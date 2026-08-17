@@ -1253,6 +1253,13 @@ type Agg = {
   branchCode: string;
   branchName: string;
   itemCode: string;
+  /** distributor's own item NAME as the sheet spelled it — kept for the normalizer's `name`-kind aliases */
+  itemName: string;
+  /** which side this branch was read from (branch-map lookup half) */
+  branchFileType: "sales" | "stock";
+  /** PS stock matrix: the 1-based column this branch sat in, and the raw header text there */
+  branchColumnIndex: number | null;
+  branchColumnHeader: string;
   grossSalesQty: number;
   returnQty: number;
   stockQty: number;
@@ -1437,6 +1444,10 @@ export async function parseWeeklyWorkbookBuffer(input: {
           ? (region.regionName ? `Direct – ${region.regionName}` : `Direct – ${obs.rawBranchCode}`)
           : obs.rawBranchName || obs.rawBranchCode,
         itemCode: obs.rawItemCode,
+        itemName: obs.rawItemName,
+        branchFileType: obs.branchFileType,
+        branchColumnIndex: obs.posColumnIndex ?? null,
+        branchColumnHeader: obs.posColumnHeaderRaw ?? "",
         grossSalesQty: 0,
         returnQty: 0,
         stockQty: 0,
@@ -1457,6 +1468,11 @@ export async function parseWeeklyWorkbookBuffer(input: {
       agg.regionName = region.regionName;
     }
     if (!agg.itemCode && obs.rawItemCode) agg.itemCode = obs.rawItemCode;
+    // Same late-fill for the raw identity the normalizer maps on: an aggregate spans both the sales
+    // and stock sides, and whichever side landed first may have carried a blank name/header.
+    if (!agg.itemName && obs.rawItemName) agg.itemName = obs.rawItemName;
+    if (agg.branchColumnIndex == null && obs.posColumnIndex != null) agg.branchColumnIndex = obs.posColumnIndex;
+    if (!agg.branchColumnHeader && obs.posColumnHeaderRaw) agg.branchColumnHeader = obs.posColumnHeaderRaw;
 
     if (obs.side === "sales") {
       agg.grossSalesQty += obs.qty;
@@ -1538,6 +1554,10 @@ export async function parseWeeklyWorkbookBuffer(input: {
       branchCode: agg.branchCode,
       branchName: agg.branchName,
       itemCode: agg.itemCode,
+      itemName: agg.itemName,
+      branchFileType: agg.branchFileType,
+      branchColumnIndex: agg.branchColumnIndex,
+      branchColumnHeader: agg.branchColumnHeader,
       productCode: agg.productCode,
       productName: agg.productName,
       officialLine: agg.officialLine,

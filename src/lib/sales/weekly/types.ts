@@ -54,6 +54,19 @@ export type WeeklyParsedRow = {
   branchCode: string;
   branchName: string;
   itemCode: string;
+  /**
+   * The distributor's own item NAME exactly as the sheet spelled it, kept apart from productName.
+   * productName holds the RESOLVED master name once an alias matches, so on a resolved row it no
+   * longer tells you what the sheet said — which is precisely what the normalizer needs to write a
+   * `name`-kind alias. Optional so already-persisted rows and hand-built fixtures stay valid.
+   */
+  itemName?: string;
+  /** Which side of the upload this branch was read from — the `${fileType}|key` half of a branch-map lookup. */
+  branchFileType?: "sales" | "stock";
+  /** PS stock matrix only: the 1-based column this branch sat in (the branch map's other lookup key). */
+  branchColumnIndex?: number | null;
+  /** PS stock matrix only: the raw location header text at that column, before normalization. */
+  branchColumnHeader?: string;
   productCode: string;
   productName: string;
   officialLine: string;
