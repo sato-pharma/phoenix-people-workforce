@@ -22,7 +22,7 @@ import {
   type MasterMapTree,
 } from "@/lib/sales/master-map/tree";
 import { loadMasterMapSource } from "@/lib/sales/master-map/load";
-import { GAPS_TAB, renderGapsSheet } from "@/lib/sales/master-map/gaps-tab";
+import { GAPS_TAB, buildGapsLayout, renderGapsLayout } from "@/lib/sales/master-map/gaps-tab";
 import {
   LISTS_COLUMN_COUNT,
   LISTS_TAB,
@@ -221,7 +221,11 @@ export async function syncMasterMap(options: {
 
   // 2b. The gaps: nameless shops and empty bricks, as a working list rather than scattered across
   // the main tabs where nobody can act on them.
-  const gaps = renderGapsSheet(tree, distributorName, 0);
+  // Built once. The row count and the formatting requests need different things — the count comes
+  // before the tab exists, the requests need its id — so this used to render the whole sheet twice
+  // per sync, walking all 50,622 shops and rebuilding 7,407 rows to read one number off the first
+  // pass and then discard it.
+  const gaps = buildGapsLayout(tree, distributorName);
   const gapsId = await ensureTab(
     token,
     options.spreadsheetId,
@@ -229,12 +233,7 @@ export async function syncMasterMap(options: {
     gaps.values.length,
     MASTER_MAP_GAP_COLUMNS.length,
   );
-  await paint(
-    token,
-    options.spreadsheetId,
-    GAPS_TAB,
-    renderGapsSheet(tree, distributorName, gapsId),
-  );
+  await paint(token, options.spreadsheetId, GAPS_TAB, renderGapsLayout(gaps, gapsId));
   written.push(GAPS_TAB);
   report(`${GAPS_TAB}: ${gaps.values.length} rows`);
 

@@ -273,6 +273,17 @@ export function shopOwningRegions(tree: MasterMapTree): MasterMapRegion[] {
 // ---------------------------------------------------------------------------------------------
 
 /**
+ * The provenance column's header, named once because its POSITION is not stable.
+ *
+ * It is the last column on the grouped tabs and the eleventh on the flat and gaps tabs, and the
+ * renderer has to find it to paint it in its quiet grey small print. Finding it by counting from
+ * the right is what broke when the three manager columns were appended: the small print landed on
+ * a district manager's name instead. Anything appended after this column must leave it alone, so
+ * every renderer looks it up by this name.
+ */
+export const MASTER_MAP_PROVENANCE_HEADER = "Where this came from";
+
+/**
  * The customer columns. Region, area and brick rows are merged bands spanning all of them.
  *
  * Distributor and code are SEPARATE columns so both can be filtered and looked up on their own.
@@ -288,7 +299,7 @@ export const MASTER_MAP_COLUMNS = [
   "Also supplied by",
   "Channel",
   "Address",
-  "Where this came from",
+  MASTER_MAP_PROVENANCE_HEADER,
 ] as const;
 
 // ---------------------------------------------------------------------------------------------
@@ -553,7 +564,7 @@ export const MASTER_MAP_FLAT_COLUMNS: readonly string[] = [
   "Also supplied by",
   "Channel",
   "Address",
-  "Where this came from",
+  MASTER_MAP_PROVENANCE_HEADER,
   ...MASTER_MAP_MANAGER_LINES.map((line) => `${line} manager`),
 ];
 
@@ -583,7 +594,7 @@ export const MASTER_MAP_GAP_COLUMNS: readonly string[] = [
   "Also supplied by",
   "Channel",
   "Address",
-  "Where this came from",
+  MASTER_MAP_PROVENANCE_HEADER,
   // Chasing a nameless shop means asking somebody who it is, and these are the somebodies.
   ...MASTER_MAP_MANAGER_LINES.map((line) => `${line} manager`),
 ];

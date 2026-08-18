@@ -3,6 +3,7 @@ import {
   MASTER_MAP_FLAT_COLUMNS,
   MASTER_MAP_GAP_COLUMNS,
   MASTER_MAP_MANAGER_LINES,
+  MASTER_MAP_PROVENANCE_HEADER,
   areaManagerCells,
   buildMasterMapTree,
   renderFlatRows,
@@ -10,6 +11,12 @@ import {
   renderUnnamedRows,
   type AreaManagerInput,
 } from "../src/lib/sales/master-map/tree.ts";
+import { renderFlatSheet } from "../src/lib/sales/master-map/sheet-render.ts";
+import {
+  buildGapsLayout,
+  renderGapsLayout,
+  renderGapsSheet,
+} from "../src/lib/sales/master-map/gaps-tab.ts";
 
 // Every shop in this company has THREE district managers, one per sales line — never one. The owner
 // asked which manager each customer belongs to, and the honest answer is three names, so the sheet
@@ -133,12 +140,94 @@ export function runMasterMapDistrictManagersTests() {
     "the shop's three managers are the three managers of its area, in Anti Infective, CNS, Pedia order",
   );
 
+  // ---- The grey small print lands on provenance, never on a person's name ----------------------
+  //
+  // This is the exact damage appending these columns did once already. renderFlatSheet painted
+  // `header.length - 1` in the quiet provenance style — 8pt, pale grey, italic — and that was
+  // "Where this came from" only for as long as it was the last column. With three manager columns
+  // after it, the small print moved onto "Pedia manager": a district manager's name rendered as a
+  // footnote, while the provenance note it exists to quieten went full size and started competing
+  // with the pharmacy name. Nothing errors, nothing looks broken in the code, and the only place
+  // it shows is the sheet itself. So the column is found by NAME, and this pins that.
+  type StyleRequest = {
+    repeatCell?: {
+      cell?: {
+        userEnteredFormat?: {
+          backgroundColor?: { blue?: number; green?: number; red?: number };
+          textFormat?: { fontSize?: number };
+        };
+      };
+      range?: { endRowIndex?: number; startColumnIndex?: number; startRowIndex?: number };
+    };
+  };
+  const smallPrint = (renderFlatSheet(MASTER_MAP_FLAT_COLUMNS, flat, 0).requests as StyleRequest[]).filter(
+    (request) => request.repeatCell?.cell?.userEnteredFormat?.textFormat?.fontSize === 8,
+  );
+  assert.equal(smallPrint.length, 1, "exactly one column on the flat tab wears the quiet provenance style");
+  assert.equal(
+    smallPrint[0]?.repeatCell?.range?.startColumnIndex,
+    MASTER_MAP_FLAT_COLUMNS.indexOf(MASTER_MAP_PROVENANCE_HEADER),
+    `the 8pt grey italic belongs to "${MASTER_MAP_PROVENANCE_HEADER}" — on any other column it is a manager's name rendered as small print`,
+  );
+
   const unnamed = renderUnnamedRows(built, distributorName);
   assert.equal(unnamed.length, 1, "the nameless Main Store shop reaches the gaps tab");
   assert.equal(
     unnamed[0].length,
     MASTER_MAP_GAP_COLUMNS.length,
     "and its row is as wide as that tab's header",
+  );
+
+  // ---- The Gaps tab is built ONCE, and its provenance column is as quiet as everywhere else ----
+  //
+  // Two things are pinned here. The sync needs the row count before the tab exists and the real tab
+  // id afterwards, which it used to satisfy by rendering the entire sheet twice — so the split into
+  // buildGapsLayout + renderGapsLayout must stay behaviour-preserving, or the tab silently changes
+  // shape. And "Where this came from" must wear the same 8pt grey italic it wears on every other
+  // tab: it is applied AFTER the amber unnamed rows, so an innocent-looking reorder undoes it.
+  const gapsLayout = buildGapsLayout(built, distributorName);
+  const gapsTwoStep = renderGapsLayout(gapsLayout, 77);
+  const gapsOneShot = renderGapsSheet(built, distributorName, 77);
+  assert.deepEqual(
+    gapsTwoStep.values,
+    gapsOneShot.values,
+    "splitting the render must not change a single cell of the Gaps tab",
+  );
+  assert.deepEqual(
+    gapsTwoStep.requests,
+    gapsOneShot.requests,
+    "nor a single formatting request — the tab id is the only thing the second half adds",
+  );
+  assert.equal(
+    gapsLayout.values.length,
+    gapsOneShot.values.length,
+    "the count ensureTab sizes the tab from must equal the rows actually painted into it",
+  );
+
+  const gapsSmallPrint = (gapsTwoStep.requests as StyleRequest[]).filter(
+    (request) => request.repeatCell?.cell?.userEnteredFormat?.textFormat?.fontSize === 8,
+  );
+  assert.equal(gapsSmallPrint.length, 1, "exactly one column on the Gaps tab wears the quiet provenance style");
+  assert.equal(
+    gapsSmallPrint[0]?.repeatCell?.range?.startColumnIndex,
+    MASTER_MAP_GAP_COLUMNS.indexOf(MASTER_MAP_PROVENANCE_HEADER),
+    `the Gaps tab's 8pt grey italic belongs to "${MASTER_MAP_PROVENANCE_HEADER}" — anywhere else it is a manager's name rendered as a footnote`,
+  );
+
+  // Identified by the ROWS it covers, not by its colour: several bands on this tab are warm-toned,
+  // and matching on "reddish" found the title band instead — which sits above everything, so the
+  // ordering check passed no matter where provenance went. The unnamed style is the one painted
+  // across exactly the nameless-shop rows.
+  const amberIndex = (gapsTwoStep.requests as StyleRequest[]).findIndex(
+    (request) =>
+      request.repeatCell?.cell?.userEnteredFormat?.backgroundColor !== undefined &&
+      request.repeatCell?.range?.startRowIndex === gapsLayout.unnamedFirstRow &&
+      request.repeatCell?.range?.endRowIndex === gapsLayout.unnamedLastRow,
+  );
+  assert.ok(amberIndex >= 0, "expected the amber band painted across the nameless shop rows");
+  assert.ok(
+    gapsTwoStep.requests.indexOf(gapsSmallPrint[0]) > amberIndex,
+    "provenance is restyled AFTER the amber rows — before them the amber repaints over it and the column goes loud again",
   );
 
   // ---- The grouped tabs say it once per area, not once per shop ---------------------------------
