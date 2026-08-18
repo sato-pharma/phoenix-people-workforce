@@ -9,8 +9,8 @@
 > the bottom.
 
 > **Note:** `pnpm run check:secret-pins` (`scripts/check-secret-pins.ts`) enforced the Cloud Run
-> `:latest` rule and ran in the (now dead) Cloud Run deploy. It is **not** in the `ci` / `check:harden`
-> gate (verified 2026-08-04) and Railway has no version pins — so it is a dead no-op. Actually
+> `:latest` rule and ran in the (now dead) Cloud Run deploy. It is **not** in the `ci` gate
+> (verified 2026-08-04) and Railway has no version pins — so it is a dead no-op. Actually
 > retiring the script is a separate chore, not a rotation step.
 
 ## Both halves rotate together

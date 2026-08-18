@@ -28,7 +28,8 @@ export const systemDeployment = {
 
 export const systemEditingPolicy = {
   fastCheckScript: "pnpm run check:edit",
-  hardeningScript: "pnpm run check:harden",
+  // No `hardeningScript` counterpart: `check:harden` was retired on 2026-08-18 and CI is the gate.
+  // `pnpm run ci` runs the same steps by hand, but it is opt-in and deliberately not named here.
   localEditingModeEnv: "NEXT_PUBLIC_PHOENIX_EDITING_MODE",
   protectedAreas: [
     "authentication",

@@ -71,7 +71,7 @@ protection, CI cost, the deploy path, or the region.
 - **When you do run `gh pr update-branch`, it acts on the SERVER — your local branch is then stale.** The next `git push` is rejected with *"remote contains work that you do not have locally"*, which reads like someone else pushed. Always `git fetch` and `git merge --ff-only origin/<branch>` before committing anything more. It also moves the head SHA, so **CI re-runs and the previous green result no longer applies** — never merge on the older run.
 - **A merge to `main` SHIPS TO PRODUCTION IMMEDIATELY.** This reversed on 2026-08-01 and is the single most important thing to relearn. Railway deploys on push, at full traffic, with no cron wait, no staged rollout, and no smoke test. CI gates the merge, but the merged commit then ships instantly. **Never merge anything to `main` you are not willing to have serving employees within minutes.** To confirm what is actually live, request `/api/healthz` and read `revision` — not the workflow list.
 - **There is a staging application again** — a live Railway environment (`https://phoenix-people-workforce-staging.up.railway.app`), confirmed 2026-08-13, correctly wired to the staging Supabase project (`cifwmndunmlxjhyjugxa`), not production. It was already running when discovered, apparently created since the "no staging app" note below was written; the owner has confirmed keeping it. Any rule elsewhere in this file requiring staging verification now has somewhere to run against — see §3.
-- **Full validation gates must not trust warm TypeScript caches.** `pnpm run check:harden` / CI are authoritative; a bare warm `tsc` can report a false green. For manual full checks use `tsc --incremental false`.
+- **A local typecheck must not trust a warm TypeScript cache.** CI is authoritative — it always starts cold; a bare warm local `tsc` can report a false green. If you ever do run one by hand, use `tsc --incremental false`.
 - **Never foreground-watch a long pipeline** (CI run, deploy, big script). Launch it in the background and check at batched checkpoints.
 - **Role sweeps use dev-auth request headers** (`PHOENIX_ENABLE_DEV_AUTH_HEADERS=true` + `x-phoenix-role`/`x-phoenix-hr-id`), not the cookie flow — cookie-based role switching logs the real user out.
 - **Merged-branch checks must be squash-aware.** PRs merge by squash, so a merged branch is never an ancestor of `origin/main` — `git branch --merged` is always wrong here. Use `gh pr list --head <branch> --state merged`.
@@ -217,47 +217,41 @@ automatically; the local branch and worktree survive and still need approval to 
 
 ## 7. Validation
 
-**Validate ONLY when the owner says so. Never on your own judgement.**
+**CI is the gate. Do not run a local full validation.**
 
-No lint, no typecheck, no tests, no build until he says the work is done. Not between edits, not
-"once per task", not because a change feels finished — **he decides when the work is finished, not
-you.** (This replaced "validate once per task" on 2026-08-10: that wording still left the agent
-deciding where a task ended.) He iterates in long sessions and changes one file many times;
-re-validating work that is about to change again proves nothing and costs him minutes.
+`check:harden` was retired on 2026-08-18 at the owner's instruction, along with the
+`ask-before-validation` hook and the "ask before you validate" rule that surrounded it. Do not
+reintroduce any of them, and do not invent a replacement — no "quick subset" of lint + typecheck
+before pushing, no running `pnpm run ci` as a pre-push ritual. **Push the branch and let the PR's
+checks answer.**
 
-**Ask first, in plain words: "Have you finished editing?"** Before starting ANY long run —
-`check:harden`, `ci`, `build`, `test`, `lint`, `typecheck` — stop and ask that question, then wait
-for the answer. **Yes → run it. No → do not run it**, and do not substitute a "quick subset"
-instead. Owner's rule, 2026-08-15. You do not get to infer the answer from how finished the work
-looks; only he knows whether he is about to change another file. One exception: if he has just named
-the command himself ("run check:harden"), that IS the answer — run it without asking again.
+This is safe because the local gate never gated anything. `.github/workflows/ci.yml` re-lists every
+step itself, and the four **required** status checks — `validate`, `lint`, `typecheck`,
+`secret-scan` — run on the PR head commit and block the merge if any is red. That is unchanged.
+What is gone is only the duplicate local run, which on a 16 GB laptop already carrying several
+sessions cost minutes, saturated RAM, and proved something CI was about to prove anyway.
 
-This one is mechanically backed, not behavioral. `.claude/hooks/ask-before-validation.mjs` is a
-`PreToolUse` hook on `Bash|PowerShell` that turns any of those commands into a permission prompt
-carrying the question. It was added together with the **removal** of `Bash(pnpm run check:harden)`,
-`run test`, `run lint`, `run typecheck` and `check:edit` from `permissions.allow` — those entries
-were why the most expensive command in the repo ran with no prompt at all. The hook fails open on
-any error, so it is a backstop, not a substitute for asking.
+`pnpm run ci` still exists and still runs the whole thing, for the rare case where you genuinely
+need the answer before pushing. It is opt-in: run it **only when the owner names it**.
 
-Verifying a UI change in the browser is NOT validation and needs no permission — reload and look.
-That is seconds, and it is how defects actually get found.
+Two things are NOT covered by a PR's CI and still need a check immediately before the action:
+**migrations** and **production deploys**. Run what the tier table below calls for in those cases.
 
-When he says done, match the tier below to the blast radius and run it **once**.
+Verifying a UI change in the browser is not validation at all — reload and look. That is seconds,
+and it is how defects actually get found.
 
-`pnpm run check:harden` then runs **once before you push** — not before every local commit. A commit
-on a feature branch ships nowhere, and CI re-runs the identical content (`validate` + `lint` +
-`typecheck` jobs, all required status checks) on the PR head commit and blocks the merge if it is
-red. Migrations and production deploys still get their own run immediately before the action,
-because those are not covered by a PR's CI.
+**What must be satisfied before a change is called ready.** Read the right-hand column as *what has
+to have passed*, not as *what you should run locally* — for everything except the last two rows, CI
+is what runs it, on the PR.
 
-| Change type | Minimum validation |
-| --- | --- |
-| Docs or repo instructions only | Review diff, formatting, links, secret exposure |
-| Narrow TypeScript/JavaScript change | Lint, typecheck, targeted tests |
-| Shared runtime, app/API route, server component, env, or deployment behavior | Lint, typecheck, tests, build |
-| UI workflow | Relevant code checks plus browser verification at desktop and mobile sizes |
-| Migration, view, function, RPC, grant, or policy | Migration checks, SQL review, target confirmation, schema/security review, staging verification after approval |
-| Auth, RLS, payroll, HR lifecycle, sales, permissions, executive reporting | Full checks, role-based tests, failure-state checks, explicit risk review |
+| Change type | Minimum validation | Who runs it |
+| --- | --- | --- |
+| Docs or repo instructions only | Review diff, formatting, links, secret exposure | You, by reading |
+| Narrow TypeScript/JavaScript change | Lint, typecheck, targeted tests | CI, on the PR |
+| Shared runtime, app/API route, server component, env, or deployment behavior | Lint, typecheck, tests, build | CI, on the PR |
+| UI workflow | Relevant code checks plus browser verification at desktop and mobile sizes | CI for the code; **you** for the browser |
+| Migration, view, function, RPC, grant, or policy | Migration checks, SQL review, target confirmation, schema/security review, staging verification after approval | **You, before the migration** — CI never sees this |
+| Auth, RLS, payroll, HR lifecycle, sales, permissions, executive reporting | Full checks, role-based tests, failure-state checks, explicit risk review | CI for the code; **you** for the role sweep and the risk review |
 
 Prefer repository scripts over improvised commands. Never present a known-broken change as ready.
 Report failures your change caused separately from pre-existing ones. When a data source is

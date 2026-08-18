@@ -114,7 +114,7 @@ const securityHeaders = [
 // sales-imports Supabase bucket).
 const nextConfig: NextConfig = {
   // `typecheck` already runs as a required, separate step ahead of `build` in both
-  // pnpm run check:harden / ci and the required `lint-typecheck` CI job. Next.js 16
+  // the `pnpm run ci` script and the required `typecheck` CI job. Next.js 16
   // has no built-in ESLint-during-build integration anymore (no `eslint` NextConfig
   // key), so only the redundant type-check needs disabling here. Do NOT remove this
   // without also confirming typecheck still gates merges/deploys some other way.

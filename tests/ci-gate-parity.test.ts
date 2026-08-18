@@ -5,10 +5,16 @@ import path from "node:path";
 /**
  * CI <-> package.json gate parity.
  *
- * `check:harden` / `ci` are package.json-only strings; `.github/workflows/ci.yml` re-lists the same
- * gate steps separately. The two silently diverge: a `check:*` added to the `ci` script alone NEVER
- * runs on a PR (it needs BOTH edits) — the documented `ci-does-not-run-check-harden` trap. This test
- * pins it: every `check:*` step the gate runs must also appear in at least one workflow file.
+ * `ci` is a package.json-only string; `.github/workflows/ci.yml` re-lists the same gate steps
+ * separately. The two silently diverge: a `check:*` added to the `ci` script alone NEVER runs on a
+ * PR (it needs BOTH edits). This test pins it: every `check:*` step the gate runs must also appear
+ * in at least one workflow file.
+ *
+ * There used to be a second assertion here, that `ci` and `check:harden` were byte-identical. That
+ * mattered while `check:harden` was the local pre-push gate and a green local run was supposed to
+ * predict a green PR. `check:harden` was retired on 2026-08-18 — the workflow is the only gate now,
+ * so there is no second string left to keep in lockstep, and `ci` is kept purely as the one-shot
+ * way to run the whole thing by hand.
  *
  * Scope is deliberately the `check:*` steps only. lint / typecheck / test / build have their own CI
  * jobs invoked in varied ways (e.g. the runner runs as its own process, not `pnpm run test`), so a
@@ -23,13 +29,12 @@ export function runCiGateParityTests() {
   const ciScript = pkg.scripts?.ci ?? "";
   assert.ok(ciScript.length > 0, "package.json must define a `ci` script");
 
-  // `ci` and `check:harden` must stay identical (they are the same gate; the PR gate is `ci`).
-  const harden = pkg.scripts?.["check:harden"] ?? "";
+  // Retired, and pinned so it does not quietly come back as a second gate to keep in sync.
   assert.equal(
-    harden,
-    ciScript,
-    "`check:harden` and `ci` must be the identical gate string, or a local `check:harden` pass no " +
-      "longer means the PR gate (`ci`) will pass. Keep them in lockstep.",
+    pkg.scripts?.["check:harden"],
+    undefined,
+    "`check:harden` was retired on 2026-08-18 — the CI workflow is the gate. Reintroducing it " +
+      "recreates the divergence trap this test exists to catch.",
   );
 
   const gateChecks = Array.from(new Set(ciScript.match(/\bcheck:[a-z0-9-]+/gi) ?? [])).sort();
@@ -44,8 +49,8 @@ export function runCiGateParityTests() {
   assert.deepEqual(
     missing,
     [],
-    `these check:* steps run in the package.json \`ci\`/\`check:harden\` gate but appear in NO ` +
+    `these check:* steps run in the package.json \`ci\` gate but appear in NO ` +
       `${WORKFLOW_DIR}/*.yml file, so they NEVER run on a PR: [${missing.join(", ")}]. ` +
-      `Add each to a workflow — this is the CI-vs-check:harden divergence trap.`,
+      `Add each to a workflow — the workflow is the only thing that actually gates a merge.`,
   );
 }

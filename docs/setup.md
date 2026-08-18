@@ -80,14 +80,15 @@ Fast inner loop (typecheck only):
 pnpm run check:edit
 ```
 
-Full pre-push validation (lint + typecheck + test + build):
+The whole gate in one command (lint + typecheck + test + build):
 
 ```bash
-pnpm run check:harden
+pnpm run ci
 ```
 
-Run `check:harden` **once per task, before you push or open a PR** — not before every commit. A
-branch commit ships nowhere, and CI re-runs the same gate on the PR before a merge is allowed.
+**You do not normally run that.** CI is the gate: push the branch and let the PR's checks answer —
+they run the same steps and block a red merge. Reach for `pnpm run ci` only before a migration or a
+production deploy, which CI never sees.
 
 ## Running Tests
 

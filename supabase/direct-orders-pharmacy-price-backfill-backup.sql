@@ -7,7 +7,7 @@
 -- other copy of what it contained.
 --
 -- The snapshot lives in a DATED SCHEMA, never in `public`. `scripts/check-sql-backup-placement.ts`
--- (wired into check:harden and CI) fails the build on `public.*_backup_*`, because a backup table
+-- (wired into CI as its own step) fails the build on `public.*_backup_*`, because a backup table
 -- in `public` is reachable by the anon key — that is a real, previously-live exposure, not a
 -- style preference. The revokes below are part of the same rule.
 --

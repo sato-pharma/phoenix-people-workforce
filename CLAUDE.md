@@ -21,16 +21,17 @@ All commands run from the repo root.
 | Typecheck | `pnpm run typecheck` |
 | Unit/integration tests | `pnpm run test` |
 | Fast editing gate (typecheck only) | `pnpm run check:edit` |
-| Full hardening gate (5 domain/DB checks + lint + typegen + typecheck + test + build) | `pnpm run check:harden` |
-| CI gate (same as harden) | `pnpm run ci` |
+| Whole gate, by hand — **only when the owner names it** | `pnpm run ci` |
 
-**Validate ONLY when the owner says so. Never on your own judgement.** No lint, no typecheck, no
-tests, no build until he says the work is done — not between edits, not "once per task", not because
-a change feels finished. **Before starting any long run, ask him in plain words: "Have you finished
-editing?" — yes → run it, no → don't.** When he says done: `check:harden` once, then push. Verifying
-a UI change in the browser is not validation and needs no permission — reload and look. The ask is
-enforced by `.claude/hooks/ask-before-validation.mjs`, which turns every long command into a prompt.
-Full rule, the reasoning, and the per-change validation matrix: [AGENTS.md §7](AGENTS.md).
+**CI is the gate. Do not run a local full validation.** `check:harden` was retired on 2026-08-18 at
+the owner's instruction, together with the `ask-before-validation` hook and the ask-before-you-
+validate rule. Do not reintroduce them and do not invent a replacement — no "quick subset" of lint +
+typecheck before pushing, no `pnpm run ci` as a pre-push ritual. **Push the branch and let the PR's
+checks answer**; `.github/workflows/ci.yml` lists every step itself, and `validate`, `lint`,
+`typecheck` and `secret-scan` are required checks that still block the merge. Migrations and
+production deploys are the two things CI never sees — those still get a check immediately before the
+action. Verifying a UI change in the browser is not validation at all — reload and look. Full rule
+and the per-change matrix: [AGENTS.md §7](AGENTS.md).
 
 ## The two rules that apply to every change
 

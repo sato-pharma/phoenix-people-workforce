@@ -1,4 +1,4 @@
-// DEAD CONFIG as of the 2026-08-01 Railway cutover — do NOT wire this into check:harden.
+// DEAD CONFIG as of the 2026-08-01 Railway cutover — do NOT wire this into `ci.yml` or the `ci` script.
 //
 // This guard validates the GCP Cloud Run service's Secret Manager wiring. Production no
 // longer runs on Cloud Run, and Railway has no equivalent concept: its variables hold values

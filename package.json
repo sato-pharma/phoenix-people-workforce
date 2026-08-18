@@ -40,7 +40,6 @@
     "ops:provision-accounts": "node --env-file-if-exists=.env.local --experimental-strip-types --experimental-specifier-resolution=node --experimental-loader ./scripts/alias-loader.mjs scripts/provision-missing-employee-accounts.ts",
     "ops:backfill-access-profiles": "node --env-file-if-exists=.env.local --experimental-strip-types --experimental-specifier-resolution=node --experimental-loader ./scripts/alias-loader.mjs scripts/backfill-missing-access-profiles.ts",
     "check:edit": "pnpm run typecheck",
-    "check:harden": "pnpm run check:routes && pnpm run check:migrations && pnpm run check:sql-backups && pnpm run check:deductions-write-contract && pnpm run check:no-stale-domains && pnpm run lint && pnpm exec next typegen && pnpm run typecheck && pnpm run test && pnpm run build",
     "analyze": "next build --experimental-analyze",
     "db:rls:create-staging-env": "node --experimental-strip-types --experimental-specifier-resolution=node tests/scripts/create-staging-rls-env-local.ts",
     "db:rls:check-local-prereqs": "node --experimental-strip-types --experimental-specifier-resolution=node tests/scripts/check-local-rls-prereqs.ts",

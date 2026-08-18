@@ -45,9 +45,8 @@ No AWS CLI is required. The `aws-…` strings throughout the repo are the Supaba
 3. Start the dev server with `pnpm run dev` (Turbopack on macOS/Linux; webpack on Windows for stability).
 4. Edit freely — do not run checks between edits. `pnpm run check:edit` (typecheck only) is
    available mid-task if you want a fast sanity read, but it is optional.
-5. When the task is finished, run `pnpm run check:harden` (lint + typecheck + test + build) **once,
-   before you push**. Intermediate commits on a feature branch do not each need it — CI re-runs the
-   same gate on the PR and blocks a red merge.
+5. When the task is finished, **push and let CI answer**. There is no local full gate to run — the
+   PR runs lint, typecheck, tests and build itself, and a red one blocks the merge.
 6. Never push a broken build.
 
 ## Commit Messages
@@ -117,6 +116,6 @@ Automated tooling may be used during development. All changes -- whether manuall
 - Do not add or reschedule a cron without approval. Vercel crons no longer exist, and neither does
   Cloud Scheduler — the live scheduler is a third-party cron-job.org account outside this repo, so
   a schedule change cannot be made or reviewed in a PR. See [docs/deployment.md](docs/deployment.md).
-- Do not skip `pnpm run check:harden` before pushing or opening a PR. (Once, at that point — not
-  once per commit.)
+- Do not merge a PR whose checks are red, and do not reintroduce a local full-validation gate to
+  run before pushing — `check:harden` was retired on 2026-08-18 and CI is the gate.
 - Do not re-implement domain business logic inside components or pages.
