@@ -126,9 +126,9 @@ Key principles:
 
 ## Deployment Security
 
-- **Production deploys** are only permitted from the `main` branch after
-  passing the full validation gate (`pnpm run check:harden`: lint, typecheck,
-  tests, and build).
+- **Production deploys** are only permitted from the `main` branch, and only
+  after the PR's required checks pass -- `validate`, `lint`, `typecheck` and
+  `secret-scan`, which between them cover lint, typecheck, tests and build.
 - **Preview environments** enforce a read-only guard via the
   `PHOENIX_PREVIEW_READ_ONLY` environment variable, preventing accidental
   mutations against production data from preview deployments.

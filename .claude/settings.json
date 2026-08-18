@@ -10,18 +10,6 @@
             "shell": "bash"
           }
         ]
-      },
-      {
-        "matcher": "Bash|PowerShell",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "DIR=\"$(git rev-parse --show-toplevel 2>/dev/null || pwd)\"; node \"$DIR/.claude/hooks/ask-before-validation.mjs\" 2>/dev/null || true",
-            "shell": "bash",
-            "timeout": 10,
-            "statusMessage": "Confirming the work is finished"
-          }
-        ]
       }
     ],
     "SessionStart": [

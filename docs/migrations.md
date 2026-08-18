@@ -42,7 +42,7 @@ The supabase/ root also contains historical hardening scripts and operational pa
 **Reconciled 2026-08-04.** There is currently **no scripted gate** for taking a new
 migration to production. The `phase25`-`phase27` staging mutation-smoke scripts and the
 `phase28`-`phase37` production approval/reconciliation scripts **still exist in
-`package.json`** — but no automated gate invokes them: neither `check:harden` nor
+`package.json`** — but no automated gate invokes them: neither the `ci` script nor
 `.github/workflows/ci.yml` runs any `phase*` script. The `phase28`+ production-gate scripts
 were **retired as a gate on 2026-07-11** (retired, not deleted): they hardcode checks
 against one specific pre-baseline migration (now archived under

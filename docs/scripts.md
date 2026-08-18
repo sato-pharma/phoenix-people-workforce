@@ -28,8 +28,7 @@ All scripts are defined in `package.json`. This document classifies them by purp
 | Script | Purpose | Safety | Notes |
 |---|---|---|---|
 | `pnpm run check:edit` | Fast editing gate (typecheck only) | Safe | Inner loop during development |
-| `pnpm run check:harden` | Full validation gate | Safe | lint + typecheck + test + build |
-| `pnpm run ci` | CI pipeline gate | Safe | Same as check:harden |
+| `pnpm run ci` | The whole gate in one command | Safe | lint + typecheck + test + build. **Not a pre-push ritual** — CI is the gate; run this only before a migration or a production deploy, which CI never sees |
 
 ## Database / RLS Validation Scripts
 

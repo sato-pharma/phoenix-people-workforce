@@ -10,9 +10,9 @@ create table <domain>_backup_YYYYMMDD.<name> as
 select ... from public.<source> where ...;
 ```
 
-Enforced by `pnpm run check:sql-backups`, which runs as its own step in `ci.yml` and inside
-`check:harden` locally. (CI invokes the individual checks, not `check:harden` — a check added
-only to that script would never run in CI.)
+Enforced by `pnpm run check:sql-backups`, which runs as its own step in `ci.yml` and inside the
+`ci` script. (CI invokes the individual checks, not the `ci` script — a check added only to that
+script would never run in CI. `tests/ci-gate-parity.test.ts` pins that.)
 
 ## Why
 

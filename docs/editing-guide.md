@@ -47,10 +47,12 @@ pnpm run check:edit
 
 This keeps TypeScript honest without forcing every existing lint/test hardening rule to pass after each small UI move.
 
-Before commit, push, PR, migration, or deployment, switch back to the full hardening gate:
+For a commit, push, or PR there is nothing further to run locally — the PR's required checks are the
+gate. Before a **migration or a production deploy**, which CI never sees, run the whole gate once by
+hand:
 
 ```bash
-pnpm run check:harden
+pnpm run ci
 ```
 
 Do not relax production-critical protections while editing. Authentication, permissions, RLS, payroll locks, employee lifecycle rules, and deployment checks stay protected even when the UI and configuration are being reshaped.

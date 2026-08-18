@@ -24,7 +24,7 @@
 //      head, not whether the name matches.
 //
 // NOT A CI GATE. It describes the state of one developer's laptop; CI has no local branches, so it
-// would be vacuously green there. Do not wire it into check:harden.
+// would be vacuously green there. Do not wire it into `ci.yml` or the `ci` script.
 //
 // Read-only: ls-remote, rev-list and a gh query. Nothing is written, pushed or deleted.
 

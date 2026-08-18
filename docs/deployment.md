@@ -44,7 +44,8 @@ Never push directly to `main`. Work happens on a branch/PR and merges after CI p
    Supabase project — it does not deploy or hit any live preview URL), `lint`, and `typecheck`.
    The smoke test used to be a fourth `preview-smoke` job; it now runs as a step inside `validate`,
    so there is no separate job to wait on.
-3. Run `pnpm run check:harden` locally once before you push — see AGENTS.md § 7.
+3. Do **not** run a local full validation before pushing — those PR checks are the gate, and they
+   are the same steps. See AGENTS.md § 7.
 4. **Apply any database migration by hand BEFORE the merge.** The Railway deploy applies none. See
    "Database Deployment" below.
 5. Merge to `main`. **The merge is the deploy.** Railway builds and ships the new commit to

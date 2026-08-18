@@ -41,7 +41,7 @@
 - [ ] Unit tests added/updated
 - [ ] E2E tests added/updated
 - [ ] Manual testing completed
-- [ ] check:harden passes locally
+- [ ] CI is green on this PR (`validate`, `lint`, `typecheck`, `secret-scan`)
 
 ## Deployment Notes
 

@@ -33,8 +33,8 @@ push-triggers on `main` and `master` only. Every other branch is validated throu
 
 ## Validation Gates
 
-See [AGENTS.md § 7](../AGENTS.md). The short version: **validate once per task, not once per step** —
-make all the edits, then run `pnpm run check:harden` once before you push.
+See [AGENTS.md § 7](../AGENTS.md). The short version: **CI is the gate** — make the edits, push, and
+let the PR's checks answer. There is no local full gate; `check:harden` was retired on 2026-08-18.
 
 For documentation-only changes a full build is unnecessary; review the diff, links, and secret
 exposure, and confirm `git diff --check` passes.
