@@ -6,6 +6,7 @@ import {
   CalendarDays,
   CheckCircle2,
   Clock3,
+  Eye,
   Inbox,
   MessageSquareText,
   RefreshCcw,
@@ -24,6 +25,7 @@ import type {
   MarketingApproverChainRung,
   MarketingApproverInboxRow,
   MarketingApproverInboxWorkspace,
+  MarketingApproverOversightRow,
   MarketingApproverUpcomingRow,
 } from "@/lib/marketing-requests/service";
 import { PHOENIX_BUSINESS_TIME_ZONE } from "@/lib/i18n/format";
@@ -281,6 +283,9 @@ function MarketingRequestInboxInner({ decisionBasePath }: { decisionBasePath: st
   const [rows, setRows] = useState<MarketingApproverInboxRow[]>([]);
   const [advisoryRows, setAdvisoryRows] = useState<MarketingApproverInboxRow[]>([]);
   const [upcomingRows, setUpcomingRows] = useState<MarketingApproverUpcomingRow[]>([]);
+  // Server-side only: this arrives populated for a Super Admin and empty for everyone else. The
+  // component never decides who may see it — see canViewMarketingOversightQueue.
+  const [oversightRows, setOversightRows] = useState<MarketingApproverOversightRow[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -295,6 +300,8 @@ function MarketingRequestInboxInner({ decisionBasePath }: { decisionBasePath: st
       if (!response.ok) {
         setRows([]);
         setAdvisoryRows([]);
+        setUpcomingRows([]);
+        setOversightRows([]);
         setError(
           ("message" in payload && payload.message) ||
             "Unable to load your approval inbox.",
@@ -305,11 +312,13 @@ function MarketingRequestInboxInner({ decisionBasePath }: { decisionBasePath: st
       setRows((payload as MarketingApproverInboxWorkspace).rows ?? []);
       setAdvisoryRows((payload as MarketingApproverInboxWorkspace).advisoryRows ?? []);
       setUpcomingRows((payload as MarketingApproverInboxWorkspace).upcomingRows ?? []);
+      setOversightRows((payload as MarketingApproverInboxWorkspace).oversightRows ?? []);
       setError(null);
     } catch {
       setRows([]);
       setAdvisoryRows([]);
       setUpcomingRows([]);
+      setOversightRows([]);
       setError("Unable to load your approval inbox.");
     } finally {
       setIsLoading(false);
@@ -370,7 +379,10 @@ function MarketingRequestInboxInner({ decisionBasePath }: { decisionBasePath: st
           <RowSkeleton />
           <RowSkeleton />
         </div>
-      ) : rows.length === 0 && advisoryRows.length === 0 && upcomingRows.length === 0 ? (
+      ) : rows.length === 0 &&
+        advisoryRows.length === 0 &&
+        upcomingRows.length === 0 &&
+        oversightRows.length === 0 ? (
         <Card className="flex flex-col items-center justify-center gap-2 rounded-sm border border-slate-200 bg-white px-4 py-10 text-center shadow-[0_8px_24px_rgba(15,23,42,0.05)]">
           <div className="flex h-10 w-10 items-center justify-center rounded-sm bg-slate-50 text-slate-400 ring-1 ring-slate-100">
             <Inbox className="h-4 w-4" />
@@ -455,6 +467,69 @@ function MarketingRequestInboxInner({ decisionBasePath }: { decisionBasePath: st
           </div>
           {advisoryRows.map((row) => (
             <AdvisoryRowCard key={`advisory-${row.id}`} onPosted={() => void loadInbox()} row={row} />
+          ))}
+        </div>
+      ) : null}
+
+      {/* ------ Everything in approval: Super Admin oversight, read-only ------------------------------
+          Owner instruction, 2026-08-18. Every section above is scoped to the viewer's own rungs, and
+          a Super Admin holds none — so this inbox showed him nothing while requests sat pending with
+          other people. The server decides who gets these rows (canViewMarketingOversightQueue); for
+          every other role the array is empty and this block never renders.
+
+          Last on the page, and with no decision controls, on purpose: it is a watch list, not a
+          queue. Whose turn it is stays unambiguous — his own work is at the top, everyone else's is
+          down here with the holder's name on it. */}
+      {!isLoading && oversightRows.length > 0 ? (
+        <div className="space-y-3 pt-2">
+          <div className="flex items-center gap-2">
+            <div className="flex h-8 w-8 items-center justify-center rounded-sm bg-slate-100 text-slate-600 ring-1 ring-slate-200">
+              <Eye className="h-3.5 w-3.5" />
+            </div>
+            <div>
+              <h2 className="text-[15px] font-black tracking-tight text-slate-950">
+                Everything in approval
+              </h2>
+              <p className="text-[11px] font-medium text-slate-400">
+                {oversightRows.length} request{oversightRows.length === 1 ? "" : "s"} moving through
+                the chain — view only, the decision is the named approver&rsquo;s
+              </p>
+            </div>
+          </div>
+          {oversightRows.map((row) => (
+            <Card
+              className="rounded-sm border border-slate-200 bg-white px-4 py-3 shadow-[0_8px_24px_rgba(15,23,42,0.05)]"
+              key={`oversight-${row.id}`}
+            >
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="text-[14px] font-black text-slate-950">{row.customerName}</p>
+                  <p className="mt-0.5 text-[11px] font-bold text-slate-500">
+                    {row.requestCode} · {row.requesterName} · {egp(row.estimatedCost)}
+                  </p>
+                </div>
+                <span className="shrink-0 rounded-sm bg-slate-100 px-2.5 py-1 text-[11px] font-black text-slate-700">
+                  {row.ageDays === 0
+                    ? "Submitted today"
+                    : `${row.ageDays} ${row.ageDays === 1 ? "day" : "days"} in system`}
+                </span>
+              </div>
+              <p className="mt-2 text-[12px] font-bold text-slate-700">
+                {row.awaitingStepName
+                  ? `Now with ${row.awaitingApproverName || "an unassigned approver"} — ${row.awaitingStepName}`
+                  : "No open approval step on this request."}
+              </p>
+              <p className="mt-0.5 text-[11px] font-medium text-slate-400">
+                Step {row.stepSequence} of {row.totalGatingSteps}
+              </p>
+              <Link
+                className="mt-2 inline-flex min-h-9 items-center gap-1.5 rounded-sm border border-slate-300 bg-white px-4 text-[12px] font-bold text-slate-700 shadow-sm transition hover:border-orange-200 hover:bg-orange-50 hover:text-orange-700"
+                href={`/marketing-requests/${row.id}`}
+              >
+                <Eye className="h-3.5 w-3.5" />
+                Open the full record
+              </Link>
+            </Card>
           ))}
         </div>
       ) : null}

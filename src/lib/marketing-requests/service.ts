@@ -676,6 +676,24 @@ export type MarketingApproverInboxWorkspace = {
    * (no decision is theirs to make yet) and carry where the request is stopped and for how long.
    */
   upcomingRows: MarketingApproverUpcomingRow[];
+  /**
+   * EVERY request still in the approval chain, whoever is holding it — Super Admin only.
+   *
+   * Owner instruction, 2026-08-18. The three sections above are all scoped to the ACTOR: rungs
+   * assigned to them, CC rungs they may comment on, and rungs heading toward them. A Super Admin
+   * holds no rung on the live chain (manager → SFE → marketing → CEO → finance), so all three came
+   * back empty and the inbox read "no marketing requests involve you right now" while four requests
+   * sat pending. That is a true statement about the actor and a useless one about the company.
+   *
+   * Strictly read-only, and deliberately NOT merged into `rows`: oversight is the right to SEE a
+   * queue, not to decide it. `allowReject` / `allowReturn` are forced false on every row here so no
+   * decision control can be rendered from one, and the decision API is untouched — it still matches
+   * the actor against their own step, which a Super Admin does not have. Requests already sitting in
+   * `rows` are excluded so the same request never appears twice.
+   *
+   * Empty for every other role, so nothing widens for anyone else.
+   */
+  oversightRows: MarketingApproverOversightRow[];
 };
 
 /** A request heading toward the actor, with its live position in the chain. */
@@ -690,6 +708,14 @@ export type MarketingApproverUpcomingRow = MarketingApproverInboxRow & {
   myStepSequence: number;
   totalGatingSteps: number;
 };
+
+/**
+ * A request in the chain that the viewer is watching rather than deciding.
+ *
+ * Same shape as an upcoming row minus `myStepSequence` — an oversight viewer has no rung of their
+ * own, and inventing one (0, or the current holder's) would be a number that means nothing.
+ */
+export type MarketingApproverOversightRow = Omit<MarketingApproverUpcomingRow, "myStepSequence">;
 
 export type PreparedMarketingRequestDraft = {
   pharmacyRows: Array<{
@@ -4773,6 +4799,19 @@ const marketingRegisterRoles = new Set<AccessContext["role"]>([
   "Super Admin",
 ]);
 
+/**
+ * Who may see the company-wide oversight queue inside the approval inbox.
+ *
+ * Super Admin only — owner instruction, 2026-08-18. Deliberately NARROWER than
+ * `marketingRegisterRoles` above: the register is a report, this is an inbox, and putting other
+ * people's pending decisions in a Marketing Manager's or an SFE Manager's inbox would blur whose
+ * turn it is. `scope === "system"` is included for the same reason every other gate here does it —
+ * the system administrator context is not carried on the role label.
+ */
+export function canViewMarketingOversightQueue(access: AccessContext): boolean {
+  return access.scope === "system" || access.role === "Super Admin";
+}
+
 function assertMarketingRegisterAccess(access: AccessContext) {
   if (access.scope === "system") return;
   if (!marketingRegisterRoles.has(access.role)) {
@@ -5508,7 +5547,11 @@ export async function getApproverPendingRequests(access: AccessContext): Promise
   // `assigned_hr_id` is stored in the employee master's real casing, while the session id is
   // lower-cased — match every HR_ID dialect so the inbox is not silently empty for an approver.
   const actorHrKeys = hrIdLookupKeys(actorHrId);
-  const [gatingResult, ccResult, upcomingResult] = await Promise.all([
+  // Super Admin holds no rung on the chain, so the three actor-scoped queries below return nothing
+  // for him and the inbox reads empty while the company has requests in flight. This fourth query
+  // is his, and only his — see canViewMarketingOversightQueue and the `oversightRows` doc comment.
+  const includeOversight = canViewMarketingOversightQueue(access);
+  const [gatingResult, ccResult, upcomingResult, oversightResult] = await Promise.all([
     supabase
       .from("marketing_request_approval_steps")
       .select("*")
@@ -5529,15 +5572,31 @@ export async function getApproverPendingRequests(access: AccessContext): Promise
       .eq("status", "pending")
       .eq("is_cc", false)
       .in("assigned_hr_id", actorHrKeys),
+    // Bounded by the number of requests actually in flight (one open gating step each), not by the
+    // size of the table — a finished or rejected request has no step in `current`.
+    includeOversight
+      ? supabase
+          .from("marketing_request_approval_steps")
+          .select("*")
+          .eq("status", "current")
+          .eq("is_cc", false)
+      : Promise.resolve({ data: [], error: null }),
   ]);
   if (gatingResult.error) throw gatingResult.error;
   if (ccResult.error) throw ccResult.error;
   if (upcomingResult.error) throw upcomingResult.error;
+  if (oversightResult.error) throw oversightResult.error;
   const gatingSteps = ((gatingResult.data ?? []) as MarketingRequestApprovalStepDbRow[]).map(mapApprovalStep);
   const ccSteps = ((ccResult.data ?? []) as MarketingRequestApprovalStepDbRow[]).map(mapApprovalStep);
   const upcomingSteps = ((upcomingResult.data ?? []) as MarketingRequestApprovalStepDbRow[]).map(mapApprovalStep);
-  if (gatingSteps.length === 0 && ccSteps.length === 0 && upcomingSteps.length === 0) {
-    return { advisoryRows: [], rows: [], upcomingRows: [] };
+  const oversightSteps = ((oversightResult.data ?? []) as MarketingRequestApprovalStepDbRow[]).map(mapApprovalStep);
+  if (
+    gatingSteps.length === 0 &&
+    ccSteps.length === 0 &&
+    upcomingSteps.length === 0 &&
+    oversightSteps.length === 0
+  ) {
+    return { advisoryRows: [], oversightRows: [], rows: [], upcomingRows: [] };
   }
 
   // A CC reviewer may comment only while the gating step it is attached to is the current one.
@@ -5558,9 +5617,9 @@ export async function getApproverPendingRequests(access: AccessContext): Promise
   const activeCcSteps = ccSteps.filter((step) => currentStepCodeByRequest.get(step.requestId) === step.stepCode);
 
   const requestIds = Array.from(
-    new Set([...gatingSteps, ...activeCcSteps, ...upcomingSteps].map((step) => step.requestId)),
+    new Set([...gatingSteps, ...activeCcSteps, ...upcomingSteps, ...oversightSteps].map((step) => step.requestId)),
   );
-  if (requestIds.length === 0) return { advisoryRows: [], rows: [], upcomingRows: [] };
+  if (requestIds.length === 0) return { advisoryRows: [], oversightRows: [], rows: [], upcomingRows: [] };
 
   // Every gating step of the upcoming requests, so each row can name WHERE it is stopped and how
   // far along it is. Loaded once for the whole set rather than per request.
@@ -5605,13 +5664,20 @@ export async function getApproverPendingRequests(access: AccessContext): Promise
   const typeNameById = new Map(((typesResult.data ?? []) as Array<{ id: number | string; name?: string | null }>)
     .map((row) => [Number(row.id), cleanText(row.name) ?? "Marketing request"] as const));
 
-  const buildRow = (step: MarketingRequestApprovalStep, request: MarketingRequest): MarketingApproverInboxRow => ({
+  // `myStepId` defaults to the step being rendered, which is right for every actor-scoped section.
+  // The oversight section passes null: the current holder's rung is somebody else's, and marking it
+  // "isMine" would put a Super Admin's name on another approver's decision.
+  const buildRow = (
+    step: MarketingRequestApprovalStep,
+    request: MarketingRequest,
+    myStepId: string | null = step.id,
+  ): MarketingApproverInboxRow => ({
     allowReject: step.allowReject,
     allowReturn: step.allowReturn,
     approvalHistory: buildMarketingApproverChain(
       allStepsByRequest.get(request.id) ?? [],
       employeeRows,
-      step.id,
+      myStepId,
     ),
     currentStepName: step.stepName,
     customerName: customerNameById.get(request.customerId) ?? request.customerId,
@@ -5639,18 +5705,22 @@ export async function getApproverPendingRequests(access: AccessContext): Promise
     const request = requestById.get(step.requestId);
     if (request) advisoryRows.push(buildRow(step, request));
   }
+  // Age is measured from SUBMISSION, not from when it reached the current holder: the question a
+  // reader of a read-only queue is asking is "how long has this been in the system?".
+  const ageDaysSinceSubmission = (request: MarketingRequest) => {
+    const submittedAtMs = request.submittedAt ? Date.parse(request.submittedAt) : Number.NaN;
+    return Number.isFinite(submittedAtMs)
+      ? Math.max(0, Math.floor((Date.now() - submittedAtMs) / 86_400_000))
+      : 0;
+  };
+
   const upcomingRows: MarketingApproverUpcomingRow[] = [];
   for (const step of upcomingSteps) {
     const request = requestById.get(step.requestId);
     if (!request) continue;
     const chain = (allStepsByRequest.get(step.requestId) ?? []).sort((left, right) => left.sequence - right.sequence);
     const holder = chain.find((chainStep) => chainStep.status === "current") ?? null;
-    // Age is measured from SUBMISSION, not from when it reached the current holder: the question
-    // an approver waiting downstream is asking is "how long has this been in the system?".
-    const submittedAtMs = request.submittedAt ? Date.parse(request.submittedAt) : Number.NaN;
-    const ageDays = Number.isFinite(submittedAtMs)
-      ? Math.max(0, Math.floor((Date.now() - submittedAtMs) / 86_400_000))
-      : 0;
+    const ageDays = ageDaysSinceSubmission(request);
 
     upcomingRows.push({
       ...buildRow(step, request),
@@ -5662,13 +5732,40 @@ export async function getApproverPendingRequests(access: AccessContext): Promise
     });
   }
 
+  // Company-wide watch list. `oversightSteps` is empty for every role but Super Admin, so this loop
+  // simply does not run for anyone else.
+  const myRequestIds = new Set(rows.map((row) => row.id));
+  const oversightRows: MarketingApproverOversightRow[] = [];
+  for (const step of oversightSteps) {
+    const request = requestById.get(step.requestId);
+    if (!request) continue;
+    // Anything already awaiting HIS decision belongs in "Requests awaiting my decision", where it
+    // is actionable. Listing it twice would make one request read as two.
+    if (myRequestIds.has(request.id)) continue;
+    const chain = (allStepsByRequest.get(step.requestId) ?? []).sort((left, right) => left.sequence - right.sequence);
+
+    oversightRows.push({
+      ...buildRow(step, request, null),
+      // Forced, not inherited. These flags come off somebody else's step, and a truthy one here is
+      // all it would take for a future edit to render an Approve button on a request that is not
+      // his to decide. The API would still refuse it — this makes the UI unable to ask.
+      allowReject: false,
+      allowReturn: false,
+      ageDays: ageDaysSinceSubmission(request),
+      awaitingApproverName: employeeNameByHrId(employeeRows, step.assignedHrId),
+      awaitingStepName: step.stepName,
+      totalGatingSteps: chain.length,
+    });
+  }
+
   const bySubmittedAt = (left: MarketingApproverInboxRow, right: MarketingApproverInboxRow) =>
     (left.submittedAt ?? "").localeCompare(right.submittedAt ?? "");
   rows.sort(bySubmittedAt);
   advisoryRows.sort(bySubmittedAt);
   // Oldest first — a request that has been sitting longest is the one worth chasing.
   upcomingRows.sort((left, right) => right.ageDays - left.ageDays);
-  return { advisoryRows, rows, upcomingRows };
+  oversightRows.sort((left, right) => right.ageDays - left.ageDays);
+  return { advisoryRows, oversightRows, rows, upcomingRows };
 }
 
 // ── Sidebar pending-count badge ──────────────────────────────────────────────
@@ -5843,7 +5940,7 @@ export async function getMarketingOverview(access: AccessContext): Promise<Marke
 
   const [inbox, inApprovalResult, returnedResult, validationPendingResult, approvedResult] = await Promise.all([
     getApproverPendingRequests(access).catch(
-      () => ({ advisoryRows: [], rows: [], upcomingRows: [] }) as MarketingApproverInboxWorkspace,
+      () => ({ advisoryRows: [], oversightRows: [], rows: [], upcomingRows: [] }) as MarketingApproverInboxWorkspace,
     ),
     supabase.from("marketing_requests").select("id", { count: "exact", head: true }).eq("status", "pending_approval"),
     supabase.from("marketing_requests").select("id", { count: "exact", head: true }).eq("status", "returned"),
