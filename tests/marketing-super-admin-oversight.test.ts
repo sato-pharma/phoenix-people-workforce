@@ -25,8 +25,13 @@ function access(role: AccessContext["role"], scope: AccessContext["scope"] = "se
  *
  * ── THE LIMITS, WHICH MATTER MORE THAN THE FEATURE ───────────────────────────
  * Oversight is the right to SEE a queue, not to decide it. The rows must stay out of `rows` (the
- * actionable section), must never carry a decision permission, and must never reach the sidebar
- * badge — a badge counting other people's work would pump orange at someone with nothing to do.
+ * actionable section) and must never carry a decision permission.
+ *
+ * The sidebar badge DOES count them, for Super Admin only — owner instruction, 2026-08-18, given
+ * against the stated objection that such a badge sits permanently lit. What makes it coherent is
+ * that the badge and the oversight section are gated identically, so the badge never shows a number
+ * the inbox cannot explain. That pairing is the invariant pinned below; the count itself is a
+ * product decision and not this suite's business.
  */
 export async function runMarketingSuperAdminOversightTests() {
   // ── Who gets it: Super Admin and the system context, nobody else ─────────────
@@ -88,14 +93,21 @@ export async function runMarketingSuperAdminOversightTests() {
     "a request already in the actionable section must not be repeated as an oversight row",
   );
 
-  // ── The sidebar badge is untouched ───────────────────────────────────────────
-  // getMarketingApproverBadge runs its own actor-scoped query and must stay that way. Pinning it by
-  // behaviour rather than by absence: the badge reducer counts only the gating steps handed to it.
+  // ── The badge counts the same steps the oversight section shows ──────────────
   const badgeFn = service.slice(service.indexOf("export async function getMarketingApproverBadge"));
-  assert.doesNotMatch(
-    badgeFn.slice(0, 2_000),
-    /oversight/i,
-    "the pending-count badge must never count requests the viewer is only watching",
+  const badgeBody = badgeFn.slice(0, 2_000);
+  // Gated by the SAME predicate as the section, so the two can never disagree about what is counted.
+  // A badge showing a number the inbox cannot account for is worse than no badge at all.
+  assert.match(
+    badgeBody,
+    /canViewMarketingOversightQueue\(access\)/,
+    "the badge must use the same gate as the oversight section, or it will show a number the inbox cannot explain",
+  );
+  // And every other approver still counts only their own rung — the widening is for one role.
+  assert.match(
+    badgeBody,
+    /gatingQuery\.in\("assigned_hr_id", actorHrKeys\)/,
+    "an approver without oversight must still have the badge scoped to their own assigned steps",
   );
 
   // ── The UI renders it read-only ──────────────────────────────────────────────

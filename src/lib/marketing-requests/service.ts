@@ -5824,9 +5824,18 @@ export function summarizeMarketingApproverBadge(input: {
 }
 
 /**
- * Sidebar badge for the Marketing Approval Inbox: how many marketing requests are stopped at THIS
- * person's own gating step. Scoped entirely by `assigned_hr_id`, so it needs no separate permission
- * gate beyond a linked HR identity — an approver can only ever count their own rung.
+ * Sidebar badge for the Marketing Approval Inbox: how many marketing requests are stopped at this
+ * person's own gating step — or, for a Super Admin, at ANYONE's.
+ *
+ * Scoped by `assigned_hr_id` for every approver, so they can only ever count their own rung. The one
+ * exception is the oversight viewer (canViewMarketingOversightQueue), for whom the filter is dropped
+ * and the badge counts every open gating step in the company.
+ *
+ * Owner instruction, 2026-08-18, made knowingly against the objection that a badge counting other
+ * people's work sits permanently lit. The reason it is nonetheless coherent: the badge must never
+ * show a number the inbox cannot explain, and since #2187 the inbox CAN explain it — a Super Admin's
+ * "Everything in approval" section lists exactly the steps counted here. The two move together, so
+ * a future change to one is wrong unless it changes the other.
  *
  * Deliberately does NOT call getApproverPendingRequests: that builds full display rows (employee
  * directory, customers, request types, the whole upcoming chain) for a number that is polled every
@@ -5839,12 +5848,15 @@ export async function getMarketingApproverBadge(access: AccessContext): Promise<
   // casing while the session id is lower-cased, so an exact match silently returns nothing.
   const actorHrKeys = hrIdLookupKeys(actorHrId);
 
-  const gatingResult = await supabase
+  const gatingQuery = supabase
     .from("marketing_request_approval_steps")
     .select("request_id, step_code, workflow_step_id, created_at, updated_at")
     .eq("status", "current")
-    .eq("is_cc", false)
-    .in("assigned_hr_id", actorHrKeys);
+    .eq("is_cc", false);
+  // Same gate as the inbox's oversight section, so the badge and that section always agree.
+  const gatingResult = await (canViewMarketingOversightQueue(access)
+    ? gatingQuery
+    : gatingQuery.in("assigned_hr_id", actorHrKeys));
   if (gatingResult.error) throw gatingResult.error;
   const gatingSteps: MarketingApproverBadgeStep[] = (
     (gatingResult.data ?? []) as Array<{
