@@ -76,6 +76,7 @@ import {
   loadMarketingRequestById,
   loadMarketingRequestTypeName,
   normalizeHrId,
+  resolveMarketingRequestUuid,
 } from "@/lib/marketing-requests/service";
 import { canViewRestrictedProducts, isRestrictedProductCode } from "@/lib/sales/access-scope";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -598,16 +599,21 @@ export async function getMarketingRequestCaseFile(
   const supabase = getSupabaseAdmin();
   const generatedAt = new Date().toISOString();
 
+  // The link may carry the request CODE rather than the UUID — the report sheet's "Request Preview"
+  // column prints the code, and it is the only identifier a person ever sees. Resolved to the UUID
+  // once, before the reads, because every query below keys on `id`.
+  const requestUuid = await resolveMarketingRequestUuid(supabase, cleanRequestId);
+
   // A read failure here throws rather than degrading: not knowing who the requester is, or which
   // steps exist, means not knowing whether this viewer may be here at all. Unknown is never allow.
   const [request, steps, activeEmployeeRows] = await Promise.all([
-    loadMarketingRequestById(supabase, cleanRequestId),
-    loadMarketingRequestApprovalSteps(supabase, cleanRequestId),
+    loadMarketingRequestById(supabase, requestUuid),
+    loadMarketingRequestApprovalSteps(supabase, requestUuid),
     getEmployeeDirectoryRows(),
   ]);
 
   const [requestProductCodes, ownedProductCodes] = await Promise.all([
-    loadRequestProductCodes(supabase, cleanRequestId),
+    loadRequestProductCodes(supabase, requestUuid),
     resolveViewerOwnedProductCodes(supabase, access, activeEmployeeRows),
   ]);
 
@@ -671,13 +677,13 @@ export async function getMarketingRequestCaseFile(
     overlaps,
   ] = await Promise.all([
     loadMarketingRequestTypeName(supabase, request.requestTypeId).catch(() => null),
-    loadProductsBlock(supabase, cleanRequestId, canSeeConfidentialProducts),
-    loadTargetPharmacies(supabase, cleanRequestId, canSeeCustomerPii),
+    loadProductsBlock(supabase, requestUuid, canSeeConfidentialProducts),
+    loadTargetPharmacies(supabase, requestUuid, canSeeCustomerPii),
     loadCustomerBlock(supabase, request, canSeeCustomerPii, nameOf),
     loadSpentBefore(supabase, request),
     // Joins the same batch rather than adding a round trip of its own: every DB call from here
     // crosses to Frankfurt, so what costs is the number of trips, not the size of one.
-    loadHistoryBlock(supabase, cleanRequestId, nameOf),
+    loadHistoryBlock(supabase, requestUuid, nameOf),
     // The ONE place a caught failure is allowed to become a value — and it becomes `null`, which
     // buildCaseFileWarnings renders as "UNKNOWN", never as "clear".
     loadMarketingRequestOverlaps(supabase, request).then(
@@ -772,7 +778,7 @@ export async function getMarketingRequestCaseFile(
       submittedAt: request.submittedAt,
     },
     history: historyBlock,
-    lazySections: buildLazySections(cleanRequestId, access, admittedAs),
+    lazySections: buildLazySections(requestUuid, access, admittedAs),
     money: buildMoney(request, spentBeforeBlock),
     outcome,
     products: productsBlock,

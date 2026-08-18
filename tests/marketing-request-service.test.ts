@@ -19,6 +19,7 @@ import {
   normalizeMarketingRequestDraftInput,
   prepareMarketingRequestDraft,
   resolveLineCcHrIds,
+  resolveMarketingRequestUuid,
 } from "@/lib/marketing-requests/service";
 import type { MarketingRequest, MarketingRequestCreateDraft } from "@/lib/marketing-requests/types";
 
@@ -191,6 +192,63 @@ export async function runMarketingRequestServiceTests() {
   assert.match(decisionRouteSource, /decideMarketingRequestWorkflow/, "marketing decision API must use governed workflow service");
   assert.match(decisionPageSource, /getMarketingRequestDecisionSummary/, "marketing decision page must re-check authorization before showing details");
   assert.match(decisionPageSource, /Login Required/, "marketing decision links must require a Phoenix session");
+
+  // ── A link may carry the request CODE, not the UUID ──────────────────────────────────────────
+  // The report sheet's "Request Preview" column prints `MKT-REQ-…`, which is the only identifier a
+  // person ever sees; every read below keys on `marketing_requests.id`, a UUID. Both read surfaces
+  // a link can land on must therefore resolve the code first, or the row cannot be found at all.
+  // A decision link with NO `?decision=` is a READ, not a tampered decision. Both shells must send
+  // it to the Case File — that is the shape of every "Request Preview" link the live sheet handed
+  // out before this fix, and each one dead-ended on "Invalid Decision Link".
+  const workspaceDecisionSource = source("src/components/workspace/admin-shell-employee-pages.tsx");
+  for (const [label, pageSource] of [
+    ["portal", decisionPageSource],
+    ["admin shell", workspaceDecisionSource],
+  ] as const) {
+    assert.match(
+      pageSource,
+      /rawDecision === undefined\)[\s\S]{0,12}redirect\(`\/marketing-requests\/\$\{encodeURIComponent\(requestId\)\}`\)/,
+      `a ${label} decision link with no decision must open the Case File, not the invalid-link dead end`,
+    );
+    assert.match(pageSource, /Invalid Decision Link/, `a ${label} decision link with a TAMPERED decision must still be refused`);
+  }
+
+  const caseFileSource = source("src/lib/marketing-requests/case-file-service.ts");
+  assert.match(caseFileSource, /resolveMarketingRequestUuid/, "the Case File must accept a request code, not only a UUID");
+  assert.match(
+    serviceSource,
+    /getMarketingRequestDecisionSummary[\s\S]*?resolveMarketingRequestUuid/,
+    "the decision summary must accept a request code, not only a UUID",
+  );
+
+  const REAL_UUID = "3f8c1d2e-4a5b-4c6d-8e9f-0a1b2c3d4e5f";
+  // A UUID passes straight through — no round trip on the path every notification link takes.
+  let queriedCode: string | null = null;
+  const uuidStub = {
+    from: () => ({
+      select: () => ({
+        eq: (_column: string, value: string) => {
+          queriedCode = value;
+          return { maybeSingle: async () => ({ data: { id: REAL_UUID }, error: null }) };
+        },
+      }),
+    }),
+  } as unknown as Parameters<typeof resolveMarketingRequestUuid>[0];
+
+  assert.equal(await resolveMarketingRequestUuid(uuidStub, REAL_UUID), REAL_UUID);
+  assert.equal(queriedCode, null, "a value already shaped like a UUID must not cost a database read");
+
+  // A request code resolves to its UUID, upper-cased — codes are stored upper-case.
+  assert.equal(await resolveMarketingRequestUuid(uuidStub, " mkt-req-20260818-d9e88e15 "), REAL_UUID);
+  assert.equal(queriedCode, "MKT-REQ-20260818-D9E88E15");
+
+  // An unknown code is not-found, never a silent null that reads as "no access".
+  const emptyStub = {
+    from: () => ({
+      select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: null, error: null }) }) }),
+    }),
+  } as unknown as Parameters<typeof resolveMarketingRequestUuid>[0];
+  await assert.rejects(() => resolveMarketingRequestUuid(emptyStub, "MKT-REQ-NOPE"), /not found/i);
 
   // ── Notification wiring guard (verified end-to-end; lock against silent regression) ──
   // The workflow map once claimed this module had "no notification trigger code"; it is

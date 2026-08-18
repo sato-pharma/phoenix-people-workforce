@@ -212,8 +212,16 @@ export async function runMarketingRequestReportColumnsTests() {
   assert.equal(cells[13], 45531.81, "Estimated ROI must stay a number");
   assert.equal(
     cells[15],
-    "https://phoenix-hr.satopharma.com/employee-portals/marketing-requests/decision/MKT-REQ-20260802-DCF31EC4",
+    "https://phoenix-hr.satopharma.com/marketing-requests/MKT-REQ-20260802-DCF31EC4",
     "Request Preview must be the deep link into Phoenix",
+  );
+  // The regression this pins: it pointed at /employee-portals/marketing-requests/decision/<code>,
+  // and that page REQUIRES a `?decision=` — so every link the live sheet handed out rendered
+  // "Invalid Decision Link", for Super Admin too. A sheet row carries no decision; it must open the
+  // Case File.
+  assert.ok(
+    !String(cells[15]).includes("/decision/"),
+    "Request Preview must never point at the decision page — a bare decision URL is always invalid",
   );
 
   // With a contact present, column H carries both halves of "Account/Dr.Name".
@@ -229,7 +237,7 @@ export async function runMarketingRequestReportColumnsTests() {
     "instants render in Africa/Cairo (UTC+3 in August), never raw UTC",
   );
   assert.equal(cairoDateTime(null), null);
-  assert.equal(requestPreviewUrl("A B"), "https://phoenix-hr.satopharma.com/employee-portals/marketing-requests/decision/A%20B");
+  assert.equal(requestPreviewUrl("A B"), "https://phoenix-hr.satopharma.com/marketing-requests/A%20B");
 
   // ── 6. Clickable files ──
   // The three link columns are the last three, and they are the SAME columns in the .xlsx and in

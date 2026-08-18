@@ -448,6 +448,15 @@ export async function WorkspaceMarketingDecisionPage({
   const access = await requireAdminShellEmployeeWorkspaceAccess({ allowedRoles: workspaceMarketingRoles });
   const rawDecision = firstParam(searchParams.decision);
   const decision = parseMarketingRequestDecision(rawDecision);
+
+  // No `?decision=` at all means somebody is opening the request to READ it, not deciding it —
+  // the shape every pre-2026-08-18 "Request Preview" link from the live sheet had. Send them to the
+  // Case File rather than the dead end. A decision that is PRESENT but not one of the three real
+  // ones still falls through to the safe state below; that one is a tampered value.
+  if (rawDecision === undefined) {
+    redirect(`/marketing-requests/${encodeURIComponent(requestId)}`);
+  }
+
   if (!decision) {
     await auditMarketingDecisionPage({
       access,

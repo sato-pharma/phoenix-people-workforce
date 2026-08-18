@@ -1,4 +1,5 @@
 import { systemDeployment } from "@/config/system-settings";
+import { MARKETING_REQUEST_LINK_BASE } from "@/lib/marketing-requests/notification-link";
 import type { CellValue, TableColumn } from "@/lib/sales/sales-workbook-kit";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -129,10 +130,22 @@ function daysBetween(from: string | null | undefined, to: string | null | undefi
   return Math.round(((end - start) / 86_400_000) * 10) / 10;
 }
 
-/** The deep link the owner asked "Request Preview" to hold — opens the request in Phoenix. */
+/**
+ * The deep link the owner asked "Request Preview" to hold — opens the request in Phoenix.
+ *
+ * It points at the shell-neutral Case File, NOT at the decision page. The decision page is the
+ * one-tap Telegram/email target and it *requires* a `?decision=approve|reject|return`; a bare
+ * `/decision/<code>` fails `parseMarketingRequestDecision` and renders "Invalid Decision Link" for
+ * every viewer, Super Admin included. A sheet column has no decision to carry — the reader is
+ * opening the row to READ it — so a decision URL was never the right shape here.
+ *
+ * `/marketing-requests/<code>` resolves per viewer: admin-shell and portal roles both land on the
+ * Case File, `?decision=` still redirects to the shell-correct decision page, and a signed-out
+ * reader gets "Login Required" instead of a dead end.
+ */
 export function requestPreviewUrl(requestCode: string): string {
   const base = systemDeployment.productionUrl.replace(/\/+$/, "");
-  return `${base}/employee-portals/marketing-requests/decision/${encodeURIComponent(requestCode)}`;
+  return `${base}${MARKETING_REQUEST_LINK_BASE}/${encodeURIComponent(requestCode)}`;
 }
 
 // ── The shape the loader hands over ──────────────────────────────────────────
