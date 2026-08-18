@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 
 import { MarketingRequestDecisionConfirmation } from "@/components/employee-portal/marketing-request-decision-confirmation";
 import { writeAuditLog } from "@/lib/admin/audit";
@@ -69,6 +70,15 @@ export default async function MarketingRequestDecisionPage({
   const rawDecision = Array.isArray(query.decision) ? query.decision[0] : query.decision;
   const decision = parseMarketingRequestDecision(rawDecision);
   const access = await resolveAccessContextFromPage();
+
+  // A link with NO `?decision=` at all is not a tampered decision — it is somebody opening the
+  // request to READ it. Every "Request Preview" link the live sheet handed out before 2026-08-18
+  // has this shape, and every one of them dead-ended here on "Invalid Decision Link". Send them to
+  // the Case File, which is where they were trying to go. A decision that is PRESENT but not one of
+  // the three real ones still gets the safe state below — that one is a tampered value.
+  if (rawDecision === undefined) {
+    redirect(`/marketing-requests/${encodeURIComponent(requestId)}`);
+  }
 
   if (!decision) {
     await auditDecisionPage({

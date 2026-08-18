@@ -175,9 +175,12 @@ export async function runMarketingRequestHistoryTests() {
     "history must be a three-state block like every other fallible section, not a bare array",
   );
 
+  // The identifier is matched loosely on purpose: what is pinned is that the call sits INSIDE the
+  // Promise.all batch (hence the trailing comma), not what the request id variable happens to be
+  // called — it was renamed once already when the Case File learned to accept a request code.
   assert.match(
     serviceSource,
-    /loadHistoryBlock\(supabase, cleanRequestId, nameOf\),/,
+    /loadHistoryBlock\(supabase, \w+, nameOf\),/,
     "the history must be loaded in the same parallel batch — every round trip crosses the Atlantic",
   );
   assert.match(

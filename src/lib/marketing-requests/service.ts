@@ -2706,6 +2706,34 @@ function requireMarketingDecisionActor(access: AccessContext) {
  * the same row without re-deriving the mapping. Callers own the gate — never call this in place
  * of one.
  */
+const MARKETING_REQUEST_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Turn whatever identifier a link carries into the request's UUID.
+ *
+ * Every read below this line keys on `marketing_requests.id`, a UUID — but the identifier a HUMAN
+ * holds is the request CODE (`MKT-REQ-20260818-D9E88E15`): it is what the report sheet prints, what
+ * the owner quotes, and what anyone pastes. Accepting only the UUID meant a link built from the
+ * code could not resolve at all, so the code is resolved here once, ahead of the reads.
+ *
+ * A value already shaped like a UUID is passed straight through — no extra round trip on the path
+ * every notification link takes.
+ */
+export async function resolveMarketingRequestUuid(supabase: SupabaseClient, idOrCode: string) {
+  const candidate = String(idOrCode ?? "").trim();
+  if (!candidate) throw notFoundError("Marketing request was not found.", "marketing_request_not_found");
+  if (MARKETING_REQUEST_UUID.test(candidate)) return candidate;
+
+  const { data, error } = await supabase
+    .from("marketing_requests")
+    .select("id")
+    .eq("request_code", candidate.toUpperCase())
+    .maybeSingle();
+  if (error) throw error;
+  if (!data?.id) throw notFoundError("Marketing request was not found.", "marketing_request_not_found");
+  return String(data.id);
+}
+
 export async function loadMarketingRequestById(supabase: SupabaseClient, requestId: string) {
   const { data, error } = await supabase
     .from("marketing_requests")
@@ -3023,9 +3051,11 @@ export async function getMarketingRequestDecisionSummary(
   if (!cleanRequestId) throw validationError("Marketing request ID is required.");
   const actorHrId = requireMarketingDecisionActor(access);
   const supabase = getSupabaseAdmin();
+  // Same reason as the Case File: the identifier in a link may be the request CODE, not the UUID.
+  const requestUuid = await resolveMarketingRequestUuid(supabase, cleanRequestId);
   const [request, steps, employeeRows] = await Promise.all([
-    loadMarketingRequestById(supabase, cleanRequestId),
-    loadMarketingRequestApprovalSteps(supabase, cleanRequestId),
+    loadMarketingRequestById(supabase, requestUuid),
+    loadMarketingRequestApprovalSteps(supabase, requestUuid),
     loadEmployeeDirectoryRows(),
   ]);
   const currentStep = steps.find((step) => step.status === "current") ?? null;
@@ -3038,11 +3068,11 @@ export async function getMarketingRequestDecisionSummary(
 
   // Rich request context so the approver can decide in place (products, financials, the chain).
   const [productsResult, pharmaciesResult, customerResult, contactResult, requestTypeName] = await Promise.all([
-    supabase.from("marketing_request_products").select("*").eq("request_id", cleanRequestId),
+    supabase.from("marketing_request_products").select("*").eq("request_id", requestUuid),
     supabase
       .from("marketing_request_pharmacies")
       .select("id, pharmacy_id, distributor_code_id, notes")
-      .eq("request_id", cleanRequestId),
+      .eq("request_id", requestUuid),
     request.customerId
       ? supabase
         .from("marketing_customers")
