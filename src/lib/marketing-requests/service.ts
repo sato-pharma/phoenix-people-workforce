@@ -44,7 +44,10 @@ import {
 import { createSystemNotification, logNotificationSendFailure } from "@/lib/notifications/system";
 import { resolveNotificationRoleEnabled } from "@/lib/notifications/role-recipients";
 import { logError, logWarning } from "@/lib/observability/log";
-import { MARKETING_CUSTOMER_SPECIALITIES } from "@/lib/marketing-requests/types";
+import {
+  MARKETING_CUSTOMER_SPECIALITIES,
+  UNVERIFIED_CODE_REASON_MIN_LENGTH,
+} from "@/lib/marketing-requests/types";
 import type {
   MarketingDistributor,
   MarketingControlSetting,
@@ -1385,13 +1388,6 @@ function normalizeDraftProducts(inputProducts: MarketingRequestDraftProductInput
 
   return Array.from(grouped.values());
 }
-
-/**
- * Minimum length for an unverified-code justification. A one-word entry ("ok", "yes") is not a
- * reason and would turn the gate into a formality — the repo already treats too-short cleanup
- * reasons as blank elsewhere for the same reason.
- */
-const UNVERIFIED_CODE_REASON_MIN_LENGTH = 10;
 
 function normalizeDraftPharmacies(inputPharmacies: MarketingRequestDraftPharmacyInput[] | null | undefined) {
   if (!Array.isArray(inputPharmacies)) return [];

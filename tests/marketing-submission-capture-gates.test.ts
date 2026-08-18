@@ -10,6 +10,8 @@ import { readFileSync } from "node:fs";
 // submissions on day one, which is its own kind of failure.
 
 const SERVICE = "src/lib/marketing-requests/service.ts";
+const PORTAL = "src/components/employee-portal/marketing-request-drafts.tsx";
+const TYPES = "src/lib/marketing-requests/types.ts";
 
 function code(path: string): string {
   return readFileSync(path, "utf8")
@@ -95,8 +97,83 @@ function testRecoverableStatusesAreNotBlocked() {
   );
 }
 
+/**
+ * The other half of the same decision, and the half that was missing for six days.
+ *
+ * The server told the rep to "record why it must be used as-is", and no screen in the repository
+ * ever sent `unverifiedCodeReason` — the portal posted `{ distributorCodeId }` alone. So the
+ * override existed only in the API: a rep standing in front of a real pharmacy whose POS code we
+ * had not imported was refused at submit and offered a remedy the form did not implement. A gate
+ * whose documented escape hatch is unreachable is a hard block wearing a soft block's error
+ * message, so the form must actually offer it.
+ */
+function testThePortalOffersTheOverrideItIsToldToUse() {
+  const portal = code(PORTAL);
+
+  // The payload, which is what was actually broken. Matched on the PROPERTY (`unverifiedCodeReason:`)
+  // and not the bare word: the map body also names the `unverifiedCodeReasons` state it reads from,
+  // so a looser pattern still passes with the property deleted — verified by deleting it.
+  assert.match(
+    portal,
+    /pharmacies:\s*selectedPharmacyIds\.map\([\s\S]{0,400}\bunverifiedCodeReason:/,
+    "the portal must send the reason with the pharmacy it belongs to, not omit it",
+  );
+  // A place to type it.
+  assert.match(
+    portal,
+    /<textarea[\s\S]{0,600}setUnverifiedCodeReasons/,
+    "the portal must render an input the rep can write the justification into",
+  );
+  // Shown only where it is needed, and only while the pharmacy is actually selected — unticking
+  // the pharmacy is the other valid answer and must not demand a reason for a code being dropped.
+  assert.match(
+    portal,
+    /unverified\s*&&\s*checked/,
+    "the reason box must appear only for a selected `not_found` pharmacy",
+  );
+  // The rep must find out before pressing Save, not by being thrown back by the API.
+  assert.match(
+    portal,
+    /unverifiedSelectionsMissingReason\.length === 0/,
+    "Save must stay disabled while a selected unverified code has no acceptable reason",
+  );
+}
+
+/**
+ * One constant, imported by both sides.
+ *
+ * A second copy of `10` in the form would let the two drift, and the drift is invisible until a
+ * rep types nine characters, sees an enabled Save button, and is refused by the API anyway. So the
+ * minimum lives in the import-free types module and both sides read it from there.
+ */
+function testTheMinimumLengthHasExactlyOneDefinition() {
+  const types = code(TYPES);
+  const service = code(SERVICE);
+  const portal = code(PORTAL);
+
+  assert.match(
+    types,
+    /export const UNVERIFIED_CODE_REASON_MIN_LENGTH = \d+/,
+    "the minimum must be defined in the types module, which the client can import safely",
+  );
+  for (const [label, source] of [["server", service], ["portal", portal]] as const) {
+    assert.doesNotMatch(
+      source,
+      /const UNVERIFIED_CODE_REASON_MIN_LENGTH\s*=/,
+      `the ${label} must import the minimum, never redeclare it`,
+    );
+    assert.match(
+      source,
+      /UNVERIFIED_CODE_REASON_MIN_LENGTH/,
+      `the ${label} must actually enforce the shared minimum`,
+    );
+  }
+}
+
 export function runMarketingSubmissionCaptureGateTests() {
   testNotFoundPharmacyCodeIsBlockedAtWriteTime();
   testOverrideRequiresAWrittenReasonAndRecordsIt();
   testRecoverableStatusesAreNotBlocked();
+  testThePortalOffersTheOverrideItIsToldToUse();
+  testTheMinimumLengthHasExactlyOneDefinition();
 }

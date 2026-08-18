@@ -1214,7 +1214,7 @@ await runTest("marketing ROI report scope + filter options", runMarketingRoiRepo
 await runTest("marketing ROI report helpers (date math + body parse)", runMarketingRoiReportHelpersTests);
 await runTest("marketing ROI forecast-vs-actual labeling", runMarketingRoiLabelingTests);
 await runTest("marketing ROI Tracker (composes the authoritative engine, adds no fifth)", runMarketingRoiTrackerTests);
-await runTest("marketing submission capture gates (not_found pharmacy code refused at write time)", runMarketingSubmissionCaptureGateTests);
+await runTest("marketing submission capture gates (not_found pharmacy code refused at write time, the portal offers the written-reason override, one shared minimum length)", runMarketingSubmissionCaptureGateTests);
 await runTest("marketing request overlap detection (double-count guard)", runMarketingRequestOverlapTests);
 await runTest("marketing ROI live lifecycle stages (rejected never counts as committed)", runMarketingRoiLiveStagesTests);
 await runTest("marketing ROI confidence score (measurement trust, not performance)", runMarketingRoiConfidenceTests);
