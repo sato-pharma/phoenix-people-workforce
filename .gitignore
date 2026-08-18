@@ -124,3 +124,10 @@ cloud-run-env-all.yaml
 # `include` already covers `.next/types/**` and `.next/dev/types/**`, so the
 # reference directives were redundant. Next recreates it on dev/build/typegen.
 next-env.d.ts
+
+# Output of the recruitment CV-ops scripts (scripts/recruitment-*.ts). Every file in
+# here is a plan or a report about REAL job applicants — names, phone numbers,
+# LinkedIn URLs, professional summaries — so it must never enter git history, where
+# deleting it later does not remove it. The scripts write here by default and take
+# CV_REREAD_OUT_DIR to write elsewhere.
+.cv-reread/
