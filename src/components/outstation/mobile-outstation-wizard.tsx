@@ -44,6 +44,7 @@ import {
   getCompressedEvidenceCanvasSize,
   resolveReadableLocation,
 } from "@/components/outstation/evidence-watermark";
+import { ZoomablePhoto } from "@/components/ui/zoomable-photo";
 
 
 type MedicalTripOption = {
@@ -1828,9 +1829,9 @@ export function MobileOutstationWizard({
           ) : null}
           {carEvidence?.imageDataUrl ? (
             <div className="relative mt-4 overflow-hidden rounded-md border border-slate-200">
-              {/* eslint-disable-next-line @next/next/no-img-element -- Local camera data URLs cannot be optimized by Next Image. */}
-              <img
+              <ZoomablePhoto
                 alt="Live car photo preview"
+                caption="Live car photo"
                 className="h-auto w-full object-cover"
                 src={carEvidence.imageDataUrl}
               />

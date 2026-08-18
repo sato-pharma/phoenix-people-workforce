@@ -7,6 +7,7 @@ import type {
   MarketingRequestDecision,
   MarketingRequestDecisionSummary,
 } from "@/lib/marketing-requests/service";
+import { ZoomablePhoto } from "@/components/ui/zoomable-photo";
 
 /**
  * One labelled field. An absent value renders "Not captured" rather than an empty cell — a blank
@@ -227,11 +228,9 @@ export function MarketingRequestDecisionConfirmation({
               a name with no image says so plainly instead of passing for evidence. */}
           {summary.evidencePhotoUrl ? (
             <figure className="mt-2 border border-emerald-200 bg-white">
-              {/* Plain <img>: the src is a short-lived signed URL to a private bucket, which the
-                  Next image optimizer cannot fetch or cache on the approver's behalf. */}
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
+              <ZoomablePhoto
                 alt={`Live capture of ${summary.customerName ?? "the customer"} premises`}
+                caption={`Live capture · ${summary.customerName ?? "the customer"}`}
                 className="h-64 w-full bg-slate-50 object-contain"
                 src={summary.evidencePhotoUrl}
               />
@@ -273,9 +272,9 @@ export function MarketingRequestDecisionConfirmation({
                       customer's, so it must be visible on the same rule too — storing evidence no
                       approver can look at is the defect this whole change exists to end. */}
                   {pharmacy.evidencePhotoUrl ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
+                    <ZoomablePhoto
                       alt={`Live capture of ${pharmacy.pharmacyName}`}
+                      caption={`Live capture · ${pharmacy.pharmacyName}`}
                       className="mt-1.5 h-40 w-full border border-slate-200 bg-slate-50 object-contain"
                       src={pharmacy.evidencePhotoUrl}
                     />

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { ZoomablePhoto } from "@/components/ui/zoomable-photo";
 
 type Props = {
   pharmacyId: string;
@@ -305,8 +306,12 @@ export function PharmacyValidationCapture({ pharmacyId, pharmacyName, requestId,
           ) : null}
           <video ref={videoRef} playsInline muted className={`mt-2 w-full max-w-md border border-slate-200 ${cameraReady ? "" : "hidden"}`} />
           {photo ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={photo} alt="Storefront evidence" className="mt-2 w-full max-w-md border border-emerald-300" />
+            <ZoomablePhoto
+              alt="Storefront evidence"
+              caption="Storefront evidence"
+              className="mt-2 w-full max-w-md border border-emerald-300"
+              src={photo}
+            />
           ) : null}
         </div>
 

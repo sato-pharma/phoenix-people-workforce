@@ -7,6 +7,7 @@ import { X } from "lucide-react";
 
 import { useDialogA11y } from "@/components/ui/use-dialog-a11y";
 import { detectCvFileKind } from "@/lib/recruitment/cv-file-kind";
+import { ZoomablePhoto } from "@/components/ui/zoomable-photo";
 
 type Props = {
   fileName: string;
@@ -214,8 +215,9 @@ export function CvPreviewModal({ fileName, mimeType, downloadUrl, onClose, sideP
         {loading ? <p className="p-1 text-sm text-slate-500">Loading preview…</p> : null}
         {failureNotice}
         {imageUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element -- CV bytes already held in memory as a blob, not a static asset next/image can optimize
-          <img alt={fileName} className="mx-auto max-h-full max-w-full object-contain" src={imageUrl} />
+          // Photographed CVs arrive over WhatsApp at phone-camera resolution and are unreadable
+          // scaled into this panel, so the image opens full screen and zooms.
+          <ZoomablePhoto alt={fileName} caption={fileName} className="mx-auto max-h-full max-w-full object-contain" src={imageUrl} />
         ) : null}
       </div>
     ) : kind === "docx" ? (

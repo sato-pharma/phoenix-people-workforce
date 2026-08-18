@@ -1,9 +1,9 @@
 "use client";
 
 import { Camera, Loader2, Trash2, UploadCloud } from "lucide-react";
-import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
+import { ZoomablePhoto } from "@/components/ui/zoomable-photo";
 
 const ACCEPTED = ["image/jpeg", "image/png", "image/webp"];
 const MAX_BYTES = 5 * 1024 * 1024;
@@ -26,8 +26,6 @@ export function EmployeePhotoEditor({
   const [preview, setPreview] = useState<string | null>(null);
 
   const displaySrc = preview ?? currentPhotoUrl;
-  // Blob previews and the same-origin photo route must bypass the image optimizer.
-  const unoptimized = Boolean(preview) || (displaySrc?.startsWith("/api/") ?? false);
   const showRemove = hasUploadedPhoto && !preview;
 
   async function handleFile(file: File) {
@@ -95,13 +93,15 @@ export function EmployeePhotoEditor({
       <div className="flex flex-col items-center gap-5 sm:flex-row sm:items-center">
         <div className="group relative flex h-[92px] w-[92px] shrink-0 items-center justify-center overflow-hidden rounded border border-orange-100 bg-gradient-to-tr from-orange-50/80 to-white shadow-[0_10px_28px_rgba(249,115,22,0.12)]">
           {displaySrc ? (
-            <Image
+            // Not next/image any more: this frame hard-crops a portrait to 92px at
+            // `object-[center_18%]`, so what the employee is actually approving is a sliver of
+            // their own photo. Tapping it shows the whole frame. The optimizer bought nothing here
+            // anyway — blob previews and the same-origin photo route were already `unoptimized`.
+            <ZoomablePhoto
               alt={`${fullName} profile photo`}
+              caption={`${fullName} · profile photo`}
               className="h-full w-full object-cover object-[center_18%]"
-              height={92}
               src={displaySrc}
-              unoptimized={unoptimized}
-              width={92}
             />
           ) : (
             <span className="text-[28px] font-black tracking-tight text-orange-500">

@@ -2,6 +2,7 @@
 
 import { FileText, ImageOff, Loader2, Paperclip } from "lucide-react";
 import { useEffect, useState } from "react";
+import { ZoomablePhoto } from "@/components/ui/zoomable-photo";
 
 type Ticket = { contentType: string; name: string; url: string };
 type AttachmentsData = { carEvidenceImageUrl: string | null; found: boolean; tickets: Ticket[] };
@@ -106,8 +107,10 @@ export function TripAttachments({ tripId }: { tripId: string }) {
               <span className="text-[10px] font-bold uppercase tracking-wide">PDF</span>
             </div>
           ) : (
-            // eslint-disable-next-line @next/next/no-img-element -- Private signed Supabase URLs are not configured for Next image optimization.
-            <img alt={item.label} className="h-28 w-full object-cover" src={item.url} />
+            // The tile crops the receipt to a 112px strip, so tapping the image opens the full
+            // photo rather than following the anchor — the amount on a receipt cannot be read at
+            // this size. The label beneath still opens the file in a new tab.
+            <ZoomablePhoto alt={item.label} caption={item.label} className="h-28 w-full object-cover" src={item.url} />
           )}
           <p className="truncate px-2 py-1.5 text-[11px] font-semibold text-slate-700 group-hover:text-orange-700">
             {item.label}

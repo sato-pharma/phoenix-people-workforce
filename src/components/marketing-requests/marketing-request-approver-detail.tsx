@@ -6,6 +6,7 @@ import { AlertTriangle, Camera, MapPin, Phone, Store } from "lucide-react";
 import { LoadingSpinner } from "@/components/ui/loading-state";
 import type { MarketingApproverRequestDetail } from "@/lib/marketing-requests/approver-detail";
 import { PHOENIX_BUSINESS_TIME_ZONE } from "@/lib/i18n/format";
+import { ZoomablePhoto } from "@/components/ui/zoomable-photo";
 
 /* ------------------------------------------------------------------------------------------- */
 /* Formatters                                                                                    */
@@ -235,11 +236,9 @@ export function MarketingRequestApproverDetail({ requestId }: { requestId: strin
               because for every customer validated before 2026-08-04 that is still the whole truth. */}
           {detail.evidencePhotoUrl ? (
             <figure className="rounded-sm border border-slate-200">
-              {/* Plain <img>: the src is a short-lived signed URL into a private bucket, which the
-                  Next image optimizer can neither fetch nor cache on the approver's behalf. */}
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
+              <ZoomablePhoto
                 alt={`Live capture of ${detail.customerName ?? "the customer"} premises`}
+                caption={`Live capture · ${detail.customerName ?? "the customer"}`}
                 className="h-56 w-full rounded-t-sm bg-slate-50 object-contain"
                 src={detail.evidencePhotoUrl}
               />
@@ -296,9 +295,9 @@ export function MarketingRequestApproverDetail({ requestId }: { requestId: strin
                 </div>
                 {/* The pharmacy's own retained shop front, on the same rule as the customer's. */}
                 {pharmacy.evidencePhotoUrl ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
+                  <ZoomablePhoto
                     alt={`Live capture of ${pharmacy.pharmacyName}`}
+                    caption={`Live capture · ${pharmacy.pharmacyName}`}
                     className="mt-1 h-36 w-full border border-slate-200 bg-slate-50 object-contain"
                     src={pharmacy.evidencePhotoUrl}
                   />

@@ -59,6 +59,7 @@ import {
 import type { SeatTransferOptions } from "@/lib/employees/seat-transfer";
 import { cn } from "@/lib/utils";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { ZoomablePhoto } from "@/components/ui/zoomable-photo";
 
 
 type EmployeeManagementProps = {
@@ -674,10 +675,9 @@ function DirectoryAvatar({
   return (
     <div className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-orange-50">
       {mode !== "initials" ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
+        <ZoomablePhoto
           alt=""
-          aria-hidden="true"
+          ariaHidden
           className="h-full w-full object-cover"
           onError={handleError}
           src={mode === "uploaded" ? `/api/employees/${encodeURIComponent(hrId)}/photo` : (staticUrl ?? "")}
