@@ -592,6 +592,112 @@ export async function runMarketingRequestServiceTests() {
     "District Manager chain must skip rep+DM and start at National Sales Manager",
   );
 
+  /* ---------------------------------------------------------------------- */
+  /* Marketing ladder: the chain must not duplicate a later dedicated step    */
+  /* ---------------------------------------------------------------------- */
+
+  // The live workflow gates SFE Manager (2), the line's review role (3), CEO (4) and Finance
+  // Manager (5) with their own dedicated steps, and targets the managerial chain at National
+  // Sales Manager -- a role that exists only on the SALES ladder.
+  const liveGatedRoles = ["SFE Manager", "Marketing Manager", "CEO", "Finance Manager"];
+
+  // Production org: A-10 Product Manager -> A-9 Marketing Manager -> AA CEO.
+  const marketingLadderRows = [
+    makeEmployee({ fullName: "Product Mgr", hrId: "PM010", jobTitle: "Product Manager", managerHrId: "MM009" }),
+    makeEmployee({ fullName: "Group Product Mgr", hrId: "GPM008", jobTitle: "Group Product Manager", managerHrId: "MM009" }),
+    makeEmployee({ fullName: "Marketing Mgr", hrId: "MM009", jobTitle: "Marketing Manager", managerHrId: "CEO001" }),
+    makeEmployee({ fullName: "Chief", hrId: "CEO001", jobTitle: "CEO", managerHrId: null }),
+  ];
+
+  // Without the gate list the walk runs to the top of the company -- this is the shape that put
+  // "Marketing Manager Approval" at sequence 1 and "CEO Approval" at sequence 2 in production,
+  // ahead of SFE Validation and duplicating Marketing Review + CEO Approval further down.
+  const pmRawChain = buildMarketingManagerChain({
+    chainTargetRole: "National Sales Manager",
+    employeeRows: marketingLadderRows,
+    requester: marketingLadderRows[0],
+  });
+  assert.deepEqual(
+    pmRawChain.map((step) => step.assignedHrId),
+    ["mm009", "ceo001"],
+    "raw walk must still reach the top of the marketing ladder (this is what the gate list trims)",
+  );
+
+  // A Product Manager's managers ARE the later steps, so the gated chain is correctly empty.
+  const pmChain = buildMarketingManagerChain({
+    chainTargetRole: "National Sales Manager",
+    employeeRows: marketingLadderRows,
+    requester: marketingLadderRows[0],
+    rolesGatedLater: liveGatedRoles,
+  });
+  assert.deepEqual(
+    pmChain.map((step) => step.assignedHrId),
+    [],
+    "Product Manager chain must be empty: Marketing Review and CEO Approval already gate both managers",
+  );
+
+  // Marketing Manager submits: his only manager is the CEO, who gates at ceo_approval.
+  const mmChain = buildMarketingManagerChain({
+    chainTargetRole: "National Sales Manager",
+    employeeRows: marketingLadderRows,
+    requester: marketingLadderRows[2],
+  });
+  assert.deepEqual(mmChain.map((step) => step.assignedHrId), ["ceo001"], "raw Marketing Manager walk reaches the CEO");
+  assert.deepEqual(
+    buildMarketingManagerChain({
+      chainTargetRole: "National Sales Manager",
+      employeeRows: marketingLadderRows,
+      requester: marketingLadderRows[2],
+      rolesGatedLater: liveGatedRoles,
+    }),
+    [],
+    "Marketing Manager chain must be empty: CEO Approval already gates his only manager",
+  );
+
+  // Deeper marketing ladder (B-155: PM -> GPM -> Marketing Manager -> CEO). The GPM is NOT a
+  // gating role on this line, so it survives; the walk stops before the Marketing Manager.
+  const deepPmRows = [
+    makeEmployee({ fullName: "Cross-line PM", hrId: "PM155", jobTitle: "Product Manager", managerHrId: "GPM008" }),
+    ...marketingLadderRows,
+  ];
+  const deepPmChain = buildMarketingManagerChain({
+    chainTargetRole: "National Sales Manager",
+    employeeRows: deepPmRows,
+    requester: deepPmRows[0],
+    rolesGatedLater: liveGatedRoles,
+  });
+  assert.deepEqual(
+    deepPmChain.map((step) => step.assignedHrId),
+    ["gpm008"],
+    "chain must keep the Group Product Manager rung and stop before the Marketing Manager",
+  );
+
+  // Line 2 routes Marketing Review to the Group Product Manager instead. The same requester's
+  // chain must then collapse to nothing -- the gate list is per-line, not a fixed constant.
+  const deepPmChainLine2 = buildMarketingManagerChain({
+    chainTargetRole: "National Sales Manager",
+    employeeRows: deepPmRows,
+    requester: deepPmRows[0],
+    rolesGatedLater: ["SFE Manager", "Group Product Manager", "CEO", "Finance Manager"],
+  });
+  assert.deepEqual(
+    deepPmChainLine2.map((step) => step.assignedHrId),
+    [],
+    "a line reviewed by the Group Product Manager must not also gate that seat in the manager chain",
+  );
+
+  // The sales ladder must be untouched: none of its rungs are gated by a later step.
+  assert.deepEqual(
+    buildMarketingManagerChain({
+      chainTargetRole: "National Sales Manager",
+      employeeRows: repChainRows,
+      requester: repChainRows[0],
+      rolesGatedLater: liveGatedRoles,
+    }).map((step) => step.assignedHrId),
+    ["dm001", "nsm001"],
+    "Medical Rep chain must be unchanged by the gate list",
+  );
+
   // Cycle guard: A -> B -> A must terminate (no infinite loop) and not duplicate.
   const cycleRows = [
     makeEmployee({ hrId: "A001", jobTitle: "Medical Rep", managerHrId: "B001" }),
@@ -726,6 +832,26 @@ export async function runMarketingRequestServiceTests() {
   assert.match(source("app/api/marketing-requests/[id]/resubmit/route.ts"), /resubmitReturnedMarketingRequest/, "resubmit route must call the service");
   assert.match(source("app/api/marketing-requests/inbox/route.ts"), /getApproverPendingRequests/, "inbox route must call the service");
   assert.match(source("app/api/marketing-requests/[id]/route.ts"), /getMarketingRequestDetail/, "request detail route must call the service");
+
+  // `createMarketingApprovalSteps` needs a live Supabase client, so its wiring is pinned at source
+  // level: the gate list must actually be built from the later steps and handed to the chain
+  // builder, and the requester must be excluded from the CC rows of their own request. Without
+  // these, the builder's `rolesGatedLater` support above would be dead code.
+  assert.match(
+    serviceSource,
+    /const rolesGatedLater = requiredSteps[\s\S]{0,400}?stepKind !== "managerial_chain"[\s\S]{0,200}?effectiveStepRole\(step\)/,
+    "createMarketingApprovalSteps must derive the gated-role list from the later dedicated steps",
+  );
+  assert.match(
+    serviceSource,
+    /buildMarketingManagerChain\(\{[\s\S]{0,300}?rolesGatedLater,/,
+    "createMarketingApprovalSteps must pass rolesGatedLater into the managerial chain walk",
+  );
+  assert.match(
+    serviceSource,
+    /for \(const ccHrId of ccHrIds\)[\s\S]{0,700}?isSamePerson\(ccHrId, params\.request\.requesterHrId\)\) continue;/,
+    "the requester must never be CC'd on their own marketing request",
+  );
 
   // Migration reshape tokens.
   const chainMigration = source("supabase/_migrations_archive/pre-baseline-2026-07-11/20260606180000_marketing_workflow_chain_reshape.sql");
