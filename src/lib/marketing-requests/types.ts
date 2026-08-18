@@ -719,6 +719,18 @@ export type MarketingRequestDraftProductInput = {
   quantity: number;
 };
 
+/**
+ * Minimum length for an unverified-code justification. A one-word entry ("ok", "yes") is not a
+ * reason and would turn the gate into a formality — the repo already treats too-short cleanup
+ * reasons as blank elsewhere for the same reason.
+ *
+ * Lives here, in the import-free types module, because BOTH sides need it: the server refuses a
+ * shorter reason in `buildMarketingRequestRows`, and the portal form disables Save until the rep
+ * has written one. Two copies would drift, and the drift shows up as a form that lets you submit
+ * something the API then rejects.
+ */
+export const UNVERIFIED_CODE_REASON_MIN_LENGTH = 10;
+
 export type MarketingRequestDraftPharmacyInput = {
   distributorCodeId: string;
   notes?: string | null;

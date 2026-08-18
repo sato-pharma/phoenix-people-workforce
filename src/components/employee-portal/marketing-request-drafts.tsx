@@ -53,6 +53,7 @@ import type {
   MarketingRequestRejection,
   MarketingRequestStepProgress,
 } from "@/lib/marketing-requests/service";
+import { UNVERIFIED_CODE_REASON_MIN_LENGTH } from "@/lib/marketing-requests/types";
 import type {
   MarketingApprovedRequestRow,
   MarketingRequestPharmacyOption,
@@ -649,6 +650,14 @@ function MarketingRequestDraftWorkspaceInner() {
   // empty default would quietly reproduce the old behaviour where every request was saved with
   // no targets at all and could never be credited a sale.
   const [deselectedPharmacyIds, setDeselectedPharmacyIds] = useState<string[]>([]);
+  // Written justification per pharmacy whose distributor code the reference database cannot find.
+  //
+  // The API has accepted `unverifiedCodeReason` since the capture gate was added, but no screen
+  // ever sent one — so a rep who genuinely stood in front of a real shop was refused at submit
+  // with "record why it must be used as-is" and given nowhere to record it. Keyed by
+  // distributorCodeId, so switching customer leaves stale keys that are simply never read, exactly
+  // like `deselectedPharmacyIds` above.
+  const [unverifiedCodeReasons, setUnverifiedCodeReasons] = useState<Record<string, string>>({});
   const [estimatedCost, setEstimatedCost] = useState("");
   const [roiDurationMonths, setRoiDurationMonths] = useState("3");
   const [otherRequestType, setOtherRequestType] = useState("");
@@ -812,6 +821,32 @@ function MarketingRequestDraftWorkspaceInner() {
     [pharmacyOptions, deselectedPharmacyIds],
   );
 
+  // The selected pharmacies the server will refuse without a written reason. Only `not_found`
+  // counts: `ambiguous` and `pending` still attribute and were deliberately left un-gated, so
+  // asking for a justification on those would be theatre.
+  const unverifiedSelections = useMemo(
+    () =>
+      pharmacyOptions.filter(
+        (option) =>
+          option.referenceStatus === "not_found" &&
+          selectedPharmacyIds.includes(option.distributorCodeId),
+      ),
+    [pharmacyOptions, selectedPharmacyIds],
+  );
+
+  // Save stays disabled until every one of them carries a reason long enough for the server to
+  // accept it. Mirrors the API rule with the SAME constant rather than a second copy of 10, so the
+  // form can never permit a submission the API then throws back.
+  const unverifiedSelectionsMissingReason = useMemo(
+    () =>
+      unverifiedSelections.filter(
+        (option) =>
+          (unverifiedCodeReasons[option.distributorCodeId] ?? "").trim().length <
+          UNVERIFIED_CODE_REASON_MIN_LENGTH,
+      ),
+    [unverifiedSelections, unverifiedCodeReasons],
+  );
+
   // Capture quality — the same trust score the ROI tracker shows after submission, computed live
   // from only what the requester can still change (verified codes, a forecast, a pay date). Shown
   // on the preview so "is this request even measurable?" is answerable before Save, not months later.
@@ -938,7 +973,8 @@ function MarketingRequestDraftWorkspaceInner() {
     ) &&
     roiPreview.products.some((product) => product.quantity > 0) &&
     (!selectedRequestType?.requiresDescription ||
-      otherRequestType.trim().length > 0);
+      otherRequestType.trim().length > 0) &&
+    unverifiedSelectionsMissingReason.length === 0;
 
   /* #7 --- Filtered approved requests */
   const filteredApproved = useMemo(() => {
@@ -991,6 +1027,7 @@ function MarketingRequestDraftWorkspaceInner() {
     setOtherRequestType("");
     setNotes("");
     setProductLines([{ key: "line-1", productId: "", quantity: "" }]);
+    setUnverifiedCodeReasons({});
   }
 
   async function fetchRequestDetail(
@@ -1090,7 +1127,13 @@ function MarketingRequestDraftWorkspaceInner() {
       notes,
       otherRequestType,
       payDate: payDate || null,
-      pharmacies: selectedPharmacyIds.map((distributorCodeId) => ({ distributorCodeId })),
+      // The reason rides per pharmacy, not per request: a request can target several pharmacies
+      // where only one code is unverified, and a request-level note would not say which. Sent only
+      // where one was actually typed, so a verified code carries nothing extra.
+      pharmacies: selectedPharmacyIds.map((distributorCodeId) => {
+        const reason = (unverifiedCodeReasons[distributorCodeId] ?? "").trim();
+        return reason ? { distributorCodeId, unverifiedCodeReason: reason } : { distributorCodeId };
+      }),
       products: productLines
         .filter((line) => line.productId && fieldNumber(line.quantity) > 0)
         .map((line) => ({
@@ -1122,6 +1165,9 @@ function MarketingRequestDraftWorkspaceInner() {
       setOtherRequestType("");
       setPayDate("");
       setProductLines([{ key: "line-1", productId: "", quantity: "" }]);
+      // Cleared with the rest of the form. A justification is written about one request; leaving it
+      // pre-filled would let the next request reuse it silently, and it is stored as an audit note.
+      setUnverifiedCodeReasons({});
       return;
     }
 
@@ -1178,6 +1224,9 @@ function MarketingRequestDraftWorkspaceInner() {
       setOtherRequestType("");
       setPayDate("");
       setProductLines([{ key: "line-1", productId: "", quantity: "" }]);
+      // Cleared with the rest of the form. A justification is written about one request; leaving it
+      // pre-filled would let the next request reuse it silently, and it is stored as an audit note.
+      setUnverifiedCodeReasons({});
     } catch {
       showMessage(
         resubmitRequestId
@@ -1545,32 +1594,65 @@ function MarketingRequestDraftWorkspaceInner() {
                           {pharmacyOptions.map((option) => {
                             const checked = selectedPharmacyIds.includes(option.distributorCodeId);
                             const unverified = option.referenceStatus === "not_found";
+                            const reason = unverifiedCodeReasons[option.distributorCodeId] ?? "";
+                            const reasonTooShort =
+                              reason.trim().length < UNVERIFIED_CODE_REASON_MIN_LENGTH;
                             return (
-                              <label
-                                className="flex cursor-pointer items-center gap-2 text-xs"
-                                key={option.distributorCodeId}
-                              >
-                                <input
-                                  checked={checked}
-                                  onChange={() =>
-                                    setDeselectedPharmacyIds((current) =>
-                                      current.includes(option.distributorCodeId)
-                                        ? current.filter((id) => id !== option.distributorCodeId)
-                                        : [...current, option.distributorCodeId],
-                                    )
-                                  }
-                                  type="checkbox"
-                                />
-                                <span className="text-slate-800">{option.pharmacyName}</span>
-                                <span className="text-slate-500">
-                                  {option.pharmacyCode} · {option.distributorName}
-                                </span>
-                                {unverified ? (
-                                  <span className="text-amber-700">
-                                    — code not recognised, sales here will not be counted
+                              <div key={option.distributorCodeId}>
+                                <label
+                                  className="flex cursor-pointer items-center gap-2 text-xs"
+                                >
+                                  <input
+                                    checked={checked}
+                                    onChange={() =>
+                                      setDeselectedPharmacyIds((current) =>
+                                        current.includes(option.distributorCodeId)
+                                          ? current.filter((id) => id !== option.distributorCodeId)
+                                          : [...current, option.distributorCodeId],
+                                      )
+                                    }
+                                    type="checkbox"
+                                  />
+                                  <span className="text-slate-800">{option.pharmacyName}</span>
+                                  <span className="text-slate-500">
+                                    {option.pharmacyCode} · {option.distributorName}
                                   </span>
+                                  {unverified ? (
+                                    <span className="text-amber-700">
+                                      — code not recognised, sales here will not be counted
+                                    </span>
+                                  ) : null}
+                                </label>
+                                {/*
+                                  The way past the capture gate, and the only one. The server refuses
+                                  a `not_found` code unless a justification of at least
+                                  UNVERIFIED_CODE_REASON_MIN_LENGTH characters comes with it and
+                                  stores that text on the request as an audit note. Shown only while
+                                  the pharmacy is actually selected — unticking it is the other valid
+                                  answer, and asking for a reason then would be asking about nothing.
+                                */}
+                                {unverified && checked ? (
+                                  <div className="mt-1 mb-2 ml-5 flex flex-col gap-1">
+                                    <textarea
+                                      className="min-h-16 w-full rounded-sm border border-amber-200 bg-amber-50/40 px-3 py-2 text-[13px] text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-orange-300 focus:ring-2 focus:ring-orange-100"
+                                      onChange={(event) => {
+                                        const value = event.target.value;
+                                        setUnverifiedCodeReasons((current) => ({
+                                          ...current,
+                                          [option.distributorCodeId]: value,
+                                        }));
+                                      }}
+                                      placeholder={`Why must code ${option.pharmacyCode} be used as-is?`}
+                                      value={reason}
+                                    />
+                                    {reasonTooShort ? (
+                                      <span className="text-xs text-amber-700">
+                                        Needed to save — at least {UNVERIFIED_CODE_REASON_MIN_LENGTH} characters.
+                                      </span>
+                                    ) : null}
+                                  </div>
                                 ) : null}
-                              </label>
+                              </div>
                             );
                           })}
                         </div>
