@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { ZoomablePhoto } from "@/components/ui/zoomable-photo";
 
 // The one employee avatar. Extracted verbatim from the Stars of the Month card so the winner panel,
 // the landing card and the race rows share one implementation at three sizes — three copies of the
@@ -57,9 +58,11 @@ export function PersonPhoto({
   }
 
   return (
-    // eslint-disable-next-line @next/next/no-img-element -- same-origin photo route / bundled asset, cropped square
-    <img
+    // The avatar is square-cropped to as little as 32px, so the face is often cut off. Tapping it
+    // opens the whole photo uncropped.
+    <ZoomablePhoto
       alt={name}
+      caption={name}
       className={`${dimensions} shrink-0 rounded-lg border-2 border-orange-200 object-cover object-top`}
       onError={() => setFailed(true)}
       src={src}

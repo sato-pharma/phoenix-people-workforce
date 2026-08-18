@@ -44,6 +44,7 @@ import { formatDateTimeValue, formatDateValue } from "@/lib/i18n/format";
 import type { OutstationExpenseRequest } from "@/lib/outstation/types";
 import { formatEmployeeDisplayName } from "@/lib/utils";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { ZoomablePhoto } from "@/components/ui/zoomable-photo";
 
 
 type AdminAction = "approve" | "delete" | "reject";
@@ -455,9 +456,9 @@ function RequestDetailsModal({
 
               {request.carEvidenceImageUrl ? (
                 <div className="overflow-hidden rounded-lg border border-[#E2E8F0] bg-[#F8FAFC]">
-                  {/* eslint-disable-next-line @next/next/no-img-element -- Private signed Supabase URLs are not configured for Next image optimization. */}
-                  <img
+                  <ZoomablePhoto
                     alt={`Car evidence for outstation request ${request.id}`}
+                    caption={`Car evidence · outstation request ${request.id}`}
                     className="max-h-[420px] w-full object-contain"
                     src={request.carEvidenceImageUrl}
                   />

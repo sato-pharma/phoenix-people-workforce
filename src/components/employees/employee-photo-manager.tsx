@@ -1,11 +1,11 @@
 "use client";
 
 import { Camera, Loader2, Trash2, UploadCloud } from "lucide-react";
-import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
 
 import { employeeProfileImageForHrId } from "@/lib/employees/profile-images";
+import { ZoomablePhoto } from "@/components/ui/zoomable-photo";
 
 const ACCEPTED = ["image/jpeg", "image/png", "image/webp"];
 const MAX_BYTES = 5 * 1024 * 1024;
@@ -99,14 +99,14 @@ export function EmployeePhotoManager({ hrId, fullName }: { hrId: string; fullNam
     <div className="flex items-center gap-4 rounded border border-[#E2E8F0] bg-[#F8FAFC] p-4">
       <div className="relative flex h-[72px] w-[72px] shrink-0 items-center justify-center overflow-hidden rounded border border-orange-100 bg-white shadow-sm">
         {displaySrc ? (
-          <Image
+          // Same reason as the portal editor: a 72px hard crop is not enough to check a photo
+          // before it goes out across Phoenix. It was already `unoptimized`.
+          <ZoomablePhoto
             alt={`${fullName} profile photo`}
+            caption={`${fullName} · profile photo`}
             className="h-full w-full object-cover object-[center_18%]"
-            height={72}
             onError={handleImageError}
             src={displaySrc}
-            unoptimized
-            width={72}
           />
         ) : (
           <span className="text-xl font-black tracking-tight text-orange-500">{initials}</span>

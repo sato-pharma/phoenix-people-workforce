@@ -29,6 +29,7 @@ import {
 import { describeResolvedAddressPlace, type DirectOrderGeographyVerdict } from "@/lib/direct-orders/geography-check";
 import { describeDirectOrderAutoLinkRefusal } from "@/lib/direct-orders/hold-decision";
 import type { DirectOrderApprovalDetail } from "@/lib/direct-orders/types";
+import { ZoomablePhoto } from "@/components/ui/zoomable-photo";
 
 const money = (value: number) => `${Math.round(value).toLocaleString("en-US")} EGP`;
 
@@ -394,8 +395,12 @@ export function DirectOrderRequestDetail({
           <div className="grid grid-cols-1 gap-4 md:grid-cols-[minmax(0,280px)_minmax(0,1fr)]">
             <div>
               {pharmacyEvidence.photoUrl ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={pharmacyEvidence.photoUrl} alt="Storefront evidence" className="w-full border border-slate-200" />
+                <ZoomablePhoto
+                  alt="Storefront evidence"
+                  caption="Storefront evidence"
+                  className="w-full border border-slate-200"
+                  src={pharmacyEvidence.photoUrl}
+                />
               ) : (
                 <p className="border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] font-semibold text-amber-800">
                   No photo on file for this claim.

@@ -819,6 +819,7 @@ import { runMarketingPharmacyCodeCompactTests } from "./marketing-pharmacy-code-
 import { runMasterMapMergeTests } from "./master-map-merge.test.ts";
 import { runMasterMapOrganogramRegionsTests } from "./master-map-organogram-regions.test.ts";
 import { runMasterMapDistrictManagersTests } from "./master-map-district-managers.test.ts";
+import { runZoomablePhotoTests } from "./zoomable-photo.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -2117,6 +2118,11 @@ await runTest(
 await runTest(
   "master map district managers (three per shop, never blank, and appended so the finder's column letters hold)",
   runMasterMapDistrictManagersTests,
+);
+
+await runTest(
+  "zoomable photos (every evidence photo opens full screen; the pinch/wheel wiring survives)",
+  runZoomablePhotoTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);

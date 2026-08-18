@@ -34,6 +34,7 @@ import type {
   MarketingValidationWorkspace as MarketingValidationWorkspacePayload,
 } from "@/lib/marketing-requests/types";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { ZoomablePhoto } from "@/components/ui/zoomable-photo";
 
 
 /* --------------------------------------------------------------------- Focus Trap Hook --------------------------------------------------------------------- */
@@ -655,8 +656,12 @@ function CapturePanel({
       </div>
       {capture.photoDataUrl ? (
         <div className="mt-2.5 overflow-hidden rounded-sm border border-slate-200 bg-slate-900">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img alt={`${label} captured evidence`} className="h-36 w-full object-contain" src={capture.photoDataUrl} />
+          <ZoomablePhoto
+            alt={`${label} captured evidence`}
+            caption={`${label} · captured evidence`}
+            className="h-36 w-full object-contain"
+            src={capture.photoDataUrl}
+          />
           <p className="bg-white px-3 py-1.5 text-[11px] font-semibold text-slate-500">{capture.photoCapturedAt}</p>
         </div>
       ) : null}
@@ -1112,9 +1117,9 @@ function LiveCameraModal({
         </div>
         <div className="bg-slate-900">
           {pendingPhoto ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
+            <ZoomablePhoto
               alt={`${targetLabel} stamped live evidence preview`}
+              caption={`${targetLabel} · stamped live evidence`}
               className="max-h-[70vh] w-full object-contain"
               src={pendingPhoto.dataUrl}
             />

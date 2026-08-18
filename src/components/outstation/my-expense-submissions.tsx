@@ -19,6 +19,7 @@ import { useCallback, useMemo, useState } from "react";
 import { DeparturePhotoCard } from "@/components/outstation/departure-photo-card";
 import type { MyOutstationSubmission } from "@/lib/outstation/service";
 import { formatPhoenixLongDate } from "@/lib/i18n/format";
+import { ZoomablePhoto } from "@/components/ui/zoomable-photo";
 
 /**
  * The submitter's own outstation submissions.
@@ -693,9 +694,9 @@ export function MyExpenseSubmissions({
                               // the optimizer would need to fetch it server-side, and the URL
                               // expires. eslint-disable must be ONE line — split across two it
                               // disables the comment beneath it, not the element.
-                              // eslint-disable-next-line @next/next/no-img-element
-                              <img
+                              <ZoomablePhoto
                                 alt={`${photo.label} for OUTSTATION-${submission.id}`}
+                                caption={`${photo.label} · OUTSTATION-${submission.id}`}
                                 className="max-h-72 w-full object-contain bg-slate-900"
                                 src={photo.url}
                               />

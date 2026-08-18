@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { PharmacyComboBox, type PharmacySearchHit } from "@/components/direct-orders/pharmacy-combo-box";
 import { EvidenceReading } from "@/components/direct-orders/evidence-reading";
 import type { DirectOrderValidationRow } from "@/lib/direct-orders/pharmacy-validation";
+import { ZoomablePhoto } from "@/components/ui/zoomable-photo";
 
 type Props = { rows: DirectOrderValidationRow[] };
 
@@ -118,8 +119,12 @@ export function ValidationDesk({ rows }: Props) {
             <div className="grid grid-cols-1 gap-4 px-4 py-3 md:grid-cols-[minmax(0,320px)_minmax(0,1fr)]">
               <div>
                 {row.photoUrl ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={row.photoUrl} alt="Storefront evidence" className="w-full border border-slate-200" />
+                  <ZoomablePhoto
+                    alt="Storefront evidence"
+                    caption={`Storefront evidence · ${row.claimedPharmacyName}`}
+                    className="w-full border border-slate-200"
+                    src={row.photoUrl}
+                  />
                 ) : (
                   <p className="border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] font-semibold text-amber-800">
                     No photo on file for this claim.

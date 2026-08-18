@@ -10,6 +10,7 @@ import type {
 } from "@/lib/marketing-requests/case-file-types";
 import { cairoDateTime, plainDate } from "@/lib/marketing-requests/request-report-columns";
 import type { MarketingRequestStatus } from "@/lib/marketing-requests/types";
+import { ZoomablePhoto } from "@/components/ui/zoomable-photo";
 
 /* ────────────────────────────────────────────────────────────────────────────
    The Case File view.
@@ -443,11 +444,9 @@ function Customer({ customer, canSeePii }: { customer: MarketingCaseFileCustomer
             {(photo) =>
               photo.url ? (
                 <figure className="mt-2 border border-emerald-200 bg-white">
-                  {/* Plain <img>: a short-lived signed URL to a private bucket, which the Next image
-                      optimizer cannot fetch on the viewer's behalf. */}
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
+                  <ZoomablePhoto
                     alt={`Live capture of ${customer.name ?? "the customer"} premises`}
+                    caption={`Live capture · ${customer.name ?? "the customer"}`}
                     className="h-64 w-full bg-slate-50 object-contain"
                     src={photo.url}
                   />
