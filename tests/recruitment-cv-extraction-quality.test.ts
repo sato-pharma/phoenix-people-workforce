@@ -168,9 +168,10 @@ export function runRecruitmentCvExtractionQualityTests() {
     "getText must ask for hyperlinks; without it the LinkedIn URL is structurally invisible",
   );
 
-  // 2. Reasoning effort. The most accuracy-sensitive call in the module ran at the middle setting.
-  assert.match(extractionSource, /reasoning:\s*\{\s*effort:\s*"high"\s*\}/, "CV extraction must reason at high effort");
-  assert.doesNotMatch(extractionSource, /effort:\s*"medium"/, "no medium-effort extraction pass may remain");
+  // 2. Reasoning effort. Held at "medium" (owner's instruction, 2026-08-18) — "high" (#2162) was the
+  // dominant driver of the OpenAI bill spike, and medium keeps accuracy acceptable at far less cost.
+  assert.match(extractionSource, /reasoning:\s*\{\s*effort:\s*"medium"\s*\}/, "CV extraction must reason at medium effort");
+  assert.doesNotMatch(extractionSource, /effort:\s*"high"\s*\}/, "no high-effort extraction pass may remain (cost guard)");
 
   // 3. The escalation ladder: a thin text-layer read on a PDF gets a second, different attempt.
   assert.match(extractionSource, /const escalation: CvExtractionRoute \| null =/);

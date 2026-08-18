@@ -515,12 +515,13 @@ export async function extractCvFieldsFromBytes(input: {
         maxOutputTokens: MAX_CV_EXTRACTION_OUTPUT_TOKENS,
         model: OPENAI_COPILOT_DEFAULT_MODEL,
         purpose: "recruitment-cv-extraction",
-        // Raised from "medium" 2026-08-15. This is the single most accuracy-sensitive call in the
-        // module — it runs a few hundred times a month, once per applicant, and every field the
-        // module will ever hold comes out of it. Reading a two-column CV, pairing employers to
-        // date ranges and telling a current title from an applied-for one is reasoning work, and
-        // it was being done at the middle setting to save tokens on the cheapest thing here.
-        reasoning: { effort: "high" },
+        // Dropped back to "medium" 2026-08-18 at the owner's instruction, to cut OpenAI spend. It
+        // had been raised medium -> high on 2026-08-16 (#2162), and that — on the top gpt-5.4 model,
+        // once per applicant, a few hundred times a month, over whole multi-MB PDFs handed to the
+        // vision model — was the dominant driver of the sudden bill jump that exhausted the credits.
+        // "high" burns a large pile of hidden reasoning tokens per call; "medium" removes most of
+        // that cost while still doing the two-column / employer-to-date-range reasoning acceptably.
+        reasoning: { effort: "medium" },
         text: buildExtractionTextFormat(schema),
         timeoutMs: OPENAI_ROUTE_BUDGET_MS,
       });
