@@ -316,6 +316,7 @@ import { runMarketingRequestServiceTests } from "./marketing-request-service.tes
 import { runReportRpcGuardrailTests } from "./report-rpc-guardrails.test.ts";
 import { runMarketingReviewRoutingTests } from "./marketing-review-routing.test.ts";
 import { runMarketingApproverHrIdCasingTests } from "./marketing-approver-hrid-casing.test.ts";
+import { runMarketingSuperAdminOversightTests } from "./marketing-super-admin-oversight.test.ts";
 import { runMarketingPremiumNotificationTests } from "./marketing-premium-notifications.test.ts";
 import { runMarketingRoiTests } from "./marketing-roi.test.ts";
 import { runMarketingRoiSheetImportTests } from "./marketing-roi-sheet-import.test.ts";
@@ -1244,6 +1245,7 @@ await runTest("marketing request service", runMarketingRequestServiceTests);
 await runTest("report rpc guardrails", runReportRpcGuardrailTests);
 await runTest("marketing review routing", runMarketingReviewRoutingTests);
 await runTest("marketing approver hr_id casing (FK fix)", runMarketingApproverHrIdCasingTests);
+await runTest("marketing Super Admin oversight queue", runMarketingSuperAdminOversightTests);
 await runTest("marketing premium notifications + review view", runMarketingPremiumNotificationTests);
 await runTest("marketing request access", runMarketingRequestAccessTests);
 await runTest("marketing validation service", runMarketingValidationServiceTests);
