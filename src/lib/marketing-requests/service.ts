@@ -2170,13 +2170,35 @@ function marketingChainStepName(roleName: string) {
  * Manager). Starting at the requester's manager means the requester's own level is
  * skipped automatically (a District Manager submitter starts at the NSM). manager_hr_id
  * is the live, seat-continuity-connected edge, so vacant seats already point upward.
+ *
+ * `rolesGatedLater` is the second stop condition, and it exists because the chain target
+ * only ever describes the SALES ladder. A Product Manager reports A-10 → A-9 (Marketing
+ * Manager) → AA (CEO); a National Sales Manager is nowhere on that path, so the walk used
+ * to run to the top of the company and mint a "Marketing Manager Approval" and a "CEO
+ * Approval" rung at sequence 1 and 2 — the exact two seats that `marketing_review` and
+ * `ceo_approval` already gate at sequence 4 and 6. Both people were asked twice, and the
+ * CEO was asked FIRST, before SFE Validation and Marketing Review had run at all.
+ *
+ * The walk therefore stops BEFORE the first manager whose role a later dedicated step
+ * already gates: everyone above that manager is reached through that step anyway. Stopping
+ * (rather than filtering the rung out and carrying on) keeps the chain a ladder — filtering
+ * could leap over the Marketing Manager and put the CEO at sequence 1, which is the same
+ * inversion this is fixing.
  */
 export function buildMarketingManagerChain(params: {
   chainTargetRole: string | null;
   employeeRows: EmployeeDirectoryRow[];
   requester: EmployeeDirectoryRow;
+  /**
+   * Roles a later, dedicated workflow step already gates. Compared case-insensitively.
+   * Omitted (the default) means "nothing downstream" and reproduces the raw walk — used to
+   * tell "this requester has no manager at all" apart from "every manager above them is
+   * already a formal gate", which are a hard error and a correct empty chain respectively.
+   */
+  rolesGatedLater?: Iterable<string>;
 }): Array<{ assignedHrId: string; assignedRole: string; stepName: string }> {
   const byHrId = employeeRowByHrId(params.employeeRows);
+  const gatedLater = new Set(Array.from(params.rolesGatedLater ?? []).map((role) => normalizeLookupKey(role)));
   const chain: Array<{ assignedHrId: string; assignedRole: string; stepName: string }> = [];
   const visited = new Set<string>();
   let currentHrId = normalizeHrId(params.requester.managerHrId);
@@ -2186,6 +2208,7 @@ export function buildMarketingManagerChain(params: {
     const managerRow = byHrId.get(currentHrId);
     if (!managerRow) break;
     const roleName = String(resolveJobFunctionRole(managerRow.jobTitle));
+    if (gatedLater.has(normalizeLookupKey(roleName))) break;
     chain.push({ assignedHrId: currentHrId, assignedRole: roleName, stepName: marketingChainStepName(roleName) });
     if (params.chainTargetRole && roleName === params.chainTargetRole) break;
     currentHrId = normalizeHrId(managerRow.managerHrId);
@@ -2239,6 +2262,28 @@ async function createMarketingApprovalSteps(params: {
   if (requiredSteps.length === 0) {
     throw validationError("Marketing workflow has no active required approval steps.", "marketing_workflow_missing");
   }
+
+  /**
+   * Hoisted out of the step loop because the managerial chain — built first — has to know which
+   * role will review at `marketing_review` before it can avoid duplicating it, and that role is
+   * per-line (line 2 reviews at Group Product Manager, not Marketing Manager). Same single query
+   * as before, just read before the loop instead of inside it — the `some(...)` guard keeps it
+   * from firing when no `marketing_review` step is active.
+   */
+  const reviewRouting = requiredSteps.some((step) => step.stepCode === "marketing_review")
+    ? await loadMarketingReviewRoutingByLine(params.supabase, params.request.lineId ?? null)
+    : null;
+  const effectiveStepRole = (step: MarketingWorkflowStep) =>
+    step.stepCode === "marketing_review" && reviewRouting ? reviewRouting.reviewerRole : step.assignedRole;
+
+  /**
+   * The roles a later, dedicated step already gates (SFE Manager, the line's review role, CEO,
+   * Finance Manager). The managerial walk stops before reaching any of them, so no one is asked
+   * twice on one request and the dedicated steps keep their designed order behind SFE Validation.
+   */
+  const rolesGatedLater = requiredSteps
+    .filter((step) => step.stepKind !== "managerial_chain" && step.approvalScope !== "direct_manager")
+    .map((step) => effectiveStepRole(step));
 
   const byHrId = employeeRowByHrId(params.employeeRows);
   const requesterRow = byHrId.get(normalizeHrId(params.request.requesterHrId) ?? "");
@@ -2314,14 +2359,35 @@ async function createMarketingApprovalSteps(params: {
       if (!requesterRow) {
         throw validationError("Requester was not found in the employee directory.", "requester_not_found");
       }
-      const chain = buildMarketingManagerChain({
+      /**
+       * Walked twice on purpose, and the two answers are different questions.
+       *
+       * The raw walk answers "does this requester have ANY manager above them" — an empty raw
+       * walk is a genuine configuration error and still fails loudly, exactly as before.
+       *
+       * The gated walk answers "which of those rungs is not already a dedicated later step". For
+       * a marketing-side requester (Product Manager, Group Product Manager, Marketing Manager,
+       * SFE Manager — everyone reporting up to A-9 or straight to the CEO) the gated walk is
+       * CORRECTLY empty: their managers are the Marketing Review and CEO Approval steps, which
+       * still run, in their designed order, behind SFE Validation. An empty gated walk therefore
+       * contributes no rung and must NOT be reported as a missing manager.
+       *
+       * Both walks are in-memory Map hops capped at 8, so the second one costs nothing.
+       */
+      const rawChain = buildMarketingManagerChain({
         chainTargetRole: step.chainTargetRole,
         employeeRows: params.employeeRows,
         requester: requesterRow,
       });
-      if (chain.length === 0) {
+      if (rawChain.length === 0) {
         throw validationError(`No approving manager could be resolved for ${requesterRow.displayName}.`, "marketing_approver_not_resolved");
       }
+      const chain = buildMarketingManagerChain({
+        chainTargetRole: step.chainTargetRole,
+        employeeRows: params.employeeRows,
+        requester: requesterRow,
+        rolesGatedLater,
+      });
       for (const node of chain) {
         pushRow({ assignedHrId: node.assignedHrId, assignedRole: node.assignedRole, isCc: false, step, stepName: node.stepName });
       }
@@ -2330,16 +2396,10 @@ async function createMarketingApprovalSteps(params: {
 
     // Per-line review routing: the post-SFE "Marketing Review" reviewer (and which line PM/GPM are
     // CC'd to comment) is chosen by the request's line. Unmapped lines keep the default Marketing
-    // Manager reviewer + the template CC roles. Every other step is unchanged.
-    let effectiveRole = step.assignedRole;
-    let effectiveCcRoles = step.ccRoles;
-    if (step.stepCode === "marketing_review") {
-      const routing = await loadMarketingReviewRoutingByLine(params.supabase, params.request.lineId ?? null);
-      if (routing) {
-        effectiveRole = routing.reviewerRole;
-        effectiveCcRoles = routing.ccRoles;
-      }
-    }
+    // Manager reviewer + the template CC roles. Every other step is unchanged. Read once above the
+    // loop (`reviewRouting`) because the managerial chain needs the same answer before this point.
+    const effectiveRole = effectiveStepRole(step);
+    const effectiveCcRoles = step.stepCode === "marketing_review" && reviewRouting ? reviewRouting.ccRoles : step.ccRoles;
 
     const assignedHrId = await workflowStepApproverHrId({
       employeeRows: params.employeeRows,
@@ -2365,6 +2425,12 @@ async function createMarketingApprovalSteps(params: {
       });
       for (const ccHrId of ccHrIds) {
         if (ccHrId === assignedHrId) continue;
+        // The requester is never CC'd on their own request. A CC row is a "there is something for
+        // you to look at" notification plus a visible rung in the chain; pointed back at the person
+        // who raised the spend it is pure noise, and it read as a fourth reviewer on the timeline.
+        // The self-approval guard in `pushRow` deliberately covers gating rungs only, so CC rows
+        // need their own check — production carried A-10 CC'd on both of her own PM requests.
+        if (isSamePerson(ccHrId, params.request.requesterHrId)) continue;
         pushRow({ assignedHrId: ccHrId, assignedRole: effectiveRole, isCc: true, step, stepName: `${step.stepName} (CC)` });
       }
     }

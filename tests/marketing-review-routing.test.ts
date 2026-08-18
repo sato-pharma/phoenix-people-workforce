@@ -69,10 +69,24 @@ export async function runMarketingReviewRoutingTests() {
   // ── Per-line review routing wired into the chain builder ────────────────────────────────────
   assert.match(service, /loadMarketingReviewRoutingByLine/, "chain builder loads per-line review routing");
   assert.match(service, /from\("marketing_review_routing"\)/, "routing reads the marketing_review_routing table");
+  // The routing is now read ONCE above the step loop, because the managerial chain has to know the
+  // line's reviewer role before it walks (otherwise it mints a duplicate rung for that same seat —
+  // see buildMarketingManagerChain's `rolesGatedLater`). The override itself is unchanged: a
+  // marketing_review step still takes its reviewer from the line's routing row.
   assert.match(
     service,
-    /step\.stepCode === "marketing_review"[\s\S]{0,300}routing\.reviewerRole/,
+    /step\.stepCode === "marketing_review" && reviewRouting \? reviewRouting\.reviewerRole : step\.assignedRole/,
     "the marketing_review reviewer is overridden per line",
+  );
+  assert.match(
+    service,
+    /const effectiveRole = effectiveStepRole\(step\);/,
+    "the step loop takes its reviewer role from the hoisted per-line routing",
+  );
+  assert.match(
+    service,
+    /step\.stepCode === "marketing_review" && reviewRouting \? reviewRouting\.ccRoles : step\.ccRoles/,
+    "the per-line routing still overrides the CC roles too",
   );
 
   // ── Reviewer roles resolve deterministically (Pedia GPM + finance Financial Advisor) ─────────
