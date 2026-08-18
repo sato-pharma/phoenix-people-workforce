@@ -15,7 +15,7 @@
 // column would stop reading as a column at all.
 
 import type { MasterMapRow } from "@/lib/sales/master-map/tree";
-import { MASTER_MAP_COLUMNS } from "@/lib/sales/master-map/tree";
+import { MASTER_MAP_COLUMNS, MASTER_MAP_PROVENANCE_HEADER } from "@/lib/sales/master-map/tree";
 
 const COLUMN_COUNT = MASTER_MAP_COLUMNS.length;
 
@@ -106,7 +106,8 @@ export const MANAGER_COLUMN_WIDTH = 330;
  */
 const SOURCE_STYLE = { italic: true, size: 8, text: rgb(148, 163, 184) } as const;
 
-const SOURCE_COLUMN = COLUMN_COUNT - 1;
+/** By name on the grouped tabs too, for the same reason renderFlatSheet looks it up. */
+const SOURCE_COLUMN = MASTER_MAP_COLUMNS.indexOf(MASTER_MAP_PROVENANCE_HEADER);
 
 /**
  * Which columns are centred on the grouped tabs.
@@ -285,7 +286,7 @@ function columnWidthRequests(sheetId: number, widths: readonly number[]): unknow
  * different places — last of seven columns on one, last of eleven on the other — and the owner
  * asked for the same quiet treatment beside every pharmacy, on whichever tab he is reading.
  */
-function sourceColumnRequest(
+export function sourceColumnRequest(
   sheetId: number,
   startRow: number,
   endRow: number,
@@ -469,9 +470,16 @@ export function renderFlatSheet(
       },
     },
   ];
-  // Provenance stays pale and small here too — same rule, different column index.
-  if (values.length > 1) {
-    requests.push(sourceColumnRequest(sheetId, 1, values.length, header.length - 1));
+  // Provenance stays pale and small here too — found BY NAME, never by counting from the right.
+  //
+  // This was `header.length - 1`, which was correct for exactly as long as provenance was the last
+  // column. Appending the three district-manager columns moved it, and the small print silently
+  // landed on "Pedia manager" instead: a person's name rendered in 8pt grey italic, while the
+  // provenance note it was meant to quieten went full size and started competing with the pharmacy
+  // name. Looking it up means the next column appended here changes nothing.
+  const provenanceColumn = header.indexOf(MASTER_MAP_PROVENANCE_HEADER);
+  if (values.length > 1 && provenanceColumn >= 0) {
+    requests.push(sourceColumnRequest(sheetId, 1, values.length, provenanceColumn));
   }
 
   // A hairline under every row. Deliberately borders rather than an addBanding request: banding

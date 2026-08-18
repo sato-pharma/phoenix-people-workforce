@@ -8,6 +8,8 @@
 // increasingly expensive ones — the same lesson the Master Workbook export already learned.
 
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { ORGANOGRAM_ROW_CAP } from "@/lib/sales/master-map/organogram-limits";
+import { currentCairoDateOnlyIso } from "@/lib/i18n/format";
 import { lineName } from "@/lib/sales/monthly-targets";
 import type { MasterMapCustomerInput } from "@/lib/sales/master-map/customer-merge";
 import type {
@@ -78,12 +80,47 @@ type Organogram = { areaManagers: AreaManagerInput[]; organogramAreas: Organogra
 const EMPTY_ORGANOGRAM: Organogram = { areaManagers: [], organogramAreas: [] };
 
 /**
+ * The last reading that actually worked, held for the life of the process.
+ *
+ * FAILING SOFT TO EMPTY WAS WORSE THAN FAILING. An empty organogram is not a neutral result — it
+ * repaints every manager cell in the workbook to "Not in the organogram" and empties the Upper
+ * Egypt 1 and Upper Egypt 2 tabs, and it does that quietly, so one timed-out read publishes a
+ * sheet that reads as "the org chart is broken" rather than as "Phoenix could not reach it just
+ * now". Holding the last good answer means a blip changes nothing at all: same names, same tabs,
+ * same content hash, no repaint. Only a process that has NEVER read it successfully falls back to
+ * empty, and that case is logged on every attempt.
+ */
+let lastGoodOrganogram: Organogram | null = null;
+
+/** Never silently. A degraded workbook that nobody was told about is the failure mode here. */
+function reportOrganogramFailure(cause: unknown): Organogram {
+  if (lastGoodOrganogram) {
+    console.warn(
+      "[master map] the organogram came back unusable; holding the last good district managers so the sheet is not repainted with blanks",
+      cause,
+    );
+    return lastGoodOrganogram;
+  }
+  console.warn(
+    "[master map] the organogram came back unusable and nothing good is cached; every area will report its managers as unknown and Upper Egypt 1/2 will render empty",
+    cause,
+  );
+  return EMPTY_ORGANOGRAM;
+}
+
+/**
  * The organogram's line × area map, as of today: which district owns each area, and who runs it.
  *
  * "As of today" on purpose, matching the owner's standing rule that Source of Sales attributes to
  * TODAY's structure and never as-was: a reorganisation re-cuts the whole sheet rather than leaving
- * an old shape behind. Same view and same date filter the Monthly Closing uses, so the sheet and
- * the closing can never disagree about which district an area belongs to, or about who manages it.
+ * an old shape behind. Same view the Monthly Closing reads, so the sheet and the closing can never
+ * disagree about which district an area belongs to, or about who manages it.
+ *
+ * TODAY IS CAIRO'S TODAY, not the server's. This was `new Date().toISOString()`, which is UTC, and
+ * Cairo runs two to three hours ahead of it — so between midnight and about 03:00 Cairo the sheet
+ * was still applying yesterday's structure, and a reorganisation taking effect today would not
+ * show until mid-morning. (`loadLineOperationalRegions` in the Monthly Closing still defaults to
+ * the UTC date and has the same narrow window; it is a separate change.)
  *
  * THREE READS, NOT ONE, BECAUSE THE NAME IS THREE HOPS AWAY: the map holds a seat id, the org tree
  * says who occupies that seat, and only `employees` knows the person's name. All three are tiny
@@ -95,18 +132,27 @@ const EMPTY_ORGANOGRAM: Organogram = { areaManagers: [], organogramAreas: [] };
  * was not loaded" rather than "there is genuinely no manager here" — the same reason the owner's
  * rule says to flag a row rather than drop it.
  *
- * FAILS SOFT. An empty result means "no region borrows any areas and no manager is known", which
- * paints the sheet the way it looked before this existed rather than failing the whole workbook. A
- * master of 50,000 pharmacies must not stop refreshing because the org chart is briefly unreadable.
+ * FAILS SOFT, BUT NEVER SILENTLY. A master of 50,000 pharmacies must not stop refreshing because
+ * the org chart is briefly unreadable — but it must not quietly blank every manager either. See
+ * lastGoodOrganogram above: the previous good answer is held, and the failure is logged.
  */
 async function loadOrganogram(): Promise<Organogram> {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = currentCairoDateOnlyIso();
   try {
     const supabase = getSupabaseAdmin();
     const { data, error } = await supabase
       .from("au_v_line_area_map")
-      .select("area_code,line_code,operational_region_code,dm_seat_id,effective_from,effective_to");
-    if (error || !data) return EMPTY_ORGANOGRAM;
+      .select("area_code,line_code,operational_region_code,dm_seat_id,effective_from,effective_to")
+      .limit(ORGANOGRAM_ROW_CAP);
+    if (error || !data) return reportOrganogramFailure(error);
+    // A full page means PostgREST truncated at its ceiling and said nothing. Half an org chart is
+    // worse than none: the areas that fell off the end would render "Not in the organogram", which
+    // reads as a mapping the owner has to go and fix rather than as a read that came back short.
+    if (data.length >= ORGANOGRAM_ROW_CAP) {
+      return reportOrganogramFailure(
+        new Error(`the area map came back at the ${ORGANOGRAM_ROW_CAP}-row ceiling, so it is truncated`),
+      );
+    }
 
     const current: Array<{ areaCode: string; line: string; regionCode: string; seatId: string }> = [];
     for (const row of data as Array<Record<string, unknown>>) {
@@ -129,10 +175,14 @@ async function loadOrganogram(): Promise<Organogram> {
     const seatIds = [...new Set(current.map((row) => row.seatId).filter(Boolean))];
     const seats = new Map<string, { hrId: string; pseudo: boolean }>();
     if (seatIds.length > 0) {
-      const { data: seatRows } = await supabase
+      const { data: seatRows, error: seatError } = await supabase
         .from("au_v_org_tree")
         .select("seat_id,occupant_hr_id,is_other_pseudo_dm")
-        .in("seat_id", seatIds);
+        .in("seat_id", seatIds)
+        .limit(ORGANOGRAM_ROW_CAP);
+      // Checked, because losing THIS read is the worst of the three: with no seats every district
+      // resolves to "Vacant", and the sheet would report fifty job openings that do not exist.
+      if (seatError) return reportOrganogramFailure(seatError);
       for (const row of (seatRows ?? []) as Array<Record<string, unknown>>) {
         seats.set(String(row.seat_id ?? ""), {
           hrId: String(row.occupant_hr_id ?? "").trim(),
@@ -146,10 +196,13 @@ async function loadOrganogram(): Promise<Organogram> {
     const hrIds = [...new Set([...seats.values()].map((seat) => seat.hrId).filter(Boolean))];
     const names = new Map<string, string>();
     if (hrIds.length > 0) {
-      const { data: people } = await supabase
+      const { data: people, error: peopleError } = await supabase
         .from("employees")
         .select("hr_id,full_name")
-        .in("hr_id", hrIds);
+        .in("hr_id", hrIds)
+        .limit(ORGANOGRAM_ROW_CAP);
+      // Same reasoning: an occupied seat whose name did not load also reads as "Vacant".
+      if (peopleError) return reportOrganogramFailure(peopleError);
       for (const row of (people ?? []) as Array<Record<string, unknown>>) {
         const name = String(row.full_name ?? "").trim();
         if (name) names.set(String(row.hr_id ?? ""), name);
@@ -184,9 +237,18 @@ async function loadOrganogram(): Promise<Organogram> {
       areaManagers.push({ areaCode: row.areaCode, lineName: line, manager });
     }
 
-    return { areaManagers, organogramAreas };
-  } catch {
-    return EMPTY_ORGANOGRAM; // see "FAILS SOFT" above
+    // A successful read that came back EMPTY is treated exactly like a failed one. That is the
+    // shape a broken view returns, the organogram is never legitimately empty, and publishing it
+    // would blank every manager cell in the workbook — the very thing this path exists to prevent.
+    if (areaManagers.length === 0) {
+      return reportOrganogramFailure(new Error("the organogram returned no area rows"));
+    }
+
+    const organogram: Organogram = { areaManagers, organogramAreas };
+    lastGoodOrganogram = organogram;
+    return organogram;
+  } catch (cause) {
+    return reportOrganogramFailure(cause); // see "FAILS SOFT, BUT NEVER SILENTLY" above
   }
 }
 

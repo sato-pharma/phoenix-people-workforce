@@ -16,6 +16,7 @@
 import {
   MASTER_MAP_EMPTY_BRICK_COLUMNS,
   MASTER_MAP_GAP_COLUMNS,
+  MASTER_MAP_PROVENANCE_HEADER,
   renderEmptyBrickRows,
   renderUnnamedRows,
   type MasterMapTree,
@@ -26,6 +27,7 @@ import {
   rgb,
   renderedTabColor,
   repeatCellRequest,
+  sourceColumnRequest,
   type RenderedSheet,
 } from "@/lib/sales/master-map/sheet-render";
 
@@ -39,15 +41,40 @@ const CENTRED_COLUMNS = [0, 1, 2, 3, 4, 5, 6, 7];
 const COLUMN_WIDTHS = [140, 170, 200, 100, 150, 130, 250, 90, 600, 320];
 while (COLUMN_WIDTHS.length < COLUMN_COUNT) COLUMN_WIDTHS.push(MANAGER_COLUMN_WIDTH);
 
+/** By name, never by counting — the same reason the flat tab looks it up. */
+const PROVENANCE_COLUMN = MASTER_MAP_GAP_COLUMNS.indexOf(MASTER_MAP_PROVENANCE_HEADER);
+
 function count(total: number, one: string, many: string): string {
   return `${total.toLocaleString("en-US")} ${total === 1 ? one : many}`;
 }
 
-export function renderGapsSheet(
+/**
+ * What the tab says, with no formatting and no tab id — the expensive half, computed once.
+ *
+ * Split out because of a chicken and egg in the sync: `ensureTab` needs the ROW COUNT before the
+ * tab can be sized, and the formatting requests need the tab's ID, which only exists afterwards. It
+ * used to resolve that by rendering the entire sheet against a placeholder id purely to read
+ * `values.length`, throwing all of it away, and rendering again for real — two full walks of all
+ * 50,622 shops and two rebuilds of 7,407 rows on every sync, for one number.
+ *
+ * Deliberately NOT a row-count formula: duplicating the arithmetic below would be a second thing
+ * to keep in step, and it would go wrong silently.
+ */
+export type GapsLayout = {
+  /** Rows that span the full width and carry a band style. */
+  bands: { row: number; style: (typeof STYLE)[keyof typeof STYLE] }[];
+  /** Rows carrying a column header. */
+  headers: number[];
+  unnamedCount: number;
+  unnamedFirstRow: number;
+  unnamedLastRow: number;
+  values: string[][];
+};
+
+export function buildGapsLayout(
   tree: MasterMapTree,
   distributorName: (code: string) => string,
-  sheetId: number,
-): RenderedSheet {
+): GapsLayout {
   const unnamed = renderUnnamedRows(tree, distributorName);
   const emptyBricks = renderEmptyBrickRows(tree);
 
@@ -105,6 +132,20 @@ export function renderGapsSheet(
   } else {
     for (const row of emptyBricks) values.push(pad(row));
   }
+
+  return {
+    bands,
+    headers,
+    unnamedCount: unnamed.length,
+    unnamedFirstRow,
+    unnamedLastRow,
+    values,
+  };
+}
+
+/** The formatting half: everything that needs the real tab id. Cheap — no shop is walked here. */
+export function renderGapsLayout(layout: GapsLayout, sheetId: number): RenderedSheet {
+  const { bands, headers, unnamedCount, unnamedFirstRow, unnamedLastRow, values } = layout;
 
   const clearRequests: unknown[] = [
     { unmergeCells: { range: { sheetId } } },
@@ -170,8 +211,18 @@ export function renderGapsSheet(
 
   // The nameless shops carry the same amber they wear on the main tabs, so the two readings of the
   // same shop look like the same thing rather than two unrelated problems.
-  if (unnamed.length > 0) {
+  if (unnamedCount > 0) {
     requests.push(repeatCellRequest(sheetId, unnamedFirstRow, unnamedLastRow, STYLE.unnamed));
+    // And then the provenance column back to pale small print, exactly as the grouped tabs do it
+    // over their own amber rows. Without this the Gaps tab was the one place "Where this came from"
+    // rendered full size and full weight — the same column looking like a different thing, on the
+    // one tab built for reading a long list of shops, where a loud provenance note competes with
+    // the codes that are the whole point of the row.
+    //
+    // ORDER MATTERS: it must come AFTER the amber, which paints the whole row width.
+    if (PROVENANCE_COLUMN >= 0) {
+      requests.push(sourceColumnRequest(sheetId, unnamedFirstRow, unnamedLastRow, PROVENANCE_COLUMN));
+    }
   }
 
   requests.push({
@@ -205,4 +256,19 @@ export function renderGapsSheet(
   requests.push(renderedTabColor(sheetId, rgb(180, 83, 9)));
 
   return { clearRequests, requests, values };
+}
+
+/**
+ * Both halves in one call, for callers that already hold the tab id.
+ *
+ * The plan builder is one: it renders every tab against a placeholder id purely to hash the text,
+ * so it has nothing to save by splitting. The sync is the caller that does, and it uses the two
+ * halves directly.
+ */
+export function renderGapsSheet(
+  tree: MasterMapTree,
+  distributorName: (code: string) => string,
+  sheetId: number,
+): RenderedSheet {
+  return renderGapsLayout(buildGapsLayout(tree, distributorName), sheetId);
 }
