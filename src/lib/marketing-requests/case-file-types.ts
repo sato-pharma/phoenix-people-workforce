@@ -347,6 +347,34 @@ export type MarketingCaseFileAdmission =
   | "cc_reviewer"
   | "product_owner";
 
+/** One control on the decision bar. `href` is already resolved for THIS viewer's shell. */
+export type MarketingCaseFileDecisionAction = {
+  decision: "approve" | "return" | "reject";
+  /**
+   * The shell-correct decision page, resolved per viewer. The Case File is shell-NEUTRAL (one URL
+   * for every recipient of a notification), so a hardcoded path would be wrong for half the chain:
+   * the portal page redirects admin-shell approvers to /overview and the workspace page redirects
+   * portal roles back out.
+   */
+  href: string;
+  /** The step's own wording — "Validate & Forward", "Execute", "Decline" — never a generic verb. */
+  label: string;
+};
+
+/**
+ * The viewer's own OPEN rung, as the controls that answer it.
+ *
+ * Null unless `can.decide` is true, so this is never a set of buttons a viewer may not press.
+ * `actions` always leads with approve; return and reject appear only when the rung permits them
+ * (Finance Execution carries `allow_reject: false`, and a Reject control there is one whose only
+ * outcome is `marketing_reject_not_allowed`).
+ */
+export type MarketingCaseFileViewerDecision = {
+  actions: MarketingCaseFileDecisionAction[];
+  /** The rung's name, so the bar can say WHICH decision is being asked for. */
+  stepName: string;
+};
+
 export type MarketingCaseFileViewer = {
   admittedAs: MarketingCaseFileAdmission[];
   /**
@@ -368,6 +396,11 @@ export type MarketingCaseFileViewer = {
    * locked rule is role-based, and a scope bypass would reopen it for every system-scoped role.
    */
   canSeeConfidentialProducts: boolean;
+  /**
+   * `can.decide` made actionable. It was a boolean nothing rendered for three weeks — see the
+   * header of case-file-decision-bar.ts for what that cost.
+   */
+  decision: MarketingCaseFileViewerDecision | null;
   hrId: string | null;
   role: PhoenixRole;
 };

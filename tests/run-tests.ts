@@ -823,6 +823,7 @@ import { runMasterMapMergeTests } from "./master-map-merge.test.ts";
 import { runMasterMapOrganogramRegionsTests } from "./master-map-organogram-regions.test.ts";
 import { runMasterMapDistrictManagersTests } from "./master-map-district-managers.test.ts";
 import { runZoomablePhotoTests } from "./zoomable-photo.test.ts";
+import { runMarketingCaseFileDecisionBarTests } from "./marketing-case-file-decision-bar.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -2132,6 +2133,11 @@ await runTest(
 await runTest(
   "zoomable photos (every evidence photo opens full screen; the pinch/wheel wiring survives)",
   runZoomablePhotoTests,
+);
+
+await runTest(
+  "marketing case file decision bar (the notification's own approver can answer in place, in their own shell, with only the powers their rung has)",
+  runMarketingCaseFileDecisionBarTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);

@@ -2,9 +2,11 @@ import type {
   CaseFileBlock,
   MarketingCaseFileChain,
   MarketingCaseFileCustomer,
+  MarketingCaseFileDecisionAction,
   MarketingCaseFileHistory,
   MarketingCaseFileProducts,
   MarketingCaseFileTargetPharmacies,
+  MarketingCaseFileViewerDecision,
   MarketingCaseFileWarning,
   MarketingRequestCaseFile,
 } from "@/lib/marketing-requests/case-file-types";
@@ -124,6 +126,54 @@ function Warnings({ warnings }: { warnings: MarketingCaseFileWarning[] }) {
           <p className="text-[12px] font-medium leading-5">{warning.sentence}</p>
         </div>
       ))}
+    </div>
+  );
+}
+
+/* ── decision bar ─────────────────────────────────────────────────────────── */
+
+/** Semantic colours lifted from the approval inbox so one verb never means two things. */
+function decisionClasses(decision: MarketingCaseFileDecisionAction["decision"]) {
+  if (decision === "approve") return "border-emerald-600 bg-emerald-600 text-white hover:bg-emerald-700";
+  if (decision === "return") return "border-amber-300 bg-white text-amber-800 hover:bg-amber-50";
+  return "border-rose-300 bg-white text-rose-700 hover:bg-rose-50";
+}
+
+/**
+ * The viewer's own open rung, answerable in place.
+ *
+ * Rendered ABOVE everything, directly under the header, and deliberately so: the reader who sees
+ * this bar arrived from a notification that told them the request was theirs to answer, and making
+ * them scroll a full case file to find out how is the defect this fixes, in a milder form. It says
+ * which rung it is, so "approve" is never an unlabelled yes.
+ *
+ * `viewer.decision` is non-null ONLY for the holder of the current gating rung of a request still
+ * `pending_approval` (buildCaseFileDecisionBar). Every href lands on the decision page, which
+ * re-runs the whole gate before it shows a confirmation, and the API re-runs it again before it
+ * writes — this is an affordance, never an authorisation. The full incident is in the header of
+ * src/lib/marketing-requests/case-file-decision-bar.ts.
+ */
+function DecisionBar({ decision }: { decision: MarketingCaseFileViewerDecision }) {
+  return (
+    <div className="border-b border-orange-200 bg-orange-50 px-6 py-4">
+      <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-orange-700">
+        Waiting for you
+      </p>
+      <p className="mt-1 text-[13px] font-medium leading-5 text-slate-800">
+        This request is on your rung — {decision.stepName}. It does not move until you answer it.
+      </p>
+      <div className="mt-3 flex flex-wrap gap-2">
+        {decision.actions.map((action) => (
+          // min-h-11 is a thumb, not a cursor: the CEO reads these on a phone, from a push alert.
+          <a
+            className={`inline-flex min-h-11 items-center whitespace-nowrap border px-5 text-[13px] font-semibold ${decisionClasses(action.decision)}`}
+            href={action.href}
+            key={action.decision}
+          >
+            {action.label}
+          </a>
+        ))}
+      </div>
     </div>
   );
 }
@@ -494,6 +544,8 @@ export function MarketingRequestCaseFileView({ caseFile }: { caseFile: Marketing
           {/* One sentence: where it is and what happens next. Never a bare status code. */}
           <p className="mt-1.5 text-[13px] leading-5 text-slate-300">{header.lifecycleSentence}</p>
         </div>
+
+        {viewer.decision ? <DecisionBar decision={viewer.decision} /> : null}
 
         <div className="px-6 py-5">
           <div className="flex items-center gap-3 border-b border-slate-200 pb-4">
