@@ -604,6 +604,7 @@ import { runDirectOrdersInvoiceScanTests } from "./direct-orders-invoice-scan.te
 import { runDirectOrdersArabicSearchTests } from "./direct-orders-arabic-search.test.ts";
 import { runCrmBrickCentroidsCacheTests } from "./crm-brick-centroids-cache.test.ts";
 import { runDirectOrdersAreaAutofillTests } from "./direct-orders-area-autofill.test.ts";
+import { runDirectOrdersExtraAreaGrantTests } from "./direct-orders-extra-area-grants.test.ts";
 import { runDirectOrdersShareLinkControlsTests } from "./direct-orders-share-link-controls.test.ts";
 import { runDirectOrderCancelHeldTests } from "./direct-orders-cancel-held.test.ts";
 import { runDirectOrderInvoicePrefillTests } from "./direct-orders-invoice-prefill.test.ts";
@@ -1511,6 +1512,7 @@ await runTest("direct orders invoice scan (a dim page gains real contrast, a fai
 await runTest("direct orders Arabic search (every fold survives, the strip class never swallows a letter, an unnamed customer is ranked down not hidden, both birth paths are searched)", runDirectOrdersArabicSearchTests);
 await runTest("CRM brick-centroids cache (shared Data Cache not a per-segment module var, 300s TTL unchanged, sos-reference tag, DB read byte-identical, catch OUTSIDE the cache so a transient error is never cached as [])", runCrmBrickCentroidsCacheTests);
 await runTest("direct orders area auto-fill (the body carries pointers only, the server copies the catalogue row and fails closed, a picked pharmacy never carries client geography)", runDirectOrdersAreaAutofillTests);
+await runTest("direct orders extra area grants (B-76 gets Alex-BHR, nobody else gets anything, the grant widens the seat bound instead of replacing it, and only the Direct Orders service may read it)", runDirectOrdersExtraAreaGrantTests);
 await runTest("direct orders share-link controls (export-gated not read-gated, passcode in the body never the URL, expiry mandatory and capped, scope frozen at creation, nothing cached or indexed)", runDirectOrdersShareLinkControlsTests);
 await runTest("direct orders invoice prefill (an unconfirmed code prefills nothing, unmatched lines are named not dropped, the reader is never announced, mounted on BOTH forms)", runDirectOrderInvoicePrefillTests);
 await runTest("direct orders validation registry gate (both declared actions are actually invoked, request passes the row's real status, decide is NOT coupled to it)", runDirectOrderValidationRegistryGateTests);
