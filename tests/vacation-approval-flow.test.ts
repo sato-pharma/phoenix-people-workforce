@@ -8,6 +8,7 @@ import {
   resolveActionAvailability,
   resolveActiveStep,
   resolveStageLabel,
+  shouldIncludeManagerOfManagerStep,
   stepOrderForStepKey,
 } from "../src/lib/vacation/approval-flow.ts";
 import type {
@@ -34,6 +35,55 @@ export function runVacationApprovalFlowTests() {
   assert.equal(genericStepName("direct_manager"), "management_approval_1");
   assert.equal(genericStepName("manager_of_manager"), "management_approval_2");
   assert.equal(genericStepName("hr"), "hr_acknowledgement");
+
+  // ---- Who the second management approver is (owner rule 2026-08-15, corrected 2026-08-19) ----
+  // A District Manager's chain never includes the CEO, and never skips the National Sales
+  // Manager. #2149 got only the first half: it dropped the second step for EVERY District
+  // Manager, which silently removed the NSM from the chain of every DM who reports through a
+  // Regional Sales Manager (live: B-74 Ahmed Mohamed Abdallah -> RSM Hany Saad -> HR, with NSM
+  // Ali Mohamed Ali Elsayed skipped on his 16 and 19 Aug 2026 requests).
+  const approver = (jobTitle: string | null, hrId = "X-1") => ({ hrId, jobTitle, positionTitle: null });
+  const nsm = approver("National Sales Manager", "A-12");
+  const ceo = approver("Ceo", "AA");
+
+  assert.equal(
+    shouldIncludeManagerOfManagerStep({ managerOfManager: nsm, requesterRole: "District Manager" }),
+    true,
+    "a District Manager reporting through a Regional Manager MUST still escalate to the National Sales Manager",
+  );
+  assert.equal(
+    shouldIncludeManagerOfManagerStep({ managerOfManager: ceo, requesterRole: "District Manager" }),
+    false,
+    "a District Manager reporting straight to the NSM must not escalate to the CEO",
+  );
+  // Position title wins over job title, matching the canonical organogram classifier.
+  assert.equal(
+    shouldIncludeManagerOfManagerStep({
+      managerOfManager: { hrId: "A-12", jobTitle: "Ceo", positionTitle: "National Sales Manager" },
+      requesterRole: "District Manager",
+    }),
+    true,
+    "the seat's position title decides the second approver's level, not a stale job title",
+  );
+  // Every other requester keeps the step whenever a manager-of-manager exists.
+  for (const role of ["Medical Rep", "Regional Manager", "Product Manager"]) {
+    assert.equal(
+      shouldIncludeManagerOfManagerStep({ managerOfManager: ceo, requesterRole: role }),
+      true,
+      `${role} keeps the manager-of-manager step — the CEO drop is a District Manager rule only`,
+    );
+  }
+  // Top-of-org reports have nobody above their manager: no second step, any role.
+  assert.equal(
+    shouldIncludeManagerOfManagerStep({ managerOfManager: null, requesterRole: "Medical Rep" }),
+    false,
+    "no manager-of-manager means no second step (CEO direct reports must still be able to submit)",
+  );
+  assert.equal(
+    shouldIncludeManagerOfManagerStep({ managerOfManager: approver("National Sales Manager", ""), requesterRole: "District Manager" }),
+    false,
+    "an unidentifiable approver (no HR id) cannot be assigned a step",
+  );
 
   // ---- Chain shapes (creation expectation) ----
   const fullChain = [step("direct_manager", "pending"), step("manager_of_manager", "pending"), step("hr", "pending")];

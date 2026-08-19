@@ -256,17 +256,30 @@ export function runVacationModuleTests() {
   assert.match(serviceSource, /managerOfManagerHrId/);
   // CEO-direct-reports: the parallel chain requires only a direct manager; the
   // manager-of-manager step is included only when one exists (no manager above the CEO).
-  // District Managers additionally never get this step at all (owner rule, 2026-08-15) —
-  // see the includeManagerOfManager gate in resolveVacationParallelApprovalRecipients.
   assert.match(
     serviceSource,
     /\.\.\.\(includeManagerOfManager && managerOfManager\?\.hrId\s*\n\s*\?\s*\[/,
     "manager-of-manager approval step must be optional so direct reports to the top of the org can submit, and skippable for District Manager requesters",
   );
-  assert.match(
+  // A District Manager's chain drops the CEO but must never drop the National Sales Manager
+  // (owner rule 2026-08-15, corrected 2026-08-19). The rule itself is behaviour-tested in
+  // tests/vacation-approval-flow.test.ts; pinned here is only that all three call sites go
+  // through the one shared gate, so the submit chain, the insert columns and the submission
+  // preview can never disagree about who approves.
+  assert.equal(
+    (serviceSource.match(/shouldIncludeManagerOfManagerStep\(\{/g) ?? []).length,
+    3,
+    "the submit chain, the request row and the submission preview must all resolve the second approver through the shared shouldIncludeManagerOfManagerStep gate",
+  );
+  assert.doesNotMatch(
     serviceSource,
-    /const includeManagerOfManager = requesterRole !== "District Manager";/,
-    "District Manager vacation requests must skip the manager-of-manager approval step entirely (owner rule, 2026-08-15: DM submit -> direct manager approves -> HR acknowledges, no CEO step)",
+    /(includeManagerOfManager|includesManagerOfManagerStep)\s*=\s*[^;]*requesterRole !== "District Manager"/,
+    "District Manager requests must not blanket-skip the second approver — that drops the NSM for DMs who report through a Regional Manager (owner rule, 2026-08-19)",
+  );
+  assert.doesNotMatch(
+    serviceSource,
+    /(includeManagerOfManager|includesManagerOfManagerStep)\s*=\s*[^;]*access\.role !== "District Manager"/,
+    "District Manager requests must not blanket-skip the second approver — that drops the NSM for DMs who report through a Regional Manager (owner rule, 2026-08-19)",
   );
   assert.doesNotMatch(
     serviceSource,

@@ -1,3 +1,4 @@
+import { classifyOrganogramStructureLevel } from "@/lib/reports/organogram-safety";
 import type {
   VacationActionAvailability,
   VacationApprovalStepState,
@@ -38,6 +39,37 @@ export function genericStepName(stepKey: VacationWorkflowStepKey): VacationGener
 
 export function isManagementStep(stepKey: VacationWorkflowStepKey): boolean {
   return stepKey !== "hr";
+}
+
+/** Minimum identity needed to decide whether a second approver may be dropped. */
+export type VacationApproverIdentity = {
+  hrId?: string | null;
+  jobTitle: string | null;
+  positionTitle: string | null;
+};
+
+/**
+ * Whether the request gets the second management (manager-of-manager) approval step.
+ *
+ * Owner rule (2026-08-15, corrected 2026-08-19): a District Manager's approval chain must never
+ * include the CEO — and must never skip the National Sales Manager either.
+ *
+ * #2149 implemented only the first half, by dropping the second management step for every
+ * District Manager. That is correct for the DMs who report straight to the NSM: their second
+ * step WAS the CEO. For the DMs who report through a Regional Sales Manager it dropped the NSM
+ * instead, so those requests ran Regional Manager -> HR (observed live on B-74, 16 and 19 Aug
+ * 2026). Whether the step survives therefore depends on WHO the second approver is, not on the
+ * requester's role alone: a District Manager keeps it only when that person is the National
+ * Sales Manager. Every other role keeps the step whenever a manager-of-manager exists.
+ */
+export function shouldIncludeManagerOfManagerStep(input: {
+  managerOfManager: VacationApproverIdentity | null | undefined;
+  requesterRole: string;
+}): boolean {
+  const { managerOfManager, requesterRole } = input;
+  if (!managerOfManager?.hrId) return false;
+  if (requesterRole !== "District Manager") return true;
+  return classifyOrganogramStructureLevel(managerOfManager) === "nsm";
 }
 
 function managementSteps(steps: VacationApprovalStepState[]): VacationApprovalStepState[] {

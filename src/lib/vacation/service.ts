@@ -64,6 +64,7 @@ import {
   resolveActionAvailability,
   resolveActiveStep,
   resolveStageLabel,
+  shouldIncludeManagerOfManagerStep,
   stepOrderForStepKey,
 } from "@/lib/vacation/approval-flow";
 import {
@@ -1596,12 +1597,11 @@ async function resolveVacationParallelApprovalRecipients(
     throw new Error("Vacation approval chain is incomplete. Please contact HR before submitting a vacation request.");
   }
 
-  // Owner rule (2026-08-15): District Manager vacation requests skip the second
-  // management step entirely. Approval stops at the direct manager (typically the
-  // NSM; RSM for the minority of DMs who report through one) before going to HR —
-  // whoever would otherwise sit above the direct manager (usually the CEO) is
-  // dropped from the chain.
-  const includeManagerOfManager = requesterRole !== "District Manager";
+  // Owner rule (2026-08-15, corrected 2026-08-19): a District Manager's chain drops the CEO but
+  // must always keep the National Sales Manager — see shouldIncludeManagerOfManagerStep. A DM
+  // reporting straight to the NSM ends at that one management step; a DM reporting through a
+  // Regional Sales Manager still escalates RSM -> NSM before HR.
+  const includeManagerOfManager = shouldIncludeManagerOfManagerStep({ managerOfManager, requesterRole });
 
   const hrApprovers = await resolveVacationPilotHrApprovers(directory);
   return [
@@ -2623,9 +2623,11 @@ export async function getVacationRequestPageData(access: AccessContext) {
     dayPartOptions: VACATION_DAY_PARTS,
     employee: summarizeEmployee(employee),
     manager: manager ? summarizeEmployee(manager) : null,
-    // District Managers never get a manager-of-manager approval step (owner rule,
-    // 2026-08-15), so the submission preview must not show one either.
-    managerOfManager: access.role !== "District Manager" && managerOfManager ? summarizeEmployee(managerOfManager) : null,
+    // Same gate as the chain that will actually be created on submit, so the preview can never
+    // promise (or hide) a second approver the request will not (or will) get.
+    managerOfManager: shouldIncludeManagerOfManagerStep({ managerOfManager, requesterRole: access.role }) && managerOfManager
+      ? summarizeEmployee(managerOfManager)
+      : null,
     vacationTypeOptions: VACATION_REQUEST_TYPES,
     weeklyOffPolicy,
   };
@@ -2675,9 +2677,9 @@ export async function createVacationRequest(access: AccessContext, input: Create
   const { manager, managerOfManager } = managerChain(directory, employee);
   // Only the direct manager is required; manager-of-manager is optional (top-of-org
   // reports, e.g. direct reports to the CEO, have no manager above their manager).
-  // District Managers never get a manager-of-manager step (owner rule, 2026-08-15) —
-  // see resolveVacationParallelApprovalRecipients.
-  const includesManagerOfManagerStep = access.role !== "District Manager";
+  // A District Manager's chain drops the CEO but always keeps the National Sales Manager
+  // (owner rule, 2026-08-15 corrected 2026-08-19) — see shouldIncludeManagerOfManagerStep.
+  const includesManagerOfManagerStep = shouldIncludeManagerOfManagerStep({ managerOfManager, requesterRole: access.role });
   const usesSequentialWorkflow = isSequentialWorkflowType(resolvedVacationType);
   let approvalRecipients: VacationApprovalRecipient[];
   let initialRequestStatus: VacationRequestStatus = "pending_manager";
