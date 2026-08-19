@@ -12,6 +12,7 @@ import { readFileSync } from "node:fs";
 const SERVICE = "src/lib/marketing-requests/service.ts";
 const PORTAL = "src/components/employee-portal/marketing-request-drafts.tsx";
 const TYPES = "src/lib/marketing-requests/types.ts";
+const BLOCKERS = "src/lib/marketing-requests/draft-blockers.ts";
 
 function code(path: string): string {
   return readFileSync(path, "utf8")
@@ -132,9 +133,24 @@ function testThePortalOffersTheOverrideItIsToldToUse() {
     "the reason box must appear only for a selected `not_found` pharmacy",
   );
   // The rep must find out before pressing Save, not by being thrown back by the API.
+  //
+  // Pinned as a three-link chain rather than one literal, because the gate no longer lives in
+  // the component: Save and the line that names the reason are both derived from
+  // marketingDraftBlockers so they can never disagree. Cutting any single link re-opens the
+  // button, so all three are asserted, in the order the value travels.
   assert.match(
     portal,
-    /unverifiedSelectionsMissingReason\.length === 0/,
+    /unverifiedCodesMissingReason:\s*unverifiedSelectionsMissingReason\.length/,
+    "the portal must feed the unverified-code count into the blocker list, or the gate is never consulted",
+  );
+  assert.match(
+    portal,
+    /const canSave = !isSaving && saveBlockers\.length === 0/,
+    "Save must be driven by that blocker list being empty, never by a second boolean that could drift from it",
+  );
+  assert.match(
+    code(BLOCKERS),
+    /input\.unverifiedCodesMissingReason > 0/,
     "Save must stay disabled while a selected unverified code has no acceptable reason",
   );
 }

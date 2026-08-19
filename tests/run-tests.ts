@@ -831,6 +831,7 @@ import { runMarketingDecisionPageReturnGatingTests } from "./marketing-decision-
 import { runMarketingPharmacyCodeMatchTests } from "./marketing-pharmacy-code-match.test.ts";
 import { runMarketingRequestStatusLabelTests } from "./marketing-request-status-label.test.ts";
 import { runMarketingDecisionConfirmPromptTests } from "./marketing-decision-confirm-prompt.test.ts";
+import { runMarketingDraftBlockersTests } from "./marketing-draft-blockers.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -2167,6 +2168,10 @@ await runTest(
 await runTest(
   "marketing decision confirm prompt (no approve, return or reject commits on a single unguarded click)",
   runMarketingDecisionConfirmPromptTests,
+);
+await runTest(
+  "marketing draft blockers (named in form order, unrecognised pharmacy code included)",
+  runMarketingDraftBlockersTests,
 );
 
 await runTest(
