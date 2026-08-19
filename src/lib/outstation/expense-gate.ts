@@ -180,6 +180,59 @@ export function outstationRequestMayReachPayroll(input: {
 }
 
 /**
+ * Should this request appear in the repair panel — the list of what the GATE is holding?
+ *
+ * Pure, and kept here beside the gate itself, because it decides what a human is shown about
+ * money that has not moved. Three exclusions, each for a different reason:
+ *
+ *   1. The gate is satisfied. There is nothing to repair.
+ *   2. The request was REJECTED. It is held by a DECISION, not by evidence, and nothing offered
+ *      in this panel may override that — the same reasoning, and the same rule, as
+ *      releaseOutstationRequestToPayrollIfReady.
+ *   3. The trip has not ENDED yet. The departure photo is taken before leaving the destination,
+ *      so a request whose trip is still running is not held — it is in progress. Listing it under
+ *      "Held out of payroll — the employee is not paid until each one clears", beside a button
+ *      offering to waive the photo permanently, invites an administrator to waive a photo that is
+ *      not yet due. This is not hypothetical: request 93 was submitted at 20:32 Cairo on the day
+ *      of its own trip, and would have been the newest row in the list.
+ *
+ * What is deliberately NOT excluded is a request still awaiting approval. Until 2026-08-19 this
+ * list required `status.startsWith("accepted")`, mirroring the release rule — but that rule is
+ * about who may be PAID, and borrowing it here made the panel permanently empty. Since the
+ * owner's 2026-08-08 change every submission persists as `submitted` and waits for a human;
+ * production has carried 57 requests across two months without one ever reaching an `accepted_*`
+ * status. So the panel built to make a failed CRM grab visible could never show anything, and
+ * the 2026-08-19 repair had to be run from a script instead of from the screen built for it.
+ *
+ * Widening this list does not widen who gets paid. Every action the panel offers still ends in
+ * releaseOutstationRequestToPayrollIfReady, which goes on refusing anything not `accepted_*`.
+ */
+export function isOutstationRequestHeldForRepair(input: {
+  /** Today in Africa/Cairo as YYYY-MM-DD. Injected so the in-progress test is assertable. */
+  cairoTodayIso: string;
+  gate: OutstationGateState;
+  status: string;
+  tripEndDate: string | null;
+}): boolean {
+  if (input.gate.isPayrollEligible) return false;
+  if (String(input.status ?? "").startsWith("rejected")) return false;
+
+  // A missing or unreadable trip end cannot prove the trip is over, but it must not hide a
+  // genuinely stuck request either — so it is shown. This test only ever removes a LIVE trip.
+  //
+  // The shape check is load-bearing, not defensive noise. These are compared as STRINGS, and any
+  // non-date text sorts above a "2026-…" date — so without it a malformed value would read as a
+  // trip far in the future and silently hide the request, which is the one outcome this whole
+  // panel exists to prevent.
+  const isoDay = /^\d{4}-\d{2}-\d{2}$/;
+  const tripEnd = String(input.tripEndDate ?? "").slice(0, 10);
+  const today = String(input.cairoTodayIso ?? "").slice(0, 10);
+  if (isoDay.test(tripEnd) && isoDay.test(today) && tripEnd >= today) return false;
+
+  return true;
+}
+
+/**
  * Validate a hand-entered AM/PM workload before it is allowed to release money.
  *
  * Extracted from setOutstationWorkloadManually so it can be asserted without a database. This is
