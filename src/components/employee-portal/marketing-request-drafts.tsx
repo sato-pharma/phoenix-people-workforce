@@ -25,6 +25,7 @@ import {
   Search,
   Trash2,
   TrendingUp,
+  TriangleAlert,
   Upload,
   WifiOff,
   X,
@@ -41,6 +42,7 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { LoadingSpinner } from "@/components/ui/loading-state";
 import { WorkspaceErrorBoundary } from "@/components/ui/workspace-error-boundary";
+import { marketingDraftBlockers } from "@/lib/marketing-requests/draft-blockers";
 import { calculateMarketingRoiPreview } from "@/lib/marketing-requests/roi";
 import { draftCaptureConfidence, type RoiConfidenceBand } from "@/lib/marketing-requests/roi-confidence";
 import {
@@ -86,6 +88,13 @@ type DraftWorkspacePayload = {
   returnedToMe: MarketingRequest[];
   stepProgressByRequestId: Record<string, MarketingRequestStepProgress>;
 };
+
+/**
+ * Ties the disabled Save button to the line explaining why it is disabled. A disabled button is
+ * skipped by the accessibility tree's own description lookup and shows no tooltip, so a screen
+ * reader would otherwise announce "Save Draft, dimmed" and nothing more.
+ */
+const SAVE_BLOCKED_HINT_ID = "marketing-draft-save-blocked";
 
 type ProductLine = {
   key: string;
@@ -962,19 +971,37 @@ function MarketingRequestDraftWorkspaceInner() {
       );
   }, [productLines, productMap, roiPreview.expectedRoiValue]);
 
-  const canSave =
-    !isSaving &&
-    Boolean(
-      customerId &&
-        requestTypeId &&
-        requestDate &&
-        roiDurationMonths &&
-        fieldNumber(estimatedCost) > 0,
-    ) &&
-    roiPreview.products.some((product) => product.quantity > 0) &&
-    (!selectedRequestType?.requiresDescription ||
-      otherRequestType.trim().length > 0) &&
-    unverifiedSelectionsMissingReason.length === 0;
+  // What is still missing, in form order. The Save button and the hint beside it both read this
+  // one list — see marketingDraftBlockers for why they must never be two.
+  const saveBlockers = useMemo(
+    () =>
+      marketingDraftBlockers({
+        customerId,
+        estimatedCost: fieldNumber(estimatedCost),
+        hasProductWithQuantity: roiPreview.products.some(
+          (product) => product.quantity > 0,
+        ),
+        otherRequestType,
+        requestDate,
+        requestTypeId,
+        requiresDescription: Boolean(selectedRequestType?.requiresDescription),
+        roiDurationMonths,
+        unverifiedCodesMissingReason: unverifiedSelectionsMissingReason.length,
+      }),
+    [
+      customerId,
+      estimatedCost,
+      otherRequestType,
+      requestDate,
+      requestTypeId,
+      roiDurationMonths,
+      roiPreview.products,
+      selectedRequestType,
+      unverifiedSelectionsMissingReason,
+    ],
+  );
+
+  const canSave = !isSaving && saveBlockers.length === 0;
 
   /* #7 --- Filtered approved requests */
   const filteredApproved = useMemo(() => {
@@ -1116,7 +1143,10 @@ function MarketingRequestDraftWorkspaceInner() {
     event.preventDefault();
     setMessage(null);
     if (!canSave) {
-      showMessage("Complete the draft fields before saving.", "error");
+      showMessage(
+        saveBlockers[0] ?? "Complete the draft fields before saving.",
+        "error",
+      );
       return;
     }
 
@@ -1981,27 +2011,59 @@ function MarketingRequestDraftWorkspaceInner() {
               </div>
 
               {/* Form footer */}
-              <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 bg-slate-50/50 px-4 py-3">
-                <div className="flex min-w-0 items-center gap-2 text-[13px] font-bold text-slate-700">
-                  <TrendingUp className="h-4 w-4 shrink-0 text-orange-500" />
-                  <span>
-                    Required ROI: {egp(roiPreview.requiredRoiValue)}
-                  </span>
+              <div className="border-t border-slate-100 bg-slate-50/50 px-4 py-3">
+                {/*
+                  Why Save is refusing. A disabled button carries no tooltip — its pointer events
+                  are off — so without this line the requester is told nothing at all, and the two
+                  gates that actually fire in production both sit far above the fold: the customer
+                  select at the very top, and the unrecognised-code justification inside Target
+                  Pharmacies. Named beside the button rather than at the offending field, because
+                  the button is where she is looking when the tap does nothing.
+
+                  Only the first blocker is spelled out, with a count of the rest, so the line
+                  stays on one row on a phone. It disappears while saving on its own: canSave is
+                  false for the whole request then, but saveBlockers is empty, which is the right
+                  answer — nothing is missing, it is in flight.
+                */}
+                {saveBlockers.length > 0 ? (
+                  <p
+                    className="mb-2 flex items-center gap-1.5 text-[12px] font-bold text-amber-700"
+                    id={SAVE_BLOCKED_HINT_ID}
+                  >
+                    <TriangleAlert className="h-3.5 w-3.5 shrink-0" />
+                    <span className="min-w-0">{saveBlockers[0]}</span>
+                    {saveBlockers.length > 1 ? (
+                      <span className="shrink-0 font-semibold text-amber-600">
+                        +{saveBlockers.length - 1} more
+                      </span>
+                    ) : null}
+                  </p>
+                ) : null}
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="flex min-w-0 items-center gap-2 text-[13px] font-bold text-slate-700">
+                    <TrendingUp className="h-4 w-4 shrink-0 text-orange-500" />
+                    <span>
+                      Required ROI: {egp(roiPreview.requiredRoiValue)}
+                    </span>
+                  </div>
+                  <Button
+                    aria-describedby={
+                      saveBlockers.length > 0 ? SAVE_BLOCKED_HINT_ID : undefined
+                    }
+                    className="min-h-10 gap-1.5 rounded-sm bg-orange-500 px-5 text-[13px] font-bold text-white shadow-sm hover:bg-orange-600"
+                    disabled={!canSave}
+                    type="submit"
+                  >
+                    {isSaving ? (
+                      <LoadingSpinner className="text-white" />
+                    ) : resubmitRequestId ? (
+                      <RefreshCcw className="h-3.5 w-3.5" />
+                    ) : (
+                      <Save className="h-3.5 w-3.5" />
+                    )}
+                    {resubmitRequestId ? "Resubmit Request" : "Save Draft"}
+                  </Button>
                 </div>
-                <Button
-                  className="min-h-10 gap-1.5 rounded-sm bg-orange-500 px-5 text-[13px] font-bold text-white shadow-sm hover:bg-orange-600"
-                  disabled={!canSave}
-                  type="submit"
-                >
-                  {isSaving ? (
-                    <LoadingSpinner className="text-white" />
-                  ) : resubmitRequestId ? (
-                    <RefreshCcw className="h-3.5 w-3.5" />
-                  ) : (
-                    <Save className="h-3.5 w-3.5" />
-                  )}
-                  {resubmitRequestId ? "Resubmit Request" : "Save Draft"}
-                </Button>
               </div>
             </form>
           )}
