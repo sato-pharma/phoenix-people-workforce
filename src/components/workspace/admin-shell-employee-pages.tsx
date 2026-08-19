@@ -36,6 +36,7 @@ import {
   MedicalRepPayrollPage,
 } from "@/components/employee-portal/employee-portal-dashboard-dynamic";
 import { EmployeePortalEmptyState } from "@/components/employee-portal/enterprise-shell";
+import { MarketingRequestCaseFile } from "@/components/marketing-requests/marketing-request-case-file";
 import { MobileOutstationWizard } from "@/components/outstation/mobile-outstation-wizard";
 import { OrganogramReport } from "@/components/reports/organogram-report";
 import { VacanciesReport } from "@/components/reports/vacancies-report";
@@ -414,6 +415,26 @@ export async function WorkspaceMarketingInboxPage() {
       title="Approval Inbox"
     >
       <MarketingRequestInbox decisionBasePath="/workspace/marketing-requests/decision" />
+    </WorkspaceFrame>
+  );
+}
+
+/**
+ * One marketing request, read end to end, inside the admin-shell employee workspace.
+ *
+ * Third of three mounts of the same component (admin shell, employee portal, here). The gate is
+ * the workspace's own marketing role set — the component then shows only what the CALLER's own
+ * access context admits, which the case-file service settles server-side on every request.
+ */
+export async function WorkspaceMarketingCaseFilePage({ requestId }: { requestId: string }) {
+  await requireAdminShellEmployeeWorkspaceAccess({ allowedRoles: workspaceMarketingRoles });
+  return (
+    <WorkspaceFrame
+      description="Everything about one marketing request in one place — the ask, the chain that decided it, where the money is pointed, and what came back. A check that could not run is shown as unknown, never as a clean pass."
+      icon={<ScrollText className="h-3.5 w-3.5" />}
+      title="Marketing Request Case File"
+    >
+      <MarketingRequestCaseFile requestId={requestId} />
     </WorkspaceFrame>
   );
 }
