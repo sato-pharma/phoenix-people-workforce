@@ -208,32 +208,48 @@ export function outstationRequestMayReachPayroll(input: {
  * releaseOutstationRequestToPayrollIfReady, which goes on refusing anything not `accepted_*`.
  */
 /**
- * Is the departure-photo reminder due for this request today, and is it already late?
+ * Is the departure-photo reminder due for this request today?
  *
- * Pure, so the timing can be asserted without a database or a notification provider — and the
- * timing is the whole of it. The rule is: nothing before the trip's last day (a reminder on day
- * one of a five-day trip is noise), the "last day" wording on the day itself, and the "overdue"
- * wording from the day after.
+ * **Exactly one day is reminded: the trip's last day.** Not before it, and — since 2026-08-19 —
+ * not after it either.
  *
- * Both dates must be real YYYY-MM-DD. These are compared as STRINGS, so any other text sorts
- * above a "2026-…" date and would silently read as a future trip — the failure would be a
- * reminder that never sends, which is precisely the bug this whole area exists to correct.
+ * The "after" half used to send too, worded as overdue, and the owner ended it that evening with
+ * the right question: what does that email add? The departure photo is a live camera capture,
+ * taken at the destination, before the employee leaves. Once he is home there is no photo left
+ * for him to take. He can still technically submit one — the trip window is enforced only on a
+ * RETAKE (see the capture path in service.ts) — but it would be captured wherever he now is, days
+ * late, and come back flagged `far_from_arrival` and `outside_trip_window`. So the overdue mail
+ * asked a man whose money was stuck either to ignore it or to manufacture evidence that reads as
+ * suspicious for a trip that genuinely happened. Neither is worth sending.
+ *
+ * A request whose window has closed is not chased. It is released by a Super Admin, with a
+ * reason, which is what departure-evidence.ts always said should happen to it.
+ *
+ * Worth knowing when reading production history: the overdue branch is the only one that ever
+ * fired. The last-day reminder could not reach a same-day trip until the submit path started
+ * raising it (#2222, the same evening), because the 06:36 daily job cannot see a request that
+ * will not exist until the afternoon. So every departure-photo reminder sent before 2026-08-19
+ * was the kind this rule no longer sends.
+ *
+ * Pure, so the timing can be asserted without a database or a notification provider. Both dates
+ * must be real YYYY-MM-DD: they are compared as STRINGS, so any other text sorts above a "2026-…"
+ * date and would silently read as a future trip.
  */
 export function outstationDeparturePhotoReminderDue(input: {
   gateBlocker: OutstationGateBlocker | null;
   todayCairo: string;
   tripEndDate: string | null;
-}): { due: boolean; overdue: boolean } {
-  const notDue = { due: false, overdue: false };
+}): { due: boolean } {
+  const notDue = { due: false };
   if (input.gateBlocker !== "departure_photo") return notDue;
 
   const isoDay = /^\d{4}-\d{2}-\d{2}$/;
   const lastDay = String(input.tripEndDate ?? "").slice(0, 10);
   const today = String(input.todayCairo ?? "").slice(0, 10);
   if (!isoDay.test(lastDay) || !isoDay.test(today)) return notDue;
-  if (lastDay > today) return notDue;
 
-  return { due: true, overdue: lastDay < today };
+  // The whole rule, in one line: the day he is still there, and no other day.
+  return { due: lastDay === today };
 }
 
 export function isOutstationRequestHeldForRepair(input: {

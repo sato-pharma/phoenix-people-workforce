@@ -56,7 +56,7 @@ export function runOutstationDeparturePhotoResendTests() {
   // has ever been held behind a photo.
   assert.match(
     sendSlice,
-    /options\?\.idempotencyKey \?\?\s*`outstation:\$\{String\(row\.id\)\}:departure-photo:\$\{overdue \? "overdue" : "due"\}`/,
+    /options\?\.idempotencyKey \?\?\s*`outstation:\$\{String\(row\.id\)\}:departure-photo:due`/,
     "the caller-supplied key must be an OVERRIDE with the automatic key as the fallback — an unconditional override re-sends every historic reminder the moment it ships",
   );
   // `idempotencyKey?:` (the option's type) and `options?.idempotencyKey` (the read) carry no colon
@@ -138,17 +138,42 @@ export function runOutstationDeparturePhotoResendTests() {
     /The trip has not finished yet/,
     "…and the second, which is not a fault at all — the photo is simply not due until he leaves",
   );
+  // The third, and since 2026-08-19 the common one. It must NAME the release, because an admin
+  // told only "not sent" on a two-week-old trip will press the button again tomorrow.
+  assert.match(
+    resendSlice,
+    /can no longer be taken at the destination/,
+    "a finished trip must be refused in plain words — there is no photo left for him to take",
+  );
+  assert.match(
+    resendSlice,
+    /Release the request without the photo instead\./,
+    "…and must point at the action that DOES clear it, or the refusal is a dead end",
+  );
+  assert.match(
+    resendSlice,
+    /if \(lastDay && lastDay < today\)/,
+    "the finished-trip branch must be guarded on a real date — an empty tripEndDate must not fall into it and report a trip that ended on nothing",
+  );
 
-  // The timing rule those refusals rest on is the same pure function the automatic reminder uses,
-  // so an admin pressing the button on day one of a five-day trip sends nothing.
+  // The timing rule those refusals rest on is the same pure function the automatic reminder uses.
   assert.deepEqual(
     outstationDeparturePhotoReminderDue({
       gateBlocker: "departure_photo",
       todayCairo: "2026-08-19",
       tripEndDate: "2026-08-23",
     }),
-    { due: false, overdue: false },
+    { due: false },
     "a running trip is not due — the button must not become a way to nag an employee before he could act",
+  );
+  assert.deepEqual(
+    outstationDeparturePhotoReminderDue({
+      gateBlocker: "departure_photo",
+      todayCairo: "2026-08-19",
+      tripEndDate: "2026-08-09",
+    }),
+    { due: false },
+    "and a FINISHED trip is not due either — this is the case the button was first pressed on, and the reason the owner retired the overdue message",
   );
   assert.deepEqual(
     outstationDeparturePhotoReminderDue({
@@ -156,7 +181,7 @@ export function runOutstationDeparturePhotoResendTests() {
       todayCairo: "2026-08-19",
       tripEndDate: "2026-08-01",
     }),
-    { due: false, overdue: false },
+    { due: false },
     "a request held on the CRM workload is not a photo problem, however long ago the trip ended",
   );
 
@@ -209,8 +234,13 @@ export function runOutstationDeparturePhotoResendTests() {
   );
   assert.match(
     route,
-    /if \(message\.includes\("not waiting on its departure photo"\) \|\| message\.includes\("has not finished yet"\)\)\s*\{\s*return 409;/,
-    "the two refusals are 409, not 500 — they are correct answers about the wrong row, and a 500 tells the admin the system is broken when it is working",
+    /message\.includes\("can no longer be taken at the destination"\)/,
+    "the finished-trip refusal must be mapped too, or the most common one of the three comes back as a 500 and reads as a broken system",
+  );
+  assert.match(
+    route,
+    /\|\|\s*\n?\s*message\.includes\("has not finished yet"\) \|\|/,
+    "all three refusals are 409, not 500 — they are correct answers about the wrong row",
   );
   assert.match(
     route,
@@ -221,8 +251,21 @@ export function runOutstationDeparturePhotoResendTests() {
   // ── The button ───────────────────────────────────────────────────────────────────
   const panel = source("src/components/outstation/held-requests-panel.tsx").replace(/\s+/g, " ");
   assert.ok(
-    panel.includes('{request.blocker === "departure_photo" ? ('),
-    "the button appears only on a row actually held on the departure photo — offering it elsewhere invites a 409 the admin cannot do anything about",
+    panel.includes('{request.blocker === "departure_photo" && request.reminderResendable ? ('),
+    "the button appears only on a row held on the departure photo AND still worth asking about — a button on a finished trip is one the endpoint will refuse, and the admin reads that 409 as a fault",
+  );
+  // The flag has to come from the server. Recomputing "is it still his last day?" in the browser
+  // would use the VIEWER's clock, so an admin abroad, or one whose laptop is a day out, would see
+  // a different set of buttons from the one the server will honour.
+  assert.equal(
+    /new Date\(\)|Date\.now\(\)|toISOString/.test(panel),
+    false,
+    "the panel must not derive today's date itself — the server already answered this with the same rule the sender obeys",
+  );
+  const service2 = source("src/lib/outstation/service.ts").replace(/\s+/g, " ");
+  assert.ok(
+    service2.includes("reminderResendable: outstationDeparturePhotoReminderDue({"),
+    "and the server must compute that flag from the shared rule, not from its own copy of the date comparison",
   );
   assert.ok(
     panel.includes('void act(request.id, {}, "reminder")'),

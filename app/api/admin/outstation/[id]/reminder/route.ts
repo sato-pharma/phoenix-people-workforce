@@ -23,8 +23,14 @@ export const dynamic = "force-dynamic";
 function reminderStatus(error: unknown) {
   if (isForbiddenError(error)) return 403;
   const message = error instanceof Error ? error.message.toLowerCase() : "";
-  // Not a failure — a statement that this is the wrong row for this button.
-  if (message.includes("not waiting on its departure photo") || message.includes("has not finished yet")) {
+  // Not a failure — a statement that this is the wrong row for this button. Three ways that
+  // happens: the row owes no photo, the trip has not finished, or it finished and the photo can
+  // no longer be taken at all (the usual one — that request wants the release, not a reminder).
+  if (
+    message.includes("not waiting on its departure photo") ||
+    message.includes("has not finished yet") ||
+    message.includes("can no longer be taken at the destination")
+  ) {
     return 409;
   }
   if (message.includes("not available")) return 404;
