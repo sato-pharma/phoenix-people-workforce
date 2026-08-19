@@ -27,6 +27,7 @@ import { getEmployeeDirectoryRows, type EmployeeDirectoryRow } from "@/lib/emplo
 import { resolveJobFunctionRole } from "@/lib/employees/job-function";
 import { forbiddenError, validationError } from "@/lib/http/api-errors";
 import { buildCaseFileDecisionBar } from "@/lib/marketing-requests/case-file-decision-bar";
+import { marketingRequestStatusLabel } from "@/lib/marketing-requests/request-status-label";
 import {
   caseFileNotApplicable,
   caseFileOk,
@@ -776,6 +777,10 @@ export async function getMarketingRequestCaseFile(
         role: requesterRow ? resolveJobFunctionRole(requesterRow.jobTitle) : null,
       },
       status: request.status,
+      statusLabel: marketingRequestStatusLabel({
+        currentStepCode: steps.find((step) => step.status === "current" && !step.isCc)?.stepCode ?? null,
+        status: request.status,
+      }),
       submittedAt: request.submittedAt,
     },
     history: historyBlock,

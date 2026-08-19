@@ -1,6 +1,7 @@
 import { forbiddenError, notFoundError } from "@/lib/http/api-errors";
 import type { AccessContext } from "@/lib/auth/permissions";
 import { hrIdLookupKeys } from "@/lib/hr-id";
+import { pharmacyCodeLookupSet } from "@/lib/marketing-requests/pharmacy-code-match";
 import {
   canViewRestrictedProducts,
   isRestrictedProductCode,
@@ -295,7 +296,12 @@ export async function getMarketingSalesEvidence(
     roiStatus: request.roi_status ?? null,
   };
   const customerName = (customerResult.data as { display_name: string | null } | null)?.display_name ?? "Unknown customer";
+  // What the rep registered, shown to the approver as they typed it.
   const matchedPharmacyCodes = [...pharmacyCodes].sort();
+  // What the sales table is actually searched for. The same pharmacy is written `1548234` here and
+  // `0001548234` in Source of Sales, so matching on the entered spelling alone reported a hard zero
+  // for customers with years of trade — see pharmacy-code-match.ts.
+  const lookupPharmacyCodes = pharmacyCodeLookupSet(pharmacyCodes);
 
   // A customer with no validated pharmacy code has no way to be matched to a sales row. Return the
   // empty verdict rather than running a query that would return nothing anyway — and let the panel
@@ -352,7 +358,7 @@ export async function getMarketingSalesEvidence(
   // of every figure rather than out of one table.
   let confidentialProductsWithheld = false;
   // Both lists are folded into the request URL by PostgREST, so batch each independently.
-  for (const codeBatch of chunk(matchedPharmacyCodes)) {
+  for (const codeBatch of chunk(lookupPharmacyCodes)) {
     for (const batchIdBatch of chunk(batchIds as string[])) {
       const rowsResult = await supabase
         .from("source_of_sales_import_rows")

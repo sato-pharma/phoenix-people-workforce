@@ -63,7 +63,12 @@ export function runMarketingDecisionPageReturnGatingTests() {
   /* 1. Approve always renders — a rung that cannot be advanced is not a rung */
   /* ---------------------------------------------------------------------- */
 
-  const approveAt = bar.indexOf('submitDecision("approve")');
+  // `requestDecision`, not `submitDecision`: since the confirmation prompt shipped, a button OPENS
+  // the "are you sure?" and only the prompt's own confirm button submits. What this file pins is
+  // which buttons exist, so it follows the click to wherever the click now goes. That nothing may
+  // still submit straight from an onClick is pinned separately, in
+  // `marketing-decision-confirm-prompt.test.ts`.
+  const approveAt = bar.indexOf('requestDecision("approve")');
   assert.ok(approveAt > -1, "the decision bar must still offer Approve");
   // Counted, not compared against the gate positions: `indexOf` returns -1 for a gate that is
   // MISSING, and a `> approveAt` comparison would then fail here instead of at §2 — this assertion
@@ -81,21 +86,21 @@ export function runMarketingDecisionPageReturnGatingTests() {
 
   assert.match(
     bar,
-    /\{summary\.allowReturn \? \(\s*<button[\s\S]*?submitDecision\("return"\)[\s\S]*?<\/button>\s*\) : null\}/,
+    /\{summary\.allowReturn \? \(\s*<button[\s\S]*?requestDecision\("return"\)[\s\S]*?<\/button>\s*\) : null\}/,
     "the Return button must be gated on summary.allowReturn — a step with allow_return off can only answer the click with a 400",
   );
   // Reject has been gated all along. Pinned here so a later edit cannot "tidy" the pair back apart.
   assert.match(
     bar,
-    /\{summary\.allowReject \? \(\s*<button[\s\S]*?submitDecision\("reject"\)[\s\S]*?<\/button>\s*\) : null\}/,
+    /\{summary\.allowReject \? \(\s*<button[\s\S]*?requestDecision\("reject"\)[\s\S]*?<\/button>\s*\) : null\}/,
     "the Reject button must stay gated on summary.allowReject — same rule, the other per-step power",
   );
 
   // And exactly one of each in the whole module, so the gated copy cannot be shadowed by an ungated
   // duplicate rendered elsewhere on the page.
   for (const decision of ["return", "reject"] as const) {
-    const uses = page.match(new RegExp(`submitDecision\\("${decision}"\\)`, "g")) ?? [];
-    assert.equal(uses.length, 1, `${decision} must be submitted from exactly one place, which is the gated one`);
+    const uses = page.match(new RegExp(`requestDecision\\("${decision}"\\)`, "g")) ?? [];
+    assert.equal(uses.length, 1, `${decision} must be offered from exactly one place, which is the gated one`);
   }
 
   /* ---------------------------------------------------------------------- */

@@ -826,6 +826,9 @@ import { runMasterMapDistrictManagersTests } from "./master-map-district-manager
 import { runZoomablePhotoTests } from "./zoomable-photo.test.ts";
 import { runMarketingCaseFileDecisionBarTests } from "./marketing-case-file-decision-bar.test.ts";
 import { runMarketingDecisionPageReturnGatingTests } from "./marketing-decision-page-return-gating.test.ts";
+import { runMarketingPharmacyCodeMatchTests } from "./marketing-pharmacy-code-match.test.ts";
+import { runMarketingRequestStatusLabelTests } from "./marketing-request-status-label.test.ts";
+import { runMarketingDecisionConfirmPromptTests } from "./marketing-decision-confirm-prompt.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -2146,6 +2149,21 @@ await runTest(
 await runTest(
   "marketing decision page Return gate (the confirmation page offers Return only on a rung that holds it)",
   runMarketingDecisionPageReturnGatingTests,
+);
+
+await runTest(
+  "marketing pharmacy code match (a customer registered without the leading zeros still finds its own sales)",
+  runMarketingPharmacyCodeMatchTests,
+);
+
+await runTest(
+  "marketing request status label (a CEO-approved request waiting on Finance stops calling itself pending approval)",
+  runMarketingRequestStatusLabelTests,
+);
+
+await runTest(
+  "marketing decision confirm prompt (no approve, return or reject commits on a single unguarded click)",
+  runMarketingDecisionConfirmPromptTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
