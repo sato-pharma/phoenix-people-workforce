@@ -275,3 +275,53 @@ export function resolveActionAvailability(input: {
     return: enabled ? { enabled: true, disabledReason: null } : { enabled: false, disabledReason: reason },
   };
 }
+
+// ── Missing management line (flag, never block) ───────────────────────────────
+
+/**
+ * Roles whose chain MUST contain at least one management rung.
+ *
+ * A District Manager always has a National Sales Manager above them, and a Regional Manager
+ * always has one too — so for these two, a chain with no person rung is always wrong, whatever
+ * the org looked like on the day it was built. Every other requester legitimately has none: a
+ * National Sales Manager reports to the CEO (the climb correctly stops before the CEO rung), and
+ * Product/Group-Product Managers go straight to the CEO by design.
+ *
+ * Deliberately NOT derived from {@link directOrderManagementLadder}: that ladder lists the roles a
+ * FULL climb passes through, and a DM reporting straight to the NSM correctly yields one rung
+ * where the ladder names two. Counting rungs against it would flag healthy chains. The only
+ * defect this can see is ZERO rungs where at least one was owed.
+ */
+export function directOrderRoleRequiresManagementLine(
+  requesterRole: PhoenixRole | string | null | undefined,
+): boolean {
+  const role = String(requesterRole ?? "").trim();
+  return role === "District Manager" || role === "Regional Manager";
+}
+
+/**
+ * True when a chain was built with NO management rung for a requester who is owed one — the
+ * request climbs SFE → CEO with nobody from the sales line on it.
+ *
+ * Owner rule, 2026-08-19: "never skip the National Sales Manager in anything regarding any
+ * District Manager". This is FLAGGED, not blocked (owner decision, 2026-08-19, matching the
+ * create-and-flag rule already used for an unresolvable manager mid-climb) — refusing the
+ * submission would block a requester over somebody else's missing HR record.
+ *
+ * How it happens: {@link buildApprovalChain} climbs `managerHrId` from the requester. When the
+ * requester has no manager on record the loop never runs, pushes nothing, and the CEO rung is
+ * appended anyway. Six live requests were built this way on 3–4 August 2026 — two District
+ * Managers whose manager (Magdy El Senosey) had not been created yet — and one, worth EGP 4,600,
+ * was approved by SFE and the CEO with no sales manager ever seeing it.
+ *
+ * Reads the role AS STORED ON THE REQUEST, so an org change after submission cannot flip the
+ * answer for a chain that is already built.
+ */
+export function directOrderChainMissingManagementLine(input: {
+  requesterRole: PhoenixRole | string | null | undefined;
+  steps: ReadonlyArray<Pick<DirectOrderStepState, "kind">>;
+}): boolean {
+  if (!directOrderRoleRequiresManagementLine(input.requesterRole)) return false;
+  if (input.steps.length === 0) return false; // draft/held — no chain built yet, nothing to judge
+  return !input.steps.some((step) => step.kind === "person");
+}
