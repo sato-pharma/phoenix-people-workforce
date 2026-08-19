@@ -43,6 +43,7 @@
 //   node scripts/repo-doctor.mjs --strip-idle=480    # ...only if idle 8h+ (default 120 minutes)
 //   node scripts/repo-doctor.mjs --fix --force   # skip the concurrent-session guard
 //   node scripts/repo-doctor.mjs --no-auth   # skip the orphan-auth-user check (offline / no creds)
+//   node scripts/repo-doctor.mjs --deep      # ...also lists every unlinked memory file, not the first 20
 //
 // THE ORPHAN AUTH USER CHECK. Added 2026-08-19 after four Supabase `auth.users` rows were
 // found with no Phoenix account behind them — two duplicate employee entries from 20 May, a
@@ -52,6 +53,12 @@
 // and no screen in Phoenix lists logins with no account. So they accumulate silently — the
 // oldest had sat there for three months. This section is read-only and never deletes; removing
 // an auth user is a production mutation and needs the owner's approval per AGENTS.md section 6.
+//
+// THE MEMORY INDEX CHECK. Added 2026-08-19 after a sweep found 194 of 734 memory files with no
+// pointer from MEMORY.md or MEMORY-ARCHIVE.md — written, then unreachable, the oldest since May.
+// Only MEMORY.md loads automatically, so an unlinked memory is invisible rather than merely
+// hard to find, and the next session re-derives what it already knows. Read-only, like the auth
+// check: it names the orphans and the broken pointers, and leaves the judgement to a person.
 //
 // WHY --strip-idle EXISTS. The 2026-08-04 cleanup was an hour of manual analysis that reclaimed
 // 727,861 paths, and every path of it was `node_modules` and `.next` — regenerable by
@@ -73,6 +80,7 @@
 // existed in no other copy anywhere. Idle time is the only signal that a session is not mid-edit.
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 
 const args = process.argv.slice(2);
@@ -631,6 +639,137 @@ if (!skipAuth) {
             "approval (AGENTS.md section 6).",
         );
       }
+    }
+  }
+}
+
+/**
+ * The session memory directory for THIS checkout, or null if there is none.
+ *
+ * Claude Code stores per-project memory at `<config>/projects/<slug>/memory`, where the slug is
+ * the absolute project path with every non-alphanumeric character replaced by a hyphen — so
+ * `F:\Phoenix Workforce\phoenix-workforce` becomes `F--Phoenix-Workforce-phoenix-workforce`
+ * (the drive colon and the separator each contribute their own hyphen, which is why the doubled
+ * one is correct and not a typo). `CLAUDE_CONFIG_DIR` relocates the config root when set.
+ *
+ * Returning null rather than guessing matters: this script also runs on machines and in CI
+ * checkouts that have no memory directory at all, and a wrong guess there would print findings
+ * about someone else's project.
+ */
+function memoryDirFor(projectRoot) {
+  const configRoot = process.env.CLAUDE_CONFIG_DIR?.trim() || path.join(os.homedir(), ".claude");
+  const slug = path.resolve(projectRoot).replace(/[^A-Za-z0-9]/g, "-");
+  const dir = path.join(configRoot, "projects", slug, "memory");
+  try {
+    return fs.statSync(dir).isDirectory() ? dir : null;
+  } catch {
+    return null;
+  }
+}
+
+// ── MEMORY INDEX INTEGRITY (read-only) ─────────────────────────────────────────────
+// WHY THIS EXISTS. Swept 2026-08-19: 194 of the 734 files in this project's memory directory had
+// NO pointer from MEMORY.md or MEMORY-ARCHIVE.md. They had been written, then became unreachable —
+// the oldest had sat unlinked since May. Only MEMORY.md is loaded into a session automatically, so
+// an unlinked file is not "slightly harder to find", it is invisible: nothing recalls it, nothing
+// greps it, and the next session re-derives the fact it already contains. The failure is silent by
+// construction, which is why it needed a check rather than a habit.
+//
+// It catches the mirror defect too — a pointer whose file was renamed or deleted, which reads as a
+// working index entry right up until someone follows it.
+//
+// READ-ONLY, ALWAYS. This prints; it never writes an index line and never deletes a memory file.
+// Deciding whether an orphan deserves an index line, an archive line, or retirement is a judgement
+// about what is still true, and that belongs to a person — the same report-don't-act stance the
+// husk and orphan-auth sections take. It also never changes the exit code: an orphan is a backlog,
+// not a broken repo, and failing the command would make people stop running it.
+{
+  console.log("");
+  console.log("MEMORY INDEX (memory files with no pointer, and pointers with no file)");
+
+  const memoryDir = memoryDirFor(primaryRoot);
+  if (memoryDir === null) {
+    console.log("  SKIPPED — this checkout has no session memory directory.");
+    console.log("  Expected " + path.join(process.env.CLAUDE_CONFIG_DIR?.trim() || path.join(os.homedir(), ".claude"), "projects", "<slug>", "memory") + ".");
+  } else {
+    // Both indexes count as reachability. MEMORY.md is what loads every session; MEMORY-ARCHIVE.md
+    // is where depth and closed items are parked on purpose, and a file pointed at from there is
+    // findable by grep, which is the whole contract the archive advertises.
+    const INDEX_FILES = ["MEMORY.md", "MEMORY-ARCHIVE.md"];
+    const indexText = INDEX_FILES.map((f) => {
+      try {
+        return fs.readFileSync(path.join(memoryDir, f), "utf8");
+      } catch {
+        return "";
+      }
+    }).join("\n");
+
+    // `.bak` copies are deliberate point-in-time snapshots taken before an index rewrite. They are
+    // not memories and must never be reported as orphans, or every compaction would create noise.
+    const memoryFiles = fs
+      .readdirSync(memoryDir)
+      .filter((f) => f.endsWith(".md") && !INDEX_FILES.includes(f) && !f.includes(".bak"));
+
+    const orphans = memoryFiles.filter((f) => !indexText.includes("](" + f + ")")).sort();
+
+    // A markdown pointer to a `.md` inside the memory directory. Relative links only — an index
+    // line may legitimately point at a repo file or a URL, and neither is this check's business.
+    const linked = new Set(
+      [...indexText.matchAll(/\]\(([^):\s]+\.md)\)/g)].map((m) => m[1]).filter((t) => !t.includes("/")),
+    );
+    const broken = [...linked]
+      .filter((t) => !INDEX_FILES.includes(t) && !fs.existsSync(path.join(memoryDir, t)))
+      .sort();
+
+    // The read ceiling is what makes index size a correctness issue rather than a tidiness one:
+    // past it, the file cannot be read in one go and a session silently starts from a partial index.
+    const READ_CEILING = 24_400;
+    let indexBytes = 0;
+    try {
+      indexBytes = fs.statSync(path.join(memoryDir, "MEMORY.md")).size;
+    } catch {
+      /* reported as 0 below */
+    }
+    const kb = (n) => (n / 1024).toFixed(1) + "KB";
+
+    console.log("  memory: " + memoryDir);
+    console.log(
+      "  " +
+        num(memoryFiles.length) +
+        " memory files, " +
+        num(linked.size) +
+        " index pointers, MEMORY.md " +
+        kb(indexBytes) +
+        " of the " +
+        kb(READ_CEILING) +
+        " read ceiling",
+    );
+    if (indexBytes > READ_CEILING) {
+      console.log("  OVER CEILING — MEMORY.md no longer fits one read; a session will load it partially.");
+    }
+
+    // No silent caps: when the list is long the count that was not printed is stated out loud, and
+    // so is the flag that prints the rest. A truncated list that does not say it was truncated
+    // reads as "that is all of them", which is the confidently-wrong outcome this repo bans.
+    const LIST_LIMIT = 20;
+    const shown = deep ? orphans : orphans.slice(0, LIST_LIMIT);
+    for (const f of shown) console.log("  ORPHAN  " + f);
+    if (orphans.length > shown.length) {
+      console.log("  ORPHAN  ... and " + num(orphans.length - shown.length) + " more not listed — re-run with --deep for the full list.");
+    }
+    for (const f of broken) console.log("  BROKEN  " + f + "  (pointed at by an index, file does not exist)");
+
+    if (orphans.length === 0 && broken.length === 0) {
+      console.log("  -> none. Every memory file is reachable and every pointer resolves.");
+    } else {
+      console.log(
+        "  -> " +
+          num(orphans.length) +
+          " orphan(s), " +
+          num(broken.length) +
+          " broken pointer(s). Nothing was changed — give each orphan a line in MEMORY.md if it is " +
+          "a live rule, or in MEMORY-ARCHIVE.md if it is depth or history.",
+      );
     }
   }
 }
