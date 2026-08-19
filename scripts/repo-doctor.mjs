@@ -42,6 +42,16 @@
 //   node scripts/repo-doctor.mjs --strip-idle        # drop node_modules/.next from idle worktrees
 //   node scripts/repo-doctor.mjs --strip-idle=480    # ...only if idle 8h+ (default 120 minutes)
 //   node scripts/repo-doctor.mjs --fix --force   # skip the concurrent-session guard
+//   node scripts/repo-doctor.mjs --no-auth   # skip the orphan-auth-user check (offline / no creds)
+//
+// THE ORPHAN AUTH USER CHECK. Added 2026-08-19 after four Supabase `auth.users` rows were
+// found with no Phoenix account behind them — two duplicate employee entries from 20 May, a
+// `ZZ-TOUR` test account that still held a live session and refresh token, and a terminated
+// employee's login that survived his deactivation. Nothing in the platform deletes an
+// `auth.users` row when the app-side account goes: the account disappears, the login stays,
+// and no screen in Phoenix lists logins with no account. So they accumulate silently — the
+// oldest had sat there for three months. This section is read-only and never deletes; removing
+// an auth user is a production mutation and needs the owner's approval per AGENTS.md section 6.
 //
 // WHY --strip-idle EXISTS. The 2026-08-04 cleanup was an hour of manual analysis that reclaimed
 // 727,861 paths, and every path of it was `node_modules` and `.next` — regenerable by
@@ -69,6 +79,7 @@ const args = process.argv.slice(2);
 const deep = args.includes("--deep");
 const fix = args.includes("--fix");
 const force = args.includes("--force");
+const skipAuth = args.includes("--no-auth");
 const stripArg = args.find((a) => a === "--strip-idle" || a.startsWith("--strip-idle="));
 const stripIdle = stripArg !== undefined;
 // Default 120 minutes. Two hours is long enough that a session pausing to think does not lose its
@@ -370,7 +381,10 @@ if (merged.length) {
   console.log("");
 }
 
-// ── mutating modes: --fix (husks) and --strip-idle (build caches) ──────────────────
+// The read-only verdict on the filesystem half, printed here rather than beside its
+// `process.exit(0)` further down so it stays next to the counts it is talking about. Guarded
+// the same way that exit is: under --fix or --strip-idle these lines would be telling you to
+// run the flag you are already running.
 if (!fix && !stripIdle) {
   if (husks.length) {
     console.log(`Run with --fix to delete ${husks.length} husk(s) (${num(huskEntries)} empty path entries).`);
@@ -384,10 +398,254 @@ if (!fix && !stripIdle) {
         "worktrees that are clean, fully pushed, and idle (pnpm install restores them).",
     );
   }
-  process.exit(0);
 }
 
-if (!force) {
+// ── Orphan auth users: Supabase logins with no Phoenix account behind them ─────────
+//
+// Deliberately the LAST thing reported, and deliberately incapable of failing the run.
+// Everything above is offline filesystem work that must finish even when there is no network,
+// no .env.local and no credentials — a laptop on a plane still needs to clear husks. So every
+// failure path here prints a line and moves on; none of them exits non-zero or throws.
+//
+// It sits ABOVE the mutating modes, and that placement is load-bearing. The read-only path —
+// the way this script is run almost every time — used to end in `process.exit(0)` right below,
+// so this section's first draft, appended to the end of the file, never executed at all: the
+// run printed nothing and looked entirely normal. That exit has since been removed (see the
+// mutating-modes comment), which is what lets this section end the process cleanly instead of
+// killing it mid-request. Do not move this below those blocks and do not reintroduce the exit.
+//
+// Zero new dependencies, on purpose. This file boots on node builtins alone and that is worth
+// keeping: pulling in @supabase/supabase-js to run two GET requests would make the common
+// offline case pay for the rare online one. Node 18+ has global fetch, and both endpoints are
+// plain REST — GoTrue's admin user list, and PostgREST for the app's own account table.
+//
+// READ-ONLY, always. Deleting an auth user is a production mutation that needs the owner's
+// approval in conversation (AGENTS.md section 6) — the same report-don't-act stance this file
+// already takes for registered worktrees.
+//
+// WHY IT EXISTS. Added 2026-08-19 after four auth.users rows were found with no Phoenix account
+// behind them: two duplicate employee entries from 20 May, a ZZ-TOUR test account still holding
+// a live session and refresh token, and a terminated employee's login that outlived his
+// deactivation. Nothing in the platform deletes an auth.users row when the app-side account
+// goes, and no screen in Phoenix lists logins with no account — so they accumulate unseen. The
+// oldest had sat there three months.
+
+/**
+ * hr_ids that are SUPPOSED to have a login and no employee-facing account.
+ * `admin-HR` is the Phoenix System Administrator — no employees row by design, in daily use.
+ * Add here only after confirming an entry is intentional, never to silence a finding you have
+ * not explained.
+ */
+const AUTH_ORPHAN_ALLOWLIST = new Set(["admin-HR"]);
+
+/**
+ * Minimal .env reader. Values already in process.env win, so CI and one-off shell overrides
+ * behave the way every other script here behaves. Strips a UTF-8 BOM (Windows editors add one,
+ * and it would otherwise become part of the first key's name), an `export ` prefix, surrounding
+ * quotes, and trailing comments on unquoted values.
+ */
+function readEnvFile(file) {
+  const out = {};
+  let text;
+  try {
+    text = fs.readFileSync(file, "utf8");
+  } catch {
+    return out;
+  }
+  // A UTF-8 BOM is stripped by charCode rather than by regex so this file holds no
+  // invisible characters of its own.
+  const body = text.charCodeAt(0) === 0xfeff ? text.slice(1) : text;
+  for (const raw of body.split(/\r?\n/)) {
+    const line = raw.trim();
+    if (line === "" || line.startsWith("#")) continue;
+    const eq = line.indexOf("=");
+    if (eq < 1) continue;
+    const key = line.slice(0, eq).replace(/^export\s+/, "").trim();
+    let value = line.slice(eq + 1).trim();
+    const quoted =
+      (value.startsWith('"') && value.endsWith('"') && value.length > 1) ||
+      (value.startsWith("'") && value.endsWith("'") && value.length > 1);
+    if (quoted) {
+      value = value.slice(1, -1);
+    } else {
+      const comment = value.indexOf(" #");
+      if (comment !== -1) value = value.slice(0, comment).trim();
+    }
+    out[key] = value;
+  }
+  return out;
+}
+
+/**
+ * GET returning parsed JSON, or an Error. Never throws, and never logs the key.
+ *
+ * The cleanup in here is not decoration — without it this crashed. The read-only path ends in
+ * `process.exit(0)`, and exiting while fetch still holds live handles trips a libuv assertion on
+ * Windows (`!(handle->flags & UV_HANDLE_CLOSING)`, src\win\async.c) and returns exit code 127.
+ * Reproduced 2026-08-19 on the HTTP 401 branch, which used to return without ever reading the
+ * response — leaving an undrained socket behind. Two handles have to go:
+ *
+ *   1. The body, on EVERY path, success or failure. An unread body keeps its connection open.
+ *   2. The timeout timer, cleared in `finally`. `AbortSignal.timeout()` gives no handle to clear,
+ *      so this uses an explicit controller and an unref'd timer that cannot hold the loop open.
+ *
+ * The failure mode is what makes it worth the words: the report printed correctly and looked
+ * completely fine, then the process died on the way out, so `repo-doctor` failed while telling
+ * you everything was healthy.
+ */
+async function getJson(url, headers) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 20000);
+  if (typeof timer.unref === "function") timer.unref();
+  try {
+    const res = await fetch(url, { headers, signal: controller.signal });
+    if (!res.ok) {
+      await res.text().catch(() => {});
+      return new Error("HTTP " + res.status + " " + res.statusText);
+    }
+    return await res.json();
+  } catch (err) {
+    if (controller.signal.aborted) return new Error("request timed out after 20s");
+    return new Error((err && err.message) || String(err));
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+if (!skipAuth) {
+  console.log("");
+  console.log("ORPHAN AUTH USERS (Supabase logins with no Phoenix account behind them)");
+
+  const fileEnv = readEnvFile(path.join(primaryRoot, ".env.local"));
+  const baseUrl = (process.env.NEXT_PUBLIC_SUPABASE_URL || fileEnv.NEXT_PUBLIC_SUPABASE_URL || "")
+    .trim()
+    .replace(/\/+$/, "");
+  const serviceKey = (process.env.SUPABASE_SERVICE_ROLE_KEY || fileEnv.SUPABASE_SERVICE_ROLE_KEY || "").trim();
+
+  if (!baseUrl || !serviceKey) {
+    console.log("  SKIPPED — no NEXT_PUBLIC_SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY in the environment or .env.local.");
+    console.log("  Everything above is unaffected. Pass --no-auth to silence this line.");
+  } else {
+    // Print the project ref, never the key. Which database this ran against is the single most
+    // important fact in the output — AGENTS.md section 8 requires the target be shown, and
+    // .env.local on this machine points at PRODUCTION.
+    const ref = baseUrl.replace(/^https?:\/\//, "").split(".")[0];
+    console.log("  project: " + ref + "  (" + baseUrl + ")");
+
+    const headers = { apikey: serviceKey, Authorization: "Bearer " + serviceKey };
+
+    // GoTrue caps per_page at 1000 and returns no total, so page until a short page arrives.
+    const authUsers = [];
+    let failure = null;
+    for (let page = 1; page <= 50; page++) {
+      const body = await getJson(baseUrl + "/auth/v1/admin/users?page=" + page + "&per_page=1000", headers);
+      if (body instanceof Error) {
+        failure = "could not list auth users — " + body.message;
+        break;
+      }
+      const batch = Array.isArray(body && body.users) ? body.users : [];
+      authUsers.push(...batch);
+      if (batch.length < 1000) break;
+    }
+
+    // PostgREST applies its own max-rows ceiling, so page this one too rather than trusting a
+    // single unbounded select. A short read here would invent orphans that do not exist.
+    const accountHrIds = new Set();
+    if (failure === null) {
+      for (let offset = 0; offset < 100000; offset += 1000) {
+        const body = await getJson(
+          baseUrl + "/rest/v1/app_auth_users?select=hr_id&limit=1000&offset=" + offset,
+          headers,
+        );
+        if (body instanceof Error) {
+          failure = "could not read app_auth_users — " + body.message;
+          break;
+        }
+        const rows = Array.isArray(body) ? body : [];
+        for (const r of rows) if (r && typeof r.hr_id === "string") accountHrIds.add(r.hr_id);
+        if (rows.length < 1000) break;
+      }
+    }
+
+    if (failure !== null) {
+      // A failed lookup is reported as a failed lookup, never as a clean result. Silence here
+      // would read as "no orphans" — the confidently-wrong outcome AGENTS.md rule 1 exists for.
+      console.log("  UNKNOWN — " + failure);
+      console.log("  Treat this as 'not checked', not as 'nothing found'.");
+    } else {
+      // The app matches hr_id EXACTLY, so a case-only difference is a real defect rather than an
+      // orphan: the login exists, the account exists, and the two fail to find each other. Seen
+      // in production on 2026-08-19, where notification metadata carried "a-16" for "A-16".
+      const lowerToAccount = new Map();
+      for (const id of accountHrIds) lowerToAccount.set(id.toLowerCase(), id);
+
+      const orphans = [];
+      const casing = [];
+      for (const u of authUsers) {
+        const meta = (u && u.user_metadata) || {};
+        const appMeta = (u && u.app_metadata) || {};
+        const raw = typeof meta.hr_id === "string" ? meta.hr_id : typeof appMeta.hr_id === "string" ? appMeta.hr_id : "";
+        const label = raw.trim() === "" ? null : raw.trim();
+        if (label !== null && AUTH_ORPHAN_ALLOWLIST.has(label)) continue;
+        if (label !== null && accountHrIds.has(label)) continue;
+        const person = typeof meta.name === "string" && meta.name !== "" ? meta.name : "(no name in metadata)";
+        const seen = u && u.last_sign_in_at ? String(u.last_sign_in_at).slice(0, 10) : "never";
+        const id = (u && u.id) || "(no id)";
+        if (label === null) {
+          orphans.push({ id, label: "(no hr_id)", person, seen });
+        } else if (lowerToAccount.has(label.toLowerCase())) {
+          casing.push({ id, label, person, account: lowerToAccount.get(label.toLowerCase()) });
+        } else {
+          orphans.push({ id, label, person, seen });
+        }
+      }
+
+      console.log(
+        "  " +
+          num(authUsers.length) +
+          " auth users, " +
+          num(accountHrIds.size) +
+          " app accounts, " +
+          AUTH_ORPHAN_ALLOWLIST.size +
+          " allowlisted",
+      );
+      for (const o of orphans) {
+        console.log(
+          "  ORPHAN  " + o.label.padEnd(16) + " " + o.person.padEnd(32) + " last sign-in " + o.seen.padEnd(10) + " " + o.id,
+        );
+      }
+      for (const c of casing) {
+        console.log(
+          "  CASING  " + c.label.padEnd(16) + " " + c.person.padEnd(32) + ' account is "' + c.account + '" ' + c.id,
+        );
+      }
+      if (orphans.length === 0 && casing.length === 0) {
+        console.log("  -> none. Every login has an account behind it.");
+      } else {
+        console.log(
+          "  -> " +
+            orphans.length +
+            " orphan(s), " +
+            casing.length +
+            " casing mismatch(es). Nothing was changed — deleting an auth user needs the owner's " +
+            "approval (AGENTS.md section 6).",
+        );
+      }
+    }
+  }
+}
+
+// ── mutating modes: --fix (husks) and --strip-idle (build caches) ──────────────────
+// This used to open with `if (!fix && !stripIdle) process.exit(0)`. That exit is GONE, and must
+// not come back: the auth check above runs before it, and calling process.exit() while fetch
+// still holds live handles crashes libuv on Windows with exit code 127 — see getJson. Both
+// blocks below already test their own flag, so read-only mode simply falls through them and
+// the process ends on its own, which is also the only clean way to leave a network handle.
+//
+// The session guard is the one thing that did NOT test a flag, because the old early exit was
+// doing that job for it. It has to test both flags now, or a plain read-only `repo-doctor`
+// would abort with exit 1 whenever a second Claude Code session happens to be open.
+if ((fix || stripIdle) && !force) {
   // Concurrent destructive cleanup is this repo's documented incident pattern
   // (AGENTS.md section 5). Count Claude Code engines only — Claude Desktop ships as
   // WindowsApps\Claude.exe and runs ~14 processes of its own.
