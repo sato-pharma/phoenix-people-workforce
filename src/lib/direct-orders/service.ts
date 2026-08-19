@@ -42,6 +42,7 @@ import {
   type DirectOrderHoldGround,
 } from "@/lib/direct-orders/hold-decision";
 import { checkDirectOrderGeography } from "@/lib/direct-orders/geography-check";
+import { extraDirectOrderAreaCodes } from "@/lib/direct-orders/extra-area-grants";
 import {
   canRecordDirectOrderCollection,
   deriveDirectOrderCollection,
@@ -5004,7 +5005,12 @@ export async function listDirectOrderAreaAndBrickOptions(access?: AccessContext)
   // their region label (see src/lib/sales/seat-area-scope.ts) — so when that seat resolved, bound the
   // picker by AREA. Region-based trimming would drop such an area from the requester's own options.
   let areaCodesInScopeOverride: Set<string> | null = null;
+  // Hand-listed extra areas, Direct Orders ONLY (see extra-area-grants.ts). Empty for almost
+  // everyone. Applied as a union in the filter below rather than folded into the scope sets
+  // here, so the seat/region bound stays byte-for-byte what it was and this can only ever add.
+  let extraAreaCodes = new Set<string>();
   if (access) {
+    extraAreaCodes = extraDirectOrderAreaCodes(resolveEmployeeIdentityId(access) ?? access.hrId);
     const salesScope = await resolveSalesAccessScope(access);
     if (salesScope.allowedAreaCodes) {
       areaCodesInScopeOverride = salesScope.allowedAreaCodes;
@@ -5024,11 +5030,13 @@ export async function listDirectOrderAreaAndBrickOptions(access?: AccessContext)
 
   const regionNameByCode = new Map((ref.regions ?? []).map((region) => [region.regionCode, region.regionName]));
   const areas = (ref.areas ?? [])
-    .filter((area) =>
-      areaCodesInScopeOverride
-        ? areaCodesInScopeOverride.has(area.areaCode.toUpperCase())
-        : !regionCodesInScope || regionCodesInScope.has(area.regionCode.toUpperCase()),
-    )
+    .filter((area) => {
+      const areaCode = area.areaCode.toUpperCase();
+      if (extraAreaCodes.has(areaCode)) return true;
+      return areaCodesInScopeOverride
+        ? areaCodesInScopeOverride.has(areaCode)
+        : !regionCodesInScope || regionCodesInScope.has(area.regionCode.toUpperCase());
+    })
     .map((area) => ({
       areaCode: area.areaCode,
       areaName: area.areaName,
