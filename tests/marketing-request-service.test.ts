@@ -897,6 +897,79 @@ export async function runMarketingRequestServiceTests() {
     /assignedHrId: ccHrId, assignedRole: ccRole, isCc: true/,
     "a CC rung must be stamped with the CC recipient's own role, never the reviewing role",
   );
+  /* ---------------------------------------------------------------------- */
+  /* Assignment notice: a decision recorded outside the app must still notify */
+  /* ---------------------------------------------------------------------- */
+
+  /**
+   * A CEO approval written straight into the database never runs the notify path, so the request
+   * lands on Finance Execution and its approver is never told. `MKT-REQ-20260818-8C628BF4` sat
+   * there with zero deliveries on any channel while its sibling, decided through the UI 22 minutes
+   * earlier, reached Ahmed El Maraghy on email, in-app and push.
+   */
+  assert.match(
+    serviceSource,
+    /export async function dispatchMarketingAssignmentEmail\(requestId: string\)/,
+    "the service must expose a by-request-id assignment dispatcher, like direct orders' dispatchDirectOrderApprovedEmail",
+  );
+  assert.match(
+    serviceSource,
+    /dispatchMarketingAssignmentEmail[\s\S]{0,2600}?eventType: "request_assigned"/,
+    "the dispatcher must send the same request_assigned notice the decision path sends",
+  );
+  // It must refuse to invent a recipient when nobody is holding the request.
+  for (const guard of ["request_not_pending", "no_current_step", "already_notified"]) {
+    assert.match(
+      serviceSource,
+      new RegExp(`reason: "${guard}"`),
+      `the dispatcher must bail with ${guard} rather than notifying the wrong person`,
+    );
+  }
+  assert.match(
+    serviceSource,
+    /export async function backfillMissingMarketingAssignmentEmails\(\)/,
+    "a backstop must re-drive assignment notices so a silent miss self-heals",
+  );
+
+  assert.match(
+    dailyRouteSource,
+    /backfillMissingMarketingAssignmentEmails\(\)\.catch\(/,
+    "the daily job must run the assignment backfill",
+  );
+
+  /**
+   * An on-demand route for the same sweep, so a miss can be repaired the moment it is found rather
+   * than waiting for tomorrow's daily run — and so the mail leaves PRODUCTION, whose PHOENIX_APP_URL
+   * is the live domain, instead of a developer machine still carrying the decommissioned Vercel URL.
+   * It must be cron-secret guarded like every other cron route, never open.
+   */
+  const backfillRouteSource = source("app/api/cron/marketing-assignment-backfill/route.ts");
+  assert.match(
+    backfillRouteSource,
+    /bearerSecretMatches\(request\.headers\.get\("authorization"\), secret\)/,
+    "the on-demand backfill route must be cron-secret guarded",
+  );
+  assert.match(
+    backfillRouteSource,
+    /logCronUnauthorized\("cron\/marketing-assignment-backfill", request\)[\s\S]{0,200}?status: 401/,
+    "an unauthorized call must be logged and refused with 401",
+  );
+  assert.match(
+    backfillRouteSource,
+    /backfillMissingMarketingAssignmentEmails\(\)/,
+    "the route must drive the assignment backfill",
+  );
+  /**
+   * The backfill must NOT sit behind `marketing_sla_reminder`. That toggle governs CHASING an
+   * approver who already knows; it has been enabled=false since 2026-07-23, and gating the primary
+   * "there is work on your desk" notice behind it is what let the miss go unseen.
+   */
+  assert.doesNotMatch(
+    serviceSource,
+    /backfillMissingMarketingAssignmentEmails\(\)[\s\S]{0,600}?resolveNotificationRoleEnabled\("marketing_sla_reminder"\)/,
+    "the assignment backfill must not be gated on the SLA reminder toggle",
+  );
+
   assert.doesNotMatch(
     serviceSource,
     /assignedHrId: ccHrId, assignedRole: effectiveRole/,

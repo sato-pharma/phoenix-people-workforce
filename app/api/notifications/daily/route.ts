@@ -10,7 +10,7 @@ import { runContractRenewalNotifications } from "@/app/api/notifications/contrac
 import { runHolidayConfirmationReminder } from "@/app/api/notifications/holiday-confirmation/route";
 import { runVacationSlaDaily } from "@/lib/vacation/service";
 import { runFieldWorkforceComplianceDeductionsAutoSync } from "@/lib/deductions-governance/connectors/field-workforce-compliance";
-import { runMarketingSlaDaily } from "@/lib/marketing-requests/service";
+import { backfillMissingMarketingAssignmentEmails, runMarketingSlaDaily } from "@/lib/marketing-requests/service";
 import { runRecruitmentDailyNotifications } from "@/lib/recruitment/notifications";
 import { remindHeldNotifications } from "@/lib/notifications/held-notification-alert";
 import { runTelegramDailyHrDigest } from "@/lib/notifications/telegram-operations";
@@ -125,6 +125,14 @@ async function runDailyNotifications(request: Request) {
     // role-recipients.ts) — the 2026-07-22 disable is now an enabled=false default, not a
     // code-level stub, so a Super Admin can re-enable it from the Email Control Center.
     runMarketingSlaDaily().catch(onJobFailure("daily-marketing-sla", (message) => ({ success: false, error: message }))),
+    // Catches a request whose approver was never told it arrived — a decision recorded outside the
+    // app (straight into the database) skips the notify path entirely, and the request then sits on
+    // someone's desk invisibly. NOT behind "marketing_sla_reminder": that toggle governs chasing an
+    // approver who already knows, and it has been off since 2026-07-23, which is why the last miss
+    // went unseen. Re-sends nothing — the unique idempotency key absorbs every already-notified rung.
+    backfillMissingMarketingAssignmentEmails().catch(
+      onJobFailure("daily-marketing-assignment-backfill", (message) => ({ checked: 0, dispatched: 0, requestCodes: [], error: message })),
+    ),
     runRecruitmentDailyNotifications().catch(
       onJobFailure("daily-recruitment-notifications", (message) => ({ success: false, error: message })),
     ),
