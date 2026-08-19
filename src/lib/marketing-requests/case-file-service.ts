@@ -22,10 +22,11 @@
 // eyeballing a screen.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { resolveEmployeeIdentityId, type AccessContext } from "@/lib/auth/permissions";
+import { resolveEmployeeIdentityId, resolveNavigationMode, type AccessContext } from "@/lib/auth/permissions";
 import { getEmployeeDirectoryRows, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { resolveJobFunctionRole } from "@/lib/employees/job-function";
 import { forbiddenError, validationError } from "@/lib/http/api-errors";
+import { buildCaseFileDecisionBar } from "@/lib/marketing-requests/case-file-decision-bar";
 import {
   caseFileNotApplicable,
   caseFileOk,
@@ -1383,24 +1384,35 @@ function buildViewer(
       ),
   );
 
+  // Only the holder of the CURRENT gating step decides, and only while the request is actually
+  // pending. decideMarketingRequestWorkflow enforces both again.
+  const canDecide = Boolean(
+    viewerHrId &&
+      currentGating &&
+      request.status === "pending_approval" &&
+      normalizeHrId(currentGating.assignedHrId) === viewerHrId,
+  );
+
   return {
     admittedAs,
     can: {
       comment: canComment,
-      // Only the holder of the CURRENT gating step decides, and only while the request is actually
-      // pending. decideMarketingRequestWorkflow enforces both again.
-      decide: Boolean(
-        viewerHrId &&
-          currentGating &&
-          request.status === "pending_approval" &&
-          normalizeHrId(currentGating.assignedHrId) === viewerHrId,
-      ),
+      decide: canDecide,
       resubmit: Boolean(
         viewerHrId && request.status === "returned" && normalizeHrId(request.requesterHrId) === viewerHrId,
       ),
     },
     canSeeConfidentialProducts: tiers.canSeeConfidentialProducts,
     canSeeCustomerPii: tiers.canSeeCustomerPii,
+    // The same boolean, made pressable. Until 2026-08-19 `can.decide` was computed here and read by
+    // nothing, so a notification recipient landed on their own open rung with no way to answer it —
+    // see the header of case-file-decision-bar.ts.
+    decision: buildCaseFileDecisionBar({
+      canDecide,
+      navigationMode: resolveNavigationMode(access),
+      requestId: request.id,
+      step: currentGating,
+    }),
     hrId: viewerHrId ? viewerHrId.toUpperCase() : null,
     role: access.role,
   };
