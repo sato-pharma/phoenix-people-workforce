@@ -107,6 +107,43 @@ export function runOutstationWorkloadRepairTests() {
     "and its match status must say so too — an approver has to tell a typed number from a measured one",
   );
 
+  // ── A re-grab must leave the row agreeing with itself ───────────────────────────
+  // The capture writes am/pm and workload_source but used to leave workload_match_status alone,
+  // so a repaired row stored a real CRM count next to a column still reading "no_activity" — the
+  // state the FIRST, premature grab had recorded. Three production rows looked like that on
+  // 2026-08-19. It gates nothing, which is precisely why it went unnoticed: it is the field a
+  // human reads to decide whether the number in front of them means anything.
+  const captureWorkloadSlice = functionSlice(service, "async function captureWorkloadAndReleaseIfReady");
+  assert.match(
+    captureWorkloadSlice,
+    /workload_match_status:\s*\n?\s*capture\.amWorkload \+ capture\.pmWorkload > 0 \? "matched" : "no_activity"/,
+    "a successful re-grab must restate the match status from the numbers it just wrote, or the row contradicts itself",
+  );
+  // Both branches, so the pair can never drift into "matched" on a genuine zero.
+  for (const value of ['"matched"', '"no_activity"']) {
+    assert.ok(
+      captureWorkloadSlice.includes(value),
+      `the re-grab must still be able to record ${value} — collapsing to one of the two makes the column decorative`,
+    );
+  }
+
+  // ── The retry reports the release's OWN reason ──────────────────────────────────
+  // releaseOutstationRequestToPayrollIfReady declines for three different causes; only one of
+  // them is the evidence gate. Re-deriving the gate here reported "Retry, or check the expense
+  // record" for a request that was merely still awaiting the owner's approval — advice that leads
+  // nowhere and invites an endless retry loop.
+  const retrySlice = functionSlice(service, "export async function retryOutstationWorkloadCapture");
+  assert.match(
+    retrySlice,
+    /const release = await captureWorkloadAndReleaseIfReady\(request, access\)/,
+    "the retry must KEEP the release outcome — discarding it is what left it guessing",
+  );
+  assert.match(
+    retrySlice,
+    /if \(release && !release\.released\) \{\s*\n\s*return \{ message: `Workload captured, but the request did not reach payroll: \$\{release\.reason\}`/,
+    "and must report that reason verbatim, ahead of any gate it re-derives",
+  );
+
   // ── Both repairs are Super Admin only ───────────────────────────────────────────
   // assertOutstationAdminAccess(..., "approve") is Super-Admin-only; the "read" variant also
   // admits the execution-only oversight roles. Using "read" here would hand the CEO the ability

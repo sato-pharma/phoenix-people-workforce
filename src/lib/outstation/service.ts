@@ -4262,15 +4262,20 @@ async function runAutomaticOutstationRelease(
  * error text are what the Super Admin repair screen reads to decide between retrying and typing
  * the numbers in. Deliberately never writes zeros on failure — a zero workload reads as "he did
  * no work", which is a reason to reject a claim, not a missing measurement.
+ *
+ * Returns the release attempt's own outcome, or null when it never got as far as attempting one.
+ * The caller needs the REASON, not just the fact: releaseOutstationRequestToPayrollIfReady
+ * declines for three genuinely different causes — the request is not accepted yet, it is already
+ * in payroll, or the gate still holds it — and a caller that re-derives only the gate cannot tell
+ * the first two apart from a bug. See retryOutstationWorkloadCapture.
  */
 async function captureWorkloadAndReleaseIfReady(
   request: OutstationExpenseRequest,
   access: AccessContext,
-) {
+): Promise<{ reason: string; released: boolean } | null> {
   try {
     if (request.workloadGateStatus !== "pending_workload") {
-      await runAutomaticOutstationRelease(request, access);
-      return;
+      return await runAutomaticOutstationRelease(request, access);
     }
 
     const capture = await captureOutstationTripWorkload({
@@ -4290,7 +4295,7 @@ async function captureWorkloadAndReleaseIfReady(
           workload_last_attempt_error: capture.reason,
         })
         .eq("id", request.id);
-      return;
+      return null;
     }
 
     await getSupabaseAdmin()
@@ -4303,6 +4308,13 @@ async function captureWorkloadAndReleaseIfReady(
         workload_last_attempt_at: now,
         workload_last_attempt_error: null,
         workload_matched_at: now,
+        // Kept in step with the numbers being written. Leaving the previous value in place made
+        // a repaired row contradict itself: three requests re-grabbed on 2026-08-19 stored a
+        // real AM 2 / PM 7 from the CRM while the column beside it still read "no_activity",
+        // because the submit-time grab had run before that day's visits had synced. It gates
+        // nothing, which is exactly why nobody noticed — it is what a person reads.
+        workload_match_status:
+          capture.amWorkload + capture.pmWorkload > 0 ? "matched" : "no_activity",
         workload_source: "ireports360",
         // The per-day breakdown and who was counted, so an approver can see WHY the number is
         // what it is — a rolled-up manager figure is otherwise unexplainable.
@@ -4315,12 +4327,13 @@ async function captureWorkloadAndReleaseIfReady(
       })
       .eq("id", request.id);
 
-    await runAutomaticOutstationRelease(request, access);
+    return await runAutomaticOutstationRelease(request, access);
   } catch (error) {
     logError("Outstation workload capture failed after the departure photo (non-blocking)", {
       error,
       labels: { event: "outstation_workload_capture_failed", requestId: String(request.id) },
     });
+    return null;
   }
 }
 
@@ -4814,7 +4827,7 @@ export async function retryOutstationWorkloadCapture(
     throw new Error("This request is not waiting on its workload.");
   }
 
-  await captureWorkloadAndReleaseIfReady(request, access);
+  const release = await captureWorkloadAndReleaseIfReady(request, access);
 
   // Re-read rather than infer: captureWorkloadAndReleaseIfReady is best-effort and swallows its
   // own failures, so the only honest answer about what happened is the row itself.
@@ -4840,7 +4853,16 @@ export async function retryOutstationWorkloadCapture(
   // Captured but NOT released is its own outcome, and naming it is the point: it means the gate
   // is satisfied and something downstream did not happen, which needs a different action from
   // "the CRM has no workload".
+  //
+  // The release's OWN reason is preferred over re-deriving the gate, because the gate is only one
+  // of the three ways a release declines. Re-deriving it told a Super Admin "the request did not
+  // reach payroll. Retry, or check the expense record" for requests 78, 79 and 80 on 2026-08-19,
+  // when the true and actionable answer was already in hand: the request is still `submitted`, so
+  // it is waiting for HIS approval, not for evidence. Retrying that forever changes nothing.
   if (workloadCaptured) {
+    if (release && !release.released) {
+      return { message: `Workload captured, but the request did not reach payroll: ${release.reason}`, released };
+    }
     const gate = after
       ? resolveOutstationGateState({
           employeeRole: after.employeeRole,
