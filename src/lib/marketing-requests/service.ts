@@ -17,6 +17,7 @@ import type { EmailTemplateContext } from "@/lib/email-templates/service";
 import { canonicalHrIdKey, hrIdLookupKeys, resolveStoredHrId } from "@/lib/hr-id";
 import type { EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { resolveJobFunctionRole } from "@/lib/employees/job-function";
+import { resolveGovernorate } from "@/lib/geo/egypt-locations";
 import { conflictError, forbiddenError, notFoundError, validationError } from "@/lib/http/api-errors";
 import {
   deleteMarketingEvidencePhotos,
@@ -46,6 +47,7 @@ import { resolveNotificationRoleEnabled } from "@/lib/notifications/role-recipie
 import { logError, logWarning } from "@/lib/observability/log";
 import {
   MARKETING_CUSTOMER_SPECIALITIES,
+  MARKETING_GOVERNORATE_HOLD_PREFIX,
   UNVERIFIED_CODE_REASON_MIN_LENGTH,
 } from "@/lib/marketing-requests/types";
 import type {
@@ -402,12 +404,22 @@ type MarketingCustomerPharmacyDbRow = {
 type MarketingPharmacyCodeReferenceDbRow = {
   id: number | string;
   raw_pharmacy_code: string;
+  raw_pharmacy_address?: string | null;
+  raw_region?: string | null;
 };
 
 /** What a reference lookup needs back: the row, and the code the sales data actually carries. */
 type MarketingPharmacyCodeReferenceRowForMatch = {
   id: number | string;
   normalized_pharmacy_code?: string | null;
+  /**
+   * The distributor's OWN registered address for this code, and the governorate it files it under.
+   * Read only to compare against where the rep actually stood — see `checkCapturedGovernorate`.
+   * Both are optional because the reference import leaves them blank for some codes, and the
+   * pre-migration fallback query cannot select them at all.
+   */
+  raw_pharmacy_address?: string | null;
+  raw_region?: string | null;
 };
 
 type MarketingRequestDbRow = {
@@ -854,6 +866,12 @@ type NormalizedMarketingValidationInput = {
 
 type MarketingSystemValidationInput = {
   customerEvidenceStatus: MarketingEvidenceStatus;
+  /**
+   * Verdict from `checkCapturedGovernorate`. ONLY `"disagrees"` changes the outcome — omitted,
+   * `"agrees"` and `"not_comparable"` all leave the evidence rule exactly as it was, so a blank or
+   * unrecognisable reference row can never park a link on `pending`.
+   */
+  governorateVerdict?: MarketingGovernorateVerdict;
   pharmacyEvidenceStatus: MarketingEvidenceStatus;
 };
 
@@ -1595,13 +1613,28 @@ function systemStatusFromEvidence(status: MarketingEvidenceStatus): MarketingVal
  * forever — `buildUntrackedDistributorCodeNote` says exactly that on the row. This is the trade the
  * desk / on-behalf path has always made; the field path now matches it.
  *
- * Evidence still gates, and is the whole gate: `complete` on BOTH the customer and the pharmacy
- * means a GPS fix plus a timestamped live photo that actually reached the `marketing-evidence`
- * bucket (see `evidenceStatusFromInput`), which is the only proof the visit happened at all.
+ * Evidence gates: `complete` on BOTH the customer and the pharmacy means a GPS fix plus a
+ * timestamped live photo that actually reached the `marketing-evidence` bucket (see
+ * `evidenceStatusFromInput`), which is the only proof the visit happened at all.
+ *
+ * GEOGRAPHY ALSO GATES, since 2026-08-20 at the owner's instruction. Complete evidence proves a
+ * photo was taken somewhere; it says nothing about whether that somewhere is where the distributor
+ * registers the code. Production had validated a capture in Cairo against a code registered in
+ * Alexandria, ~185 km apart, because nothing in Phoenix had ever compared those two addresses. An
+ * outright `"disagrees"` from `checkCapturedGovernorate` now holds the link on `pending` for a
+ * human to release, and `buildGovernorateMismatchNote` says on the row exactly which two
+ * governorates are in conflict so the reviewer is not left guessing.
+ *
+ * The asymmetry is deliberate and load-bearing: only a positive contradiction blocks. A reference
+ * row with a blank or unrecognisable region yields `"not_comparable"` and changes nothing, because
+ * the reference database is Phoenix's own point-in-time import and its GAPS must never be read as
+ * evidence against a rep — that is the same distinction the 2026-08-12 ruling above draws for an
+ * unmatched code, which still only flags.
  */
 export function resolveMarketingSystemValidationStatus(
   input: MarketingSystemValidationInput,
 ): MarketingValidationStatus {
+  if (input.governorateVerdict === "disagrees") return "pending";
   return input.customerEvidenceStatus === "complete" && input.pharmacyEvidenceStatus === "complete"
     ? "system_validated"
     : "pending";
@@ -1622,9 +1655,115 @@ export function buildUntrackedDistributorCodeNote(
     : `Distributor code is ${referenceStatus.replace(/_/g, " ")} in the Phoenix reference database, so sales cannot be tracked for it yet.`;
 }
 
-/** Why a field-captured link is still pending. Evidence is now the only thing that can park one. */
+export type MarketingGovernorateVerdict = "agrees" | "disagrees" | "not_comparable";
+
+export type MarketingGovernorateCheck = {
+  /** Governorate resolved from the reverse-geocoded GPS address, or null when unrecognisable. */
+  capturedGovernorate: string | null;
+  /** The distributor's registered street address, carried only so the note can quote it. */
+  registeredAddress: string | null;
+  /** Governorate resolved from the distributor's own `raw_region`, or null when blank. */
+  registeredGovernorate: string | null;
+  verdict: MarketingGovernorateVerdict;
+};
+
+/**
+ * Compares WHERE THE REP STOOD against WHERE THE DISTRIBUTOR SAYS THE CODE LIVES.
+ *
+ * Until now nothing in Phoenix made this comparison at all: `raw_pharmacy_address` / `raw_region`
+ * were written once by the reference importer and read by no code path, so a capture could sit in
+ * a different governorate from the code's registered address and still reach `system_validated`.
+ * Production carries exactly that — pharmacy `MKT-PHA-20260619-6F50E43C` was captured in Cairo
+ * against a code the distributor files in Alexandria, roughly 185 km apart, and validated cleanly.
+ *
+ * Deliberately compares at GOVERNORATE level and no finer. A street-level or distance comparison
+ * is impossible anyway (the reference table stores no coordinates) and would be wrong to attempt:
+ * a shop legitimately moves within its city, `raw_pharmacy_address` is free text, and 13 of the 21
+ * captured addresses in production resolve only to a Google Plus Code with no street at all. A
+ * governorate is coarse enough to be reliable and still catches the failure that matters.
+ *
+ * `raw_region` is the ONLY registered input, and the reference table's other two location columns
+ * are excluded on evidence, not on taste:
+ *
+ *   - `raw_pharmacy_address` is free-text street data that frequently contains a foreign place
+ *     name. Production reference row 9302 reads "16ناصيه هارون والمنصوره" under region القاهرة;
+ *     matching that text would resolve Dakahlia (المنصورة) and invent a mismatch.
+ *   - `raw_area` drifts from the shop's actual location even when the region is right. Reference
+ *     row 8553 (code 0001552116) is filed under area المحلة الكبري while its own address reads
+ *     الشين- قطور, ~40 km away — and its region, الغربية, is correct for both. An area-level
+ *     comparison would have held that link for a labelling quirk in our own import.
+ *
+ * On the captured side the rep-supplied `extractedGovernorateName` is ignored too, because it is
+ * typed in the workspace UI rather than derived from the GPS fix, so comparing it would only check
+ * the rep against himself.
+ *
+ * Returns `not_comparable` — never `disagrees` — whenever either side is missing or unrecognised,
+ * so absent reference data can never be read as evidence of a wrong capture.
+ */
+export function checkCapturedGovernorate(input: {
+  capturedAddress: string | null | undefined;
+  registeredAddress?: string | null | undefined;
+  registeredRegion: string | null | undefined;
+}): MarketingGovernorateCheck {
+  const capturedGovernorate = resolveGovernorate(input.capturedAddress);
+  const registeredGovernorate = resolveGovernorate(input.registeredRegion);
+  const registeredAddress = cleanText(input.registeredAddress);
+
+  if (!capturedGovernorate || !registeredGovernorate) {
+    return { capturedGovernorate, registeredAddress, registeredGovernorate, verdict: "not_comparable" };
+  }
+  return {
+    capturedGovernorate,
+    registeredAddress,
+    registeredGovernorate,
+    verdict: capturedGovernorate === registeredGovernorate ? "agrees" : "disagrees",
+  };
+}
+
+/**
+ * The note stamped on a link whose capture sits in a different governorate from the one the
+ * distributor registers the code in. Null unless the verdict is an outright disagreement.
+ *
+ * This note is the REASON THE LINK IS PENDING, not a decoration on a validated one. Owner
+ * instruction, 2026-08-20: a governorate contradiction BLOCKS — `resolveMarketingSystemValidationStatus`
+ * returns `pending` on `"disagrees"`, and only a Super Admin / CEO can release it
+ * (`canAccessCustomerPharmacyMapping`). It therefore has to name both governorates and quote the
+ * distributor's own street address, because the person releasing it was not on the visit and has
+ * nothing else to judge by.
+ *
+ * It deliberately does NOT accuse. The reference database is Phoenix's own point-in-time import,
+ * and a held link can be a bad reference row just as easily as a bad capture, so the note asks for
+ * a decision rather than asserting a fault.
+ */
+export function buildGovernorateMismatchNote(check: MarketingGovernorateCheck): string | null {
+  if (check.verdict !== "disagrees") return null;
+  const registered = check.registeredAddress
+    ? `${check.registeredGovernorate} (${check.registeredAddress})`
+    : check.registeredGovernorate;
+  return `${MARKETING_GOVERNORATE_HOLD_PREFIX} captured location is in ${check.capturedGovernorate}, but the distributor registers this code in ${registered}. Confirm the code belongs to this shop before releasing it.`;
+}
+
+/** Why a field-captured link is still pending, when what is missing is the evidence itself. */
 export const MARKETING_PENDING_EVIDENCE_NOTE =
   "Waiting for a complete live photo and location on both the customer and the pharmacy.";
+
+/**
+ * Emits `MARKETING_PENDING_EVIDENCE_NOTE` only when the evidence is genuinely the thing missing.
+ *
+ * Two things can park a link since 2026-08-20 — incomplete evidence, or a governorate
+ * contradiction — and they need different notes. Deriving this from the evidence statuses rather
+ * than from `status !== "system_validated"` is the point: a link held purely on geography HAS its
+ * photo and its GPS fix, so the old test would have told the reviewer to wait for evidence that had
+ * already arrived, and buried the real reason under a false one.
+ */
+function buildPendingEvidenceNote(input: {
+  customerEvidenceStatus: MarketingEvidenceStatus;
+  pharmacyEvidenceStatus: MarketingEvidenceStatus;
+}): string | null {
+  return input.customerEvidenceStatus === "complete" && input.pharmacyEvidenceStatus === "complete"
+    ? null
+    : MARKETING_PENDING_EVIDENCE_NOTE;
+}
 
 /**
  * The single rule deciding what status a validation row is saved with.
@@ -4378,9 +4517,7 @@ function mapValidationReportRows(params: {
   return { rows, summary };
 }
 
-function buildPharmacyCodeReferenceResult(
-  matches: Array<{ id: number | string; normalized_pharmacy_code?: string | null }>,
-) {
+function buildPharmacyCodeReferenceResult(matches: MarketingPharmacyCodeReferenceRowForMatch[]) {
   const matchCount = matches.length;
   const status: MarketingPharmacyCodeReferenceStatus =
     matchCount === 1 ? "matched" : matchCount > 1 ? "ambiguous" : "not_found";
@@ -4392,6 +4529,10 @@ function buildPharmacyCodeReferenceResult(
     canonicalCode: matchCount === 1 ? normalizeLookupKey(matches[0].normalized_pharmacy_code) || null : null,
     matchCount,
     referenceId: matchCount === 1 ? Number(matches[0].id) : null,
+    // Where the DISTRIBUTOR says this code lives. Carried on a single match only, for the same
+    // reason as canonicalCode: with 0 or >1 rows there is no one address that describes the code.
+    registeredAddress: matchCount === 1 ? cleanText(matches[0].raw_pharmacy_address) : null,
+    registeredRegion: matchCount === 1 ? cleanText(matches[0].raw_region) : null,
     status,
   };
 }
@@ -4429,7 +4570,7 @@ export async function resolvePharmacyCodeReference(params: {
   // whole distributor.
   const primary = await params.supabase
     .from("marketing_pharmacy_code_references")
-    .select("id, normalized_pharmacy_code")
+    .select("id, normalized_pharmacy_code, raw_pharmacy_address, raw_region")
     .eq("distributor_id", params.distributorId)
     .eq("normalized_pharmacy_code", params.normalizedPharmacyCode)
     .limit(2);
@@ -4457,7 +4598,7 @@ export async function resolvePharmacyCodeReference(params: {
 
     const compact = await params.supabase
       .from("marketing_pharmacy_code_references")
-      .select("id, normalized_pharmacy_code")
+      .select("id, normalized_pharmacy_code, raw_pharmacy_address, raw_region")
       .eq("distributor_id", params.distributorId)
       .eq("compact_pharmacy_code", compactCode)
       .limit(2);
@@ -4475,13 +4616,15 @@ export async function resolvePharmacyCodeReference(params: {
   // arbitrary first 20 rows. Applies the same two passes, in the same order.
   const fallback = await params.supabase
     .from("marketing_pharmacy_code_references")
-    .select("id, raw_pharmacy_code")
+    .select("id, raw_pharmacy_code, raw_pharmacy_address, raw_region")
     .eq("distributor_id", params.distributorId);
   if (fallback.error) throw fallback.error;
 
   const rows = ((fallback.data ?? []) as MarketingPharmacyCodeReferenceDbRow[]).map((row) => ({
     id: row.id,
     normalized_pharmacy_code: normalizeLookupKey(row.raw_pharmacy_code),
+    raw_pharmacy_address: row.raw_pharmacy_address,
+    raw_region: row.raw_region,
   }));
   const exactMatches = rows.filter(
     (row) => row.normalized_pharmacy_code === params.normalizedPharmacyCode,
@@ -5112,6 +5255,7 @@ export async function createMarketingValidationRecord(
   );
   const reusedPharmacyRows = new Map<string, MarketingPharmacyDbRow>();
   const reusedCodesByPharmacyId = new Map<string, MarketingPharmacyDistributorCodeDbRow[]>();
+  const reusedReferencesById = new Map<number, MarketingPharmacyCodeReferenceDbRow>();
   if (reusedPharmacyIds.length > 0) {
     const rows = await fetchRowsByIds<MarketingPharmacyDbRow>(
       supabase,
@@ -5147,6 +5291,33 @@ export async function createMarketingValidationRecord(
           "pharmacy_has_no_distributor_code",
         );
       }
+    }
+
+    // The registered address behind each reused code, so attaching an existing shop faces the same
+    // governorate check a freshly captured one does. Without this, a pharmacy held on `pending`
+    // for a Cairo-vs-Alexandria contradiction could be laundered into a `system_validated` link
+    // simply by attaching it to a second customer — the same laundering the evidence rule already
+    // refuses to allow for a shop that was never photographed.
+    //
+    // One batched read for the whole submission, keyed by the code row's stored `reference_id`,
+    // rather than re-running `resolvePharmacyCodeReference` per code: the reference was already
+    // resolved when the pharmacy was first captured, and its id is on the row. `select("*")` also
+    // means a database predating the address columns returns rows without them, which reads as a
+    // blank region and therefore `not_comparable` — never a false contradiction.
+    const reusedReferenceIds = Array.from(
+      new Set(
+        Array.from(reusedCodesByPharmacyId.values())
+          .flat()
+          .map((code) => Number(code.reference_id ?? 0))
+          .filter((referenceId) => Number.isFinite(referenceId) && referenceId > 0),
+      ),
+    );
+    for (const row of await fetchRowsByIds<MarketingPharmacyCodeReferenceDbRow>(
+      supabase,
+      "marketing_pharmacy_code_references",
+      reusedReferenceIds,
+    )) {
+      reusedReferencesById.set(Number(row.id), row);
     }
   }
 
@@ -5311,20 +5482,33 @@ export async function createMarketingValidationRecord(
 
         for (const codeRow of reusedCodesByPharmacyId.get(reusedRow.id) ?? []) {
           const distributorCode = mapDistributorCode(codeRow);
+          // Compared against the SHOP'S OWN capture, not this customer's: the reuse path
+          // deliberately re-captures nothing, so the only GPS fix that ever described this shop is
+          // the one taken when it was first created. A shop whose capture contradicts its code is
+          // held here too, or attaching it to a second customer would launder it clean.
+          const reusedReference = reusedReferencesById.get(Number(codeRow.reference_id ?? 0));
+          const governorateCheck = checkCapturedGovernorate({
+            capturedAddress: reusedRow.captured_address,
+            registeredAddress: reusedReference?.raw_pharmacy_address,
+            registeredRegion: reusedReference?.raw_region,
+          });
           const linkValidationStatus = resolveMarketingValidationRecordStatus({
             isOnBehalf,
             systemStatus: resolveMarketingSystemValidationStatus({
               customerEvidenceStatus: normalizedCustomer.evidenceStatus,
+              governorateVerdict: governorateCheck.verdict,
               pharmacyEvidenceStatus: pharmacy.evidenceStatus,
             }),
           });
           const linkValidationNotes = [
             isOnBehalf
               ? adminValidationNote
-              : linkValidationStatus === "system_validated"
-                ? null
-                : MARKETING_PENDING_EVIDENCE_NOTE,
+              : buildPendingEvidenceNote({
+                customerEvidenceStatus: normalizedCustomer.evidenceStatus,
+                pharmacyEvidenceStatus: pharmacy.evidenceStatus,
+              }),
             buildUntrackedDistributorCodeNote(distributorCode.referenceStatus),
+            buildGovernorateMismatchNote(governorateCheck),
             // Says on the row itself that this shop was not re-captured for this customer, so an
             // evidence photo dated before the customer is explainable rather than suspicious.
             `Linked from an existing validated pharmacy (${pharmacy.pharmacyCode || pharmacy.displayName}).`,
@@ -5427,10 +5611,19 @@ export async function createMarketingValidationRecord(
           normalizedPharmacyCode: vendorCode.normalizedPharmacyCode,
           supabase,
         });
+        // Runs BEFORE the status is decided, because since 2026-08-20 it is part of deciding it.
+        // Nothing in Phoenix compared these two addresses before: a code whose registered
+        // governorate contradicts the GPS fix used to save and validate silently.
+        const governorateCheck = checkCapturedGovernorate({
+          capturedAddress: normalizedPharmacy.capturedAddress,
+          registeredAddress: reference.registeredAddress,
+          registeredRegion: reference.registeredRegion,
+        });
         const linkValidationStatus = resolveMarketingValidationRecordStatus({
           isOnBehalf,
           systemStatus: resolveMarketingSystemValidationStatus({
             customerEvidenceStatus: normalizedCustomer.evidenceStatus,
+            governorateVerdict: governorateCheck.verdict,
             pharmacyEvidenceStatus: normalizedPharmacy.evidenceStatus,
           }),
         });
@@ -5440,6 +5633,10 @@ export async function createMarketingValidationRecord(
         // Since the code stopped gating the status (2026-08-12) this warning is the ONLY thing
         // carrying that consequence, so it now rides on validated rows as well as pending ones.
         const untrackedCodeNote = buildUntrackedDistributorCodeNote(reference.status);
+        // On a contradiction this is the REASON the row above came back pending, so it must be on
+        // the row — a held link with no stated reason is unreleasable by the Super Admin / CEO who
+        // is the only one allowed to release it.
+        const governorateNote = buildGovernorateMismatchNote(governorateCheck);
         // Store the code THE SALES DATA CARRIES, not the one the rep typed. ROI attribution
         // joins sales on this column with exact string equality (migration 20260808231742,
         // line 159), so a POS pharmacy saved as '1503246' when the sales rows read '0001503246'
@@ -5450,10 +5647,12 @@ export async function createMarketingValidationRecord(
         const linkValidationNotes = [
           isOnBehalf
             ? adminValidationNote
-            : linkValidationStatus === "system_validated"
-              ? null
-              : MARKETING_PENDING_EVIDENCE_NOTE,
+            : buildPendingEvidenceNote({
+              customerEvidenceStatus: normalizedCustomer.evidenceStatus,
+              pharmacyEvidenceStatus: normalizedPharmacy.evidenceStatus,
+            }),
           untrackedCodeNote,
+          governorateNote,
         ].filter(Boolean).join(" ") || null;
         const distributorCodeInsert = await supabase
           .from("marketing_pharmacy_distributor_codes")
