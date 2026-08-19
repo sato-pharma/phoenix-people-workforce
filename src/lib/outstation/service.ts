@@ -68,6 +68,7 @@ import {
   isOutstationExpenseInPayroll,
   isOutstationRequestHeldForRepair,
   nextEvidenceGateStatus,
+  outstationDeparturePhotoReminderDue,
   resolveOutstationGateState,
   validateManualWorkloadInput,
   type OutstationGateBlocker,
@@ -1985,6 +1986,37 @@ export async function submitOutstationRequest(
     heldForReview: true,
     reviewReason: reviewHoldReasons.length > 0 ? reviewHoldReasons.join(" ") : null,
   });
+
+  // Tell him NOW, not tomorrow morning.
+  //
+  // The daily job fires at 06:36 Cairo, and for a same-day trip the request does not yet exist at
+  // that hour — it is created in the afternoon or evening, after the travelling is done (median
+  // 16:00 Cairo across the live data, some as late as 21:40). So the "last day" reminder could
+  // never fire for a one-day trip: by the next morning the trip is in the past, and the FIRST and
+  // ONLY notice an employee ever received was an "overdue" one telling him to photograph a
+  // destination he had already left. That is not a theory — when this was found, production held
+  // 8 reminders and every single one was "overdue"; not one "due today" had ever been sent, and
+  // six employees were owed EGP 2,279.67 behind a photo nobody had asked them for in time.
+  //
+  // Raising it here does not guarantee he can still act — if he is already home, he cannot — but
+  // it moves the only warning from "the morning after" to "the moment he submits", which is the
+  // last point at which acting is still possible at all.
+  //
+  // Deliberately AFTER notifyOutstationSubmitted and deliberately swallowed: a reminder that
+  // fails must never fail the submission the employee just made. The shared idempotency key means
+  // the daily job will not repeat whatever this raises.
+  try {
+    await sendOutstationDeparturePhotoReminder(submitted, cairoTodayIso());
+  } catch (reminderError) {
+    logError("Outstation departure-photo reminder on submit failed", {
+      error: reminderError,
+      labels: {
+        event: "outstation_departure_reminder_on_submit_failed",
+        requestId,
+      },
+    });
+  }
+
   return submitted;
 }
 
@@ -3953,7 +3985,73 @@ export async function deleteOutstationRequestAsAdmin(
  * Not behind a notification toggle, unlike the SLA reminder: an unregistered toggle key resolves
  * to false, which would leave this silently dead while appearing to be wired up — the exact
  * failure mode it exists to prevent.
+ *
+ * Called from TWO places, which is why it is a function rather than a loop body: the daily job
+ * below, and the moment a request is submitted. The daily job alone was not enough — see the note
+ * at the submit call site. Returns whether a notification was actually raised, so a caller can
+ * count it; it decides for itself whether one is due and says no by returning false.
  */
+export async function sendOutstationDeparturePhotoReminder(
+  row: OutstationExpenseRequest,
+  todayCairo: string,
+): Promise<boolean> {
+  const gate = resolveOutstationGateState({
+    employeeRole: row.employeeRole,
+    evidenceGateStatus: row.evidenceGateStatus,
+    hasArrivalPhoto: Boolean(row.carEvidenceImagePath),
+    hasDeparturePhoto: Boolean(row.departureEvidenceImagePath),
+    workloadGateStatus: row.workloadGateStatus,
+  });
+  const { due, overdue } = outstationDeparturePhotoReminderDue({
+    gateBlocker: gate.blocker,
+    todayCairo,
+    tripEndDate: row.tripEndDate,
+  });
+  if (!due) return false;
+
+  const lastDay = String(row.tripEndDate ?? "").slice(0, 10);
+  const destination = text(row.toLabel) || text(row.toCity) || text(row.toArea) || "your destination";
+
+  await createSystemNotificationForRecipients(
+    {
+      actionUrl: "/employee-portals/expense-submissions",
+      channels: ["email", "push"],
+      email: {
+        ctaHref: "/employee-portals/expense-submissions",
+        ctaLabel: "Take the photo",
+        tone: overdue ? ("warning" as const) : ("neutral" as const),
+      },
+      eventType: "outstation_departure_photo_due",
+      message: overdue
+        ? `Your trip to ${destination} still needs its departure photo. The window closed on ${lastDay}, so it reaches your approver marked as late — but it is still accepted, and your expense cannot be paid until you take it.`
+        : `Today is the last day to take the departure photo for your trip to ${destination}. Your expense does not reach payroll until it is captured.`,
+      // Keyed WITHOUT the date, unlike the SLA reminder. The daily job would otherwise nag the
+      // same person about the same trip every morning until he acted — and a reminder that
+      // arrives every day is one people learn to delete. Two is the whole budget per request,
+      // ever: one on the last day, one when it first goes overdue. The key is also what makes it
+      // safe for the submit path to raise this as well: whichever caller gets there first wins,
+      // and the other is deduplicated rather than doubling the message.
+      metadata: {
+        idempotencyKey: `outstation:${String(row.id)}:departure-photo:${overdue ? "overdue" : "due"}`,
+      },
+      module: "outstation",
+      priority: "normal",
+      // Without this the EMAIL half is skipped outright. `outstation` is an employee-subject
+      // workflow module, so resolvedEmailIdentity() requires a subject HR ID and refuses the send
+      // when none of its six sources carries one — and this call carried none. Every reminder
+      // raised between 2026-08-10 and 2026-08-18 lost its email exactly that way, 8 out of 8,
+      // while the event row still read "sent" and the failure sat only in the delivery's
+      // last_error. Push covered the employees who had a subscription; three had none and were
+      // therefore told nothing at all, on any channel. The three other outstation notifications
+      // all pass this correctly — this one call was the omission.
+      subjectHrId: row.employeeHrId,
+      title: overdue ? "Departure photo overdue" : "Departure photo due today",
+    },
+    [row.employeeHrId],
+  );
+  return true;
+}
+
 export async function runOutstationDeparturePhotoReminders(): Promise<{
   processed: number;
   errors: number;
@@ -3972,49 +4070,8 @@ export async function runOutstationDeparturePhotoReminders(): Promise<{
   let errors = 0;
 
   for (const row of (data as Array<Record<string, unknown>>).map(mapOutstationRequestRow)) {
-    const gate = resolveOutstationGateState({
-      employeeRole: row.employeeRole,
-      evidenceGateStatus: row.evidenceGateStatus,
-      hasArrivalPhoto: Boolean(row.carEvidenceImagePath),
-      hasDeparturePhoto: Boolean(row.departureEvidenceImagePath),
-      workloadGateStatus: row.workloadGateStatus,
-    });
-    if (gate.blocker !== "departure_photo") continue;
-
-    const lastDay = String(row.tripEndDate ?? "").slice(0, 10);
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(lastDay) || lastDay > today) continue;
-
-    const overdue = lastDay < today;
-    const destination = text(row.toLabel) || text(row.toCity) || text(row.toArea) || "your destination";
-
     try {
-      await createSystemNotificationForRecipients(
-        {
-          actionUrl: "/employee-portals/expense-submissions",
-          channels: ["email", "push"],
-          email: {
-            ctaHref: "/employee-portals/expense-submissions",
-            ctaLabel: "Take the photo",
-            tone: overdue ? ("warning" as const) : ("neutral" as const),
-          },
-          eventType: "outstation_departure_photo_due",
-          message: overdue
-            ? `Your trip to ${destination} still needs its departure photo. The window closed on ${lastDay}, so it reaches your approver marked as late — but it is still accepted, and your expense cannot be paid until you take it.`
-            : `Today is the last day to take the departure photo for your trip to ${destination}. Your expense does not reach payroll until it is captured.`,
-          // Keyed WITHOUT the date, unlike the SLA reminder. This job runs daily, so a date in the
-          // key would nag the same person about the same trip every morning until he acted — and a
-          // reminder that arrives every day is one people learn to delete. Two is the whole budget
-          // per request, ever: one on the last day, one when it first goes overdue.
-          metadata: {
-            idempotencyKey: `outstation:${String(row.id)}:departure-photo:${overdue ? "overdue" : "due"}`,
-          },
-          module: "outstation",
-          priority: "normal",
-          title: overdue ? "Departure photo overdue" : "Departure photo due today",
-        },
-        [row.employeeHrId],
-      );
-      processed += 1;
+      if (await sendOutstationDeparturePhotoReminder(row, today)) processed += 1;
     } catch (notifyError) {
       logError("Outstation departure-photo reminder failed", {
         error: notifyError,

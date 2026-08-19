@@ -207,6 +207,35 @@ export function outstationRequestMayReachPayroll(input: {
  * Widening this list does not widen who gets paid. Every action the panel offers still ends in
  * releaseOutstationRequestToPayrollIfReady, which goes on refusing anything not `accepted_*`.
  */
+/**
+ * Is the departure-photo reminder due for this request today, and is it already late?
+ *
+ * Pure, so the timing can be asserted without a database or a notification provider — and the
+ * timing is the whole of it. The rule is: nothing before the trip's last day (a reminder on day
+ * one of a five-day trip is noise), the "last day" wording on the day itself, and the "overdue"
+ * wording from the day after.
+ *
+ * Both dates must be real YYYY-MM-DD. These are compared as STRINGS, so any other text sorts
+ * above a "2026-…" date and would silently read as a future trip — the failure would be a
+ * reminder that never sends, which is precisely the bug this whole area exists to correct.
+ */
+export function outstationDeparturePhotoReminderDue(input: {
+  gateBlocker: OutstationGateBlocker | null;
+  todayCairo: string;
+  tripEndDate: string | null;
+}): { due: boolean; overdue: boolean } {
+  const notDue = { due: false, overdue: false };
+  if (input.gateBlocker !== "departure_photo") return notDue;
+
+  const isoDay = /^\d{4}-\d{2}-\d{2}$/;
+  const lastDay = String(input.tripEndDate ?? "").slice(0, 10);
+  const today = String(input.todayCairo ?? "").slice(0, 10);
+  if (!isoDay.test(lastDay) || !isoDay.test(today)) return notDue;
+  if (lastDay > today) return notDue;
+
+  return { due: true, overdue: lastDay < today };
+}
+
 export function isOutstationRequestHeldForRepair(input: {
   /** Today in Africa/Cairo as YYYY-MM-DD. Injected so the in-progress test is assertable. */
   cairoTodayIso: string;
