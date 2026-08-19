@@ -3986,14 +3986,22 @@ export async function deleteOutstationRequestAsAdmin(
  * to false, which would leave this silently dead while appearing to be wired up — the exact
  * failure mode it exists to prevent.
  *
- * Called from TWO places, which is why it is a function rather than a loop body: the daily job
- * below, and the moment a request is submitted. The daily job alone was not enough — see the note
- * at the submit call site. Returns whether a notification was actually raised, so a caller can
- * count it; it decides for itself whether one is due and says no by returning false.
+ * Called from THREE places, which is why it is a function rather than a loop body: the daily job
+ * below, the moment a request is submitted, and the Super Admin resend. The daily job alone was
+ * not enough — see the note at the submit call site. Returns whether a notification was actually
+ * raised, so a caller can count it; it decides for itself whether one is due and says no by
+ * returning false.
  */
 export async function sendOutstationDeparturePhotoReminder(
   row: OutstationExpenseRequest,
   todayCairo: string,
+  // A caller may supply its own idempotency key to deliberately step around the automatic one.
+  // Only the Super Admin resend does, and it exists because the automatic key is UNREPEATABLE by
+  // design: claimDelivery upserts it with ignoreDuplicates, so once a key is claimed — even by an
+  // attempt that then died at the provider — nothing on that key ever sends again. That property
+  // is what stops a retro-blast when this code is fixed, and it is also what can leave a
+  // genuinely-owed employee silent forever. The way out is a NEW key, never a re-run of the old.
+  options?: { idempotencyKey?: string },
 ): Promise<boolean> {
   const gate = resolveOutstationGateState({
     employeeRole: row.employeeRole,
@@ -4032,7 +4040,9 @@ export async function sendOutstationDeparturePhotoReminder(
       // safe for the submit path to raise this as well: whichever caller gets there first wins,
       // and the other is deduplicated rather than doubling the message.
       metadata: {
-        idempotencyKey: `outstation:${String(row.id)}:departure-photo:${overdue ? "overdue" : "due"}`,
+        idempotencyKey:
+          options?.idempotencyKey ??
+          `outstation:${String(row.id)}:departure-photo:${overdue ? "overdue" : "due"}`,
       },
       module: "outstation",
       priority: "normal",
@@ -5093,5 +5103,74 @@ export async function releaseOutstationRequestWithoutEvidence(
       ? "Evidence waived and the request was released into payroll. Both gates are now marked exempt."
       : `Evidence waived, but the request did not reach payroll: ${release.reason}`,
     released: release.released,
+  };
+}
+
+/**
+ * Ask an employee again for the departure photo his expense is stuck behind.
+ *
+ * This exists because a reminder that failed is indistinguishable, afterwards, from one that was
+ * never owed. Delivery dedupe claims the automatic key the instant the first attempt is made; if
+ * that attempt then dies — at the identity guard, at the provider, anywhere — the key stays
+ * claimed and the employee is never told, on any channel, ever again. Eight reminders were lost
+ * exactly that way before 2026-08-19, and nothing in the system could re-ask. Re-running the
+ * daily job would not have helped: it raises the same key and is deduplicated into silence.
+ *
+ * So this deliberately mints a NEW key, dated, which has two consequences worth stating plainly:
+ * pressing the button twice on the same day sends once, and pressing it again tomorrow genuinely
+ * sends again. That is the intended shape — one nudge per day is a nudge; more is nagging.
+ *
+ * It is NOT a way to message an employee freely. It refuses unless the departure photo is the
+ * live blocker, so it cannot be pointed at somebody who owes nothing, and it reuses the reminder
+ * the system sends itself rather than composing its own text — one wording, one timing rule.
+ */
+export async function resendOutstationDeparturePhotoReminder(
+  requestId: number,
+  access: AccessContext,
+): Promise<{ message: string; sent: boolean }> {
+  // Same authority as the waiver, not merely "can view". This sends real mail to a real employee
+  // in the owner's name, so it sits with approve, above the execution-only finance roles.
+  await assertOutstationAdminAccess(access, "approve");
+
+  const request = await getOutstationRequestById(requestId);
+  if (!request) throw new Error("That outstation request is not available.");
+
+  const today = cairoTodayIso();
+  const sent = await sendOutstationDeparturePhotoReminder(request, today, {
+    idempotencyKey: `outstation:${String(requestId)}:departure-photo:resend-${today}`,
+  });
+
+  if (!sent) {
+    // The shared rule declined. Say WHY in the terms the admin can act on, rather than reporting
+    // a bare "not sent" that reads like a fault.
+    const gate = resolveOutstationGateState({
+      employeeRole: request.employeeRole,
+      evidenceGateStatus: request.evidenceGateStatus,
+      hasArrivalPhoto: Boolean(request.carEvidenceImagePath),
+      hasDeparturePhoto: Boolean(request.departureEvidenceImagePath),
+      workloadGateStatus: request.workloadGateStatus,
+    });
+    if (gate.blocker !== "departure_photo") {
+      throw new Error(
+        "This request is not waiting on its departure photo, so there is nothing to remind him about.",
+      );
+    }
+    throw new Error(
+      "The trip has not finished yet — the departure photo is not due until the employee leaves.",
+    );
+  }
+
+  await writeRequiredAuditLog({
+    actorLoginId: access.loginId ?? resolveEmployeeIdentityId(access) ?? "system",
+    entityId: String(requestId),
+    entityType: "outstation_request",
+    newValues: { channel: "email+push", reminderResentOn: today },
+    oldValues: {},
+    summary: `Departure-photo reminder re-sent by hand for outstation request ${requestId} to ${request.employeeHrId}`,
+  });
+
+  return {
+    message: `Reminder sent again to ${request.employeeName || request.employeeHrId}. Pressing this again today will not send a second copy.`,
+    sent: true,
   };
 }
