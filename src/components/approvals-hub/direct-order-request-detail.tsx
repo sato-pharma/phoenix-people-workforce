@@ -152,6 +152,7 @@ export function DirectOrderRequestDetail({
     steps,
     availableActions,
     bonusOverCap,
+    missingManagementLine,
     pharmacyEvidence,
     possibleDistributorMatches,
     autoLinkRefusal,
@@ -243,6 +244,19 @@ export function DirectOrderRequestDetail({
           <div className="space-y-1 border-b border-[#eef1f3] bg-amber-50 px-4 py-2.5">
             <p className="text-[12px] font-bold text-amber-900">
               Over cap — this {request.dealType} exceeds its product cap. Flagged for your attention, not blocked.
+            </p>
+          </div>
+        ) : null}
+
+        {/* Rose, not amber: the over-cap flag says "look closely at this number", this one says
+            "the people who should have signed this are not on it". Deliberately worded as an
+            instruction, because the approver reading it is the one who can act on it. */}
+        {missingManagementLine ? (
+          <div className="space-y-1 border-b border-[#eef1f3] bg-rose-50 px-4 py-2.5">
+            <p className="text-[12px] font-bold text-rose-900">
+              No sales manager on this chain — it goes straight to the CEO. The requester had no manager on
+              their HR record when this was submitted, so their National Sales Manager was never added.
+              Flagged for your attention, not blocked — ask HR to set the manager before deciding.
             </p>
           </div>
         ) : null}

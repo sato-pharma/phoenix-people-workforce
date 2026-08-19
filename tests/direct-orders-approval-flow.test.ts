@@ -4,9 +4,11 @@ import { readFileSync } from "node:fs";
 import {
   computeDirectOrderSalesValue,
   computeDiscountSalesValue,
+  directOrderChainMissingManagementLine,
   directOrderExpectedRoleChain,
   directOrderExpectedStepCount,
   directOrderManagementLadder,
+  directOrderRoleRequiresManagementLine,
   evaluateStepAction,
   isLegacySystemAdminAckStep,
   isPharmacyConfirmingStep,
@@ -31,6 +33,94 @@ function steps(...defs: Array<Partial<DirectOrderStepState> & { order: number; s
 }
 
 export function runDirectOrdersApprovalFlowTests() {
+  // ---- Missing management line: flagged, never blocked (owner decision, 2026-08-19) ----
+  // A District Manager always has a National Sales Manager above them, so a chain with no person
+  // rung at all means the sales line was silently dropped. Six live requests were built that way
+  // on 3-4 August 2026 and one, worth EGP 4,600, was approved by SFE + CEO alone.
+  {
+    const roleRung = (role: string): Pick<DirectOrderStepState, "kind"> & { role: string } => ({ kind: "role", role });
+    const personRung: Pick<DirectOrderStepState, "kind"> = { kind: "person" };
+
+    // The exact live shape: SFE -> System Admin -> CEO, no person rung.
+    assert.equal(
+      directOrderChainMissingManagementLine({
+        requesterRole: "District Manager",
+        steps: [roleRung("SFE Manager"), roleRung("Super Admin"), roleRung("CEO")],
+      }),
+      true,
+      "a District Manager chain with no management rung must be flagged — this is the live SFE -> CEO shape",
+    );
+
+    // A DM reporting STRAIGHT to the NSM has one rung, not two. Counting against the ladder
+    // (which names Regional Manager AND National Sales Manager) would flag this healthy chain.
+    assert.equal(
+      directOrderChainMissingManagementLine({
+        requesterRole: "District Manager",
+        steps: [roleRung("SFE Manager"), personRung, roleRung("CEO")],
+      }),
+      false,
+      "a District Manager reporting straight to the NSM has ONE management rung and must not be flagged",
+    );
+
+    // An NSM reports to the CEO, so the climb correctly stops before the CEO rung and yields none.
+    assert.equal(
+      directOrderChainMissingManagementLine({
+        requesterRole: "National Sales Manager",
+        steps: [roleRung("SFE Manager"), roleRung("CEO")],
+      }),
+      false,
+      "a National Sales Manager legitimately has no management rung — the CEO is their manager",
+    );
+    for (const role of ["Product Manager", "Group Product Manager"]) {
+      assert.equal(
+        directOrderChainMissingManagementLine({
+          requesterRole: role,
+          steps: [roleRung("SFE Manager"), roleRung("CEO")],
+        }),
+        false,
+        `${role} goes straight to the CEO by design and must never be flagged`,
+      );
+    }
+
+    // A Regional Manager still has an NSM above them.
+    assert.equal(
+      directOrderChainMissingManagementLine({
+        requesterRole: "Regional Manager",
+        steps: [roleRung("SFE Manager"), roleRung("CEO")],
+      }),
+      true,
+      "a Regional Manager chain with no management rung must be flagged — the NSM is missing",
+    );
+
+    // Draft/held requests have no chain seeded yet; that is not a defect.
+    assert.equal(
+      directOrderChainMissingManagementLine({ requesterRole: "District Manager", steps: [] }),
+      false,
+      "a held or draft order has no chain built yet and must not be flagged",
+    );
+
+    assert.equal(directOrderRoleRequiresManagementLine("District Manager"), true);
+    assert.equal(directOrderRoleRequiresManagementLine("Regional Manager"), true);
+    assert.equal(directOrderRoleRequiresManagementLine("National Sales Manager"), false);
+    assert.equal(directOrderRoleRequiresManagementLine(null), false);
+  }
+
+  // The build-time log is the only signal when a chain is created with no management line — the
+  // "unresolvable manager" log lives inside the climb loop and cannot fire when the loop never runs.
+  {
+    const serviceSource = readFileSync(new URL("../src/lib/direct-orders/service.ts", import.meta.url), "utf8");
+    assert.match(
+      serviceSource,
+      /direct_order_chain_missing_management_line/,
+      "buildApprovalChain must log a distinct event when it builds a chain with no management rung",
+    );
+    assert.match(
+      serviceSource,
+      /missingManagementLine,/,
+      "the approval detail must carry missingManagementLine so the approver sees the flag",
+    );
+  }
+
   // ── Single-request READ is scope-gated, not permission-gated ────────────────
   // `direct_orders:read` is held by every requester role (District / Regional / Product Manager …),
   // so asserting the permission alone let any of them fetch ANY order company-wide by id — requester,

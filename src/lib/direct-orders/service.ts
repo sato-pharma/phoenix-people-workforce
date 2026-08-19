@@ -79,6 +79,8 @@ import {
 import {
   computeDirectOrderSalesValue,
   computeDiscountSalesValue,
+  directOrderChainMissingManagementLine,
+  directOrderRoleRequiresManagementLine,
   evaluateStepAction,
   SFE_VALIDATION_ROLE,
   isPharmacyConfirmingStep,
@@ -405,6 +407,26 @@ async function buildApprovalChain(input: {
       });
       cursor = manager?.managerHrId ?? null;
       guard += 1;
+    }
+
+    // The climb produced NOTHING for a requester who is owed a management rung — the request is
+    // about to go SFE -> CEO with no sales manager on it at all. This is the one case the loop
+    // above cannot report: its "unresolvable manager" log lives INSIDE the loop, so it only fires
+    // when a chain breaks part-way up. When the requester has no manager_hr_id at all the loop
+    // never runs, and until 2026-08-19 that produced a CEO-only chain in complete silence — six
+    // requests were built that way on 3-4 August 2026, and one of them was approved.
+    //
+    // Logged, not blocked (owner decision, 2026-08-19): refusing the submission would stop a
+    // requester working over somebody else's missing HR record. The flag then rides on the request
+    // for the approver to see — see directOrderChainMissingManagementLine.
+    if (directOrderRoleRequiresManagementLine(input.requesterRole) && !rungs.some((rung) => rung.kind === "person")) {
+      logError("Direct order approval chain has no management line; it will climb straight to the CEO", {
+        labels: {
+          event: "direct_order_chain_missing_management_line",
+          requesterHrId: input.requesterHrId,
+          requesterRole: input.requesterRole,
+        },
+      });
     }
   }
   rungs.push({ kind: "role", role: "CEO", approverHrId: null, label: "CEO" });
@@ -5340,6 +5362,14 @@ export async function getDirectOrderApprovalDetail(
   const active = resolveActiveStep(steps);
   const canAct = request.status === "pending_approval" && viewerCanActOnStep(access, active);
   const bonusOverCap = isRequestOverCap(request, caps);
+  // Derived from the chain that was actually built, plus the role AS STORED ON THE REQUEST — never
+  // from today's org. The two live cases were built while their manager did not yet exist, and
+  // re-deriving from the current directory would now clear the flag on the very requests it exists
+  // to expose.
+  const missingManagementLine = directOrderChainMissingManagementLine({
+    requesterRole: request.requesterRole,
+    steps,
+  });
 
   // Fetched AFTER the block above, deliberately: a fixed-window source-text test
   // (direct-orders-approval-detail-names.test.ts) looks for loadDirectOrderGeoNames(/
@@ -5478,6 +5508,7 @@ export async function getDirectOrderApprovalDetail(
     })),
     availableActions: { approve: canAct, reject: canAct, return: canAct },
     bonusOverCap,
+    missingManagementLine,
     canSetSalesMonth: canSetDirectOrderSalesMonth(access),
     canRecordCollection: canRecordDirectOrderCollection(access),
     // Correcting a return is the requester's own action, so this is an OWNERSHIP flag, not a role

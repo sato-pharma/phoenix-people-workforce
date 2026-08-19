@@ -137,6 +137,7 @@ function detail(overrides: Partial<DirectOrderApprovalDetail> = {}): DirectOrder
     steps: [],
     availableActions: { approve: true, reject: true, return: true },
     bonusOverCap: false,
+    missingManagementLine: false,
     // The common case (2026-08-08): most orders never touch the held/validation lane at all.
     pharmacyEvidence: null,
     possibleDistributorMatches: [],

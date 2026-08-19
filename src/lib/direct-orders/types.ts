@@ -775,6 +775,12 @@ export type DirectOrderApprovalDetail = {
   /** True when the bonus/discount exceeds its product cap — flagged for the approver, NOT blocked. */
   bonusOverCap: boolean;
   /**
+   * True when this chain has NO management rung for a requester who is owed one — it climbs
+   * SFE → CEO with nobody from the sales line on it. Flagged for the approver, NOT blocked
+   * (owner decision, 2026-08-19). See directOrderChainMissingManagementLine.
+   */
+  missingManagementLine: boolean;
+  /**
    * The pharmacy's held/validation evidence (photo, GPS, AI sign-check), when this request ever
    * went through that lane. Null for the common case — most orders never touch a held pharmacy.
    * `evidenceCheck` on this row is stripped to null when the viewer is the request's own requester
