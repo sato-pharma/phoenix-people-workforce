@@ -295,6 +295,46 @@ export type MarketingCustomerPharmacy = {
 };
 
 /**
+ * One already-validated pharmacy offered back on the validation form's "My Pharmacies" tab.
+ *
+ * Exists because two customers a street apart routinely dispense through the SAME shop, and until
+ * now the only way to record that was to re-enter the pharmacy from scratch under the second
+ * customer — a second shop-front photo, a second GPS fix, and the distributor codes typed again.
+ * Measured on production 2026-08-19: 7 of the 25 field-validated pharmacies were the same code
+ * entered twice by the same rep. Picking one of these instead creates only the customer↔pharmacy
+ * link, so one physical shop stays one record however many customers it serves.
+ */
+export type MarketingReusablePharmacy = {
+  areaName: string | null;
+  capturedAddress: string | null;
+  displayName: string;
+  /**
+   * Carried so the picker can warn BEFORE the pick: linking a pharmacy whose own live photo and
+   * location are short parks the new customer on "Not Usable Yet", exactly as capturing an
+   * incomplete one would. Flagged, never hidden — the owner's standing rule.
+   */
+  evidenceStatus: MarketingEvidenceStatus;
+  governorateName: string | null;
+  id: string;
+  /** False when it belongs to a colleague the viewer shares an area or a reporting line with. */
+  isOwn: boolean;
+  /** How many customers already dispense through it — the reason the rep recognises the shop. */
+  linkedCustomerCount: number;
+  ownerHrId: string | null;
+  ownerName: string | null;
+  pharmacyCode: string;
+  validationStatus: MarketingValidationStatus;
+  /** Every active distributor code on the pharmacy. Picking it links all of them, as capturing would. */
+  vendorCodes: Array<{
+    distributorCodeId: string;
+    distributorId: number;
+    distributorName: string;
+    distributorPharmacyCode: string;
+    referenceStatus: MarketingPharmacyCodeReferenceStatus;
+  }>;
+};
+
+/**
  * The speciality options offered on a validated customer.
  *
  * Deliberately a fixed list rather than the raw `speciality` text iReports360 syncs onto
@@ -371,7 +411,7 @@ export type MarketingValidationInput = {
    * merge. Takes precedence over the single-customer fields below when present.
    */
   customers?: Array<MarketingValidationCustomerInput & {
-    pharmacies?: MarketingValidationPharmacyInput[];
+    pharmacies?: MarketingValidationPharmacyEntry[];
   }>;
   /** Legacy single-customer shape. Still accepted so an in-flight offline replay cannot 400. */
   customer?: MarketingValidationCustomerInput;
@@ -379,9 +419,26 @@ export type MarketingValidationInput = {
     distributorId: number | string;
     distributorPharmacyCode: string;
   };
-  pharmacies?: MarketingValidationPharmacyInput[];
+  pharmacies?: MarketingValidationPharmacyEntry[];
   pharmacy?: Omit<MarketingValidationPharmacyInput, "vendorCodes">;
 };
+
+/**
+ * "Link the pharmacy I already validated" — the My Pharmacies half of the form's pharmacy tabs.
+ *
+ * Deliberately carries the id and nothing else. Name, location, live photo and distributor codes
+ * are read from the stored record on the server, so a client can never re-describe a shop it is
+ * only pointing at, and the evidence attached to a link is always the evidence someone actually
+ * captured in front of that shop.
+ */
+export type MarketingValidationExistingPharmacyInput = {
+  existingPharmacyId: string;
+};
+
+/** Either half of the pharmacy tabs: capture a new shop, or point at one already validated. */
+export type MarketingValidationPharmacyEntry =
+  | MarketingValidationPharmacyInput
+  | MarketingValidationExistingPharmacyInput;
 
 export type MarketingValidationPharmacyInput = {
   capturedAccuracyMeters?: number | null;
@@ -446,6 +503,13 @@ export type MarketingValidationWorkspace = {
   distributors: MarketingDistributor[];
   /** Empty unless `canValidateOnBehalf`; active employees holding a marketing-capable role. */
   onBehalfEmployees: MarketingOnBehalfEmployee[];
+  /**
+   * Pharmacies the viewer may attach to a new customer instead of capturing one — his own, plus
+   * those of colleagues he shares an area or a reporting line with (owner ruling 2026-08-19: a
+   * shop is captured once for the whole area). Never includes the history-seeded pharmacies, which
+   * belong to nobody and carry no evidence at all.
+   */
+  reusablePharmacies: MarketingReusablePharmacy[];
   rows: MarketingValidationReportRow[];
   summary: Record<MarketingValidationStatus, number>;
 };

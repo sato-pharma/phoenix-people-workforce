@@ -392,6 +392,88 @@ export function runMarketingValidationServiceTests() {
 
   runMarketingMultiCustomerTests();
   runMarketingOnBehalfValidationTests();
+  runMarketingReusedPharmacyTests();
+}
+
+/* ── "My Pharmacies": attaching a shop that was already validated ───────────────────────────── */
+
+/**
+ * The second half of the validation form's pharmacy tabs.
+ *
+ * Two customers a street apart routinely dispense through the same shop, and before this the only
+ * way to record that was to capture the shop again — on production 2026-08-19, 7 of the 25
+ * field-validated pharmacies were the same distributor code entered twice by the same rep. These
+ * cover the normalizer's half of the contract: an attached pharmacy carries its ID and nothing
+ * else, so the server reads the stored record instead of trusting a client re-description.
+ */
+function runMarketingReusedPharmacyTests() {
+  const attached = normalizeMarketingValidationInput({
+    customers: [
+      {
+        ...customerPayload({ displayName: "Dr Alaa Clinic" }),
+        pharmacies: [{ existingPharmacyId: "  pharmacy-uuid-1  " }],
+      },
+    ],
+  });
+  const [reusedPharmacy] = attached.customers[0].pharmacies;
+  assert.equal(
+    reusedPharmacy.existingPharmacyId,
+    "pharmacy-uuid-1",
+    "an attached pharmacy must carry the id it points at, trimmed",
+  );
+  assert.equal(
+    reusedPharmacy.vendorCodes.length,
+    0,
+    "an attached pharmacy must contribute no vendor codes — they are read from the stored record",
+  );
+  assert.equal(
+    reusedPharmacy.displayName,
+    "",
+    "an attached pharmacy must not carry a client-supplied name that could overwrite the stored shop",
+  );
+
+  // Mixing the two tabs under one customer is the normal case: a shop captured today alongside one
+  // the rep already has. Neither path may swallow the other.
+  const mixed = normalizeMarketingValidationInput({
+    customers: [
+      {
+        ...customerPayload({ displayName: "Dr Mona Clinic" }),
+        pharmacies: [pharmacyPayload("New Pharmacy", "PH-500"), { existingPharmacyId: "pharmacy-uuid-2" }],
+      },
+    ],
+  });
+  assert.equal(mixed.customers[0].pharmacies.length, 2);
+  assert.equal(mixed.customers[0].pharmacies[0].existingPharmacyId, null);
+  assert.equal(mixed.customers[0].pharmacies[0].displayName, "New Pharmacy");
+  assert.equal(mixed.customers[0].pharmacies[1].existingPharmacyId, "pharmacy-uuid-2");
+
+  // An empty id is a picker that was never answered, not a request to create a nameless pharmacy.
+  assert.throws(
+    () =>
+      normalizeMarketingValidationInput({
+        customers: [
+          { ...customerPayload({ displayName: "Dr Sara Clinic" }), pharmacies: [{ existingPharmacyId: "" }] },
+        ],
+      }),
+    /did not name which pharmacy to link/i,
+    "an attached pharmacy with no id must be refused",
+  );
+
+  // The same shop twice under one customer would mint two identical link rows, and the request
+  // form would then offer the same pharmacy twice with no way to tell them apart.
+  assert.throws(
+    () =>
+      normalizeMarketingValidationInput({
+        customers: [
+          {
+            ...customerPayload({ displayName: "Dr Hani Clinic" }),
+            pharmacies: [{ existingPharmacyId: "pharmacy-uuid-3" }, { existingPharmacyId: "pharmacy-uuid-3" }],
+          },
+        ],
+      }),
+    /same existing pharmacy attached twice/i,
+    "attaching one pharmacy twice to the same customer must be refused",
+  );
 }
 
 /* ── Several customers in one submission, each with its OWN pharmacies ──────────────────────── */
