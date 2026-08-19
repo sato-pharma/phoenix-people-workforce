@@ -114,6 +114,12 @@ export type MarketingCaseFileHeader = {
   requestType: string | null;
   requester: MarketingCaseFileRequester;
   status: MarketingRequestStatus;
+  /**
+   * The status in words. Differs from `status` only where the stored value understates progress —
+   * a request sitting on Finance Execution still stores `pending_approval` but has no approval
+   * outstanding. See request-status-label.ts.
+   */
+  statusLabel: string;
   submittedAt: string | null;
 };
 

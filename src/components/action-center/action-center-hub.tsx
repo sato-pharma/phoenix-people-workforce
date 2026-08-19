@@ -18,7 +18,12 @@ import type {
 } from "@/components/action-center/types";
 import { ACTION_HUB_MODULE_LABELS, REJECTION_TEMPLATES } from "@/components/action-center/types";
 import { WeeklyPlanCalendar } from "@/components/action-center/weekly-plan-calendar";
+import {
+  buildMarketingDecisionConfirmPrompt,
+  type MarketingConfirmDecision,
+} from "@/lib/marketing-requests/decision-confirm-prompt";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { useDialogA11y } from "@/components/ui/use-dialog-a11y";
 
 
 // ── Snooze helpers (localStorage, no backend) ────────────────────────────────
@@ -512,6 +517,8 @@ export function ActionCenterHub({ initialData, initialModule, initialId, callerR
   const [comment, setComment] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** A marketing decision clicked but not yet confirmed — nothing is sent while this is set. */
+  const [marketingConfirm, setMarketingConfirm] = useState<MarketingConfirmDecision | null>(null);
   const [notice, setNotice] = useState<string | null>(
     initialDeepLinkMissing ? "The request from this notification was not found in your current Action Center queue." : null,
   );
@@ -773,12 +780,24 @@ export function ActionCenterHub({ initialData, initialModule, initialId, callerR
     }
   }
 
-  function handleMarketingAction(decision: string) {
+  /**
+   * Marketing decisions ask before they commit — the same guard the decision page carries. This is
+   * the CEO's other route to the same irreversible write, so it must not be the unguarded one.
+   */
+  function handleMarketingAction(decision: MarketingConfirmDecision) {
     if (!selected) return;
     if ((decision === "reject" || decision === "return") && !comment.trim()) {
       setError("A comment is required for this action.");
       return;
     }
+    setError(null);
+    setMarketingConfirm(decision);
+  }
+
+  function confirmMarketingAction() {
+    const decision = marketingConfirm;
+    setMarketingConfirm(null);
+    if (!decision || !selected) return;
     void callApi(`/api/marketing-requests/${selected.id}/decision`, { decision, comment: comment.trim() || null });
   }
 
@@ -867,6 +886,27 @@ export function ActionCenterHub({ initialData, initialModule, initialId, callerR
   const priorLeaveHint = contextData?.recentLeave.length
     ? contextData.recentLeave.map((r) => r.hrDecision ?? r.managerDecision)
     : null;
+
+  const marketingDetail = selected?.detail.module === "marketing" ? selected.detail : null;
+  const marketingPrompt =
+    marketingConfirm && marketingDetail && selected
+      ? buildMarketingDecisionConfirmPrompt({
+          customerName: marketingDetail.customerName,
+          decision: marketingConfirm,
+          decisionLabel:
+            marketingDetail.decisionLabels?.[marketingConfirm] ??
+            (marketingConfirm === "approve" ? "Approve" : marketingConfirm === "reject" ? "Reject" : "Return for edit"),
+          estimatedCost: marketingDetail.estimatedCost ?? 0,
+          // The hub knows which rung holds the request, not which one comes after it.
+          nextStepName: null,
+          requestCode: marketingDetail.requestCode,
+          requesterName: selected.employeeName,
+        })
+      : null;
+  const marketingDialogRef = useDialogA11y<HTMLDivElement>({
+    onClose: () => setMarketingConfirm(null),
+    open: marketingPrompt !== null,
+  });
 
   return (
     <div className="space-y-5">
@@ -1408,6 +1448,49 @@ export function ActionCenterHub({ initialData, initialModule, initialId, callerR
                 </div>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {marketingPrompt && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/50 p-4 sm:items-center">
+          <div
+            aria-labelledby="action-center-marketing-confirm-title"
+            aria-modal
+            className="w-full max-w-md rounded-xl bg-white shadow-xl"
+            ref={marketingDialogRef}
+            role="dialog"
+          >
+            <div className="px-5 py-4">
+              <h2 className="text-base font-bold text-slate-950" id="action-center-marketing-confirm-title">
+                {marketingPrompt.title}
+              </h2>
+              <p className="mt-2 text-sm text-slate-700">{marketingPrompt.body}</p>
+              <p className="mt-2 text-sm font-medium text-slate-950">{marketingPrompt.consequence}</p>
+            </div>
+            <div className="flex flex-wrap justify-end gap-2 border-t border-slate-200 px-5 py-3">
+              <button
+                className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-700"
+                onClick={() => setMarketingConfirm(null)}
+                type="button"
+              >
+                {marketingPrompt.cancelLabel}
+              </button>
+              <button
+                className={`rounded-lg px-4 py-2 text-sm font-bold text-white ${
+                  marketingConfirm === "reject"
+                    ? "bg-rose-600"
+                    : marketingConfirm === "return"
+                      ? "bg-amber-500"
+                      : "bg-emerald-600"
+                }`}
+                disabled={busy}
+                onClick={confirmMarketingAction}
+                type="button"
+              >
+                {marketingPrompt.confirmLabel}
+              </button>
+            </div>
           </div>
         </div>
       )}

@@ -3,10 +3,12 @@
 import { useMemo, useState } from "react";
 
 import { MarketingSalesEvidencePanel } from "@/components/marketing-requests/marketing-sales-evidence-panel";
+import { buildMarketingDecisionConfirmPrompt } from "@/lib/marketing-requests/decision-confirm-prompt";
 import type {
   MarketingRequestDecision,
   MarketingRequestDecisionSummary,
 } from "@/lib/marketing-requests/service";
+import { useDialogA11y } from "@/components/ui/use-dialog-a11y";
 import { ZoomablePhoto } from "@/components/ui/zoomable-photo";
 
 /**
@@ -57,6 +59,11 @@ export function MarketingRequestDecisionConfirmation({
   const [error, setError] = useState<string | null>(null);
   const [isPending, setIsPending] = useState(false);
   const [success, setSuccess] = useState<string | null>(null);
+  /**
+   * The decision the approver has clicked but not yet confirmed. Nothing is sent while this is set
+   * — the buttons open the prompt, and only the prompt's own confirm button calls the API.
+   */
+  const [pendingConfirm, setPendingConfirm] = useState<MarketingRequestDecision | null>(null);
 
   const needsReason = activeDecision === "reject" || activeDecision === "return";
   const labelFor = (decision: MarketingRequestDecision) =>
@@ -65,6 +72,50 @@ export function MarketingRequestDecisionConfirmation({
     () => summary.products.reduce((sum, product) => sum + (product.value || 0), 0),
     [summary.products],
   );
+  /** Who holds the request next if this one is approved — named in the prompt so it is not abstract. */
+  const nextStepName = useMemo(() => {
+    const currentIndex = summary.chain.findIndex((step) => step.isCurrent);
+    if (currentIndex < 0) return null;
+    return summary.chain[currentIndex + 1]?.stepName ?? null;
+  }, [summary.chain]);
+  const confirmPrompt = pendingConfirm
+    ? buildMarketingDecisionConfirmPrompt({
+        customerName: summary.customerName,
+        decision: pendingConfirm,
+        decisionLabel: labelFor(pendingConfirm),
+        estimatedCost: totalValue || summary.estimatedCost,
+        nextStepName,
+        requestCode: summary.requestCode,
+        requesterName: summary.requesterName,
+      })
+    : null;
+
+  const dialogRef = useDialogA11y<HTMLDivElement>({
+    onClose: () => setPendingConfirm(null),
+    open: pendingConfirm !== null,
+  });
+
+  /**
+   * A click on Approve/Return/Reject no longer decides anything — it asks. The note requirement is
+   * still checked here rather than inside the prompt, so a reject with no note shows the same
+   * inline error it always did instead of failing behind a dialog the approver just confirmed.
+   */
+  function requestDecision(decision: MarketingRequestDecision) {
+    setError(null);
+    setSuccess(null);
+    setActiveDecision(decision);
+    if ((decision === "reject" || decision === "return") && !comment.trim()) {
+      setError(`${labelFor(decision)} note is required.`);
+      return;
+    }
+    setPendingConfirm(decision);
+  }
+
+  function confirmPending() {
+    const decision = pendingConfirm;
+    setPendingConfirm(null);
+    if (decision) void submitDecision(decision);
+  }
 
   async function submitDecision(decision: MarketingRequestDecision) {
     setError(null);
@@ -386,7 +437,7 @@ export function MarketingRequestDecisionConfirmation({
               <button
                 className="bg-emerald-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
                 disabled={isPending || decided}
-                onClick={() => void submitDecision("approve")}
+                onClick={() => requestDecision("approve")}
                 type="button"
               >
                 {isPending && activeDecision === "approve" ? "Submitting…" : labelFor("approve")}
@@ -395,7 +446,7 @@ export function MarketingRequestDecisionConfirmation({
                 <button
                   className="border border-amber-400 bg-white px-4 py-2 text-sm font-medium text-amber-800 disabled:opacity-50"
                   disabled={isPending || decided}
-                  onClick={() => void submitDecision("return")}
+                  onClick={() => requestDecision("return")}
                   type="button"
                 >
                   {isPending && activeDecision === "return" ? "Submitting…" : labelFor("return")}
@@ -405,7 +456,7 @@ export function MarketingRequestDecisionConfirmation({
                 <button
                   className="border border-rose-300 bg-white px-4 py-2 text-sm font-medium text-rose-700 disabled:opacity-50"
                   disabled={isPending || decided}
-                  onClick={() => void submitDecision("reject")}
+                  onClick={() => requestDecision("reject")}
                   type="button"
                 >
                   {isPending && activeDecision === "reject" ? "Submitting…" : labelFor("reject")}
@@ -421,6 +472,48 @@ export function MarketingRequestDecisionConfirmation({
           </div>
         </div>
       </div>
+
+      {confirmPrompt ? (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/50 p-4 sm:items-center">
+          <div
+            aria-labelledby="marketing-decision-confirm-title"
+            aria-modal
+            className="w-full max-w-md border border-slate-200 bg-white shadow-xl"
+            ref={dialogRef}
+            role="dialog"
+          >
+            <div className="px-5 py-4">
+              <h2 className="text-base font-semibold text-slate-950" id="marketing-decision-confirm-title">
+                {confirmPrompt.title}
+              </h2>
+              <p className="mt-2 text-sm text-slate-700">{confirmPrompt.body}</p>
+              <p className="mt-2 text-sm font-medium text-slate-950">{confirmPrompt.consequence}</p>
+            </div>
+            <div className="flex flex-wrap justify-end gap-2 border-t border-slate-200 px-5 py-3">
+              <button
+                className="border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700"
+                onClick={() => setPendingConfirm(null)}
+                type="button"
+              >
+                {confirmPrompt.cancelLabel}
+              </button>
+              <button
+                className={`px-4 py-2 text-sm font-medium text-white ${
+                  pendingConfirm === "reject"
+                    ? "bg-rose-600"
+                    : pendingConfirm === "return"
+                      ? "bg-amber-600"
+                      : "bg-emerald-600"
+                }`}
+                onClick={confirmPending}
+                type="button"
+              >
+                {confirmPrompt.confirmLabel}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </section>
   );
 }

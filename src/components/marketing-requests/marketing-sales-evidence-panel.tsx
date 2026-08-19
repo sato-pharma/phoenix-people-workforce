@@ -151,9 +151,11 @@ export function MarketingSalesEvidencePanel({ requestId }: { requestId: string }
           </>
         ) : (
           <>
-            No sales have ever been recorded against this customer&apos;s{" "}
+            No sales matched this customer&apos;s{" "}
             {data.matchedPharmacyCodes.length === 1 ? "pharmacy code" : "pharmacy codes"} (
-            {data.matchedPharmacyCodes.join(", ")}). This is an unproven customer, not missing data.
+            {data.matchedPharmacyCodes.join(", ")}). That may mean the customer has never bought, or
+            that the code it trades under is not the one registered here — this panel cannot tell
+            the two apart, so treat it as unproven rather than disproven.
           </>
         )}
       </p>

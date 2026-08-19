@@ -561,7 +561,9 @@ export function MarketingRequestCaseFileView({ caseFile }: { caseFile: Marketing
             </div>
             <div className="shrink-0 text-right">
               <span className="inline-block bg-slate-100 px-2.5 py-1 text-[11px] font-medium uppercase tracking-wide text-slate-700">
-                {header.status.replace(/_/g, " ")}
+                {/* Not the raw status: a request on Finance Execution still stores
+                    `pending_approval` though every approver has signed. See request-status-label.ts. */}
+                {header.statusLabel}
               </span>
             </div>
           </div>

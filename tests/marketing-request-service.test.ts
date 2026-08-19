@@ -1095,10 +1095,14 @@ export async function runMarketingRequestServiceTests() {
     /No historical sales/,
     "a customer with no sales history must be labelled, not rendered as an empty table",
   );
+  // The no-sales state must still explain ITSELF rather than render a bare zero — but it may no
+  // longer rule on what the emptiness proves. The old wording ("this is an unproven customer, not
+  // missing data") was a verdict the panel could not earn: it was shown for customers whose code
+  // was simply registered without its leading zeros, one of whom had EGP 8,981 of real trade.
   assert.match(
     evidencePanelSource,
-    /unproven customer, not missing data/,
-    "the no-sales state must distinguish an unproven customer from absent data",
+    /treat it as unproven rather than disproven/,
+    "the no-sales state must name both readings instead of asserting the customer never bought",
   );
   assert.match(
     evidencePanelSource,
