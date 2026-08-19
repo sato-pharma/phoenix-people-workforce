@@ -18,7 +18,7 @@ import {
   isPhoenixOriginatedRequest,
   normalizeMarketingRequestDraftInput,
   prepareMarketingRequestDraft,
-  resolveLineCcHrIds,
+  resolveLineCcRecipients,
   resolveMarketingRequestUuid,
 } from "@/lib/marketing-requests/service";
 import type { MarketingRequest, MarketingRequestCreateDraft } from "@/lib/marketing-requests/types";
@@ -149,8 +149,8 @@ function makeEmployee(overrides: Partial<EmployeeDirectoryRow> & { hrId: string 
   return { ...baseEmployee, ...overrides };
 }
 
-/** Minimal stub of the Supabase client surface resolveLineCcHrIds uses. */
-function fakeCcSupabase(rows: Array<{ hr_id: string }>) {
+/** Minimal stub of the Supabase client surface resolveLineCcRecipients uses. */
+function fakeCcSupabase(rows: Array<{ hr_id: string; role?: string }>) {
   const builder = {
     eq() {
       return builder;
@@ -162,7 +162,7 @@ function fakeCcSupabase(rows: Array<{ hr_id: string }>) {
       return builder;
     },
   };
-  return { from: () => builder } as unknown as Parameters<typeof resolveLineCcHrIds>[0]["supabase"];
+  return { from: () => builder } as unknown as Parameters<typeof resolveLineCcRecipients>[0]["supabase"];
 }
 
 const ccRequest = { areaId: 30, id: "REQ-CC", lineId: 7 } as unknown as MarketingRequest;
@@ -739,32 +739,70 @@ export async function runMarketingRequestServiceTests() {
 
   // No CC roles configured -> no CC recipients (no DB call required).
   assert.deepEqual(
-    await resolveLineCcHrIds({ ccRoles: [], employeeRows: ccEmployees, request: ccRequest, supabase: fakeCcSupabase([]) }),
+    await resolveLineCcRecipients({ ccRoles: [], employeeRows: ccEmployees, request: ccRequest, supabase: fakeCcSupabase([]) }),
     [],
     "empty cc roles must resolve to no recipients",
   );
 
   // Many candidates: only same-line PM/GPM are CC'd; other-line GPM excluded.
-  const manyCc = await resolveLineCcHrIds({
+  const manyCc = await resolveLineCcRecipients({
     ccRoles: ["Product Manager", "Group Product Manager"],
     employeeRows: ccEmployees,
     request: ccRequest,
-    supabase: fakeCcSupabase([{ hr_id: "PM001" }, { hr_id: "GPM001" }, { hr_id: "GPM002" }]),
+    supabase: fakeCcSupabase([
+      { hr_id: "PM001", role: "Product Manager" },
+      { hr_id: "GPM001", role: "Group Product Manager" },
+      { hr_id: "GPM002", role: "Group Product Manager" },
+    ]),
   });
-  assert.deepEqual(manyCc.sort(), ["gpm002", "pm001"], "only same-line PM/GPM are CC recipients");
+  assert.deepEqual(
+    manyCc.map((entry) => entry.hrId).sort(),
+    ["gpm002", "pm001"],
+    "only same-line PM/GPM are CC recipients",
+  );
+
+  /**
+   * Each CC recipient carries their OWN role, never the reviewer's. Line 1 reviews at Marketing
+   * Manager and CCs the line's Product Manager, and stamping the reviewer's role onto that rung
+   * printed "Marketing Review (CC) · Marketing Manager · <a Product Manager>" on both of A-10's
+   * open production requests — two rungs reading "Marketing Manager", hiding which one decides.
+   */
+  assert.deepEqual(
+    [...manyCc].sort((left, right) => left.hrId.localeCompare(right.hrId)).map((entry) => entry.role),
+    ["Group Product Manager", "Product Manager"],
+    "each CC recipient must carry their own role, not the reviewing role",
+  );
 
   // Single candidate match.
-  const oneCc = await resolveLineCcHrIds({
+  const oneCc = await resolveLineCcRecipients({
     ccRoles: ["Product Manager"],
     employeeRows: ccEmployees,
     request: ccRequest,
-    supabase: fakeCcSupabase([{ hr_id: "PM001" }]),
+    supabase: fakeCcSupabase([{ hr_id: "PM001", role: "Product Manager" }]),
   });
-  assert.deepEqual(oneCc, ["pm001"], "single same-line PM resolves to one CC recipient");
+  assert.deepEqual(
+    oneCc,
+    [{ hrId: "pm001", role: "Product Manager" }],
+    "single same-line PM resolves to one CC recipient tagged Product Manager",
+  );
+
+  // An unrecognised `app_auth_users.role` must never DROP the recipient — a CC row is a
+  // notification. It falls back to the employee master's own job-function role.
+  const oddRoleCc = await resolveLineCcRecipients({
+    ccRoles: ["Product Manager"],
+    employeeRows: ccEmployees,
+    request: ccRequest,
+    supabase: fakeCcSupabase([{ hr_id: "PM001", role: "Something Unrecognised" }]),
+  });
+  assert.deepEqual(
+    oddRoleCc,
+    [{ hrId: "pm001", role: "Product Manager" }],
+    "an unrecognised stored role falls back to the employee's job-function role, never a dropped CC",
+  );
 
   // Unknown CC role string is ignored (no throw).
   assert.deepEqual(
-    await resolveLineCcHrIds({ ccRoles: ["Not A Role"], employeeRows: ccEmployees, request: ccRequest, supabase: fakeCcSupabase([]) }),
+    await resolveLineCcRecipients({ ccRoles: ["Not A Role"], employeeRows: ccEmployees, request: ccRequest, supabase: fakeCcSupabase([]) }),
     [],
     "unknown cc role strings must be ignored",
   );
@@ -849,8 +887,20 @@ export async function runMarketingRequestServiceTests() {
   );
   assert.match(
     serviceSource,
-    /for \(const ccHrId of ccHrIds\)[\s\S]{0,700}?isSamePerson\(ccHrId, params\.request\.requesterHrId\)\) continue;/,
+    /for \(const \{ hrId: ccHrId, role: ccRole \} of ccRecipients\)[\s\S]{0,900}?isSamePerson\(ccHrId, params\.request\.requesterHrId\)\) continue;/,
     "the requester must never be CC'd on their own marketing request",
+  );
+  // A CC rung names a person, so it must print THAT person's role. Reusing `effectiveRole` here
+  // labelled the line's Product Manager "Marketing Manager" on the case file.
+  assert.match(
+    serviceSource,
+    /assignedHrId: ccHrId, assignedRole: ccRole, isCc: true/,
+    "a CC rung must be stamped with the CC recipient's own role, never the reviewing role",
+  );
+  assert.doesNotMatch(
+    serviceSource,
+    /assignedHrId: ccHrId, assignedRole: effectiveRole/,
+    "no CC rung may reuse the reviewing role",
   );
 
   // Migration reshape tokens.
