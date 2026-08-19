@@ -188,6 +188,42 @@ export function runWorkflowControlTests() {
   assert.ok(readOnlySim.warnings.some((w) => /read-only map only/i.test(w)), "simulator warns a cross-cutting domain is read-only map only");
 
   // ---------------------------------------------------------------------------
+  // Offer & Hiring is DESIGNED, not built. Verified against production 2026-08-19:
+  // job_offers does not exist, and no code path can reach an offer stage. The page must
+  // never present it as a live governed process. Owner decision 2026-08-19: leave it
+  // unbuilt and label it honestly.
+  // ---------------------------------------------------------------------------
+  const offerDomain = getWorkflowDomain("offer-hiring");
+  assert.ok(offerDomain, "offer-hiring domain still exists (it is the specification)");
+  assert.equal(offerDomain!.status, "Not implemented", "offer-hiring is labelled Not implemented, never Active");
+  assert.match(offerDomain!.summary, /NOT BUILT/, "offer-hiring summary says plainly that it is not built");
+  for (const subflow of offerDomain!.subflows) {
+    assert.ok(
+      (subflow.gaps ?? []).some((g) => /NOT BUILT/.test(g)),
+      `offer-hiring subflow "${subflow.key}" carries a NOT BUILT gap`,
+    );
+  }
+  for (const subflow of offerDomain!.subflows) {
+    const offerSim = simulateWorkflow({ domainKey: "offer-hiring", subflowKey: subflow.key });
+    assert.ok(
+      offerSim.warnings.some((w) => /not implemented/i.test(w)),
+      `simulator warns that offer-hiring/${subflow.key} is not implemented`,
+    );
+  }
+
+  // Every OTHER domain must still be honest about being live — this pins that the new
+  // status was applied to the one domain that earned it, not sprayed across the file.
+  for (const domain of domains) {
+    if (domain.key === "offer-hiring") continue;
+    assert.notEqual(domain.status, "Not implemented", `domain "${domain.key}" is not mislabelled Not implemented`);
+  }
+
+  // The badge map is a Record over the status union, so a new member must be styled.
+  const statusBadgeSrc = readFileSync(new URL("../src/components/workflow-control/workflow-control-center.tsx", import.meta.url), "utf8");
+  assert.match(statusBadgeSrc, /"Not implemented":/, "the status badge map styles the Not implemented status");
+  assert.ok(statusBadgeSrc.includes("Not implemented:</span> nothing in the system runs these steps today"), "the domain detail shows a Not implemented banner");
+
+  // ---------------------------------------------------------------------------
   // Phase-1 guarantee: read-only modules never call a mutation/DB path.
   // ---------------------------------------------------------------------------
   const simulatorSrc = readFileSync(new URL("../src/lib/workflow-control/simulator.ts", import.meta.url), "utf8");

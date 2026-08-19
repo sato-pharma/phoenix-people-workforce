@@ -238,6 +238,11 @@ export function simulateWorkflow(input: WorkflowSimulationInput): WorkflowSimula
   }
 
   // Domain-level informational warnings.
+  if (domain.status === "Not implemented") {
+    warnings.push(
+      "This domain is NOT IMPLEMENTED — nothing in the system runs these steps. The simulation below is the intended design, not live behavior.",
+    );
+  }
   if (domain.status === "Read-only map" || domain.crossCutting) {
     warnings.push("This domain is a read-only map only — it has no live request flow to simulate.");
   }

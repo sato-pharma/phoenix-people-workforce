@@ -12,7 +12,7 @@
  * Phase 1 does NOT change runtime workflow execution or approval logic.
  */
 
-export type WorkflowControlStatus = "Active" | "Draft" | "Read-only map";
+export type WorkflowControlStatus = "Active" | "Draft" | "Read-only map" | "Not implemented";
 export type WorkflowControlRisk = "Low" | "Medium" | "High";
 
 export type WorkflowControlStep = {
@@ -542,12 +542,21 @@ export const WORKFLOW_CONTROL_DOMAINS: readonly WorkflowControlDomain[] = [
   // ===========================================================================
   // 4. Offer & Hiring
   // ===========================================================================
+  // NOT BUILT — verified against production on 2026-08-19. `job_offers` and `job_offer_audit_logs`
+  // do not exist; no table matching `%offer%` exists at all. The offer stages declared in
+  // `recruitment/types.ts` are absent from `plainTransitionNextStatus`, so no code path can reach
+  // them, and `src/config/offer-approval.ts` has zero call sites outside its own file.
+  //
+  // The steps below are kept ON PURPOSE: they are the specification for whoever builds this. They
+  // describe nothing that runs today. Owner decision 2026-08-19 — leave it unbuilt and label it
+  // honestly, so nobody reads this page and believes offers are governed.
   {
     key: "offer-hiring",
     name: "Offer & Hiring",
-    status: "Active",
+    status: "Not implemented",
     riskLevel: "High",
-    summary: "Candidate offer, acceptance, HR approval, employee creation and vacancy fill.",
+    summary:
+      "NOT BUILT — nothing in the system creates, sends, approves or records an offer today. The steps are the intended design, not live behavior.",
     modulesAffected: n("job_offers", "employees", "position_vacancies", "job_offer_audit_logs", "notification_outbox"),
     subflows: [
       {
@@ -592,7 +601,10 @@ export const WORKFLOW_CONTROL_DOMAINS: readonly WorkflowControlDomain[] = [
             sideEffects: "Creates the employee; closes/fills the matching vacancy; provisions access.",
           },
         ],
-        gaps: ["Offer token is not consumed/invalidated until expiry — it can be reused while valid."],
+        gaps: [
+          "NOT BUILT: there is no offer record anywhere — the job_offers table was never created, so no offer can be sent, accepted, rejected or expired.",
+          "Design note for whenever this is built: the accept/reject token must be consumed and invalidated on first use, not merely left to expire.",
+        ],
       },
       {
         key: "acceptance",
@@ -612,6 +624,9 @@ export const WORKFLOW_CONTROL_DOMAINS: readonly WorkflowControlDomain[] = [
             sideEffects: "Moves the record into the hired pipeline (pending HR approval).",
           },
         ],
+        gaps: [
+          "NOT BUILT: there is no candidate-facing accept or reject route — the offer stages are missing from plainTransitionNextStatus in recruitment/applications.ts, so no code path can reach them.",
+        ],
       },
       {
         key: "hr-approval",
@@ -630,6 +645,9 @@ export const WORKFLOW_CONTROL_DOMAINS: readonly WorkflowControlDomain[] = [
             sideEffects: "Generates the employee_hr_id and provisions system access.",
           },
         ],
+        gaps: [
+          "NOT BUILT: nothing converts an accepted offer into an employee, and there is no approver — src/config/offer-approval.ts (salary thresholds, CEO caps, always-approve roles) has zero call sites outside its own file.",
+        ],
       },
       {
         key: "vacancy-fill",
@@ -647,6 +665,9 @@ export const WORKFLOW_CONTROL_DOMAINS: readonly WorkflowControlDomain[] = [
             sideEffects: "Picks a department-safe vacancy and sets filled_by_hr_id.",
           },
         ],
+        gaps: [
+          "NOT BUILT: no offer ever fills a vacancy — seats are opened and closed by the HR employee lifecycle, never by this flow.",
+        ],
       },
       {
         key: "notifications",
@@ -663,6 +684,9 @@ export const WORKFLOW_CONTROL_DOMAINS: readonly WorkflowControlDomain[] = [
             emailRecipients: n("Candidate (offer)", "HR (accept/reject/hire)"),
             sideEffects: "hr_notifications recipient mode for the HR team.",
           },
+        ],
+        gaps: [
+          "NOT BUILT: no candidate or HR message is produced by this flow — nothing writes an offer notification to the outbox.",
         ],
       },
     ],
