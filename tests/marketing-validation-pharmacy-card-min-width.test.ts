@@ -55,4 +55,36 @@ export function runMarketingValidationPharmacyCardMinWidthTests() {
     `${WORKSPACE}: ReusablePharmacyPicker's nowrap lines are no longer inside an "overflow-x-auto" ` +
       `box, so a long pharmacy name or owner name has nowhere to scroll and will overflow the card.`,
   );
+
+  // 3. The Pharmacy Validation section header, one level up, has exactly the same problem. Its
+  //    subtitle is a single nowrap sentence 335px wide, which sized its own grid item past the
+  //    330px mobile track and got cut mid-word by the customer card's `overflow-hidden`. Note the
+  //    original code carried `text-ellipsis` and it never rendered an ellipsis: the paragraph was
+  //    not overflowing its OWN box, so `text-overflow` had nothing to act on. `text-ellipsis` is
+  //    the wrong treatment here regardless — the owner's rule is scroll, never truncate.
+  const sectionHeader = source.match(
+    /<div className="([^"]*)">\s*<div className="flex flex-col gap-3 border-t border-slate-100 pt-4[^"]*">\s*<div className="([^"]+)">\s*<p className="[^"]*">Pharmacy Validation<\/p>\s*<p className="([^"]+)">/,
+  );
+  assert.ok(
+    sectionHeader,
+    `${WORKSPACE}: could not find the "Pharmacy Validation" section header — has it been restructured?`,
+  );
+  assert.ok(
+    sectionHeader[1].split(/\s+/).includes("min-w-0"),
+    `${WORKSPACE}: the Pharmacy Validation section's grid item is "${sectionHeader[1]}" — it is ` +
+      `missing "min-w-0". Without it the item sizes to its subtitle's min-content width (335px) ` +
+      `inside a 330px phone track, and the customer card's "overflow-hidden" cuts the sentence ` +
+      `mid-word with no ellipsis to show anything is missing.`,
+  );
+  assert.ok(
+    sectionHeader[2].split(/\s+/).includes("overflow-x-auto"),
+    `${WORKSPACE}: the Pharmacy Validation subtitle's wrapper is "${sectionHeader[2]}" — it is ` +
+      `missing "overflow-x-auto", so the nowrap sentence has nowhere to scroll on a phone.`,
+  );
+  assert.ok(
+    !sectionHeader[3].includes("text-ellipsis"),
+    `${WORKSPACE}: the Pharmacy Validation subtitle is "${sectionHeader[3]}" — it uses ` +
+      `"text-ellipsis". The owner's standing rule is that text is never truncated with an ellipsis; ` +
+      `let it scroll inside "overflow-x-auto" instead.`,
+  );
 }
