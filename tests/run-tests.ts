@@ -838,6 +838,7 @@ import { runMarketingDraftBlockersTests } from "./marketing-draft-blockers.test.
 // Registered beside its marketing siblings, not appended: this one pins the 2026-08-19 territory
 // ruling, and a PR that touches marketing visibility must see it in the same block it edits.
 import { runMarketingCustomerAreaOwnershipTests } from "./marketing-customer-area-ownership.test.ts";
+import { runMarketingSalesCodeSyncRerunTests } from "./marketing-sales-code-sync-rerun.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -2193,6 +2194,11 @@ await runTest(
 await runTest(
   "outstation evidence waiver (Product / Group Product / National Sales Managers submit with no photo, and their train-bus ticket is optional)",
   runOutstationEvidenceWaiverTests,
+);
+
+await runTest(
+  "sales pharmacy-code sync re-run (twice leaves exactly one row per distributor+code, spreadsheet rows untouched, links not detached)",
+  runMarketingSalesCodeSyncRerunTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
