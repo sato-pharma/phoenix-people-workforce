@@ -1239,8 +1239,10 @@ function tryFindRequester(access: AccessContext, rows: EmployeeDirectoryRow[]): 
  * A Super Admin sitting at a desk can validate a customer FOR a field employee: they pick the
  * employee, search the address on a map, and the resulting customer/pharmacy records are OWNED by
  * that employee — which is what puts the customer in that employee's marketing request dropdown
- * (getMarketingRequestDraftWorkspace filters customers through canSeeMarketingCustomer, which reads
- * owner_hr_id / manager_hr_id).
+ * (getMarketingRequestDraftWorkspace filters customers through canSeeMarketingCustomer). Since the
+ * 2026-08-19 territory ruling that filter passes on EITHER the hierarchy (owner_hr_id /
+ * manager_hr_id) or the customer's area, so picking the right employee also picks the right area —
+ * and the customer stays visible to whoever works that patch after the chosen employee leaves.
  *
  * Two invariants make this safe to hand to an admin:
  *   1. The role check is on the ACTOR, server-side, before any write. A non-Super-Admin who posts
@@ -4207,11 +4209,60 @@ function emptyValidationSummary(): Record<MarketingValidationStatus, number> {
  */
 const MARKETING_WORKSPACE_SAFETY_LIMIT = 10000;
 
-function canSeeMarketingCustomer(access: AccessContext, row: MarketingCustomerDbRow, employeeRows: EmployeeDirectoryRow[]) {
-  return canSeeMarketingHierarchyRecord(access, {
-    employeeHrId: row.owner_hr_id,
-    managerHrId: row.manager_hr_id,
-  }, employeeRows);
+/**
+ * The viewer's own area, used by every territory-scoped marketing rule below.
+ *
+ * `employees.area_id` is a PATCH for a rep and a REGION for a manager. That asymmetry is deliberate
+ * and safe: a rep matches the patch written on the record, a manager matches nothing and falls
+ * through to the hierarchy rule, which was already serving managers correctly.
+ */
+export function viewerAreaIdFor(access: AccessContext, employeeRows: EmployeeDirectoryRow[]) {
+  const viewerHrId = normalizeHrId(access.hrId);
+  if (!viewerHrId) return null;
+  return employeeRowByHrId(employeeRows).get(viewerHrId)?.areaId ?? null;
+}
+
+/**
+ * A marketing customer belongs to a TERRITORY, not to a person.
+ *
+ * Owner ruling 2026-08-19, in his words: *"the customers are assigned to people. They must be
+ * assigned to areas. Why? Because the employee resigns and another one is hired in his place, he
+ * finds his customers automatically."*
+ *
+ * Before this, visibility read `owner_hr_id`/`manager_hr_id` and nothing else — so a customer was
+ * bound to a human being and died with them. When a rep resigned the row kept pointing at the
+ * departed employee, the replacement matched neither the identity test nor the hierarchy test, and
+ * the customer went invisible to the person actually working the patch. The only repair was a
+ * manual ownership backfill, which is exactly the busywork this rule abolishes: nothing is
+ * re-stamped when somebody leaves, because the new hire's `employees.area_id` already matches the
+ * area on the row.
+ *
+ * The area test is deliberately **line-agnostic**, the same rule he set for pharmacies earlier the
+ * same day (see `canReuseMarketingPharmacy`): one customer is captured once for the whole area,
+ * whatever line the colleague who captured them sells. That also settles the cross-line case he
+ * calls a "treasure" — a doctor seen by Pedia and Anti Infective in one area becomes visible to
+ * both reps with no ownership shifted and nobody's name moved, which is his standing rule there:
+ * "never shift, you just select and highlight".
+ *
+ * `owner_hr_id` is NOT removed and NOT derived away. It stays as the audit record of who actually
+ * captured and validated the customer; it simply stops being what grants sight of the row.
+ */
+export function canSeeMarketingCustomer(
+  access: AccessContext,
+  row: MarketingCustomerDbRow,
+  employeeRows: EmployeeDirectoryRow[],
+  viewerAreaId: number | null,
+) {
+  if (
+    canSeeMarketingHierarchyRecord(access, {
+      employeeHrId: row.owner_hr_id,
+      managerHrId: row.manager_hr_id,
+    }, employeeRows)
+  ) {
+    return true;
+  }
+  if (viewerAreaId === null || row.area_id === null || row.area_id === undefined) return false;
+  return Number(row.area_id) === viewerAreaId;
 }
 
 // PostgREST folds every .in() value into the request URL; an unbatched array of a few hundred ids
@@ -4634,7 +4685,10 @@ export async function getMarketingValidationWorkspace(access: AccessContext): Pr
     ),
   ]);
 
-  const visibleCustomers = customerRows.filter((row) => canSeeMarketingCustomer(access, row, employeeRows));
+  const customerViewerAreaId = viewerAreaIdFor(access, employeeRows);
+  const visibleCustomers = customerRows.filter((row) =>
+    canSeeMarketingCustomer(access, row, employeeRows, customerViewerAreaId),
+  );
   const visibleCustomerIds = new Set(visibleCustomers.map((row) => row.id));
   const visibleLinks = links.filter((row) => visibleCustomerIds.has(row.customer_id));
   const report = mapValidationReportRows({
@@ -5859,9 +5913,10 @@ export async function getMarketingRequestDraftWorkspace(access: AccessContext): 
   }
   const allCustomerRows = (customersResult.data ?? []) as MarketingCustomerDbRow[];
   const allCustomers = allCustomerRows.map(mapCustomer);
+  const draftViewerAreaId = viewerAreaIdFor(access, employeeRows);
   const customers = allCustomerRows
     .filter((row) => validatedCustomerIds.has(row.id))
-    .filter((row) => canSeeMarketingCustomer(access, row, employeeRows))
+    .filter((row) => canSeeMarketingCustomer(access, row, employeeRows, draftViewerAreaId))
     .map(mapCustomer);
 
   return {
