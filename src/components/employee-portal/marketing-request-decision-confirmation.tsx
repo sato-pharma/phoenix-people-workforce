@@ -391,14 +391,16 @@ export function MarketingRequestDecisionConfirmation({
               >
                 {isPending && activeDecision === "approve" ? "Submitting…" : labelFor("approve")}
               </button>
-              <button
-                className="border border-amber-400 bg-white px-4 py-2 text-sm font-medium text-amber-800 disabled:opacity-50"
-                disabled={isPending || decided}
-                onClick={() => void submitDecision("return")}
-                type="button"
-              >
-                {isPending && activeDecision === "return" ? "Submitting…" : labelFor("return")}
-              </button>
+              {summary.allowReturn ? (
+                <button
+                  className="border border-amber-400 bg-white px-4 py-2 text-sm font-medium text-amber-800 disabled:opacity-50"
+                  disabled={isPending || decided}
+                  onClick={() => void submitDecision("return")}
+                  type="button"
+                >
+                  {isPending && activeDecision === "return" ? "Submitting…" : labelFor("return")}
+                </button>
+              ) : null}
               {summary.allowReject ? (
                 <button
                   className="border border-rose-300 bg-white px-4 py-2 text-sm font-medium text-rose-700 disabled:opacity-50"
