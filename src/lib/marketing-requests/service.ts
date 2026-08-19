@@ -2587,6 +2587,126 @@ async function notifyMarketingWorkflow(params: {
   });
 }
 
+/**
+ * Send the `request_assigned` notice for whatever rung a request is CURRENTLY sitting on, addressed
+ * by request id — the same notification `decideMarketingRequestWorkflow` fires when it advances a
+ * step, and therefore the same full-detail email plus the link that opens the request itself.
+ * Deliberately mirrors `dispatchDirectOrderApprovedEmail` in the direct-orders module.
+ *
+ * It exists because a decision recorded OUTSIDE the app never runs the notify path at all.
+ * `MKT-REQ-20260818-8C628BF4`'s CEO approval was written straight into the database on 2026-08-19
+ * ("Recorded on his behalf"), so the request landed on Finance Execution and Ahmed El Maraghy was
+ * never told it existed — no email, no in-app, no push — while its sibling `8E4E42C4`, approved
+ * through the UI 22 minutes earlier, reached him on all three channels.
+ *
+ * **Safe to call repeatedly.** `notifyMarketingWorkflow` keys the notification on the current step
+ * id and `notification_deliveries.idempotency_key` is a UNIQUE index claimed conflict-tolerantly,
+ * so a rung that has already told its approver cannot tell them twice.
+ */
+export async function dispatchMarketingAssignmentEmail(requestId: string): Promise<{
+  dispatched: boolean;
+  reason?: string;
+  requestCode?: string;
+  stepName?: string;
+}> {
+  const id = cleanText(requestId);
+  if (!id) return { dispatched: false, reason: "missing_request_id" };
+  try {
+    const supabase = getSupabaseAdmin();
+    const request = await loadMarketingRequestById(supabase, id);
+    if (!(MARKETING_SLA_PENDING_STATUSES as readonly string[]).includes(request.status)) {
+      return { dispatched: false, reason: "request_not_pending", requestCode: request.requestCode };
+    }
+    const steps = await loadMarketingRequestApprovalSteps(supabase, id);
+    const currentStep = steps.find((step) => step.status === "current") ?? null;
+    // No current rung means nobody is holding it — there is no one to notify, and inventing a
+    // recipient would be worse than staying quiet.
+    if (!currentStep?.assignedHrId) {
+      return { dispatched: false, reason: "no_current_step", requestCode: request.requestCode };
+    }
+    /**
+     * The unique idempotency key already makes a re-send physically impossible, so this check is
+     * about REPORTING, not safety: without it every pending request would be counted as
+     * "dispatched" and the backfill would claim it had emailed people it had not.
+     */
+    const { data: alreadySent } = await supabase
+      .from("notification_events")
+      .select("id")
+      .eq("module", "marketing_requests")
+      .eq("event_type", "request_assigned")
+      .eq("metadata->>currentStepId", currentStep.id)
+      .limit(1);
+    if ((alreadySent ?? []).length > 0) {
+      return { dispatched: false, reason: "already_notified", requestCode: request.requestCode, stepName: currentStep.stepName };
+    }
+    const employeeRows = await loadEmployeeDirectoryRows();
+    const requestTypeName = await loadMarketingRequestTypeName(supabase, request.requestTypeId);
+    const ccHrIds = steps
+      .filter((step) => step.isCc && step.stepCode === currentStep.stepCode)
+      .map((step) => step.assignedHrId)
+      .filter((hrId): hrId is string => Boolean(hrId));
+    await notifyMarketingWorkflow({
+      actorHrId: null,
+      ccHrIds,
+      eventType: "request_assigned",
+      message: `${request.requestCode} is waiting for ${currentStep.stepName}.`,
+      metadata: {
+        assignedApproverHrId: currentStep.assignedHrId,
+        currentStepId: currentStep.id,
+        currentStepName: currentStep.stepName,
+        workflowApproverHrId: currentStep.assignedHrId,
+        ...marketingNotificationVariables({ currentStep, employeeRows, request, requestTypeName }),
+      },
+      priority: "high",
+      request,
+      title: "Marketing request assigned",
+    });
+    return { dispatched: true, requestCode: request.requestCode, stepName: currentStep.stepName };
+  } catch (error) {
+    logError("Marketing assignment email dispatch failed", {
+      labels: { event: "marketing_assignment_email_dispatch_failed", requestId: id },
+      error,
+    });
+    return { dispatched: false, reason: "error" };
+  }
+}
+
+/**
+ * Backstop for the hole above: re-drive the assignment notice for EVERY pending request, so a rung
+ * whose approver was never told catches up on the next daily run instead of waiting forever on
+ * somebody noticing. Requests that already notified their approver are no-ops at the database's
+ * unique idempotency key, so this re-sends nothing that was sent.
+ *
+ * Deliberately NOT behind the `marketing_sla_reminder` toggle. That switch governs *chasing* an
+ * approver who has already been told and is sitting on it — a courtesy the owner can turn off. This
+ * is the primary "there is work on your desk" notice that the workflow always intended to send, and
+ * suppressing it makes the request invisible rather than merely un-nagged. `marketing_sla_reminder`
+ * has been `enabled = false` since 2026-07-23, which is exactly why the miss went unseen for a day.
+ */
+export async function backfillMissingMarketingAssignmentEmails(): Promise<{
+  checked: number;
+  dispatched: number;
+  requestCodes: string[];
+}> {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("marketing_requests")
+    .select("id")
+    .in("status", MARKETING_SLA_PENDING_STATUSES as unknown as string[]);
+  if (error) throw error;
+  const rows = (data ?? []) as Array<{ id: string }>;
+  const requestCodes: string[] = [];
+  let dispatched = 0;
+  for (const row of rows) {
+    const result = await dispatchMarketingAssignmentEmail(row.id);
+    if (result.dispatched) {
+      dispatched += 1;
+      if (result.requestCode) requestCodes.push(result.requestCode);
+    }
+  }
+  return { checked: rows.length, dispatched, requestCodes };
+}
+
 // --- Marketing SLA reminders (daily) ---------------------------------------
 const MARKETING_SLA_PENDING_STATUSES = ["pending_validation", "pending_approval", "returned"] as const;
 const MARKETING_SLA_DUE_SOON_DAYS = 3; // remind when the pay date is within N days
