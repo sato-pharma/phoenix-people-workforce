@@ -24,7 +24,10 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { LoadingSpinner } from "@/components/ui/loading-state";
 import { WorkspaceErrorBoundary } from "@/components/ui/workspace-error-boundary";
-import { MARKETING_CUSTOMER_SPECIALITIES } from "@/lib/marketing-requests/types";
+import {
+  MARKETING_CUSTOMER_SPECIALITIES,
+  MARKETING_GOVERNORATE_HOLD_PREFIX,
+} from "@/lib/marketing-requests/types";
 import type {
   MarketingCustomerType,
   MarketingDistributor,
@@ -331,17 +334,27 @@ function statusVariant(status: MarketingValidationStatus): "success" | "warning"
   return "neutral";
 }
 
+/** Whether any row on this customer is held because its capture contradicts the code's region. */
+function hasGovernorateHold(rows: MarketingValidationReportRow[]): boolean {
+  return rows.some((row) => (row.validationNotes ?? "").includes(MARKETING_GOVERNORATE_HOLD_PREFIX));
+}
+
 /**
  * Why this customer is not in the marketing request list yet, said in the rep's terms.
  *
- * Evidence is the only thing that can park a field row since 2026-08-12 — an unmatched distributor
- * code no longer blocks (see `resolveMarketingSystemValidationStatus`) — so this names the side
- * whose live photo and location are short instead of reading back the stored note, which cannot say
- * WHICH capture failed.
+ * TWO things can park a field row. Evidence, which this derives from the capture statuses rather
+ * than from the stored note, because the note cannot say WHICH capture failed. And, since
+ * 2026-08-20, a capture whose governorate contradicts the one the distributor registers the code in
+ * (see `resolveMarketingSystemValidationStatus`) — checked FIRST, because a rep told to "capture it
+ * again" would retake a photo that was never the problem and land in exactly the same place. An
+ * unmatched distributor code still does not block, and has not since 2026-08-12.
  */
 function pendingBlockReason(rows: MarketingValidationReportRow[]): string {
   const customerShort = rows.some((row) => row.customer.evidenceStatus !== "complete");
   const pharmacyShort = rows.some((row) => row.pharmacy.evidenceStatus !== "complete");
+  if (hasGovernorateHold(rows) && !customerShort && !pharmacyShort) {
+    return "The location you captured is in a different governorate from the one this distributor code is registered in, so it needs a check before release.";
+  }
   if (customerShort && pharmacyShort) {
     return "The live photo and location are incomplete on both the customer and the pharmacy.";
   }
@@ -359,6 +372,9 @@ function pendingBlockReason(rows: MarketingValidationReportRow[]): string {
 function pendingBlockLabel(rows: MarketingValidationReportRow[]): string {
   const customerShort = rows.some((row) => row.customer.evidenceStatus !== "complete");
   const pharmacyShort = rows.some((row) => row.pharmacy.evidenceStatus !== "complete");
+  // 22 characters — deliberately shorter than the longest label already here ("Customer capture
+  // incomplete", 26), so the chip cannot become the thing that makes a row wrap.
+  if (hasGovernorateHold(rows) && !customerShort && !pharmacyShort) return "Code location mismatch";
   if (customerShort && pharmacyShort) return "Both captures incomplete";
   if (customerShort) return "Customer capture incomplete";
   if (pharmacyShort) return "Pharmacy capture incomplete";
@@ -1960,8 +1976,15 @@ export function MarketingValidationWorkspace() {
       }
 
       const blockedNames = blocked.map((customerRows) => customerRows[0].customer.displayName).join(", ");
+      // "Capture it again" is the right advice for missing evidence and the WRONG advice for a
+      // governorate hold — the photo and the pin are already there, and retaking them lands the rep
+      // on the identical hold. A held-on-geography row is a question about the CODE, so send him to
+      // the code instead.
+      const blockedRemedy = hasGovernorateHold(blocked.flat())
+        ? `Check the distributor code on ${blocked.length === 1 ? "it" : "them"} is the right one for that shop, then ask a Super Admin or the CEO to release ${blocked.length === 1 ? "it" : "them"}.`
+        : `Ask a Super Admin or the CEO to release ${blocked.length === 1 ? "it" : "them"}, or capture ${blocked.length === 1 ? "it" : "them"} again with the live photo and location on both the customer and the pharmacy.`;
       setMessage(
-        `Saved, but ${blockedNames} ${blocked.length === 1 ? "is" : "are"} NOT in your marketing request customer list yet. ${pendingBlockReason(blocked.flat())} Ask a Super Admin or the CEO to release ${blocked.length === 1 ? "it" : "them"}, or capture ${blocked.length === 1 ? "it" : "them"} again with the live photo and location on both the customer and the pharmacy.${usable > 0 ? ` The other ${usable === 1 ? "customer is" : `${usable} customers are`} ready to use.` : ""}`,
+        `Saved, but ${blockedNames} ${blocked.length === 1 ? "is" : "are"} NOT in your marketing request customer list yet. ${pendingBlockReason(blocked.flat())} ${blockedRemedy}${usable > 0 ? ` The other ${usable === 1 ? "customer is" : `${usable} customers are`} ready to use.` : ""}`,
         "warning",
       );
       setActiveTab("pending");

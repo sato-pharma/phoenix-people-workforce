@@ -368,6 +368,17 @@ export const MARKETING_CUSTOMER_SPECIALITIES = [
 
 export type MarketingCustomerSpeciality = (typeof MARKETING_CUSTOMER_SPECIALITIES)[number];
 
+/**
+ * How a governorate hold is recognised on a stored `validation_notes` string.
+ *
+ * `buildGovernorateMismatchNote` writes it and the Customer Validation workspace reads it, so the
+ * marker is a constant rather than prose either side pattern-matches: reword the sentence freely,
+ * but keep this at the front of it. It lives HERE, not in `service.ts`, because the workspace is a
+ * `"use client"` component and importing the service into the browser bundle would drag the
+ * service-role Supabase client in with it.
+ */
+export const MARKETING_GOVERNORATE_HOLD_PREFIX = "Held for review:";
+
 export type MarketingValidationCustomerInput = {
   capturedAccuracyMeters?: number | null;
   capturedAddress?: string | null;
