@@ -121,6 +121,7 @@ import { runRecruitmentInterviewNotificationsTests } from "./recruitment-intervi
 import { runRecruitmentNsmRmCeoScopingTests } from "./recruitment-nsm-rm-ceo-scoping.test.ts";
 import { runRecruitmentCvExtractionFieldsTests } from "./recruitment-cv-extraction-fields.test.ts";
 import { runRecruitmentCvExtractionQualityTests } from "./recruitment-cv-extraction-quality.test.ts";
+import { runRecruitmentRuleExtractionTests } from "./recruitment-rule-extraction.test.ts";
 import { runRecruitmentCvAutoApplyTests } from "./recruitment-cv-auto-apply.test.ts";
 import { runRecruitmentHiringManagerPushTests } from "./recruitment-hiring-manager-push.test.ts";
 import { runRecruitmentSimplifyTests } from "./recruitment-simplify.test.ts";
@@ -985,6 +986,10 @@ await runTest("recruitment cv extraction fields", runRecruitmentCvExtractionFiel
 await runTest(
   "recruitment cv extraction quality (thin-read scoring, best-of merge, hyperlink capture, high effort, escalation ladder, recorded intake failure)",
   runRecruitmentCvExtractionQualityTests,
+);
+await runTest(
+  "recruitment RULE cv extraction (no-AI primary path: ligature/shredded repair, phone+email+LinkedIn patterns, section slicing, district-first governorate, work history, rule-vs-AI merge policy, escalation gate)",
+  runRecruitmentRuleExtractionTests,
 );
 await runTest("recruitment cv auto-apply (high-confidence gap-fill rules; a CREATED candidate's blank phone is filled, a MATCHED one's never is)", runRecruitmentCvAutoApplyTests);
 await runTest(
