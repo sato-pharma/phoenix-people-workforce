@@ -2224,13 +2224,23 @@ export function buildMarketingManagerChain(params: {
   return chain;
 }
 
-/** Product/Group Product Manager(s) of the request's line, CC-notified (never gate). */
-export async function resolveLineCcHrIds(params: {
+/**
+ * Product/Group Product Manager(s) of the request's line, CC-notified (never gate).
+ *
+ * Each recipient is returned WITH the role that selected them, because a CC rung has to be stamped
+ * with the recipient's OWN role, not the reviewer's. Line 1 reviews at Marketing Manager and CCs the
+ * line's Product Manager, so reusing the reviewer's role printed
+ * `Marketing Review (CC) · Marketing Manager · <the line's Product Manager>` — two rungs reading
+ * "Marketing Manager" one under the other, which made the case file look like it had two Marketing
+ * Managers and hid which of the two actually decides. Production carried it on both of A-10's open
+ * requests. `app_auth_users.role` was already selected here and simply thrown away.
+ */
+export async function resolveLineCcRecipients(params: {
   ccRoles: string[];
   employeeRows: EmployeeDirectoryRow[];
   request: MarketingRequest;
   supabase: SupabaseClient;
-}): Promise<string[]> {
+}): Promise<Array<{ hrId: string; role: string }>> {
   if (params.ccRoles.length === 0) return [];
   const roles: PhoenixRole[] = [];
   for (const raw of params.ccRoles) {
@@ -2250,13 +2260,26 @@ export async function resolveLineCcHrIds(params: {
   if (error) throw error;
 
   const byHrId = employeeRowByHrId(params.employeeRows);
-  const ccHrIds = new Set<string>();
-  for (const row of (data ?? []) as Array<{ hr_id?: string | null }>) {
+  const requestedRoleByKey = new Map(roles.map((role) => [normalizeLookupKey(role), String(role)]));
+  const seen = new Set<string>();
+  const recipients: Array<{ hrId: string; role: string }> = [];
+  for (const row of (data ?? []) as Array<{ hr_id?: string | null; role?: string | null }>) {
     const hrId = normalizeHrId(row.hr_id);
-    if (!hrId) continue;
-    if (sameNullableId(byHrId.get(hrId)?.lineId, params.request.lineId)) ccHrIds.add(hrId);
+    if (!hrId || seen.has(hrId)) continue;
+    const employeeRow = byHrId.get(hrId);
+    if (!sameNullableId(employeeRow?.lineId, params.request.lineId)) continue;
+    /**
+     * The query filters on `in(roles)`, so `row.role` is normally one of the requested CC roles.
+     * The two fallbacks exist so an unrecognised value can never DROP a recipient — a CC row is a
+     * notification, and losing one silently is worse than labelling it from the employee master.
+     */
+    const role =
+      requestedRoleByKey.get(normalizeLookupKey(row.role)) ??
+      (employeeRow ? String(resolveJobFunctionRole(employeeRow.jobTitle)) : String(roles[0]));
+    seen.add(hrId);
+    recipients.push({ hrId, role });
   }
-  return Array.from(ccHrIds);
+  return recipients;
 }
 
 async function createMarketingApprovalSteps(params: {
@@ -2424,13 +2447,13 @@ async function createMarketingApprovalSteps(params: {
     pushRow({ assignedHrId, assignedRole: effectiveRole, isCc: false, step, stepName: step.stepName });
 
     if (effectiveCcRoles.length > 0) {
-      const ccHrIds = await resolveLineCcHrIds({
+      const ccRecipients = await resolveLineCcRecipients({
         ccRoles: effectiveCcRoles,
         employeeRows: params.employeeRows,
         request: params.request,
         supabase: params.supabase,
       });
-      for (const ccHrId of ccHrIds) {
+      for (const { hrId: ccHrId, role: ccRole } of ccRecipients) {
         if (ccHrId === assignedHrId) continue;
         // The requester is never CC'd on their own request. A CC row is a "there is something for
         // you to look at" notification plus a visible rung in the chain; pointed back at the person
@@ -2438,7 +2461,9 @@ async function createMarketingApprovalSteps(params: {
         // The self-approval guard in `pushRow` deliberately covers gating rungs only, so CC rows
         // need their own check — production carried A-10 CC'd on both of her own PM requests.
         if (isSamePerson(ccHrId, params.request.requesterHrId)) continue;
-        pushRow({ assignedHrId: ccHrId, assignedRole: effectiveRole, isCc: true, step, stepName: `${step.stepName} (CC)` });
+        // `ccRole`, not `effectiveRole`: the rung names the person who was copied, so it must carry
+        // THEIR role. See `resolveLineCcRecipients`.
+        pushRow({ assignedHrId: ccHrId, assignedRole: ccRole, isCc: true, step, stepName: `${step.stepName} (CC)` });
       }
     }
   }
