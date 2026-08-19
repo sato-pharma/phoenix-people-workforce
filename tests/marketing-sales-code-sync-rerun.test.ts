@@ -101,23 +101,32 @@ function syncAdditive(
   const isActive = (distributorId: number) => vendors.get(distributorId) ?? true;
   const live = candidates(map);
   const livePairs = new Set(live.map((row) => pairKey(row.distributorId, row.customerCode)));
+  // Every code the live map carries, under ANY vendor. This is the merge guard: when the owner
+  // merges vendor B into vendor A he re-points B's codes onto A's distributor_id, and the map can
+  // then only ever justify them under B — the vendor he just hid. Judging staleness per-vendor
+  // therefore reads all 2,671 merged production rows as dead. Judging it per-code does not.
+  const liveCodes = new Set(live.map((row) => normalized(row.customerCode)));
   const linked = new Set(links.map((link) => link.referenceId).filter((id): id is number => id !== null));
 
-  // RETIREMENT — only our own rows, only when the live map no longer produces the pair, and only
-  // when nothing points at the row. reference_id is a FK with ON DELETE SET NULL, so deleting a
-  // referenced row silently detaches a validated customer code instead of raising anything.
+  // RETIREMENT — only our own rows, only when the live map no longer produces the pair, only when
+  // the code has left the map entirely, and only when nothing points at the row. reference_id is a
+  // FK with ON DELETE SET NULL, so deleting a referenced row silently detaches a validated
+  // customer code instead of raising anything.
   let retired = 0;
   let retainedLinked = 0;
   const kept: ReferenceRow[] = [];
   for (const row of table) {
-    const stale =
+    const staleHere =
       row.sourceFile === SALES_SOURCE_FILE && !livePairs.has(pairKey(row.distributorId, row.rawPharmacyCode));
-    if (!stale) {
+    if (!staleHere) {
       kept.push(row);
       continue;
     }
     retainedLinked += 1;
-    if (linked.has(row.id)) kept.push(row);
+    // Still live somewhere in the map — a merged code, or one that moved vendor. Keeping it costs
+    // one redundant row under a DIFFERENT distributor_id, which the resolver does not read as
+    // ambiguous because matching is scoped by distributor. Deleting it costs a real customer code.
+    if (liveCodes.has(normalized(row.rawPharmacyCode)) || linked.has(row.id)) kept.push(row);
     else retired += 1;
   }
 
@@ -219,6 +228,11 @@ function source(relPath: string): string {
 
 export function runMarketingSalesCodeSyncRerunTests() {
   const migration = source("supabase/migrations/20260819210000_marketing_sales_code_sync_is_additive.sql");
+  // The follow-up that stops retirement undoing a vendor merge. It is the version of the function
+  // actually running, so its retirement clause is the one that has to hold.
+  const mergeGuardMigration = source(
+    "supabase/migrations/20260819220000_sync_retirement_must_not_undo_a_vendor_merge.sql",
+  );
 
   // ── THE TEST CAN FAIL ────────────────────────────────────────────────────
   // Before pinning the fix, prove the fixture reproduces the incident. If this stops failing under
@@ -436,9 +450,81 @@ export function runMarketingSalesCodeSyncRerunTests() {
     );
   }
 
+  // ── A MERGED CODE IS NOT A STALE CODE ────────────────────────────────────
+  // The production shape that migration 20260819210000 missed, and that 20260819220000 fixes.
+  // Merging vendor B into vendor A means re-pointing B's codes onto A's distributor_id. The live
+  // map still carries those codes, but only ever under B — so retirement judged per-vendor reads
+  // every one of them as dead. On production that was 2,671 rows (epda 1,556, Ibn sina 1,115),
+  // none of them link-protected, i.e. the first real run would have deleted all of them and undone
+  // both merges. Insert-side hidden-vendor guarding does NOT cover this: it is the same owner
+  // decision approached from the delete side.
+  {
+    const PARENT = 41; // the vendor B was merged INTO; no map row ever resolves to it
+    const seeded = syncAdditive(spreadsheetRows(), liveMap(), []);
+    const mergedRow = seeded.table.find((row) => normalized(row.rawPharmacyCode) === "0001564574");
+    assert.ok(mergedRow, "fixture sanity: the row about to be 'merged' must exist");
+
+    // The merge itself: same code, now sitting under the parent. The map is untouched — it still
+    // justifies this code under POS, exactly as production's map still justifies the Ibn Sina-Sato
+    // codes under the hidden Ibn Sina-Sato vendor rather than under `Ibn sina`.
+    const afterMerge = seeded.table.map((row) =>
+      row.id === mergedRow.id ? { ...row, distributorId: PARENT } : row,
+    );
+
+    const result = syncAdditive(afterMerge, liveMap(), []);
+    assert.equal(
+      result.references_retired,
+      0,
+      "a code merged onto another vendor must NEVER be retired — the live map still carries it, just under the vendor it was merged away from, and deleting it undoes the owner's merge",
+    );
+    assert.ok(
+      result.table.some((row) => row.id === mergedRow.id && row.distributorId === PARENT),
+      "the merged row must survive intact under its new vendor, not merely go uncounted",
+    );
+    // It is still reported as stale-under-this-vendor, so the number stays visible to a human
+    // rather than the sync pretending nothing is unusual.
+    assert.ok(
+      result.references_retained_linked >= 1,
+      "a kept-but-unjustified row must still be counted, or the sync silently accumulates rows nobody can see",
+    );
+  }
+
+  // The conservative rule must not swallow retirement whole: a code that leaves the map ENTIRELY
+  // is still retired. Without this, the merge guard above would be indistinguishable from deleting
+  // the retirement pass.
+  {
+    const seeded = syncAdditive(spreadsheetRows(), liveMap(), []);
+    const goneMap = liveMap().filter((row) => normalized(row.customerCode) !== "0001564574");
+    const result = syncAdditive(seeded.table, goneMap, []);
+    assert.equal(
+      result.references_retired,
+      1,
+      "a code absent from the map under EVERY vendor is genuinely dead and must still be retired",
+    );
+  }
+
   // ── THE MODEL AND THE SQL MUST AGREE ─────────────────────────────────────
   // Everything above is a model. These pin the shipped migration so the model cannot silently
   // outlive the SQL it claims to describe.
+  {
+    // The merge guard, in the SQL that actually runs. Without this clause the retirement pass
+    // deletes every code the owner merged onto another vendor.
+    assert.match(
+      mergeGuardMigration,
+      /and not exists \(\s*select 1 from public\.phx_v_sales_pharmacy_code_candidates c2\s*where c2\.normalized_pharmacy_code = r\.normalized_pharmacy_code\s*\)/,
+      "retirement must refuse to delete a code the live map still carries under ANY vendor, or a re-run undoes the owner's vendor merges (2,671 rows on production)",
+    );
+    assert.match(
+      mergeGuardMigration,
+      /and not exists \(\s*select 1 from public\.marketing_pharmacy_distributor_codes dc\s*where dc\.reference_id = r\.id\s*\)/,
+      "the follow-up must keep the link guard too — replacing the function wholesale is how a fix loses an earlier one",
+    );
+    assert.doesNotMatch(
+      mergeGuardMigration,
+      /delete from public\.marketing_pharmacy_code_references\s*\n\s*where source_file = 'source_of_sales_customer_map';/,
+      "the blanket delete must not come back in the follow-up either",
+    );
+  }
   {
     assert.match(
       migration,
