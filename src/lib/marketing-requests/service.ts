@@ -4265,6 +4265,41 @@ export function canSeeMarketingCustomer(
   return Number(row.area_id) === viewerAreaId;
 }
 
+/**
+ * The WRITE-side twin of `canSeeMarketingCustomer`, for the two paths that raise a spend request
+ * against a customer: `createMarketingRequestDraft` and `resubmitReturnedMarketingRequest`.
+ *
+ * Until this existed those paths loaded the customer by id and checked only that the row was there
+ * and `active !== false` — nothing checked that the requester was allowed to SEE it. The dropdown
+ * they pick from is scoped (getMarketingRequestDraftWorkspace filters through
+ * `canSeeMarketingCustomer`), but a dropdown is a convenience, not a boundary: the request body
+ * carries a raw `customerId`, so any marketing-capable employee who knew or guessed one could raise
+ * a spend request against a customer on somebody else's patch, and it would enter the approval
+ * chain looking entirely ordinary.
+ *
+ * Deliberately the SAME predicate as the read rule rather than a stricter one of its own. If you
+ * can see a customer in the workspace you may request for it, and if you cannot, you may not —
+ * one rule, so the picker and the server can never disagree about what is in scope. That includes
+ * the territory route added by the 2026-08-19 ruling, so the rep hired into a resigned rep's patch
+ * can raise requests for the customers they inherited without anything being re-stamped.
+ *
+ * Modelled on the pharmacy guard in `submitMarketingValidation` — same shape, same reasoning:
+ * "the picker is a convenience, the visibility rule is the boundary".
+ *
+ * Measured against production before it shipped: of the 9 marketing_requests then on record, 0
+ * would have been refused. Eight were raised by the customer's own owner and one by the Marketing
+ * Manager, whose company-wide oversight role passes on the first branch of the rule.
+ */
+export function assertMarketingCustomerIsInScope(
+  access: AccessContext,
+  row: MarketingCustomerDbRow,
+  employeeRows: EmployeeDirectoryRow[],
+) {
+  if (!canSeeMarketingCustomer(access, row, employeeRows, viewerAreaIdFor(access, employeeRows))) {
+    throw forbiddenError("Forbidden: that customer is not one you can raise a request for.");
+  }
+}
+
 // PostgREST folds every .in() value into the request URL; an unbatched array of a few hundred ids
 // can push the URL past undici's ~16KB header limit and throw "TypeError: fetch failed" /
 // HeadersOverflowError (the Customer Database workspace dedupes ids from an org-wide, .limit(1000)
@@ -5993,6 +6028,10 @@ export async function createMarketingRequestDraft(
   if (contactResult.error) throw contactResult.error;
   if (!customerResult.data) throw notFoundError("Customer was not found.", "customer_not_found");
   if (!requestTypeResult.data) throw notFoundError("Request type was not found.", "request_type_not_found");
+  // Re-checked on the server, never trusted from the payload: the picker is scoped, but the body
+  // carries a raw customerId. Runs before the draft is prepared, so a customer on somebody else's
+  // patch fails here rather than at the first insert.
+  assertMarketingCustomerIsInScope(access, customerResult.data as MarketingCustomerDbRow, employeeRows);
 
   const contact = contactResult.data as MarketingCustomerContactDbRow | null;
   if (contact && (contact.active === false || contact.customer_id !== normalized.customerId)) {
@@ -6165,6 +6204,10 @@ export async function resubmitReturnedMarketingRequest(
   if (contactResult.error) throw contactResult.error;
   if (!customerResult.data) throw notFoundError("Customer was not found.", "customer_not_found");
   if (!requestTypeResult.data) throw notFoundError("Request type was not found.", "request_type_not_found");
+  // Same guard as the create path, and needed just as much: a resubmit re-reads `customerId` from
+  // the edited payload, so the customer can be SWAPPED for one the requester was never allowed to
+  // see. Only-the-requester-may-resubmit above proves who is editing, not what they may point at.
+  assertMarketingCustomerIsInScope(access, customerResult.data as MarketingCustomerDbRow, employeeRows);
   const contact = contactResult.data as MarketingCustomerContactDbRow | null;
   if (contact && (contact.active === false || contact.customer_id !== normalized.customerId)) {
     throw validationError("Customer contact does not belong to the selected customer.");
