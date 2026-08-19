@@ -2280,12 +2280,18 @@ export function MarketingValidationWorkspace() {
                       )}
                     </div>
 
-                    {/* Pharmacy section divider — scoped to THIS customer */}
-                    <div className="lg:col-span-6">
+                    {/* Pharmacy section divider — scoped to THIS customer.
+                        `min-w-0` here is the same load-bearing fix as on the pharmacy cards below:
+                        without it this grid item sizes to its own min-content (the nowrap sentence,
+                        ~335px) and overflows a 330px phone track, and the customer card's
+                        `overflow-hidden` then clips the sentence mid-word. The sentence itself
+                        scrolls inside `overflow-x-auto` rather than ellipsing — owner's rule:
+                        never wrap, never truncate. */}
+                    <div className="min-w-0 lg:col-span-6">
                       <div className="flex flex-col gap-3 border-t border-slate-100 pt-4 sm:flex-row sm:items-center sm:justify-between">
-                        <div className="min-w-0">
-                          <p className="text-[10px] font-black uppercase tracking-[0.14em] text-orange-600">Pharmacy Validation</p>
-                          <p className="mt-0.5 overflow-hidden text-ellipsis whitespace-nowrap text-[12px] font-medium text-slate-500">
+                        <div className="min-w-0 overflow-x-auto">
+                          <p className="whitespace-nowrap text-[10px] font-black uppercase tracking-[0.14em] text-orange-600">Pharmacy Validation</p>
+                          <p className="mt-0.5 whitespace-nowrap text-[12px] font-medium text-slate-500">
                             Capture a new pharmacy, or attach one you already validated.
                           </p>
                         </div>
