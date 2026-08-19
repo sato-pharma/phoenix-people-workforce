@@ -132,7 +132,11 @@ const nextConfig: NextConfig = {
   // paths break (Next tries to resolve them as bundled "vendor-chunks" that don't exist).
   // Marking them external makes API routes `require()` them natively from node_modules
   // instead, so the on-disk .afm lookups keep working.
-  serverExternalPackages: ["pdfmake", "pdfkit", "puppeteer-core", "pdf-parse", "mammoth"],
+  // tesseract.js is here for the same class of reason: it forks its own worker script and loads a
+  // WebAssembly core and a language file from disk at runtime, by path. Bundled, none of those paths
+  // resolve. See src/lib/recruitment/cv-ocr.ts, which reads scanned CVs when the vision model is
+  // unavailable.
+  serverExternalPackages: ["pdfmake", "pdfkit", "puppeteer-core", "pdf-parse", "mammoth", "tesseract.js"],
   // pdf-parse's local PDF text extraction (src/lib/recruitment/cv-extraction.ts) runs on
   // pdfjs-dist's "legacy" build. In Node, pdfjs-dist always disables real Worker threads and
   // instead dynamically `import()`s its own sibling "legacy/build/pdf.worker.mjs" file to run
@@ -144,8 +148,19 @@ const nextConfig: NextConfig = {
   // copies pdf.mjs, but never sees pdf.worker.mjs, so every PDF extraction hard-fails in
   // production with "Setting up fake worker failed: Cannot find module '.../pdf.worker.mjs'"
   // (confirmed fatal: pdfjs-dist has no other Node code path once that promise rejects).
+  //
+  // The tessdata file and the tesseract.js WASM core are here for exactly the same reason. Both are
+  // opened by absolute path at runtime — the language file from assets/tessdata (deliberately
+  // vendored so nothing is fetched from a CDN by a production server) and the core from its own
+  // package — so the tracer never sees either. Without these entries free OCR would work in dev and
+  // fail only in production, which is precisely how the pdf.worker.mjs bug behaved.
   outputFileTracingIncludes: {
-    "/api/**/*": ["./node_modules/.pnpm/pdfjs-dist@*/node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs"],
+    "/api/**/*": [
+      "./node_modules/.pnpm/pdfjs-dist@*/node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs",
+      "./assets/tessdata/*.traineddata.gz",
+      "./node_modules/.pnpm/tesseract.js@*/node_modules/tesseract.js/src/worker-script/**",
+      "./node_modules/.pnpm/tesseract.js-core@*/node_modules/tesseract.js-core/**",
+    ],
   },
   experimental: {
     serverActions: {

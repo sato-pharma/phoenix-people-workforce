@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
 
 import { mergeRuleAndAiExtractions, shouldEscalateToAi } from "../src/lib/recruitment/cv-extraction-merge.ts";
 import type { ExtractedCandidateFields } from "../src/lib/recruitment/cv-extraction-fields.ts";
@@ -384,7 +384,14 @@ function runWiringTests() {
     extraction.indexOf("runRuleCvExtraction(cleanedText, ruleContext)") < extraction.indexOf("if (!hasOpenAiApiKey())"),
     "the free rule pass must run before the OpenAI key is required",
   );
-  assert.match(extraction, /if \(rule && rule\.isCv\) return ruleOnly\(\);\s*\n\s*throw error;/, "an AI failure must fall back to the rule result");
+  // An exhausted AI must fall back rather than throw: first to the rule result, then — for a scan,
+  // which has no rule result because it had no text layer — to free OCR. Only when both are empty
+  // does the caller see the error it used to see unconditionally.
+  assert.match(
+    extraction,
+    /if \(rule && rule\.isCv\) return ruleOnly\(\);[\s\S]{0,300}?const scanned = await ruleFromOcr\(\);\s*\n\s*if \(scanned\) return scanned;\s*\n\s*throw error;/,
+    "an AI failure must fall back to the rule result, then to OCR, before throwing",
+  );
 
   // 3. is_cv still follows the MODEL when the model was consulted. The rules' own is_cv is a
   //    six-signal heuristic an invoice would satisfy, and letting it overrule the model would
@@ -408,6 +415,64 @@ function runWiringTests() {
   assert.match(intake, /subject: input\.subject \?\? null,/, "intake must pass the subject to the rule pass");
 }
 
+// ---------------------------------------------------------------------------
+// Free OCR for scanned CVs
+//
+// The engine itself is not exercised here on purpose: running Tesseract costs 2-25 seconds per
+// page and needs real scans, which CI has neither of. What IS pinned is every decision that makes
+// OCR safe, because those are the things a later edit could quietly undo.
+// ---------------------------------------------------------------------------
+
+function runOcrTests() {
+  // The defect OCR found in the email rule, and the reason it is worth having found. Tesseract read
+  // "martenaadly177@outlook.com" as "martenaadly 1 77@outlook.com", and the address regex then
+  // matched the tail — a perfectly valid-looking address for somebody else's mailbox, which nothing
+  // downstream would ever have questioned.
+  assert.deepEqual(findEmails("martenaadly 1 77@outlook.com"), []);
+  // A real address on the same line is still read, so the guard costs nothing.
+  assert.deepEqual(findEmails("martenaadly177@outlook.com"), ["martenaadly177@outlook.com"]);
+  assert.deepEqual(findEmails("ali@example-co.com"), ["ali@example-co.com"]);
+
+  const ocr = readFileSync(new URL("../src/lib/recruitment/cv-ocr.ts", import.meta.url), "utf8");
+  const extraction = readFileSync(new URL("../src/lib/recruitment/cv-extraction.ts", import.meta.url), "utf8");
+
+  // The language file is VENDORED. Without it tesseract.js silently fetches from a CDN and writes
+  // into the server's working directory; this assertion turns a missing vendored file into a red CI
+  // run rather than a surprise network call from production.
+  const tessdata = new URL("../assets/tessdata/eng.traineddata.gz", import.meta.url);
+  assert.ok(statSync(tessdata).size > 1_000_000, "the vendored eng.traineddata.gz must be present");
+  assert.match(ocr, /cacheMethod: "none"/, "OCR must never fetch or cache language data over the network");
+  assert.match(ocr, /langPath: TESSDATA_DIR/, "OCR must read its language data from the vendored folder");
+
+  // OCR REFUSES rather than guesses. The confidence gate is what makes the two Arabic scans fall
+  // through to the model automatically instead of producing confident nonsense.
+  assert.match(ocr, /OCR_MIN_CONFIDENCE = 60/, "the confidence gate must stay between the two measured populations");
+  assert.match(ocr, /if \(confidence < OCR_MIN_CONFIDENCE\) return null;/, "a low-confidence read must be discarded");
+
+  // The worker is always terminated — it is a forked process holding ~200 MB on a single production
+  // replica that also serves payroll.
+  assert.match(ocr, /finally \{[\s\S]*terminate\(\)/, "the OCR worker must be terminated in a finally block");
+
+  // OCR is a FALLBACK, never a short-circuit. It may only run after the model has failed or is
+  // unavailable, because it is not accurate enough to replace it — measured, not assumed.
+  assert.ok(
+    extraction.indexOf("const decision = shouldEscalateToAi(rule)") < extraction.indexOf("const ruleFromOcr"),
+    "OCR must not be consulted before the rule/AI decision",
+  );
+  assert.ok(
+    !/if \(!decision\.escalate\) return await ruleFromOcr/.test(extraction),
+    "OCR must never short-circuit a working model",
+  );
+
+  // Nothing OCR produces may be auto-applied to a candidate record. cv-auto-apply writes only
+  // high-confidence values, so the downgrade is the whole protection.
+  assert.match(
+    extraction,
+    /fields\[key\] = \{ \.\.\.field, confidence: "low" \};/,
+    "every OCR-derived field must be downgraded to low confidence",
+  );
+}
+
 export function runRecruitmentRuleExtractionTests() {
   runNormalizationTests();
   runPatternTests();
@@ -418,4 +483,5 @@ export function runRecruitmentRuleExtractionTests() {
   runMergeTests();
   runEscalationTests();
   runWiringTests();
+  runOcrTests();
 }

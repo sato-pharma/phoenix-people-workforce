@@ -131,6 +131,12 @@ allowBuilds:
   protobufjs: true
   sharp: true
   supabase: true
+  # false, and verified rather than assumed: free OCR was measured end to end against the six real
+  # scanned CVs with this package's install script never run (pnpm reported "Ignored build scripts:
+  # tesseract.js@7.0.0"), and it read them. Downloading language data is what that script is for,
+  # and src/lib/recruitment/cv-ocr.ts deliberately does not want that — the data is vendored at
+  # assets/tessdata so a production server never fetches it from a CDN.
+  tesseract.js: false
   unrs-resolver: true
 
 # GHSA-mh99-v99m-4gvg (brace-expansion DoS via unbounded glob-pattern expansion, patched
