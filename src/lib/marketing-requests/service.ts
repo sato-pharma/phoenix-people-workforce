@@ -77,8 +77,10 @@ import type {
   MarketingRequestApprovalStep,
   MarketingRequestType,
   MarketingOnBehalfEmployee,
+  MarketingReusablePharmacy,
   MarketingValidationCustomerInput,
   MarketingValidationInput,
+  MarketingValidationPharmacyEntry,
   MarketingValidationPharmacyInput,
   MarketingValidationReportRow,
   MarketingValidationStatus,
@@ -794,6 +796,13 @@ type NormalizedMarketingValidationPharmacy = {
   capturedAt: string | null;
   capturedLatitude: number | null;
   capturedLongitude: number | null;
+  /**
+   * Set only when the rep picked an existing pharmacy off the My Pharmacies tab. Every OTHER field
+   * on this object is then meaningless and must not be read — the record is loaded from the
+   * database instead, so the reuse path can never overwrite a stored shop with client-supplied
+   * text. `createMarketingValidationRecord` branches on this before touching anything else.
+   */
+  existingPharmacyId: string | null;
   displayName: string;
   evidenceHasTimestamp: boolean;
   evidencePhotoCapturedAt: string | null;
@@ -1653,10 +1662,48 @@ function normalizeCustomerSpeciality(value: unknown, label: string) {
   return match;
 }
 
+/**
+ * An empty normalized pharmacy carrying nothing but the id of the record to reuse.
+ *
+ * The zeros and nulls are placeholders, never written: the caller branches on `existingPharmacyId`
+ * and reads the stored pharmacy row instead. Keeping one normalized shape (rather than a union)
+ * leaves every existing call site untouched.
+ */
+function normalizeReusedValidationPharmacy(existingPharmacyId: string): NormalizedMarketingValidationPharmacy {
+  return {
+    capturedAccuracyMeters: null,
+    capturedAddress: null,
+    capturedAt: null,
+    capturedLatitude: null,
+    capturedLongitude: null,
+    displayName: "",
+    evidenceHasTimestamp: false,
+    evidencePhotoCapturedAt: null,
+    evidencePhotoDataUrl: null,
+    evidencePhotoName: null,
+    evidenceStatus: "missing",
+    existingPharmacyId,
+    extractedAreaName: null,
+    extractedGovernorateName: null,
+    normalizedName: "",
+    regionName: null,
+    validationStatus: "pending",
+    vendorCodes: [],
+  };
+}
+
 function normalizeValidationPharmacy(
-  inputPharmacy: MarketingValidationPharmacyInput,
+  inputEntry: MarketingValidationPharmacyEntry,
   label: string,
 ): NormalizedMarketingValidationPharmacy {
+  // The My Pharmacies path: the client points at a record and says nothing else about it.
+  if ("existingPharmacyId" in inputEntry && inputEntry.existingPharmacyId !== undefined) {
+    const existingPharmacyId = cleanText(inputEntry.existingPharmacyId);
+    if (!existingPharmacyId) throw validationError(`${label} did not name which pharmacy to link.`);
+    return normalizeReusedValidationPharmacy(existingPharmacyId);
+  }
+
+  const inputPharmacy = inputEntry as MarketingValidationPharmacyInput;
   const displayName = cleanText(inputPharmacy?.displayName);
   if (!displayName) throw validationError(`${label} name is required.`);
   if (!Array.isArray(inputPharmacy.vendorCodes) || inputPharmacy.vendorCodes.length === 0) {
@@ -1710,6 +1757,7 @@ function normalizeValidationPharmacy(
     ...pharmacy,
     capturedAccuracyMeters: pharmacy.capturedAccuracyMeters || null,
     evidenceStatus: pharmacyEvidenceStatus,
+    existingPharmacyId: null,
     validationStatus: systemStatusFromEvidence(pharmacyEvidenceStatus),
     vendorCodes,
   };
@@ -1717,7 +1765,7 @@ function normalizeValidationPharmacy(
 
 function normalizeValidationCustomer(
   inputCustomer: MarketingValidationCustomerInput | undefined,
-  inputPharmacies: MarketingValidationPharmacyInput[],
+  inputPharmacies: MarketingValidationPharmacyEntry[],
   /** "" for a single customer so the existing messages are unchanged; "Customer 2 " when several. */
   prefix: string,
 ): NormalizedMarketingValidationCustomer {
@@ -1758,13 +1806,30 @@ function normalizeValidationCustomer(
     );
   }
 
+  const pharmacies = inputPharmacies.map((inputPharmacy, index) =>
+    normalizeValidationPharmacy(inputPharmacy, `${prefix}${prefix ? "p" : "P"}harmacy ${index + 1}`),
+  );
+
+  // Linking the same existing pharmacy to one customer twice would mint two identical link rows,
+  // and the marketing request form would then offer the same shop twice in its target list with no
+  // way to tell them apart. Cheap to catch here; impossible to explain later.
+  const seenExistingPharmacyIds = new Set<string>();
+  for (const pharmacy of pharmacies) {
+    if (!pharmacy.existingPharmacyId) continue;
+    if (seenExistingPharmacyIds.has(pharmacy.existingPharmacyId)) {
+      throw validationError(
+        `${customerLabel} has the same existing pharmacy attached twice.`,
+        "duplicate_existing_pharmacy",
+      );
+    }
+    seenExistingPharmacyIds.add(pharmacy.existingPharmacyId);
+  }
+
   return {
     ...customer,
     capturedAccuracyMeters: customer.capturedAccuracyMeters || null,
     evidenceStatus: customerEvidenceStatus,
-    pharmacies: inputPharmacies.map((inputPharmacy, index) =>
-      normalizeValidationPharmacy(inputPharmacy, `${prefix}${prefix ? "p" : "P"}harmacy ${index + 1}`),
-    ),
+    pharmacies,
     validationStatus: systemStatusFromEvidence(customerEvidenceStatus),
   };
 }
@@ -4276,11 +4341,142 @@ export async function getMarketingPharmacyCodeReferenceStatus(
   };
 }
 
+async function fetchDistributorCodesByPharmacyIds(
+  supabase: SupabaseClient,
+  pharmacyIds: string[],
+): Promise<MarketingPharmacyDistributorCodeDbRow[]> {
+  const rows: MarketingPharmacyDistributorCodeDbRow[] = [];
+  for (const batch of chunk(pharmacyIds)) {
+    const { data, error } = await supabase
+      .from("marketing_pharmacy_distributor_codes")
+      .select("*")
+      .in("pharmacy_id", batch)
+      .or("active.is.null,active.eq.true");
+    if (error) throw error;
+    rows.push(...((data ?? []) as MarketingPharmacyDistributorCodeDbRow[]));
+  }
+  return rows;
+}
+
+/**
+ * Who may attach an already-validated pharmacy to a new customer instead of capturing it again.
+ *
+ * Owner ruling 2026-08-19: his own, PLUS his team's and his AREA's — one shop is captured once for
+ * the whole area, whatever line the colleague who captured it sells, because the shop is the same
+ * shop either way. Hierarchy visibility alone was not enough: a Medical Rep has no subtree, so
+ * `canSeeMarketingHierarchyRecord` would have limited him to pharmacies he personally validated and
+ * left the shared-shop case exactly where it started.
+ */
+function canReuseMarketingPharmacy(
+  access: AccessContext,
+  row: MarketingPharmacyDbRow,
+  employeeRows: EmployeeDirectoryRow[],
+  viewerAreaId: number | null,
+) {
+  if (
+    canSeeMarketingHierarchyRecord(
+      access,
+      { employeeHrId: row.owner_hr_id, managerHrId: row.manager_hr_id },
+      employeeRows,
+    )
+  ) {
+    return true;
+  }
+  if (viewerAreaId === null || row.area_id === null || row.area_id === undefined) return false;
+  return Number(row.area_id) === viewerAreaId;
+}
+
+/**
+ * The pharmacies the validation form offers back on its "My Pharmacies" tab.
+ *
+ * Restricted to rows somebody actually validated (`owner_hr_id` set). The 286 history-seeded
+ * pharmacies carry no owner, no area and `evidence_status = 'missing'`, so they belong to nobody's
+ * list, and linking one would park the customer that picked it on "Not Usable Yet" for a reason the
+ * rep never caused. Evidence status still rides on every row returned, because a rep's OWN pharmacy
+ * can be short of a photo too — the picker flags that rather than hiding the row (owner's standing
+ * rule: the system flags, it does not refuse).
+ */
+async function buildReusableMarketingPharmacies(params: {
+  access: AccessContext;
+  distributorRows: MarketingDistributorDbRow[];
+  employeeRows: EmployeeDirectoryRow[];
+  links: MarketingCustomerPharmacyDbRow[];
+  supabase: SupabaseClient;
+}): Promise<MarketingReusablePharmacy[]> {
+  const { access, distributorRows, employeeRows, links, supabase } = params;
+
+  const pharmaciesResult = await supabase
+    .from("marketing_pharmacies")
+    .select("*")
+    .not("owner_hr_id", "is", null)
+    .or("active.is.null,active.eq.true")
+    .order("display_name")
+    .limit(MARKETING_WORKSPACE_SAFETY_LIMIT);
+  if (pharmaciesResult.error) throw pharmaciesResult.error;
+
+  const pharmacyRows = (pharmaciesResult.data ?? []) as MarketingPharmacyDbRow[];
+  if (pharmacyRows.length === 0) return [];
+
+  const employeesByHrId = employeeRowByHrId(employeeRows);
+  const viewerHrId = normalizeHrId(access.hrId);
+  const viewerAreaId = employeesByHrId.get(viewerHrId ?? "")?.areaId ?? null;
+  const visible = pharmacyRows.filter((row) =>
+    canReuseMarketingPharmacy(access, row, employeeRows, viewerAreaId),
+  );
+  if (visible.length === 0) return [];
+
+  const codeRows = await fetchDistributorCodesByPharmacyIds(supabase, visible.map((row) => row.id));
+  const distributorNameById = new Map(distributorRows.map((row) => [Number(row.id), row.display_name]));
+  const codesByPharmacyId = new Map<string, MarketingReusablePharmacy["vendorCodes"]>();
+  for (const code of codeRows) {
+    const bucket = codesByPharmacyId.get(code.pharmacy_id) ?? [];
+    const distributorId = Number(code.distributor_id ?? 0);
+    bucket.push({
+      distributorCodeId: code.id,
+      distributorId,
+      distributorName: distributorNameById.get(distributorId) ?? "Unknown distributor",
+      distributorPharmacyCode: code.distributor_pharmacy_code ?? "",
+      referenceStatus: code.reference_status ?? "pending",
+    });
+    codesByPharmacyId.set(code.pharmacy_id, bucket);
+  }
+
+  const customersByPharmacyId = new Map<string, Set<string>>();
+  for (const link of links) {
+    const bucket = customersByPharmacyId.get(link.pharmacy_id) ?? new Set<string>();
+    bucket.add(link.customer_id);
+    customersByPharmacyId.set(link.pharmacy_id, bucket);
+  }
+
+  return visible
+    // A pharmacy with no distributor code has nothing to link a sale to, so there is nothing to
+    // reuse — offering it would create a customer with an empty target list in the request form.
+    .filter((row) => (codesByPharmacyId.get(row.id) ?? []).length > 0)
+    .map((row) => {
+      const ownerHrId = normalizeHrId(row.owner_hr_id);
+      return {
+        areaName: row.extracted_area_name ?? null,
+        capturedAddress: row.captured_address ?? null,
+        displayName: row.display_name ?? "",
+        evidenceStatus: row.evidence_status ?? "missing",
+        governorateName: row.extracted_governorate_name ?? null,
+        id: row.id,
+        isOwn: Boolean(viewerHrId) && ownerHrId === viewerHrId,
+        linkedCustomerCount: customersByPharmacyId.get(row.id)?.size ?? 0,
+        ownerHrId: row.owner_hr_id,
+        ownerName: employeesByHrId.get(ownerHrId ?? "")?.displayName ?? null,
+        pharmacyCode: row.pharmacy_code ?? "",
+        validationStatus: row.validation_status ?? "pending",
+        vendorCodes: codesByPharmacyId.get(row.id) ?? [],
+      };
+    });
+}
+
 export async function getMarketingValidationWorkspace(access: AccessContext): Promise<MarketingValidationWorkspace> {
   assertMarketingAccess(access);
 
   const supabase = getSupabaseAdmin();
-  const [distributorsResult, linksResult] = await Promise.all([
+  const [distributorsResult, linksResult, employeeRows] = await Promise.all([
     supabase.from("marketing_distributors").select("*").eq("active", true).order("display_name"),
     supabase
       .from("marketing_customer_pharmacies")
@@ -4288,29 +4484,42 @@ export async function getMarketingValidationWorkspace(access: AccessContext): Pr
       .eq("active", true)
       .order("created_at", { ascending: false })
       .limit(MARKETING_WORKSPACE_SAFETY_LIMIT),
+    loadEmployeeDirectoryRows(),
   ]);
 
   if (distributorsResult.error) throw distributorsResult.error;
   if (linksResult.error) throw linksResult.error;
 
-  const distributors = ((distributorsResult.data ?? []) as MarketingDistributorDbRow[]).map(mapDistributor);
+  const distributorRows = (distributorsResult.data ?? []) as MarketingDistributorDbRow[];
+  const distributors = distributorRows.map(mapDistributor);
   const canActOnBehalf = canValidateMarketingOnBehalf(access);
   const links = (linksResult.data ?? []) as MarketingCustomerPharmacyDbRow[];
+
+  // Built even when the workspace is otherwise empty: a rep whose only validated customer belongs
+  // to a colleague still has that colleague's pharmacies to reuse, and the very first customer he
+  // validates is exactly when re-typing a known shop hurts most.
+  const reusablePharmacies = await buildReusableMarketingPharmacies({
+    access,
+    distributorRows,
+    employeeRows,
+    links,
+    supabase,
+  });
+
   if (links.length === 0) {
     // A Super Admin still needs the picker on an empty workspace — validating the very first
     // customer for an employee is exactly when this screen is empty.
     return {
       canValidateOnBehalf: canActOnBehalf,
       distributors,
-      onBehalfEmployees: canActOnBehalf
-        ? buildMarketingOnBehalfEmployees(await loadEmployeeDirectoryRows())
-        : [],
+      onBehalfEmployees: canActOnBehalf ? buildMarketingOnBehalfEmployees(employeeRows) : [],
+      reusablePharmacies,
       rows: [],
       summary: emptyValidationSummary(),
     };
   }
 
-  const [customerRows, pharmacyRows, codeRows, employeeRows] = await Promise.all([
+  const [customerRows, pharmacyRows, codeRows] = await Promise.all([
     fetchRowsByIds<MarketingCustomerDbRow>(
       supabase,
       "marketing_customers",
@@ -4326,7 +4535,6 @@ export async function getMarketingValidationWorkspace(access: AccessContext): Pr
       "marketing_pharmacy_distributor_codes",
       links.map((row) => row.distributor_code_id),
     ),
-    loadEmployeeDirectoryRows(),
   ]);
 
   const visibleCustomers = customerRows.filter((row) => canSeeMarketingCustomer(access, row, employeeRows));
@@ -4335,7 +4543,7 @@ export async function getMarketingValidationWorkspace(access: AccessContext): Pr
   const report = mapValidationReportRows({
     customers: visibleCustomers,
     distributorCodes: codeRows,
-    distributors: (distributorsResult.data ?? []) as MarketingDistributorDbRow[],
+    distributors: distributorRows,
     links: visibleLinks,
     pharmacies: pharmacyRows,
   });
@@ -4344,6 +4552,7 @@ export async function getMarketingValidationWorkspace(access: AccessContext): Pr
     canValidateOnBehalf: canActOnBehalf,
     distributors,
     onBehalfEmployees: canActOnBehalf ? buildMarketingOnBehalfEmployees(employeeRows) : [],
+    reusablePharmacies,
     rows: report.rows,
     summary: report.summary,
   };
@@ -4701,6 +4910,60 @@ export async function createMarketingValidationRecord(
     : null;
 
   const normalized = normalizeMarketingValidationInput(input);
+
+  // --- "My Pharmacies" picks, resolved once for the whole submission -------------------------
+  // The client sent ids and nothing else, so the shop's name, location, evidence and distributor
+  // codes are read here from the stored rows. Resolving up front also means an unusable pick fails
+  // before a single customer is written, rather than half-way through a multi-customer save.
+  const reusedPharmacyIds = Array.from(
+    new Set(
+      normalized.customers.flatMap((entry) =>
+        entry.pharmacies
+          .map((pharmacy) => pharmacy.existingPharmacyId)
+          .filter((value): value is string => Boolean(value)),
+      ),
+    ),
+  );
+  const reusedPharmacyRows = new Map<string, MarketingPharmacyDbRow>();
+  const reusedCodesByPharmacyId = new Map<string, MarketingPharmacyDistributorCodeDbRow[]>();
+  if (reusedPharmacyIds.length > 0) {
+    const rows = await fetchRowsByIds<MarketingPharmacyDbRow>(
+      supabase,
+      "marketing_pharmacies",
+      reusedPharmacyIds,
+    );
+    const rowsById = new Map(rows.map((row) => [row.id, row]));
+    const viewerAreaId = employeeRowByHrId(employeeRows).get(normalizeHrId(access.hrId) ?? "")?.areaId ?? null;
+    for (const pharmacyId of reusedPharmacyIds) {
+      const row = rowsById.get(pharmacyId);
+      if (!row) throw notFoundError("That pharmacy was not found.", "pharmacy_not_found");
+      if (row.active === false) {
+        throw validationError(`Pharmacy "${row.display_name ?? pharmacyId}" is no longer active.`);
+      }
+      // Re-checked on the server, never trusted from the payload: the picker is a convenience, the
+      // visibility rule is the boundary. Same rule that built the list — own, team, or same area.
+      if (!row.owner_hr_id || !canReuseMarketingPharmacy(access, row, employeeRows, viewerAreaId)) {
+        throw forbiddenError("Forbidden: that pharmacy is not one you can attach to a customer.");
+      }
+      reusedPharmacyRows.set(pharmacyId, row);
+    }
+
+    for (const code of await fetchDistributorCodesByPharmacyIds(supabase, reusedPharmacyIds)) {
+      const bucket = reusedCodesByPharmacyId.get(code.pharmacy_id) ?? [];
+      bucket.push(code);
+      reusedCodesByPharmacyId.set(code.pharmacy_id, bucket);
+    }
+    for (const pharmacyId of reusedPharmacyIds) {
+      if ((reusedCodesByPharmacyId.get(pharmacyId) ?? []).length === 0) {
+        const row = reusedPharmacyRows.get(pharmacyId);
+        throw validationError(
+          `Pharmacy "${row?.display_name ?? pharmacyId}" has no distributor code, so nothing can be attributed to it.`,
+          "pharmacy_has_no_distributor_code",
+        );
+      }
+    }
+  }
+
   const distributorIds = Array.from(
     new Set(
       normalized.customers.flatMap((entry) =>
@@ -4708,11 +4971,15 @@ export async function createMarketingValidationRecord(
       ),
     ),
   );
-  const distributorsResult = await supabase
-    .from("marketing_distributors")
-    .select("*")
-    .in("id", distributorIds)
-    .eq("active", true);
+  // Empty whenever every pharmacy in the submission was attached rather than captured — there is
+  // no freshly typed code to check, and an `in.()` against no ids is not worth a round trip.
+  const distributorsResult = distributorIds.length > 0
+    ? await supabase
+      .from("marketing_distributors")
+      .select("*")
+      .in("id", distributorIds)
+      .eq("active", true)
+    : { data: [] as MarketingDistributorDbRow[], error: null };
   if (distributorsResult.error) throw distributorsResult.error;
 
   const distributorRows = (distributorsResult.data ?? []) as MarketingDistributorDbRow[];
@@ -4720,6 +4987,29 @@ export async function createMarketingValidationRecord(
   for (const distributorId of distributorIds) {
     if (!distributorsById.has(distributorId)) {
       throw notFoundError(`Distributor ${distributorId} was not found.`, "distributor_not_found");
+    }
+  }
+
+  // A reused pharmacy's distributor is looked up WITHOUT the active filter that guards a freshly
+  // typed code. Its code row was accepted when the pharmacy was first validated; a distributor
+  // retired since then is a reason to stop offering NEW codes, not a reason to refuse a rep the
+  // shop his colleague already proved. Only the display name is taken from it.
+  const missingDistributorIds = Array.from(
+    new Set(
+      Array.from(reusedCodesByPharmacyId.values())
+        .flat()
+        .map((code) => Number(code.distributor_id ?? 0))
+        .filter((distributorId) => distributorId > 0 && !distributorsById.has(distributorId)),
+    ),
+  );
+  if (missingDistributorIds.length > 0) {
+    const extraDistributors = await supabase
+      .from("marketing_distributors")
+      .select("*")
+      .in("id", missingDistributorIds);
+    if (extraDistributors.error) throw extraDistributors.error;
+    for (const row of (extraDistributors.data ?? []) as MarketingDistributorDbRow[]) {
+      distributorsById.set(Number(row.id), row);
     }
   }
 
@@ -4821,6 +5111,71 @@ export async function createMarketingValidationRecord(
     }
 
     for (const normalizedPharmacy of normalizedCustomer.pharmacies) {
+      // --- "My Pharmacies": link the shop that already exists, mint nothing ---------------------
+      // Deliberately creates ONLY the customer↔pharmacy link rows. No second pharmacy record, no
+      // second shop-front photo, no re-typed distributor code — that duplication is the entire
+      // reason this path exists. The pharmacy's own evidence still decides whether the new link is
+      // usable, exactly as a freshly captured one would, so reusing a shop can never launder a
+      // pharmacy that was never photographed into a validated customer.
+      if (normalizedPharmacy.existingPharmacyId) {
+        const reusedRow = reusedPharmacyRows.get(normalizedPharmacy.existingPharmacyId);
+        if (!reusedRow) throw notFoundError("That pharmacy was not found.", "pharmacy_not_found");
+        const pharmacy = mapMarketingPharmacy(reusedRow);
+        // NOT pushed onto `pharmacyIds`: it predates this submission and must survive a rollback.
+
+        for (const codeRow of reusedCodesByPharmacyId.get(reusedRow.id) ?? []) {
+          const distributorCode = mapDistributorCode(codeRow);
+          const linkValidationStatus = resolveMarketingValidationRecordStatus({
+            isOnBehalf,
+            systemStatus: resolveMarketingSystemValidationStatus({
+              customerEvidenceStatus: normalizedCustomer.evidenceStatus,
+              pharmacyEvidenceStatus: pharmacy.evidenceStatus,
+            }),
+          });
+          const linkValidationNotes = [
+            isOnBehalf
+              ? adminValidationNote
+              : linkValidationStatus === "system_validated"
+                ? null
+                : MARKETING_PENDING_EVIDENCE_NOTE,
+            buildUntrackedDistributorCodeNote(distributorCode.referenceStatus),
+            // Says on the row itself that this shop was not re-captured for this customer, so an
+            // evidence photo dated before the customer is explainable rather than suspicious.
+            `Linked from an existing validated pharmacy (${pharmacy.pharmacyCode || pharmacy.displayName}).`,
+          ].filter(Boolean).join(" ") || null;
+
+          const reusedLinkInsert = await supabase
+            .from("marketing_customer_pharmacies")
+            .insert({
+              created_by_hr_id: actorHrId,
+              customer_id: customer.id,
+              distributor_code_id: distributorCode.id,
+              pharmacy_id: pharmacy.id,
+              updated_by_hr_id: actorHrId,
+              validation_notes: linkValidationNotes,
+              validation_status: linkValidationStatus,
+            })
+            .select("*")
+            .single();
+          if (reusedLinkInsert.error) throw reusedLinkInsert.error;
+          const reusedLink = mapCustomerPharmacy(reusedLinkInsert.data as MarketingCustomerPharmacyDbRow);
+          const reusedDistributor = distributorsById.get(distributorCode.distributorId);
+
+          rows.push({
+            customer,
+            distributorCode,
+            distributorName: reusedDistributor
+              ? mapDistributor(reusedDistributor).displayName
+              : "Unknown distributor",
+            id: reusedLink.id,
+            pharmacy,
+            validationNotes: reusedLink.validationNotes,
+            validationStatus: reusedLink.validationStatus,
+          });
+        }
+        continue;
+      }
+
       const pharmacyInsert = await supabase
         .from("marketing_pharmacies")
         .insert({

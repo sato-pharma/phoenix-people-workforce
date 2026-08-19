@@ -29,6 +29,7 @@ import type {
   MarketingCustomerType,
   MarketingDistributor,
   MarketingOnBehalfEmployee,
+  MarketingReusablePharmacy,
   MarketingValidationReportRow,
   MarketingValidationStatus,
   MarketingValidationWorkspace as MarketingValidationWorkspacePayload,
@@ -167,12 +168,25 @@ type VendorCodeLine = {
   key: string;
 };
 
+/**
+ * Which of the two pharmacy tabs this block is on.
+ *
+ * `new` is the original flow — name the shop, capture its GPS and live photo, type its distributor
+ * codes. `existing` attaches a pharmacy already validated by this rep or by a colleague in his
+ * area, creating only the link. Two customers a street apart routinely dispense through the same
+ * shop, and until now the only way to record that was to capture the shop a second time.
+ */
+type PharmacySource = "new" | "existing";
+
 type PharmacyLine = {
   capture: CaptureState;
+  /** Set only while `source` is "existing" — the pharmacy chosen from My Pharmacies. */
+  existingPharmacyId: string;
   governorate: string;
   key: string;
   name: string;
   area: string;
+  source: PharmacySource;
   vendorCodes: VendorCodeLine[];
 };
 
@@ -267,10 +281,14 @@ function newVendorCodeLine(distributorId = ""): VendorCodeLine {
 function newPharmacyLine(distributorId = ""): PharmacyLine {
   return {
     capture: emptyCapture(),
+    existingPharmacyId: "",
     governorate: "",
     key: stableKey("pharmacy"),
     name: "",
     area: "",
+    // Defaults to the capture flow so nothing about the existing habit changes until the rep
+    // deliberately switches to the pharmacies he already has.
+    source: "new",
     vendorCodes: [newVendorCodeLine(distributorId)],
   };
 }
@@ -295,6 +313,7 @@ function emptyWorkspace(): MarketingValidationWorkspacePayload {
     canValidateOnBehalf: false,
     distributors: [],
     onBehalfEmployees: [],
+    reusablePharmacies: [],
     rows: [],
     summary: {
       pending: 0,
@@ -379,6 +398,14 @@ function describeMissingRequirement(customers: CustomerLine[], isDeskMode: boole
 
     for (const [pharmacyIndex, pharmacy] of customer.pharmacies.entries()) {
       const pharmacyLabel = pharmacy.name.trim() ? `"${pharmacy.name.trim()}"` : `Pharmacy ${pharmacyIndex + 1}`;
+      // On the My Pharmacies tab there is exactly one thing to get right: which shop. Name, GPS,
+      // live photo and distributor codes all come from the record already stored for it.
+      if (pharmacy.source === "existing") {
+        if (!pharmacy.existingPharmacyId) {
+          return `Choose which pharmacy to attach for Pharmacy ${pharmacyIndex + 1} under ${customerLabel}.`;
+        }
+        continue;
+      }
       if (!pharmacy.name.trim()) return `Enter a name for Pharmacy ${pharmacyIndex + 1} under ${customerLabel}.`;
       if (isDeskMode && !hasPin(pharmacy.capture)) return `Pin ${pharmacyLabel}'s location on the map.`;
       if (pharmacy.vendorCodes.length === 0) return `${pharmacyLabel} needs at least one distributor code.`;
@@ -532,6 +559,148 @@ function MetricCard({
         </p>
       </div>
       <p className="mt-1.5 text-[22px] font-black leading-none text-slate-900">{value}</p>
+    </div>
+  );
+}
+
+/**
+ * The two pharmacy tabs inside one pharmacy block.
+ *
+ * Sits at pharmacy level rather than page level on purpose: the choice is per pharmacy, so one
+ * customer can carry a shop captured today alongside a shop attached from the rep's existing list.
+ * Disabled — not hidden — when there is nothing to attach yet, so a rep on his first customer can
+ * see the option exists and why it is empty.
+ */
+function PharmacySourceTab({
+  active,
+  children,
+  disabled = false,
+  onClick,
+}: {
+  active: boolean;
+  children: ReactNode;
+  disabled?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      className={`min-h-9 overflow-hidden whitespace-nowrap rounded-sm px-3 text-[12px] font-bold transition ${
+        active
+          ? "bg-orange-500 text-white shadow-[0_4px_12px_rgba(249,115,22,0.25)]"
+          : disabled
+            ? "cursor-not-allowed border border-slate-200 bg-slate-100 text-slate-400"
+            : "border border-slate-200 bg-white text-slate-600 hover:border-orange-200 hover:bg-orange-50 hover:text-orange-700"
+      }`}
+      disabled={disabled}
+      onClick={onClick}
+      type="button"
+    >
+      {children}
+    </button>
+  );
+}
+
+/**
+ * Picks one already-validated pharmacy to attach to the customer being validated.
+ *
+ * Shows the whole record before it is attached — whose it is, how many customers already dispense
+ * through it, and every distributor code that will come with it — because the rep is vouching for a
+ * shop he is not standing in front of right now. Two things are FLAGGED rather than filtered out,
+ * per the owner's standing rule that the system flags and he decides: a pharmacy whose own live
+ * photo is short (attaching it parks the new customer on Not Usable Yet), and a distributor code
+ * the Phoenix reference database cannot match (its sales can never be attributed).
+ */
+function ReusablePharmacyPicker({
+  onSelect,
+  options,
+  selectedId,
+}: {
+  onSelect: (pharmacyId: string) => void;
+  options: MarketingReusablePharmacy[];
+  selectedId: string;
+}) {
+  const selected = options.find((option) => option.id === selectedId) ?? null;
+
+  if (options.length === 0) {
+    return (
+      <div className="rounded-sm border border-slate-200 bg-white px-3.5 py-3 text-[12px] font-semibold text-slate-500">
+        No validated pharmacies yet. Validate one on the other tab and it will be here next time —
+        for you and for your colleagues in the same area.
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      <Field label="Pharmacy Already Validated">
+        <SearchableSelect
+          className="h-10 w-full rounded-sm border-slate-200 bg-white text-[13px]"
+          onValueChange={onSelect}
+          placeholder="Search by pharmacy name, code, or area"
+          value={selectedId}
+        >
+          <option value="">Choose a pharmacy</option>
+          {options.map((option) => (
+            <option key={option.id} value={option.id}>
+              {[
+                option.displayName || option.pharmacyCode,
+                option.vendorCodes.map((code) => code.distributorPharmacyCode).join(" / "),
+                option.areaName ?? "",
+                option.isOwn ? "Yours" : option.ownerName ?? "",
+              ].filter(Boolean).join(" · ")}
+            </option>
+          ))}
+        </SearchableSelect>
+      </Field>
+
+      {selected ? (
+        <div className="space-y-2.5 rounded-sm border border-orange-200 bg-orange-50/40 px-3.5 py-3">
+          <div className="overflow-x-auto">
+            <p className="whitespace-nowrap text-[13px] font-black text-slate-900">
+              {selected.displayName || selected.pharmacyCode}
+            </p>
+            <p className="mt-0.5 whitespace-nowrap text-[11px] font-semibold text-slate-600">
+              {[
+                selected.pharmacyCode,
+                [selected.areaName, selected.governorateName].filter(Boolean).join(", "),
+                selected.isOwn ? "Validated by you" : `Validated by ${selected.ownerName ?? "a colleague"}`,
+                selected.linkedCustomerCount === 1
+                  ? "Serving 1 customer"
+                  : `Serving ${selected.linkedCustomerCount} customers`,
+              ].filter(Boolean).join(" · ")}
+            </p>
+          </div>
+
+          <div className="space-y-1.5">
+            <p className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-500">
+              Vendor codes that will be attached
+            </p>
+            {selected.vendorCodes.map((code) => (
+              <div className="overflow-x-auto" key={code.distributorCodeId}>
+                <p className="whitespace-nowrap text-[12px] font-semibold text-slate-700">
+                  {code.distributorName} — {code.distributorPharmacyCode}
+                  {code.referenceStatus === "matched" ? null : (
+                    <span className="ml-2 font-bold text-amber-700">Sales not trackable</span>
+                  )}
+                </p>
+              </div>
+            ))}
+          </div>
+
+          {selected.evidenceStatus === "complete" ? (
+            <p className="flex items-center gap-1.5 text-[11px] font-bold text-emerald-700">
+              <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
+              Live photo and location already on file — no need to capture it again.
+            </p>
+          ) : (
+            <p className="flex items-start gap-1.5 text-[11px] font-bold text-amber-700">
+              <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              This pharmacy has no complete live photo and location, so attaching it leaves the
+              customer under Not Usable Yet until that is fixed.
+            </p>
+          )}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -1281,6 +1450,7 @@ export function MarketingValidationWorkspace() {
         canValidateOnBehalf: payload.canValidateOnBehalf === true,
         distributors: payload.distributors ?? [],
         onBehalfEmployees: payload.onBehalfEmployees ?? [],
+        reusablePharmacies: payload.reusablePharmacies ?? [],
         rows: payload.rows ?? [],
         summary: payload.summary ?? emptyWorkspace().summary,
       });
@@ -1396,10 +1566,14 @@ export function MarketingValidationWorkspace() {
       (!isDeskMode || hasPin(customer.capture)) &&
       customer.pharmacies.length > 0 &&
       customer.pharmacies.every((pharmacy) =>
-        pharmacy.name.trim() &&
-        (!isDeskMode || hasPin(pharmacy.capture)) &&
-        pharmacy.vendorCodes.length > 0 &&
-        pharmacy.vendorCodes.every((line) => line.distributorId && line.distributorCode.trim()),
+        pharmacy.source === "existing"
+          // Everything else about an attached pharmacy is read from its stored record, so the pick
+          // itself is the only requirement. Must stay in step with describeMissingRequirement.
+          ? Boolean(pharmacy.existingPharmacyId)
+          : pharmacy.name.trim() &&
+            (!isDeskMode || hasPin(pharmacy.capture)) &&
+            pharmacy.vendorCodes.length > 0 &&
+            pharmacy.vendorCodes.every((line) => line.distributorId && line.distributorCode.trim()),
       ),
     ),
   );
@@ -1676,17 +1850,23 @@ export function MarketingValidationWorkspace() {
         otherTypeDescription: customer.otherType,
         regionName: [customer.area, customer.governorate].filter(Boolean).join(", "),
         speciality: customer.speciality || null,
-        pharmacies: customer.pharmacies.map((pharmacy) => ({
-          ...payloadCapture(pharmacy.capture),
-          displayName: pharmacy.name,
-          extractedAreaName: pharmacy.area,
-          extractedGovernorateName: pharmacy.governorate,
-          regionName: [pharmacy.area, pharmacy.governorate].filter(Boolean).join(", "),
-          vendorCodes: pharmacy.vendorCodes.map((line) => ({
-            distributorId: Number(line.distributorId),
-            distributorPharmacyCode: line.distributorCode,
-          })),
-        })),
+        pharmacies: customer.pharmacies.map((pharmacy) =>
+          // An attached pharmacy sends its id and nothing else. Re-describing a shop the server
+          // already has on file is how the stored name, address or photo would drift.
+          pharmacy.source === "existing"
+            ? { existingPharmacyId: pharmacy.existingPharmacyId }
+            : {
+              ...payloadCapture(pharmacy.capture),
+              displayName: pharmacy.name,
+              extractedAreaName: pharmacy.area,
+              extractedGovernorateName: pharmacy.governorate,
+              regionName: [pharmacy.area, pharmacy.governorate].filter(Boolean).join(", "),
+              vendorCodes: pharmacy.vendorCodes.map((line) => ({
+                distributorId: Number(line.distributorId),
+                distributorPharmacyCode: line.distributorCode,
+              })),
+            },
+        ),
       })),
     };
   }
@@ -2106,7 +2286,7 @@ export function MarketingValidationWorkspace() {
                         <div className="min-w-0">
                           <p className="text-[10px] font-black uppercase tracking-[0.14em] text-orange-600">Pharmacy Validation</p>
                           <p className="mt-0.5 overflow-hidden text-ellipsis whitespace-nowrap text-[12px] font-medium text-slate-500">
-                            Pharmacies for this customer only, multiple vendors per pharmacy.
+                            Capture a new pharmacy, or attach one you already validated.
                           </p>
                         </div>
                         <Button
@@ -2150,6 +2330,36 @@ export function MarketingValidationWorkspace() {
                               <Trash2 className="h-3.5 w-3.5" />
                             </button>
                           </div>
+
+                          {/* Two ways to give this customer a pharmacy. "Validate New Pharmacy" is
+                              the original capture flow, unchanged. "My Pharmacies" attaches a shop
+                              already validated — by this rep or by a colleague in his area — so one
+                              physical pharmacy stays one record however many customers it serves. */}
+                          <div className="mb-3 grid grid-cols-2 gap-2">
+                            <PharmacySourceTab
+                              active={pharmacy.source === "new"}
+                              onClick={() => updatePharmacy(customer.key, pharmacy.key, { source: "new" })}
+                            >
+                              Validate New Pharmacy
+                            </PharmacySourceTab>
+                            <PharmacySourceTab
+                              active={pharmacy.source === "existing"}
+                              disabled={workspace.reusablePharmacies.length === 0}
+                              onClick={() => updatePharmacy(customer.key, pharmacy.key, { source: "existing" })}
+                            >
+                              My Pharmacies ({workspace.reusablePharmacies.length})
+                            </PharmacySourceTab>
+                          </div>
+
+                          {pharmacy.source === "existing" ? (
+                          <ReusablePharmacyPicker
+                            onSelect={(pharmacyId) =>
+                              updatePharmacy(customer.key, pharmacy.key, { existingPharmacyId: pharmacyId })
+                            }
+                            options={workspace.reusablePharmacies}
+                            selectedId={pharmacy.existingPharmacyId}
+                          />
+                          ) : (
                           <div className="grid gap-3 lg:grid-cols-6">
                             <div className="lg:col-span-2">
                               <Field label="Pharmacy Name">
@@ -2307,6 +2517,7 @@ export function MarketingValidationWorkspace() {
                               </div>
                             </div>
                           </div>
+                          )}
                         </div>
                       </div>
                     ))}
