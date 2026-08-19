@@ -838,6 +838,9 @@ import { runMarketingDraftBlockersTests } from "./marketing-draft-blockers.test.
 // Registered beside its marketing siblings, not appended: this one pins the 2026-08-19 territory
 // ruling, and a PR that touches marketing visibility must see it in the same block it edits.
 import { runMarketingCustomerAreaOwnershipTests } from "./marketing-customer-area-ownership.test.ts";
+// Registered next to the area-ownership test it reuses: that one pins who may SEE a customer, this
+// one pins that the two write paths actually ask before raising a request against one.
+import { runMarketingRequestCustomerScopeGuardTests } from "./marketing-request-customer-scope-guard.test.ts";
 import { runMarketingSalesCodeSyncRerunTests } from "./marketing-sales-code-sync-rerun.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
@@ -2189,6 +2192,10 @@ await runTest(
 await runTest(
   "marketing customer area ownership (a customer belongs to a territory, so the rep hired into a resigned rep's patch inherits it with nothing re-stamped; same area other line sees it too; another area does not)",
   runMarketingCustomerAreaOwnershipTests,
+);
+await runTest(
+  "marketing request customer scope guard (a spend request can only be raised against a customer the requester can see — both the create and the resubmit path check, before anything is written)",
+  runMarketingRequestCustomerScopeGuardTests,
 );
 
 await runTest(
