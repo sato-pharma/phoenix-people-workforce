@@ -835,6 +835,9 @@ import { runMarketingPharmacyCodeMatchTests } from "./marketing-pharmacy-code-ma
 import { runMarketingRequestStatusLabelTests } from "./marketing-request-status-label.test.ts";
 import { runMarketingDecisionConfirmPromptTests } from "./marketing-decision-confirm-prompt.test.ts";
 import { runMarketingDraftBlockersTests } from "./marketing-draft-blockers.test.ts";
+// Registered beside its marketing siblings, not appended: this one pins the 2026-08-19 territory
+// ruling, and a PR that touches marketing visibility must see it in the same block it edits.
+import { runMarketingCustomerAreaOwnershipTests } from "./marketing-customer-area-ownership.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -2181,6 +2184,10 @@ await runTest(
 await runTest(
   "marketing draft blockers (named in form order, unrecognised pharmacy code included)",
   runMarketingDraftBlockersTests,
+);
+await runTest(
+  "marketing customer area ownership (a customer belongs to a territory, so the rep hired into a resigned rep's patch inherits it with nothing re-stamped; same area other line sees it too; another area does not)",
+  runMarketingCustomerAreaOwnershipTests,
 );
 
 await runTest(
