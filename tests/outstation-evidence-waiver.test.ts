@@ -287,11 +287,14 @@ export function runOutstationEvidenceWaiverTests() {
 
   // Every gate call site has to pass the role through. One that forgets it does not fail loudly —
   // it holds a waived manager's money on a photo the form never offered him.
+  // 9 since 2026-08-19: resendOutstationDeparturePhotoReminder resolves the gate a second time to
+  // explain WHY a refused resend was refused. Raise this number only alongside a real new call
+  // site — it is a census, and a census that drifts upward on its own stops counting anything.
   const gateCallSites = service.match(/resolveOutstationGateState\(\{ employeeRole:/g) ?? [];
   assert.equal(
     gateCallSites.length,
-    8,
-    `every resolveOutstationGateState call in service.ts must pass employeeRole first — found ${gateCallSites.length} of 8`,
+    9,
+    `every resolveOutstationGateState call in service.ts must pass employeeRole first — found ${gateCallSites.length} of 9`,
   );
 
   // ── The form and the gate agree ─────────────────────────────────────────────────

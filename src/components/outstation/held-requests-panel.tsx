@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, Loader2, RefreshCw, Send } from "lucide-react";
+import { AlertTriangle, Loader2, Mail, RefreshCw, Send } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
 import { formatDateValue, formatDateTimeValue } from "@/lib/i18n/format";
@@ -84,7 +84,11 @@ export function HeldRequestsPanel() {
   }, [load]);
 
   const act = useCallback(
-    async (id: number, body: Record<string, unknown>, endpoint: "workload" | "evidence" = "workload") => {
+    async (
+      id: number,
+      body: Record<string, unknown>,
+      endpoint: "workload" | "evidence" | "reminder" = "workload",
+    ) => {
       setBusyId(id);
       setNotice(null);
       try {
@@ -183,6 +187,35 @@ export function HeldRequestsPanel() {
                 {request.lastAttemptAt ? `at ${formatDateTimeValue(request.lastAttemptAt)}` : ""} (
                 {request.workloadCaptureAttempts} tried): {request.lastAttemptError}
               </p>
+            ) : null}
+
+            {/* Ask him again — deliberately ABOVE the waiver, because it is the right answer far
+                more often. The automatic reminder gets exactly one attempt per idempotency key,
+                and the key is claimed the moment that attempt starts, so a reminder that then died
+                on the way out leaves the employee permanently unasked with nothing on screen to
+                say so. Eight were lost that way before 2026-08-19. This is the only way to re-ask;
+                the server mints a fresh dated key for it. Not offered for a missing ARRIVAL photo:
+                that one is taken at the destination, and by the time there is a request to remind
+                him about, the moment to take it has already gone. */}
+            {request.blocker === "departure_photo" ? (
+              <div className="mt-3">
+                <button
+                  className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-slate-300 bg-white px-3 text-xs font-black text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                  disabled={busyId === request.id}
+                  onClick={() => void act(request.id, {}, "reminder")}
+                  type="button"
+                >
+                  {busyId === request.id ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Mail className="h-3.5 w-3.5" />
+                  )}
+                  Ask him again for the photo
+                </button>
+                <p className="mt-1.5 text-[11px] font-semibold text-slate-500">
+                  Email and push. Once a day — pressing it twice today sends one message.
+                </p>
+              </div>
             ) : null}
 
             {/* A missing PHOTO still cannot be TAKEN from an admin desk — only the employee can
