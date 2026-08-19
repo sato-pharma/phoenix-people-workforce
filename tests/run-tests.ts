@@ -740,6 +740,7 @@ import { runClosingChannelRollupEquivalenceTests } from "./closing-channel-rollu
 import { runClosingDistributorProductRollupEquivalenceTests } from "./closing-distributor-product-rollup-equivalence.test.ts";
 import { runClosingChannelBreakdownRollupEquivalenceTests } from "./closing-channel-breakdown-rollup-equivalence.test.ts";
 import { runMonthlyAttributionRollupEquivalenceTests } from "./monthly-attribution-rollup-equivalence.test.ts";
+import { runTerritoryAreaIndexTests } from "./territory-area-index.test.ts";
 import { runClosingCorrectionsTests } from "./closing-corrections.test.ts";
 import { runTerritoryScopeLineAwareTests } from "./territory-scope-line-aware.test.ts";
 import { runTerritoryPreviewLinkControlsTests } from "./territory-preview-link-controls.test.ts";
@@ -1781,6 +1782,13 @@ await runTest(
   + "factory_price stays LIVE so a price edit reprices history; units-only baked; same exclusions; "
   + "per-batch refresh wired everywhere after the fact rollup)",
   runClosingDistributorProductRollupEquivalenceTests,
+);
+
+await runTest(
+  "territory area pharmacies area-period index (expression index on (upper(btrim(coalesce(area_code,''))), "
+  + "period) matches the RPC's only selective predicate so the plan is a Bitmap Index Scan not a full "
+  + "rollup seq scan; index expression and function predicate pinned to stay in lockstep)",
+  runTerritoryAreaIndexTests,
 );
 
 await runTest(
