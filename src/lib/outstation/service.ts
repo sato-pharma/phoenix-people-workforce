@@ -3978,9 +3978,11 @@ export async function deleteOutstationRequestAsAdmin(
  *   - The recipient is the SUBMITTER, not an approver. He is the only person on earth who can
  *     satisfy this — the photo has to be taken where he is standing — so there is no recipient
  *     question to ask here.
- *   - It fires on the LAST DAY and afterwards, never on day one of a five-day trip. A reminder
- *     that arrives before the employee could reasonably act is noise, and noise is how the real
- *     ones start getting ignored.
+ *   - It fires on the trip's LAST DAY and on no other day. Not before, because a reminder on day
+ *     one of a five-day trip is noise. Not after, because once he is home there is no photo left
+ *     to take: chasing him then asks either for nothing or for a capture in the wrong place. That
+ *     request is released by a Super Admin instead. Owner's decision, 2026-08-19; the reasoning is
+ *     written out in full over outstationDeparturePhotoReminderDue.
  *
  * Not behind a notification toggle, unlike the SLA reminder: an unregistered toggle key resolves
  * to false, which would leave this silently dead while appearing to be wired up — the exact
@@ -4010,14 +4012,13 @@ export async function sendOutstationDeparturePhotoReminder(
     hasDeparturePhoto: Boolean(row.departureEvidenceImagePath),
     workloadGateStatus: row.workloadGateStatus,
   });
-  const { due, overdue } = outstationDeparturePhotoReminderDue({
+  const { due } = outstationDeparturePhotoReminderDue({
     gateBlocker: gate.blocker,
     todayCairo,
     tripEndDate: row.tripEndDate,
   });
   if (!due) return false;
 
-  const lastDay = String(row.tripEndDate ?? "").slice(0, 10);
   const destination = text(row.toLabel) || text(row.toCity) || text(row.toArea) || "your destination";
 
   await createSystemNotificationForRecipients(
@@ -4027,22 +4028,20 @@ export async function sendOutstationDeparturePhotoReminder(
       email: {
         ctaHref: "/employee-portals/expense-submissions",
         ctaLabel: "Take the photo",
-        tone: overdue ? ("warning" as const) : ("neutral" as const),
+        tone: "neutral" as const,
       },
       eventType: "outstation_departure_photo_due",
-      message: overdue
-        ? `Your trip to ${destination} still needs its departure photo. The window closed on ${lastDay}, so it reaches your approver marked as late — but it is still accepted, and your expense cannot be paid until you take it.`
-        : `Today is the last day to take the departure photo for your trip to ${destination}. Your expense does not reach payroll until it is captured.`,
+      message: `Today is the last day to take the departure photo for your trip to ${destination}. Your expense does not reach payroll until it is captured.`,
       // Keyed WITHOUT the date, unlike the SLA reminder. The daily job would otherwise nag the
-      // same person about the same trip every morning until he acted — and a reminder that
-      // arrives every day is one people learn to delete. Two is the whole budget per request,
-      // ever: one on the last day, one when it first goes overdue. The key is also what makes it
-      // safe for the submit path to raise this as well: whichever caller gets there first wins,
-      // and the other is deduplicated rather than doubling the message.
+      // same person about the same trip every morning — and a reminder that arrives every day is
+      // one people learn to delete. ONE is the whole budget per request, ever, now that the
+      // overdue message is gone. The key is also what makes it safe for the submit path to raise
+      // this as well: whichever caller gets there first wins, and the other is deduplicated
+      // rather than doubling the message.
       metadata: {
         idempotencyKey:
           options?.idempotencyKey ??
-          `outstation:${String(row.id)}:departure-photo:${overdue ? "overdue" : "due"}`,
+          `outstation:${String(row.id)}:departure-photo:due`,
       },
       module: "outstation",
       priority: "normal",
@@ -4055,7 +4054,7 @@ export async function sendOutstationDeparturePhotoReminder(
       // therefore told nothing at all, on any channel. The three other outstation notifications
       // all pass this correctly — this one call was the omission.
       subjectHrId: row.employeeHrId,
-      title: overdue ? "Departure photo overdue" : "Departure photo due today",
+      title: "Departure photo due today",
     },
     [row.employeeHrId],
   );
@@ -4824,6 +4823,16 @@ export type HeldOutstationRequest = {
   lastAttemptAt: string | null;
   lastAttemptError: string | null;
   message: string;
+  /**
+   * Whether asking this employee again could still achieve anything today.
+   *
+   * Computed by the SAME pure rule the sender uses, so the button on screen and the endpoint
+   * behind it cannot disagree — a button offered on a row the server will refuse is worse than no
+   * button, because the admin reads the 409 as a fault. In practice this is true only on the
+   * trip's last day: after that the photo can no longer be taken where it had to be taken, and
+   * the row wants the release instead.
+   */
+  reminderResendable: boolean;
   tripEndDate: string;
   tripStartDate: string;
   workloadCaptureAttempts: number;
@@ -4883,6 +4892,11 @@ export async function listHeldOutstationRequests(
       lastAttemptAt: request.workloadLastAttemptAt,
       lastAttemptError: request.workloadLastAttemptError,
       message: gate.message,
+      reminderResendable: outstationDeparturePhotoReminderDue({
+        gateBlocker: gate.blocker,
+        todayCairo: today,
+        tripEndDate: request.tripEndDate,
+      }).due,
       tripEndDate: request.tripEndDate,
       tripStartDate: request.tripStartDate,
       workloadCaptureAttempts: request.workloadCaptureAttempts,
@@ -5123,6 +5137,10 @@ export async function releaseOutstationRequestWithoutEvidence(
  * It is NOT a way to message an employee freely. It refuses unless the departure photo is the
  * live blocker, so it cannot be pointed at somebody who owes nothing, and it reuses the reminder
  * the system sends itself rather than composing its own text — one wording, one timing rule.
+ *
+ * Since 2026-08-19 that shared rule fires on the trip's LAST DAY only, so this can only re-ask
+ * someone who is still at the destination and can still act. Once the trip is over there is
+ * nothing left to ask for and the button refuses — that request is released, not chased.
  */
 export async function resendOutstationDeparturePhotoReminder(
   requestId: number,
@@ -5142,7 +5160,7 @@ export async function resendOutstationDeparturePhotoReminder(
 
   if (!sent) {
     // The shared rule declined. Say WHY in the terms the admin can act on, rather than reporting
-    // a bare "not sent" that reads like a fault.
+    // a bare "not sent" that reads like a fault. Three reasons, and they need three answers.
     const gate = resolveOutstationGateState({
       employeeRole: request.employeeRole,
       evidenceGateStatus: request.evidenceGateStatus,
@@ -5153,6 +5171,17 @@ export async function resendOutstationDeparturePhotoReminder(
     if (gate.blocker !== "departure_photo") {
       throw new Error(
         "This request is not waiting on its departure photo, so there is nothing to remind him about.",
+      );
+    }
+
+    const lastDay = String(request.tripEndDate ?? "").slice(0, 10);
+    if (lastDay && lastDay < today) {
+      // The common one, and the whole reason the overdue reminder was retired: he is home, the
+      // photo can no longer be taken where it had to be taken, and asking again would only get
+      // him to capture the wrong place or ignore the mail. Point at the release instead.
+      throw new Error(
+        `The trip ended on ${lastDay}, so the departure photo can no longer be taken at the destination — ` +
+          "there is nothing left to ask him for. Release the request without the photo instead.",
       );
     }
     throw new Error(

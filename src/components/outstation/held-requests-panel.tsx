@@ -15,6 +15,8 @@ type HeldRequest = {
   lastAttemptAt: string | null;
   lastAttemptError: string | null;
   message: string;
+  /** Server's answer to "would asking him again achieve anything today?". Never recomputed here. */
+  reminderResendable: boolean;
   tripEndDate: string;
   tripStartDate: string;
   workloadCaptureAttempts: number;
@@ -189,15 +191,18 @@ export function HeldRequestsPanel() {
               </p>
             ) : null}
 
-            {/* Ask him again — deliberately ABOVE the waiver, because it is the right answer far
-                more often. The automatic reminder gets exactly one attempt per idempotency key,
+            {/* Ask him again. The automatic reminder gets exactly one attempt per idempotency key,
                 and the key is claimed the moment that attempt starts, so a reminder that then died
                 on the way out leaves the employee permanently unasked with nothing on screen to
                 say so. Eight were lost that way before 2026-08-19. This is the only way to re-ask;
-                the server mints a fresh dated key for it. Not offered for a missing ARRIVAL photo:
-                that one is taken at the destination, and by the time there is a request to remind
-                him about, the moment to take it has already gone. */}
-            {request.blocker === "departure_photo" ? (
+                the server mints a fresh dated key for it.
+
+                `reminderResendable` comes from the server and is NOT recomputed here — it is the
+                same rule the sender obeys, so the button cannot be offered on a row the endpoint
+                would refuse. In practice it is true only on the trip's last day, while he is still
+                at the destination and a photo he takes still means something. On every row below
+                that day the waiver underneath is the answer, and this is correctly absent. */}
+            {request.blocker === "departure_photo" && request.reminderResendable ? (
               <div className="mt-3">
                 <button
                   className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-slate-300 bg-white px-3 text-xs font-black text-slate-700 hover:bg-slate-50 disabled:opacity-60"
