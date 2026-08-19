@@ -5,6 +5,21 @@ import { useRouter } from "next/navigation";
 
 import type { DoctorCoverageConfig, DoctorCoverageNorms } from "@/lib/crm/doctor-coverage-config";
 
+/**
+ * Declared locally rather than imported from doctor-coverage-scope.ts. `import type` is erased by
+ * TypeScript, but this is a client component and that module reaches the Supabase admin client —
+ * the same hazard that put the role list in its own client-safe file. Shape is structural, so the
+ * server's DoctorCoverageOverrideCandidate satisfies it without either side importing the other.
+ */
+type OverrideCandidate = {
+  canonicalHrId: string;
+  hrId: string;
+  jobTitle: string;
+  lineId: number | null;
+  lineName: string | null;
+  name: string;
+};
+
 // Doctor Coverage visit-norms editor. Six numbers: visits required per month, for each grade
 // (A / B / C) and each contact kind — doctors (SP) and pharmacies/hospitals/contracts (HCP).
 //
@@ -35,12 +50,56 @@ function toDraft(norms: DoctorCoverageNorms): Draft {
   };
 }
 
-export function DoctorCoverageNormsEditor({ initial }: { initial: DoctorCoverageConfig }) {
+export function DoctorCoverageNormsEditor({
+  candidates = [],
+  initial,
+  lines = [],
+}: {
+  /** People an override can actually affect — line-scoped roles only. */
+  candidates?: OverrideCandidate[];
+  initial: DoctorCoverageConfig;
+  lines?: Array<{ id: number; name: string }>;
+}) {
   const router = useRouter();
   const [draft, setDraft] = useState<Draft>(() => toDraft(initial.norms));
+  const [overrides, setOverrides] = useState<Record<string, number[]>>(() => ({ ...initial.lineOverrides }));
+  const [addHrId, setAddHrId] = useState("");
   const [issues, setIssues] = useState<string[]>([]);
   const [status, setStatus] = useState<"idle" | "saving" | "saved">("idle");
   const [updatedAt, setUpdatedAt] = useState<string | null>(initial.updatedAt);
+
+  const byCanonical = new Map(candidates.map((candidate) => [candidate.canonicalHrId, candidate]));
+  const overrideRows = Object.entries(overrides).sort(([a], [b]) =>
+    (byCanonical.get(a)?.name ?? a).localeCompare(byCanonical.get(b)?.name ?? b),
+  );
+
+  const toggleLine = (key: string, lineId: number) => {
+    setOverrides((current) => {
+      const have = current[key] ?? [];
+      const next = have.includes(lineId) ? have.filter((id) => id !== lineId) : [...have, lineId].sort((a, b) => a - b);
+      return { ...current, [key]: next };
+    });
+  };
+
+  const addOverride = () => {
+    const candidate = candidates.find((entry) => entry.canonicalHrId === addHrId);
+    if (!candidate || overrides[candidate.canonicalHrId]) return;
+    // Seed with the line they already have, so the row starts as a no-op the admin then widens —
+    // an empty row would be rejected on save and reads like the control is broken.
+    setOverrides((current) => ({
+      ...current,
+      [candidate.canonicalHrId]: candidate.lineId != null ? [candidate.lineId] : [],
+    }));
+    setAddHrId("");
+  };
+
+  const removeOverride = (key: string) => {
+    setOverrides((current) => {
+      const next = { ...current };
+      delete next[key];
+      return next;
+    });
+  };
 
   const save = async () => {
     setStatus("saving");
@@ -51,7 +110,7 @@ export function DoctorCoverageNormsEditor({ initial }: { initial: DoctorCoverage
         hcp: { A: Number(draft.hcp.A), B: Number(draft.hcp.B), C: Number(draft.hcp.C) },
       };
       const response = await fetch("/api/crm/doctor-coverage/config", {
-        body: JSON.stringify({ norms }),
+        body: JSON.stringify({ lineOverrides: overrides, norms }),
         headers: { "Content-Type": "application/json" },
         method: "PATCH",
       });
@@ -67,6 +126,7 @@ export function DoctorCoverageNormsEditor({ initial }: { initial: DoctorCoverage
       }
       if (payload.config) {
         setDraft(toDraft(payload.config.norms));
+        setOverrides({ ...payload.config.lineOverrides });
         setUpdatedAt(payload.config.updatedAt);
       }
       setStatus("saved");
@@ -123,6 +183,101 @@ export function DoctorCoverageNormsEditor({ initial }: { initial: DoctorCoverage
           held to a frequency: those contacts drop out of the coverage %, the red/amber/green counts and the call list,
           instead of all turning green.
         </p>
+      </div>
+
+      {/* ── Line overrides ──────────────────────────────────────────────────────────────────── */}
+      <div className="border border-slate-200 bg-white">
+        <div className="border-b border-slate-200 bg-slate-900 px-4 py-3">
+          <h2 className="text-[11px] font-black uppercase tracking-[0.14em] text-white">Line coverage exceptions</h2>
+          <p className="mt-0.5 text-[10px] text-slate-400">
+            Product, Group Product and National Sales Managers normally see the one line on their employee record. Add
+            someone here to give them more than one.
+          </p>
+        </div>
+
+        <div className="divide-y divide-slate-100">
+          {overrideRows.length === 0 ? (
+            <p className="px-4 py-3 text-xs text-slate-400">
+              No exceptions — everyone sees the line on their own record.
+            </p>
+          ) : (
+            overrideRows.map(([key, lineIds]) => {
+              const person = byCanonical.get(key);
+              return (
+                <div className="px-4 py-3" key={key}>
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div className="whitespace-nowrap">
+                      <span className="text-sm font-bold text-slate-900">{person?.name ?? key.toUpperCase()}</span>
+                      <span className="ml-2 text-[11px] text-slate-400">
+                        {person ? `${person.hrId} · ${person.jobTitle}` : "not a line-scoped role any more"}
+                      </span>
+                    </div>
+                    <button
+                      className="h-8 border border-slate-200 bg-white px-3 text-[10px] font-black uppercase tracking-[0.12em] text-rose-700 hover:border-rose-400"
+                      onClick={() => removeOverride(key)}
+                      type="button"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                  <div className="mt-2 flex flex-wrap gap-3">
+                    {lines.map((line) => (
+                      <label className="flex items-center gap-1.5 whitespace-nowrap text-xs font-semibold text-slate-700" key={line.id}>
+                        <input
+                          checked={lineIds.includes(line.id)}
+                          onChange={() => toggleLine(key, line.id)}
+                          type="checkbox"
+                        />
+                        {line.name}
+                      </label>
+                    ))}
+                  </div>
+                  {lineIds.length === 0 ? (
+                    <p className="mt-1 text-[10px] font-semibold text-rose-700">
+                      Pick at least one line, or remove this row — an empty exception is rejected on save.
+                    </p>
+                  ) : null}
+                  {person?.lineId != null && lineIds.length === 1 && lineIds[0] === person.lineId ? (
+                    <p className="mt-1 text-[10px] text-slate-400">
+                      Same as their own record ({person.lineName ?? "their line"}) — this row changes nothing yet.
+                    </p>
+                  ) : null}
+                </div>
+              );
+            })
+          )}
+        </div>
+
+        <div className="flex flex-wrap items-end gap-2 border-t border-slate-200 bg-slate-50 px-4 py-3">
+          <label className="space-y-1">
+            <span className="block text-[9px] font-black uppercase tracking-[0.16em] text-slate-400">Add a person</span>
+            <select
+              className="h-9 min-w-64 border border-slate-200 bg-white px-2 text-sm font-semibold text-slate-700 outline-none focus:border-orange-400"
+              onChange={(event) => setAddHrId(event.target.value)}
+              value={addHrId}
+            >
+              <option value="">Choose…</option>
+              {candidates
+                .filter((candidate) => !overrides[candidate.canonicalHrId])
+                .map((candidate) => (
+                  <option key={candidate.canonicalHrId} value={candidate.canonicalHrId}>
+                    {candidate.name} — {candidate.jobTitle} ({candidate.lineName ?? "no line"})
+                  </option>
+                ))}
+            </select>
+          </label>
+          <button
+            className="h-9 border border-slate-200 bg-white px-4 text-[11px] font-black uppercase tracking-[0.12em] text-slate-600 hover:border-orange-400 disabled:opacity-40"
+            disabled={!addHrId}
+            onClick={addOverride}
+            type="button"
+          >
+            Add
+          </button>
+          <span className="whitespace-nowrap text-[10px] text-slate-400">
+            Only these roles are listed — an exception on a District Manager or a rep would do nothing.
+          </span>
+        </div>
       </div>
 
       {issues.length > 0 ? (
