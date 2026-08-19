@@ -1621,7 +1621,7 @@ function CandidateActionsControl({
   const notified = candidate.managerNotified;
 
   return (
-    <div className="space-y-1">
+    <div className="max-w-[280px] space-y-1">
       <div className="flex flex-wrap gap-1.5">
         <Button variant="ghost" disabled={pending} onClick={() => void openProfile(candidate.id)}>
           Profile
@@ -1630,7 +1630,7 @@ function CandidateActionsControl({
           <>
             <CandidateDecisionButtons candidate={candidate} pending={pending} run={run} />
             <SearchableSelect
-              className={fieldClass}
+              className={`${fieldClass} w-56`}
               value={sendTo[candidate.id] ?? ""}
               onChange={(e) => setSendTo((prev) => ({ ...prev, [candidate.id]: e.target.value }))}
             >
@@ -1657,7 +1657,7 @@ function CandidateActionsControl({
               {notified ? "Send again" : "Send"}
             </Button>
             <SearchableSelect
-              className={fieldClass}
+              className={`${fieldClass} w-48`}
               value={startReq[candidate.id] ?? ""}
               onChange={(e) => setStartReq((prev) => ({ ...prev, [candidate.id]: e.target.value }))}
             >
@@ -2310,7 +2310,7 @@ function CandidatesTab({
             />
           )}
           renderTable={() => (
-            <PortalDesktopTable minWidth="1400px">
+            <PortalDesktopTable minWidth="1024px">
               <thead>
                 <tr>
                   {canManage ? (
@@ -2338,7 +2338,7 @@ function CandidatesTab({
                 {visibleCandidates.map((candidate) => (
                   <tr key={candidate.id}>
                     {canManage ? (
-                      <td className="px-3 py-2">
+                      <td className="px-3 py-2 align-top">
                         <input
                           aria-label={`Select ${candidate.fullName}`}
                           checked={selectedIds.includes(candidate.id)}
@@ -2348,24 +2348,32 @@ function CandidatesTab({
                         />
                       </td>
                     ) : null}
-                    <td className="whitespace-nowrap px-3 py-2 font-medium text-slate-900">
-                      <span className="inline-flex items-center gap-1.5">
-                        {candidate.fullName}
+                    <td className="max-w-[180px] px-3 py-2 align-top font-medium text-slate-900">
+                      <span className="flex min-w-0 items-center gap-1.5">
+                        <span className="min-w-0 truncate" title={candidate.fullName}>
+                          {candidate.fullName}
+                        </span>
                         {/* Phoenix recruits Egyptian nationals only. Flagged, never filtered — the
                             row still lists and every action still works; a person decides. */}
                         {isStatedNonEgyptian(candidate.nationality) ? (
-                          <StagePill tone="rose">
-                            <span title={nonEgyptianFlagTitle(candidate.nationality)}>{NON_EGYPTIAN_FLAG_LABEL}</span>
-                          </StagePill>
+                          <span className="shrink-0">
+                            <StagePill tone="rose">
+                              <span title={nonEgyptianFlagTitle(candidate.nationality)}>{NON_EGYPTIAN_FLAG_LABEL}</span>
+                            </StagePill>
+                          </span>
                         ) : null}
                       </span>
                     </td>
                     {/* Second column on purpose: after the name, "which job is this for" is the one
-                        fact that decides who the CV goes to. Never truncated — the whole title
-                        shows or the column widens. */}
-                    <td className="whitespace-nowrap px-3 py-2">
+                        fact that decides who the CV goes to. Truncated with the full title on hover
+                        (same trade as Source below) so one long title can't force the whole table
+                        into horizontal scroll. */}
+                    <td className="max-w-[180px] px-3 py-2 align-top">
                       {candidate.appliedForJobTitle ? (
-                        <span className="text-slate-900" title={candidate.appliedForEvidence ?? undefined}>
+                        <span
+                          className="block truncate text-slate-900"
+                          title={[candidate.appliedForJobTitle, candidate.appliedForEvidence].filter(Boolean).join("\n")}
+                        >
                           {candidate.appliedForJobTitle}
                         </span>
                       ) : (
@@ -2375,22 +2383,26 @@ function CandidatesTab({
                     {/* The reason for the current status sits in the tooltip rather than a column
                         of its own: it is read when someone asks "why", not on every scan of the
                         pool. The durable copy is in ats_candidate_status_events either way. */}
-                    <td className="whitespace-nowrap px-3 py-2">
+                    <td className="whitespace-nowrap px-3 py-2 align-top">
                       <StagePill tone={candidateStatusTone(candidate.status)}>
                         <span title={candidate.statusNote ?? undefined}>{candidateStatusLabel(candidate.status)}</span>
                       </StagePill>
                     </td>
                     {/* When it landed, Cairo time — the column the pool had no answer for. The New
                         pill marks the last 24 hours, measured from the server's stamp. */}
-                    <td className="whitespace-nowrap px-3 py-2 text-slate-600">
+                    <td className="whitespace-nowrap px-3 py-2 align-top text-slate-600">
                       <span className="inline-flex items-center gap-1.5">
                         {cairoDateTime(candidate.createdAt)}
                         {isNewArrival(candidate) ? <StagePill tone="orange">New</StagePill> : null}
                       </span>
                     </td>
-                    <td className="px-3 py-2">{candidate.email ?? "—"}</td>
-                    <td className="px-3 py-2">{candidate.phone ?? "—"}</td>
-                    <td className="max-w-[220px] px-3 py-2">
+                    <td className="max-w-[170px] px-3 py-2 align-top">
+                      <span className="block truncate" title={candidate.email ?? undefined}>
+                        {candidate.email ?? "—"}
+                      </span>
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-2 align-top">{candidate.phone ?? "—"}</td>
+                    <td className="max-w-[180px] px-3 py-2 align-top">
                       {candidate.sourceContext?.shortLabel ? (
                         <span className="block truncate text-slate-600" title={candidate.sourceContext.detailLines.join("\n")}>
                           {candidate.sourceContext.shortLabel}
@@ -2399,7 +2411,7 @@ function CandidatesTab({
                         <span className="text-slate-400">—</span>
                       )}
                     </td>
-                    <td className="px-3 py-2">
+                    <td className="px-3 py-2 align-top">
                       <CandidateActionsControl
                         candidate={candidate}
                         canDelete={canDelete}
