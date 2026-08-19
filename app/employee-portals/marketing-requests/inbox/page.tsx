@@ -12,7 +12,7 @@ export default async function EmployeePortalMarketingInboxPage() {
   return (
     <EmployeePortalPageShell
       badge="Marketing"
-      description="Marketing requests that are currently waiting for your approval decision. Approve, return, or reject each one."
+      description="Marketing requests waiting for your approval decision, plus a History tab holding every request already approved, rejected or returned — with the full decision trail."
       title="Marketing Requests Inbox"
     >
       <MarketingRequestInbox />

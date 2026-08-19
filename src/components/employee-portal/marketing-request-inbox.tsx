@@ -7,6 +7,7 @@ import {
   CheckCircle2,
   Clock3,
   Eye,
+  History,
   Inbox,
   MessageSquareText,
   RefreshCcw,
@@ -15,6 +16,12 @@ import {
 } from "lucide-react";
 
 import { MarketingAdvisoryCommentBox } from "@/components/employee-portal/marketing-advisory-comment-box";
+import {
+  ApprovalHistory,
+  egp,
+  formatDate,
+} from "@/components/employee-portal/marketing-approval-chain";
+import { MarketingRequestHistory } from "@/components/employee-portal/marketing-request-history";
 import { MarketingRequestApproverDetail } from "@/components/marketing-requests/marketing-request-approver-detail";
 import { MarketingRequestedProductHistory } from "@/components/marketing-requests/marketing-requested-product-history";
 import { Badge } from "@/components/ui/badge";
@@ -22,121 +29,18 @@ import { Card } from "@/components/ui/card";
 import { LoadingSpinner } from "@/components/ui/loading-state";
 import { WorkspaceErrorBoundary } from "@/components/ui/workspace-error-boundary";
 import type {
-  MarketingApproverChainRung,
   MarketingApproverInboxRow,
   MarketingApproverInboxWorkspace,
   MarketingApproverOversightRow,
   MarketingApproverUpcomingRow,
 } from "@/lib/marketing-requests/service";
-import { PHOENIX_BUSINESS_TIME_ZONE } from "@/lib/i18n/format";
 
 /* --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- */
 /* --------- Helpers ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ */
+/*                                                                                                                                                                                                             */
+/* `egp`, `formatDate` and the whole ApprovalHistory chain now live in marketing-approval-chain.tsx,          */
+/* shared with the History tab — a rung must read identically whether it is being decided or remembered.      */
 /* --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- */
-
-function egp(value: number) {
-  return new Intl.NumberFormat("en-US", {
-    currency: "EGP",
-    maximumFractionDigits: 0,
-    style: "currency",
-  }).format(Number.isFinite(value) ? value : 0);
-}
-
-function formatDate(value: string | null) {
-  if (!value) return "-";
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return "-";
-  return parsed.toLocaleDateString("en-GB", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-    timeZone: PHOENIX_BUSINESS_TIME_ZONE,
-  });
-}
-
-/** Date AND time, Africa/Cairo — a decision time without the clock is not an audit trail. */
-function formatDateTime(value: string | null) {
-  if (!value) return null;
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return null;
-  return parsed.toLocaleString("en-GB", {
-    day: "2-digit",
-    hour: "2-digit",
-    hour12: false,
-    minute: "2-digit",
-    month: "short",
-    timeZone: PHOENIX_BUSINESS_TIME_ZONE,
-    year: "numeric",
-  });
-}
-
-const RUNG_TONE: Record<MarketingApproverChainRung["status"], string> = {
-  approved: "border-emerald-200 bg-emerald-50 text-emerald-800",
-  current: "border-orange-300 bg-orange-50 text-orange-900",
-  pending: "border-slate-200 bg-slate-50 text-slate-500",
-  rejected: "border-rose-200 bg-rose-50 text-rose-800",
-  returned: "border-amber-200 bg-amber-50 text-amber-900",
-  skipped: "border-slate-200 bg-slate-50 text-slate-400",
-};
-
-const RUNG_VERB: Record<MarketingApproverChainRung["status"], string> = {
-  approved: "Approved",
-  current: "Waiting",
-  pending: "Not reached yet",
-  rejected: "Rejected",
-  returned: "Returned",
-  skipped: "Skipped",
-};
-
-/**
- * Who signed this off before it reached you, when, and what they wrote.
- *
- * The chain used to render as a bare breadcrumb of step names. The CEO signs LAST, so he was the
- * one person being asked to commit money on the strength of three approvals he could not read.
- */
-function ApprovalHistory({ rungs }: { rungs: MarketingApproverChainRung[] }) {
-  if (rungs.length === 0) return null;
-  return (
-    <div className="border-b border-slate-100 px-4 py-3">
-      <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-slate-400">
-        Approval history
-      </p>
-      <ol className="mt-2 space-y-1.5">
-        {rungs.map((rung) => {
-          const decidedAt = formatDateTime(rung.decisionAt);
-          return (
-            <li
-              className={`rounded-sm border px-2.5 py-1.5 ${RUNG_TONE[rung.status]}`}
-              key={`${rung.sequence}-${rung.stepName}`}
-            >
-              <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-                <span className="text-[11px] font-black">
-                  {rung.sequence}. {rung.stepName}
-                </span>
-                <span className="text-[11px] font-bold">{RUNG_VERB[rung.status]}</span>
-                {rung.approverName ? (
-                  <span className="text-[11px] font-medium">by {rung.approverName}</span>
-                ) : null}
-                {decidedAt ? <span className="text-[10px] font-semibold opacity-80">{decidedAt}</span> : null}
-                {rung.isMine ? (
-                  <span className="rounded-sm bg-slate-900 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-[0.1em] text-white">
-                    Yours
-                  </span>
-                ) : null}
-              </div>
-              {/* Full note, never truncated — the reason for a decision is the whole point of showing it. */}
-              {rung.decisionNote ? (
-                <p className="mt-1 text-[11px] font-medium leading-snug">&ldquo;{rung.decisionNote}&rdquo;</p>
-              ) : rung.status === "approved" ? (
-                <p className="mt-1 text-[10px] font-medium italic opacity-70">No comment left</p>
-              ) : null}
-            </li>
-          );
-        })}
-      </ol>
-    </div>
-  );
-}
 
 function decisionHref(basePath: string, requestId: string, decision: "approve" | "reject" | "return") {
   return `${basePath}/${requestId}?decision=${decision}`;
@@ -538,6 +442,80 @@ function MarketingRequestInboxInner({ decisionBasePath }: { decisionBasePath: st
 }
 
 /* --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- */
+/* --------- Tabs: live approvals, and everything already answered ------------------------------------------------- */
+/* --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- */
+
+type InboxTab = "approval" | "history";
+
+const INBOX_TABS: ReadonlyArray<{ description: string; icon: typeof Inbox; key: InboxTab; label: string }> = [
+  { description: "Still moving through the chain", icon: Inbox, key: "approval", label: "In approval" },
+  { description: "Approved, rejected or returned", icon: History, key: "history", label: "History" },
+];
+
+/**
+ * Two views of the same queue, on the same page — owner instruction, 2026-08-19.
+ *
+ * The History panel is mounted only once it has actually been opened, so the default view costs
+ * exactly what it did before this change; after that BOTH panels stay mounted and the inactive one
+ * is hidden. Unmounting on every switch would throw away the loaded rows and re-fire every per-row
+ * detail fetch on the way back — the tab would get slower the more it is used.
+ */
+function MarketingInboxTabs({ decisionBasePath }: { decisionBasePath: string }) {
+  const [tab, setTab] = useState<InboxTab>("approval");
+  const [historyOpened, setHistoryOpened] = useState(false);
+
+  return (
+    <div className="space-y-4">
+      <div
+        className="inline-flex w-full overflow-hidden rounded-sm border border-slate-200 bg-white p-1 shadow-[0_8px_24px_rgba(15,23,42,0.05)] sm:w-auto"
+        role="tablist"
+      >
+        {INBOX_TABS.map((definition) => {
+          const Icon = definition.icon;
+          const isActive = definition.key === tab;
+          return (
+            <button
+              aria-selected={isActive}
+              className={`inline-flex flex-1 items-center justify-center gap-2 whitespace-nowrap rounded-sm px-4 py-2 text-[13px] font-bold transition-colors sm:flex-none ${
+                isActive
+                  ? "bg-slate-900 text-white shadow-[0_4px_12px_rgba(15,23,42,0.18)]"
+                  : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+              }`}
+              key={definition.key}
+              onClick={() => {
+                if (definition.key === "history") setHistoryOpened(true);
+                setTab(definition.key);
+              }}
+              role="tab"
+              type="button"
+            >
+              <Icon className="h-4 w-4 shrink-0" />
+              <span>{definition.label}</span>
+              <span
+                className={`hidden whitespace-nowrap text-[11px] font-medium sm:inline ${
+                  isActive ? "text-slate-300" : "text-slate-400"
+                }`}
+              >
+                {definition.description}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
+      <div className={tab === "approval" ? undefined : "hidden"}>
+        <MarketingRequestInboxInner decisionBasePath={decisionBasePath} />
+      </div>
+      {historyOpened ? (
+        <div className={tab === "history" ? undefined : "hidden"}>
+          <MarketingRequestHistory />
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/* --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- */
 /* --------- Exported wrapper with error boundary --------------------------------------------------------------------------------- */
 /* --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- */
 
@@ -548,7 +526,7 @@ export function MarketingRequestInbox({
 }) {
   return (
     <WorkspaceErrorBoundary fallbackTitle="Marketing approval inbox error">
-      <MarketingRequestInboxInner decisionBasePath={decisionBasePath} />
+      <MarketingInboxTabs decisionBasePath={decisionBasePath} />
     </WorkspaceErrorBoundary>
   );
 }

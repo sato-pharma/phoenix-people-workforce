@@ -149,13 +149,24 @@ export function runMarketingApproverChainHistoryTests() {
     /<ApprovalHistory rungs=\{row\.approvalHistory\}/,
     "the inbox row must render the approval history — carrying it to the client and not showing it is the bug",
   );
+  // The rung RENDERER moved to marketing-approval-chain.tsx on 2026-08-19, when the inbox grew a
+  // History tab that has to draw the same chain. The two assertions below therefore follow the code
+  // to its new home rather than being deleted — the invariant is about how a rung is drawn, not about
+  // which file draws it. The import assertion above keeps them honest: the inbox cannot satisfy this
+  // suite by pointing at a module it does not actually use.
+  const chainSource = source("src/components/employee-portal/marketing-approval-chain.tsx");
   assert.match(
     inboxSource,
+    /from "@\/components\/employee-portal\/marketing-approval-chain"/,
+    "the inbox must render the chain through the shared module, not a private copy of it",
+  );
+  assert.match(
+    chainSource,
     /timeZone: PHOENIX_BUSINESS_TIME_ZONE/,
     "decision times render in Africa/Cairo, never raw UTC",
   );
   assert.match(
-    inboxSource,
+    chainSource,
     /No comment left/,
     "a silent approval is stated explicitly rather than rendering an empty space",
   );

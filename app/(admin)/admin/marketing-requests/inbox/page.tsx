@@ -13,7 +13,8 @@ export default async function AdminMarketingInboxPage() {
         <p className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-700">Marketing</p>
         <h1 className="text-2xl font-bold tracking-tight text-slate-950">Approval Inbox</h1>
         <p className="max-w-3xl text-sm text-slate-600">
-          Marketing requests that are currently waiting for your approval decision. Approve, return, or reject each one.
+          Marketing requests waiting for your approval decision, plus a History tab holding every request already
+          approved, rejected or returned — with the full decision trail.
         </p>
       </div>
       {/* MarketingRequestInbox defaults decisionBasePath to the PORTAL. This page is the admin
