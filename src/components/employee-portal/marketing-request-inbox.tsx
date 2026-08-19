@@ -136,6 +136,32 @@ function InboxRowCard({ decisionBasePath, row }: { decisionBasePath: string; row
         </div>
       </div>
 
+      {/* The decision bar. Approve always renders — a rung that cannot be advanced is not a rung.
+          Return and reject are PER-STEP powers held on the step row (`allow_return` /
+          `allow_reject`), and until now this card ignored both and painted all three.
+
+          Live consequence, measured on production 2026-08-19: EVERY Finance Execution step ever
+          created carries `allow_reject: false` — 6 of 6 — and one of them
+          (MKT-REQ-20260814-6CD456E4, B-185 Ahmed El Maraghy) is the CURRENT rung as this is
+          written. So this card was painting him a Reject button he cannot use.
+
+          What that click actually did, traced rather than assumed: `?decision=reject` only
+          PRESELECTS the decision on marketing-request-decision-confirmation.tsx — it never
+          auto-submits — and that page has gated its own Reject button on `summary.allowReject`
+          all along. So the button vanished on arrival. Not an error, not a 400: a silent
+          round trip to a page missing the one control he went there to press. The 400 is the
+          backstop below it (decideMarketingRequestWorkflow throws `marketing_reject_not_allowed`),
+          which is what makes the affordance provably dead — not what the approver sees.
+
+          It is not a label problem either: that step's decision_labels still read
+          `reject: "Reject"`, so only the flag knows. `allow_return` is true on every live step, so
+          today the reject gate is the one that bites; the return gate is pinned with it because
+          the next step config to turn one off should not need a second bug to find it.
+
+          Same gating the MM inbox (mm-inbox-client.tsx) already applies.
+
+          This is an AFFORDANCE, never an authorisation: the decision page and the decision API each
+          re-run the whole gate, so hiding a control here removes a dead end, it grants nothing. */}
       <div className="flex flex-wrap items-center gap-2 border-t border-slate-100 bg-slate-50/50 px-4 py-3">
         <Link
           className="inline-flex min-h-9 items-center gap-1.5 rounded-sm bg-emerald-600 px-4 text-[12px] font-bold text-white shadow-sm transition hover:bg-emerald-700"
@@ -144,20 +170,24 @@ function InboxRowCard({ decisionBasePath, row }: { decisionBasePath: string; row
           <CheckCircle2 className="h-3.5 w-3.5" />
           {row.decisionLabels.approve}
         </Link>
-        <Link
-          className="inline-flex min-h-9 items-center gap-1.5 rounded-sm border border-amber-300 bg-white px-4 text-[12px] font-bold text-amber-800 shadow-sm transition hover:bg-amber-50"
-          href={decisionHref(decisionBasePath, row.id, "return")}
-        >
-          <Undo2 className="h-3.5 w-3.5" />
-          {row.decisionLabels.return}
-        </Link>
-        <Link
-          className="inline-flex min-h-9 items-center gap-1.5 rounded-sm border border-rose-300 bg-white px-4 text-[12px] font-bold text-rose-700 shadow-sm transition hover:bg-rose-50"
-          href={decisionHref(decisionBasePath, row.id, "reject")}
-        >
-          <XCircle className="h-3.5 w-3.5" />
-          {row.decisionLabels.reject}
-        </Link>
+        {row.allowReturn ? (
+          <Link
+            className="inline-flex min-h-9 items-center gap-1.5 rounded-sm border border-amber-300 bg-white px-4 text-[12px] font-bold text-amber-800 shadow-sm transition hover:bg-amber-50"
+            href={decisionHref(decisionBasePath, row.id, "return")}
+          >
+            <Undo2 className="h-3.5 w-3.5" />
+            {row.decisionLabels.return}
+          </Link>
+        ) : null}
+        {row.allowReject ? (
+          <Link
+            className="inline-flex min-h-9 items-center gap-1.5 rounded-sm border border-rose-300 bg-white px-4 text-[12px] font-bold text-rose-700 shadow-sm transition hover:bg-rose-50"
+            href={decisionHref(decisionBasePath, row.id, "reject")}
+          >
+            <XCircle className="h-3.5 w-3.5" />
+            {row.decisionLabels.reject}
+          </Link>
+        ) : null}
       </div>
     </Card>
   );
