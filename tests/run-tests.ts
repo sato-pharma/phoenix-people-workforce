@@ -842,6 +842,7 @@ import { runMarketingCustomerAreaOwnershipTests } from "./marketing-customer-are
 // one pins that the two write paths actually ask before raising a request against one.
 import { runMarketingRequestCustomerScopeGuardTests } from "./marketing-request-customer-scope-guard.test.ts";
 import { runMarketingSalesCodeSyncRerunTests } from "./marketing-sales-code-sync-rerun.test.ts";
+import { runTerritoryAreaIndexTests } from "./territory-area-index.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -2206,6 +2207,13 @@ await runTest(
 await runTest(
   "sales pharmacy-code sync re-run (twice leaves exactly one row per distributor+code, spreadsheet rows untouched, links not detached)",
   runMarketingSalesCodeSyncRerunTests,
+);
+
+await runTest(
+  "territory area pharmacies area-period index (expression index on (upper(btrim(coalesce(area_code,''))), "
+  + "period) matches the RPC's only selective predicate so the plan is a Bitmap Index Scan not a full "
+  + "rollup seq scan; index expression and function predicate pinned to stay in lockstep)",
+  runTerritoryAreaIndexTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
