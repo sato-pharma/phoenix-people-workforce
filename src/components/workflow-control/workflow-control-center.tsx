@@ -30,6 +30,7 @@ const STATUS_BADGE: Record<WorkflowControlStatus, string> = {
   Active: "bg-[#ECFDF5] text-[#047857]",
   Draft: "bg-[#FFF7ED] text-[#C2410C]",
   "Read-only map": "bg-[#F1F5F9] text-[#475569]",
+  "Not implemented": "bg-[#FEF2F2] text-[#B91C1C]",
 };
 
 type Tab = "center" | "registry";
@@ -192,6 +193,17 @@ export function WorkflowControlCenter({
                   {canDraftEdit ? <PencilLine className="h-4 w-4" /> : <Lock className="h-4 w-4" />} Edit Workflow
                 </button>
               </div>
+
+              {selectedDomain.status === "Not implemented" ? (
+                <div className="mt-3 flex items-start gap-2 rounded-xl border border-[#FECACA] bg-[#FEF2F2] px-4 py-3">
+                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-[#B91C1C]" />
+                  <p className="text-[13px] leading-5 text-[#B91C1C]">
+                    <span className="font-black">Not implemented:</span> nothing in the system runs these steps today. This is the intended
+                    design kept as a specification, not a live governed process — do not rely on it, and do not report that anything here
+                    was approved.
+                  </p>
+                </div>
+              ) : null}
 
               {selectedDomain.beta ? (
                 <div className="mt-3 flex items-start gap-2 rounded-xl border border-[#FDE68A] bg-[#FEF9C3] px-4 py-3">
