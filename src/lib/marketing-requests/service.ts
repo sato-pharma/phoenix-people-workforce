@@ -187,6 +187,13 @@ export type { MarketingDecisionOverlap, MarketingDecisionPharmacy };
 
 export type MarketingRequestDecisionSummary = {
   allowReject: boolean;
+  /**
+   * The other per-step power, and it must travel with `allowReject` rather than be assumed true.
+   * Both live on the step row; `MarketingWorkflowStep` and `MarketingRequestApprovalStep` have
+   * carried the pair since the flags shipped, and this summary carried only half of it — so the
+   * confirmation page had nothing to gate Return on and painted it on every rung.
+   */
+  allowReturn: boolean;
   assignedApproverHrId: string;
   currentStepName: string;
   decision: MarketingRequestDecision;
@@ -3246,6 +3253,7 @@ export async function getMarketingRequestDecisionSummary(
 
   return {
     allowReject: currentStep.allowReject,
+    allowReturn: currentStep.allowReturn,
     assignedApproverHrId: currentStep.assignedHrId ?? "",
     currentStepName: currentStep.stepName,
     decisionLabels: currentStep.decisionLabels ?? normalizeMarketingDecisionLabels(null),

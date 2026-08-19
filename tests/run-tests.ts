@@ -825,6 +825,7 @@ import { runMasterMapOrganogramRegionsTests } from "./master-map-organogram-regi
 import { runMasterMapDistrictManagersTests } from "./master-map-district-managers.test.ts";
 import { runZoomablePhotoTests } from "./zoomable-photo.test.ts";
 import { runMarketingCaseFileDecisionBarTests } from "./marketing-case-file-decision-bar.test.ts";
+import { runMarketingDecisionPageReturnGatingTests } from "./marketing-decision-page-return-gating.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -2140,6 +2141,11 @@ await runTest(
 await runTest(
   "marketing case file decision bar (the notification's own approver can answer in place, in their own shell, with only the powers their rung has)",
   runMarketingCaseFileDecisionBarTests,
+);
+
+await runTest(
+  "marketing decision page Return gate (the confirmation page offers Return only on a rung that holds it)",
+  runMarketingDecisionPageReturnGatingTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
