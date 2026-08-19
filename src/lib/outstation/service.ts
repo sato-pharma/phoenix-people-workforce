@@ -66,6 +66,7 @@ import {
 } from "@/lib/outstation/departure-evidence";
 import {
   isOutstationExpenseInPayroll,
+  isOutstationRequestHeldForRepair,
   nextEvidenceGateStatus,
   resolveOutstationGateState,
   validateManualWorkloadInput,
@@ -4781,9 +4782,12 @@ export async function listHeldOutstationRequests(
     .order("created_at", { ascending: false });
   if (error || !data) return [];
 
+  // One reading of "today", not one per row: a list computed either side of Cairo midnight would
+  // otherwise drop or keep a trip depending on where in the loop it happened to fall.
+  const today = cairoTodayIso();
+
   return (data as Array<Record<string, unknown>>)
     .map(mapOutstationRequestRow)
-    .filter((request) => request.status.startsWith("accepted"))
     .map((request) => ({
       request,
       gate: resolveOutstationGateState({
@@ -4794,7 +4798,14 @@ export async function listHeldOutstationRequests(
         workloadGateStatus: request.workloadGateStatus,
       }),
     }))
-    .filter((row) => !row.gate.isPayrollEligible)
+    .filter(({ gate, request }) =>
+      isOutstationRequestHeldForRepair({
+        cairoTodayIso: today,
+        gate,
+        status: request.status,
+        tripEndDate: request.tripEndDate,
+      }),
+    )
     .map(({ gate, request }) => ({
       blocker: gate.blocker ?? "unknown",
       destination: text(request.toLabel) || text(request.toCity) || text(request.toArea) || "—",

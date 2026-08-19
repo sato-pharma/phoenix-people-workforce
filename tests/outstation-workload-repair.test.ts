@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-import { validateManualWorkloadInput } from "../src/lib/outstation/expense-gate.ts";
+import {
+  isOutstationRequestHeldForRepair,
+  validateManualWorkloadInput,
+} from "../src/lib/outstation/expense-gate.ts";
 
 function source(path: string) {
   return readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
@@ -142,6 +145,92 @@ export function runOutstationWorkloadRepairTests() {
     retrySlice,
     /if \(release && !release\.released\) \{\s*\n\s*return \{ message: `Workload captured, but the request did not reach payroll: \$\{release\.reason\}`/,
     "and must report that reason verbatim, ahead of any gate it re-derives",
+  );
+
+  // ── What the repair panel is allowed to LIST ────────────────────────────────────
+  // The panel is what stops a held request being invisible, and until 2026-08-19 it listed
+  // nothing at all: it required `status.startsWith("accepted")`, borrowed from the payroll
+  // release rule. That rule is right about who may be PAID and wrong about what may be SHOWN.
+  // Since the owner's 2026-08-08 change every submission persists as `submitted`, and production
+  // has carried 57 requests across two months without one reaching an `accepted_*` status — so
+  // the screen built for this job could never display a row, and the 2026-08-19 repair had to be
+  // driven from a script instead.
+  type HeldInput = Parameters<typeof isOutstationRequestHeldForRepair>[0];
+  const heldGate: HeldInput["gate"] = { blocker: "workload", isPayrollEligible: false, message: "waiting" };
+  const clearedGate: HeldInput["gate"] = { blocker: null, isPayrollEligible: true, message: "complete" };
+  const TODAY = "2026-08-19";
+  // Fields resolved one by one rather than by spreading a Partial, so that an explicit
+  // `tripEndDate: null` case is passed through as null instead of falling back to the default.
+  const listed = (over: Partial<HeldInput>): boolean =>
+    isOutstationRequestHeldForRepair({
+      cairoTodayIso: over.cairoTodayIso ?? TODAY,
+      gate: over.gate ?? heldGate,
+      status: over.status ?? "submitted",
+      tripEndDate: over.tripEndDate === undefined ? "2026-08-16" : over.tripEndDate,
+    });
+
+  assert.equal(
+    listed({}),
+    true,
+    "a SUBMITTED request the gate is holding must be listed — requiring `accepted` is precisely what left this panel showing nothing at all",
+  );
+  for (const status of ["approved", "accepted_by_system", "accepted_by_admin", "needs_review"]) {
+    assert.equal(listed({ status }), true, `a held ${status} request must be listed too`);
+  }
+
+  // Rejected is held by a DECISION. Nothing this panel offers may overturn one — the same rule
+  // releaseOutstationRequestToPayrollIfReady states, and the one part of the old filter that was
+  // doing real work.
+  for (const status of ["rejected", "rejected_by_system", "rejected_by_admin"]) {
+    assert.equal(
+      listed({ status }),
+      false,
+      `${status} must never be listed — it is held by a decision, and the buttons here would override it`,
+    );
+  }
+
+  assert.equal(listed({ gate: clearedGate }), false, "a request the gate has cleared has nothing to repair");
+
+  // A trip that has not finished is IN PROGRESS, not held. The departure photo is taken before
+  // leaving the destination, so listing a live trip under "Held out of payroll — the employee is
+  // not paid until each one clears", beside a button that waives the photo permanently, invites
+  // an administrator to waive a photo that is not yet due. Request 93 was submitted at 20:32
+  // Cairo on the day of its own trip and would have been the newest row in the list.
+  assert.equal(
+    listed({ tripEndDate: TODAY }),
+    false,
+    "a trip ending TODAY must not be listed — the employee may still be at the destination",
+  );
+  assert.equal(listed({ tripEndDate: "2026-08-21" }), false, "nor a trip still days from finishing");
+  assert.equal(
+    listed({ tripEndDate: "2026-08-18" }),
+    true,
+    "a trip that ended yesterday with no departure photo IS held, and is exactly what the panel is for",
+  );
+
+  // An unreadable trip end must not hide a stuck request. These are compared as strings, and any
+  // non-date text sorts ABOVE a "2026-…" date — so without the shape check a malformed value
+  // would read as a far-future trip and silently suppress the row.
+  for (const tripEndDate of [null, "", "not-a-date", "n/a"]) {
+    assert.equal(
+      listed({ tripEndDate }),
+      true,
+      `trip end ${JSON.stringify(tripEndDate)} proves nothing about whether the trip is over, so the request must still be shown`,
+    );
+  }
+
+  // The service must actually USE the predicate rather than re-filter inline — two copies of
+  // "what counts as held" is how the list and the panel's own copy drift apart.
+  const heldListSlice = functionSlice(service, "export async function listHeldOutstationRequests");
+  assert.match(
+    heldListSlice,
+    /isOutstationRequestHeldForRepair\(\{/,
+    "the held list must delegate to the pure predicate, not re-implement the rule inline",
+  );
+  assert.doesNotMatch(
+    heldListSlice,
+    /status\.startsWith\("accepted"\)/,
+    "the accepted-only filter must be gone — it is what made this panel permanently empty",
   );
 
   // ── Both repairs are Super Admin only ───────────────────────────────────────────

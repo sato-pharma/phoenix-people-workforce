@@ -142,9 +142,11 @@ export function HeldRequestsPanel() {
         </button>
       </div>
       <p className="mt-2 max-w-3xl text-[13px] leading-relaxed text-rose-900">
-        {requests.length} accepted request{requests.length === 1 ? " is" : "s are"} waiting on evidence
-        and {requests.length === 1 ? "has" : "have"} not been added to payroll. The employee is not paid
-        until each one clears.
+        {requests.length} request{requests.length === 1 ? " is" : "s are"} waiting on evidence and
+        cannot be added to payroll. The employee is not paid until each one clears. A request still
+        awaiting approval is listed too — the same check will hold it the moment it is approved, so
+        it is better fixed now. Trips that have not finished yet are not listed: the departure photo
+        is not due until the employee leaves the destination.
       </p>
 
       {notice ? (
