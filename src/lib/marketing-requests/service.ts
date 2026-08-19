@@ -90,6 +90,7 @@ import type {
 } from "@/lib/marketing-requests/types";
 import { getUserProductScopeOverride } from "@/lib/auth/scope-visibility";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { resolveMarketingPharmacyCodes } from "@/lib/marketing-requests/master-resolution";
 import { pingMarketingRequestSheet } from "@/lib/marketing-requests/sheet-webhook";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
@@ -4607,6 +4608,11 @@ export async function createMarketingValidationRecord(
   // owner's book with no pharmacies attached.
   const customerIds: string[] = [];
   const pharmacyIds: string[] = [];
+  // Every distributor-code row minted here, so the Source-of-Sales master resolver can be pointed
+  // at exactly this submission once the writes are done. Collected rather than re-queried because
+  // the ids are already in hand, and because an explicit list is what keeps the resolver off the
+  // whole table — see src/lib/marketing-requests/master-resolution.ts.
+  const distributorCodeIds: string[] = [];
   // Storage objects written by THIS submission. Tracked alongside the row ids because a bucket
   // object outlives a rolled-back insert unless it is explicitly removed, and an orphaned photo of
   // a real shop front is exactly the kind of thing that must not linger unreferenced.
@@ -4805,6 +4811,7 @@ export async function createMarketingValidationRecord(
           .single();
         if (distributorCodeInsert.error) throw distributorCodeInsert.error;
         const distributorCode = mapDistributorCode(distributorCodeInsert.data as MarketingPharmacyDistributorCodeDbRow);
+        distributorCodeIds.push(distributorCode.id);
 
         const linkInsert = await supabase
           .from("marketing_customer_pharmacies")
@@ -4858,6 +4865,14 @@ export async function createMarketingValidationRecord(
       });
     }
     }
+
+    // Connect what was just written to the Source-of-Sales customer master, while the ids are in
+    // hand and before anyone can look at the row. Awaited rather than fired and forgotten: an
+    // unawaited promise here would race the response, and a row left unresolved is invisible —
+    // that is precisely how ten days of codes accumulated unnoticed. `resolveMarketingPharmacyCodes`
+    // never throws, which is what makes it safe to await INSIDE this try block: the catch below
+    // deletes the whole submission, and enrichment must never be able to trigger that.
+    await resolveMarketingPharmacyCodes(supabase, distributorCodeIds);
 
     // A newly validated customer or pharmacy changes the evidence and validation columns the
     // sheet shows, so it is worth a refresh even though no request row moved.
