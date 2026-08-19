@@ -49,6 +49,7 @@ import {
 import { detectCvFileKind } from "@/lib/recruitment/cv-file-kind";
 import { isThinCvRead, mergeCvExtractions, scoreCvExtraction } from "@/lib/recruitment/cv-extraction-quality";
 import { mergeRuleAndAiExtractions, shouldEscalateToAi } from "@/lib/recruitment/cv-extraction-merge";
+import { extractTextByOcr } from "@/lib/recruitment/cv-ocr";
 import { runRuleCvExtraction, type CvRuleContext, type RuleExtractionResult } from "@/lib/recruitment/rule-extraction";
 import { chooseCvExtractionRoute, MAX_PDF_VISION_BYTES, type CvExtractionRoute } from "@/lib/recruitment/cv-text-layer";
 import { recruitmentDb } from "@/lib/recruitment/db";
@@ -111,6 +112,10 @@ const MAX_CV_EXTRACTION_OUTPUT_TOKENS = 8_000;
 //
 //   select ai_model, count(*) from ats_candidate_cv_extractions group by 1;
 export const RULE_ONLY_EXTRACTION_MODEL = "phoenix-rules";
+// Written when the document was a SCAN and the model could not be reached, so the text came from
+// free OCR. Distinct from the value above because the accuracy is materially different and a
+// reviewer looking at a doubtful record deserves to know which of the two produced it.
+export const OCR_EXTRACTION_MODEL = "phoenix-rules+ocr";
 // Written when both engines contributed — the rules read the CV and the model was asked to fill
 // what they could not. The model's own name is prefixed so cost can still be attributed to it.
 const ruleAssistedModel = (model: string) => `${model}+rules`;
@@ -562,10 +567,50 @@ export async function extractCvFieldsFromBytes(input: {
     if (!decision.escalate) return ruleOnly();
   }
 
+  // -------------------------------------------------------------------------
+  // FREE OCR — the last resort for a scanned CV, never the first choice.
+  //
+  // ~5% of the inbox is a photograph of a printed CV. There is no text layer, so the rule pass above
+  // had nothing to read and these documents belong to the vision model. This reads the pixels with
+  // Tesseract instead, for free — but ONLY once the model has already failed or is unavailable, and
+  // that ordering is a measured decision rather than caution.
+  //
+  // Free OCR is not accurate enough to REPLACE the model on this material. On the six real scans it
+  // read four (it refuses the two Arabic ones on confidence, correctly), but among those four it
+  // turned "martenaadly177@outlook.com" into "77@outlook.com" and read a man's name as "in Egypt.".
+  // A plausible-looking wrong e-mail is worse than an empty one: nobody ever questions it and the
+  // candidate is simply never reachable. So OCR does not get to short-circuit a working model, and
+  // it does not get to overrule one. What it does get to do is stop an applicant being lost entirely
+  // when the model is down, rate-limited or out of credit — which is the same failure the rule pass
+  // above now covers for text CVs, and the reason both exist.
+  //
+  // Every value it produces is marked LOW confidence regardless of what the rules thought, because
+  // cv-auto-apply only ever writes HIGH ones. An OCR read reaches a human, never the record.
+  // -------------------------------------------------------------------------
+  const ruleFromOcr = async (): Promise<CvFieldExtraction | null> => {
+    if (fileKind !== "pdf" && fileKind !== "image") return null;
+    const ocr = await extractTextByOcr({ bytes: input.bytes, fileKind, fileName: input.fileName });
+    if (!ocr) return null;
+    let read: RuleExtractionResult;
+    try {
+      read = runRuleCvExtraction(ocr.text, ruleContext);
+    } catch {
+      return null;
+    }
+    if (!read.isCv) return null;
+    const fields: ExtractedCandidateFields = {};
+    for (const [key, field] of Object.entries(read.fields)) {
+      fields[key] = { ...field, confidence: "low" };
+    }
+    return { fields, isCv: true, model: OCR_EXTRACTION_MODEL, positionKey: schema.positionKey };
+  };
+
   if (!hasOpenAiApiKey()) {
     // Unchanged for every caller that has no usable rule result; what is new is that a CV the rules
     // DID read is no longer thrown away just because the model is unavailable.
     if (rule && rule.isCv) return ruleOnly();
+    const scanned = await ruleFromOcr();
+    if (scanned) return scanned;
     throw new CvExtractionError(
       "ai_not_configured",
       "This isn't configured yet. Add the OpenAI key as OPENAI_API_KEY.",
@@ -687,6 +732,9 @@ export async function extractCvFieldsFromBytes(input: {
     // candidates permanently have. A model that is down, rate-limited or out of credit no longer
     // costs an applicant their profile.
     if (rule && rule.isCv) return ruleOnly();
+    // No text layer either, so this is a scan: read the pixels rather than lose the applicant.
+    const scanned = await ruleFromOcr();
+    if (scanned) return scanned;
     throw error;
   }
 

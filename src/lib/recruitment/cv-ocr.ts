@@ -1,0 +1,196 @@
+// Recruitment / ATS — reading a SCANNED CV with no AI and no vendor.
+//
+// About 5% of the careers inbox arrives as a photograph: a CV printed, photographed on a phone, and
+// wrapped in a PDF, or sent straight through as a .jpg. Those pages carry no text layer at all, so
+// the rule engine has nothing to read and they route to the vision model. This module gives them a
+// free first attempt.
+//
+// WHAT IT IS AND IS NOT. Tesseract is genuinely good on a clean printed page and genuinely bad on a
+// creased phone photo of one, and it reads only the language it was given. Measured over the six
+// scanned CVs in the inbox on 2026-08-19:
+//
+//   confidence 91  Martena Adly       name, e-mail, BOTH mobiles, city — complete
+//   confidence 91  Mina Ehab Ramzy    name, street address, both mobiles, e-mail, LinkedIn, degree
+//   confidence 78  Ahmed Ibrahim      readable through heavy decorative noise
+//   confidence 75  Mohamed Reda       readable, noisy
+//   confidence 41  (Arabic document)  unreadable — the English model cannot read Arabic
+//   confidence 32  (Arabic document)  unreadable
+//
+// So it solves four of the six and is worthless on the other two, and — this is the useful part —
+// Tesseract's own confidence separates the two groups cleanly, with nothing between 41 and 75. That
+// is why this module is allowed to REFUSE. Below the threshold it returns null and the caller goes
+// to the model exactly as it does today, so OCR can only ever save a call, never cost an applicant
+// their profile.
+//
+// ENGLISH ONLY, deliberately. Arabic Tesseract data is another 5 MB for a script the engine reads
+// poorly, on documents the vision model already handles well. The two Arabic scans fall through, by
+// design, and the confidence gate is what makes that automatic rather than a guess.
+//
+// NO NETWORK. tesseract.js downloads its language data from a CDN by default and writes it into the
+// process's working directory — a third-party fetch from a production server, on a cold start, into
+// the app directory. The data file is vendored at assets/tessdata/eng.traineddata.gz (2.9 MB)
+// instead and cacheMethod is "none", so this module never reaches the network. tesseract.js expects
+// the file at langPath GZIPPED and named exactly "<lang>.traineddata.gz"; handed the uncompressed
+// file it reports ENOENT for the .gz that is not there.
+
+import { readFile } from "node:fs/promises";
+import path from "node:path";
+
+import { logError } from "@/lib/observability/log";
+
+/**
+ * Tesseract's mean per-word confidence, 0-100, below which the read is discarded.
+ *
+ * 60 sits in the empty band between the two populations measured above (41 and 75 are the nearest
+ * points on either side), so it is not a knob tuned to a hoped-for outcome — there is simply nothing
+ * in this corpus between a read that worked and one that did not.
+ */
+export const OCR_MIN_CONFIDENCE = 60;
+
+/**
+ * How many letters and digits a read must produce to count as a page of text. Same threshold as
+ * cv-text-layer.ts uses on a PDF's native text layer, for the same reason: below it there is not
+ * enough to identify anybody.
+ */
+export const OCR_MIN_READABLE_CHARS = 200;
+
+/**
+ * Pages to read. A CV is one or two; three is generous. Each page costs 2-5 seconds of CPU, so this
+ * is the bound that keeps a 30-page scanned document from occupying the server.
+ */
+const MAX_OCR_PAGES = 3;
+
+/** Downscale ceiling. Tesseract gains nothing above ~2,000px on the long edge and slows down. */
+const MAX_OCR_EDGE_PX = 2_000;
+
+const TESSDATA_DIR = path.join(process.cwd(), "assets", "tessdata");
+
+/**
+ * The two members of tesseract.js's worker this module touches.
+ *
+ * Declared here rather than imported: tesseract.js is in serverExternalPackages and is loaded by
+ * dynamic import, and naming the shape we actually use keeps the surface honest — recognize a page,
+ * then always terminate.
+ */
+type OcrWorker = {
+  recognize: (image: Buffer) => Promise<{ data: { text?: string; confidence?: number } }>;
+  terminate: () => Promise<unknown>;
+};
+
+export type OcrResult = {
+  readonly text: string;
+  /** Tesseract's mean confidence, 0-100. */
+  readonly confidence: number;
+  readonly pages: number;
+};
+
+function readableChars(text: string): number {
+  return (text.match(/[\p{L}\p{N}]/gu) ?? []).length;
+}
+
+/**
+ * The page images inside a scanned PDF.
+ *
+ * Deliberately extracts the EMBEDDED images rather than rendering the pages. Rendering would need a
+ * canvas — a native dependency, on a platform where the standalone build already loses files the
+ * tracer cannot see (see the pdf.worker.mjs note in next.config.ts). Every scanned CV in the corpus
+ * is exactly one embedded image per page, which is what a phone photo wrapped in a PDF always looks
+ * like, so extraction gets the same pixels for none of the risk.
+ */
+async function pdfPageImages(bytes: Buffer): Promise<Buffer[]> {
+  const { PDFParse } = await import("pdf-parse");
+  const parser = new PDFParse({ data: bytes });
+  try {
+    const result = await parser.getImage({});
+    const images: Buffer[] = [];
+    for (const page of result.pages ?? []) {
+      const first = page.images?.[0];
+      const dataUrl = first?.dataUrl;
+      if (typeof dataUrl === "string" && dataUrl.includes(",")) {
+        images.push(Buffer.from(dataUrl.slice(dataUrl.indexOf(",") + 1), "base64"));
+      }
+      if (images.length >= MAX_OCR_PAGES) break;
+    }
+    return images;
+  } finally {
+    await parser.destroy();
+  }
+}
+
+/**
+ * Grayscale, contrast-normalize and bound the size.
+ *
+ * Not decoration: a phone photo of a printed page is a colour image with uneven lighting, and
+ * Tesseract is a binarizer at heart. This is the cheap preprocessing that moves such a page from
+ * unreadable to readable, and sharp is already a dependency of this app.
+ */
+async function prepareForOcr(image: Buffer): Promise<Buffer> {
+  const sharp = (await import("sharp")).default;
+  return sharp(image)
+    .rotate() // honour the EXIF orientation a phone camera writes, or the page is read sideways
+    .resize({ fit: "inside", height: MAX_OCR_EDGE_PX, width: MAX_OCR_EDGE_PX, withoutEnlargement: true })
+    .grayscale()
+    .normalize()
+    .png()
+    .toBuffer();
+}
+
+/**
+ * Reads a scanned CV, or returns null.
+ *
+ * Null means "use the model" and is a perfectly normal outcome — an Arabic document, a bad
+ * photograph, a PDF with no extractable image, or any failure at all. NOTHING in here is allowed to
+ * throw at the caller: this runs ahead of a path that already works, so its worst case must be that
+ * it changes nothing.
+ */
+export async function extractTextByOcr(input: {
+  bytes: Buffer;
+  fileKind: "pdf" | "image";
+  fileName: string;
+}): Promise<OcrResult | null> {
+  let worker: OcrWorker | null = null;
+  try {
+    const images = input.fileKind === "pdf" ? await pdfPageImages(input.bytes) : [input.bytes];
+    if (images.length === 0) return null;
+
+    const { createWorker } = await import("tesseract.js");
+    // langPath + cacheMethod "none" is what keeps this offline. Without both, tesseract.js fetches
+    // eng.traineddata from a CDN and writes it into process.cwd() on every cold start.
+    const active = (await createWorker("eng", undefined, {
+      cacheMethod: "none",
+      langPath: TESSDATA_DIR,
+    })) as unknown as OcrWorker;
+    worker = active;
+
+    const texts: string[] = [];
+    const confidences: number[] = [];
+    for (const image of images.slice(0, MAX_OCR_PAGES)) {
+      const prepared = await prepareForOcr(image);
+      const { data } = await active.recognize(prepared);
+      const text = data.text ?? "";
+      // A blank or near-blank page (a scanned back cover) must not drag the average down and veto
+      // the pages that DID read.
+      if (readableChars(text) < 40) continue;
+      texts.push(text);
+      confidences.push(data.confidence ?? 0);
+    }
+
+    if (texts.length === 0) return null;
+    const text = texts.join("\n\n");
+    const confidence = confidences.reduce((sum, value) => sum + value, 0) / confidences.length;
+
+    if (confidence < OCR_MIN_CONFIDENCE) return null;
+    if (readableChars(text) < OCR_MIN_READABLE_CHARS) return null;
+    return { confidence, pages: texts.length, text };
+  } catch (error) {
+    logError("Free OCR of a scanned CV failed; falling back to the vision model", {
+      error,
+      labels: { event: "cv_ocr_failed", file_name: input.fileName },
+    });
+    return null;
+  } finally {
+    // Always. A leaked Tesseract worker is a leaked child process holding ~200 MB, on a single
+    // production replica that also serves payroll.
+    if (worker) await worker.terminate().catch(() => undefined);
+  }
+}

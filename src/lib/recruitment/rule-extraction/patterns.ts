@@ -19,13 +19,30 @@ const NON_CANDIDATE_EMAIL_DOMAINS: readonly string[] = [
   "example.com", "domain.com", "email.com", "company.com",
 ];
 
+/**
+ * The shortest local part ("the bit before the @") this will believe.
+ *
+ * Found by OCR, which is exactly the kind of defect worth refusing. Tesseract read a real address,
+ * "martenaadly177@outlook.com", as "martenaadly 1 77@outlook.com" — it inserted two spaces into the
+ * name — and the address regex then matched the fragment after the last space and produced
+ * "77@outlook.com". That is a VALID-LOOKING address for a different mailbox, so nothing downstream
+ * would ever have questioned it, and the candidate would simply never have been reachable.
+ *
+ * A wrong address is worse than no address: an empty field is visibly empty and someone fills it,
+ * while a plausible wrong one is silently trusted forever. Two characters is below any real local
+ * part in this corpus, so refusing them costs nothing and closes the failure.
+ */
+const MIN_EMAIL_LOCAL_PART = 3;
+
 export function findEmails(text: string): string[] {
   const seen = new Set<string>();
   for (const match of text.matchAll(EMAIL)) {
     // A trailing dot belongs to the sentence, not the address.
     const address = match[0].replace(/\.+$/, "").toLowerCase();
-    const domain = address.slice(address.lastIndexOf("@") + 1);
+    const at = address.lastIndexOf("@");
+    const domain = address.slice(at + 1);
     if (NON_CANDIDATE_EMAIL_DOMAINS.includes(domain)) continue;
+    if (at < MIN_EMAIL_LOCAL_PART) continue;
     seen.add(address);
   }
   return [...seen];
