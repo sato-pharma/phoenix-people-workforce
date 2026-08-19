@@ -320,6 +320,21 @@ export async function ingestInboundCv(input: InboundCvIntakeInput): Promise<Inbo
         coverMessage: input.coverMessage ?? null,
         fileName: input.attachment.fileName,
         mimeType: input.attachment.mimeType,
+        // For the free RULE pass.
+        //
+        // The subject is always safe to pass: it describes the JOB, not the person, and in this
+        // inbox it is the vacancy name the great majority of the time because that is what our own
+        // job ads tell applicants to write. It answers appliedForJobTitle with no model involved.
+        //
+        // The sender's name and address are WITHHELD on a bulk forward-import, and that is not a
+        // detail. The rule engine falls back to the sender's address when the CV body contains no
+        // email, and on identitySource "cv" the candidate's whole identity is built from the
+        // extracted fields (see below) — so passing the forwarder's address here would stamp it onto
+        // every candidate in the import and collapse them into one. That is not hypothetical: it is
+        // the WhatsApp forwarder incident, and it is why identitySource exists at all.
+        senderEmail: input.identitySource === "cv" ? null : input.senderIdentifier,
+        senderName: input.identitySource === "cv" ? null : (input.senderDisplayName ?? null),
+        subject: input.subject ?? null,
       });
     } catch (error) {
       // Still fails OPEN — the candidate and their CV file are created either way, because a real

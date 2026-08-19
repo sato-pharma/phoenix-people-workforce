@@ -31,6 +31,7 @@ import {
   OPENAI_ROUTE_BUDGET_MS,
   PhoenixOpenAiError,
 } from "@/lib/ai/openai-client";
+import { logError } from "@/lib/observability/log";
 import { getCandidate } from "@/lib/recruitment/candidates";
 import {
   normalizeStoredExtractionFields,
@@ -47,6 +48,8 @@ import {
 } from "@/lib/recruitment/cv-field-schemas";
 import { detectCvFileKind } from "@/lib/recruitment/cv-file-kind";
 import { isThinCvRead, mergeCvExtractions, scoreCvExtraction } from "@/lib/recruitment/cv-extraction-quality";
+import { mergeRuleAndAiExtractions, shouldEscalateToAi } from "@/lib/recruitment/cv-extraction-merge";
+import { runRuleCvExtraction, type CvRuleContext, type RuleExtractionResult } from "@/lib/recruitment/rule-extraction";
 import { chooseCvExtractionRoute, MAX_PDF_VISION_BYTES, type CvExtractionRoute } from "@/lib/recruitment/cv-text-layer";
 import { recruitmentDb } from "@/lib/recruitment/db";
 import { getFileForDownload, listCandidateFiles } from "@/lib/recruitment/files";
@@ -101,6 +104,16 @@ const MAX_CV_TEXT_CHARS = 20_000;
 // structured-output response fails to parse and the applicant is dropped, so the cap has to clear
 // the worst realistic CV rather than the typical one.
 const MAX_CV_EXTRACTION_OUTPUT_TOKENS = 8_000;
+
+// What gets written to ats_candidate_cv_extractions.ai_model when no model was involved at all.
+// Recorded rather than left null so the audit trail can answer "how was this candidate read?", and
+// so the share of CVs costing nothing is countable from the table itself:
+//
+//   select ai_model, count(*) from ats_candidate_cv_extractions group by 1;
+export const RULE_ONLY_EXTRACTION_MODEL = "phoenix-rules";
+// Written when both engines contributed — the rules read the CV and the model was asked to fill
+// what they could not. The model's own name is prefixed so cost can still be attributed to it.
+const ruleAssistedModel = (model: string) => `${model}+rules`;
 
 // ---------------------------------------------------------------------------
 // Structured-output schema, built dynamically from a CvPositionSchema (same
@@ -463,6 +476,14 @@ export async function extractCvFieldsFromBytes(input: {
   // a CV states what someone has done, not what they want. See appliedForJobTitle in
   // cv-field-schemas.ts, and rules 5a/5b there for the two limits on how it may be used.
   coverMessage?: string | null;
+  // Who sent it and what they titled it. Used by the RULE pass only, and worth passing wherever it
+  // is known: the email subject is the vacancy name 87% of the time in this inbox, which makes it
+  // the cheapest reliable source of appliedForJobTitle there is, and the sender's own address
+  // corroborates an email found in the CV body. All optional — a recruiter-uploaded CV has none of
+  // it and simply reads the document.
+  senderName?: string | null;
+  senderEmail?: string | null;
+  subject?: string | null;
 }): Promise<CvFieldExtraction> {
   const declaredSchema = getCvPositionSchema(input.positionKey ?? defaultCvPositionKey);
   if (!declaredSchema) {
@@ -473,12 +494,6 @@ export async function extractCvFieldsFromBytes(input: {
   // with zero rows ever written, so the read could only ever return "everything on" while costing
   // a round trip to Frankfurt per CV. The owner's rule was always "capture everything" anyway.
   const schema = declaredSchema;
-  if (!hasOpenAiApiKey()) {
-    throw new CvExtractionError(
-      "ai_not_configured",
-      "This isn't configured yet. Add the OpenAI key as OPENAI_API_KEY.",
-    );
-  }
 
   const fileKind = detectCvFileKind(input.mimeType, input.fileName);
   // An unsupported kind still throws from inside extractRawTextFromFile, exactly as before — the
@@ -489,6 +504,72 @@ export async function extractCvFieldsFromBytes(input: {
   const route = chooseCvExtractionRoute({ byteLength: input.bytes.length, extractedText: cleanedText, fileKind });
   if (route === "text" && !cleanedText) {
     throw new CvExtractionError("unsupported_file", "No readable text was found in this CV file.");
+  }
+
+  // -------------------------------------------------------------------------
+  // THE RULE PASS RUNS FIRST, ALWAYS, AND COSTS NOTHING.
+  //
+  // Owner instruction, 2026-08-19: make the deterministic engine the primary path and use the model
+  // to enhance its result, rather than paying a model to do all of the work on every CV. On the 126
+  // readable CVs in the careers inbox the rules alone answer everything worth asking on 62% of them,
+  // so on roughly three CVs in five the code below returns without a network call at all.
+  //
+  // It runs before the API-key check on purpose. A CV that the rules can read is read whether or not
+  // OpenAI is configured, in credit, or up — which is not hypothetical: the credits ran dry on
+  // 2026-08-16 and every inbound CV that day failed to extract.
+  // -------------------------------------------------------------------------
+  const ruleContext: CvRuleContext = {
+    coverMessage: input.coverMessage ?? null,
+    senderEmail: input.senderEmail ?? null,
+    senderName: input.senderName ?? null,
+    subject: input.subject ?? null,
+  };
+  // Only over a real text layer. A scan routed to vision has no text for the rules to read, and
+  // running them over the empty string would produce a confident-looking empty record.
+  //
+  // WRAPPED SO IT CANNOT FAIL THE EXTRACTION. This module's whole disposition is to fail open —
+  // is_cv only suppresses on an explicit false, a dead first pass gets a second route, a dead
+  // escalation keeps the first read. The rule engine is new code running over text produced by a
+  // third-party PDF parser, and it is now the FIRST thing every inbound CV touches; a crash on some
+  // pathological document must cost that document its free read, not its extraction. On this path a
+  // throw would be strictly worse than the behaviour it replaced, which is the one outcome a
+  // cost-saving change is not allowed to have.
+  let rule: RuleExtractionResult | null = null;
+  if (cleanedText) {
+    try {
+      rule = runRuleCvExtraction(cleanedText, ruleContext);
+    } catch (error) {
+      logError("Rule-based CV extraction threw; falling back to the AI path", {
+        error,
+        labels: { event: "cv_rule_extraction_failed", file_name: input.fileName },
+      });
+    }
+  }
+  const ruleOnly = (): CvFieldExtraction => ({
+    fields: rule!.fields,
+    isCv: rule!.isCv,
+    model: RULE_ONLY_EXTRACTION_MODEL,
+    positionKey: schema.positionKey,
+  });
+
+  if (rule && rule.isCv) {
+    const decision = shouldEscalateToAi(rule);
+    // Gated on isCv as well as on the decision. shouldEscalateToAi also answers "false" for a
+    // document it judges NOT to be a CV, and that answer must never short-circuit to a result: the
+    // rules' is_cv is a cheap six-signal heuristic, and dropping a real applicant on it is the exact
+    // incident that put cv-text-layer.ts in this codebase. A "not a CV" therefore still costs a
+    // model call, and the model gets the final say.
+    if (!decision.escalate) return ruleOnly();
+  }
+
+  if (!hasOpenAiApiKey()) {
+    // Unchanged for every caller that has no usable rule result; what is new is that a CV the rules
+    // DID read is no longer thrown away just because the model is unavailable.
+    if (rule && rule.isCv) return ruleOnly();
+    throw new CvExtractionError(
+      "ai_not_configured",
+      "This isn't configured yet. Add the OpenAI key as OPENAI_API_KEY.",
+    );
   }
 
   const buildInput = (
@@ -545,49 +626,85 @@ export async function extractCvFieldsFromBytes(input: {
     return { fields, isCv: parsed.is_cv !== false, model, positionKey: schema.positionKey };
   };
 
-  // A PDF read from its text layer always has a second, INDEPENDENT way to be read: hand the file
-  // to the model and let it render the pages. That is the only escalation available — a .docx has
-  // no image form, and a route that already IS vision has nothing better to fall back to.
-  const escalation: CvExtractionRoute | null =
-    route === "text" && fileKind === "pdf" && input.bytes.length <= MAX_PDF_VISION_BYTES ? "vision_pdf" : null;
+  // The paid half, unchanged in every internal detail — the text pass, the vision escalation for a
+  // PDF, and the best-of merge between those two READS OF THE SAME DOCUMENT. It is now wrapped in a
+  // function so its result can be merged with the rule result, and so its total failure can fall
+  // back to one instead of losing the applicant.
+  const runAiExtraction = async (): Promise<CvFieldExtraction> => {
+    // A PDF read from its text layer always has a second, INDEPENDENT way to be read: hand the file
+    // to the model and let it render the pages. That is the only escalation available — a .docx has
+    // no image form, and a route that already IS vision has nothing better to fall back to.
+    const escalation: CvExtractionRoute | null =
+      route === "text" && fileKind === "pdf" && input.bytes.length <= MAX_PDF_VISION_BYTES ? "vision_pdf" : null;
 
-  let primary: CvFieldExtraction;
+    let primary: CvFieldExtraction;
+    try {
+      primary = await runPass(route);
+    } catch (error) {
+      // The first pass DIED. Before this, that ended the CV: cv-intake-service.ts catches and fails
+      // open, so the applicant was created with a name and nothing else and nothing ever went back
+      // for them — 49 of 226 production candidates are in exactly that state. A PDF gets one more
+      // attempt down a genuinely different path before we accept losing it.
+      if (!escalation) throw error;
+      return await runPass(escalation);
+    }
+
+    if (!escalation) return primary;
+
+    // A credible read stops here — the escalation costs a second call and must not fire on the
+    // common path. It fires on the two shapes a FAILED text-layer read takes: a near-empty result,
+    // and a confident "this isn't a CV" reached from scrambled text. The second is the incident that
+    // put cv-text-layer.ts in this codebase; that guard catches a text layer thin enough to measure,
+    // and this one catches the layer that is long enough to pass it but still unreadable.
+    const score = scoreCvExtraction(primary.fields);
+    if (!isThinCvRead(score) && primary.isCv) return primary;
+
+    let retry: CvFieldExtraction;
+    try {
+      retry = await runPass(escalation);
+    } catch {
+      return primary; // the escalation is a bonus attempt; its failure must never cost the first read
+    }
+
+    // Best-of, field by field — the retry reads layout better but must never delete what the text
+    // layer already got right (see mergeCvExtractions). is_cv follows whichever pass actually read
+    // the document: a retry that came back with a real CV overrules a text-layer "not a CV".
+    const retryScore = scoreCvExtraction(retry.fields);
+    return {
+      fields: mergeCvExtractions(primary.fields, retry.fields),
+      isCv: isThinCvRead(retryScore) ? primary.isCv : retry.isCv,
+      model: retry.model,
+      positionKey: schema.positionKey,
+    };
+  };
+
+  let ai: CvFieldExtraction;
   try {
-    primary = await runPass(route);
+    ai = await runAiExtraction();
   } catch (error) {
-    // The first pass DIED. Before this, that ended the CV: cv-intake-service.ts catches and fails
-    // open, so the applicant was created with a name and nothing else and nothing ever went back
-    // for them — 49 of 226 production candidates are in exactly that state. A PDF gets one more
-    // attempt down a genuinely different path before we accept losing it.
-    if (!escalation) throw error;
-    return await runPass(escalation);
+    // Every AI route is exhausted. If the rules read this document, that result is a great deal
+    // better than nothing — which is what the caller got before, and what 49 of 226 production
+    // candidates permanently have. A model that is down, rate-limited or out of credit no longer
+    // costs an applicant their profile.
+    if (rule && rule.isCv) return ruleOnly();
+    throw error;
   }
 
-  if (!escalation) return primary;
+  if (!rule) return ai;
 
-  // A credible read stops here — the escalation costs a second call and must not fire on the
-  // common path. It fires on the two shapes a FAILED text-layer read takes: a near-empty result,
-  // and a confident "this isn't a CV" reached from scrambled text. The second is the incident that
-  // put cv-text-layer.ts in this codebase; that guard catches a text layer thin enough to measure,
-  // and this one catches the layer that is long enough to pass it but still unreadable.
-  const score = scoreCvExtraction(primary.fields);
-  if (!isThinCvRead(score) && primary.isCv) return primary;
-
-  let retry: CvFieldExtraction;
-  try {
-    retry = await runPass(escalation);
-  } catch {
-    return primary; // the escalation is a bonus attempt; its failure must never cost the first read
-  }
-
-  // Best-of, field by field — the retry reads layout better but must never delete what the text
-  // layer already got right (see mergeCvExtractions). is_cv follows whichever pass actually read
-  // the document: a retry that came back with a real CV overrules a text-layer "not a CV".
-  const retryScore = scoreCvExtraction(retry.fields);
+  // Both engines read it. mergeRuleAndAiExtractions arbitrates per field: contact details and the
+  // verbatim summary stay with the rules even against a confident model, judgement fields go to the
+  // model when it is confident. NOT the same merge as mergeCvExtractions above — that one picks the
+  // richer of two reads by the SAME engine; this one applies a fixed policy between two different
+  // engines whose strengths are known in advance.
+  //
+  // is_cv follows the MODEL, exactly as before this change. The rules' is_cv is a six-signal
+  // heuristic that an invoice with a phone number and an email address would also satisfy, so it
+  // must not be allowed to overrule the deliberate "this is a vendor pitch, not a CV" gate.
   return {
-    fields: mergeCvExtractions(primary.fields, retry.fields),
-    isCv: isThinCvRead(retryScore) ? primary.isCv : retry.isCv,
-    model: retry.model,
+    fields: mergeRuleAndAiExtractions(rule.fields, ai.fields).fields,
+    isCv: ai.isCv,
+    model: ruleAssistedModel(ai.model),
     positionKey: schema.positionKey,
   };
 }
