@@ -219,3 +219,59 @@ export async function getDoctorCoverageScope(access: AccessContext): Promise<Doc
     lineOverrides: config.lineOverrides,
   });
 }
+
+/** One person an override can meaningfully be set for, plus where they sit today. */
+export type DoctorCoverageOverrideCandidate = {
+  /** Canonical key — what the override map is stored under. */
+  canonicalHrId: string;
+  hrId: string;
+  jobTitle: string;
+  /** Line on their employee record, i.e. what they see WITHOUT an override. */
+  lineId: number | null;
+  lineName: string | null;
+  name: string;
+};
+
+/**
+ * Everything the override editor needs, derived from the employee directory rather than a new
+ * query — the directory is already cached and already carries lineId + lineName.
+ *
+ * Candidates are limited to LINE-SCOPED roles on purpose. An override on anyone else is silently
+ * inert: a District Manager is scoped by the org tree and a Medical Rep to themselves, so storing
+ * lines against them would look like a setting that does nothing. Offering only the roles it can
+ * actually affect is the difference between a control and a trap.
+ *
+ * Lines come from the people themselves, so a line with nobody on it never appears — an override
+ * pointing at an empty line would produce a blank board and read as a bug.
+ */
+export async function getDoctorCoverageOverrideOptions(): Promise<{
+  candidates: DoctorCoverageOverrideCandidate[];
+  lines: Array<{ id: number; name: string }>;
+}> {
+  const employees = await getEmployeeDirectoryRows({ includeInactive: false });
+
+  const lineMap = new Map<number, string>();
+  for (const employee of employees) {
+    if (employee.lineId != null && employee.lineName?.trim()) {
+      lineMap.set(employee.lineId, employee.lineName.trim());
+    }
+  }
+
+  const candidates = employees
+    .filter((employee) => doctorCoverageScopeBasisForRole(employee.jobTitle?.trim() ?? "") === "line")
+    .map((employee) => ({
+      canonicalHrId: normalizeHrIdForAccess(employee.hrId) ?? "",
+      hrId: employee.hrId,
+      jobTitle: employee.jobTitle?.trim() ?? "",
+      lineId: employee.lineId,
+      lineName: employee.lineName?.trim() || null,
+      name: employee.displayName || employee.fullName || employee.hrId,
+    }))
+    .filter((candidate) => candidate.canonicalHrId)
+    .sort((a, b) => a.name.localeCompare(b.name));
+
+  return {
+    candidates,
+    lines: Array.from(lineMap, ([id, name]) => ({ id, name })).sort((a, b) => a.id - b.id),
+  };
+}

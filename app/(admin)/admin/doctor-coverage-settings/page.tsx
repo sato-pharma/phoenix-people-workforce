@@ -4,6 +4,7 @@ import { DoctorCoverageNormsEditor } from "@/components/crm/doctor-coverage-norm
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { canAccess, resolveNavigationMode } from "@/lib/auth/permissions";
 import { getDoctorCoverageConfig } from "@/lib/crm/doctor-coverage-config";
+import { getDoctorCoverageOverrideOptions } from "@/lib/crm/doctor-coverage-scope";
 
 export const dynamic = "force-dynamic";
 
@@ -22,7 +23,8 @@ export default async function DoctorCoverageSettingsPage() {
     redirect("/admin");
   }
 
-  const config = await getDoctorCoverageConfig();
+  // Options for the line-exception editor: who it can apply to, and the real line names.
+  const [config, options] = await Promise.all([getDoctorCoverageConfig(), getDoctorCoverageOverrideOptions()]);
 
   return (
     <div className="mx-auto max-w-3xl p-4 sm:p-6">
@@ -33,7 +35,7 @@ export default async function DoctorCoverageSettingsPage() {
           contract/insurance accounts.
         </p>
       </div>
-      <DoctorCoverageNormsEditor initial={config} />
+      <DoctorCoverageNormsEditor candidates={options.candidates} initial={config} lines={options.lines} />
     </div>
   );
 }

@@ -12,6 +12,7 @@ import { EmployeePortalEmptyState, EmployeePortalPageShell } from "@/components/
 import { resolveAuthenticatedPageAccess } from "@/lib/auth/page-access";
 import { canAccess } from "@/lib/auth/permissions";
 import { getDoctorCoverageConfig } from "@/lib/crm/doctor-coverage-config";
+import { getDoctorCoverageOverrideOptions } from "@/lib/crm/doctor-coverage-scope";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -38,10 +39,11 @@ export default async function PortalDoctorCoverageSettingsPage() {
     );
   }
 
-  const config = await getDoctorCoverageConfig();
+  // Options for the line-exception editor: who it can apply to, and the real line names.
+  const [config, options] = await Promise.all([getDoctorCoverageConfig(), getDoctorCoverageOverrideOptions()]);
   return shell(
     <div className="p-5">
-      <DoctorCoverageNormsEditor initial={config} />
+      <DoctorCoverageNormsEditor candidates={options.candidates} initial={config} lines={options.lines} />
     </div>,
   );
 }
