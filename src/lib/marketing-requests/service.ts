@@ -5834,6 +5834,350 @@ export async function getApproverPendingRequests(access: AccessContext): Promise
   return { advisoryRows, oversightRows, rows, upcomingRows };
 }
 
+/* ────────────────────────────────────────────────────────────────────────────────────────────── */
+/* Approval HISTORY — the second tab of the same inbox                                             */
+/* ────────────────────────────────────────────────────────────────────────────────────────────── */
+
+/**
+ * Where a request ended up once the chain finished with it.
+ *
+ * Deliberately COARSER than `MarketingRequestStatus`: the lifecycle carries eleven values and a
+ * reader of an approval history is asking one question — did it get a yes, a no, or a send-back.
+ * `active` / `roi_tracking` / `finance_hold` are all states a request can only reach by having
+ * been APPROVED, so folding them here is not a loss of truth; the live status is still carried on
+ * the row for anyone who needs the finer answer.
+ */
+export type MarketingApproverHistoryOutcome =
+  | "approved"
+  | "rejected"
+  | "returned"
+  | "closed"
+  | "archived"
+  | "in_flight";
+
+/**
+ * Pure status → outcome map, so the labelling is testable without a database.
+ *
+ * `in_flight` is the fail-safe: a status that has NOT left the chain must never be presented as a
+ * finished decision. The query below excludes those rows, so this branch is reachable only if the
+ * lifecycle grows a new pre-decision status — in which case a row reading "still in approval" is
+ * the harmless answer and a row reading "Approved" is the dangerous one.
+ */
+export function marketingHistoryOutcome(status: MarketingRequest["status"]): MarketingApproverHistoryOutcome {
+  switch (status) {
+    case "approved":
+    case "active":
+    case "roi_tracking":
+    case "finance_hold":
+      return "approved";
+    case "rejected":
+      return "rejected";
+    case "returned":
+      return "returned";
+    case "closed":
+      return "closed";
+    case "archived":
+      return "archived";
+    default:
+      return "in_flight";
+  }
+}
+
+/** Human-readable, because a raw status code is never shown to anyone — owner rule. */
+export const MARKETING_HISTORY_OUTCOME_LABEL: Record<MarketingApproverHistoryOutcome, string> = {
+  approved: "Approved",
+  archived: "Archived",
+  closed: "Closed",
+  in_flight: "Still in approval",
+  rejected: "Rejected",
+  returned: "Returned to requester",
+};
+
+/** The statuses that mean "the chain is no longer waiting on an approver". */
+const MARKETING_HISTORY_STATUSES: ReadonlyArray<MarketingRequest["status"]> = [
+  "approved",
+  "active",
+  "roi_tracking",
+  "finance_hold",
+  "closed",
+  "rejected",
+  "returned",
+  "archived",
+];
+
+/**
+ * How many finished requests the history tab loads at once.
+ *
+ * Not a page size — it is the ceiling on one read. The register (`getMarketingAllRequestsWorkspace`)
+ * is the exhaustive report; this is the tab next to an inbox, and it is ordered newest-decision
+ * first so the cap only ever hides the oldest. `truncated` is returned so the UI can SAY that
+ * rather than quietly presenting a partial list as the whole history.
+ */
+const MARKETING_HISTORY_ROW_LIMIT = 300;
+
+/**
+ * One finished request, with the entire decision trail attached.
+ *
+ * Same base shape as a pending inbox row on purpose — the two tabs render the same chain component,
+ * so a rung reads identically whether it is being decided or being remembered.
+ */
+export type MarketingApproverHistoryRow = MarketingApproverInboxRow & {
+  /** ISO of the last recorded decision on the chain — what the list is ordered by. */
+  decidedAt: string | null;
+  /** Who gave the decision that ended it. */
+  finalApproverName: string | null;
+  /** What that approver actually wrote. Null when they decided without comment. */
+  finalDecisionNote: string | null;
+  /** The rung it ended at — "CEO Approval", "SFE Validation". */
+  finalStepName: string | null;
+  /**
+   * The viewer's OWN verdict on this request, or null when they never decided it (a rung that was
+   * skipped past them, or a request they are only seeing through oversight).
+   */
+  myDecision: {
+    at: string | null;
+    note: string | null;
+    status: MarketingRequestApprovalStep["status"];
+    stepName: string;
+  } | null;
+  /** True when the viewer RAISED this request. Their own work, whether or not they also approved it. */
+  isMyRequest: boolean;
+  outcome: MarketingApproverHistoryOutcome;
+  outcomeLabel: string;
+  totalGatingSteps: number;
+  /**
+   * True when the ONLY reason this row is visible is company-wide oversight — the viewer neither
+   * held a rung on it nor raised it. Rendered as a marker so a Super Admin is never left thinking
+   * he decided something he did not. A requester looking at their own request is NOT oversight,
+   * which is why this is not simply `myStep === null`.
+   */
+  viaOversight: boolean;
+};
+
+export type MarketingApproverHistoryWorkspace = {
+  rows: MarketingApproverHistoryRow[];
+  /**
+   * Company-wide (oversight), or only what the viewer was personally part of — rungs they held
+   * plus requests they raised.
+   */
+  scope: "company" | "mine";
+  /** True when the read hit MARKETING_HISTORY_ROW_LIMIT and older requests exist beyond it. */
+  truncated: boolean;
+};
+
+/**
+ * The approval inbox's second tab: requests that have already been answered.
+ *
+ * Owner instruction, 2026-08-19. The inbox showed only live work — four sections, all of them
+ * requests still moving. The moment a request was approved or rejected it vanished from the one
+ * screen the approvers actually open, so "what did we decide on this pharmacy, and why" had no
+ * answer anywhere near where the decision was made.
+ *
+ * SCOPE, which is the part worth getting right:
+ *  · An oversight viewer (Super Admin / system scope — `canViewMarketingOversightQueue`, the same
+ *    gate as the live oversight section) sees EVERY finished request. Same right, same people,
+ *    across both tabs; nothing new is exposed to anyone who could not already watch the queue.
+ *  · Everybody else sees only requests they were personally part of — a rung assigned to them, a
+ *    rung they decided, or (owner instruction, 2026-08-19) a request they RAISED. All three are
+ *    things they have already been shown: a rung on their chain passed through their own inbox,
+ *    and their own request is served to them in full, decision notes included, by
+ *    getMarketingRequestDetail. This tab moves that record next to the decision, it does not
+ *    widen who may read it.
+ *
+ * Read-only in the strongest sense: no decision control is derivable from these rows, because the
+ * request has left `pending_approval` and the decision API matches on an OPEN step the actor holds.
+ */
+export async function getApproverDecidedRequests(
+  access: AccessContext,
+): Promise<MarketingApproverHistoryWorkspace> {
+  const actorHrId = requireMarketingDecisionActor(access);
+  const supabase = getSupabaseAdmin();
+  const actorHrKeys = hrIdLookupKeys(actorHrId);
+  const includeOversight = canViewMarketingOversightQueue(access);
+  const scope = includeOversight ? ("company" as const) : ("mine" as const);
+
+  // Which requests are candidates. The oversight branch reads the REQUESTS table directly — a
+  // Super Admin holds no rung, so a step-scoped query would return nothing for him, exactly the
+  // hole the live oversight section exists to fill.
+  let candidateIds: string[];
+  if (includeOversight) {
+    const finishedResult = await supabase
+      .from("marketing_requests")
+      .select("id")
+      .in("status", [...MARKETING_HISTORY_STATUSES])
+      .order("updated_at", { ascending: false })
+      .limit(MARKETING_HISTORY_ROW_LIMIT + 1);
+    if (finishedResult.error) throw finishedResult.error;
+    candidateIds = ((finishedResult.data ?? []) as Array<{ id: string }>).map((row) => String(row.id));
+  } else {
+    // Assigned AND decided, separately: a re-assigned step is decided by somebody who is no longer
+    // its assignee, and an approver must keep the record of a call they personally made.
+    // `is_cc` is NOT filtered out here — a CC reviewer who left a comment on a request has a
+    // legitimate reason to find it again.
+    //
+    // The third query is the REQUESTER's own work (owner instruction, 2026-08-19). Somebody who
+    // raised a request and never sat on its chain held no rung at all, so the two step queries
+    // return nothing for them — the person with the most reason to ask "what was decided, and
+    // why" was the one person the tab answered with an empty page.
+    //
+    // This exposes nothing new: getMarketingRequestDetail already serves a requester their own
+    // request in full, decision notes included, because canSeeMarketingHierarchyRecord returns
+    // true the moment the target IS the viewer. Deliberately their OWN requests only, matched on
+    // requester_hr_id — not their subtree, which is the register's job.
+    const [assignedResult, decidedResult, raisedResult] = await Promise.all([
+      supabase.from("marketing_request_approval_steps").select("request_id").in("assigned_hr_id", actorHrKeys),
+      supabase.from("marketing_request_approval_steps").select("request_id").in("decision_by_hr_id", actorHrKeys),
+      supabase
+        .from("marketing_requests")
+        .select("id")
+        .in("requester_hr_id", actorHrKeys)
+        .in("status", [...MARKETING_HISTORY_STATUSES]),
+    ]);
+    if (assignedResult.error) throw assignedResult.error;
+    if (decidedResult.error) throw decidedResult.error;
+    if (raisedResult.error) throw raisedResult.error;
+    candidateIds = Array.from(
+      new Set([
+        ...[...(assignedResult.data ?? []), ...(decidedResult.data ?? [])].map((row) =>
+          String((row as { request_id: string }).request_id),
+        ),
+        ...((raisedResult.data ?? []) as Array<{ id: string }>).map((row) => String(row.id)),
+      ]),
+    );
+  }
+  if (candidateIds.length === 0) return { rows: [], scope, truncated: false };
+
+  // Batched: PostgREST folds every .in() value into the URL, and an unbatched list of a few hundred
+  // ids can push it past undici's header limit.
+  const requestRows: MarketingRequestDbRow[] = [];
+  for (const batch of chunk(candidateIds)) {
+    const requestsResult = await supabase
+      .from("marketing_requests")
+      .select("*")
+      .in("id", batch)
+      .in("status", [...MARKETING_HISTORY_STATUSES]);
+    if (requestsResult.error) throw requestsResult.error;
+    requestRows.push(...((requestsResult.data ?? []) as MarketingRequestDbRow[]));
+  }
+  const requests = requestRows.map(mapRequest);
+  if (requests.length === 0) return { rows: [], scope, truncated: false };
+
+  const requestIds = requests.map((request) => request.id);
+  const stepsByRequestId = new Map<string, MarketingRequestApprovalStep[]>();
+  for (const batch of chunk(requestIds)) {
+    const stepsResult = await supabase
+      .from("marketing_request_approval_steps")
+      .select("*")
+      .in("request_id", batch)
+      .eq("is_cc", false);
+    if (stepsResult.error) throw stepsResult.error;
+    for (const row of (stepsResult.data ?? []) as MarketingRequestApprovalStepDbRow[]) {
+      const step = mapApprovalStep(row);
+      stepsByRequestId.set(step.requestId, [...(stepsByRequestId.get(step.requestId) ?? []), step]);
+    }
+  }
+
+  const customerIds = Array.from(new Set(requests.map((request) => request.customerId)));
+  const typeIds = Array.from(new Set(requests.map((request) => request.requestTypeId)));
+  const [customersResult, typesResult, employeeRows] = await Promise.all([
+    customerIds.length > 0
+      ? supabase.from("marketing_customers").select("id, display_name").in("id", customerIds)
+      : Promise.resolve({ data: [], error: null }),
+    typeIds.length > 0
+      ? supabase.from("marketing_request_types").select("id, name").in("id", typeIds)
+      : Promise.resolve({ data: [], error: null }),
+    loadEmployeeDirectoryRows(),
+  ]);
+  if (customersResult.error) throw customersResult.error;
+  if (typesResult.error) throw typesResult.error;
+  const customerNameById = new Map(((customersResult.data ?? []) as Array<{ display_name?: string | null; id: string }>)
+    .map((row) => [row.id, cleanText(row.display_name) ?? row.id] as const));
+  const typeNameById = new Map(((typesResult.data ?? []) as Array<{ id: number | string; name?: string | null }>)
+    .map((row) => [Number(row.id), cleanText(row.name) ?? "Marketing request"] as const));
+
+  const actorKeySet = new Set(actorHrKeys.map((key) => key.trim().toLowerCase()));
+  const isActor = (hrId: string | null | undefined) =>
+    Boolean(hrId) && actorKeySet.has(String(hrId).trim().toLowerCase());
+
+  const rows: MarketingApproverHistoryRow[] = [];
+  for (const request of requests) {
+    const chain = [...(stepsByRequestId.get(request.id) ?? [])].sort((left, right) => left.sequence - right.sequence);
+    // The viewer's own rung: the one they DECIDED if there is one, otherwise the one that was
+    // assigned to them. A step decided by somebody else after re-assignment is not theirs to claim.
+    const myStep =
+      chain.find((step) => isActor(step.decisionByHrId)) ??
+      chain.find((step) => isActor(step.assignedHrId)) ??
+      null;
+    // What ended it: the rung carrying the LATEST decision instant. Taking the highest sequence
+    // instead would be wrong on every rejection — a no at rung 2 is the final word even though
+    // rungs 3-5 exist, and those rungs are skipped, which records no decision instant at all.
+    const finalStep = chain
+      .filter((step) => Boolean(step.decisionAt))
+      .reduce<MarketingRequestApprovalStep | null>((latest, step) => {
+        if (!latest) return step;
+        return Date.parse(step.decisionAt ?? "") > Date.parse(latest.decisionAt ?? "") ? step : latest;
+      }, null);
+    // Fall back to the request's own lifecycle stamps before giving up: a legacy imported request
+    // carries a status and a date but may have no decided step at all.
+    const decidedAt =
+      finalStep?.decisionAt ??
+      request.rejectedAt ??
+      request.returnedAt ??
+      request.approvedAt ??
+      request.closedAt ??
+      null;
+    const outcome = marketingHistoryOutcome(request.status);
+    const isMyRequest = isActor(request.requesterHrId);
+
+    rows.push({
+      // Forced false, exactly as the live oversight rows do it. The request has left the chain so
+      // the API would refuse a decision anyway — this makes the UI unable to ask.
+      allowReject: false,
+      allowReturn: false,
+      approvalHistory: buildMarketingApproverChain(chain, employeeRows, myStep?.id ?? null),
+      currentStepName: finalStep?.stepName ?? MARKETING_HISTORY_OUTCOME_LABEL[outcome],
+      customerName: customerNameById.get(request.customerId) ?? request.customerId,
+      decidedAt,
+      decisionLabels: normalizeMarketingDecisionLabels(null),
+      estimatedCost: request.estimatedCost,
+      finalApproverName: finalStep
+        ? employeeNameByHrId(employeeRows, finalStep.decisionByHrId ?? finalStep.assignedHrId)
+        : null,
+      finalDecisionNote: finalStep ? cleanText(finalStep.decisionNote) : null,
+      finalStepName: finalStep?.stepName ?? null,
+      id: request.id,
+      isMyRequest,
+      myDecision:
+        myStep && myStep.decisionAt
+          ? {
+              at: myStep.decisionAt,
+              note: cleanText(myStep.decisionNote),
+              status: myStep.status,
+              stepName: myStep.stepName,
+            }
+          : null,
+      outcome,
+      outcomeLabel: MARKETING_HISTORY_OUTCOME_LABEL[outcome],
+      payDate: request.payDate,
+      requestCode: request.requestCode,
+      requesterHrId: request.requesterHrId,
+      requesterName: employeeNameByHrId(employeeRows, request.requesterHrId),
+      requesterRole: employeeRoleByHrId(employeeRows, request.requesterHrId),
+      requestType: typeNameById.get(request.requestTypeId) ?? "Marketing request",
+      status: request.status,
+      stepSequence: finalStep?.sequence ?? chain.length,
+      submittedAt: request.submittedAt,
+      totalGatingSteps: chain.length,
+      viaOversight: myStep === null && !isMyRequest,
+    });
+  }
+
+  // Newest decision first — "what did we just decide" is the question this tab is opened with.
+  rows.sort((left, right) => Date.parse(right.decidedAt ?? "0") - Date.parse(left.decidedAt ?? "0"));
+  const truncated = rows.length > MARKETING_HISTORY_ROW_LIMIT;
+  return { rows: truncated ? rows.slice(0, MARKETING_HISTORY_ROW_LIMIT) : rows, scope, truncated };
+}
+
 // ── Sidebar pending-count badge ──────────────────────────────────────────────
 // Marketing is deliberately excluded from the consolidated approvals hub (see the comment in
 // src/lib/action-center/service.ts) — it keeps its own dedicated inbox — so "approvals-hub-pending"

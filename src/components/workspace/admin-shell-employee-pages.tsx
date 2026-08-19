@@ -411,7 +411,7 @@ export async function WorkspaceMarketingInboxPage() {
   await requireAdminShellEmployeeWorkspaceAccess({ allowedRoles: workspaceMarketingRoles });
   return (
     <WorkspaceFrame
-      description="Review marketing approvals assigned to your employee role and scope."
+      description="Review marketing approvals assigned to your employee role and scope, and the History tab of everything already decided."
       icon={<Inbox className="h-3.5 w-3.5" />}
       title="Approval Inbox"
     >
