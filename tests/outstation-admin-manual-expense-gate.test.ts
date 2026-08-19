@@ -66,6 +66,9 @@ export function runOutstationAdminManualExpenseGateTests() {
     // decides whether money moves, and a value that merely LOOKS settled ('complete') is held as
     // inconsistent because the resolver checks the photos themselves before it trusts the column.
     const gate = resolveOutstationGateState({
+      // A role with NO waiver, deliberately: this block is about the gate STATUS these write
+      // paths declare, and running it as a waived role would pass on the waiver instead.
+      employeeRole: "Medical Rep",
       evidenceGateStatus: gateStatus,
       hasArrivalPhoto: false,
       hasDeparturePhoto: false,
@@ -103,6 +106,7 @@ export function runOutstationAdminManualExpenseGateTests() {
   // and must still be held until the second one lands.
   assert.equal(
     resolveOutstationGateState({
+      employeeRole: "Medical Rep",
       evidenceGateStatus: "pending_departure_photo",
       hasArrivalPhoto: true,
       hasDeparturePhoto: false,
@@ -116,6 +120,7 @@ export function runOutstationAdminManualExpenseGateTests() {
   // every other write path that forgets to declare itself.
   assert.equal(
     resolveOutstationGateState({
+      employeeRole: "Medical Rep",
       evidenceGateStatus: "pending_arrival_photo",
       hasArrivalPhoto: false,
       hasDeparturePhoto: false,

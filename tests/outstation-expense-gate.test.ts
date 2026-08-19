@@ -15,6 +15,7 @@ import {
  */
 export function runOutstationExpenseGateTests() {
   const complete = {
+    employeeRole: "District Manager",
     evidenceGateStatus: "complete",
     hasArrivalPhoto: true,
     hasDeparturePhoto: true,
@@ -67,6 +68,7 @@ export function runOutstationExpenseGateTests() {
   // ── The status column is not trusted on its own ─────────────────────────────────
   // A row claiming completeness without the photos to back it is corrupt, not complete.
   const lyingStatusInput = {
+    employeeRole: "District Manager",
     evidenceGateStatus: "complete",
     hasArrivalPhoto: true,
     hasDeparturePhoto: false,
@@ -81,6 +83,7 @@ export function runOutstationExpenseGateTests() {
   assert.equal(lyingStatus.blocker, "departure_photo", "and the real missing thing is named");
 
   const staleStatusInput = {
+    employeeRole: "District Manager",
     evidenceGateStatus: "pending_departure_photo",
     hasArrivalPhoto: true,
     hasDeparturePhoto: true,
@@ -99,6 +102,7 @@ export function runOutstationExpenseGateTests() {
   // The 12 requests that existed on 2026-08-04 are already decided and several are already paid.
   // Their trips are over and can never be photographed, so the gate must not reach back for them.
   const legacyInput = {
+    employeeRole: "District Manager",
     evidenceGateStatus: "grandfathered",
     hasArrivalPhoto: false,
     hasDeparturePhoto: false,

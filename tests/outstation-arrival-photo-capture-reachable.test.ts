@@ -47,12 +47,20 @@ export function runOutstationArrivalPhotoCaptureReachableTests() {
   // control. This half is the "why" behind every wiring assertion below.
   for (const transportationType of ALL_TRANSPORT_TYPES) {
     assert.equal(
-      validateLiveArrivalEvidence({ carEvidenceMetadata: null, transportationType }).isValid,
+      validateLiveArrivalEvidence({
+        carEvidenceMetadata: null,
+        employeeRole: "District Manager",
+        transportationType,
+      }).isValid,
       false,
       `${transportationType} is not exempt from the arrival photo, so its UI must be able to capture one`,
     );
     assert.equal(
-      validateLiveArrivalEvidence({ carEvidenceMetadata: validMetadata, transportationType }).isValid,
+      validateLiveArrivalEvidence({
+        carEvidenceMetadata: validMetadata,
+        employeeRole: "District Manager",
+        transportationType,
+      }).isValid,
       true,
       `${transportationType} passes once the photo exists — the rule is about the photo, not the transport`,
     );
@@ -81,10 +89,18 @@ export function runOutstationArrivalPhotoCaptureReachableTests() {
     !wizard.includes('(transportationType === "car" && !hasCarEvidence)'),
     "neither submit button may be car-gated: on train/bus the button stayed enabled, so the refusal came from the server instead of from the form",
   );
+  // Owner waiver 2026-08-19: the three roles in evidence-waiver.ts owe no photo, so the guard is
+  // now "missing AND not waived" rather than a bare "missing". The COUNT is what this pins — both
+  // buttons, never one — because a single-button regression is exactly how the mobile action bar
+  // once stayed live while the desktop card was fixed.
   assert.equal(
-    wizard.split("|| !hasCarEvidence }").length - 1,
+    wizard.split("|| (!hasCarEvidence && !isEvidencePhotoWaived) }").length - 1,
     2,
-    "both submit buttons (desktop card and mobile action bar) disable on a missing arrival photo, for every transport type",
+    "both submit buttons (desktop card and mobile action bar) disable on a missing arrival photo, for every transport type and every role that still owes one",
+  );
+  assert.ok(
+    !wizard.includes("|| !hasCarEvidence }"),
+    "…and neither may keep the un-waived form of the guard, or a waived manager's button sits dead with no photo card on screen to explain it",
   );
   assert.ok(
     wizard.includes("{arrivalPhotoMissingMessage}") && wizard.includes("{arrivalPhotoMissingShort}"),

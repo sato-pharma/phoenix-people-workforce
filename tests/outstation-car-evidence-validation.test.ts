@@ -20,18 +20,21 @@ const validMetadata: OutstationCarEvidenceMetadata = {
 
 export function runOutstationCarEvidenceValidationTests() {
   const missingMetadata = validateLiveArrivalEvidence({
+    employeeRole: "District Manager",
     carEvidenceMetadata: null,
     transportationType: "car",
   });
   assert.equal(missingMetadata.isValid, false);
 
   const valid = validateLiveArrivalEvidence({
+    employeeRole: "District Manager",
     carEvidenceMetadata: validMetadata,
     transportationType: "car",
   });
   assert.equal(valid.isValid, true);
 
   const galleryEvidence = validateLiveArrivalEvidence({
+    employeeRole: "District Manager",
     carEvidenceMetadata: {
       ...validMetadata,
       source: "gallery",
@@ -41,6 +44,7 @@ export function runOutstationCarEvidenceValidationTests() {
   assert.equal(galleryEvidence.isValid, false);
 
   const missingGps = validateLiveArrivalEvidence({
+    employeeRole: "District Manager",
     carEvidenceMetadata: {
       ...validMetadata,
       capturedLatitude: Number.NaN,
@@ -53,6 +57,7 @@ export function runOutstationCarEvidenceValidationTests() {
   // Car is deliberately excluded and must stay excluded. These two assertions are the whole
   // asymmetry: the same metadata, the same `upload` source, opposite verdicts by transport.
   const uploadedOnCar = validateLiveArrivalEvidence({
+    employeeRole: "District Manager",
     carEvidenceMetadata: { ...validMetadata, source: "upload" },
     transportationType: "car",
   });
@@ -65,6 +70,7 @@ export function runOutstationCarEvidenceValidationTests() {
   for (const transportationType of ["train", "bus", "other"] as const) {
     assert.equal(
       validateLiveArrivalEvidence({
+        employeeRole: "District Manager",
         carEvidenceMetadata: { ...validMetadata, source: "upload" },
         transportationType,
       }).isValid,
@@ -76,6 +82,7 @@ export function runOutstationCarEvidenceValidationTests() {
     // or "upload" would become a way to submit evidence with no GPS and no capture time at all.
     assert.equal(
       validateLiveArrivalEvidence({
+        employeeRole: "District Manager",
         carEvidenceMetadata: { ...validMetadata, capturedLatitude: Number.NaN, source: "upload" },
         transportationType,
       }).isValid,
@@ -87,6 +94,7 @@ export function runOutstationCarEvidenceValidationTests() {
     // as "therefore acceptable on a train".
     assert.equal(
       validateLiveArrivalEvidence({
+        employeeRole: "District Manager",
         carEvidenceMetadata: { ...validMetadata, source: "gallery" } as unknown as OutstationCarEvidenceMetadata,
         transportationType,
       }).isValid,
@@ -102,6 +110,7 @@ export function runOutstationCarEvidenceValidationTests() {
   // carry two photos, and this is the first of them.
   for (const transportationType of ["train", "bus", "other"] as const) {
     const missingArrivalPhoto = validateLiveArrivalEvidence({
+      employeeRole: "District Manager",
       carEvidenceMetadata: null,
       transportationType,
     });
@@ -119,7 +128,11 @@ export function runOutstationCarEvidenceValidationTests() {
     // …and the same non-car trip passes once the photo is there, so the requirement is about the
     // photo's presence and never about the transport type.
     assert.equal(
-      validateLiveArrivalEvidence({ carEvidenceMetadata: validMetadata, transportationType }).isValid,
+      validateLiveArrivalEvidence({
+        carEvidenceMetadata: validMetadata,
+        employeeRole: "District Manager",
+        transportationType,
+      }).isValid,
       true,
       `a ${transportationType} trip with a live arrival photo is valid`,
     );

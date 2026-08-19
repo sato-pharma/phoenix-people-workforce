@@ -448,6 +448,17 @@ ticket attachment mandatory for train/bus when online (offline is held instead) 
 policy → hold · offline sync delay vs policy → hold · eligibility, campaign/double-visit,
 governorate → hold.
 
+**Waived for three roles** (owner request 2026-08-19, `evidence-waiver.ts`): Product Manager,
+Group Product Manager and National Sales Manager submit with **no evidence photo at all**, on
+every transport type, and their train/bus ticket is **optional** (PDF or image). The waiver covers
+BOTH photos — waiving only the arrival photo would park these requests at `pending_arrival_photo`
+forever, since `resolveOutstationGateState` demands the first photo before it looks at anything
+else. It is derived from the row's own `employee_role` on every read, so there is no new gate
+status and no migration: `evidence_gate_status` goes on recording truthfully which photos a row
+holds, and the gate decides separately whether that matters for the role. The **workload** gate is
+untouched — only the photographs were waived. A waived role that *does* attach a photo is still
+validated exactly like everyone else.
+
 **The system flags, never rejects** (owner rule 2026-08-09). Every failed check appends to
 `reviewHoldReasons`; the row persists as `status='submitted'` with the reasons joined into
 `approval_reason`. `calculation_status` separately records `accepted_by_system` vs `submitted`.
