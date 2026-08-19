@@ -15,7 +15,9 @@ import {
   buildMarketingApprovedRequestRows,
   buildMarketingDraftProductScope,
   buildMarketingManagerChain,
+  classifyMarketingWaitingSla,
   isPhoenixOriginatedRequest,
+  marketingWaitingSince,
   normalizeMarketingRequestDraftInput,
   prepareMarketingRequestDraft,
   resolveLineCcRecipients,
@@ -1631,5 +1633,85 @@ export async function runMarketingRequestServiceTests() {
     serviceSource,
     /title:\s*"Marketing request submitted",\s*\}\)\.catch\(\(error: unknown\) => logNotificationSendFailure\("marketingRequests\.createMarketingRequestDraft\.submitted", error\)\);/,
     "the request-submitted notification failure must be logged via the shared helper",
+  );
+
+  // ── The waiting clock must measure from step_opened, never from updated_at ──────────────────
+  //
+  // Real incident, 2026-08-19: a config backfill switched `allow_return` off across every live
+  // Finance Execution rung (owner's rule — nothing may block a request once the CEO has approved)
+  // and wrote `updated_at = now()` on four in-flight steps as a side effect. One had been sitting
+  // with Finance since 15 Aug. Its "waiting 4 days" silently became "waiting 0 days", so the
+  // stuck-request reminder — the whole point of this second clock — would have stayed quiet.
+  // `updated_at` is a generic row-modification stamp; `step_opened` fires only when a rung is
+  // actually opened, which is what "how long has this been on someone's desk" means.
+  {
+    const OPENED = "2026-08-15T18:55:00.000Z";
+    const TOUCHED_BY_BACKFILL = "2026-08-19T14:09:45.000Z";
+    const NOW = "2026-08-19T16:00:00.000Z";
+
+    assert.equal(
+      marketingWaitingSince({ createdAt: OPENED, openedAt: OPENED, updatedAt: TOUCHED_BY_BACKFILL }),
+      OPENED,
+      "waiting-since must prefer the step_opened event over a row touched by an unrelated write",
+    );
+
+    // The headline assertion: with the old clock this request read 0 days and fired nothing.
+    assert.equal(
+      classifyMarketingWaitingSla({
+        now: NOW,
+        waitingSince: marketingWaitingSince({ openedAt: OPENED, updatedAt: TOUCHED_BY_BACKFILL }),
+      }),
+      "due_date_reminder",
+      "a request opened 4 days ago must still be chased after a config write touches its step row",
+    );
+    assert.equal(
+      classifyMarketingWaitingSla({ now: NOW, waitingSince: TOUCHED_BY_BACKFILL }),
+      null,
+      "sanity: reading updated_at is exactly what silenced it, so that path must still read as silent",
+    );
+
+    // Fallbacks are load-bearing, not padding. `step_opened` capture began 2026-08-15, so older
+    // requests have no event at all — returning null for them would drop the oldest, most stuck
+    // requests out of the waiting rule entirely, which is strictly worse than the bug being fixed.
+    assert.equal(
+      marketingWaitingSince({ createdAt: "2026-08-01T00:00:00.000Z", updatedAt: OPENED }),
+      OPENED,
+      "a step with no recorded opening must fall back to updated_at, never to null",
+    );
+    assert.equal(
+      marketingWaitingSince({ createdAt: OPENED }),
+      OPENED,
+      "with neither an opening nor an update, created_at is the last honest fallback",
+    );
+    assert.equal(marketingWaitingSince({}), null, "an empty step has no clock to report");
+  }
+
+  // Both consumers of the clock must go through the helper. The daily scan is the one that broke;
+  // the sidebar badge reads the same signal and would lie in exactly the same way.
+  assert.match(
+    serviceSource,
+    /const waitingSince = marketingWaitingSince\(\{/,
+    "the daily SLA scan must resolve waiting-since through the shared helper",
+  );
+  assert.doesNotMatch(
+    serviceSource,
+    /const waitingSince = step\?\.updated_at \?\? step\?\.created_at/,
+    "the daily SLA scan must not read updated_at as the waiting clock — that is the defect",
+  );
+  assert.doesNotMatch(
+    serviceSource,
+    /marketingDaysWaiting\(step\.updatedAt \?\? step\.createdAt, input\.now\)/,
+    "the approver badge must not read updated_at as the waiting clock either",
+  );
+  assert.match(
+    serviceSource,
+    /kind", "step_opened"/,
+    "waiting-since must be sourced from the step_opened event",
+  );
+  // One batched read, not one per request: this runs from Amsterdam against Frankfurt.
+  assert.match(
+    serviceSource,
+    /const stepOpenedAt = await loadMarketingStepOpenedAt\([\s\S]{0,120}?\);\s*\n\s*for \(const row of rows\) \{/,
+    "the SLA scan must load every rung's opening once, before the per-request loop",
   );
 }

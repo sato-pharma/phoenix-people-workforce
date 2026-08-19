@@ -281,4 +281,53 @@ export function runMarketingApprovalInboxNavBadgeTests() {
     /assertPermission\(|@\/lib\/auth\/permissions/,
     "12: marketing has no permission resource — the guard is the actor's own assigned_hr_id, as in /inbox",
   );
+
+  // ── 13. Overdue is measured from when the rung OPENED, not when the row was last written ────
+  //
+  // `updated_at` is a generic row-modification stamp. On 2026-08-19 a config backfill that turned
+  // `allow_return` off across every live Finance Execution rung wrote `updated_at = now()` on four
+  // in-flight steps, which would have quietly cleared the orange badge on a request that had been
+  // stuck for days. The badge must read `openedAt` (the step_opened event) and only fall back to
+  // the row stamps when no opening was ever recorded — capture began 2026-08-15, so older requests
+  // genuinely have none, and dropping those would hide the most stuck work of all.
+  {
+    const openedLongAgo = summarizeMarketingApproverBadge({
+      gatingSteps: [{ ...step({ requestId: REQUEST_A, updatedAt: NOW }), openedAt: THREE_DAYS_AGO }],
+      liveRequestIds: [REQUEST_A],
+      now: NOW,
+      slaDaysByStepCode: SLA_BY_CODE,
+      slaDaysByWorkflowStepId: SLA_BY_ID,
+    });
+    assert.equal(
+      openedLongAgo.overdue,
+      true,
+      "13: a rung opened 3 days ago stays overdue even though a config write just touched its row",
+    );
+
+    const freshlyOpened = summarizeMarketingApproverBadge({
+      gatingSteps: [{ ...step({ requestId: REQUEST_A, updatedAt: THREE_DAYS_AGO }), openedAt: ONE_DAY_AGO }],
+      liveRequestIds: [REQUEST_A],
+      now: NOW,
+      slaDaysByStepCode: SLA_BY_CODE,
+      slaDaysByWorkflowStepId: SLA_BY_ID,
+    });
+    assert.equal(
+      freshlyOpened.overdue,
+      false,
+      "13: reopening a returned rung restarts its clock — an old row stamp must not keep it orange",
+    );
+
+    const noOpeningRecorded = summarizeMarketingApproverBadge({
+      gatingSteps: [{ ...step({ requestId: REQUEST_A, updatedAt: THREE_DAYS_AGO }), openedAt: null }],
+      liveRequestIds: [REQUEST_A],
+      now: NOW,
+      slaDaysByStepCode: SLA_BY_CODE,
+      slaDaysByWorkflowStepId: SLA_BY_ID,
+    });
+    assert.equal(
+      noOpeningRecorded.overdue,
+      true,
+      "13: a pre-2026-08-15 rung with no step_opened event must still be judged, via the row stamps",
+    );
+  }
 }

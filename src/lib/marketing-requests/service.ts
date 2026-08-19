@@ -2803,12 +2803,88 @@ const MARKETING_WAITING_DUE_SOON_DAYS = 3;
 const MARKETING_WAITING_OVERDUE_DAYS = 7;
 
 /**
+ * Key for the step-opened index below. A request can hold two steps sharing one `step_name` (a
+ * chain that reviews at CEO twice, say), so the sequence — not the name — is what identifies a rung.
+ */
+function marketingStepKey(requestId: string, sequence: number) {
+  return `${requestId}:${sequence}`;
+}
+
+/**
+ * When each of these approval steps last became the request's live decision.
+ *
+ * `step_opened` is written by the `marketing_request_steps_capture_event` trigger the moment a rung
+ * goes `current`, so it moves when RESPONSIBILITY moves and at no other time. That is the whole
+ * reason it exists here — see `marketingWaitingSince`.
+ *
+ * Returns the LATEST opening per rung: a returned-then-resubmitted step is opened again, and the
+ * clock is meant to restart then rather than count time against someone who was not yet holding it.
+ * A step with no recorded opening is simply absent from the map — callers fall back.
+ */
+export async function loadMarketingStepOpenedAt(
+  supabase: SupabaseClient,
+  requestIdsInput: ReadonlyArray<string>,
+): Promise<Map<string, string>> {
+  const opened = new Map<string, string>();
+  const requestIds = Array.from(new Set(requestIdsInput.filter(Boolean)));
+  if (requestIds.length === 0) return opened;
+  for (const batch of chunk(requestIds)) {
+    const { data, error } = await supabase
+      .from("marketing_request_events")
+      .select("request_id, step_sequence, occurred_at")
+      .eq("kind", "step_opened")
+      .in("request_id", batch);
+    if (error) throw error;
+    for (const row of (data ?? []) as Array<{
+      occurred_at?: string | null;
+      request_id?: string | null;
+      step_sequence?: number | string | null;
+    }>) {
+      const requestId = cleanText(row.request_id);
+      const occurredAt = cleanText(row.occurred_at);
+      if (!requestId || !occurredAt || row.step_sequence === null || row.step_sequence === undefined) continue;
+      const sequence = Number(row.step_sequence);
+      if (!Number.isFinite(sequence)) continue;
+      const key = marketingStepKey(requestId, sequence);
+      const existing = opened.get(key);
+      if (!existing || Date.parse(occurredAt) > Date.parse(existing)) opened.set(key, occurredAt);
+    }
+  }
+  return opened;
+}
+
+/**
+ * The instant a rung actually landed on its approver's desk, which is what "waiting N days" must be
+ * measured from.
+ *
+ * **Never read `updated_at` for this directly.** It is a generic row-modification stamp, so ANY
+ * write to the step resets it — and on 2026-08-19 a config backfill that switched `allow_return`
+ * off across every live Finance Execution rung (owner's rule: nothing may block a request once the
+ * CEO has approved) set `updated_at = now()` on four in-flight steps as a side effect. One of them
+ * had been sitting with Finance since 15 Aug; its waiting clock silently went back to zero, and the
+ * stuck-request reminder that exists precisely to catch that case would have stayed quiet for
+ * another three days. Nothing was wrong with the backfill — the clock was reading the wrong column.
+ *
+ * `openedAt` comes from the `step_opened` event and only moves when the rung is opened. The
+ * fallbacks are load-bearing, not defensive padding: event capture began 2026-08-15, so requests
+ * older than that have no `step_opened` row at all, and returning null for them would drop them out
+ * of the waiting rule entirely — making the oldest, most stuck requests the only invisible ones.
+ */
+export function marketingWaitingSince(step: {
+  createdAt?: string | null;
+  openedAt?: string | null;
+  updatedAt?: string | null;
+}): string | null {
+  return step.openedAt ?? step.updatedAt ?? step.createdAt ?? null;
+}
+
+/**
  * Pure classifier for how long the current approval step has been outstanding.
  *
- * `waitingSince` is the step's last status change — a step's `updated_at` is stamped when it is
- * made `current`, including when a returned request is resumed. So reassigning or resubmitting
- * legitimately restarts the clock rather than counting elapsed time against someone who was not
- * yet responsible for the decision.
+ * `waitingSince` must come from `marketingWaitingSince`, which prefers the step's `step_opened`
+ * event over its row timestamps. Reassigning or resubmitting legitimately restarts the clock rather
+ * than counting elapsed time against someone who was not yet responsible for the decision; an
+ * unrelated maintenance write to the row must NOT.
  */
 export function classifyMarketingWaitingSla(input: {
   waitingSince: string | null;
@@ -2895,24 +2971,45 @@ export async function runMarketingSlaDaily(): Promise<{
     const rows = (data ?? []) as MarketingRequestDbRow[];
     scanned = rows.length;
     const nowIso = new Date().toISOString();
+    // Every rung's opening in ONE round trip rather than one per request — this runs against
+    // Frankfurt from Amsterdam, so a per-request lookup inside the loop below would pay that
+    // latency `scanned` times over for data that is a single indexed read.
+    const stepOpenedAt = await loadMarketingStepOpenedAt(
+      supabase,
+      rows.map((row) => row.id),
+    );
     for (const row of rows) {
       const request = mapRequest(row);
       try {
         // Current approver — feeds assigned_approver / workflow_step_approver routing.
-        // `updated_at` is stamped when a step is made `current`, so it doubles as "waiting since".
         const { data: stepData } = await supabase
           .from("marketing_request_approval_steps")
-          .select("assigned_hr_id, updated_at, created_at")
+          .select("assigned_hr_id, sequence, updated_at, created_at")
           .eq("request_id", request.id)
           .eq("status", "current")
           .maybeSingle();
         const hasCurrentStep = Boolean(stepData);
-        const step = stepData as { assigned_hr_id?: string | null; created_at?: string | null; updated_at?: string | null } | null;
+        const step = stepData as {
+          assigned_hr_id?: string | null;
+          created_at?: string | null;
+          sequence?: number | string | null;
+          updated_at?: string | null;
+        } | null;
         const approverHrId = step?.assigned_hr_id ?? null;
 
         // Two independent clocks, reduced to the single worst signal so one request never
         // produces two competing notifications on the same day.
-        const waitingSince = step?.updated_at ?? step?.created_at ?? null;
+        // "Waiting since" is the step's `step_opened` event, NOT its `updated_at` — see
+        // marketingWaitingSince for the config backfill that silently zeroed this.
+        const stepSequence = Number(step?.sequence);
+        const openedAt = Number.isFinite(stepSequence)
+          ? stepOpenedAt.get(marketingStepKey(request.id, stepSequence)) ?? null
+          : null;
+        const waitingSince = marketingWaitingSince({
+          createdAt: step?.created_at ?? null,
+          openedAt,
+          updatedAt: step?.updated_at ?? null,
+        });
         const payDateEvent = classifyMarketingSla({ payDate: request.payDate, today });
         const waitingEvent = classifyMarketingWaitingSla({ now: nowIso, waitingSince });
         const eventType = mostUrgentMarketingSla(payDateEvent, waitingEvent);
@@ -6710,6 +6807,8 @@ export async function getApproverDecidedRequests(
 /** The subset of a gating approval step the badge needs — nothing that would identify a request. */
 export type MarketingApproverBadgeStep = {
   createdAt: string | null;
+  /** From the step's `step_opened` event; preferred over the row stamps. See marketingWaitingSince. */
+  openedAt?: string | null;
   requestId: string;
   stepCode: string;
   updatedAt: string | null;
@@ -6729,10 +6828,11 @@ export type MarketingApproverBadge = { count: number; overdue: boolean };
  *    drops exactly these rows (its request lookup filters on that status), so counting them here
  *    would show a number the inbox cannot explain.
  *
- * Overdue: each step's own `marketing_workflow_steps.default_sla_days`, measured from the step's
- * last status change — the same "waiting since" clock the daily SLA scan uses (see
- * classifyMarketingWaitingSla). A step whose SLA is null contributes NO overdue signal rather than
- * being treated as 0 days, which would make every request instantly overdue.
+ * Overdue: each step's own `marketing_workflow_steps.default_sla_days`, measured from when the rung
+ * was opened — the same "waiting since" clock the daily SLA scan uses (see marketingWaitingSince,
+ * and note it is deliberately NOT the row's `updated_at`). A step whose SLA is null contributes NO
+ * overdue signal rather than being treated as 0 days, which would make every request instantly
+ * overdue.
  */
 export function summarizeMarketingApproverBadge(input: {
   gatingSteps: MarketingApproverBadgeStep[];
@@ -6749,7 +6849,7 @@ export function summarizeMarketingApproverBadge(input: {
       input.slaDaysByStepCode?.get(step.stepCode) ??
       null;
     if (slaDays === null || !Number.isFinite(slaDays) || slaDays <= 0) return false;
-    const daysWaiting = marketingDaysWaiting(step.updatedAt ?? step.createdAt, input.now);
+    const daysWaiting = marketingDaysWaiting(marketingWaitingSince(step), input.now);
     if (daysWaiting === null) return false;
     return slaTone(daysWaiting, slaDays) === "overdue";
   });
@@ -6783,7 +6883,7 @@ export async function getMarketingApproverBadge(access: AccessContext): Promise<
 
   const gatingQuery = supabase
     .from("marketing_request_approval_steps")
-    .select("request_id, step_code, workflow_step_id, created_at, updated_at")
+    .select("request_id, step_code, sequence, workflow_step_id, created_at, updated_at")
     .eq("status", "current")
     .eq("is_cc", false);
   // Same gate as the inbox's oversight section, so the badge and that section always agree.
@@ -6791,23 +6891,41 @@ export async function getMarketingApproverBadge(access: AccessContext): Promise<
     ? gatingQuery
     : gatingQuery.in("assigned_hr_id", actorHrKeys));
   if (gatingResult.error) throw gatingResult.error;
-  const gatingSteps: MarketingApproverBadgeStep[] = (
-    (gatingResult.data ?? []) as Array<{
-      created_at?: string | null;
-      request_id: string;
-      step_code: string;
-      updated_at?: string | null;
-      workflow_step_id?: number | string | null;
-    }>
-  ).map((row) => ({
+  const gatingRows = (gatingResult.data ?? []) as Array<{
+    created_at?: string | null;
+    request_id: string;
+    sequence?: number | string | null;
+    step_code: string;
+    updated_at?: string | null;
+    workflow_step_id?: number | string | null;
+  }>;
+  if (gatingRows.length === 0) return { count: 0, overdue: false };
+
+  // Opened-at drives the overdue colour; a failure here must not suppress the COUNT, which is the
+  // point of the badge — so it degrades to the row stamps rather than throwing, exactly as the SLA
+  // lookup below does.
+  let openedAt = new Map<string, string>();
+  try {
+    openedAt = await loadMarketingStepOpenedAt(
+      supabase,
+      gatingRows.map((row) => row.request_id),
+    );
+  } catch (error) {
+    logWarning("Marketing approver badge could not load step openings — count kept, clock falls back", {
+      context: { message: error instanceof Error ? error.message : String(error) },
+      labels: { event: "marketing_approver_badge_step_opened_unavailable" },
+    });
+  }
+
+  const gatingSteps: MarketingApproverBadgeStep[] = gatingRows.map((row) => ({
     createdAt: row.created_at ?? null,
+    openedAt: openedAt.get(marketingStepKey(row.request_id, Number(row.sequence))) ?? null,
     requestId: row.request_id,
     stepCode: row.step_code,
     updatedAt: row.updated_at ?? null,
     workflowStepId:
       row.workflow_step_id === null || row.workflow_step_id === undefined ? null : Number(row.workflow_step_id),
   }));
-  if (gatingSteps.length === 0) return { count: 0, overdue: false };
 
   const requestIds = Array.from(new Set(gatingSteps.map((step) => step.requestId)));
   const liveRequestIds = new Set<string>();
