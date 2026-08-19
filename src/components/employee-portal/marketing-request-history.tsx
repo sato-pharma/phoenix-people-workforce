@@ -67,9 +67,14 @@ function HistoryRowCard({ row }: { row: MarketingApproverHistoryRow }) {
       >
         <div className="min-w-0">
           <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500">{row.requestCode}</p>
-          <h3 className="mt-0.5 whitespace-nowrap text-[15px] font-black tracking-tight text-slate-950">
-            {row.customerName}
-          </h3>
+          {/* Owner rules: never truncate with an ellipsis, never wrap to a second line. On a 375px
+              phone a long pharmacy name honours both by SCROLLING inside its own box — measured
+              459px of text in a 317px box, so without this it painted 113px off the screen edge. */}
+          <div className="overflow-x-auto">
+            <h3 className="mt-0.5 whitespace-nowrap text-[15px] font-black tracking-tight text-slate-950">
+              {row.customerName}
+            </h3>
+          </div>
           <p className="mt-0.5 text-[11px] font-medium text-slate-500">
             {row.requestType} · From {row.requesterName} ({row.requesterRole})
           </p>

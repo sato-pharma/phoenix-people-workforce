@@ -193,4 +193,32 @@ export async function runMarketingApprovalHistoryTabTests() {
     /^function ApprovalHistory\(/m,
     "ApprovalHistory must live in the shared module, not be re-declared per tab",
   );
+
+  /* ---------------------------------------------------------------------- */
+  /* 9. A long customer name SCROLLS — it never wraps, truncates, or escapes */
+  /* ---------------------------------------------------------------------- */
+
+  // Owner report, 2026-08-19: "the layout is broken on mobile". The customer-name heading is
+  // `whitespace-nowrap` because two owner rules forbid the alternatives — no ellipsis, and no
+  // wrapping onto a second line. With nothing to clip it, a real pharmacy name measured 459px of
+  // text inside a 357px card on a 375px phone: the card's content escaped its own box and the
+  // whole PAGE scrolled sideways. Wrapping the heading in an overflow-x container honours both
+  // rules and contains the overflow (measured after the fix: card scrollWidth == clientWidth,
+  // document scrollWidth == 375).
+  //
+  // Pinned on BOTH tabs: they sit on one page, and one tab scrolling while the other bursts its
+  // card is the inconsistency a reader notices first.
+  for (const [label, text] of [["history", historyComponent], ["inbox", inbox]] as const) {
+    assert.match(
+      text,
+      /<div className="overflow-x-auto">\s*<h3 className="[^"]*whitespace-nowrap/,
+      `${label}: the nowrap customer name must sit inside an overflow-x container, or a long name escapes the card on mobile`,
+    );
+  }
+  // And the banned escapes stay banned on the heading itself.
+  assert.doesNotMatch(
+    historyComponent,
+    /<h3 className="[^"]*truncate/,
+    "the customer name must never be truncated with an ellipsis — owner rule",
+  );
 }

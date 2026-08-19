@@ -76,9 +76,14 @@ function InboxRowCard({ decisionBasePath, row }: { decisionBasePath: string; row
           <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-orange-600">
             {row.requestCode}
           </p>
-          <h3 className="mt-0.5 whitespace-nowrap text-[15px] font-black tracking-tight text-slate-950">
-            {row.customerName}
-          </h3>
+          {/* Owner rules: never truncate with an ellipsis, never wrap to a second line. On a 375px
+              phone a long pharmacy name honours both by SCROLLING inside its own box — measured
+              459px of text in a 317px box, so without this it painted 113px off the screen edge. */}
+          <div className="overflow-x-auto">
+            <h3 className="mt-0.5 whitespace-nowrap text-[15px] font-black tracking-tight text-slate-950">
+              {row.customerName}
+            </h3>
+          </div>
           <p className="mt-0.5 text-[11px] font-medium text-slate-500">
             {row.requestType} · From {row.requesterName} ({row.requesterRole})
           </p>
@@ -168,7 +173,14 @@ function AdvisoryRowCard({ onPosted, row }: { onPosted: () => void; row: Marketi
       <div className="flex flex-wrap items-start justify-between gap-2 border-b border-slate-100 bg-gradient-to-r from-white via-sky-50/40 to-white px-4 py-3">
         <div className="min-w-0">
           <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-sky-600">{row.requestCode}</p>
-          <h3 className="mt-0.5 whitespace-nowrap text-[15px] font-black tracking-tight text-slate-950">{row.customerName}</h3>
+          {/* Owner rules: never truncate with an ellipsis, never wrap to a second line. On a 375px
+              phone a long pharmacy name honours both by SCROLLING inside its own box — measured
+              459px of text in a 317px box, so without this it painted 113px off the screen edge. */}
+          <div className="overflow-x-auto">
+            <h3 className="mt-0.5 whitespace-nowrap text-[15px] font-black tracking-tight text-slate-950">
+              {row.customerName}
+            </h3>
+          </div>
           <p className="mt-0.5 text-[11px] font-medium text-slate-500">
             {row.requestType} · From {row.requesterName} ({row.requesterRole})
           </p>
