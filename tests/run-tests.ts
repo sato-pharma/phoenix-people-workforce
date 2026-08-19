@@ -356,6 +356,7 @@ import { runMarketingCoverageDistributorRollupTests } from "./marketing-coverage
 import { runMarketingCoverageUrlStateTests } from "./marketing-coverage-url-state.test.ts";
 import { runWeeklyExportTests } from "./weekly-export-workbook.test.ts";
 import { runMarketingValidationServiceTests } from "./marketing-validation-service.test.ts";
+import { runMarketingValidationPharmacyCardMinWidthTests } from "./marketing-validation-pharmacy-card-min-width.test.ts";
 import { runMarketingEvidencePhotoStorageTests } from "./marketing-evidence-photo-storage.test.ts";
 import { runSupportRequestsNotificationsTests } from "./support-requests-notifications.test.ts";
 import { runOrganogramEmptyDiagnosticTests } from "./organogram-empty-diagnostic.test.ts";
@@ -1269,6 +1270,10 @@ await runTest("marketing approval inbox decision bar (per-step reject/return pow
 await runTest("marketing premium notifications + review view", runMarketingPremiumNotificationTests);
 await runTest("marketing request access", runMarketingRequestAccessTests);
 await runTest("marketing validation service", runMarketingValidationServiceTests);
+await runTest(
+  "marketing validation: the pharmacy card can shrink, so the tabs stay on screen on a phone",
+  runMarketingValidationPharmacyCardMinWidthTests,
+);
 await runTest(
   "marketing evidence photo storage (the image is retained, not just its filename; a name with no image is refused)",
   runMarketingEvidencePhotoStorageTests,

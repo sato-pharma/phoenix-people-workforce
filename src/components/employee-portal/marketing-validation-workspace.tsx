@@ -2304,8 +2304,15 @@ export function MarketingValidationWorkspace() {
                       </div>
                     </div>
 
+                    {/* `min-w-0` on each pharmacy card is load-bearing on mobile. A grid item's
+                        automatic minimum size is its min-content width, and the reused-pharmacy
+                        detail card is deliberately `whitespace-nowrap` (owner's rule: never wrap,
+                        never ellipsis). Without it the card's widest line — "Validated by <full
+                        name>" — sized the whole single-column track to ~618px on a 390px phone and
+                        pushed the tab row off screen. With it the track stays at the viewport width
+                        and the card's own `overflow-x-auto` scrolls instead. */}
                     {customer.pharmacies.map((pharmacy, index) => (
-                      <div className="lg:col-span-6" key={pharmacy.key}>
+                      <div className="min-w-0 lg:col-span-6" key={pharmacy.key}>
                         <div className="rounded-sm border border-slate-200 bg-slate-50/50 p-3 sm:p-4">
                           <div className="mb-3 flex items-center justify-between gap-3">
                             <div className="flex items-center gap-2.5">
