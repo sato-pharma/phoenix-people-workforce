@@ -1,3 +1,4 @@
+import { isOutstationEvidenceWaivedRole } from "@/lib/outstation/evidence-waiver";
 import type {
   OutstationCarEvidenceMetadata,
   OutstationTransportationType,
@@ -26,13 +27,29 @@ const UPLOADED_EVIDENCE_SOURCE = "upload";
  * GPS is captured separately — it is NOT a judgement that the two are equivalent, and `source`
  * is persisted precisely so an approver can tell them apart.
  *
+ * Waived on 2026-08-19 (owner request) for Product Manager, Group Product Manager and National
+ * Sales Manager, on EVERY transportation type — see evidence-waiver.ts. Note precisely what is
+ * waived: the REQUIREMENT to hold a photo, not the standard a photo must meet. One of these
+ * managers who does attach an arrival photo is still checked exactly like everyone else, because
+ * a photo that reached the record with no HR ID, no timestamp and no GPS is not weaker evidence
+ * — it is unreadable evidence, and letting it through by role would put it in front of an
+ * approver looking like the real thing.
+ *
+ * `employeeRole` is the canonical job-function role, and it is REQUIRED rather than optional: a
+ * caller that forgets it must fail to compile rather than silently re-impose a requirement the
+ * owner removed.
+ *
  * `transportationType` shapes both the refusal MESSAGE and, now, which sources are accepted.
  */
 export function validateLiveArrivalEvidence(params: {
   carEvidenceMetadata?: OutstationCarEvidenceMetadata | null;
+  employeeRole: string;
   transportationType: OutstationTransportationType;
 }) {
+  const isWaived = isOutstationEvidenceWaivedRole(params.employeeRole);
+
   if (!params.carEvidenceMetadata) {
+    if (isWaived) return { isValid: true, message: "" };
     return {
       isValid: false,
       message:
@@ -42,8 +59,11 @@ export function validateLiveArrivalEvidence(params: {
     };
   }
 
+  // A waived role that volunteers a photo may equally volunteer an uploaded one — the live-camera
+  // mandate on car exists to make a REQUIRED photo hard to fake, and there is no longer a
+  // required photo here to protect.
   const acceptedSources =
-    params.transportationType === "car"
+    params.transportationType === "car" && !isWaived
       ? [CAR_EVIDENCE_SOURCE]
       : [CAR_EVIDENCE_SOURCE, UPLOADED_EVIDENCE_SOURCE];
 

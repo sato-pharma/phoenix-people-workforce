@@ -23,6 +23,10 @@ import { Input } from "@/components/ui/input";
 import { LoadingSpinner } from "@/components/ui/loading-state";
 import { PremiumTooltip } from "@/components/ui/premium-tooltip";
 import {
+  isOutstationEvidenceWaivedRole,
+  isOutstationTicketWaivedRole,
+} from "@/lib/outstation/evidence-waiver";
+import {
   isRestorableOutstationLocalDraft,
   outstationDraftStorageKey,
   parseOutstationLocalDraft,
@@ -358,6 +362,16 @@ export function MobileOutstationWizard({
   // transportIcon was removed when WizardStep migrated from icon containers
   // to numbered indices (visual polish — no logic change).
   const isTicketBased = transportationType === "train" || transportationType === "bus";
+  // Owner request 2026-08-19: Product Manager, Group Product Manager and National Sales Manager
+  // submit with no evidence photo at all, and their train/bus ticket is optional. The rule lives
+  // in src/lib/outstation/evidence-waiver.ts and the SERVER applies the same predicate to the
+  // same role string — this is the screen agreeing with the gate, not a second copy of the rule.
+  //
+  // `employeeRole` is the canonical job-function role the page was rendered with, so a waived
+  // manager never sees the photo step. Hiding a step the server still demanded (or the reverse)
+  // is exactly the dead-end this page had to be fixed for on 2026-08-04.
+  const isEvidencePhotoWaived = isOutstationEvidenceWaivedRole(employeeRole);
+  const isTicketRequired = isTicketBased && !isOutstationTicketWaivedRole(employeeRole);
   // The arrival photo is required for EVERY transportation type — validateLiveArrivalEvidence()
   // was widened past `car` on 2026-08-04. The capture card below must therefore render for every
   // type too. While it rendered on `car` only, a train or bus employee had no control anywhere on
@@ -1162,12 +1176,12 @@ export function MobileOutstationWizard({
       return;
     }
 
-    if (!hasCarEvidence) {
+    if (!hasCarEvidence && !isEvidencePhotoWaived) {
       setMessage(arrivalPhotoMissingMessage);
       return;
     }
 
-    if (!isOffline && isTicketBased && ticketFiles.length === 0) {
+    if (!isOffline && isTicketRequired && ticketFiles.length === 0) {
       setMessage("Upload the ticket before submitting this train or bus request.");
       return;
     }
@@ -1717,6 +1731,11 @@ export function MobileOutstationWizard({
         ) : null}
       </Card>
 
+      {/* Hidden outright for the waived roles (owner request 2026-08-19) rather than shown as
+          "optional": these managers are not being asked to weigh a choice, the step is simply no
+          longer part of their submission. A card that stays on screen saying "you may skip this"
+          is the same requirement, only asked more quietly. */}
+      {isEvidencePhotoWaived ? null : (
       <Card className="rounded-lg border border-gray-100 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.06)] sm:p-5">
           <span className="rounded-md bg-orange-50 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-orange-600">
             {arrivalPhotoBadge}
@@ -1842,13 +1861,17 @@ export function MobileOutstationWizard({
             </div>
           ) : null}
         </Card>
+      )}
 
       {/* Rendered alongside the arrival photo, never instead of it — a train or bus
           request carries BOTH its ticket and its live arrival photo. The card hides
-          itself for car and other via `visible`. */}
+          itself for car and other via `visible`. For a waived role the photo card is gone
+          and this is the trip's only evidence surface, which is why it stays on screen for
+          them — optional, but offered. */}
       <TicketUploadCard
         attachmentCount={ticketFiles.length}
         onFilesSelected={(files) => setTicketFiles(files ? Array.from(files) : [])}
+        required={isTicketRequired}
         transportationType={transportationType}
         visible={isTicketBased}
       />
@@ -1878,7 +1901,7 @@ export function MobileOutstationWizard({
                 disabled={
                   isSubmitting ||
                   calculation.eligibilityStatus === "not_eligible" ||
-                  !hasCarEvidence
+                  (!hasCarEvidence && !isEvidencePhotoWaived)
                 }
                 onClick={submit}
                 type="button"
@@ -1893,7 +1916,7 @@ export function MobileOutstationWizard({
             </div>
             {/* A disabled button that says nothing is what made this look broken: the
                 employee pressed it and the page did not react. Always name the reason. */}
-            {!hasCarEvidence ? (
+            {!hasCarEvidence && !isEvidencePhotoWaived ? (
               <p className="mt-2 text-[12px] font-semibold text-amber-700">
                 {arrivalPhotoMissingMessage}
               </p>
@@ -1910,7 +1933,7 @@ export function MobileOutstationWizard({
             role="region"
             aria-label="Submit expense action bar"
           >
-            {!hasCarEvidence ? (
+            {!hasCarEvidence && !isEvidencePhotoWaived ? (
               <p className="mb-1.5 whitespace-nowrap text-[11px] font-semibold text-amber-700">
                 {arrivalPhotoMissingShort}
               </p>
@@ -1922,7 +1945,7 @@ export function MobileOutstationWizard({
                 disabled={
                   isSubmitting ||
                   calculation.eligibilityStatus === "not_eligible" ||
-                  !hasCarEvidence
+                  (!hasCarEvidence && !isEvidencePhotoWaived)
                 }
                 onClick={submit}
                 type="button"

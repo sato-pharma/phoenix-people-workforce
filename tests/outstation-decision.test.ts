@@ -330,27 +330,27 @@ export function runOutstationDecisionTests() {
   // SAME rule; decideOutstationRequest is a pure engine production does not call
   // end-to-end (rules 1-3 are computed upstream in calculateOutstationExpense).
   assert.equal(
-    outstationTicketEvidenceRejection({ hasTicketAttachments: false, requiresTicketAttachment: true, transportationType: "train" }),
+    outstationTicketEvidenceRejection({ role: "Medical Rep", hasTicketAttachments: false, requiresTicketAttachment: true, transportationType: "train" }),
     "Train or bus expenses require an attached ticket before they can be accepted.",
     "ticket rule rejects a ticketless train claim",
   );
   assert.equal(
-    outstationTicketEvidenceRejection({ hasTicketAttachments: false, requiresTicketAttachment: true, transportationType: "bus" }),
+    outstationTicketEvidenceRejection({ role: "Medical Rep", hasTicketAttachments: false, requiresTicketAttachment: true, transportationType: "bus" }),
     "Train or bus expenses require an attached ticket before they can be accepted.",
     "ticket rule rejects a ticketless bus claim",
   );
   assert.equal(
-    outstationTicketEvidenceRejection({ hasTicketAttachments: true, requiresTicketAttachment: true, transportationType: "train" }),
+    outstationTicketEvidenceRejection({ role: "Medical Rep", hasTicketAttachments: true, requiresTicketAttachment: true, transportationType: "train" }),
     null,
     "a train claim carrying a ticket passes",
   );
   assert.equal(
-    outstationTicketEvidenceRejection({ hasTicketAttachments: false, requiresTicketAttachment: true, transportationType: "car" }),
+    outstationTicketEvidenceRejection({ role: "Medical Rep", hasTicketAttachments: false, requiresTicketAttachment: true, transportationType: "car" }),
     null,
     "car transport is not ticket-based and is unaffected",
   );
   assert.equal(
-    outstationTicketEvidenceRejection({ hasTicketAttachments: false, requiresTicketAttachment: false, transportationType: "train" }),
+    outstationTicketEvidenceRejection({ role: "Medical Rep", hasTicketAttachments: false, requiresTicketAttachment: false, transportationType: "train" }),
     null,
     "the mandate is policy-driven — a role whose policy does not require tickets is unaffected",
   );

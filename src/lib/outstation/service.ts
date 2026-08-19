@@ -20,6 +20,10 @@ import { getDoubleVisitExpenseWorkloadEvidence } from "@/lib/double-visit-analyt
 import type { DoubleVisitExpenseWorkloadEvidence } from "@/lib/double-visit-analytics/types";
 import { validateLiveArrivalEvidence } from "@/lib/outstation/car-evidence";
 import {
+  isOutstationEvidenceWaivedRole,
+  isOutstationTicketWaivedRole,
+} from "@/lib/outstation/evidence-waiver";
+import {
   createOutstationCarEvidenceSignedUrl,
   createOutstationEvidenceSignedUrls,
   uploadOutstationDepartureEvidenceImage,
@@ -568,6 +572,11 @@ function recommendationForResult(params: {
   eligibilityStatus: OutstationEligibilityStatus;
   hasTicketAttachments: boolean;
   policy: OutstationPolicyRule;
+  // Canonical job-function role. Present so the ticket-evidence recommendation can honour the
+  // same waiver the submit gate does — otherwise a waived role would submit successfully and
+  // then land on the approvals screen recommended for "hr_review: ticket evidence required",
+  // which is the rule the owner just removed, restated as a nudge to a human.
+  role: string;
   territoryValidationStatus: OutstationTerritoryValidationStatus;
   transportationType: OutstationTransportationType;
 }) {
@@ -582,6 +591,7 @@ function recommendationForResult(params: {
   if (
     (params.transportationType === "train" || params.transportationType === "bus") &&
     params.policy.requiresTicketAttachment &&
+    !isOutstationTicketWaivedRole(params.role) &&
     !params.hasTicketAttachments
   ) {
     return {
@@ -1209,7 +1219,15 @@ export async function calculateOutstationExpense(
     ticketAmount = roundMoney(
       numberValue(input.goTicketAmount) + numberValue(input.returnTicketAmount),
     );
-    if (policy.requiresTicketAttachment && !input.hasTicketAttachments) {
+    // Waived roles skip this too. Leaving it in would downgrade an otherwise clean train claim
+    // to `needs_review` on the calculate step — the employee would watch the estimate turn amber
+    // and read that his trip needs an attachment, seconds after being told the attachment is
+    // optional.
+    if (
+      policy.requiresTicketAttachment &&
+      !isOutstationTicketWaivedRole(identity.employeeRole) &&
+      !input.hasTicketAttachments
+    ) {
       if (result.eligibilityStatus === "eligible") {
         result.eligibilityStatus = "needs_review";
         result.eligibilityReason =
@@ -1239,6 +1257,7 @@ export async function calculateOutstationExpense(
     eligibilityStatus: result.eligibilityStatus,
     hasTicketAttachments: Boolean(input.hasTicketAttachments),
     policy,
+    role: identity.employeeRole,
     territoryValidationStatus: result.territoryValidationStatus,
     transportationType: input.transportationType,
   });
@@ -1615,8 +1634,13 @@ export async function submitOutstationRequest(
   const calculation = await calculateOutstationExpense(access, input);
   const evidenceValidation = validateLiveArrivalEvidence({
     carEvidenceMetadata: input.carEvidenceMetadata,
+    employeeRole: calculation.employeeRole,
     transportationType: input.transportationType,
   });
+  // Whether this submitter owes a photo at all. Read from the CALCULATION's role, which is the
+  // same value written to `employee_role` below and therefore the same value every later read of
+  // this request resolves the waiver from.
+  const evidencePhotoWaived = isOutstationEvidenceWaivedRole(calculation.employeeRole);
 
   if (!evidenceValidation.isValid) {
     throw new Error(evidenceValidation.message);
@@ -1654,21 +1678,31 @@ export async function submitOutstationRequest(
 
   // The arrival image is uploaded for every transportation type. The refusal names the
   // employee's actual transport so a train passenger is never told to photograph a car.
-  if (!input.carEvidenceImageDataUrl) {
+  //
+  // A waived role (evidence-waiver.ts) may submit with no photo — but if one IS supplied it is
+  // stored and checked exactly as anyone else's. The pair is deliberately all-or-nothing: an
+  // image with no metadata still fails, because a photo with no HR ID, timestamp or GPS on it is
+  // not lighter evidence, it is evidence an approver cannot read.
+  if (!input.carEvidenceImageDataUrl && !evidencePhotoWaived) {
     throw new Error(
       calculation.transportationType === "car"
         ? "Car transport requires the live camera evidence image before submitting the request."
         : `A ${calculation.transportationType} trip requires the live arrival photo before submitting the request.`,
     );
   }
-  if (!storedCarEvidenceMetadata) {
+  if (!storedCarEvidenceMetadata && !evidencePhotoWaived) {
+    throw new Error("The live arrival photo metadata is missing.");
+  }
+  if (input.carEvidenceImageDataUrl && !storedCarEvidenceMetadata) {
     throw new Error("The live arrival photo metadata is missing.");
   }
 
-  carEvidenceImagePath = await uploadOutstationCarEvidenceImage({
-    imageDataUrl: input.carEvidenceImageDataUrl,
-    metadata: storedCarEvidenceMetadata,
-  });
+  if (input.carEvidenceImageDataUrl && storedCarEvidenceMetadata) {
+    carEvidenceImagePath = await uploadOutstationCarEvidenceImage({
+      imageDataUrl: input.carEvidenceImageDataUrl,
+      metadata: storedCarEvidenceMetadata,
+    });
+  }
 
   const workloadPayload = await resolveOutstationWorkloadPayload({
     employeeHrId: calculation.employeeHrId,
@@ -1696,6 +1730,7 @@ export async function submitOutstationRequest(
   const ticketEvidenceRejection = outstationTicketEvidenceRejection({
     hasTicketAttachments: ticketAttachmentInputs.length > 0,
     requiresTicketAttachment: submitPolicy.requiresTicketAttachment,
+    role: calculation.employeeRole,
     transportationType: calculation.transportationType,
   });
   // Online: block the submission outright so the employee attaches the ticket now.
@@ -2737,6 +2772,7 @@ export async function approveOutstationRequestForPayroll(
   // Requests held here are released by releaseOutstationRequestToPayrollIfReady, which runs as
   // soon as the missing evidence lands.
   const gate = resolveOutstationGateState({
+    employeeRole: request.employeeRole,
     evidenceGateStatus: request.evidenceGateStatus,
     hasArrivalPhoto: Boolean(request.carEvidenceImagePath),
     hasDeparturePhoto: Boolean(request.departureEvidenceImagePath),
@@ -2822,6 +2858,7 @@ export async function releaseOutstationRequestToPayrollIfReady(
     }
 
     const gate = resolveOutstationGateState({
+      employeeRole: request.employeeRole,
       evidenceGateStatus: request.evidenceGateStatus,
       hasArrivalPhoto: Boolean(request.carEvidenceImagePath),
       hasDeparturePhoto: Boolean(request.departureEvidenceImagePath),
@@ -3935,6 +3972,7 @@ export async function runOutstationDeparturePhotoReminders(): Promise<{
 
   for (const row of (data as Array<Record<string, unknown>>).map(mapOutstationRequestRow)) {
     const gate = resolveOutstationGateState({
+      employeeRole: row.employeeRole,
       evidenceGateStatus: row.evidenceGateStatus,
       hasArrivalPhoto: Boolean(row.carEvidenceImagePath),
       hasDeparturePhoto: Boolean(row.departureEvidenceImagePath),
@@ -4333,6 +4371,7 @@ export async function getOwnOutstationRequestsAwaitingDeparturePhoto(
     .filter(
       (row) =>
         resolveOutstationGateState({
+          employeeRole: row.employeeRole,
           evidenceGateStatus: row.evidenceGateStatus,
           hasArrivalPhoto: Boolean(row.carEvidenceImagePath),
           hasDeparturePhoto: Boolean(row.departureEvidenceImagePath),
@@ -4465,6 +4504,7 @@ function buildMyOutstationSubmission(
   decision: MyOutstationSubmissionDecision | null,
 ): MyOutstationSubmission {
   const gate = resolveOutstationGateState({
+    employeeRole: request.employeeRole,
     evidenceGateStatus: request.evidenceGateStatus,
     hasArrivalPhoto: Boolean(request.carEvidenceImagePath),
     hasDeparturePhoto: Boolean(request.departureEvidenceImagePath),
@@ -4734,6 +4774,7 @@ export async function listHeldOutstationRequests(
     .map((request) => ({
       request,
       gate: resolveOutstationGateState({
+        employeeRole: request.employeeRole,
         evidenceGateStatus: request.evidenceGateStatus,
         hasArrivalPhoto: Boolean(request.carEvidenceImagePath),
         hasDeparturePhoto: Boolean(request.departureEvidenceImagePath),
@@ -4802,6 +4843,7 @@ export async function retryOutstationWorkloadCapture(
   if (workloadCaptured) {
     const gate = after
       ? resolveOutstationGateState({
+          employeeRole: after.employeeRole,
           evidenceGateStatus: after.evidenceGateStatus,
           hasArrivalPhoto: Boolean(after.carEvidenceImagePath),
           hasDeparturePhoto: Boolean(after.departureEvidenceImagePath),
@@ -4923,6 +4965,7 @@ export async function releaseOutstationRequestWithoutEvidence(
   if (!request) throw new Error("That outstation request is not available.");
 
   const gate = resolveOutstationGateState({
+    employeeRole: request.employeeRole,
     evidenceGateStatus: request.evidenceGateStatus,
     hasArrivalPhoto: Boolean(request.carEvidenceImagePath),
     hasDeparturePhoto: Boolean(request.departureEvidenceImagePath),

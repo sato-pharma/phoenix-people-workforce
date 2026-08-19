@@ -2,6 +2,7 @@ import {
   classifyOutstationExpenseEligibility,
   type OutstationDistanceEligibilityPolicy,
 } from "@/lib/outstation/classification";
+import { isOutstationTicketWaivedRole } from "@/lib/outstation/evidence-waiver";
 import type {
   OutstationExpenseType,
   OutstationTransportationType,
@@ -165,15 +166,26 @@ export function outstationCampaignRuleOutcome(input: {
  *
  * `hasTicketAttachments` MUST be derived from files the server actually stored,
  * never from a client-supplied boolean.
+ *
+ * Waived on 2026-08-19 (owner request) for the three roles in evidence-waiver.ts: they MAY
+ * attach the ticket — as a PDF or an image — but a train or bus claim without one is accepted.
+ * The waiver is applied here rather than by clearing `requiresTicketAttachment` upstream so that
+ * the admin policy editor keeps saying what the policy actually is for everyone else; a role
+ * exemption that showed up as "no policy requires a ticket" would be a lie on the policy screen.
+ *
+ * `role` is the canonical job-function role and is REQUIRED, for the same reason it is required
+ * on validateLiveArrivalEvidence: forgetting it must break the build, not the rule.
  */
 export function outstationTicketEvidenceRejection(input: {
   hasTicketAttachments: boolean;
   requiresTicketAttachment: boolean;
+  role: string;
   transportationType: OutstationTransportationType;
 }): string | null {
   const isTicketBasedTransport =
     input.transportationType === "train" || input.transportationType === "bus";
   if (!isTicketBasedTransport) return null;
+  if (isOutstationTicketWaivedRole(input.role)) return null;
   if (!input.requiresTicketAttachment) return null;
   if (input.hasTicketAttachments) return null;
   return "Train or bus expenses require an attached ticket before they can be accepted.";
@@ -235,6 +247,7 @@ export function decideOutstationRequest(input: OutstationDecisionInput): Outstat
   const ticketRejection = outstationTicketEvidenceRejection({
     hasTicketAttachments: input.hasTicketAttachments,
     requiresTicketAttachment: input.requiresTicketAttachment,
+    role: input.role,
     transportationType: input.transportationType,
   });
   if (ticketRejection) {

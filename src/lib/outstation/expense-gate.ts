@@ -16,6 +16,7 @@
  * it must be assertable without a database, a CRM, or a photo.
  */
 
+import { isOutstationEvidenceWaivedRole } from "@/lib/outstation/evidence-waiver";
 import type {
   OutstationEvidenceGateStatus,
   OutstationWorkloadGateStatus,
@@ -75,18 +76,46 @@ function isGrandfathered(
  * Trusting the status column alone would make a single bad write silently bypass the whole gate.
  */
 export function resolveOutstationGateState(input: {
+  employeeRole: string;
   evidenceGateStatus: OutstationEvidenceGateStatus;
   hasArrivalPhoto: boolean;
   hasDeparturePhoto: boolean;
   workloadGateStatus: OutstationWorkloadGateStatus;
 }): OutstationGateState {
-  const { evidenceGateStatus, hasArrivalPhoto, hasDeparturePhoto, workloadGateStatus } = input;
+  const { employeeRole, evidenceGateStatus, hasArrivalPhoto, hasDeparturePhoto, workloadGateStatus } =
+    input;
 
   if (isGrandfathered(evidenceGateStatus, workloadGateStatus)) {
     return {
       blocker: null,
       isPayrollEligible: true,
       message: "Submitted before the two-photo rule — exempt from it, not checked against it.",
+    };
+  }
+
+  // Owner waiver (2026-08-19): the three roles in evidence-waiver.ts owe no photo at all, so
+  // neither photo may block them — and the check has to sit ABOVE both photo tests, because the
+  // arrival test alone would hold the request before the departure test ever ran.
+  //
+  // The WORKLOAD gate is untouched. Only the photographs were waived; a trip still has to show
+  // the day's work before it is paid, and quietly folding that into the same exemption would
+  // have released these roles from a rule the owner did not mention.
+  if (isOutstationEvidenceWaivedRole(employeeRole)) {
+    if (workloadGateStatus === "pending_workload") {
+      return {
+        blocker: "workload",
+        isPayrollEligible: false,
+        message:
+          "Photo evidence is not required for this role. Waiting for the AM/PM workload for every trip day to be captured from the CRM.",
+      };
+    }
+    return {
+      blocker: null,
+      isPayrollEligible: true,
+      message:
+        workloadGateStatus === "manual"
+          ? "Complete — photo evidence is not required for this role, and the workload was entered by hand by a system administrator."
+          : "Complete — photo evidence is not required for this role, and the trip workload was matched from the CRM.",
     };
   }
 
@@ -141,6 +170,7 @@ export function resolveOutstationGateState(input: {
  * than re-implementing the condition: two copies of a payroll gate is how they drift apart.
  */
 export function outstationRequestMayReachPayroll(input: {
+  employeeRole: string;
   evidenceGateStatus: OutstationEvidenceGateStatus;
   hasArrivalPhoto: boolean;
   hasDeparturePhoto: boolean;

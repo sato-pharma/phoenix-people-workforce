@@ -769,6 +769,7 @@ import { runOutstationDeparturePhotoRetakeTests } from "./outstation-departure-p
 import { runOutstationAllowanceDuplicateDayGuardTests } from "./outstation-allowance-duplicate-day-guard.test.ts";
 import { runOutstationCairoNoAllowanceTests } from "./outstation-cairo-no-allowance.test.ts";
 import { runOutstationClaimValidationTests } from "./outstation-claim-validation.test.ts";
+import { runOutstationEvidenceWaiverTests } from "./outstation-evidence-waiver.test.ts";
 import { runOutstationExpenseNoteAssistTests } from "./outstation-expense-note-assist.test.ts";
 import { runOutstationSubmissionWaitsForApprovalTests } from "./outstation-submission-waits-for-approval.test.ts";
 import { runDirectOrdersPharmacyStandingTests } from "./direct-orders-pharmacy-standing.test.ts";
@@ -2166,6 +2167,11 @@ await runTest(
 await runTest(
   "marketing decision confirm prompt (no approve, return or reject commits on a single unguarded click)",
   runMarketingDecisionConfirmPromptTests,
+);
+
+await runTest(
+  "outstation evidence waiver (Product / Group Product / National Sales Managers submit with no photo, and their train-bus ticket is optional)",
+  runOutstationEvidenceWaiverTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
