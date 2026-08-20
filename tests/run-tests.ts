@@ -358,6 +358,7 @@ import { runMarketingCoverageDistributorRollupTests } from "./marketing-coverage
 import { runMarketingCoverageUrlStateTests } from "./marketing-coverage-url-state.test.ts";
 import { runWeeklyExportTests } from "./weekly-export-workbook.test.ts";
 import { runMarketingValidationServiceTests } from "./marketing-validation-service.test.ts";
+import { runMarketingCompleteExistingCustomerTests } from "./marketing-complete-existing-customer.test.ts";
 import { runMarketingGovernorateCheckTests } from "./marketing-governorate-check.test.ts";
 import { runMarketingValidationPharmacyCardMinWidthTests } from "./marketing-validation-pharmacy-card-min-width.test.ts";
 import { runMarketingEvidencePhotoStorageTests } from "./marketing-evidence-photo-storage.test.ts";
@@ -1288,6 +1289,10 @@ await runTest("marketing approval inbox decision bar (per-step reject/return pow
 await runTest("marketing premium notifications + review view", runMarketingPremiumNotificationTests);
 await runTest("marketing request access", runMarketingRequestAccessTests);
 await runTest("marketing validation service", runMarketingValidationServiceTests);
+await runTest(
+  "marketing validation: capturing a customer already on record completes it instead of duplicating it",
+  runMarketingCompleteExistingCustomerTests,
+);
 await runTest("marketing governorate check", runMarketingGovernorateCheckTests);
 await runTest(
   "marketing validation: the pharmacy card can shrink, so the tabs stay on screen on a phone",
