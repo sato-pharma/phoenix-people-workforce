@@ -700,7 +700,9 @@ export function runRecruitmentCvExtractionTests() {
 
   // On screen, in both layouts, and never as a bare guess.
   const workspaceSource = read("src/components/recruitment/recruitment-workspace.tsx");
-  assert.match(workspaceSource, /<th>Applying for<\/th>/, "the desktop table must carry the column");
+  // Attributes are not pinned here — the column's padding is layout, and this assertion is about
+  // the column existing. Pinning the bare tag once made a padding fix look like a test failure.
+  assert.match(workspaceSource, /<th[^>]*>Applying for<\/th>/, "the desktop table must carry the column");
   // Mobile gets it as a card field — the owner's rule is desktop tables, mobile cards. Since
   // 2026-08-21 the value is candidateAppliedFor(), which falls back to the intake message's
   // subject line when no title was stored (15 rows of 555 store one). A card has no tooltip, so
