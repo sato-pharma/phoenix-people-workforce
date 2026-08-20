@@ -1,19 +1,17 @@
 "use client";
 
-import { MapPin, Package, Tags, Tag } from "lucide-react";
+import { MapPin, Tags, Tag } from "lucide-react";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import type { WeeklyBranchRegionAdmin } from "@/lib/sales/weekly/branch-region-map";
 import type { WeeklyProductAliasAdmin } from "@/lib/sales/weekly/product-aliases";
-import type { WeeklyMissingProduct } from "@/lib/sales/weekly/types";
 import { cn } from "@/lib/utils";
 
 import { WeeklyBranchMappingManager } from "./weekly-branch-mapping-manager";
-import { WeeklyMissingProducts } from "./weekly-missing-products";
 import { WeeklyProductMappingManager } from "./weekly-product-mapping-manager";
 
-export type WeeklyMappingTab = "branch" | "products" | "missing-products";
+export type WeeklyMappingTab = "branch" | "products";
 
 type Props = {
   initialTab?: WeeklyMappingTab;
@@ -21,31 +19,29 @@ type Props = {
   initialProductsDistributor?: string;
   branch: { initial: WeeklyBranchRegionAdmin | null; initialError: string | null };
   products: { initial: WeeklyProductAliasAdmin | null; initialError: string | null };
-  missingProducts: { initial: WeeklyMissingProduct[]; initialError: string | null };
 };
 
 const TABS: { key: WeeklyMappingTab; label: string; icon: typeof MapPin }[] = [
   { key: "branch", label: "Branch → Region", icon: MapPin },
   { key: "products", label: "Products", icon: Tags },
-  { key: "missing-products", label: "Missing Products", icon: Package },
 ];
 
 /**
- * Single canonical surface for every Weekly Sales mapping/missing task. Replaces five standalone
- * routes (branch-mapping, product-mapping, mapping, missing, missing-products) with one tabbed page,
- * mirroring the Source-of-Sales import workspace pattern. Each tab renders its existing manager/panel
- * unchanged; the three live data models are preserved.
+ * Single canonical surface for every Weekly Sales mapping task. Replaces the old standalone routes
+ * (branch-mapping, product-mapping, mapping) with one tabbed page, mirroring the Source-of-Sales
+ * import workspace pattern. Each tab renders its existing manager unchanged.
+ *
+ * A third "Missing Products" tab lived here until 2026-08-21. It listed stored rows with
+ * validation_state='warning' — a state weekly validation never produces, because any failure blocks
+ * the whole batch and nothing persists. So it was a guaranteed-empty full scan of weekly_sales_rows
+ * on every page load, under a heading that told the operator every item resolves. Unmapped labels
+ * surface in the Normalizer preview instead, before the batch is ever stored.
  */
-export function WeeklyMappingWorkspace({ initialTab, initialProductsDistributor, branch, products, missingProducts }: Props) {
+export function WeeklyMappingWorkspace({ initialTab, initialProductsDistributor, branch, products }: Props) {
   const [activeTab, setActiveTab] = useState<WeeklyMappingTab>(initialTab ?? "branch");
-  // When the user clicks "Add Alias" on the Missing Products tab we jump to Products for that
-  // distributor — the key forces a remount so the manager picks up the new initial distributor.
-  const [productsDistributor, setProductsDistributor] = useState<string | undefined>(initialProductsDistributor);
-
-  const goToProducts = (distributorCode: string) => {
-    setProductsDistributor(distributorCode);
-    setActiveTab("products");
-  };
+  // Carried from an "Add Alias" deep-link. Fixed for the life of the page now that the Missing
+  // Products tab (the only thing that used to switch it in place) is gone.
+  const productsDistributor = initialProductsDistributor;
 
   return (
     <div className="space-y-4 p-4 sm:p-6">
@@ -59,7 +55,7 @@ export function WeeklyMappingWorkspace({ initialTab, initialProductsDistributor,
         </h1>
         <p className="mt-1 text-sm font-medium text-[#64748B]">
           Everything that teaches the weekly importer how each distributor&apos;s raw file maps to official
-          Phoenix codes — branch→region, product aliases, and the unresolved labels still to map — in one place.
+          Phoenix codes — branch→region and product aliases — in one place.
         </p>
       </header>
 
@@ -85,15 +81,13 @@ export function WeeklyMappingWorkspace({ initialTab, initialProductsDistributor,
       <div className="rounded-[6px] border border-[#E2E8F0] bg-white shadow-sm">
         {activeTab === "branch" ? (
           <WeeklyBranchMappingManager initial={branch.initial} initialError={branch.initialError} />
-        ) : activeTab === "products" ? (
+        ) : (
           <WeeklyProductMappingManager
             key={productsDistributor ?? "default"}
             initial={products.initial}
             initialError={products.initialError}
             initialDistributor={productsDistributor}
           />
-        ) : (
-          <WeeklyMissingProducts initial={missingProducts.initial} initialError={missingProducts.initialError} onAddAlias={goToProducts} />
         )}
       </div>
     </div>

@@ -7,6 +7,7 @@ import { SourceOfSalesProductsTab } from "@/components/sales/source-of-sales-pro
 import type {
   WeeklyBatch,
   WeeklyDistributorOption,
+  WeeklyExcludedBranch,
   WeeklyExcludedItem,
   WeeklySalesValidationResult,
   WeeklyVerifyColumnStatus,
@@ -1173,6 +1174,47 @@ function ExcludedItemsPanel({ items }: { items: WeeklyExcludedItem[] }) {
   );
 }
 
+function ExcludedBranchesPanel({ branches }: { branches: WeeklyExcludedBranch[] }) {
+  const rows = branches.reduce((sum, branch) => sum + branch.rows, 0);
+  const netQty = branches.reduce((sum, branch) => sum + branch.netQty, 0);
+  const stockQty = branches.reduce((sum, branch) => sum + branch.stockQty, 0);
+
+  return (
+    <div className="border-b border-[#E2E8F0] bg-[#F8FAFC] px-4 py-3">
+      <h3 className="text-xs font-black uppercase tracking-wide text-[#475569]">
+        Branches excluded on purpose ({branches.length}) — {num(rows)} rows, {num(netQty)} net and {num(stockQty)} stock units kept out of the numbers
+      </h3>
+      <div className="mt-2 overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead className="text-left text-[11px] font-bold uppercase text-[#94A3B8]">
+            <tr>
+              <th className="py-1 pr-4 whitespace-nowrap">Branch</th>
+              <th className="py-1 pr-4 whitespace-nowrap">Branch name</th>
+              <th className="py-1 pr-4 text-right whitespace-nowrap">Rows</th>
+              <th className="py-1 pr-4 text-right whitespace-nowrap">Net units</th>
+              <th className="py-1 text-right whitespace-nowrap">Stock units</th>
+            </tr>
+          </thead>
+          <tbody>
+            {branches.map((branch) => (
+              <tr className="border-t border-[#E2E8F0]" key={`${branch.rawBranch}|${branch.branchColumnIndex ?? ""}`}>
+                <td className="py-1 pr-4 font-semibold text-[#0F172A] whitespace-nowrap">{branch.rawBranch || (branch.branchColumnIndex != null ? `Column ${branch.branchColumnIndex}` : "—")}</td>
+                <td className="py-1 pr-4 text-[#334155] whitespace-nowrap">{branch.branchName || "—"}</td>
+                <td className="py-1 pr-4 text-right tabular-nums text-[#334155]">{num(branch.rows)}</td>
+                <td className="py-1 pr-4 text-right tabular-nums text-[#334155]">{num(branch.netQty)}</td>
+                <td className="py-1 text-right tabular-nums text-[#334155]">{num(branch.stockQty)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="mt-2 text-xs font-medium text-[#94A3B8]">
+        These depots are ticked &quot;excluded&quot; in the Weekly Mapping branch list, so none of their volume reaches the dashboard. Untick a branch there if its sales should count.
+      </p>
+    </div>
+  );
+}
+
 function ValidationResultPanel({
   result,
   selectedWeek,
@@ -1270,6 +1312,11 @@ function ValidationResultPanel({
           reach the numbers, so every one is listed with its units: counted and shown, never a
           silent drop. */}
       {result.excludedItems.length > 0 && <ExcludedItemsPanel items={result.excludedItems} />}
+
+      {/* Excluded on purpose — depots whose branch→region mapping is ticked "excluded". Same rule as
+          the items above: their whole volume leaves the numbers, so it is counted and shown here
+          rather than disappearing with nothing to reconcile against. */}
+      {result.excludedBranches.length > 0 && <ExcludedBranchesPanel branches={result.excludedBranches} />}
 
       {isPS && (
         <p className="border-b border-[#E2E8F0] bg-[#FFF7ED] px-4 py-2 text-xs font-semibold text-[#9A3412]">

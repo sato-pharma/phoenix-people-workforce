@@ -17,7 +17,7 @@ import { normalizeCode, normalizeKey } from "@/lib/sales/weekly/mapping-normaliz
 import { parseWeeklyWorkbookBuffer } from "@/lib/sales/weekly/parser";
 import { listWeeklyProductAliasExamples, loadProductAliasIndex, upsertProductAlias, type WeeklyAliasKind } from "@/lib/sales/weekly/product-aliases";
 import { resolveWeeklyContractWithSource } from "@/lib/sales/weekly/weekly-column-profile-store";
-import type { WeeklyExcludedItem, WeeklyParsedRow } from "@/lib/sales/weekly/types";
+import type { WeeklyExcludedBranch, WeeklyExcludedItem, WeeklyParsedRow } from "@/lib/sales/weekly/types";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Weekly Sales — the NORMALIZER surface: the weekly twin of the monthly Source Normalizer.
@@ -131,12 +131,15 @@ export type WeeklyNormalizePreview = {
     fullyCoded: number;
     /** distinct raw items deliberately held out via an IGNORE alias */
     excludedItems: number;
+    /** distinct depots deliberately held out via an excluded branch→region mapping */
+    excludedBranches: number;
   };
   sampleCoded: WeeklyNormalizeCodedRow[];
   unknownProducts: WeeklyNormalizeUnknownProduct[];
   unknownBranches: WeeklyNormalizeUnknownBranch[];
   blockedIssues: WeeklyNormalizeBlockedIssue[];
   excludedItems: WeeklyExcludedItem[];
+  excludedBranches: WeeklyExcludedBranch[];
 };
 
 /** The two controlled vocabularies the mapping dropdowns bind to. */
@@ -374,6 +377,7 @@ export async function analyzeWeeklyForNormalization(input: {
     status: parsed.result.status,
     blockingReasons: parsed.result.blockingReasons,
     excludedItems: parsed.result.excludedItems,
+    excludedBranches: parsed.result.excludedBranches,
     template,
   });
 }
@@ -390,6 +394,7 @@ export function summarizeWeeklyNormalization(
     status: "blocked" | "validated";
     blockingReasons: string[];
     excludedItems: WeeklyExcludedItem[];
+    excludedBranches?: WeeklyExcludedBranch[];
     template?: WeeklyNormalizeTemplate | null;
   },
 ): WeeklyNormalizePreview {
@@ -501,6 +506,7 @@ export function summarizeWeeklyNormalization(
       regionResolved,
       fullyCoded,
       excludedItems: meta.excludedItems.length,
+      excludedBranches: (meta.excludedBranches ?? []).length,
     },
     sampleCoded,
     unknownProducts: [...unknownProducts.values()]
@@ -511,6 +517,7 @@ export function summarizeWeeklyNormalization(
       .sort(byImpact),
     blockedIssues: [...blockedIssues.values()].sort((left, right) => right.rows - left.rows),
     excludedItems: meta.excludedItems,
+    excludedBranches: meta.excludedBranches ?? [],
   };
 }
 

@@ -965,6 +965,16 @@ export async function runWeeklySalesImportTests() {
       assert.equal(excluded.result.status, "validated", "excluded branch does not block");
       assert.equal(excluded.result.totals.salesValue, 0, "excluded branch cells dropped from totals");
       assert.equal(excluded.result.rowCount, 0, "excluded branch produces no fact rows");
+      // ...but dropped from the totals is NOT dropped from the report. An excluded depot used to
+      // leave zero trace anywhere, so a mis-ticked exclusion silently removed its whole volume with
+      // nothing to reconcile against (owner's rule: count and flag, never silently drop).
+      assert.equal(excluded.result.excludedBranches.length, 1, "the excluded branch is listed, not silently dropped");
+      const depot = excluded.result.excludedBranches[0];
+      assert.equal(depot.rawBranch, "B01", "excluded branch keeps its raw distributor code");
+      assert.equal(depot.branchName, "Cairo Branch", "and its display name");
+      assert.equal(depot.rows, 2, "both source rows of the depot are counted");
+      assert.equal(depot.netQty, 7, "excluded net units counted = 10 sold − 3 returned");
+      assert.equal(depot.stockQty, 30, "excluded stock units counted");
     }
 
     // IGNORE alias ("we don't sell this") → kept out of the numbers, listed, and NEVER blocking.

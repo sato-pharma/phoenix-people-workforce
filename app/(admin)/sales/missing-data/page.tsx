@@ -5,8 +5,6 @@ import { resolveLandingPathForRole } from "@/lib/auth/landing";
 import { assertPermission, resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAuthenticatedPageAccess } from "@/lib/auth/page-access";
 import { loadSalesReferenceGaps, type SalesReferenceGaps } from "@/lib/sales/reference-gaps";
-import { loadWeeklyMissingProducts } from "@/lib/sales/weekly/service";
-import type { WeeklyMissingProduct } from "@/lib/sales/weekly/types";
 
 export const dynamic = "force-dynamic";
 // The gap scan pages every validated import row; give it more than the default function budget.
@@ -25,19 +23,11 @@ export default async function MissingDataPage() {
 
   let data: SalesReferenceGaps | null = null;
   let loadError: string | null = null;
-  let weekly: WeeklyMissingProduct[] = [];
-  let weeklyError: string | null = null;
   try {
     await assertPermission(accessContext, "sales", "import");
     data = await loadSalesReferenceGaps();
   } catch (error) {
     loadError = error instanceof Error ? error.message : "Failed to scan for missing data.";
   }
-  try {
-    weekly = await loadWeeklyMissingProducts();
-  } catch (error) {
-    weeklyError = error instanceof Error ? error.message : "Failed to load weekly missing products.";
-  }
-
-  return <MissingDataWorkspace data={data} loadError={loadError} weekly={weekly} weeklyError={weeklyError} />;
+  return <MissingDataWorkspace data={data} loadError={loadError} />;
 }
