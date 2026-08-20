@@ -111,6 +111,7 @@ import { runProbationCrmUnmappedTests } from "./probation-crm-unmapped.test.ts";
 import { runProbationFeedbackInboxTests } from "./probation-feedback-inbox.test.ts";
 import { runProbationOutcomesAnalyticsTests } from "./probation-outcomes-analytics.test.ts";
 import { runProbationCaptureUisTests } from "./probation-capture-uis.test.ts";
+import { runProbationManualScorecardTests } from "./probation-manual-scorecard.test.ts";
 import { runProbationAuditFixesTests } from "./probation-audit-fixes.test.ts";
 import { runProbationAuditFixesRound2Tests } from "./probation-audit-fixes-round2.test.ts";
 import { runProbationLegacyWritesToCasesTests } from "./probation-legacy-writes-to-cases.test.ts";
@@ -996,6 +997,7 @@ await runTest("probation CRM-unmapped badge (E6 classifier + dashboard wiring)",
 await runTest("probation manager feedback inbox (E2 portal wiring)", runProbationFeedbackInboxTests);
 await runTest("probation outcomes analytics (E4 rollups + predictiveness)", runProbationOutcomesAnalyticsTests);
 await runTest("probation capture UIs (C1–C6 feedback/assessment/dev-action write forms)", runProbationCaptureUisTests);
+await runTest("probation manual scorecards (open a DV-Day the CRM never produced)", runProbationManualScorecardTests);
 await runTest("probation audit fixes (F1–F13 pre-merge hardening)", runProbationAuditFixesTests);
 await runTest("probation audit fixes round 2 (R1–R10 deep hardening)", runProbationAuditFixesRound2Tests);
 await runTest("probation legacy decision write-through to cases (dashboard/email desync fix)", runProbationLegacyWritesToCasesTests);

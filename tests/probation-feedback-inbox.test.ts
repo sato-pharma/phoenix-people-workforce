@@ -9,7 +9,11 @@ function src(p: string) { return readFileSync(p, "utf8"); }
 export function runProbationFeedbackInboxTests() {
   const page = src("app/employee-portals/probation/page.tsx");
   assert.match(page, /listFeedbackTasks\(access\)/, "page loads the caller's feedback tasks");
-  assert.match(page, /if \(hasTracker && canSubmitManagerFeedback\)/, "tasks only loaded for feedback-submitting roles with a scoped team");
+  // Gated on the role tiers ONLY. It was additionally gated on `hasTracker` until 2026-08-20, which
+  // hid live overdue tasks whenever every probationer the caller owed feedback for had passed day 90
+  // and dropped out of the tracker window.
+  assert.match(page, /if \(canSubmitManagerFeedback\) \{/, "tasks loaded for feedback-submitting roles");
+  assert.doesNotMatch(page, /if \(hasTracker && canSubmitManagerFeedback\)/, "the tracker window must not gate the feedback inbox");
   assert.match(page, /<ProbationFeedbackTasksPanel tasks=\{feedbackTasks\}/, "panel is rendered");
   // Employee NAME (not code) is resolved for display (memory rule).
   assert.match(page, /nameByHrId\.get\(t\.employeeHrId\.toLowerCase\(\)\)/, "task shows the employee name");

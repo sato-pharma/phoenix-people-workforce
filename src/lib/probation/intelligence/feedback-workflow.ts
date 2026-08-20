@@ -11,6 +11,7 @@
 
 import { writeAuditLog } from "@/lib/admin/audit";
 import { normalizeHrId, type AccessContext } from "@/lib/auth/permissions";
+import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { isProbationAdministrator } from "@/lib/probation/service";
 
@@ -151,6 +152,32 @@ export async function listFeedbackTasks(
       createdAt: r.created_at ?? null,
       sla: computeFeedbackSla(r.dv_date, nowIso, config.sla, r.created_at ?? null),
     }));
+}
+
+/**
+ * Display names for a set of probationers, keyed by normalized HR_ID.
+ *
+ * The feedback inbox used to borrow its names from the tracker rows the page had already loaded,
+ * which silently degraded to a bare HR code the moment a task's rep was outside that list — a rep
+ * past day 90 still owes feedback but no longer appears in the tracker window. Owner rule: show
+ * human-readable names, never raw codes.
+ */
+export async function resolveFeedbackTaskNames(
+  employeeHrIds: readonly string[],
+): Promise<Map<string, string>> {
+  const names = new Map<string, string>();
+  const keys = Array.from(new Set(employeeHrIds.map((hrId) => norm(hrId)).filter(Boolean)));
+  if (keys.length === 0) return names;
+  // Match on either stored casing — employees.hr_id is uppercase for nearly every row.
+  const variants = Array.from(new Set(keys.flatMap((k) => [k, k.toUpperCase()])));
+  const { data } = await getSupabaseAdmin()
+    .from("employees")
+    .select("hr_id, full_name, nickname")
+    .in("hr_id", variants);
+  for (const row of (data ?? []) as Array<{ hr_id: string; full_name: string | null; nickname: string | null }>) {
+    if (row.full_name) names.set(norm(row.hr_id), resolveEmployeeDisplayName(row.full_name, row.nickname));
+  }
+  return names;
 }
 
 async function loadDvDay(dvDayId: string): Promise<DvDayRow | null> {

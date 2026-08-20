@@ -91,6 +91,19 @@ export function withinWindow(dvDate: string, start: string | null, end: string |
 }
 
 /**
+ * Inclusive clamp of a date-only string into [start, end]; a missing bound is open on that side.
+ * The write-side companion to withinWindow, used when a DV-Day is opened BY HAND (manual-dv-day.ts)
+ * rather than detected from CRM: such a day is dated "today", but a case can still be open past its
+ * end date, and an unclamped date would land outside the window every window-scoped reader filters
+ * on. Lives here so the clamp and the test it must satisfy stay one file apart from each other.
+ */
+export function clampToWindow(date: string, start: string | null, end: string | null): string {
+  if (start && date < start) return start;
+  if (end && date > end) return end;
+  return date;
+}
+
+/**
  * Validate one detected DV-Day. Order: dedup (idempotency) → identity → role → window.
  * The first failing gate assigns the status; a day passing all gates is "validated".
  */
