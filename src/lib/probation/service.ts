@@ -254,6 +254,87 @@ function canSubmitManagerFeedback(
   return isDirectManagerOrManagerOfManager(directory, viewer, employee);
 }
 
+/**
+ * Probation SCORING scope for a set of employees, by HR_ID — who this caller may open a probation
+ * scorecard for, for surfaces that work from `probation_cases` rather than from the
+ * employee-directory window.
+ *
+ * Built on the tracker's own per-row rule (canReadProbationEmployee) with two deliberate
+ * differences, each of which exists because scoring is not reading:
+ *
+ * 1. NO date or job-title window. getProbationRows additionally hides anyone past day 90 or not
+ *    titled "medical rep" — right for the tracker, wrong here: a case still open past its end date
+ *    is still the caller's to score, and its evaluators still owe it feedback.
+ * 2. National Sales Manager is national. The title is held once per product line today (three
+ *    live holders), so the read rule's "same line as the viewer" default silently confined each
+ *    NSM to their own line's probationers — while `config.requirements.nsm = 1` demands an NSM
+ *    component on EVERY case. Owner instruction 2026-08-20: an NSM may score anyone in probation,
+ *    not only their own line.
+ *
+ *    A per-user `line_scope_override` still wins. That column is how the owner deliberately pins
+ *    a manager to named lines (Ahmed Sharaf spans Pedia + Anti Infective), so an NSM who has one
+ *    keeps exactly the lines it lists — setting an override is how to narrow an NSM back down,
+ *    with no code change.
+ *
+ * This widens WHO MAY BE SCORED and nothing else: the tracker, the exports and every other
+ * probation read still go through canReadProbationEmployee unchanged.
+ *
+ * Returns the normalized (lowercased) HR_IDs the caller may score.
+ */
+export async function filterProbationScorableHrIds(
+  access: AccessContext,
+  employeeHrIds: readonly string[],
+): Promise<Set<string>> {
+  return filterProbationHrIds(access, employeeHrIds, canScoreProbationEmployee);
+}
+
+function canScoreProbationEmployee(
+  access: AccessContext,
+  employee: EmployeeScopeRow,
+  viewer: EmployeeScopeRow | null,
+  directory: EmployeeScopeRow[] = [],
+  viewerAllowedLines: string[] | null = null,
+) {
+  if (access.role === "National Sales Manager" && !(viewerAllowedLines && viewerAllowedLines.length > 0)) {
+    return true;
+  }
+  return canReadProbationEmployee(access, employee, viewer, directory, viewerAllowedLines);
+}
+
+async function filterProbationHrIds(
+  access: AccessContext,
+  employeeHrIds: readonly string[],
+  isAllowed: (
+    access: AccessContext,
+    employee: EmployeeScopeRow,
+    viewer: EmployeeScopeRow | null,
+    directory: EmployeeScopeRow[],
+    viewerAllowedLines: string[] | null,
+  ) => boolean,
+): Promise<Set<string>> {
+  const wanted = new Set(
+    employeeHrIds.map((hrId) => normalizeHrId(hrId)).filter((hrId): hrId is string => Boolean(hrId)),
+  );
+  if (wanted.size === 0) return new Set();
+
+  const [{ employees }, viewerAllowedLines] = await Promise.all([
+    getEmployeeDirectory(),
+    resolveViewerAllowedLines(access),
+  ]);
+  const viewerHrId = normalizeHrId(access.hrId);
+  const viewer = employees.find((employee) => normalizeHrId(employee.hrId) === viewerHrId) ?? null;
+
+  const allowed = new Set<string>();
+  for (const employee of employees) {
+    const hrId = normalizeHrId(employee.hrId);
+    if (!hrId || !wanted.has(hrId)) continue;
+    if (isAllowed(access, employee, viewer, employees, viewerAllowedLines)) {
+      allowed.add(hrId);
+    }
+  }
+  return allowed;
+}
+
 function isInManagerHierarchy(directory: EmployeeScopeRow[], manager: EmployeeScopeRow | null, employee: EmployeeScopeRow) {
   if (!manager) return false;
   const managerHrId = normalizeHrId(manager.hrId);

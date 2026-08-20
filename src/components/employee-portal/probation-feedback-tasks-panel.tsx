@@ -172,7 +172,11 @@ export function ProbationFeedbackTasksPanel({ tasks }: { tasks: FeedbackTaskView
                           )}
                         </div>
                         <div className="text-xs text-slate-500">
-                          Double-Visit {t.dvDate} · {t.visitCount} visit{t.visitCount === 1 ? "" : "s"}
+                          {/* visit_count 0 = a scorecard opened by hand (manual-dv-day.ts), not a
+                              captured field day that found nothing. */}
+                          {t.visitCount === 0
+                            ? `Scorecard opened ${t.dvDate}`
+                            : `Double-Visit ${t.dvDate} · ${t.visitCount} visit${t.visitCount === 1 ? "" : "s"}`}
                           {t.evaluatorRole ? ` · as ${t.evaluatorRole}` : ""}
                         </div>
                       </div>

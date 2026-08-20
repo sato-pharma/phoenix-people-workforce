@@ -128,13 +128,20 @@ export function StructuredFeedbackForm({
 
   const cell = "h-9 w-16 rounded border border-slate-200 px-2 text-sm text-center";
   const area = "w-full rounded border border-slate-200 px-3 py-2 text-sm";
+  // A hand-opened scorecard (manual-dv-day.ts) carries no CRM visits. Say so rather than
+  // printing "0 visits", which reads like a captured field day that found nothing.
+  const isManualScorecard = visitCount === 0;
 
   return (
     <div className="flex flex-col gap-4">
       <div className="rounded-lg border border-slate-200 bg-white p-4">
-        <h1 className="text-base font-semibold text-slate-900">Double-Visit feedback — {employeeName}</h1>
+        <h1 className="text-base font-semibold text-slate-900">
+          {isManualScorecard ? "Probation scorecard" : "Double-Visit feedback"} — {employeeName}
+        </h1>
         <p className="mt-0.5 text-xs text-slate-500">
-          {dvDate} · {visitCount} visit{visitCount === 1 ? "" : "s"}{evaluatorRoleLabel ? ` · as ${evaluatorRoleLabel}` : ""}
+          {dvDate} ·{" "}
+          {isManualScorecard ? "opened manually — no field visits captured" : `${visitCount} visit${visitCount === 1 ? "" : "s"}`}
+          {evaluatorRoleLabel ? ` · as ${evaluatorRoleLabel}` : ""}
         </p>
       </div>
 

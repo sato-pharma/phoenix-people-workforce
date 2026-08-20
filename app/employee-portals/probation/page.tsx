@@ -6,6 +6,10 @@ import {
   type FeedbackTaskView,
 } from "@/components/employee-portal/probation-feedback-tasks-panel";
 import {
+  ProbationScorecardLauncher,
+  type ScorableProbationerView,
+} from "@/components/employee-portal/probation-scorecard-launcher";
+import {
   EmployeePortalEmptyState,
   EmployeePortalPageShell,
 } from "@/components/employee-portal/enterprise-shell";
@@ -28,7 +32,12 @@ import {
   isProbationSchemaMissing,
   probationErrorMessage,
 } from "@/lib/probation/service";
-import { listFeedbackTasks } from "@/lib/probation/intelligence/feedback-workflow";
+import {
+  listFeedbackTasks,
+  resolveFeedbackTaskNames,
+} from "@/lib/probation/intelligence/feedback-workflow";
+import { listScorableProbationers } from "@/lib/probation/intelligence/manual-dv-day";
+import { formatDateValue } from "@/lib/i18n/format";
 import {
   getProbationOutcomesAnalytics,
   type OutcomesAnalytics,
@@ -37,6 +46,14 @@ import { ProbationAnalyticsView } from "@/components/probation/probation-analyti
 import type { ProbationRow } from "@/lib/probation/types";
 
 export const dynamic = "force-dynamic";
+
+// Human-readable evaluator role for the scorecard launcher — owner rule: names, never codes.
+const EVALUATOR_ROLE_LABEL: Record<string, string> = {
+  dm: "District Manager",
+  nsm: "National Sales Manager",
+  tm: "Training Manager",
+  pm_gpm: "Product Manager",
+};
 
 /* ---------- error handling ---------- */
 
@@ -121,31 +138,32 @@ export default async function EmployeePortalProbationPage({
 
   const hasTracker = Boolean(initialData && initialData.length > 0);
 
-  // Nothing to show — no scoped probationers AND not an analytics viewer.
-  if (!hasTracker && !showAnalytics) {
-    return (
-      <EmployeePortalEmptyState
-        message="No active probation records found for your current scope."
-        title="Probation Tracker"
-      />
-    );
-  }
-
   // Manager feedback inbox (E2): the signed-in evaluator's open, validated Double-Visit days that still
   // owe structured feedback. Best-effort — the intelligence tables may not exist in every environment,
   // and this panel must never break the tracker below it.
+  //
+  // Loaded independently of `hasTracker` (2026-08-20): the tracker window hides anyone past day 90,
+  // but their case stays open and their evaluators still owe feedback, so gating the inbox on it
+  // could hide live, overdue work.
   let feedbackTasks: FeedbackTaskView[] = [];
-  if (hasTracker && canSubmitManagerFeedback) {
+  if (canSubmitManagerFeedback) {
     try {
       const nameByHrId = new Map<string, string>();
-      for (const row of initialData!) {
+      for (const row of initialData ?? []) {
         if (row.full_name) nameByHrId.set(row.hr_id.toLowerCase(), row.full_name);
       }
       const tasks = await listFeedbackTasks(access);
+      // Fill any name the tracker rows did not cover — never fall through to a bare HR code.
+      const resolvedNames = await resolveFeedbackTaskNames(
+        tasks.filter((t) => !nameByHrId.has(t.employeeHrId.toLowerCase())).map((t) => t.employeeHrId),
+      );
       feedbackTasks = tasks.map((t) => ({
         dvDayId: t.dvDayId,
         employeeHrId: t.employeeHrId,
-        employeeName: nameByHrId.get(t.employeeHrId.toLowerCase()) ?? null,
+        employeeName:
+          nameByHrId.get(t.employeeHrId.toLowerCase()) ??
+          resolvedNames.get(t.employeeHrId.toLowerCase()) ??
+          null,
         evaluatorRole: t.evaluatorRole,
         dvDate: t.dvDate,
         visitCount: t.visitCount,
@@ -158,6 +176,39 @@ export default async function EmployeePortalProbationPage({
     }
   }
 
+  // "Score a probationer" (owner request 2026-08-20): the probationers in scope this evaluator has
+  // NO open Double-Visit task for — the people the CRM-fed inbox above structurally cannot reach.
+  // Kept disjoint from that inbox so no rep is listed twice. Best-effort, same as the inbox.
+  let scorableProbationers: ScorableProbationerView[] = [];
+  if (canSubmitManagerFeedback) {
+    try {
+      const scorable = await listScorableProbationers(access);
+      scorableProbationers = scorable
+        .filter((p) => !p.openDvDayId)
+        .map((p) => ({
+          employeeHrId: p.employeeHrId,
+          employeeName: p.employeeName,
+          evaluatorRoleLabel: EVALUATOR_ROLE_LABEL[p.evaluatorRole] ?? p.evaluatorRole,
+          probationEndLabel: formatDateValue(p.probationEndDate),
+          lineLabel: p.lineName ?? "Unassigned line",
+          submittedCount: p.submittedCount,
+          requiredCount: p.requiredCount,
+        }));
+    } catch {
+      scorableProbationers = [];
+    }
+  }
+
+  // Nothing to show — no scoped probationers, nothing to score, and not an analytics viewer.
+  if (!hasTracker && feedbackTasks.length === 0 && scorableProbationers.length === 0 && !showAnalytics) {
+    return (
+      <EmployeePortalEmptyState
+        message="No active probation records found for your current scope."
+        title="Probation Tracker"
+      />
+    );
+  }
+
   return (
     <EmployeePortalPageShell
       badge="People Operations"
@@ -168,18 +219,17 @@ export default async function EmployeePortalProbationPage({
       <div className="flex flex-wrap items-center gap-2">
         <ScopeBadge scope={access.scope} />
       </div>
+      <ProbationFeedbackTasksPanel tasks={feedbackTasks} />
+      <ProbationScorecardLauncher probationers={scorableProbationers} />
       {hasTracker ? (
-        <>
-          <ProbationFeedbackTasksPanel tasks={feedbackTasks} />
-          <EmployeeProbationDashboard
-            canExport={canExportProbation(access)}
-            canManageDvCheckboxes={canManageDvCheckboxes}
-            canSubmitManagerFeedback={canSubmitManagerFeedback}
-            feedbackCycle={feedbackCycle}
-            feedbackEmployeeHrId={feedbackEmployeeHrId}
-            initialData={initialData!}
-          />
-        </>
+        <EmployeeProbationDashboard
+          canExport={canExportProbation(access)}
+          canManageDvCheckboxes={canManageDvCheckboxes}
+          canSubmitManagerFeedback={canSubmitManagerFeedback}
+          feedbackCycle={feedbackCycle}
+          feedbackEmployeeHrId={feedbackEmployeeHrId}
+          initialData={initialData!}
+        />
       ) : (
         <p className="rounded-lg border border-slate-200 bg-white px-4 py-6 text-sm text-slate-500">
           No probationers are currently in your scoped team.
