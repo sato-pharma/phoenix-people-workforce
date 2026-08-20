@@ -643,6 +643,23 @@ export const accessRegistry = [
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/sales/normalizer/mappings/save", permission: { resource: "sales", action: "import" }, csrfExemptReason: "Authenticated admin JSON-only mapping save: writes selected product, territory, and customer aliases after server-side permission checks." }),
   sessionApi({ audit: { classification: "export", required: true }, methods: ["POST"], pattern: "/api/sales/normalizer/mappings/template", permission: { resource: "sales", action: "export" }, csrfExemptReason: "Read-only export: lists the distinct unmapped codes from the uploaded raw sheet as a fill-in XLSX; persists nothing." }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/sales/normalizer/import-validated", permission: { resource: "sales", action: "import" }, csrfExemptReason: "Authenticated admin import: normalizes the uploaded raw sheet, builds the coded workbook in memory, and persists ONLY when it passes the Source-of-Sales validator." }),
+  // The five below had no entry of their own and fell through to the /api/sales/** blanket at the
+  // end of this block, which declares sales:read and carries NO audit classification — so four
+  // routes that WRITE to the source-of-sales alias and import tables left no audit row, and the
+  // registry understated their real gate to anyone reading it. Nothing was reachable that should
+  // not have been: every handler under /api/sales/normalizer opens with its own
+  // `role !== "Super Admin" && scope !== "system"` check, which is far stricter than the blanket
+  // (and `scopeForRole` never returns "system" for any role, so that half is unreachable from a
+  // request). Confirmed 2026-08-21 by a 16-role dev-auth sweep: Super Admin through on all 13
+  // routes, every other role 403 on all 13 — the CEO included.
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/sales/normalizer/import", permission: { resource: "sales", action: "import" }, csrfExemptReason: "Authenticated admin import: normalizes the uploaded raw sheet and persists the coded rows; the unvalidated sibling of import-validated." }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/sales/normalizer/mappings/auto-map", permission: { resource: "sales", action: "import" }, csrfExemptReason: "Authenticated admin JSON-only auto-mapping: applies the AI's confident customer→brick matches to the alias tables and parks the rest for review." }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/sales/normalizer/mappings/learn-from-history", permission: { resource: "sales", action: "import" }, csrfExemptReason: "Authenticated admin backfill: mines every source_of_sales_import_rows row for product_name→product_code and client_code→brick_id pairs and upserts them into the alias tables. Idempotent, but it writes on EVERY call — the handler has no input to bail on." }),
+  sessionApi({ audit: { classification: "access-read", required: true }, methods: ["POST"], pattern: "/api/sales/normalizer/mappings/clusters", permission: { resource: "sales", action: "import" }, csrfExemptReason: "Read-only JSON request: clusters the submitted unknown labels in memory so near-duplicates can be mapped in one go; persists nothing." }),
+  // Split by method on purpose: GET reports centroid coverage, POST rebuilds every brick centroid.
+  // One entry each, so the rebuild is classified as the mutation it is instead of inheriting a read.
+  sessionApi({ audit: { classification: "access-read", required: true }, methods: readOnly, pattern: "/api/sales/normalizer/brick-centroids", permission: { resource: "sales", action: "import" } }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/sales/normalizer/brick-centroids", permission: { resource: "sales", action: "import" }, csrfExemptReason: "Authenticated admin rebuild: recomputes and persists the geographic centroid of every brick from its customer coordinates. Writes on EVERY call — the handler has no input to bail on." }),
   // Had no entry of its own and fell through to the /api/sales/** blanket below, which carries no
   // audit classification — so this download escaped the export-audit guard twice over (the guard's
   // own regex also required a slash-delimited "template", missing the hyphenated name). The file is

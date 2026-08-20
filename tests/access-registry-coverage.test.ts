@@ -61,6 +61,21 @@ export function runAccessRegistryCoverageTests() {
   assert.equal(normalizerSaveEntry?.audit.classification, "mutation", "normalizer mapping save must be classified as a mutation");
   assert.deepEqual(normalizerSaveEntry?.permission, { resource: "sales", action: "import" }, "normalizer mapping save must require sales import access");
 
+  // These two write to the alias tables the moment the permission check clears — neither handler has
+  // an input to bail on — so their classification is the one thing standing between a full rebuild
+  // of the source-of-sales crosswalks and no record that it happened. Pin them by name.
+  for (const route of ["/api/sales/normalizer/mappings/learn-from-history", "/api/sales/normalizer/brick-centroids"]) {
+    const entry = findAccessRegistryEntry(route, "POST");
+    assert.equal(entry?.pattern, route, `${route} POST must resolve to its own entry, not a blanket`);
+    assert.equal(entry?.audit.classification, "mutation", `${route} POST writes on every call and must be classified as a mutation`);
+  }
+  // ...and the GET half of that split pair must still resolve to the read entry, not the POST one.
+  assert.equal(
+    findAccessRegistryEntry("/api/sales/normalizer/brick-centroids", "GET")?.audit.classification,
+    "access-read",
+    "brick-centroids GET only reports coverage and must stay classified as a read",
+  );
+
   const files = walkRouteFiles(apiRoot);
   assert.ok(files.length > 0, "route file scan must find app/api route handlers");
 
@@ -70,6 +85,8 @@ export function runAccessRegistryCoverageTests() {
   const missingCsrf: string[] = [];
   const missingExportAudit: string[] = [];
   const missingPublicClassification: string[] = [];
+  const normalizerFellThrough: string[] = [];
+  const normalizerMissingAudit: string[] = [];
 
   for (const file of files) {
     const source = readFileSync(file, "utf8");
@@ -102,6 +119,17 @@ export function runAccessRegistryCoverageTests() {
       if (exportLikeRoute && !entry.audit.required) {
         missingExportAudit.push(`${method} ${route}`);
       }
+
+      // Both Source Normalizers — the monthly one at /api/sales/normalizer/** and the weekly one at
+      // /api/sales/weekly/normalizer/** — hold the alias crosswalks the whole sales pipeline codes
+      // against. Five monthly routes reached production with no entry of their own, inheriting
+      // sales:read and no audit classification from the /api/sales/** blanket; four of those five
+      // write. Pinning the module as a whole (rather than route by route, as `mappings/save` was)
+      // is what stops the next one added here from falling through the same way.
+      if (/^\/api\/sales\/(weekly\/)?normalizer(\/|$)/.test(route)) {
+        if (entry.pattern.includes("**")) normalizerFellThrough.push(`${method} ${route} -> ${entry.pattern}`);
+        if (!entry.audit.required || !entry.audit.classification) normalizerMissingAudit.push(`${method} ${route}`);
+      }
     }
   }
 
@@ -111,4 +139,6 @@ export function runAccessRegistryCoverageTests() {
   assert.deepEqual(missingPermissionGuard, [], "session routes must use assertPermission/canAccess or an approved domain guard");
   assert.deepEqual(missingCsrf, [], "CSRF-required mutation routes must call assertSameOriginMutation(request)");
   assert.deepEqual(missingExportAudit, [], "export/template/download routes must require audit classification in the registry");
+  assert.deepEqual(normalizerFellThrough, [], "every Source Normalizer route must have its own registry entry, not a wildcard blanket");
+  assert.deepEqual(normalizerMissingAudit, [], "every Source Normalizer route must declare an audit classification");
 }
