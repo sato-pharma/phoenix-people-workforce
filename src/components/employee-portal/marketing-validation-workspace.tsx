@@ -202,6 +202,11 @@ type PharmacyLine = {
 type CustomerLine = {
   area: string;
   capture: CaptureState;
+  /**
+   * Set only by "Capture evidence" on the Pending tab: the id of the customer already on record
+   * that this capture completes. Empty on the ordinary path, which mints a new customer.
+   */
+  existingCustomerId: string;
   governorate: string;
   key: string;
   mobile: string;
@@ -300,6 +305,7 @@ function newCustomerLine(distributorId = ""): CustomerLine {
   return {
     area: "",
     capture: emptyCapture(),
+    existingCustomerId: "",
     governorate: "",
     key: stableKey("customer"),
     mobile: "",
@@ -1860,6 +1866,10 @@ export function MarketingValidationWorkspace() {
         ...payloadCapture(customer.capture),
         customerType: customer.type,
         displayName: customer.name,
+        // Present only when the rep came from the Pending tab. It redirects the server from
+        // minting a new customer to completing the one already waiting, which is the whole point:
+        // capturing a customer that exists used to create a second copy of it.
+        existingCustomerId: customer.existingCustomerId || null,
         extractedAreaName: customer.area,
         extractedGovernorateName: customer.governorate,
         mobileNumber: customer.mobile,
@@ -1889,6 +1899,32 @@ export function MarketingValidationWorkspace() {
 
   function resetForm() {
     setCustomers([newCustomerLine(defaultDistributorId)]);
+  }
+
+  /**
+   * "Capture evidence" on the Not Usable Yet tab.
+   *
+   * Seeds the Validate form with the customer ALREADY on record so the capture lands on that row
+   * instead of minting a second copy of it. Until this existed the only way to photograph a
+   * customer you already owned was to type it in again as a new one — which is how production ended
+   * up holding the same doctor under two spellings, and why 39 imported customers sat with missing
+   * evidence and no route to supply it. Identity is carried but locked: the server updates the
+   * capture columns only, so re-labelling here would be a silent no-op.
+   */
+  function startCompletingCustomer(group: ValidatedCustomerGroup) {
+    const customer = group.rows[0]?.customer;
+    setCustomers([{
+      ...newCustomerLine(defaultDistributorId),
+      area: customer?.extractedAreaName ?? "",
+      existingCustomerId: group.key,
+      governorate: customer?.extractedGovernorateName ?? "",
+      name: group.customerName,
+      // The customer ROW, not `group.customerType` — the group widens it to `string` for display,
+      // and the form field is the narrow union.
+      type: customer?.customerType ?? "clinic",
+    }]);
+    setMessage(null);
+    setActiveTab("validation");
   }
 
   async function submitValidation(event: React.FormEvent<HTMLFormElement>) {
@@ -2203,10 +2239,24 @@ export function MarketingValidationWorkspace() {
                     </button>
                   </div>
 
+                  {/* Completing a customer already on record supplies its MISSING EVIDENCE only.
+                      Name and type are shown so the rep can see who she is standing in front of,
+                      and locked because the server updates the capture columns alone — an editable
+                      field the save would ignore is worse than no field at all. */}
+                  {customer.existingCustomerId ? (
+                    <div className="flex items-center gap-2 border-b border-amber-100 bg-amber-50 px-3 py-2 sm:px-4">
+                      <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-amber-600" />
+                      <p className="overflow-hidden text-ellipsis whitespace-nowrap text-[12px] font-bold text-amber-800">
+                        Completing a customer already on record — name and type are locked
+                      </p>
+                    </div>
+                  ) : null}
+
                   <div className="grid gap-4 p-3 sm:p-4 lg:grid-cols-6">
                     <div className="lg:col-span-2">
                       <Field label="Customer Type">
                         <SelectField
+                          disabled={Boolean(customer.existingCustomerId)}
                           onChange={(value) => updateCustomer(customer.key, { type: value as MarketingCustomerType })}
                           value={customer.type}
                         >
@@ -2221,7 +2271,8 @@ export function MarketingValidationWorkspace() {
                     <div className="lg:col-span-4">
                       <Field label="Customer Name">
                         <Input
-                          className="h-10 rounded-sm border-slate-200 bg-white text-[13px]"
+                          className="h-10 rounded-sm border-slate-200 bg-white text-[13px] disabled:cursor-not-allowed disabled:opacity-60"
+                          disabled={Boolean(customer.existingCustomerId)}
                           onChange={(event) => updateCustomer(customer.key, { name: event.target.value })}
                           placeholder="Customer name"
                           value={customer.name}
@@ -2662,6 +2713,16 @@ export function MarketingValidationWorkspace() {
                             <span className="font-semibold text-slate-700">{customer?.extractedAreaName || customer?.regionName || "Not captured"}</span>
                           </div>
                         </div>
+                        {customer && customer.evidenceStatus !== "complete" ? (
+                          <button
+                            className="mt-2.5 flex h-8 w-full items-center justify-center gap-1.5 whitespace-nowrap rounded-sm border border-orange-300 bg-orange-600 px-2 text-[12px] font-bold text-white transition hover:bg-orange-700"
+                            onClick={() => startCompletingCustomer(group)}
+                            type="button"
+                          >
+                            <Camera className="h-3.5 w-3.5" />
+                            Capture Evidence
+                          </button>
+                        ) : null}
                       </div>
                     );
                   })}
@@ -2677,7 +2738,8 @@ export function MarketingValidationWorkspace() {
                         <th className="border-r border-slate-100 px-3 py-2.5">Customer</th>
                         <th className="border-r border-slate-100 px-3 py-2.5">Blocked By</th>
                         <th className="border-r border-slate-100 px-3 py-2.5">Area</th>
-                        <th className="px-3 py-2.5 text-center">Pharmacies</th>
+                        <th className="border-r border-slate-100 px-3 py-2.5 text-center">Pharmacies</th>
+                        <th className="px-3 py-2.5 text-center">Action</th>
                       </tr>
                     </thead>
                     <tbody className="bg-white text-[13px]">
@@ -2701,7 +2763,7 @@ export function MarketingValidationWorkspace() {
                             <td className="border-r border-slate-100 px-3 py-2.5 font-medium text-slate-700">
                               {customer?.extractedAreaName || customer?.regionName || "Not captured"}
                             </td>
-                            <td className="px-3 py-2.5 text-center">
+                            <td className="border-r border-slate-100 px-3 py-2.5 text-center">
                               <button
                                 className="inline-flex h-7 min-w-7 items-center justify-center gap-1 rounded-sm border border-orange-200 bg-orange-50 px-2 text-[12px] font-bold text-orange-700 transition hover:bg-orange-100"
                                 onClick={() => setSelectedValidatedCustomerKey(group.key)}
@@ -2709,6 +2771,23 @@ export function MarketingValidationWorkspace() {
                               >
                                 {pharmaciesForCustomer.length}
                               </button>
+                            </td>
+                            {/* The customer's own evidence is the half a rep can actually fix in the
+                                field. When it is already complete the block is on the pharmacy, and
+                                offering "Capture Evidence" would only earn a server rejection. */}
+                            <td className="px-3 py-2.5 text-center">
+                              {customer && customer.evidenceStatus !== "complete" ? (
+                                <button
+                                  className="inline-flex h-7 items-center justify-center gap-1.5 whitespace-nowrap rounded-sm border border-orange-300 bg-orange-600 px-2.5 text-[12px] font-bold text-white transition hover:bg-orange-700"
+                                  onClick={() => startCompletingCustomer(group)}
+                                  type="button"
+                                >
+                                  <Camera className="h-3.5 w-3.5" />
+                                  Capture Evidence
+                                </button>
+                              ) : (
+                                <span className="whitespace-nowrap text-[12px] font-medium text-slate-400">Pharmacy side</span>
+                              )}
                             </td>
                           </tr>
                         );

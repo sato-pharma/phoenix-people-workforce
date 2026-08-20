@@ -48,6 +48,7 @@ import { logError, logWarning } from "@/lib/observability/log";
 import {
   MARKETING_CUSTOMER_SPECIALITIES,
   MARKETING_GOVERNORATE_HOLD_PREFIX,
+  MARKETING_MANUAL_HOLD_MARKER,
   UNVERIFIED_CODE_REASON_MIN_LENGTH,
 } from "@/lib/marketing-requests/types";
 import type {
@@ -848,6 +849,8 @@ type NormalizedMarketingValidationCustomer = {
   evidencePhotoDataUrl: string | null;
   evidencePhotoName: string | null;
   evidenceStatus: MarketingEvidenceStatus;
+  /** Set when this capture completes a customer already on record. See the input type's note. */
+  existingCustomerId: string | null;
   extractedAreaName: string | null;
   extractedGovernorateName: string | null;
   mobileNumber: string | null;
@@ -1747,6 +1750,20 @@ export function buildGovernorateMismatchNote(check: MarketingGovernorateCheck): 
 export const MARKETING_PENDING_EVIDENCE_NOTE =
   "Waiting for a complete live photo and location on both the customer and the pharmacy.";
 
+/** Stamped on a link released because the customer it belongs to was finally captured in the field. */
+export const MARKETING_RELEASED_BY_COMPLETION_NOTE =
+  "Released after the customer's own evidence was captured in the field.";
+
+/**
+ * Stamped on a MANUALLY held link whose customer has since been captured properly.
+ *
+ * The hold itself stands — see `MARKETING_MANUAL_HOLD_MARKER`. This only records that the evidence
+ * half of the reason is now satisfied, so whoever reads the row in Customer Pharmacy Mapping is
+ * looking at a decision to make rather than at a row that is simply waiting for a photograph.
+ */
+export const MARKETING_COMPLETED_CUSTOMER_NOTE =
+  "The customer has since been captured in the field, so this hold is now a human decision, not a missing photo.";
+
 /**
  * Emits `MARKETING_PENDING_EVIDENCE_NOTE` only when the evidence is genuinely the thing missing.
  *
@@ -1931,6 +1948,7 @@ function normalizeValidationCustomer(
       customerPhotoName,
     ),
     evidencePhotoName: customerPhotoName,
+    existingCustomerId: cleanText(inputCustomer?.existingCustomerId),
     extractedAreaName: cleanText(inputCustomer?.extractedAreaName),
     extractedGovernorateName: cleanText(inputCustomer?.extractedGovernorateName),
     mobileNumber: cleanText(inputCustomer?.mobileNumber),
@@ -1984,6 +2002,7 @@ export function normalizeMarketingValidationInput(
   const multiCustomerInput = Array.isArray(input.customers) ? input.customers.filter(Boolean) : [];
   if (multiCustomerInput.length > 0) {
     const seenNames = new Set<string>();
+    const seenExistingCustomerIds = new Set<string>();
     return {
       customers: multiCustomerInput.map((entry, index) => {
         const prefix = multiCustomerInput.length > 1 ? `Customer ${index + 1} ` : "";
@@ -2001,6 +2020,18 @@ export function normalizeMarketingValidationInput(
           );
         }
         seenNames.add(normalized.normalizedName);
+        // The name check above cannot catch this one: two entries spelled DIFFERENTLY may still
+        // point at the same existing row, and the second update would silently overwrite the first
+        // capture's evidence with no trace that two were sent.
+        if (normalized.existingCustomerId) {
+          if (seenExistingCustomerIds.has(normalized.existingCustomerId)) {
+            throw validationError(
+              `"${normalized.displayName}" completes a customer that another entry in this submission already completes.`,
+              "duplicate_existing_customer",
+            );
+          }
+          seenExistingCustomerIds.add(normalized.existingCustomerId);
+        }
         return normalized;
       }),
     };
@@ -4481,6 +4512,149 @@ async function fetchRowsByIds<T extends { id: string | number }>(
   return rows;
 }
 
+/**
+ * Re-decide the customer's existing links once its own evidence has just been supplied.
+ *
+ * Without this the "complete an existing customer" path would be decorative. **The link row is the
+ * gate** — the request dropdown and the draft guard both filter on
+ * `validation_status IN ('system_validated','sfe_validated')` — and every link's status was frozen
+ * at the moment it was written, from the customer evidence that existed *then*. A customer imported
+ * with no photo therefore carries links stamped `pending`, and photographing the customer today
+ * changes the customer row alone: the links stay pending, the customer stays unusable, and the rep
+ * sees no result from the walk she just made.
+ *
+ * Three rules keep this from becoming a way to launder rows clean:
+ *
+ * - **Promotion only.** A link is touched only while it is `pending`. `rejected` is a human verdict
+ *   and `system_validated` / `sfe_validated` are already better than anything computed here.
+ * - **The pharmacy half still has to hold up.** `resolveMarketingSystemValidationStatus` is re-run
+ *   in full, so a shop that was never photographed keeps its link pending exactly as before — the
+ *   customer's new photo is not evidence about the shop.
+ * - **A hold placed by a person is never lifted by a machine.** The governorate check is re-run from
+ *   the shop's own capture against the code's registered region, and any link carrying
+ *   `MARKETING_MANUAL_HOLD_MARKER` is skipped outright and annotated instead.
+ *
+ * Returns the number of links promoted, which the caller reports back to the rep — "your capture
+ * released 2 pharmacies" is the only feedback that makes the walk feel worth making.
+ */
+async function refreshLinksAfterCustomerCompletion(input: {
+  actorHrId: string | null;
+  customerEvidenceStatus: MarketingEvidenceStatus;
+  customerId: string;
+  isOnBehalf: boolean;
+  supabase: SupabaseClient;
+}): Promise<number> {
+  const { actorHrId, customerEvidenceStatus, customerId, isOnBehalf, supabase } = input;
+
+  const linkQuery = await supabase
+    .from("marketing_customer_pharmacies")
+    .select("*")
+    .eq("customer_id", customerId)
+    .eq("validation_status", "pending")
+    .neq("active", false);
+  if (linkQuery.error) throw linkQuery.error;
+  const links = (linkQuery.data ?? []) as MarketingCustomerPharmacyDbRow[];
+  if (links.length === 0) return 0;
+
+  const pharmacyRows = await fetchRowsByIds<MarketingPharmacyDbRow>(
+    supabase,
+    "marketing_pharmacies",
+    Array.from(new Set(links.map((link) => link.pharmacy_id).filter(Boolean))),
+  );
+  const pharmaciesById = new Map(pharmacyRows.map((row) => [String(row.id), row]));
+
+  const codeRows = await fetchRowsByIds<MarketingPharmacyDistributorCodeDbRow>(
+    supabase,
+    "marketing_pharmacy_distributor_codes",
+    Array.from(new Set(links.map((link) => link.distributor_code_id).filter(Boolean))),
+  );
+  const codesById = new Map(codeRows.map((row) => [String(row.id), row]));
+
+  const referenceRows = await fetchRowsByIds<MarketingPharmacyCodeReferenceDbRow>(
+    supabase,
+    "marketing_pharmacy_code_references",
+    Array.from(
+      new Set(
+        codeRows
+          .map((row) => Number(row.reference_id ?? 0))
+          .filter((referenceId) => Number.isFinite(referenceId) && referenceId > 0),
+      ),
+    ),
+  );
+  const referencesById = new Map(referenceRows.map((row) => [Number(row.id), row]));
+
+  const nowIso = new Date().toISOString();
+  let promoted = 0;
+
+  for (const link of links) {
+    const existingNotes = typeof link.validation_notes === "string" ? link.validation_notes : "";
+
+    // Skipped, not released — and said so on the row, or the next person to read it has no way to
+    // know the evidence half of the hold is now satisfied and it is theirs to release.
+    if (existingNotes.includes(MARKETING_MANUAL_HOLD_MARKER)) {
+      const alreadyAnnotated = existingNotes.includes(MARKETING_COMPLETED_CUSTOMER_NOTE);
+      if (!alreadyAnnotated) {
+        const annotate = await supabase
+          .from("marketing_customer_pharmacies")
+          .update({
+            updated_at: nowIso,
+            updated_by_hr_id: actorHrId,
+            validation_notes: `${existingNotes} ${MARKETING_COMPLETED_CUSTOMER_NOTE}`.trim(),
+          })
+          .eq("id", link.id);
+        if (annotate.error) throw annotate.error;
+      }
+      continue;
+    }
+
+    const pharmacyRow = pharmaciesById.get(String(link.pharmacy_id));
+    const codeRow = codesById.get(String(link.distributor_code_id));
+    // A link whose shop or code has gone is not something to reason about — leave it exactly as it
+    // is and let the mapping screen surface it.
+    if (!pharmacyRow || !codeRow) continue;
+
+    const distributorCode = mapDistributorCode(codeRow);
+    const reference = referencesById.get(Number(codeRow.reference_id ?? 0));
+    const governorateCheck = checkCapturedGovernorate({
+      capturedAddress: pharmacyRow.captured_address,
+      registeredAddress: reference?.raw_pharmacy_address,
+      registeredRegion: reference?.raw_region,
+    });
+    const pharmacyEvidenceStatus = (pharmacyRow.evidence_status ?? "missing") as MarketingEvidenceStatus;
+    const nextStatus = resolveMarketingValidationRecordStatus({
+      isOnBehalf,
+      systemStatus: resolveMarketingSystemValidationStatus({
+        customerEvidenceStatus,
+        governorateVerdict: governorateCheck.verdict,
+        pharmacyEvidenceStatus,
+      }),
+    });
+    if (nextStatus === "pending") continue;
+
+    const update = await supabase
+      .from("marketing_customer_pharmacies")
+      .update({
+        updated_at: nowIso,
+        updated_by_hr_id: actorHrId,
+        validation_notes: [
+          buildUntrackedDistributorCodeNote(distributorCode.referenceStatus),
+          buildGovernorateMismatchNote(governorateCheck),
+          MARKETING_RELEASED_BY_COMPLETION_NOTE,
+        ].filter(Boolean).join(" ") || null,
+        validation_status: nextStatus,
+      })
+      .eq("id", link.id)
+      // Repeats the precondition so a link an admin ruled on while this ran is not overwritten.
+      .eq("validation_status", "pending")
+      .select("id")
+      .maybeSingle();
+    if (update.error) throw update.error;
+    if (update.data) promoted += 1;
+  }
+
+  return promoted;
+}
+
 function mapValidationReportRows(params: {
   customers: MarketingCustomerDbRow[];
   distributorCodes: MarketingPharmacyDistributorCodeDbRow[];
@@ -5370,11 +5544,70 @@ export async function createMarketingValidationRecord(
     }
   }
 
+  // --- "Complete the customer already on record" picks, resolved once for the whole submission --
+  // Same reasoning as the pharmacy preload above: an unusable pick fails before a single row is
+  // written, rather than half-way through. The scope check is the boundary here — the Pending tab
+  // offered the id, but a payload can name ANY customer id, including one on another rep's patch.
+  const completedCustomerRows = new Map<string, MarketingCustomerDbRow>();
+  const existingLinksByCustomerAndCode = new Map<string, MarketingCustomerPharmacyDbRow>();
+  const existingCustomerIds = Array.from(
+    new Set(
+      normalized.customers
+        .map((entry) => entry.existingCustomerId)
+        .filter((value): value is string => Boolean(value)),
+    ),
+  );
+  if (existingCustomerIds.length > 0) {
+    const rows = await fetchRowsByIds<MarketingCustomerDbRow>(
+      supabase,
+      "marketing_customers",
+      existingCustomerIds,
+    );
+    const rowsById = new Map(rows.map((row) => [String(row.id), row]));
+    for (const existingCustomerId of existingCustomerIds) {
+      const row = rowsById.get(existingCustomerId);
+      if (!row) throw notFoundError("That customer was not found.", "customer_not_found");
+      assertMarketingCustomerIsInScope(access, row, employeeRows);
+      if (row.active === false) {
+        throw validationError(`Customer "${row.display_name ?? existingCustomerId}" is no longer active.`);
+      }
+      // Evidence that already exists is PROOF, and proof is never overwritten by a later capture.
+      // Without this, a second submission could quietly replace the photo and GPS standing behind
+      // an already-validated customer — the same class of defect `evidenceStatusFromInput` exists
+      // to prevent, arriving through a different door.
+      if (row.evidence_status === "complete") {
+        throw validationError(
+          `Customer "${row.display_name ?? existingCustomerId}" already has complete evidence.`,
+          "customer_already_evidenced",
+        );
+      }
+      completedCustomerRows.set(existingCustomerId, row);
+    }
+
+    // The links these customers ALREADY carry, so re-attaching the shop a customer is already
+    // linked to updates that row instead of colliding with the unique index on
+    // (customer_id, distributor_code_id). Read once for the whole submission — the alternative is
+    // a lookup per reused distributor code, per customer.
+    const existingLinkQuery = await supabase
+      .from("marketing_customer_pharmacies")
+      .select("*")
+      .in("customer_id", existingCustomerIds);
+    if (existingLinkQuery.error) throw existingLinkQuery.error;
+    for (const row of (existingLinkQuery.data ?? []) as MarketingCustomerPharmacyDbRow[]) {
+      existingLinksByCustomerAndCode.set(`${row.customer_id}::${row.distributor_code_id}`, row);
+    }
+  }
+
   // Every customer and pharmacy minted by THIS submission, so a failure part-way through a
   // multi-customer save removes all of them rather than leaving the earlier ones stranded in the
   // owner's book with no pharmacies attached.
   const customerIds: string[] = [];
   const pharmacyIds: string[] = [];
+  // The rollback set for the OTHER path. A completed customer predates this submission, so it must
+  // never be deleted — but its capture columns were just overwritten, and the rule that a record
+  // must never survive its own evidence applies here exactly as it does to a minted one. Undoing
+  // means restoring the values that were read at preload time, not removing a row.
+  const completedCustomerUndo: Array<{ before: MarketingCustomerDbRow; id: string }> = [];
   // Every distributor-code row minted here, so the Source-of-Sales master resolver can be pointed
   // at exactly this submission once the writes are done. Collected rather than re-queried because
   // the ids are already in hand, and because an explicit list is what keeps the resolver off the
@@ -5387,45 +5620,83 @@ export async function createMarketingValidationRecord(
   try {
     const rows: MarketingValidationReportRow[] = [];
     for (const normalizedCustomer of normalized.customers) {
-    const customerInsert = await supabase
-      .from("marketing_customers")
-      .insert({
-        area_id: owner.areaId ?? null,
-        captured_accuracy_meters: normalizedCustomer.capturedAccuracyMeters,
-        captured_address: normalizedCustomer.capturedAddress,
-        captured_at: normalizedCustomer.capturedAt,
-        captured_latitude: normalizedCustomer.capturedLatitude,
-        captured_longitude: normalizedCustomer.capturedLongitude,
-        created_by_hr_id: actorHrId,
-        customer_code: generateMarketingCode("MKT-HCP"),
-        customer_type: normalizedCustomer.customerType,
-        display_name: normalizedCustomer.displayName,
-        evidence_has_timestamp: normalizedCustomer.evidenceHasTimestamp,
-        evidence_photo_captured_at: normalizedCustomer.evidencePhotoCapturedAt,
-        evidence_photo_name: normalizedCustomer.evidencePhotoName,
-        evidence_status: normalizedCustomer.evidenceStatus,
-        extracted_area_name: normalizedCustomer.extractedAreaName,
-        extracted_governorate_name: normalizedCustomer.extractedGovernorateName,
-        line_id: owner.lineId ?? null,
-        manager_hr_id: owner.managerHrId ?? null,
-        normalized_name: normalizedCustomer.normalizedName,
-        other_type_description: normalizedCustomer.otherTypeDescription,
-        owner_hr_id: ownerHrId,
-        region_name: normalizedCustomer.regionName,
-        updated_by_hr_id: actorHrId,
-        validated_at: adminValidatedAt,
-        validated_by_hr_id: adminValidatedByHrId,
-        validation_notes: adminValidationNote,
-        validation_status: resolveMarketingValidationRecordStatus({
-          isOnBehalf,
-          systemStatus: normalizedCustomer.validationStatus,
-        }),
-      })
-      .select("*")
-      .single();
-    if (customerInsert.error) throw customerInsert.error;
-    const customer = mapCustomer(customerInsert.data as MarketingCustomerDbRow);
-    customerIds.push(customer.id);
+    const existingCustomerRow = normalizedCustomer.existingCustomerId
+      ? completedCustomerRows.get(normalizedCustomer.existingCustomerId) ?? null
+      : null;
+
+    // What the rep captured — identical on both paths, because completing a customer runs through
+    // exactly the same normalization and the same evidence rule as creating one. What is absent
+    // here is IDENTITY (code, name, type, owner, area, line): supplying a customer's missing
+    // evidence must not re-label it, or the ROI history would stop pointing at the same record.
+    const capturedColumns = {
+      captured_accuracy_meters: normalizedCustomer.capturedAccuracyMeters,
+      captured_address: normalizedCustomer.capturedAddress,
+      captured_at: normalizedCustomer.capturedAt,
+      captured_latitude: normalizedCustomer.capturedLatitude,
+      captured_longitude: normalizedCustomer.capturedLongitude,
+      evidence_has_timestamp: normalizedCustomer.evidenceHasTimestamp,
+      evidence_photo_captured_at: normalizedCustomer.evidencePhotoCapturedAt,
+      evidence_photo_name: normalizedCustomer.evidencePhotoName,
+      evidence_status: normalizedCustomer.evidenceStatus,
+      extracted_area_name: normalizedCustomer.extractedAreaName,
+      extracted_governorate_name: normalizedCustomer.extractedGovernorateName,
+      region_name: normalizedCustomer.regionName,
+      updated_by_hr_id: actorHrId,
+      validated_at: adminValidatedAt,
+      validated_by_hr_id: adminValidatedByHrId,
+      validation_notes: adminValidationNote,
+      validation_status: resolveMarketingValidationRecordStatus({
+        isOnBehalf,
+        systemStatus: normalizedCustomer.validationStatus,
+      }),
+    };
+
+    let customer: MarketingCustomer;
+    if (existingCustomerRow) {
+      // The `.neq` repeats the precondition checked at preload time so a concurrent completion
+      // loses cleanly rather than overwriting the capture that got there first.
+      const customerUpdate = await supabase
+        .from("marketing_customers")
+        .update({ ...capturedColumns, updated_at: new Date().toISOString() })
+        .eq("id", existingCustomerRow.id)
+        .neq("evidence_status", "complete")
+        .select("*")
+        .maybeSingle();
+      if (customerUpdate.error) throw customerUpdate.error;
+      if (!customerUpdate.data) {
+        throw validationError(
+          `Customer "${existingCustomerRow.display_name ?? existingCustomerRow.id}" was completed by someone else while this was being saved.`,
+          "customer_already_evidenced",
+        );
+      }
+      customer = mapCustomer(customerUpdate.data as MarketingCustomerDbRow);
+      // Deliberately NOT pushed to `customerIds`. That list is the rollback set for rows this
+      // submission MINTED, and unwinding it deletes them — which on this path would destroy a
+      // customer that existed long before the request arrived. It goes on the undo list instead,
+      // recorded only once the write has actually landed.
+      completedCustomerUndo.push({ before: existingCustomerRow, id: existingCustomerRow.id });
+    } else {
+      const customerInsert = await supabase
+        .from("marketing_customers")
+        .insert({
+          ...capturedColumns,
+          area_id: owner.areaId ?? null,
+          created_by_hr_id: actorHrId,
+          customer_code: generateMarketingCode("MKT-HCP"),
+          customer_type: normalizedCustomer.customerType,
+          display_name: normalizedCustomer.displayName,
+          line_id: owner.lineId ?? null,
+          manager_hr_id: owner.managerHrId ?? null,
+          normalized_name: normalizedCustomer.normalizedName,
+          other_type_description: normalizedCustomer.otherTypeDescription,
+          owner_hr_id: ownerHrId,
+        })
+        .select("*")
+        .single();
+      if (customerInsert.error) throw customerInsert.error;
+      customer = mapCustomer(customerInsert.data as MarketingCustomerDbRow);
+      customerIds.push(customer.id);
+    }
 
     // Retain the image itself. Runs AFTER the insert because `marketing_evidence_files.entity_id`
     // points at the customer row that did not exist a moment ago. A failure here throws, which
@@ -5514,19 +5785,57 @@ export async function createMarketingValidationRecord(
             `Linked from an existing validated pharmacy (${pharmacy.pharmacyCode || pharmacy.displayName}).`,
           ].filter(Boolean).join(" ") || null;
 
-          const reusedLinkInsert = await supabase
-            .from("marketing_customer_pharmacies")
-            .insert({
-              created_by_hr_id: actorHrId,
-              customer_id: customer.id,
-              distributor_code_id: distributorCode.id,
-              pharmacy_id: pharmacy.id,
-              updated_by_hr_id: actorHrId,
-              validation_notes: linkValidationNotes,
-              validation_status: linkValidationStatus,
-            })
-            .select("*")
-            .single();
+          // `marketing_customer_pharmacies` is unique on (customer_id, distributor_code_id) — NOT
+          // on (customer, pharmacy). Completing a customer already on record means re-attaching the
+          // shop it is ALREADY linked to, so a plain insert is a straight unique violation that
+          // would reach the rep as an opaque 500 at the end of a field visit.
+          //
+          // Resolved by branching rather than by `upsert`: a blind upsert would also flip `active`
+          // back to true on a link somebody retired, and overwrite a `rejected` verdict with a
+          // freshly computed one. Both are human decisions, and a rep re-photographing a shop is
+          // not an appeal against either.
+          const existingLinkRow = existingCustomerRow
+            ? existingLinksByCustomerAndCode.get(`${customer.id}::${distributorCode.id}`) ?? null
+            : null;
+          if (existingLinkRow?.validation_status === "rejected") {
+            throw validationError(
+              `"${pharmacy.displayName}" was already reviewed and rejected for this customer. Ask a Super Admin or the CEO to reopen it from Customer Pharmacy Mapping.`,
+              "link_already_rejected",
+            );
+          }
+          if (existingLinkRow && existingLinkRow.active === false) {
+            throw validationError(
+              `"${pharmacy.displayName}" was retired from this customer. Ask a Super Admin or the CEO to restore it from Customer Pharmacy Mapping.`,
+              "link_retired",
+            );
+          }
+
+          const reusedLinkInsert = existingLinkRow
+            ? await supabase
+              .from("marketing_customer_pharmacies")
+              .update({
+                updated_at: new Date().toISOString(),
+                updated_by_hr_id: actorHrId,
+                validation_notes: linkValidationNotes,
+                validation_status: linkValidationStatus,
+              })
+              .eq("id", existingLinkRow.id)
+              .neq("validation_status", "rejected")
+              .select("*")
+              .single()
+            : await supabase
+              .from("marketing_customer_pharmacies")
+              .insert({
+                created_by_hr_id: actorHrId,
+                customer_id: customer.id,
+                distributor_code_id: distributorCode.id,
+                pharmacy_id: pharmacy.id,
+                updated_by_hr_id: actorHrId,
+                validation_notes: linkValidationNotes,
+                validation_status: linkValidationStatus,
+              })
+              .select("*")
+              .single();
           if (reusedLinkInsert.error) throw reusedLinkInsert.error;
           const reusedLink = mapCustomerPharmacy(reusedLinkInsert.data as MarketingCustomerPharmacyDbRow);
           const reusedDistributor = distributorsById.get(distributorCode.distributorId);
@@ -5724,6 +6033,20 @@ export async function createMarketingValidationRecord(
         summary: `Customer ${customer.displayName} validated at the desk on behalf of ${owner.displayName} (${ownerHrId})`,
       });
     }
+
+    // Last for this customer, and only on the completing path: every link it already carried was
+    // stamped from the evidence that existed when it was written, which for these rows was none.
+    // Re-deciding them is what turns the capture into a usable customer — without it the rep walks
+    // to the shop, photographs it, and the customer stays exactly as stuck as it was.
+    if (existingCustomerRow) {
+      await refreshLinksAfterCustomerCompletion({
+        actorHrId,
+        customerEvidenceStatus: normalizedCustomer.evidenceStatus,
+        customerId: customer.id,
+        isOnBehalf,
+        supabase,
+      });
+    }
     }
 
     // Connect what was just written to the Source-of-Sales customer master, while the ids are in
@@ -5747,6 +6070,31 @@ export async function createMarketingValidationRecord(
     }
     for (const rollbackCustomerId of customerIds) {
       await supabase.from("marketing_customers").delete().eq("id", rollbackCustomerId);
+    }
+    // A completed customer is restored, never deleted. Only the capture columns are put back — the
+    // same set the update wrote — so a concurrent edit to anything else on the row survives.
+    for (const undo of completedCustomerUndo) {
+      await supabase
+        .from("marketing_customers")
+        .update({
+          captured_accuracy_meters: undo.before.captured_accuracy_meters ?? null,
+          captured_address: undo.before.captured_address ?? null,
+          captured_at: undo.before.captured_at ?? null,
+          captured_latitude: undo.before.captured_latitude ?? null,
+          captured_longitude: undo.before.captured_longitude ?? null,
+          evidence_has_timestamp: undo.before.evidence_has_timestamp ?? null,
+          evidence_photo_captured_at: undo.before.evidence_photo_captured_at ?? null,
+          evidence_photo_name: undo.before.evidence_photo_name ?? null,
+          evidence_status: undo.before.evidence_status ?? "missing",
+          extracted_area_name: undo.before.extracted_area_name ?? null,
+          extracted_governorate_name: undo.before.extracted_governorate_name ?? null,
+          region_name: undo.before.region_name ?? null,
+          validated_at: undo.before.validated_at ?? null,
+          validated_by_hr_id: undo.before.validated_by_hr_id ?? null,
+          validation_notes: undo.before.validation_notes ?? null,
+          validation_status: undo.before.validation_status ?? "pending",
+        })
+        .eq("id", undo.id);
     }
     // Last, and best-effort: the photos this submission uploaded. Their index rows FK to nothing
     // that was just deleted, so they would otherwise survive as evidence of records that no longer

@@ -379,6 +379,22 @@ export type MarketingCustomerSpeciality = (typeof MARKETING_CUSTOMER_SPECIALITIE
  */
 export const MARKETING_GOVERNORATE_HOLD_PREFIX = "Held for review:";
 
+/**
+ * How a hold placed by a PERSON, rather than by the evidence rules, is recognised on a stored
+ * `validation_notes` string.
+ *
+ * Written on 2026-08-21 to 39 links whose customers had no evidence *and* no field activity of any
+ * kind, after a production audit; the owner ruled on those rows himself. Nothing in the code may
+ * release such a link automatically — completing a customer's evidence removes the *evidence* half
+ * of the reason it was held, never the human half. Only a Super Admin or the CEO releases it, from
+ * Customer Pharmacy Mapping.
+ *
+ * Deliberately NOT `MARKETING_GOVERNORATE_HOLD_PREFIX`: the workspace renders that one as
+ * "Code location mismatch", which would mislabel these rows as a geography contradiction they do
+ * not have.
+ */
+export const MARKETING_MANUAL_HOLD_MARKER = "by owner decision:";
+
 export type MarketingValidationCustomerInput = {
   capturedAccuracyMeters?: number | null;
   capturedAddress?: string | null;
@@ -399,6 +415,20 @@ export type MarketingValidationCustomerInput = {
    */
   evidencePhotoDataUrl?: string | null;
   evidencePhotoName?: string | null;
+  /**
+   * "This capture completes the customer that is ALREADY on record" — the Pending tab's path.
+   *
+   * Without it every submission inserts a fresh `MKT-HCP-…` row, so a rep who owned a customer with
+   * missing evidence had no way to supply it: walking to the shop and capturing it properly minted a
+   * SECOND customer beside the first, and the original stayed pending for ever. Production carried
+   * 39 such customers (all imported 2026-07-02, all with a real owner and real CRM visits) plus the
+   * duplicate rows the workaround left behind — including the same doctor spelled two ways.
+   *
+   * The capture fields still arrive in full and are still normalized identically; this id only
+   * redirects the write from an INSERT to an UPDATE of that row. Identity is NOT rewritten — name,
+   * code, owner and area stay as they are, so the tie to ROI history survives.
+   */
+  existingCustomerId?: string | null;
   extractedAreaName?: string | null;
   extractedGovernorateName?: string | null;
   mobileNumber?: string | null;
