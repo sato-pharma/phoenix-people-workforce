@@ -1,6 +1,7 @@
 import { isDevelopment } from "@/lib/env";
 import { writeRequiredAuditLog } from "@/lib/admin/audit";
 import { invalidateExecutiveDashboardCache } from "@/lib/dashboard/invalidation";
+import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { getSupabaseRlsClientIfAvailable } from "@/lib/supabase/rls-server";
 import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
@@ -1328,6 +1329,21 @@ export async function createSalaryBatch(input: CreateSalaryBatchInput) {
   const batch = mapBatch(batchData as Record<string, unknown>);
   await verifySalaryRecordPayloads(supabase, batch.id, recordPayloads);
   invalidateExecutiveDashboardCache("payroll batch created", ["payroll"]);
+  await writeRequiredAuditLog({
+    actorLoginId: input.uploadedBy,
+    entityId: batch.id,
+    entityType: "payroll_batch",
+    newValues: {
+      fileName: batch.fileName,
+      importedRecords: recordPayloads.length,
+      governanceWarnings: flagPayloads.length,
+      month: batch.month,
+      status: batch.status,
+      year: batch.year,
+    },
+    oldValues: null,
+    summary: `Payroll salary file imported for ${batch.month}/${batch.year} (${recordPayloads.length} records).`,
+  });
 
   return {
     batch,
@@ -1336,8 +1352,22 @@ export async function createSalaryBatch(input: CreateSalaryBatchInput) {
   };
 }
 
-export async function deleteSalaryBatch(batchId: string) {
+export async function deleteSalaryBatch(batchId: string, actor?: string | null) {
   const supabase = getSupabaseAdmin();
+  // Read the batch BEFORE the RPC. phx_delete_salary_batch removes the row and its salary_records,
+  // so afterwards there is nothing left to describe — and "a month's payroll disappeared" is
+  // precisely the event the audit log exists to answer. A failure to read it must not block the
+  // delete the caller is authorised to make, so fall back to recording that the read failed.
+  let existing: SalaryBatch | null = null;
+  try {
+    existing = await getSalaryBatchById(batchId);
+  } catch (error) {
+    logError("Payroll batch could not be read before deletion", {
+      labels: { event: "payroll_batch_predelete_read_failed", batchId },
+      error,
+    });
+  }
+
   const { error } = await supabase.rpc("phx_delete_salary_batch", {
     p_batch_id: batchId,
   });
@@ -1351,6 +1381,25 @@ export async function deleteSalaryBatch(batchId: string) {
   }
 
   invalidateExecutiveDashboardCache("payroll batch deleted", ["payroll"]);
+  await writeRequiredAuditLog({
+    actorLoginId: actor ?? null,
+    entityId: batchId,
+    entityType: "payroll_batch",
+    newValues: null,
+    oldValues: existing
+      ? {
+          approvedBy: existing.approvedBy,
+          fileName: existing.fileName,
+          month: existing.month,
+          status: existing.status,
+          uploadedBy: existing.uploadedBy,
+          year: existing.year,
+        }
+      : { note: "Batch row could not be read before deletion." },
+    summary: existing
+      ? `Payroll batch deleted for ${existing.month}/${existing.year} (status ${existing.status}).`
+      : "Payroll batch deleted.",
+  });
   return true;
 }
 
@@ -1426,9 +1475,23 @@ export async function replaceSalaryBatch(
 
   await verifySalaryRecordPayloads(supabase, existing.id, recordPayloads);
   invalidateExecutiveDashboardCache("payroll batch replaced", ["payroll"]);
+  const replacedBatch = mapBatch(updatedBatchData as Record<string, unknown>);
+  await writeRequiredAuditLog({
+    actorLoginId: input.uploadedBy,
+    entityId: existing.id,
+    entityType: "payroll_batch",
+    newValues: {
+      fileName: replacedBatch.fileName,
+      importedRecords: recordPayloads.length,
+      governanceWarnings: flagPayloads.length,
+      status: replacedBatch.status,
+    },
+    oldValues: { fileName: existing.fileName, status: existing.status },
+    summary: `Payroll salary file replaced for ${existing.month}/${existing.year} (${recordPayloads.length} records).`,
+  });
 
   return {
-    batch: mapBatch(updatedBatchData as Record<string, unknown>),
+    batch: replacedBatch,
     importedRecords: recordPayloads.length,
     governanceWarnings: flagPayloads.length,
   };

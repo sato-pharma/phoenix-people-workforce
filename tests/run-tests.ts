@@ -437,6 +437,7 @@ import { runAccessGovernanceHardeningTests } from "./access-governance-hardening
 import { runRlsAuthenticatedReadRevokeTests } from "./rls-authenticated-read-revoke.test.ts";
 import { runAccessIdentityHardeningTests } from "./access-identity-hardening.test.ts";
 import { runAccessRegistryCoverageTests } from "./access-registry-coverage.test.ts";
+import { runPayrollMutationAuditTests } from "./payroll-mutation-audit.test.ts";
 import { runCronControlRegistryTests } from "./cron-control-registry.test.ts";
 import { runCronControlExpressionTests } from "./cron-control-expression.test.ts";
 import { runNotificationRoleRecipientsTests } from "./notification-role-recipients.test.ts";
@@ -1373,6 +1374,7 @@ await runTest("access profile hr_id casing (admin-typed hr_id is normalised befo
 await runTest("access governance hardening", runAccessGovernanceHardeningTests);
 await runTest("RLS authenticated-read revoke (M3)", runRlsAuthenticatedReadRevokeTests);
 await runTest("access registry coverage", runAccessRegistryCoverageTests);
+await runTest("payroll mutation audit", runPayrollMutationAuditTests);
 await runTest("access identity hardening", runAccessIdentityHardeningTests);
 await runTest("cron control registry (job-registry <-> access-registry cross-reference)", runCronControlRegistryTests);
 await runTest("cron control expression (validate/reject, next-run computation, collisions)", runCronControlExpressionTests);
