@@ -701,10 +701,19 @@ export function runRecruitmentCvExtractionTests() {
   // On screen, in both layouts, and never as a bare guess.
   const workspaceSource = read("src/components/recruitment/recruitment-workspace.tsx");
   assert.match(workspaceSource, /<th>Applying for<\/th>/, "the desktop table must carry the column");
+  // Mobile gets it as a card field — the owner's rule is desktop tables, mobile cards. Since
+  // 2026-08-21 the value is candidateAppliedFor(), which falls back to the intake message's
+  // subject line when no title was stored (15 rows of 555 store one). A card has no tooltip, so
+  // the LABEL has to say when the role was inferred rather than stated.
   assert.match(
     workspaceSource,
-    /\{ label: "Applying for", value: candidate\.appliedForJobTitle \?\? "Not stated" \}/,
-    "mobile gets it as a card field — the owner's rule is desktop tables, mobile cards",
+    /label: appliedFor\.source === "subject" \? "Applying for \(from the subject line\)" : "Applying for"/,
+    "mobile must carry the applying-for field, and say so when the role was read off the subject line",
+  );
+  assert.match(
+    workspaceSource,
+    /value: appliedFor\.text \?\? "Not stated"/,
+    "a candidate with neither a stored title nor a usable subject still reads 'Not stated', never blank",
   );
   assert.match(
     workspaceSource,

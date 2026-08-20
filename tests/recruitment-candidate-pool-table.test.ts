@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 
-import { candidateDisplayName, isShortenedCandidateName } from "../src/lib/recruitment/candidate-display.ts";
+import { candidateAppliedFor, candidateDisplayName, isShortenedCandidateName } from "../src/lib/recruitment/candidate-display.ts";
 
 /**
  * The candidate pool table, and the intake blob that broke it.
@@ -138,5 +138,74 @@ export async function runRecruitmentCandidatePoolTableTests() {
   assert.ok(
     duplicateSites.length >= 2,
     `the possible-duplicate flag belongs on the desktop row as well as the mobile card — found ${duplicateSites.length}`,
+  );
+
+  // ── 8 · "Applying for" answers, instead of saying "Not stated" 97% of the time ─
+  //
+  // Only 15 of the 555 production rows store a title. 198 carry a Subject( … ) in the intake
+  // envelope, and those subjects are real answers — measured 2026-08-21, reading them lifts the
+  // column from 15 populated rows to 186.
+  assert.deepEqual(
+    candidateAppliedFor("Medical Representative", "anything at all"),
+    { source: "stated", text: "Medical Representative" },
+    "a stored title always wins — it was entered by a person",
+  );
+  assert.deepEqual(
+    candidateAppliedFor(null, "file 754C From(Islam Mostafa (a@b com)) Subject(Apply for Hr)"),
+    { source: "subject", text: "Hr" },
+    "the subject line answers it when nothing was stored, with the 'apply for' boilerplate stripped",
+  );
+  assert.deepEqual(
+    candidateAppliedFor(null, "X From(A B (a@b com)) Subject(Personnel & Recruitment Specialist)"),
+    { source: "subject", text: "Personnel & Recruitment Specialist" },
+    "the single most common subject in production — 22 rows — must come through verbatim",
+  );
+
+  // Never invent a role: a wrong job title routes a CV to the wrong hiring manager.
+  for (const empty of [
+    "X From(A B (a@b com)) Subject(CV)",
+    "X From(A B (a@b com)) Subject(resume)",
+    "X From(A B (a@b com)) Subject()",
+    "Rwan Safaa",
+  ]) {
+    assert.deepEqual(
+      candidateAppliedFor(null, empty),
+      { source: null, text: null },
+      `"${empty}" names no role — the column must read Not stated rather than guess`,
+    );
+  }
+  assert.equal(
+    candidateAppliedFor(null, `X From(A B (a@b com)) Subject(${"a".repeat(80)})`).text,
+    null,
+    "a subject longer than any real job title is a sentence, not a role",
+  );
+
+  // Shown as inferred, never as fact — the recruiter has to know which of the two they are reading.
+  assert.match(
+    workspace,
+    /appliedFor\.source === "subject" \? "italic text-slate-500" : "text-slate-900"/,
+    "a role read off a subject line must not be styled like one somebody stated",
+  );
+  assert.match(
+    workspace,
+    /Read from the subject line of the message this CV arrived on/,
+    "the tooltip has to say where an inferred role came from",
+  );
+
+  // ── 9 · Closing the profile returns you to the row you opened it from ─────────
+  //
+  // The panel renders below a 555-row table, so opening it throws the page to the bottom. Without
+  // a remembered position, getting back to row 300 means scrolling for it.
+  assert.match(workspace, /returnScrollYRef\.current = typeof window === "undefined" \? null : window\.scrollY/,
+    "the pool position must be captured when the profile is opened");
+  assert.match(workspace, /const returnToPool = \(\) => \{/, "there must be one way back, shared by both controls");
+  assert.match(workspace, /window\.scrollTo\(\{ behavior: "smooth", top: returnTo \}\)/, "closing must scroll back to it");
+  assert.match(workspace, /Back to the pool/, "and the way back must be visible without scrolling the profile");
+
+  const profilePanel = workspace.slice(workspace.indexOf("{profile ? ("));
+  assert.match(
+    profilePanel.slice(0, 1600),
+    /className="sticky top-0/,
+    "the profile's own header must stay put — the panel is long enough to scroll on its own",
   );
 }
