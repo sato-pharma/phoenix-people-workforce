@@ -2,6 +2,12 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
+import {
+  canAccessWeeklyMappingTemplate,
+  phoenixRoles,
+  systemAccessContext,
+  type AccessContext,
+} from "../src/lib/auth/permissions.ts";
 import { applyWeeklyAccessScope, type WeeklyAccessScope } from "../src/lib/sales/weekly/access.ts";
 
 function readSource(rel: string): string {
@@ -106,4 +112,19 @@ export async function runWeeklySalesAccessTests() {
     service.includes('const distributorsForEmpty = (filters?.accessScope?.tier ?? "full") === "full" ? distributors : [];'),
     "the empty-dashboard shortcut must not leak the full distributor catalog to a restricted tier",
   );
+
+  // ── mapping-template workbook audience ────────────────────────────────────────────────────────
+  // The workbook embeds the UNSCOPED master catalogue incl. the confidential Head Office line, so
+  // its audience must stay the mapping audience (Super Admin + SFE Manager) plus the CEO, who is
+  // already cleared for Head Office but holds weekly_sales read+export only. #2234 moved it off
+  // `export` — which reaches down to Medical Rep — and that swept the CEO out with the field.
+  const allowed = new Set(["Super Admin", "SFE Manager", "CEO"]);
+  for (const role of phoenixRoles) {
+    const context = { ...systemAccessContext, role, scope: role === "Super Admin" ? "system" : "self" } as AccessContext;
+    assert.equal(
+      await canAccessWeeklyMappingTemplate(context),
+      allowed.has(role),
+      `${role} must ${allowed.has(role) ? "reach" : "NOT reach"} the weekly mapping template workbook`,
+    );
+  }
 }

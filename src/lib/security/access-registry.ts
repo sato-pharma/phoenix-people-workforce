@@ -737,8 +737,11 @@ export const accessRegistry = [
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/sales/weekly/normalizer/mappings/learn", permission: { resource: "weekly_sales", action: "update" }, csrfExemptReason: "Authenticated admin import: learns weekly product aliases and branch->region rows from a completed unmapped-list workbook." }),
   // `update`, not `export`: the workbook embeds the unscoped master product/region/area catalogue
   // (incl. the confidential Head Office line), so it belongs to the mapping audience, not the
-  // read+export audience that reaches down to Medical Rep. Matches the route's own assertPermission.
-  sessionApi({ audit: { classification: "export", required: true }, methods: ["POST"], pattern: "/api/sales/weekly/normalizer/mappings/template", permission: { resource: "weekly_sales", action: "update" }, csrfExemptReason: "Read-only export: lists the distinct unmapped item codes and branches from the uploaded raw weekly sheet as a fill-in XLSX; persists nothing." }),
+  // read+export audience that reaches down to Medical Rep.
+  // guard: "domain-helper" — gated via assertWeeklyMappingTemplatePermission, which is `update` PLUS
+  // a route-scoped CEO exception (the CEO is already cleared for the Head Office line but holds
+  // read+export only; see src/lib/auth/permissions.ts). Same shape as the fingerprint report.
+  sessionApi({ audit: { classification: "export", required: true }, methods: ["POST"], pattern: "/api/sales/weekly/normalizer/mappings/template", permission: { resource: "weekly_sales", action: "update" }, guard: "domain-helper", csrfExemptReason: "Read-only export: lists the distinct unmapped item codes and branches from the uploaded raw weekly sheet as a fill-in XLSX; persists nothing." }),
   // Sales Targets (au monthly targets/achievement) — Super Admin + SFE Manager via sales:import.
   // The per-area drill-down READ is sales:read so the scoped read-only Targets view can expand a
   // row, but it additionally enforces assertTargetsAreaInScope on the caller-supplied `area` — the

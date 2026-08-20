@@ -1747,6 +1747,33 @@ export async function assertFingerprintReportPermission(context: AccessContext) 
 }
 
 /**
+ * Weekly normalizer mapping-template workbook: a route-scoped CEO exception, same shape as the
+ * fingerprint report above.
+ *
+ * The workbook embeds the UNSCOPED master catalogue — every product code/name/line, every region,
+ * every area — including the confidential Head Office line (LA003/LA004/SS001). That catalogue is
+ * why the route moved off `weekly_sales:export` (#2234): export reaches down to Medical Rep, so the
+ * whole sales field could pull it. But `weekly_sales:update` is held only by Super Admin and SFE
+ * Manager, and that swept up the CEO too — who is one of exactly two roles
+ * (see HEAD_OFFICE_LINE_KEYS / canViewHeadOffice in src/lib/sales/weekly/access.ts) already cleared
+ * to see the Head Office line the workbook's sensitivity rests on.
+ *
+ * So the CEO is allowed here explicitly rather than by widening `update`, which would also hand him
+ * create/delete/approve/import across every other weekly_sales route. Every sibling normalizer route
+ * (preview / save / learn / ai-suggest) stays update-only.
+ */
+export async function canAccessWeeklyMappingTemplate(context: AccessContext) {
+  if (context.role === "CEO") return true;
+  return canAccess(context, "weekly_sales", "update");
+}
+
+export async function assertWeeklyMappingTemplatePermission(context: AccessContext) {
+  if (!(await canAccessWeeklyMappingTemplate(context))) {
+    throw new Error(`Forbidden: ${context.role} cannot export the weekly mapping template.`);
+  }
+}
+
+/**
  * Workflow Control Center (Admin / Governance) access design.
  *
  * Phase 1 is a READ-ONLY workflow map + simulator. Access is restricted to HR
