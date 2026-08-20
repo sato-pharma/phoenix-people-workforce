@@ -199,7 +199,7 @@ export async function runRecruitmentCandidatePoolTableTests() {
   assert.match(workspace, /returnScrollYRef\.current = typeof window === "undefined" \? null : window\.scrollY/,
     "the pool position must be captured when the profile is opened");
   assert.match(workspace, /const returnToPool = \(\) => \{/, "there must be one way back, shared by both controls");
-  assert.match(workspace, /window\.scrollTo\(\{ behavior: "smooth", top: returnTo \}\)/, "closing must scroll back to it");
+  assert.match(workspace, /window\.scrollTo\(\{ behavior: "auto", top: returnTo \}\)/, "closing must scroll back to it");
   assert.match(workspace, /Back to the pool/, "and the way back must be visible without scrolling the profile");
 
   const profilePanel = workspace.slice(workspace.indexOf("{profile ? ("));
@@ -207,5 +207,65 @@ export async function runRecruitmentCandidatePoolTableTests() {
     profilePanel.slice(0, 1600),
     /className="sticky top-0/,
     "the profile's own header must stay put — the panel is long enough to scroll on its own",
+  );
+
+  // ── 10 · Neither scroll may be "smooth" ─────────────────────────────────────
+  //
+  // This is the whole defect, and it is invisible in review — the smooth version reads fine and
+  // does nothing. Measured on production 2026-08-21 with the panel 15,489px below the fold:
+  // `scrollIntoView({ behavior: "smooth" })` left window.scrollY at 18402 after 1.8s; the identical
+  // call with `behavior: "auto"` landed on the panel; a plain `window.scrollTo` moved the page
+  // freely. There is no scrollable ancestor to blame — Chrome abandons a programmatic smooth scroll
+  // over that distance. So the recruiter pressed the eye, nothing moved, and the profile had opened
+  // sixteen screens away. Restoring "smooth" on either scroll silently restores that.
+  assert.doesNotMatch(
+    workspace,
+    /behavior: "smooth"/,
+    'a "smooth" scroll does not run over the length of this page — it looks like the button did nothing',
+  );
+  assert.match(
+    workspace,
+    /panel\.getBoundingClientRect\(\)\.top \+ window\.scrollY/,
+    "the landing position must be computed here, not delegated to scrollIntoView",
+  );
+
+  // ── 11 · A way back that survives the page not scrolling at all ─────────────
+  //
+  // The sticky header only helps once the panel is on screen. The fixed pill is what answers the
+  // owner's actual words — "i am pushed to the bottom … need a thing that pulles me from where i
+  // was pushed" — because it is anchored to the viewport rather than to the page.
+  assert.match(
+    workspace,
+    /const \[wayBackOffScreen, setWayBackOffScreen\] = useState\(false\)/,
+    "the floating way back is state, driven by whether the profile's header is on screen",
+  );
+  assert.match(
+    workspace,
+    /new IntersectionObserver\(\(\[entry\]\) => setWayBackOffScreen\(!entry\.isIntersecting\)\)/,
+    "an observer, not a scroll handler — a scroll handler on this page runs against 555 rows",
+  );
+  assert.match(
+    profilePanel,
+    /\{wayBackOffScreen \? \([\s\S]{0,400}?className="fixed bottom-6 right-6/,
+    "and it must be position:fixed, or it is just one more thing below the fold",
+  );
+
+  // ── 12 · "Applying for" is the column that gets the room ────────────────────
+  //
+  // Measured per column across all 555 production rows on 2026-08-21, as the width the text wants
+  // at its own computed font: Candidate p99 261px, Applying-for p99 301px, Status 50px,
+  // Received 60px. The first cut of this table gave Candidate 443px and Applying-for 140px — so
+  // the one fact that decides who a CV goes to was the only starved column, and every longer role
+  // read "Personnel and Recruitment Speci…". The flexible slot belongs to it.
+  const colgroup = workspace.slice(workspace.indexOf("<colgroup>"), workspace.indexOf("</colgroup>"));
+  assert.match(
+    colgroup,
+    /<col className="w-\[280px\]" \/>\s*<col \/>/,
+    "Candidate is pinned and Applying-for takes what is left — not the other way round",
+  );
+  assert.equal(
+    (colgroup.match(/<col \/>/g) ?? []).length,
+    1,
+    "exactly one flexible column, or the measured widths stop meaning anything",
   );
 }

@@ -1611,6 +1611,9 @@ function CandidateDecisionButtons({
   );
 }
 
+/** Breathing room left above the profile panel when it is scrolled into view. */
+const PROFILE_LANDING_GAP = 12;
+
 /**
  * One compact icon button in the pool's action strip. Square, 28px, no label — the name lives in
  * `aria-label` and the native tooltip so a screen reader and a hovering recruiter get the same word.
@@ -1998,9 +2001,14 @@ function CandidatesTab({
   const router = useRouter();
   const fileRef = useRef<HTMLInputElement | null>(null);
   const profilePanelRef = useRef<HTMLDivElement | null>(null);
+  const profileHeaderRef = useRef<HTMLDivElement | null>(null);
   // The scroll position the pool was at when the profile was opened, so closing it puts the
   // recruiter back on the row they pressed rather than at the foot of a 555-row table.
   const returnScrollYRef = useRef<number | null>(null);
+  // True while the profile's own header is off screen, which is the only moment the floating way
+  // back earns its place. Kept in state rather than derived on scroll — an IntersectionObserver
+  // fires on the compositor, a scroll handler on this page would run against 555 rows.
+  const [wayBackOffScreen, setWayBackOffScreen] = useState(false);
   const [fullName, setFullName] = useState("");
   const [nationalId, setNationalId] = useState("");
   const [email, setEmail] = useState("");
@@ -2103,6 +2111,7 @@ function CandidatesTab({
     // moment the button was pressed.
     returnScrollYRef.current = typeof window === "undefined" ? null : window.scrollY;
     setProfile(null);
+    setWayBackOffScreen(false);
     setViewCvFile(null);
     setError(null);
     setRetryExtraction(null);
@@ -2155,10 +2164,48 @@ function CandidatesTab({
     });
   };
 
-  // The profile panel renders below the (often long) candidate table — without this it opens
-  // out of view and looks like the Profile button did nothing.
+  /**
+   * Bring the profile into view when it opens.
+   *
+   * This was a smooth `scrollIntoView`, and on a pool this long it did nothing at all. Measured
+   * against production on 2026-08-21 with the panel 15,489px below the fold: the smooth call left
+   * `window.scrollY` at 18402 after 1.8 seconds, while the identical call asking for an instant
+   * scroll landed on the panel, and a plain `window.scrollTo` moved the page freely. There is no
+   * scrollable ancestor to blame — Chrome simply abandons a programmatic smooth scroll of that
+   * length. So the recruiter pressed the eye, the page sat still, and the profile had opened
+   * sixteen screens away with nothing on screen to say so.
+   *
+   * Instant, and computed from the panel's own box rather than delegated, so the landing position
+   * is a number this code chose. Nobody wants a sixteen-screen animated flight anyway.
+   */
   useEffect(() => {
-    if (profile) profilePanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    if (!profile || typeof window === "undefined") return;
+    const panel = profilePanelRef.current;
+    if (!panel) return;
+    // After paint — the panel's box is only real once it has been laid out.
+    const frame = requestAnimationFrame(() => {
+      const top = panel.getBoundingClientRect().top + window.scrollY;
+      window.scrollTo({ behavior: "auto", top: Math.max(0, top - PROFILE_LANDING_GAP) });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [profile]);
+
+  /**
+   * Is the way back off screen?
+   *
+   * The sticky header only helps once the panel is in view. This watches it, and the moment it is
+   * not on screen — the recruiter scrolled back up into the table, or the scroll above never
+   * happened — a fixed pill appears so there is always one click back to the row they pressed.
+   */
+  useEffect(() => {
+    const header = profileHeaderRef.current;
+    if (!profile || !header || typeof IntersectionObserver === "undefined") return;
+    // Nothing is set here in the effect body on purpose — react-hooks/set-state-in-effect is an
+    // error in this repo. The pill is cleared by the two things that actually change the profile:
+    // openProfile and returnToPool.
+    const observer = new IntersectionObserver(([entry]) => setWayBackOffScreen(!entry.isIntersecting));
+    observer.observe(header);
+    return () => observer.disconnect();
   }, [profile]);
 
   /**
@@ -2173,6 +2220,7 @@ function CandidatesTab({
     const returnTo = returnScrollYRef.current;
     returnScrollYRef.current = null;
     setProfile(null);
+    setWayBackOffScreen(false);
     setViewCvFile(null);
     setRetryExtraction(null);
     setRetryError(null);
@@ -2180,7 +2228,10 @@ function CandidatesTab({
     setStoredExtraction(null);
     if (returnTo === null || typeof window === "undefined") return;
     // After paint: the panel has to be gone before the page is short enough to scroll back into.
-    requestAnimationFrame(() => window.scrollTo({ behavior: "smooth", top: returnTo }));
+    // Instant, for the same measured reason as the scroll in — over these distances Chrome does not
+    // run a smooth programmatic scroll at all, and a return that silently does nothing is the whole
+    // complaint. It also matches what a Back button should feel like: the page you left, at once.
+    requestAnimationFrame(() => window.scrollTo({ behavior: "auto", top: returnTo }));
   };
 
   // Follow the ?candidate= deep link from the inbound-CV notification, once. Ref-guarded rather
@@ -2519,16 +2570,32 @@ function CandidatesTab({
              */
             <PortalDesktopTable className="table-fixed" minWidth="900px">
               {/*
-               * Actions is 220px because six 28px icon buttons plus their gaps and the cell padding
-               * measure 212 — the strip has to fit on one line or the row grows again. Everything
-               * else is sized to its content type, and Candidate takes whatever is left.
+               * Every width below is the width its text actually wants, measured cell by cell
+               * against all 555 production rows on 2026-08-21 (99th percentile, at each line's own
+               * computed font, plus the 24px of cell padding):
+               *
+               *   Candidate 261 · Applying for 301 · Status 50 · Received 60
+               *
+               * Against that, the first cut of this table gave Candidate 443 and Applying-for 140.
+               * Status and Received were also 100 and 116 for content needing 50 and 60. So the one
+               * column carrying the fact that decides who a CV goes to was the only one starved,
+               * and every longer role read "Personnel and Recruitment Speci…".
+               *
+               * Applying-for now takes the flexible slot — 328px at the 1172px this table renders
+               * at, 304 of it text, clear of the 301 it needs. Candidate is pinned at 280 rather
+               * than left to sprawl. Actions stays 220: six 28px icon buttons plus gaps and padding
+               * measure 212, and the strip has to fit on one line or the row grows again.
+               *
+               * Source keeps 116 and is still the one genuinely clipped column — some rows store an
+               * entire forwarded message as the source label, so no column width fixes it; the full
+               * text is on hover, and shortening the label is a data job, not a layout one.
                */}
               <colgroup>
                 {canManage ? <col className="w-[36px]" /> : null}
+                <col className="w-[280px]" />
                 <col />
-                <col className="w-[140px]" />
-                <col className="w-[100px]" />
-                <col className="w-[116px]" />
+                <col className="w-[96px]" />
+                <col className="w-[96px]" />
                 <col className="w-[116px]" />
                 <col className="w-[220px]" />
               </colgroup>
@@ -2550,7 +2617,7 @@ function CandidatesTab({
                     </th>
                   ) : null}
                   <th className="px-3 py-2.5">Candidate</th>
-                  <th>Applying for</th>
+                  <th className="px-3 py-2.5">Applying for</th>
                   <th className="px-3 py-2.5">Status</th>
                   <th className="px-3 py-2.5">Received</th>
                   <th className="px-3 py-2.5">Source</th>
@@ -2708,7 +2775,10 @@ function CandidatesTab({
            * through the whole profile to find the Close button — the exact complaint this answers.
            * It carries the way back on the left and the way out on the right.
            */}
-          <div className="sticky top-0 z-20 -mx-4 -mt-4 mb-1 flex items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-2.5">
+          <div
+            className="sticky top-0 z-20 -mx-4 -mt-4 mb-1 flex items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-2.5"
+            ref={profileHeaderRef}
+          >
             <button
               className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap border border-[#D8E0EA] bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:border-[#FDBA74] hover:text-[#F97316]"
               onClick={returnToPool}
@@ -2721,6 +2791,25 @@ function CandidatesTab({
               {candidateDisplayName(profile.candidate.fullName)}
             </p>
           </div>
+          {/*
+           * The way back, anchored to the screen instead of to the page.
+           *
+           * Everything above assumes the recruiter is looking at the panel. This is for when they
+           * are not: they scrolled back up into the table with the profile still open, or the
+           * scroll-in failed the way it did in production before today. Nothing on this page has a
+           * transform, so `fixed` really is the viewport (checked, not assumed) — the pill sits in
+           * the corner whatever the page did, and it is the same one click as the header's.
+           */}
+          {wayBackOffScreen ? (
+            <button
+              className="fixed bottom-6 right-6 z-50 inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border border-[#FDBA74] bg-white px-4 py-2.5 text-xs font-semibold text-[#F97316] shadow-[0_10px_30px_rgba(15,23,42,0.18)] transition hover:bg-[#FFF7ED]"
+              onClick={returnToPool}
+              type="button"
+            >
+              <ArrowLeft className="h-3.5 w-3.5" />
+              Back to the pool
+            </button>
+          ) : null}
           <div className="flex items-center justify-between">
             <div>
               <p className="inline-flex items-center gap-1.5 text-sm font-semibold text-slate-900">
