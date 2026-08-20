@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { assertPermission } from "@/lib/auth/permissions";
+import { assertWeeklyMappingTemplatePermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { SalesWorkflowError } from "@/lib/sales/contracts";
 import {
@@ -25,7 +25,9 @@ export async function POST(request: Request) {
     // Office line (LA003/LA004/SS001) that access.ts strips from every dashboard tier. `export` is
     // held by Medical Rep upward, so gating on it handed that catalogue to the whole sales field.
     // Every sibling normalizer route (preview / save / learn / ai-suggest) already gates on `update`.
-    await assertPermission(access, "weekly_sales", "update");
+    // The CEO is allowed through explicitly — he is already cleared for the Head Office line but
+    // does not hold `update`. See canAccessWeeklyMappingTemplate for why that is not widened.
+    await assertWeeklyMappingTemplatePermission(access);
 
     const form = await request.formData();
     const distributorCode = String(form.get("distributorCode") ?? "").trim();
