@@ -100,7 +100,8 @@ export function WeeklyProductMappingManager({
   }
 
   // Suggest-only: pre-fills the Master product picker, never saves on its own — the operator still
-  // has to review and hit "Add alias". Same engine + contract as WeeklyNormalizationTab's "AI suggest".
+  // has to review and hit "Add alias". Sole remaining caller of /api/sales/weekly/ai-suggest since
+  // the dead WeeklyNormalizationTab was removed (2026-08-21) — the route itself stays live.
   async function aiSuggestOne() {
     if (!draft.alias.trim()) {
       setError("Enter the distributor alias first.");

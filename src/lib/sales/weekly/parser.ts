@@ -13,6 +13,7 @@ import { canonicalWeeklyDistributorCode, weeklyDistributorByCode } from "@/lib/s
 import { normalizeCode, normalizeKey, normalizeSoft } from "@/lib/sales/weekly/mapping-normalize";
 import type { WeeklyProductAliasIndex } from "@/lib/sales/weekly/product-aliases";
 import type {
+  WeeklyExcludedBranch,
   WeeklyExcludedItem,
   WeeklyParsedRow,
   WeeklySalesValidationResult,
@@ -1279,8 +1280,46 @@ type Agg = {
 };
 
 function aggKeyOf(productCode: string, obs: WeeklyObservation): AggKey {
-  const branchPart = obs.posColumnIndex != null ? `col#${obs.posColumnIndex}` : normalizeKey(obs.rawBranchCode || obs.rawBranchName);
-  return `${normalizeCode(productCode)}||${branchPart}`;
+  return `${normalizeCode(productCode)}||${branchKeyOf(obs)}`;
+}
+
+/** The branch half of an aggregate key, on its own — so a HELD-OUT depot groups exactly the way an
+ *  included one would (PS resolves by stock-matrix column index, everyone else by code/name). */
+function branchKeyOf(obs: WeeklyObservation): string {
+  return obs.posColumnIndex != null ? `col#${obs.posColumnIndex}` : normalizeKey(obs.rawBranchCode || obs.rawBranchName);
+}
+
+/** Quantities for one bucket of observations deliberately held OUT of the totals. */
+type HeldOutTally = {
+  rows: Set<number>;
+  grossSalesQty: number;
+  returnQty: number;
+  authoritativeNet: number;
+  hasAuthoritativeNet: boolean;
+  stockQty: number;
+};
+
+function emptyHeldOut(): HeldOutTally {
+  return { rows: new Set<number>(), grossSalesQty: 0, returnQty: 0, authoritativeNet: 0, hasAuthoritativeNet: false, stockQty: 0 };
+}
+
+function addHeldOut(tally: HeldOutTally, obs: WeeklyObservation): void {
+  tally.rows.add(obs.sourceRowNumber);
+  if (obs.side === "sales") {
+    tally.grossSalesQty += obs.qty;
+    if (obs.authoritativeNet != null) {
+      tally.hasAuthoritativeNet = true;
+      tally.authoritativeNet += obs.authoritativeNet;
+    }
+  } else if (obs.side === "return") tally.returnQty += obs.qty;
+  else tally.stockQty += obs.qty;
+}
+
+/** Net of a held-out bucket, derived exactly the way the real fact-row builder derives it: a
+ *  distributor-stated authoritative net (RM col15) wins outright and the return is NOT taken off it
+ *  again, because that net is already net of returns. */
+function heldOutNet(tally: HeldOutTally): number {
+  return tally.hasAuthoritativeNet ? tally.authoritativeNet : tally.grossSalesQty - tally.returnQty;
 }
 
 export type WeeklyParseError = { code: "unsupported_template" | "empty_file"; message: string };
@@ -1402,14 +1441,33 @@ export async function parseWeeklyWorkbookBuffer(input: {
 
   // ── resolve + aggregate over the UNION of (product, branch) keys across all sides ─────────────
   const aggregates = new Map<AggKey, Agg>();
-  const excluded = new Map<string, { itemCode: string; itemName: string; rows: Set<number>; netQty: number; stockQty: number }>();
+  const excluded = new Map<string, { itemCode: string; itemName: string; tally: HeldOutTally }>();
+  const excludedBranches = new Map<string, { rawBranch: string; branchName: string; branchColumnIndex: number | null; tally: HeldOutTally }>();
 
   for (const obs of adapted.observations) {
     const product = resolveProduct(obs, aliasBucket, indexes);
     const region = resolveRegion(obs, branchMapIndex, indexes);
 
-    // Excluded branch → drop the cell from totals entirely (not a failure, no fact row).
-    if (region.excluded) continue;
+    // Excluded branch → the cell leaves the totals entirely (not a failure, no fact row), but it is
+    // tallied per depot first. Same rule as the IGNORE-item path below: count and show what was left
+    // out, never silently drop. Checked before the item so a depot that is BOTH excluded and selling
+    // an IGNORE item is reported once, against the depot that removed it.
+    if (region.excluded) {
+      const key = branchKeyOf(obs);
+      const entry = excludedBranches.get(key) ?? {
+        rawBranch: obs.rawBranchCode || obs.rawBranchName || "",
+        branchName: obs.rawBranchName || "",
+        branchColumnIndex: obs.posColumnIndex ?? null,
+        tally: emptyHeldOut(),
+      };
+      // An excluded depot spans the sales and stock sides; whichever landed first may have carried a
+      // blank display name or no column index (same late-fill the real aggregate does).
+      if (!entry.branchName && obs.rawBranchName) entry.branchName = obs.rawBranchName;
+      if (entry.branchColumnIndex == null && obs.posColumnIndex != null) entry.branchColumnIndex = obs.posColumnIndex;
+      addHeldOut(entry.tally, obs);
+      excludedBranches.set(key, entry);
+      continue;
+    }
 
     // IGNORE-mapped item → same, but tallied per raw item so the operator sees exactly what was
     // left out and how much of it (owner's rule: count and flag, never silently drop).
@@ -1417,11 +1475,8 @@ export async function parseWeeklyWorkbookBuffer(input: {
       const itemCode = obs.rawItemCode || "";
       const itemName = obs.rawItemName || "";
       const key = `${normalizeCode(itemCode)}|${normalizeKey(itemName)}`;
-      const entry = excluded.get(key) ?? { itemCode, itemName, rows: new Set<number>(), netQty: 0, stockQty: 0 };
-      entry.rows.add(obs.sourceRowNumber);
-      if (obs.side === "sales") entry.netQty += obs.authoritativeNet ?? obs.qty;
-      else if (obs.side === "return") entry.netQty -= obs.qty;
-      else entry.stockQty += obs.qty;
+      const entry = excluded.get(key) ?? { itemCode, itemName, tally: emptyHeldOut() };
+      addHeldOut(entry.tally, obs);
       excluded.set(key, entry);
       continue;
     }
@@ -1613,11 +1668,22 @@ export async function parseWeeklyWorkbookBuffer(input: {
       .map((entry) => ({
         itemCode: entry.itemCode,
         itemName: entry.itemName,
-        rows: entry.rows.size,
-        netQty: Number(entry.netQty.toFixed(2)),
-        stockQty: Number(entry.stockQty.toFixed(2)),
+        rows: entry.tally.rows.size,
+        netQty: Number(heldOutNet(entry.tally).toFixed(2)),
+        stockQty: Number(entry.tally.stockQty.toFixed(2)),
       }))
       .sort((left, right) => right.netQty - left.netQty),
+    excludedBranches: [...excludedBranches.values()]
+      .map((entry) => ({
+        rawBranch: entry.rawBranch,
+        branchName: entry.branchName,
+        branchColumnIndex: entry.branchColumnIndex,
+        rows: entry.tally.rows.size,
+        netQty: Number(heldOutNet(entry.tally).toFixed(2)),
+        stockQty: Number(entry.tally.stockQty.toFixed(2)),
+      }))
+      // A stock-only depot nets zero — fall back to stock so it never sorts as "nothing happened".
+      .sort((left, right) => right.netQty - left.netQty || right.stockQty - left.stockQty),
   });
   return { ok: true, rows, result };
 }
@@ -1652,6 +1718,7 @@ export function summarizeWeekly(input: {
   weekStart: string | null;
   blockingReasons: string[];
   excludedItems?: WeeklyExcludedItem[];
+  excludedBranches?: WeeklyExcludedBranch[];
 }): WeeklySalesValidationResult {
   const { rows } = input;
   const totals = emptyTotals();
@@ -1734,5 +1801,6 @@ export function summarizeWeekly(input: {
       .sort((left, right) => right.salesValue - left.salesValue),
     issues: issues.slice(0, 500),
     excludedItems: input.excludedItems ?? [],
+    excludedBranches: input.excludedBranches ?? [],
   };
 }

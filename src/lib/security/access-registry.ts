@@ -725,8 +725,6 @@ export const accessRegistry = [
   sessionApi({ methods: ["GET"], pattern: "/api/sales/weekly/mapping", permission: { resource: "weekly_sales", action: "update" } }),
   sessionApi({ audit: { classification: "export", required: true }, methods: ["GET"], pattern: "/api/sales/weekly/mapping/export", permission: { resource: "weekly_sales", action: "update" } }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/sales/weekly/mapping/import", permission: { resource: "weekly_sales", action: "update" }, csrfExemptReason: "Authenticated weekly distributor mapping upsert/import; server validates each mapping row before write." }),
-  sessionApi({ methods: ["GET"], pattern: "/api/sales/weekly/missing", permission: { resource: "weekly_sales", action: "update" } }),
-  sessionApi({ audit: { classification: "export", required: true }, methods: ["GET"], pattern: "/api/sales/weekly/missing/export", permission: { resource: "weekly_sales", action: "update" } }),
   sessionApi({ methods: ["GET", "POST"], pattern: "/api/sales/weekly/pos-region-mappings", permission: { resource: "weekly_sales", action: "update" } }),
   sessionApi({ audit: { classification: "export", required: true }, methods: ["GET"], pattern: "/api/sales/weekly/pos-region-mappings/template", permission: { resource: "weekly_sales", action: "update" } }),
   // Weekly Normalizer — the weekly twin of /api/sales/normalizer/**, and registered the same way:
@@ -737,7 +735,10 @@ export const accessRegistry = [
   sessionApi({ audit: { classification: "access-read", required: true }, methods: ["POST"], pattern: "/api/sales/weekly/normalizer/mappings/ai-suggest", permission: { resource: "weekly_sales", action: "update" }, csrfExemptReason: "Suggestion-only JSON request: uses submitted unknown item/branch labels to suggest Phoenix matches and persists nothing." }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/sales/weekly/normalizer/mappings/save", permission: { resource: "weekly_sales", action: "update" }, csrfExemptReason: "Authenticated admin JSON-only mapping save: writes selected weekly product aliases and branch->region rows after server-side permission checks." }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/sales/weekly/normalizer/mappings/learn", permission: { resource: "weekly_sales", action: "update" }, csrfExemptReason: "Authenticated admin import: learns weekly product aliases and branch->region rows from a completed unmapped-list workbook." }),
-  sessionApi({ audit: { classification: "export", required: true }, methods: ["POST"], pattern: "/api/sales/weekly/normalizer/mappings/template", permission: { resource: "weekly_sales", action: "export" }, csrfExemptReason: "Read-only export: lists the distinct unmapped item codes and branches from the uploaded raw weekly sheet as a fill-in XLSX; persists nothing." }),
+  // `update`, not `export`: the workbook embeds the unscoped master product/region/area catalogue
+  // (incl. the confidential Head Office line), so it belongs to the mapping audience, not the
+  // read+export audience that reaches down to Medical Rep. Matches the route's own assertPermission.
+  sessionApi({ audit: { classification: "export", required: true }, methods: ["POST"], pattern: "/api/sales/weekly/normalizer/mappings/template", permission: { resource: "weekly_sales", action: "update" }, csrfExemptReason: "Read-only export: lists the distinct unmapped item codes and branches from the uploaded raw weekly sheet as a fill-in XLSX; persists nothing." }),
   // Sales Targets (au monthly targets/achievement) — Super Admin + SFE Manager via sales:import.
   // The per-area drill-down READ is sales:read so the scoped read-only Targets view can expand a
   // row, but it additionally enforces assertTargetsAreaInScope on the caller-supplied `area` — the

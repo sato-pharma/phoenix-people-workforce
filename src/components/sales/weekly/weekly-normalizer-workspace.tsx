@@ -23,6 +23,7 @@ type UnknownProduct = { key: string; itemCode: string; itemName: string; aliasKi
 type UnknownBranch = { key: string; rawBranch: string; branchName: string; sourceFileType: "any" | "sales" | "stock"; branchColumnIndex: number | null; branchColumnHeader: string; rows: number; netQty: number; stockQty: number };
 type BlockedIssue = { field: string; message: string; value: string | null; rows: number };
 type ExcludedItem = { itemCode: string; itemName: string; rows: number; netQty: number; stockQty: number };
+type ExcludedBranch = { rawBranch: string; branchName: string; branchColumnIndex: number | null; rows: number; netQty: number; stockQty: number };
 type CodedRow = {
   itemCode: string; productCode: string; productName: string; officialLine: string;
   branchCode: string; branchName: string; regionCode: string; regionName: string;
@@ -36,12 +37,13 @@ type Preview = {
   distributorCode: string; distributorName: string; fileName: string; sheetName: string;
   template: Template | null;
   weekStart: string | null; status: "blocked" | "validated"; blockingReasons: string[];
-  summary: { totalRows: number; productResolved: number; regionResolved: number; fullyCoded: number; excludedItems: number };
+  summary: { totalRows: number; productResolved: number; regionResolved: number; fullyCoded: number; excludedItems: number; excludedBranches: number };
   sampleCoded: CodedRow[];
   unknownProducts: UnknownProduct[];
   unknownBranches: UnknownBranch[];
   blockedIssues: BlockedIssue[];
   excludedItems: ExcludedItem[];
+  excludedBranches: ExcludedBranch[];
 };
 
 /** Region option meaning "this depot's rows never count" — mirrors the product list's IGNORE. */
@@ -599,6 +601,26 @@ export function WeeklyNormalizerWorkspace({
                               <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums text-slate-700">{item.rows.toLocaleString()}</td>
                               <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums text-slate-700">{num(item.netQty)}</td>
                               <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums text-slate-700">{num(item.stockQty)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : null}
+
+                  {preview.excludedBranches.length > 0 ? (
+                    <div className="overflow-x-auto border border-[#E2E8F0]">
+                      <p className="flex items-center gap-2 bg-slate-700 px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-white"><span aria-hidden="true" className="h-3.5 w-1 bg-slate-300" />Branches held out on purpose ({preview.excludedBranches.length}) — mapped to Exclude, counted here so nothing is dropped silently</p>
+                      <table className="w-full text-sm">
+                        <thead className="bg-slate-100"><tr>{["Branch", "Branch name", "Rows", "Net units", "Stock"].map((h) => <th className="whitespace-nowrap px-3 py-2 text-left font-semibold text-slate-600" key={h}>{h}</th>)}</tr></thead>
+                        <tbody>
+                          {preview.excludedBranches.map((branch) => (
+                            <tr className="border-t border-slate-100" key={`${branch.rawBranch}|${branch.branchColumnIndex ?? ""}`}>
+                              <td className="whitespace-nowrap px-3 py-1.5 font-mono text-[13px] text-slate-700">{branch.rawBranch || (branch.branchColumnIndex != null ? `Column ${branch.branchColumnIndex}` : "—")}</td>
+                              <td className="whitespace-nowrap px-3 py-1.5 text-slate-600">{branch.branchName || "—"}</td>
+                              <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums text-slate-700">{branch.rows.toLocaleString()}</td>
+                              <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums text-slate-700">{num(branch.netQty)}</td>
+                              <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums text-slate-700">{num(branch.stockQty)}</td>
                             </tr>
                           ))}
                         </tbody>

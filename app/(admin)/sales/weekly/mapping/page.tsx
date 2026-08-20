@@ -5,13 +5,10 @@ import { canAccess, resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { loadWeeklyBranchRegionAdmin } from "@/lib/sales/weekly/branch-region-map";
 import { loadWeeklyProductAliasAdmin } from "@/lib/sales/weekly/product-aliases";
-import { loadWeeklyMissingProducts } from "@/lib/sales/weekly/service";
 
 export const dynamic = "force-dynamic";
-// The missing-products scan pages stored weekly rows — give it more than the default budget.
-export const maxDuration = 60;
 
-const TAB_KEYS: WeeklyMappingTab[] = ["branch", "products", "missing-products"];
+const TAB_KEYS: WeeklyMappingTab[] = ["branch", "products"];
 
 // Each tab loads independently so one failing data source degrades only its own tab, not the page.
 async function safeLoad<T>(fn: () => Promise<T>): Promise<{ data: T | null; error: string | null }> {
@@ -33,10 +30,9 @@ export default async function WeeklyMappingPage({ searchParams }: { searchParams
   const initialTab = TAB_KEYS.includes(sp?.tab as WeeklyMappingTab) ? (sp?.tab as WeeklyMappingTab) : undefined;
   const initialProductsDistributor = sp?.distributor?.trim() || undefined;
 
-  const [branch, products, missingProducts] = await Promise.all([
+  const [branch, products] = await Promise.all([
     safeLoad(() => loadWeeklyBranchRegionAdmin("IS", "any")),
     safeLoad(() => loadWeeklyProductAliasAdmin("IS")),
-    safeLoad(() => loadWeeklyMissingProducts()),
   ]);
 
   return (
@@ -45,7 +41,6 @@ export default async function WeeklyMappingPage({ searchParams }: { searchParams
       initialProductsDistributor={initialProductsDistributor}
       branch={{ initial: branch.data, initialError: branch.error }}
       products={{ initial: products.data, initialError: products.error }}
-      missingProducts={{ initial: missingProducts.data ?? [], initialError: missingProducts.error }}
     />
   );
 }

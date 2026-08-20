@@ -118,6 +118,27 @@ export type WeeklyExcludedItem = {
   stockQty: number;
 };
 
+/**
+ * One distributor depot whose branch→region mapping is marked excluded ("this depot's rows never
+ * count" — a warehouse, platform or tender channel). The twin of WeeklyExcludedItem, and it exists
+ * for the same reason: an excluded branch used to drop out of the totals with no count anywhere, so
+ * a mis-ticked exclusion silently removed a depot's whole volume. Counted and shown, never silently
+ * dropped (owner's rule).
+ */
+export type WeeklyExcludedBranch = {
+  /** the text the branch→region map joins on — branch code when present, else branch name */
+  rawBranch: string;
+  branchName: string;
+  /** PS stock matrix only — the 1-based column this depot sat in */
+  branchColumnIndex: number | null;
+  /** distinct source sheet rows dropped */
+  rows: number;
+  /** net units (sales − returns) that did NOT enter the totals */
+  netQty: number;
+  /** stock units that did NOT enter the totals */
+  stockQty: number;
+};
+
 export type WeeklySalesValidationResult = {
   advisories?: string[];
   batchId?: string;
@@ -152,6 +173,8 @@ export type WeeklySalesValidationResult = {
   issues: WeeklyValidationIssue[];
   /** items excluded on purpose via an IGNORE alias — informational, never blocking */
   excludedItems: WeeklyExcludedItem[];
+  /** depots excluded on purpose via the branch→region map — informational, never blocking */
+  excludedBranches: WeeklyExcludedBranch[];
 };
 
 // ── Pre-upload verification (AI column check) ─────────────────────────────────────────────────────
@@ -436,21 +459,6 @@ export type WeeklyDashboard = {
    * Only present when `includeFactRows` is requested; undefined for normal dashboard loads.
    */
   factRows?: WeeklyFactExportRow[];
-};
-
-// ── Missing product resolution ───────────────────────────────────────────────────────────────────
-// Rows stored with validation_state='warning' + field='productCode' — no alias yet mapped.
-// Shown on the missing-products page; auto-healed when an alias is added.
-export type WeeklyMissingProduct = {
-  distributorCode: string;
-  distributorName: string;
-  itemCode: string;
-  itemName: string;
-  rowCount: number;
-  batchCount: number;
-  totalStock: number;
-  earliestWeek: string | null;
-  latestWeek: string | null;
 };
 
 // ── Mapping pipeline ─────────────────────────────────────────────────────────────────────────────

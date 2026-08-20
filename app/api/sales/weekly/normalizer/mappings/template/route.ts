@@ -20,7 +20,12 @@ export const dynamic = "force-dynamic";
 export async function POST(request: Request) {
   try {
     const access = await resolveAccessContext(request);
-    await assertPermission(access, "weekly_sales", "export");
+    // `update`, not `export`. The workbook this builds embeds the UNSCOPED master catalogue —
+    // every product code/name/line, every region, every area — including the confidential Head
+    // Office line (LA003/LA004/SS001) that access.ts strips from every dashboard tier. `export` is
+    // held by Medical Rep upward, so gating on it handed that catalogue to the whole sales field.
+    // Every sibling normalizer route (preview / save / learn / ai-suggest) already gates on `update`.
+    await assertPermission(access, "weekly_sales", "update");
 
     const form = await request.formData();
     const distributorCode = String(form.get("distributorCode") ?? "").trim();
