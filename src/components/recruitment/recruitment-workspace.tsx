@@ -4,11 +4,18 @@ import type { Dispatch, ReactNode, SetStateAction } from "react";
 import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
+  Briefcase,
   BriefcaseBusiness,
+  Check,
   CheckCircle2,
+  Copy,
+  Eye,
   FileSpreadsheet,
+  Send,
+  Trash2,
   UserPlus,
   Users,
+  X,
 } from "lucide-react";
 
 import {
@@ -29,6 +36,7 @@ import {
 import { Input } from "@/components/ui/input";
 import type { ApplicationWithContext } from "@/lib/recruitment/applications";
 import type { CandidateProfile } from "@/lib/recruitment/candidates";
+import { candidateDisplayName, isShortenedCandidateName } from "@/lib/recruitment/candidate-display";
 import { cairoDayKey, type CandidatePoolStats } from "@/lib/recruitment/candidate-stats";
 import type { HiringManagerOption } from "@/lib/recruitment/hiring-manager-notify";
 import type { SelectionBoardEntry } from "@/lib/recruitment/selection";
@@ -1534,60 +1542,134 @@ function RequisitionsTab({
  */
 function CandidateDecisionButtons({
   candidate,
+  current: currentProp,
   onDecided,
   pending,
   run,
+  variant = "icon",
 }: {
   candidate: Candidate;
+  /** Precomputed status, when the caller already normalized it. Optional so the profile can omit it. */
+  current?: CandidateStatus | null;
   /** Lets the profile panel, which holds its own copy of the candidate, follow the change. */
   onDecided?: (status: CandidateStatus, note: string | null) => void;
   pending: boolean;
   run: (work: () => Promise<string | void>) => void;
+  /** "icon" for the dense pool row, "label" where there is room for words (the profile panel). */
+  variant?: "icon" | "label";
 }) {
-  const current = normalizeCandidateStatus(candidate.status);
+  const current = currentProp ?? normalizeCandidateStatus(candidate.status);
 
   const decide = (status: CandidateStatus, note: string | null) =>
     run(async () => {
       await patchJson(`/api/recruitment/candidates/${candidate.id}/status`, { status, note: note ?? undefined });
       onDecided?.(status, note);
-      return `${candidate.fullName} marked ${candidateStatusLabels[status].toLowerCase()}.`;
+      return `${candidateDisplayName(candidate.fullName)} marked ${candidateStatusLabels[status].toLowerCase()}.`;
     });
+
+  const shortlist = () => decide("shortlisted", null);
+  const reject = () => {
+    const entered = window.prompt(`Why is ${candidate.fullName} not proceeding?`);
+    if (entered === null) return;
+    const note = entered.trim().slice(0, CANDIDATE_STATUS_NOTE_MAX_LENGTH);
+    decide("rejected", note || null);
+  };
+
+  if (variant === "label") {
+    return (
+      <>
+        <Button variant="secondary" disabled={pending || current === "shortlisted"} onClick={shortlist}>
+          Shortlist
+        </Button>
+        <Button variant="destructive" disabled={pending || current === "rejected"} onClick={reject}>
+          Reject
+        </Button>
+      </>
+    );
+  }
 
   return (
     <>
-      <Button
-        variant="secondary"
+      <PoolIconButton
         disabled={pending || current === "shortlisted"}
-        onClick={() => decide("shortlisted", null)}
+        label={current === "shortlisted" ? "Already shortlisted" : "Shortlist"}
+        tone="positive"
+        onClick={shortlist}
       >
-        Shortlist
-      </Button>
-      <Button
-        variant="destructive"
+        <Check className="h-3.5 w-3.5" />
+      </PoolIconButton>
+      <PoolIconButton
         disabled={pending || current === "rejected"}
-        onClick={() => {
-          const entered = window.prompt(`Why is ${candidate.fullName} not proceeding?`);
-          if (entered === null) return;
-          const note = entered.trim().slice(0, CANDIDATE_STATUS_NOTE_MAX_LENGTH);
-          decide("rejected", note || null);
-        }}
+        label={current === "rejected" ? "Already rejected" : "Reject"}
+        tone="danger"
+        onClick={reject}
       >
-        Reject
-      </Button>
+        <X className="h-3.5 w-3.5" />
+      </PoolIconButton>
     </>
+  );
+}
+
+/**
+ * One compact icon button in the pool's action strip. Square, 28px, no label — the name lives in
+ * `aria-label` and the native tooltip so a screen reader and a hovering recruiter get the same word.
+ */
+const poolIconButtonClass =
+  "inline-flex h-7 w-7 shrink-0 items-center justify-center border border-slate-200 bg-white text-slate-500 transition hover:border-[#FDBA74] hover:text-[#F97316] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-slate-200 disabled:hover:text-slate-500";
+
+function PoolIconButton({
+  active,
+  disabled,
+  label,
+  onClick,
+  tone = "default",
+  children,
+}: {
+  active?: boolean;
+  disabled?: boolean;
+  label: string;
+  onClick: () => void;
+  tone?: "default" | "danger" | "positive";
+  children: ReactNode;
+}) {
+  const toneClass =
+    tone === "danger"
+      ? "hover:border-rose-300 hover:bg-rose-50 hover:text-rose-600"
+      : tone === "positive"
+        ? "hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-700"
+        : "";
+  return (
+    <button
+      aria-label={label}
+      className={cn(poolIconButtonClass, toneClass, active && "border-[#FDBA74] bg-orange-50 text-[#F97316]")}
+      disabled={disabled}
+      onClick={onClick}
+      title={label}
+      type="button"
+    >
+      {children}
+    </button>
   );
 }
 
 /**
  * The row of actions on a candidate — and, since 2026-08-15, the shortest path in the module.
  *
- * The manager picker sits FIRST, ahead of the requisition controls, because sending a CV to a
- * District Manager is what the module exists to do and starting an application is the rarer, heavier
- * act. Measured in production the day this was built: 221 candidates, 214 of whom had never been
- * shown to anybody, because reaching a manager meant first inventing a requisition with a job title,
- * line, area, seat and owner. None of that is needed to ask someone to look at a CV.
+ * Sending a CV to a District Manager is what the module exists to do, and starting an application
+ * is the rarer, heavier act. Measured in production the day that was built: 221 candidates, 214 of
+ * whom had never been shown to anybody, because reaching a manager meant first inventing a
+ * requisition with a job title, line, area, seat and owner. None of that is needed to ask someone
+ * to look at a CV — so both still live here, one keystroke away.
  *
- * The line under the buttons is the same idea as SendToManagerCard's: it reads the send back off the
+ * What changed on 2026-08-20 is the SHAPE, not the reach. This cell used to render eight controls
+ * side by side, two of them `w-full` dropdowns. A full-width item inside a wrapping flex row claims
+ * the whole line, so every button fell onto its own line and each row stood eight lines tall —
+ * which is also why merely capping the cell's width did nothing: a narrower cell wraps the same
+ * eight controls onto just as many lines. The fix is fewer things on the line. Six icon buttons sit
+ * on one row (~200px), and the two pickers open on demand into the panel underneath, which is only
+ * mounted for the candidate being acted on.
+ *
+ * The "Sent to …" line is the same idea as SendToManagerCard's: it reads the send back off the
  * candidate row, so "has anyone been told about this person?" is answered on screen rather than
  * guessed, and it survives a reload because it is stored, not component state.
  */
@@ -1596,11 +1678,13 @@ function CandidateActionsControl({
   canDelete,
   canManage,
   hiringManagers,
+  openPanel,
   openProfile,
   openRequisitions,
   pending,
   run,
   sendTo,
+  setOpenPanel,
   setSendTo,
   setStartReq,
   startReq,
@@ -1609,87 +1693,76 @@ function CandidateActionsControl({
   canDelete: boolean;
   canManage: boolean;
   hiringManagers: HiringManagerOption[];
+  /** Which picker, if any, this candidate has open — lifted so only one row expands at a time. */
+  openPanel: "send" | "start" | null;
   openProfile: (id: string) => void;
   openRequisitions: Requisition[];
   pending: boolean;
   run: (work: () => Promise<string | void>) => void;
   sendTo: Record<string, string>;
+  setOpenPanel: (panel: "send" | "start" | null) => void;
   setSendTo: Dispatch<SetStateAction<Record<string, string>>>;
   setStartReq: Dispatch<SetStateAction<Record<string, string>>>;
   startReq: Record<string, string>;
 }) {
   const notified = candidate.managerNotified;
+  const current = normalizeCandidateStatus(candidate.status);
+
+  const sendToManager = () =>
+    run(async () => {
+      const data = await postJson(`/api/recruitment/candidates/${candidate.id}/notify-manager`, {
+        managerHrId: sendTo[candidate.id],
+      });
+      const result = (data.result ?? {}) as { managerName?: unknown };
+      const name = typeof result.managerName === "string" ? result.managerName : "the manager";
+      setOpenPanel(null);
+      return `${candidateDisplayName(candidate.fullName)} sent to ${name}.`;
+    });
+
+  const startApplication = () =>
+    run(async () => {
+      await postJson("/api/recruitment/applications", {
+        requisitionId: startReq[candidate.id],
+        candidateId: candidate.id,
+      });
+      setOpenPanel(null);
+      return "Application started.";
+    });
 
   return (
-    <div className="max-w-[280px] space-y-1">
-      <div className="flex flex-wrap gap-1.5">
-        <Button variant="ghost" disabled={pending} onClick={() => void openProfile(candidate.id)}>
-          Profile
-        </Button>
+    <div className="space-y-1.5">
+      <div className="flex items-center gap-1">
+        <PoolIconButton disabled={pending} label="Open profile" onClick={() => void openProfile(candidate.id)}>
+          <Eye className="h-3.5 w-3.5" />
+        </PoolIconButton>
         {canManage ? (
           <>
-            <CandidateDecisionButtons candidate={candidate} pending={pending} run={run} />
-            <SearchableSelect
-              className={`${fieldClass} w-56`}
-              value={sendTo[candidate.id] ?? ""}
-              onChange={(e) => setSendTo((prev) => ({ ...prev, [candidate.id]: e.target.value }))}
+            <CandidateDecisionButtons candidate={candidate} current={current} pending={pending} run={run} />
+            <PoolIconButton
+              active={openPanel === "send"}
+              disabled={pending}
+              label={notified ? `Send again — last sent to ${notified.name}` : "Send to manager"}
+              onClick={() => setOpenPanel(openPanel === "send" ? null : "send")}
             >
-              <option value="">Send to manager…</option>
-              {hiringManagers.map((manager) => (
-                <option key={manager.hrId} value={manager.hrId}>
-                  {manager.name} · {manager.jobTitle}
-                </option>
-              ))}
-            </SearchableSelect>
-            <Button
-              disabled={pending || !sendTo[candidate.id]}
-              onClick={() =>
-                run(async () => {
-                  const data = await postJson(`/api/recruitment/candidates/${candidate.id}/notify-manager`, {
-                    managerHrId: sendTo[candidate.id],
-                  });
-                  const result = (data.result ?? {}) as { managerName?: unknown };
-                  const name = typeof result.managerName === "string" ? result.managerName : "the manager";
-                  return `${candidate.fullName} sent to ${name}.`;
-                })
-              }
+              <Send className="h-3.5 w-3.5" />
+            </PoolIconButton>
+            <PoolIconButton
+              active={openPanel === "start"}
+              disabled={pending}
+              label="Start an application"
+              onClick={() => setOpenPanel(openPanel === "start" ? null : "start")}
             >
-              {notified ? "Send again" : "Send"}
-            </Button>
-            <SearchableSelect
-              className={`${fieldClass} w-48`}
-              value={startReq[candidate.id] ?? ""}
-              onChange={(e) => setStartReq((prev) => ({ ...prev, [candidate.id]: e.target.value }))}
-            >
-              <option value="">Requisition…</option>
-              {openRequisitions.map((requisition) => (
-                <option key={requisition.id} value={requisition.id}>
-                  {requisition.jobTitle}
-                </option>
-              ))}
-            </SearchableSelect>
-            <Button
-              disabled={pending || !startReq[candidate.id]}
-              onClick={() =>
-                run(async () => {
-                  await postJson("/api/recruitment/applications", {
-                    requisitionId: startReq[candidate.id],
-                    candidateId: candidate.id,
-                  });
-                  return "Application started.";
-                })
-              }
-            >
-              Start
-            </Button>
+              <Briefcase className="h-3.5 w-3.5" />
+            </PoolIconButton>
             {canDelete ? (
-              <Button
-                variant="destructive"
+              <PoolIconButton
                 disabled={pending}
+                label="Delete candidate"
+                tone="danger"
                 onClick={() => {
                   if (
                     !window.confirm(
-                      `Delete candidate ${candidate.fullName} and all of their applications? This cannot be undone.`,
+                      `Delete candidate ${candidateDisplayName(candidate.fullName)} and all of their applications? This cannot be undone.`,
                     )
                   )
                     return;
@@ -1699,14 +1772,58 @@ function CandidateActionsControl({
                   });
                 }}
               >
-                Delete
-              </Button>
+                <Trash2 className="h-3.5 w-3.5" />
+              </PoolIconButton>
             ) : null}
           </>
         ) : null}
       </div>
+
+      {/* Only the row being acted on mounts a picker, so 555 rows do not carry 1,110 dropdowns. */}
+      {canManage && openPanel === "send" ? (
+        <div className="flex items-center gap-1.5 border border-orange-200 bg-orange-50/60 p-1.5">
+          <SearchableSelect
+            className="h-8 w-full min-w-0 border border-slate-300 bg-white px-2 text-xs text-slate-900"
+            value={sendTo[candidate.id] ?? ""}
+            onChange={(e) => setSendTo((prev) => ({ ...prev, [candidate.id]: e.target.value }))}
+          >
+            <option value="">Send to manager…</option>
+            {hiringManagers.map((manager) => (
+              <option key={manager.hrId} value={manager.hrId}>
+                {manager.name} · {manager.jobTitle}
+              </option>
+            ))}
+          </SearchableSelect>
+          <Button className="h-8 shrink-0" disabled={pending || !sendTo[candidate.id]} onClick={sendToManager}>
+            {notified ? "Send again" : "Send"}
+          </Button>
+        </div>
+      ) : null}
+
+      {canManage && openPanel === "start" ? (
+        <div className="flex items-center gap-1.5 border border-slate-200 bg-slate-50 p-1.5">
+          <SearchableSelect
+            className="h-8 w-full min-w-0 border border-slate-300 bg-white px-2 text-xs text-slate-900"
+            value={startReq[candidate.id] ?? ""}
+            onChange={(e) => setStartReq((prev) => ({ ...prev, [candidate.id]: e.target.value }))}
+          >
+            <option value="">Requisition…</option>
+            {openRequisitions.map((requisition) => (
+              <option key={requisition.id} value={requisition.id}>
+                {requisition.jobTitle}
+              </option>
+            ))}
+          </SearchableSelect>
+          <Button className="h-8 shrink-0" disabled={pending || !startReq[candidate.id]} onClick={startApplication}>
+            Start
+          </Button>
+        </div>
+      ) : null}
+
       {notified ? (
-        <p className="whitespace-nowrap text-xs text-slate-600">
+        // Truncated, with the whole sentence on hover: the column is a fixed 220px, and a manager
+        // with a long name must not be what pushes the table back into horizontal scroll.
+        <p className="truncate text-[11px] text-slate-500" title={`Sent to ${notified.name} on ${cairoDateTime(notified.sentAt)}`}>
           Sent to {notified.name} on {cairoDateTime(notified.sentAt)}
         </p>
       ) : null}
@@ -1743,6 +1860,10 @@ function CandidatePoolCard({
   setStartReq: Dispatch<SetStateAction<Record<string, string>>>;
   startReq: Record<string, string>;
 }) {
+  // One card is one candidate, so the open picker is local here — unlike the table, where the state
+  // is lifted so two rows cannot expand at once.
+  const [openPanel, setOpenPanel] = useState<"send" | "start" | null>(null);
+
   return (
     <PortalRecordCard
       accent="slate"
@@ -1752,11 +1873,13 @@ function CandidatePoolCard({
           canDelete={canDelete}
           canManage={canManage}
           hiringManagers={hiringManagers}
+          openPanel={openPanel}
           openProfile={openProfile}
           openRequisitions={openRequisitions}
           pending={pending}
           run={run}
           sendTo={sendTo}
+          setOpenPanel={setOpenPanel}
           setSendTo={setSendTo}
           setStartReq={setStartReq}
           startReq={startReq}
@@ -1770,7 +1893,7 @@ function CandidatePoolCard({
           <StagePill tone={candidateStatusTone(candidate.status)}>{candidateStatusLabel(candidate.status)}</StagePill>
         </span>
       }
-      title={candidate.fullName}
+      title={candidateDisplayName(candidate.fullName)}
     >
       <PortalRecordFields
         fields={[
@@ -1793,6 +1916,9 @@ function CandidatePoolCard({
                 },
               ]
             : []),
+          // A phone has no hover, so where the desktop table puts the stored envelope in a tooltip
+          // the card has to spell it out — otherwise the shortened name is the only thing on screen.
+          ...(isShortenedCandidateName(candidate.fullName) ? [{ label: "As received", value: candidate.fullName }] : []),
         ]}
       />
     </PortalRecordCard>
@@ -1877,10 +2003,17 @@ function CandidatesTab({
   // the AI has already answered it on 161 of the 227 people in the pool (81 yes, 80 no, 66 it could
   // not tell). Free to filter on, and it turns a scroll through 226 rows into a look at 81.
   const [experienceFilter, setExperienceFilter] = useState<PoolExperienceFilter>("all");
+  // 132 of the 555 rows in production share a person with another row — the same CV forwarded twice,
+  // or the same applicant applying again. The flag was already computed; there was no way to ask for
+  // just those rows, which is the only way anyone is going to work through them.
+  const [duplicatesOnly, setDuplicatesOnly] = useState(false);
   // Bulk send: which candidates are ticked, and who they all go to. Held here rather than per row
   // so the choice survives the re-render router.refresh() triggers after some other row is acted on.
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [bulkManagerHrId, setBulkManagerHrId] = useState("");
+  // Which row, if any, has a picker open. One at a time: 555 rows must not each mount two
+  // dropdowns, and two open pickers on screen is two places to click Send by mistake.
+  const [openRowPanel, setOpenRowPanel] = useState<{ id: string; panel: "send" | "start" } | null>(null);
   const [profile, setProfile] = useState<CandidateProfile | null>(null);
   const [viewCvFile, setViewCvFile] = useState<RecruitmentFile | null>(null);
   const [statusDraft, setStatusDraft] = useState("");
@@ -1911,6 +2044,8 @@ function CandidatesTab({
     new Set(candidates.map((candidate) => (candidate.source ?? "").trim()).filter(Boolean)),
   ).sort((left, right) => left.localeCompare(right));
 
+  const duplicateCount = candidates.filter((candidate) => candidate.possibleDuplicate).length;
+
   const q = query.trim().toLowerCase();
   const visibleCandidates = candidates
     .filter((c) => {
@@ -1924,6 +2059,7 @@ function CandidatesTab({
       }
       if (statusFilter && normalizeCandidateStatus(c.status) !== statusFilter) return false;
       if (sourceFilter && (c.source ?? "").trim() !== sourceFilter) return false;
+      if (duplicatesOnly && !c.possibleDuplicate) return false;
       // Three-way, not a checkbox: null is a real and common answer here (66 rows), and it means
       // "the CV did not say", which is not the same as "no". Folding unknown into either bucket
       // would quietly hide people.
@@ -2224,7 +2360,23 @@ function CandidatesTab({
                 </select>
               </label>
             ) : null}
-            {dateFilter !== "all" || experienceFilter !== "all" || statusFilter || sourceFilter || query ? (
+            {duplicateCount > 0 ? (
+              <button
+                aria-pressed={duplicatesOnly}
+                className={`inline-flex h-9 shrink-0 items-center gap-1.5 whitespace-nowrap border px-3 text-xs font-semibold transition ${
+                  duplicatesOnly
+                    ? "border-[#F97316] bg-orange-50 text-[#C2410C]"
+                    : "border-[#D8E0EA] bg-white text-slate-600 hover:border-[#FDBA74] hover:text-[#F97316]"
+                }`}
+                onClick={() => setDuplicatesOnly((previous) => !previous)}
+                type="button"
+              >
+                <Copy className="h-3.5 w-3.5" />
+                Possible duplicates
+                <span className="tabular-nums opacity-70">{duplicateCount}</span>
+              </button>
+            ) : null}
+            {dateFilter !== "all" || experienceFilter !== "all" || statusFilter || sourceFilter || query || duplicatesOnly ? (
               <Button
                 variant="ghost"
                 onClick={() => {
@@ -2233,6 +2385,7 @@ function CandidatesTab({
                   setStatusFilter("");
                   setSourceFilter("");
                   setQuery("");
+                  setDuplicatesOnly(false);
                 }}
               >
                 Clear filters
@@ -2310,11 +2463,42 @@ function CandidatesTab({
             />
           )}
           renderTable={() => (
-            <PortalDesktopTable minWidth="1024px">
-              <thead>
+            /*
+             * Rebuilt 2026-08-20 to fit the page without sideways scroll.
+             *
+             * `table-fixed` plus the colgroup below is what makes that true rather than hopeful:
+             * with a fixed layout the browser obeys the declared widths instead of sizing columns
+             * to their widest cell, so a single 185-character intake blob can no longer widen the
+             * whole table. Everything except the name is a fixed pixel width; Candidate takes the
+             * remainder, so the table is exactly as wide as its container at any window size.
+             *
+             * Email and Phone lost their own columns and moved under the name. In production 258
+             * of 555 rows have no email and 316 no phone, so two columns were spending ~340px to
+             * show a dash most of the time.
+             */
+            <PortalDesktopTable className="table-fixed" minWidth="900px">
+              {/*
+               * Actions is 220px because six 28px icon buttons plus their gaps and the cell padding
+               * measure 212 — the strip has to fit on one line or the row grows again. Everything
+               * else is sized to its content type, and Candidate takes whatever is left.
+               */}
+              <colgroup>
+                {canManage ? <col className="w-[36px]" /> : null}
+                <col />
+                <col className="w-[140px]" />
+                <col className="w-[100px]" />
+                <col className="w-[116px]" />
+                <col className="w-[116px]" />
+                <col className="w-[220px]" />
+              </colgroup>
+              {/* No colours here on purpose. The admin shell's locked rules in globals.css paint
+                  every `thead th` black, centred and 0.78rem with !important, so the header already
+                  matches every other admin table — restating it locally would only be a lie the next
+                  reader has to check. Padding is all that is left to say. */}
+              <thead className="font-black uppercase tracking-[0.08em]">
                 <tr>
                   {canManage ? (
-                    <th className="w-10">
+                    <th className="px-3 py-2.5">
                       <input
                         aria-label="Select every candidate shown"
                         checked={allVisibleSelected}
@@ -2324,111 +2508,145 @@ function CandidatesTab({
                       />
                     </th>
                   ) : null}
-                  <th>Name</th>
+                  <th className="px-3 py-2.5">Candidate</th>
                   <th>Applying for</th>
-                  <th>Status</th>
-                  <th>Received</th>
-                  <th>Email</th>
-                  <th>Phone</th>
-                  <th>Source</th>
-                  <th>Actions</th>
+                  <th className="px-3 py-2.5">Status</th>
+                  <th className="px-3 py-2.5">Received</th>
+                  <th className="px-3 py-2.5">Source</th>
+                  <th className="px-3 py-2.5">Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {visibleCandidates.map((candidate) => (
-                  <tr key={candidate.id}>
-                    {canManage ? (
-                      <td className="px-3 py-2 align-top">
-                        <input
-                          aria-label={`Select ${candidate.fullName}`}
-                          checked={selectedIds.includes(candidate.id)}
-                          className="h-4 w-4 accent-orange-600"
-                          onChange={() => toggleSelected(candidate.id)}
-                          type="checkbox"
+                {visibleCandidates.map((candidate) => {
+                  const displayName = candidateDisplayName(candidate.fullName);
+                  const contact = [candidate.email, candidate.phone].filter(Boolean).join(" · ");
+                  return (
+                    <tr className="align-top transition-colors hover:bg-orange-50/50" key={candidate.id}>
+                      {canManage ? (
+                        <td className="px-3 py-2.5">
+                          <input
+                            aria-label={`Select ${displayName}`}
+                            checked={selectedIds.includes(candidate.id)}
+                            className="h-4 w-4 accent-orange-600"
+                            onChange={() => toggleSelected(candidate.id)}
+                            type="checkbox"
+                          />
+                        </td>
+                      ) : null}
+                      {/*
+                       * The name, and under it whatever way there is to reach the person. 220 of
+                       * the 555 production rows store the forwarder's whole envelope here rather
+                       * than a name, so what is shown is the derived one — the stored value is
+                       * still the hover text, and still what the search box matches on.
+                       */}
+                      <td className="px-3 py-2.5">
+                        <div className="flex min-w-0 items-center gap-1.5">
+                          <span
+                            className="min-w-0 truncate font-semibold text-[#0F172A]"
+                            title={candidate.fullName}
+                          >
+                            {displayName}
+                          </span>
+                          {/* Phoenix recruits Egyptian nationals only. Flagged, never filtered —
+                              the row still lists and every action still works; a person decides. */}
+                          {isStatedNonEgyptian(candidate.nationality) ? (
+                            <span className="shrink-0">
+                              <StagePill tone="rose">
+                                <span title={nonEgyptianFlagTitle(candidate.nationality)}>{NON_EGYPTIAN_FLAG_LABEL}</span>
+                              </StagePill>
+                            </span>
+                          ) : null}
+                          {/* 132 of 555 rows share a person with another row. The flag was already
+                              computed and already on the mobile card; the desktop table — the
+                              surface Talent Acquisition actually works in — never showed it. */}
+                          {candidate.possibleDuplicate ? (
+                            <span
+                              className="shrink-0 text-amber-600"
+                              title={`Possible duplicate of another candidate (matched on ${
+                                candidate.possibleDuplicate.reason === "name" ? "name" : "phone number"
+                              })`}
+                            >
+                              <Copy className="h-3 w-3" />
+                            </span>
+                          ) : null}
+                        </div>
+                        <div className="mt-0.5 truncate text-[11px] text-slate-500" title={contact || undefined}>
+                          {contact || <span className="text-slate-300">No contact details</span>}
+                        </div>
+                        {isShortenedCandidateName(candidate.fullName) ? (
+                          <div className="mt-0.5 truncate text-[10px] uppercase tracking-wide text-slate-300">
+                            From the forwarded message
+                          </div>
+                        ) : null}
+                      </td>
+                      {/* Second column on purpose: after the name, "which job is this for" is the
+                          one fact that decides who the CV goes to. 539 of 555 rows say nothing
+                          here, which is itself the thing worth seeing. */}
+                      <td className="px-3 py-2.5">
+                        {candidate.appliedForJobTitle ? (
+                          <span
+                            className="block truncate text-slate-900"
+                            title={[candidate.appliedForJobTitle, candidate.appliedForEvidence].filter(Boolean).join("\n")}
+                          >
+                            {candidate.appliedForJobTitle}
+                          </span>
+                        ) : (
+                          <span className="text-slate-300">Not stated</span>
+                        )}
+                      </td>
+                      {/* The reason for the current status sits in the tooltip rather than a column
+                          of its own: it is read when someone asks "why", not on every scan of the
+                          pool. The durable copy is in ats_candidate_status_events either way. */}
+                      <td className="px-3 py-2.5">
+                        <StagePill tone={candidateStatusTone(candidate.status)}>
+                          <span title={candidate.statusNote ?? undefined}>{candidateStatusLabel(candidate.status)}</span>
+                        </StagePill>
+                      </td>
+                      {/* When it landed, Cairo time — the column the pool had no answer for. Date
+                          over time rather than one line, so a fixed-width column can show the whole
+                          stamp instead of clipping it; the Candidate cell is two lines anyway, so
+                          this costs no row height. The New pill marks the last 24 hours, measured
+                          from the server's stamp. */}
+                      <td className="whitespace-nowrap px-3 py-2.5 text-[11px] text-slate-600">
+                        <div>{cairoDateTime(candidate.createdAt).split(" · ")[0]}</div>
+                        <div className="mt-0.5 flex items-center gap-1.5 text-slate-400">
+                          {cairoDateTime(candidate.createdAt).split(" · ")[1] ?? ""}
+                          {isNewArrival(candidate) ? <StagePill tone="orange">New</StagePill> : null}
+                        </div>
+                      </td>
+                      <td className="px-3 py-2.5">
+                        {candidate.sourceContext?.shortLabel ? (
+                          <span
+                            className="block truncate text-[11px] text-slate-600"
+                            title={candidate.sourceContext.detailLines.join("\n")}
+                          >
+                            {candidate.sourceContext.shortLabel}
+                          </span>
+                        ) : (
+                          <span className="text-slate-300">—</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-2.5">
+                        <CandidateActionsControl
+                          candidate={candidate}
+                          canDelete={canDelete}
+                          canManage={canManage}
+                          hiringManagers={hiringManagers}
+                          openPanel={openRowPanel?.id === candidate.id ? openRowPanel.panel : null}
+                          openProfile={openProfile}
+                          openRequisitions={openRequisitions}
+                          pending={pending}
+                          run={run}
+                          sendTo={sendTo}
+                          setOpenPanel={(panel) => setOpenRowPanel(panel ? { id: candidate.id, panel } : null)}
+                          setSendTo={setSendTo}
+                          setStartReq={setStartReq}
+                          startReq={startReq}
                         />
                       </td>
-                    ) : null}
-                    <td className="max-w-[180px] px-3 py-2 align-top font-medium text-slate-900">
-                      <span className="flex min-w-0 items-center gap-1.5">
-                        <span className="min-w-0 truncate" title={candidate.fullName}>
-                          {candidate.fullName}
-                        </span>
-                        {/* Phoenix recruits Egyptian nationals only. Flagged, never filtered — the
-                            row still lists and every action still works; a person decides. */}
-                        {isStatedNonEgyptian(candidate.nationality) ? (
-                          <span className="shrink-0">
-                            <StagePill tone="rose">
-                              <span title={nonEgyptianFlagTitle(candidate.nationality)}>{NON_EGYPTIAN_FLAG_LABEL}</span>
-                            </StagePill>
-                          </span>
-                        ) : null}
-                      </span>
-                    </td>
-                    {/* Second column on purpose: after the name, "which job is this for" is the one
-                        fact that decides who the CV goes to. Truncated with the full title on hover
-                        (same trade as Source below) so one long title can't force the whole table
-                        into horizontal scroll. */}
-                    <td className="max-w-[180px] px-3 py-2 align-top">
-                      {candidate.appliedForJobTitle ? (
-                        <span
-                          className="block truncate text-slate-900"
-                          title={[candidate.appliedForJobTitle, candidate.appliedForEvidence].filter(Boolean).join("\n")}
-                        >
-                          {candidate.appliedForJobTitle}
-                        </span>
-                      ) : (
-                        <span className="text-slate-400">Not stated</span>
-                      )}
-                    </td>
-                    {/* The reason for the current status sits in the tooltip rather than a column
-                        of its own: it is read when someone asks "why", not on every scan of the
-                        pool. The durable copy is in ats_candidate_status_events either way. */}
-                    <td className="whitespace-nowrap px-3 py-2 align-top">
-                      <StagePill tone={candidateStatusTone(candidate.status)}>
-                        <span title={candidate.statusNote ?? undefined}>{candidateStatusLabel(candidate.status)}</span>
-                      </StagePill>
-                    </td>
-                    {/* When it landed, Cairo time — the column the pool had no answer for. The New
-                        pill marks the last 24 hours, measured from the server's stamp. */}
-                    <td className="whitespace-nowrap px-3 py-2 align-top text-slate-600">
-                      <span className="inline-flex items-center gap-1.5">
-                        {cairoDateTime(candidate.createdAt)}
-                        {isNewArrival(candidate) ? <StagePill tone="orange">New</StagePill> : null}
-                      </span>
-                    </td>
-                    <td className="max-w-[170px] px-3 py-2 align-top">
-                      <span className="block truncate" title={candidate.email ?? undefined}>
-                        {candidate.email ?? "—"}
-                      </span>
-                    </td>
-                    <td className="whitespace-nowrap px-3 py-2 align-top">{candidate.phone ?? "—"}</td>
-                    <td className="max-w-[180px] px-3 py-2 align-top">
-                      {candidate.sourceContext?.shortLabel ? (
-                        <span className="block truncate text-slate-600" title={candidate.sourceContext.detailLines.join("\n")}>
-                          {candidate.sourceContext.shortLabel}
-                        </span>
-                      ) : (
-                        <span className="text-slate-400">—</span>
-                      )}
-                    </td>
-                    <td className="px-3 py-2 align-top">
-                      <CandidateActionsControl
-                        candidate={candidate}
-                        canDelete={canDelete}
-                        canManage={canManage}
-                        hiringManagers={hiringManagers}
-                        openProfile={openProfile}
-                        openRequisitions={openRequisitions}
-                        pending={pending}
-                        run={run}
-                        sendTo={sendTo}
-                        setSendTo={setSendTo}
-                        setStartReq={setStartReq}
-                        startReq={startReq}
-                      />
-                    </td>
-                  </tr>
-                ))}
+                    </tr>
+                  );
+                })}
               </tbody>
             </PortalDesktopTable>
           )}
@@ -2583,6 +2801,7 @@ function CandidatesTab({
                   }
                   pending={pending}
                   run={run}
+                  variant="label"
                 />
               </div>
               {profile.candidate.statusNote ? (

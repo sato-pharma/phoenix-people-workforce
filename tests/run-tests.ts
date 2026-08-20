@@ -127,6 +127,7 @@ import { runRecruitmentCvAutoApplyTests } from "./recruitment-cv-auto-apply.test
 import { runRecruitmentHiringManagerPushTests } from "./recruitment-hiring-manager-push.test.ts";
 import { runRecruitmentSimplifyTests } from "./recruitment-simplify.test.ts";
 import { runRecruitmentManagerInboxTests } from "./recruitment-manager-inbox.test.ts";
+import { runRecruitmentCandidatePoolTableTests } from "./recruitment-candidate-pool-table.test.ts";
 import { runRecruitmentHubPortalCoverageTests } from "./recruitment-hub-portal-coverage.test.ts";
 import { runRecruitmentPortalCvViewTests } from "./recruitment-portal-cv-view.test.ts";
 import { runRecruitmentInboundCvIntakeTests } from "./recruitment-inbound-cv-intake.test.ts";
@@ -1027,6 +1028,10 @@ await runTest(
 await runTest(
   "recruitment manager inbox (a manager sees and answers what was pushed to them, the nationality flag, the pharma-experience filter, and one daily CV digest instead of 628 alerts)",
   runRecruitmentManagerInboxTests,
+);
+await runTest(
+  "recruitment candidate pool table (the intake envelope becomes a name, the action strip is one line, and duplicates show on the desktop row)",
+  runRecruitmentCandidatePoolTableTests,
 );
 await runTest("recruitment hub -> portal coverage (Talent Acquisition can reach every hub tool)", runRecruitmentHubPortalCoverageTests);
 await runTest("recruitment portal \"View CV\" opens the viewer instead of downloading", runRecruitmentPortalCvViewTests);
