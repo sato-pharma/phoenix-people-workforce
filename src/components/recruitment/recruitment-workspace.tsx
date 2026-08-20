@@ -4,6 +4,7 @@ import type { Dispatch, ReactNode, SetStateAction } from "react";
 import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
+  ArrowLeft,
   Briefcase,
   BriefcaseBusiness,
   Check,
@@ -36,7 +37,7 @@ import {
 import { Input } from "@/components/ui/input";
 import type { ApplicationWithContext } from "@/lib/recruitment/applications";
 import type { CandidateProfile } from "@/lib/recruitment/candidates";
-import { candidateDisplayName, isShortenedCandidateName } from "@/lib/recruitment/candidate-display";
+import { candidateAppliedFor, candidateDisplayName, isShortenedCandidateName } from "@/lib/recruitment/candidate-display";
 import { cairoDayKey, type CandidatePoolStats } from "@/lib/recruitment/candidate-stats";
 import type { HiringManagerOption } from "@/lib/recruitment/hiring-manager-notify";
 import type { SelectionBoardEntry } from "@/lib/recruitment/selection";
@@ -1897,8 +1898,18 @@ function CandidatePoolCard({
     >
       <PortalRecordFields
         fields={[
-          // Mobile leads with the routing fact, same as the desktop table's second column.
-          { label: "Applying for", value: candidate.appliedForJobTitle ?? "Not stated" },
+          // Mobile leads with the routing fact, same as the desktop table's second column — and
+          // reads it the same way, off the intake subject when no title was stored. The label says
+          // which of the two it is, since a card has no tooltip to carry that.
+          ...(() => {
+            const appliedFor = candidateAppliedFor(candidate.appliedForJobTitle, candidate.fullName);
+            return [
+              {
+                label: appliedFor.source === "subject" ? "Applying for (from the subject line)" : "Applying for",
+                value: appliedFor.text ?? "Not stated",
+              },
+            ];
+          })(),
           ...(isStatedNonEgyptian(candidate.nationality)
             ? [{ label: "Nationality", value: nonEgyptianFlagTitle(candidate.nationality) }]
             : []),
@@ -1987,6 +1998,9 @@ function CandidatesTab({
   const router = useRouter();
   const fileRef = useRef<HTMLInputElement | null>(null);
   const profilePanelRef = useRef<HTMLDivElement | null>(null);
+  // The scroll position the pool was at when the profile was opened, so closing it puts the
+  // recruiter back on the row they pressed rather than at the foot of a 555-row table.
+  const returnScrollYRef = useRef<number | null>(null);
   const [fullName, setFullName] = useState("");
   const [nationalId, setNationalId] = useState("");
   const [email, setEmail] = useState("");
@@ -2083,6 +2097,11 @@ function CandidatesTab({
     setSelectedIds((prev) => (prev.includes(id) ? prev.filter((value) => value !== id) : [...prev, id]));
 
   const openProfile = async (id: string) => {
+    // Where the recruiter was standing in the pool. The profile panel renders BELOW a table that
+    // is 555 rows long, so opening it throws the page to the bottom; without this the only way
+    // back to row 300 is to scroll for it. Captured before the fetch, so it is the position at the
+    // moment the button was pressed.
+    returnScrollYRef.current = typeof window === "undefined" ? null : window.scrollY;
     setProfile(null);
     setViewCvFile(null);
     setError(null);
@@ -2141,6 +2160,28 @@ function CandidatesTab({
   useEffect(() => {
     if (profile) profilePanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   }, [profile]);
+
+  /**
+   * Close the profile and put the recruiter back where they pressed it.
+   *
+   * Reading a CV is one step in a pass down a 555-row pool, so the pool position is the thing to
+   * preserve. Falls back to doing nothing when there is no remembered position — a profile reached
+   * by the ?candidate= deep link was never opened from a row, and jumping to the top of a table the
+   * recruiter has not scrolled would be its own surprise.
+   */
+  const returnToPool = () => {
+    const returnTo = returnScrollYRef.current;
+    returnScrollYRef.current = null;
+    setProfile(null);
+    setViewCvFile(null);
+    setRetryExtraction(null);
+    setRetryError(null);
+    setRetryPositionKey(defaultCvPositionKey);
+    setStoredExtraction(null);
+    if (returnTo === null || typeof window === "undefined") return;
+    // After paint: the panel has to be gone before the page is short enough to scroll back into.
+    requestAnimationFrame(() => window.scrollTo({ behavior: "smooth", top: returnTo }));
+  };
 
   // Follow the ?candidate= deep link from the inbound-CV notification, once. Ref-guarded rather
   // than keyed on `profile` so closing the panel doesn't immediately reopen it.
@@ -2520,6 +2561,7 @@ function CandidatesTab({
                 {visibleCandidates.map((candidate) => {
                   const displayName = candidateDisplayName(candidate.fullName);
                   const contact = [candidate.email, candidate.phone].filter(Boolean).join(" · ");
+                  const appliedFor = candidateAppliedFor(candidate.appliedForJobTitle, candidate.fullName);
                   return (
                     <tr className="align-top transition-colors hover:bg-orange-50/50" key={candidate.id}>
                       {canManage ? (
@@ -2570,25 +2612,30 @@ function CandidatesTab({
                             </span>
                           ) : null}
                         </div>
+                        {/* No "from the forwarded message" caption here any more: it appeared on
+                            nearly every row, so it carried no information, and it cost a third
+                            line of height on all 555 of them (75px → 59px without it). The stored
+                            envelope is still the name's hover text, which is where it belongs. */}
                         <div className="mt-0.5 truncate text-[11px] text-slate-500" title={contact || undefined}>
                           {contact || <span className="text-slate-300">No contact details</span>}
                         </div>
-                        {isShortenedCandidateName(candidate.fullName) ? (
-                          <div className="mt-0.5 truncate text-[10px] uppercase tracking-wide text-slate-300">
-                            From the forwarded message
-                          </div>
-                        ) : null}
                       </td>
                       {/* Second column on purpose: after the name, "which job is this for" is the
-                          one fact that decides who the CV goes to. 539 of 555 rows say nothing
-                          here, which is itself the thing worth seeing. */}
+                          one fact that decides who the CV goes to. Only 15 rows store a title, so
+                          the rest is read off the intake message's subject line — shown in italic
+                          grey, and labelled in the tooltip, so an inferred role never reads as a
+                          stated one. */}
                       <td className="px-3 py-2.5">
-                        {candidate.appliedForJobTitle ? (
+                        {appliedFor.text ? (
                           <span
-                            className="block truncate text-slate-900"
-                            title={[candidate.appliedForJobTitle, candidate.appliedForEvidence].filter(Boolean).join("\n")}
+                            className={`block truncate ${appliedFor.source === "subject" ? "italic text-slate-500" : "text-slate-900"}`}
+                            title={
+                              appliedFor.source === "subject"
+                                ? `Read from the subject line of the message this CV arrived on:\n"${appliedFor.text}"`
+                                : [candidate.appliedForJobTitle, candidate.appliedForEvidence].filter(Boolean).join("\n")
+                            }
                           >
-                            {candidate.appliedForJobTitle}
+                            {appliedFor.text}
                           </span>
                         ) : (
                           <span className="text-slate-300">Not stated</span>
@@ -2655,6 +2702,25 @@ function CandidatesTab({
 
       {profile ? (
         <div ref={profilePanelRef} className="space-y-3 border border-slate-200 p-4">
+          {/*
+           * Sticky, because this panel opens below a 555-row table and is itself long enough to
+           * scroll. Without a header that stays put, "go back to the pool" means scrolling up
+           * through the whole profile to find the Close button — the exact complaint this answers.
+           * It carries the way back on the left and the way out on the right.
+           */}
+          <div className="sticky top-0 z-20 -mx-4 -mt-4 mb-1 flex items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-2.5">
+            <button
+              className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap border border-[#D8E0EA] bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:border-[#FDBA74] hover:text-[#F97316]"
+              onClick={returnToPool}
+              type="button"
+            >
+              <ArrowLeft className="h-3.5 w-3.5" />
+              Back to the pool
+            </button>
+            <p className="truncate text-xs text-slate-500" title={profile.candidate.fullName}>
+              {candidateDisplayName(profile.candidate.fullName)}
+            </p>
+          </div>
           <div className="flex items-center justify-between">
             <div>
               <p className="inline-flex items-center gap-1.5 text-sm font-semibold text-slate-900">
@@ -2671,17 +2737,7 @@ function CandidatesTab({
                 {profile.candidate.email ?? "—"} · {profile.candidate.phone ?? "—"} · Source: {profile.candidate.source ?? "—"}
               </p>
             </div>
-            <Button
-              variant="ghost"
-              onClick={() => {
-                setProfile(null);
-                setViewCvFile(null);
-                setRetryExtraction(null);
-                setRetryError(null);
-                setRetryPositionKey(defaultCvPositionKey);
-                setStoredExtraction(null);
-              }}
-            >
+            <Button variant="ghost" onClick={returnToPool}>
               Close
             </Button>
           </div>
