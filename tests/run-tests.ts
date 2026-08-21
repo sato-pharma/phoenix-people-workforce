@@ -128,6 +128,7 @@ import { runRecruitmentHiringManagerPushTests } from "./recruitment-hiring-manag
 import { runRecruitmentSimplifyTests } from "./recruitment-simplify.test.ts";
 import { runRecruitmentManagerInboxTests } from "./recruitment-manager-inbox.test.ts";
 import { runRecruitmentCandidatePoolTableTests } from "./recruitment-candidate-pool-table.test.ts";
+import { runRecruitmentAppliedForTests } from "./recruitment-applied-for.test.ts";
 import { runRecruitmentHubPortalCoverageTests } from "./recruitment-hub-portal-coverage.test.ts";
 import { runRecruitmentPortalCvViewTests } from "./recruitment-portal-cv-view.test.ts";
 import { runRecruitmentInboundCvIntakeTests } from "./recruitment-inbound-cv-intake.test.ts";
@@ -1036,6 +1037,10 @@ await runTest(
 await runTest(
   "recruitment candidate pool table (the intake envelope becomes a name, the action strip is one line, and duplicates show on the desktop row)",
   runRecruitmentCandidatePoolTableTests,
+);
+await runTest(
+  "recruitment \"Applying for\" (the evidence ladder that lifts the column from 15 answered rows to 394, on verbatim production strings)",
+  runRecruitmentAppliedForTests,
 );
 await runTest("recruitment hub -> portal coverage (Talent Acquisition can reach every hub tool)", runRecruitmentHubPortalCoverageTests);
 await runTest("recruitment portal \"View CV\" opens the viewer instead of downloading", runRecruitmentPortalCvViewTests);

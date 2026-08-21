@@ -704,22 +704,21 @@ export function runRecruitmentCvExtractionTests() {
   // the column existing. Pinning the bare tag once made a padding fix look like a test failure.
   assert.match(workspaceSource, /<th[^>]*>Applying for<\/th>/, "the desktop table must carry the column");
   // Mobile gets it as a card field — the owner's rule is desktop tables, mobile cards. Since
-  // 2026-08-21 the value is candidateAppliedFor(), which falls back to the intake message's
-  // subject line when no title was stored (15 rows of 555 store one). A card has no tooltip, so
-  // the LABEL has to say when the role was inferred rather than stated.
+  // 2026-08-21 the value walks the whole evidence ladder in applied-for.ts, because a stored title
+  // exists on 15 rows of 555. A card has no tooltip, so the LABEL has to say which source answered.
   assert.match(
     workspaceSource,
-    /label: appliedFor\.source === "subject" \? "Applying for \(from the subject line\)" : "Applying for"/,
-    "mobile must carry the applying-for field, and say so when the role was read off the subject line",
+    /APPLIED_FOR_SOURCE_SHORT\[appliedFor\.source\]/,
+    "mobile must name the source in the label — a card has no tooltip to carry it",
   );
   assert.match(
     workspaceSource,
     /value: appliedFor\.text \?\? "Not stated"/,
-    "a candidate with neither a stored title nor a usable subject still reads 'Not stated', never blank",
+    "a candidate no source can answer for still reads 'Not stated', never blank",
   );
   assert.match(
     workspaceSource,
-    /Read from: \{profile\.candidate\.appliedForEvidence\}/,
+    /\{appliedFor\.source \? APPLIED_FOR_SOURCE_LABEL\[appliedFor\.source\] : "Read from"\}: \{readFrom\}/,
     "the profile must show the wording the role was read from, so a recruiter can disagree with it",
   );
 

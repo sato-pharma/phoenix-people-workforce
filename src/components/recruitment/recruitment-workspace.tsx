@@ -37,7 +37,8 @@ import {
 import { Input } from "@/components/ui/input";
 import type { ApplicationWithContext } from "@/lib/recruitment/applications";
 import type { CandidateProfile } from "@/lib/recruitment/candidates";
-import { candidateAppliedFor, candidateDisplayName, isShortenedCandidateName } from "@/lib/recruitment/candidate-display";
+import { APPLIED_FOR_SOURCE_LABEL, APPLIED_FOR_SOURCE_SHORT, candidateRowAppliedFor } from "@/lib/recruitment/applied-for";
+import { candidateDisplayName, isShortenedCandidateName } from "@/lib/recruitment/candidate-display";
 import { cairoDayKey, type CandidatePoolStats } from "@/lib/recruitment/candidate-stats";
 import type { HiringManagerOption } from "@/lib/recruitment/hiring-manager-notify";
 import type { SelectionBoardEntry } from "@/lib/recruitment/selection";
@@ -1902,13 +1903,16 @@ function CandidatePoolCard({
       <PortalRecordFields
         fields={[
           // Mobile leads with the routing fact, same as the desktop table's second column — and
-          // reads it the same way, off the intake subject when no title was stored. The label says
-          // which of the two it is, since a card has no tooltip to carry that.
+          // reads it the same way, off whichever piece of evidence answered. The label says which
+          // one that was, since a card has no tooltip to carry it.
           ...(() => {
-            const appliedFor = candidateAppliedFor(candidate.appliedForJobTitle, candidate.fullName);
+            const appliedFor = candidateRowAppliedFor(candidate);
             return [
               {
-                label: appliedFor.source === "subject" ? "Applying for (from the subject line)" : "Applying for",
+                label:
+                  appliedFor.source && appliedFor.source !== "stated"
+                    ? `Applying for (${APPLIED_FOR_SOURCE_SHORT[appliedFor.source]})`
+                    : "Applying for",
                 value: appliedFor.text ?? "Not stated",
               },
             ];
@@ -2073,7 +2077,19 @@ function CandidatesTab({
     .filter((c) => {
       if (
         q &&
-        ![c.fullName, c.email, c.phone, candidateStatusLabel(c.status), c.source, c.nationalId, c.appliedForJobTitle]
+        // The DERIVED role is searched as well as the stored one. Searching "district manager" has
+        // to find the 198 rows whose only statement of it is the intake subject line, otherwise the
+        // column answers on screen and the search box still says there is nobody.
+        ![
+          c.fullName,
+          c.email,
+          c.phone,
+          candidateStatusLabel(c.status),
+          c.source,
+          c.nationalId,
+          c.appliedForJobTitle,
+          candidateRowAppliedFor(c).text,
+        ]
           .filter(Boolean)
           .some((value) => String(value).toLowerCase().includes(q))
       ) {
@@ -2628,7 +2644,7 @@ function CandidatesTab({
                 {visibleCandidates.map((candidate) => {
                   const displayName = candidateDisplayName(candidate.fullName);
                   const contact = [candidate.email, candidate.phone].filter(Boolean).join(" · ");
-                  const appliedFor = candidateAppliedFor(candidate.appliedForJobTitle, candidate.fullName);
+                  const appliedFor = candidateRowAppliedFor(candidate);
                   return (
                     <tr className="align-top transition-colors hover:bg-orange-50/50" key={candidate.id}>
                       {canManage ? (
@@ -2689,17 +2705,18 @@ function CandidatesTab({
                       </td>
                       {/* Second column on purpose: after the name, "which job is this for" is the
                           one fact that decides who the CV goes to. Only 15 rows store a title, so
-                          the rest is read off the intake message's subject line — shown in italic
-                          grey, and labelled in the tooltip, so an inferred role never reads as a
-                          stated one. */}
+                          the rest is read off whatever the sender wrote — shown in italic grey, and
+                          named in the tooltip, so a derived role never reads as a stated one. The
+                          tooltip carries the untouched wording it was read from, which is what lets
+                          a recruiter overrule it without opening the mail. */}
                       <td className="px-3 py-2.5">
                         {appliedFor.text ? (
                           <span
-                            className={`block truncate ${appliedFor.source === "subject" ? "italic text-slate-500" : "text-slate-900"}`}
+                            className={`block truncate ${appliedFor.source === "stated" ? "text-slate-900" : "italic text-slate-500"}`}
                             title={
-                              appliedFor.source === "subject"
-                                ? `Read from the subject line of the message this CV arrived on:\n"${appliedFor.text}"`
-                                : [candidate.appliedForJobTitle, candidate.appliedForEvidence].filter(Boolean).join("\n")
+                              appliedFor.source === "stated"
+                                ? [candidate.appliedForJobTitle, candidate.appliedForEvidence].filter(Boolean).join("\n")
+                                : `${APPLIED_FOR_SOURCE_LABEL[appliedFor.source ?? "subject"]}:\n"${appliedFor.evidence ?? appliedFor.text}"`
                             }
                           >
                             {appliedFor.text}
@@ -2834,16 +2851,25 @@ function CandidatesTab({
           {/* The applied-for role, with the wording it was read from directly beneath it. The
               evidence is shown rather than hidden in a tooltip because this value is INFERRED from
               a covering message, not transcribed from the CV — a recruiter has to be able to see
-              the sentence and disagree with it. */}
-          {profile.candidate.appliedForJobTitle ? (
-            <div className="rounded-md border border-slate-200 bg-white p-3">
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Applying for</p>
-              <p className="mt-1 text-sm font-medium text-slate-900">{profile.candidate.appliedForJobTitle}</p>
-              {profile.candidate.appliedForEvidence ? (
-                <p className="mt-1 text-xs text-slate-600">Read from: {profile.candidate.appliedForEvidence}</p>
-              ) : null}
-            </div>
-          ) : null}
+              the sentence and disagree with it. Same resolution as the pool table, so the profile
+              never disagrees with the row that was clicked to reach it. */}
+          {(() => {
+            const appliedFor = candidateRowAppliedFor(profile.candidate);
+            if (!appliedFor.text) return null;
+            const readFrom =
+              appliedFor.source === "stated" ? profile.candidate.appliedForEvidence : appliedFor.evidence;
+            return (
+              <div className="rounded-md border border-slate-200 bg-white p-3">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Applying for</p>
+                <p className="mt-1 text-sm font-medium text-slate-900">{appliedFor.text}</p>
+                {readFrom ? (
+                  <p className="mt-1 text-xs text-slate-600">
+                    {appliedFor.source ? APPLIED_FOR_SOURCE_LABEL[appliedFor.source] : "Read from"}: {readFrom}
+                  </p>
+                ) : null}
+              </div>
+            );
+          })()}
 
           {profile.candidate.sourceContext && profile.candidate.sourceContext.detailLines.length > 0 ? (
             <div className="rounded-md border border-slate-200 bg-slate-50/60 p-3">

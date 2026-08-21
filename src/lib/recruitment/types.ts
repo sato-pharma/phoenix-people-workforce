@@ -6,6 +6,8 @@
 //   supabase/_migrations_archive/pre-baseline-2026-07-11/20260605014225_recruitment_phase1_schema.sql
 //   supabase/_migrations_archive/pre-baseline-2026-07-11/20260605014350_recruitment_workflow_registry_module.sql
 
+import type { CandidateAppliedFor } from "@/lib/recruitment/applied-for";
+
 export const RECRUITMENT_MODULE_KEY = "recruitment" as const;
 
 export const requisitionStatuses = [
@@ -263,6 +265,11 @@ export type Candidate = {
   // auto-merge: the exact-key identity rule stays authoritative; this just points Talent
   // Acquisition at a record worth eyeballing. Populated by listCandidates; see findDuplicateFlags.
   possibleDuplicate?: { candidateId: string; reason: "name" | "phone_tail" } | null;
+  // The job this person is asking us for, resolved from every piece of evidence on the record
+  // rather than from `appliedForJobTitle` alone — which is filled on 15 of 555 production rows.
+  // Populated by listCandidates; see src/lib/recruitment/applied-for.ts for the ladder and why it
+  // is ordered the way it is. Carries the source so a derived answer is never shown as a stated one.
+  appliedFor?: CandidateAppliedFor | null;
 };
 
 export type CandidateSourceContext = {

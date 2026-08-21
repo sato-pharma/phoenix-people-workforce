@@ -7,6 +7,7 @@ import {
   loadExcelWorkbook,
 } from "@/lib/uploads/exceljs-rows";
 import { assertCanDeleteRecruitment } from "@/lib/recruitment/access";
+import { candidateAppliedFor, freeAppliedForEvidence } from "@/lib/recruitment/applied-for";
 import { describeCandidateSource, type SourceContextRow } from "@/lib/recruitment/candidate-source-context";
 import { chunkIds } from "@/lib/recruitment/db-batch";
 import { hrIdLookupKeys, hrIdsMatch } from "@/lib/hr-id";
@@ -183,6 +184,102 @@ async function loadSourceContextByCandidate(ids: string[]): Promise<Map<string, 
   return map;
 }
 
+/**
+ * The job title the CV reader last read off a candidate's covering message, keyed by candidate id.
+ *
+ * Best-effort and DELIBERATELY NARROW: it is called with only the candidates the free evidence
+ * could not answer, because `extracted_fields` is a fat jsonb blob (1.1 MB across 370 production
+ * rows) and every round trip from here crosses the Atlantic. Restricted that way it answers 5 rows
+ * today for ~100 rows of payload — and it is the source that grows, since 262 CVs in the pool have
+ * never been read by the model at all.
+ */
+async function loadCvJobTitleByCandidate(ids: string[]): Promise<Map<string, string>> {
+  const map = new Map<string, string>();
+  if (ids.length === 0) return map;
+  const supabase = recruitmentDb();
+  for (const batch of chunkIds(ids)) {
+    const { data, error } = await supabase
+      .from("ats_candidate_cv_extractions")
+      .select("candidate_id,created_at,extracted_fields")
+      .in("candidate_id", batch)
+      .order("created_at", { ascending: false });
+    if (error || !data) continue;
+    for (const row of data as Array<{ candidate_id?: unknown; extracted_fields?: unknown }>) {
+      const candidateId = textOrNull(row.candidate_id);
+      // Newest first, so the first row seen for a candidate is the one that counts.
+      if (!candidateId || map.has(candidateId)) continue;
+      const field = (row.extracted_fields as Record<string, unknown> | null)?.appliedForJobTitle;
+      const value = textOrNull((field as { value?: unknown } | null | undefined)?.value);
+      if (value) map.set(candidateId, value);
+    }
+  }
+  return map;
+}
+
+/**
+ * The job title of the vacancy a candidate was formally put forward for, keyed by candidate id.
+ *
+ * Last rung of the ladder and the smallest — 7 applications against 2 requisitions in production —
+ * but it is the one piece of evidence a recruiter created on purpose, so it is worth reading when
+ * nothing the applicant wrote answered the question. Best-effort, same as the loaders above.
+ */
+async function loadRequisitionJobTitleByCandidate(ids: string[]): Promise<Map<string, string>> {
+  const map = new Map<string, string>();
+  if (ids.length === 0) return map;
+  const supabase = recruitmentDb();
+  for (const batch of chunkIds(ids)) {
+    const { data, error } = await supabase
+      .from("ats_applications")
+      .select("candidate_id,created_at,ats_requisitions(job_title)")
+      .in("candidate_id", batch)
+      .order("created_at", { ascending: false });
+    if (error || !data) continue;
+    for (const row of data as Array<{ candidate_id?: unknown; ats_requisitions?: unknown }>) {
+      const candidateId = textOrNull(row.candidate_id);
+      if (!candidateId || map.has(candidateId)) continue;
+      const requisition = Array.isArray(row.ats_requisitions) ? row.ats_requisitions[0] : row.ats_requisitions;
+      const title = textOrNull((requisition as { job_title?: unknown } | null | undefined)?.job_title);
+      if (title) map.set(candidateId, title);
+    }
+  }
+  return map;
+}
+
+/**
+ * Fills in `sourceContext` and the resolved `appliedFor` on a list of candidates, in place.
+ *
+ * Two phases on purpose. The free evidence — the stored title, the intake subject, the WhatsApp
+ * messages, the `Subject( … )` in the envelope — answers 400 of the 555 production rows and costs
+ * exactly one query, the one that loads the intake context. Only what is STILL unanswered goes back
+ * to the database for the CV extraction and the requisition, so those two run against ~120 ids
+ * rather than all 555. That ordering is what makes reading `extracted_fields` affordable at all:
+ * it is 1.1 MB across the table, and every round trip from here crosses the Atlantic.
+ */
+async function attachAppliedFor(candidates: Candidate[]): Promise<void> {
+  if (candidates.length === 0) return;
+  const sourceContext = await loadSourceContextByCandidate(candidates.map((candidate) => candidate.id));
+  for (const candidate of candidates) {
+    const context = sourceContext.get(candidate.id);
+    if (context) candidate.sourceContext = context;
+    candidate.appliedFor = candidateAppliedFor(freeAppliedForEvidence(candidate));
+  }
+
+  const unresolved = candidates.filter((candidate) => !candidate.appliedFor?.text);
+  if (unresolved.length === 0) return;
+  const unresolvedIds = unresolved.map((candidate) => candidate.id);
+  const [cvTitles, requisitionTitles] = await Promise.all([
+    loadCvJobTitleByCandidate(unresolvedIds),
+    loadRequisitionJobTitleByCandidate(unresolvedIds),
+  ]);
+  for (const candidate of unresolved) {
+    candidate.appliedFor = candidateAppliedFor({
+      ...freeAppliedForEvidence(candidate),
+      cvExtractionJobTitle: cvTitles.get(candidate.id) ?? null,
+      requisitionJobTitle: requisitionTitles.get(candidate.id) ?? null,
+    });
+  }
+}
+
 export async function listCandidates(): Promise<Candidate[]> {
   const supabase = recruitmentDb();
   const { data, error } = await supabase
@@ -191,15 +288,13 @@ export async function listCandidates(): Promise<Candidate[]> {
     .order("created_at", { ascending: false });
   if (error) throw error;
   const candidates = ((data ?? []) as CandidateDbRow[]).map(mapCandidate);
-  const sourceContext = await loadSourceContextByCandidate(candidates.map((candidate) => candidate.id));
+  await attachAppliedFor(candidates);
   // Advisory soft-duplicate flags across the whole pool (same phone-tail / normalized name). Purely
   // a "worth a look" marker for Talent Acquisition — never merges anything.
   const dupFlags = findDuplicateFlags(
     candidates.map((candidate) => ({ fullName: candidate.fullName, id: candidate.id, phoneNorm: normalizePhone(candidate.phone) })),
   );
   for (const candidate of candidates) {
-    const context = sourceContext.get(candidate.id);
-    if (context) candidate.sourceContext = context;
     const flag = dupFlags.get(candidate.id);
     candidate.possibleDuplicate = flag ? { candidateId: flag.id, reason: flag.reason } : null;
   }
@@ -249,7 +344,12 @@ export async function listCandidatesSentToManager(managerHrId: string | null | u
     if ((error as { code?: string }).code === "42703") return [];
     throw error;
   }
-  return ((data ?? []) as CandidateDbRow[]).map(mapCandidate);
+  const candidates = ((data ?? []) as CandidateDbRow[]).map(mapCandidate);
+  // The manager's own inbox needs the role more than any other screen — it is the whole question
+  // they are answering. Without this the card read "No role stated on the application" for 540 of
+  // the 555 rows, because `applied_for_job_title` is filled on 15 of them.
+  await attachAppliedFor(candidates);
+  return candidates;
 }
 
 async function fetchById(id: string): Promise<Candidate> {
