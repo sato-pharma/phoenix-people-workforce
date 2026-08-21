@@ -119,6 +119,22 @@ export function normalizeContactGrade(value: string | null | undefined): string 
   return normalized ? normalized : null;
 }
 
+/** Normalizes the vendor's ampm half-day marker to a clean uppercase/trimmed value. iReports360
+ * has the same inconsistent-casing habit here as on contactGrade: measured on the live mirror
+ * 2026-08-21, 97 of 122,814 rows carry "Pm" (58), "Am" (23) or "pm" (16) against 94,689 "PM" and
+ * 25,229 "AM". Both readers take the value literally — the CRM master AM/PM filter does an exact
+ * .eq("ampm", ...) so a mis-cased row is invisible to it, and the day-count logic in master.ts
+ * treats any marker that is not exactly "AM"/"PM" as a FULL day, so a lone "Pm" scored a whole
+ * day instead of half. Empty string -> null, the same "blank means no marker" convention every
+ * other optional CRM field uses.
+ *
+ * An unrecognized value is uppercased and KEPT, never dropped: a marker we do not recognize is a
+ * vendor change worth surfacing, and master.ts already counts anything non-AM/PM as a full day. */
+export function normalizeAmpm(value: string | null | undefined): string | null {
+  const normalized = value?.trim().toUpperCase();
+  return normalized ? normalized : null;
+}
+
 // VENDOR TIMESTAMP INVARIANT (load-bearing — do not "helpfully" convert): iReports360 sends
 // `saveDate`/`checkDate`/`visitDate` as zone-less strings that are ALREADY Africa/Cairo wall-clock
 // (e.g. "2026-07-16T18:13:18", no offset). They are stored verbatim into `timestamptz` columns, so
@@ -137,7 +153,7 @@ export function rowFromVisit(visit: IReports360Visit, maps: CrmIdentityMaps) {
     agent_crm_id: visit.agentID,
     agent_hr_id: resolveEmployeeHrId(visit.agentID, visit.agentName, maps, visitDay),
     agent_name: visit.agentName,
-    ampm: visit.ampm,
+    ampm: normalizeAmpm(visit.ampm),
     attendance: visit.attendance,
     call_type: visit.callType,
     comment: visit.comment,
