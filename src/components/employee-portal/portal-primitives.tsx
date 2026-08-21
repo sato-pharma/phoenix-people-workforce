@@ -219,7 +219,15 @@ export function PortalRecordCard({
     <article className={cn("border-l-[3px] bg-white px-4 py-3.5", accentClass, className)}>
       <div className="flex min-w-0 items-start justify-between gap-3">
         <div className="min-w-0">
-          <h3 className="whitespace-nowrap text-sm font-black text-slate-950">{title}</h3>
+          {/* Nowrap from `md` up, where a card sits in a wide grid and a name always fits. BELOW
+              md it must wrap: measured on a 375px phone, the longest real rep name (52 chars,
+              "Mohamed Mohamed ElMenshawy Abdelmatty Mohamed Ismail") needs 436px in a 267px slot,
+              and with `whitespace-nowrap` and no clipping it pushed the PAGE's scroll width to
+              455px — a sideways-scrolling phone page, which is the exact defect the card layout
+              exists to remove. 37 of 108 CRM reps are over that length. Wrapping is the only
+              option that keeps the whole name readable; the owner chose it over an ellipsis on
+              2026-08-21, for mobile cards only. Desktop tables still never wrap. */}
+          <h3 className="break-words text-sm font-black text-slate-950 md:whitespace-nowrap">{title}</h3>
           {meta ? <div className="mt-1 text-xs font-semibold text-slate-500">{meta}</div> : null}
         </div>
         {status ? <div className="shrink-0">{status}</div> : null}
