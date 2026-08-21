@@ -39,6 +39,7 @@ import {
   type CrmMasterDataset,
   type CrmMasterFilterKey,
 } from "@/lib/crm/master-datasets";
+import { CRM_VISIT_TYPE_FILTER_CODES, CRM_VISIT_TYPE_OPTIONS, resolveVisitTypeLabel } from "@/lib/crm/visit-types";
 
 export { CRM_MASTER_DATASETS, CRM_MASTER_SUPPORTED_FILTERS, crmMasterSupportsFilter, type CrmMasterDataset, type CrmMasterFilterKey };
 
@@ -57,19 +58,9 @@ function isVisitDataset(dataset: CrmMasterDataset): boolean {
   return dataset !== "checkins";
 }
 
-/** Fixed visit-type options for the Visit Type dropdown (a stable iReports360 enum). */
-export const CRM_VISIT_TYPE_OPTIONS: readonly string[] = [
-  "Regular Visit",
-  "Campaign (Prospection)",
-  "Meeting",
-  "Group Meeting",
-  "Conference",
-  "Training",
-  "Health Day",
-  "Traveling",
-  "Annual Vacation",
-  "Unknown",
-];
+// The Visit Type dropdown now lives beside the codes it filters on, in visit-types.ts.
+// Re-exported here because the CRM master page has always imported it from this module.
+export { CRM_VISIT_TYPE_OPTIONS };
 
 /** A displayed column: the raw DB key + a human label + a rendering hint + an optional
  * header tooltip.
@@ -682,7 +673,11 @@ export function attachEffectiveType(
     const reclassified = alwaysReclassified ? true : knowsCheckin && isRegular && row.checkin_id == null;
     row.effective_type = reclassified
       ? "Campaign — reclassified (Regular, no check-in)"
-      : (typeof row.visit_type_description === "string" && row.visit_type_description) || String(row.visit_type ?? "—");
+      : resolveVisitTypeLabel(
+          typeof row.visit_type === "number" ? row.visit_type : null,
+          typeof row.visit_type_description === "string" ? row.visit_type_description : null,
+          typeof row.comment === "string" ? row.comment : null,
+        );
   }
 }
 
@@ -1548,12 +1543,14 @@ function applyMasterFilters(
   }
   if (isVisits && ampm !== "all") q = q.eq("ampm", ampm);
   if (isVisits && visitType) {
-    // Exact match on the stored description. The dropdown offers the stable vendor enum
-    // (CRM_VISIT_TYPE_OPTIONS), which maps 1:1 to the descriptions actually present, so an exact
-    // match always resolves. Deliberately NOT sanitizeSearch()+ilike: that stripped parentheses,
-    // turning "Campaign (Prospection)" into the pattern "%Campaign  Prospection%" which matched 0 of
-    // ~29k rows. sanitizeSearch stays only on the free-text search box (paren-harmless there).
-    q = q.eq("visit_type_description", visitType);
+    // Two kinds of entry share this dropdown. The vendor's documented enum is matched on the stored
+    // description — deliberately NOT sanitizeSearch()+ilike: that stripped parentheses, turning
+    // "Campaign (Prospection)" into the pattern "%Campaign  Prospection%" which matched 0 of ~29k
+    // rows. sanitizeSearch stays only on the free-text search box (paren-harmless there).
+    // The Phoenix-resolved entries have no distinct stored description to match on — the vendor
+    // sends the same string "Unknown" for all seven codes — so they select on the numeric column.
+    const codes = CRM_VISIT_TYPE_FILTER_CODES.get(visitType);
+    q = codes ? q.in("visit_type", [...codes]) : q.eq("visit_type_description", visitType);
   }
   if (isVisits && mappingStatus === "agent_mapped") q = q.not("agent_hr_id", "is", null);
   if (isVisits && mappingStatus === "agent_unmapped") q = q.is("agent_hr_id", null);

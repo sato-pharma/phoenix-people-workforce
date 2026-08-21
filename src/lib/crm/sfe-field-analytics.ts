@@ -11,6 +11,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { collapseDuplicateVisitSubmissions, queryCheckins, queryVisits } from "@/lib/crm/reads";
+import { resolveVisitTypeLabel } from "@/lib/crm/visit-types";
 
 export type SfeStartTimeRow = {
   agentHrId: string | null;
@@ -205,7 +206,15 @@ export async function getSfeCrmFieldAnalytics(input: {
     else if (ampm === "PM") pmVisits++;
     if (visit.double_crm_id) doubleVisits++;
 
-    const typeLabel = (visit.visit_type_description ?? "").trim() || "Unclassified";
+    // The vendor sends the literal string "Unknown" for seven visit-type codes, which collapsed
+    // 2,965 production visits into a single meaningless bucket in this breakdown. Resolve them to
+    // what Phoenix already knows each code means. `comment` is deliberately NOT selected by this
+    // query — it spans every rep in the window and the free text would dominate the payload — so
+    // the two comment-split codes (-7, -30) land on their default label rather than a variant.
+    const hasType = visit.visit_type != null || (visit.visit_type_description ?? "").trim() !== "";
+    const typeLabel = hasType
+      ? resolveVisitTypeLabel(visit.visit_type, visit.visit_type_description, null)
+      : "Unclassified";
     byType.set(typeLabel, (byType.get(typeLabel) ?? 0) + 1);
 
     let rep = perRep.get(key);

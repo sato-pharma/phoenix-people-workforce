@@ -203,6 +203,7 @@ import { runCrmMasterExportWorkbookTests } from "./crm-master-export-workbook.te
 import { runCrmDegradationPolicyTests } from "./crm-degradation-policy.test.ts";
 import { runCrmCheckinCoordGuardTests } from "./crm-checkin-coord-guard.test.ts";
 import { runCrmAmpmNormalizationTests } from "./crm-ampm-normalization.test.ts";
+import { runCrmVisitTypeLabelTests } from "./crm-visit-type-labels.test.ts";
 import { runLocationIqGeocodeConfidenceTests } from "./locationiq-geocode-confidence.test.ts";
 import { runPrivateCalendarTests } from "./private-calendar.test.ts";
 import { runWeeklyPlanApproverUiParityTests } from "./weekly-plan-approver-ui-parity.test.ts";
@@ -1154,6 +1155,12 @@ await runTest(
   + "master filter and the half-day count both see them; blank means no marker; an unrecognized "
   + "marker is kept, never dropped)",
   runCrmAmpmNormalizationTests,
+);
+await runTest(
+  "crm visit type labels (the seven codes iReports360 never documented stop reaching a human as "
+  + "\"Unknown\"; the vendor's own description still wins; -7 and -30 route on the rep's comment; a "
+  + "resolved label must never be written back to visit_type_description)",
+  runCrmVisitTypeLabelTests,
 );
 await runTest("LocationIQ geocode confidence (reverse/forward scoring + LocationIQ-first/Google-fallback wiring)", runLocationIqGeocodeConfidenceTests);
 await runTest("private calendar", runPrivateCalendarTests);

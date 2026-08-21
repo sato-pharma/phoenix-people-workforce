@@ -14,6 +14,7 @@
 import { indexCheckinsByAgentContactDay, pickCheckinForVisit } from "@/lib/crm/checkin-match";
 import { queryCheckins, queryVisits, queryVisitsLimited, resolveVisitTime } from "@/lib/crm/reads";
 import type { VisitTimeSource } from "@/lib/crm/reads";
+import { resolveVisitTypeLabel } from "@/lib/crm/visit-types";
 import { TEAM_VISIT_ROW_CAP } from "@/lib/employee-portal/my-crm-visits-constants";
 
 export type MyCrmWindow = { dateFrom: string; dateTo: string };
@@ -24,6 +25,7 @@ type RawVisit = {
   contact_crm_id: number | null;
   visit_date: string | null;
   ampm: string | null;
+  visit_type: number | null;
   visit_type_description: string | null;
   contact_name: string | null;
   customer_name: string | null;
@@ -36,6 +38,7 @@ type RawDoubleVisit = {
   id: string;
   visit_date: string | null;
   ampm: string | null;
+  visit_type: number | null;
   visit_type_description: string | null;
   contact_name: string | null;
   customer_name: string | null;
@@ -92,9 +95,9 @@ export type MyCrmCheckinRow = {
 };
 
 const VISIT_COLUMNS =
-  "id,agent_crm_id,contact_crm_id,visit_date,ampm,visit_type_description,contact_name,customer_name,double_name,comment,crm_save_date";
+  "id,agent_crm_id,contact_crm_id,visit_date,ampm,visit_type,visit_type_description,contact_name,customer_name,double_name,comment,crm_save_date";
 const DOUBLE_VISIT_COLUMNS =
-  "id,visit_date,ampm,visit_type_description,contact_name,customer_name,agent_name,comment,crm_save_date";
+  "id,visit_date,ampm,visit_type,visit_type_description,contact_name,customer_name,agent_name,comment,crm_save_date";
 const TEAM_VISIT_COLUMNS = `${VISIT_COLUMNS},agent_name`;
 // Imported (for fetchTeamVisits below) and re-exported (for existing server-side callers) from a
 // client-safe module, so the "use client" workspace can read the cap without importing this
@@ -162,7 +165,7 @@ export async function fetchMyVisits(hrId: string, window: MyCrmWindow): Promise<
       visitDate: row.visit_date,
       visitTime: resolved.time,
       visitTimeSource: resolved.source,
-      visitTypeDescription: row.visit_type_description,
+      visitTypeDescription: resolveVisitTypeLabel(row.visit_type, row.visit_type_description, row.comment),
     };
   });
   return rows.sort(byVisitDateDesc);
@@ -237,7 +240,7 @@ export async function fetchTeamVisits(hrIds: string[], window: MyCrmWindow): Pro
         visitDate: row.visit_date,
         visitTime: resolved.time,
         visitTimeSource: resolved.source,
-        visitTypeDescription: row.visit_type_description,
+        visitTypeDescription: resolveVisitTypeLabel(row.visit_type, row.visit_type_description, row.comment),
       };
     })
     .sort(byVisitDateDesc);
@@ -271,7 +274,7 @@ export async function fetchMyDoubleVisits(hrId: string, window: MyCrmWindow): Pr
         primaryAgentName: row.agent_name,
         visitDate: row.visit_date,
         visitTime: resolved.time,
-        visitTypeDescription: row.visit_type_description,
+        visitTypeDescription: resolveVisitTypeLabel(row.visit_type, row.visit_type_description, row.comment),
       };
     })
     .sort(byVisitDateDesc);

@@ -19,6 +19,7 @@
 //    the day-of-week charts dim Friday and lighten Thursday.
 
 import { isCrmDoubleVisitRow, queryCheckins, queryVisits } from "@/lib/crm/reads";
+import { classifyVisit } from "@/lib/crm/visit-types";
 import {
   COMPANY_CAMPAIGN_SHARE_BY_MONTH,
   COMPANY_CHECKIN_HOUR_SHARE,
@@ -26,24 +27,25 @@ import {
   LATE_NIGHT_HOURS,
 } from "./benchmarks";
 
-export const REGULAR_TYPE = 0;
-export const CAMPAIGN_TYPE = -8;
-export const TRAINING_TYPE = -9;
-
-// Additional iReports360 visit-type codes that come back from the CRM's own API
-// with the literal description "Unknown" (confirmed against production comment
-// text with the business owner, 2026-07-14 — see PR #1061). Each was identified
-// by reading the actual `comment` field on hundreds of sample rows, not guessed.
-export const HOLIDAY_TYPE = -5;
-export const CASUAL_LEAVE_TYPE = -6;
-export const AMBIGUOUS_TYPE = -7; // split at runtime by comment text — see classifyAmbiguousComment
-export const MEETING_TYPE = -19;
-export const ADMIN_WORK_TYPE = -20;
-export const BRM_TYPE = -21;
-// Real field visits (doctor/pharmacy call notes) that iReports360 never assigned
-// a description to. Counted as productive, same as REGULAR_TYPE ("put it in its
-// normal place") — pharmacy-flavored comments get their own distinct label.
-export const UNLABELED_FIELD_VISIT_TYPE = -30;
+// The iReports360 visit-type codes, and the classifier that turns one into a label
+// + counting bucket, now live in the CRM domain (src/lib/crm/visit-types.ts) so the
+// CRM master, the employee portal and the NSM compliance board resolve a code the
+// same way Activity Mix always has. Re-exported here unchanged because the deep
+// profile and the Employee 360 tests have always imported them from this module.
+export {
+  ADMIN_WORK_TYPE,
+  AMBIGUOUS_TYPE,
+  BRM_TYPE,
+  CAMPAIGN_TYPE,
+  CASUAL_LEAVE_TYPE,
+  HOLIDAY_TYPE,
+  MEETING_TYPE,
+  REGULAR_TYPE,
+  TRAINING_TYPE,
+  UNLABELED_FIELD_VISIT_TYPE,
+  classifyVisit,
+} from "@/lib/crm/visit-types";
+export type { VisitBucket, VisitClassification } from "@/lib/crm/visit-types";
 
 export type Employee360Window = { from: string; to: string; label: string };
 
@@ -63,52 +65,6 @@ export type VisitRow = {
   double_name: string | null;
   comment: string | null;
 };
-
-export type VisitBucket = "regular" | "campaign" | "training" | "admin";
-export type VisitClassification = { label: string; bucket: VisitBucket };
-
-// -7's own comments carry no single consistent meaning (owner-confirmed) — read
-// the free-text comment itself to route it: "sales day" -> Health Day, a leave
-// mention -> Vacations & Leaves, a meeting mention -> Meetings. Anything else
-// falls back to Admin Work (no clearer signal available in the text).
-function classifyAmbiguousComment(comment: string | null): string {
-  const c = (comment ?? "").toLowerCase();
-  if (c.includes("sales day") || c.includes("health day")) return "Health Day";
-  if (c.includes("اجازه") || c.includes("اجازة") || c.includes("excuse") || c.includes("leave")) return "Vacations & Leaves";
-  if (c.includes("meeting") || c.includes("اجتماع")) return "Meetings";
-  return "Admin Work";
-}
-
-// "ص" (short for صيدلية/pharmacy) as its own token before a name is the reps'
-// own shorthand for a pharmacy call (e.g. "ص السلامه", "ص. نور الرحمن"), seen
-// consistently across -30 sample comments alongside "فارما"/"pharmacy". Best
-// effort against free text — not perfect, but never fabricates a category.
-const PHARMACY_COMMENT_PATTERN = /(^|\s)ص[\s.]|صيدلي|فارما|pharmacy/iu;
-function isPharmacyComment(comment: string | null): boolean {
-  return PHARMACY_COMMENT_PATTERN.test(comment ?? "");
-}
-
-// Single source of truth for "what is this visit" — both its display label
-// (Activity Mix) and which counting bucket it belongs to (productive/admin/etc).
-// Every place that used to compare visit_type directly must go through this
-// so the two can never drift apart again.
-export function classifyVisit(type: number | null, comment: string | null, rawDescription: string | null): VisitClassification {
-  if (type === REGULAR_TYPE) return { label: "Regular", bucket: "regular" };
-  if (type === CAMPAIGN_TYPE) return { label: "Campaign", bucket: "campaign" };
-  if (type === TRAINING_TYPE) return { label: "Training", bucket: "training" };
-  if (type === HOLIDAY_TYPE) return { label: "Vacations & Leaves", bucket: "admin" };
-  if (type === CASUAL_LEAVE_TYPE) return { label: "Vacations & Leaves", bucket: "admin" };
-  if (type === MEETING_TYPE) return { label: "Meetings", bucket: "admin" };
-  if (type === ADMIN_WORK_TYPE) return { label: "Admin Work", bucket: "admin" };
-  if (type === BRM_TYPE) return { label: "Business Review (BRM)", bucket: "admin" };
-  if (type === AMBIGUOUS_TYPE) return { label: classifyAmbiguousComment(comment), bucket: "admin" };
-  if (type === UNLABELED_FIELD_VISIT_TYPE) {
-    return isPharmacyComment(comment) ? { label: "Pharmacy Visit", bucket: "regular" } : { label: "Regular", bucket: "regular" };
-  }
-  const trimmed = (rawDescription ?? "").trim();
-  const label = trimmed && trimmed.toLowerCase() !== "unknown" ? trimmed : `Type ${type ?? "?"}`;
-  return { label, bucket: "admin" };
-}
 
 // Shared "does this row count as a productive visit" check for callers that only
 // need the yes/no answer (checkin coverage, the impact engine, etc.) — always
