@@ -29,11 +29,21 @@
 // Health Day (-15) mapping after the other two dropped it, and never received
 // the Public Holiday (-5) / Casual Leave (-6) ruling at all.
 //
-// Still outside both Sets, and therefore still falling through, pending an
-// owner ruling: -7, -19, -20, -21, -30. Measured on production 2026-08-21,
-// that is 88 agent-days across 30 employees since 2026-07-01 whose ONLY CRM
-// record is one of those codes. Under the `?? "CP"` the other two copies apply
-// each of those days would count as working time.
+// The five undocumented codes that used to fall through here — -7, -19, -20,
+// -21, -30 — were added to the CP Set on the owner's ruling of 2026-08-21,
+// closing that gap: measured on production the same day, 88 agent-days across
+// 30 employees since 2026-07-01 had one of those as their ONLY CRM record, and
+// were being judged on punch timing while copies #1 and #2 counted the very
+// same day as working time via `?? "CP"`. The Set now lists all 15 visit types
+// production has ever produced, so all three copies agree on every real code.
+//
+// What still differs is only a code iReports360 has never sent: a NEW type
+// would be CP in the other two and a fall-through here. That is deliberate —
+// silently cancelling a deduction for a code nobody has classified is the
+// riskier default. But note NOTHING alerts on it: crm/unmapped-alert.ts covers
+// unmapped AGENTS, not unmapped visit types, so a new code would surface only
+// as an "Unknown" label on a report. If a 16th code ever appears, classify it
+// here and in the two Maps deliberately.
 
 import { queryVisits, scanVisitsForRange } from "@/lib/crm/reads";
 import { normalizeAttendanceHrId } from "@/lib/attendance/metrics";
@@ -46,13 +56,28 @@ import { isIsoDate } from "@/lib/attendance/working-days";
  * (-6) are NOT leave either — owner ruling 2026-08-21. All three now sit in the CP Set below. */
 const CRM_LEAVE_VISIT_TYPES = new Set<number>([-4]);
 
-/** iReports360 visit types that represent a real (non-desk) work activity that
- * isn't a plain customer visit — the CP half of VISIT_TYPE_TO_STATUS /
- * LEAVER_VISIT_TYPE_TO_STATUS (Conference, Group Meeting, Public Holiday, Casual Leave,
- * Campaign/Prospection, Training, Meeting, Traveling, Health Day). Treated identically to a
- * regular visit for this module's purposes: proof the employee was doing real field/CRM-logged
- * work that day, same "regular > CP > AV" precedence as dayCellValue. */
-const CRM_CAMPAIGN_VISIT_TYPES = new Set<number>([-1, -2, -5, -6, -8, -9, -11, -12, -15]);
+/** iReports360 visit types that represent a real (non-desk) work activity that isn't a plain
+ * customer visit — the CP half of VISIT_TYPE_TO_STATUS / LEAVER_VISIT_TYPE_TO_STATUS. Treated
+ * identically to a regular visit for this module's purposes: proof the employee was doing real
+ * field/CRM-logged work that day, same "regular > CP > AV" precedence as dayCellValue.
+ *
+ * The nine the vendor documents: Conference (-1), Group Meeting (-2), Campaign/Prospection (-8),
+ * Training (-9), Meeting (-11), Traveling (-12), Health Day (-15).
+ *
+ * Plus the undocumented codes, which iReports360 sends with the description "Unknown" and whose
+ * meanings were owner-confirmed 2026-07-14 from the reps' own comment text (see
+ * src/lib/crm/visit-types.ts): Public Holiday (-5), Casual Leave (-6), Ambiguous (-7), Meetings
+ * (-19), Admin Work (-20), Business Review/BRM (-21), Unlabelled field visit (-30). Copies #1 and
+ * #2 reach CP for all of these through their `?? "CP"` default; this Set has to name them,
+ * because it has no default. Owner ruling 2026-08-21.
+ *
+ * -7 is the one judgement call: its comment text is split at runtime by classifyAmbiguousComment,
+ * and some of those rows read as leave. CP is still right here — it is what the other two copies
+ * already return for -7, and in this module leave and field visit are both a universal cancel in
+ * reconcileDay, so the two only differ in the reason string, never in money. */
+const CRM_CAMPAIGN_VISIT_TYPES = new Set<number>([
+  -1, -2, -5, -6, -7, -8, -9, -11, -12, -15, -19, -20, -21, -30,
+]);
 
 /**
  * Read accessor for the two Sets above, exported so the AV/CP ruling is unit-testable without
