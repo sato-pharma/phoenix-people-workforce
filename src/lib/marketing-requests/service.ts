@@ -47,6 +47,7 @@ import { resolveNotificationRoleEnabled } from "@/lib/notifications/role-recipie
 import { logError, logWarning } from "@/lib/observability/log";
 import {
   MARKETING_CUSTOMER_SPECIALITIES,
+  MARKETING_CUSTOMER_TYPES,
   MARKETING_GOVERNORATE_HOLD_PREFIX,
   MARKETING_MANUAL_HOLD_MARKER,
   UNVERIFIED_CODE_REASON_MIN_LENGTH,
@@ -1500,7 +1501,11 @@ export function normalizeMarketingRequestDraftInput(input: MarketingRequestCreat
 
 function normalizeCustomerType(value: unknown) {
   const type = normalizeLookupKey(value) as MarketingCustomerType;
-  if (!["hospital", "clinic", "account", "other"].includes(type)) {
+  // Checked against the shared list, never a copy of it. The copy that used to sit here omitted
+  // "doctor", which blocked Capture Evidence for 130 of the 160 active customers — the rep is shown
+  // the stored type in a locked field, so a doctor customer could only ever submit "doctor" and was
+  // rejected every time.
+  if (!MARKETING_CUSTOMER_TYPES.includes(type)) {
     throw validationError("Customer type is required.");
   }
   return type;

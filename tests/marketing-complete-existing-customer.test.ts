@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 
 import { normalizeMarketingValidationInput } from "@/lib/marketing-requests/service";
 import {
+  MARKETING_CUSTOMER_TYPES,
   MARKETING_GOVERNORATE_HOLD_PREFIX,
   MARKETING_MANUAL_HOLD_MARKER,
 } from "@/lib/marketing-requests/types";
@@ -191,8 +192,51 @@ export function runMarketingCompleteExistingCustomerTests() {
     "completing two different customers in one submission must remain allowed",
   );
 
+  // --- every type the database allows must survive the write path -------------------------------
+  //
+  // Proved on staging 2026-08-21 against the deployed revision e1141ab1: completing a real doctor
+  // customer was REJECTED with "Customer type is required.", while the identical submission sent as
+  // "clinic" passed all seven guarantees. `normalizeCustomerType` was checking a hand-written copy
+  // of the type list that omitted "doctor" — even though the DB constraint
+  // `marketing_customers_type_check` allows it, the declared union allowed it, and
+  // `classifyCustomerType` in roi-sheet-writer.ts DEFAULTS to it, so the module minted rows it then
+  // refused to accept back.
+  //
+  // The rep has no way round it: `startCompletingCustomer` seeds the form with the stored type and
+  // the field is locked (asserted below), so a doctor customer could only ever submit "doctor".
+  // Production held 130 active doctor customers of 160 — 59 of the 65 who could use Capture
+  // Evidence at all, and 115 of the 126 pending links behind them.
+  for (const customerType of MARKETING_CUSTOMER_TYPES) {
+    assert.equal(
+      normalizeMarketingValidationInput({
+        customers: [
+          {
+            ...customerPayload({ customerType, existingCustomerId: "cust-39" }),
+            pharmacies: [pharmacyPayload("El Ezaby Nasr City", "PH-1")],
+          },
+        ],
+      }).customers[0].customerType,
+      customerType,
+      `${customerType} is allowed by marketing_customers_type_check, so the write path must accept it`,
+    );
+  }
+
+  // Pinned separately so the loop above cannot be satisfied by SHRINKING the list it iterates.
+  assert.ok(
+    MARKETING_CUSTOMER_TYPES.includes("doctor"),
+    "doctor is the majority of active marketing customers — dropping it re-breaks Capture Evidence for all of them",
+  );
+
   // --- the write path, source-locked ------------------------------------------------------------
   const service = source("src/lib/marketing-requests/service.ts");
+
+  // The guard must READ the shared list. A literal list here is what drifted from the union in the
+  // first place, and it drifted silently because nothing compared the two.
+  assert.match(
+    service,
+    /if \(!MARKETING_CUSTOMER_TYPES\.includes\(type\)\)/,
+    "the customer-type guard must check the shared list, never a copy that can drift from the schema",
+  );
 
   // The branch itself: an existing customer is UPDATED, never inserted.
   assert.match(
