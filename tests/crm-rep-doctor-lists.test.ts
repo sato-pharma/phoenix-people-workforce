@@ -67,8 +67,15 @@ function visit(overrides: Partial<VisitRow> = {}): VisitRow {
     crm_contact_grade: "A",
     speciality: "Internal Medicine",
     visit_date: "2026-08-03",
+    visit_type: 0,
     ...overrides,
   };
+}
+
+/** A campaign call: the rep worked, but the vendor names no doctor on it. Every one of the 31,322
+ * recorded in production carries contact id 0, blank name, blank speciality. */
+function campaign(overrides: Partial<VisitRow> = {}): VisitRow {
+  return visit({ contact_crm_id: 0, speciality: null, visit_type: -8, ...overrides });
 }
 
 const PLAN_ROWS: PlanRow[] = [
@@ -129,6 +136,23 @@ const PLAN_ROWS: PlanRow[] = [
     speciality: "Neurology",
     plan_date: "2026-08-11",
   }),
+  // Rep 505: a real doctor list, against which they made zero regular visits.
+  plan({
+    agent_crm_id: 505,
+    agent_hr_id: null,
+    contact_crm_id: 5001,
+    contact_name: "Campaign Doc",
+    speciality: "Cardiology",
+    plan_date: "2026-08-06",
+  }),
+  plan({
+    agent_crm_id: 505,
+    agent_hr_id: null,
+    contact_crm_id: 5002,
+    contact_name: "Campaign Doc Two",
+    speciality: "Chest",
+    plan_date: "2026-08-07",
+  }),
   // Departed rep with a plan still on file.
   plan({
     agent_crm_id: 303,
@@ -168,6 +192,23 @@ const VISIT_ROWS: VisitRow[] = [
   }),
   // A visit with no contact: proves the rep worked, contributes no doctor row.
   visit({ contact_crm_id: null, visit_date: "2026-08-21" }),
+  // Rep 505 spent the month on campaign work: a full plan, not one regular visit. Their name is
+  // recoverable ONLY from these rows.
+  campaign({ agent_crm_id: 505, agent_hr_id: null, agent_name: "Campaign Only Rep", visit_date: "2026-08-06" }),
+  campaign({ agent_crm_id: 505, agent_hr_id: null, agent_name: "Campaign Only Rep", visit_date: "2026-08-07" }),
+  campaign({ agent_crm_id: 505, agent_hr_id: null, agent_name: "Campaign Only Rep", visit_date: "2026-08-08" }),
+  // A campaign row carrying a REAL contact that IS on rep 505's plan. No such row exists in
+  // production today -- all 31,322 campaign visits carry contact id 0 -- which is exactly why it
+  // belongs here: without it the type split is only redundant with the id-0 sentinel guard, and a
+  // regression that let campaign rows into the join would pass unnoticed. If the vendor ever starts
+  // populating this field, THIS is the assertion that catches it.
+  campaign({
+    agent_crm_id: 505,
+    agent_hr_id: null,
+    agent_name: "Campaign Only Rep",
+    contact_crm_id: 5001,
+    visit_date: "2026-08-09",
+  }),
 ];
 
 function board(overrides: Partial<RepDoctorListsInput> = {}) {
@@ -219,6 +260,11 @@ export function runCrmRepDoctorListsTests() {
     2,
     "rep 101 planned 4 doctors and saw 2 — exactly 2 must count as never visited",
   );
+
+  // Run the two rules that decide whether a working rep is presented as idle BEFORE the aggregate
+  // totals, so a regression fires the assertion that names the rule rather than an arithmetic sum.
+  runCampaignTests(result);
+  runNoPlanRankingTests(result);
 
   // ── Adherence is doctors-only ────────────────────────────────────────────────────────────────
   const rep101 = repOf(result, "101");
@@ -351,14 +397,14 @@ export function runCrmRepDoctorListsTests() {
   );
 
   // ── Totals are the sum of the reps actually on the board ─────────────────────────────────────
-  assert.equal(result.totals.reps, 3, "101, 202 and 404 — not the departed 303");
-  assert.equal(result.totals.plannedDoctors, 6, "4 + 2 + 0");
-  assert.equal(result.totals.visitedDoctors, 3, "2 + 1 + 0");
-  assert.equal(result.totals.missedDoctors, 3, "2 + 1 + 0");
-  assert.equal(result.totals.adherencePct, 50, "3 of 6");
+  assert.equal(result.totals.reps, 4, "101, 202, 404 and 505 — not the departed 303");
+  assert.equal(result.totals.plannedDoctors, 8, "4 + 2 + 0 + 2");
+  assert.equal(result.totals.visitedDoctors, 3, "2 + 1 + 0 + 0");
+  assert.equal(result.totals.missedDoctors, 5, "2 + 1 + 0 + 2");
+  assert.equal(result.totals.adherencePct, 38, "3 of 8");
   assert.equal(result.totals.plannedAccounts, 1, "one pharmacy");
-  assert.equal(result.totals.plannedCalls, 9, "7 + 2");
-  assert.equal(result.totals.offPlanDoctors, 3, "2 + 0 + 1");
+  assert.equal(result.totals.plannedCalls, 11, "7 + 2 + 2");
+  assert.equal(result.totals.offPlanDoctors, 3, "2 + 0 + 1 + 0");
   assert.equal(result.totals.unverifiedCalls, 1, "one call still at status New");
   assert.equal(
     result.totals.visitedDoctors + result.totals.missedDoctors,
@@ -422,6 +468,83 @@ export function runCrmRepDoctorListsTests() {
   runDateTests();
   runPlanSyncTests();
   runAccessTests();
+}
+
+// ── Campaign calls: proof of work that can never become proof of a visit ───────────────────────
+function runCampaignTests(result: ReturnType<typeof board>) {
+  const rep505 = repOf(result, "505");
+
+  // THE HEADLINE for this rule. A campaign row carries contact id 0 -- it says the rep worked and
+  // never which doctor they saw -- so it MUST NOT be able to satisfy a planned call. If it could,
+  // adherence would silently start counting work that reached nobody on the list.
+  assert.equal(
+    rep505.visitedDoctors,
+    0,
+    "a campaign call names no doctor, so it can never mark a planned doctor as visited -- adherence must stay 0 here",
+  );
+  assert.equal(rep505.missedDoctors, 2, "both planned doctors are still unreached");
+  assert.equal(rep505.adherencePct, 0, "0 of 2");
+  assert.equal(
+    result.doctors.filter((row) => row.contactCrmId === 0).length,
+    0,
+    "the campaign sentinel contact must never appear as a doctor row",
+  );
+  assert.equal(rep505.offPlanDoctors, 0, "a campaign call is not an off-plan doctor visit either");
+
+  // ...but the rep must be visibly WORKING, which is the whole point of the owner's ruling.
+  // The load-bearing one: a campaign row naming a doctor who IS on this rep's plan still must not
+  // mark them seen. Campaign attendance is not a doctor call, whatever contact the vendor attaches.
+  assert.equal(
+    doctorOf(result, "505", 5001).status,
+    "missed",
+    "a CAMPAIGN row naming a planned doctor must NOT mark them visited — only a regular visit can satisfy a planned call",
+  );
+  assert.equal(doctorOf(result, "505", 5001).visits, 0, "and it must not be counted as a visit either");
+
+  assert.equal(rep505.campaignCalls, 4, "all four campaign calls are counted against the rep");
+  assert.equal(result.totals.campaignCalls, 4, "and rolled into the board total");
+  assert.equal(
+    result.repsAllCampaign,
+    1,
+    "a rep with a plan, no regular visits and campaign work must be flagged -- their 0% is true and reads as idle",
+  );
+
+  // A campaign-only rep has no type-0 row anywhere, so this is the only place a name can come from.
+  assert.equal(
+    rep505.repName,
+    "Campaign Only Rep",
+    "a rep whose whole month is campaign work must still be named -- reading only joinable rows would print a bare id",
+  );
+
+  // Campaign work does not mean "no plan".
+  assert.equal(rep505.hasMeasurablePlan, true, "rep 505 has two planned doctors, so they ARE measurable");
+}
+
+// ── A rep with nothing assigned is not a 0% performer ──────────────────────────────────────────
+function runNoPlanRankingTests(result: ReturnType<typeof board>) {
+  const rep404 = repOf(result, "404");
+  assert.equal(rep404.plannedDoctors, 0, "rep 404 was never given a list");
+  assert.equal(
+    rep404.hasMeasurablePlan,
+    false,
+    "with nothing planned there is no percentage to compute, and the table prints a marker instead of 0%",
+  );
+
+  // THE HEADLINE: worst-first must rank only reps who had something to reach.
+  const measurable = result.reps.filter((rep) => rep.hasMeasurablePlan);
+  const unmeasurable = result.reps.filter((rep) => !rep.hasMeasurablePlan);
+  assert.ok(measurable.length > 0 && unmeasurable.length > 0, "the fixture must contain both kinds of rep");
+  const lastMeasurable = result.reps.findLastIndex((rep) => rep.hasMeasurablePlan);
+  const firstUnmeasurable = result.reps.findIndex((rep) => !rep.hasMeasurablePlan);
+  assert.ok(
+    lastMeasurable < firstUnmeasurable,
+    "a rep with no plan must sort BELOW every rep who has one -- ranking their arithmetic 0 among real performers presents \"nothing was assigned\" as \"nothing was done\"",
+  );
+  assert.equal(
+    result.reps[0].hasMeasurablePlan,
+    true,
+    "the worst performer on the board must be a rep who actually had a list to miss",
+  );
 }
 
 // ── The drill-down cap must never be able to look like a complete list ─────────────────────────
