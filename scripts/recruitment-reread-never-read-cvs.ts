@@ -7,7 +7,12 @@ import type { AccessContext } from "@/lib/auth/permissions";
 import { candidateAppliedFor } from "@/lib/recruitment/applied-for";
 import { describeCandidateSource, type SourceContextRow } from "@/lib/recruitment/candidate-source-context";
 import { defaultCvPositionKey } from "@/lib/recruitment/cv-field-schemas";
-import { CvExtractionError, extractCandidateFieldsFromCv } from "@/lib/recruitment/cv-extraction";
+import {
+  CvExtractionError,
+  extractCandidateFieldsFromCv,
+  OCR_EXTRACTION_MODEL,
+  RULE_ONLY_EXTRACTION_MODEL,
+} from "@/lib/recruitment/cv-extraction";
 import { type ExtractedCandidateFields, isEmptyExtractedField } from "@/lib/recruitment/cv-extraction-fields";
 import { describeCvRead } from "@/lib/recruitment/cv-extraction-quality";
 
@@ -149,7 +154,15 @@ async function main(): Promise<void> {
   // it touched would be excluded from every future run FOREVER, so restoring the key later would
   // silently skip exactly the CVs that were read most poorly. They stay in the set instead, and the
   // insert-vs-replace decision below keeps the newest read as the one that counts.
-  const RULES_ONLY_MODELS = new Set(["phoenix-rules", "phoenix-ocr"]);
+  //
+  // These are the CONSTANTS, never re-typed as literals. The set spelled its own strings until
+  // 2026-08-21 and one of them, "phoenix-ocr", was a value nothing has ever written: the OCR path
+  // records OCR_EXTRACTION_MODEL, which is "phoenix-rules+ocr". So an OCR-only row matched neither
+  // entry, counted as a genuine model read, and dropped that candidate out of the set FOREVER —
+  // exactly the failure the paragraph above exists to prevent, arriving through the back door.
+  // Four production candidates were already frozen that way. Importing the constants makes the two
+  // unable to drift again; tests/recruitment-reread-model-constants.test.ts holds the door shut.
+  const RULES_ONLY_MODELS = new Set<string>([RULE_ONLY_EXTRACTION_MODEL, OCR_EXTRACTION_MODEL]);
   const { data: alreadyRead, error: readError } = await supabase
     .from("ats_candidate_cv_extractions")
     .select("candidate_id, ai_model");
