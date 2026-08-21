@@ -26,3 +26,9 @@ export const CRM_REGION_BRICK_RESOLUTIONS_TABLE = "ireports360_crm_region_brick_
  * One level finer than CRM_REGION_BRICK_RESOLUTIONS_TABLE: a region groups many customers into one
  * rough locality, a customer mapping is the single most precise thing Phoenix can resolve. */
 export const CRM_CUSTOMER_BRICK_RESOLUTIONS_TABLE = "ireports360_crm_customer_brick_resolutions";
+
+/** Synced PLAN entries — the rep's assigned doctor list (one row per planned call, keyed on
+ * `crm_plan_entry_id`). The counterpart to CRM_VISITS_TABLE: that table holds what a rep DID,
+ * this one holds what they were assigned. Deliberately NOT named after Phoenix's own
+ * `weekly-planning` module, which is an unrelated in-app feature with a confusingly similar name. */
+export const CRM_PLAN_ENTRIES_TABLE = "ireports360_plan_entries";

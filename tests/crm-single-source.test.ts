@@ -5,20 +5,20 @@ import { join, sep } from "node:path";
 // The CRM "single door" invariant (Phase 3 of the CRM single-source module).
 //
 // NO module outside src/lib/crm/ may run its own query against the iReports360 mirror tables
-// (ireports360_visits / _checkins / _visits_sync_runs / _crm_identity_resolutions and the
-// _visits_effective view). Every consumer reads CRM data through the crm/reads.ts service
+// (ireports360_visits / _checkins / _visits_sync_runs / _crm_identity_resolutions / _plan_entries
+// and the _visits_effective view). Every consumer reads CRM data through the crm/reads.ts service
 // functions instead, so the CRM module is the only code that touches the feed. This test fails
 // loudly if a raw mirror `.from(...)` reappears anywhere else — the regression guard that keeps
 // the centralization from eroding one convenient query at a time.
 
 // `.from("ireports360_...")` — a raw string-literal mirror query.
 const literalFrom =
-  /\.from\(\s*["'`]ireports360_(?:visits|checkins|visits_sync_runs|crm_identity_resolutions|visits_effective)\b/;
+  /\.from\(\s*["'`]ireports360_(?:visits|checkins|visits_sync_runs|crm_identity_resolutions|plan_entries|visits_effective)\b/;
 // `.from(SOME_CONST)` where the const names a mirror table — the migrated local consts plus the
 // canonical crm/tables constants (importing those into a non-CRM file and querying would bypass
 // the door just as surely as a string literal).
 const constFrom =
-  /\.from\(\s*(?:visitsTable|checkinsTable|DV_SOURCE_TABLE|VISITS_MIRROR_TABLE|CRM_VISITS_TABLE|CRM_CHECKINS_TABLE|CRM_SYNC_RUNS_TABLE|CRM_IDENTITY_RESOLUTIONS_TABLE|CRM_VISITS_EFFECTIVE_VIEW)\s*\)/;
+  /\.from\(\s*(?:visitsTable|checkinsTable|DV_SOURCE_TABLE|VISITS_MIRROR_TABLE|CRM_VISITS_TABLE|CRM_CHECKINS_TABLE|CRM_SYNC_RUNS_TABLE|CRM_IDENTITY_RESOLUTIONS_TABLE|CRM_PLAN_ENTRIES_TABLE|CRM_VISITS_EFFECTIVE_VIEW)\s*\)/;
 
 function walkTsFiles(dir: string, out: string[]): void {
   for (const entry of readdirSync(dir)) {

@@ -382,6 +382,12 @@ export const accessRegistry = [
   // coverage % means, and "why did coverage jump" has to be answerable later.
   sessionApi({ methods: ["GET"], pattern: "/api/crm/doctor-coverage/config", permission: { resource: "crm_visits", action: "update" }, guard: "assert-permission", csrfRequired: false }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["PATCH"], pattern: "/api/crm/doctor-coverage/config", permission: { resource: "crm_visits", action: "update" }, guard: "assert-permission", csrfRequired: true }),
+  // Rep Doctor Lists. Pulls one month of the vendor's WEEKLY PLAN into ireports360_plan_entries --
+  // the rep's assigned doctor list, the counterpart to the visits mirror. Audited as a mutation
+  // because it reaches an external system and rewrites a mirror table on every call; gated on
+  // `crm_visits:update` (Super Admin + SFE Manager) and then narrowed again to Super Admin alone by
+  // assertRepDoctorListsAccess, per the owner's "admin account only for now" (2026-08-21).
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/crm/rep-doctor-lists/sync", permission: { resource: "crm_visits", action: "update" }, guard: "assert-permission", csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/approvals/early-bird/:id/decision", permission: { resource: "early_birds", action: "approve" }, guard: "domain-helper", csrfRequired: true }),
   // `create` matches the other requester-side mutations, but it is NOT the real gate: cancelling is
   // restricted to the requester of that specific held order (or a Super Admin) by
