@@ -340,7 +340,17 @@ export function candidateAppliedFor(evidence: AppliedForEvidence): CandidateAppl
     // A stated title is what a person entered on this record — clean the punctuation off it, but a
     // human's answer is never rejected for looking implausible.
     const text = source === "stated" ? value : cleanJobTitle(value);
-    if (text) return { evidence: value, source, text };
+    if (!text) continue;
+    // A chat message has to prove it names a job; a subject line does not.
+    //
+    // A subject line is written to say what the mail is ABOUT, so shorthand with no recognisable job
+    // word in it is still an answer — "Cairo 2 DM", "M.r - Gharbia", "Mohamed Hassan D.M" are five
+    // production rows, and requiring a job word would throw all five away. A WhatsApp message is not
+    // written to say anything of the kind: of the seven rows it answered on the first production
+    // run, four were "صباح الخير" (good morning) and a home address. Those went in a column that
+    // decides which manager receives the CV.
+    if (source === "message" && !JOB_WORDS.test(text)) continue;
+    return { evidence: value, source, text };
   }
   return NOT_RESOLVED;
 }

@@ -68,6 +68,31 @@ export async function runRecruitmentAppliedForTests() {
     "a filename caption must not block the message that names the role",
   );
 
+  // A chat message must PROVE it names a job; a subject line need not. Caught on the live page:
+  // of the seven rows the message rung answered on its first production run, four were "صباح الخير"
+  // (good morning) and a home address — in the column that decides which manager gets the CV.
+  for (const chatter of ["صباح الخير", "sheraton resisdent", "hello sir", "please find attached"]) {
+    assert.equal(
+      candidateAppliedFor({ sourceMessages: [chatter] }).text,
+      null,
+      `"${chatter}" is small talk, not a role`,
+    );
+  }
+  assert.equal(
+    candidateAppliedFor({ sourceMessages: ["مطلوب للتعيين: منسقة مكتب"] }).text,
+    "مطلوب للتعيين: منسقة مكتب",
+    "and an Arabic message that DOES name a role still answers",
+  );
+  // The same words in a SUBJECT line are kept, because a subject is written to say what the mail is
+  // about. These five shorthand production subjects would all be lost to a job-word requirement.
+  for (const shorthand of ["Cairo 2 DM", "M.r - Gharbia", "Mohamed Hassan D.M"]) {
+    assert.equal(
+      candidateAppliedFor({ sourceSubject: shorthand }).text,
+      shorthand,
+      `"${shorthand}" is a real answer in shorthand — a subject line is not held to the job-word test`,
+    );
+  }
+
   // ── 2 · Never invent a role ─────────────────────────────────────────────────
   //
   // A wrong job title routes a CV to the wrong hiring manager, which is worse than an empty cell.
