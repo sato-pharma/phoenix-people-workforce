@@ -858,6 +858,8 @@ import { runTerritoryAreaIndexTests } from "./territory-area-index.test.ts";
 
 import { runCrmDayMapVisitTypeStatusTests } from "./crm-day-map-visit-type-status.test.ts";
 
+import { runRecruitmentCvReadHonestyTests } from "./recruitment-cv-read-honesty.test.ts";
+
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
@@ -2276,6 +2278,11 @@ await runTest(
   "CRM day-map visit-type ruling (third copy of AV/CP: -4 is the only leave; Health Day -15, Public "
   + "Holiday -5 and Casual Leave -6 are working time; all three copies pinned against each other)",
   runCrmDayMapVisitTypeStatusTests,
+);
+await runTest(
+  "CV read honesty (five EMPTY arrays are not five fields; a read that produced nothing reports EMPTY, "
+    + "never READ, and gets its own summary line so 'Failed: 0' cannot mean 'nothing was extracted')",
+  runRecruitmentCvReadHonestyTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
