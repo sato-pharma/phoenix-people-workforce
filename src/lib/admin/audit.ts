@@ -40,6 +40,7 @@ export type AuditEntityType =
   | "outstation_request"
   | "payroll_batch"
   | "permission_override"
+  | "pharmacy_search_discovery"
   | "private_calendar_data_dispute"
   | "probation_case"
   | "probation_config"

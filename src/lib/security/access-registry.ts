@@ -184,6 +184,19 @@ export const accessRegistry = [
   // PM product master: Super Admin writes, CEO/SFE Manager/Super Admin read — enforced
   // in-route by role (domain-helper), like the system-issues admin routes.
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["GET", "POST"], pattern: "/api/admin/pm-products", permission: null, guard: "domain-helper" }),
+  // Pharmacy Search. Access mirrors the Customers Database hub it is listed under: Super Admin and
+  // CEO short-circuit, everyone else needs sales:import. That short-circuit is why these carry
+  // `guard: "domain-helper"` — the enforcement is assertPharmacySearchAccess() rather than a bare
+  // assertPermission call — while `permission` still records the resource a normal user is checked
+  // against, so this registry keeps saying what actually gates the route.
+  sessionApi({ audit: { classification: "access-read", required: true }, methods: readOnly, pattern: "/api/admin/pharmacy-search", permission: { resource: "sales", action: "import" }, guard: "domain-helper" }),
+  sessionApi({ audit: { classification: "access-read", required: true }, methods: readOnly, pattern: "/api/admin/pharmacy-search/profile", permission: { resource: "sales", action: "import" }, guard: "domain-helper" }),
+  // Reads nothing of ours — it spends a billed Google Places call per request, which is why it is
+  // its own entry rather than inheriting a blanket: the cost of an unguarded loop here is money.
+  sessionApi({ audit: { classification: "access-read", required: true }, methods: readOnly, pattern: "/api/admin/pharmacy-search/external", permission: { resource: "sales", action: "import" }, guard: "domain-helper" }),
+  // The one write in the feature. It records a Google-derived pharmacy in its own discovery
+  // register and never touches source_of_sales_customer_map, so it cannot move sales attribution.
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/admin/pharmacy-search/save", permission: { resource: "sales", action: "import" }, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ audit: { classification: "access-read", required: true }, methods: readOnly, pattern: "/api/admin/logs", permission: { resource: "admin", action: "read" } }),
   sessionApi({ audit: { classification: "access-read", required: true }, methods: readOnly, pattern: "/api/admin/errors", permission: { resource: "admin", action: "read" } }),
   // System Issues dashboard is CEO + Super Admin (checks access.role === "CEO" ||

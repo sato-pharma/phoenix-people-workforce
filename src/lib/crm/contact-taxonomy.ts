@@ -99,6 +99,24 @@ export function isDoctorSpeciality(speciality: string | null | undefined): boole
   return classifyCrmContactSpeciality(speciality) === "sp";
 }
 
+/**
+ * HCP is one bucket, but it holds two different things: places you visit (a hospital) and accounts
+ * you bill (a contract, an insurer). Pharmacy Search has to tell them apart, because "hospitals
+ * near this pharmacy" is a question about places.
+ *
+ * Deliberately derived FROM `HCP_VALUES` rather than written out again: a hospital is by definition
+ * an HCP, so the two lists cannot be allowed to drift. `isHospitalSpeciality` is therefore false
+ * for anything the module does not already class as HCP, unclassified values included — the same
+ * refusal to guess that governs the rest of this file.
+ */
+const HOSPITAL_VALUES = HCP_VALUES.filter((value) => value.endsWith("hospital"));
+
+/** True when this contact is a hospital — a strict subset of HCP. */
+export function isHospitalSpeciality(speciality: string | null | undefined): boolean {
+  if (classifyCrmContactSpeciality(speciality) !== "hcp") return false;
+  return HOSPITAL_VALUES.includes(normalizeSpecialityKey(speciality) as (typeof HOSPITAL_VALUES)[number]);
+}
+
 /** Display label for a kind, used by the board's two mix panels. */
 export const CRM_CONTACT_KIND_LABELS: Record<CrmContactKind, string> = {
   sp: "Doctors (SP)",
@@ -109,3 +127,4 @@ export const CRM_CONTACT_KIND_LABELS: Record<CrmContactKind, string> = {
 /** Every value this module knows, for the test that pins it against production. */
 export const KNOWN_SP_SPECIALITIES: readonly string[] = SP_VALUES;
 export const KNOWN_HCP_SPECIALITIES: readonly string[] = HCP_VALUES;
+export const KNOWN_HOSPITAL_SPECIALITIES: readonly string[] = HOSPITAL_VALUES;

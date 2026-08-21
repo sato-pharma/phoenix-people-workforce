@@ -360,6 +360,10 @@ export type CrmVisitFilter = {
   requireAgentHrId?: boolean;
   /** Require a resolved `double_hr_id` (NOT NULL). */
   requireDoubleHrId?: boolean;
+  /** Restrict to these CRM contact ids (`contact_crm_id IN`). Empty array → no rows. For
+   * contact-centric reads (e.g. "what speciality does the CRM record for these doctors"), where
+   * the subject of the question is the contact rather than the agent. */
+  contactCrmIds?: readonly number[];
 };
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- structural PostgREST builder shape; the
@@ -395,6 +399,7 @@ function applyVisitFilter(
   if (filter.doubleOnly) result = result.not("double_crm_id", "is", null).neq("double_crm_id", 0);
   if (filter.requireAgentHrId) result = result.not("agent_hr_id", "is", null);
   if (filter.requireDoubleHrId) result = result.not("double_hr_id", "is", null);
+  if (filter.contactCrmIds && filter.contactCrmIds.length > 0) result = result.in("contact_crm_id", [...filter.contactCrmIds]);
   return result;
 }
 
@@ -629,6 +634,7 @@ export async function queryVisits<T = CrmVisitRow>(
 ): Promise<T[]> {
   if (options.agentHrIds && options.agentHrIds.length === 0) return [];
   if (options.doubleHrIds && options.doubleHrIds.length === 0) return [];
+  if (options.contactCrmIds && options.contactCrmIds.length === 0) return [];
   const supabase = getSupabaseAdmin();
   const excludedInList = options.includeResignedAgents ? "" : await getEffectiveExcludedInList();
   // When collapsing, widen the projection so the duplicate-detection fingerprint columns are present
@@ -667,6 +673,7 @@ export async function queryVisitsLimited<T = CrmVisitRow>(
 ): Promise<T[]> {
   if (options.agentHrIds && options.agentHrIds.length === 0) return [];
   if (options.doubleHrIds && options.doubleHrIds.length === 0) return [];
+  if (options.contactCrmIds && options.contactCrmIds.length === 0) return [];
   const supabase = getSupabaseAdmin();
   const excludedInList = await getEffectiveExcludedInList();
   // See queryVisits: widen the projection so the collapse fingerprint columns are present.
@@ -724,6 +731,13 @@ export type CrmCheckinFilter = {
   dateFrom?: string;
   /** Inclusive `check_date` upper bound as a date (YYYY-MM-DD); expanded to `T23:59:59`. */
   dateTo?: string;
+  /** Restrict to check-ins whose GPS falls inside this latitude/longitude window. The database has
+   * no PostGIS and no earthdistance (checked 2026-08-21), so a true radius query is impossible in
+   * SQL; a box prefilter here plus an exact haversine in the caller is the available shape. Pass a
+   * box that FULLY CONTAINS the circle you want — the caller discards the corners. */
+  bounds?: { maxLatitude: number; maxLongitude: number; minLatitude: number; minLongitude: number };
+  /** Require a resolved `contact_crm_id` (NOT NULL) — for contact-centric proximity reads. */
+  requireContactCrmId?: boolean;
 };
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- see VisitFilterableQuery note. */
@@ -749,6 +763,14 @@ function applyCheckinFilter(
   if (filter.agentHrIdILike) result = result.ilike("agent_hr_id", filter.agentHrIdILike);
   if (filter.dateFrom) result = result.gte("check_date", `${filter.dateFrom}T00:00:00`);
   if (filter.dateTo) result = result.lte("check_date", `${filter.dateTo}T23:59:59`);
+  if (filter.bounds) {
+    result = result
+      .gte("lat", filter.bounds.minLatitude)
+      .lte("lat", filter.bounds.maxLatitude)
+      .gte("lon", filter.bounds.minLongitude)
+      .lte("lon", filter.bounds.maxLongitude);
+  }
+  if (filter.requireContactCrmId) result = result.not("contact_crm_id", "is", null);
   return result;
 }
 
@@ -768,12 +790,27 @@ function applyCheckinFilter(
  * Returns `[]` (never throws) when the mirror schema is missing.
  */
 export async function queryCheckins<T = CrmCheckinRow>(
-  options: CrmCheckinFilter & { columns?: string; orderBy?: string; ascending?: boolean; limit?: number; pageSize?: number },
+  options: CrmCheckinFilter & {
+    columns?: string;
+    orderBy?: string;
+    ascending?: boolean;
+    limit?: number;
+    pageSize?: number;
+    /** Explicit, default-false opt-out of the resigned-agent exclusion — the check-in twin of the
+     * {@link queryVisits} option, and subject to the same condition: only for a caller that never
+     * displays or trusts the resolved agent. The legitimate case is a CONTACT-centric read, where
+     * the agent is merely who happened to record the point and the subject is the doctor. Measured
+     * on production 2026-08-21: excluding those agents removes 6,431 of 105,413 GPS check-ins and
+     * takes 1,100 of 15,125 contacts to zero — doctors who exist, at real coordinates, whose only
+     * check-in came from a rep who has since left. Every agent-centric reader
+     * (coverage, scoring, reporting) must leave this off. */
+    includeResignedAgents?: boolean;
+  },
 ): Promise<T[]> {
   if (options.agentCrmIds && options.agentCrmIds.length === 0) return [];
   if (options.agentHrIds && options.agentHrIds.length === 0) return [];
   const supabase = getSupabaseAdmin();
-  const excludedInList = await getEffectiveExcludedInList();
+  const excludedInList = options.includeResignedAgents ? "" : await getEffectiveExcludedInList();
 
   if (options.limit != null) {
     let query = supabase.from(CRM_CHECKINS_TABLE).select(options.columns ?? "*");

@@ -616,6 +616,7 @@ import { runDirectOrdersApprovalWindowMobileTests } from "./direct-orders-approv
 import { runEmployeePortalMobileInputZoomTests } from "./employee-portal-mobile-input-zoom.test.ts";
 import { runEmployeePortalMobileTableCardTests } from "./employee-portal-mobile-table-cards.test.ts";
 import { runCrmMobileTableCardTests } from "./crm-mobile-table-cards.test.ts";
+import { runPharmacySearchTests } from "./pharmacy-search.test.ts";
 import { runDirectOrdersInvoiceScanTests } from "./direct-orders-invoice-scan.test.ts";
 import { runDirectOrdersArabicSearchTests } from "./direct-orders-arabic-search.test.ts";
 import { runCrmBrickCentroidsCacheTests } from "./crm-brick-centroids-cache.test.ts";
@@ -2302,6 +2303,14 @@ await runTest(
   "CRM brick coverage (coverage weighted by selling units not brick count; a rep with no GPS "
   + "check-in that month is listed unscored and kept OUT of every total, never shown at 0%)",
   runCrmBrickCoverageTests,
+);
+
+await runTest(
+  "Pharmacy Search (PostgREST or-filter sanitising, one pharmacy across many distributors, "
+  + "brick table beats a stale row code, bounding box widens with latitude, null island rejected, "
+  + "a hospital is never listed as a doctor, the measured distance wins the hospital merge, "
+  + "save never touches sales attribution, every route asserts access, mobile gets cards)",
+  runPharmacySearchTests,
 );
 
 await runTest(
