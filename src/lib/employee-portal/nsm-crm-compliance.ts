@@ -9,6 +9,7 @@ import {
   resolveVisitTime,
   type VisitTimeSource,
 } from "@/lib/crm/reads";
+import { resolveVisitTypeLabel } from "@/lib/crm/visit-types";
 
 // NSM "first CRM visit" compliance for the recurring iReports360 sync (3x/day plus a live
 // 8:30 AM-12:01 PM morning window — see the ireports360-visits-* cron routes): who on the NSM's
@@ -122,11 +123,21 @@ const VISIT_TYPE_LABELS = new Map<number, string>([
   [-8, "Campaign"],
 ]);
 
-function visitTypeLabel(visitType: number | null | undefined, description: string | null | undefined): string {
+// VISIT_TYPE_LABELS above is deliberately compact for this board ("Regular", not the vendor's
+// longer "Regular Visit") and is pinned by tests/nsm-crm-compliance.test.ts — it stays.
+// What changed is the fallback: it used to print the vendor description verbatim, which is the
+// literal string "Unknown" for the seven codes iReports360 never documented. Those now go
+// through the CRM domain resolver, so this board names a code the same way the rest of Phoenix
+// does instead of showing a rep "Unknown" for their own public holiday.
+function visitTypeLabel(
+  visitType: number | null | undefined,
+  description: string | null | undefined,
+  comment: string | null | undefined,
+): string {
   const known = visitType == null ? undefined : VISIT_TYPE_LABELS.get(visitType);
   if (known) return known;
-  const vendor = description?.trim();
-  return vendor && vendor.length > 0 ? vendor : "Visit";
+  if (visitType == null && !(description ?? "").trim()) return "Visit";
+  return resolveVisitTypeLabel(visitType, description, comment);
 }
 
 /**
@@ -316,7 +327,7 @@ export function buildNsmCrmCompliance(input: {
     const best: Best = {
       when,
       source: resolved.source,
-      visitType: visitTypeLabel(row.visit_type, row.visit_type_description),
+      visitType: visitTypeLabel(row.visit_type, row.visit_type_description, row.comment),
       account: accountName(row),
       comment: row.comment?.trim() || null,
     };
