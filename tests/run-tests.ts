@@ -862,6 +862,7 @@ import { runCrmDayMapVisitTypeStatusTests } from "./crm-day-map-visit-type-statu
 import { runCrmBrickCoverageTests } from "./crm-brick-coverage.test.ts";
 
 import { runRecruitmentCvReadHonestyTests } from "./recruitment-cv-read-honesty.test.ts";
+import { runRecruitmentRereadModelConstantsTests } from "./recruitment-reread-model-constants.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -2288,6 +2289,11 @@ await runTest(
   "CV read honesty (five EMPTY arrays are not five fields; a read that produced nothing reports EMPTY, "
     + "never READ, and gets its own summary line so 'Failed: 0' cannot mean 'nothing was extracted')",
   runRecruitmentCvReadHonestyTests,
+);
+await runTest(
+  "CV re-read hold-back is built from the exported model constants (an OCR-only row must not count "
+    + "as a real model read and freeze that candidate out of every future re-read)",
+  runRecruitmentRereadModelConstantsTests,
 );
 
 await runTest(
