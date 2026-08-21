@@ -276,11 +276,28 @@ export async function runRecruitmentAppliedForTests() {
     "and be given that narrowed id list, not the whole pool",
   );
   // Both CV fields come off the same jsonb blob, so they must cost ONE query, not two.
+  //
+  // Counted by what each query SELECTS, not by how many there are. This assertion used to
+  // require exactly one read of ats_candidate_cv_extractions full stop, which made it fire on
+  // the "Not a CV" flag loader (#2274) — a query that fetches three small columns and never
+  // touches the blob. The rule worth keeping is about the 1.1 MB, so it now says that in
+  // words: the fat column is read once, and every other visit to the table stays thin.
+  const extractionSelects = candidatesSource
+    .split('.from("ats_candidate_cv_extractions")')
+    .slice(1)
+    .map((rest) => rest.slice(0, rest.indexOf(")") + 1));
   assert.equal(
-    candidatesSource.match(/\.from\("ats_candidate_cv_extractions"\)/g)?.length,
+    extractionSelects.filter((select) => select.includes("extracted_fields")).length,
     1,
     "appliedForJobTitle and currentJobTitle must be read in a single pass over extracted_fields",
   );
+  for (const select of extractionSelects) {
+    if (select.includes("extracted_fields")) continue;
+    assert.ok(
+      !select.includes("*"),
+      `a second read of the extractions table must name its columns, not select * — that pulls the 1.1 MB blob back in by the side door: ${select}`,
+    );
+  }
 
   // ── 9 · The tightening pass, and the line it must not cross ─────────────────
   //

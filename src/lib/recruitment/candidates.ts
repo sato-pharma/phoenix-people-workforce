@@ -294,6 +294,40 @@ async function attachAppliedFor(candidates: Candidate[]): Promise<void> {
   }
 }
 
+/**
+ * The candidates whose most recent CV read judged the file explicitly NOT to be a CV.
+ *
+ * Three columns, one query, newest row per candidate wins — deliberately NOT a join on
+ * `extracted_fields`, which is 1.1 MB across the table and crosses the Atlantic on every read.
+ *
+ * Only an explicit `false` lands in the set. NULL is "no judgement recorded" — every row written
+ * before the column existed reads that way — and calling those not-a-CV would hide real applicants,
+ * which is far worse than the confusion this fixes. Same fail-open shape as the intake gate.
+ */
+async function loadNotACvCandidates(ids: string[]): Promise<Set<string>> {
+  const notACv = new Set<string>();
+  if (ids.length === 0) return notACv;
+  const supabase = recruitmentDb();
+  const seen = new Set<string>();
+  for (const batch of chunkIds(ids)) {
+    const { data, error } = await supabase
+      .from("ats_candidate_cv_extractions")
+      .select("candidate_id,created_at,is_cv")
+      .in("candidate_id", batch)
+      .order("created_at", { ascending: false });
+    if (error || !data) continue;
+    for (const row of data as Array<{ candidate_id?: unknown; is_cv?: unknown }>) {
+      const candidateId = textOrNull(row.candidate_id);
+      // Newest first, so the first row seen for a candidate is the verdict that stands. A later
+      // re-read that DID find a CV must overrule an older "no", not be overruled by it.
+      if (!candidateId || seen.has(candidateId)) continue;
+      seen.add(candidateId);
+      if (row.is_cv === false) notACv.add(candidateId);
+    }
+  }
+  return notACv;
+}
+
 export async function listCandidates(): Promise<Candidate[]> {
   const supabase = recruitmentDb();
   const { data, error } = await supabase
@@ -311,6 +345,10 @@ export async function listCandidates(): Promise<Candidate[]> {
   for (const candidate of candidates) {
     const flag = dupFlags.get(candidate.id);
     candidate.possibleDuplicate = flag ? { candidateId: flag.id, reason: flag.reason } : null;
+  }
+  const notACv = await loadNotACvCandidates(candidates.map((candidate) => candidate.id));
+  for (const candidate of candidates) {
+    if (notACv.has(candidate.id)) candidate.notACv = true;
   }
   return candidates;
 }

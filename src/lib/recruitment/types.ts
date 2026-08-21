@@ -270,6 +270,18 @@ export type Candidate = {
   // Populated by listCandidates; see src/lib/recruitment/applied-for.ts for the ladder and why it
   // is ordered the way it is. Carries the source so a derived answer is never shown as a stated one.
   appliedFor?: CandidateAppliedFor | null;
+  // TRUE only when the most recent CV read judged this file explicitly NOT to be a CV — the answer
+  // the model gives on the same call as the extraction, stored since #2271. Twenty-three "WhatsApp
+  // Import" rows in production are photographs of ICDL certificates, training diplomas and Saudi
+  // experience letters; the read correctly returned every field null and the pool showed an empty
+  // row with no reason, so the same file was re-read three times at full vision price.
+  //
+  // Absent means "no judgement on record", NOT "it is a CV": every row written before #2271 has a
+  // NULL verdict, and so does any read that never reached the model. Gate on `notACv === true`.
+  // Populated by listCandidates only — the write paths that call getCandidate have no use for it
+  // and should not pay for the extra query. The profile panel reads the verdict straight off its
+  // own StoredCvExtraction.isCv instead, which is fresher than any copy carried on the row.
+  notACv?: boolean;
 };
 
 export type CandidateSourceContext = {
