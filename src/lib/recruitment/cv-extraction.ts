@@ -833,7 +833,7 @@ export async function getLatestCvExtraction(candidateId: string): Promise<Stored
   const supabase = recruitmentDb();
   const { data, error } = await supabase
     .from("ats_candidate_cv_extractions")
-    .select("id,ai_model,position_key,extracted_fields,applied_fields,created_at")
+    .select("id,ai_model,position_key,extracted_fields,applied_fields,created_at,is_cv")
     .eq("candidate_id", candidateId)
     .order("created_at", { ascending: false })
     .limit(1)
@@ -848,11 +848,15 @@ export async function getLatestCvExtraction(candidateId: string): Promise<Stored
     extracted_fields?: unknown;
     applied_fields?: unknown;
     created_at?: unknown;
+    is_cv?: unknown;
   };
   return {
     createdAt: row.created_at ? String(row.created_at) : null,
     extractionId: String(row.id),
     fields: normalizeStoredExtractionFields(row.extracted_fields),
+    // Anything that is not literally a boolean stays null — a row written before the column
+    // existed, or one whose value was hand-edited, must read as "unknown", not as a verdict.
+    isCv: typeof row.is_cv === "boolean" ? row.is_cv : null,
     model: row.ai_model ? String(row.ai_model) : null,
     positionKey: typeof row.position_key === "string" && row.position_key ? row.position_key : defaultCvPositionKey,
     reviewed: row.applied_fields !== null && row.applied_fields !== undefined,
@@ -860,6 +864,14 @@ export async function getLatestCvExtraction(candidateId: string): Promise<Stored
 }
 
 // Writes an already-computed extraction to the audit table against a candidate + file.
+//
+// is_cv is written here and nowhere else. The model answers it on the SAME call that extracts the
+// fields, so it costs nothing extra — but until 2026-08-21 this function dropped it, and the
+// judgement died with the request. That is how a doctor's prescription became a candidate: a later
+// ops script, reading this table, had no way to ask whether the page was a CV and fell back to
+// re-asserting the extracted name, which a clinic letterhead satisfies. Everything downstream of an
+// extraction sees only what this row records, so an answer that is not stored is an answer nobody
+// downstream can ever have.
 export async function persistCvExtraction(input: {
   candidateId: string;
   fileId: string;
@@ -875,6 +887,7 @@ export async function persistCvExtraction(input: {
       created_by: input.access.hrId ?? input.access.loginId ?? null,
       extracted_fields: input.extraction.fields,
       file_id: input.fileId,
+      is_cv: input.extraction.isCv,
       position_key: input.extraction.positionKey,
     })
     .select("id")

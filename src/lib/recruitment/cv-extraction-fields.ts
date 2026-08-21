@@ -57,6 +57,11 @@ export type StoredCvExtraction = {
   // applied_fields is written only when a reviewer saves (recordAppliedExtractionFields), so this
   // is exactly "has a human already accepted or corrected this proposal".
   reviewed: boolean;
+  // Did the read judge this document to be a CV at all? NULL — not false — for every row written
+  // before 2026-08-21, because nobody recorded an answer for those and pretending otherwise would
+  // be inventing one. Gate on `isCv === false`, never on `!isCv`: treating the unknown as a no
+  // would discard real applicants, which is the one failure this must never cause.
+  isCv: boolean | null;
 };
 
 // extracted_fields is jsonb, so a row written by an older shape (or edited by hand) may hold
