@@ -62,6 +62,7 @@ export type AuditEntityType =
   | "user_activity_access"
   | "vacation_report_export"
   | "vacation_request"
+  | "vacation_retention_purge"
   | "vacation_weekly_off_policy"
   | "weekly_plan"
   | "weekly_sales_mapping"

@@ -439,6 +439,7 @@ import { runRlsAuthenticatedReadRevokeTests } from "./rls-authenticated-read-rev
 import { runAccessIdentityHardeningTests } from "./access-identity-hardening.test.ts";
 import { runAccessRegistryCoverageTests } from "./access-registry-coverage.test.ts";
 import { runPayrollMutationAuditTests } from "./payroll-mutation-audit.test.ts";
+import { runVacationRetentionPurgeAuditTests } from "./vacation-retention-purge-audit.test.ts";
 import { runCronControlRegistryTests } from "./cron-control-registry.test.ts";
 import { runCronControlExpressionTests } from "./cron-control-expression.test.ts";
 import { runNotificationRoleRecipientsTests } from "./notification-role-recipients.test.ts";
@@ -1382,6 +1383,7 @@ await runTest("access governance hardening", runAccessGovernanceHardeningTests);
 await runTest("RLS authenticated-read revoke (M3)", runRlsAuthenticatedReadRevokeTests);
 await runTest("access registry coverage", runAccessRegistryCoverageTests);
 await runTest("payroll mutation audit", runPayrollMutationAuditTests);
+await runTest("vacation retention purge audit", runVacationRetentionPurgeAuditTests);
 await runTest("access identity hardening", runAccessIdentityHardeningTests);
 await runTest("cron control registry (job-registry <-> access-registry cross-reference)", runCronControlRegistryTests);
 await runTest("cron control expression (validate/reject, next-run computation, collisions)", runCronControlExpressionTests);
