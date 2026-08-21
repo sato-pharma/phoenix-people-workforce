@@ -406,4 +406,38 @@ export function runPharmacySearchTests() {
         "carries the md: gate that keeps it off a phone",
     );
   }
+
+  // ── A code on a phone must say whose code it is ───────────────────────────
+  // The desktop results table has carried Distributor and Code as adjacent columns from the
+  // start. The card shipped with four fields — brick, area, region, code — so a phone showed
+  // `0001559807` with nothing saying it was Ibn sina's number for that pharmacy. Sliced to the
+  // card renderer specifically: the desktop table below it must not be what satisfies this.
+  {
+    const source = readFileSync(
+      fileURLToPath(new URL("../src/components/pharmacy-search/pharmacy-search-workspace.tsx", import.meta.url)),
+      "utf8",
+    );
+    const cardStart = source.indexOf("renderCard=");
+    const cardEnd = source.indexOf("renderTable=", cardStart);
+    assert.ok(
+      cardStart !== -1 && cardEnd > cardStart,
+      "could not isolate the mobile card renderer — this test is measuring nothing until it can",
+    );
+    const card = source.slice(cardStart, cardEnd);
+
+    assert.match(
+      card,
+      /label:\s*"Distributor"/,
+      "the mobile result card must name the distributor — a bare customer code with no owner "
+        + "cannot be acted on, and desktop has always shown both",
+    );
+    assert.ok(
+      card.includes("hit.distributorName"),
+      "the card's Distributor field must read the real distributor name off the hit, not a literal",
+    );
+    assert.ok(
+      card.indexOf('label: "Distributor"') < card.indexOf('label: "Code"'),
+      "the distributor must sit immediately before its code, so the pair reads as one fact",
+    );
+  }
 }
