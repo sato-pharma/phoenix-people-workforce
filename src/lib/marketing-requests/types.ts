@@ -1,9 +1,26 @@
-export type MarketingCustomerType =
-  | "doctor"
-  | "hospital"
-  | "clinic"
-  | "account"
-  | "other";
+/**
+ * Every customer type the database accepts — `marketing_customers_type_check` allows exactly these
+ * five, so this list is the schema, not a preference.
+ *
+ * `doctor` is legacy-only by design: the create dropdown in the Customer Validation workspace
+ * deliberately offers the other four, so no NEW customer is typed `doctor`. But 130 active
+ * customers imported by the 2026-07-02 ROI backfill ARE `doctor`, and they must still be readable,
+ * completable, and writable. Leaving `doctor` out of a runtime guard does not stop anyone creating
+ * one — it only breaks the rows that already exist.
+ *
+ * The union is DERIVED from this list rather than written out beside it. It was written out
+ * beside it until 2026-08-21, the two drifted, and `normalizeCustomerType` rejected `doctor` while
+ * the union, the DB constraint and 130 live rows all still allowed it.
+ */
+export const MARKETING_CUSTOMER_TYPES = [
+  "doctor",
+  "hospital",
+  "clinic",
+  "account",
+  "other",
+] as const;
+
+export type MarketingCustomerType = (typeof MARKETING_CUSTOMER_TYPES)[number];
 
 export type MarketingEvidenceStatus = "missing" | "pending" | "complete";
 
