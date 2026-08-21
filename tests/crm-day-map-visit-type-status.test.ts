@@ -24,10 +24,22 @@ import { leaverVisitTypeStatus } from "../src/lib/automated-payroll/recommend.ts
  * and -5/-6 went dormant on 2026-04-25 / 2026-02-08, before `deductions_candidates` starts in
  * 2026-07, so 0 agent-days overlap. This test is what stops the next drift from being the one
  * that does cost money.
+ *
+ * SECOND OWNER RULING, SAME DAY. The Sets are a strict whitelist while the two Maps end in
+ * `?? "CP"`, so five undocumented codes — -7, -19, -20, -21, -30 — reached CP in copies #1 and #2
+ * but fell through here with no cancel at all. That one was NOT latent: 88 agent-days across 30
+ * employees since 2026-07-01 had one of those as their only CRM record, inside the
+ * `deductions_candidates` window. The owner ruled they join the CP Set, so all three copies now
+ * agree on every one of the 15 visit types production has ever produced.
  */
 
-/** Owner-confirmed AV/CP ruling. -4 is the ONLY genuine leave type iReports360 gives Phoenix. */
-const RULING: ReadonlyArray<{ code: number; status: "AV" | "CP"; name: string }> = [
+type Ruling = { code: number; status: "AV" | "CP"; name: string };
+
+/**
+ * Codes named EXPLICITLY in all three copies. -4 is the ONLY genuine leave type iReports360 gives
+ * Phoenix. Because these are listed by hand in VISIT_TYPE_TO_STATUS, they can be source-guarded.
+ */
+const MAPPED_RULING: ReadonlyArray<Ruling> = [
   { code: -1, status: "CP", name: "Conference" },
   { code: -2, status: "CP", name: "Group Meeting" },
   { code: -4, status: "AV", name: "Annual Vacation" },
@@ -40,6 +52,22 @@ const RULING: ReadonlyArray<{ code: number; status: "AV" | "CP"; name: string }>
   { code: -15, status: "CP", name: "Health Day" },
 ];
 
+/**
+ * Undocumented codes that copies #1 and #2 reach CP for through their `?? "CP"` default rather than
+ * a listed entry — so they must NOT be source-guarded against those Maps, only behaviourally
+ * pinned. This Set has no default, so it has to name them; owner ruling 2026-08-21.
+ */
+const DEFAULTED_TO_CP: ReadonlyArray<Ruling> = [
+  { code: -7, status: "CP", name: "Ambiguous (split by comment text)" },
+  { code: -19, status: "CP", name: "Meetings" },
+  { code: -20, status: "CP", name: "Admin Work" },
+  { code: -21, status: "CP", name: "Business Review (BRM)" },
+  { code: -30, status: "CP", name: "Unlabelled field visit" },
+];
+
+/** Every visit type production has ever produced (measured 2026-08-21). */
+const RULING: ReadonlyArray<Ruling> = [...MAPPED_RULING, ...DEFAULTED_TO_CP];
+
 export function runCrmDayMapVisitTypeStatusTests() {
   // ---- THE HEADLINE: ONLY ANNUAL VACATION IS LEAVE --------------------------
   // Stated as its own assertion rather than only inside the table loop below, so that breaking
@@ -51,6 +79,19 @@ export function runCrmDayMapVisitTypeStatusTests() {
     "Annual Vacation (-4) must be the ONLY CRM visit type the attendance day map treats as leave — "
       + "Health Day (-15) is working time per the owner ruling of 2026-08-01, and Public Holiday (-5) "
       + "and Casual Leave (-6) are working days per the owner ruling of 2026-08-21",
+  );
+
+  // ---- THE 88-AGENT-DAY GAP MUST STAY CLOSED --------------------------------
+  // These five were the live hole: CP in copies #1/#2 via `?? "CP"`, but a fall-through here, so no
+  // cancel reached reconcileDay and the day was judged on punch timing alone. Asserted separately
+  // from the table loop so dropping one fails on a message that names the gap, not a row index.
+  const stillFallingThrough = DEFAULTED_TO_CP.filter((entry) => crmDayVisitTypeStatus(entry.code) === undefined);
+  assert.deepEqual(
+    stillFallingThrough.map((entry) => entry.code),
+    [],
+    "the five undocumented codes (-7, -19, -20, -21, -30) must stay in the CP Set — they are CP in the "
+      + "other two copies via `?? \"CP\"`, and falling through here left 88 agent-days across 30 "
+      + "employees (since 2026-07-01) with no cancel at all (owner ruling 2026-08-21)",
   );
 
   // ---- EVERY RULED CODE, BOTH DIRECTIONS ------------------------------------
@@ -79,27 +120,23 @@ export function runCrmDayMapVisitTypeStatusTests() {
   );
   // VISIT_TYPE_TO_STATUS is module-private, so the third copy is pinned at the source. Plain string
   // checks, deliberately not a regex over match-anything (the SonarQube S5852 ReDoS hotspot).
-  for (const { code, status, name } of RULING) {
+  for (const { code, status, name } of MAPPED_RULING) {
     assert.ok(
       sourceMap.includes(`[${code}, "${status}"]`),
       `VISIT_TYPE_TO_STATUS must still map ${name} (${code}) to ${status} — the day map is pinned to it`,
     );
   }
 
-  // ---- THE FALL-THROUGH IS REAL, AND IT IS NOT `?? "CP"` --------------------
-  // The two Maps end in `?? "CP"`, so an unlisted code still counts as working time there. The day
-  // map is a strict whitelist: an unlisted code sets NO flag, the day hits the loop's `continue`,
-  // and no cancel reaches reconcileDay. That difference is why -5/-6 were a hole rather than a
-  // harmless omission, and it still applies to -7/-19/-20/-21/-30 (88 agent-days across 30
-  // employees since 2026-07-01, production 2026-08-21) pending an owner ruling.
-  for (const unlisted of [-7, -19, -20, -21, -30]) {
-    assert.equal(
-      crmDayVisitTypeStatus(unlisted),
-      undefined,
-      `${unlisted} is knowingly outside both Sets — if it gains a ruling, add it here deliberately, `
-        + "never by accident",
-    );
-  }
+  // ---- BUT THE WHITELIST IS STILL A WHITELIST -------------------------------
+  // A code iReports360 has never sent stays a fall-through, deliberately: copies #1/#2 would call it
+  // CP, and cancelling a deduction for a code nobody has classified is the riskier default. Nothing
+  // alerts on this (crm/unmapped-alert.ts covers unmapped AGENTS, not visit types), so if a 16th
+  // code ever appears it must be classified by hand in all three copies.
+  assert.equal(
+    crmDayVisitTypeStatus(-99),
+    undefined,
+    "an unknown/future visit type must NOT silently become a cancel — classify it deliberately instead",
+  );
   assert.equal(
     crmDayVisitTypeStatus(0),
     undefined,
@@ -115,8 +152,8 @@ export function runCrmDayMapVisitTypeStatusTests() {
     "the leave Set must contain Annual Vacation and nothing else",
   );
   assert.ok(
-    dayMap.includes("const CRM_CAMPAIGN_VISIT_TYPES = new Set<number>([-1, -2, -5, -6, -8, -9, -11, -12, -15]);"),
-    "the CP Set must carry Public Holiday (-5), Casual Leave (-6) and Health Day (-15) alongside the "
-      + "original campaign types",
+    dayMap.includes("-1, -2, -5, -6, -7, -8, -9, -11, -12, -15, -19, -20, -21, -30,"),
+    "the CP Set must carry all 15 production visit types — Public Holiday (-5), Casual Leave (-6) and "
+      + "Health Day (-15) alongside the original campaign types and the five undocumented codes",
   );
 }
