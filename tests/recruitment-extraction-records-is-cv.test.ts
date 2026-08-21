@@ -2,6 +2,11 @@ import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 
+import {
+  isRuleOnlyExtractionModel,
+  OCR_EXTRACTION_MODEL,
+  RULE_ONLY_EXTRACTION_MODEL,
+} from "../src/lib/recruitment/cv-extraction.ts";
 import type { StoredCvExtraction } from "../src/lib/recruitment/cv-extraction-fields.ts";
 
 function read(relativePath: string): string {
@@ -31,8 +36,8 @@ export function runRecruitmentExtractionRecordsIsCvTests() {
   assert.ok(persist.length > 0, "persistCvExtraction must exist — it is the only write site for an extraction row");
   assert.match(
     persist,
-    /is_cv:\s*input\.extraction\.isCv/,
-    "persistCvExtraction must store extraction.isCv; the model answers it for free and a judgement that is not written down is one nothing downstream can ever ask for",
+    /is_cv:\s*isRuleOnlyExtractionModel\(input\.extraction\.model\)\s*\?\s*null\s*:\s*input\.extraction\.isCv/,
+    "persistCvExtraction must store the model's judgement — and ONLY the model's. A judgement that is not written down is one nothing downstream can ever ask for; one that was never made must not be written down as though it were",
   );
 
   // --- 2. and read back, with anything non-boolean meaning "unknown" ---------
@@ -124,5 +129,37 @@ export function runRecruitmentExtractionRecordsIsCvTests() {
     ddl,
     /update\s+public\.ats_candidate_cv_extractions/i,
     "no backfill: the model's answer for those rows is gone, and inventing one is worse than admitting it is unknown",
+  );
+
+  // --- 6. a read no model saw stores NULL, never a fabricated "yes" ----------
+  //
+  // Both free routes reach persistCvExtraction claiming the document IS a CV without a model having
+  // looked at it: ruleOnly() is returned only on the rule engine's own `isCv === true` branch, and
+  // the OCR path hard-codes `isCv: true`. Storing that claim is what made the section-3 guard
+  // unfirable — measured on production 2026-08-21, 104 of 173 rows from a single re-read were
+  // rules-only and every one asserted is_cv=true, so `is_cv === false` could never fire on them.
+  assert.equal(
+    isRuleOnlyExtractionModel(RULE_ONLY_EXTRACTION_MODEL),
+    true,
+    "a rules-only read never reaches a model, so it has no judgement to store",
+  );
+  assert.equal(
+    isRuleOnlyExtractionModel(OCR_EXTRACTION_MODEL),
+    true,
+    "the OCR path reads pixels with Tesseract and re-runs the rules — still no model, still no judgement",
+  );
+  assert.equal(
+    isRuleOnlyExtractionModel("gpt-5.4"),
+    false,
+    "a plain model read is a real judgement and must be stored as the boolean it is",
+  );
+  // The one that a lazier predicate gets wrong. `<model>+rules` is written when BOTH engines
+  // contributed — the model was asked, it just started from the rules' fields — so its answer is
+  // genuine. A `model.includes("rules")` check would throw away every escalated read's verdict,
+  // which is 69 of the 173 rows above and the only ones whose judgement was ever worth anything.
+  assert.equal(
+    isRuleOnlyExtractionModel("gpt-5.4+rules"),
+    false,
+    "the `<model>+rules` form means the model DID answer — do not match on the substring 'rules'",
   );
 }

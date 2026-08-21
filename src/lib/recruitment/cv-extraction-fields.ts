@@ -57,10 +57,14 @@ export type StoredCvExtraction = {
   // applied_fields is written only when a reviewer saves (recordAppliedExtractionFields), so this
   // is exactly "has a human already accepted or corrected this proposal".
   reviewed: boolean;
-  // Did the read judge this document to be a CV at all? NULL — not false — for every row written
-  // before 2026-08-21, because nobody recorded an answer for those and pretending otherwise would
-  // be inventing one. Gate on `isCv === false`, never on `!isCv`: treating the unknown as a no
-  // would discard real applicants, which is the one failure this must never cause.
+  // Did the read judge this document to be a CV at all? NULL means NOBODY JUDGED IT, which happens
+  // for two different reasons and is not a backfillable gap in either:
+  //   1. every row written before 2026-08-21, when the column did not exist; and
+  //   2. every rules-only or OCR read, ongoing — those never reach a model, so there is no
+  //      judgement to record. See isRuleOnlyExtractionModel in cv-extraction.ts.
+  // Gate on `isCv === false`, never on `!isCv`: treating the unknown as a no would discard real
+  // applicants, which is the one failure this must never cause. That is not a theoretical risk —
+  // rules-only reads were ~60% of one production re-read.
   isCv: boolean | null;
 };
 
