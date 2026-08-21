@@ -48,7 +48,7 @@
  *    fact rather than a policy choice: all 31,322 campaign rows recorded between 2026-01-01 and
  *    2026-08-20 carry contact id 0, blank name, blank speciality. A campaign row says the rep
  *    worked; it never says which doctor they saw, so there is nothing to match a plan entry
- *    against. They are counted per rep BESIDE adherence (owner's ruling 2026-08-21) so that a rep
+ *    against. They are counted per rep BESIDE both KPIs (owner's ruling 2026-08-21) so that a rep
  *    who spent the month on campaign work is never presented as idle — two did in August 2026
  *    (113 and 62 calls, zero regular visits between them).
  *  - A rep with NO planned doctors is not a 0% performer. `hasMeasurablePlan` marks them, they sort
@@ -165,7 +165,7 @@ export type RepDoctorListRepRow = {
   plannedDoctors: number;
   /** Campaign calls (visit type -8) this rep logged. These prove the rep WORKED but name no doctor
    * (every one of the 31,322 ever recorded carries contact id 0), so they can never mark a planned
-   * doctor as seen — they are reported beside adherence, never inside it. */
+   * doctor as seen — they are reported beside coverage and frequency, never inside either. */
   campaignCalls: number;
   /** False when this rep has no planned doctors at all, so there is nothing to be a percentage OF.
    * Such a rep is not a 0% performer and must not be ranked as one. */
@@ -508,8 +508,8 @@ export function buildRepDoctorListsBoard(input: RepDoctorListsInput): RepDoctorL
   // THE SPLIT. A campaign row (visit type -8) proves the rep worked but names no doctor: every one
   // of the 31,322 recorded between 2026-01-01 and 2026-08-20 carries contact id 0, blank name,
   // blank speciality. So it can never mark a planned doctor as seen -- there is no doctor on it to
-  // match. It is counted beside adherence instead, so a rep who spent the month on campaign work is
-  // never presented as idle (owner's ruling 2026-08-21). Adherence keeps meaning exactly one thing:
+  // match. It is counted beside BOTH KPIs instead, so a rep who spent the month on campaign work is
+  // never presented as idle (owner's ruling 2026-08-21). Coverage keeps meaning exactly one thing:
   // planned doctors CONFIRMED seen.
   const visitRows = input.visitRows.filter((row) => row.visit_type !== CAMPAIGN_TYPE);
   const campaignRows = input.visitRows.filter((row) => row.visit_type === CAMPAIGN_TYPE);
