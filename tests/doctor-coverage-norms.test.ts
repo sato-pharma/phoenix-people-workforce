@@ -49,6 +49,13 @@ export function runDoctorCoverageNormsTests() {
   assert.equal(isDoctorSpeciality("ENT"), true);
   assert.equal(isDoctorSpeciality("Hospital"), false);
 
+  // Vendor drift caught 2026-08-21: 4 production contacts (3 Nephrology, 1 Dermatologist) were
+  // riding the unclassified path because the vendor started sending these real specialties after
+  // the SP_VALUES list was compiled. They are doctors, not a new unknown kind.
+  assert.equal(classifyCrmContactSpeciality("Nephrology"), "sp");
+  assert.equal(classifyCrmContactSpeciality("Dermatologist"), "sp");
+  assert.equal(isDoctorSpeciality("Nephrology"), true);
+
   // ── norms validation ──────────────────────────────────────────────────────────────────────────
   const ok = validateDoctorCoverageNorms({ sp: { A: 2, B: 1, C: 1 }, hcp: { A: 1, B: 0, C: 0 } });
   assert.deepEqual(ok.hcp, { A: 1, B: 0, C: 0 }, "zero is a legal, meaningful value — 'not scored'");

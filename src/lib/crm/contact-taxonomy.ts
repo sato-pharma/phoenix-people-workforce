@@ -51,6 +51,9 @@ const SP_VALUES = [
   "nicu",
   "orthopedic surgery",
   "tropical medicine",
+  // — added 2026-08-21, confirmed against production (4 contacts: 3 nephrology, 1 dermatologist) —
+  "dermatologist",
+  "nephrology",
 ] as const;
 
 /**

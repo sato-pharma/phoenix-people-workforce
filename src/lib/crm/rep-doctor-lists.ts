@@ -60,8 +60,8 @@
  *    having succeeded, and the 79 planning agents measured on 2026-08-21 all resolved anyway.
  *  - Contact kind comes from the shared taxonomy (contact-taxonomy.ts). A speciality it has never
  *    seen stays `unclassified` and is COUNTED AND NAMED on the board, never folded into the doctor
- *    total — the plan carries two such values today ("Nephrology", "Dermatologist") that the
- *    taxonomy was written before the vendor started sending.
+ *    total. The plan carried two such values ("Nephrology", "Dermatologist") that the taxonomy was
+ *    written before the vendor started sending — both taught to the taxonomy 2026-08-21.
  *
  * DATE DISCIPLINE (same test-enforced rule as sfe-doctor-coverage.ts): CRM dates are Cairo
  * wall-clock and `plan_date`/`visit_date` are plain YYYY-MM-DD, so all month math is string
