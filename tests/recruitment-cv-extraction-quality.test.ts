@@ -168,9 +168,20 @@ export function runRecruitmentCvExtractionQualityTests() {
     "getText must ask for hyperlinks; without it the LinkedIn URL is structurally invisible",
   );
 
-  // 2. Reasoning effort. Held at "medium" (owner's instruction, 2026-08-18) — "high" (#2162) was the
-  // dominant driver of the OpenAI bill spike, and medium keeps accuracy acceptable at far less cost.
-  assert.match(extractionSource, /reasoning:\s*\{\s*effort:\s*"medium"\s*\}/, "CV extraction must reason at medium effort");
+  // 2. Reasoning effort. Capped at "medium" (owner's instruction, 2026-08-18) — "high" (#2162) was
+  // the dominant driver of the OpenAI bill spike. It is no longer FLAT: the effort is chosen per
+  // route by cvReasoningEffortForRoute, medium for the hard vision reads and low for the common
+  // text one, whose fields the rules have mostly already won. What must never come back is "high".
+  assert.doesNotMatch(
+    extractionSource,
+    /reasoning:\s*\{\s*effort:\s*"high"\s*\}/,
+    'CV extraction must never reason at "high" effort — that is what exhausted the credits',
+  );
+  assert.match(
+    extractionSource,
+    /reasoning: \{ effort: cvReasoningEffortForRoute\(forRoute\) \}/,
+    "CV extraction must choose its reasoning effort per route, not once for everything",
+  );
   assert.doesNotMatch(extractionSource, /effort:\s*"high"\s*\}/, "no high-effort extraction pass may remain (cost guard)");
 
   // 3. The escalation ladder: a thin text-layer read on a PDF gets a second, different attempt.

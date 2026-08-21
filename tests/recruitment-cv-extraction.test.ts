@@ -12,6 +12,7 @@ import {
   readNumberField,
   readSchemaField,
   readStringField,
+  cvReasoningEffortForRoute,
 } from "../src/lib/recruitment/cv-extraction.ts";
 import {
   CV_FIELD_SECTIONS,
@@ -729,6 +730,20 @@ export function runRecruitmentCvExtractionTests() {
   const appliedForMigration = read("supabase/migrations/20260815200000_candidate_applied_for_role.sql");
   assert.match(appliedForMigration, /add column if not exists applied_for_job_title text/);
   assert.match(appliedForMigration, /add column if not exists applied_for_evidence\s+text/);
+
+  // --- reasoning effort is spent where the difficulty is ---------------------
+  //
+  // Hidden reasoning tokens are the invisible half of the bill: medium -> high on 2026-08-16 is
+  // what exhausted the credits. A flat setting overpays on the common case, because a text-layer
+  // CV reaches the model only to fill judgement gaps the rules left, out of already-clean text.
+  assert.equal(cvReasoningEffortForRoute("text"), "low", "the common route must be the cheap one");
+  assert.equal(cvReasoningEffortForRoute("vision_pdf"), "medium", "rendering a PDF is the hard read");
+  assert.equal(cvReasoningEffortForRoute("vision_image"), "medium", "a photograph is the hard read");
+  assert.match(
+    read("src/lib/recruitment/cv-extraction.ts"),
+    /reasoning: \{ effort: cvReasoningEffortForRoute\(forRoute\) \}/,
+    "the call site must ASK per route — a hard-coded effort silently reinstates the flat bill",
+  );
 
   // --- no key must not cancel the FREE engine -------------------------------
   //

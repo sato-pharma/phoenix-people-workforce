@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import { readFileSync, statSync } from "node:fs";
 
-import { mergeRuleAndAiExtractions, shouldEscalateToAi } from "../src/lib/recruitment/cv-extraction-merge.ts";
+import {
+  aiFieldsWorthAsking,
+  mergeRuleAndAiExtractions,
+  shouldEscalateToAi,
+} from "../src/lib/recruitment/cv-extraction-merge.ts";
 import type { ExtractedCandidateFields } from "../src/lib/recruitment/cv-extraction-fields.ts";
 import { runRuleCvExtraction } from "../src/lib/recruitment/rule-extraction/index.ts";
 import {
@@ -370,6 +374,57 @@ function runEscalationTests() {
 // on every CV. These read the source and pin the four decisions that make the wiring correct.
 // ---------------------------------------------------------------------------
 
+function runNarrowingTests() {
+  // What an escalated CV is ASKED for, once the rules have already won part of the document.
+  // The saving here is output tokens — the half of the bill that is generated, charged, and then
+  // thrown away by the merge policy.
+  const ruleFields: ExtractedCandidateFields = {
+    currentJobTitle: low("HR Specialist"), // judgement field, rule unsure  -> ask
+    degree: high("BSc Pharmacy"), // unlisted, rule confident       -> drop
+    email: high("real@candidate.com"), // rule-authoritative              -> drop
+    governorate: high("Cairo"), // rule-authoritative              -> drop
+    languages: low(["Arabic"]), // unlisted, rule unsure           -> ask
+    phone: high("01012345678"), // rule-authoritative              -> drop
+    professionalSummary: high("The candidate's own words."), // verbatim   -> drop
+    university: high("Cairo University"), // unlisted, rule confident      -> drop
+    workHistory: low([{ employer: "Kazyon" }]), // judgement field         -> ask
+  };
+  // Three keys the rules did not answer at all, to prove they survive the narrowing.
+  const schemaKeys = [...Object.keys(ruleFields), "currentEmployer", "yearsExperience", "nationalId"];
+  const asked = aiFieldsWorthAsking(ruleFields, schemaKeys);
+  const dropped = schemaKeys.filter((key) => !asked.includes(key));
+
+  for (const key of ["currentEmployer", "yearsExperience", "nationalId"]) {
+    assert.ok(asked.includes(key), `${key} is unanswered by the rules, so it must still be asked for`);
+  }
+  assert.deepEqual(
+    [...dropped].sort(),
+    ["degree", "email", "governorate", "phone", "professionalSummary", "university"],
+    "only fields the rules have already won outright may be dropped from the request",
+  );
+
+  // THE PROOF, and the only reason narrowing is safe: for every dropped key, hand the merge a
+  // DIFFERENT high-confidence model answer and the rule value still wins. So not asking costs
+  // nothing. Read off mergeRuleAndAiExtractions itself rather than restated, so the two cannot
+  // drift apart — change the merge policy without changing the narrowing and this goes red.
+  for (const key of dropped) {
+    const merged = mergeRuleAndAiExtractions(ruleFields, { [key]: high("A CONFIDENT MODEL ANSWER") });
+    assert.equal(
+      merged.fields[key]?.value,
+      ruleFields[key]?.value,
+      `dropping ${key} must be lossless — a confident model answer loses this merge anyway`,
+    );
+    assert.equal(merged.sources[key], "rule", `${key} is only safe to drop while the rule owns it outright`);
+  }
+
+  // ...and the converse, so the narrowing cannot quietly become "ask for nothing": every field
+  // still asked for is one where a confident answer genuinely changes the stored record.
+  for (const key of asked.filter((candidate) => ruleFields[candidate])) {
+    const merged = mergeRuleAndAiExtractions(ruleFields, { [key]: high("A CONFIDENT MODEL ANSWER") });
+    assert.equal(merged.sources[key], "ai", `${key} is asked for, so a confident answer must be able to win`);
+  }
+}
+
 function runWiringTests() {
   const extraction = readFileSync(new URL("../src/lib/recruitment/cv-extraction.ts", import.meta.url), "utf8");
   const intake = readFileSync(new URL("../src/lib/recruitment/inbound/cv-intake-service.ts", import.meta.url), "utf8");
@@ -391,6 +446,35 @@ function runWiringTests() {
     extraction,
     /if \(rule && rule\.isCv\) return ruleOnly\(\);[\s\S]{0,300}?const scanned = await ruleFromOcr\(\);\s*\n\s*if \(scanned\) return scanned;\s*\n\s*throw error;/,
     "an AI failure must fall back to the rule result, then to OCR, before throwing",
+  );
+
+  // 2b. The narrowed request is actually WIRED — the schema, the prompt's reply parsing, and the
+  //     escalation gate all have to move together, and each one is a separate way to get it wrong.
+  assert.match(
+    extraction,
+    /text: buildExtractionTextFormat\(schema, askKeys \?\? undefined\)/,
+    "the request must carry the narrowed field list, or the saving never reaches OpenAI",
+  );
+  assert.match(
+    extraction,
+    /for \(const field of askedFields\) \{/,
+    "the reply must be parsed over the fields ASKED for — reading an unasked key invents an empty answer",
+  );
+  // Narrowing only ever applies to the text route. A vision route means the text layer was absent
+  // or too thin to trust, so whatever the rules "won" from it was won from scraps.
+  assert.match(
+    extraction,
+    /const askKeys = forRoute === "text" \? narrowedTextKeys : null;/,
+    "a vision pass must always be asked for the whole schema",
+  );
+  // THE COST TRAP. Five of the nine core signals (email, phone, professionalSummary, degree,
+  // university) are exactly the fields the narrowing drops. Score the model's reply on its own and
+  // a well-read CV looks THIN, which buys a second full-price vision call on precisely the
+  // documents the rules read best — a cost saving that costs more. It must score the whole record.
+  assert.match(
+    extraction,
+    /const scored = narrowedPrimary && rule \? mergeRuleAndAiExtractions\(rule\.fields, primary\.fields\)\.fields : primary\.fields;/,
+    "the escalation gate must score the MERGED record, or narrowing triggers the vision call it was meant to avoid",
   );
 
   // 3. is_cv still follows the MODEL when the model was consulted. The rules' own is_cv is a
@@ -482,6 +566,7 @@ export function runRecruitmentRuleExtractionTests() {
   runEndToEndTests();
   runMergeTests();
   runEscalationTests();
+  runNarrowingTests();
   runWiringTests();
   runOcrTests();
 }
