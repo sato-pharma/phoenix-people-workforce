@@ -61,6 +61,7 @@ import {
   isStatedNonEgyptian,
   nonEgyptianFlagTitle,
 } from "@/lib/recruitment/nationality";
+import { NOT_A_CV_LABEL, NOT_A_CV_TITLE, isNotACv } from "@/lib/recruitment/not-a-cv";
 import { interviewOutcomes, interviewScorecardCriteria, summarizeScorecard } from "@/lib/recruitment/scorecards";
 import type { VacancyReportRow } from "@/lib/reports/vacancies";
 import { cn } from "@/lib/utils";
@@ -1908,6 +1909,9 @@ function CandidatePoolCard({
           {isNew ? <StagePill tone="orange">New</StagePill> : null}
           {/* Same flag as the desktop table, on the pill row where a phone reader looks first. */}
           {isStatedNonEgyptian(candidate.nationality) ? <StagePill tone="rose">{NON_EGYPTIAN_FLAG_LABEL}</StagePill> : null}
+          {/* Amber, not rose: nothing is wrong with the person, the attachment is simply a
+              certificate. Rose is reserved for "this candidate cannot be hired". */}
+          {isNotACv(candidate) ? <StagePill tone="amber">{NOT_A_CV_LABEL}</StagePill> : null}
           <StagePill tone={candidateStatusTone(candidate.status)}>{candidateStatusLabel(candidate.status)}</StagePill>
         </span>
       }
@@ -1933,6 +1937,9 @@ function CandidatePoolCard({
           ...(isStatedNonEgyptian(candidate.nationality)
             ? [{ label: "Nationality", value: nonEgyptianFlagTitle(candidate.nationality) }]
             : []),
+          // The pill above says what; this says why. On desktop that sentence is the tooltip, and a
+          // phone has no hover — without it the card is a blank row wearing a two-word label.
+          ...(isNotACv(candidate) ? [{ label: "CV file", value: NOT_A_CV_TITLE }] : []),
           { label: "Received", value: cairoDateTime(candidate.createdAt) },
           { label: "Email", value: candidate.email ?? "—" },
           { label: "Phone", value: candidate.phone ?? "—" },
@@ -2738,9 +2745,26 @@ function CandidatesTab({
                           >
                             {appliedFor.text}
                           </span>
-                        ) : (
+                        ) : null}
+                        {/* "Not stated" gives way to the badge — it is the weaker of the two facts,
+                            and stacking both would say the same nothing twice. */}
+                        {!appliedFor.text && !isNotACv(candidate) ? (
                           <span className="text-slate-300">Not stated</span>
-                        )}
+                        ) : null}
+                        {/* The badge lives in THIS cell rather than beside the name, deliberately
+                            twice over. It is a fact about the attachment, not about the person, and
+                            a warning pinned to someone's name reads as a judgement on them. And
+                            this is the cell whose emptiness raises the question: a certificate
+                            yields no job title, so the reader is already staring at this blank
+                            space asking why. It is also the widest column, where the 280px
+                            Candidate cell would have squeezed a name that already truncates. */}
+                        {isNotACv(candidate) ? (
+                          <div className={appliedFor.text ? "mt-0.5" : undefined}>
+                            <StagePill tone="amber">
+                              <span title={NOT_A_CV_TITLE}>{NOT_A_CV_LABEL}</span>
+                            </StagePill>
+                          </div>
+                        ) : null}
                       </td>
                       {/* The reason for the current status sits in the tooltip rather than a column
                           of its own: it is read when someone asks "why", not on every scan of the
@@ -2866,6 +2890,17 @@ function CandidatesTab({
                 {isStatedNonEgyptian(profile.candidate.nationality) ? (
                   <StagePill tone="rose">
                     <span title={nonEgyptianFlagTitle(profile.candidate.nationality)}>{NON_EGYPTIAN_FLAG_LABEL}</span>
+                  </StagePill>
+                ) : null}
+                {/* Read off the stored extraction rather than the pool row, because THIS panel is
+                    where "Read the CV again" sits — the button that charged for the same thirteen
+                    certificate photographs three times over. The verdict shown has to be the one
+                    that button would re-ask, and this is the freshest copy of it. Gate on the
+                    explicit false: null is "nobody has judged this file", which is every row
+                    written before the column existed. */}
+                {storedExtraction?.isCv === false ? (
+                  <StagePill tone="amber">
+                    <span title={NOT_A_CV_TITLE}>{NOT_A_CV_LABEL}</span>
                   </StagePill>
                 ) : null}
               </p>
