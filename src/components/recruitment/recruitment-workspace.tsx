@@ -1,14 +1,16 @@
 "use client";
 
 import type { Dispatch, ReactNode, SetStateAction } from "react";
-import { useEffect, useRef, useState, useTransition } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useCallback, useEffect, useRef, useState, useTransition } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
+  AlertTriangle,
   ArrowLeft,
   Briefcase,
   BriefcaseBusiness,
   Check,
   CheckCircle2,
+  Clock,
   Copy,
   Eye,
   FileSpreadsheet,
@@ -39,6 +41,10 @@ import type { ApplicationWithContext } from "@/lib/recruitment/applications";
 import type { CandidateProfile } from "@/lib/recruitment/candidates";
 import { APPLIED_FOR_SOURCE_LABEL, APPLIED_FOR_SOURCE_SHORT, candidateRowAppliedFor } from "@/lib/recruitment/applied-for";
 import { candidateDisplayName, isShortenedCandidateName } from "@/lib/recruitment/candidate-display";
+// offer-rules is the pure half of the offer service — no database imports — so the same
+// completeness check runs in the browser and on the server without pulling a Supabase client in.
+import { isOfferStage, missingOfferTerms } from "@/lib/recruitment/offer-rules";
+import type { Offer } from "@/lib/recruitment/offers";
 import {
   candidateSourceChannel,
   type CandidateSourceChannelKey,
@@ -47,6 +53,12 @@ import { cairoDayKey, type CandidatePoolStats } from "@/lib/recruitment/candidat
 import type { HiringManagerOption } from "@/lib/recruitment/hiring-manager-notify";
 import type { SelectionBoardEntry } from "@/lib/recruitment/selection";
 import type { RecruitmentDashboard } from "@/lib/recruitment/dashboard";
+import {
+  computePipelineMetrics,
+  daysInStage,
+  STALLED_AFTER_DAYS,
+} from "@/lib/recruitment/pipeline-metrics";
+import { isTerminalApplicationStage } from "@/lib/recruitment/types";
 import type { Candidate, Interview, InterviewType, RecruitmentActionKey, RecruitmentFile, Requisition } from "@/lib/recruitment/types";
 import {
   CANDIDATE_STATUS_NOTE_MAX_LENGTH,
@@ -633,17 +645,276 @@ function FinalSelectionCard({
   );
 }
 
+/**
+ * The offer, from draft to the candidate's answer.
+ *
+ * Everything here posts to one route with an `intent`; the server decides what is allowed. The
+ * buttons are shown by stage so the recruiter sees the one thing to do next, but hiding a button
+ * is not the gate — approval is Super-Admin-only in the workflow registry, and sending refuses
+ * outright while the offer is unapproved.
+ */
+function OfferCard({
+  application,
+  canApprove,
+  pending,
+  run,
+}: {
+  application: ApplicationWithContext;
+  canApprove: boolean;
+  pending: boolean;
+  run: (work: () => Promise<string | void>) => void;
+}) {
+  const [offer, setOffer] = useState<Offer | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [jobTitle, setJobTitle] = useState("");
+  const [monthlyGross, setMonthlyGross] = useState("");
+  const [startDate, setStartDate] = useState("");
+  const [notes, setNotes] = useState("");
+  const [reason, setReason] = useState("");
+
+  const stage = application.stage;
+  const applicationId = application.id;
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/recruitment/applications/${applicationId}/offer`, { cache: "no-store" });
+      const data = (await res.json().catch(() => ({}))) as { offer?: Offer | null };
+      const loaded = data.offer ?? null;
+      setOffer(loaded);
+      // Seed the form from the saved offer, falling back to the requisition's own title so a first
+      // draft does not start empty.
+      setJobTitle(loaded?.jobTitle ?? application.requisition?.jobTitle ?? "");
+      setMonthlyGross(loaded?.monthlyGross != null ? String(loaded.monthlyGross) : "");
+      setStartDate(loaded?.startDate ?? "");
+      setNotes(loaded?.notes ?? "");
+    } finally {
+      setLoading(false);
+    }
+  }, [applicationId, application.requisition?.jobTitle]);
+
+  // Scheduled rather than called straight from the effect body: load() sets state synchronously
+  // on its first line, and react-hooks/set-state-in-effect is an ERROR here, not a warning.
+  useEffect(() => {
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      if (cancelled) return;
+      void load();
+    }, 0);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [load]);
+
+  const post = (body: Record<string, unknown>, message: string) =>
+    run(async () => {
+      await postJson(`/api/recruitment/applications/${applicationId}/offer`, body);
+      await load();
+      setReason("");
+      return message;
+    });
+
+  const editable = stage === "offer_initiated" || stage === "offer_draft" || stage === "offer_negotiation";
+  const draftTerms = {
+    jobTitle: jobTitle.trim() || null,
+    monthlyGross: monthlyGross.trim() ? Number(monthlyGross) : null,
+    startDate: startDate.trim() || null,
+  };
+  const missing = missingOfferTerms(draftTerms);
+
+  return (
+    <div className="space-y-2 border-t border-slate-200 pt-3">
+      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Offer</p>
+
+      {loading ? (
+        <p className="text-xs text-slate-500">Loading the offer…</p>
+      ) : editable ? (
+        <div className="space-y-1">
+          <Input placeholder="Job title" value={jobTitle} onChange={(e) => setJobTitle(e.target.value)} />
+          <Input
+            placeholder="Monthly gross salary (EGP)"
+            type="number"
+            value={monthlyGross}
+            onChange={(e) => setMonthlyGross(e.target.value)}
+          />
+          <Input placeholder="Start date" type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
+          <textarea
+            className={fieldClass}
+            placeholder="Notes (optional)"
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+          />
+          <div className="flex flex-wrap gap-2 pt-1">
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={pending}
+              onClick={() =>
+                post(
+                  {
+                    intent: "save_draft",
+                    jobTitle: jobTitle.trim() || undefined,
+                    monthlyGross: monthlyGross.trim() || undefined,
+                    startDate: startDate.trim() || undefined,
+                    notes: notes.trim() || undefined,
+                  },
+                  "Offer draft saved.",
+                )
+              }
+            >
+              Save draft
+            </Button>
+            <Button
+              size="sm"
+              disabled={pending || missing.length > 0 || stage !== "offer_draft"}
+              onClick={() => post({ intent: "submit_approval" }, "Offer submitted for approval.")}
+            >
+              Submit for approval
+            </Button>
+          </div>
+          {missing.length > 0 ? (
+            <p className="text-xs text-amber-700">
+              Still needed before approval: {missing.join(", ")}.
+            </p>
+          ) : stage !== "offer_draft" ? (
+            <p className="text-xs text-slate-500">Save the draft first, then submit it for approval.</p>
+          ) : null}
+        </div>
+      ) : offer ? (
+        <dl className="space-y-1 text-xs">
+          <OfferFact label="Job title" value={offer.jobTitle ?? "—"} />
+          <OfferFact
+            label="Monthly gross"
+            value={offer.monthlyGross != null ? `${offer.monthlyGross.toLocaleString("en-GB")} EGP` : "—"}
+          />
+          <OfferFact label="Start date" value={offer.startDate ?? "—"} />
+          {offer.submittedForApprovalAt ? (
+            <OfferFact label="Submitted" value={cairoDateTime(offer.submittedForApprovalAt)} />
+          ) : null}
+          {offer.approvedAt ? <OfferFact label="Approved" value={cairoDateTime(offer.approvedAt)} /> : null}
+          {offer.sentAt ? <OfferFact label="Sent" value={cairoDateTime(offer.sentAt)} /> : null}
+          {offer.respondedAt ? (
+            <OfferFact label={titleCase(offer.response ?? "answered")} value={cairoDateTime(offer.respondedAt)} />
+          ) : null}
+          {offer.notes ? <OfferFact label="Notes" value={offer.notes} /> : null}
+        </dl>
+      ) : (
+        <p className="text-xs text-slate-500">No offer has been prepared on this application yet.</p>
+      )}
+
+      {stage === "offer_pending_approval" ? (
+        canApprove ? (
+          <div className="space-y-2 pt-1">
+            <textarea
+              className={fieldClass}
+              placeholder="Reason (only needed when sending it back)"
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+            />
+            <div className="flex flex-wrap gap-2">
+              <Button size="sm" disabled={pending} onClick={() => post({ intent: "approve" }, "Offer approved.")}>
+                Approve offer
+              </Button>
+              <Button
+                size="sm"
+                variant="secondary"
+                disabled={pending}
+                onClick={() =>
+                  post({ intent: "reject_approval", reason: reason.trim() || undefined }, "Offer sent back to draft.")
+                }
+              >
+                Send back to draft
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <p className="text-xs text-slate-500">
+            Waiting for approval. Talent Acquisition cannot approve an offer it prepared.
+          </p>
+        )
+      ) : null}
+
+      {stage === "offer_approved" ? (
+        <div className="space-y-1 pt-1">
+          <Button size="sm" disabled={pending} onClick={() => post({ intent: "mark_sent" }, "Offer recorded as sent.")}>
+            Record offer as sent
+          </Button>
+          <p className="text-xs text-slate-500">
+            Nothing is emailed from here. Send the letter as usual, then record it.
+          </p>
+        </div>
+      ) : null}
+
+      {stage === "offer_sent" ? (
+        <div className="flex flex-wrap gap-2 pt-1">
+          <Button
+            size="sm"
+            disabled={pending}
+            onClick={() => post({ intent: "record_response", response: "accepted" }, "Offer accepted.")}
+          >
+            Candidate accepted
+          </Button>
+          <Button
+            size="sm"
+            variant="secondary"
+            disabled={pending}
+            onClick={() =>
+              run(async () => {
+                await postJson(`/api/recruitment/applications/${applicationId}/workflow`, {
+                  action: "app_offer_negotiation" satisfies RecruitmentActionKey,
+                });
+                return "Marked as negotiating.";
+              })
+            }
+          >
+            Negotiating
+          </Button>
+          <Button
+            size="sm"
+            variant="secondary"
+            disabled={pending}
+            onClick={() => post({ intent: "record_response", response: "expired" }, "Offer marked as expired.")}
+          >
+            Expired
+          </Button>
+          <Button
+            size="sm"
+            variant="destructive"
+            disabled={pending}
+            onClick={() => post({ intent: "record_response", response: "declined" }, "Offer declined.")}
+          >
+            Candidate declined
+          </Button>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function OfferFact({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-baseline justify-between gap-3">
+      <dt className="whitespace-nowrap text-slate-500">{label}</dt>
+      <dd className="whitespace-nowrap font-medium text-slate-900">{value}</dd>
+    </div>
+  );
+}
+
 export function RecruitmentWorkspace(props: Props) {
   const { candidateStats, dashboard, initialError } = props;
   const router = useRouter();
   // The inbound-CV notification deep-links to ?candidate=<id> so a reviewer lands on the profile
   // holding the extracted fields, not on a module landing page they'd have to search from.
-  const linkedCandidateId = useSearchParams().get("candidate");
+  const workspaceParams = useSearchParams();
+  const linkedCandidateId = workspaceParams.get("candidate");
   const [pending, startTransition] = useTransition();
   // Candidates, not Pipeline. Production on 2026-08-15: the pipeline held 7 applications ever while
   // 152 CVs arrived that week — so the module opened on its emptiest screen and put the work two
   // clicks away, behind a tab labelled with someone else's vocabulary.
-  const [tab, setTab] = useState<TabKey>("candidates");
+  // ...except when HR sends someone back here holding a freshly created employee's HR_ID
+  // (?application=<id>), which is a return trip into the pipeline, not a fresh visit.
+  const [tab, setTab] = useState<TabKey>(() => (workspaceParams.get("application") ? "pipeline" : "candidates"));
   const [error, setError] = useState<string | null>(initialError);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -728,6 +999,7 @@ export function RecruitmentWorkspace(props: Props) {
       ) : tab === "pipeline" ? (
         <PipelineTab
           applications={applications}
+          asOf={candidateStats.asOf}
           canApprove={props.canApprove}
           canDelete={props.canDelete}
           canManage={props.canManage}
@@ -772,8 +1044,26 @@ export function RecruitmentWorkspace(props: Props) {
   );
 }
 
+/**
+ * How long this application has sat where it is.
+ *
+ * Terminal applications show nothing at all rather than a number that only grows: a rejected
+ * candidate is not waiting for anybody, and "waiting 90 days" against a closed row reads as a
+ * backlog that does not exist.
+ */
+function WaitingInStage({ application, asOf }: { application: ApplicationWithContext; asOf: string }) {
+  if (isTerminalApplicationStage(application.stage)) return <span className="text-slate-300">—</span>;
+  const days = daysInStage(application, asOf);
+  if (days === null) return <span className="text-slate-300">—</span>;
+  const label = days === 0 ? "Today" : days === 1 ? "1 day" : `${days} days`;
+  return (
+    <span className={cn(days >= STALLED_AFTER_DAYS ? "font-semibold text-rose-600" : "text-slate-600")}>{label}</span>
+  );
+}
+
 function PipelineApplicationCard({
   application,
+  asOf,
   canDelete,
   onSelect,
   pending,
@@ -781,12 +1071,16 @@ function PipelineApplicationCard({
   selected,
 }: {
   application: ApplicationWithContext;
+  asOf: string;
   canDelete: boolean;
   onSelect: () => void;
   pending: boolean;
   run: (work: () => Promise<string | void>) => void;
   selected: boolean;
 }) {
+  const waiting = isTerminalApplicationStage(application.stage) ? null : daysInStage(application, asOf);
+  const stalledDays = waiting !== null && waiting >= STALLED_AFTER_DAYS ? waiting : null;
+
   return (
     <div className={cn("cursor-pointer transition-colors", selected && "bg-orange-50")} onClick={onSelect}>
       <PortalRecordCard
@@ -811,15 +1105,23 @@ function PipelineApplicationCard({
         }
         meta={application.requisition?.jobTitle ?? "—"}
         status={<StagePill tone={stageTone(application.stage)}>{titleCase(application.stage)}</StagePill>}
-        title={application.candidate?.fullName ?? "Unknown candidate"}
+        title={candidateDisplayName(application.candidate?.fullName ?? "") || "Unknown candidate"}
       >
         {/* Kept to a two-word pill so it can never wrap on a phone. Who and when is on the desktop
             table and in the actions panel, where there is room for it. */}
-        {application.managerNotified ? (
-          <StagePill tone="emerald">Manager told</StagePill>
-        ) : (
-          <StagePill tone="amber">Manager not told</StagePill>
-        )}
+        {/* A flex row, not two adjacent inline pills: JSX drops the whitespace between expressions
+            on separate lines, so without this the two badges render touching each other. */}
+        <div className="flex flex-wrap items-center gap-1.5">
+          {application.managerNotified ? (
+            <StagePill tone="emerald">Manager told</StagePill>
+          ) : (
+            <StagePill tone="amber">Manager not told</StagePill>
+          )}
+          {/* Only when it is stalled. Every card carrying its own waiting time would put a second
+              pill on all of them and cost the list a line of height for a fact that, at three days
+              old, nobody needs. The desktop table has the day count on every row. */}
+          {stalledDays !== null ? <StagePill tone="rose">{`Waiting ${stalledDays} days`}</StagePill> : null}
+        </div>
       </PortalRecordCard>
     </div>
   );
@@ -827,6 +1129,7 @@ function PipelineApplicationCard({
 
 function PipelineTab({
   applications,
+  asOf,
   canApprove,
   canDelete,
   canManage,
@@ -838,6 +1141,10 @@ function PipelineTab({
   run,
 }: {
   applications: ApplicationWithContext[];
+  /** The instant the server stamped this page at. Nothing here reads the clock during render — a
+      "waiting 21 days" computed in the browser would disagree with the server's HTML and hydrate
+      badly, the same reason the pool's stat cards take theirs from the server. */
+  asOf: string;
   canApprove: boolean;
   canDelete: boolean;
   canManage: boolean;
@@ -848,9 +1155,20 @@ function PipelineTab({
   pending: boolean;
   run: (work: () => Promise<string | void>) => void;
 }) {
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  // Both seeded from the URL, so the round trip through HR's Add Employee form comes back to the
+  // application it started from with the new HR_ID already in the box — see the hire card below.
+  // Lazy initialisers rather than an effect: react-hooks/set-state-in-effect is an error here.
+  const hireParams = useSearchParams();
+  // Talent Acquisition works in the portal shell and Super Admin in the admin one; the same
+  // workspace renders in both, so the way out to Add Employee is derived from where we already are
+  // rather than passed down as another prop.
+  const hirePathname = usePathname();
+  const addEmployeeHref = hirePathname?.startsWith("/employee-portals")
+    ? "/employee-portals/employees"
+    : "/employees";
+  const [selectedId, setSelectedId] = useState<string | null>(() => hireParams.get("application"));
   const [reason, setReason] = useState("");
-  const [employeeHrId, setEmployeeHrId] = useState("");
+  const [employeeHrId, setEmployeeHrId] = useState(() => hireParams.get("hiredHrId") ?? "");
   const [hireStartDate, setHireStartDate] = useState("");
   const [hireProbationMonths, setHireProbationMonths] = useState("3");
   const [interviews, setInterviews] = useState<Interview[]>([]);
@@ -895,265 +1213,338 @@ function PipelineTab({
   const selected = applications.find((application) => application.id === selectedId) ?? null;
   const next = selected ? nextStageAction[selected.stage] : undefined;
 
+  // The three numbers that say whether hiring is moving, as opposed to how big it is. Derived from
+  // the applications already on screen — see pipeline-metrics.ts for why that is the whole of it.
+  const metrics = computePipelineMetrics(applications, asOf);
+
   return (
-    <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
-      <AdminTableShell title="Pipeline" description="Every application and its current stage. Select a row to act on it.">
-        <PortalResponsiveDataList
-          empty={<PortalEmptyState message="Add a candidate from the Candidates tab." title="No applications yet" />}
-          getKey={(application) => application.id}
-          items={applications}
-          renderCard={(application) => (
-            <PipelineApplicationCard
-              application={application}
-              canDelete={canDelete}
-              onSelect={() => selectApplication(application.id)}
-              pending={pending}
-              run={run}
-              selected={selectedId === application.id}
-            />
-          )}
-          renderTable={() => (
-            <PortalDesktopTable minWidth="820px">
-              <thead>
-                <tr>
-                  <th>Candidate</th>
-                  <th>Requisition</th>
-                  <th>Stage</th>
-                  <th>Manager told</th>
-                  <th className="w-px"></th>
-                </tr>
-              </thead>
-              <tbody>
-                {applications.map((application) => (
-                  <tr
-                    key={application.id}
-                    className={selectedId === application.id ? "bg-orange-50" : "cursor-pointer"}
-                    onClick={() => selectApplication(application.id)}
-                  >
-                    <td className="px-3 py-2 font-medium text-slate-900">
-                      {application.candidate?.fullName ?? "Unknown candidate"}
-                    </td>
-                    <td className="px-3 py-2">{application.requisition?.jobTitle ?? "—"}</td>
-                    <td className="px-3 py-2">
-                      <StagePill tone={stageTone(application.stage)}>{titleCase(application.stage)}</StagePill>
-                    </td>
-                    <td className="whitespace-nowrap px-3 py-2">
-                      {application.managerNotified
-                        ? `${application.managerNotified.managerName} · ${cairoDateTime(application.managerNotified.sentAt)}`
-                        : "Not sent"}
-                    </td>
-                    <td className="px-3 py-2 text-right">
-                      {canDelete ? (
-                        <Button
-                          variant="destructive"
-                          disabled={pending}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            if (!window.confirm("Delete this application permanently? This cannot be undone.")) return;
-                            run(async () => {
-                              await deleteRequest(`/api/recruitment/applications/${application.id}`);
-                              return "Application deleted.";
-                            });
-                          }}
-                        >
-                          Delete
-                        </Button>
-                      ) : null}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </PortalDesktopTable>
-          )}
+    <>
+      {/* Same cards as the pool's, because they are the same kind of fact — the module does not get
+          a second look for its second tab. These sit inside the Pipeline tab rather than beside the
+          four at the top: those count CVs arriving, which is a different question from whether the
+          people already in the pipeline are moving. */}
+      <div className="grid gap-4 sm:grid-cols-3">
+        <AdminStatCard
+          description={
+            metrics.hiresMeasured === 0
+              ? "Nobody has been hired through the pipeline yet, so there is nothing to measure."
+              : `Typical days from application to hire, across ${metrics.hiresMeasured === 1 ? "1 hire" : `${metrics.hiresMeasured} hires`}.`
+          }
+          icon={<Clock className="h-5 w-5" />}
+          label="Time to hire"
+          tone="blue"
+          value={metrics.medianDaysToHire === null ? "—" : `${metrics.medianDaysToHire} days`}
         />
-      </AdminTableShell>
+        <AdminStatCard
+          description={`Live applications nobody has moved in ${metrics.stalledAfterDays} days.`}
+          icon={<AlertTriangle className="h-5 w-5" />}
+          label="Stalled"
+          tone={metrics.stalled > 0 ? "orange" : "emerald"}
+          value={metrics.stalled}
+        />
+        <AdminStatCard
+          description={
+            metrics.offersSent === 0
+              ? "No offer has been sent yet."
+              : "Offers accepted, out of the offers sent."
+          }
+          icon={<Send className="h-5 w-5" />}
+          label="Offers accepted"
+          tone="violet"
+          value={metrics.offersSent === 0 ? "—" : `${metrics.offersAccepted} of ${metrics.offersSent}`}
+        />
+      </div>
 
-      <div className="space-y-3">
-        <AdminSectionHeader title="Actions" description="Move the selected candidate through the pipeline." />
-        {!selected ? (
-          <p className="text-sm text-slate-500">Select an application to see available actions.</p>
-        ) : (
-          <div className="space-y-3 border border-slate-200 p-4">
-            <div>
-              <p className="text-sm font-semibold text-slate-900">{selected.candidate?.fullName}</p>
-              <p className="text-xs text-slate-500">
-                {selected.requisition?.jobTitle} · {titleCase(selected.stage)}
-              </p>
-            </div>
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
+        <AdminTableShell title="Pipeline" description="Every application and its current stage. Select a row to act on it.">
+          <PortalResponsiveDataList
+            empty={<PortalEmptyState message="Add a candidate from the Candidates tab." title="No applications yet" />}
+            getKey={(application) => application.id}
+            items={applications}
+            renderCard={(application) => (
+              <PipelineApplicationCard
+                application={application}
+                asOf={asOf}
+                canDelete={canDelete}
+                onSelect={() => selectApplication(application.id)}
+                pending={pending}
+                run={run}
+                selected={selectedId === application.id}
+              />
+            )}
+            renderTable={() => (
+              <PortalDesktopTable minWidth="820px">
+                <thead>
+                  <tr>
+                    <th>Candidate</th>
+                    <th>Requisition</th>
+                    <th>Stage</th>
+                    {/* The "Stalled" card says how many; this says which. Without it the count is a
+                        number nobody can act on. */}
+                    <th>Waiting</th>
+                    <th>Manager told</th>
+                    <th className="w-px"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {applications.map((application) => (
+                    <tr
+                      key={application.id}
+                      className={selectedId === application.id ? "bg-orange-50" : "cursor-pointer"}
+                      onClick={() => selectApplication(application.id)}
+                    >
+                      {/* The stored name is the whole forwarded-mail envelope on 40% of this
+                          pool, so the raw value wrapped a row onto three lines. Same treatment the
+                          candidate table has always given it: the name on screen, the envelope on
+                          hover. */}
+                      <td className="whitespace-nowrap px-3 py-2 font-medium text-slate-900" title={application.candidate?.fullName}>
+                        {candidateDisplayName(application.candidate?.fullName ?? "") || "Unknown candidate"}
+                      </td>
+                      <td className="px-3 py-2">{application.requisition?.jobTitle ?? "—"}</td>
+                      <td className="px-3 py-2">
+                        <StagePill tone={stageTone(application.stage)}>{titleCase(application.stage)}</StagePill>
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-2">
+                        <WaitingInStage application={application} asOf={asOf} />
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-2">
+                        {application.managerNotified
+                          ? `${application.managerNotified.managerName} · ${cairoDateTime(application.managerNotified.sentAt)}`
+                          : "Not sent"}
+                      </td>
+                      <td className="px-3 py-2 text-right">
+                        {canDelete ? (
+                          <Button
+                            variant="destructive"
+                            disabled={pending}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (!window.confirm("Delete this application permanently? This cannot be undone.")) return;
+                              run(async () => {
+                                await deleteRequest(`/api/recruitment/applications/${application.id}`);
+                                return "Application deleted.";
+                              });
+                            }}
+                          >
+                            Delete
+                          </Button>
+                        ) : null}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </PortalDesktopTable>
+            )}
+          />
+        </AdminTableShell>
 
-            {canManage ? <SendToManagerCard application={selected} pending={pending} run={run} /> : null}
+        <div className="space-y-3">
+          <AdminSectionHeader title="Actions" description="Move the selected candidate through the pipeline." />
+          {!selected ? (
+            <p className="text-sm text-slate-500">Select an application to see available actions.</p>
+          ) : (
+            <div className="space-y-3 border border-slate-200 p-4">
+              <div>
+                <p className="text-sm font-semibold text-slate-900">{selected.candidate?.fullName}</p>
+                <p className="text-xs text-slate-500">
+                  {selected.requisition?.jobTitle} · {titleCase(selected.stage)}
+                </p>
+              </div>
 
-            {canManage && next ? (
-              <div className="space-y-2">
-                {next.needsReason ? (
+              {canManage ? <SendToManagerCard application={selected} pending={pending} run={run} /> : null}
+
+              {canManage && next ? (
+                <div className="space-y-2">
+                  {next.needsReason ? (
+                    <textarea
+                      className={fieldClass}
+                      placeholder="Reason (required)"
+                      value={reason}
+                      onChange={(event) => setReason(event.target.value)}
+                    />
+                  ) : null}
+                  <Button
+                    disabled={pending || (next.needsReason && !reason.trim())}
+                    onClick={() =>
+                      run(async () => {
+                        await postJson(`/api/recruitment/applications/${selected.id}/workflow`, {
+                          action: next.action,
+                          reason: reason.trim() || undefined,
+                        });
+                        setReason("");
+                        return `${next.label} complete.`;
+                      })
+                    }
+                  >
+                    {next.label}
+                  </Button>
+                </div>
+              ) : null}
+
+              {canManage &&
+              (selected.stage === "cv_screening" ||
+                selected.stage === "phone_screening" ||
+                selected.stage === "hiring_manager_interview") ? (
+                <ScreeningCard
+                  key={selected.id + selected.stage}
+                  application={selected}
+                  stage={
+                    selected.stage === "cv_screening" ? "cv" : selected.stage === "phone_screening" ? "phone" : "hm"
+                  }
+                  pending={pending}
+                  run={run}
+                />
+              ) : null}
+
+              {canManage && selected.stage === "final_selection" ? (
+                <FinalSelectionCard key={selected.id} application={selected} pending={pending} run={run} />
+              ) : null}
+
+              {canManage && isOfferStage(selected.stage) ? (
+                <OfferCard
+                  key={selected.id + selected.stage}
+                  application={selected}
+                  canApprove={canApprove}
+                  pending={pending}
+                  run={run}
+                />
+              ) : null}
+
+              {canManage && holdingStageActions[selected.stage] ? (
+                <div className="space-y-2 border-t border-slate-200 pt-3">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Resume</p>
+                  {holdingStageActions[selected.stage].map((item) => (
+                    <Button
+                      key={item.action}
+                      variant="secondary"
+                      disabled={pending}
+                      onClick={() =>
+                        run(async () => {
+                          await postJson(`/api/recruitment/applications/${selected.id}/workflow`, { action: item.action });
+                          return `${item.label} complete.`;
+                        })
+                      }
+                    >
+                      {item.label}
+                    </Button>
+                  ))}
+                </div>
+              ) : null}
+
+              {canApprove &&
+              (selected.stage === "offer_accepted" ||
+                selected.stage === "offer_initiated" ||
+                selected.stage === "pre_boarding") ? (
+                <div className="space-y-2 border-t border-slate-200 pt-3">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Mark as hired</p>
+                  <p className="text-xs text-slate-500">
+                    The employee record is created by the normal HR &quot;Add Employee&quot; flow (it also closes the
+                    matching vacancy). Opening it from here carries the candidate&apos;s details and the offer
+                    across, and brings you back with their HR_ID already filled in.
+                  </p>
+                  <a
+                    className="inline-flex h-9 items-center justify-center whitespace-nowrap rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 shadow-sm transition hover:bg-slate-50"
+                    href={`${addEmployeeHref}?fromApplication=${encodeURIComponent(selected.id)}`}
+                  >
+                    Open Add Employee with these details
+                  </a>
+                  <Input placeholder="Employee HR_ID" value={employeeHrId} onChange={(e) => setEmployeeHrId(e.target.value)} />
+                  <Input placeholder="Start date (optional)" type="date" value={hireStartDate} onChange={(e) => setHireStartDate(e.target.value)} />
+                  <Input
+                    placeholder="Probation (months, optional)"
+                    type="number"
+                    value={hireProbationMonths}
+                    onChange={(e) => setHireProbationMonths(e.target.value)}
+                  />
+                  <Button
+                    disabled={pending || !employeeHrId.trim()}
+                    onClick={() =>
+                      run(async () => {
+                        const data = await postJson(`/api/recruitment/applications/${selected.id}/convert`, {
+                          employeeHrId: employeeHrId.trim(),
+                          startDate: hireStartDate || undefined,
+                          probationMonths: Number(hireProbationMonths) || undefined,
+                        });
+                        setEmployeeHrId("");
+                        setHireStartDate("");
+                        return `Hired as ${typeof data.employeeHrId === "string" ? data.employeeHrId : employeeHrId.trim()}.`;
+                      })
+                    }
+                  >
+                    Mark as hired
+                  </Button>
+                </div>
+              ) : null}
+
+              {canManage && rejectableStages.has(selected.stage) ? (
+                <div className="space-y-2 border-t border-slate-200 pt-3">
                   <textarea
                     className={fieldClass}
-                    placeholder="Reason (required)"
+                    placeholder="Reason for reject / withdraw"
                     value={reason}
                     onChange={(event) => setReason(event.target.value)}
                   />
-                ) : null}
-                <Button
-                  disabled={pending || (next.needsReason && !reason.trim())}
-                  onClick={() =>
-                    run(async () => {
-                      await postJson(`/api/recruitment/applications/${selected.id}/workflow`, {
-                        action: next.action,
-                        reason: reason.trim() || undefined,
-                      });
-                      setReason("");
-                      return `${next.label} complete.`;
-                    })
-                  }
-                >
-                  {next.label}
-                </Button>
-              </div>
-            ) : null}
-
-            {canManage &&
-            (selected.stage === "cv_screening" ||
-              selected.stage === "phone_screening" ||
-              selected.stage === "hiring_manager_interview") ? (
-              <ScreeningCard
-                key={selected.id + selected.stage}
-                application={selected}
-                stage={
-                  selected.stage === "cv_screening" ? "cv" : selected.stage === "phone_screening" ? "phone" : "hm"
-                }
-                pending={pending}
-                run={run}
-              />
-            ) : null}
-
-            {canManage && selected.stage === "final_selection" ? (
-              <FinalSelectionCard key={selected.id} application={selected} pending={pending} run={run} />
-            ) : null}
-
-            {canManage && holdingStageActions[selected.stage] ? (
-              <div className="space-y-2 border-t border-slate-200 pt-3">
-                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Resume</p>
-                {holdingStageActions[selected.stage].map((item) => (
-                  <Button
-                    key={item.action}
-                    variant="secondary"
-                    disabled={pending}
-                    onClick={() =>
-                      run(async () => {
-                        await postJson(`/api/recruitment/applications/${selected.id}/workflow`, { action: item.action });
-                        return `${item.label} complete.`;
-                      })
-                    }
-                  >
-                    {item.label}
-                  </Button>
-                ))}
-              </div>
-            ) : null}
-
-            {canApprove && (selected.stage === "offer_initiated" || selected.stage === "pre_boarding") ? (
-              <div className="space-y-2 border-t border-slate-200 pt-3">
-                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Mark as hired</p>
-                <p className="text-xs text-slate-500">
-                  Create the employee record first via the normal HR &quot;Add Employee&quot; flow (it also closes
-                  the matching vacancy), then enter their HR_ID here to link this application.
-                </p>
-                <Input placeholder="Employee HR_ID" value={employeeHrId} onChange={(e) => setEmployeeHrId(e.target.value)} />
-                <Input placeholder="Start date (optional)" type="date" value={hireStartDate} onChange={(e) => setHireStartDate(e.target.value)} />
-                <Input
-                  placeholder="Probation (months, optional)"
-                  type="number"
-                  value={hireProbationMonths}
-                  onChange={(e) => setHireProbationMonths(e.target.value)}
-                />
-                <Button
-                  disabled={pending || !employeeHrId.trim()}
-                  onClick={() =>
-                    run(async () => {
-                      const data = await postJson(`/api/recruitment/applications/${selected.id}/convert`, {
-                        employeeHrId: employeeHrId.trim(),
-                        startDate: hireStartDate || undefined,
-                        probationMonths: Number(hireProbationMonths) || undefined,
-                      });
-                      setEmployeeHrId("");
-                      setHireStartDate("");
-                      return `Hired as ${typeof data.employeeHrId === "string" ? data.employeeHrId : employeeHrId.trim()}.`;
-                    })
-                  }
-                >
-                  Mark as hired
-                </Button>
-              </div>
-            ) : null}
-
-            {canManage && rejectableStages.has(selected.stage) ? (
-              <div className="space-y-2 border-t border-slate-200 pt-3">
-                <textarea
-                  className={fieldClass}
-                  placeholder="Reason for reject / withdraw"
-                  value={reason}
-                  onChange={(event) => setReason(event.target.value)}
-                />
-                <div className="flex gap-2">
-                  <Button
-                    variant="destructive"
-                    disabled={pending || !reason.trim()}
-                    onClick={() =>
-                      run(async () => {
-                        await postJson(`/api/recruitment/applications/${selected.id}/workflow`, {
-                          action: "app_reject" satisfies RecruitmentActionKey,
-                          reason: reason.trim(),
-                        });
-                        setReason("");
-                        return "Application rejected.";
-                      })
-                    }
-                  >
-                    Reject
-                  </Button>
-                  <Button
-                    variant="secondary"
-                    disabled={pending || !reason.trim()}
-                    onClick={() =>
-                      run(async () => {
-                        await postJson(`/api/recruitment/applications/${selected.id}/workflow`, {
-                          action: "app_withdraw" satisfies RecruitmentActionKey,
-                          reason: reason.trim(),
-                        });
-                        setReason("");
-                        return "Application withdrawn.";
-                      })
-                    }
-                  >
-                    Withdraw
-                  </Button>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="destructive"
+                      disabled={pending || !reason.trim()}
+                      onClick={() =>
+                        run(async () => {
+                          await postJson(`/api/recruitment/applications/${selected.id}/workflow`, {
+                            action: "app_reject" satisfies RecruitmentActionKey,
+                            reason: reason.trim(),
+                          });
+                          setReason("");
+                          return "Application rejected.";
+                        })
+                      }
+                    >
+                      Reject
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      disabled={pending || !reason.trim()}
+                      onClick={() =>
+                        run(async () => {
+                          await postJson(`/api/recruitment/applications/${selected.id}/workflow`, {
+                            action: "app_withdraw" satisfies RecruitmentActionKey,
+                            reason: reason.trim(),
+                          });
+                          setReason("");
+                          return "Application withdrawn.";
+                        })
+                      }
+                    >
+                      Withdraw
+                    </Button>
+                  </div>
                 </div>
-              </div>
-            ) : null}
+              ) : null}
 
-            <InterviewsSection
-              applicationId={selected.id}
-              canManage={canManage}
-              error={interviewsError}
-              interviews={interviews}
-              managers={managers}
-              onReload={() => loadInterviews(selected.id)}
-            />
-
-            {canViewCandidates && selected.candidateId ? (
-              <FilesSection
-                candidateId={selected.candidateId}
-                canUpload={canManageCandidates}
-                error={candidateFilesError}
-                files={candidateFiles}
-                filesEnabled={filesEnabled}
-                onReload={() => loadCandidateFiles(selected.candidateId)}
+              <InterviewsSection
+                applicationId={selected.id}
+                canManage={canManage}
+                error={interviewsError}
+                interviews={interviews}
+                managers={managers}
+                onReload={() => loadInterviews(selected.id)}
               />
-            ) : null}
-          </div>
-        )}
+
+              {canViewCandidates && selected.candidateId ? (
+                <FilesSection
+                  candidateId={selected.candidateId}
+                  canUpload={canManageCandidates}
+                  error={candidateFilesError}
+                  files={candidateFiles}
+                  filesEnabled={filesEnabled}
+                  onReload={() => loadCandidateFiles(selected.candidateId)}
+                />
+              ) : null}
+            </div>
+          )}
+        </div>
       </div>
-    </div>
+    </>
   );
 }
 
@@ -1487,6 +1878,57 @@ function RequisitionsTab({
         </AdminTableShell>
       ) : null}
 
+      {/*
+        The seats nobody is recruiting for.
+
+        openVacancies is ALREADY exactly this list — listOpenVacanciesForRequisition subtracts every
+        vacancy that has an active requisition — and until now it only ever filled the cascading
+        picker above. So the number was computed on every page load and never shown: on production
+        2026-08-21 there were 35 open seats against 2 requisitions, and the pipeline was empty
+        largely because there was nothing to attach a candidate TO.
+
+        Nothing is created automatically. An empty seat on the organogram is not the same thing as a
+        decision to hire, so this lists them and makes each one a single click that inherits the
+        seat's line, area and manager — rather than three cascading selects a recruiter has to walk
+        33 times.
+      */}
+      {canCreate && openVacancies.length > 0 ? (
+        <AdminTableShell
+          title="Vacant seats with no requisition"
+          description={`${openVacancies.length} open ${openVacancies.length === 1 ? "seat" : "seats"} on the organogram nobody is recruiting for. Opening one inherits its line, area and manager.`}
+        >
+          <ul className="divide-y divide-slate-100">
+            {openVacancies.map((vacancy) => (
+              <li className="flex flex-wrap items-center justify-between gap-3 px-5 py-3" key={vacancy.id}>
+                <div className="min-w-0">
+                  <p className="whitespace-nowrap text-sm font-semibold text-slate-800">
+                    {vacancy.jobTitle ?? vacancy.positionTitle ?? "Untitled seat"}
+                  </p>
+                  <p className="mt-0.5 whitespace-nowrap text-xs text-slate-500">
+                    {[vacancy.lineName, vacancy.areaName, vacancy.managerName ?? vacancy.managerHrId]
+                      .filter(Boolean)
+                      .join(" · ") || vacancy.vacancyCode}
+                  </p>
+                </div>
+                <Button
+                  disabled={pending}
+                  onClick={() =>
+                    run(async () => {
+                      await postJson("/api/recruitment/requisitions", { vacancyId: vacancy.id });
+                      return "Requisition opened.";
+                    })
+                  }
+                  size="sm"
+                  variant="secondary"
+                >
+                  Open requisition
+                </Button>
+              </li>
+            ))}
+          </ul>
+        </AdminTableShell>
+      ) : null}
+
       <AdminTableShell title="Requisitions" description="All recruitment openings and their status.">
         <PortalResponsiveDataList
           empty={<PortalEmptyState message="Requisitions will appear here once one is opened." title="No requisitions yet" />}
@@ -1667,6 +2109,73 @@ function PoolIconButton({
       type="button"
     >
       {children}
+    </button>
+  );
+}
+
+/**
+ * The amber duplicate marker in the name cell — and, since 2026-08-21, the button that resolves it.
+ *
+ * The flag is written onto BOTH rows of a pair, each pointing at the other, so clicking the row you
+ * want gone is what chooses the direction. That is the whole control: no picker, no "which one do
+ * you want to keep" dialog, no second place to click Merge by mistake. It also costs the row no
+ * width, which the actions strip next door could not have given it — six icon buttons already
+ * measure 212px inside a 220px column, and a seventh puts every flagged row onto two lines.
+ *
+ * Read-only viewers keep the marker exactly as it was: a tooltip saying what matched.
+ */
+function DuplicateFlagControl({
+  candidate,
+  canManage,
+  otherName,
+  pending,
+  run,
+}: {
+  candidate: Candidate;
+  canManage: boolean;
+  /** The record this one would be merged into. Blank when it has since been deleted or filtered. */
+  otherName: string;
+  pending: boolean;
+  run: (work: () => Promise<string | void>) => void;
+}) {
+  const flag = candidate.possibleDuplicate;
+  if (!flag) return null;
+  const matchedOn = flag.reason === "name" ? "name" : "phone number";
+  const thisName = candidateDisplayName(candidate.fullName) || "this record";
+
+  if (!canManage || !otherName) {
+    return (
+      <span className="shrink-0 text-amber-600" title={`Possible duplicate of another candidate (matched on ${matchedOn})`}>
+        <Copy className="h-3 w-3" />
+      </span>
+    );
+  }
+
+  return (
+    <button
+      aria-label={`Merge ${thisName} into ${otherName}`}
+      className="shrink-0 text-amber-600 hover:text-amber-800"
+      disabled={pending}
+      onClick={(event) => {
+        // The whole name cell opens the profile. Merging is a different intention entirely.
+        event.stopPropagation();
+        if (
+          !window.confirm(
+            `Merge ${thisName} into ${otherName}?\n\nThis record is removed. Its CV, files, applications and history move across, and anything blank on ${otherName} is filled in from here. Nothing already on ${otherName} is overwritten.`,
+          )
+        )
+          return;
+        run(async () => {
+          const data = await postJson(`/api/recruitment/candidates/${flag.candidateId}/merge`, {
+            duplicateId: candidate.id,
+          });
+          return typeof data.summary === "string" ? data.summary : "Candidate records merged.";
+        });
+      }}
+      title={`Possible duplicate of ${otherName} (matched on ${matchedOn}) — merge this record into it`}
+      type="button"
+    >
+      <Copy className="h-3 w-3" />
     </button>
   );
 }
@@ -2095,6 +2604,12 @@ function CandidatesTab({
   ).sort((left, right) => left.localeCompare(right));
 
   const duplicateCount = candidates.filter((candidate) => candidate.possibleDuplicate).length;
+  // Built over the WHOLE pool, not the filtered view: a duplicate's counterpart is very often
+  // filtered out (different status, different source, older than the date filter), and a merge
+  // button that cannot name what it merges into is a merge nobody will click.
+  const candidateNameById = new Map(
+    candidates.map((candidate) => [candidate.id, candidateDisplayName(candidate.fullName)] as const),
+  );
 
   const q = query.trim().toLowerCase();
   const visibleCandidates = candidates
@@ -2708,16 +3223,17 @@ function CandidatesTab({
                           {/* 132 of 555 rows share a person with another row. The flag was already
                               computed and already on the mobile card; the desktop table — the
                               surface Talent Acquisition actually works in — never showed it. */}
-                          {candidate.possibleDuplicate ? (
-                            <span
-                              className="shrink-0 text-amber-600"
-                              title={`Possible duplicate of another candidate (matched on ${
-                                candidate.possibleDuplicate.reason === "name" ? "name" : "phone number"
-                              })`}
-                            >
-                              <Copy className="h-3 w-3" />
-                            </span>
-                          ) : null}
+                          <DuplicateFlagControl
+                            candidate={candidate}
+                            canManage={canManage}
+                            otherName={
+                              candidate.possibleDuplicate
+                                ? (candidateNameById.get(candidate.possibleDuplicate.candidateId) ?? "")
+                                : ""
+                            }
+                            pending={pending}
+                            run={run}
+                          />
                         </div>
                         {/* No "from the forwarded message" caption here any more: it appeared on
                             nearly every row, so it carried no information, and it cost a third

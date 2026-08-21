@@ -142,6 +142,10 @@ const plainTransitionNextStatus: Partial<Record<RecruitmentActionKey, Applicatio
   app_resume_from_hold_to_hm: "hiring_manager_interview",
   app_to_backup: "backup_candidate",
   app_backup_to_offer: "offer_initiated",
+  // The one offer action that carries no terms and no approval with it: the candidate has come
+  // back asking for different numbers. Everything else in the offer chain writes to ats_offers as
+  // well as the stage, so it goes through src/lib/recruitment/offers.ts instead of this map.
+  app_offer_negotiation: "offer_negotiation",
 };
 
 async function loadApplicationRow(id: string): Promise<Application> {

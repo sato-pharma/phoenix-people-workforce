@@ -30,6 +30,7 @@ const STATUS_BADGE: Record<WorkflowControlStatus, string> = {
   Active: "bg-[#ECFDF5] text-[#047857]",
   Draft: "bg-[#FFF7ED] text-[#C2410C]",
   "Read-only map": "bg-[#F1F5F9] text-[#475569]",
+  "Partially implemented": "bg-[#FFFBEB] text-[#B45309]",
   "Not implemented": "bg-[#FEF2F2] text-[#B91C1C]",
 };
 
@@ -201,6 +202,16 @@ export function WorkflowControlCenter({
                     <span className="font-black">Not implemented:</span> nothing in the system runs these steps today. This is the intended
                     design kept as a specification, not a live governed process — do not rely on it, and do not report that anything here
                     was approved.
+                  </p>
+                </div>
+              ) : null}
+
+              {selectedDomain.status === "Partially implemented" ? (
+                <div className="mt-3 flex items-start gap-2 rounded-xl border border-[#FDE68A] bg-[#FFFBEB] px-4 py-3">
+                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-[#B45309]" />
+                  <p className="text-[13px] leading-5 text-[#B45309]">
+                    <span className="font-black">Partially implemented:</span> some of these steps run today and some are still only a
+                    specification. Read each subflow&apos;s gaps below before relying on it — a step with a NOT BUILT gap does nothing.
                   </p>
                 </div>
               ) : null}

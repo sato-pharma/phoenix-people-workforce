@@ -56,6 +56,16 @@ export function canViewInboundIntakeHealth(access: Pick<AccessContext, "role" | 
   return access.scope === "system" || recruitmentManageRoles.includes(access.role);
 }
 
+// Contact-details review — accepting an email or phone the AI read off a CV onto the candidate.
+//
+// Same authority as the rest of the pipeline, and deliberately NOT canViewInboundIntakeHealth even
+// though the two resolve identically today: this page WRITES to two dedupe-deciding columns, so it
+// is gated on who may work the pipeline, not on who may read the plumbing diagnostics. Sharing the
+// intake-health helper would make a later widening of that read gate silently widen this write one.
+export function canReviewCandidateContacts(access: Pick<AccessContext, "role" | "scope">): boolean {
+  return access.scope === "system" || recruitmentManageRoles.includes(access.role);
+}
+
 // Roles whose hiring-manager visibility extends beyond their own requisitions to an
 // org-scoped set (resolved via resolveHiringManagerScopeHrIds). Every other role
 // (District Manager included) stays on the exact hrIdsMatch check only.

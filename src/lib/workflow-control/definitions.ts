@@ -12,7 +12,14 @@
  * Phase 1 does NOT change runtime workflow execution or approval logic.
  */
 
-export type WorkflowControlStatus = "Active" | "Draft" | "Read-only map" | "Not implemented";
+// "Partially implemented" is the honest middle: some subflows run, some are still specification.
+// Read the per-subflow gaps -- the domain badge alone cannot tell you which is which.
+export type WorkflowControlStatus =
+  | "Active"
+  | "Draft"
+  | "Read-only map"
+  | "Partially implemented"
+  | "Not implemented";
 export type WorkflowControlRisk = "Low" | "Medium" | "High";
 
 export type WorkflowControlStep = {
@@ -49,6 +56,14 @@ export type WorkflowSubflow = {
   registryModuleKey?: string;
   steps: WorkflowControlStep[];
   gaps?: string[];
+  /**
+   * True when NONE of these steps run — the subflow is specification only.
+   *
+   * Explicit rather than inferred from the gap text: a domain can be partly built, and a subflow
+   * that IS built can still carry a "NOT BUILT" gap about something it does not cover. Sniffing
+   * the prose would then warn that a live subflow does nothing.
+   */
+  notImplemented?: boolean;
 };
 
 export type WorkflowControlDomain = {
@@ -542,22 +557,27 @@ export const WORKFLOW_CONTROL_DOMAINS: readonly WorkflowControlDomain[] = [
   // ===========================================================================
   // 4. Offer & Hiring
   // ===========================================================================
-  // NOT BUILT — verified against production on 2026-08-19. `job_offers` and `job_offer_audit_logs`
-  // do not exist; no table matching `%offer%` exists at all. The offer stages declared in
-  // `recruitment/types.ts` are absent from `plainTransitionNextStatus`, so no code path can reach
-  // them, and `src/config/offer-approval.ts` has zero call sites outside its own file.
+  // PARTIALLY BUILT as of 2026-08-21. The internal offer now exists and is governed: `ats_offers`
+  // holds one offer per application, and prepare -> submit -> approve -> send -> record-answer each
+  // run through assertRecruitmentTransition against the live workflow registry, writing to
+  // `ats_application_events`. Approval is Super-Admin-only, and an unapproved offer is refused at
+  // send — the registry on its own allows offer_initiated -> offer_sent, so that guard lives in
+  // src/lib/recruitment/offers.ts and is pinned by tests/recruitment-offers.test.ts.
   //
-  // The steps below are kept ON PURPOSE: they are the specification for whoever builds this. They
-  // describe nothing that runs today. Owner decision 2026-08-19 — leave it unbuilt and label it
-  // honestly, so nobody reads this page and believes offers are governed.
+  // What is still NOT built is everything candidate-facing: there are no accept/reject links, no
+  // token, no expiry job, and no email to the candidate at any point. Owner decision 2026-08-21 —
+  // no automatic applicant email; the offer goes out however letters go out today and a recruiter
+  // records the answer they were given. `job_offers` / `job_offer_audit_logs` were never created
+  // and are not planned; `src/config/offer-approval.ts` (salary thresholds, CEO caps) still has
+  // zero call sites. The candidate-driven steps below are kept as specification, not description.
   {
     key: "offer-hiring",
     name: "Offer & Hiring",
-    status: "Not implemented",
+    status: "Partially implemented",
     riskLevel: "High",
     summary:
-      "NOT BUILT — nothing in the system creates, sends, approves or records an offer today. The steps are the intended design, not live behavior.",
-    modulesAffected: n("job_offers", "employees", "position_vacancies", "job_offer_audit_logs", "notification_outbox"),
+      "The internal offer is live and governed — prepared, approved by a Super Admin, then recorded as sent. Nothing candidate-facing exists: no accept/reject link, no expiry job, and no email to the applicant.",
+    modulesAffected: n("ats_offers", "ats_applications", "ats_application_events", "employees", "position_vacancies"),
     subflows: [
       {
         key: "offer",
@@ -566,48 +586,68 @@ export const WORKFLOW_CONTROL_DOMAINS: readonly WorkflowControlDomain[] = [
         registryModuleKey: "employee_lifecycle",
         steps: [
           {
+            id: "offer_prepare",
+            name: "Prepare the offer draft",
+            actor: "Talent Acquisition",
+            role: "Talent Acquisition / Super Admin",
+            statusProduced: "offer_draft",
+            notificationRecipients: [],
+            emailRecipients: [],
+            sideEffects:
+              "Writes the terms (job title, monthly gross, start date) to ats_offers. Editing them again clears any previous approval.",
+          },
+          {
+            id: "offer_submit_approval",
+            name: "Submit the offer for approval",
+            actor: "Talent Acquisition",
+            role: "Talent Acquisition / Super Admin",
+            statusProduced: "offer_pending_approval",
+            notificationRecipients: [],
+            emailRecipients: [],
+            sideEffects: "Refused while any of the three terms is missing.",
+          },
+          {
+            id: "offer_approved",
+            name: "Approve the offer",
+            actor: "Super Admin",
+            role: "Super Admin",
+            statusProduced: "offer_approved | offer_draft (sent back)",
+            notificationRecipients: [],
+            emailRecipients: [],
+            sideEffects:
+              "Super-Admin-only in the workflow registry, so Talent Acquisition cannot approve an offer it prepared. Sending it back returns it to draft and voids the submission.",
+          },
+          {
             id: "offer_sent",
-            name: "Create & send offer",
+            name: "Record the offer as sent",
             actor: "Talent Acquisition",
             role: "Talent Acquisition / Super Admin",
             statusProduced: "offer_sent",
-            notificationRecipients: n("Candidate (via email)"),
-            actionRequiredRecipients: n("Candidate (via email)"),
-            emailRecipients: n("Candidate"),
-            sideEffects: "Creates offer with secure token + expiry; emails accept/reject links.",
+            notificationRecipients: [],
+            emailRecipients: [],
+            sideEffects:
+              "Refused unless the offer is approved. Nothing is emailed — the letter goes out as it does today and this records that it went.",
           },
           {
-            id: "candidate_decision",
-            name: "Candidate accepts / rejects",
-            actor: "Candidate",
-            role: "Candidate",
-            statusProduced: "offer_accepted | offer_rejected",
-            notificationRecipients: n("HR team", "Candidate (confirmation)"),
-            actionRequiredRecipients: n("HR team"),
-            fyiRecipients: n("Candidate (confirmation)"),
-            emailRecipients: n("HR team", "Candidate"),
-            fallbackEscalation: "Expires automatically after the expiry date.",
-            sideEffects: "On accept sets onboarding_status = pending_hr_approval.",
-          },
-          {
-            id: "hr_hire",
-            name: "HR approves accepted offer as hire",
-            actor: "HR Manager",
-            role: "Super Admin",
-            statusProduced: "offer_hired",
-            notificationRecipients: n("HR team"),
-            fyiRecipients: n("HR team"),
-            emailRecipients: n("HR team"),
-            sideEffects: "Creates the employee; closes/fills the matching vacancy; provisions access.",
+            id: "offer_answer",
+            name: "Record the candidate's answer",
+            actor: "Talent Acquisition",
+            role: "Talent Acquisition / Super Admin",
+            statusProduced: "offer_accepted | offer_declined | offer_expired | offer_negotiation",
+            notificationRecipients: [],
+            emailRecipients: [],
+            sideEffects: "The answer is recorded by whoever heard it; the candidate has no way to respond in-system.",
           },
         ],
         gaps: [
-          "NOT BUILT: there is no offer record anywhere — the job_offers table was never created, so no offer can be sent, accepted, rejected or expired.",
-          "Design note for whenever this is built: the accept/reject token must be consumed and invalidated on first use, not merely left to expire.",
+          "NOT BUILT: nothing candidate-facing — no accept/reject link, no token, and no email to the applicant at any step. Owner decision 2026-08-21: the answer is recorded by the recruiter who heard it.",
+          "NOT BUILT: offer_expired is recorded by hand. There is no expiry date on an offer and no job that lapses one.",
+          "src/config/offer-approval.ts (salary thresholds, CEO caps, always-approve roles) still has zero call sites — approval is a single Super-Admin step regardless of the figure.",
         ],
       },
       {
         key: "acceptance",
+        notImplemented: true,
         name: "Candidate Acceptance",
         summary: "The candidate-driven decision step.",
         steps: [
@@ -625,11 +665,12 @@ export const WORKFLOW_CONTROL_DOMAINS: readonly WorkflowControlDomain[] = [
           },
         ],
         gaps: [
-          "NOT BUILT: there is no candidate-facing accept or reject route — the offer stages are missing from plainTransitionNextStatus in recruitment/applications.ts, so no code path can reach them.",
+          "NOT BUILT: there is no candidate-facing accept or reject route. The stage itself is now reachable — a recruiter records the answer through src/lib/recruitment/offers.ts — but the candidate never touches the system and is never emailed by it.",
         ],
       },
       {
         key: "hr-approval",
+        notImplemented: true,
         name: "HR Approval & Employee Creation",
         summary: "HR converts an accepted offer into an employee.",
         steps: [
@@ -651,6 +692,7 @@ export const WORKFLOW_CONTROL_DOMAINS: readonly WorkflowControlDomain[] = [
       },
       {
         key: "vacancy-fill",
+        notImplemented: true,
         name: "Vacancy Fill",
         summary: "Department-safe matching closes the open seat.",
         steps: [
@@ -671,6 +713,7 @@ export const WORKFLOW_CONTROL_DOMAINS: readonly WorkflowControlDomain[] = [
       },
       {
         key: "notifications",
+        notImplemented: true,
         name: "Notifications & Emails",
         summary: "Candidate + HR notifications across the lifecycle.",
         steps: [

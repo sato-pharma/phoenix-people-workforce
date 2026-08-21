@@ -100,8 +100,12 @@ export type SoftMatchableCandidate = { id: string; fullName?: string | null; pho
 /**
  * Flags every candidate that shares a phone-tail (stronger) or normalized name with ANOTHER
  * candidate in the set — the advisory "possible duplicate" markers the candidate list shows. O(n)
- * via two indexes rather than an O(n²) pairwise scan, so it stays cheap on the whole pool. Advisory
- * only: it points at a record to eyeball, never merges anything.
+ * via two indexes rather than an O(n²) pairwise scan, so it stays cheap on the whole pool.
+ *
+ * This function itself decides nothing — it points at a record to eyeball. Acting on the flag is a
+ * separate, deliberate step a person takes: see candidate-merge.ts for what a merge may and may not
+ * do. Note both rows of a pair get a flag, each naming the other, which is what lets the recruiter
+ * choose the direction of a merge simply by clicking the row they want gone.
  */
 export function findDuplicateFlags(candidates: readonly SoftMatchableCandidate[]): Map<string, SoftDuplicateMatch> {
   const idsByPhone = new Map<string, string[]>();
