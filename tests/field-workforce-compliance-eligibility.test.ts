@@ -240,6 +240,28 @@ export function runFieldWorkforceComplianceEligibilityTests() {
   assert.equal(mirrorRepRow[22], "CP", "visitType -8 maps to CP via the mirror row path");
   assert.equal(mirrorMgrRow[22], "CP", "the double partner is credited the same CP day via the mirror row path");
 
+  // --- Public Holiday (-5) and Casual Leave (-6) are WORKING days (owner ruling 2026-08-21). ---
+  // Asserted through the real matrix builder rather than the map, so this also covers the
+  // `?? "CP"` default both codes used to rely on. Flipping either to "AV" would consume the
+  // rep's annual balance and then bite salary — the exact shape of the Health Day incident.
+  {
+    const workingDayRows: VisitsMirrorRow[] = [
+      { agent_crm_id: 1, agent_name: "Rep.One ( Cairo / A )", double_crm_id: null, double_name: null, visit_date: "2026-05-05", visit_type: -5 },
+      { agent_crm_id: 1, agent_name: "Rep.One ( Cairo / A )", double_crm_id: null, double_name: null, visit_date: "2026-05-06", visit_type: -6 },
+    ];
+    const { matrix } = buildIReports360FieldWorkforceMatrix({
+      employees: mirrorEmployees,
+      month: 5,
+      year: 2026,
+      todayIso: "2026-06-01",
+      visits: workingDayRows.map(visitFromMirrorRow),
+    });
+    const repRow = matrix.find((row) => row[1] === "A-1")!;
+    // Same column layout as above: day 1 sits at index 5, so 05-05 = idx 9 and 05-06 = idx 10.
+    assert.equal(repRow[9], "CP", "Public Holiday (-5) is a worked day, never AV — it must never charge leave");
+    assert.equal(repRow[10], "CP", "Casual Leave (-6) is a worked day, never AV — it must never charge leave");
+  }
+
   // --- Mixed day (owner decision 2026-07-20): a day with BOTH a regular visit AND a campaign now
   // COUNTS the regular visit (numeric count, not "CP"), and flags the campaign via
   // campaignOverlayKeys so the grid renders a two-color split square and campaignDays stays
