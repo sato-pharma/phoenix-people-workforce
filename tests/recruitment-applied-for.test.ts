@@ -291,6 +291,10 @@ export async function runRecruitmentAppliedForTests() {
     ["Application for Office Coordinator Position – Sabreen Mahmoud", "Office Coordinator"],
     ["Application for Office Coordinator – Hana Essam Abdelbary", "Office Coordinator"],
     ["District Manager for Upper Egypt 2", "District Manager for Upper Egypt"],
+    // An underscore is a word character, so there is no \b between "Resume" and "_National" and the
+    // marker rule missed this row entirely on the first production run — the sender's name stayed in
+    // the column. The marker now ends on (?![A-Za-z]).
+    ["Fwd: Shashi Gupta _ Resume_National Sales Manager", "National Sales Manager"],
     ["District manager application Alex & Beheira", "District manager Alex & Beheira"],
     ["District manger upper Egypt resident Assuit", "District manger upper Egypt"],
     ["Experienced Health Information Specialist Seeking Opportunities", "Health Information Specialist"],
