@@ -156,4 +156,34 @@ export function runEmployeePortalMobileTableCardTests() {
         "hydrates with a mismatch. Pass <thead>/<tbody> as its children instead.",
     );
   }
+
+  // ── A card title must WRAP on a phone, never push the page sideways ─────
+  // PortalRecordCard is the mobile half of every converted table — 30 files as of
+  // 2026-08-21 — and its <h3> carried a bare `whitespace-nowrap`. With no clipping and no
+  // ellipsis (both correct: the owner forbids truncating text) a long title simply
+  // overflowed the card. Measured in a real 375px viewport with the longest real rep name,
+  // 52 chars: the title needed 436px inside a 267px slot, and the PAGE's scrollWidth went
+  // to 455px — the phone scrolled sideways. That is precisely the defect the card layout
+  // exists to remove, so it must not come back. 37 of 108 CRM reps are long enough to hit it.
+  //
+  // The rule survives where it can: `md:whitespace-nowrap` keeps the title on one line from
+  // 768px up, and no desktop table is touched.
+  {
+    const primitives = stripComments(read("../src/components/employee-portal/portal-primitives.tsx"));
+    const title = /<h3 className="([^"]*)">\{title\}<\/h3>/.exec(primitives);
+    assert.ok(title, "PortalRecordCard's <h3>{title}</h3> was not found in portal-primitives.tsx.");
+    const classes = title[1].split(/\s+/);
+    assert.ok(
+      !classes.includes("whitespace-nowrap"),
+      "PortalRecordCard's title carries an unconditional `whitespace-nowrap`. On a 375px phone a " +
+        "long name then overflows the card and the whole page scrolls sideways, which is the " +
+        "defect the cards replace. Use `md:whitespace-nowrap` so it wraps below md and stays on " +
+        "one line above it.",
+    );
+    assert.ok(
+      classes.includes("md:whitespace-nowrap"),
+      "PortalRecordCard's title must keep `md:whitespace-nowrap`, so a card rendered at desktop " +
+        "width still puts its title on a single line.",
+    );
+  }
 }
