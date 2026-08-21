@@ -146,6 +146,15 @@ export const OCR_EXTRACTION_MODEL = "phoenix-rules+ocr";
 // what they could not. The model's own name is prefixed so cost can still be attributed to it.
 const ruleAssistedModel = (model: string) => `${model}+rules`;
 
+// True when the row's model means NO model was ever asked. Only the two constants above qualify:
+// the `<model>+rules` form written by ruleAssistedModel means the model DID answer, it just had the
+// rules' fields handed to it. Exported because persistCvExtraction is not the only place that has
+// to tell a free read from a paid one, and a third rules-only engine must not be addable without
+// this predicate in view.
+export function isRuleOnlyExtractionModel(model: string): boolean {
+  return model === RULE_ONLY_EXTRACTION_MODEL || model === OCR_EXTRACTION_MODEL;
+}
+
 // ---------------------------------------------------------------------------
 // Structured-output schema, built dynamically from a CvPositionSchema (same
 // "text: json_schema, strict: true" shape as src/lib/email/ai-assist.ts's
@@ -887,7 +896,15 @@ export async function persistCvExtraction(input: {
       created_by: input.access.hrId ?? input.access.loginId ?? null,
       extracted_fields: input.extraction.fields,
       file_id: input.fileId,
-      is_cv: input.extraction.isCv,
+      // NULL — not the boolean — when no model judged this document. A rules-only read arrives here
+      // with isCv already true (the rule engine's own six-signal heuristic; ruleOnly() is reached
+      // only on its `true` branch) and the OCR path hard-codes true, so storing either would
+      // publish a verdict nobody gave. Measured on production 2026-08-21: of 173 rows written in
+      // one re-read, 104 were rules-only and every one asserted is_cv=true having never cost a
+      // call, which made the split script's `is_cv === false` guard unfirable on 60% of the table.
+      // NULL is the honest answer and is safe by construction — every reader gates on an explicit
+      // false, so an unjudged row blocks nobody.
+      is_cv: isRuleOnlyExtractionModel(input.extraction.model) ? null : input.extraction.isCv,
       position_key: input.extraction.positionKey,
     })
     .select("id")
