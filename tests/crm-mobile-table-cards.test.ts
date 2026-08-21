@@ -202,4 +202,61 @@ export function runCrmMobileTableCardTests() {
         "split the owner ruled out when he approved the module-wide change.",
     );
   }
+  // -- A name in a mobile card must be allowed to wrap ------------------------
+  // crm-recovered-chains-panel's <ResolvedChain> is deliberately rendered by BOTH halves, so
+  // whatever it does happens on the phone too. Its two spans hold real people's names --
+  // chain.hingeManagerName and chain.resolvedMrName -- and both carried an unconditional
+  // `whitespace-nowrap`. On desktop that is right: the row sits in PortalDesktopTable, which is
+  // `hidden overflow-x-auto md:block` at 960px, so a long name scrolls inside the table. On a
+  // phone the same markup sits in a card whose container (`border border-slate-200 bg-white`)
+  // has NO `overflow-hidden`, so the name extends the page instead.
+  //
+  // Measured 2026-08-21 at 375px in DM Sans, against the real shell content width (app-shell's
+  // <main> is `px-3`, so 351px, not 375): growing the hinge-manager name one character at a time
+  // pushed documentElement.scrollWidth from 375 to 376 at 55 characters. The longest
+  // employees.full_name company-wide is 52. Three characters of margin -- not a live defect, but
+  // one longer hire reintroduces exactly the sideways-scrolling phone page the mobile-card work
+  // exists to remove, and that #2268 fixed for PortalRecordCard's title.
+  {
+    const panel = files.find((candidate) => candidate.name === "crm-recovered-chains-panel.tsx");
+    assert.ok(panel, "src/components/crm/crm-recovered-chains-panel.tsx is missing.");
+
+    const body = /function ResolvedChain\b[\s\S]*?\n}/.exec(panel.source);
+    assert.ok(
+      body,
+      "ResolvedChain was not found in crm-recovered-chains-panel.tsx. It renders the hinge-manager " +
+        "and resolved-MR names in BOTH the mobile card and the desktop row; if it was renamed or " +
+        "inlined, re-point this assertion rather than deleting it.",
+    );
+
+    const nameSpans = (body[0].match(/className="[^"]*"/g) ?? []).filter((span) =>
+      span.includes("whitespace-nowrap"),
+    );
+    assert.ok(
+      nameSpans.length > 0,
+      "ResolvedChain no longer gates nowrap on a breakpoint at all. That is safe for the page, but " +
+        "the desktop row is then free to wrap mid-name inside a 960px table -- use " +
+        "`md:whitespace-nowrap` so each half keeps its own behaviour.",
+    );
+
+    for (const span of nameSpans) {
+      const classes = span.slice('className="'.length, -1).split(/\s+/);
+      assert.ok(
+        !classes.includes("whitespace-nowrap"),
+        "ResolvedChain has a span with an unconditional `whitespace-nowrap`: " +
+          span +
+          ". It holds a person's name, and below md it renders inside a mobile card with no " +
+          "overflow-hidden, so a 55-character name pushes the whole 375px page sideways " +
+          "(measured: documentElement.scrollWidth 376 against a 375 viewport). Use " +
+          "`md:whitespace-nowrap` -- one line on desktop, wrapping on a phone.",
+      );
+      assert.ok(
+        classes.includes("md:whitespace-nowrap"),
+        "ResolvedChain span " +
+          span +
+          " must keep `md:whitespace-nowrap`, so the desktop row -- which scrolls inside " +
+          "PortalDesktopTable -- still puts the name on one line.",
+      );
+    }
+  }
 }

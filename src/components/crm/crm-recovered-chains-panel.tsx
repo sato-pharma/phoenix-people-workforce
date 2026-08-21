@@ -17,14 +17,24 @@ function formatDate(value: string) {
 }
 
 /** The hinge → resolved-MR chain, rendered identically in the mobile card and the desktop row so
- * the two can never tell a different story about who actually got the credit. */
+ * the two can never tell a different story about who actually got the credit.
+ *
+ * Both names NOWRAP only from `md` up, where this renders inside PortalDesktopTable — that table
+ * is `hidden overflow-x-auto md:block` with a 960px min-width, so a long name scrolls inside the
+ * table rather than moving the page. BELOW md the same markup sits in a mobile card whose
+ * container (`border border-slate-200 bg-white`) has no `overflow-hidden`, so an overflowing
+ * name extends the PAGE. Measured at 375px in DM Sans against the real shell width (`main` is
+ * `px-3`, so 351px of content): the hinge-manager span pushed `documentElement.scrollWidth` past
+ * 375 at a 55-character name, and the longest `employees.full_name` company-wide is 52 — three
+ * characters of margin. The parent is already `flex flex-wrap`, so wrapping needs nothing else.
+ * Same fix and same reasoning as PortalRecordCard's title (#2268). */
 function ResolvedChain({ chain }: { chain: DoubleVisitRecoveredChain }) {
   return (
     <>
       <div className="flex flex-wrap items-center gap-1.5 text-[11px] font-medium text-slate-600">
-        <span className="whitespace-nowrap text-slate-400">{chain.hingeManagerName ?? "hinge manager"}</span>
+        <span className="break-words text-slate-400 md:whitespace-nowrap">{chain.hingeManagerName ?? "hinge manager"}</span>
         <ArrowRight className="h-3 w-3 text-emerald-500" />
-        <span className="inline-flex items-center gap-1 whitespace-nowrap bg-emerald-50 px-2 py-0.5 text-[11px] font-bold text-emerald-700">
+        <span className="inline-flex items-center gap-1 break-words bg-emerald-50 px-2 py-0.5 text-[11px] font-bold text-emerald-700 md:whitespace-nowrap">
           {chain.resolvedMrName ?? chain.resolvedMrHrId ?? "MR"}
         </span>
       </div>
