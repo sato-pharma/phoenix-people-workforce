@@ -295,6 +295,11 @@ export function PharmacyProfilePanel({
                 fields={[
                   { label: "Code", value: entry.customerCode },
                   { label: "Brick", value: entry.territory.brickName ?? entry.territory.brickId ?? "—" },
+                  // The desktop table carries Area next to Brick and the card did not, so a phone
+                  // answered two thirds of "brick, area and region" — the first thing this page is
+                  // for. Region is deliberately absent from BOTH: it is derived from the area, and
+                  // the pharmacy's own region already sits in the header above.
+                  { label: "Area", value: entry.territory.areaName ?? "—" },
                 ]}
               />
             </PortalRecordCard>
