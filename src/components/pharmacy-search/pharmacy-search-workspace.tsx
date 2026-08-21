@@ -304,6 +304,12 @@ export function PharmacySearchWorkspace() {
                       { label: "Brick", value: hit.territory.brickName ?? hit.territory.brickId ?? "—" },
                       { label: "Area", value: hit.territory.areaName ?? "—" },
                       { label: "Region", value: hit.territory.regionName ?? "—" },
+                      // Sits immediately before the code because the two are one fact: a
+                      // distributor's code for a pharmacy means nothing without knowing whose
+                      // code it is. The desktop table has carried both columns from the start —
+                      // the card was built with four fields and this is the one that was dropped,
+                      // so a phone showed a bare number with no owner.
+                      { label: "Distributor", value: hit.distributorName ?? "—" },
                       { label: "Code", value: hit.customerCode ?? "—" },
                     ]}
                   />
