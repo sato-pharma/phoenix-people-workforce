@@ -440,4 +440,32 @@ export function runPharmacySearchTests() {
       "the distributor must sit immediately before its code, so the pair reads as one fact",
     );
   }
+
+  // ── Same defect, second instance ──────────────────────────────────────────
+  // The distributor-codes card on the profile page carried Brick but not Area, so a phone
+  // answered two thirds of "brick, area and region" — the first thing this page exists for.
+  // Sliced to that one section, so neither the results table nor the other three card
+  // renderers in the same file can be what satisfies it.
+  {
+    const source = readFileSync(
+      fileURLToPath(new URL("../src/components/pharmacy-search/pharmacy-profile-panel.tsx", import.meta.url)),
+      "utf8",
+    );
+    const section = source.indexOf("Distributor codes (");
+    const cardStart = source.indexOf("renderCard=", section);
+    const cardEnd = source.indexOf("renderTable=", cardStart);
+    assert.ok(
+      section !== -1 && cardStart > section && cardEnd > cardStart,
+      "could not isolate the distributor-codes card — this test is measuring nothing until it can",
+    );
+    const card = source.slice(cardStart, cardEnd);
+
+    for (const field of ["Brick", "Area"]) {
+      assert.ok(
+        card.includes(`label: "${field}"`),
+        `the distributor-codes card must show ${field} on a phone — brick, area and region are the `
+          + "first thing this page answers, and the desktop table has always carried it",
+      );
+    }
+  }
 }
