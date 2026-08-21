@@ -49,6 +49,14 @@ import { describeCvRead } from "@/lib/recruitment/cv-extraction-quality";
 //   RULES_ONLY_MODELS hold-back below exists to close, one layer up. The Empty count in the summary
 //   is how you find those; they are not retried automatically and need their rows removed first.
 //
+//   AND THE CAVEAT TO THAT CAVEAT, learned 2026-08-21: "delete the empty rows so the next run
+//   reaches them" is WRONG when the file is not a CV. 23 WhatsApp JPEGs proved to be photographed
+//   certificates and 4 email attachments proved to be outbound job offers and an Outlook signature
+//   image; for those, empty is the CORRECT answer and their rows are load-bearing — they keep a
+//   confirmed non-CV out of every future run at zero cost. Before deleting an empty row to re-arm
+//   a read, check what the file actually IS. NOT_A_CV_CANDIDATES below covers the ones whose rows
+//   were already removed.
+//
 // Usage (from the worktree root):
 //   node --env-file-if-exists=.env.local --experimental-strip-types \
 //        --experimental-specifier-resolution=node --experimental-loader ./scripts/alias-loader.mjs \
@@ -78,6 +86,52 @@ type TargetRow = {
   created_at: string;
   source: string | null;
 };
+
+// Candidates whose only stored file is CONFIRMED not to be a CV. Never re-read; there is nothing
+// on these pages to extract and a perfect model returns the same nothing.
+//
+// WHY A LIST AND NOT A RULE. The truth set here is "has no extraction row", which is a proxy for
+// "was never read" — and the proxy inverts for a file that is not a CV at all. Reading one of these
+// does not fail. It SUCCEEDS on the wrong document and writes a row that then hides the candidate
+// from every future run, so the failure is self-concealing. Worse, a job offer has a clean text
+// layer, so the rules engine parses it confidently into the wrong fields. Measured on production
+// 2026-08-21, from the 08:49 run:
+//
+//     Abdelrahman Nour   fullName       = "Total Monthly Package"                    <- a salary
+//                                                                                      table HEADER
+//     Khaled Abdelfatah  currentJobTitle = "Medical Sales Representative Job Offer"  (HIGH conf.)
+//
+// Both rows were deleted the same day. An empty read announces itself in the Empty count; a
+// confidently wrong one does not, which is what makes this class worth a hard list.
+//
+// THE REAL FIX IS is_cv, NOT THIS LIST. Since 3f3c0e05 (2026-08-21) every extraction records
+// whether the read judged the document to be a CV, so a future run can ask instead of consulting a
+// hand-kept list. This list covers the rows written BEFORE that shipped, whose judgement is gone.
+// Prefer extending is_cv coverage over extending this array.
+//
+// Every entry needs the evidence, because an id with no reason behind it can never be safely
+// removed. Adding one is a decision to spend nothing on that candidate forever — take it only when
+// somebody has OPENED the file.
+const NOT_A_CV_CANDIDATES: ReadonlyArray<{ id: string; name: string; file: string; why: string }> = [
+  {
+    file: "Abdelrahman Nour JO ٍSigned.pdf",
+    id: "254a228f-5458-40ab-b79d-62c29686c930",
+    name: "Abdelrahman Nour",
+    why: "His own signed job offer — outbound, Phoenix sent it. Read 2026-08-21 as fullName='Total Monthly Package'.",
+  },
+  {
+    file: "MRs JO.pdf",
+    id: "cfd39f22-3cb3-4b5e-9d65-9dc868a6ea6e",
+    name: "Khaled Abdelfatah",
+    why: "Signed job offer. Read 2026-08-21 as currentJobTitle='Medical Sales Representative Job Offer' at HIGH confidence.",
+  },
+  {
+    file: "Dr Hany Saad RM JO.pdf",
+    id: "7b7141fb-496b-4183-ac76-7e1b8f6208b3",
+    name: "dr.hany saad",
+    why: "Signed job offer, same class and same state as the two above — 0 extractions, so the next run would read it and write the same nonsense.",
+  },
+];
 
 // "empty" is a THIRD outcome, not a flavour of success.
 //
@@ -193,6 +247,24 @@ async function main(): Promise<void> {
     const before = targets.length;
     targets = targets.filter((row) => !rulesOnlyIds.has(String(row.id)));
     console.log(`Rules-only so far: ${rulesOnlyIds.size}  (held back ${before - targets.length}; they need a real key)`);
+  }
+
+  // Confirmed non-CVs. Report what was actually hit, not just the size of the list — a listed id
+  // that matches nothing means the candidate has since been read, deleted, or re-keyed, and a
+  // silently ineffective skip entry is exactly the kind of thing that rots unnoticed.
+  {
+    const notACvIds = new Set(NOT_A_CV_CANDIDATES.map((entry) => entry.id));
+    const before = targets.length;
+    targets = targets.filter((row) => !notACvIds.has(String(row.id)));
+    const skipped = before - targets.length;
+    console.log(`Not a CV         : skipped ${skipped} of ${NOT_A_CV_CANDIDATES.length} listed  (outbound job offers — see NOT_A_CV_CANDIDATES)`);
+    if (skipped < NOT_A_CV_CANDIDATES.length) {
+      const inTargets = new Set(targets.map((row) => String(row.id)));
+      for (const entry of NOT_A_CV_CANDIDATES) {
+        if (!notACvIds.has(entry.id) || inTargets.has(entry.id)) continue;
+        console.log(`  note: "${entry.name}" (${entry.id}) was not in the target set this run — already read, or gone.`);
+      }
+    }
   }
 
   if (unresolvedOnly) {
