@@ -4,6 +4,12 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Loader2, RefreshCw } from "lucide-react";
 
+import {
+  PortalDesktopTable,
+  PortalRecordCard,
+  PortalRecordFields,
+  PortalResponsiveDataList,
+} from "@/components/employee-portal/portal-primitives";
 import { ExportXlsxButton } from "@/components/ui/export-xlsx-button";
 import { SortableTh, TableSearchInput } from "@/components/ui/sortable-table";
 import { useSortableTable } from "@/components/ui/use-sortable-table";
@@ -21,6 +27,10 @@ import type {
 // Every control is a URL parameter, so each change re-runs the server-side access gate rather than
 // filtering a payload already in the browser. Month and filters move TOGETHER for the reason the
 // sibling documents: pushing `?month=` alone silently dropped an active filter.
+//
+// Desktop table / mobile cards via PortalResponsiveDataList — AGENTS.md §4. The sibling board moved
+// the same way on 2026-08-21 and the two must stay identical; a 10-column table side-scrolling
+// inside a phone is what this replaces.
 
 const THEAD = "px-3 py-2.5 text-[10px] font-black uppercase tracking-[0.12em] text-white";
 const SELECT_CLASS =
@@ -32,6 +42,25 @@ const STATUS_LABEL: Record<RepDoctorStatus, string> = {
   off_plan: "Off plan",
   seen: "Visited",
 };
+
+const STATUS_ACCENT: Record<RepDoctorStatus, "emerald" | "amber" | "rose"> = {
+  missed: "rose",
+  off_plan: "amber",
+  seen: "emerald",
+};
+
+const STATUS_TEXT: Record<RepDoctorStatus, string> = {
+  missed: "text-rose-700",
+  off_plan: "text-amber-700",
+  seen: "text-emerald-700",
+};
+
+// Adherence tone in one place, so the card badge and the desktop meter cannot drift apart.
+const adherenceAccent = (pct: number): "amber" | "emerald" | "rose" =>
+  pct >= 80 ? "emerald" : pct >= 50 ? "amber" : "rose";
+const adherenceText = (pct: number) =>
+  pct >= 80 ? "text-emerald-700" : pct >= 50 ? "text-amber-700" : "text-rose-700";
+const adherenceBar = (pct: number) => (pct >= 80 ? "bg-emerald-500" : pct >= 50 ? "bg-amber-400" : "bg-rose-400");
 
 const KIND_LABEL: Record<string, string> = {
   hcp: "Account",
@@ -268,31 +297,76 @@ export function RepDoctorListsRepTable({ month, rows }: { month: string; rows: R
           title="Rep Doctor Lists — by rep"
         />
       </div>
-      <div className="overflow-x-auto">
-        <table className="w-full border-collapse text-xs">
-          <thead>
-            <tr className="bg-slate-900 text-left">
-              <SortableTh className={THEAD} label="Rep" onSort={table.toggleSort} sort={table.sort} sortKey="repName" />
-              <SortableTh align="right" className={`${THEAD} text-right`} label="On List" onSort={table.toggleSort} sort={table.sort} sortKey="plannedDoctors" />
-              <SortableTh align="right" className={`${THEAD} text-right text-emerald-300`} label="Visited" onSort={table.toggleSort} sort={table.sort} sortKey="visitedDoctors" />
-              <SortableTh align="right" className={`${THEAD} text-right text-rose-300`} label="Never Visited" onSort={table.toggleSort} sort={table.sort} sortKey="missedDoctors" />
-              <SortableTh align="right" className={`${THEAD} text-right`} label="Adherence" onSort={table.toggleSort} sort={table.sort} sortKey="adherencePct" />
-              <SortableTh align="right" className={`${THEAD} text-right text-amber-300`} label="Off Plan" onSort={table.toggleSort} sort={table.sort} sortKey="offPlanDoctors" />
-              <SortableTh align="right" className={`${THEAD} text-right`} label="Campaign" onSort={table.toggleSort} sort={table.sort} sortKey="campaignCalls" />
-              <SortableTh align="right" className={`${THEAD} text-right`} label="Accounts" onSort={table.toggleSort} sort={table.sort} sortKey="plannedAccounts" />
-              <SortableTh align="right" className={`${THEAD} text-right`} label="A / B / C" onSort={table.toggleSort} sort={table.sort} sortKey="gradeA" />
-              <SortableTh align="right" className={`${THEAD} text-right`} label="Unverified" onSort={table.toggleSort} sort={table.sort} sortKey="unverifiedCalls" />
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100">
-            {table.rows.length === 0 ? (
-              <tr>
-                <td className="px-3 py-6 text-center text-xs text-slate-400" colSpan={10}>
-                  No rep has a doctor list for this month. Press Refresh from CRM to pull it.
-                </td>
+      <PortalResponsiveDataList
+        empty={
+          <p className="px-3 py-6 text-center text-xs text-slate-400">
+            No rep has a doctor list for this month. Press Refresh from CRM to pull it.
+          </p>
+        }
+        getKey={(row) => row.repKey}
+        items={table.rows}
+        renderCard={(row) => (
+          <PortalRecordCard
+            accent={row.hasMeasurablePlan ? adherenceAccent(row.adherencePct) : "slate"}
+            meta={`${row.plannedDoctors} on list · ${row.plannedAccounts} accounts`}
+            // A rep with no planned doctors has no percentage to show. Printing 0% here states
+            // "reached none of their list" about someone who was never given one -- so the card
+            // says so in words instead, exactly as the desktop cell does.
+            status={
+              row.hasMeasurablePlan ? (
+                <span className={`text-sm font-black ${adherenceText(row.adherencePct)}`}>{row.adherencePct}%</span>
+              ) : (
+                <span className="whitespace-nowrap text-[10px] font-bold uppercase tracking-[0.08em] text-slate-400">
+                  No plan
+                </span>
+              )
+            }
+            title={row.repName}
+          >
+            <PortalRecordFields
+              fields={[
+                { label: "Visited", value: <span className="text-emerald-700">{row.visitedDoctors}</span> },
+                {
+                  label: "Never visited",
+                  value: <span className={row.missedDoctors > 0 ? "text-rose-700" : "text-slate-400"}>{row.missedDoctors}</span>,
+                },
+                {
+                  label: "Off plan",
+                  value: <span className={row.offPlanDoctors > 0 ? "text-amber-700" : "text-slate-400"}>{row.offPlanDoctors}</span>,
+                },
+                // Campaign calls prove the rep worked but name no doctor, so they sit BESIDE
+                // adherence and never inside it — same rule the desktop column follows.
+                {
+                  label: "Campaign",
+                  value: <span className={row.campaignCalls > 0 ? "text-sky-700" : "text-slate-400"}>{row.campaignCalls}</span>,
+                },
+                { label: "A / B / C", value: `${row.gradeA} / ${row.gradeB} / ${row.gradeC}` },
+                {
+                  label: "Unverified",
+                  value: <span className={row.unverifiedCalls > 0 ? "text-amber-700" : "text-slate-400"}>{row.unverifiedCalls}</span>,
+                },
+              ]}
+            />
+          </PortalRecordCard>
+        )}
+        renderTable={() => (
+          <PortalDesktopTable className="text-xs" minWidth="1040px">
+            <thead>
+              <tr className="bg-slate-900 text-left">
+                <SortableTh className={THEAD} label="Rep" onSort={table.toggleSort} sort={table.sort} sortKey="repName" />
+                <SortableTh align="right" className={`${THEAD} text-right`} label="On List" onSort={table.toggleSort} sort={table.sort} sortKey="plannedDoctors" />
+                <SortableTh align="right" className={`${THEAD} text-right text-emerald-300`} label="Visited" onSort={table.toggleSort} sort={table.sort} sortKey="visitedDoctors" />
+                <SortableTh align="right" className={`${THEAD} text-right text-rose-300`} label="Never Visited" onSort={table.toggleSort} sort={table.sort} sortKey="missedDoctors" />
+                <SortableTh align="right" className={`${THEAD} text-right`} label="Adherence" onSort={table.toggleSort} sort={table.sort} sortKey="adherencePct" />
+                <SortableTh align="right" className={`${THEAD} text-right text-amber-300`} label="Off Plan" onSort={table.toggleSort} sort={table.sort} sortKey="offPlanDoctors" />
+                <SortableTh align="right" className={`${THEAD} text-right`} label="Campaign" onSort={table.toggleSort} sort={table.sort} sortKey="campaignCalls" />
+                <SortableTh align="right" className={`${THEAD} text-right`} label="Accounts" onSort={table.toggleSort} sort={table.sort} sortKey="plannedAccounts" />
+                <SortableTh align="right" className={`${THEAD} text-right`} label="A / B / C" onSort={table.toggleSort} sort={table.sort} sortKey="gradeA" />
+                <SortableTh align="right" className={`${THEAD} text-right`} label="Unverified" onSort={table.toggleSort} sort={table.sort} sortKey="unverifiedCalls" />
               </tr>
-            ) : (
-              table.rows.map((row) => (
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {table.rows.map((row) => (
                 <tr className="whitespace-nowrap bg-white hover:bg-slate-50" key={row.repKey}>
                   <td className="px-3 py-2 font-semibold text-slate-900">{row.repName}</td>
                   <td className="px-3 py-2 text-right font-semibold text-slate-900">{row.plannedDoctors}</td>
@@ -308,13 +382,11 @@ export function RepDoctorListsRepTable({ month, rows }: { month: string; rows: R
                       <div className="flex items-center justify-end gap-2">
                         <div className="h-1 w-16 bg-slate-100">
                           <div
-                            className={`h-full ${row.adherencePct >= 80 ? "bg-emerald-500" : row.adherencePct >= 50 ? "bg-amber-400" : "bg-rose-400"}`}
+                            className={`h-full ${adherenceBar(row.adherencePct)}`}
                             style={{ width: `${Math.max(2, row.adherencePct)}%` }}
                           />
                         </div>
-                        <span
-                          className={`min-w-[34px] text-right font-black ${row.adherencePct >= 80 ? "text-emerald-700" : row.adherencePct >= 50 ? "text-amber-700" : "text-rose-700"}`}
-                        >
+                        <span className={`min-w-[34px] text-right font-black ${adherenceText(row.adherencePct)}`}>
                           {row.adherencePct}%
                         </span>
                       </div>
@@ -343,11 +415,11 @@ export function RepDoctorListsRepTable({ month, rows }: { month: string; rows: R
                     {row.unverifiedCalls}
                   </td>
                 </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
+              ))}
+            </tbody>
+          </PortalDesktopTable>
+        )}
+      />
     </div>
   );
 }
@@ -409,30 +481,53 @@ export function RepDoctorListsDoctorTable({ month, rows }: { month: string; rows
           title="Rep Doctor Lists — doctor by doctor"
         />
       </div>
-      <div className="overflow-x-auto">
-        <table className="w-full border-collapse text-xs">
-          <thead>
-            <tr className="bg-slate-900 text-left">
-              <SortableTh className={THEAD} label="Doctor" onSort={table.toggleSort} sort={table.sort} sortKey="contactName" />
-              <SortableTh className={THEAD} label="Grade" onSort={table.toggleSort} sort={table.sort} sortKey="gradeRaw" />
-              <SortableTh className={THEAD} label="Specialty" onSort={table.toggleSort} sort={table.sort} sortKey="speciality" />
-              <SortableTh className={THEAD} label="Locality" onSort={table.toggleSort} sort={table.sort} sortKey="regionName" />
-              <SortableTh className={THEAD} label="Rep" onSort={table.toggleSort} sort={table.sort} sortKey="repName" />
-              <SortableTh align="right" className={`${THEAD} text-right`} label="Planned" onSort={table.toggleSort} sort={table.sort} sortKey="plannedCalls" />
-              <SortableTh align="right" className={`${THEAD} text-right`} label="Visits" onSort={table.toggleSort} sort={table.sort} sortKey="visits" />
-              <SortableTh className={THEAD} label="Status" onSort={table.toggleSort} sort={table.sort} sortKey="status" />
-              <SortableTh className={THEAD} label="Last Visit" onSort={table.toggleSort} sort={table.sort} sortKey="lastVisitDate" />
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100">
-            {table.rows.length === 0 ? (
-              <tr>
-                <td className="px-3 py-6 text-center text-xs text-slate-400" colSpan={9}>
-                  No doctors match this filter.
-                </td>
+      <PortalResponsiveDataList
+        empty={<p className="px-3 py-6 text-center text-xs text-slate-400">No doctors match this filter.</p>}
+        getKey={(row) => `${row.repKey}:${row.contactCrmId}:${row.status}`}
+        items={table.rows}
+        renderCard={(row) => (
+          <PortalRecordCard
+            accent={STATUS_ACCENT[row.status]}
+            meta={`${row.speciality ?? "Unspecified"} · ${KIND_LABEL[row.kind] ?? row.kind}`}
+            status={
+              <span className={`text-[10px] font-black uppercase tracking-[0.1em] ${STATUS_TEXT[row.status]}`}>
+                {STATUS_LABEL[row.status]}
+              </span>
+            }
+            title={row.contactName}
+          >
+            <PortalRecordFields
+              fields={[
+                { label: "Grade", value: row.gradeRaw ?? "—" },
+                { label: "Locality", value: row.regionName ?? "—" },
+                { label: "Rep", value: row.repName },
+                { label: "Planned", value: row.plannedCalls },
+                {
+                  label: "Visits",
+                  value: <span className={row.visits > 0 ? "text-emerald-700" : "text-slate-400"}>{row.visits}</span>,
+                },
+                { label: "Last Visit", value: row.lastVisitDate ?? "Never" },
+              ]}
+            />
+          </PortalRecordCard>
+        )}
+        renderTable={() => (
+          <PortalDesktopTable className="text-xs" minWidth="980px">
+            <thead>
+              <tr className="bg-slate-900 text-left">
+                <SortableTh className={THEAD} label="Doctor" onSort={table.toggleSort} sort={table.sort} sortKey="contactName" />
+                <SortableTh className={THEAD} label="Grade" onSort={table.toggleSort} sort={table.sort} sortKey="gradeRaw" />
+                <SortableTh className={THEAD} label="Specialty" onSort={table.toggleSort} sort={table.sort} sortKey="speciality" />
+                <SortableTh className={THEAD} label="Locality" onSort={table.toggleSort} sort={table.sort} sortKey="regionName" />
+                <SortableTh className={THEAD} label="Rep" onSort={table.toggleSort} sort={table.sort} sortKey="repName" />
+                <SortableTh align="right" className={`${THEAD} text-right`} label="Planned" onSort={table.toggleSort} sort={table.sort} sortKey="plannedCalls" />
+                <SortableTh align="right" className={`${THEAD} text-right`} label="Visits" onSort={table.toggleSort} sort={table.sort} sortKey="visits" />
+                <SortableTh className={THEAD} label="Status" onSort={table.toggleSort} sort={table.sort} sortKey="status" />
+                <SortableTh className={THEAD} label="Last Visit" onSort={table.toggleSort} sort={table.sort} sortKey="lastVisitDate" />
               </tr>
-            ) : (
-              table.rows.map((row) => (
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {table.rows.map((row) => (
                 <tr className="whitespace-nowrap bg-white hover:bg-slate-50" key={`${row.repKey}:${row.contactCrmId}:${row.status}`}>
                   <td className="px-3 py-2 font-semibold text-slate-900">{row.contactName}</td>
                   <td
@@ -447,18 +542,14 @@ export function RepDoctorListsDoctorTable({ month, rows }: { month: string; rows
                   <td className={`px-3 py-2 text-right font-bold ${row.visits > 0 ? "text-emerald-700" : "text-slate-400"}`}>
                     {row.visits}
                   </td>
-                  <td
-                    className={`px-3 py-2 font-bold ${row.status === "missed" ? "text-rose-700" : row.status === "off_plan" ? "text-amber-700" : "text-emerald-700"}`}
-                  >
-                    {STATUS_LABEL[row.status]}
-                  </td>
+                  <td className={`px-3 py-2 font-bold ${STATUS_TEXT[row.status]}`}>{STATUS_LABEL[row.status]}</td>
                   <td className="px-3 py-2 text-slate-400">{row.lastVisitDate ?? "Never"}</td>
                 </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
+              ))}
+            </tbody>
+          </PortalDesktopTable>
+        )}
+      />
     </div>
   );
 }

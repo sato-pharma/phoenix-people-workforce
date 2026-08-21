@@ -4,6 +4,12 @@ import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Download, Loader2, Search, Upload } from "lucide-react";
 
+import {
+  PortalDesktopTable,
+  PortalRecordCard,
+  PortalRecordFields,
+  PortalResponsiveDataList,
+} from "@/components/employee-portal/portal-primitives";
 import type { CrmRegionResolutionAction, UnmappedCrmRegionRow } from "@/lib/crm/region-brick";
 
 type ImportSummary = {
@@ -267,51 +273,83 @@ export function CrmRegionMappingPanel({
         </div>
       )}
 
-      <div className="overflow-x-auto border border-slate-200 bg-white">
-        <table className="w-full min-w-[900px] text-left text-sm">
-          <thead className="bg-slate-900">
-            <tr>
-              <th className="px-3 py-3 text-[10px] font-black uppercase tracking-wider text-slate-300">CRM Region ID</th>
-              <th className="px-3 py-3 text-[10px] font-black uppercase tracking-wider text-slate-300">CRM Region Name</th>
-              <th className="px-3 py-3 text-[10px] font-black uppercase tracking-wider text-slate-300">Visits (all time)</th>
-              <th className="px-3 py-3 text-[10px] font-black uppercase tracking-wider text-slate-300">First Seen</th>
-              <th className="px-3 py-3 text-[10px] font-black uppercase tracking-wider text-slate-300">Last Seen</th>
-              <th className="px-3 py-3 text-[10px] font-black uppercase tracking-wider text-slate-300">Resolution</th>
-              <th className="px-3 py-3 text-[10px] font-black uppercase tracking-wider text-slate-300">Action</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-orange-100">
-            {filtered.length === 0 ? (
-              <tr>
-                <td colSpan={7} className="px-3 py-8 text-center text-sm text-slate-500">
-                  {rows.length === 0 ? "No unmapped CRM regions — every region maps to a brick." : "No regions match this search."}
-                </td>
-              </tr>
-            ) : (
-              filtered.map((region) => (
-                <tr key={region.crmRegionId} className="odd:bg-white even:bg-orange-50/30">
-                  <td className="whitespace-nowrap px-3 py-2.5 font-semibold text-slate-700">{region.crmRegionId}</td>
-                  <td className="px-3 py-2.5 font-medium text-slate-900">{region.crmRegionName}</td>
-                  <td className="whitespace-nowrap px-3 py-2.5 font-semibold text-rose-500">{region.visitCount}</td>
-                  <td className="whitespace-nowrap px-3 py-2.5">{formatDate(region.firstSeen)}</td>
-                  <td className="whitespace-nowrap px-3 py-2.5">{formatDate(region.lastSeen)}</td>
-                  <td className="px-3 py-2.5">
-                    <ResolutionCell region={region} onResolved={handleResolved} />
-                  </td>
-                  <td className="whitespace-nowrap px-3 py-2.5">
-                    <button
-                      type="button"
-                      onClick={() => viewInVisits(region)}
-                      className="h-8 border border-[#D8E0EA] bg-white px-2.5 text-xs font-bold text-[#0F172A] shadow-sm transition hover:border-[#FDBA74] hover:text-[#F97316]"
-                    >
-                      View in Visits
-                    </button>
-                  </td>
+      {/* Desktop keeps the seven-column punch list; mobile gets one card per region, brick-mapping
+          control and all — AGENTS.md §4. Mirrors CrmUnmappedIdentitiesPanel exactly, as ever. */}
+      <div className="border border-slate-200 bg-white">
+        <PortalResponsiveDataList
+          empty={
+            <p className="px-3 py-8 text-center text-sm text-slate-500">
+              {rows.length === 0 ? "No unmapped CRM regions — every region maps to a brick." : "No regions match this search."}
+            </p>
+          }
+          getKey={(region) => String(region.crmRegionId)}
+          items={filtered}
+          renderCard={(region) => (
+            <PortalRecordCard
+              accent="rose"
+              actions={
+                <>
+                  <ResolutionCell region={region} onResolved={handleResolved} />
+                  <button
+                    type="button"
+                    onClick={() => viewInVisits(region)}
+                    className="h-8 border border-[#D8E0EA] bg-white px-2.5 text-xs font-bold text-[#0F172A] shadow-sm transition hover:border-[#FDBA74] hover:text-[#F97316]"
+                  >
+                    View in Visits
+                  </button>
+                </>
+              }
+              meta={`CRM Region ID ${region.crmRegionId}`}
+              status={<span className="text-sm font-black text-rose-500">{region.visitCount}</span>}
+              title={region.crmRegionName}
+            >
+              <PortalRecordFields
+                fields={[
+                  { label: "First seen", value: formatDate(region.firstSeen) },
+                  { label: "Last seen", value: formatDate(region.lastSeen) },
+                ]}
+              />
+            </PortalRecordCard>
+          )}
+          renderTable={() => (
+            <PortalDesktopTable minWidth="900px">
+              <thead className="bg-slate-900">
+                <tr>
+                  <th className="px-3 py-3 text-[10px] font-black uppercase tracking-wider text-slate-300">CRM Region ID</th>
+                  <th className="px-3 py-3 text-[10px] font-black uppercase tracking-wider text-slate-300">CRM Region Name</th>
+                  <th className="px-3 py-3 text-[10px] font-black uppercase tracking-wider text-slate-300">Visits (all time)</th>
+                  <th className="px-3 py-3 text-[10px] font-black uppercase tracking-wider text-slate-300">First Seen</th>
+                  <th className="px-3 py-3 text-[10px] font-black uppercase tracking-wider text-slate-300">Last Seen</th>
+                  <th className="px-3 py-3 text-[10px] font-black uppercase tracking-wider text-slate-300">Resolution</th>
+                  <th className="px-3 py-3 text-[10px] font-black uppercase tracking-wider text-slate-300">Action</th>
                 </tr>
-              ))
-            )}
-          </tbody>
-        </table>
+              </thead>
+              <tbody className="divide-y divide-orange-100">
+                {filtered.map((region) => (
+                  <tr key={region.crmRegionId} className="odd:bg-white even:bg-orange-50/30">
+                    <td className="whitespace-nowrap px-3 py-2.5 font-semibold text-slate-700">{region.crmRegionId}</td>
+                    <td className="px-3 py-2.5 font-medium text-slate-900">{region.crmRegionName}</td>
+                    <td className="whitespace-nowrap px-3 py-2.5 font-semibold text-rose-500">{region.visitCount}</td>
+                    <td className="whitespace-nowrap px-3 py-2.5">{formatDate(region.firstSeen)}</td>
+                    <td className="whitespace-nowrap px-3 py-2.5">{formatDate(region.lastSeen)}</td>
+                    <td className="px-3 py-2.5">
+                      <ResolutionCell region={region} onResolved={handleResolved} />
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-2.5">
+                      <button
+                        type="button"
+                        onClick={() => viewInVisits(region)}
+                        className="h-8 border border-[#D8E0EA] bg-white px-2.5 text-xs font-bold text-[#0F172A] shadow-sm transition hover:border-[#FDBA74] hover:text-[#F97316]"
+                      >
+                        View in Visits
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </PortalDesktopTable>
+          )}
+        />
       </div>
     </div>
   );

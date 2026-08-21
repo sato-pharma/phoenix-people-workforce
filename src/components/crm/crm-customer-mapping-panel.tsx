@@ -4,6 +4,12 @@ import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Download, Loader2, Search, Upload } from "lucide-react";
 
+import {
+  PortalDesktopTable,
+  PortalRecordCard,
+  PortalRecordFields,
+  PortalResponsiveDataList,
+} from "@/components/employee-portal/portal-primitives";
 import type { CrmCustomerResolutionAction, UnmappedCrmCustomerRow } from "@/lib/crm/customer-brick";
 
 type ImportSummary = {
@@ -267,51 +273,83 @@ export function CrmCustomerMappingPanel({
         </div>
       )}
 
-      <div className="overflow-x-auto border border-slate-200 bg-white">
-        <table className="w-full min-w-[900px] text-left text-sm">
-          <thead className="bg-slate-900">
-            <tr>
-              <th className="px-3 py-3 text-[10px] font-black uppercase tracking-wider text-slate-300">CRM Contact ID</th>
-              <th className="px-3 py-3 text-[10px] font-black uppercase tracking-wider text-slate-300">CRM Contact Name</th>
-              <th className="px-3 py-3 text-[10px] font-black uppercase tracking-wider text-slate-300">Visits (all time)</th>
-              <th className="px-3 py-3 text-[10px] font-black uppercase tracking-wider text-slate-300">First Seen</th>
-              <th className="px-3 py-3 text-[10px] font-black uppercase tracking-wider text-slate-300">Last Seen</th>
-              <th className="px-3 py-3 text-[10px] font-black uppercase tracking-wider text-slate-300">Resolution</th>
-              <th className="px-3 py-3 text-[10px] font-black uppercase tracking-wider text-slate-300">Action</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-orange-100">
-            {filtered.length === 0 ? (
-              <tr>
-                <td colSpan={7} className="px-3 py-8 text-center text-sm text-slate-500">
-                  {rows.length === 0 ? "No unmapped CRM customers — every customer maps to a brick." : "No customers match this search."}
-                </td>
-              </tr>
-            ) : (
-              filtered.map((customer) => (
-                <tr key={customer.crmContactId} className="odd:bg-white even:bg-orange-50/30">
-                  <td className="whitespace-nowrap px-3 py-2.5 font-semibold text-slate-700">{customer.crmContactId}</td>
-                  <td className="px-3 py-2.5 font-medium text-slate-900">{customer.crmContactName}</td>
-                  <td className="whitespace-nowrap px-3 py-2.5 font-semibold text-rose-500">{customer.visitCount}</td>
-                  <td className="whitespace-nowrap px-3 py-2.5">{formatDate(customer.firstSeen)}</td>
-                  <td className="whitespace-nowrap px-3 py-2.5">{formatDate(customer.lastSeen)}</td>
-                  <td className="px-3 py-2.5">
-                    <ResolutionCell customer={customer} onResolved={handleResolved} />
-                  </td>
-                  <td className="whitespace-nowrap px-3 py-2.5">
-                    <button
-                      type="button"
-                      onClick={() => viewInVisits(customer)}
-                      className="h-8 border border-[#D8E0EA] bg-white px-2.5 text-xs font-bold text-[#0F172A] shadow-sm transition hover:border-[#FDBA74] hover:text-[#F97316]"
-                    >
-                      View in Visits
-                    </button>
-                  </td>
+      {/* Desktop keeps the seven-column punch list; mobile gets one card per customer, brick-mapping
+          control and all — AGENTS.md §4. Mirrors CrmRegionMappingPanel exactly, as ever. */}
+      <div className="border border-slate-200 bg-white">
+        <PortalResponsiveDataList
+          empty={
+            <p className="px-3 py-8 text-center text-sm text-slate-500">
+              {rows.length === 0 ? "No unmapped CRM customers — every customer maps to a brick." : "No customers match this search."}
+            </p>
+          }
+          getKey={(customer) => String(customer.crmContactId)}
+          items={filtered}
+          renderCard={(customer) => (
+            <PortalRecordCard
+              accent="rose"
+              actions={
+                <>
+                  <ResolutionCell customer={customer} onResolved={handleResolved} />
+                  <button
+                    type="button"
+                    onClick={() => viewInVisits(customer)}
+                    className="h-8 border border-[#D8E0EA] bg-white px-2.5 text-xs font-bold text-[#0F172A] shadow-sm transition hover:border-[#FDBA74] hover:text-[#F97316]"
+                  >
+                    View in Visits
+                  </button>
+                </>
+              }
+              meta={`CRM Contact ID ${customer.crmContactId}`}
+              status={<span className="text-sm font-black text-rose-500">{customer.visitCount}</span>}
+              title={customer.crmContactName}
+            >
+              <PortalRecordFields
+                fields={[
+                  { label: "First seen", value: formatDate(customer.firstSeen) },
+                  { label: "Last seen", value: formatDate(customer.lastSeen) },
+                ]}
+              />
+            </PortalRecordCard>
+          )}
+          renderTable={() => (
+            <PortalDesktopTable minWidth="900px">
+              <thead className="bg-slate-900">
+                <tr>
+                  <th className="px-3 py-3 text-[10px] font-black uppercase tracking-wider text-slate-300">CRM Contact ID</th>
+                  <th className="px-3 py-3 text-[10px] font-black uppercase tracking-wider text-slate-300">CRM Contact Name</th>
+                  <th className="px-3 py-3 text-[10px] font-black uppercase tracking-wider text-slate-300">Visits (all time)</th>
+                  <th className="px-3 py-3 text-[10px] font-black uppercase tracking-wider text-slate-300">First Seen</th>
+                  <th className="px-3 py-3 text-[10px] font-black uppercase tracking-wider text-slate-300">Last Seen</th>
+                  <th className="px-3 py-3 text-[10px] font-black uppercase tracking-wider text-slate-300">Resolution</th>
+                  <th className="px-3 py-3 text-[10px] font-black uppercase tracking-wider text-slate-300">Action</th>
                 </tr>
-              ))
-            )}
-          </tbody>
-        </table>
+              </thead>
+              <tbody className="divide-y divide-orange-100">
+                {filtered.map((customer) => (
+                  <tr key={customer.crmContactId} className="odd:bg-white even:bg-orange-50/30">
+                    <td className="whitespace-nowrap px-3 py-2.5 font-semibold text-slate-700">{customer.crmContactId}</td>
+                    <td className="px-3 py-2.5 font-medium text-slate-900">{customer.crmContactName}</td>
+                    <td className="whitespace-nowrap px-3 py-2.5 font-semibold text-rose-500">{customer.visitCount}</td>
+                    <td className="whitespace-nowrap px-3 py-2.5">{formatDate(customer.firstSeen)}</td>
+                    <td className="whitespace-nowrap px-3 py-2.5">{formatDate(customer.lastSeen)}</td>
+                    <td className="px-3 py-2.5">
+                      <ResolutionCell customer={customer} onResolved={handleResolved} />
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-2.5">
+                      <button
+                        type="button"
+                        onClick={() => viewInVisits(customer)}
+                        className="h-8 border border-[#D8E0EA] bg-white px-2.5 text-xs font-bold text-[#0F172A] shadow-sm transition hover:border-[#FDBA74] hover:text-[#F97316]"
+                      >
+                        View in Visits
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </PortalDesktopTable>
+          )}
+        />
       </div>
     </div>
   );
