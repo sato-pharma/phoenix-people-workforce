@@ -51,8 +51,9 @@ export type ReconcileInput = {
    */
   deviceOutage: boolean;
   /**
-   * A CRM-recorded leave day (iReports360 visit type -4 Annual Vacation or
-   * -15 Health Day) covers this date, per getCrmLeaveDayMap — a leave the
+   * A CRM-recorded leave day (iReports360 visit type -4 Annual Vacation — the
+   * only genuine leave type; Health Day -15, Public Holiday -5 and Casual Leave
+   * -6 are working time) covers this date, per getCrmLeaveDayMap — a leave the
    * employee may never have formally submitted through Phoenix's own
    * vacation_requests, but is real per the CRM record. Universal cancel,
    * same as hasApprovedLeave.

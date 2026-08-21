@@ -854,6 +854,8 @@ import { runMarketingRequestCustomerScopeGuardTests } from "./marketing-request-
 import { runMarketingSalesCodeSyncRerunTests } from "./marketing-sales-code-sync-rerun.test.ts";
 import { runTerritoryAreaIndexTests } from "./territory-area-index.test.ts";
 
+import { runCrmDayMapVisitTypeStatusTests } from "./crm-day-map-visit-type-status.test.ts";
+
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
@@ -2258,6 +2260,12 @@ await runTest(
   + "period) matches the RPC's only selective predicate so the plan is a Bitmap Index Scan not a full "
   + "rollup seq scan; index expression and function predicate pinned to stay in lockstep)",
   runTerritoryAreaIndexTests,
+);
+
+await runTest(
+  "CRM day-map visit-type ruling (third copy of AV/CP: -4 is the only leave; Health Day -15, Public "
+  + "Holiday -5 and Casual Leave -6 are working time; all three copies pinned against each other)",
+  runCrmDayMapVisitTypeStatusTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
