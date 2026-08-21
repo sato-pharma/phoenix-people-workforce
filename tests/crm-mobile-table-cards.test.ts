@@ -105,14 +105,37 @@ export function runCrmMobileTableCardTests() {
   // The call list is not a <table>, so nothing above reaches it. It is still seven columns of
   // fixed-width spans on one nowrap flex row, which on a 375px screen is the same defect with a
   // different tag — it gets the same split.
+  //
+  // This one is checked by OUTCOME rather than by naming <PortalResponsiveDataList>, because
+  // that primitive is not available here. doctor-coverage-board.tsx has no "use client" — it
+  // renders on the server — and portal-primitives.tsx does, so handing the primitive getKey /
+  // renderCard / renderTable serialises three functions across the RSC boundary. React refuses,
+  // and both /admin/doctor-coverage and /employee-portals/doctor-coverage 500 on every load.
+  // That is not hypothetical: pinning the primitive by name here is what pushed the board onto
+  // it in #2264, and production returned "Admin workspace unavailable" for about an hour on
+  // 2026-08-21 (digests 1878765947 / 3180310587 / 923360379 — one per function prop).
+  // The board now inlines exactly what the primitive emits, so the rule is unchanged; only the
+  // spelling is. rsc-client-function-props.test.ts guards the boundary itself.
   const board = files.find((candidate) => candidate.name === "doctor-coverage-board.tsx");
   assert.ok(board, "src/components/crm/doctor-coverage-board.tsx is missing.");
   assert.match(
     board.source,
-    /\bPortalResponsiveDataList\b/,
-    "src/components/crm/doctor-coverage-board.tsx must render its call list through " +
-      "<PortalResponsiveDataList>. It is a div grid rather than a <table>, so the <table> scan " +
-      "above cannot see it — a regression there would otherwise ship silently.",
+    /\bmd:hidden\b/,
+    "src/components/crm/doctor-coverage-board.tsx must keep a card list gated to below md for " +
+      "its call list. It is a div grid rather than a <table>, so the <table> scan above cannot " +
+      "see it — a regression there would otherwise ship silently.",
+  );
+  assert.match(
+    board.source,
+    /\bPortalRecordCard\b/,
+    "src/components/crm/doctor-coverage-board.tsx must build its mobile call list out of real " +
+      "<PortalRecordCard>s, not a narrowed copy of the desktop row.",
+  );
+  assert.match(
+    board.source,
+    /hidden[^"]*\bmd:block\b/,
+    "src/components/crm/doctor-coverage-board.tsx must keep its wide call-list row list hidden " +
+      "below md. Cards on a phone are only half the rule — the desktop half has to be gated too.",
   );
 
   for (const file of files) {
