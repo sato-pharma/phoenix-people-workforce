@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, useTransition } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Braces, ChevronLeft, ChevronRight, Download, Info, Loader2, Search, TriangleAlert, X } from "lucide-react";
 
+import { PortalRecordCard, PortalRecordFields } from "@/components/employee-portal/portal-primitives";
 import {
   formatVendorLocal,
   formatVendorTimeOnly,
@@ -66,6 +67,15 @@ function RecognitionBadge({ missing, score }: { missing: unknown; score: unknown
       {label}
     </span>
   );
+}
+
+/** One cell, rendered the same way whether it lands in a desktop `<td>` or a mobile card field.
+ * The two special-cased columns live here rather than in the table body so the phone view cannot
+ * quietly degrade Visit Time back to a bare timestamp or Recognized back to a naked number. */
+function masterCell(col: CrmMasterColumn, row: CrmMasterRow) {
+  if (col.key === "visit_time") return <VisitTimeCell source={row.visit_time_source} value={row[col.key]} />;
+  if (col.key === "recognition_score") return <RecognitionBadge missing={row.recognition_missing} score={row[col.key]} />;
+  return renderCell(row[col.key], col.kind);
 }
 
 const FILTER_FIELD = "flex flex-col gap-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500";
@@ -576,48 +586,67 @@ export function CrmMasterTable({
           No records match the current filters.
         </div>
       ) : (
-        <div>
-          {/* Top horizontal scrollbar — directly above the header */}
-          <div
-            className="overflow-x-auto border border-b-0 border-slate-200 bg-white"
-            onScroll={() => mirrorScroll("top")}
-            ref={topRef}
-          >
-            <div style={{ height: 1, width: scrollWidth }} />
+        <>
+          {/* Mobile: one card per record — AGENTS.md §4. The desktop grid below is a genuine raw
+              dataset explorer (runtime columns, synced dual scrollbars, sticky header), so the two
+              halves are built differently but render every cell through the same masterCell(). */}
+          <div className="divide-y divide-slate-100 border border-slate-200 bg-white md:hidden">
+            {data.rows.map((row: CrmMasterRow) => (
+              <RowCard
+                columns={data.columns}
+                isOpen={expanded.has(row.id)}
+                key={row.id}
+                onToggle={() => toggleRaw(row.id)}
+                row={row}
+              />
+            ))}
           </div>
-          <div
-            className="max-h-[65vh] overflow-auto border border-slate-200 bg-white"
-            onScroll={() => mirrorScroll("body")}
-            ref={bodyRef}
-          >
-            <table className="w-full border-collapse text-left text-xs" ref={tableRef}>
-              <thead className="sticky top-0 z-10">
-                <tr className="border-b border-slate-200 bg-slate-100 text-slate-500">
-                  {data.columns.map((col) => (
-                    <th className="whitespace-nowrap px-3 py-2 font-semibold" key={col.key} title={col.note ?? undefined}>
-                      <span className={`inline-flex items-center gap-1 ${col.note ? "cursor-help" : ""}`}>
-                        {col.label}
-                        {col.note ? <Info aria-hidden="true" className="h-3 w-3 text-orange-400" /> : null}
-                      </span>
-                    </th>
+          <div className="hidden md:block">
+            {/* Top horizontal scrollbar — directly above the header */}
+            <div
+              className="overflow-x-auto border border-b-0 border-slate-200 bg-white"
+              onScroll={() => mirrorScroll("top")}
+              ref={topRef}
+            >
+              <div style={{ height: 1, width: scrollWidth }} />
+            </div>
+            <div
+              className="max-h-[65vh] overflow-auto border border-slate-200 bg-white"
+              onScroll={() => mirrorScroll("body")}
+              ref={bodyRef}
+            >
+              {/* `hidden md:block` on the wrapper is the gate that works in BOTH shells; the
+                  data attribute adds the portal shell's own max-width:767px display:none on top
+                  (enterprise-shell.tsx) and marks the tag itself as desktop-only. */}
+              <table className="w-full border-collapse text-left text-xs" data-portal-desktop-table ref={tableRef}>
+                <thead className="sticky top-0 z-10">
+                  <tr className="border-b border-slate-200 bg-slate-100 text-slate-500">
+                    {data.columns.map((col) => (
+                      <th className="whitespace-nowrap px-3 py-2 font-semibold" key={col.key} title={col.note ?? undefined}>
+                        <span className={`inline-flex items-center gap-1 ${col.note ? "cursor-help" : ""}`}>
+                          {col.label}
+                          {col.note ? <Info aria-hidden="true" className="h-3 w-3 text-orange-400" /> : null}
+                        </span>
+                      </th>
+                    ))}
+                    <th className="whitespace-nowrap px-3 py-2 text-right font-semibold">Raw</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.rows.map((row: CrmMasterRow) => (
+                    <RowGroup
+                      columns={data.columns}
+                      isOpen={expanded.has(row.id)}
+                      key={row.id}
+                      onToggle={() => toggleRaw(row.id)}
+                      row={row}
+                    />
                   ))}
-                  <th className="whitespace-nowrap px-3 py-2 text-right font-semibold">Raw</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.rows.map((row: CrmMasterRow) => (
-                  <RowGroup
-                    columns={data.columns}
-                    isOpen={expanded.has(row.id)}
-                    key={row.id}
-                    onToggle={() => toggleRaw(row.id)}
-                    row={row}
-                  />
-                ))}
-              </tbody>
-            </table>
+                </tbody>
+              </table>
+            </div>
           </div>
-        </div>
+        </>
       )}
       </div>
     </div>
@@ -646,13 +675,7 @@ function RowGroup({
       >
         {columns.map((col) => (
           <td className="whitespace-nowrap px-3 py-2" key={col.key}>
-            {col.key === "visit_time" ? (
-              <VisitTimeCell source={row.visit_time_source} value={row[col.key]} />
-            ) : col.key === "recognition_score" ? (
-              <RecognitionBadge missing={row.recognition_missing} score={row[col.key]} />
-            ) : (
-              renderCell(row[col.key], col.kind)
-            )}
+            {masterCell(col, row)}
           </td>
         ))}
         <td className="whitespace-nowrap px-3 py-2 text-right">
@@ -681,5 +704,56 @@ function RowGroup({
         </tr>
       ) : null}
     </>
+  );
+}
+
+/** The mobile twin of RowGroup: the same record, the same cells, and the same JSON expander —
+ * laid out as a card because a runtime-width table on a 375px screen is unreadable. The first
+ * column becomes the card title (it is the identifying one on every dataset) and the rest become
+ * label/value fields, so a dataset that gains a column gains a field here with no extra work. */
+function RowCard({
+  columns,
+  isOpen,
+  onToggle,
+  row,
+}: {
+  columns: readonly CrmMasterColumn[];
+  isOpen: boolean;
+  onToggle: () => void;
+  row: CrmMasterRow;
+}) {
+  // Same national-holiday tint the desktop row applies (the service sets `national_holiday`).
+  const isNationalHoliday = typeof row.national_holiday === "string" && row.national_holiday.length > 0;
+  const [first, ...rest] = columns;
+
+  return (
+    <PortalRecordCard
+      accent={isNationalHoliday ? "amber" : "slate"}
+      className={isNationalHoliday ? "bg-amber-100/70" : undefined}
+      meta={first ? first.label : undefined}
+      title={first ? masterCell(first, row) : `#${row.id}`}
+    >
+      {rest.length > 0 ? (
+        <PortalRecordFields fields={rest.map((col) => ({ label: col.label, value: masterCell(col, row) }))} />
+      ) : null}
+      <div className="mt-3">
+        <button
+          aria-expanded={isOpen}
+          className={`inline-flex items-center gap-1 border px-2 py-1 text-[11px] font-bold transition ${
+            isOpen ? "border-orange-400 bg-orange-50 text-orange-700" : "border-slate-200 text-slate-500 hover:bg-slate-50"
+          }`}
+          onClick={onToggle}
+          type="button"
+        >
+          <Braces aria-hidden="true" className="h-3.5 w-3.5" />
+          {isOpen ? "Hide" : "JSON"}
+        </button>
+      </div>
+      {isOpen ? (
+        <pre className="mt-2 max-h-96 overflow-auto bg-slate-950 px-3 py-2 text-[11px] leading-5 text-emerald-200">
+          {JSON.stringify(row.raw_payload ?? {}, null, 2)}
+        </pre>
+      ) : null}
+    </PortalRecordCard>
   );
 }

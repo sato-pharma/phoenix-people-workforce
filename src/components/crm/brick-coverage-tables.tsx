@@ -2,6 +2,12 @@
 
 import Link from "next/link";
 
+import {
+  PortalDesktopTable,
+  PortalRecordCard,
+  PortalRecordFields,
+  PortalResponsiveDataList,
+} from "@/components/employee-portal/portal-primitives";
 import { ExportXlsxButton } from "@/components/ui/export-xlsx-button";
 import { SortableTh, TableSearchInput } from "@/components/ui/sortable-table";
 import { useSortableTable } from "@/components/ui/use-sortable-table";
@@ -19,14 +25,20 @@ import type { CoverageFilterVacancy } from "@/lib/crm/coverage-filters";
 //
 // Every export below feeds the ORIGINAL `rows` prop, never the hook's filtered `table.rows` — the
 // sortable-table hook's own contract, so a search box left filled cannot silently truncate a file.
+//
+// All four tables are desktop-only, with a card list under md — AGENTS.md §4, and the
+// same PortalResponsiveDataList the rest of the CRM module moved to on 2026-08-21. The widest of
+// them is ~1,040px, so on a 375px phone the pre-split version was a sideways scroll inside a
+// container that gave no hint it could scroll. Card and desktop row both read their tone from the
+// one `toneOf`, so the two halves cannot disagree about where 50% and 80% sit.
 
 const THEAD = "px-3 py-2.5 text-[10px] font-black uppercase tracking-[0.12em] text-white";
 
 /** Shared with the rep table's bar: 80+ good, 50+ watch, below that a real gap. */
-function toneOf(pctValue: number): { bar: string; text: string } {
-  if (pctValue >= 80) return { bar: "bg-emerald-500", text: "text-emerald-700" };
-  if (pctValue >= 50) return { bar: "bg-amber-400", text: "text-amber-700" };
-  return { bar: "bg-rose-400", text: "text-rose-700" };
+function toneOf(pctValue: number): { accent: "amber" | "emerald" | "rose"; bar: string; text: string } {
+  if (pctValue >= 80) return { accent: "emerald", bar: "bg-emerald-500", text: "text-emerald-700" };
+  if (pctValue >= 50) return { accent: "amber", bar: "bg-amber-400", text: "text-amber-700" };
+  return { accent: "rose", bar: "bg-rose-400", text: "text-rose-700" };
 }
 
 function CoverageBar({ value }: { value: number }) {
@@ -129,29 +141,64 @@ export function BrickCoverageRepTable({
           title="Rep brick coverage"
         />
       </div>
-      <div className="overflow-x-auto">
-        <table className="w-full border-collapse text-xs">
-          <thead>
-            <tr className="bg-slate-900 text-left">
-              <SortableTh className={THEAD} label="Rep" onSort={table.toggleSort} sort={table.sort} sortKey="repName" />
-              <SortableTh className={THEAD} label="Line" onSort={table.toggleSort} sort={table.sort} sortKey="line" />
-              <SortableTh align="right" className={`${THEAD} text-right`} label="Sales covered" onSort={table.toggleSort} sort={table.sort} sortKey="salesCoveragePct" />
-              <SortableTh align="right" className={`${THEAD} text-right`} label="Units in territory" onSort={table.toggleSort} sort={table.sort} sortKey="unitsInTerritory" />
-              <SortableTh align="right" className={`${THEAD} text-right`} label="Bricks selling" onSort={table.toggleSort} sort={table.sort} sortKey="bricksWithSales" />
-              <SortableTh align="right" className={`${THEAD} text-right`} label="Bricks covered" onSort={table.toggleSort} sort={table.sort} sortKey="brickCoveragePct" />
-              <SortableTh align="right" className={`${THEAD} text-right text-amber-300`} label="Outside" onSort={table.toggleSort} sort={table.sort} sortKey="offTerritoryBricks" />
-              <SortableTh align="right" className={`${THEAD} text-right`} label="Check-ins" onSort={table.toggleSort} sort={table.sort} sortKey="checkins" />
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100">
-            {table.rows.length === 0 ? (
-              <tr>
-                <td className="px-3 py-6 text-center text-xs text-slate-400" colSpan={8}>
-                  No rep has both a territory and a GPS check-in in this month.
-                </td>
+      <PortalResponsiveDataList
+        empty={
+          <p className="px-3 py-6 text-center text-xs text-slate-400">
+            No rep has both a territory and a GPS check-in in this month.
+          </p>
+        }
+        getKey={(row) => row.repKey}
+        items={table.rows}
+        renderCard={(row) => (
+          <PortalRecordCard
+            accent={toneOf(row.salesCoveragePct).accent}
+            meta={`${row.line} · ${row.areaNames}`}
+            status={
+              <span className={`text-sm font-black ${toneOf(row.salesCoveragePct).text}`}>{row.salesCoveragePct}%</span>
+            }
+            title={
+              <Link className="hover:text-orange-600 hover:underline" href={contactListHref(row.repKey, month)}>
+                {row.repName}
+              </Link>
+            }
+          >
+            <PortalRecordFields
+              fields={[
+                { label: "Units in territory", value: row.unitsInTerritory.toLocaleString() },
+                { label: "Bricks selling", value: `${row.bricksCovered} / ${row.bricksWithSales}` },
+                {
+                  label: "Bricks covered",
+                  value: <span className={toneOf(row.brickCoveragePct).text}>{row.brickCoveragePct}%</span>,
+                },
+                {
+                  label: "Outside territory",
+                  value: (
+                    <span className={row.offTerritoryBricks > 0 ? "text-amber-700" : "text-slate-400"}>
+                      {row.offTerritoryBricks}
+                    </span>
+                  ),
+                },
+                { label: "Check-ins", value: row.checkins.toLocaleString() },
+              ]}
+            />
+          </PortalRecordCard>
+        )}
+        renderTable={() => (
+          <PortalDesktopTable className="text-xs" minWidth="1040px">
+            <thead>
+              <tr className="bg-slate-900 text-left">
+                <SortableTh className={THEAD} label="Rep" onSort={table.toggleSort} sort={table.sort} sortKey="repName" />
+                <SortableTh className={THEAD} label="Line" onSort={table.toggleSort} sort={table.sort} sortKey="line" />
+                <SortableTh align="right" className={`${THEAD} text-right`} label="Sales covered" onSort={table.toggleSort} sort={table.sort} sortKey="salesCoveragePct" />
+                <SortableTh align="right" className={`${THEAD} text-right`} label="Units in territory" onSort={table.toggleSort} sort={table.sort} sortKey="unitsInTerritory" />
+                <SortableTh align="right" className={`${THEAD} text-right`} label="Bricks selling" onSort={table.toggleSort} sort={table.sort} sortKey="bricksWithSales" />
+                <SortableTh align="right" className={`${THEAD} text-right`} label="Bricks covered" onSort={table.toggleSort} sort={table.sort} sortKey="brickCoveragePct" />
+                <SortableTh align="right" className={`${THEAD} text-right text-amber-300`} label="Outside" onSort={table.toggleSort} sort={table.sort} sortKey="offTerritoryBricks" />
+                <SortableTh align="right" className={`${THEAD} text-right`} label="Check-ins" onSort={table.toggleSort} sort={table.sort} sortKey="checkins" />
               </tr>
-            ) : (
-              table.rows.map((row) => (
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {table.rows.map((row) => (
                 <tr className="bg-white hover:bg-slate-50" key={row.repKey}>
                   <td className="whitespace-nowrap px-3 py-2 font-semibold text-slate-900">
                     <Link className="hover:text-orange-600 hover:underline" href={contactListHref(row.repKey, month)}>
@@ -173,11 +220,11 @@ export function BrickCoverageRepTable({
                   </td>
                   <td className="px-3 py-2 text-right text-slate-600">{row.checkins.toLocaleString()}</td>
                 </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
+              ))}
+            </tbody>
+          </PortalDesktopTable>
+        )}
+      />
     </div>
   );
 }
@@ -216,26 +263,49 @@ export function BrickCoverageBlindSpotTable({ monthLabel, rows }: { monthLabel: 
           title="Brick coverage blind spots"
         />
       </div>
-      <div className="overflow-x-auto">
-        <table className="w-full border-collapse text-xs">
-          <thead>
-            <tr className="bg-slate-900 text-left">
-              <SortableTh className={THEAD} label="Rep" onSort={table.toggleSort} sort={table.sort} sortKey="repName" />
-              <SortableTh className={THEAD} label="Brick never visited" onSort={table.toggleSort} sort={table.sort} sortKey="brickName" />
-              <SortableTh className={THEAD} label="Area" onSort={table.toggleSort} sort={table.sort} sortKey="areaName" />
-              <SortableTh align="right" className={`${THEAD} text-right`} label="Units sold" onSort={table.toggleSort} sort={table.sort} sortKey="units" />
-              <SortableTh align="right" className={`${THEAD} text-right text-rose-300`} label="Of his sales" onSort={table.toggleSort} sort={table.sort} sortKey="pctOfRepSales" />
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100">
-            {table.rows.length === 0 ? (
-              <tr>
-                <td className="px-3 py-6 text-center text-xs text-slate-400" colSpan={5}>
-                  Every selling brick in scope was visited this month.
-                </td>
+      <PortalResponsiveDataList
+        empty={
+          <p className="px-3 py-6 text-center text-xs text-slate-400">
+            Every selling brick in scope was visited this month.
+          </p>
+        }
+        getKey={(row, index) => `${row.repKey}-${row.brickName}-${index}`}
+        items={table.rows}
+        renderCard={(row) => (
+          <PortalRecordCard
+            accent={row.pctOfRepSales >= 25 ? "rose" : "slate"}
+            meta={`${row.repName} · ${row.line} · ${row.areaName}`}
+            status={<span className="text-sm font-black text-slate-900">{row.units.toLocaleString()}</span>}
+            title={row.brickName}
+          >
+            <PortalRecordFields
+              fields={[
+                { label: "Units sold there", value: row.units.toLocaleString() },
+                {
+                  label: "Of his sales",
+                  value: (
+                    <span className={row.pctOfRepSales >= 25 ? "text-rose-700" : "text-slate-600"}>
+                      {row.pctOfRepSales}%
+                    </span>
+                  ),
+                },
+              ]}
+            />
+          </PortalRecordCard>
+        )}
+        renderTable={() => (
+          <PortalDesktopTable className="text-xs" minWidth="820px">
+            <thead>
+              <tr className="bg-slate-900 text-left">
+                <SortableTh className={THEAD} label="Rep" onSort={table.toggleSort} sort={table.sort} sortKey="repName" />
+                <SortableTh className={THEAD} label="Brick never visited" onSort={table.toggleSort} sort={table.sort} sortKey="brickName" />
+                <SortableTh className={THEAD} label="Area" onSort={table.toggleSort} sort={table.sort} sortKey="areaName" />
+                <SortableTh align="right" className={`${THEAD} text-right`} label="Units sold" onSort={table.toggleSort} sort={table.sort} sortKey="units" />
+                <SortableTh align="right" className={`${THEAD} text-right text-rose-300`} label="Of his sales" onSort={table.toggleSort} sort={table.sort} sortKey="pctOfRepSales" />
               </tr>
-            ) : (
-              table.rows.map((row, index) => (
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {table.rows.map((row, index) => (
                 <tr className="bg-white hover:bg-slate-50" key={`${row.repKey}-${row.brickName}-${index}`}>
                   <td className="whitespace-nowrap px-3 py-2 font-semibold text-slate-900">
                     {row.repName}
@@ -248,11 +318,11 @@ export function BrickCoverageBlindSpotTable({ monthLabel, rows }: { monthLabel: 
                     {row.pctOfRepSales}%
                   </td>
                 </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
+              ))}
+            </tbody>
+          </PortalDesktopTable>
+        )}
+      />
     </div>
   );
 }
@@ -266,32 +336,52 @@ export function BrickCoverageUnmeasuredTable({ month, rows }: { month: string; r
   if (rows.length === 0) return null;
   return (
     <div className="p-5">
-      <div className="overflow-x-auto">
-        <table className="w-full border-collapse text-xs">
-          <thead>
-            <tr className="bg-slate-900 text-left">
-              <th className={THEAD}>Rep</th>
-              <th className={THEAD}>Line</th>
-              <th className={THEAD}>Territory</th>
-              <th className={THEAD}>Why not scored</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100">
-            {rows.map((row) => (
-              <tr className="bg-white hover:bg-slate-50" key={row.repKey}>
-                <td className="whitespace-nowrap px-3 py-2 font-semibold text-slate-900">
-                  <Link className="hover:text-orange-600 hover:underline" href={contactListHref(row.repKey, month)}>
-                    {row.repName}
-                  </Link>
-                </td>
-                <td className="whitespace-nowrap px-3 py-2 text-slate-600">{row.line}</td>
-                <td className="whitespace-nowrap px-3 py-2 text-slate-600">{row.areaNames}</td>
-                <td className="whitespace-nowrap px-3 py-2 text-amber-700">{row.reason}</td>
+      <PortalResponsiveDataList
+        empty={null}
+        getKey={(row) => row.repKey}
+        items={rows}
+        renderCard={(row) => (
+          <PortalRecordCard
+            accent="amber"
+            meta={`${row.line} · ${row.areaNames}`}
+            title={
+              <Link className="hover:text-orange-600 hover:underline" href={contactListHref(row.repKey, month)}>
+                {row.repName}
+              </Link>
+            }
+          >
+            <PortalRecordFields
+              fields={[{ label: "Why not scored", value: <span className="text-amber-700">{row.reason}</span> }]}
+            />
+          </PortalRecordCard>
+        )}
+        renderTable={() => (
+          <PortalDesktopTable className="text-xs" minWidth="760px">
+            <thead>
+              <tr className="bg-slate-900 text-left">
+                <th className={THEAD}>Rep</th>
+                <th className={THEAD}>Line</th>
+                <th className={THEAD}>Territory</th>
+                <th className={THEAD}>Why not scored</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {rows.map((row) => (
+                <tr className="bg-white hover:bg-slate-50" key={row.repKey}>
+                  <td className="whitespace-nowrap px-3 py-2 font-semibold text-slate-900">
+                    <Link className="hover:text-orange-600 hover:underline" href={contactListHref(row.repKey, month)}>
+                      {row.repName}
+                    </Link>
+                  </td>
+                  <td className="whitespace-nowrap px-3 py-2 text-slate-600">{row.line}</td>
+                  <td className="whitespace-nowrap px-3 py-2 text-slate-600">{row.areaNames}</td>
+                  <td className="whitespace-nowrap px-3 py-2 text-amber-700">{row.reason}</td>
+                </tr>
+              ))}
+            </tbody>
+          </PortalDesktopTable>
+        )}
+      />
     </div>
   );
 }
@@ -308,26 +398,36 @@ export function BrickCoverageVacancyTable({ rows }: { rows: CoverageFilterVacanc
   if (rows.length === 0) return null;
   return (
     <div className="p-5">
-      <div className="overflow-x-auto">
-        <table className="w-full border-collapse text-xs">
-          <thead>
-            <tr className="bg-slate-900 text-left">
-              <th className={THEAD}>Territory</th>
-              <th className={THEAD}>Line</th>
-              <th className={THEAD}>Region</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100">
-            {rows.map((row) => (
-              <tr className="bg-white hover:bg-slate-50" key={`${row.lineCode}:${row.areaCode}:${row.seatId}`}>
-                <td className="whitespace-nowrap px-3 py-2 font-semibold text-slate-900">{row.areaName}</td>
-                <td className="whitespace-nowrap px-3 py-2 text-slate-600">{row.lineName}</td>
-                <td className="whitespace-nowrap px-3 py-2 text-slate-600">{row.regionName}</td>
+      <PortalResponsiveDataList
+        empty={null}
+        getKey={(row) => `${row.lineCode}:${row.areaCode}:${row.seatId}`}
+        items={rows}
+        renderCard={(row) => (
+          <PortalRecordCard accent="slate" meta={row.lineName} title={row.areaName}>
+            <PortalRecordFields fields={[{ label: "Region", value: row.regionName }]} />
+          </PortalRecordCard>
+        )}
+        renderTable={() => (
+          <PortalDesktopTable className="text-xs" minWidth="620px">
+            <thead>
+              <tr className="bg-slate-900 text-left">
+                <th className={THEAD}>Territory</th>
+                <th className={THEAD}>Line</th>
+                <th className={THEAD}>Region</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {rows.map((row) => (
+                <tr className="bg-white hover:bg-slate-50" key={`${row.lineCode}:${row.areaCode}:${row.seatId}`}>
+                  <td className="whitespace-nowrap px-3 py-2 font-semibold text-slate-900">{row.areaName}</td>
+                  <td className="whitespace-nowrap px-3 py-2 text-slate-600">{row.lineName}</td>
+                  <td className="whitespace-nowrap px-3 py-2 text-slate-600">{row.regionName}</td>
+                </tr>
+              ))}
+            </tbody>
+          </PortalDesktopTable>
+        )}
+      />
     </div>
   );
 }

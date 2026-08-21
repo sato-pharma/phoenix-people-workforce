@@ -1,6 +1,11 @@
 import { DoctorCoverageDoctorTable, DoctorCoverageRepTable } from "@/components/crm/doctor-coverage-tables";
 import { DoctorCoverageFilterBar } from "@/components/crm/doctor-coverage-filter-bar";
 import {
+  PortalRecordCard,
+  PortalRecordFields,
+  PortalResponsiveDataList,
+} from "@/components/employee-portal/portal-primitives";
+import {
   describeCoverageSelection,
   type CoverageFilterSelection,
   type CoverageFilterTree,
@@ -11,6 +16,11 @@ import type { SfeDoctorCoverageBoard } from "@/lib/crm/sfe-doctor-coverage";
 // Super Admin) and the NSM portal twin; only `monthBasePath` differs. Styling copies the CEO/SFE
 // command-center vocabulary exactly (Section shells, KPI tiles, divide-y mini lists, orange
 // accent) — see ceo-phase-b.tsx; never a one-off look.
+//
+// The call list is the one place on this board that was a table in all but tag name — seven fixed
+// columns held apart by min-w-* on a single flex row. It now splits like the real tables do
+// (AGENTS.md §4): cards under md, the wide row list above. The KPI tiles and the mix/trend lists
+// above already reflow on their own grids and need no split.
 
 function Section({
   action,
@@ -194,31 +204,59 @@ export function DoctorCoverageBoard({
           }
           title={board.isCurrentMonth ? `Call list — ${board.pace.daysRemaining} days left` : "Call list — month closed"}
         >
-          <div className="overflow-x-auto">
-            <div className="divide-y divide-slate-100">
-              {board.callList.map((doctor, index) => (
-                <div className="flex items-center gap-3 whitespace-nowrap px-5 py-2" key={doctor.contactCrmId}>
-                  <span className="w-6 text-[11px] font-black text-slate-300">#{index + 1}</span>
-                  <span
-                    className={`w-5 text-[11px] font-black ${
-                      doctor.gradeTier === "A" ? "text-rose-700" : doctor.gradeTier === "B" ? "text-amber-700" : "text-slate-400"
-                    }`}
-                  >
-                    {doctor.gradeTier}
-                  </span>
-                  <span className="min-w-56 flex-1 text-sm font-semibold text-slate-800">{doctor.contactName}</span>
-                  <span className="min-w-40 text-xs text-slate-400">{doctor.speciality ?? "Unspecified"}</span>
-                  <span className="min-w-44 text-xs font-medium text-slate-600">{doctor.repName}</span>
-                  <span className="w-28 text-right text-xs font-black text-slate-900">
-                    needs {doctor.visitsNeeded}
-                  </span>
-                  <span className="w-32 text-right text-xs text-slate-400">
-                    {doctor.lastVisitDate ? `last ${doctor.lastVisitDate}` : "never seen"}
-                  </span>
+          <PortalResponsiveDataList
+            empty={null}
+            getKey={(doctor) => String(doctor.contactCrmId)}
+            items={board.callList}
+            renderCard={(doctor, index) => (
+              <PortalRecordCard
+                accent={doctor.gradeTier === "A" ? "rose" : doctor.gradeTier === "B" ? "amber" : "slate"}
+                meta={`#${index + 1} · ${doctor.speciality ?? "Unspecified"}`}
+                status={
+                  <span className="whitespace-nowrap text-xs font-black text-slate-900">needs {doctor.visitsNeeded}</span>
+                }
+                title={doctor.contactName}
+              >
+                <PortalRecordFields
+                  fields={[
+                    { label: "Grade", value: doctor.gradeTier },
+                    { label: "Rep", value: doctor.repName },
+                    {
+                      label: "Last visit",
+                      value: doctor.lastVisitDate ?? "Never seen",
+                    },
+                  ]}
+                />
+              </PortalRecordCard>
+            )}
+            renderTable={() => (
+              <div className="hidden overflow-x-auto md:block">
+                <div className="divide-y divide-slate-100">
+                  {board.callList.map((doctor, index) => (
+                    <div className="flex items-center gap-3 whitespace-nowrap px-5 py-2" key={doctor.contactCrmId}>
+                      <span className="w-6 text-[11px] font-black text-slate-300">#{index + 1}</span>
+                      <span
+                        className={`w-5 text-[11px] font-black ${
+                          doctor.gradeTier === "A" ? "text-rose-700" : doctor.gradeTier === "B" ? "text-amber-700" : "text-slate-400"
+                        }`}
+                      >
+                        {doctor.gradeTier}
+                      </span>
+                      <span className="min-w-56 flex-1 text-sm font-semibold text-slate-800">{doctor.contactName}</span>
+                      <span className="min-w-40 text-xs text-slate-400">{doctor.speciality ?? "Unspecified"}</span>
+                      <span className="min-w-44 text-xs font-medium text-slate-600">{doctor.repName}</span>
+                      <span className="w-28 text-right text-xs font-black text-slate-900">
+                        needs {doctor.visitsNeeded}
+                      </span>
+                      <span className="w-32 text-right text-xs text-slate-400">
+                        {doctor.lastVisitDate ? `last ${doctor.lastVisitDate}` : "never seen"}
+                      </span>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
-          </div>
+              </div>
+            )}
+          />
         </Section>
       ) : null}
 

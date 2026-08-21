@@ -4,6 +4,12 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2, Search } from "lucide-react";
 
+import {
+  PortalDesktopTable,
+  PortalRecordCard,
+  PortalRecordFields,
+  PortalResponsiveDataList,
+} from "@/components/employee-portal/portal-primitives";
 import type { UnmappedCrmIdentityRow, UnmappedCrmResolutionAction } from "@/lib/visits-report/types";
 
 const RESOLUTION_OPTIONS: Array<{ label: string; value: UnmappedCrmResolutionAction }> = [
@@ -169,53 +175,85 @@ export function CrmUnmappedIdentitiesPanel({
         </div>
       )}
 
-      <div className="overflow-x-auto border border-slate-200 bg-white">
-        <table className="w-full min-w-[1100px] text-left text-sm">
-          <thead className="bg-slate-900">
-            <tr>
-              <th className="px-3 py-3 text-[10px] font-black uppercase tracking-wider text-slate-300">CRM ID</th>
-              <th className="px-3 py-3 text-[10px] font-black uppercase tracking-wider text-slate-300">CRM Name</th>
-              <th className="px-3 py-3 text-[10px] font-black uppercase tracking-wider text-slate-300">Seen As</th>
-              <th className="px-3 py-3 text-[10px] font-black uppercase tracking-wider text-slate-300">Unmapped Visits</th>
-              <th className="px-3 py-3 text-[10px] font-black uppercase tracking-wider text-slate-300">First Seen</th>
-              <th className="px-3 py-3 text-[10px] font-black uppercase tracking-wider text-slate-300">Last Seen</th>
-              <th className="px-3 py-3 text-[10px] font-black uppercase tracking-wider text-slate-300">Resolution</th>
-              <th className="px-3 py-3 text-[10px] font-black uppercase tracking-wider text-slate-300">Action</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-orange-100">
-            {filtered.length === 0 ? (
-              <tr>
-                <td colSpan={8} className="px-3 py-8 text-center text-sm text-slate-500">
-                  {rows.length === 0 ? "No unmapped CRM identities — everyone maps to an HR ID." : "No identities match this search."}
-                </td>
-              </tr>
-            ) : (
-              filtered.map((identity) => (
-                <tr key={identity.crmId} className="odd:bg-white even:bg-orange-50/30">
-                  <td className="whitespace-nowrap px-3 py-2.5 font-semibold text-slate-700">{identity.crmId}</td>
-                  <td className="px-3 py-2.5 font-medium text-slate-900">{identity.name}</td>
-                  <td className="whitespace-nowrap px-3 py-2.5 text-slate-600">{identity.roles.join(" + ")}</td>
-                  <td className="whitespace-nowrap px-3 py-2.5 font-semibold text-rose-500">{identity.visitCount}</td>
-                  <td className="whitespace-nowrap px-3 py-2.5">{formatDate(identity.firstSeen)}</td>
-                  <td className="whitespace-nowrap px-3 py-2.5">{formatDate(identity.lastSeen)}</td>
-                  <td className="px-3 py-2.5">
-                    <ResolutionCell identity={identity} onResolved={handleResolved} />
-                  </td>
-                  <td className="whitespace-nowrap px-3 py-2.5">
-                    <button
-                      type="button"
-                      onClick={() => viewInVisits(identity)}
-                      className="h-8 border border-[#D8E0EA] bg-white px-2.5 text-xs font-bold text-[#0F172A] shadow-sm transition hover:border-[#FDBA74] hover:text-[#F97316]"
-                    >
-                      View in Visits
-                    </button>
-                  </td>
+      {/* Desktop keeps the eight-column punch list; mobile gets one card per identity, resolution
+          control and all — AGENTS.md §4. Both halves drive the same handleResolved/viewInVisits. */}
+      <div className="border border-slate-200 bg-white">
+        <PortalResponsiveDataList
+          empty={
+            <p className="px-3 py-8 text-center text-sm text-slate-500">
+              {rows.length === 0 ? "No unmapped CRM identities — everyone maps to an HR ID." : "No identities match this search."}
+            </p>
+          }
+          getKey={(identity) => String(identity.crmId)}
+          items={filtered}
+          renderCard={(identity) => (
+            <PortalRecordCard
+              accent="rose"
+              actions={
+                <>
+                  <ResolutionCell identity={identity} onResolved={handleResolved} />
+                  <button
+                    type="button"
+                    onClick={() => viewInVisits(identity)}
+                    className="h-8 border border-[#D8E0EA] bg-white px-2.5 text-xs font-bold text-[#0F172A] shadow-sm transition hover:border-[#FDBA74] hover:text-[#F97316]"
+                  >
+                    View in Visits
+                  </button>
+                </>
+              }
+              meta={`CRM ID ${identity.crmId} · ${identity.roles.join(" + ")}`}
+              status={<span className="text-sm font-black text-rose-500">{identity.visitCount}</span>}
+              title={identity.name}
+            >
+              <PortalRecordFields
+                fields={[
+                  { label: "First seen", value: formatDate(identity.firstSeen) },
+                  { label: "Last seen", value: formatDate(identity.lastSeen) },
+                ]}
+              />
+            </PortalRecordCard>
+          )}
+          renderTable={() => (
+            <PortalDesktopTable minWidth="1100px">
+              <thead className="bg-slate-900">
+                <tr>
+                  <th className="px-3 py-3 text-[10px] font-black uppercase tracking-wider text-slate-300">CRM ID</th>
+                  <th className="px-3 py-3 text-[10px] font-black uppercase tracking-wider text-slate-300">CRM Name</th>
+                  <th className="px-3 py-3 text-[10px] font-black uppercase tracking-wider text-slate-300">Seen As</th>
+                  <th className="px-3 py-3 text-[10px] font-black uppercase tracking-wider text-slate-300">Unmapped Visits</th>
+                  <th className="px-3 py-3 text-[10px] font-black uppercase tracking-wider text-slate-300">First Seen</th>
+                  <th className="px-3 py-3 text-[10px] font-black uppercase tracking-wider text-slate-300">Last Seen</th>
+                  <th className="px-3 py-3 text-[10px] font-black uppercase tracking-wider text-slate-300">Resolution</th>
+                  <th className="px-3 py-3 text-[10px] font-black uppercase tracking-wider text-slate-300">Action</th>
                 </tr>
-              ))
-            )}
-          </tbody>
-        </table>
+              </thead>
+              <tbody className="divide-y divide-orange-100">
+                {filtered.map((identity) => (
+                  <tr key={identity.crmId} className="odd:bg-white even:bg-orange-50/30">
+                    <td className="whitespace-nowrap px-3 py-2.5 font-semibold text-slate-700">{identity.crmId}</td>
+                    <td className="px-3 py-2.5 font-medium text-slate-900">{identity.name}</td>
+                    <td className="whitespace-nowrap px-3 py-2.5 text-slate-600">{identity.roles.join(" + ")}</td>
+                    <td className="whitespace-nowrap px-3 py-2.5 font-semibold text-rose-500">{identity.visitCount}</td>
+                    <td className="whitespace-nowrap px-3 py-2.5">{formatDate(identity.firstSeen)}</td>
+                    <td className="whitespace-nowrap px-3 py-2.5">{formatDate(identity.lastSeen)}</td>
+                    <td className="px-3 py-2.5">
+                      <ResolutionCell identity={identity} onResolved={handleResolved} />
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-2.5">
+                      <button
+                        type="button"
+                        onClick={() => viewInVisits(identity)}
+                        className="h-8 border border-[#D8E0EA] bg-white px-2.5 text-xs font-bold text-[#0F172A] shadow-sm transition hover:border-[#FDBA74] hover:text-[#F97316]"
+                      >
+                        View in Visits
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </PortalDesktopTable>
+          )}
+        />
       </div>
     </div>
   );
