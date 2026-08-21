@@ -38,6 +38,7 @@ import { useDialogA11y } from "@/components/ui/use-dialog-a11y";
 import { PlanConversationThread } from "@/components/weekly-planning/plan-conversation-thread";
 import type { AccessContext } from "@/lib/auth/permissions";
 import { hrIdsMatch } from "@/lib/hr-id";
+import { APPROVED_PLANNING_REGIONS, canonicalPlanningRegionName, planningAreaOptions, planningAreasForRegion } from "@/lib/weekly-planning/regions";
 import { currentCairoDateOnlyIso, PHOENIX_BUSINESS_TIME_ZONE } from "@/lib/i18n/format";
 import { sameLineBookingWarning, type SameLinePlanBooking } from "@/lib/weekly-planning/calendar";
 import type { EmployeePlanKind, EmployeePlanStatus, PlanSlot, PlanWorkweek } from "@/lib/weekly-planning/plan-v1";
@@ -88,6 +89,15 @@ type DraftItem = EmployeePlanItemInput & {
 };
 
 type MedicalRepOption = EmployeePlansWorkspace["medicalRepOptions"][number];
+// Everything the Area picker needs, bundled so it can be threaded to the mobile sheet as one
+// prop. `seats` is the AU seat model and is authoritative; the roster pair is only a fallback
+// for the case where the seat map could not be loaded at all.
+type AreaSource = {
+  seats: EmployeePlansWorkspace["planningAreaSeats"];
+  ownRegionCode: string | null;
+  roster: MedicalRepOption[];
+  ownSeat: { areaName?: string | null; regionName?: string | null } | null;
+};
 type DayMode = "full" | "split";
 type PlanningActivityValue = EmployeePlanItemInput["activityType"] | "Coaching";
 
@@ -103,14 +113,7 @@ const AM_END = "13:00";
 const PM_START = "13:00";
 const PM_END = "17:00";
 
-const approvedPlanningRegions = [
-  "ALEX-BHR",
-  "Cairo",
-  "Delta 1",
-  "Delta 2",
-  "Giza",
-  "Upper Egypt",
-] as const;
+const approvedPlanningRegions = APPROVED_PLANNING_REGIONS;
 
 const noGeographyActivities = new Set<EmployeePlanItemInput["activityType"]>([
   "Office",
@@ -448,19 +451,10 @@ function activityRule(value: EmployeePlanItemInput["activityType"], activityTitl
   };
 }
 
+// The UI wants "" rather than null for an unrecognised region, so it can feed a <select>
+// value directly. Everything else is the shared canonicaliser.
 function canonicalRegion(value: string | null | undefined) {
-  const raw = String(value ?? "").trim();
-  if (!raw) return "";
-  const normalized = raw.toLowerCase().replace(/[()]/g, "").replace(/\s+/g, " ").trim();
-  if (["alex-bhr", "alex bhr", "alex/bhr", "alex", "alexandria", "bhr", "beheira"].includes(normalized)) {
-    return "ALEX-BHR";
-  }
-  if (normalized === "cairo") return "Cairo";
-  if (normalized === "delta 1" || normalized === "delta-1") return "Delta 1";
-  if (normalized === "delta 2" || normalized === "delta-2") return "Delta 2";
-  if (normalized === "giza") return "Giza";
-  if (normalized === "upper egypt") return "Upper Egypt";
-  return "";
+  return canonicalPlanningRegionName(value) ?? "";
 }
 
 function regionOptions(currentRegion?: string | null) {
@@ -877,24 +871,18 @@ function needsLineSelection(options: MedicalRepOption[]): boolean {
   return lineOptionsFromReps(options).length > 1;
 }
 
-// Every area in the region is listed for every activity type, including areas whose only
-// Medical Rep seat is currently vacant — Double Visit/Coaching no longer hide those (see
-// areaHasAssignableRep for the "no rep" display/validation handling once one is picked).
-function areasForRegion(options: MedicalRepOption[], region: string): string[] {
-  const targetRegion = canonicalRegion(region);
-  if (!targetRegion) return [];
-  const seen = new Set<string>();
-  const result: string[] = [];
-  for (const rep of options) {
-    if (canonicalRegion(rep.regionName) === targetRegion && rep.areaName) {
-      const k = rep.areaName.toLowerCase();
-      if (!seen.has(k)) {
-        seen.add(k);
-        result.push(rep.areaName);
-      }
-    }
-  }
-  return result.sort((a, b) => a.localeCompare(b));
+// The areas offered for a region. The AU seat model decides (planningAreaOptions): a rep gets
+// their own DM district, so an Upper Egypt 1 rep sees Minia 1 / Minia 2 / Beni Suef and never
+// Assuit or Qena. Vacant areas are included on purpose; areaHasAssignableRep handles the
+// "no rep for this area" case separately once one is picked.
+//
+// The roster-derived list survives only as a fallback for when the seat map is unavailable —
+// it cannot see an area whose occupant has a blank area_name (Beni Suef), and it cannot
+// express the district split at all.
+function areasForRegion(source: AreaSource, region: string): string[] {
+  const fromSeatModel = planningAreaOptions(source.seats, region, source.ownRegionCode);
+  if (fromSeatModel.length > 0) return fromSeatModel;
+  return planningAreasForRegion(source.roster, region, source.ownSeat);
 }
 
 /** Map raw service/DB/workflow errors to short, friendly, action-oriented messages. UI-only. */
@@ -1183,6 +1171,18 @@ export function PlansWorkspace({
   const noSameLineReps = needsAssignedRep && workspace.medicalRepOptions.filter((rep) => !isVacantMedicalRep(rep)).length === 0;
   const noPlanRows = rows.length === 0;
   const lineOptions = useMemo(() => lineOptionsFromReps(workspace.medicalRepOptions), [workspace.medicalRepOptions]);
+
+  // Everything the Area picker reads, assembled once. The AU seat model decides; the roster
+  // pair below it is only reached when that map could not be loaded.
+  const areaSource = useMemo<AreaSource>(
+    () => ({
+      ownRegionCode: workspace.currentEmployee?.regionCode ?? null,
+      ownSeat: workspace.currentEmployee ?? null,
+      roster: workspace.medicalRepOptions,
+      seats: workspace.planningAreaSeats,
+    }),
+    [workspace.currentEmployee, workspace.medicalRepOptions, workspace.planningAreaSeats],
+  );
   const tableNeedsLine = lineOptions.length > 1;
   const submitBlocked = !canEdit || submitValidationIssues.length > 0 || incompleteDays.length > 0 || noSameLineReps || noPlanRows;
   const prefillScopeKey = `${workspace.currentEmployee?.hrId ?? ""}|${activeKind}|${period.periodStartDate}`;
@@ -2146,6 +2146,7 @@ export function PlansWorkspace({
               onDelete={() => deleteRow(sheetRow.key)}
               onUpdate={(field, value) => updateRow(sheetRow.key, field, value)}
               onUpdateLine={(value) => updateRowLine(sheetRow.key, value)}
+              areaSource={areaSource}
               dayMode={sheetGroup?.mode ?? "full"}
               dayNote={sheetGroup?.dayNote ?? sheetRow.notes ?? ""}
               conflictWarning={rowConflictWarning.get(sheetRow.key) ?? null}
@@ -2420,7 +2421,7 @@ export function PlansWorkspace({
                       <Fragment key={group.activityDate}>
                         {group.rows.map((row, slotIndex) => {
                           const rule = activityRule(row.activityType, row.activityTitle);
-                          const availableAreas = areasForRegion(workspace.medicalRepOptions, row.locationText ?? "");
+                          const availableAreas = areasForRegion(areaSource, row.locationText ?? "");
                           const autoRep = rule.autoRep ? autoRepForArea(workspace.medicalRepOptions, row.area ?? "", row.lineFilter) : null;
                           const currentRegionOptions = regionOptions(row.locationText);
                           const showLineSelect = tableNeedsLine && rule.showRep;
@@ -3002,6 +3003,7 @@ function RowEditSheet({
   onDayNote,
   onDelete,
   onUpdate,
+  areaSource,
   onUpdateLine,
   row,
 }: {
@@ -3011,6 +3013,7 @@ function RowEditSheet({
   dayNote: string;
   locked?: boolean;
   lockedLabel?: string;
+  areaSource: AreaSource;
   medicalRepOptions: MedicalRepOption[];
   onClose: () => void;
   onDayMode: (mode: DayMode) => void;
@@ -3021,7 +3024,7 @@ function RowEditSheet({
   row: DraftItem;
 }) {
   const rule = activityRule(row.activityType, row.activityTitle);
-  const availableAreas = areasForRegion(medicalRepOptions, row.locationText ?? "");
+  const availableAreas = areasForRegion(areaSource, row.locationText ?? "");
   const autoRep = rule.autoRep ? autoRepForArea(medicalRepOptions, row.area ?? "", row.lineFilter) : null;
   const currentRegionOptions = regionOptions(row.locationText);
   const lineOptions = lineOptionsFromReps(medicalRepOptions);
