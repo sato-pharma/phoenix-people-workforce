@@ -128,16 +128,43 @@ export function normalizeRegionCode(value: string | null | undefined) {
  * Qena. When they pick some other region (a trip outside their territory) the whole of that
  * region's areas for their line are offered, so the picker is never empty.
  */
+export type PlanningOwner = {
+  /** The area on the plan owner's employee row. Preferred: (line, area) determines the
+   *  district in the au model, whereas the region columns are hand-editable and do drift. */
+  areaName?: string | null;
+  /** Fallback only, and often null in practice. */
+  regionCode?: string | null;
+};
+
+/**
+ * Which DM district the plan owner sits in. Their AREA decides, because the au seat model
+ * derives region from (line, area) — see region-resolver.ts. The region columns on the
+ * employee row are hand-editable and have been observed contradicting the area (a rep whose
+ * area is Minia 1, a UE-1 area, carrying region_name "Upper Egypt 2" and a null region_code),
+ * so they are only consulted when the area resolves to nothing.
+ */
+function resolveOwnDistrict(
+  seats: readonly PlanningAreaSeat[],
+  owner: PlanningOwner | null | undefined,
+): string {
+  const areaKey = owner?.areaName?.trim().toLowerCase();
+  if (areaKey) {
+    const hit = seats.find((seat) => seat.areaName?.trim().toLowerCase() === areaKey);
+    if (hit) return normalizeRegionCode(hit.regionCode);
+  }
+  return normalizeRegionCode(owner?.regionCode);
+}
+
 export function planningAreaOptions(
   seats: readonly PlanningAreaSeat[],
   selectedRegion: string | null | undefined,
-  ownRegionCode: string | null | undefined,
+  owner: PlanningOwner | null | undefined,
 ): string[] {
   const targetRegion = canonicalPlanningRegionName(selectedRegion);
   if (!targetRegion) return [];
 
   const inRegion = seats.filter((seat) => canonicalPlanningRegionName(seat.regionName) === targetRegion);
-  const ownCode = normalizeRegionCode(ownRegionCode);
+  const ownCode = resolveOwnDistrict(seats, owner);
   const ownDistrict = ownCode
     ? inRegion.filter((seat) => normalizeRegionCode(seat.regionCode) === ownCode)
     : [];
