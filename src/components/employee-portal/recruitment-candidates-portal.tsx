@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { CvPreviewModal } from "@/components/recruitment/cv-preview-modal";
+import { APPLIED_FOR_SOURCE_LABEL, candidateRowAppliedFor } from "@/lib/recruitment/applied-for";
 import type { ApplicationWithContext } from "@/lib/recruitment/applications";
 import {
   CANDIDATE_STATUS_NOTE_MAX_LENGTH,
@@ -429,11 +430,21 @@ function SentCandidateCard({ candidate: initial }: { candidate: Candidate }) {
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
           <p className="text-base font-semibold text-slate-900">{candidate.fullName}</p>
-          <p className="text-xs text-slate-500">
-            {candidate.appliedForJobTitle?.trim()
-              ? `Applying for ${candidate.appliedForJobTitle}`
-              : "No role stated on the application"}
-          </p>
+          {/* The one question a manager opens this card to answer. Read through the same evidence
+              ladder the pool table uses, because `applied_for_job_title` is filled on 15 of the 555
+              production rows — reading only that made this line say "no role stated" on 540 CVs.
+              The source is named in the hover text, so a derived role never reads as a stated one. */}
+          {(() => {
+            const appliedFor = candidateRowAppliedFor(candidate);
+            return (
+              <p
+                className="text-xs text-slate-500"
+                title={appliedFor.source ? `${APPLIED_FOR_SOURCE_LABEL[appliedFor.source]}: ${appliedFor.evidence}` : undefined}
+              >
+                {appliedFor.text ? `Applying for ${appliedFor.text}` : "No role stated on the application"}
+              </p>
+            );
+          })()}
         </div>
         <span className="inline-block rounded border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] font-semibold text-slate-600">
           {candidateStatusLabel(candidate.status)}
