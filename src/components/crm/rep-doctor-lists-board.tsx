@@ -144,8 +144,8 @@ export function RepDoctorListsBoardView({
               {board.repsAllCampaign > 0 ? (
                 <p className="border border-sky-200 bg-sky-50 px-3 py-2 text-[11px] font-semibold text-sky-800">
                   {board.repsAllCampaign} reps reached none of their list but logged campaign calls instead. A campaign
-                  visit records that the rep worked and never which doctor they saw, so it cannot count toward adherence
-                  — read their 0% as &ldquo;no regular visits&rdquo;, not as an idle month.
+                  visit records that the rep worked and never which doctor they saw, so it cannot count toward coverage
+                  or frequency — read their 0% as &ldquo;no regular visits&rdquo;, not as an idle month.
                 </p>
               ) : null}
               {board.totals.unverifiedCalls > 0 ? (
@@ -163,7 +163,7 @@ export function RepDoctorListsBoardView({
               {board.totals.plannedAccounts > 0 ? (
                 <p className="border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] font-semibold text-slate-600">
                   {board.totals.plannedAccounts} pharmacies, hospitals and contract accounts are also on these lists. They
-                  are counted separately — a pharmacy is not a doctor, and adherence above measures doctors only.
+                  are counted separately — a pharmacy is not a doctor, and both KPIs above measure doctors only.
                 </p>
               ) : null}
               {totals.notDueDoctors > 0 ? (
