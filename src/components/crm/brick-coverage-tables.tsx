@@ -1,0 +1,333 @@
+"use client";
+
+import Link from "next/link";
+
+import { ExportXlsxButton } from "@/components/ui/export-xlsx-button";
+import { SortableTh, TableSearchInput } from "@/components/ui/sortable-table";
+import { useSortableTable } from "@/components/ui/use-sortable-table";
+import type {
+  BrickCoverageBlindSpot,
+  BrickCoverageRepRow,
+  BrickCoverageUnmeasured,
+} from "@/lib/crm/brick-coverage";
+import type { CoverageFilterVacancy } from "@/lib/crm/coverage-filters";
+
+// Client half of the Brick Coverage board: the three sortable tables. Styling copies the Doctor
+// Coverage / CEO table vocabulary verbatim (doctor-coverage-tables.tsx, ceo-dv-table.tsx) — flat
+// borders, slate-900 header rows, emerald/amber/rose tones, the same inline coverage bar. Never a
+// one-off look.
+//
+// Every export below feeds the ORIGINAL `rows` prop, never the hook's filtered `table.rows` — the
+// sortable-table hook's own contract, so a search box left filled cannot silently truncate a file.
+
+const THEAD = "px-3 py-2.5 text-[10px] font-black uppercase tracking-[0.12em] text-white";
+
+/** Shared with the rep table's bar: 80+ good, 50+ watch, below that a real gap. */
+function toneOf(pctValue: number): { bar: string; text: string } {
+  if (pctValue >= 80) return { bar: "bg-emerald-500", text: "text-emerald-700" };
+  if (pctValue >= 50) return { bar: "bg-amber-400", text: "text-amber-700" };
+  return { bar: "bg-rose-400", text: "text-rose-700" };
+}
+
+function CoverageBar({ value }: { value: number }) {
+  const tone = toneOf(value);
+  return (
+    <div className="flex items-center justify-end gap-2">
+      <div className="h-1 w-16 bg-slate-100">
+        <div className={`h-full ${tone.bar}`} style={{ width: `${Math.max(2, value)}%` }} />
+      </div>
+      <span className={`min-w-[34px] text-right font-black ${tone.text}`}>{value}%</span>
+    </div>
+  );
+}
+
+const REP_COLS = [
+  { accessor: (r: BrickCoverageRepRow) => r.repName, defaultDir: "asc" as const, key: "repName", type: "string" as const },
+  { accessor: (r: BrickCoverageRepRow) => r.line, key: "line", type: "string" as const },
+  { accessor: (r: BrickCoverageRepRow) => r.salesCoveragePct, key: "salesCoveragePct", type: "number" as const },
+  { accessor: (r: BrickCoverageRepRow) => r.unitsInTerritory, key: "unitsInTerritory", type: "number" as const },
+  { accessor: (r: BrickCoverageRepRow) => r.bricksWithSales, key: "bricksWithSales", type: "number" as const },
+  { accessor: (r: BrickCoverageRepRow) => r.brickCoveragePct, key: "brickCoveragePct", type: "number" as const },
+  { accessor: (r: BrickCoverageRepRow) => r.offTerritoryBricks, key: "offTerritoryBricks", type: "number" as const },
+  { accessor: (r: BrickCoverageRepRow) => r.checkins, key: "checkins", type: "number" as const },
+];
+
+/**
+ * Where a rep row goes when you click it: his own contact list on Doctor Coverage, for the same
+ * month — every doctor and account he owns, with grades, who he has seen and who he has not.
+ *
+ * The two boards answer different halves of one question ("is he covering the bricks that sell?"
+ * and "who exactly is he not seeing?"), so the brick row links into the answer rather than growing
+ * a second copy of that table here.
+ *
+ * The `hr:` prefix is the conversion between the two boards' rep-key conventions: this board keys
+ * reps by bare `canonicalHrIdKey`, Doctor Coverage by `hr:<lowercased id>`. See `repsMatching` in
+ * coverage-filters.ts — the same seam, in the other direction.
+ */
+function contactListHref(repKey: string, month: string) {
+  const params = new URLSearchParams({ month, rep: `hr:${repKey}` });
+  return `/admin/doctor-coverage?${params.toString()}`;
+}
+
+export function BrickCoverageRepTable({
+  month,
+  monthLabel,
+  rows,
+}: {
+  month: string;
+  monthLabel: string;
+  rows: BrickCoverageRepRow[];
+}) {
+  const table = useSortableTable(rows, {
+    columns: REP_COLS,
+    initialSort: { dir: "asc", key: "salesCoveragePct" },
+    searchAccessors: [(r) => r.repName, (r) => r.line, (r) => r.areaNames],
+  });
+
+  // Project to scalars before exporting. `ExportRow` is Record<string, string | number | null |
+  // undefined>, and BrickCoverageRepRow carries `hasGpsFeed: boolean`, which is not assignable —
+  // so the whole row type is rejected. Spreading the row would only re-introduce it; naming the
+  // columns explicitly is also what doctor-coverage-tables.tsx does, and it keeps the sheet's
+  // columns and this list from drifting apart. `hasGpsFeed` is deliberately absent rather than
+  // coerced: every row in this table has a feed by construction (a rep without one is held out in
+  // `unmeasured`), so a column that is always TRUE would only invite the reader to doubt it.
+  const exportRows = rows.map((row) => ({
+    areaNames: row.areaNames,
+    brickCoveragePct: row.brickCoveragePct,
+    bricksCovered: row.bricksCovered,
+    bricksWithSales: row.bricksWithSales,
+    checkins: row.checkins,
+    line: row.line,
+    offTerritoryBricks: row.offTerritoryBricks,
+    repName: row.repName,
+    salesCoveragePct: row.salesCoveragePct,
+    unitsCovered: row.unitsCovered,
+    unitsInTerritory: row.unitsInTerritory,
+  }));
+
+  return (
+    <div className="space-y-3 p-5">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <TableSearchInput onChange={table.setQuery} onClear={table.clearQuery} placeholder="Search rep, line or area…" value={table.query} />
+        <ExportXlsxButton
+          columns={[
+            { key: "repName", label: "Rep", width: 34 },
+            { key: "line", label: "Line", width: 16 },
+            { key: "areaNames", label: "Territory", width: 34 },
+            { key: "salesCoveragePct", label: "Sales covered %", numeric: true },
+            { key: "unitsCovered", label: "Units in bricks visited", numeric: true },
+            { key: "unitsInTerritory", label: "Units in territory", numeric: true },
+            { key: "bricksCovered", label: "Bricks visited", numeric: true },
+            { key: "bricksWithSales", label: "Bricks with sales", numeric: true },
+            { key: "brickCoveragePct", label: "Bricks covered %", numeric: true },
+            { key: "offTerritoryBricks", label: "Bricks visited outside territory", numeric: true },
+            { key: "checkins", label: "Check-ins", numeric: true },
+          ]}
+          rows={exportRows}
+          sheetName="Brick coverage"
+          subtitle={`${monthLabel} · GPS check-ins snapped to nearest brick centre`}
+          title="Rep brick coverage"
+        />
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full border-collapse text-xs">
+          <thead>
+            <tr className="bg-slate-900 text-left">
+              <SortableTh className={THEAD} label="Rep" onSort={table.toggleSort} sort={table.sort} sortKey="repName" />
+              <SortableTh className={THEAD} label="Line" onSort={table.toggleSort} sort={table.sort} sortKey="line" />
+              <SortableTh align="right" className={`${THEAD} text-right`} label="Sales covered" onSort={table.toggleSort} sort={table.sort} sortKey="salesCoveragePct" />
+              <SortableTh align="right" className={`${THEAD} text-right`} label="Units in territory" onSort={table.toggleSort} sort={table.sort} sortKey="unitsInTerritory" />
+              <SortableTh align="right" className={`${THEAD} text-right`} label="Bricks selling" onSort={table.toggleSort} sort={table.sort} sortKey="bricksWithSales" />
+              <SortableTh align="right" className={`${THEAD} text-right`} label="Bricks covered" onSort={table.toggleSort} sort={table.sort} sortKey="brickCoveragePct" />
+              <SortableTh align="right" className={`${THEAD} text-right text-amber-300`} label="Outside" onSort={table.toggleSort} sort={table.sort} sortKey="offTerritoryBricks" />
+              <SortableTh align="right" className={`${THEAD} text-right`} label="Check-ins" onSort={table.toggleSort} sort={table.sort} sortKey="checkins" />
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {table.rows.length === 0 ? (
+              <tr>
+                <td className="px-3 py-6 text-center text-xs text-slate-400" colSpan={8}>
+                  No rep has both a territory and a GPS check-in in this month.
+                </td>
+              </tr>
+            ) : (
+              table.rows.map((row) => (
+                <tr className="bg-white hover:bg-slate-50" key={row.repKey}>
+                  <td className="whitespace-nowrap px-3 py-2 font-semibold text-slate-900">
+                    <Link className="hover:text-orange-600 hover:underline" href={contactListHref(row.repKey, month)}>
+                      {row.repName}
+                    </Link>
+                    <span className="ml-2 text-[10px] font-normal text-slate-400">{row.areaNames}</span>
+                  </td>
+                  <td className="whitespace-nowrap px-3 py-2 text-slate-600">{row.line}</td>
+                  <td className="px-3 py-2">
+                    <CoverageBar value={row.salesCoveragePct} />
+                  </td>
+                  <td className="px-3 py-2 text-right font-semibold text-slate-900">{row.unitsInTerritory.toLocaleString()}</td>
+                  <td className="px-3 py-2 text-right text-slate-600">
+                    {row.bricksCovered} / {row.bricksWithSales}
+                  </td>
+                  <td className={`px-3 py-2 text-right font-bold ${toneOf(row.brickCoveragePct).text}`}>{row.brickCoveragePct}%</td>
+                  <td className={`px-3 py-2 text-right font-bold ${row.offTerritoryBricks > 0 ? "text-amber-700" : "text-slate-400"}`}>
+                    {row.offTerritoryBricks}
+                  </td>
+                  <td className="px-3 py-2 text-right text-slate-600">{row.checkins.toLocaleString()}</td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+const SPOT_COLS = [
+  { accessor: (r: BrickCoverageBlindSpot) => r.units, key: "units", type: "number" as const },
+  { accessor: (r: BrickCoverageBlindSpot) => r.repName, defaultDir: "asc" as const, key: "repName", type: "string" as const },
+  { accessor: (r: BrickCoverageBlindSpot) => r.brickName, defaultDir: "asc" as const, key: "brickName", type: "string" as const },
+  { accessor: (r: BrickCoverageBlindSpot) => r.areaName, defaultDir: "asc" as const, key: "areaName", type: "string" as const },
+  { accessor: (r: BrickCoverageBlindSpot) => r.pctOfRepSales, key: "pctOfRepSales", type: "number" as const },
+];
+
+export function BrickCoverageBlindSpotTable({ monthLabel, rows }: { monthLabel: string; rows: BrickCoverageBlindSpot[] }) {
+  const table = useSortableTable(rows, {
+    columns: SPOT_COLS,
+    initialSort: { dir: "desc", key: "units" },
+    searchAccessors: [(r) => r.repName, (r) => r.brickName, (r) => r.areaName, (r) => r.line],
+  });
+
+  return (
+    <div className="space-y-3 p-5">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <TableSearchInput onChange={table.setQuery} onClear={table.clearQuery} placeholder="Search rep, brick or area…" value={table.query} />
+        <ExportXlsxButton
+          columns={[
+            { key: "repName", label: "Rep", width: 34 },
+            { key: "line", label: "Line", width: 16 },
+            { key: "brickName", label: "Brick never visited", width: 28 },
+            { key: "areaName", label: "Area", width: 24 },
+            { key: "units", label: "Units sold there", numeric: true },
+            { key: "pctOfRepSales", label: "% of his sales", numeric: true },
+          ]}
+          rows={rows}
+          sheetName="Blind spots"
+          subtitle={`${monthLabel} · bricks that sold where the rep never checked in`}
+          title="Brick coverage blind spots"
+        />
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full border-collapse text-xs">
+          <thead>
+            <tr className="bg-slate-900 text-left">
+              <SortableTh className={THEAD} label="Rep" onSort={table.toggleSort} sort={table.sort} sortKey="repName" />
+              <SortableTh className={THEAD} label="Brick never visited" onSort={table.toggleSort} sort={table.sort} sortKey="brickName" />
+              <SortableTh className={THEAD} label="Area" onSort={table.toggleSort} sort={table.sort} sortKey="areaName" />
+              <SortableTh align="right" className={`${THEAD} text-right`} label="Units sold" onSort={table.toggleSort} sort={table.sort} sortKey="units" />
+              <SortableTh align="right" className={`${THEAD} text-right text-rose-300`} label="Of his sales" onSort={table.toggleSort} sort={table.sort} sortKey="pctOfRepSales" />
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {table.rows.length === 0 ? (
+              <tr>
+                <td className="px-3 py-6 text-center text-xs text-slate-400" colSpan={5}>
+                  Every selling brick in scope was visited this month.
+                </td>
+              </tr>
+            ) : (
+              table.rows.map((row, index) => (
+                <tr className="bg-white hover:bg-slate-50" key={`${row.repKey}-${row.brickName}-${index}`}>
+                  <td className="whitespace-nowrap px-3 py-2 font-semibold text-slate-900">
+                    {row.repName}
+                    <span className="ml-2 text-[10px] font-normal text-slate-400">{row.line}</span>
+                  </td>
+                  <td className="whitespace-nowrap px-3 py-2 font-semibold text-slate-900">{row.brickName}</td>
+                  <td className="whitespace-nowrap px-3 py-2 text-slate-600">{row.areaName}</td>
+                  <td className="px-3 py-2 text-right font-bold text-slate-900">{row.units.toLocaleString()}</td>
+                  <td className={`px-3 py-2 text-right font-black ${row.pctOfRepSales >= 25 ? "text-rose-700" : "text-slate-600"}`}>
+                    {row.pctOfRepSales}%
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Reps the board refuses to score. This table is not a nicety — without it a rep whose check-in
+ * feed simply stopped would either vanish from the page or, far worse, appear at 0% coverage. It
+ * names them, says why, and keeps them out of every total above.
+ */
+export function BrickCoverageUnmeasuredTable({ month, rows }: { month: string; rows: BrickCoverageUnmeasured[] }) {
+  if (rows.length === 0) return null;
+  return (
+    <div className="p-5">
+      <div className="overflow-x-auto">
+        <table className="w-full border-collapse text-xs">
+          <thead>
+            <tr className="bg-slate-900 text-left">
+              <th className={THEAD}>Rep</th>
+              <th className={THEAD}>Line</th>
+              <th className={THEAD}>Territory</th>
+              <th className={THEAD}>Why not scored</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {rows.map((row) => (
+              <tr className="bg-white hover:bg-slate-50" key={row.repKey}>
+                <td className="whitespace-nowrap px-3 py-2 font-semibold text-slate-900">
+                  <Link className="hover:text-orange-600 hover:underline" href={contactListHref(row.repKey, month)}>
+                    {row.repName}
+                  </Link>
+                </td>
+                <td className="whitespace-nowrap px-3 py-2 text-slate-600">{row.line}</td>
+                <td className="whitespace-nowrap px-3 py-2 text-slate-600">{row.areaNames}</td>
+                <td className="whitespace-nowrap px-3 py-2 text-amber-700">{row.reason}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Territories carrying a sales target with an empty seat.
+ *
+ * The sibling of the unscored-reps table above, and there for the same reason: without it these
+ * would simply be absent — they are kept out of every total AND out of the filters, because
+ * scoring an empty seat at 0% blames a rep who does not exist. Absent is indistinguishable from
+ * covered, so they are named instead.
+ */
+export function BrickCoverageVacancyTable({ rows }: { rows: CoverageFilterVacancy[] }) {
+  if (rows.length === 0) return null;
+  return (
+    <div className="p-5">
+      <div className="overflow-x-auto">
+        <table className="w-full border-collapse text-xs">
+          <thead>
+            <tr className="bg-slate-900 text-left">
+              <th className={THEAD}>Territory</th>
+              <th className={THEAD}>Line</th>
+              <th className={THEAD}>Region</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {rows.map((row) => (
+              <tr className="bg-white hover:bg-slate-50" key={`${row.lineCode}:${row.areaCode}:${row.seatId}`}>
+                <td className="whitespace-nowrap px-3 py-2 font-semibold text-slate-900">{row.areaName}</td>
+                <td className="whitespace-nowrap px-3 py-2 text-slate-600">{row.lineName}</td>
+                <td className="whitespace-nowrap px-3 py-2 text-slate-600">{row.regionName}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}

@@ -1,5 +1,10 @@
 import { DoctorCoverageDoctorTable, DoctorCoverageRepTable } from "@/components/crm/doctor-coverage-tables";
 import { DoctorCoverageFilterBar } from "@/components/crm/doctor-coverage-filter-bar";
+import {
+  describeCoverageSelection,
+  type CoverageFilterSelection,
+  type CoverageFilterTree,
+} from "@/lib/crm/coverage-filters";
 import type { SfeDoctorCoverageBoard } from "@/lib/crm/sfe-doctor-coverage";
 
 // Server half of the Doctor Coverage board — shared verbatim by the admin page (SFE Manager +
@@ -44,12 +49,28 @@ function Tile({ label, sub, tone, value }: { label: string; sub?: string; tone?:
   );
 }
 
-export function DoctorCoverageBoard({ board, monthBasePath }: { board: SfeDoctorCoverageBoard; monthBasePath: string }) {
+export function DoctorCoverageBoard({
+  board,
+  monthBasePath,
+  scope,
+  tree,
+}: {
+  board: SfeDoctorCoverageBoard;
+  monthBasePath: string;
+  scope: CoverageFilterSelection;
+  tree: CoverageFilterTree;
+}) {
   const scopeLine = "Regular customer visits (type 0) only · duplicates collapsed · departed agents excluded";
   const emptyPanel = board.totals.activePanel === 0;
   // Whose numbers these are, always on screen — the owner's standing rule. Empty only on the
-  // fixture path, which has no viewer.
-  const description = [board.scopeLabel, scopeLine, board.isCurrentMonth ? "month to date" : null]
+  // fixture path, which has no viewer. The territory filter goes FIRST: when someone has narrowed
+  // to one area, that is the single most important fact about every number underneath.
+  const description = [
+    describeCoverageSelection(tree, scope),
+    board.scopeLabel,
+    scopeLine,
+    board.isCurrentMonth ? "month to date" : null,
+  ]
     .filter(Boolean)
     .join(" · ");
 
@@ -61,7 +82,8 @@ export function DoctorCoverageBoard({ board, monthBasePath }: { board: SfeDoctor
             applied={board.appliedFilters}
             basePath={monthBasePath}
             month={board.month}
-            repOptions={board.repOptions}
+            scope={scope}
+            tree={tree}
           />
         }
         description={description}

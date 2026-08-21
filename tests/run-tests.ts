@@ -201,6 +201,7 @@ import { runCrmLivePollerTests } from "./crm-live-poller.test.ts";
 import { runCrmDuplicateVisitCollapseTests } from "./crm-duplicate-visit-collapse.test.ts";
 import { runCrmMasterExportWorkbookTests } from "./crm-master-export-workbook.test.ts";
 import { runCrmDegradationPolicyTests } from "./crm-degradation-policy.test.ts";
+import { runCrmCoverageFilterTests } from "./crm-coverage-filters.test.ts";
 import { runCrmCheckinCoordGuardTests } from "./crm-checkin-coord-guard.test.ts";
 import { runCrmAmpmNormalizationTests } from "./crm-ampm-normalization.test.ts";
 import { runCrmVisitTypeLabelTests } from "./crm-visit-type-labels.test.ts";
@@ -857,6 +858,7 @@ import { runMarketingSalesCodeSyncRerunTests } from "./marketing-sales-code-sync
 import { runTerritoryAreaIndexTests } from "./territory-area-index.test.ts";
 
 import { runCrmDayMapVisitTypeStatusTests } from "./crm-day-map-visit-type-status.test.ts";
+import { runCrmBrickCoverageTests } from "./crm-brick-coverage.test.ts";
 
 import { runRecruitmentCvReadHonestyTests } from "./recruitment-cv-read-honesty.test.ts";
 
@@ -1150,6 +1152,7 @@ await runTest("crm live poller (stable fingerprint, delta vs memo, cadence tiers
 await runTest("crm duplicate visit collapse (contact-keyed: one rep+contact+day = one stop; comment text never groups)", runCrmDuplicateVisitCollapseTests);
 await runTest("crm master export streaming workbook (multi-page, uncapped, valid xlsx, error aborts)", runCrmMasterExportWorkbookTests);
 await runTest("crm degradation policy (a failed read never manufactures a classification; filters cannot lie)", runCrmDegradationPolicyTests);
+await runTest("crm coverage filters (region/line/area/rep cascade offers no dead end, hides no vacancy, leaks no code)", runCrmCoverageFilterTests);
 await runTest(
   "crm check-in coordinate guard (an impossible GPS fix cannot stand as proof-of-presence; the Najaf "
   + "glitch is refused, every bound is load-bearing, and the vendor's constant-zero `attendance` "
@@ -2283,6 +2286,12 @@ await runTest(
   "CV read honesty (five EMPTY arrays are not five fields; a read that produced nothing reports EMPTY, "
     + "never READ, and gets its own summary line so 'Failed: 0' cannot mean 'nothing was extracted')",
   runRecruitmentCvReadHonestyTests,
+);
+
+await runTest(
+  "CRM brick coverage (coverage weighted by selling units not brick count; a rep with no GPS "
+  + "check-in that month is listed unscored and kept OUT of every total, never shown at 0%)",
+  runCrmBrickCoverageTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);

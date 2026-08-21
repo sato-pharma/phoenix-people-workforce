@@ -2634,6 +2634,17 @@ export const crmPageItems: readonly AdminToolsPageItem[] = [
     roles: ["Super Admin", "SFE Manager", "CEO"],
   },
   {
+    // Same audience and the SAME enforcing gate as Doctor Coverage above: both pages ask
+    // getDoctorCoverageScope, so this entry cannot grant sight of a rep that board would hide.
+    // Listing it here is UX only — src/lib/crm/brick-coverage.ts is reached through that scope.
+    href: "/admin/brick-coverage",
+    icon: MapPinned,
+    label: "Brick Coverage",
+    description:
+      "Which Source-of-Sales bricks each rep actually reaches, against the bricks that carry his sales — weighted by selling units, with the blind spots named.",
+    roles: ["Super Admin", "SFE Manager", "CEO"],
+  },
+  {
     // Visit-norms editor. CEO is excluded on purpose: that account is observational on policy, and
     // this page changes what every role's coverage % means. Gate is crm_visits:update, held only by
     // Super Admin and SFE Manager — the same gate the page and the API route assert.
