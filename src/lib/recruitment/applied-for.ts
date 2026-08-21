@@ -234,6 +234,99 @@ function salvageTitlePhrase(value: string): string | null {
 }
 
 /**
+ * Noise that survives the leading/trailing strips because it sits in the MIDDLE of the subject.
+ *
+ * Measured on production 2026-08-21: 396 rows answered, and 24 distinct answers still read as a
+ * sentence rather than a job — "Office Coordinator Position – Sabreen Mahmoud", "National sales
+ * Manager- 15 yrs of exp in UAE in all the channels", "Osama mohammed cv District manager upper
+ * Egypt". The role is in every one of them; it is wearing the sender's name, their CV filename and
+ * their years of experience.
+ *
+ * The line this pass will not cross: it removes a PERSON, a FILLER WORD, a CV marker, a boast and a
+ * date, and nothing else. A place, a line name, a qualification and a second role all stay, because
+ * "National Sales Manager – Anti-Infective Line", "Senior Medical Sales Representative (Nigeria)"
+ * and "HR Generalist / HR Operations / Personnel & Payroll" are not noisy — they are three people
+ * telling a recruiter something worth reading, and 10 of the 24 are of exactly that kind.
+ *
+ * Nothing is lost either way: `evidence` still carries the untouched string, and the cell's hover
+ * text shows it.
+ */
+
+/** Filler that means "this is an application" and never names the job. Eats one separator with it. */
+const MIDDLE_FILLER = /\s*\b(?:position|post|vacancy|job|role|application|applying|request)\b\s*[-–—:_,./]?\s*/gi;
+
+/**
+ * A marker with a person in front of it — "Osama mohammed cv …", "Shashi Gupta _ Resume_…",
+ * "RWAN-SAFAA-Application for …". Only ever applied when a job word is left standing behind it.
+ */
+const NAME_BEFORE_MARKER =
+  /^.*?\b(?:cv|c\.?v\.?|resume|application\s+for|apply\s+for)\b\s*(?:for\s+the\s+(?:post|position|role)\s+of|as|_|-|:|\/)?\s*/i;
+
+/**
+ * A person's name at the end — "… – Sabreen Mahmoud", "… ,Heba Magdy", "… (Shokry Ammar)".
+ *
+ * Two or three words, each capitalised and purely alphabetic, and reachable ONLY across an explicit
+ * separator that has whitespace in front of it. That separator is the whole safety margin, and it
+ * was added after measuring: without it the same pattern reads "Qena Luxor", "Upper Egypt" and
+ * "Kafr Elsheikh" as people and deletes three governorates, and eats "Infective Line" out of the
+ * middle of "Anti-Infective". Requiring the run to reach the end of the string is what protects
+ * "National Sales Manager – Anti-Infective Line", whose tail is not a pure run.
+ *
+ * The cost of the caution is that "Finance Manager Mohamed Hamed" keeps its name. A surname with
+ * nothing in front of it is genuinely indistinguishable from a town, and a kept name is a blemish
+ * where a deleted territory is a wrong answer.
+ */
+const TRAILING_PERSON_NAME = /(?:\s+[-–—|]|\s*,)\s*[A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,2}\s*$/;
+
+/** The same, bracketed — "National Sales Manager (Shokry Ammar)". "(Nigeria)" is one word, so it stays. */
+const BRACKETED_PERSON_NAME = /\s*\([A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,2}\)\s*$/;
+
+/** Boasts and biography: what the applicant is like, never what the job is. */
+const APPLICANT_BIOGRAPHY: RegExp[] = [
+  /^\s*(?:highly\s+)?experienced\s+/i,
+  /\s*[-–—|,]?\s*(?:seeking|looking\s+for|open\s+to)\s+\w+.*$/i,
+  /\s*[-–—|,]\s*\d+\s*(?:\+)?\s*(?:yrs?|years?)\b.*$/i,
+  /\s*[-–—|,]?\s*fresh\s+gradu\w*\s*$/i,
+  /\s+residen(?:t|ce)\s+\p{L}+\s*$/iu,
+  // "(August–October 2026)" — a date, not a place. "(Nigeria)" has no year and no month, and stays.
+  /\s*\((?=[^)]*(?:\b20\d\d\b|jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec))[^)]*\)\s*$/i,
+  /\s+\d\s*$/,
+];
+
+/**
+ * Cuts the noise out of an already-clean title, or returns it untouched.
+ *
+ * Every step is conditional on a job word still standing afterwards, so the failure mode is "no
+ * change", never "the role was removed". The result is also never allowed to grow.
+ */
+function tightenJobTitle(title: string): string {
+  const keepIfStillAJob = (next: string): string | null => {
+    const tidied = stripRepeatedly(next, TRAILING_BOILERPLATE)
+      .replace(/\(\s+/g, "(")
+      .replace(/\s+\)/g, ")")
+      .replace(/\s+([,.])/g, "$1")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (!tidied || tidied.length < SHORTEST_PLAUSIBLE_TITLE) return null;
+    if (!JOB_WORDS.test(tidied) || NAMES_NO_JOB.has(tidied.toLowerCase())) return null;
+    return tidied;
+  };
+
+  let current = title;
+
+  // A marker only proves a name is in front of it when a job is left standing behind it.
+  current = keepIfStillAJob(current.replace(NAME_BEFORE_MARKER, "")) ?? current;
+  for (const pattern of APPLICANT_BIOGRAPHY) current = keepIfStillAJob(current.replace(pattern, " ")) ?? current;
+  // Names before filler: "Office Coordinator Position – Sabreen Mahmoud" needs its separator intact
+  // to find the name, and only then is "Position" noise with nothing after it.
+  current = keepIfStillAJob(current.replace(BRACKETED_PERSON_NAME, "")) ?? current;
+  current = keepIfStillAJob(current.replace(TRAILING_PERSON_NAME, "")) ?? current;
+  current = keepIfStillAJob(current.replace(MIDDLE_FILLER, " ")) ?? current;
+
+  return current.length < title.length ? current : title;
+}
+
+/**
  * Turns one raw candidate string into a job title, or null if it does not name one.
  *
  * NFKC first, which is what folds the mathematical-bold letters some senders use for emphasis —
@@ -292,7 +385,10 @@ function readJobTitle(start: string): string | null {
   if (NAMES_NO_JOB.has(title.toLowerCase())) return null;
   // A remainder with no letter in it at all — a date, a reference number, stray punctuation.
   if (!/\p{L}/u.test(title)) return null;
-  return title;
+  // Last, and only on a title that already passed every guard above: cut the sender's name, their
+  // CV filename and their years of experience out of the middle of it. Cannot turn a title into
+  // null — it either shortens the string or hands back exactly what it was given.
+  return tightenJobTitle(title);
 }
 
 /** `Subject(` … `)` — the forwarder's envelope, written into `full_name` at intake. */
