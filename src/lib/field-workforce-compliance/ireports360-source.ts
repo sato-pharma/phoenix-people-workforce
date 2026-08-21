@@ -72,6 +72,14 @@ const VISIT_TYPE_TO_STATUS = new Map<number, "AV" | "CP">([
   [-1, "CP"], // Conference
   [-2, "CP"], // Group Meeting
   [-4, "AV"], // Annual Vacation — the only genuine leave type here
+  // Public Holiday (-5) and Casual Leave (-6) are WORKING time (owner ruling 2026-08-21).
+  // Both already behaved this way — but only because they were ABSENT from this map and fell
+  // through to the CP default. That was an accident, not a decision. Listing them explicitly
+  // means a later change to that fallback cannot silently turn 1,659 production days into
+  // charged leave, which is exactly how the Health Day mistake below happened. iReports360
+  // sends no description for either; see src/lib/crm/visit-types.ts for what each code means.
+  [-5, "CP"],
+  [-6, "CP"],
   [-8, "CP"], // Campaign (Prospection)
   [-9, "CP"], // Training
   [-11, "CP"], // Meeting

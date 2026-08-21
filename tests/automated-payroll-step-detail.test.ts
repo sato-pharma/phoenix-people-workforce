@@ -169,7 +169,11 @@ export function runAutomatedPayrollStepDetailTests() {
     "Health Day (-15) is working time — mapping it to AV charges leave for a day the rep worked",
   );
   assert.equal(leaverVisitTypeStatus(-4), "AV", "Annual Vacation (-4) is the only genuine leave type");
-  for (const workingType of [-1, -2, -8, -9, -11, -12]) {
+  // ---- Public Holiday (-5) and Casual Leave (-6) are WORK too (owner ruling 2026-08-21) ----
+  // Both already resolved to CP, but only by being absent from the map and falling through its
+  // default — an accident, not a decision. They are listed explicitly now, and pinned here, so the
+  // ruling survives any change to that default. -5 alone is 1,633 production days across 129 reps.
+  for (const workingType of [-1, -2, -5, -6, -8, -9, -11, -12]) {
     assert.equal(leaverVisitTypeStatus(workingType), "CP", `visit type ${workingType} is a worked day`);
   }
 }
