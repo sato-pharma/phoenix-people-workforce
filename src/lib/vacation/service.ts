@@ -4968,6 +4968,71 @@ async function fetchEvidencePurgeCandidates(cutoff: string) {
   }
 }
 
+/**
+ * How many purged requests we keep full detail for. Beyond this the manifest keeps every id — an
+ * id is what makes a row findable again — and flags the shortfall explicitly. It never silently
+ * drops rows: `detailTruncated` and `detailOmitted` say exactly how much is missing.
+ */
+const VACATION_PURGE_MANIFEST_DETAIL_LIMIT = 2000;
+
+type VacationPurgeManifestRow = {
+  created_at: string | null;
+  employee_hr_id: string | null;
+  employee_name: string | null;
+  end_date: string | null;
+  id: string;
+  start_date: string | null;
+  status: string | null;
+  vacation_type: string | null;
+};
+
+/**
+ * The request rows the history purge is about to destroy, read BEFORE the delete runs.
+ * Afterwards there is nothing left to describe, and "whose leave history disappeared, and when"
+ * is precisely the question a retention purge has to be able to answer years later. Counting the
+ * rows — which is all this used to do — cannot answer it.
+ */
+async function fetchRequestHistoryPurgeManifest(cutoff: string): Promise<VacationPurgeManifestRow[]> {
+  try {
+    const { data, error } = await getSupabaseAdmin()
+      .from(vacationRequestsTable)
+      .select("id,employee_hr_id,employee_name,vacation_type,start_date,end_date,status,created_at")
+      .lt("created_at", cutoff)
+      .order("created_at", { ascending: true });
+    if (error) throwVacationDatabaseError(error);
+    return (data ?? []) as VacationPurgeManifestRow[];
+  } catch (error) {
+    if (!isVacationSchemaMissingError(error)) throw error;
+    return [];
+  }
+}
+
+/**
+ * These are the rows the purge SET OUT to delete, not necessarily the ones that died: the request
+ * delete runs last, so a failure earlier in the sequence leaves them standing. `deletedCounts`
+ * sits alongside them in the same audit row and says what actually went — on a `failed` status the
+ * two legitimately differ, which is why this says "targeted" and never "purged".
+ */
+function buildPurgeManifestPayload(rows: VacationPurgeManifestRow[]) {
+  const detail = rows.slice(0, VACATION_PURGE_MANIFEST_DETAIL_LIMIT);
+  return {
+    detailOmitted: rows.length - detail.length,
+    detailTruncated: rows.length > detail.length,
+    targetedRequestIds: rows.map((row) => row.id),
+    targetedRequests: detail.map((row) => ({
+      createdAt: row.created_at,
+      employeeHrId: row.employee_hr_id,
+      employeeName: row.employee_name,
+      endDate: row.end_date,
+      id: row.id,
+      startDate: row.start_date,
+      status: row.status,
+      vacationType: row.vacation_type,
+    })),
+    totalTargetedRequests: rows.length,
+  };
+}
+
 async function recordRetentionPurgeRun(input: {
   actorLoginId: string | null;
   candidates: Record<string, number>;
@@ -4992,6 +5057,19 @@ async function recordRetentionPurgeRun(input: {
       });
   } catch (error) {
     if (!isVacationSchemaMissingError(error)) throw error;
+    // The run table is absent. This used to return silently, which meant a real purge could
+    // destroy request rows and leave no record anywhere at all. The audit row written by the
+    // caller is now the independent second record, but a missing run table is still a governance
+    // failure and must not pass unnoticed.
+    logError("Vacation retention purge run could not be recorded", {
+      labels: {
+        event: "vacation_retention_purge_run_unrecorded",
+        dryRun: String(input.dryRun),
+        status: input.status,
+      },
+      context: { actorLoginId: input.actorLoginId, deletedCounts: input.deletedCounts },
+      error,
+    });
   }
 }
 
@@ -5026,8 +5104,14 @@ export async function runVacationRetentionPurge(access: AccessContext, input: { 
   };
   const errors: Array<Record<string, unknown>> = [];
 
+  let purgeManifest: VacationPurgeManifestRow[] = [];
+
   if (!dryRun) {
     try {
+      // Read what is about to be destroyed while it still exists. Placed before every delete so
+      // the manifest describes the pre-purge state rather than whatever survived a partial failure.
+      purgeManifest = await fetchRequestHistoryPurgeManifest(cutoffs.request_history);
+
       const evidenceObjectPaths = evidenceCandidates.flatMap((row) => [
         row.sick_attachment_object_path,
         row.compensatory_attachment_object_path,
@@ -5093,8 +5177,9 @@ export async function runVacationRetentionPurge(access: AccessContext, input: { 
   }
 
   const status = errors.length > 0 ? "failed" : "completed";
+  const actorLoginId = access.loginId ?? resolveEmployeeIdentityId(access);
   await recordRetentionPurgeRun({
-    actorLoginId: access.loginId ?? resolveEmployeeIdentityId(access),
+    actorLoginId,
     candidates,
     deletedCounts,
     dryRun,
@@ -5102,6 +5187,25 @@ export async function runVacationRetentionPurge(access: AccessContext, input: { 
     policySnapshot,
     status,
   });
+
+  // A dry run destroys nothing, so it stays out of audit_logs and is recorded only as a purge run.
+  // A real purge is the one irreversible thing this module does, so it gets a required audit row —
+  // written independently of the run table above, so a missing run table can no longer erase the
+  // only record — and it carries the manifest, so "whose leave history went" stays answerable.
+  if (!dryRun) {
+    await writeRequiredAuditLog({
+      actorLoginId,
+      entityId: null,
+      entityType: "vacation_retention_purge",
+      newValues: null,
+      oldValues: { ...buildPurgeManifestPayload(purgeManifest), cutoffs, deletedCounts, errors, policySnapshot, status },
+      summary:
+        `Leave retention purge ${status}: ${deletedCounts.requestHistory} request(s), ` +
+        `${deletedCounts.requestEvents} event(s), ${deletedCounts.decisionTokens} decision token(s), ` +
+        `${deletedCounts.slaRunLogs} SLA run(s) and ${deletedCounts.evidenceAttachments} attachment(s) deleted ` +
+        `(request history older than ${cutoffs.request_history}).`,
+    });
+  }
 
   return {
     candidates,
