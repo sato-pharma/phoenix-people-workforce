@@ -218,6 +218,7 @@ const REP_COLS = [
   { accessor: (r: RepDoctorListRepRow) => r.missedDoctors, key: "missedDoctors", type: "number" as const },
   { accessor: (r: RepDoctorListRepRow) => r.adherencePct, key: "adherencePct", type: "number" as const },
   { accessor: (r: RepDoctorListRepRow) => r.offPlanDoctors, key: "offPlanDoctors", type: "number" as const },
+  { accessor: (r: RepDoctorListRepRow) => r.campaignCalls, key: "campaignCalls", type: "number" as const },
   { accessor: (r: RepDoctorListRepRow) => r.plannedAccounts, key: "plannedAccounts", type: "number" as const },
   { accessor: (r: RepDoctorListRepRow) => r.gradeA, key: "gradeA", type: "number" as const },
   { accessor: (r: RepDoctorListRepRow) => r.unverifiedCalls, key: "unverifiedCalls", type: "number" as const },
@@ -233,7 +234,8 @@ export function RepDoctorListsRepTable({ month, rows }: { month: string; rows: R
   const exportRows = table.rows.map((row) => ({
     a_b_c: `${row.gradeA} / ${row.gradeB} / ${row.gradeC}`,
     accounts: row.plannedAccounts,
-    adherence: row.adherencePct,
+    adherence: row.hasMeasurablePlan ? row.adherencePct : "",
+    campaign_calls: row.campaignCalls,
     hr_id: row.agentHrId ?? "",
     missed: row.missedDoctors,
     off_plan: row.offPlanDoctors,
@@ -276,6 +278,7 @@ export function RepDoctorListsRepTable({ month, rows }: { month: string; rows: R
               <SortableTh align="right" className={`${THEAD} text-right text-rose-300`} label="Never Visited" onSort={table.toggleSort} sort={table.sort} sortKey="missedDoctors" />
               <SortableTh align="right" className={`${THEAD} text-right`} label="Adherence" onSort={table.toggleSort} sort={table.sort} sortKey="adherencePct" />
               <SortableTh align="right" className={`${THEAD} text-right text-amber-300`} label="Off Plan" onSort={table.toggleSort} sort={table.sort} sortKey="offPlanDoctors" />
+              <SortableTh align="right" className={`${THEAD} text-right`} label="Campaign" onSort={table.toggleSort} sort={table.sort} sortKey="campaignCalls" />
               <SortableTh align="right" className={`${THEAD} text-right`} label="Accounts" onSort={table.toggleSort} sort={table.sort} sortKey="plannedAccounts" />
               <SortableTh align="right" className={`${THEAD} text-right`} label="A / B / C" onSort={table.toggleSort} sort={table.sort} sortKey="gradeA" />
               <SortableTh align="right" className={`${THEAD} text-right`} label="Unverified" onSort={table.toggleSort} sort={table.sort} sortKey="unverifiedCalls" />
@@ -284,7 +287,7 @@ export function RepDoctorListsRepTable({ month, rows }: { month: string; rows: R
           <tbody className="divide-y divide-slate-100">
             {table.rows.length === 0 ? (
               <tr>
-                <td className="px-3 py-6 text-center text-xs text-slate-400" colSpan={9}>
+                <td className="px-3 py-6 text-center text-xs text-slate-400" colSpan={10}>
                   No rep has a doctor list for this month. Press Refresh from CRM to pull it.
                 </td>
               </tr>
@@ -297,23 +300,40 @@ export function RepDoctorListsRepTable({ month, rows }: { month: string; rows: R
                   <td className={`px-3 py-2 text-right font-bold ${row.missedDoctors > 0 ? "text-rose-700" : "text-slate-400"}`}>
                     {row.missedDoctors}
                   </td>
+                  {/* A rep with no planned doctors has no percentage to show. Printing 0% here
+                      states "reached none of their list" about someone who was never given one --
+                      so the bar is suppressed and the cell says so instead. */}
                   <td className="px-3 py-2">
-                    <div className="flex items-center justify-end gap-2">
-                      <div className="h-1 w-16 bg-slate-100">
-                        <div
-                          className={`h-full ${row.adherencePct >= 80 ? "bg-emerald-500" : row.adherencePct >= 50 ? "bg-amber-400" : "bg-rose-400"}`}
-                          style={{ width: `${Math.max(2, row.adherencePct)}%` }}
-                        />
+                    {row.hasMeasurablePlan ? (
+                      <div className="flex items-center justify-end gap-2">
+                        <div className="h-1 w-16 bg-slate-100">
+                          <div
+                            className={`h-full ${row.adherencePct >= 80 ? "bg-emerald-500" : row.adherencePct >= 50 ? "bg-amber-400" : "bg-rose-400"}`}
+                            style={{ width: `${Math.max(2, row.adherencePct)}%` }}
+                          />
+                        </div>
+                        <span
+                          className={`min-w-[34px] text-right font-black ${row.adherencePct >= 80 ? "text-emerald-700" : row.adherencePct >= 50 ? "text-amber-700" : "text-rose-700"}`}
+                        >
+                          {row.adherencePct}%
+                        </span>
                       </div>
-                      <span
-                        className={`min-w-[34px] text-right font-black ${row.adherencePct >= 80 ? "text-emerald-700" : row.adherencePct >= 50 ? "text-amber-700" : "text-rose-700"}`}
-                      >
-                        {row.adherencePct}%
-                      </span>
-                    </div>
+                    ) : (
+                      <div className="flex items-center justify-end">
+                        <span className="whitespace-nowrap text-right text-[10px] font-bold uppercase tracking-[0.08em] text-slate-400">
+                          No plan
+                        </span>
+                      </div>
+                    )}
                   </td>
                   <td className={`px-3 py-2 text-right font-bold ${row.offPlanDoctors > 0 ? "text-amber-700" : "text-slate-400"}`}>
                     {row.offPlanDoctors}
+                  </td>
+                  {/* Campaign calls prove the rep worked but name no doctor, so they sit BESIDE
+                      adherence and never inside it. Without this column a rep who spent the month
+                      on campaign work reads as a flat zero. */}
+                  <td className={`px-3 py-2 text-right ${row.campaignCalls > 0 ? "text-sky-700 font-bold" : "text-slate-400"}`}>
+                    {row.campaignCalls}
                   </td>
                   <td className="px-3 py-2 text-right text-slate-600">{row.plannedAccounts}</td>
                   <td className="px-3 py-2 text-right text-slate-600">

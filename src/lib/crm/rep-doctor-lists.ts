@@ -15,8 +15,17 @@
  *
  * SCOPE RULES (deliberate, and surfaced on the board):
  *  - Plan side: every weekly plan entry whose `plan_date` falls in the selected month.
- *  - Actual side: visit_type 0 (regular customer visits) only, duplicate submissions collapsed —
- *    the same door Doctor Coverage and DV Analytics read through, so the numbers agree.
+ *  - Actual side: visit_type 0 (regular customer visits), duplicate submissions collapsed — the
+ *    same door Doctor Coverage and DV Analytics read through, so the numbers agree.
+ *  - CAMPAIGN visits (type -8) are loaded but CANNOT satisfy a planned call, and this is a data
+ *    fact rather than a policy choice: all 31,322 campaign rows recorded between 2026-01-01 and
+ *    2026-08-20 carry contact id 0, blank name, blank speciality. A campaign row says the rep
+ *    worked; it never says which doctor they saw, so there is nothing to match a plan entry
+ *    against. They are counted per rep BESIDE adherence (owner's ruling 2026-08-21) so that a rep
+ *    who spent the month on campaign work is never presented as idle — two did in August 2026
+ *    (113 and 62 calls, zero regular visits between them).
+ *  - A rep with NO planned doctors is not a 0% performer. `hasMeasurablePlan` marks them, they sort
+ *    out of the worst-first ranking, and the table prints a marker rather than a percentage.
  *  - Departed agents are excluded from BOTH sides. The reads door already drops them from visits;
  *    the plan side must drop them too, or a leaver whose plan is still on file scores 0% forever.
  *  - The join is on the vendor's own keys (agent_crm_id + contact_crm_id), present and identical on
@@ -36,6 +45,7 @@ import { CRM_PLAN_ENTRIES_TABLE } from "@/lib/crm/tables";
 import { cairoTodayIso } from "@/lib/crm/dates";
 import { classifyCrmContactSpeciality, type CrmContactKind } from "@/lib/crm/contact-taxonomy";
 import { getEffectiveExcludedAgentCrmIds, queryVisits } from "@/lib/crm/reads";
+import { CAMPAIGN_TYPE } from "@/lib/crm/visit-types";
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -87,6 +97,13 @@ export type RepDoctorListRepRow = {
   plannedCalls: number;
   /** Distinct SP contacts on the plan — the doctor list itself. */
   plannedDoctors: number;
+  /** Campaign calls (visit type -8) this rep logged. These prove the rep WORKED but name no doctor
+   * (every one of the 31,322 ever recorded carries contact id 0), so they can never mark a planned
+   * doctor as seen — they are reported beside adherence, never inside it. */
+  campaignCalls: number;
+  /** False when this rep has no planned doctors at all, so there is nothing to be a percentage OF.
+   * Such a rep is not a 0% performer and must not be ranked as one. */
+  hasMeasurablePlan: boolean;
   plannedUnclassified: number;
   repKey: string;
   repName: string;
@@ -133,10 +150,14 @@ export type RepDoctorListsBoard = {
   planSyncedAt: string | null;
   repOptions: Array<{ repKey: string; repName: string }>;
   reps: RepDoctorListRepRow[];
-  /** Reps with type-0 visits this month but no plan entries at all. */
+  /** Reps with visits this month but no plan entries at all. */
   repsWithoutPlan: number;
+  /** Reps who have a plan, reached none of it, and whose month is entirely CAMPAIGN work. Their 0%
+   * is arithmetically true and completely misleading — surfaced so it is never read as "idle". */
+  repsAllCampaign: number;
   totals: {
     adherencePct: number;
+    campaignCalls: number;
     missedDoctors: number;
     offPlanDoctors: number;
     plannedAccounts: number;
@@ -169,6 +190,9 @@ export type PlanRow = {
 /** The visits-mirror projection this board reads (see the `columns` list in getRepDoctorLists). */
 export type VisitRow = {
   agent_crm_id: number | null;
+  /** 0 = regular customer visit, -8 = campaign. Both are loaded; only 0 can satisfy a planned
+   * doctor, because a campaign row carries no contact. */
+  visit_type: number | null;
   agent_hr_id: string | null;
   agent_name: string | null;
   contact_crm_id: number | null;
@@ -286,10 +310,14 @@ export async function getRepDoctorLists(input: {
     scanPlanEntries(from, to),
     queryVisits<VisitRow>({
       collapseDoubleVisits: true,
-      columns: "agent_crm_id, agent_hr_id, agent_name, contact_crm_id, crm_contact_grade, speciality, visit_date",
+      columns:
+        "agent_crm_id, agent_hr_id, agent_name, contact_crm_id, crm_contact_grade, speciality, visit_date, visit_type",
       dateFrom: from,
       dateTo: to,
-      visitTypes: [0],
+      // Campaign rows are loaded but can never satisfy a planned call — see the split in
+      // buildRepDoctorListsBoard. They are here so a rep who spent the month on campaign work is
+      // shown as working rather than as a zero (owner's ruling 2026-08-21).
+      visitTypes: [0, CAMPAIGN_TYPE],
     }),
     getEffectiveExcludedAgentCrmIds(),
     getEmployeeDirectoryRows({ includeInactive: true }),
@@ -320,7 +348,15 @@ export async function getRepDoctorLists(input: {
 export function buildRepDoctorListsBoard(input: RepDoctorListsInput): RepDoctorListsBoard {
   const month = input.month;
   const filters = input.filters ?? {};
-  const visitRows = input.visitRows;
+
+  // THE SPLIT. A campaign row (visit type -8) proves the rep worked but names no doctor: every one
+  // of the 31,322 recorded between 2026-01-01 and 2026-08-20 carries contact id 0, blank name,
+  // blank speciality. So it can never mark a planned doctor as seen -- there is no doctor on it to
+  // match. It is counted beside adherence instead, so a rep who spent the month on campaign work is
+  // never presented as idle (owner's ruling 2026-08-21). Adherence keeps meaning exactly one thing:
+  // planned doctors CONFIRMED seen.
+  const visitRows = input.visitRows.filter((row) => row.visit_type !== CAMPAIGN_TYPE);
+  const campaignRows = input.visitRows.filter((row) => row.visit_type === CAMPAIGN_TYPE);
 
   // Symmetry with the visits door, which has already dropped these agents from `visitRows`.
   const excluded = new Set(input.excludedAgentCrmIds);
@@ -332,7 +368,9 @@ export function buildRepDoctorListsBoard(input: RepDoctorListsInput): RepDoctorL
   // planned but never visited has only the first source.
   const nameByHrId = input.employeeNameByHrId;
   const vendorNameByCrmId = new Map<number, string>();
-  for (const visit of visitRows) {
+  // input.visitRows, not visitRows: a rep whose whole month is campaign work has NO type-0 row, so
+  // reading only the joinable rows would leave them nameless and print "Unmapped CRM agent 1550".
+  for (const visit of input.visitRows) {
     const crmId = visit.agent_crm_id;
     const name = visit.agent_name?.trim();
     if (crmId && name && !vendorNameByCrmId.has(crmId)) vendorNameByCrmId.set(crmId, name);
@@ -341,7 +379,7 @@ export function buildRepDoctorListsBoard(input: RepDoctorListsInput): RepDoctorL
   for (const row of planRows) {
     if (!hrIdByCrmId.has(row.agent_crm_id)) hrIdByCrmId.set(row.agent_crm_id, row.agent_hr_id);
   }
-  for (const visit of visitRows) {
+  for (const visit of input.visitRows) {
     if (visit.agent_crm_id && !hrIdByCrmId.has(visit.agent_crm_id)) {
       hrIdByCrmId.set(visit.agent_crm_id, visit.agent_hr_id);
     }
@@ -458,6 +496,8 @@ export function buildRepDoctorListsBoard(input: RepDoctorListsInput): RepDoctorL
       gradeA: 0,
       gradeB: 0,
       gradeC: 0,
+      campaignCalls: 0,
+      hasMeasurablePlan: false,
       missedDoctors: 0,
       offPlanDoctors: 0,
       plannedAccounts: 0,
@@ -544,12 +584,26 @@ export function buildRepDoctorListsBoard(input: RepDoctorListsInput): RepDoctorL
     if (known) row.contactName = known;
   }
 
+  // Campaign work, counted against the rep and never against a doctor. repFor() is used so a rep
+  // whose ONLY activity is campaign still gets a row rather than vanishing from the board.
+  for (const row of campaignRows) {
+    if (!row.agent_crm_id) continue;
+    repsWithVisits.add(row.agent_crm_id);
+    repFor(row.agent_crm_id).campaignCalls += 1;
+  }
+
   for (const rep of repAccumulator.values()) {
+    rep.hasMeasurablePlan = rep.plannedDoctors > 0;
     rep.adherencePct = rep.plannedDoctors > 0 ? Math.round((rep.visitedDoctors / rep.plannedDoctors) * 100) : 0;
   }
 
   const repsWithPlan = new Set([...planned.values()].map((contact) => contact.agentCrmId));
   const repsWithoutPlan = [...repsWithVisits].filter((agentCrmId) => !repsWithPlan.has(agentCrmId)).length;
+  // Has a plan, reached none of it, and did campaign work instead. Arithmetically 0%, and the one
+  // shape on this board most likely to be misread as an idle rep.
+  const repsAllCampaign = [...repAccumulator.values()].filter(
+    (rep) => rep.hasMeasurablePlan && rep.visitedDoctors === 0 && rep.campaignCalls > 0,
+  ).length;
 
   // ── Filters ──────────────────────────────────────────────────────────────────────────────────
   const search = filters.search?.trim().toLowerCase() ?? "";
@@ -574,12 +628,23 @@ export function buildRepDoctorListsBoard(input: RepDoctorListsInput): RepDoctorL
       left.contactName.localeCompare(right.contactName),
   );
 
+  // Worst-first, but ONLY among reps who have something to be measured against. A rep with no
+  // planned doctors has no percentage -- ranking their arithmetic 0 alongside a real 2% presents
+  // "nothing was assigned" as "nothing was done", which is an accusation the data does not support.
+  // They sort to the end and the table prints a marker instead of 0% (owner's fix 2026-08-21).
   const reps = [...repAccumulator.values()]
     .filter((rep) => !filters.repKey || rep.repKey === filters.repKey)
-    .sort((left, right) => left.adherencePct - right.adherencePct || right.plannedDoctors - left.plannedDoctors);
+    .sort(
+      (left, right) =>
+        Number(right.hasMeasurablePlan) - Number(left.hasMeasurablePlan) ||
+        left.adherencePct - right.adherencePct ||
+        right.plannedDoctors - left.plannedDoctors ||
+        left.repName.localeCompare(right.repName),
+    );
 
   const totals = {
     adherencePct: 0,
+    campaignCalls: 0,
     missedDoctors: 0,
     offPlanDoctors: 0,
     plannedAccounts: 0,
@@ -590,6 +655,7 @@ export function buildRepDoctorListsBoard(input: RepDoctorListsInput): RepDoctorL
     visitedDoctors: 0,
   };
   for (const rep of reps) {
+    totals.campaignCalls += rep.campaignCalls;
     totals.missedDoctors += rep.missedDoctors;
     totals.offPlanDoctors += rep.offPlanDoctors;
     totals.plannedAccounts += rep.plannedAccounts;
@@ -618,6 +684,7 @@ export function buildRepDoctorListsBoard(input: RepDoctorListsInput): RepDoctorL
       .map((rep) => ({ repKey: rep.repKey, repName: rep.repName }))
       .sort((left, right) => left.repName.localeCompare(right.repName)),
     reps,
+    repsAllCampaign,
     repsWithoutPlan,
     totals,
     unclassifiedSpecialities: [...unclassifiedContacts.entries()]

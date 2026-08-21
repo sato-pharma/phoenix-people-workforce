@@ -68,7 +68,7 @@ export function RepDoctorListsBoardView({ basePath, board }: { basePath: string;
   const empty = board.reps.length === 0;
   const adherenceTone = board.totals.adherencePct >= 80 ? "emerald" : board.totals.adherencePct >= 50 ? "amber" : "rose";
   const scopeLine =
-    "Weekly CRM plan vs regular customer visits (type 0) · duplicates collapsed · departed agents excluded on both sides";
+    "Weekly CRM plan vs regular customer visits · duplicates collapsed · departed agents excluded on both sides · campaign calls counted separately";
   const description = [
     scopeLine,
     board.planSyncedAt ? `plan last pulled ${cairoStamp(board.planSyncedAt)} Cairo` : "plan never pulled for this month",
@@ -92,13 +92,14 @@ export function RepDoctorListsBoardView({ basePath, board }: { basePath: string;
         title={`Rep Doctor Lists — ${board.monthLabel}`}
       >
         <div className="space-y-4 p-5">
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-7">
             <Tile label="Reps with a list" sub="from the CRM plan" value={String(board.totals.reps)} />
             <Tile label="Doctors on lists" sub={`${board.totals.plannedCalls} planned calls`} value={String(board.totals.plannedDoctors)} />
             <Tile label="Visited" tone="emerald" value={String(board.totals.visitedDoctors)} />
             <Tile label="Never visited" sub="on the list, not seen" tone="rose" value={String(board.totals.missedDoctors)} />
             <Tile label="Adherence" tone={adherenceTone} value={`${board.totals.adherencePct}%`} />
             <Tile label="Off plan" sub="visited, not on the list" tone="amber" value={String(board.totals.offPlanDoctors)} />
+            <Tile label="Campaign" sub="worked, no doctor named" value={String(board.totals.campaignCalls)} />
           </div>
 
           {empty ? (
@@ -109,6 +110,13 @@ export function RepDoctorListsBoardView({ basePath, board }: { basePath: string;
             </p>
           ) : (
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {board.repsAllCampaign > 0 ? (
+                <p className="border border-sky-200 bg-sky-50 px-3 py-2 text-[11px] font-semibold text-sky-800">
+                  {board.repsAllCampaign} reps reached none of their list but logged campaign calls instead. A campaign
+                  visit records that the rep worked and never which doctor they saw, so it cannot count toward adherence
+                  — read their 0% as &ldquo;no regular visits&rdquo;, not as an idle month.
+                </p>
+              ) : null}
               {board.totals.unverifiedCalls > 0 ? (
                 <p className="border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] font-semibold text-amber-800">
                   {board.totals.unverifiedCalls} planned calls are still at CRM status &ldquo;New&rdquo; — never verified by a
