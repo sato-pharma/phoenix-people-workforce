@@ -718,8 +718,20 @@ export async function getCandidateProfile(id: string): Promise<CandidateProfile 
   };
 }
 
-// Hard-delete a candidate (admin cleanup). Database cascades remove their
-// applications and any application children + files.
+// Hard-delete a candidate (admin cleanup). Measured against production 2026-08-21: four foreign
+// keys reference ats_candidates, and they do NOT all cascade.
+//   - ats_applications             CASCADE - and with it ats_application_events, ats_interviews,
+//                                  and any ats_files hanging off the application
+//   - ats_files                    CASCADE - the candidate-level CVs
+//   - ats_candidate_cv_extractions CASCADE
+//   - ats_cv_intake_events         SET NULL - the intake row SURVIVES with a null candidate_id,
+//                                  so ats_candidate_source_context (a VIEW over that table, not
+//                                  a table) keeps showing a detached row
+// ats_candidate_status_events carries no foreign key at all, so the decision history is left
+// untouched on purpose: an audit row that died with the record it describes could not testify
+// about the deletion. Do not "fix" that with ON DELETE CASCADE - the table is append-only,
+// enforced by a BEFORE UPDATE OR DELETE trigger, so the cascade would raise 23001 and this
+// delete would fail outright. See 20260815210000_candidate_status_vocabulary.sql.
 export async function deleteCandidate(access: AccessContext, id: string): Promise<void> {
   assertCanDeleteRecruitment(access);
   const candidate = await getCandidate(id);
