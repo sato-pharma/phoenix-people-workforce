@@ -4,6 +4,8 @@ import path from "node:path";
 import { createClient } from "@supabase/supabase-js";
 
 import type { AccessContext } from "@/lib/auth/permissions";
+import { candidateAppliedFor } from "@/lib/recruitment/applied-for";
+import { describeCandidateSource, type SourceContextRow } from "@/lib/recruitment/candidate-source-context";
 import { defaultCvPositionKey } from "@/lib/recruitment/cv-field-schemas";
 import { CvExtractionError, extractCandidateFieldsFromCv } from "@/lib/recruitment/cv-extraction";
 
@@ -38,10 +40,17 @@ import { CvExtractionError, extractCandidateFieldsFromCv } from "@/lib/recruitme
 // Usage (from the worktree root):
 //   node --env-file-if-exists=.env.local --experimental-strip-types \
 //        --experimental-specifier-resolution=node --experimental-loader ./scripts/alias-loader.mjs \
-//        scripts/recruitment-reread-never-read-cvs.ts [--limit N] [--dry-run]
+//        scripts/recruitment-reread-never-read-cvs.ts [--limit N] [--dry-run] [--unresolved-only]
 //
-//   --dry-run   lists the target set and exits. No AI call, no write, no spend.
-//   --limit N   reads only the first N. Used to prove the path on one before firing all of them.
+//   --dry-run          lists the target set and exits. No AI call, no write, no spend.
+//   --limit N          reads only the first N. Used to prove the path on one before firing all.
+//   --unresolved-only  narrows the set to candidates whose "Applying for" column is EMPTY and who
+//                      actually have a stored file. Added 2026-08-21 at the owner's instruction
+//                      ("run the extraction on the 56"). Most never-read CVs belong to candidates
+//                      the column ALREADY answers from their subject line, so reading those is
+//                      pure spend that changes nothing on screen. This flag runs the shipped
+//                      resolver over the same evidence the page uses, so the set it picks is
+//                      exactly the set the page shows as "Not stated".
 // ─────────────────────────────────────────────────────────────────────────────
 
 const OPS_MARKER = "ops:cv-reread-20260816";
@@ -106,6 +115,7 @@ function cairo(iso: string): string {
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
   const dryRun = args.includes("--dry-run");
+  const unresolvedOnly = args.includes("--unresolved-only");
   const limitArg = args.find((a) => a.startsWith("--limit"));
   const limit = limitArg ? Number(limitArg.split("=")[1] ?? args[args.indexOf(limitArg) + 1]) : Number.NaN;
 
@@ -116,12 +126,30 @@ async function main(): Promise<void> {
   console.log(`Supabase project : ${requireEnv("NEXT_PUBLIC_SUPABASE_URL")}`);
   console.log(`OpenAI key       : ${process.env.OPENAI_API_KEY ? "present" : "MISSING"}`);
 
-  // Truth set: every candidate with no extraction row at all.
+  // Truth set: every candidate with no extraction row at all — EXCEPT that a free rules-only read
+  // does not count as read.
+  //
+  // Owner decision 2026-08-21: the OpenAI key was deleted deliberately, for cost. The rule engine
+  // still runs and still costs nothing, so this script remains useful — but a rules row carries
+  // ~11-15 fields where a model row carries 38. If a rules row counted as "read", every candidate
+  // it touched would be excluded from every future run FOREVER, so restoring the key later would
+  // silently skip exactly the CVs that were read most poorly. They stay in the set instead, and the
+  // insert-vs-replace decision below keeps the newest read as the one that counts.
+  const RULES_ONLY_MODELS = new Set(["phoenix-rules", "phoenix-ocr"]);
   const { data: alreadyRead, error: readError } = await supabase
     .from("ats_candidate_cv_extractions")
-    .select("candidate_id");
+    .select("candidate_id, ai_model");
   if (readError) throw readError;
-  const readIds = new Set((alreadyRead ?? []).map((row) => String(row.candidate_id)));
+  const readIds = new Set(
+    (alreadyRead ?? [])
+      .filter((row) => !RULES_ONLY_MODELS.has(String((row as { ai_model: unknown }).ai_model ?? "")))
+      .map((row) => String(row.candidate_id)),
+  );
+  const rulesOnlyIds = new Set(
+    (alreadyRead ?? [])
+      .filter((row) => RULES_ONLY_MODELS.has(String((row as { ai_model: unknown }).ai_model ?? "")))
+      .map((row) => String(row.candidate_id)),
+  );
 
   const { data: allCandidates, error: candidateError } = await supabase
     .from("ats_candidates")
@@ -133,6 +161,45 @@ async function main(): Promise<void> {
   console.log(`\nCandidates total : ${(allCandidates ?? []).length}`);
   console.log(`Already read     : ${readIds.size} distinct candidates`);
   console.log(`Never read       : ${targets.length}`);
+  if (rulesOnlyIds.size > 0) {
+    // Re-reading these while the key is still gone would only write the same free row again.
+    const before = targets.length;
+    targets = targets.filter((row) => !rulesOnlyIds.has(String(row.id)));
+    console.log(`Rules-only so far: ${rulesOnlyIds.size}  (held back ${before - targets.length}; they need a real key)`);
+  }
+
+  if (unresolvedOnly) {
+    // Two extra reads, both cheap, both needed to answer "would this row change on screen?".
+    const { data: contextRows, error: contextError } = await supabase
+      .from("ats_candidate_source_context")
+      .select("candidate_id, channel, subject, raw_metadata");
+    if (contextError) throw contextError;
+    const contexts = new Map<string, ReturnType<typeof describeCandidateSource>>();
+    for (const row of contextRows ?? []) {
+      const key = String((row as { candidate_id: unknown }).candidate_id);
+      contexts.set(key, describeCandidateSource(row as SourceContextRow));
+    }
+
+    // A candidate with no stored CV cannot be read at all — including one buys a guaranteed
+    // failure and an entry in the report that looks like a problem to fix.
+    const { data: fileRows, error: fileError } = await supabase.from("ats_files").select("candidate_id");
+    if (fileError) throw fileError;
+    const withAFile = new Set((fileRows ?? []).map((row) => String((row as { candidate_id: unknown }).candidate_id)));
+
+    const before = targets.length;
+    targets = targets.filter((row) => {
+      if (!withAFile.has(String(row.id))) return false;
+      const context = contexts.get(String(row.id)) ?? null;
+      // No CV rung is passed, deliberately: having no extraction row is what makes this a target.
+      return !candidateAppliedFor({
+        fullName: row.full_name,
+        sourceMessages: context?.channel === "whatsapp" ? context.detailLines : [],
+        sourceSubject: context?.channel === "email" ? context.shortLabel : null,
+        statedJobTitle: null,
+      }).text;
+    });
+    console.log(`Column empty     : ${targets.length}  (--unresolved-only dropped ${before - targets.length})`);
+  }
 
   if (Number.isFinite(limit) && limit > 0) {
     targets = targets.slice(0, limit);

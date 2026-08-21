@@ -729,4 +729,37 @@ export function runRecruitmentCvExtractionTests() {
   const appliedForMigration = read("supabase/migrations/20260815200000_candidate_applied_for_role.sql");
   assert.match(appliedForMigration, /add column if not exists applied_for_job_title text/);
   assert.match(appliedForMigration, /add column if not exists applied_for_evidence\s+text/);
+
+  // --- no key must not cancel the FREE engine -------------------------------
+  //
+  // The rules pass and the OCR pass both cost nothing and both live inside extractCvFieldsFromBytes,
+  // which checks the key only after they have had their turn. extractCandidateFieldsFromCv used to
+  // throw "ai_not_configured" before any of that — before it had even looked up the candidate — so
+  // with the key removed a CV with a readable text layer got nothing at all. Measured 2026-08-21:
+  // 5 of 5 attempts died in 0s; with the guard gone, 3 of the same 5 read for free, 2 of them
+  // yielding the very job title the "Applying for" column needs.
+  const cvEngineSource = read("src/lib/recruitment/cv-extraction.ts");
+  const entryPoint = cvEngineSource.slice(
+    cvEngineSource.indexOf("export async function extractCandidateFieldsFromCv"),
+  );
+  assert.ok(entryPoint.length > 0, "extractCandidateFieldsFromCv must exist");
+  assert.doesNotMatch(
+    entryPoint,
+    /hasOpenAiApiKey/,
+    "the entry point must not gate on the API key — that skips the free rules and OCR passes entirely",
+  );
+  // And the engine itself must keep its own check, or a missing key becomes a silent success.
+  const engine = cvEngineSource.slice(
+    cvEngineSource.indexOf("export async function extractCvFieldsFromBytes"),
+    cvEngineSource.indexOf("export async function getLatestCvExtraction"),
+  );
+  assert.match(
+    engine,
+    /if \(!hasOpenAiApiKey\(\)\) \{/,
+    "the engine keeps the key check, after the free passes have had their turn",
+  );
+  assert.ok(
+    engine.indexOf("runRuleCvExtraction") < engine.indexOf("if (!hasOpenAiApiKey()) {"),
+    "the free rule pass must run BEFORE the key check, or removing the key removes the free read",
+  );
 }
