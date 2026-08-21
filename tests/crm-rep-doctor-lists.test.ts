@@ -115,7 +115,10 @@ const PLAN_ROWS: PlanRow[] = [
   // A place, not a person — must never enter the doctor list or move either KPI.
   plan({ contact_crm_id: 1005, contact_name: "El Ezaby Pharmacy", speciality: "Pharmacy", plan_date: "2026-08-08" }),
   // A specialty the shared taxonomy has never seen. Neither doctor nor account until someone rules.
-  plan({ contact_crm_id: 1006, contact_name: "Nephro Doc", speciality: "Nephrology", plan_date: "2026-08-09" }),
+  // Deliberately synthetic (not a real medical specialty): this fixture used "Nephrology" for the
+  // same purpose until 2026-08-21, when the taxonomy correctly learned it as a real SP value and
+  // silently flipped this test's math — a synthetic label can never be reclassified out from under it.
+  plan({ contact_crm_id: 1006, contact_name: "Unlisted Doc", speciality: "Unlisted Test Specialty", plan_date: "2026-08-09" }),
   // The vendor's two "no contact" shapes.
   plan({ contact_crm_id: null, contact_name: null, plan_date: "2026-08-10" }),
   plan({ contact_crm_id: 0, contact_name: null, plan_date: "2026-08-10" }),
@@ -287,7 +290,7 @@ export function runCrmRepDoctorListsTests() {
   assert.equal(
     rep101.plannedCalls,
     7,
-    "seven plan entries survive: 2x1001 + 1002 + 1003 + 1004 + pharmacy + nephrology",
+    "seven plan entries survive: 2x1001 + 1002 + 1003 + 1004 + pharmacy + the unlisted specialty",
   );
   assert.equal(rep101.unverifiedCalls, 1, "only the second call on 1001 is still at vendor status 0 (New)");
 
@@ -395,7 +398,7 @@ export function runCrmRepDoctorListsTests() {
   // ── Unknown specialties are named, with counts ───────────────────────────────────────────────
   assert.deepEqual(
     result.unclassifiedSpecialities,
-    [{ contacts: 1, label: "Nephrology" }],
+    [{ contacts: 1, label: "Unlisted Test Specialty" }],
     "a specialty the taxonomy has never seen must be reported BY NAME with its contact count, never silently dropped from the doctor total",
   );
 
