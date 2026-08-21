@@ -258,9 +258,15 @@ const MIDDLE_FILLER = /\s*\b(?:position|post|vacancy|job|role|application|applyi
 /**
  * A marker with a person in front of it — "Osama mohammed cv …", "Shashi Gupta _ Resume_…",
  * "RWAN-SAFAA-Application for …". Only ever applied when a job word is left standing behind it.
+ *
+ * The marker ends on `(?![A-Za-z])`, NOT on `\b`. An underscore is a word character in JS, so `\b`
+ * does not exist between "Resume" and "_National" — with a `\b` here the whole rule silently missed
+ * `Shashi Gupta _ Resume_National Sales Manager` and left the sender's name in the column. Same
+ * root cause as the Arabic patterns in NOT_AN_APPLICATION above: `\b` is defined by [A-Za-z0-9_]
+ * and nothing else, which is exactly the set a filename separator is drawn from.
  */
 const NAME_BEFORE_MARKER =
-  /^.*?\b(?:cv|c\.?v\.?|resume|application\s+for|apply\s+for)\b\s*(?:for\s+the\s+(?:post|position|role)\s+of|as|_|-|:|\/)?\s*/i;
+  /^.*?\b(?:cv|c\.?v\.?|resume|application\s+for|apply\s+for)(?![A-Za-z])\s*(?:for\s+the\s+(?:post|position|role)\s+of|as|[_\-:/])?\s*/i;
 
 /**
  * A person's name at the end — "… – Sabreen Mahmoud", "… ,Heba Magdy", "… (Shokry Ammar)".
