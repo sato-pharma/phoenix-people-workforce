@@ -285,4 +285,66 @@ export async function runRecruitmentCandidatePoolTableTests() {
     /\[\{ label: "Source", value: candidate\.sourceContext\.shortLabel \}\]/,
     "the sender's wording is not the source — it must not be relabelled back onto that row",
   );
+
+  // ── 14 · A certificate says so, instead of looking like a failed read ──────
+  //
+  // 23 "WhatsApp Import" rows in production are photographs of ICDL certificates, training diplomas
+  // and Saudi experience letters — 13 distinct images, 10 of them imported twice. The extractor asks
+  // "is this a CV?" on the same call as the 38 fields, and its own prompt permits nulling every
+  // field once the answer is no, so those rows came back correctly empty. Nothing on any screen
+  // said why, so the same thirteen images were re-read three separate times at full vision price.
+  const notACvModule = read("src/lib/recruitment/not-a-cv.ts");
+  assert.ok(
+    notACvModule.includes("return candidate?.notACv === true;"),
+    "isNotACv must gate on the explicit true — absent means nobody has judged the file, which is the state of every row read before the column existed, and flagging those would paint most of the pool",
+  );
+
+  const candidatesService = read("src/lib/recruitment/candidates.ts");
+  assert.ok(
+    candidatesService.includes('.select("candidate_id,created_at,is_cv")'),
+    "the pool's verdict loader must select those three columns and no more — extracted_fields is 1.1 MB across the table, and this query crosses the Atlantic to fetch one boolean",
+  );
+  assert.ok(
+    candidatesService.includes("if (row.is_cv === false) notACv.add(candidateId);"),
+    "only an explicit false is a verdict; NULL means no judgement on record and must never flag a row",
+  );
+  assert.ok(
+    candidatesService.includes("const notACv = await loadNotACvCandidates(candidates.map((candidate) => candidate.id));"),
+    "listCandidates must actually call the loader, or the flag is computed nowhere and every badge below is dead markup",
+  );
+
+  // Desktop. The badge sits in the Applying-for cell — the cell whose emptiness raises the question
+  // — and it takes the place of "Not stated" rather than stacking on top of it.
+  assert.ok(
+    workspace.includes("{!appliedFor.text && !isNotACv(candidate) ? ("),
+    "'Not stated' must give way to the badge, not sit above it saying the same nothing twice",
+  );
+  assert.ok(
+    workspace.includes("<span title={NOT_A_CV_TITLE}>{NOT_A_CV_LABEL}</span>"),
+    "the desktop badge needs the explaining sentence on hover — two words alone do not say why the row is empty",
+  );
+
+  // The profile panel is where "Read the CV again" sits, which is the button that paid for those
+  // re-reads. It reads the verdict off the stored extraction, the freshest copy there is.
+  assert.ok(
+    workspace.includes("{storedExtraction?.isCv === false ? ("),
+    "the profile must show the verdict the retry button would re-ask, or the wasted re-read stays one click away",
+  );
+
+  // Mobile: a phone has no hover, so the sentence has to become a field of its own.
+  assert.ok(
+    workspace.includes('{isNotACv(candidate) ? <StagePill tone="amber">{NOT_A_CV_LABEL}</StagePill> : null}'),
+    "the mobile pill row must carry the flag too",
+  );
+  assert.ok(
+    workspace.includes('...(isNotACv(candidate) ? [{ label: "CV file", value: NOT_A_CV_TITLE }] : []),'),
+    "and carry the reason, because a card cannot hide it in a tooltip",
+  );
+
+  // Rose means "this candidate cannot be hired" — it is what the non-Egyptian flag uses. The
+  // attachment being the wrong document is not a judgement on the person.
+  assert.ok(
+    !workspace.includes('<StagePill tone="rose">{NOT_A_CV_LABEL}</StagePill>'),
+    "Not a CV is amber, never rose",
+  );
 }
