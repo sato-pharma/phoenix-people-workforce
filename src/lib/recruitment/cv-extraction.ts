@@ -831,19 +831,22 @@ export async function extractCandidateFieldsFromCv(
   positionKey: string = defaultCvPositionKey,
   options?: { fileId?: string },
 ): Promise<CvExtractionResult> {
-  // Schema/key are validated up front (before the candidate and file lookups below) so the
-  // error a caller sees for a misconfigured server stays the same as it has always been.
+  // The schema is validated up front. The API KEY IS DELIBERATELY NOT.
+  //
+  // It used to be, and that quietly cancelled the whole point of the rules-first engine. The owner
+  // deleted the OpenAI key on 2026-08-21 to stop the spend; extractCvFieldsFromBytes is built to
+  // cope with exactly that — it runs the free deterministic pass BEFORE any key check, then free
+  // OCR, and only raises "ai_not_configured" when neither could read the document. Throwing here
+  // meant that path was never reached: the call died before it had even looked up the candidate,
+  // so a CV with a perfectly readable text layer got nothing instead of its free read. Measured
+  // 2026-08-21: 5 of 5 attempted CVs failed in 0s, having downloaded nothing.
+  //
+  // A caller with no key still sees "ai_not_configured" for anything genuinely unreadable — the
+  // error simply now comes from the engine that tried, rather than from a guard that did not.
   const schema = getCvPositionSchema(positionKey);
   if (!schema) {
     throw new CvExtractionError("ai_failed", `Unknown CV extraction position "${positionKey}".`);
   }
-  if (!hasOpenAiApiKey()) {
-    throw new CvExtractionError(
-      "ai_not_configured",
-      "This isn't configured yet. Add the OpenAI key as OPENAI_API_KEY.",
-    );
-  }
-
   const candidate = await getCandidate(candidateId);
   if (!candidate) throw new Error("Candidate not found.");
 
