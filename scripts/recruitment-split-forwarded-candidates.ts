@@ -29,6 +29,26 @@ import { selectAutoApplyFields, type AutoApplyExtractedFields } from "@/lib/recr
 // They stay attached to the holder record, where they are visibly wrong rather than invisibly
 // wrong as five junk candidates.
 //
+// AND THE LIST ABOVE WAS WRONG ABOUT ONE OF ITS OWN FILES. It excludes `page 1 ultrasound.jpeg` as
+// "a maternity-leave document" — but IMG_20260525_072106.jpg, in SPLITS below, came out of that
+// SAME thread and is a DOCTOR'S PRESCRIPTION. It was split out as "Emad R. N. Morgan": the name,
+// phone and Alexandria address on it are the CLINIC'S LETTERHEAD, not an applicant's. The owner
+// opened the file and confirmed it on 2026-08-21, and that candidate was deleted from production
+// the same day (its ats_files row went with it, so re-running this entry now fails loudly at the
+// file lookup — which is the correct outcome, and the entry is kept so the run's history stays
+// honest rather than quietly edited out).
+//
+// 27.jpg / "Muhammed Ahmed Tammam" IS STILL UNRESOLVED. It arrived under the subject "Certificate
+// of Attendance - Pharmacy Promotion & OTC Campaign" and its extraction holds a full name and
+// NOTHING ELSE — the signature of a letterhead, not a CV. But omar.anwar's own hand-written note
+// calls that file a CV photo, so a human who looked disagreed. Do not delete it on the fingerprint;
+// open the file.
+//
+// The guard that let the prescription through was `identity.fullName === expectName` — it only
+// re-asserted that the page still says the same name. A prescription has a name on it. There is now
+// an is_cv check beside it (see the extraction fetch below), which is the model's own answer to the
+// question this script was never asking.
+//
 // THE COLLISION THAT MUST BE CLEARED FIRST. Intake wrote the APPLICANT's phone onto the
 // FORWARDING COLLEAGUE's record: two colleagues each carried an applicant's own mobile number
 // (numbers redacted here — see the run report in the ops archive). phone_norm has a partial UNIQUE index
@@ -166,13 +186,28 @@ async function main(): Promise<void> {
 
     const { data: extraction, error: extractionError } = await supabase
       .from("ats_candidate_cv_extractions")
-      .select("id, extracted_fields, position_key")
+      .select("id, extracted_fields, position_key, is_cv")
       .eq("file_id", split.fileId)
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle();
     if (extractionError) throw extractionError;
     if (!extraction) throw new Error(`No extraction for ${split.fileName}. Refusing to invent a candidate.`);
+
+    // A NAME IS NOT A DOCUMENT TYPE, and until 2026-08-21 that was the only thing this script
+    // checked. IMG_20260525_072106.jpg was a doctor's prescription forwarded inside an employee's
+    // maternity-leave thread; the AI read the CLINIC LETTERHEAD, so a name, a phone and an
+    // Alexandria address came back, the expectName check below passed, and a third-party
+    // physician's practice details became a "candidate". Ask the read what the page IS.
+    //
+    // Explicit false only. NULL means the extraction predates is_cv or never reached the model,
+    // which is not a verdict — failing closed on it would refuse every one of the rows written
+    // before that date, including the four real applicants this script correctly split out.
+    if (extraction.is_cv === false) {
+      throw new Error(
+        `${split.fileName} is not a CV — the read behind these fields judged is_cv=false. Refusing to make a candidate of it.`,
+      );
+    }
 
     const fields = (extraction.extracted_fields ?? {}) as AutoApplyExtractedFields;
     const identity = candidateIdentityFromCvFields({ fields } as never, split.expectName);

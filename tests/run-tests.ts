@@ -863,6 +863,7 @@ import { runCrmBrickCoverageTests } from "./crm-brick-coverage.test.ts";
 
 import { runRecruitmentCvReadHonestyTests } from "./recruitment-cv-read-honesty.test.ts";
 import { runRecruitmentRereadModelConstantsTests } from "./recruitment-reread-model-constants.test.ts";
+import { runRecruitmentExtractionRecordsIsCvTests } from "./recruitment-extraction-records-is-cv.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -2300,6 +2301,12 @@ await runTest(
   "CRM brick coverage (coverage weighted by selling units not brick count; a rep with no GPS "
   + "check-in that month is listed unscored and kept OUT of every total, never shown at 0%)",
   runCrmBrickCoverageTests,
+);
+
+await runTest(
+  "CV extraction records is_cv (the model's 'is this a CV' answer is persisted, and every reader "
+  + "gates on an explicit false so a missing judgement never discards a real applicant)",
+  runRecruitmentExtractionRecordsIsCvTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
