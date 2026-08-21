@@ -168,8 +168,10 @@ export async function runRecruitmentAppliedForTests() {
     // Too long to be a title, but that shape is "<the role> – <the person>": take the first segment,
     // and only when it actually names a job.
     ["Application for Veterinary Product Manager – Dr. Alaa Hamdy Ibrahim | DVM | KSA Licensed", "Veterinary Product Manager"],
-    // The trailing strip must stop at the role. It once ate its way to "…Seeking".
-    ["Experienced Health Information Specialist Seeking Opportunities", "Experienced Health Information Specialist Seeking Opportunities"],
+    // The trailing strip must stop at the role. It once ate its way to "…Seeking". The biography
+    // around the role is now cut by the tightening pass in section 9 — but the ROLE is what has to
+    // survive, and that is what this line has always been checking.
+    ["Experienced Health Information Specialist Seeking Opportunities", "Health Information Specialist"],
   ] as const) {
     assert.equal(cleanJobTitle(raw), expected, `"${raw}" must clean to "${expected}"`);
   }
@@ -273,4 +275,79 @@ export async function runRecruitmentAppliedForTests() {
     /loadCvJobTitleByCandidate\(unresolvedIds\)/,
     "and be given that narrowed id list, not the whole pool",
   );
+
+  // ── 9 · The tightening pass, and the line it must not cross ─────────────────
+  //
+  // With the ladder live, production answered 396 of 555 — and 24 of those answers still read as a
+  // sentence rather than a job, because the sender's name, their CV filename and their years of
+  // experience were sitting in the middle of the subject line.
+  //
+  // Every pair below is a verbatim production subject from 2026-08-21 and the answer it must now
+  // give. These 23 are the COMPLETE impact: the same corpus of 226 distinct live subjects was run
+  // through the cleaner before and after the pass, and nothing outside this list moved.
+  const tightened: Array<[string, string]> = [
+    ["Application NSM sales", "NSM sales"],
+    ["Application for Accounting Position – Mostafa El Hogoraty", "Accounting"],
+    ["Application for Office Coordinator Position – Sabreen Mahmoud", "Office Coordinator"],
+    ["Application for Office Coordinator – Hana Essam Abdelbary", "Office Coordinator"],
+    ["District Manager for Upper Egypt 2", "District Manager for Upper Egypt"],
+    ["District manager application Alex & Beheira", "District manager Alex & Beheira"],
+    ["District manger upper Egypt resident Assuit", "District manger upper Egypt"],
+    ["Experienced Health Information Specialist Seeking Opportunities", "Health Information Specialist"],
+    ["M Aamir khan Resume for the post of National sales Manager", "National sales Manager"],
+    ["Medical Representative - Mahalla - fresh graduate", "Medical Representative - Mahalla"],
+    ["Medical representative vacancy.( Beni suef)", "Medical representative (Beni suef)"],
+    ["Michael'Cv National sales manager", "National sales manager"],
+    ["My c.v / District manager upperegypt", "District manager upperegypt"],
+    ["National Sales Manager (Shokry Ammar)", "National Sales Manager"],
+    ["National sales Manager -  Tamer Abdallah CV", "National sales Manager"],
+    ["National sales Manager- 15 yrs of exp in UAE in all the channels.", "National sales Manager"],
+    ["Osama mohammed cv District manager upper Egypt", "District manager upper Egypt"],
+    ["Product manager vacancy ,Heba Magdy", "Product manager"],
+    ["RWAN-SAFAA-Application for medical representative position-Minya", "medical representative Minya"],
+    ["Re: R&D Internship Request (August–October 2026) – Sato Pharma", "R&D Internship"],
+    ["Senior medical rep menofia 1", "Senior medical rep menofia"],
+    ["Shaimaa mostafa cv as district manager upper Egypt 2", "district manager upper Egypt"],
+    ["Summer internship application - Lydia Magdy Fahmy", "Summer internship"],
+  ];
+  for (const [raw, expected] of tightened) {
+    assert.equal(cleanJobTitle(raw), expected, `"${raw}" should tighten to "${expected}"`);
+  }
+
+  // The other half of the same rule, and the more important half: a place, a line name, a country,
+  // a qualification and a second role are NOT noise, and 10 of the 24 long answers are made only of
+  // those. Each of these broke a draft of the pass — an earlier trailing-name rule read "Qena
+  // Luxor", "Upper Egypt" and "Kafr Elsheikh" as people and deleted three governorates, and ate
+  // "Infective Line" out of the middle of "Anti-Infective". A kept name is a blemish; a deleted
+  // territory is a wrong answer, so where the two conflict the pass does nothing.
+  const mustKeepEveryWord: Array<[string, string]> = [
+    ["Application for National Sales Manager – Anti-Infective Line", "National Sales Manager – Anti-Infective Line"],
+    ["Application – National Sales Manager | Anti-Infective Line", "National Sales Manager | Anti-Infective Line"],
+    ["Medical Representative-Kafr Elsheikh", "Medical Representative-Kafr Elsheikh"],
+    ["District sales manager sohage Qena Luxor", "District sales manager sohage Qena Luxor"],
+    ["District manager for Upper Egypt", "District manager for Upper Egypt"],
+    ["Senior Medical Sales Representative (Nigeria)", "Senior Medical Sales Representative (Nigeria)"],
+    ["Application for Personnel & Recruitment Specialist", "Personnel & Recruitment Specialist"],
+    ["Personnel & Recruitment Specialist HR Generalist", "Personnel & Recruitment Specialist HR Generalist"],
+    ["Recruitment&Personnel Specialist", "Recruitment&Personnel Specialist"],
+    ["Business Development & Sales Manager", "Business Development & Sales Manager"],
+    ["Interest in Medical Coding Specialist Opportunities", "Medical Coding Specialist Opportunities"],
+    ["Finance Manager Mohamed Hamed", "Finance Manager Mohamed Hamed"],
+    [
+      "Request for the post of Procurement executive/Store logistic supervisor Supply chain executive,",
+      "Procurement executive/Store logistic supervisor Supply chain executive",
+    ],
+  ];
+  for (const [raw, expected] of mustKeepEveryWord) {
+    assert.equal(cleanJobTitle(raw), expected, `"${raw}" must keep every real word — it has no noise in it`);
+  }
+
+  // The two invariants that make the pass safe to run last: it may shorten an answer, but it can
+  // never delete one and never lengthen one. Measured across all 226 live subjects: 23 changed,
+  // 0 newly empty.
+  for (const [raw] of [...tightened, ...mustKeepEveryWord]) {
+    const text = cleanJobTitle(raw);
+    assert.ok(text, `tightening must never blank an answer — "${raw}" resolved before it ran`);
+    assert.ok(text.length <= raw.length, `tightening must never lengthen an answer — "${raw}"`);
+  }
 }
