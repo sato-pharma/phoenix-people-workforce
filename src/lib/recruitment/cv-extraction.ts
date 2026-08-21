@@ -48,7 +48,11 @@ import {
 } from "@/lib/recruitment/cv-field-schemas";
 import { detectCvFileKind } from "@/lib/recruitment/cv-file-kind";
 import { isThinCvRead, mergeCvExtractions, scoreCvExtraction } from "@/lib/recruitment/cv-extraction-quality";
-import { mergeRuleAndAiExtractions, shouldEscalateToAi } from "@/lib/recruitment/cv-extraction-merge";
+import {
+  aiFieldsWorthAsking,
+  mergeRuleAndAiExtractions,
+  shouldEscalateToAi,
+} from "@/lib/recruitment/cv-extraction-merge";
 import { extractTextByOcr } from "@/lib/recruitment/cv-ocr";
 import { runRuleCvExtraction, type CvRuleContext, type RuleExtractionResult } from "@/lib/recruitment/rule-extraction";
 import { chooseCvExtractionRoute, MAX_PDF_VISION_BYTES, type CvExtractionRoute } from "@/lib/recruitment/cv-text-layer";
@@ -105,6 +109,28 @@ const MAX_CV_TEXT_CHARS = 20_000;
 // structured-output response fails to parse and the applicant is dropped, so the cap has to clear
 // the worst realistic CV rather than the typical one.
 const MAX_CV_EXTRACTION_OUTPUT_TOKENS = 8_000;
+
+/**
+ * How hard the model is allowed to think, chosen per ROUTE rather than once for everything.
+ *
+ * Hidden reasoning tokens are the part of the bill nobody sees: raising this medium -> high on
+ * 2026-08-16 (#2162) was the single change that exhausted the credits, and dropping it back on
+ * 2026-08-18 is what stopped the bleeding. A flat setting is the wrong shape for it, because the
+ * two routes are not the same job:
+ *
+ *   • "text"   — the rules already read this document and won every deterministic field (email,
+ *                phone, summary, governorate: 93-98% accurate). The model is here only to fill
+ *                judgement gaps out of clean, already-extracted text. That is not hard thinking,
+ *                and it is by far the COMMON case, so it is where a lower setting pays.
+ *   • vision   — the model is reading pixels or rendering a PDF itself: two-column layouts,
+ *                handwriting, a photograph taken at an angle. This is the work that actually needs
+ *                reasoning, and it is rare — 24 of 555 candidates arrived as an image.
+ *
+ * Spending the effort where the difficulty is, rather than everywhere, is the whole idea.
+ */
+export function cvReasoningEffortForRoute(route: CvExtractionRoute): "low" | "medium" {
+  return route === "text" ? "low" : "medium";
+}
 
 // What gets written to ats_candidate_cv_extractions.ai_model when no model was involved at all.
 // Recorded rather than left null so the audit trail can answer "how was this candidate read?", and
@@ -190,9 +216,14 @@ function slugForSchemaName(value: string): string {
   return slug.length > 0 ? slug : "cv";
 }
 
-export function buildExtractionTextFormat(schema: CvPositionSchema) {
+// `onlyKeys` narrows the request to the fields whose answer can still change the stored record —
+// see aiFieldsWorthAsking. Omit it and the whole schema is asked for, which is the right thing
+// whenever there is no rule read to have won anything (every vision route, and every caller that
+// is not the escalation path). is_cv is never narrowed away: it is the screening gate, not a field.
+export function buildExtractionTextFormat(schema: CvPositionSchema, onlyKeys?: readonly string[]) {
+  const asked = onlyKeys ? schema.fields.filter((field) => onlyKeys.includes(field.key)) : schema.fields;
   const properties: Record<string, ExtractionSchemaProperty> = { is_cv: { type: "boolean" as const } };
-  for (const field of schema.fields) {
+  for (const field of asked) {
     properties[field.key] = fieldSchemaProperty(field);
   }
   return {
@@ -201,7 +232,9 @@ export function buildExtractionTextFormat(schema: CvPositionSchema) {
       schema: {
         additionalProperties: false,
         properties,
-        required: ["is_cv", ...schema.fields.map((field) => field.key)],
+        // strict structured output requires every declared property to be required, so this list
+        // tracks `asked` rather than the full schema.
+        required: ["is_cv", ...asked.map((field) => field.key)],
         type: "object" as const,
       },
       strict: true as const,
@@ -567,6 +600,18 @@ export async function extractCvFieldsFromBytes(input: {
     if (!decision.escalate) return ruleOnly();
   }
 
+  // We are escalating. Decide what is worth ASKING for, which is not the same as what the schema
+  // declares: the rules have already won a share of the fields outright, and the merge policy will
+  // discard the model's answer on every one of them. Generating those answers is billed output.
+  //
+  // Only for the TEXT route, and only off a rule read that judged the document a CV. A vision route
+  // means the text layer was absent or too thin to trust, so whatever the rules "won" from it was
+  // won from scraps — narrowing the vision retry on that basis would suppress the very fields the
+  // vision read exists to recover. Same shape as cvReasoningEffortForRoute: the common, easy path
+  // gets the saving, the rare hard one is left alone.
+  const narrowedTextKeys =
+    rule && rule.isCv ? aiFieldsWorthAsking(rule.fields, schema.fields.map((field) => field.key)) : null;
+
   // -------------------------------------------------------------------------
   // FREE OCR — the last resort for a scanned CV, never the first choice.
   //
@@ -632,6 +677,8 @@ export async function extractCvFieldsFromBytes(input: {
   };
 
   const runPass = async (forRoute: CvExtractionRoute): Promise<CvFieldExtraction> => {
+    const askKeys = forRoute === "text" ? narrowedTextKeys : null;
+    const askedFields = askKeys ? schema.fields.filter((field) => askKeys.includes(field.key)) : schema.fields;
     let outputText: string;
     let model: string;
     try {
@@ -641,14 +688,13 @@ export async function extractCvFieldsFromBytes(input: {
         maxOutputTokens: MAX_CV_EXTRACTION_OUTPUT_TOKENS,
         model: OPENAI_COPILOT_DEFAULT_MODEL,
         purpose: "recruitment-cv-extraction",
-        // Dropped back to "medium" 2026-08-18 at the owner's instruction, to cut OpenAI spend. It
-        // had been raised medium -> high on 2026-08-16 (#2162), and that — on the top gpt-5.4 model,
-        // once per applicant, a few hundred times a month, over whole multi-MB PDFs handed to the
-        // vision model — was the dominant driver of the sudden bill jump that exhausted the credits.
-        // "high" burns a large pile of hidden reasoning tokens per call; "medium" removes most of
-        // that cost while still doing the two-column / employer-to-date-range reasoning acceptably.
-        reasoning: { effort: "medium" },
-        text: buildExtractionTextFormat(schema),
+        // Per route, not one setting for everything — see cvReasoningEffortForRoute. "medium" was
+        // set flat on 2026-08-18 after "high" (#2162) exhausted the credits; keeping "medium" only
+        // for the vision routes, where the reading is genuinely hard, and dropping the common text
+        // route to "low" cuts the hidden reasoning tokens again without touching the case that
+        // needs them.
+        reasoning: { effort: cvReasoningEffortForRoute(forRoute) },
+        text: buildExtractionTextFormat(schema, askKeys ?? undefined),
         timeoutMs: OPENAI_ROUTE_BUDGET_MS,
       });
       outputText = response.outputText;
@@ -663,7 +709,9 @@ export async function extractCvFieldsFromBytes(input: {
 
     const parsed = parseAiJson(outputText);
     const fields: ExtractedCandidateFields = {};
-    for (const field of schema.fields) {
+    // The fields ASKED for, not the fields declared. Reading a key that was never in the request
+    // would manufacture an empty high-confidence value and hand it to the merge as an answer.
+    for (const field of askedFields) {
       fields[field.key] = readSchemaField(parsed, field);
     }
     // Fail OPEN: only an explicit is_cv:false suppresses a candidate; a missing/garbled value is
@@ -701,7 +749,17 @@ export async function extractCvFieldsFromBytes(input: {
     // and a confident "this isn't a CV" reached from scrambled text. The second is the incident that
     // put cv-text-layer.ts in this codebase; that guard catches a text layer thin enough to measure,
     // and this one catches the layer that is long enough to pass it but still unreadable.
-    const score = scoreCvExtraction(primary.fields);
+    // Scored over the WHOLE record, rules included, whenever the request was narrowed.
+    //
+    // This gate asks "did this document get read?", and once the ask is narrowed, the model's reply
+    // on its own is no longer an answer to that question: five of the nine core signals (email,
+    // phone, professionalSummary, degree, university) are exactly the ones the rules win and the
+    // narrowing drops. Scoring the reply alone would count every deliberately-unasked field as a
+    // failure to answer and fire a second, FULL-PRICE vision call on the CVs the rules read best —
+    // a cost-saving change that costs more, which is the one outcome it may not have.
+    const narrowedPrimary = route === "text" ? narrowedTextKeys : null;
+    const scored = narrowedPrimary && rule ? mergeRuleAndAiExtractions(rule.fields, primary.fields).fields : primary.fields;
+    const score = scoreCvExtraction(scored);
     if (!isThinCvRead(score) && primary.isCv) return primary;
 
     let retry: CvFieldExtraction;

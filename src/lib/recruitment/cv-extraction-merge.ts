@@ -212,3 +212,40 @@ export function shouldEscalateToAi(result: RuleExtractionResult): EscalationDeci
   }
   return { escalate: false, missingFields, reason: `only ${missingFields.length} field(s) missing — not worth a model call` };
 }
+
+/**
+ * Of the fields the schema declares, the ones an AI answer could actually SURVIVE the merge on.
+ *
+ * The third cost lever, and the one that acts on output tokens rather than reasoning tokens.
+ * `shouldEscalateToAi` decides *whether* to spend; `cvReasoningEffortForRoute` decides *how hard*
+ * the model thinks; this decides *how much it is asked to write*. Until now an escalated CV was
+ * asked for the entire ~30-field schema even though the rules had already won a third of it — and
+ * every one of those answers was generated, billed, and then discarded by the policy above.
+ *
+ * The predicate is read straight off `mergeRuleAndAiExtractions`, branch for branch, so the two
+ * cannot disagree about what is discardable:
+ *
+ *   • rule value empty            → ASK. An AI value is taken outright when the rules found nothing.
+ *   • RULE_AUTHORITATIVE, filled  → DROP. The rule value wins unconditionally; the model's answer is
+ *                                  thrown away on arrival. This is the pure waste.
+ *   • AI_PREFERRED, filled        → ASK. A high-confidence answer beats the rule, and so does any
+ *                                  answer where the rule itself was unsure.
+ *   • anything else, filled       → ASK only if the rule was LOW. A high-confidence rule value can
+ *                                  only be displaced by `ai high && rule low`, so with the rule
+ *                                  already high there is no answer the model could give that wins.
+ *
+ * Callers must only use this when the rule pass actually read the document (a text layer, judged a
+ * CV). With no rule result there is nothing won and nothing to narrow — ask for everything.
+ */
+export function aiFieldsWorthAsking(
+  ruleFields: ExtractedCandidateFields,
+  schemaFieldKeys: readonly string[],
+): readonly string[] {
+  return schemaFieldKeys.filter((key) => {
+    const rule = ruleFields[key];
+    if (isEmpty(rule)) return true;
+    if (RULE_AUTHORITATIVE_FIELDS.includes(key)) return false;
+    if (AI_PREFERRED_FIELDS.includes(key)) return true;
+    return rule!.confidence === "low";
+  });
+}
