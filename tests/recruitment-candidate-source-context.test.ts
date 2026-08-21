@@ -6,12 +6,56 @@ import {
   assembleWhatsAppSourceContext,
   describeCandidateSource,
   formatCoveringMessage,
+  candidateSourceChannel,
   isJustAFileName,
   MAX_COVER_BODY_CHARS,
   MAX_WHATSAPP_SOURCE_MESSAGES,
 } from "../src/lib/recruitment/candidate-source-context.ts";
 
+function runSourceChannelTests() {
+  // The channel badge the pool never had. Owner, 2026-08-21: "i cannot know whatsapp or email
+  // source nothing says this" — the Source column renders the sender's own words, which is clipped
+  // on most rows, so the channel was invisible even though every row stores it.
+  assert.equal(candidateSourceChannel("whatsapp").label, "WhatsApp");
+  assert.equal(candidateSourceChannel("whatsapp").key, "whatsapp");
+  assert.equal(candidateSourceChannel("email").label, "Email");
+  assert.equal(candidateSourceChannel("email").key, "email");
+
+  // Case and stray whitespace must not produce a third rendering of a channel we already know.
+  assert.equal(candidateSourceChannel(" WhatsApp ").key, "whatsapp", "the stored value is not normalised at write time");
+  assert.equal(candidateSourceChannel("EMAIL").key, "email");
+
+  // ats_candidates.source is the authority — it is set on all 555 production rows. The context is
+  // only a fallback, because it is derived from an intake EVENT and is absent for a hand-added
+  // candidate or a list that did not load it.
+  assert.equal(candidateSourceChannel(null, { channel: "whatsapp" }).key, "whatsapp", "the context must fill in for a null source");
+  assert.equal(candidateSourceChannel("email", { channel: "whatsapp" }).key, "email", "the stored source must win over the derived context");
+
+  // Nothing at all: added by hand.
+  assert.equal(candidateSourceChannel(null).key, "manual");
+  assert.equal(candidateSourceChannel(null, null).label, "Manual");
+  assert.equal(candidateSourceChannel("   ").key, "manual", "a blank source is not a channel named \"   \"");
+
+  // A channel nobody has taught this function about is shown AS ITSELF, never folded into
+  // "Manual". A careers page or a referral form must not read as "somebody typed this in" — that
+  // is a wrong label that would outlive the import that created it.
+  const other = candidateSourceChannel("careers_page");
+  assert.equal(other.key, "other", "an unknown channel must not be folded into Manual");
+  assert.equal(other.label, "Careers_page", "and must be shown as itself, capitalised, not dropped");
+  assert.match(other.title, /careers_page/);
+
+  // Every branch owes the reader a plain-words explanation, because the badge is two words in a
+  // 116px column and the tooltip is the only place the meaning can live.
+  for (const source of ["whatsapp", "email", null, "careers_page"]) {
+    const badge = candidateSourceChannel(source);
+    assert.ok(badge.title.length > 20, `${String(source)} needs a real hover explanation, not a repeated label`);
+    assert.ok(badge.label.length <= 12, `${String(source)} label must stay short enough not to wrap the column`);
+  }
+}
+
 export function runRecruitmentCandidateSourceContextTests() {
+  runSourceChannelTests();
+
   // --- Migration: buffer table + per-candidate source-context view -----------------------------
   const migration = readFileSync(
     path.join(process.cwd(), "supabase/migrations/20260726154207_ats_whatsapp_message_buffer_and_source_context.sql"),

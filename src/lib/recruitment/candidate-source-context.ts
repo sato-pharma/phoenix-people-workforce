@@ -161,3 +161,55 @@ export function describeCandidateSource(row: SourceContextRow | null | undefined
 
   return { channel: null, detailLines: [], shortLabel: null };
 }
+
+// ---------------------------------------------------------------------------
+// Which CHANNEL a candidate arrived through — the fact the pool never showed.
+// ---------------------------------------------------------------------------
+
+/**
+ * The intake channel, as a short badge.
+ *
+ * The pool has had a "Source" column all along, but it renders `shortLabel` — the sender's own
+ * words, which for a forwarded mail can be an entire message and is clipped to 116px more often
+ * than not. So the one thing a recruiter actually wants from that column at a glance ("did this
+ * come from WhatsApp or from email?") was the one thing it never said. Owner, 2026-08-21: "i
+ * cannot know whatsapp or email source nothing says this."
+ *
+ * `ats_candidates.source` is the authority because it is set on every row — 337 whatsapp, 217
+ * email and 1 null across the 555 in production. `sourceContext.channel` is only a fallback: it is
+ * derived from the most recent intake EVENT, so it is absent for a candidate added by hand and for
+ * any list that was not asked to load it.
+ *
+ * An unrecognised value is shown as itself rather than folded into "Manual". A future channel
+ * (a careers page, a referral form) must not silently read as "somebody typed this in".
+ */
+export type CandidateSourceChannelKey = "whatsapp" | "email" | "manual" | "other";
+
+export type CandidateSourceChannelBadge = {
+  key: CandidateSourceChannelKey;
+  /** Two words at most — the column is 116px wide and nothing in this table may wrap. */
+  label: string;
+  /** Hover text, in plain words, for someone who has never seen this column before. */
+  title: string;
+};
+
+export function candidateSourceChannel(
+  source: string | null | undefined,
+  context?: { channel: "email" | "whatsapp" | null } | null,
+): CandidateSourceChannelBadge {
+  const resolved = cleanLine(source)?.toLowerCase() ?? context?.channel ?? null;
+
+  if (resolved === "whatsapp") {
+    return { key: "whatsapp", label: "WhatsApp", title: "Arrived as a WhatsApp message to the recruitment number" };
+  }
+  if (resolved === "email") {
+    return { key: "email", label: "Email", title: "Arrived as an email to the careers inbox" };
+  }
+  if (!resolved) {
+    return { key: "manual", label: "Manual", title: "Added directly in Phoenix — it did not arrive by email or WhatsApp" };
+  }
+  // Shown verbatim, capitalised only. Guessing at an unknown channel's meaning is how a wrong
+  // label outlives the import that created it.
+  const label = resolved.charAt(0).toUpperCase() + resolved.slice(1);
+  return { key: "other", label, title: `Arrived through "${resolved}"` };
+}
