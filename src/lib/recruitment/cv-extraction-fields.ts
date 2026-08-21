@@ -22,6 +22,31 @@ export type ExtractedCvValue = string | boolean | number | Array<Record<string, 
 // schema is edited as data, so nothing here changes when a field is added.
 export type ExtractedCandidateFields = Record<string, ExtractedField<ExtractedCvValue>>;
 
+// THE definition of "this field did not answer" — deliberately the only one, and it lives in this
+// leaf module so the merge policy, the read score, and the ops scripts all share it rather than
+// each carrying its own opinion. There were two; there must never be a third.
+//
+// null/undefined, a blank or whitespace-only string, and an EMPTY REPEATING BLOCK all mean the same
+// thing: nothing usable was read. The empty array is the one that costs real money. readArrayField
+// returns { confidence: "high", value: [] } for a CV that genuinely lists no certifications, which
+// is an honest thing to STORE but is not a field with a value — and a counter that treats it as one
+// turns a total failure into a success on screen. That is exactly what happened on 2026-08-21: 23
+// WhatsApp photo CVs came back with every scalar null and five empty arrays (skills, languages,
+// workHistory, educationHistory, certifications), the re-read script printed "READ 5 fields
+// (5 high)" for each and summarised "Read: 23, Failed: 0", and the 23 rows were then deleted from
+// production because they held nothing.
+//
+// A boolean `false` and the number 0 ARE answers ("no medical rep experience", "0 years of it") and
+// stay non-empty.
+export function isEmptyExtractedField(field: ExtractedField<ExtractedCvValue> | null | undefined): boolean {
+  if (!field) return true;
+  const { value } = field;
+  if (value === null || value === undefined) return true;
+  if (typeof value === "string") return value.trim().length === 0;
+  if (Array.isArray(value)) return value.length === 0;
+  return false;
+}
+
 // One stored row of ats_candidate_cv_extractions, read back for review.
 export type StoredCvExtraction = {
   extractionId: string;

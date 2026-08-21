@@ -8,6 +8,8 @@ import { candidateAppliedFor } from "@/lib/recruitment/applied-for";
 import { describeCandidateSource, type SourceContextRow } from "@/lib/recruitment/candidate-source-context";
 import { defaultCvPositionKey } from "@/lib/recruitment/cv-field-schemas";
 import { CvExtractionError, extractCandidateFieldsFromCv } from "@/lib/recruitment/cv-extraction";
+import { type ExtractedCandidateFields, isEmptyExtractedField } from "@/lib/recruitment/cv-extraction-fields";
+import { describeCvRead } from "@/lib/recruitment/cv-extraction-quality";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Re-read the CVs the AI never read.
@@ -36,6 +38,11 @@ import { CvExtractionError, extractCandidateFieldsFromCv } from "@/lib/recruitme
 // SAFE TO RE-RUN: the truth set is "candidates with no extraction row at all", so anything
 // this script successfully reads drops out of the set on the next run. A failure stays in the
 // set and will be retried. It never re-reads a CV that already has an extraction.
+//
+//   CAVEAT, and it is the one to know: an EMPTY read still writes an extraction row, so a CV the
+//   model looked at and got nothing from ALSO drops out of the set — the same trap the
+//   RULES_ONLY_MODELS hold-back below exists to close, one layer up. The Empty count in the summary
+//   is how you find those; they are not retried automatically and need their rows removed first.
 //
 // Usage (from the worktree root):
 //   node --env-file-if-exists=.env.local --experimental-strip-types \
@@ -67,11 +74,21 @@ type TargetRow = {
   source: string | null;
 };
 
+// "empty" is a THIRD outcome, not a flavour of success.
+//
+// 2026-08-21: 23 WhatsApp photo CVs came back from the model with every scalar null and five empty
+// arrays. The counter below treated an empty array as a field with a value, so each one printed
+// "READ 5 fields (5 high)" and the summary read "Read: 23, Failed: 0" — a complete failure reported
+// as a complete success, on the strength of which the 23 rows were deleted from production. The
+// only honest numbers on screen were the three keyField counters at the bottom, all reading 0/23.
+//
+// A read that produced nothing usable is now counted and printed on its own line, so "Failed: 0"
+// can never again be read as "everything was extracted".
 type Outcome = {
   candidateId: string;
   name: string | null;
   received: string;
-  status: "read" | "failed";
+  status: "read" | "empty" | "failed";
   errorCode?: string;
   errorMessage?: string;
   extractionId?: string;
@@ -90,18 +107,15 @@ function requireEnv(name: string): string {
 // The extracted payload is { field: { value, confidence } } — reading it with ->>'field'
 // yields the stringified object, which is exactly the trap that nearly wrote JSON blobs into
 // 145 phone columns during the phone backfill. Read .value explicitly, always.
-function readValue(fields: Record<string, unknown>, key: string): string | null {
-  const entry = fields[key];
-  if (!entry || typeof entry !== "object") return null;
-  const value = (entry as { value?: unknown }).value;
-  return value === null || value === undefined || value === "" ? null : String(value);
-}
-
-function readConfidence(fields: Record<string, unknown>, key: string): string | null {
-  const entry = fields[key];
-  if (!entry || typeof entry !== "object") return null;
-  const confidence = (entry as { confidence?: unknown }).confidence;
-  return confidence ? String(confidence) : null;
+//
+// Emptiness is decided by isEmptyExtractedField, the one shared rule, and NOT by the hand-rolled
+// `value === ""` check that used to live here. That check missed the two cases that matter: a
+// whitespace-only string, and an empty array — which `String([])` then turned into "", a value the
+// counter happily counted. Never re-derive this predicate locally.
+function readValue(fields: ExtractedCandidateFields, key: string): string | null {
+  const field = fields[key];
+  if (isEmptyExtractedField(field)) return null;
+  return String(field!.value);
 }
 
 function cairo(iso: string): string {
@@ -230,20 +244,21 @@ async function main(): Promise<void> {
     const began = Date.now();
     try {
       const result = await extractCandidateFieldsFromCv(String(row.id), access, defaultCvPositionKey);
-      const fields = (result.fields ?? {}) as Record<string, unknown>;
-      const keys = Object.keys(fields);
-      const withValue = keys.filter((key) => readValue(fields, key) !== null);
-      const highConfidence = withValue.filter((key) => readConfidence(fields, key) === "high");
+      const fields = result.fields ?? {};
+      // describeCvRead counts with the shared emptiness rule and decides read-vs-empty from that
+      // count. Do not re-count here — a second opinion about what "has a value" means is the exact
+      // defect this replaced.
+      const outcome = describeCvRead(fields);
       const seconds = Math.round((Date.now() - began) / 100) / 10;
 
       outcomes.push({
         candidateId: String(row.id),
         name: row.full_name,
         received: cairo(row.created_at),
-        status: "read",
+        status: outcome.status,
         extractionId: result.extractionId,
-        fieldsWithAValue: withValue.length,
-        fieldsHighConfidence: highConfidence.length,
+        fieldsWithAValue: outcome.fieldsWithAValue,
+        fieldsHighConfidence: outcome.fieldsHighConfidence,
         // camelCase, NOT snake_case. The extracted payload is keyed exactly like
         // CreateCandidateInput — fullName, appliedForJobTitle. Reading it as full_name /
         // applied_for_job_title silently returns null for every row, which made this script's own
@@ -258,7 +273,11 @@ async function main(): Promise<void> {
         },
         seconds,
       });
-      console.log(`${label}  ->  READ   ${withValue.length} fields (${highConfidence.length} high)  ${seconds}s`);
+      console.log(
+        outcome.status === "read"
+          ? `${label}  ->  READ   ${outcome.fieldsWithAValue} fields (${outcome.fieldsHighConfidence} high)  ${seconds}s`
+          : `${label}  ->  EMPTY  nothing usable — every field came back blank (${result.model})  ${seconds}s`,
+      );
     } catch (error) {
       const seconds = Math.round((Date.now() - began) / 100) / 10;
       const code = error instanceof CvExtractionError ? error.code : "unexpected";
@@ -278,19 +297,30 @@ async function main(): Promise<void> {
   }
 
   const read = outcomes.filter((o) => o.status === "read");
+  const empty = outcomes.filter((o) => o.status === "empty");
   const failed = outcomes.filter((o) => o.status === "failed");
   const totalMinutes = Math.round((Date.now() - startedAt) / 6_000) / 10;
 
   console.log(`\n${"=".repeat(70)}`);
   console.log(`Read   : ${read.length}`);
+  // On its own line, above Failed, and named in full — because "Failed: 0" next to "Read: 23" is
+  // what made 23 unreadable photo CVs look like a clean run.
+  console.log(`Empty  : ${empty.length}  (call succeeded, extraction row written, NOT a read)`);
+  for (const blank of empty) {
+    console.log(`         nothing extracted  ${blank.name ?? "(no name)"}`);
+  }
   console.log(`Failed : ${failed.length}`);
   for (const failure of failed) {
     console.log(`         ${failure.errorCode}  ${failure.name ?? "(no name)"}`);
   }
   console.log(`Elapsed: ${totalMinutes} minutes`);
-  console.log(`Names found  : ${read.filter((o) => o.keyFields?.full_name).length}/${read.length}`);
+  // camelCase, matching how keyFields is WRITTEN above. These three read full_name and
+  // applied_for_job_title until 2026-08-21, so two of them could only ever print 0 — which is why
+  // the one set of numbers that was telling the truth about the 23 empty reads was dismissed as a
+  // known reporting bug rather than believed.
+  console.log(`Names found  : ${read.filter((o) => o.keyFields?.fullName).length}/${read.length}`);
   console.log(`Phones found : ${read.filter((o) => o.keyFields?.phone).length}/${read.length}`);
-  console.log(`Applied-for  : ${read.filter((o) => o.keyFields?.applied_for_job_title).length}/${read.length}`);
+  console.log(`Applied-for  : ${read.filter((o) => o.keyFields?.appliedForJobTitle).length}/${read.length}`);
 
   const outDir = process.env.CV_REREAD_OUT_DIR ?? path.join(process.cwd(), ".cv-reread");
   mkdirSync(outDir, { recursive: true });

@@ -28,7 +28,7 @@
 // Isomorphic and dependency-free (no AI client, no DB) so it can be unit-tested directly and
 // imported from either side of the pipeline.
 
-import type { ExtractedCandidateFields, ExtractedCvValue, ExtractedField } from "@/lib/recruitment/cv-extraction-fields";
+import { type ExtractedCandidateFields, isEmptyExtractedField } from "@/lib/recruitment/cv-extraction-fields";
 import { isThinCvRead, scoreCvExtraction } from "@/lib/recruitment/cv-extraction-quality";
 import type { RuleExtractionResult } from "@/lib/recruitment/rule-extraction";
 
@@ -78,15 +78,6 @@ export const AI_PREFERRED_FIELDS: readonly string[] = [
   "medicalRepExperienceTo",
 ];
 
-function isEmpty(field: ExtractedField<ExtractedCvValue> | undefined): boolean {
-  if (!field) return true;
-  const { value } = field;
-  if (value === null || value === undefined) return true;
-  if (typeof value === "string") return value.trim().length === 0;
-  if (Array.isArray(value)) return value.length === 0;
-  return false;
-}
-
 /**
  * Combines a rule extraction with an AI extraction under the per-field policy above.
  *
@@ -108,8 +99,8 @@ export function mergeRuleAndAiExtractions(
   for (const key of new Set([...Object.keys(ruleFields), ...Object.keys(aiFields)])) {
     const rule = ruleFields[key];
     const ai = aiFields[key];
-    const ruleEmpty = isEmpty(rule);
-    const aiEmpty = isEmpty(ai);
+    const ruleEmpty = isEmptyExtractedField(rule);
+    const aiEmpty = isEmptyExtractedField(ai);
 
     if (ruleEmpty && aiEmpty) continue;
     if (aiEmpty) {
@@ -190,7 +181,7 @@ export type EscalationDecision = {
  * parseable work history, or one where the text layer had to be repaired and may still be wrong.
  */
 export function shouldEscalateToAi(result: RuleExtractionResult): EscalationDecision {
-  const missingFields = AI_WORTH_ASKING_FIELDS.filter((key) => isEmpty(result.fields[key]));
+  const missingFields = AI_WORTH_ASKING_FIELDS.filter((key) => isEmptyExtractedField(result.fields[key]));
 
   if (!result.isCv) {
     return { escalate: false, missingFields, reason: "not a CV — nothing to extract" };
@@ -243,7 +234,7 @@ export function aiFieldsWorthAsking(
 ): readonly string[] {
   return schemaFieldKeys.filter((key) => {
     const rule = ruleFields[key];
-    if (isEmpty(rule)) return true;
+    if (isEmptyExtractedField(rule)) return true;
     if (RULE_AUTHORITATIVE_FIELDS.includes(key)) return false;
     if (AI_PREFERRED_FIELDS.includes(key)) return true;
     return rule!.confidence === "low";

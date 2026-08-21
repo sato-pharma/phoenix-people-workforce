@@ -9,7 +9,12 @@
 // Pure on purpose (no pdf-parse, no OpenAI, no Supabase) so the escalation rule can be tested
 // directly and so cv-extraction-fields.ts's client importers stay unaffected.
 
-import type { ExtractedCandidateFields, ExtractedCvValue, ExtractedField } from "@/lib/recruitment/cv-extraction-fields";
+import {
+  type ExtractedCandidateFields,
+  type ExtractedCvValue,
+  type ExtractedField,
+  isEmptyExtractedField,
+} from "@/lib/recruitment/cv-extraction-fields";
 
 // The fields a genuinely-read CV almost always yields. Chosen from measured production fill rates
 // rather than from taste: across the 177 completed extractions these sat at 86–100%, so a miss
@@ -47,13 +52,12 @@ export type CvExtractionScore = {
   hasName: boolean;
 };
 
+// The positive half of the one shared emptiness rule (isEmptyExtractedField). This used to be a
+// second, independently-written copy of the same three checks; it is a delegation now so the score,
+// the rule-vs-AI merge policy and the ops reporting can never drift apart about what "the model
+// answered this" means.
 function hasValue(field: ExtractedField<ExtractedCvValue> | undefined): boolean {
-  if (!field) return false;
-  const value = field.value;
-  if (value === null || value === undefined) return false;
-  if (Array.isArray(value)) return value.length > 0;
-  if (typeof value === "string") return value.trim().length > 0;
-  return true;
+  return !isEmptyExtractedField(field);
 }
 
 /**
@@ -91,6 +95,34 @@ export function scoreCvExtraction(fields: ExtractedCandidateFields | null | unde
  */
 export function isThinCvRead(score: CvExtractionScore): boolean {
   return score.coreFilled < MIN_CORE_CV_SIGNALS || !score.hasName;
+}
+
+/**
+ * What a finished extraction may honestly be REPORTED as.
+ *
+ * `read` and `empty` are both "the call returned without throwing", which is why every counter that
+ * split outcomes into success-or-error got this wrong. An extraction that produced nothing usable is
+ * not a failure — nothing errored, a row was written, no retry is owed — but it is emphatically not
+ * a read either, and reporting it as one is how a total failure gets announced as a total success.
+ *
+ * The distinction is `filled`, counted with the shared emptiness rule, so five empty repeating blocks
+ * score 0 rather than 5. Callers should print the two on separate lines: a summary that says only
+ * "Failed: 0" must never again be able to mean "nothing was extracted".
+ */
+export type CvReadOutcome = {
+  /** `empty` = the extraction succeeded mechanically and yielded no usable value at all. */
+  readonly status: "read" | "empty";
+  readonly fieldsWithAValue: number;
+  readonly fieldsHighConfidence: number;
+};
+
+export function describeCvRead(fields: ExtractedCandidateFields | null | undefined): CvReadOutcome {
+  const score = scoreCvExtraction(fields);
+  return {
+    fieldsHighConfidence: score.highConfidence,
+    fieldsWithAValue: score.filled,
+    status: score.filled === 0 ? "empty" : "read",
+  };
 }
 
 function betterField(
