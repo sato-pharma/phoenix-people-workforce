@@ -94,7 +94,7 @@ type MedicalRepOption = EmployeePlansWorkspace["medicalRepOptions"][number];
 // for the case where the seat map could not be loaded at all.
 type AreaSource = {
   seats: EmployeePlansWorkspace["planningAreaSeats"];
-  ownRegionCode: string | null;
+  owner: { areaName: string | null; regionCode: string | null };
   roster: MedicalRepOption[];
   ownSeat: { areaName?: string | null; regionName?: string | null } | null;
 };
@@ -880,7 +880,7 @@ function needsLineSelection(options: MedicalRepOption[]): boolean {
 // it cannot see an area whose occupant has a blank area_name (Beni Suef), and it cannot
 // express the district split at all.
 function areasForRegion(source: AreaSource, region: string): string[] {
-  const fromSeatModel = planningAreaOptions(source.seats, region, source.ownRegionCode);
+  const fromSeatModel = planningAreaOptions(source.seats, region, source.owner);
   if (fromSeatModel.length > 0) return fromSeatModel;
   return planningAreasForRegion(source.roster, region, source.ownSeat);
 }
@@ -1176,7 +1176,10 @@ export function PlansWorkspace({
   // pair below it is only reached when that map could not be loaded.
   const areaSource = useMemo<AreaSource>(
     () => ({
-      ownRegionCode: workspace.currentEmployee?.regionCode ?? null,
+      owner: {
+        areaName: workspace.currentEmployee?.areaName ?? null,
+        regionCode: workspace.currentEmployee?.regionCode ?? null,
+      },
       ownSeat: workspace.currentEmployee ?? null,
       roster: workspace.medicalRepOptions,
       seats: workspace.planningAreaSeats,

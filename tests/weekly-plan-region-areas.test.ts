@@ -89,19 +89,44 @@ export function runWeeklyPlanRegionAreasTests() {
 
   // THE headline case: an Upper Egypt 1 Anti Infective rep gets her own district, whole and
   // nothing but. Beni Suef is in it despite having no rep row carrying that area name.
-  const ue1 = planningAreaOptions(ANTI_INFECTIVE_SEATS, "Upper Egypt", "UE-1");
+  const ue1 = planningAreaOptions(ANTI_INFECTIVE_SEATS, "Upper Egypt", { regionCode: "UE-1" });
   assert.deepEqual(ue1, ["Beni Suef", "Minia 1", "Minia 2"]);
   for (const foreign of ["Assuit 1", "Assuit 2", "Sohag1", "Sohag2", "Qena 1", "Qena 2"]) {
     assert.ok(!ue1.includes(foreign), `a UE-1 rep must not be offered ${foreign} (that is UE-2)`);
   }
 
+  // B-1's ACTUAL production row, as of 2026-08-22: area "Minia 1" (a UE-1 area) but
+  // region_name "Upper Egypt 2" and a NULL region_code. The area must win — keying off the
+  // region columns here would hand her Assuit/Sohag/Qena, which is precisely wrong.
+  assert.deepEqual(
+    planningAreaOptions(ANTI_INFECTIVE_SEATS, "Upper Egypt", { areaName: "Minia 1", regionCode: null }),
+    ["Beni Suef", "Minia 1", "Minia 2"],
+    "the owner's AREA must decide the district, not the hand-editable region columns",
+  );
+  // Same row, with the drifted region code actually present and contradicting the area.
+  assert.deepEqual(
+    planningAreaOptions(ANTI_INFECTIVE_SEATS, "Upper Egypt", { areaName: "Minia 1", regionCode: "UE-2" }),
+    ["Beni Suef", "Minia 1", "Minia 2"],
+    "a region code contradicting the area must lose to the area",
+  );
+  // Area matching ignores case and padding, the way the au model is keyed.
+  assert.deepEqual(
+    planningAreaOptions(ANTI_INFECTIVE_SEATS, "Upper Egypt", { areaName: "  minia 1 " }),
+    ["Beni Suef", "Minia 1", "Minia 2"],
+  );
+  // An area that is not in the seat map falls back to the region code.
+  assert.deepEqual(
+    planningAreaOptions(ANTI_INFECTIVE_SEATS, "Upper Egypt", { areaName: "Nowhere", regionCode: "UE-1" }),
+    ["Beni Suef", "Minia 1", "Minia 2"],
+  );
+
   // The mirror case: a UE-2 rep gets UE-2 and never Minia or Beni Suef.
-  const ue2 = planningAreaOptions(ANTI_INFECTIVE_SEATS, "Upper Egypt", "UE-2");
+  const ue2 = planningAreaOptions(ANTI_INFECTIVE_SEATS, "Upper Egypt", { regionCode: "UE-2" });
   assert.deepEqual(ue2, ["Assuit 1", "Assuit 2", "Qena 1", "Qena 2", "Sohag1", "Sohag2"]);
   assert.ok(!ue2.includes("Beni Suef"), "a UE-2 rep must not be offered Beni Suef (that is UE-1)");
 
   // A line with no district split keeps the whole region.
-  assert.deepEqual(planningAreaOptions(CNS_SEATS, "Upper Egypt", "UE"), [
+  assert.deepEqual(planningAreaOptions(CNS_SEATS, "Upper Egypt", { regionCode: "UE" }), [
     "Assuit 1",
     "Minia 1",
     "Minia 2",
@@ -109,12 +134,12 @@ export function runWeeklyPlanRegionAreasTests() {
   ]);
 
   // Region case and stored spelling do not matter — the canonicaliser decides.
-  assert.deepEqual(planningAreaOptions(ANTI_INFECTIVE_SEATS, "upper egypt", "UE-1"), [
+  assert.deepEqual(planningAreaOptions(ANTI_INFECTIVE_SEATS, "upper egypt", { regionCode: "UE-1" }), [
     "Beni Suef",
     "Minia 1",
     "Minia 2",
   ]);
-  assert.deepEqual(planningAreaOptions(ANTI_INFECTIVE_SEATS, "Upper Egypt", "ue-1"), [
+  assert.deepEqual(planningAreaOptions(ANTI_INFECTIVE_SEATS, "Upper Egypt", { regionCode: "ue-1" }), [
     "Beni Suef",
     "Minia 1",
     "Minia 2",
@@ -124,11 +149,11 @@ export function runWeeklyPlanRegionAreasTests() {
 
   // Picking a region the rep's district is not in offers that whole region rather than an
   // empty list — an empty picker is the bug this whole change exists to end.
-  assert.deepEqual(planningAreaOptions(ANTI_INFECTIVE_SEATS, "Cairo", "UE-1"), ["Heliopolis", "Nasr City"]);
+  assert.deepEqual(planningAreaOptions(ANTI_INFECTIVE_SEATS, "Cairo", { regionCode: "UE-1" }), ["Heliopolis", "Nasr City"]);
 
   // An unknown/blank own district also falls back to the whole region rather than nothing.
   assert.equal(planningAreaOptions(ANTI_INFECTIVE_SEATS, "Upper Egypt", null).length, 9);
-  assert.equal(planningAreaOptions(ANTI_INFECTIVE_SEATS, "Upper Egypt", "ZZ").length, 9);
+  assert.equal(planningAreaOptions(ANTI_INFECTIVE_SEATS, "Upper Egypt", { regionCode: "ZZ" }).length, 9);
 
   // "Others" is not plannable under any region.
   for (const region of APPROVED_PLANNING_REGIONS) {
@@ -139,8 +164,8 @@ export function runWeeklyPlanRegionAreasTests() {
   }
 
   // No region chosen yet -> no areas, whatever the seat map holds.
-  assert.deepEqual(planningAreaOptions(ANTI_INFECTIVE_SEATS, "", "UE-1"), []);
-  assert.deepEqual(planningAreaOptions(ANTI_INFECTIVE_SEATS, "Others", "UE-1"), []);
+  assert.deepEqual(planningAreaOptions(ANTI_INFECTIVE_SEATS, "", { regionCode: "UE-1" }), []);
+  assert.deepEqual(planningAreaOptions(ANTI_INFECTIVE_SEATS, "Others", { regionCode: "UE-1" }), []);
 
   // ---------------------------------------------------------------- 4. the roster fallback
 
@@ -192,15 +217,16 @@ export function runWeeklyPlanRegionAreasTests() {
   // The picker must prefer the seat model and keep the roster only as a fallback.
   assert.match(
     workspaceSrc,
-    /planningAreaOptions\(source\.seats, region, source\.ownRegionCode\)[\s\S]{0,200}planningAreasForRegion\(source\.roster/,
+    /planningAreaOptions\(source\.seats, region, source\.owner\)[\s\S]{0,200}planningAreasForRegion\(source\.roster/,
     "areasForRegion must try the seat model first and fall back to the roster",
   );
-  // The owner's district code has to actually reach the client for the narrowing to work.
+  // The owner's own area has to actually reach the client — it is what decides the district.
+  assert.match(serviceSrc, /areaName: employee\.areaName/, "the payload must carry the owner's area");
   assert.match(serviceSrc, /regionCode: employee\.regionCode \?\? null/, "the payload must carry the owner's region code");
   assert.match(serviceSrc, /planningAreaSeats,/, "the payload must carry the seat map");
   assert.match(
     workspaceSrc,
-    /ownRegionCode: workspace\.currentEmployee\?\.regionCode \?\? null/,
-    "the Area picker must be given the owner's district code",
+    /areaName: workspace\.currentEmployee\?\.areaName \?\? null/,
+    "the Area picker must be given the owner's own area",
   );
 }
