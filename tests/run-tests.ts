@@ -206,6 +206,7 @@ import { runCrmCheckinCoordGuardTests } from "./crm-checkin-coord-guard.test.ts"
 import { runCrmAmpmNormalizationTests } from "./crm-ampm-normalization.test.ts";
 import { runCrmVisitTypeLabelTests } from "./crm-visit-type-labels.test.ts";
 import { runCrmRepDoctorListsTests } from "./crm-rep-doctor-lists.test.ts";
+import { runCrmRepDoctorTrendTests } from "./crm-rep-doctor-trend.test.ts";
 import { runLocationIqGeocodeConfidenceTests } from "./locationiq-geocode-confidence.test.ts";
 import { runPrivateCalendarTests } from "./private-calendar.test.ts";
 import { runWeeklyPlanApproverUiParityTests } from "./weekly-plan-approver-ui-parity.test.ts";
@@ -1182,6 +1183,12 @@ await runTest(
   + "agents leave both sides, an unknown specialty is named not folded, and the drill-down cap can "
   + "never look like a complete list)",
   runCrmRepDoctorListsTests,
+);
+await runTest(
+  "crm rep coverage & frequency trend (a rep with no plan in a month reads BLANK, never 0% — and "
+  + "the like-for-like cohort holds flat across a departure that moves the company line 25 points, "
+  + "so a change in WHO is measured can never be reported as a change in performance)",
+  runCrmRepDoctorTrendTests,
 );
 await runTest("LocationIQ geocode confidence (reverse/forward scoring + LocationIQ-first/Google-fallback wiring)", runLocationIqGeocodeConfidenceTests);
 await runTest("private calendar", runPrivateCalendarTests);

@@ -16,12 +16,17 @@ import { canAccess } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { getRepDoctorLists, resolveRepDoctorListMonth } from "@/lib/crm/rep-doctor-lists";
 import { canAccessRepDoctorLists } from "@/lib/crm/rep-doctor-lists-access";
+import { getRepDoctorTrend, REP_DOCTOR_TREND_FIRST_MONTH } from "@/lib/crm/rep-doctor-lists-trend";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+const MONTH_PATTERN = /^\d{4}-(0[1-9]|1[0-2])$/;
+
 type PageProps = {
   searchParams?: Promise<{
+    frequency?: string;
+    from?: string;
     kind?: string;
     month?: string;
     rep?: string;
@@ -41,11 +46,16 @@ export default async function RepDoctorListsPage({ searchParams }: PageProps) {
   const params = await searchParams;
   const month = resolveRepDoctorListMonth(params?.month);
   const filters = {
+    frequency: params?.frequency,
     kind: params?.kind,
     repKey: params?.rep,
     search: params?.search,
     status: params?.status,
   };
+  // The trend's start month is adjustable, because January is the range's weakest month — 32 of its
+  // 58 planning agents have since left — and starting at February gives a materially larger
+  // like-for-like cohort. Anything unparseable falls back to the mirror's first month.
+  const trendFrom = params?.from && MONTH_PATTERN.test(params.from) ? params.from : REP_DOCTOR_TREND_FIRST_MONTH;
 
   // Data fetch and JSX stay separated (react-hooks/error-boundaries: JSX must not be constructed
   // inside try/catch). A data failure renders a plain explanation, never a crash page.
@@ -55,6 +65,16 @@ export default async function RepDoctorListsPage({ searchParams }: PageProps) {
     board = await getRepDoctorLists({ filters, month });
   } catch (error) {
     loadError = error instanceof Error ? error.message : "Rep doctor list data is unavailable.";
+  }
+
+  // The trend is eight months of scanning and is NOT allowed to take the month board down with it:
+  // the month board is the answer to "how is this rep doing now", and it must render even when the
+  // history behind it cannot. A null trend simply hides that one section.
+  let trend: Awaited<ReturnType<typeof getRepDoctorTrend>> | null = null;
+  try {
+    trend = await getRepDoctorTrend({ from: trendFrom, to: month });
+  } catch {
+    trend = null;
   }
 
   if (!board) {
@@ -68,7 +88,7 @@ export default async function RepDoctorListsPage({ searchParams }: PageProps) {
 
   return (
     <div className="space-y-5">
-      <RepDoctorListsBoardView basePath="/admin/rep-doctor-lists" board={board} />
+      <RepDoctorListsBoardView basePath="/admin/rep-doctor-lists" board={board} trend={trend} />
     </div>
   );
 }

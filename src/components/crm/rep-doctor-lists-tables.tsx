@@ -10,10 +10,18 @@ import {
   PortalRecordFields,
   PortalResponsiveDataList,
 } from "@/components/employee-portal/portal-primitives";
+import {
+  coverageAccent,
+  coverageBar,
+  coverageText,
+  frequencyBar,
+  frequencyText,
+} from "@/components/crm/rep-doctor-kpi-tone";
 import { ExportXlsxButton } from "@/components/ui/export-xlsx-button";
 import { SortableTh, TableSearchInput } from "@/components/ui/sortable-table";
 import { useSortableTable } from "@/components/ui/use-sortable-table";
 import type {
+  RepDoctorFrequencyStatus,
   RepDoctorListDoctorRow,
   RepDoctorListFilters,
   RepDoctorListRepRow,
@@ -55,12 +63,24 @@ const STATUS_TEXT: Record<RepDoctorStatus, string> = {
   seen: "text-emerald-700",
 };
 
-// Adherence tone in one place, so the card badge and the desktop meter cannot drift apart.
-const adherenceAccent = (pct: number): "amber" | "emerald" | "rose" =>
-  pct >= 80 ? "emerald" : pct >= 50 ? "amber" : "rose";
-const adherenceText = (pct: number) =>
-  pct >= 80 ? "text-emerald-700" : pct >= 50 ? "text-amber-700" : "text-rose-700";
-const adherenceBar = (pct: number) => (pct >= 80 ? "bg-emerald-500" : pct >= 50 ? "bg-amber-400" : "bg-rose-400");
+const FREQUENCY_LABEL: Record<RepDoctorFrequencyStatus, string> = {
+  missed: "Never visited",
+  not_due: "Not due yet",
+  off_plan: "Off plan",
+  on_plan: "On plan",
+  over: "Over plan",
+  under: "Under plan",
+};
+
+const FREQUENCY_TEXT: Record<RepDoctorFrequencyStatus, string> = {
+  missed: "text-rose-700",
+  not_due: "text-slate-400",
+  off_plan: "text-amber-700",
+  on_plan: "text-emerald-700",
+  // Over-visiting is a deviation on the owner's rule, not a bonus — it must never read as a pass.
+  over: "text-sky-700",
+  under: "text-amber-700",
+};
 
 const KIND_LABEL: Record<string, string> = {
   hcp: "Account",
@@ -81,6 +101,7 @@ export function RepDoctorListsControls({
 }) {
   const router = useRouter();
   const [draft, setDraft] = useState({
+    frequency: applied.frequency ?? "",
     kind: applied.kind ?? "",
     month,
     rep: applied.repKey ?? "",
@@ -89,11 +110,12 @@ export function RepDoctorListsControls({
   });
   const [syncing, setSyncing] = useState(false);
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
-  const active = Boolean(applied.kind || applied.repKey || applied.search || applied.status);
+  const active = Boolean(applied.frequency || applied.kind || applied.repKey || applied.search || applied.status);
 
   const push = (next: typeof draft) => {
     const params = new URLSearchParams();
     params.set("month", next.month);
+    if (next.frequency) params.set("frequency", next.frequency);
     if (next.kind) params.set("kind", next.kind);
     if (next.rep) params.set("rep", next.rep);
     if (next.status) params.set("status", next.status);
@@ -102,7 +124,7 @@ export function RepDoctorListsControls({
   };
 
   const clearAll = () => {
-    const cleared = { kind: "", month: draft.month, rep: "", search: "", status: "" };
+    const cleared = { frequency: "", kind: "", month: draft.month, rep: "", search: "", status: "" };
     setDraft(cleared);
     push(cleared);
   };
@@ -177,6 +199,23 @@ export function RepDoctorListsControls({
         </label>
 
         <label className="space-y-1">
+          <span className={LABEL_CLASS}>Frequency</span>
+          <select
+            className={SELECT_CLASS}
+            onChange={(e) => setDraft({ ...draft, frequency: e.target.value })}
+            value={draft.frequency}
+          >
+            <option value="">All frequencies</option>
+            <option value="on_plan">On plan</option>
+            <option value="under">Under plan</option>
+            <option value="over">Over plan</option>
+            <option value="missed">Never visited</option>
+            <option value="not_due">Not due yet</option>
+            <option value="off_plan">Off plan</option>
+          </select>
+        </label>
+
+        <label className="space-y-1">
           <span className={LABEL_CLASS}>Type</span>
           <select className={SELECT_CLASS} onChange={(e) => setDraft({ ...draft, kind: e.target.value })} value={draft.kind}>
             <option value="">Doctors &amp; accounts</option>
@@ -245,31 +284,43 @@ const REP_COLS = [
   { accessor: (r: RepDoctorListRepRow) => r.plannedDoctors, key: "plannedDoctors", type: "number" as const },
   { accessor: (r: RepDoctorListRepRow) => r.visitedDoctors, key: "visitedDoctors", type: "number" as const },
   { accessor: (r: RepDoctorListRepRow) => r.missedDoctors, key: "missedDoctors", type: "number" as const },
-  { accessor: (r: RepDoctorListRepRow) => r.adherencePct, key: "adherencePct", type: "number" as const },
+  { accessor: (r: RepDoctorListRepRow) => r.coveragePct, key: "coveragePct", type: "number" as const },
+  { accessor: (r: RepDoctorListRepRow) => r.frequencyPct, key: "frequencyPct", type: "number" as const },
+  { accessor: (r: RepDoctorListRepRow) => r.onPlanDoctors, key: "onPlanDoctors", type: "number" as const },
+  { accessor: (r: RepDoctorListRepRow) => r.underDoctors, key: "underDoctors", type: "number" as const },
+  { accessor: (r: RepDoctorListRepRow) => r.overDoctors, key: "overDoctors", type: "number" as const },
   { accessor: (r: RepDoctorListRepRow) => r.offPlanDoctors, key: "offPlanDoctors", type: "number" as const },
   { accessor: (r: RepDoctorListRepRow) => r.campaignCalls, key: "campaignCalls", type: "number" as const },
   { accessor: (r: RepDoctorListRepRow) => r.plannedAccounts, key: "plannedAccounts", type: "number" as const },
   { accessor: (r: RepDoctorListRepRow) => r.gradeA, key: "gradeA", type: "number" as const },
+  { accessor: (r: RepDoctorListRepRow) => r.underPlannedVsGrade, key: "underPlannedVsGrade", type: "number" as const },
   { accessor: (r: RepDoctorListRepRow) => r.unverifiedCalls, key: "unverifiedCalls", type: "number" as const },
 ];
 
 export function RepDoctorListsRepTable({ month, rows }: { month: string; rows: RepDoctorListRepRow[] }) {
   const table = useSortableTable(rows, {
     columns: REP_COLS,
-    initialSort: { dir: "asc", key: "adherencePct" },
+    initialSort: { dir: "asc", key: "coveragePct" },
     searchAccessors: [(r) => r.repName, (r) => r.agentHrId ?? ""],
   });
 
   const exportRows = table.rows.map((row) => ({
     a_b_c: `${row.gradeA} / ${row.gradeB} / ${row.gradeC}`,
     accounts: row.plannedAccounts,
-    adherence: row.hasMeasurablePlan ? row.adherencePct : "",
     campaign_calls: row.campaignCalls,
+    // Blank, never 0, for a rep with no plan — a 0 in a spreadsheet column headed "Coverage %"
+    // outlives every caveat on the screen it was exported from.
+    coverage: row.hasMeasurablePlan ? row.coveragePct : "",
+    frequency: row.hasMeasurablePlan ? row.frequencyPct : "",
     hr_id: row.agentHrId ?? "",
     missed: row.missedDoctors,
     off_plan: row.offPlanDoctors,
+    on_plan: row.onPlanDoctors,
+    over: row.overDoctors,
     planned: row.plannedDoctors,
     rep: row.repName,
+    under: row.underDoctors,
+    under_vs_grade: row.underPlannedVsGrade,
     unverified: row.unverifiedCalls,
     visited: row.visitedDoctors,
   }));
@@ -285,10 +336,15 @@ export function RepDoctorListsRepTable({ month, rows }: { month: string; rows: R
             { key: "planned", label: "Doctors On List", numeric: true },
             { key: "visited", label: "Visited", numeric: true },
             { key: "missed", label: "Never Visited", numeric: true },
-            { key: "adherence", label: "Adherence %", numeric: true },
+            { key: "coverage", label: "Coverage %", numeric: true },
+            { key: "frequency", label: "Frequency %", numeric: true },
+            { key: "on_plan", label: "On Plan", numeric: true },
+            { key: "under", label: "Under Plan", numeric: true },
+            { key: "over", label: "Over Plan", numeric: true },
             { key: "off_plan", label: "Off Plan", numeric: true },
             { key: "accounts", label: "Accounts On List", numeric: true },
             { key: "a_b_c", label: "A / B / C" },
+            { key: "under_vs_grade", label: "Planned Below Grade", numeric: true },
             { key: "unverified", label: "Unverified Calls", numeric: true },
           ]}
           rows={exportRows}
@@ -307,14 +363,31 @@ export function RepDoctorListsRepTable({ month, rows }: { month: string; rows: R
         items={table.rows}
         renderCard={(row) => (
           <PortalRecordCard
-            accent={row.hasMeasurablePlan ? adherenceAccent(row.adherencePct) : "slate"}
+            accent={row.hasMeasurablePlan ? coverageAccent(row.coveragePct) : "slate"}
             meta={`${row.plannedDoctors} on list · ${row.plannedAccounts} accounts`}
+            // BOTH KPIs sit in the badge, labelled, because neither one answers the owner's question
+            // on its own: coverage says he touched the doctor, frequency says he touched him the
+            // right number of times, and a rep can be 100% on the first and 70% on the second.
+            //
             // A rep with no planned doctors has no percentage to show. Printing 0% here states
             // "reached none of their list" about someone who was never given one -- so the card
             // says so in words instead, exactly as the desktop cell does.
             status={
               row.hasMeasurablePlan ? (
-                <span className={`text-sm font-black ${adherenceText(row.adherencePct)}`}>{row.adherencePct}%</span>
+                <span className="flex items-start gap-3">
+                  <span className="flex flex-col items-end leading-tight">
+                    <span className={`text-sm font-black ${coverageText(row.coveragePct)}`}>{row.coveragePct}%</span>
+                    <span className="whitespace-nowrap text-[8px] font-black uppercase tracking-[0.12em] text-slate-400">
+                      Coverage
+                    </span>
+                  </span>
+                  <span className="flex flex-col items-end leading-tight">
+                    <span className={`text-sm font-black ${frequencyText(row.frequencyPct)}`}>{row.frequencyPct}%</span>
+                    <span className="whitespace-nowrap text-[8px] font-black uppercase tracking-[0.12em] text-slate-400">
+                      Frequency
+                    </span>
+                  </span>
+                </span>
               ) : (
                 <span className="whitespace-nowrap text-[10px] font-bold uppercase tracking-[0.08em] text-slate-400">
                   No plan
@@ -330,12 +403,26 @@ export function RepDoctorListsRepTable({ month, rows }: { month: string; rows: R
                   label: "Never visited",
                   value: <span className={row.missedDoctors > 0 ? "text-rose-700" : "text-slate-400"}>{row.missedDoctors}</span>,
                 },
+                { label: "On plan", value: <span className="text-emerald-700">{row.onPlanDoctors}</span> },
+                // Under and over share one field on the card. Both are deviations on the owner's
+                // rule, and splitting them into two of six slots would crowd out the context that
+                // makes them readable.
+                {
+                  label: "Under / over",
+                  value: (
+                    <span className="whitespace-nowrap">
+                      <span className={row.underDoctors > 0 ? "text-amber-700" : "text-slate-400"}>{row.underDoctors}</span>
+                      <span className="text-slate-300"> / </span>
+                      <span className={row.overDoctors > 0 ? "text-sky-700" : "text-slate-400"}>{row.overDoctors}</span>
+                    </span>
+                  ),
+                },
                 {
                   label: "Off plan",
                   value: <span className={row.offPlanDoctors > 0 ? "text-amber-700" : "text-slate-400"}>{row.offPlanDoctors}</span>,
                 },
-                // Campaign calls prove the rep worked but name no doctor, so they sit BESIDE
-                // adherence and never inside it — same rule the desktop column follows.
+                // Campaign calls prove the rep worked but name no doctor, so they sit BESIDE both
+                // KPIs and never inside either — same rule the desktop column follows.
                 {
                   label: "Campaign",
                   value: <span className={row.campaignCalls > 0 ? "text-sky-700" : "text-slate-400"}>{row.campaignCalls}</span>,
@@ -350,18 +437,23 @@ export function RepDoctorListsRepTable({ month, rows }: { month: string; rows: R
           </PortalRecordCard>
         )}
         renderTable={() => (
-          <PortalDesktopTable className="text-xs" minWidth="1040px">
+          <PortalDesktopTable className="text-xs" minWidth="1440px">
             <thead>
               <tr className="bg-slate-900 text-left">
                 <SortableTh className={THEAD} label="Rep" onSort={table.toggleSort} sort={table.sort} sortKey="repName" />
                 <SortableTh align="right" className={`${THEAD} text-right`} label="On List" onSort={table.toggleSort} sort={table.sort} sortKey="plannedDoctors" />
                 <SortableTh align="right" className={`${THEAD} text-right text-emerald-300`} label="Visited" onSort={table.toggleSort} sort={table.sort} sortKey="visitedDoctors" />
                 <SortableTh align="right" className={`${THEAD} text-right text-rose-300`} label="Never Visited" onSort={table.toggleSort} sort={table.sort} sortKey="missedDoctors" />
-                <SortableTh align="right" className={`${THEAD} text-right`} label="Adherence" onSort={table.toggleSort} sort={table.sort} sortKey="adherencePct" />
+                <SortableTh align="right" className={`${THEAD} text-right`} label="Coverage" onSort={table.toggleSort} sort={table.sort} sortKey="coveragePct" />
+                <SortableTh align="right" className={`${THEAD} text-right`} label="Frequency" onSort={table.toggleSort} sort={table.sort} sortKey="frequencyPct" />
+                <SortableTh align="right" className={`${THEAD} text-right text-emerald-300`} label="On Plan" onSort={table.toggleSort} sort={table.sort} sortKey="onPlanDoctors" />
+                <SortableTh align="right" className={`${THEAD} text-right text-amber-300`} label="Under" onSort={table.toggleSort} sort={table.sort} sortKey="underDoctors" />
+                <SortableTh align="right" className={`${THEAD} text-right text-sky-300`} label="Over" onSort={table.toggleSort} sort={table.sort} sortKey="overDoctors" />
                 <SortableTh align="right" className={`${THEAD} text-right text-amber-300`} label="Off Plan" onSort={table.toggleSort} sort={table.sort} sortKey="offPlanDoctors" />
                 <SortableTh align="right" className={`${THEAD} text-right`} label="Campaign" onSort={table.toggleSort} sort={table.sort} sortKey="campaignCalls" />
                 <SortableTh align="right" className={`${THEAD} text-right`} label="Accounts" onSort={table.toggleSort} sort={table.sort} sortKey="plannedAccounts" />
                 <SortableTh align="right" className={`${THEAD} text-right`} label="A / B / C" onSort={table.toggleSort} sort={table.sort} sortKey="gradeA" />
+                <SortableTh align="right" className={`${THEAD} text-right`} label="Below Grade" onSort={table.toggleSort} sort={table.sort} sortKey="underPlannedVsGrade" />
                 <SortableTh align="right" className={`${THEAD} text-right`} label="Unverified" onSort={table.toggleSort} sort={table.sort} sortKey="unverifiedCalls" />
               </tr>
             </thead>
@@ -376,18 +468,19 @@ export function RepDoctorListsRepTable({ month, rows }: { month: string; rows: R
                   </td>
                   {/* A rep with no planned doctors has no percentage to show. Printing 0% here
                       states "reached none of their list" about someone who was never given one --
-                      so the bar is suppressed and the cell says so instead. */}
+                      so the bar is suppressed and the cell says so instead. Both KPI cells follow
+                      the same rule; they are never independently measurable. */}
                   <td className="px-3 py-2">
                     {row.hasMeasurablePlan ? (
                       <div className="flex items-center justify-end gap-2">
                         <div className="h-1 w-16 bg-slate-100">
                           <div
-                            className={`h-full ${adherenceBar(row.adherencePct)}`}
-                            style={{ width: `${Math.max(2, row.adherencePct)}%` }}
+                            className={`h-full ${coverageBar(row.coveragePct)}`}
+                            style={{ width: `${Math.max(2, row.coveragePct)}%` }}
                           />
                         </div>
-                        <span className={`min-w-[34px] text-right font-black ${adherenceText(row.adherencePct)}`}>
-                          {row.adherencePct}%
+                        <span className={`min-w-[34px] text-right font-black ${coverageText(row.coveragePct)}`}>
+                          {row.coveragePct}%
                         </span>
                       </div>
                     ) : (
@@ -398,11 +491,41 @@ export function RepDoctorListsRepTable({ month, rows }: { month: string; rows: R
                       </div>
                     )}
                   </td>
+                  <td className="px-3 py-2">
+                    {row.hasMeasurablePlan ? (
+                      <div className="flex items-center justify-end gap-2">
+                        <div className="h-1 w-16 bg-slate-100">
+                          <div
+                            className={`h-full ${frequencyBar(row.frequencyPct)}`}
+                            style={{ width: `${Math.max(2, row.frequencyPct)}%` }}
+                          />
+                        </div>
+                        <span className={`min-w-[34px] text-right font-black ${frequencyText(row.frequencyPct)}`}>
+                          {row.frequencyPct}%
+                        </span>
+                      </div>
+                    ) : (
+                      <div className="flex items-center justify-end">
+                        <span className="whitespace-nowrap text-right text-[10px] font-bold uppercase tracking-[0.08em] text-slate-400">
+                          No plan
+                        </span>
+                      </div>
+                    )}
+                  </td>
+                  <td className="px-3 py-2 text-right font-bold text-emerald-700">{row.onPlanDoctors}</td>
+                  <td className={`px-3 py-2 text-right font-bold ${row.underDoctors > 0 ? "text-amber-700" : "text-slate-400"}`}>
+                    {row.underDoctors}
+                  </td>
+                  {/* Over-visiting is a deviation, not an achievement — the owner's rule is an exact
+                      match. Sky rather than green so it can never be read as a pass. */}
+                  <td className={`px-3 py-2 text-right font-bold ${row.overDoctors > 0 ? "text-sky-700" : "text-slate-400"}`}>
+                    {row.overDoctors}
+                  </td>
                   <td className={`px-3 py-2 text-right font-bold ${row.offPlanDoctors > 0 ? "text-amber-700" : "text-slate-400"}`}>
                     {row.offPlanDoctors}
                   </td>
-                  {/* Campaign calls prove the rep worked but name no doctor, so they sit BESIDE
-                      adherence and never inside it. Without this column a rep who spent the month
+                  {/* Campaign calls prove the rep worked but name no doctor, so they sit BESIDE both
+                      KPIs and never inside either. Without this column a rep who spent the month
                       on campaign work reads as a flat zero. */}
                   <td className={`px-3 py-2 text-right ${row.campaignCalls > 0 ? "text-sky-700 font-bold" : "text-slate-400"}`}>
                     {row.campaignCalls}
@@ -410,6 +533,11 @@ export function RepDoctorListsRepTable({ month, rows }: { month: string; rows: R
                   <td className="px-3 py-2 text-right text-slate-600">{row.plannedAccounts}</td>
                   <td className="px-3 py-2 text-right text-slate-600">
                     {row.gradeA} / {row.gradeB} / {row.gradeC}
+                  </td>
+                  {/* Doctors whose PLAN asks for fewer calls than their grade norm — a signal about
+                      the plan, not about the rep, and never inside either percentage. */}
+                  <td className={`px-3 py-2 text-right ${row.underPlannedVsGrade > 0 ? "text-amber-700" : "text-slate-400"}`}>
+                    {row.underPlannedVsGrade}
                   </td>
                   <td className={`px-3 py-2 text-right ${row.unverifiedCalls > 0 ? "text-amber-700" : "text-slate-400"}`}>
                     {row.unverifiedCalls}
@@ -426,6 +554,17 @@ export function RepDoctorListsRepTable({ month, rows }: { month: string; rows: R
 
 const STATUS_SEVERITY: Record<RepDoctorStatus, number> = { missed: 0, off_plan: 1, seen: 2 };
 
+// Sort order for the frequency column: worst first, so the default view opens on the problems. A
+// doctor who is not due yet sorts last — he is not a finding.
+const FREQUENCY_SEVERITY: Record<RepDoctorFrequencyStatus, number> = {
+  missed: 0,
+  under: 1,
+  over: 2,
+  off_plan: 3,
+  on_plan: 4,
+  not_due: 5,
+};
+
 const DOCTOR_COLS = [
   { accessor: (r: RepDoctorListDoctorRow) => r.contactName, defaultDir: "asc" as const, key: "contactName", type: "string" as const },
   { accessor: (r: RepDoctorListDoctorRow) => r.gradeRaw, key: "gradeRaw", type: "string" as const },
@@ -433,7 +572,12 @@ const DOCTOR_COLS = [
   { accessor: (r: RepDoctorListDoctorRow) => r.regionName, key: "regionName", type: "string" as const },
   { accessor: (r: RepDoctorListDoctorRow) => r.repName, key: "repName", type: "string" as const },
   { accessor: (r: RepDoctorListDoctorRow) => r.plannedCalls, key: "plannedCalls", type: "number" as const },
+  { accessor: (r: RepDoctorListDoctorRow) => r.plannedCallsToDate, key: "plannedCallsToDate", type: "number" as const },
   { accessor: (r: RepDoctorListDoctorRow) => r.visits, key: "visits", type: "number" as const },
+  // Sorted on the signed delta, not on the status, so "furthest off plan in either direction" is one
+  // click. The status column below sorts on severity instead.
+  { accessor: (r: RepDoctorListDoctorRow) => r.frequencyDelta, defaultDir: "asc" as const, key: "frequencyDelta", type: "number" as const },
+  { accessor: (r: RepDoctorListDoctorRow) => FREQUENCY_SEVERITY[r.frequencyStatus], defaultDir: "asc" as const, key: "frequencyStatus", type: "number" as const },
   { accessor: (r: RepDoctorListDoctorRow) => STATUS_SEVERITY[r.status], defaultDir: "asc" as const, key: "status", type: "number" as const },
   { accessor: (r: RepDoctorListDoctorRow) => r.lastVisitDate, key: "lastVisitDate", type: "string" as const },
 ];
@@ -446,10 +590,14 @@ export function RepDoctorListsDoctorTable({ month, rows }: { month: string; rows
   });
 
   const exportRows = table.rows.map((row) => ({
+    delta: row.frequencyDelta,
     doctor: row.contactName,
+    frequency: FREQUENCY_LABEL[row.frequencyStatus],
     grade: row.gradeRaw ?? "",
+    grade_norm: row.gradeNormCalls ?? "",
     last_visit: row.lastVisitDate ?? "",
     planned: row.plannedCalls,
+    planned_to_date: row.plannedCallsToDate,
     region: row.regionName ?? "",
     rep: row.repName,
     speciality: row.speciality ?? "",
@@ -471,8 +619,12 @@ export function RepDoctorListsDoctorTable({ month, rows }: { month: string; rows
             { key: "region", label: "Locality" },
             { key: "rep", label: "Rep" },
             { key: "planned", label: "Planned Calls", numeric: true },
+            { key: "planned_to_date", label: "Planned To Date", numeric: true },
             { key: "visits", label: "Visits", numeric: true },
-            { key: "status", label: "Status" },
+            { key: "delta", label: "Visits vs Plan", numeric: true },
+            { key: "frequency", label: "Frequency" },
+            { key: "grade_norm", label: "Grade Norm", numeric: true },
+            { key: "status", label: "Coverage" },
             { key: "last_visit", label: "Last Visit" },
           ]}
           rows={exportRows}
@@ -501,10 +653,26 @@ export function RepDoctorListsDoctorTable({ month, rows }: { month: string; rows
                 { label: "Grade", value: row.gradeRaw ?? "—" },
                 { label: "Locality", value: row.regionName ?? "—" },
                 { label: "Rep", value: row.repName },
-                { label: "Planned", value: row.plannedCalls },
+                // The owner's own framing — "he planned three times, did he visit three times". Plan
+                // first, actual second, in the whole-month terms he thinks in; the to-date nuance is
+                // carried by the frequency status beneath rather than by changing this number.
                 {
-                  label: "Visits",
-                  value: <span className={row.visits > 0 ? "text-emerald-700" : "text-slate-400"}>{row.visits}</span>,
+                  label: "Plan / done",
+                  value: (
+                    <span className="whitespace-nowrap">
+                      <span className="text-slate-600">{row.plannedCalls}</span>
+                      <span className="text-slate-300"> / </span>
+                      <span className={row.visits > 0 ? "text-emerald-700" : "text-slate-400"}>{row.visits}</span>
+                    </span>
+                  ),
+                },
+                {
+                  label: "Frequency",
+                  value: (
+                    <span className={`whitespace-nowrap font-bold ${FREQUENCY_TEXT[row.frequencyStatus]}`}>
+                      {FREQUENCY_LABEL[row.frequencyStatus]}
+                    </span>
+                  ),
                 },
                 { label: "Last Visit", value: row.lastVisitDate ?? "Never" },
               ]}
@@ -512,7 +680,7 @@ export function RepDoctorListsDoctorTable({ month, rows }: { month: string; rows
           </PortalRecordCard>
         )}
         renderTable={() => (
-          <PortalDesktopTable className="text-xs" minWidth="980px">
+          <PortalDesktopTable className="text-xs" minWidth="1260px">
             <thead>
               <tr className="bg-slate-900 text-left">
                 <SortableTh className={THEAD} label="Doctor" onSort={table.toggleSort} sort={table.sort} sortKey="contactName" />
@@ -521,8 +689,11 @@ export function RepDoctorListsDoctorTable({ month, rows }: { month: string; rows
                 <SortableTh className={THEAD} label="Locality" onSort={table.toggleSort} sort={table.sort} sortKey="regionName" />
                 <SortableTh className={THEAD} label="Rep" onSort={table.toggleSort} sort={table.sort} sortKey="repName" />
                 <SortableTh align="right" className={`${THEAD} text-right`} label="Planned" onSort={table.toggleSort} sort={table.sort} sortKey="plannedCalls" />
+                <SortableTh align="right" className={`${THEAD} text-right`} label="Due" onSort={table.toggleSort} sort={table.sort} sortKey="plannedCallsToDate" />
                 <SortableTh align="right" className={`${THEAD} text-right`} label="Visits" onSort={table.toggleSort} sort={table.sort} sortKey="visits" />
-                <SortableTh className={THEAD} label="Status" onSort={table.toggleSort} sort={table.sort} sortKey="status" />
+                <SortableTh align="right" className={`${THEAD} text-right`} label="+/-" onSort={table.toggleSort} sort={table.sort} sortKey="frequencyDelta" />
+                <SortableTh className={THEAD} label="Frequency" onSort={table.toggleSort} sort={table.sort} sortKey="frequencyStatus" />
+                <SortableTh className={THEAD} label="Coverage" onSort={table.toggleSort} sort={table.sort} sortKey="status" />
                 <SortableTh className={THEAD} label="Last Visit" onSort={table.toggleSort} sort={table.sort} sortKey="lastVisitDate" />
               </tr>
             </thead>
@@ -539,8 +710,28 @@ export function RepDoctorListsDoctorTable({ month, rows }: { month: string; rows
                   <td className="px-3 py-2 text-slate-400">{row.regionName ?? "—"}</td>
                   <td className="px-3 py-2 font-medium text-slate-700">{row.repName}</td>
                   <td className="px-3 py-2 text-right text-slate-600">{row.plannedCalls}</td>
+                  {/* Calls the plan has already asked for. Equal to Planned once the month closes;
+                      it is the number Visits is actually judged against mid-month, so it is shown
+                      rather than left implicit inside the status. */}
+                  <td
+                    className={`px-3 py-2 text-right ${row.plannedCallsToDate < row.plannedCalls ? "text-slate-600" : "text-slate-300"}`}
+                  >
+                    {row.plannedCallsToDate}
+                  </td>
                   <td className={`px-3 py-2 text-right font-bold ${row.visits > 0 ? "text-emerald-700" : "text-slate-400"}`}>
                     {row.visits}
+                  </td>
+                  {/* Signed on purpose: "how far off, and which way" is the whole question. An exact
+                      match shows a dash rather than a 0, so the exceptions are what the eye finds. */}
+                  <td className={`px-3 py-2 text-right font-bold ${FREQUENCY_TEXT[row.frequencyStatus]}`}>
+                    {row.frequencyDelta === 0 ? (
+                      <span className="text-slate-300">—</span>
+                    ) : (
+                      `${row.frequencyDelta > 0 ? "+" : ""}${row.frequencyDelta}`
+                    )}
+                  </td>
+                  <td className={`px-3 py-2 font-bold ${FREQUENCY_TEXT[row.frequencyStatus]}`}>
+                    {FREQUENCY_LABEL[row.frequencyStatus]}
                   </td>
                   <td className={`px-3 py-2 font-bold ${STATUS_TEXT[row.status]}`}>{STATUS_LABEL[row.status]}</td>
                   <td className="px-3 py-2 text-slate-400">{row.lastVisitDate ?? "Never"}</td>
