@@ -121,7 +121,16 @@ export const CRM_VISIT_COLUMNS: readonly CrmMasterColumn[] = [
   { key: "visit_type_description", kind: "text", label: "Visit Type Description" },
   { key: "effective_type", kind: "text", label: "Effective Type", note: "How the system counts this visit. A Regular visit with NO matching GPS check-in is counted as Campaign — always shown here (flagged), never silently recounted." },
   { key: "call_type", kind: "number", label: "Call Type" },
-  { key: "attendance", kind: "number", label: "Attendance" },
+  // DELIBERATELY NOT A COLUMN: the vendor's `attendance` field. iReports360 documents it as
+  // "1=present, 0=absent", but it is a dead field — measured across the whole production mirror
+  // on 2026-08-21, all 122,814 visits since January carry either 0 (120,922) or NULL (1,892) and
+  // NOT ONE row has ever been 1. A column with zero variance is not data, it is a wall of noise
+  // that reads to anyone opening the export as "every rep was absent on every visit all year".
+  // It is still fetched from the API and still stored (see sync.ts), so nothing is lost and the
+  // column can come straight back the day the vendor starts populating it — but until it varies
+  // it does not belong in front of a human. Real attendance here means "did the rep check in on
+  // a customer" and is derived from the GPS check-in (see sfe-field-analytics.ts and the
+  // `effective_type` column below), never from this field.
   { key: "comment", kind: "text", label: "Comment" },
   { key: "checkin_id", kind: "number", label: "Check-in ID", note: "All 'Check-in …' columns come from the GPS check-in at the SAME contact (same rep, same day; nearest in time to CRM Save Date if the contact has several). Only Regular visits have a contact — Campaign/Meeting/Vacation/etc. correctly show — (no check-in)." },
   { key: "checkin_time", kind: "datetime_local", label: "Check-in Time" },
@@ -291,7 +300,7 @@ function columnsForDataset(dataset: CrmMasterDataset): readonly CrmMasterColumn[
 }
 
 const VISIT_SELECT =
-  "id, crm_visit_id, agent_crm_id, agent_hr_id, agent_name, ampm, attendance, call_type, comment, " +
+  "id, crm_visit_id, agent_crm_id, agent_hr_id, agent_name, ampm, call_type, comment, " +
   "contact_crm_id, contact_name, crm_contact_grade, crm_region_id, crm_region_name, crm_save_date, " +
   "customer_name, double_crm_id, double_hr_id, double_name, speciality, visit_date, visit_type, " +
   "visit_type_description, synced_at, raw_payload";

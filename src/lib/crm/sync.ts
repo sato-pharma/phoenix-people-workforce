@@ -14,6 +14,7 @@ import {
   type IReports360Visit,
 } from "@/lib/crm/client";
 import { getIReports360Config, isIReports360Configured } from "@/lib/crm/config";
+import { isPlausibleCheckinCoordinate, sanitizeCheckinCoordinates } from "@/lib/crm/checkin-coords";
 import { hasLocationIqKey, resolveCheckinAddress } from "@/lib/crm/checkin-geocode";
 import {
   buildCrmIdentityMaps,
@@ -27,7 +28,7 @@ import { CRM_CHECKINS_TABLE, CRM_SYNC_RUNS_TABLE, CRM_VISITS_TABLE } from "@/lib
 import { addDaysIso, cairoTodayIso, todayIso } from "@/lib/crm/dates";
 import { selectOrphanedMappedIdentities, selectUnmappedAgentAlerts } from "@/lib/crm/unmapped-alert";
 import { notifyUnmappedCrmAgentActivity } from "@/lib/notifications/ireports360-sync-digest";
-import { logError } from "@/lib/observability/log";
+import { logError, logWarning } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { hasGoogleServerKey } from "@/lib/google-maps/server";
 import type { VisitsSyncTrigger } from "@/lib/visits-report/types";
@@ -166,8 +167,13 @@ export function rowFromVisit(visit: IReports360Visit, maps: CrmIdentityMaps) {
 }
 
 function rowFromCheckin(checkin: IReports360Checkin, maps: CrmIdentityMaps) {
+  // A handset that briefly loses its fix can report a position on another continent, and check-in
+  // matching keys on rep + contact + day rather than distance — so an impossible coordinate would
+  // otherwise stand as GPS proof-of-presence for the visit. Reject it to nulls here, at the single
+  // ingest point; `raw_payload` below still carries the vendor's original verbatim.
+  const coords = sanitizeCheckinCoordinates(checkin.lat, checkin.lon, checkin.address);
   return {
-    address: checkin.address,
+    address: coords.address,
     agent_crm_id: checkin.agentID,
     // Check-ins have no agent display-name field (crm_id only) — the crm_username fallback
     // can't apply here, only the direct crm_id match. `checkDate` is the record's own date, so it
@@ -177,8 +183,8 @@ function rowFromCheckin(checkin: IReports360Checkin, maps: CrmIdentityMaps) {
     contact_crm_id: checkin.contactID,
     contact_name: checkin.contactName,
     crm_checkin_id: checkin.id,
-    lat: checkin.lat,
-    lon: checkin.lon,
+    lat: coords.lat,
+    lon: coords.lon,
     raw_payload: checkin as unknown as Record<string, unknown>,
     synced_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
@@ -616,6 +622,31 @@ export async function syncIReports360Visits(input: {
     );
 
     const checkinRows = checkins.map((checkin) => rowFromCheckin(checkin, maps));
+    // Never silent-drop: rowFromCheckin nulls an impossible coordinate, so without this the
+    // rejection would leave no trace anywhere except a row that quietly lost its GPS. Counted and
+    // logged so a handset that starts emitting garbage is visible instead of merely absent.
+    const rejectedCheckinCoords = checkins.filter(
+      (checkin) =>
+        typeof checkin.lat === "number" &&
+        typeof checkin.lon === "number" &&
+        !isPlausibleCheckinCoordinate(checkin.lat, checkin.lon),
+    );
+    if (rejectedCheckinCoords.length > 0) {
+      // WARNING, not ERROR, and deliberately so: nothing failed here — the row synced, only its
+      // impossible GPS was dropped. It also must not page anyone, because the rolling window
+      // re-syncs the same dates every few minutes, so one bad handset reading would otherwise
+      // raise the same ERROR several thousand times before it aged out of the window.
+      logWarning("iReports360 check-ins carried coordinates outside Egypt; GPS nulled, raw payload kept", {
+        labels: {
+          agentCrmIds: [...new Set(rejectedCheckinCoords.map((checkin) => checkin.agentID))].slice(0, 20).join(","),
+          checkinIds: rejectedCheckinCoords.map((checkin) => checkin.id).slice(0, 20).join(","),
+          dateFrom: input.dateFrom,
+          dateTo: input.dateTo,
+          event: "crm_sync_checkin_coords_rejected",
+          rejected: rejectedCheckinCoords.length,
+        },
+      });
+    }
     const dedupedCheckinRows = dedupeByKey(checkinRows, (row) => row.crm_checkin_id);
     const checkinRowsForUpsert = filterRowsToUpsert(
       dedupedCheckinRows,
