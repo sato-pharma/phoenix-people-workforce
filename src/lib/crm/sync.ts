@@ -27,7 +27,15 @@ import {
 import { CRM_CHECKINS_TABLE, CRM_SYNC_RUNS_TABLE, CRM_VISITS_TABLE } from "@/lib/crm/tables";
 import { addDaysIso, cairoTodayIso, todayIso } from "@/lib/crm/dates";
 import { selectOrphanedMappedIdentities, selectUnmappedAgentAlerts } from "@/lib/crm/unmapped-alert";
-import { notifyUnmappedCrmAgentActivity } from "@/lib/notifications/ireports360-sync-digest";
+import { selectUnrecognizedVisitTypeAlerts } from "@/lib/crm/unrecognized-visit-type-alert";
+// The attendance module owns the strict whitelist this alert watches, and exports the derived set
+// so nothing here restates the visit-type ruling. Only crm -> attendance import in this module;
+// acyclic, because crm-day-maps reaches crm/reads and crm/reads never reaches crm/sync.
+import { CRM_DAY_CLASSIFIED_VISIT_TYPES } from "@/lib/attendance/crm-day-maps";
+import {
+  notifyUnmappedCrmAgentActivity,
+  notifyUnrecognizedCrmVisitTypes,
+} from "@/lib/notifications/ireports360-sync-digest";
 import { logError, logWarning } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { hasGoogleServerKey } from "@/lib/google-maps/server";
@@ -877,6 +885,49 @@ export async function syncIReports360Visits(input: {
     } catch (error) {
       logError("Unmapped CRM agent alerting failed; the sync itself succeeded", {
         labels: { event: "crm_unmapped_agent_alert_failed", dateFrom: input.dateFrom, dateTo: input.dateTo },
+        error,
+      });
+    }
+
+    // Unrecognized visit-type tripwire (best-effort, never fails the run). Deliberately its OWN
+    // try/catch rather than sharing the block above: these are independent tripwires, and one
+    // throwing must not silence the other. Runs on the same FULL deduped fetch for the same reason
+    // — a delta tick whose rows were otherwise unchanged still carries the new code.
+    //
+    // Expected to find nothing. Every visit type production has ever produced is classified; this
+    // fires only if iReports360 starts sending a code nobody has ruled on, which would otherwise
+    // reach the attendance engine as a silent fall-through. See unrecognized-visit-type-alert.ts.
+    try {
+      const unrecognized = selectUnrecognizedVisitTypeAlerts({
+        recentSinceIso: addDaysIso(cairoTodayIso(), -14),
+        recognizedTypes: CRM_DAY_CLASSIFIED_VISIT_TYPES,
+        rows: dedupedVisitRows.map((row) => ({
+          agentCrmId: row.agent_crm_id,
+          comment: row.comment,
+          visitDate: row.visit_date,
+          visitType: row.visit_type,
+          visitTypeDescription: row.visit_type_description,
+        })),
+      });
+      if (unrecognized.length > 0) {
+        logWarning("iReports360 sent visit type(s) Phoenix has never classified", {
+          labels: {
+            event: "crm_unrecognized_visit_type",
+            dateFrom: input.dateFrom,
+            dateTo: input.dateTo,
+            visitTypes: unrecognized.map((alert) => alert.visitType).join(","),
+          },
+        });
+        await notifyUnrecognizedCrmVisitTypes({
+          alerts: unrecognized,
+          dateFrom: input.dateFrom,
+          dateTo: input.dateTo,
+          runId,
+        });
+      }
+    } catch (error) {
+      logError("Unrecognized CRM visit-type alerting failed; the sync itself succeeded", {
+        labels: { event: "crm_unrecognized_visit_type_alert_failed", dateFrom: input.dateFrom, dateTo: input.dateTo },
         error,
       });
     }

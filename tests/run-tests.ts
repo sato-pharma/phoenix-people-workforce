@@ -688,6 +688,7 @@ import { runDoctorCoverageNormsTests } from "./doctor-coverage-norms.test.ts";
 import { runVisitContactKindTests } from "./visit-contact-kind.test.ts";
 import { runRootRedirectHttp307Tests } from "./root-redirect-http-307.test.ts";
 import { runCrmUnmappedAgentAlertTests } from "./crm-unmapped-agent-alert.test.ts";
+import { runCrmUnrecognizedVisitTypeAlertTests } from "./crm-unrecognized-visit-type-alert.test.ts";
 
 import { runPayrollDeductionGateComposesWithPublishRuleTests } from "./payroll-deduction-gate-composes-with-publish-rule.test.ts";
 import { runJuly2026DirectOrdersTabTests } from "./july-2026-direct-orders-tab.test.ts";
@@ -1677,6 +1678,7 @@ await runTest("one human receives one notification (person-level recipient dedup
 
 await runTest("outstation metrics use the canonical 3-state approval detector (rejected is never pending; Approved means the payable everywhere)", runOutstationExpenseApprovalStateMetricsTests);
 await runTest("CRM unmapped-agent alerts (invisible-work tripwire: new/reused/drifted identities alert, historical stay silent, weekly idempotency key)", runCrmUnmappedAgentAlertTests);
+await runTest("CRM unrecognized visit-type alerts (a code nobody classified alerts; all 16 production codes stay silent; recognized set stays derived from the two Sets)", runCrmUnrecognizedVisitTypeAlertTests);
 
 await runTest(
   "payroll ⨯ deductions gate composition (payroll never pays what the module refuses to publish; dsm_no_record never auto-publishes into a sheet; holiday_bridge reaches the other bucket)",

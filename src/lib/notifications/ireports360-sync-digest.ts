@@ -2,6 +2,7 @@ import { writeAuditLog } from "@/lib/admin/audit";
 import { createSystemNotification } from "@/lib/notifications/system";
 import { resolveNotificationPersonRecipients } from "@/lib/notifications/role-recipients";
 import type { UnmappedAgentAlert, UnmappedAgentAlertKind } from "@/lib/crm/unmapped-alert";
+import type { UnrecognizedVisitTypeAlert } from "@/lib/crm/unrecognized-visit-type-alert";
 
 // Notifies Super Admins over Telegram/in-app every time a CRM (iReports360) pull finishes —
 // success or failure — so someone always knows the visits mirror is fresh without having to
@@ -235,6 +236,100 @@ export async function notifyUnmappedCrmAgentActivity(input: {
             recipientHrId: recipient.hrId,
             recipientUserId: recipient.userId,
             title: UNMAPPED_ALERT_TITLES[alert.kind],
+          });
+          delivered += 1;
+        }),
+      );
+    }
+    return { delivered, skipped: false };
+  } catch (error) {
+    return { delivered: 0, reason: error instanceof Error ? error.message : "unknown error", skipped: true };
+  }
+}
+
+/** Far lower than the unmapped-agent cap on purpose: iReports360 has produced 16 distinct visit
+ * types in its entire history, so more than a handful of NEW ones in one run means something
+ * structural changed at the vendor, and five examples make that point as well as fifty would. */
+const UNRECOGNIZED_VISIT_TYPE_ALERTS_PER_RUN_CAP = 5;
+
+/**
+ * Deliberately leads with the numeric code. Standing rule is to show human-readable names and
+ * never raw codes — but this alert fires precisely because the code HAS no name: Phoenix has never
+ * classified it and the vendor's own description for an undocumented code is the literal string
+ * "Unknown". The number is the only identifier that exists, so it is reported alongside whatever
+ * the vendor did send and a real rep comment, which is how the previous seven were identified.
+ */
+function buildUnrecognizedVisitTypeMessage(alert: UnrecognizedVisitTypeAlert): string {
+  const span = alert.firstDay === alert.lastDay ? `on ${alert.firstDay}` : `${alert.firstDay} → ${alert.lastDay}`;
+  const reps = alert.agentCount === 1 ? "1 rep" : `${alert.agentCount} reps`;
+  const lines: string[] = [
+    `🔴 iReports360 sent visit type ${alert.visitType}, which Phoenix has never classified.`,
+    "",
+    `Seen: ${alert.visitCount} visit(s) by ${reps}, ${span}.`,
+    `The vendor calls it: ${alert.sampleDescription ?? "(it sent no description at all)"}`,
+  ];
+  if (alert.sampleComment) lines.push(`A rep's own comment on one of these visits: ${alert.sampleComment}`);
+  lines.push(
+    "",
+    "What this costs until it is classified: on a day whose ONLY CRM record is this code, the",
+    "attendance engine sets no field-visit and no leave flag, so nothing cancels a deduction and the",
+    "day is judged on punch timing alone. Someone can be deducted for a day they actually worked.",
+    "",
+    "Fix → classify this code in all THREE places that map visit types, deliberately and together:",
+    "  1. src/lib/field-workforce-compliance/ireports360-source.ts (VISIT_TYPE_TO_STATUS)",
+    "  2. src/lib/automated-payroll/recommend.ts (LEAVER_VISIT_TYPE_TO_STATUS)",
+    "  3. src/lib/attendance/crm-day-maps.ts (CRM_CAMPAIGN_VISIT_TYPES / CRM_LEAVE_VISIT_TYPES)",
+  );
+  return lines.join("\n");
+}
+
+/**
+ * Pushes one high-priority notification per unrecognized visit-type code, to the same recipients
+ * as the sync digests, deduped per code + ISO week via the notification event key. Best-effort —
+ * never throws; the sync run this rides on has already succeeded.
+ */
+export async function notifyUnrecognizedCrmVisitTypes(input: {
+  alerts: readonly UnrecognizedVisitTypeAlert[];
+  dateFrom: string;
+  dateTo: string;
+  runId: string;
+}): Promise<IReports360SyncNotifyResult> {
+  try {
+    if (input.alerts.length === 0) return { delivered: 0, reason: "no alerts", skipped: true };
+    const { recipients } = await resolveSyncNotifyRecipients();
+    if (recipients.length === 0) return { delivered: 0, reason: "no recipients", skipped: true };
+
+    const weekKey = isoWeekKeyOf(new Date());
+    const capped = input.alerts.slice(0, UNRECOGNIZED_VISIT_TYPE_ALERTS_PER_RUN_CAP);
+    let delivered = 0;
+    for (const alert of capped) {
+      const message = buildUnrecognizedVisitTypeMessage(alert);
+      await Promise.all(
+        recipients.map(async (recipient) => {
+          await createSystemNotification({
+            actionUrl: "/admin/crm",
+            actorId: "ireports360-sync-cron",
+            channels: ["in_app", "telegram", "push"],
+            eventType: "ireports360_unrecognized_visit_type",
+            message,
+            metadata: {
+              agentCount: alert.agentCount,
+              dateFrom: input.dateFrom,
+              dateTo: input.dateTo,
+              firstDay: alert.firstDay,
+              idempotencyKey: `crm-unrecognized-visit-type:${alert.visitType}:${weekKey}:${recipient.hrId}`,
+              lastDay: alert.lastDay,
+              runId: input.runId,
+              sampleComment: alert.sampleComment,
+              sampleDescription: alert.sampleDescription,
+              visitCount: alert.visitCount,
+              visitType: alert.visitType,
+            },
+            module: "system",
+            priority: "high",
+            recipientHrId: recipient.hrId,
+            recipientUserId: recipient.userId,
+            title: `Unclassified CRM Visit Type ${alert.visitType} — Attendance Cover Is Missing`,
           });
           delivered += 1;
         }),
