@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 
+import { DEFAULT_DOCTOR_COVERAGE_NORMS } from "../src/lib/crm/doctor-coverage-config.ts";
 import {
   buildRepDoctorListsBoard,
+  frequencyStatusOf,
   gradeTierOf,
   monthBounds,
   monthKeyOfDate,
@@ -110,7 +112,7 @@ const PLAN_ROWS: PlanRow[] = [
     speciality: "Chest",
     plan_date: "2026-08-07",
   }),
-  // A place, not a person — must never enter the doctor list or move adherence.
+  // A place, not a person — must never enter the doctor list or move either KPI.
   plan({ contact_crm_id: 1005, contact_name: "El Ezaby Pharmacy", speciality: "Pharmacy", plan_date: "2026-08-08" }),
   // A specialty the shared taxonomy has never seen. Neither doctor nor account until someone rules.
   plan({ contact_crm_id: 1006, contact_name: "Nephro Doc", speciality: "Nephrology", plan_date: "2026-08-09" }),
@@ -216,6 +218,7 @@ function board(overrides: Partial<RepDoctorListsInput> = {}) {
     employeeNameByHrId: new Map([["PHX-101", "Mostafa Kamel"]]),
     excludedAgentCrmIds: [303],
     month: MONTH,
+    norms: DEFAULT_DOCTOR_COVERAGE_NORMS,
     planRows: PLAN_ROWS,
     visitRows: VISIT_ROWS,
     ...overrides,
@@ -280,7 +283,7 @@ export function runCrmRepDoctorListsTests() {
     "an unrecognised specialty is counted on its own, never folded into either bucket",
   );
   assert.equal(rep101.visitedDoctors, 2, "1001 and 1002 were visited");
-  assert.equal(rep101.adherencePct, 50, "2 of 4 planned doctors visited = 50%");
+  assert.equal(rep101.coveragePct, 50, "2 of 4 planned doctors visited = 50%");
   assert.equal(
     rep101.plannedCalls,
     7,
@@ -288,12 +291,12 @@ export function runCrmRepDoctorListsTests() {
   );
   assert.equal(rep101.unverifiedCalls, 1, "only the second call on 1001 is still at vendor status 0 (New)");
 
-  // A pharmacy on the plan must not be able to move a rep's adherence in either direction.
+  // A pharmacy on the plan must not be able to move a rep's coverage in either direction.
   const withoutPharmacy = board({ planRows: PLAN_ROWS.filter((row) => row.contact_crm_id !== 1005) });
   assert.equal(
-    repOf(withoutPharmacy, "101").adherencePct,
-    rep101.adherencePct,
-    "removing a planned PHARMACY must not change adherence — a pharmacy is not a doctor",
+    repOf(withoutPharmacy, "101").coveragePct,
+    rep101.coveragePct,
+    "removing a planned PHARMACY must not change coverage — a pharmacy is not a doctor",
   );
   assert.equal(
     repOf(withoutPharmacy, "101").plannedDoctors,
@@ -359,8 +362,8 @@ export function runCrmRepDoctorListsTests() {
   assert.equal(result.repsWithoutPlan, 1, "agent 404 recorded visits with no plan at all");
   const rep404 = repOf(result, "404");
   assert.equal(rep404.plannedDoctors, 0, "a rep with no plan has no doctor list");
-  assert.equal(rep404.adherencePct, 0, "no plan means no adherence — never a divide-by-zero NaN");
-  assert.ok(Number.isFinite(rep404.adherencePct), "adherence must always be a finite number");
+  assert.equal(rep404.coveragePct, 0, "no plan means no coverage — never a divide-by-zero NaN");
+  assert.ok(Number.isFinite(rep404.coveragePct), "coverage must always be a finite number");
   assert.equal(rep404.offPlanDoctors, 1, "everyone a planless rep visits is off plan by definition");
 
   // ── Rep names: directory, then vendor label, then an explicit unmapped marker ────────────────
@@ -380,7 +383,7 @@ export function runCrmRepDoctorListsTests() {
   const rep202 = repOf(result, "202");
   assert.equal(rep202.plannedDoctors, 2, "rep 202 plans 2001 and 1003");
   assert.equal(rep202.visitedDoctors, 1, "rep 202 saw 2001");
-  assert.equal(rep202.adherencePct, 50, "1 of 2 = 50%");
+  assert.equal(rep202.coveragePct, 50, "1 of 2 = 50%");
   assert.equal(
     doctorOf(result, "202", 1003).status,
     "missed",
@@ -401,7 +404,7 @@ export function runCrmRepDoctorListsTests() {
   assert.equal(result.totals.plannedDoctors, 8, "4 + 2 + 0 + 2");
   assert.equal(result.totals.visitedDoctors, 3, "2 + 1 + 0 + 0");
   assert.equal(result.totals.missedDoctors, 5, "2 + 1 + 0 + 2");
-  assert.equal(result.totals.adherencePct, 38, "3 of 8");
+  assert.equal(result.totals.coveragePct, 38, "3 of 8");
   assert.equal(result.totals.plannedAccounts, 1, "one pharmacy");
   assert.equal(result.totals.plannedCalls, 11, "7 + 2 + 2");
   assert.equal(result.totals.offPlanDoctors, 3, "2 + 0 + 1 + 0");
@@ -476,14 +479,14 @@ function runCampaignTests(result: ReturnType<typeof board>) {
 
   // THE HEADLINE for this rule. A campaign row carries contact id 0 -- it says the rep worked and
   // never which doctor they saw -- so it MUST NOT be able to satisfy a planned call. If it could,
-  // adherence would silently start counting work that reached nobody on the list.
+  // coverage would silently start counting work that reached nobody on the list.
   assert.equal(
     rep505.visitedDoctors,
     0,
-    "a campaign call names no doctor, so it can never mark a planned doctor as visited -- adherence must stay 0 here",
+    "a campaign call names no doctor, so it can never mark a planned doctor as visited -- coverage must stay 0 here",
   );
   assert.equal(rep505.missedDoctors, 2, "both planned doctors are still unreached");
-  assert.equal(rep505.adherencePct, 0, "0 of 2");
+  assert.equal(rep505.coveragePct, 0, "0 of 2");
   assert.equal(
     result.doctors.filter((row) => row.contactCrmId === 0).length,
     0,
@@ -574,6 +577,7 @@ function runCapTests() {
     employeeNameByHrId: new Map(),
     excludedAgentCrmIds: [],
     month: MONTH,
+    norms: DEFAULT_DOCTOR_COVERAGE_NORMS,
     planRows: big,
     visitRows: [],
   });
@@ -591,6 +595,7 @@ function runCapTests() {
     excludedAgentCrmIds: [],
     filters: { repKey: "1" },
     month: MONTH,
+    norms: DEFAULT_DOCTOR_COVERAGE_NORMS,
     planRows: big,
     visitRows: [],
   });
@@ -748,4 +753,177 @@ function runAccessTests() {
       `${role} must NOT reach the rep doctor lists — this board names individual reps' misses and is Super-Admin-only until the owner says otherwise`,
     );
   }
+
+  // ── FREQUENCY (KPI 2) ─────────────────────────────────────────────────────────────────────────
+  //
+  // The owner's rule, verbatim (2026-08-21): "if he tell three times and he visited three times,
+  // then this is correct. But if he tell three times and visited four times, then there is here an
+  // issue. And if he tell three times and visited two times, he is also an issue."
+  //
+  // An EXACT match in BOTH directions. That is why every case below pins a specific bucket instead
+  // of a threshold, and why no assertion here may ever be relaxed to "met or exceeded".
+
+  // A closed month: everything planned is due, so the rule reduces to plain equality.
+  assert.equal(
+    frequencyStatusOf({ actual: 3, plannedCalls: 3, plannedToDate: 3 }),
+    "on_plan",
+    "3 planned and 3 done is the only pass",
+  );
+  assert.equal(
+    frequencyStatusOf({ actual: 4, plannedCalls: 3, plannedToDate: 3 }),
+    "over",
+    "3 planned and 4 done is a DEVIATION — over-visiting is never a bonus on this board",
+  );
+  assert.equal(
+    frequencyStatusOf({ actual: 2, plannedCalls: 3, plannedToDate: 3 }),
+    "under",
+    "3 planned and 2 done is a deviation",
+  );
+  assert.equal(
+    frequencyStatusOf({ actual: 0, plannedCalls: 3, plannedToDate: 3 }),
+    "missed",
+    "planned and never seen is its own bucket — a rep who has not started is not merely 'behind'",
+  );
+  assert.equal(
+    frequencyStatusOf({ actual: 2, plannedCalls: 0, plannedToDate: 0 }),
+    "off_plan",
+    "somebody who was never on the list",
+  );
+
+  // Mid-month the two directions use different denominators, deliberately. See frequencyStatusOf.
+  assert.equal(
+    frequencyStatusOf({ actual: 2, plannedCalls: 3, plannedToDate: 2 }),
+    "on_plan",
+    "on schedule mid-month is a pass — next week's call is not late today",
+  );
+  assert.equal(
+    frequencyStatusOf({ actual: 1, plannedCalls: 3, plannedToDate: 2 }),
+    "under",
+    "behind TODAY's schedule, not the whole month's",
+  );
+  assert.equal(
+    frequencyStatusOf({ actual: 3, plannedCalls: 3, plannedToDate: 2 }),
+    "on_plan",
+    "finishing the month's plan early is not a deviation",
+  );
+  assert.equal(
+    frequencyStatusOf({ actual: 4, plannedCalls: 3, plannedToDate: 2 }),
+    "over",
+    "already past the WHOLE month's ask is irreversible, so it is `over` even on day one",
+  );
+  assert.equal(
+    frequencyStatusOf({ actual: 0, plannedCalls: 3, plannedToDate: 0 }),
+    "not_due",
+    "a doctor planned only for days that have not happened yet is not late",
+  );
+
+  // Board level, with the clock INJECTED — a test that reads the real date passes today and fails
+  // in September.
+  const freqRep = (contactCrmId: number, planDates: string[]) =>
+    planDates.map((planDate) =>
+      plan({ agent_crm_id: 700, agent_hr_id: null, contact_crm_id: contactCrmId, plan_date: planDate }),
+    );
+  const freqVisit = (contactCrmId: number, visitDate: string) =>
+    visit({ agent_crm_id: 700, agent_hr_id: null, contact_crm_id: contactCrmId, visit_date: visitDate });
+
+  const freq = buildRepDoctorListsBoard({
+    asOf: "2026-08-15",
+    employeeNameByHrId: new Map(),
+    excludedAgentCrmIds: [],
+    month: MONTH,
+    norms: DEFAULT_DOCTOR_COVERAGE_NORMS,
+    planRows: [
+      ...freqRep(7001, ["2026-08-03", "2026-08-07", "2026-08-11"]), // 3 due, 3 done  -> on_plan
+      ...freqRep(7002, ["2026-08-04", "2026-08-05"]), //                 2 due, 1 done  -> under
+      ...freqRep(7003, ["2026-08-06"]), //                               1 due, 2 done  -> over
+      ...freqRep(7004, ["2026-08-28"]), //                               0 due          -> not_due
+      ...freqRep(7005, ["2026-08-02"]), //                               1 due, 0 done  -> missed
+    ],
+    visitRows: [
+      freqVisit(7001, "2026-08-03"),
+      freqVisit(7001, "2026-08-07"),
+      freqVisit(7001, "2026-08-11"),
+      freqVisit(7002, "2026-08-04"),
+      freqVisit(7003, "2026-08-06"),
+      freqVisit(7003, "2026-08-09"),
+      freqVisit(7009, "2026-08-10"), // never planned -> off_plan
+    ],
+  });
+
+  assert.equal(freq.asOf, "2026-08-15", "the board must report the day it scored to, so a mid-month % is never read as a full-month one");
+
+  const rep700 = repOf(freq, "700");
+  assert.equal(rep700.plannedDoctors, 5, "five doctors on the list");
+  assert.equal(rep700.notDueDoctors, 1, "the doctor planned for the 28th is not due on the 15th");
+  assert.equal(rep700.onPlanDoctors, 1, "only 7001 matched its plan exactly");
+  assert.equal(rep700.underDoctors, 1, "7002 is behind schedule");
+  assert.equal(rep700.overDoctors, 1, "7003 got two calls against a single planned one");
+  assert.equal(rep700.offPlanDoctors, 1, "7009 was visited and never planned");
+  assert.equal(
+    rep700.frequencyPct,
+    25,
+    "1 on-plan of 4 DUE doctors = 25%: the not-due doctor is held out of the denominator, and the off-plan doctor never enters it",
+  );
+  assert.equal(
+    rep700.coveragePct,
+    60,
+    "3 of 5 doctors were reached at all — coverage and frequency MUST be able to disagree, or the second KPI is not measuring anything new",
+  );
+
+  const doctorFreq = (contactCrmId: number) => {
+    const row = freq.doctors.find((doctor) => doctor.contactCrmId === contactCrmId);
+    assert.ok(row, `expected doctor ${contactCrmId} on the board`);
+    return row;
+  };
+  assert.equal(doctorFreq(7004).frequencyStatus, "not_due", "planned for the 28th, scored on the 15th");
+  assert.equal(doctorFreq(7004).status, "missed", "coverage still calls it unreached — the two statuses are independent");
+  assert.equal(doctorFreq(7005).frequencyStatus, "missed", "due on the 2nd and never seen");
+  assert.equal(doctorFreq(7003).frequencyDelta, 1, "one call MORE than the plan asked for, to date");
+  assert.equal(doctorFreq(7002).frequencyDelta, -1, "one call short — the sign is what says which way");
+
+  // The grade norm is context and must never move a frequency verdict. 7003 is a grade A doctor
+  // planned only once, which is below the configured SP norm — and still `over`, because he was
+  // visited twice against a plan of one. If these two ever couple, the KPI stops being plan-based.
+  assert.equal(
+    doctorFreq(7003).gradeNormCalls,
+    DEFAULT_DOCTOR_COVERAGE_NORMS.sp.A,
+    "the norm comes from the shared Doctor Coverage config, never a constant local to this board",
+  );
+  assert.equal(doctorFreq(7003).planBelowGradeNorm, true, "a grade A doctor planned once is under the configured norm");
+  assert.equal(
+    doctorFreq(7003).frequencyStatus,
+    "over",
+    "the grade norm must NEVER move the frequency verdict — frequency answers to the PLAN alone (owner, 2026-08-21: the A=3/B=2/C=1 convention 'is not fixed')",
+  );
+  // Every fixture doctor is grade A, so the SP norm of 2 applies to all five. 7001 is planned 3 and
+  // 7002 exactly 2 — neither is below it. 7003, 7004 and 7005 are planned once each.
+  assert.equal(
+    rep700.underPlannedVsGrade,
+    3,
+    "three doctors are planned below the grade A norm — a plan-quality signal, counted entirely outside both KPIs",
+  );
+
+  // A closed month must collapse to plain exact-match: to-date and full-month become the same thing.
+  const closed = buildRepDoctorListsBoard({
+    asOf: "2026-09-30",
+    employeeNameByHrId: new Map(),
+    excludedAgentCrmIds: [],
+    month: MONTH,
+    norms: DEFAULT_DOCTOR_COVERAGE_NORMS,
+    planRows: [...freqRep(7004, ["2026-08-28"])],
+    visitRows: [],
+  });
+  assert.equal(closed.asOf, "2026-08-31", "asOf clamps to the month's last day — a closed month is never scored past its end");
+  assert.equal(
+    repOf(closed, "700").notDueDoctors,
+    0,
+    "nothing can still be 'not due' once the month is over — the to-date basis only ever affects the live month",
+  );
+  const closed7004 = closed.doctors.find((doctor) => doctor.contactCrmId === 7004);
+  assert.ok(closed7004, "expected doctor 7004 on the closed-month board");
+  assert.equal(
+    closed7004.frequencyStatus,
+    "missed",
+    "the doctor who was not-due on the 15th becomes a real miss once August closes — the basis moves, the verdict follows",
+  );
 }

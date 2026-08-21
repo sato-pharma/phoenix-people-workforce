@@ -13,6 +13,33 @@
  *   Doctor Coverage  — of the doctors we DID see, who is short of their visit norm?
  *   Rep Doctor Lists — of the doctors we were SUPPOSED to see, who did we never reach?
  *
+ * THE TWO KPIs THIS BOARD REPORTS (owner's definitions, 2026-08-21).
+ *
+ *   COVERAGE   = visitedDoctors / plannedDoctors. Did the rep touch the doctor AT ALL this month?
+ *                Grade is irrelevant; one visit is enough. 100 on the list, 80 seen = 80%.
+ *                This is the number that shipped as `adherencePct` in #2259 — renamed here,
+ *                because "adherence" is the owner's word for the OTHER KPI and the collision
+ *                would have been permanent.
+ *
+ *   FREQUENCY  = onPlanDoctors / plannedDoctors. Did the rep visit each doctor the number of
+ *                times HIS OWN PLAN asked for? Planned 3 and did 3 is the only pass.
+ *                **Both directions are deviations** — 3 planned / 2 done is `under`, 3 planned /
+ *                4 done is `over`. That is the owner's rule verbatim and is why this cannot be
+ *                expressed as a met-or-exceeded ratio.
+ *
+ * SCORED AGAINST THE PLAN, NEVER AGAINST THE GRADE. The convention is A=3, B=2, C=1, but the
+ * owner is explicit that it is not fixed, and production agrees emphatically: measured 2026-08-21,
+ * grade A averages 2.04 planned calls and grade B averages 2.03 — statistically the same — and the
+ * most common plan for a grade A doctor is a SINGLE visit. Only 14 grade C doctors exist company
+ * wide. So the plan is the target. The grade norm is reported BESIDE the KPI as `planBelowGradeNorm`
+ * (is the plan itself under-serving this doctor?) and never inside the frequency percentage.
+ *
+ * THE UNFINISHED MONTH IS SCORED TO DATE. A plan entry carries a date, so mid-month the comparison
+ * is against the calls the plan asked for on days that have already happened — otherwise every rep
+ * reads as behind schedule until the last day of the month. Measured on August to the 20th, the
+ * to-date basis moves exactly-on-plan from 27.0% to 32.1% and false `under` from 28.9% to 21.9%.
+ * For any COMPLETE month the two bases are identical, so this only ever affects the live month.
+ *
  * SCOPE RULES (deliberate, and surfaced on the board):
  *  - Plan side: every weekly plan entry whose `plan_date` falls in the selected month.
  *  - Actual side: visit_type 0 (regular customer visits), duplicate submissions collapsed — the
@@ -44,6 +71,11 @@
 import { CRM_PLAN_ENTRIES_TABLE } from "@/lib/crm/tables";
 import { cairoTodayIso } from "@/lib/crm/dates";
 import { classifyCrmContactSpeciality, type CrmContactKind } from "@/lib/crm/contact-taxonomy";
+import {
+  DEFAULT_DOCTOR_COVERAGE_NORMS,
+  getDoctorCoverageConfig,
+  type DoctorCoverageNorms,
+} from "@/lib/crm/doctor-coverage-config";
 import { getEffectiveExcludedAgentCrmIds, queryVisits } from "@/lib/crm/reads";
 import { CAMPAIGN_TYPE } from "@/lib/crm/visit-types";
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
@@ -76,18 +108,52 @@ export const REP_DOCTOR_DRILLDOWN_CAP = 500;
 /** Rows per page when scanning the plan mirror. Matches the CRM reads door. */
 const PLAN_PAGE_SIZE = 1000;
 
+/** COVERAGE status — was this doctor reached at all this month? */
 export type RepDoctorStatus = "seen" | "missed" | "off_plan";
 
+/**
+ * FREQUENCY status — did the number of calls match what the plan asked for, to date?
+ *
+ * `missed` and `off_plan` are carried here too rather than folded into `under`/`over`, because they
+ * are different management problems: `under` is a rep running behind on a doctor he is working,
+ * `missed` is a doctor he has not started, and `off_plan` is work on somebody who was never on the
+ * list. Only `on_plan` counts toward the frequency percentage.
+ */
+export type RepDoctorFrequencyStatus = "on_plan" | "under" | "over" | "missed" | "off_plan" | "not_due";
+
 export type RepDoctorListRepRow = {
-  /** Percentage of planned doctors actually visited this month. 0 when nothing was planned. */
-  adherencePct: number;
+  /** Collapsed type-0 calls this rep made to doctors that are ON his plan. Off-plan work is not
+   * counted here — it has its own column, so this number and `plannedCallsToDate` are comparable. */
+  actualCalls: number;
   agentCrmId: number;
   agentHrId: string | null;
+  /** KPI 1 — percentage of planned doctors reached AT ALL this month. 0 when nothing was planned.
+   * Shipped as `adherencePct` in #2259; the maths is unchanged, only the name. */
+  coveragePct: number;
+  /** KPI 2 — percentage of planned doctors whose call count matched the plan exactly, to date.
+   * 0 when nothing was planned. Deliberately NOT met-or-exceeded: over-visiting is a deviation. */
+  frequencyPct: number;
   gradeA: number;
   gradeB: number;
   gradeC: number;
   /** Planned doctors with no type-0 visit this month. */
   missedDoctors: number;
+  /** Planned doctors whose calls are all scheduled for days that have not happened yet. Held OUT of
+   * the frequency denominator — they are not late. Always 0 for a complete month. */
+  notDueDoctors: number;
+  /** Planned doctors visited EXACTLY as many times as the plan asked for, to date. The numerator
+   * of `frequencyPct`; its denominator is `plannedDoctors - notDueDoctors`. */
+  onPlanDoctors: number;
+  /** Planned doctors visited MORE times than planned. A deviation, on the owner's rule. */
+  overDoctors: number;
+  /** Planned calls falling on days that have already happened — the fair denominator mid-month.
+   * Equals `plannedCalls` for any complete month. */
+  plannedCallsToDate: number;
+  /** Planned doctors visited at least once but fewer times than planned. */
+  underDoctors: number;
+  /** Doctors whose PLAN asks for fewer calls than the configured grade norm — a signal about plan
+   * quality, reported beside the KPIs and never inside either percentage. */
+  underPlannedVsGrade: number;
   /** Doctors visited this month who are NOT on this rep's plan. */
   offPlanDoctors: number;
   /** Distinct HCP accounts (pharmacies, hospitals, contracts) on the plan. */
@@ -121,8 +187,21 @@ export type RepDoctorListDoctorRow = {
   /** null for an off-plan doctor — there is no planned call to point at. */
   lastPlanDate: string | null;
   lastVisitDate: string | null;
+  /** `visits` minus `plannedCallsToDate`. Negative is behind, positive is over. 0 is on plan.
+   * Signed on purpose — "how far off, and which way" is the whole question. */
+  frequencyDelta: number;
+  frequencyStatus: RepDoctorFrequencyStatus;
+  /** The configured norm for this doctor's grade, or null when the grade is blank or unscored.
+   * Context only — never the target the frequency status is measured against. */
+  gradeNormCalls: number | null;
+  /** True when the PLAN asks for fewer calls than the grade norm, i.e. the plan itself may be the
+   * problem rather than the rep. Reported separately from every KPI. */
+  planBelowGradeNorm: boolean;
   /** How many times the plan asks for this contact this month. 0 for an off-plan doctor. */
   plannedCalls: number;
+  /** Of `plannedCalls`, how many fall on days that have already happened. The number `visits` is
+   * actually compared against. Equals `plannedCalls` once the month is complete. */
+  plannedCallsToDate: number;
   regionName: string | null;
   repKey: string;
   repName: string;
@@ -132,6 +211,9 @@ export type RepDoctorListDoctorRow = {
 };
 
 export type RepDoctorListFilters = {
+  /** Frequency bucket, independent of `status`. Both may be applied at once — "seen but under" is
+   * a real question and needs both halves. */
+  frequency?: string;
   kind?: string;
   repKey?: string;
   search?: string;
@@ -140,6 +222,9 @@ export type RepDoctorListFilters = {
 
 export type RepDoctorListsBoard = {
   appliedFilters: RepDoctorListFilters;
+  /** The last day scored: today for the live month, the month's last day for a complete one. The
+   * board prints it, so a mid-month percentage can never be mistaken for a full-month one. */
+  asOf: string;
   doctors: RepDoctorListDoctorRow[];
   /** True count before REP_DOCTOR_DRILLDOWN_CAP — so the cap is always visible. */
   doctorsTotal: number;
@@ -156,14 +241,22 @@ export type RepDoctorListsBoard = {
    * is arithmetically true and completely misleading — surfaced so it is never read as "idle". */
   repsAllCampaign: number;
   totals: {
-    adherencePct: number;
+    actualCalls: number;
     campaignCalls: number;
+    coveragePct: number;
+    frequencyPct: number;
     missedDoctors: number;
+    notDueDoctors: number;
     offPlanDoctors: number;
+    onPlanDoctors: number;
+    overDoctors: number;
     plannedAccounts: number;
     plannedCalls: number;
+    plannedCallsToDate: number;
     plannedDoctors: number;
     reps: number;
+    underDoctors: number;
+    underPlannedVsGrade: number;
     unverifiedCalls: number;
     visitedDoctors: number;
   };
@@ -235,9 +328,48 @@ export function gradeTierOf(grade: string | null | undefined): "A" | "B" | "C" |
   return null;
 }
 
+/**
+ * The FREQUENCY verdict for one contact — the owner's second KPI.
+ *
+ * His rule, verbatim: "if he tell three times and he visited three times, then this is correct. But
+ * if he tell three times and visited four times, then there is here an issue. And if he tell three
+ * times and visited two times, he is also an issue." So an exact match is the only pass, and this
+ * can never be expressed as a met-or-exceeded ratio.
+ *
+ * WHY THE TWO SIDES USE DIFFERENT DENOMINATORS. Over-visiting is judged against the WHOLE month's
+ * plan and falling behind against the plan TO DATE, because the two mistakes are not symmetric in
+ * time. A rep who has already made more calls than the entire month asks for cannot undo them — that
+ * is a real `over` on the 3rd of the month. A rep short of today's schedule still has the rest of
+ * the month to catch up, so scoring him against calls the plan plants next week would invent a
+ * deviation that does not exist. Once the month closes `plannedToDate === plannedCalls` and the two
+ * collapse into the single exact-match rule above.
+ *
+ * `not_due` is a doctor the plan schedules only for days that have not happened yet. He is neither
+ * a pass nor a failure, so he is kept OUT of the frequency denominator entirely — counting him as
+ * on-plan would flatter the score, and counting him as missed would be an accusation about a call
+ * that is not late.
+ */
+export function frequencyStatusOf(input: {
+  actual: number;
+  plannedCalls: number;
+  plannedToDate: number;
+}): RepDoctorFrequencyStatus {
+  // Never on the plan at all. The rep worked somebody else's list, or somebody nobody listed.
+  if (input.plannedCalls <= 0) return "off_plan";
+  // Already past the whole month's ask — irreversible, so it outranks the to-date test below.
+  if (input.actual > input.plannedCalls) return "over";
+  if (input.plannedToDate <= 0) return "not_due";
+  if (input.actual === 0) return "missed";
+  if (input.actual < input.plannedToDate) return "under";
+  return "on_plan";
+}
+
 /** Reads every plan entry whose date falls inside the window. Returns [] before the migration
- * ships, so the page renders an honest empty state instead of a crash. */
-async function scanPlanEntries(from: string, to: string): Promise<PlanRow[]> {
+ * ships, so the page renders an honest empty state instead of a crash.
+ *
+ * Exported for the trend reader, which walks many months and must go through the SAME projection —
+ * a second hand-written select is how the month board and the trend line start disagreeing. */
+export async function scanPlanEntries(from: string, to: string): Promise<PlanRow[]> {
   const supabase = getSupabaseAdmin();
   const rows: PlanRow[] = [];
   let offset = 0;
@@ -280,6 +412,12 @@ function contactKey(agentCrmId: number, contactCrmId: number): string {
 }
 
 export type RepDoctorListsInput = {
+  /** Last day to score, as YYYY-MM-DD. Defaults to today (Cairo) clamped to the month's last day.
+   *
+   * Injectable so the frequency rule is testable: the to-date basis is the one part of this board
+   * whose answer changes with the wall clock, and a test that depends on the real date is a test
+   * that passes today and fails in September. Production never passes it. */
+  asOf?: string;
   /** Canonical (upper-cased, trimmed) hr id → the employee's display name. */
   employeeNameByHrId: ReadonlyMap<string, string>;
   /** Departed agents, from the CRM reads door. Applied to the PLAN side here; the visits side has
@@ -287,6 +425,9 @@ export type RepDoctorListsInput = {
   excludedAgentCrmIds: readonly number[];
   filters?: RepDoctorListFilters;
   month: string;
+  /** Admin-editable grade norms, shared with Doctor Coverage so the two boards cannot disagree
+   * about what a grade is worth. Passed in rather than read here, because this function is pure. */
+  norms: DoctorCoverageNorms;
   planRows: readonly PlanRow[];
   /** Type-0 visits for the same window, duplicate submissions already collapsed. */
   visitRows: readonly VisitRow[];
@@ -306,7 +447,7 @@ export async function getRepDoctorLists(input: {
 }): Promise<RepDoctorListsBoard> {
   const { from, to } = monthBounds(input.month);
 
-  const [planRows, visitRows, excludedAgentCrmIds, directory] = await Promise.all([
+  const [planRows, visitRows, excludedAgentCrmIds, directory, norms] = await Promise.all([
     scanPlanEntries(from, to),
     queryVisits<VisitRow>({
       collapseDoubleVisits: true,
@@ -321,6 +462,11 @@ export async function getRepDoctorLists(input: {
     }),
     getEffectiveExcludedAgentCrmIds(),
     getEmployeeDirectoryRows({ includeInactive: true }),
+    // Grade norms are CONTEXT on this board, never the target — so a settings table that is missing
+    // or unreadable must not take the KPIs down with it. Degrade to the compile-time defaults.
+    getDoctorCoverageConfig()
+      .then((config) => config.norms)
+      .catch(() => DEFAULT_DOCTOR_COVERAGE_NORMS),
   ]);
 
   const employeeNameByHrId = new Map<string, string>();
@@ -333,6 +479,7 @@ export async function getRepDoctorLists(input: {
     excludedAgentCrmIds,
     filters: input.filters,
     month: input.month,
+    norms,
     planRows,
     visitRows,
   });
@@ -348,6 +495,15 @@ export async function getRepDoctorLists(input: {
 export function buildRepDoctorListsBoard(input: RepDoctorListsInput): RepDoctorListsBoard {
   const month = input.month;
   const filters = input.filters ?? {};
+  const norms = input.norms;
+
+  // The last day scored. For a complete month this is the month's own last day, so the to-date and
+  // full-month bases are identical and the frequency rule reduces to plain exact-match. Only the
+  // live month is affected. String comparison throughout: YYYY-MM-DD sorts correctly as text, and
+  // parsing to a Date would shift the Cairo wall-clock the vendor sends (see DATE DISCIPLINE above).
+  const monthEnd = monthBounds(month).to;
+  const today = input.asOf ?? cairoTodayIso();
+  const asOf = today < monthEnd ? today : monthEnd;
 
   // THE SPLIT. A campaign row (visit type -8) proves the rep worked but names no doctor: every one
   // of the 31,322 recorded between 2026-01-01 and 2026-08-20 carries contact id 0, blank name,
@@ -402,6 +558,7 @@ export function buildRepDoctorListsBoard(input: RepDoctorListsInput): RepDoctorL
     lastPlanDate: string | null;
     name: string;
     plannedCalls: number;
+    plannedCallsToDate: number;
     regionName: string | null;
     speciality: string | null;
     unverifiedCalls: number;
@@ -423,9 +580,11 @@ export function buildRepDoctorListsBoard(input: RepDoctorListsInput): RepDoctorL
       bucket.add(contactCrmId);
       unclassifiedContacts.set(label, bucket);
     }
+    const dueByNow = Boolean(row.plan_date && row.plan_date <= asOf);
     const existing = planned.get(key);
     if (existing) {
       existing.plannedCalls += 1;
+      if (dueByNow) existing.plannedCallsToDate += 1;
       if (row.plan_status === 0) existing.unverifiedCalls += 1;
       if (row.plan_date && (!existing.lastPlanDate || row.plan_date > existing.lastPlanDate)) {
         existing.lastPlanDate = row.plan_date;
@@ -440,6 +599,7 @@ export function buildRepDoctorListsBoard(input: RepDoctorListsInput): RepDoctorL
       lastPlanDate: row.plan_date,
       name: row.contact_name?.trim() || `Contact ${contactCrmId}`,
       plannedCalls: 1,
+      plannedCallsToDate: dueByNow ? 1 : 0,
       regionName: row.crm_region_name,
       speciality: row.speciality,
       unverifiedCalls: row.plan_status === 0 ? 1 : 0,
@@ -490,22 +650,30 @@ export function buildRepDoctorListsBoard(input: RepDoctorListsInput): RepDoctorL
     const existing = repAccumulator.get(agentCrmId);
     if (existing) return existing;
     const created: RepDoctorListRepRow = {
-      adherencePct: 0,
+      actualCalls: 0,
       agentCrmId,
       agentHrId: hrIdByCrmId.get(agentCrmId) ?? null,
+      campaignCalls: 0,
+      coveragePct: 0,
+      frequencyPct: 0,
       gradeA: 0,
       gradeB: 0,
       gradeC: 0,
-      campaignCalls: 0,
       hasMeasurablePlan: false,
       missedDoctors: 0,
+      notDueDoctors: 0,
       offPlanDoctors: 0,
+      onPlanDoctors: 0,
+      overDoctors: 0,
       plannedAccounts: 0,
       plannedCalls: 0,
+      plannedCallsToDate: 0,
       plannedDoctors: 0,
       plannedUnclassified: 0,
       repKey: String(agentCrmId),
       repName: repNameOf(agentCrmId),
+      underDoctors: 0,
+      underPlannedVsGrade: 0,
       unverifiedCalls: 0,
       visitedDoctors: 0,
     };
@@ -516,37 +684,64 @@ export function buildRepDoctorListsBoard(input: RepDoctorListsInput): RepDoctorL
   for (const [key, contact] of planned) {
     const rep = repFor(contact.agentCrmId);
     rep.plannedCalls += contact.plannedCalls;
+    rep.plannedCallsToDate += contact.plannedCallsToDate;
     rep.unverifiedCalls += contact.unverifiedCalls;
     if (contact.kind === "hcp") rep.plannedAccounts += 1;
     else if (contact.kind === "unclassified") rep.plannedUnclassified += 1;
 
     const seen = visited.get(key);
-    // Only SP contacts count toward the doctor list and its adherence — a pharmacy is not a doctor,
+    const actual = seen?.visits ?? 0;
+    const frequencyStatus = frequencyStatusOf({
+      actual,
+      plannedCalls: contact.plannedCalls,
+      plannedToDate: contact.plannedCallsToDate,
+    });
+    const tier = gradeTierOf(contact.gradeRaw);
+    // The grade norm is CONTEXT — "should this doctor have been planned more often?" — and only the
+    // scored kinds carry one. It never enters `frequencyStatus`, which answers to the plan alone.
+    const gradeNormCalls =
+      tier && (contact.kind === "sp" || contact.kind === "hcp") ? norms[contact.kind][tier] : null;
+    const planBelowGradeNorm = gradeNormCalls !== null && contact.plannedCalls < gradeNormCalls;
+
+    // Only SP contacts count toward the doctor list and both KPIs — a pharmacy is not a doctor,
     // the same split the taxonomy was written to enforce on Doctor Coverage.
     if (contact.kind === "sp") {
       rep.plannedDoctors += 1;
-      const tier = gradeTierOf(contact.gradeRaw);
+      rep.actualCalls += actual;
       if (tier === "A") rep.gradeA += 1;
       else if (tier === "B") rep.gradeB += 1;
       else if (tier === "C") rep.gradeC += 1;
+      // COVERAGE: one visit is enough, and that is the whole test.
       if (seen) rep.visitedDoctors += 1;
       else rep.missedDoctors += 1;
+      if (planBelowGradeNorm) rep.underPlannedVsGrade += 1;
+      // FREQUENCY: `missed` needs no counter of its own — it is what is left once the other four
+      // buckets are taken out of the due population, and `missedDoctors` above already names it.
+      if (frequencyStatus === "on_plan") rep.onPlanDoctors += 1;
+      else if (frequencyStatus === "under") rep.underDoctors += 1;
+      else if (frequencyStatus === "over") rep.overDoctors += 1;
+      else if (frequencyStatus === "not_due") rep.notDueDoctors += 1;
     }
 
     doctorRows.push({
       contactCrmId: contact.contactCrmId,
       contactName: contact.name,
+      frequencyDelta: actual - contact.plannedCallsToDate,
+      frequencyStatus,
+      gradeNormCalls,
       gradeRaw: contact.gradeRaw,
       kind: contact.kind,
       lastPlanDate: contact.lastPlanDate,
       lastVisitDate: seen?.lastVisitDate ?? null,
+      planBelowGradeNorm,
       plannedCalls: contact.plannedCalls,
+      plannedCallsToDate: contact.plannedCallsToDate,
       regionName: contact.regionName,
       repKey: rep.repKey,
       repName: rep.repName,
       speciality: contact.speciality,
       status: seen ? "seen" : "missed",
-      visits: seen?.visits ?? 0,
+      visits: actual,
     });
   }
 
@@ -559,11 +754,19 @@ export function buildRepDoctorListsBoard(input: RepDoctorListsInput): RepDoctorL
     doctorRows.push({
       contactCrmId: contact.contactCrmId,
       contactName: `Contact ${contact.contactCrmId}`,
+      // Every call here is unplanned, so the whole visit count is the overshoot. Owner's ruling
+      // 2026-08-21: these stay a count BESIDE the KPI and never enter the frequency percentage —
+      // its denominator is planned doctors, and these were never planned.
+      frequencyDelta: contact.visits,
+      frequencyStatus: "off_plan",
+      gradeNormCalls: null,
       gradeRaw: contact.gradeRaw,
       kind,
       lastPlanDate: null,
       lastVisitDate: contact.lastVisitDate,
+      planBelowGradeNorm: false,
       plannedCalls: 0,
+      plannedCallsToDate: 0,
       regionName: null,
       repKey: rep.repKey,
       repName: rep.repName,
@@ -594,7 +797,11 @@ export function buildRepDoctorListsBoard(input: RepDoctorListsInput): RepDoctorL
 
   for (const rep of repAccumulator.values()) {
     rep.hasMeasurablePlan = rep.plannedDoctors > 0;
-    rep.adherencePct = rep.plannedDoctors > 0 ? Math.round((rep.visitedDoctors / rep.plannedDoctors) * 100) : 0;
+    rep.coveragePct = rep.plannedDoctors > 0 ? Math.round((rep.visitedDoctors / rep.plannedDoctors) * 100) : 0;
+    // Doctors with nothing due yet are held out of the frequency denominator (see frequencyStatusOf).
+    // Mid-month that is the difference between a fair score and one that punishes next week's plan.
+    const dueDoctors = rep.plannedDoctors - rep.notDueDoctors;
+    rep.frequencyPct = dueDoctors > 0 ? Math.round((rep.onPlanDoctors / dueDoctors) * 100) : 0;
   }
 
   const repsWithPlan = new Set([...planned.values()].map((contact) => contact.agentCrmId));
@@ -610,6 +817,7 @@ export function buildRepDoctorListsBoard(input: RepDoctorListsInput): RepDoctorL
   const filteredDoctors = doctorRows.filter((row) => {
     if (filters.repKey && row.repKey !== filters.repKey) return false;
     if (filters.status && row.status !== filters.status) return false;
+    if (filters.frequency && row.frequencyStatus !== filters.frequency) return false;
     if (filters.kind && row.kind !== filters.kind) return false;
     if (search) {
       const haystack = `${row.contactName} ${row.speciality ?? ""} ${row.repName} ${row.regionName ?? ""}`.toLowerCase();
@@ -637,36 +845,57 @@ export function buildRepDoctorListsBoard(input: RepDoctorListsInput): RepDoctorL
     .sort(
       (left, right) =>
         Number(right.hasMeasurablePlan) - Number(left.hasMeasurablePlan) ||
-        left.adherencePct - right.adherencePct ||
+        left.coveragePct - right.coveragePct ||
         right.plannedDoctors - left.plannedDoctors ||
         left.repName.localeCompare(right.repName),
     );
 
   const totals = {
-    adherencePct: 0,
+    actualCalls: 0,
     campaignCalls: 0,
+    coveragePct: 0,
+    frequencyPct: 0,
     missedDoctors: 0,
+    notDueDoctors: 0,
     offPlanDoctors: 0,
+    onPlanDoctors: 0,
+    overDoctors: 0,
     plannedAccounts: 0,
     plannedCalls: 0,
+    plannedCallsToDate: 0,
     plannedDoctors: 0,
     reps: 0,
+    underDoctors: 0,
+    underPlannedVsGrade: 0,
     unverifiedCalls: 0,
     visitedDoctors: 0,
   };
   for (const rep of reps) {
+    totals.actualCalls += rep.actualCalls;
     totals.campaignCalls += rep.campaignCalls;
     totals.missedDoctors += rep.missedDoctors;
+    totals.notDueDoctors += rep.notDueDoctors;
     totals.offPlanDoctors += rep.offPlanDoctors;
+    totals.onPlanDoctors += rep.onPlanDoctors;
+    totals.overDoctors += rep.overDoctors;
     totals.plannedAccounts += rep.plannedAccounts;
     totals.plannedCalls += rep.plannedCalls;
+    totals.plannedCallsToDate += rep.plannedCallsToDate;
     totals.plannedDoctors += rep.plannedDoctors;
     totals.reps += 1;
+    totals.underDoctors += rep.underDoctors;
+    totals.underPlannedVsGrade += rep.underPlannedVsGrade;
     totals.unverifiedCalls += rep.unverifiedCalls;
     totals.visitedDoctors += rep.visitedDoctors;
   }
-  totals.adherencePct =
+  // Company percentages are recomputed from the summed counts, NOT averaged across reps — averaging
+  // percentages would weigh a rep with 21 doctors the same as one with 234, and the observed spread
+  // is exactly that wide (median 107, measured 2026-08-21).
+  totals.coveragePct =
     totals.plannedDoctors > 0 ? Math.round((totals.visitedDoctors / totals.plannedDoctors) * 100) : 0;
+  const totalDueDoctors = totals.plannedDoctors - totals.notDueDoctors;
+  totals.frequencyPct =
+    totalDueDoctors > 0 ? Math.round((totals.onPlanDoctors / totalDueDoctors) * 100) : 0;
 
   // A single rep's whole list is ~250 rows at the observed maximum, so it ships uncapped — the cap
   // exists only to stop the company-wide view (~9,000 rows) becoming a multi-megabyte payload.
@@ -674,6 +903,7 @@ export function buildRepDoctorListsBoard(input: RepDoctorListsInput): RepDoctorL
 
   return {
     appliedFilters: filters,
+    asOf,
     doctors: capped,
     doctorsTotal: filteredDoctors.length,
     isCurrentMonth: month === monthKeyOfDate(cairoTodayIso()),

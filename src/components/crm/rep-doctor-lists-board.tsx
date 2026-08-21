@@ -3,7 +3,9 @@ import {
   RepDoctorListsDoctorTable,
   RepDoctorListsRepTable,
 } from "@/components/crm/rep-doctor-lists-tables";
+import { RepDoctorTrendPanel } from "@/components/crm/rep-doctor-trend-panel";
 import { REP_DOCTOR_DRILLDOWN_CAP, type RepDoctorListsBoard } from "@/lib/crm/rep-doctor-lists";
+import type { RepDoctorTrend } from "@/lib/crm/rep-doctor-lists-trend";
 
 // Server half of Rep Doctor Lists. The Section/Tile vocabulary is copied verbatim from
 // doctor-coverage-board.tsx, its neighbour in the same shell — flat borders, slate-900 header bar,
@@ -64,15 +66,27 @@ function cairoStamp(iso: string): string {
   }).format(new Date(iso));
 }
 
-export function RepDoctorListsBoardView({ basePath, board }: { basePath: string; board: RepDoctorListsBoard }) {
+export function RepDoctorListsBoardView({
+  basePath,
+  board,
+  trend,
+}: {
+  basePath: string;
+  board: RepDoctorListsBoard;
+  trend: RepDoctorTrend | null;
+}) {
   const empty = board.reps.length === 0;
-  const adherenceTone = board.totals.adherencePct >= 80 ? "emerald" : board.totals.adherencePct >= 50 ? "amber" : "rose";
+  const totals = board.totals;
+  const coverageTone = totals.coveragePct >= 80 ? "emerald" : totals.coveragePct >= 50 ? "amber" : "rose";
+  // Frequency uses lower bands than coverage — see rep-doctor-kpi-tone.ts for why an exact-match
+  // KPI cannot share an at-least KPI's thresholds.
+  const frequencyTone = totals.frequencyPct >= 60 ? "emerald" : totals.frequencyPct >= 35 ? "amber" : "rose";
   const scopeLine =
     "Weekly CRM plan vs regular customer visits · duplicates collapsed · departed agents excluded on both sides · campaign calls counted separately";
   const description = [
     scopeLine,
     board.planSyncedAt ? `plan last pulled ${cairoStamp(board.planSyncedAt)} Cairo` : "plan never pulled for this month",
-    board.isCurrentMonth ? "month to date" : null,
+    board.isCurrentMonth ? `month to date — scored through ${board.asOf}` : null,
   ]
     .filter(Boolean)
     .join(" · ");
@@ -92,14 +106,31 @@ export function RepDoctorListsBoardView({ basePath, board }: { basePath: string;
         title={`Rep Doctor Lists — ${board.monthLabel}`}
       >
         <div className="space-y-4 p-5">
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-7">
-            <Tile label="Reps with a list" sub="from the CRM plan" value={String(board.totals.reps)} />
-            <Tile label="Doctors on lists" sub={`${board.totals.plannedCalls} planned calls`} value={String(board.totals.plannedDoctors)} />
-            <Tile label="Visited" tone="emerald" value={String(board.totals.visitedDoctors)} />
-            <Tile label="Never visited" sub="on the list, not seen" tone="rose" value={String(board.totals.missedDoctors)} />
-            <Tile label="Adherence" tone={adherenceTone} value={`${board.totals.adherencePct}%`} />
-            <Tile label="Off plan" sub="visited, not on the list" tone="amber" value={String(board.totals.offPlanDoctors)} />
-            <Tile label="Campaign" sub="worked, no doctor named" value={String(board.totals.campaignCalls)} />
+          {/* Two rows, one KPI each. Coverage above, frequency below, each with the counts it is
+              actually made of — the two answer different questions and a single mixed row of tiles
+              invites reading one number as evidence for the other. */}
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
+            <Tile label="Reps with a list" sub="from the CRM plan" value={String(totals.reps)} />
+            <Tile label="Doctors on lists" sub={`${totals.plannedCalls} planned calls`} value={String(totals.plannedDoctors)} />
+            <Tile label="Coverage" sub="of the list, seen at all" tone={coverageTone} value={`${totals.coveragePct}%`} />
+            <Tile label="Visited" tone="emerald" value={String(totals.visitedDoctors)} />
+            <Tile label="Never visited" sub="on the list, not seen" tone="rose" value={String(totals.missedDoctors)} />
+            <Tile label="Off plan" sub="visited, not on the list" tone="amber" value={String(totals.offPlanDoctors)} />
+          </div>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
+            <Tile label="Calls made" sub={`${totals.plannedCallsToDate} due by now`} value={String(totals.actualCalls)} />
+            <Tile
+              label="Frequency"
+              sub="planned count matched exactly"
+              tone={frequencyTone}
+              value={`${totals.frequencyPct}%`}
+            />
+            <Tile label="On plan" sub="exactly as planned" tone="emerald" value={String(totals.onPlanDoctors)} />
+            <Tile label="Under plan" sub="behind the schedule" tone="amber" value={String(totals.underDoctors)} />
+            {/* Over-visiting is a deviation on the owner's rule, never a bonus — toned amber, and
+                never emerald, so it can't be read as an achievement. */}
+            <Tile label="Over plan" sub="more calls than planned" tone="amber" value={String(totals.overDoctors)} />
+            <Tile label="Campaign" sub="worked, no doctor named" value={String(totals.campaignCalls)} />
           </div>
 
           {empty ? (
@@ -135,6 +166,26 @@ export function RepDoctorListsBoardView({ basePath, board }: { basePath: string;
                   are counted separately — a pharmacy is not a doctor, and adherence above measures doctors only.
                 </p>
               ) : null}
+              {totals.notDueDoctors > 0 ? (
+                <p className="border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] font-semibold text-slate-600">
+                  {totals.notDueDoctors} doctors are planned only for days that have not happened yet. They are held out
+                  of the frequency percentage entirely — calling them missed would be an accusation about a call that is
+                  not late.
+                </p>
+              ) : null}
+              {/* The plan-quality signal. Reported BESIDE both KPIs and never inside either: a plan
+                  that under-asks is a problem with the plan, not with the rep executing it. */}
+              {totals.underPlannedVsGrade > 0 ? (
+                <p className="border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] font-semibold text-amber-800">
+                  {totals.underPlannedVsGrade} doctors are planned for fewer calls than their grade norm asks for. That is
+                  a signal about the plan, not the rep — frequency above still scores each rep against the plan he was
+                  actually given. The norms are editable in{" "}
+                  <a className="underline" href="/admin/doctor-coverage-settings">
+                    Doctor Coverage settings
+                  </a>
+                  .
+                </p>
+              ) : null}
               {board.unclassifiedSpecialities.length > 0 ? (
                 <p className="border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] font-semibold text-slate-600">
                   {board.unclassifiedSpecialities.length} specialty values are new to Phoenix and are counted as neither
@@ -148,17 +199,26 @@ export function RepDoctorListsBoardView({ basePath, board }: { basePath: string;
       </Section>
 
       <Section
-        description="Sorted worst-first — the reps who reached least of their own list. Adherence counts doctors only."
+        description="Sorted worst-first — the reps who reached least of their own list. Both KPIs count doctors only; pharmacies, hospitals and contract accounts are in their own column."
         title="By rep"
       >
         <RepDoctorListsRepTable month={board.month} rows={board.reps} />
       </Section>
 
+      {trend ? (
+        <Section
+          description={`${trend.from} to ${trend.to} · coverage and frequency per rep per month, with the change recorded`}
+          title="Month by month"
+        >
+          <RepDoctorTrendPanel trend={trend} />
+        </Section>
+      ) : null}
+
       <Section
         description={
           board.doctorsTotal > board.doctors.length
-            ? `Never-visited first · showing ${board.doctors.length} of ${board.doctorsTotal} — pick one rep above to see a whole list without the ${REP_DOCTOR_DRILLDOWN_CAP}-row cap`
-            : `Never-visited first · ${board.doctorsTotal} contacts`
+            ? `Never-visited first · plan vs actual on every row · showing ${board.doctors.length} of ${board.doctorsTotal} — pick one rep above to see a whole list without the ${REP_DOCTOR_DRILLDOWN_CAP}-row cap`
+            : `Never-visited first · plan vs actual on every row · ${board.doctorsTotal} contacts`
         }
         title="Doctor by doctor"
       >
