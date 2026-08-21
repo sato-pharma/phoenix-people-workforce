@@ -124,4 +124,16 @@ export function runCrmCheckinCoordGuardTests() {
     false,
     "the vendor's constant-zero `attendance` field must not be a visible CRM master column",
   );
+
+  // Same for the vendor's `customer_name` ("Facility name"), measured the same day: empty on ALL
+  // 122,814 visits - 88,132 NULL and 34,682 empty string, never once populated since January.
+  // Campaign visits never carry one by design (campaign-account.ts reads the account out of the
+  // comment because of it), so the column rendered as a wall of placeholders sitting right next
+  // to the Contact Name that actually answers "who was visited". Unlike `attendance` it is still
+  // SELECTed - recognition scoring and the search filter read it - so only the display is gone.
+  assert.equal(
+    CRM_VISIT_COLUMNS.some((column) => column.key === "customer_name"),
+    false,
+    "the vendor's always-empty `customer_name` field must not be a visible CRM master column",
+  );
 }

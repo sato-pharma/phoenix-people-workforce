@@ -175,7 +175,7 @@ export function FieldWorkforceVisitsView({
                   <tr className="bg-slate-950 text-left text-xs font-black uppercase tracking-wide text-white">
                     <th className="px-4 py-3">#</th>
                     <th className="px-4 py-3">Contact</th>
-                    <th className="px-4 py-3">Customer / Facility</th>
+                    {/* No Customer / Facility column - customerName is empty on every visit (see master.ts). */}
                     <th className="px-4 py-3">Visit</th>
                     <th className="px-4 py-3">Type</th>
                     <th className="px-4 py-3">AM/PM</th>
@@ -187,7 +187,6 @@ export function FieldWorkforceVisitsView({
                     <tr className="border-t border-orange-100 align-top text-slate-700" key={visit.id}>
                       <td className="px-4 py-3 font-bold text-slate-900">{index + 1}</td>
                       <td className="px-4 py-3 font-semibold text-slate-900">{visit.contactName || "—"}</td>
-                      <td className="px-4 py-3">{visit.customerName || "—"}</td>
                       <td className="px-4 py-3">
                         <VisitKindBadge kind={visit.kind} />
                         <div className="mt-0.5 text-[10px] text-slate-400">
