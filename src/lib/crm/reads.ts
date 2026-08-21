@@ -60,7 +60,7 @@ export const CRM_RESIGNED_AGENT_CRM_IDS: readonly number[] = [
   1222, 1236, 1246, 1249, 1272, 1280, 1284, 1286, 1288, 1295, 1303, 1304, 1330, 1345, 1351,
   1354, 1357, 1367, 1368, 1369, 1370, 1371, 1372, 1373, 1374, 1376, 1377, 1378, 1381, 1382, 1389,
   1396, 1402, 1407, 1409, 1437, 1476, 1478, 1486, 1492, 1493, 1504, 1508, 1510, 1511,
-  1512, 1514, 1515, 1516, 1518, 1519, 1522, 1523, 1524, 1528,
+  1512, 1514, 1515, 1516, 1518, 1519, 1522, 1524, 1528,
   // Owner-excluded 2026-07-17 (not necessarily resigned): Ahmed Amer 667, Adel.Sayed 1436,
   // CEO 1474, George.Rafaat (Sharkia 1/C) 1500. (Mahmoud.Gamal 1272 already listed above.)
   667, 1436, 1474, 1500,
@@ -82,6 +82,19 @@ export const CRM_RESIGNED_AGENT_CRM_IDS: readonly number[] = [
   // of his visits logged the same day this was found. Same failure class as 1477/1102/1395/1521 —
   // found by auditing the rest of this list for active employees after fixing the live-tier
   // equivalent of this bug (see resolveLiveDepartedExclusion below).
+  // 2026-08-21: crm_id 1523 REMOVED (owner confirmed) — reused slot now carrying AI-0011 (Mohamed
+  // Khaled, Medical Representative, ACTIVE). It sat in the RESIGNED block above, not the
+  // owner-excluded block, so it was a leaver's id rather than a deliberate carve-out. Production
+  // the day it was found: 113 August visits (112 of them campaign, type -8) and 21 planned
+  // contacts, all invisible — including to the Field Workforce Compliance matrix that feeds
+  // automated payroll's no-activity deduction detector, so an ACTIVE rep was a candidate for a
+  // no-activity deduction against real salary. Sixth of this failure class after
+  // 1477/1102/1395/1521/1247. The live union will NOT re-hide him: resolveLiveDepartedExclusion
+  // drops the scanned id because employees.crm_id '1523' now belongs to an active employee —
+  // exactly the 1399/AI-0006 case its test pins. Found via the Rep Doctor Lists board (#2260),
+  // which showed him at 0% adherence; the audit that followed re-checked EVERY id in this list
+  // against live employment status and this was the only wrong one. 1436 (Adel El Sayed,
+  // Financial Advisor, 0 visits) is a deliberate owner exclusion and deliberately stays.
 ];
 
 /** PostgREST `in` list literal for the STATIC resigned ids, e.g. "(832,851,...)". Used as the
