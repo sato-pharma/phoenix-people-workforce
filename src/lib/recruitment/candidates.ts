@@ -185,18 +185,27 @@ async function loadSourceContextByCandidate(ids: string[]): Promise<Map<string, 
 }
 
 /**
- * The job title the CV reader last read off a candidate's covering message, keyed by candidate id.
+ * What the CV reader last read off a candidate's CV, keyed by candidate id: the job they said they
+ * were applying for, and — separately — the job they hold today.
  *
- * Best-effort and DELIBERATELY NARROW: it is called with only the candidates the free evidence
- * could not answer, because `extracted_fields` is a fat jsonb blob (1.1 MB across 370 production
- * rows) and every round trip from here crosses the Atlantic. Restricted that way it answers 5 rows
- * today for ~100 rows of payload — and it is the source that grows, since 262 CVs in the pool have
- * never been read by the model at all.
+ * Both come off the same jsonb blob, so they cost one query between them rather than two. That
+ * matters: `extracted_fields` is 1.1 MB across 370 production rows and every round trip from here
+ * crosses the Atlantic, which is why this is called with only the candidates the free evidence
+ * could not answer.
+ *
+ * `appliedForJobTitle` is filled on 23 CVs. `currentJobTitle` is filled on 131 — because a CV is
+ * written to say what someone has done, and only a covering note says what they want. The two are
+ * kept apart all the way to the screen for exactly that reason.
  */
-async function loadCvJobTitleByCandidate(ids: string[]): Promise<Map<string, string>> {
-  const map = new Map<string, string>();
-  if (ids.length === 0) return map;
+type CvJobTitles = { appliedFor: Map<string, string>; current: Map<string, string> };
+
+async function loadCvJobTitlesByCandidate(ids: string[]): Promise<CvJobTitles> {
+  const titles: CvJobTitles = { appliedFor: new Map(), current: new Map() };
+  if (ids.length === 0) return titles;
   const supabase = recruitmentDb();
+  const readField = (fields: Record<string, unknown> | null, key: string): string | null =>
+    textOrNull((fields?.[key] as { value?: unknown } | null | undefined)?.value);
+  const seen = new Set<string>();
   for (const batch of chunkIds(ids)) {
     const { data, error } = await supabase
       .from("ats_candidate_cv_extractions")
@@ -206,14 +215,18 @@ async function loadCvJobTitleByCandidate(ids: string[]): Promise<Map<string, str
     if (error || !data) continue;
     for (const row of data as Array<{ candidate_id?: unknown; extracted_fields?: unknown }>) {
       const candidateId = textOrNull(row.candidate_id);
-      // Newest first, so the first row seen for a candidate is the one that counts.
-      if (!candidateId || map.has(candidateId)) continue;
-      const field = (row.extracted_fields as Record<string, unknown> | null)?.appliedForJobTitle;
-      const value = textOrNull((field as { value?: unknown } | null | undefined)?.value);
-      if (value) map.set(candidateId, value);
+      // Newest first, so the first row seen for a candidate is the one that counts — and both
+      // fields must be taken from that SAME extraction, never mixed across two readings.
+      if (!candidateId || seen.has(candidateId)) continue;
+      seen.add(candidateId);
+      const fields = row.extracted_fields as Record<string, unknown> | null;
+      const appliedFor = readField(fields, "appliedForJobTitle");
+      const current = readField(fields, "currentJobTitle");
+      if (appliedFor) titles.appliedFor.set(candidateId, appliedFor);
+      if (current) titles.current.set(candidateId, current);
     }
   }
-  return map;
+  return titles;
 }
 
 /**
@@ -268,13 +281,14 @@ async function attachAppliedFor(candidates: Candidate[]): Promise<void> {
   if (unresolved.length === 0) return;
   const unresolvedIds = unresolved.map((candidate) => candidate.id);
   const [cvTitles, requisitionTitles] = await Promise.all([
-    loadCvJobTitleByCandidate(unresolvedIds),
+    loadCvJobTitlesByCandidate(unresolvedIds),
     loadRequisitionJobTitleByCandidate(unresolvedIds),
   ]);
   for (const candidate of unresolved) {
     candidate.appliedFor = candidateAppliedFor({
       ...freeAppliedForEvidence(candidate),
-      cvExtractionJobTitle: cvTitles.get(candidate.id) ?? null,
+      cvCurrentJobTitle: cvTitles.current.get(candidate.id) ?? null,
+      cvExtractionJobTitle: cvTitles.appliedFor.get(candidate.id) ?? null,
       requisitionJobTitle: requisitionTitles.get(candidate.id) ?? null,
     });
   }

@@ -159,7 +159,7 @@ export async function runRecruitmentAppliedForTests() {
     // A trailing "cv" comes off only when a job is still standing afterwards.
     ["Sales cv", "Sales"],
     ["Cv Accountant", "Accountant"],
-    ["Cv for district manager job for upper Egypt", "district manager job for upper Egypt"],
+    ["Cv for district manager job for upper Egypt", "district manager for upper Egypt"],
     // 25 rows state the role in Arabic and must come through untouched.
     ["محاسب مالي", "محاسب مالي"],
     // "HR" is the whole subject on 18 rows. A three-character floor would silently drop all of them.
@@ -236,7 +236,7 @@ export async function runRecruitmentAppliedForTests() {
   // A derived role must never read as a stated one. That guarantee is only as good as the labels:
   // a source with no entry renders `undefined` in the tooltip, which is how "shown as inferred"
   // quietly becomes "shown as nothing".
-  for (const source of ["stated", "subject", "message", "cv", "requisition"] as const) {
+  for (const source of ["stated", "subject", "message", "cv", "requisition", "current"] as const) {
     assert.ok(APPLIED_FOR_SOURCE_LABEL[source], `${source} needs a tooltip label`);
     if (source !== "stated") {
       assert.ok(APPLIED_FOR_SOURCE_SHORT[source], `${source} needs a short label for the mobile card`);
@@ -272,8 +272,14 @@ export async function runRecruitmentAppliedForTests() {
   );
   assert.match(
     candidatesSource,
-    /loadCvJobTitleByCandidate\(unresolvedIds\)/,
+    /loadCvJobTitlesByCandidate\(unresolvedIds\)/,
     "and be given that narrowed id list, not the whole pool",
+  );
+  // Both CV fields come off the same jsonb blob, so they must cost ONE query, not two.
+  assert.equal(
+    candidatesSource.match(/\.from\("ats_candidate_cv_extractions"\)/g)?.length,
+    1,
+    "appliedForJobTitle and currentJobTitle must be read in a single pass over extracted_fields",
   );
 
   // ── 9 · The tightening pass, and the line it must not cross ─────────────────
@@ -354,4 +360,62 @@ export async function runRecruitmentAppliedForTests() {
     assert.ok(text, `tightening must never blank an answer — "${raw}" resolved before it ran`);
     assert.ok(text.length <= raw.length, `tightening must never lengthen an answer — "${raw}"`);
   }
+
+  // ── 10 · The role they hold now, when they never said what they want ────────
+  //
+  // 117 of the 555 attached a CV and wrote no covering text of ANY kind — no subject worth reading,
+  // no caption, nothing the model could find a wanted-role in. For those the choice is not "their
+  // goal or their current role", it is "their current role or an empty cell", and 71 have one.
+  //
+  // It goes LAST, below even the requisition, and it is a different KIND of fact from every rung
+  // above it. That is the whole risk: a recruiter must never read "the job he has" as "the job he
+  // asked for". The guarantee is the label, so the label is what gets tested.
+  assert.deepEqual(
+    candidateAppliedFor({ cvCurrentJobTitle: "Medical Representative" }),
+    { evidence: "Medical Representative", source: "current", text: "Medical Representative" },
+    "the role they hold now fills a cell that would otherwise be empty",
+  );
+  assert.equal(
+    candidateAppliedFor({ cvCurrentJobTitle: "Community Pharmacist", requisitionJobTitle: "Medical Representative" })
+      .source,
+    "requisition",
+    "but it never outranks a real application — every other rung says what they WANT",
+  );
+  assert.match(
+    APPLIED_FOR_SOURCE_LABEL.current,
+    /did not say/i,
+    "the tooltip must say outright that they never stated a role, or the column tells a lie",
+  );
+  assert.notEqual(
+    APPLIED_FOR_SOURCE_SHORT.current,
+    APPLIED_FOR_SOURCE_SHORT.cv,
+    "and it must not read the same as the CV rung, which IS a wanted-role the model found",
+  );
+
+  // Structured extractions are not envelopes and must not be tightened. "District Manager -
+  // Commercial Unit" is a business unit, not a person; the pass read it as a name and deleted it.
+  for (const value of [
+    "District Manager - Commercial Unit",
+    "HR | Administration | Operations Manager",
+    "Accounting Manager & Financial Review - Temporary Assignment",
+  ]) {
+    assert.equal(
+      candidateAppliedFor({ cvCurrentJobTitle: value }).text,
+      value,
+      `a structured CV field is already clean — "${value}" must come through whole`,
+    );
+  }
+  // The same protection on the envelope path, where tightening DOES run: a tail that names a job is
+  // not a person, however much it looks like two capitalised words after a separator.
+  assert.equal(
+    cleanJobTitle("HR | Administration | Operations Manager"),
+    "HR | Administration | Operations Manager",
+    "the trailing-name rule must never eat a tail that names a job — this once became \"HR | Administration\"",
+  );
+  // And the prefix that "CV for …" leaves stranded, which read as a sentence on production.
+  assert.equal(
+    cleanJobTitle("CV for the position of National Sales Manager- Sato Pharma"),
+    "National Sales Manager",
+    "\"CV for \" comes off as a prefix, which used to leave \"the position of\" standing in the cell",
+  );
 }

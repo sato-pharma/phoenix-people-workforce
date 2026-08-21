@@ -15,6 +15,7 @@
  *   | the `Subject( … )` inside the intake `full_name`  | 198 (the forwarder's envelope) |
  *   | the latest CV extraction's `appliedForJobTitle`   |   9 (the AI read the covering note) |
  *   | the requisition an application points at          |   1 (what they were put forward for) |
+ *   | the latest CV extraction's `currentJobTitle`      |  71 (the role they hold today) |
  *
  * Order matters and is not arbitrary. A human's typed value always wins. After that comes what the
  * SENDER wrote — the subject line, the caption — because the job someone wants is a statement of
@@ -28,7 +29,7 @@
  */
 
 /** Where an answer came from. Never hidden from the reader — a guess must not read as a fact. */
-export type AppliedForSource = "stated" | "subject" | "message" | "cv" | "requisition";
+export type AppliedForSource = "stated" | "subject" | "message" | "cv" | "requisition" | "current";
 
 export type CandidateAppliedFor = {
   /** The role to show, already cleaned. Null when no source names one. */
@@ -64,6 +65,11 @@ const LEADING_BOILERPLATE: RegExp[] = [
   /^\s*interest\s+in\s+/i,
   /^\s*for\s+the\s+(?:post|position|role|job)\s+of\s+/i,
   /^\s*application\s*[:\-–—]\s*/i,
+  // Stranded by the "CV for …" prefix above: "CV for the position of National Sales Manager- Sato
+  // Pharma" has its "CV for " taken off as a name-or-job prefix, which leaves "the position of"
+  // standing in front of the role. The entry two lines up only fires when the string STARTS with
+  // it, so it never saw this one — the cell read "the position of National Sales Manager" on prod.
+  /^\s*the\s+(?:post|position|role|job)\s+of\s+/i,
   /^\s*(?:for|job)\s+/i,
   // Punctuation and quotes left behind by the phrases above, or typed by the sender.
   /^[\s"'“”«»:;,.\-–—|/\\]+/,
@@ -320,13 +326,23 @@ function tightenJobTitle(title: string): string {
 
   let current = title;
 
+  // A tail that names a job is not a person, whatever it looks like. "HR | Administration |
+  // Operations Manager" is two capitalised words after a separator and it is the ROLE — dropping it
+  // left "HR | Administration". The remainder-still-a-job check cannot catch that on its own,
+  // because "HR" is itself a job word and the wreckage passes.
+  const dropIfNotAJob = (pattern: RegExp) => {
+    const removed = current.match(pattern)?.[0] ?? "";
+    if (JOB_WORDS.test(removed)) return;
+    current = keepIfStillAJob(current.replace(pattern, "")) ?? current;
+  };
+
   // A marker only proves a name is in front of it when a job is left standing behind it.
   current = keepIfStillAJob(current.replace(NAME_BEFORE_MARKER, "")) ?? current;
   for (const pattern of APPLICANT_BIOGRAPHY) current = keepIfStillAJob(current.replace(pattern, " ")) ?? current;
   // Names before filler: "Office Coordinator Position – Sabreen Mahmoud" needs its separator intact
   // to find the name, and only then is "Position" noise with nothing after it.
-  current = keepIfStillAJob(current.replace(BRACKETED_PERSON_NAME, "")) ?? current;
-  current = keepIfStillAJob(current.replace(TRAILING_PERSON_NAME, "")) ?? current;
+  dropIfNotAJob(BRACKETED_PERSON_NAME);
+  dropIfNotAJob(TRAILING_PERSON_NAME);
   current = keepIfStillAJob(current.replace(MIDDLE_FILLER, " ")) ?? current;
 
   return current.length < title.length ? current : title;
@@ -341,7 +357,7 @@ function tightenJobTitle(title: string): string {
  *
  * Exported for the tests and for the backfill script; callers should prefer `candidateAppliedFor`.
  */
-export function cleanJobTitle(raw: string | null | undefined): string | null {
+export function cleanJobTitle(raw: string | null | undefined, options?: { tighten?: boolean }): string | null {
   const start = String(raw ?? "")
     .normalize("NFKC")
     .replace(/\s+/g, " ")
@@ -350,7 +366,9 @@ export function cleanJobTitle(raw: string | null | undefined): string | null {
   // Ahead of everything, including the salvage pass: a maternity-leave request or an insurance
   // circular must never yield a role, however many job words it happens to contain.
   if (NOT_AN_APPLICATION.some((pattern) => pattern.test(start))) return null;
-  return readJobTitle(start) ?? salvageTitlePhrase(start);
+  const read = readJobTitle(start);
+  if (!read) return salvageTitlePhrase(start);
+  return options?.tighten === false ? read : tightenJobTitle(read);
 }
 
 function readJobTitle(start: string): string | null {
@@ -391,10 +409,7 @@ function readJobTitle(start: string): string | null {
   if (NAMES_NO_JOB.has(title.toLowerCase())) return null;
   // A remainder with no letter in it at all — a date, a reference number, stray punctuation.
   if (!/\p{L}/u.test(title)) return null;
-  // Last, and only on a title that already passed every guard above: cut the sender's name, their
-  // CV filename and their years of experience out of the middle of it. Cannot turn a title into
-  // null — it either shortens the string or hands back exactly what it was given.
-  return tightenJobTitle(title);
+  return title;
 }
 
 /** `Subject(` … `)` — the forwarder's envelope, written into `full_name` at intake. */
@@ -417,6 +432,11 @@ export type AppliedForEvidence = {
   cvExtractionJobTitle?: string | null;
   /** The job title of the requisition this candidate has an application against. */
   requisitionJobTitle?: string | null;
+  /**
+   * The latest CV extraction's `currentJobTitle.value` — the job they hold TODAY, not one they
+   * asked for. Last resort, and labelled as such on screen; see the ladder below.
+   */
+  cvCurrentJobTitle?: string | null;
 };
 
 /**
@@ -434,14 +454,29 @@ export function candidateAppliedFor(evidence: AppliedForEvidence): CandidateAppl
     ["subject", (evidence.fullName ?? "").match(FORWARDED_SUBJECT)?.[1]],
     ["cv", evidence.cvExtractionJobTitle],
     ["requisition", evidence.requisitionJobTitle],
+    // LAST, and a different kind of answer from everything above it.
+    //
+    // Every rung before this one is somebody saying what job they WANT. This one is the job they
+    // already HAVE, read off the CV — which is not the same fact, and the column must never let a
+    // reader mistake it for one. It earns its place because 117 candidates attached a CV and wrote
+    // no covering text of any kind: for them the choice is not "their goal or their current role",
+    // it is "their current role or an empty cell", and 71 of the 159 empty cells have one. Its
+    // label says so in plain words, on the desktop tooltip and on the mobile card alike.
+    ["current", evidence.cvCurrentJobTitle],
   ];
+
+  // The tightening pass exists for ENVELOPES — a subject line or a WhatsApp caption, where the
+  // sender's name and their CV filename are glued to the role. The CV extractions and the
+  // requisition are structured fields that were never an envelope, so tightening them can only do
+  // harm: it read "District Manager - Commercial Unit" as a person and dropped the business unit.
+  const STRUCTURED: AppliedForSource[] = ["cv", "requisition", "current"];
 
   for (const [source, raw] of ladder) {
     const value = String(raw ?? "").trim();
     if (!value) continue;
     // A stated title is what a person entered on this record — clean the punctuation off it, but a
     // human's answer is never rejected for looking implausible.
-    const text = source === "stated" ? value : cleanJobTitle(value);
+    const text = source === "stated" ? value : cleanJobTitle(value, { tighten: !STRUCTURED.includes(source) });
     if (!text) continue;
     // A chat message has to prove it names a job; a subject line does not.
     //
@@ -500,6 +535,8 @@ export function candidateRowAppliedFor(candidate: AppliedForCandidateRow): Candi
 
 /** How a source should be described to a recruiter, in words rather than a column name. */
 export const APPLIED_FOR_SOURCE_LABEL: Record<AppliedForSource, string> = {
+  // Says "did not say" first, because this one is the job they HOLD, not one they asked for.
+  current: "They did not say which job they want — this is the role they hold now, read from their CV",
   cv: "Read by the CV reader from the message this CV arrived on",
   message: "Read from the message the sender typed with this CV",
   requisition: "Taken from the vacancy this candidate was put forward for",
@@ -512,6 +549,7 @@ export const APPLIED_FOR_SOURCE_LABEL: Record<AppliedForSource, string> = {
  * `stated` has no entry: a stated title is the plain case and the card says nothing extra about it.
  */
 export const APPLIED_FOR_SOURCE_SHORT: Record<Exclude<AppliedForSource, "stated">, string> = {
+  current: "their role now, per CV",
   cv: "read from the CV",
   message: "from the sender's message",
   requisition: "from the vacancy",
