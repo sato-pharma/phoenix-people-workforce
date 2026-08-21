@@ -244,4 +244,45 @@ export async function runRecruitmentCandidatePoolTableTests() {
     1,
     "exactly one flexible column, or the measured widths stop meaning anything",
   );
+
+  // ── 13 · The Source column says WhatsApp or email, in words ────────────────
+  //
+  // The owner's report: "i cannot know whatsapp or email source nothing says this". The cell only
+  // ever rendered `sourceContext.shortLabel` — the sender's own wording — which is blank for a
+  // WhatsApp image with no caption, and on the rows that do have it is a whole forwarded message
+  // clipped inside 116px. The channel was never printed anywhere.
+  assert.match(
+    workspace,
+    /const channel = candidateSourceChannel\(candidate\.source, candidate\.sourceContext\);/,
+    "the channel must come from the shared domain helper, not from a ternary re-derived in the table",
+  );
+  assert.match(
+    workspace,
+    /<StagePill tone=\{sourceChannelTone\[channel\.key\]\}>/,
+    "and render as a pill, which is the one shape that stays legible in a 116px column",
+  );
+
+  // Every channel the domain can return needs a colour here, or the pill renders undefined.
+  const sourceContext = read("src/lib/recruitment/candidate-source-context.ts");
+  const toneMap = workspace.slice(
+    workspace.indexOf("const sourceChannelTone"),
+    workspace.indexOf("const stageToneMap"),
+  );
+  for (const key of sourceContext.match(/key: "(\w+)", label/g) ?? []) {
+    const channelKey = key.slice('key: "'.length, key.indexOf('", label'));
+    assert.ok(toneMap.includes(`${channelKey}: "`), `channel "${channelKey}" has no pill colour`);
+  }
+
+  // Mobile: the channel is unconditional. It used to be the shortLabel wearing the "Source" label,
+  // so a captionless WhatsApp CV showed no source at all — exactly the row the owner was looking at.
+  assert.match(
+    workspace,
+    /\{ label: "Source", value: candidateSourceChannel\(candidate\.source, candidate\.sourceContext\)\.label \}/,
+    "the mobile card must name the channel on every row, not only when the sender wrote something",
+  );
+  assert.doesNotMatch(
+    workspace,
+    /\[\{ label: "Source", value: candidate\.sourceContext\.shortLabel \}\]/,
+    "the sender's wording is not the source — it must not be relabelled back onto that row",
+  );
 }

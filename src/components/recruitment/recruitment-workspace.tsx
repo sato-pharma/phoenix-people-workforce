@@ -39,6 +39,10 @@ import type { ApplicationWithContext } from "@/lib/recruitment/applications";
 import type { CandidateProfile } from "@/lib/recruitment/candidates";
 import { APPLIED_FOR_SOURCE_LABEL, APPLIED_FOR_SOURCE_SHORT, candidateRowAppliedFor } from "@/lib/recruitment/applied-for";
 import { candidateDisplayName, isShortenedCandidateName } from "@/lib/recruitment/candidate-display";
+import {
+  candidateSourceChannel,
+  type CandidateSourceChannelKey,
+} from "@/lib/recruitment/candidate-source-context";
 import { cairoDayKey, type CandidatePoolStats } from "@/lib/recruitment/candidate-stats";
 import type { HiringManagerOption } from "@/lib/recruitment/hiring-manager-notify";
 import type { SelectionBoardEntry } from "@/lib/recruitment/selection";
@@ -154,6 +158,15 @@ function StagePill({ children, tone }: { children: ReactNode; tone: BadgeTone })
     </span>
   );
 }
+
+// Intake channel -> pill colour. Presentational only: the channel itself is decided in the domain
+// (candidateSourceChannel), so a new channel gets its label there and its colour here, never a guess.
+const sourceChannelTone: Record<CandidateSourceChannelKey, BadgeTone> = {
+  email: "sky",
+  manual: "slate",
+  other: "slate",
+  whatsapp: "emerald",
+};
 
 const stageToneMap: Record<string, BadgeTone> = {
   application_received: "slate",
@@ -1923,8 +1936,12 @@ function CandidatePoolCard({
           { label: "Received", value: cairoDateTime(candidate.createdAt) },
           { label: "Email", value: candidate.email ?? "—" },
           { label: "Phone", value: candidate.phone ?? "—" },
+          // Mobile gets the channel on EVERY row, same as the desktop badge. It used to appear
+          // only when a shortLabel existed, so a WhatsApp CV with no caption showed no source at
+          // all — the case the owner hit.
+          { label: "Source", value: candidateSourceChannel(candidate.source, candidate.sourceContext).label },
           ...(candidate.sourceContext?.shortLabel
-            ? [{ label: "Source", value: candidate.sourceContext.shortLabel }]
+            ? [{ label: "Their words", value: candidate.sourceContext.shortLabel }]
             : []),
           ...(candidate.possibleDuplicate
             ? [
@@ -2745,17 +2762,30 @@ function CandidatesTab({
                           {isNewArrival(candidate) ? <StagePill tone="orange">New</StagePill> : null}
                         </div>
                       </td>
+                      {/* The channel first, on its own line, then the sender's own words under
+                          it. That order is the point of this cell: shortLabel is clipped on most
+                          rows — a forwarded mail stores an entire message there — so the second
+                          line may well be unreadable, and "WhatsApp or email?" is the question the
+                          column is actually scanned for. A badge stays legible at 116px; a
+                          sentence does not. Costs no row height: the Candidate and Received cells
+                          are already two lines. */}
                       <td className="px-3 py-2.5">
+                        {(() => {
+                          const channel = candidateSourceChannel(candidate.source, candidate.sourceContext);
+                          return (
+                            <StagePill tone={sourceChannelTone[channel.key]}>
+                              <span title={channel.title}>{channel.label}</span>
+                            </StagePill>
+                          );
+                        })()}
                         {candidate.sourceContext?.shortLabel ? (
-                          <span
-                            className="block truncate text-[11px] text-slate-600"
+                          <div
+                            className="mt-0.5 truncate text-[11px] text-slate-500"
                             title={candidate.sourceContext.detailLines.join("\n")}
                           >
                             {candidate.sourceContext.shortLabel}
-                          </span>
-                        ) : (
-                          <span className="text-slate-300">—</span>
-                        )}
+                          </div>
+                        ) : null}
                       </td>
                       <td className="px-3 py-2.5">
                         <CandidateActionsControl
