@@ -202,6 +202,7 @@ import { runCrmDuplicateVisitCollapseTests } from "./crm-duplicate-visit-collaps
 import { runCrmMasterExportWorkbookTests } from "./crm-master-export-workbook.test.ts";
 import { runCrmDegradationPolicyTests } from "./crm-degradation-policy.test.ts";
 import { runCrmCheckinCoordGuardTests } from "./crm-checkin-coord-guard.test.ts";
+import { runCrmAmpmNormalizationTests } from "./crm-ampm-normalization.test.ts";
 import { runLocationIqGeocodeConfidenceTests } from "./locationiq-geocode-confidence.test.ts";
 import { runPrivateCalendarTests } from "./private-calendar.test.ts";
 import { runWeeklyPlanApproverUiParityTests } from "./weekly-plan-approver-ui-parity.test.ts";
@@ -1147,6 +1148,12 @@ await runTest(
   + "glitch is refused, every bound is load-bearing, and the vendor's constant-zero `attendance` "
   + "field stays out of the master export)",
   runCrmCheckinCoordGuardTests,
+);
+await runTest(
+  "crm ampm normalization (the vendor's mis-cased half-day markers are folded to AM/PM so the "
+  + "master filter and the half-day count both see them; blank means no marker; an unrecognized "
+  + "marker is kept, never dropped)",
+  runCrmAmpmNormalizationTests,
 );
 await runTest("LocationIQ geocode confidence (reverse/forward scoring + LocationIQ-first/Google-fallback wiring)", runLocationIqGeocodeConfidenceTests);
 await runTest("private calendar", runPrivateCalendarTests);
