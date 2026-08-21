@@ -1,6 +1,8 @@
 import crypto from "crypto";
 
 import { writeAuditLog } from "@/lib/admin/audit";
+import { APPROVED_PLANNING_REGIONS, canonicalPlanningRegionName } from "@/lib/weekly-planning/regions";
+import { loadPlanningAreaSeats, type PlanningAreaSeat } from "@/lib/weekly-planning/planning-areas";
 
 /**
  * Typed errors raised by the weekly-plan state-transition RPCs introduced in
@@ -357,13 +359,18 @@ export type EmployeePlansWorkspace = {
   planLimit: number;
   workplaceRegions: string[];
   currentEmployee: {
+    areaName: string | null;
     fullName: string;
     hrId: string;
     jobTitle: string | null;
     managerHrId: string | null;
     managerName: string | null;
+    regionCode: string | null;
+    regionName: string | null;
     workweek: PlanWorkweek;
   } | null;
+  /** AU seat-model areas for the plan owner's line — the authority behind the Area picker. */
+  planningAreaSeats: PlanningAreaSeat[];
   medicalRepOptions: Array<{
     areaName: string | null;
     fullName: string;
@@ -572,30 +579,10 @@ function isMedicalRepEmployee(employee: EmployeeDirectoryRow) {
   return title.includes("medical rep") || title.includes("medical representative");
 }
 
-const approvedPlanningRegions = [
-  "ALEX-BHR",
-  "Cairo",
-  "Delta 1",
-  "Delta 2",
-  "Giza",
-  "Upper Egypt",
-] as const;
+const approvedPlanningRegions = APPROVED_PLANNING_REGIONS;
 
 function canonicalPlanningRegion(value: unknown) {
-  const raw = cleanText(value);
-  if (!raw) return null;
-  const directMatch = approvedPlanningRegions.find((region) => region.toLowerCase() === raw.toLowerCase());
-  if (directMatch) return directMatch;
-  const normalized = raw.toLowerCase().replace(/[()]/g, "").replace(/\s+/g, " ").trim();
-  if (["alex-bhr", "alex bhr", "alex/bhr", "alex", "alexandria", "bhr", "beheira"].includes(normalized)) {
-    return "ALEX-BHR";
-  }
-  if (normalized === "cairo") return "Cairo";
-  if (normalized === "delta 1" || normalized === "delta-1") return "Delta 1";
-  if (normalized === "delta 2" || normalized === "delta-2") return "Delta 2";
-  if (normalized === "giza") return "Giza";
-  if (normalized === "upper egypt") return "Upper Egypt";
-  return null;
+  return canonicalPlanningRegionName(value);
 }
 
 function workplaceRegionsFromDirectory(directory: EmployeeDirectoryRow[]) {
@@ -1820,6 +1807,14 @@ export async function getEmployeePlansWorkspace(access: AccessContext): Promise<
     await resolveViewerAllowedLines(access),
   );
   const workplaceRegions = workplaceRegionsForEmployee(employee, directory.employees);
+  // Fails soft: an unreachable/empty seat map leaves the picker on its roster-derived
+  // fallback rather than blanking it, which is the failure this whole change exists to end.
+  let planningAreaSeats: PlanningAreaSeat[] = [];
+  try {
+    planningAreaSeats = await loadPlanningAreaSeats(employee?.lineId ?? null);
+  } catch {
+    planningAreaSeats = [];
+  }
 
   try {
     const { data, error } = await getSupabaseAdmin()
@@ -1843,11 +1838,14 @@ export async function getEmployeePlansWorkspace(access: AccessContext): Promise<
       canSubmitPlans,
       currentEmployee: employee
         ? {
+            areaName: employee.areaName,
             fullName: employee.displayName,
             hrId: employee.hrId,
             jobTitle: employeeTitle(employee, access.role),
             managerHrId: employee.managerHrId,
             managerName: employee.managerName,
+            regionCode: employee.regionCode ?? null,
+            regionName: employee.regionName,
             workweek: resolvePlanWorkweek({
               jobTitle: employeeTitle(employee, access.role),
               role: access.role,
@@ -1857,6 +1855,7 @@ export async function getEmployeePlansWorkspace(access: AccessContext): Promise<
       hasMorePlans,
       loadedPlanCount: cappedRows.length,
       medicalRepOptions,
+      planningAreaSeats,
       planLimit: WORKSPACE_PLAN_LIMIT,
       workplaceRegions,
       plans,
@@ -1870,11 +1869,14 @@ export async function getEmployeePlansWorkspace(access: AccessContext): Promise<
       canSubmitPlans,
       currentEmployee: employee
         ? {
+            areaName: employee.areaName,
             fullName: employee.displayName,
             hrId: employee.hrId,
             jobTitle: employeeTitle(employee, access.role),
             managerHrId: employee.managerHrId,
             managerName: employee.managerName,
+            regionCode: employee.regionCode ?? null,
+            regionName: employee.regionName,
             workweek: resolvePlanWorkweek({
               jobTitle: employeeTitle(employee, access.role),
               role: access.role,
@@ -1884,6 +1886,7 @@ export async function getEmployeePlansWorkspace(access: AccessContext): Promise<
       hasMorePlans: false,
       loadedPlanCount: 0,
       medicalRepOptions,
+      planningAreaSeats,
       planLimit: WORKSPACE_PLAN_LIMIT,
       workplaceRegions,
       plans: [],
