@@ -94,7 +94,8 @@ function VisitCard({ row }: { row: MyCrmVisitRow }) {
       <PortalRecordFields
         fields={[
           { label: "Type", value: row.visitTypeDescription || "—" },
-          { label: "Customer", value: row.customerName || "—" },
+          // No "Customer" field: the vendor's customerName is empty on every visit ever synced
+          // (see master.ts). The card title above already falls back to it if that changes.
           { label: "With", value: row.doubleName || "—" },
         ]}
       />
@@ -295,7 +296,7 @@ export function MyVisitsWorkspace({
                       <th className="px-4 py-3">Time</th>
                       <th className="px-4 py-3">Type</th>
                       <th className="px-4 py-3">Contact</th>
-                      <th className="px-4 py-3">Customer</th>
+                      {/* No Customer column - customerName is empty on every visit (see master.ts). */}
                       <th className="px-4 py-3">With</th>
                       <th className="px-4 py-3">Comment</th>
                     </tr>
@@ -313,7 +314,6 @@ export function MyVisitsWorkspace({
                         </td>
                         <td className="px-4 py-3 text-slate-700">{row.visitTypeDescription || "—"}</td>
                         <td className="px-4 py-3 text-slate-700">{row.contactName || "—"}</td>
-                        <td className="px-4 py-3 text-slate-700">{row.customerName || "—"}</td>
                         <td className="px-4 py-3 text-slate-700">{row.doubleName || "—"}</td>
                         <td className="max-w-[280px] px-4 py-3 leading-5 text-slate-600">{row.comment || "—"}</td>
                       </tr>
@@ -347,7 +347,7 @@ export function MyVisitsWorkspace({
                       <th className="px-4 py-3">Time</th>
                       <th className="px-4 py-3">Type</th>
                       <th className="px-4 py-3">Contact</th>
-                      <th className="px-4 py-3">Customer</th>
+                      {/* No Customer column - customerName is empty on every visit (see master.ts). */}
                       <th className="px-4 py-3">With</th>
                       <th className="px-4 py-3">Comment</th>
                     </tr>
@@ -364,7 +364,6 @@ export function MyVisitsWorkspace({
                         </td>
                         <td className="px-4 py-3 text-slate-700">{row.visitTypeDescription || "—"}</td>
                         <td className="px-4 py-3 font-black text-slate-950">{row.contactName || "—"}</td>
-                        <td className="px-4 py-3 text-slate-700">{row.customerName || "—"}</td>
                         <td className="px-4 py-3 text-slate-700">{row.doubleName || "—"}</td>
                         <td className="max-w-[280px] px-4 py-3 leading-5 text-slate-600">{row.comment || "—"}</td>
                       </tr>

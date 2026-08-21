@@ -109,7 +109,17 @@ export const CRM_VISIT_COLUMNS: readonly CrmMasterColumn[] = [
   { key: "double_name", kind: "text", label: "Double Name" },
   { key: "contact_crm_id", kind: "number", label: "Contact CRM ID" },
   { key: "contact_name", kind: "text", label: "Contact Name" },
-  { key: "customer_name", kind: "text", label: "Customer Name" },
+  // DELIBERATELY NOT A COLUMN: the vendor's `customer_name` (documented as "Facility name").
+  // Measured across the whole production mirror on 2026-08-21 it is empty on ALL 122,814 visits
+  // since January - 88,132 NULL and 34,682 empty string, not one row that ever carried a name.
+  // Campaign visits never carry one by design (see campaign-account.ts, which reads the account
+  // out of the free-text comment precisely because this field is blank), and no other visit type
+  // has filled it either. It rendered as a "Customer Name" column of nothing but placeholders,
+  // sitting directly beside the Contact Name that actually answers "who was visited".
+  //
+  // Unlike `attendance` below, it is deliberately still in VISIT_SELECT: attachRecognitionScore
+  // counts it as a "visit target" signal and the search filter matches on it, so the day the
+  // vendor starts sending it both light up on their own and this column can come straight back.
   { key: "crm_region_id", kind: "number", label: "CRM Region ID", note: "iReports360's own locality id for the visited contact (vendor field: regionID, added 2026-07-22). Finer-grained than Phoenix's own geography — one Phoenix brick/area typically covers several of these. Null on non-customer visit types (campaign/meeting/leave)." },
   { key: "crm_region_name", kind: "text", label: "CRM Region Name", note: "iReports360's display name for the CRM Region ID (vendor field: region)." },
   { key: "phx_brick_id", kind: "text", label: "PHX Mapped Brick ID", note: "The real Phoenix brick (source_of_sales_bricks) an admin has mapped this CRM region to — see the Region Mapping tab. '—' until resolved." },
