@@ -237,7 +237,21 @@ export function simulateWorkflow(input: WorkflowSimulationInput): WorkflowSimula
     sideEffects.push(`Simulated amount: ${input.amount} (read-only; no payroll record created).`);
   }
 
+  // Subflow-level: a domain can be partly built, so the flag on THIS subflow is what decides
+  // whether these steps run. Checked before the domain warnings below, because a domain badge
+  // reading "Partially implemented" cannot tell you which half you are looking at.
+  if (subflow?.notImplemented) {
+    warnings.push(
+      "This subflow is NOT IMPLEMENTED — nothing in the system runs these steps. The simulation below is the intended design, not live behavior.",
+    );
+  }
+
   // Domain-level informational warnings.
+  if (domain.status === "Partially implemented") {
+    warnings.push(
+      "This domain is PARTIALLY IMPLEMENTED — some subflows run and some are specification only. Read each subflow's gaps before relying on it.",
+    );
+  }
   if (domain.status === "Not implemented") {
     warnings.push(
       "This domain is NOT IMPLEMENTED — nothing in the system runs these steps. The simulation below is the intended design, not live behavior.",

@@ -158,10 +158,13 @@ export async function runRecruitmentSimplifyTests() {
   );
 
   // ── 3 · The screen opens on the work, and counts CVs ────────────────────────
+  // The default is still Candidates. The one exception is a return trip: HR sends a recruiter back
+  // here with ?application=<id> after creating the employee, and landing them on the CV list would
+  // hide the application they came back to finish.
   assert.match(
     workspace,
-    /useState<TabKey>\("candidates"\)/,
-    "the module must open on the 152 CVs, not on the 7 rows of pipeline",
+    /useState<TabKey>\(\(\) => \(workspaceParams\.get\("application"\) \? "pipeline" : "candidates"\)\)/,
+    "the module must open on the 152 CVs, not on the 7 rows of pipeline — the only exception is arriving back from Add Employee on ?application=<id>",
   );
 
   const now = new Date("2026-08-15T18:20:00.000Z"); // 20:20 Cairo — the hour the evidence was measured

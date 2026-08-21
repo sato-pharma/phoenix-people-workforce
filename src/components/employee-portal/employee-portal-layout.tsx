@@ -390,6 +390,7 @@ function buildEmployeePortalSections({
         ...(showRecruitmentHiringTab ? [{ href: "/employee-portals/cv-database", label: "CV Database", icon: FileSpreadsheet }] : []),
         ...(showRecruitmentHiringTab ? [{ href: "/employee-portals/hiring-documents", label: "Hiring Documents", icon: FileCheck2 }] : []),
         ...(showRecruitmentHiringTab ? [{ href: "/employee-portals/intake-health", label: "Inbound Intake Health", icon: HeartPulse }] : []),
+        ...(showRecruitmentHiringTab ? [{ href: "/employee-portals/contact-review", label: "Missing Contact Details", icon: IdCard }] : []),
       ],
     },
     // Talent Acquisition's company-wide HR tooling, separate from the recruiting-pipeline

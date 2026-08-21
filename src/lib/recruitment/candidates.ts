@@ -337,8 +337,9 @@ export async function listCandidates(): Promise<Candidate[]> {
   if (error) throw error;
   const candidates = ((data ?? []) as CandidateDbRow[]).map(mapCandidate);
   await attachAppliedFor(candidates);
-  // Advisory soft-duplicate flags across the whole pool (same phone-tail / normalized name). Purely
-  // a "worth a look" marker for Talent Acquisition — never merges anything.
+  // Advisory soft-duplicate flags across the whole pool (same phone-tail / normalized name). A
+  // "worth a look" marker for Talent Acquisition — nothing here merges anything by itself; the flag
+  // is what the merge button in the pool reads, and a person presses it (candidate-merge.ts).
   const dupFlags = findDuplicateFlags(
     candidates.map((candidate) => ({ fullName: candidate.fullName, id: candidate.id, phoneNorm: normalizePhone(candidate.phone) })),
   );

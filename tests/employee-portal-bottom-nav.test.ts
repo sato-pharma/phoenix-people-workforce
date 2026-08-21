@@ -72,6 +72,10 @@ export function runEmployeePortalBottomNavTests() {
     // Inbound Intake Health: same Talent-Acquisition-only class again, and it is a wide read-only
     // table (a 30-day funnel plus the dead-letter list). Desk work, not a phone shortcut.
     "/employee-portals/intake-health",
+    // Missing Contact Details: the same Talent-Acquisition-only class, and reviewing a proposed
+    // email against the CV it came from is desk work. The page still renders cards on a phone —
+    // it is simply not a bottom-nav shortcut.
+    "/employee-portals/contact-review",
     "/employee-portals/employees",
     "/employee-portals/contracts",
     "/employee-portals/resignations",

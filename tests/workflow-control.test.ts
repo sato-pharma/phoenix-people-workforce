@@ -188,40 +188,84 @@ export function runWorkflowControlTests() {
   assert.ok(readOnlySim.warnings.some((w) => /read-only map only/i.test(w)), "simulator warns a cross-cutting domain is read-only map only");
 
   // ---------------------------------------------------------------------------
-  // Offer & Hiring is DESIGNED, not built. Verified against production 2026-08-19:
-  // job_offers does not exist, and no code path can reach an offer stage. The page must
-  // never present it as a live governed process. Owner decision 2026-08-19: leave it
-  // unbuilt and label it honestly.
+  // Offer & Hiring is PARTIALLY built as of 2026-08-21. The internal offer runs: ats_offers holds
+  // the terms, and prepare -> submit -> approve -> send -> record-answer each go through the live
+  // workflow registry, with approval restricted to Super Admin. Everything CANDIDATE-FACING is
+  // still specification only — no accept/reject link, no expiry job, no email to the applicant
+  // (owner decision 2026-08-21).
+  //
+  // So the page has to show both halves. It must not claim offers are fully governed, and it must
+  // not go on saying nothing runs — it said exactly that until the offer service was built, and a
+  // reader would have believed it.
   // ---------------------------------------------------------------------------
   const offerDomain = getWorkflowDomain("offer-hiring");
-  assert.ok(offerDomain, "offer-hiring domain still exists (it is the specification)");
-  assert.equal(offerDomain!.status, "Not implemented", "offer-hiring is labelled Not implemented, never Active");
-  assert.match(offerDomain!.summary, /NOT BUILT/, "offer-hiring summary says plainly that it is not built");
-  for (const subflow of offerDomain!.subflows) {
+  assert.ok(offerDomain, "offer-hiring domain still exists");
+  assert.equal(
+    offerDomain!.status,
+    "Partially implemented",
+    "offer-hiring is Partially implemented — never Active while the candidate-facing half is missing, and never Not implemented now the offer runs",
+  );
+  assert.match(
+    offerDomain!.summary,
+    /no accept\/reject link|no email to the applicant|nothing candidate-facing/i,
+    "the summary must still name what is NOT built, not just what is",
+  );
+
+  // The half that runs.
+  const offerLifecycle = offerDomain!.subflows.find((subflow) => subflow.key === "offer");
+  assert.ok(offerLifecycle, "the offer lifecycle subflow exists");
+  assert.notEqual(
+    offerLifecycle!.notImplemented,
+    true,
+    "the offer lifecycle runs — flagging it not-implemented would tell a recruiter the buttons they just used do nothing",
+  );
+  const offerSim = simulateWorkflow({ domainKey: "offer-hiring", subflowKey: "offer" });
+  assert.ok(
+    !offerSim.warnings.some((w) => /subflow is NOT IMPLEMENTED/i.test(w)),
+    "the simulator must not call the offer lifecycle unimplemented",
+  );
+  assert.ok(
+    offerSim.warnings.some((w) => /PARTIALLY IMPLEMENTED/i.test(w)),
+    "the simulator must still flag that this domain is only partly built",
+  );
+
+  // The four halves that genuinely do not run must keep saying so, on the page and in the simulator.
+  for (const key of ["acceptance", "hr-approval", "vacancy-fill", "notifications"]) {
+    // getWorkflowSubflow rather than a .find() here: its declared return type is what lets the
+    // assert.ok below narrow. An inline .find() inferred inside this loop leaves the const with no
+    // annotation for the assertion to work against, and tsc rejects it (TS7022) — which the test
+    // RUNNER never sees, because node --experimental-strip-types erases types without checking.
+    const subflow = getWorkflowSubflow("offer-hiring", key);
+    assert.ok(subflow, `offer-hiring subflow "${key}" still exists`);
+    assert.equal(subflow!.notImplemented, true, `offer-hiring subflow "${key}" is specification only and must be flagged`);
     assert.ok(
-      (subflow.gaps ?? []).some((g) => /NOT BUILT/.test(g)),
-      `offer-hiring subflow "${subflow.key}" carries a NOT BUILT gap`,
+      (subflow!.gaps ?? []).some((gap: string) => /NOT BUILT/.test(gap)),
+      `offer-hiring subflow "${key}" carries a NOT BUILT gap`,
     );
-  }
-  for (const subflow of offerDomain!.subflows) {
-    const offerSim = simulateWorkflow({ domainKey: "offer-hiring", subflowKey: subflow.key });
+    const sim = simulateWorkflow({ domainKey: "offer-hiring", subflowKey: key });
     assert.ok(
-      offerSim.warnings.some((w) => /not implemented/i.test(w)),
-      `simulator warns that offer-hiring/${subflow.key} is not implemented`,
+      sim.warnings.some((w) => /not implemented/i.test(w)),
+      `simulator warns that offer-hiring/${key} is not implemented`,
     );
   }
 
-  // Every OTHER domain must still be honest about being live — this pins that the new
-  // status was applied to the one domain that earned it, not sprayed across the file.
+  // Every OTHER domain must still be honest about being live — this pins that a "not built" label
+  // is applied to the one thing that earns it, not sprayed across the file.
   for (const domain of domains) {
     if (domain.key === "offer-hiring") continue;
     assert.notEqual(domain.status, "Not implemented", `domain "${domain.key}" is not mislabelled Not implemented`);
+    assert.notEqual(domain.status, "Partially implemented", `domain "${domain.key}" is not mislabelled Partially implemented`);
   }
 
   // The badge map is a Record over the status union, so a new member must be styled.
   const statusBadgeSrc = readFileSync(new URL("../src/components/workflow-control/workflow-control-center.tsx", import.meta.url), "utf8");
   assert.match(statusBadgeSrc, /"Not implemented":/, "the status badge map styles the Not implemented status");
+  assert.match(statusBadgeSrc, /"Partially implemented":/, "the status badge map styles the Partially implemented status");
   assert.ok(statusBadgeSrc.includes("Not implemented:</span> nothing in the system runs these steps today"), "the domain detail shows a Not implemented banner");
+  assert.ok(
+    statusBadgeSrc.includes("Partially implemented:</span> some of these steps run today"),
+    "the domain detail shows a Partially implemented banner, so a partly-built domain is never read as fully governed",
+  );
 
   // ---------------------------------------------------------------------------
   // Phase-1 guarantee: read-only modules never call a mutation/DB path.
