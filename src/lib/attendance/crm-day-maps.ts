@@ -40,10 +40,12 @@
 // What still differs is only a code iReports360 has never sent: a NEW type
 // would be CP in the other two and a fall-through here. That is deliberate —
 // silently cancelling a deduction for a code nobody has classified is the
-// riskier default. But note NOTHING alerts on it: crm/unmapped-alert.ts covers
-// unmapped AGENTS, not unmapped visit types, so a new code would surface only
-// as an "Unknown" label on a report. If a 16th code ever appears, classify it
-// here and in the two Maps deliberately.
+// riskier default. It is no longer SILENT, though: the CRM sync now raises an
+// alert the first time an unclassified code appears, via
+// CRM_DAY_CLASSIFIED_VISIT_TYPES below and
+// crm/unrecognized-visit-type-alert.ts. (crm/unmapped-alert.ts is a different
+// tripwire — it covers unmapped AGENTS, not visit types.) If a 16th code ever
+// appears, classify it here and in the two Maps deliberately.
 
 import { queryVisits, scanVisitsForRange } from "@/lib/crm/reads";
 import { normalizeAttendanceHrId } from "@/lib/attendance/metrics";
@@ -94,6 +96,32 @@ export function crmDayVisitTypeStatus(visitType: number): "AV" | "CP" | undefine
   if (CRM_LEAVE_VISIT_TYPES.has(visitType)) return "AV";
   return undefined;
 }
+
+/** Regular customer visit — counted by `regularCount` in the classification loop below rather than
+ * through either Set, so it is classified even though `crmDayVisitTypeStatus` returns undefined
+ * for it. Named here so the alert set below does not mistake the commonest code of all for a new
+ * one. */
+const CRM_REGULAR_VISIT_TYPE = 0;
+
+/**
+ * Every visit type this module knows how to classify — the two Sets plus the regular-visit code.
+ *
+ * Exists so the CRM sync can raise an alert when iReports360 sends a code that is in NEITHER Set
+ * (see selectUnrecognizedVisitTypeAlerts in crm/unrecognized-visit-type-alert.ts). Such a code
+ * falls through the classification loop to `continue`, setting no flag, so `reconcileDay` never
+ * sees a cancel and the day is judged on device-punch timing alone — the precise failure this
+ * module was built to prevent. Copies #1 and #2 default an unlisted code to CP via `?? "CP"` and
+ * are therefore unaffected, which is what makes this fall-through so quiet.
+ *
+ * DERIVED from the Sets above, never a hand-written list. A fourth hand-maintained copy of the
+ * visit-type ruling is exactly the drift that made the 88-agent-day gap possible in the first
+ * place; building this from the same two Sets means it cannot disagree with them.
+ */
+export const CRM_DAY_CLASSIFIED_VISIT_TYPES: ReadonlySet<number> = new Set<number>([
+  CRM_REGULAR_VISIT_TYPE,
+  ...CRM_LEAVE_VISIT_TYPES,
+  ...CRM_CAMPAIGN_VISIT_TYPES,
+]);
 
 type CrmDayVisitRow = {
   visit_date: string | null;
