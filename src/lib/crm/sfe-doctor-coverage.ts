@@ -154,6 +154,13 @@ export type DoctorCoverageFilters = {
   kind?: string;
   /** `repKey` of a single rep. Empty/absent = all reps in scope. */
   repKey?: string;
+  /**
+   * Territory restriction from the Region → Line → Area cascade, as the set of `repKey`s those
+   * levels resolve to. Absent = no territory filter; an EMPTY array means the territory resolved to
+   * nobody and must therefore keep nobody — never treat empty as "no filter", or narrowing to a
+   * vacant patch would silently widen the board back to everything.
+   */
+  repKeys?: string[];
   /** "green" | "yellow" | "red". Empty/absent = all. */
   status?: string;
   /** Free text over doctor name, specialty and rep name. */
@@ -166,6 +173,8 @@ export type DoctorCoverageAppliedFilters = {
   grade: string | null;
   kind: string | null;
   repKey: string | null;
+  /** How many reps the territory cascade resolved to, or null when no territory filter is set. */
+  repKeyCount: number | null;
   search: string | null;
   status: string | null;
 };
@@ -613,12 +622,15 @@ export function buildDoctorCoverageBoard(
   const repFilter = clean(rawFilters.repKey);
   const searchFilter = clean(rawFilters.search);
   const searchNeedle = searchFilter?.toLowerCase() ?? null;
+  // Presence, not size, is what makes this filter active — see the `repKeys` doc comment.
+  const territoryKeys = rawFilters.repKeys ? new Set(rawFilters.repKeys) : null;
 
   const appliedFilters: DoctorCoverageAppliedFilters = {
-    active: Boolean(gradeFilter || kindFilter || statusFilter || repFilter || searchFilter),
+    active: Boolean(gradeFilter || kindFilter || statusFilter || repFilter || searchFilter || territoryKeys),
     grade: gradeFilter,
     kind: kindFilter,
     repKey: repFilter,
+    repKeyCount: territoryKeys ? territoryKeys.size : null,
     search: searchFilter,
     status: statusFilter,
   };
@@ -629,6 +641,7 @@ export function buildDoctorCoverageBoard(
       if (kindFilter && doctor.kind !== kindFilter) return false;
       if (statusFilter && doctor.status !== statusFilter) return false;
       if (repFilter && doctor.repKey !== repFilter) return false;
+      if (territoryKeys && !territoryKeys.has(doctor.repKey)) return false;
       if (searchNeedle) {
         const haystack = `${doctor.contactName} ${doctor.speciality ?? ""} ${doctor.repName}`.toLowerCase();
         if (!haystack.includes(searchNeedle)) return false;
