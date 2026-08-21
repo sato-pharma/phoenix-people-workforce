@@ -44,6 +44,7 @@ import {
   ReceiptText,
   Scale,
   ScrollText,
+  Search,
   Send,
   Settings2,
   ShieldAlert,
@@ -1943,6 +1944,15 @@ export const weeklySalesToolsPageItems: readonly AdminToolsPageItem[] = [
 // Marketing & ROI's Customer Database) consolidated behind one sidebar button
 // (see the "master-data" section above). Each card keeps its original gate.
 export const customersDatabasePageItems: readonly AdminToolsPageItem[] = [
+  {
+    href: "/admin/pharmacy-search",
+    icon: Search,
+    label: "Pharmacy Search",
+    description: "One box: find any pharmacy by name, code or distributor, and see its brick, area, region and the doctors around it.",
+    // Same gate as Customer Directory (owner decision, 2026-08-21) -- it reads the same customer
+    // estate, so it inherits that bar rather than introducing a permission of its own.
+    permissions: [{ action: "import", resource: "sales" }],
+  },
   {
     href: "/sales/customer-directory",
     icon: UsersRound,

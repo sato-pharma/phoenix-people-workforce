@@ -486,6 +486,80 @@ export async function googlePlacesAutocomplete(input: string): Promise<PlaceSugg
   });
 }
 
+// ── Places nearby search (what is physically around a point) ─────────────────
+// Text search answers "find the thing I named"; this answers "what of TYPE X sits within R
+// metres of here". Pharmacy Search needs it for hospitals specifically: the database holds 285
+// hospitals as customer rows and only 38 with coordinates, which is nowhere near all of them, so
+// the rest can only come from Google.
+
+export type NearbyPlace = {
+  address: string | null;
+  lat: number;
+  lng: number;
+  name: string;
+};
+
+/**
+ * Places of `includedType` within `radiusMeters` of a point, nearest first, Egypt-biased.
+ *
+ * Returns [] rather than throwing when the key is missing or Google refuses — a failed
+ * enrichment must degrade to "nothing found", never break a profile the caller already built
+ * from our own data. `maxResultCount` is capped at 20 by the API.
+ */
+export async function googlePlacesNearbySearch(options: {
+  includedType: string;
+  latitude: number;
+  longitude: number;
+  maxResultCount?: number;
+  radiusMeters: number;
+}): Promise<NearbyPlace[]> {
+  const key = getServerKey();
+  if (!key) return [];
+
+  const response = await postJsonWithHttpsFallback("https://places.googleapis.com/v1/places:searchNearby", {
+    body: JSON.stringify({
+      includedTypes: [options.includedType],
+      languageCode: "en",
+      locationRestriction: {
+        circle: {
+          center: { latitude: options.latitude, longitude: options.longitude },
+          radius: Math.min(50_000, Math.max(1, options.radiusMeters)),
+        },
+      },
+      maxResultCount: Math.min(20, Math.max(1, options.maxResultCount ?? 10)),
+      rankPreference: "DISTANCE",
+    }),
+    headers: {
+      "Content-Type": "application/json",
+      "X-Goog-Api-Key": key,
+      "X-Goog-FieldMask": "places.displayName,places.formattedAddress,places.location",
+    },
+    method: "POST",
+  });
+  if (!response.ok) return [];
+
+  const payload = (await response.json()) as {
+    places?: Array<{
+      displayName?: { text?: string };
+      formattedAddress?: string;
+      location?: { latitude?: number; longitude?: number };
+    }>;
+  };
+
+  return (payload.places ?? []).flatMap((place) => {
+    const lat = place.location?.latitude;
+    const lng = place.location?.longitude;
+    const name = place.displayName?.text?.trim();
+    if (!name || !Number.isFinite(lat) || !Number.isFinite(lng)) return [];
+    return [{
+      address: place.formattedAddress?.trim() || null,
+      lat: Number(lat),
+      lng: Number(lng),
+      name,
+    }];
+  });
+}
+
 export type PlaceLocation = {
   /** District / markaz level, the value the marketing forms store as the area name. */
   area: string | null;
