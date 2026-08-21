@@ -204,6 +204,7 @@ import { runCrmDegradationPolicyTests } from "./crm-degradation-policy.test.ts";
 import { runCrmCheckinCoordGuardTests } from "./crm-checkin-coord-guard.test.ts";
 import { runCrmAmpmNormalizationTests } from "./crm-ampm-normalization.test.ts";
 import { runCrmVisitTypeLabelTests } from "./crm-visit-type-labels.test.ts";
+import { runCrmRepDoctorListsTests } from "./crm-rep-doctor-lists.test.ts";
 import { runLocationIqGeocodeConfidenceTests } from "./locationiq-geocode-confidence.test.ts";
 import { runPrivateCalendarTests } from "./private-calendar.test.ts";
 import { runWeeklyPlanApproverUiParityTests } from "./weekly-plan-approver-ui-parity.test.ts";
@@ -1163,6 +1164,13 @@ await runTest(
   + "\"Unknown\"; the vendor's own description still wins; -7 and -30 route on the rep's comment; a "
   + "resolved label must never be written back to visit_type_description)",
   runCrmVisitTypeLabelTests,
+);
+await runTest(
+  "crm rep doctor lists (a doctor on a rep's plan who was never visited must show up as missed — "
+  + "the population every visit-history board is blind to; adherence counts doctors only, departed "
+  + "agents leave both sides, an unknown specialty is named not folded, and the drill-down cap can "
+  + "never look like a complete list)",
+  runCrmRepDoctorListsTests,
 );
 await runTest("LocationIQ geocode confidence (reverse/forward scoring + LocationIQ-first/Google-fallback wiring)", runLocationIqGeocodeConfidenceTests);
 await runTest("private calendar", runPrivateCalendarTests);

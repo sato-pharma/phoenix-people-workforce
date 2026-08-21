@@ -1,0 +1,628 @@
+import assert from "node:assert/strict";
+
+import {
+  buildRepDoctorListsBoard,
+  gradeTierOf,
+  monthBounds,
+  monthKeyOfDate,
+  monthLabelOf,
+  REP_DOCTOR_DRILLDOWN_CAP,
+  resolveRepDoctorListMonth,
+  type PlanRow,
+  type RepDoctorListsInput,
+  type VisitRow,
+} from "../src/lib/crm/rep-doctor-lists.ts";
+import { canAccessRepDoctorLists, REP_DOCTOR_LISTS_ACCESS_ROLES } from "../src/lib/crm/rep-doctor-lists-access.ts";
+import {
+  assertPlanSyncRange,
+  daysBetweenIso,
+  MAX_PLAN_SYNC_DAYS,
+  PlanSyncRangeError,
+  rowFromPlanEntry,
+} from "../src/lib/crm/plan-sync.ts";
+import type { IReports360PlanEntry } from "../src/lib/crm/client.ts";
+import type { CrmIdentityMaps } from "../src/lib/crm/types.ts";
+import type { PhoenixRole } from "../src/lib/auth/permissions.ts";
+
+// Rep Doctor Lists — the board that answers "which doctors on this rep's own list did they never
+// reach?".
+//
+// WHY THIS TEST IS NOT OPTIONAL. Every other CRM board in this codebase is built from visit
+// HISTORY, so its worst failure is an omission nobody can see. This one is built from an ASSIGNMENT
+// list, and its output is an accusation: "this rep never visited 59 of their doctors." A join bug
+// here does not lose a row — it invents a performance problem for a named human being. So the whole
+// join is a pure function and every number below is pinned to a fixture that can be read by hand.
+//
+// Fixture shape (August 2026), chosen so each rep proves a different rule:
+//   agent 101 — a full list: repeat calls, a pharmacy, an unknown specialty, two never-visited
+//               doctors, two off-plan visits, and a name that must come from the HR directory.
+//   agent 202 — plans the SAME doctor as 101, and has no directory entry (vendor name wins).
+//   agent 303 — departed. Has a plan on file. Must vanish from every number on the board.
+//   agent 404 — visited, never planned. Has no name anywhere.
+
+const MONTH = "2026-08";
+
+function plan(overrides: Partial<PlanRow> = {}): PlanRow {
+  return {
+    agent_crm_id: 101,
+    agent_hr_id: "PHX-101",
+    contact_crm_id: 1001,
+    contact_grade: "A",
+    contact_name: "Planned Contact",
+    crm_region_name: "Cairo",
+    plan_date: "2026-08-03",
+    plan_status: 1,
+    speciality: "Internal Medicine",
+    synced_at: "2026-08-21T09:00:00.000Z",
+    ...overrides,
+  };
+}
+
+function visit(overrides: Partial<VisitRow> = {}): VisitRow {
+  return {
+    agent_crm_id: 101,
+    agent_hr_id: "PHX-101",
+    agent_name: "Mostafa K (CRM label)",
+    contact_crm_id: 1001,
+    crm_contact_grade: "A",
+    speciality: "Internal Medicine",
+    visit_date: "2026-08-03",
+    ...overrides,
+  };
+}
+
+const PLAN_ROWS: PlanRow[] = [
+  // 1001 is planned TWICE — one doctor, two calls, and the second is still unverified (status 0).
+  plan({ contact_crm_id: 1001, contact_name: "Ahmed Fouad", contact_grade: "A+", plan_date: "2026-08-03" }),
+  plan({
+    contact_crm_id: 1001,
+    contact_name: "Ahmed Fouad",
+    contact_grade: "A+",
+    plan_date: "2026-08-17",
+    plan_status: 0,
+    synced_at: "2026-08-21T10:00:00.000Z",
+  }),
+  plan({
+    contact_crm_id: 1002,
+    contact_name: "Sara Nabil",
+    contact_grade: "b",
+    speciality: "Pediatrics",
+    plan_date: "2026-08-05",
+  }),
+  plan({
+    contact_crm_id: 1003,
+    contact_name: "Hany Adel",
+    contact_grade: "C",
+    speciality: "Neurology",
+    plan_date: "2026-08-06",
+  }),
+  plan({
+    contact_crm_id: 1004,
+    contact_name: "Mona Saad",
+    contact_grade: null,
+    speciality: "Chest",
+    plan_date: "2026-08-07",
+  }),
+  // A place, not a person — must never enter the doctor list or move adherence.
+  plan({ contact_crm_id: 1005, contact_name: "El Ezaby Pharmacy", speciality: "Pharmacy", plan_date: "2026-08-08" }),
+  // A specialty the shared taxonomy has never seen. Neither doctor nor account until someone rules.
+  plan({ contact_crm_id: 1006, contact_name: "Nephro Doc", speciality: "Nephrology", plan_date: "2026-08-09" }),
+  // The vendor's two "no contact" shapes.
+  plan({ contact_crm_id: null, contact_name: null, plan_date: "2026-08-10" }),
+  plan({ contact_crm_id: 0, contact_name: null, plan_date: "2026-08-10" }),
+  // Rep 202: one of their own, plus the same doctor rep 101 has.
+  plan({
+    agent_crm_id: 202,
+    agent_hr_id: "PHX-202",
+    contact_crm_id: 2001,
+    contact_name: "Laila Hassan",
+    speciality: "Urology",
+    plan_date: "2026-08-04",
+    plan_status: 2,
+  }),
+  plan({
+    agent_crm_id: 202,
+    agent_hr_id: "PHX-202",
+    contact_crm_id: 1003,
+    contact_name: "Hany Adel",
+    contact_grade: "C",
+    speciality: "Neurology",
+    plan_date: "2026-08-11",
+  }),
+  // Departed rep with a plan still on file.
+  plan({
+    agent_crm_id: 303,
+    agent_hr_id: "PHX-303",
+    contact_crm_id: 3001,
+    contact_name: "Departed Doc",
+    speciality: "ENT",
+    plan_date: "2026-08-12",
+  }),
+];
+
+// The visits door has ALREADY dropped agent 303 and collapsed duplicate submissions, so nothing
+// here belongs to 303 — that exclusion is the door's job and this board must not re-do it.
+const VISIT_ROWS: VisitRow[] = [
+  visit({ contact_crm_id: 1001, visit_date: "2026-08-03" }),
+  visit({ contact_crm_id: 1001, visit_date: "2026-08-18" }),
+  visit({ contact_crm_id: 1002, speciality: "Pediatrics", visit_date: "2026-08-05" }),
+  // Off plan for 101, and on nobody's plan at all — the only row allowed to print an id form.
+  visit({ contact_crm_id: 9001, speciality: "Cardiology", visit_date: "2026-08-19" }),
+  // Off plan for 101, but on rep 202's plan — so its name must be recoverable.
+  visit({ contact_crm_id: 2001, speciality: "Urology", visit_date: "2026-08-20" }),
+  visit({
+    agent_crm_id: 202,
+    agent_hr_id: "PHX-202",
+    agent_name: "Vendor Label Rep",
+    contact_crm_id: 2001,
+    speciality: "Urology",
+    visit_date: "2026-08-04",
+  }),
+  visit({
+    agent_crm_id: 404,
+    agent_hr_id: null,
+    agent_name: null,
+    contact_crm_id: 4001,
+    speciality: "ENT",
+    visit_date: "2026-08-02",
+  }),
+  // A visit with no contact: proves the rep worked, contributes no doctor row.
+  visit({ contact_crm_id: null, visit_date: "2026-08-21" }),
+];
+
+function board(overrides: Partial<RepDoctorListsInput> = {}) {
+  return buildRepDoctorListsBoard({
+    employeeNameByHrId: new Map([["PHX-101", "Mostafa Kamel"]]),
+    excludedAgentCrmIds: [303],
+    month: MONTH,
+    planRows: PLAN_ROWS,
+    visitRows: VISIT_ROWS,
+    ...overrides,
+  });
+}
+
+function repOf(result: ReturnType<typeof board>, repKey: string) {
+  const row = result.reps.find((rep) => rep.repKey === repKey);
+  assert.ok(row, `expected rep ${repKey} on the board`);
+  return row;
+}
+
+function doctorOf(result: ReturnType<typeof board>, repKey: string, contactCrmId: number) {
+  const row = result.doctors.find((doctor) => doctor.repKey === repKey && doctor.contactCrmId === contactCrmId);
+  assert.ok(row, `expected contact ${contactCrmId} on rep ${repKey}'s list`);
+  return row;
+}
+
+export function runCrmRepDoctorListsTests() {
+  const result = board();
+
+  // ── THE HEADLINE ─────────────────────────────────────────────────────────────────────────────
+  // A doctor who is on a rep's list and was NEVER visited must appear, as "missed". This is the
+  // entire reason the module exists: such a doctor generates no visit row, so every visit-history
+  // board in this codebase is structurally blind to them.
+  for (const contactCrmId of [1003, 1004]) {
+    const missed = doctorOf(result, "101", contactCrmId);
+    assert.equal(
+      missed.status,
+      "missed",
+      `a planned doctor with no visit must read as "missed" — contact ${contactCrmId} is the population this board exists to show`,
+    );
+    assert.equal(missed.visits, 0, `a missed doctor must report zero visits — contact ${contactCrmId}`);
+    assert.equal(missed.lastVisitDate, null, `a missed doctor must have no last visit date — contact ${contactCrmId}`);
+    assert.ok(
+      missed.plannedCalls > 0,
+      `a missed doctor must still show the calls that were planned — contact ${contactCrmId}`,
+    );
+  }
+  assert.equal(
+    repOf(result, "101").missedDoctors,
+    2,
+    "rep 101 planned 4 doctors and saw 2 — exactly 2 must count as never visited",
+  );
+
+  // ── Adherence is doctors-only ────────────────────────────────────────────────────────────────
+  const rep101 = repOf(result, "101");
+  assert.equal(
+    rep101.plannedDoctors,
+    4,
+    "only the four SP contacts are doctors — the pharmacy and the unknown specialty are not",
+  );
+  assert.equal(rep101.plannedAccounts, 1, "the pharmacy is counted, separately, as an account");
+  assert.equal(
+    rep101.plannedUnclassified,
+    1,
+    "an unrecognised specialty is counted on its own, never folded into either bucket",
+  );
+  assert.equal(rep101.visitedDoctors, 2, "1001 and 1002 were visited");
+  assert.equal(rep101.adherencePct, 50, "2 of 4 planned doctors visited = 50%");
+  assert.equal(
+    rep101.plannedCalls,
+    7,
+    "seven plan entries survive: 2x1001 + 1002 + 1003 + 1004 + pharmacy + nephrology",
+  );
+  assert.equal(rep101.unverifiedCalls, 1, "only the second call on 1001 is still at vendor status 0 (New)");
+
+  // A pharmacy on the plan must not be able to move a rep's adherence in either direction.
+  const withoutPharmacy = board({ planRows: PLAN_ROWS.filter((row) => row.contact_crm_id !== 1005) });
+  assert.equal(
+    repOf(withoutPharmacy, "101").adherencePct,
+    rep101.adherencePct,
+    "removing a planned PHARMACY must not change adherence — a pharmacy is not a doctor",
+  );
+  assert.equal(
+    repOf(withoutPharmacy, "101").plannedDoctors,
+    rep101.plannedDoctors,
+    "removing a pharmacy must not change the doctor count",
+  );
+
+  // ── Grades tier the same way Doctor Coverage tiers them ──────────────────────────────────────
+  assert.equal(rep101.gradeA, 1, "A+ folds into A");
+  assert.equal(rep101.gradeB, 1, "a lower-case 'b' is still grade B");
+  assert.equal(rep101.gradeC, 1, "grade C counted");
+  assert.equal(
+    rep101.gradeA + rep101.gradeB + rep101.gradeC,
+    3,
+    "the ungraded doctor belongs to no tier — never silently promoted to A",
+  );
+
+  // ── Repeat calls collapse to one doctor, and keep the LAST planned date ──────────────────────
+  const repeated = doctorOf(result, "101", 1001);
+  assert.equal(repeated.plannedCalls, 2, "two plan entries for one doctor are two calls");
+  assert.equal(repeated.lastPlanDate, "2026-08-17", "the later plan date wins");
+  assert.equal(repeated.lastVisitDate, "2026-08-18", "the later visit date wins");
+  assert.equal(repeated.visits, 2, "both visits count");
+  assert.equal(repeated.status, "seen", "a planned doctor who was visited reads as seen");
+
+  // ── The vendor's "no contact" sentinels are not people ───────────────────────────────────────
+  assert.equal(
+    result.doctors.filter((row) => row.contactCrmId === 0 || row.contactCrmId === null).length,
+    0,
+    "contact id 0 and null are the vendor's unspecified-contact sentinels, never rows on a doctor list",
+  );
+
+  // ── Departed agents are gone from BOTH sides ─────────────────────────────────────────────────
+  assert.equal(
+    result.reps.find((rep) => rep.repKey === "303"),
+    undefined,
+    "a departed agent with a plan still on file must not appear — otherwise they score 0% forever",
+  );
+  assert.equal(
+    result.doctors.filter((row) => row.contactCrmId === 3001).length,
+    0,
+    "a departed agent's planned doctors must not reach the board",
+  );
+
+  // ── Off-plan: visited, never planned ─────────────────────────────────────────────────────────
+  assert.equal(rep101.offPlanDoctors, 2, "9001 and 2001 were visited by rep 101 and are not on rep 101's plan");
+  const offPlanShared = doctorOf(result, "101", 2001);
+  assert.equal(offPlanShared.status, "off_plan", "a doctor on ANOTHER rep's plan is still off THIS rep's plan");
+  assert.equal(offPlanShared.plannedCalls, 0, "an off-plan row has no planned call to point at");
+  assert.equal(offPlanShared.lastPlanDate, null, "an off-plan row has no plan date");
+  assert.equal(
+    offPlanShared.contactName,
+    "Laila Hassan",
+    "an off-plan doctor's name must be recovered from any plan row for the same contact — the owner's rule is human-readable names, never raw ids",
+  );
+  assert.equal(
+    doctorOf(result, "101", 9001).contactName,
+    "Contact 9001",
+    "a contact on nobody's plan has no name anywhere in this window — the id form is the honest fallback, not a guess",
+  );
+
+  // ── A rep with visits and no plan is COUNTED, not hidden ─────────────────────────────────────
+  assert.equal(result.repsWithoutPlan, 1, "agent 404 recorded visits with no plan at all");
+  const rep404 = repOf(result, "404");
+  assert.equal(rep404.plannedDoctors, 0, "a rep with no plan has no doctor list");
+  assert.equal(rep404.adherencePct, 0, "no plan means no adherence — never a divide-by-zero NaN");
+  assert.ok(Number.isFinite(rep404.adherencePct), "adherence must always be a finite number");
+  assert.equal(rep404.offPlanDoctors, 1, "everyone a planless rep visits is off plan by definition");
+
+  // ── Rep names: directory, then vendor label, then an explicit unmapped marker ────────────────
+  assert.equal(rep101.repName, "Mostafa Kamel", "the HR directory name wins over the vendor's own label");
+  assert.equal(
+    repOf(result, "202").repName,
+    "Vendor Label Rep",
+    "with no directory entry, the vendor's label is used rather than an id",
+  );
+  assert.equal(
+    rep404.repName,
+    "Unmapped CRM agent 404",
+    "a rep with no name in either source is named as unmapped — never left as a bare number",
+  );
+
+  // ── The same doctor on two reps' plans is two independent rows ───────────────────────────────
+  const rep202 = repOf(result, "202");
+  assert.equal(rep202.plannedDoctors, 2, "rep 202 plans 2001 and 1003");
+  assert.equal(rep202.visitedDoctors, 1, "rep 202 saw 2001");
+  assert.equal(rep202.adherencePct, 50, "1 of 2 = 50%");
+  assert.equal(
+    doctorOf(result, "202", 1003).status,
+    "missed",
+    "rep 202 never visited 1003 — that rep 101 also planned 1003 is irrelevant, the join is per rep",
+  );
+  assert.equal(doctorOf(result, "101", 1003).status, "missed", "and rep 101 never visited 1003 either");
+  assert.equal(rep202.unverifiedCalls, 0, "statuses 1 and 2 are both verified");
+
+  // ── Unknown specialties are named, with counts ───────────────────────────────────────────────
+  assert.deepEqual(
+    result.unclassifiedSpecialities,
+    [{ contacts: 1, label: "Nephrology" }],
+    "a specialty the taxonomy has never seen must be reported BY NAME with its contact count, never silently dropped from the doctor total",
+  );
+
+  // ── Totals are the sum of the reps actually on the board ─────────────────────────────────────
+  assert.equal(result.totals.reps, 3, "101, 202 and 404 — not the departed 303");
+  assert.equal(result.totals.plannedDoctors, 6, "4 + 2 + 0");
+  assert.equal(result.totals.visitedDoctors, 3, "2 + 1 + 0");
+  assert.equal(result.totals.missedDoctors, 3, "2 + 1 + 0");
+  assert.equal(result.totals.adherencePct, 50, "3 of 6");
+  assert.equal(result.totals.plannedAccounts, 1, "one pharmacy");
+  assert.equal(result.totals.plannedCalls, 9, "7 + 2");
+  assert.equal(result.totals.offPlanDoctors, 3, "2 + 0 + 1");
+  assert.equal(result.totals.unverifiedCalls, 1, "one call still at status New");
+  assert.equal(
+    result.totals.visitedDoctors + result.totals.missedDoctors,
+    result.totals.plannedDoctors,
+    "every planned doctor is either seen or missed — there is no third state and none may go missing",
+  );
+
+  // ── The latest sync stamp wins ───────────────────────────────────────────────────────────────
+  assert.equal(
+    result.planSyncedAt,
+    "2026-08-21T10:00:00.000Z",
+    "the freshest synced_at in the window is what the board reports",
+  );
+  assert.equal(board({ planRows: [] }).planSyncedAt, null, "an empty mirror reports no sync stamp rather than a fake one");
+
+  // ── Order: the actionable half first ─────────────────────────────────────────────────────────
+  const statuses = result.doctors.map((row) => row.status);
+  const lastMissed = statuses.lastIndexOf("missed");
+  const firstSeen = statuses.indexOf("seen");
+  assert.ok(lastMissed >= 0 && firstSeen >= 0, "the fixture must contain both missed and seen rows");
+  assert.ok(lastMissed < firstSeen, "never-visited doctors must sort ahead of visited ones without a sort click");
+
+  // ── Filters ──────────────────────────────────────────────────────────────────────────────────
+  const missedOnly = board({ filters: { status: "missed" } });
+  assert.ok(missedOnly.doctors.length > 0, "the missed filter must return rows");
+  assert.ok(
+    missedOnly.doctors.every((row) => row.status === "missed"),
+    "the status filter must not leak other statuses",
+  );
+  const accountsOnly = board({ filters: { kind: "hcp" } });
+  assert.deepEqual(
+    accountsOnly.doctors.map((row) => row.contactCrmId),
+    [1005],
+    "the kind filter isolates accounts — the pharmacy is the only one in the fixture",
+  );
+  const searched = board({ filters: { search: "laila" } });
+  assert.ok(searched.doctors.length > 0, "search must match a contact name case-insensitively");
+  assert.ok(
+    searched.doctors.every((row) => row.contactName.toLowerCase().includes("laila")),
+    "search must not return unmatched rows",
+  );
+  const oneRep = board({ filters: { repKey: "202" } });
+  assert.equal(oneRep.reps.length, 1, "a rep filter narrows the rep table too, not just the doctor table");
+  assert.ok(
+    oneRep.doctors.every((row) => row.repKey === "202"),
+    "a rep filter must not leak another rep's list",
+  );
+
+  // Every rep on the board must be selectable, and by a human-readable name.
+  assert.equal(result.repOptions.length, result.reps.length, "every rep on the board must be offered in the rep picker");
+  assert.ok(
+    result.repOptions.every((option) => option.repName.trim().length > 0),
+    "no rep option may be blank",
+  );
+
+  // ── Month plumbing ───────────────────────────────────────────────────────────────────────────
+  assert.equal(result.month, MONTH, "the board reports the month it was asked for");
+  assert.equal(result.monthLabel, "August 2026", "the month label is human-readable");
+
+  runCapTests();
+  runDateTests();
+  runPlanSyncTests();
+  runAccessTests();
+}
+
+// ── The drill-down cap must never be able to look like a complete list ─────────────────────────
+function runCapTests() {
+  const big: PlanRow[] = [];
+  for (let index = 0; index < REP_DOCTOR_DRILLDOWN_CAP + 100; index += 1) {
+    big.push(
+      plan({
+        agent_crm_id: 1,
+        agent_hr_id: "PHX-1",
+        contact_crm_id: 10_000 + index,
+        contact_name: `Doctor ${index}`,
+      }),
+    );
+  }
+  for (let index = 0; index < 10; index += 1) {
+    big.push(
+      plan({
+        agent_crm_id: 2,
+        agent_hr_id: "PHX-2",
+        contact_crm_id: 90_000 + index,
+        contact_name: `Other ${index}`,
+      }),
+    );
+  }
+  const wide = buildRepDoctorListsBoard({
+    employeeNameByHrId: new Map(),
+    excludedAgentCrmIds: [],
+    month: MONTH,
+    planRows: big,
+    visitRows: [],
+  });
+  assert.equal(wide.doctors.length, REP_DOCTOR_DRILLDOWN_CAP, "the company-wide list is capped");
+  assert.equal(
+    wide.doctorsTotal,
+    REP_DOCTOR_DRILLDOWN_CAP + 110,
+    "doctorsTotal must report the TRUE count so a truncated list can never be mistaken for a complete one",
+  );
+  assert.ok(wide.doctorsTotal > wide.doctors.length, "the board must be able to tell that it truncated");
+
+  // The board's own text tells the user to pick a rep to escape the cap. That has to be true.
+  const oneRep = buildRepDoctorListsBoard({
+    employeeNameByHrId: new Map(),
+    excludedAgentCrmIds: [],
+    filters: { repKey: "1" },
+    month: MONTH,
+    planRows: big,
+    visitRows: [],
+  });
+  assert.equal(
+    oneRep.doctors.length,
+    REP_DOCTOR_DRILLDOWN_CAP + 100,
+    "a single rep's list ships UNCAPPED — the board tells the user to pick a rep to see a whole list, so that must actually work",
+  );
+  assert.equal(oneRep.doctorsTotal, oneRep.doctors.length, "with one rep selected nothing is truncated");
+}
+
+// ── Date discipline: string arithmetic only, never a Date-object round trip ────────────────────
+function runDateTests() {
+  assert.equal(monthKeyOfDate("2026-08-01"), "2026-08", "the first of the month must not slip to the previous one");
+  assert.equal(monthKeyOfDate("2026-08-31"), "2026-08", "the last of the month must not slip to the next one");
+
+  assert.deepEqual(monthBounds("2026-08"), { from: "2026-08-01", to: "2026-08-31" }, "31-day month");
+  assert.deepEqual(monthBounds("2026-04"), { from: "2026-04-01", to: "2026-04-30" }, "30-day month");
+  assert.deepEqual(monthBounds("2026-02"), { from: "2026-02-01", to: "2026-02-28" }, "February, common year");
+  assert.deepEqual(monthBounds("2024-02"), { from: "2024-02-01", to: "2024-02-29" }, "February, leap year");
+  assert.deepEqual(monthBounds("2026-01"), { from: "2026-01-01", to: "2026-01-31" }, "January");
+  assert.deepEqual(
+    monthBounds("2026-12"),
+    { from: "2026-12-01", to: "2026-12-31" },
+    "December must not roll into the next year",
+  );
+
+  const currentMonth = /^\d{4}-(0[1-9]|1[0-2])$/;
+  assert.equal(resolveRepDoctorListMonth("2026-08"), "2026-08", "a valid month passes through");
+  assert.match(resolveRepDoctorListMonth("2026-13"), currentMonth, "month 13 is not a month — fall back to today's");
+  assert.match(resolveRepDoctorListMonth("2026-00"), currentMonth, "month 00 is not a month — fall back to today's");
+  assert.match(resolveRepDoctorListMonth("garbage"), currentMonth, "garbage falls back to today's month");
+  assert.match(resolveRepDoctorListMonth(undefined), currentMonth, "no month at all falls back to today's month");
+
+  assert.equal(monthLabelOf("2026-01"), "January 2026", "January");
+  assert.equal(monthLabelOf("2026-12"), "December 2026", "December");
+
+  assert.equal(gradeTierOf("A+"), "A", "A+ folds into A, exactly as Doctor Coverage tiers it");
+  assert.equal(gradeTierOf(" a "), "A", "grades arrive from the vendor with stray casing and whitespace");
+  assert.equal(gradeTierOf("b"), "B", "lower-case b is grade B");
+  assert.equal(gradeTierOf("C"), "C", "grade C");
+  assert.equal(gradeTierOf(null), null, "no grade is not grade A");
+  assert.equal(gradeTierOf(""), null, "a blank grade is not grade A");
+  assert.equal(gradeTierOf("D"), null, "an unrecognised grade is not silently tiered");
+}
+
+// ── Plan sync: the window guard and the mirror row ─────────────────────────────────────────────
+function identityMaps(): CrmIdentityMaps {
+  return {
+    crmUsernameByHrId: new Map(),
+    hrIdByCrmId: new Map([["101", "PHX-101"]]),
+    hrIdByCrmUsername: new Map(),
+    hrIdByManualOverride: new Map(),
+    lastWorkingDateByHrId: new Map(),
+  };
+}
+
+function planEntry(overrides: Partial<IReports360PlanEntry> = {}): IReports360PlanEntry {
+  return {
+    agentID: 101,
+    appm: "am ",
+    contactID: 1001,
+    contactName: "Ahmed Fouad",
+    date: "2026-08-03T00:00:00",
+    grade: " a+ ",
+    id: 5001,
+    planID: 900,
+    planStatus: 1,
+    region: "Cairo",
+    speciality: "Internal Medicine",
+    startAM: "09:00",
+    startPM: null,
+    ...overrides,
+  };
+}
+
+function runPlanSyncTests() {
+  assert.equal(
+    daysBetweenIso("2026-08-01", "2026-08-01"),
+    1,
+    "a single day is one day, not zero — the count is inclusive",
+  );
+  assert.equal(daysBetweenIso("2026-08-01", "2026-08-31"), 31, "August is 31 days");
+  assert.equal(daysBetweenIso("2024-02-01", "2024-02-29"), 29, "a leap February is 29 days");
+
+  assert.doesNotThrow(() => assertPlanSyncRange("2026-08-01", "2026-08-31"), "one month must always be syncable");
+  const maxEnd = "2026-10-01";
+  assert.equal(MAX_PLAN_SYNC_DAYS, 62, "the ceiling this test pins");
+  assert.equal(daysBetweenIso("2026-08-01", maxEnd), MAX_PLAN_SYNC_DAYS, "the fixture must actually sit on the ceiling");
+  assert.doesNotThrow(() => assertPlanSyncRange("2026-08-01", maxEnd), "exactly the ceiling is allowed");
+  assert.throws(
+    () => assertPlanSyncRange("2026-08-01", "2026-10-02"),
+    PlanSyncRangeError,
+    "one day past the ceiling must be refused BEFORE the vendor is called — an unbounded window is how a refresh becomes a timeout that commits half its work",
+  );
+  assert.throws(() => assertPlanSyncRange("2026-08-31", "2026-08-01"), PlanSyncRangeError, "a reversed range is refused");
+  assert.throws(() => assertPlanSyncRange("31/08/2026", "2026-08-01"), PlanSyncRangeError, "a non-ISO date is refused");
+  assert.throws(() => assertPlanSyncRange("2026-08-01", ""), PlanSyncRangeError, "a missing date is refused");
+
+  const row = rowFromPlanEntry(planEntry(), identityMaps());
+  assert.equal(row.crm_plan_entry_id, 5001, "the vendor entry id is the mirror's primary key");
+  assert.equal(row.plan_kind, "weekly", "this sync writes weekly plans");
+  assert.equal(
+    row.plan_date,
+    "2026-08-03",
+    "the vendor's zone-less Cairo timestamp is SLICED to a date — never parsed and re-serialized, which shifts the clock",
+  );
+  assert.equal(row.agent_hr_id, "PHX-101", "a mapped CRM agent resolves to their hr id");
+  assert.equal(row.contact_grade, "A+", "the grade is normalized on the way in, so the board never tiers stray casing");
+  assert.equal(row.ampm, "AM", "the half-day marker is normalized the same way a visit's is");
+  assert.equal(row.contact_crm_id, 1001, "the contact id is the join key and is stored verbatim");
+  assert.equal(row.plan_status, 1, "the vendor's approval status is preserved, never interpreted here");
+  assert.ok(row.raw_payload, "the whole vendor entry is kept, so a field Phoenix does not read yet is not lost");
+
+  const undated = rowFromPlanEntry(planEntry({ date: null }), identityMaps());
+  assert.equal(undated.plan_date, null, "an entry with no date has no date — never today's");
+
+  const unmapped = rowFromPlanEntry(planEntry({ agentID: 999 }), identityMaps());
+  assert.equal(unmapped.agent_hr_id, null, "an unmapped CRM agent resolves to null, never to someone else's hr id");
+  assert.equal(
+    unmapped.agent_crm_id,
+    999,
+    "the vendor id is still stored, so the row is recoverable once identity resolves",
+  );
+}
+
+// ── Access: Super Admin only, on the owner's instruction ───────────────────────────────────────
+function runAccessTests() {
+  assert.deepEqual(
+    [...REP_DOCTOR_LISTS_ACCESS_ROLES],
+    ["Super Admin"],
+    'the owner scoped this board to "admin account only for now" (2026-08-21) — widening it is a decision he has to make, not a refactor',
+  );
+  assert.equal(canAccessRepDoctorLists({ role: "Super Admin", scope: "self" }), true, "Super Admin may open the board");
+  assert.equal(
+    canAccessRepDoctorLists({ role: "Employee", scope: "system" }),
+    true,
+    "a system-scope context is the platform itself, not a person",
+  );
+
+  // Each of these can see other CRM boards. None may see this one yet.
+  const denied: PhoenixRole[] = [
+    "CEO",
+    "SFE Manager",
+    "Training Manager",
+    "Talent Acquisition",
+    "Medical Rep",
+    "Employee",
+    "National Sales Manager",
+  ];
+  for (const role of denied) {
+    assert.equal(
+      canAccessRepDoctorLists({ role, scope: "self" }),
+      false,
+      `${role} must NOT reach the rep doctor lists — this board names individual reps' misses and is Super-Admin-only until the owner says otherwise`,
+    );
+  }
+}

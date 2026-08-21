@@ -15,6 +15,7 @@ export type AuditEntityType =
   | "deduction_comment"
   | "deduction_decision"
   | "crm_master_export"
+  | "crm_plan_sync"
   | "sos_raw_template_export"
   | "deduction_export"
   | "deduction_finalization"

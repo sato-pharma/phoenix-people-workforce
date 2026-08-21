@@ -2,8 +2,14 @@
  * Thin, read-only HTTP client for the iReports360 Reporting API.
  *
  * Flow (per the vendor docs): POST /api/ReportsApi/login -> JWT (30-day), then
- * GET /api/ReportsApi/visits and /checkins with a Bearer token, by date range.
- * The API is read-only; this client never mutates the CRM.
+ * GET /api/ReportsApi/visits, /checkins and /weekly-plans with a Bearer token, by date range.
+ *
+ * READ-ONLY BY CONSTRUCTION. The vendor's collection also documents two mutating endpoints --
+ * PUT /weekly-plans/{id}/status and PUT /monthly-plans/{id}/status, which set a plan header's
+ * approval flag (0 = New, 1 = Supervisor Verified, 2 = Area Manager Verified). Neither is
+ * implemented here, deliberately: approving a rep's plan is a real decision inside the customer's
+ * CRM, and nothing in Phoenix has been asked to make it. Do not add them without the owner
+ * asking for plan approval as a feature.
  *
  * This is the single HTTP boundary to the CRM. Nothing outside `src/lib/crm/`
  * should import it directly — consumers go through the CRM read/sync services.
@@ -211,6 +217,79 @@ export async function iReports360GetCheckins(
       messageFromPayload(
         payload,
         "iReports360 checkins response contained no `data` array — the response shape changed or the request was rejected.",
+      ),
+      502,
+    );
+  }
+  return payload.data;
+}
+
+/**
+ * One planned call from GET /api/ReportsApi/weekly-plans.
+ *
+ * Shape confirmed against the live API 2026-08-21 — these thirteen keys and no others. Note what
+ * is NOT here: an agent NAME. Unlike a visit, a plan entry identifies its rep by numeric id only,
+ * so the sync resolves the employee crm-id-first exactly as a check-in does.
+ *
+ * `grade` and `speciality` describe the CONTACT, and are the reason this endpoint answers "what is
+ * this rep's doctor list" at all: speciality was filled on 16,328 of 16,328 rows measured over
+ * 1-21 August 2026.
+ */
+export type IReports360PlanEntry = {
+  /** Vendor field `appm` (sic) — the AM/PM half-day marker, same inconsistent casing as a visit. */
+  appm: string | null;
+  agentID: number;
+  contactID: number | null;
+  contactName: string | null;
+  /** Weekly only: the planned call date, zone-less Cairo wall-clock like every vendor timestamp. */
+  date: string | null;
+  /** Contact commercial grade (A/B/C), sent with stray casing/whitespace — normalize before use. */
+  grade: string | null;
+  id: number;
+  /** The plan HEADER id this entry belongs to; many entries share one. */
+  planID: number | null;
+  /** Header approval flag: 0 = New, 1 = Supervisor Verified, 2 = Area Manager Verified. */
+  planStatus: number | null;
+  region: string | null;
+  speciality: string | null;
+  startAM: string | null;
+  startPM: string | null;
+};
+
+/**
+ * Returns weekly PLAN entries within an inclusive date range (YYYY-MM-DD).
+ *
+ * Optionally narrowed to one rep with `agentId` — the vendor supports it (verified live), and it
+ * is the cheap path for a single-rep drill-down. Omit it for the whole field force.
+ */
+export async function iReports360GetWeeklyPlans(
+  config: IReports360Config,
+  token: string,
+  startDate: string,
+  endDate: string,
+  agentId?: number,
+): Promise<IReports360PlanEntry[]> {
+  const url =
+    `${config.baseUrl}/api/ReportsApi/weekly-plans` +
+    `?startDate=${encodeURIComponent(toDateParam(startDate))}` +
+    `&endDate=${encodeURIComponent(toDateParam(endDate))}` +
+    (agentId ? `&agentId=${encodeURIComponent(String(agentId))}` : "");
+  const payload = (await fetchJson(
+    url,
+    { headers: { Authorization: `Bearer ${token}` }, method: "GET" },
+    config.timeoutMs,
+  )) as { data?: IReports360PlanEntry[]; message?: string; success?: boolean } | null;
+  if (payload?.success === false) {
+    throw new IReports360ApiError(messageFromPayload(payload, "iReports360 weekly-plans request failed."), 502);
+  }
+  // Same rule as visits/checkins: a missing or non-array `data` is a BROKEN response, never an
+  // empty one. Coercing it to [] here would let a vendor shape change wipe every rep's doctor
+  // list on the next sync and report the run as a success.
+  if (!payload || !Array.isArray(payload.data)) {
+    throw new IReports360ApiError(
+      messageFromPayload(
+        payload,
+        "iReports360 weekly-plans response contained no `data` array — the response shape changed or the request was rejected.",
       ),
       502,
     );

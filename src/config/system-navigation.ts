@@ -2643,6 +2643,21 @@ export const crmPageItems: readonly AdminToolsPageItem[] = [
     description: "Visits required per month by grade — set separately for doctors and for pharmacies, hospitals and contract accounts.",
     roles: ["Super Admin", "SFE Manager"],
   },
+  {
+    // SUPER ADMIN ONLY — the owner's instruction 2026-08-21, "in admin account only for now". This
+    // names every rep and exactly which doctors on their own list they never reached, so it stays
+    // on one account until he decides who else should see it. The enforcing gate is
+    // canAccessRepDoctorLists (src/lib/crm/rep-doctor-lists-access.ts), asked by both the page and
+    // the sync route; this list is UX only.
+    //
+    // NOT the same thing as "Weekly / Monthly Plans" (/admin/weekly-plans), which is Phoenix's own
+    // in-app planning module. This one mirrors the CRM vendor's plan.
+    href: "/admin/rep-doctor-lists",
+    icon: ClipboardList,
+    label: "Rep Doctor Lists",
+    description: "Each rep's assigned doctor list from the CRM plan, and which of those doctors they actually visited.",
+    roles: ["Super Admin"],
+  },
 ] as const satisfies readonly AdminToolsPageItem[];
 
 // ── Pharmacovigilance hub (app/(admin)/admin/pharmacovigilance/page.tsx) ────────
