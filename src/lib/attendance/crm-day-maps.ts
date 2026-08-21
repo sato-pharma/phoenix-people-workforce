@@ -15,25 +15,60 @@
 // audit found two employees deducted on days they'd logged a real Campaign/
 // Meeting visit — matching the precedent already used in those two other
 // places rather than silently diverging from it; only when neither a regular
-// nor a CP-type visit exists does an Annual-Vacation/Health-Day entry count
-// as CRM-recorded leave.
+// nor a CP-type visit exists does an Annual-Vacation entry count as
+// CRM-recorded leave.
+//
+// THIS IS THE THIRD COPY OF THE AV/CP RULING, AND IT IS NOT IDENTICAL TO THE
+// OTHER TWO. Both maps named above are read through `?? "CP"`, so a visit type
+// they do not list still counts as working time. The two Sets below are a
+// strict WHITELIST instead: a type in neither Set sets no flag at all, the day
+// falls through the classification loop's `continue`, and NO cancel reaches
+// reconcileDay — the day is then judged on device-punch timing alone. The
+// Sets must be kept in lockstep with those Maps by hand, because a Set pair
+// does not grep like a Map: that is exactly how this copy kept an obsolete
+// Health Day (-15) mapping after the other two dropped it, and never received
+// the Public Holiday (-5) / Casual Leave (-6) ruling at all.
+//
+// Still outside both Sets, and therefore still falling through, pending an
+// owner ruling: -7, -19, -20, -21, -30. Measured on production 2026-08-21,
+// that is 88 agent-days across 30 employees since 2026-07-01 whose ONLY CRM
+// record is one of those codes. Under the `?? "CP"` the other two copies apply
+// each of those days would count as working time.
 
 import { queryVisits, scanVisitsForRange } from "@/lib/crm/reads";
 import { normalizeAttendanceHrId } from "@/lib/attendance/metrics";
 import { isIsoDate } from "@/lib/attendance/working-days";
 
-/** iReports360 visit types that represent a leave day, not a field visit — mirrors
- * the AV half of VISIT_TYPE_TO_STATUS / LEAVER_VISIT_TYPE_TO_STATUS (Annual
- * Vacation, Health Day). */
-const CRM_LEAVE_VISIT_TYPES = new Set<number>([-4, -15]);
+/** iReports360 visit types that represent a leave day, not a field visit — the AV half of
+ * VISIT_TYPE_TO_STATUS / LEAVER_VISIT_TYPE_TO_STATUS. Annual Vacation (-4) is the ONLY genuine
+ * leave type Phoenix recognises here. Health Day (-15) is NOT leave — owner ruling 2026-08-01,
+ * "an activity they do for patients in the dr clinic" — and Public Holiday (-5) / Casual Leave
+ * (-6) are NOT leave either — owner ruling 2026-08-21. All three now sit in the CP Set below. */
+const CRM_LEAVE_VISIT_TYPES = new Set<number>([-4]);
 
 /** iReports360 visit types that represent a real (non-desk) work activity that
- * isn't a plain customer visit — mirrors the CP half of VISIT_TYPE_TO_STATUS /
- * LEAVER_VISIT_TYPE_TO_STATUS (Conference, Group Meeting, Campaign/Prospection,
- * Training, Meeting, Traveling). Treated identically to a regular visit for
- * this module's purposes: proof the employee was doing real field/CRM-logged
+ * isn't a plain customer visit — the CP half of VISIT_TYPE_TO_STATUS /
+ * LEAVER_VISIT_TYPE_TO_STATUS (Conference, Group Meeting, Public Holiday, Casual Leave,
+ * Campaign/Prospection, Training, Meeting, Traveling, Health Day). Treated identically to a
+ * regular visit for this module's purposes: proof the employee was doing real field/CRM-logged
  * work that day, same "regular > CP > AV" precedence as dayCellValue. */
-const CRM_CAMPAIGN_VISIT_TYPES = new Set<number>([-1, -2, -8, -9, -11, -12]);
+const CRM_CAMPAIGN_VISIT_TYPES = new Set<number>([-1, -2, -5, -6, -8, -9, -11, -12, -15]);
+
+/**
+ * Read accessor for the two Sets above, exported so the AV/CP ruling is unit-testable without
+ * exposing the mutable Sets themselves — the same shape as `leaverVisitTypeStatus` in
+ * automated-payroll/recommend.ts.
+ *
+ * Returns undefined for a type in NEITHER Set. That is this module's strict-whitelist
+ * fall-through (no flag, no cancel) and is deliberately NOT the `?? "CP"` the other two copies
+ * apply — see the header note. A regular visit (type 0) is counted by `regularCount` in the
+ * classification loop and never routed through these Sets, so it too returns undefined here.
+ */
+export function crmDayVisitTypeStatus(visitType: number): "AV" | "CP" | undefined {
+  if (CRM_CAMPAIGN_VISIT_TYPES.has(visitType)) return "CP";
+  if (CRM_LEAVE_VISIT_TYPES.has(visitType)) return "AV";
+  return undefined;
+}
 
 type CrmDayVisitRow = {
   visit_date: string | null;
@@ -168,11 +203,11 @@ export type CrmActivityDayMaps = {
 /**
  * Classifies every active employee's CRM activity for a digest week into two
  * day-sets in a single scan: real field-visit days (a regular visit OR a
- * CP-type activity — Conference/Meeting/Campaign/Training/Traveling — wins the
- * day, same "regular > CP > AV" precedence as dayCellValue/computeLeaverCrmDates)
- * and CRM-recorded leave days (Annual Vacation / Health Day, only on a day with
- * neither a regular visit nor a CP-type activity). Both feed reconcileDay as
- * universal cancels.
+ * CP-type activity — Conference/Meeting/Campaign/Training/Traveling/Public
+ * Holiday/Casual Leave/Health Day — wins the day, same "regular > CP > AV"
+ * precedence as dayCellValue/computeLeaverCrmDates) and CRM-recorded leave days
+ * (Annual Vacation only, and only on a day with neither a regular visit nor a
+ * CP-type activity). Both feed reconcileDay as universal cancels.
  */
 export async function getCrmActivityDayMaps(input: {
   dateFromIso: string;
