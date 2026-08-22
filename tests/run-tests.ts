@@ -1274,7 +1274,10 @@ await runTest("office golden rule LOCK (owner, 2026-08-11)", runOfficeGoldenRule
 await runTest('closing "of which Office" (Office units told apart from distributor sell-out)', runClosingOfficeDifferentiationTests);
 await runTest("closing matrix fold (matrix derived from distributor_product, matrix RPC dropped)", runClosingMatrixFoldTests);
 await runTest("master workbook keyset (single keyset pass, raw_row folded, no OFFSET rescan)", runMasterWorkbookKeysetTests);
-await runTest("sales vs target cache (freshness token folded into the achievement-range cache key)", runSalesVsTargetCacheTests);
+await runTest(
+  "sales vs target cache (freshness token in the key; rows gzipped under Next's 2MB data-cache limit)",
+  runSalesVsTargetCacheTests,
+);
 await runTest("monthly sales run", runMonthlySalesRunTests);
 await runTest("sos resolveBrick precedence (area must not beat customer brick)", runSosResolveBrickPrecedenceTests);
 await runTest("sos brick coverage (real metric, recorded on the commit path)", runSosBrickCoverageTests);
