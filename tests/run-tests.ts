@@ -74,6 +74,8 @@ import { runOutstationExpenseImportTripIdTests } from "./outstation-expense-impo
 import { runMarketingBulkImportAtomicityTests } from "./marketing-bulk-import-atomicity.test.ts";
 import { runSalesBulkImportGatingTests } from "./sales-bulk-import-gating.test.ts";
 import { runMarketingAccessGatesTests } from "./marketing-access-gates.test.ts";
+import { runValidatedCustomerTransferTests } from "./validated-customer-transfer.test.ts";
+import { runAreaConsolidationTests } from "./area-consolidation.test.ts";
 import { runLoginBridgeResyncHardeningTests } from "./login-bridge-resync-hardening.test.ts";
 import { runOperationalEventsTests } from "./operational-events.test.ts";
 import { runRecruitmentOnboardingMetricsTests } from "./recruitment-onboarding-metrics.test.ts";
@@ -990,6 +992,8 @@ await runTest("outstation expense import trip_id (R1 content-hash fallback)", ru
 await runTest("marketing bulk-import atomicity", runMarketingBulkImportAtomicityTests);
 await runTest("sales bulk-import gating (idle/untouched never blocks Confirm & Import All)", runSalesBulkImportGatingTests);
 await runTest("marketing access gates (bulk-upload preview/template + direct-tracking read)", runMarketingAccessGatesTests);
+await runTest("validated customer register + Direct Order transfer gates", runValidatedCustomerTransferTests);
+await runTest("area consolidation gates + table coverage", runAreaConsolidationTests);
 await runTest("login bridge resync hardening", runLoginBridgeResyncHardeningTests);
 await runTest("operational events", runOperationalEventsTests);
 await runTest("recruitment onboarding metrics", runRecruitmentOnboardingMetricsTests);

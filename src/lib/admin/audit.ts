@@ -4,6 +4,10 @@ import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 export type AuditEntityType =
+  // Bulk repointing of rows from one area to another, performed by the Super Admin from the Area
+  // Consolidation screen. Written with `writeRequiredAuditLog` — a bulk org move that leaves no
+  // audit trail is treated as a failed move, not a quiet success.
+  | "area_consolidation"
   | "attendance_holiday_override"
   | "attendance_settlement"
   | "attendance_settlement_correction"
