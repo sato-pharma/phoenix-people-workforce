@@ -256,6 +256,44 @@ export function buildValidatedCustomerCompleteness(
 // Geography resolution
 // ─────────────────────────────────────────────────────────────────────────────
 
+/**
+ * Legacy marketing areas, mapped to the Direct Order vocabulary they actually mean.
+ *
+ * `public.areas` carries TWO vocabularies side by side. The current one is the Direct Order /
+ * Source-of-Sales coding (`AB1`, `D12`, `GZ6`, `UE5` …), which matches `source_of_sales_areas`
+ * exactly. Underneath it survive slug-style rows from an older, line-scoped scheme (`delta_1`,
+ * `delta_2`, `menoufia_1`, `alex_delta` …). Measured on production 2026-08-22: of the 36 areas
+ * marketing customers actually sit on, 35 resolve in `source_of_sales_areas` and exactly one does
+ * not — `delta_1`.
+ *
+ * Every entry here is an OWNER RULING, quoted and dated. None is inferred from coordinates, from a
+ * name resembling another name, or from a brick centroid. A wrong entry silently routes a real shop
+ * to the wrong manager, so if an area is not listed here it stays unresolved and the completeness
+ * panel says so — that is the safe failure, and it is deliberate.
+ *
+ * This is intentionally NOT stored in `source_of_sales_area_aliases`: that table maps the names
+ * printed in distributor sales sheets (`IS`, `PS` labels, sourced from the Area_Master sheet) to
+ * area codes for import matching. A Phoenix-internal area slug never appears in a distributor
+ * sheet, so putting it there would pollute the import namespace with a key nothing imports.
+ */
+export const LEGACY_MARKETING_AREA_ALIASES: Readonly<Record<string, string>> = {
+  // Owner, 2026-08-22, asked directly and answered in one line: "Delta (1) is Menoufia 1."
+  // `Menoufia 1` is area_code D12, region D1. Four validated customers sit on `delta_1`, including
+  // both copies of حضانه النيل, and all four were blocked from transfer until this ruling.
+  delta_1: "D12",
+};
+
+/**
+ * Normalize a marketing area code to the one `source_of_sales_areas` knows. Returns the input
+ * unchanged when it is already current — which is the case for 35 of the 36 live areas — so this is
+ * a spelling fix, never a reassignment.
+ */
+export function applyLegacyMarketingAreaAlias(code: string | null | undefined): string | null {
+  const trimmed = (code ?? "").trim();
+  if (!trimmed) return null;
+  return LEGACY_MARKETING_AREA_ALIASES[trimmed.toLowerCase()] ?? trimmed;
+}
+
 export type ResolvedDirectOrderGeography = {
   areaCode: string | null;
   regionCode: string | null;
@@ -282,11 +320,12 @@ export type ResolvedDirectOrderGeography = {
  * in use already carry the Direct Order area code as their `areas.code` (`AB1`, `D12`, `GZ6`, `UE5`
  * …) and match `source_of_sales_areas` exactly, so that lookup succeeds for almost all of them.
  *
- * The one that fails. `delta_1` / "Delta (1)" is a legacy slug-style area that four validated
- * customers sit on — including both copies of the owner's own example. It maps to nothing, and it
- * is left UNRESOLVED rather than guessed: "Delta (1)" spans several real areas, so picking one
+ * The legacy slugs. A handful of `public.areas` rows predate that coding and match nothing —
+ * `delta_1` / "Delta (1)" is the only one any live customer sits on. Those go through
+ * `LEGACY_MARKETING_AREA_ALIASES` above, which holds owner rulings only. An area that is neither
+ * current nor listed there is left UNRESOLVED rather than guessed: picking a plausible neighbour
  * would be inventing a territory, and a wrong territory silently routes a shop to the wrong
- * manager. The completeness panel names it; the admin fixes the source record.
+ * manager. The completeness panel names it instead, and the admin fixes the source record.
  */
 async function resolveDirectOrderGeography(input: {
   marketingAreaCode: string | null;
@@ -304,7 +343,7 @@ async function resolveDirectOrderGeography(input: {
     };
   }
 
-  const code = (input.marketingAreaCode ?? "").trim();
+  const code = applyLegacyMarketingAreaAlias(input.marketingAreaCode);
   if (!code) return { areaCode: null, brickId: null, regionCode: null, source: "none" };
 
   const supabase = getSupabaseAdmin();

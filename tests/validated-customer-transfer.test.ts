@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 
 import { createAccessContext } from "../src/lib/auth/permissions.ts";
 import {
+  applyLegacyMarketingAreaAlias,
   buildValidatedCustomerCompleteness,
   canOpenValidatedCustomerRegister,
   getValidatedMarketingCustomerDetail,
@@ -188,20 +189,40 @@ function testNoLinkedPharmacyIsABlocker() {
 }
 
 function testUnresolvableAreaIsABlocker() {
-  // The live `delta_1` case: four validated customers sit on a marketing area that maps to no
-  // Direct Order area, so a transfer would land a shop in nobody's territory.
+  // A legacy slug that is NOT in LEGACY_MARKETING_AREA_ALIASES resolves to nothing, so a transfer
+  // would land the shop in nobody's territory. `alex_delta` / "Alex-Delta" is a real such row.
+  // Deliberately no longer "Delta (1)" — the owner ruled on that one, so it now resolves.
   const result = buildValidatedCustomerCompleteness({
     ...completeInput(),
-    marketingAreaName: "Delta (1)",
+    marketingAreaName: "Alex-Delta",
     resolvedAreaCode: null,
   });
   const item = itemFor(result, "area");
   assert.equal(item.severity, "blocker");
   assert.match(
     item.detail,
-    /Delta \(1\)/,
+    /Alex-Delta/,
     "the admin must be told WHICH area failed to map, not just that one did",
   );
+}
+
+function testOwnerRuledDeltaOneIsMenoufiaOne() {
+  // Owner, 2026-08-22, asked directly and answered in one line: "Delta (1) is Menoufia 1."
+  // Menoufia 1 is area_code D12. Without this, four validated customers — including both copies of
+  // حضانه النيل, his own example — resolve to no Direct Order area and cannot be transferred.
+  assert.equal(applyLegacyMarketingAreaAlias("delta_1"), "D12");
+  assert.equal(applyLegacyMarketingAreaAlias("  DELTA_1  "), "D12", "matching is case- and space-insensitive");
+
+  // An area that is already current passes through untouched — this is a spelling fix, never a
+  // reassignment. 35 of the 36 live areas take this path.
+  assert.equal(applyLegacyMarketingAreaAlias("D12"), "D12");
+  assert.equal(applyLegacyMarketingAreaAlias("UE9"), "UE9");
+
+  // An unknown legacy slug is NOT guessed at. `delta_2` has no ruling, so it stays unresolved and
+  // the completeness panel says so, rather than inventing a neighbouring territory.
+  assert.equal(applyLegacyMarketingAreaAlias("delta_2"), "delta_2");
+  assert.equal(applyLegacyMarketingAreaAlias(null), null);
+  assert.equal(applyLegacyMarketingAreaAlias("   "), null);
 }
 
 function testMissingMobileIsOnlyAWarning() {
@@ -276,6 +297,7 @@ export async function runValidatedCustomerTransferTests() {
   testMissingGpsIsABlocker();
   testNoLinkedPharmacyIsABlocker();
   testUnresolvableAreaIsABlocker();
+  testOwnerRuledDeltaOneIsMenoufiaOne();
   testMissingMobileIsOnlyAWarning();
   testUnmatchedDistributorCodeIsOnlyAWarning();
   testDuplicateNameIsSurfacedAsAWarning();
