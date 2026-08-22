@@ -4,6 +4,7 @@ import { createAccessContext } from "../src/lib/auth/permissions.ts";
 import {
   buildValidatedCustomerCompleteness,
   canOpenValidatedCustomerRegister,
+  getValidatedMarketingCustomerDetail,
   listValidatedMarketingCustomers,
   revertValidatedCustomerTransfer,
   transferValidatedCustomerToDirectOrders,
@@ -16,7 +17,7 @@ import {
 // broke:
 //
 //   1. THE GATE. Every entry point — read, transfer, revert — refuses a role that is not Super
-//      Admin or SFE Manager. The owner's requirement was "As an admin, only can do this", and the
+//      Admin. Owner ruling 2026-08-22: "Super admin only, SFE cannot do this thing." The
 //      transfer WRITES to a second module, so a hole here is not a visibility bug, it is an
 //      unauthorized write. Each assertion drives the real service function; the gate throws before
 //      any Supabase call, so no database is needed.
@@ -31,10 +32,12 @@ import {
 // completeness panel into a hard gate.
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** Roles that must never reach this register. Includes the marketing workflow roles: they raise
- *  and approve spend, they do not run the customer desk or write into Direct Orders. */
+/** Roles that must never reach this register — every role in the system except Super Admin.
+ *  SFE Manager sits here on the owner's explicit ruling (2026-08-22) even though he DOES hold the
+ *  marketing Customer Database: reading customer rows is not authority to write into Direct Orders. */
 const FORBIDDEN_ROLES = [
   "Employee",
+  "SFE Manager",
   "Medical Rep",
   "District Manager",
   "Regional Manager",
@@ -49,7 +52,7 @@ const FORBIDDEN_ROLES = [
   "CEO",
 ] as const;
 
-const ALLOWED_ROLES = ["Super Admin", "SFE Manager"] as const;
+const ALLOWED_ROLES = ["Super Admin"] as const;
 
 const SOME_CUSTOMER_ID = "00000000-0000-0000-0000-000000000001";
 const SOME_TRANSFER_ID = "00000000-0000-0000-0000-000000000002";
@@ -89,6 +92,19 @@ async function testReadGateRefusesNonAdmins() {
       () => listValidatedMarketingCustomers(access),
       /Forbidden/i,
       `${role} must not be able to list every rep's validated customers`,
+    );
+  }
+}
+
+async function testDetailGateRefusesNonAdmins() {
+  // The detail page returns a shop-front photo, an address and a mobile number for a customer
+  // anywhere in the company. It is the widest read in the feature, so it gates like the rest.
+  for (const role of FORBIDDEN_ROLES) {
+    const access = createAccessContext({ hrId: "TEST-1", role });
+    await assert.rejects(
+      () => getValidatedMarketingCustomerDetail(access, SOME_CUSTOMER_ID),
+      /Forbidden/i,
+      `${role} must not be able to open another rep's customer detail`,
     );
   }
 }
@@ -250,6 +266,7 @@ function testBlockerDoesNotImplyRefusal() {
 
 export async function runValidatedCustomerTransferTests() {
   await testReadGateRefusesNonAdmins();
+  await testDetailGateRefusesNonAdmins();
   await testTransferGateRefusesNonAdmins();
   await testRevertGateRefusesNonAdmins();
   testAllowedRolesPassThePredicate();

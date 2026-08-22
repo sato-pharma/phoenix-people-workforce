@@ -37,25 +37,23 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 // already live on the Direct Order desk, and a revert of a transfer Direct Orders has already
 // decided. Both are explained where they are thrown.
 // ─────────────────────────────────────────────────────────────────────────────
-
 /**
  * Who may open the register and press the button.
  *
- * Deliberately the SAME pair as `assertMarketingCustomerDatabaseAccess` — Super Admin and SFE
- * Manager — because this screen shows exactly what that one does (live shop-front photos,
- * addresses, phone numbers) for every rep in the company, and the owner's ask was explicit that
- * this is an admin surface: "As an admin, only can do this."
+ * **Super Admin only.** Owner ruling, 2026-08-22, in plain words: "Super admin only, SFE cannot do
+ * this thing. Only super admin." This is deliberately NARROWER than
+ * `assertMarketingCustomerDatabaseAccess`, which admits Super Admin AND SFE Manager — do not
+ * "align" the two. Seeing the customer database is not the same authority as writing a pharmacy
+ * into a second module, and the transfer here does exactly that.
  *
- * SFE Manager is included for the reason recorded on the customer-database gate: it owns customer
- * validation and needs sight of every submitted customer. It is NOT widened to the marketing
- * workflow roles (Marketing Manager, Product Manager, Group Product Manager) — they raise and
- * approve spend, they do not run the customer desk.
+ * The marketing workflow roles (Marketing Manager, Product Manager, Group Product Manager) were
+ * never in scope either — they raise and approve spend, they do not run the customer desk.
  */
 export function canOpenValidatedCustomerRegister(
   access: Pick<AccessContext, "role" | "scope">,
 ): boolean {
   if (access.scope === "system") return true;
-  return access.role === "Super Admin" || access.role === "SFE Manager";
+  return access.role === "Super Admin";
 }
 
 /**

@@ -8,7 +8,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 // The admin register: every validated marketing customer in the company, with who captured it.
-// Access is enforced inside the service (Super Admin / SFE Manager), not here — the route is a
+// Access is enforced inside the service (Super Admin only), not here — the route is a
 // transport, the service is the boundary.
 export async function GET(request: Request) {
   try {
