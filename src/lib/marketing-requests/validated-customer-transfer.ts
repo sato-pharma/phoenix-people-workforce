@@ -1,5 +1,6 @@
 import type { AccessContext } from "@/lib/auth/permissions";
 import { writeRequiredAuditLog } from "@/lib/admin/audit";
+import { canonicalHrIdKey, hrIdLookupKeys } from "@/lib/hr-id";
 import { forbiddenError, notFoundError, validationError } from "@/lib/http/api-errors";
 import { loadMarketingEvidencePhoto } from "@/lib/marketing-requests/evidence-photo-storage";
 import { haversineKm } from "@/lib/sales/normalizer/geo-validate";
@@ -454,6 +455,50 @@ function num(row: Record<string, unknown> | null | undefined, key: string): numb
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+// ─── Every HR_ID name lookup in this file is case-insensitive, deliberately ───
+//
+// `access.hrId` has already been through `normalizeHrIdForAccess`, which LOWER-CASES. So a transfer
+// stores `transferred_by_hr_id = "b-10"` while `employees.hr_id` is `"B-10"`. A case-sensitive
+// `.in("hr_id", ["b-10"])` matches no row, the name resolves to null, and the screen falls back to
+// printing the raw id.
+//
+// That is exactly what the first live transfer did (حضانه النيل, 2026-08-22 18:45 Cairo): the
+// register and the detail page both showed `b-10` where they should have shown the admin's name.
+// It breaks the owner's standing rule — human-readable names, never raw codes or IDs — and it would
+// have done it on EVERY transfer, because the lower-casing is in the access layer, not in that one
+// row. The other ids on this screen (owner, manager, validated-by, created-by) come straight from
+// the marketing tables and happen to match case today; routing them through the same canonical key
+// costs nothing and stops the same drift reaching them later.
+function hrNameKey(value: string | null | undefined): string | null {
+  return canonicalHrIdKey(value);
+}
+
+function hrNameFrom(names: Map<string, string | null>, hrId: string | null | undefined): string | null {
+  const key = hrNameKey(hrId);
+  return key ? names.get(key) ?? null : null;
+}
+
+/** Widen an id set to every case variant, so the query finds the row whatever case it is stored in. */
+function hrIdQueryKeys(hrIds: readonly string[]): string[] {
+  return [...new Set(hrIds.flatMap((hrId) => hrIdLookupKeys(hrId)))];
+}
+
+/**
+ * A marketing capture can carry a PLACEHOLDER where a distributor code should be.
+ *
+ * حضانه النيل (transferred 2026-08-22) came across with `distributor_pharmacy_code = "0000"`, which
+ * is what a rep types when the shop has no code yet. Copying that into Direct Orders is worse than
+ * copying nothing: the pharmacy then LOOKS coded, so nobody chases the real code, and it still
+ * matches no distributor. Treat an all-zero or single-repeated-character run as absent.
+ */
+function realDistributorValue(value: string | null): string | null {
+  if (!value) return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  if (/^(.)\1*$/.test(trimmed)) return null;
+  return trimmed;
+}
+
 export type ValidatedCustomerListRow = {
   id: string;
   customerCode: string | null;
@@ -526,7 +571,7 @@ export async function listValidatedMarketingCustomers(
 
   const [employeesResult, areasResult, linesResult, transfersResult] = await Promise.all([
     hrIds.length
-      ? supabase.from("employees").select("hr_id, full_name").in("hr_id", hrIds)
+      ? supabase.from("employees").select("hr_id, full_name").in("hr_id", hrIdQueryKeys(hrIds))
       : Promise.resolve({ data: [] as unknown[] }),
     areaIds.length
       ? supabase.from("areas").select("id, code, name").in("id", areaIds)
@@ -543,7 +588,7 @@ export async function listValidatedMarketingCustomers(
 
   const employeeName = new Map(
     ((employeesResult.data ?? []) as Array<Record<string, unknown>>).map((row) => [
-      String(row.hr_id),
+      hrNameKey(String(row.hr_id)) ?? String(row.hr_id),
       text(row, "full_name"),
     ]),
   );
@@ -571,9 +616,12 @@ export async function listValidatedMarketingCustomers(
   // The transferring admin's name needs one more lookup; the ids are usually a handful.
   const transferHrIds = [...new Set(transfers.map((row) => text(row, "transferred_by_hr_id")).filter(Boolean))] as string[];
   if (transferHrIds.length) {
-    const { data } = await supabase.from("employees").select("hr_id, full_name").in("hr_id", transferHrIds);
+    const { data } = await supabase
+      .from("employees")
+      .select("hr_id, full_name")
+      .in("hr_id", hrIdQueryKeys(transferHrIds));
     for (const row of (data ?? []) as Array<Record<string, unknown>>) {
-      employeeName.set(String(row.hr_id), text(row, "full_name"));
+      employeeName.set(hrNameKey(String(row.hr_id)) ?? String(row.hr_id), text(row, "full_name"));
     }
   }
 
@@ -623,9 +671,9 @@ export async function listValidatedMarketingCustomers(
       id: String(row.id),
       lineName: lineId !== null ? lineName.get(lineId) ?? null : null,
       managerHrId,
-      managerName: managerHrId ? employeeName.get(managerHrId) ?? null : null,
+      managerName: hrNameFrom(employeeName, managerHrId),
       ownerHrId,
-      ownerName: ownerHrId ? employeeName.get(ownerHrId) ?? null : null,
+      ownerName: hrNameFrom(employeeName, ownerHrId),
       transfer: transfer
         ? {
             directOrderValidationStatus: text(transfer, "direct_order_validation_id")
@@ -635,7 +683,7 @@ export async function listValidatedMarketingCustomers(
             status: String(transfer.status) as ValidatedCustomerTransferStatus,
             transferredAt: String(transfer.transferred_at),
             transferredByHrId: String(transfer.transferred_by_hr_id),
-            transferredByName: employeeName.get(String(transfer.transferred_by_hr_id)) ?? null,
+            transferredByName: hrNameFrom(employeeName, String(transfer.transferred_by_hr_id)),
           }
         : null,
       validatedAt: text(row, "validated_at"),
@@ -921,9 +969,12 @@ export async function getValidatedMarketingCustomerDetail(
   ].filter((value): value is string => Boolean(value));
   const employeeName = new Map<string, string | null>();
   if (hrIds.length) {
-    const { data } = await supabase.from("employees").select("hr_id, full_name").in("hr_id", [...new Set(hrIds)]);
+    const { data } = await supabase
+      .from("employees")
+      .select("hr_id, full_name")
+      .in("hr_id", hrIdQueryKeys([...new Set(hrIds)]));
     for (const row of (data ?? []) as Array<Record<string, unknown>>) {
-      employeeName.set(String(row.hr_id), text(row, "full_name"));
+      employeeName.set(hrNameKey(String(row.hr_id)) ?? String(row.hr_id), text(row, "full_name"));
     }
   }
 
@@ -954,9 +1005,15 @@ export async function getValidatedMarketingCustomerDetail(
     const isLive = String(transferRow.status) === "transferred";
     const decided = Boolean(directOrderValidationStatus && directOrderValidationStatus !== "pending");
     const transferredBy = String(transferRow.transferred_by_hr_id);
-    if (!employeeName.has(transferredBy)) {
-      const { data } = await supabase.from("employees").select("full_name").eq("hr_id", transferredBy).maybeSingle();
-      employeeName.set(transferredBy, data ? text(data as Record<string, unknown>, "full_name") : null);
+    const transferredByKey = hrNameKey(transferredBy) ?? transferredBy;
+    if (!employeeName.has(transferredByKey)) {
+      const { data } = await supabase
+        .from("employees")
+        .select("full_name")
+        .in("hr_id", hrIdQueryKeys([transferredBy]))
+        .limit(1)
+        .maybeSingle();
+      employeeName.set(transferredByKey, data ? text(data as Record<string, unknown>, "full_name") : null);
     }
 
     transfer = {
@@ -976,7 +1033,7 @@ export async function getValidatedMarketingCustomerDetail(
       status: String(transferRow.status) as ValidatedCustomerTransferStatus,
       transferredAt: String(transferRow.transferred_at),
       transferredByHrId: transferredBy,
-      transferredByName: employeeName.get(transferredBy) ?? null,
+      transferredByName: employeeName.get(transferredByKey) ?? null,
     };
   }
 
@@ -997,7 +1054,7 @@ export async function getValidatedMarketingCustomerDetail(
       capturedLongitude: num(customer, "captured_longitude"),
       createdAt: String(customer.created_at),
       createdByHrId,
-      createdByName: createdByHrId ? employeeName.get(createdByHrId) ?? null : null,
+      createdByName: hrNameFrom(employeeName, createdByHrId),
       customerCode: text(customer, "customer_code"),
       customerType: text(customer, "customer_type"),
       displayName: text(customer, "display_name"),
@@ -1010,10 +1067,10 @@ export async function getValidatedMarketingCustomerDetail(
       id: String(customer.id),
       lineName: text(lineRow, "name"),
       managerHrId,
-      managerName: managerHrId ? employeeName.get(managerHrId) ?? null : null,
+      managerName: hrNameFrom(employeeName, managerHrId),
       otherTypeDescription: text(customer, "other_type_description"),
       ownerHrId,
-      ownerName: ownerHrId ? employeeName.get(ownerHrId) ?? null : null,
+      ownerName: hrNameFrom(employeeName, ownerHrId),
       regionName: text(customer, "region_name"),
       transfer: transfer
         ? {
@@ -1027,7 +1084,7 @@ export async function getValidatedMarketingCustomerDetail(
         : null,
       validatedAt: text(customer, "validated_at"),
       validatedByHrId,
-      validatedByName: validatedByHrId ? employeeName.get(validatedByHrId) ?? null : null,
+      validatedByName: hrNameFrom(employeeName, validatedByHrId),
       validationNotes: text(customer, "validation_notes"),
       validationStatus: String(customer.validation_status),
     },
@@ -1164,9 +1221,10 @@ export async function transferValidatedCustomerToDirectOrders(
         .maybeSingle();
       codeRow = (codeData as Record<string, unknown> | null) ?? null;
       // Mapped first — that is the master database's answer and the pair Direct Orders keys on.
-      distributorCode = text(codeRow, "mapped_distributor_code");
+      distributorCode = realDistributorValue(text(codeRow, "mapped_distributor_code"));
       distributorCustomerCode =
-        text(codeRow, "mapped_customer_code") ?? text(codeRow, "distributor_pharmacy_code");
+        realDistributorValue(text(codeRow, "mapped_customer_code")) ??
+        realDistributorValue(text(codeRow, "distributor_pharmacy_code"));
     }
   }
 
@@ -1228,6 +1286,42 @@ export async function transferValidatedCustomerToDirectOrders(
     .single();
   if (pharmacyError) throw pharmacyError;
   const directOrderPharmacyId = String((pharmacyInsert as Record<string, unknown>).id);
+
+  // A pharmacy with NO row in `direct_order_pharmacy_distributor_codes` is invisible to every
+  // distributor-scoped search. `phx_search_direct_order_customers` left-joins that table and then
+  // tests `c.distributor_code = p_distributor_code` in its WHERE, which collapses the join to an
+  // inner one the moment a rep picks a distributor — and the rep almost always picks one first.
+  // So a transfer that knows the real pair has to record it here, exactly as manual registration
+  // does, or the shop lands on the Direct Order side and still cannot be found. (Learned on
+  // حضانه النيل, 2026-08-22: transferred cleanly, then invisible under both overseas and sofico.)
+  //
+  // The pair must exist in the master map — same rule the manual path enforces, because matching to
+  // something that is not there would just relocate the phantom. When it does not exist we leave
+  // the pharmacy uncoded and provisional, which is the honest state: the desk attaches the code
+  // once the distributor actually issues one.
+  if (distributorCode && distributorCustomerCode) {
+    const { data: mapRow } = await supabase
+      .from("source_of_sales_customer_map")
+      .select("brick_id, area_code, region_code")
+      .eq("active", true)
+      .eq("distributor_code", distributorCode)
+      .eq("customer_code", distributorCustomerCode)
+      .maybeSingle();
+    if (mapRow) {
+      const geo = mapRow as Record<string, unknown>;
+      const { error: linkError } = await supabase.from("direct_order_pharmacy_distributor_codes").insert({
+        customer_code: distributorCustomerCode,
+        distributor_code: distributorCode,
+        mapped_area_code: text(geo, "area_code"),
+        mapped_brick_id: text(geo, "brick_id"),
+        mapped_region_code: text(geo, "region_code"),
+        pharmacy_id: directOrderPharmacyId,
+      });
+      // 23505 = the code already belongs to another pharmacy. The transfer still stands; this shop
+      // is left uncoded rather than stealing a code off an existing record.
+      if (linkError && String((linkError as { code?: string }).code ?? "") !== "23505") throw linkError;
+    }
+  }
 
   // Carry the marketing photo by REFERENCE so the Direct Order desk can open the very image the
   // rep took, without a second copy existing.
