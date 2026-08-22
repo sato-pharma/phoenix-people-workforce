@@ -21,7 +21,14 @@ export default async function AreaConsolidationPage() {
       <div className="space-y-2">
         <p className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-700">Master Data</p>
         <h1 className="text-2xl font-bold tracking-tight text-slate-950">Area Consolidation</h1>
-        <p className="max-w-none overflow-hidden text-ellipsis whitespace-nowrap text-[13px] font-medium leading-6 text-slate-600">
+        {/*
+          nowrap + ellipsis is DESKTOP-ONLY here. Measured at 375px this sentence needs 567px in a
+          303px slot, so a phone showed "Move everything off a legacy area onto the…" — the owner's
+          rule is never truncate with an ellipsis AND never wrap, and both cannot hold at once for a
+          97-character sentence on a phone. The repo's answer (PR #2268) is to wrap on mobile and
+          keep one line from md: up, which hides nothing at either size.
+        */}
+        <p className="max-w-none text-[13px] font-medium leading-6 text-slate-600 md:overflow-hidden md:text-ellipsis md:whitespace-nowrap">
           Move everything off a legacy area onto the area it actually means — after you have read the list.
         </p>
       </div>
