@@ -158,27 +158,29 @@ const nextConfig: NextConfig = {
   // THIRD gap in the same tracer, found 2026-08-22 from a live production log line. pdf-parse's
   // getImage() — the call that pulls the page images OUT of a scanned PDF to feed that same free
   // OCR path — builds a canvas to decode them, and reaches @napi-rs/canvas through a runtime
-  // createRequire the tracer cannot follow. It is a real dependency of pdf-parse and resolves fine
-  // locally, so this failed ONLY in production: `Warning: Cannot load "@napi-rs/canvas" package`
-  // at boot, then `Cannot find module '@napi-rs/canvas'` thrown from di._createCanvas the moment a
-  // scanned PDF arrived. getText() is unaffected — it never rasterizes — which is why CV text
-  // extraction kept working and this stayed invisible for months. Note cv-ocr.ts extracts EMBEDDED
-  // images specifically to avoid a canvas; that does not work, because pdf-parse builds one to
-  // decode them either way.
+  // createRequire the tracer cannot follow. getText() is unaffected (it never rasterizes), which is
+  // why CV text extraction kept working and this stayed invisible for months.
   //
-  // TWO packages are required, not one: the JS wrapper, plus the platform binary its js-binding.js
-  // selects at runtime. On this image that is the MUSL build (node:24-alpine), never gnu. The gnu
-  // glob is listed anyway so a future move off Alpine cannot silently reopen the hole — pnpm only
-  // ever installs the variant matching the build platform, and a glob matching nothing is a no-op.
+  // THE FIRST ATTEMPT AT THIS FIX SHIPPED AND DID NOT WORK (#2299). It traced the package at its
+  // .pnpm path, which copies the right bytes to a place nothing can require: tracing copies real
+  // FILES (the glob below runs with nodir:true), never pnpm's symlinks, and under pnpm a TRANSITIVE
+  // package is reachable ONLY through symlinks — the one pdfjs-dist uses to see the wrapper, and the
+  // one the wrapper uses to see its own Skia binary. Neither is recreated in .next/standalone, so
+  // production threw the identical MODULE_NOT_FOUND with the files sitting right there.
+  //
+  // Hence publicHoistPattern in pnpm-workspace.yaml: it puts both packages in the ROOT node_modules,
+  // where Node's ordinary walk-up finds them from any depth, and this glob copies them there. Note
+  // the shape carefully — `@napi-rs/*/**` and NOT `@napi-rs/**`, because `**` does not traverse a
+  // symlinked directory and the shorter pattern matches ZERO files (measured). A glob that silently
+  // matches nothing is exactly how the first attempt shipped green, so tests/pdf-canvas-trace.test.ts
+  // asserts these globs resolve to real files rather than merely being present.
   outputFileTracingIncludes: {
     "/api/**/*": [
       "./node_modules/.pnpm/pdfjs-dist@*/node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs",
       "./assets/tessdata/*.traineddata.gz",
       "./node_modules/.pnpm/tesseract.js@*/node_modules/tesseract.js/src/worker-script/**",
       "./node_modules/.pnpm/tesseract.js-core@*/node_modules/tesseract.js-core/**",
-      "./node_modules/.pnpm/@napi-rs+canvas@*/node_modules/@napi-rs/canvas/**",
-      "./node_modules/.pnpm/@napi-rs+canvas-linux-x64-musl@*/node_modules/@napi-rs/canvas-linux-x64-musl/**",
-      "./node_modules/.pnpm/@napi-rs+canvas-linux-x64-gnu@*/node_modules/@napi-rs/canvas-linux-x64-gnu/**",
+      "./node_modules/@napi-rs/*/**",
     ],
   },
   experimental: {

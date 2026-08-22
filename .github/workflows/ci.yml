@@ -245,6 +245,15 @@ jobs:
         if: needs.changes.outputs.docs_only != 'true'
         run: pnpm run build
 
+      # The ONE thing a PR could not previously answer. #2299 shipped a canvas fix that was correct
+      # by inspection — right globs, matching files, green CI — and did nothing, because tracing
+      # copies files and not pnpm's symlinks, so the bytes landed where nothing could require them.
+      # That was only observable in a Railway boot log, i.e. after it reached production. This asks
+      # the built artifact the production question directly, so the answer arrives on the PR.
+      - name: Verify @napi-rs/canvas is reachable inside .next/standalone
+        if: needs.changes.outputs.docs_only != 'true'
+        run: node scripts/verify-standalone-canvas.mjs
+
       - name: Cache Playwright browsers
         if: needs.changes.outputs.docs_only != 'true'
         id: playwright-cache
