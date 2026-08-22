@@ -89,8 +89,18 @@ History and verification detail: [docs/agents-incident-history.md](docs/agents-i
 - **The production scheduler is the third-party `cron-job.org`.** Automation is **running, not stalled**: daily notifications, the outbox drain, and iReports sync/reconcile all fire from that account. The 8 GCP Cloud Scheduler jobs still fire but **401 on every route** — a red herring, not proof anything is down. **Do not tell the owner notifications/outbox/iReports are stalled without checking `cron-job.org` first.** It caps request timeout at 30s, so a long route logs a false `Failed (timeout)` while the server still finishes the work. `src/lib/cron-control/*` is a dashboard over the dead GCP scheduler and remains inert.
 - **There IS a live Railway `staging` environment — verified 2026-08-13, and confirmed to keep.** Same project, service `phoenix-people-workforce`, reachable at `https://phoenix-people-workforce-staging.up.railway.app` (returns 200, `/api/healthz` responds). Its service source tracks git branch `main` (not the git branch named `staging`) — so confusingly, this Railway *environment* named "staging" was, until the production fix above, actually fresher than the Railway *environment* named "production". `railway variables --environment staging` confirms `NEXT_PUBLIC_SUPABASE_URL` points at the staging Supabase project (`cifwmndunmlxjhyjugxa`), not production — safe to use as a real verification target. Owner decision 2026-08-13: keep it.
 - Vercel: fully legacy/decommissioned (old project `phoenix-workforce`) — never deploy to or verify against it.
-- Staging Supabase project ref: `cifwmndunmlxjhyjugxa` (`Phoenix-HR-Staging`, Pro org, eu-central-1). The prior free-tier ref `izhmxvgiktiafqusolot` is GONE and resolves to nothing — treat any doc or prompt still naming it as stale.
-- Production Supabase project ref: `ozucdzovmcqvepbozvqf`
+- **Supabase project refs — the complete list `list_projects` returns, verified live 2026-08-23.** Two of these four belong to this app; the other two do not, and are listed precisely so an unfamiliar ref is identifiable instead of alarming.
+
+  | Ref | Name | Region | Org | What it is |
+  | --- | --- | --- | --- | --- |
+  | `ozucdzovmcqvepbozvqf` | Phoenix HR | eu-central-1 | `rovnkzmhokgsruftjsaw` | **PRODUCTION** — real payroll data |
+  | `cifwmndunmlxjhyjugxa` | Phoenix-HR-Staging | eu-central-1 | `rovnkzmhokgsruftjsaw` | **STAGING** (Pro org, created 2026-07-11) |
+  | `plleofqyfbknvwcotzqo` | Future Talents Hub | eu-north-1 | `rovnkzmhokgsruftjsaw` | unrelated to this app |
+  | `mlbpzvaanusdejqnimst` | o-gaweesh@outlook.com's Project | eu-central-1 | **`xadcyivhxyjtehyheowl`** | unrelated — **different organization**, created 2026-08-11 |
+
+  **Dead refs — treat any doc, memory, or prompt still naming one as stale:** `izhmxvgiktiafqusolot` (the prior free-tier staging) and `oaifhavixhdtwmseshff` (an older secondary project). Neither is returned by `list_projects` any more. This list named only the first as dead until 2026-08-23; both were live in older memories, and one of them sat in the `reference` memory a session consults to answer "which project is which".
+
+  **Three of the four are `eu-central-1`, and a different organization does not stop anyone passing a ref** — so neither region nor org is a guard. Combined with the rule below that both named MCP servers see both projects, the `project_id` argument remains the only thing that separates staging from production on every call. Resolve with `list_projects` before acting; never trust a ref pasted from a prompt or copied from an older doc.
 - GitHub Actions secret `STAGING_SUPABASE_SERVICE_ROLE_KEY`: the staging service-role key, used by `ci.yml`'s login-smoke step (so its noise lands in staging, not production `audit_logs`) and by both staging legs of `migration-drift-check.yml`. **There is no `preview-smoke` job any more** — the smoke test is a step inside `validate`.
 - **`.env.local` points at PRODUCTION Supabase.** `pnpm run dev` mutates production data.
 
