@@ -44,9 +44,13 @@ export type TargetGridRow = {
   dmName: string | null;
 };
 
-export type RegionRollup = { region: string; actualValue: number; targetValue: number; achievementValue: number | null };
-export type DmRollup = { dmName: string; actualValue: number; targetValue: number; achievementValue: number | null };
-export type LineTotal = { actualValue: number; targetValue: number; achievementValue: number | null } | null;
+// `coveredActualValue` is the slice of `actualValue` that sits on a product with a target
+// this month — the figure `achievementValue` actually divides. It is carried into the UI so
+// the percentage is legible: without it the card shows an Actual and a Target that do not
+// divide into the Achievement beside them, and the reader concludes the page is broken.
+export type RegionRollup = { region: string; actualValue: number; coveredActualValue: number; targetValue: number; achievementValue: number | null };
+export type DmRollup = { dmName: string; actualValue: number; coveredActualValue: number; targetValue: number; achievementValue: number | null };
+export type LineTotal = { actualValue: number; coveredActualValue: number; targetValue: number; achievementValue: number | null } | null;
 export type SourceFile = {
   distributorName: string;
   fileName: string;
@@ -86,6 +90,14 @@ const price = new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 });
 const fmtMoney = (value: number): string => money.format(Math.round(value));
 const fmtPrice = (value: number | null): string => (value == null ? "—" : price.format(value));
 const fmtPct = (value: number | null): string => (value == null ? "—" : `${Math.round(value * 100)}%`);
+
+/**
+ * The exact division behind a rolled-up percentage, for the `title` of the cell that shows it.
+ * Hover-only on purpose: the region and DM cards are one line per row and the owner's standing
+ * rule is that nothing wraps and nothing is truncated, so the arithmetic cannot live inline.
+ */
+const divisionHint = (covered: number, target: number): string =>
+  target === 0 ? "No target loaded — not graded." : `${fmtMoney(covered)} graded / ${fmtMoney(target)} target`;
 
 function achievementTone(value: number | null): string {
   if (value == null) return "text-muted-foreground";
@@ -459,6 +471,13 @@ export function TargetsWorkspace(props: TargetsWorkspaceProps) {
           {props.lineTotal ? (
             <div className="mt-1 space-y-0.5 text-sm">
               <div>Actual: <span className="font-semibold">{fmtMoney(props.lineTotal.actualValue)}</span></div>
+              {/* Only shown when the two differ, so a fully-targeted line stays as terse as it was. */}
+              {props.lineTotal.coveredActualValue !== props.lineTotal.actualValue ? (
+                <>
+                  <div className="whitespace-nowrap">Graded vs target: <span className="font-semibold">{fmtMoney(props.lineTotal.coveredActualValue)}</span></div>
+                  <div className="whitespace-nowrap text-xs text-muted-foreground">Not graded (no target): {fmtMoney(props.lineTotal.actualValue - props.lineTotal.coveredActualValue)}</div>
+                </>
+              ) : null}
               <div>Target: <span className="font-semibold">{fmtMoney(props.lineTotal.targetValue)}</span></div>
               <div className={achievementTone(props.lineTotal.achievementValue)}>Achievement: <span className="font-semibold">{fmtPct(props.lineTotal.achievementValue)}</span></div>
             </div>
@@ -470,7 +489,7 @@ export function TargetsWorkspace(props: TargetsWorkspaceProps) {
             {props.byRegion.length === 0 ? <div className="text-muted-foreground">—</div> : props.byRegion.map((region) => (
               <div key={region.region} className="flex justify-between gap-2">
                 <span>{region.region}</span>
-                <span className={achievementTone(region.achievementValue)}>{fmtPct(region.achievementValue)}</span>
+                <span className={achievementTone(region.achievementValue)} title={divisionHint(region.coveredActualValue, region.targetValue)}>{fmtPct(region.achievementValue)}</span>
               </div>
             ))}
           </div>
@@ -481,7 +500,7 @@ export function TargetsWorkspace(props: TargetsWorkspaceProps) {
             {props.byDm.length === 0 ? <div className="text-muted-foreground">—</div> : props.byDm.map((dm) => (
               <div key={dm.dmName} className="flex justify-between gap-2">
                 <span>{dm.dmName}</span>
-                <span className={achievementTone(dm.achievementValue)}>{fmtPct(dm.achievementValue)}</span>
+                <span className={achievementTone(dm.achievementValue)} title={divisionHint(dm.coveredActualValue, dm.targetValue)}>{fmtPct(dm.achievementValue)}</span>
               </div>
             ))}
           </div>
