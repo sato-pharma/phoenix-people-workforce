@@ -319,6 +319,9 @@ import { runClosingOfficeDifferentiationTests } from "./closing-office-different
 import { runClosingMatrixFoldTests } from "./closing-matrix-fold.test.ts";
 import { runMasterWorkbookKeysetTests } from "./master-workbook-keyset.test.ts";
 import { runSalesVsTargetCacheTests } from "./sales-vs-target-cache.test.ts";
+import { runBusinessReviewAchievementArithmeticTests } from "./business-review-achievement-arithmetic.test.ts";
+import { runBusinessReviewPortalScopeTests } from "./business-review-portal-scope.test.ts";
+import { runBusinessReviewWindowAndCoverageTests } from "./business-review-window-and-coverage.test.ts";
 import { runMonthlySalesRunTests } from "./monthly-sales-run.test.ts";
 import { runSosHeaderDetectionTests } from "./sos-header-detection.test.ts";
 import { runSalesStrictConformanceTests } from "./sales-strict-conformance.test.ts";
@@ -1761,6 +1764,18 @@ await runTest("outstation departure-photo resend (the one action that deliberate
 await runTest("outstation manager workload rollup (a DM's ride-alongs are already his; an NSM reaches one hop but only on the days he was actually out with that DM; a shared rep counts once)", runOutstationWorkloadRollupTests);
 
 await runTest("sales vs target (no target reads as null not 0%, July 2026 has no prior period, and a medical rep is bounded to their own rows not their whole line)", runSalesVsTargetTests);
+await runTest(
+  "business review window + coverage (a period with no data SAYS so and never renders a zero: Mar-Jun grade as \"not gradeable\" rather than 0%, a pre-August window reports no marketing rather than 0 EGP, a month whose distributor files have not landed is held out of the grade and named with the value it does hold rather than dragging Jan-Aug from 50.67% to 39.30%, every clamp announces itself, unplaceable rows are counted not dropped, and doctors are unioned at every level while rides land where the rep stood)",
+  runBusinessReviewWindowAndCoverageTests,
+);
+await runTest(
+  "business review portal scope (every one of the 27 viewers in the committed access map resolves to a real scope rather than a link that lands on \"no access\", a grant is refused the moment the live session role disagrees with the snapshot it was written from, no HR ID and an HR ID outside the map are both denied with a reason that says whether it is a fault or the Medical Rep design, every district a viewer is handed exists in that line's dataset, and a seat filter with nothing in it shows an empty page rather than falling through to the whole company)",
+  runBusinessReviewPortalScopeTests,
+);
+await runTest(
+  "business review achievement arithmetic (a percentage is re-aggregated by summing the parts it divides, never by dividing the full sales figure: the company headline, a district manager's own portal total and the product-family mix all divide covered sales by target, so a month carrying sales nobody set a target for cannot lift the grade -- the defect that made Jan-Aug 2026 read 130.73% where it means 50.67%, and an ungraded area still reports its sales while grading as null rather than 0%)",
+  runBusinessReviewAchievementArithmeticTests,
+);
 await runTest(
   "achievement counts the unmapped channel (no channel filter survives, the line_code rejoins are NULL-safe so a line-less sale is not zeroed, and service_role keeps execute)",
   runAchievementCountsUnmappedTests,

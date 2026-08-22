@@ -251,7 +251,7 @@ const adminNavigationSectionSeeds = [
       // and clipped to "Finance Command …". The PAGE still reads Finance Command Center — only the
       // rail is width-constrained. Budgets are pinned by tests/sidebar-label-width.test.ts.
       { href: "/admin/finance-command-center", icon: Landmark, label: "Finance Overview", roles: ["Finance Manager"], excludedRoles: ["Super Admin", "CEO"] },
-      { href: "/business-review-s1", icon: LayoutDashboard, label: "S1 Business Review", permissions: [{ resource: "admin" }, { resource: "overview" }], roles: ["CEO", "SFE Manager", "Super Admin"] },
+      { href: "/business-review", icon: LayoutDashboard, label: "Business Review", permissions: [{ resource: "admin" }, { resource: "overview" }], roles: ["CEO", "SFE Manager", "Super Admin"] },
       { href: "/organogram", icon: Network, label: "Organogram", permissions: [{ resource: "organogram" }], roles: ["CEO"] },
       // Excluded for every role that has its OWN command center directly above — otherwise the
       // section shows them two "Command Center" entries and the generic one lands on the
@@ -1168,14 +1168,14 @@ const employeePortalNavigationSectionSeeds = [
       // src/lib/employee-portal/navigation.ts; the enforcing gate is resolveVsTargetBound, and a
       // role here with no resolvable territory still fails closed to an empty scope.
       { href: "/employee-portals/sales-vs-target", icon: Gauge, label: "Sales vs Target", permissions: [{ resource: "sales" }], roles: ["Medical Rep", "District Manager", "Regional Manager", "National Sales Manager", "Product Manager", "Group Product Manager", "Marketing Manager"] },
-      // Portal counterpart of /business-review-s1, scoped per viewer. Medical Rep is deliberately
+      // Portal counterpart of /business-review, scoped per viewer. Medical Rep is deliberately
       // absent — the owner ruled this module is managers-only. CEO/SFE Manager/Super Admin reach it
       // through the admin entry instead, since that is the shell they land in.
-      // The real gate is the access map in src/lib/business-review-s1/portal-scope.ts; this list is
+      // The real gate is the access map in src/lib/business-review/portal-scope.ts; this list is
       // UX only, and a role here with no seat in that map still resolves to no access.
-      { href: "/employee-portals/business-review-s1", icon: LayoutDashboard, label: "S1 Business Review", permissions: [{ resource: "sales" }], roles: ["District Manager", "Regional Manager", "National Sales Manager", "Product Manager", "Group Product Manager", "Marketing Manager"] },
+      { href: "/employee-portals/business-review", icon: LayoutDashboard, label: "Business Review", permissions: [{ resource: "sales" }], roles: ["District Manager", "Regional Manager", "National Sales Manager", "Product Manager", "Group Product Manager", "Marketing Manager"] },
       // Portal twin of /admin/doctor-coverage. SFE Manager, CEO and Super Admin use the admin entry,
-      // since that is the shell they land in (same split as S1 Business Review above).
+      // since that is the shell they land in (same split as Business Review above).
       // The real gate is doctor-coverage-scope.ts, which also decides WHOSE reps each viewer sees;
       // this list is UX only, and is held identical to DOCTOR_COVERAGE_PORTAL_ROLES by
       // tests/doctor-coverage-scope.test.ts — it cannot be widened here without the test failing.

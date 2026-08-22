@@ -16,7 +16,7 @@ export type DoctorCoverageScopeBasis = "company" | "line" | "team" | "self";
 
 /** Whole-company reach: staff/executive seats with no territory of their own. */
 const COMPANY_ROLES = ["Super Admin", "CEO", "SFE Manager", "Marketing Manager"] as const;
-/** One product line. Matches the scopes already baked into the S1 Business Review access map for
+/** One product line. Matches the scopes already baked into the Business Review access map for
  * these same three roles, so a viewer's reach does not change between the two modules. */
 const LINE_ROLES = ["National Sales Manager", "Product Manager", "Group Product Manager"] as const;
 /** Own management subtree — every rep beneath the seat, however many levels down. */

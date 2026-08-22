@@ -1,5 +1,5 @@
 /**
- * S1 Business Review — builds the ACCESS MAPPING workbook straight from the live
+ * Business Review — builds the ACCESS MAPPING workbook straight from the live
  * employee master, so the owner confirms rather than types.
  *
  * READ-ONLY. Issues only SELECTs against production (the ref in .env.local, asserted
@@ -13,17 +13,18 @@
  *     which spells things differently: "Sfe Manager", "Regional Sales Manager").
  *   - employees      → display names only.
  *
- * Two different points in time are deliberately kept apart:
- *   - S1 PERFORMANCE (who owned an area Jan–Jun) comes from the sales workbooks and is
- *     already baked into data/*-s1.json. It must not be rewritten from today's org.
- *   - ACCESS (who may open the module today) comes from the live org tree. A seat that
- *     was vacant during S1 can be filled now, and vice versa — that is not a conflict,
- *     and collapsing the two would either leak data or hide a manager's own numbers.
+ * THIS SCRIPT NOW ANSWERS ACCESS ONLY. It used to also reconcile a committed sales
+ * workbook's 129-area geography against today's ~100 rep seats, which needed an alias
+ * table and a CONFIRM sheet for everything it could not match. The review reads its areas
+ * live from the canonical engine now, so that whole half is retired along with the
+ * workbook JSON it depended on: the areas emitted below are simply today's REP seats.
  *
- * Area-name reality: the S1 workbooks use an older, looser geography (129 areas) than
- * today's canonical area codes (~100 seats). Only pure spelling/spacing differences are
- * aliased here. Genuine many-to-one splits and true ambiguities are NOT guessed — they
- * land on a CONFIRM sheet with candidates, because this file is a permission boundary.
+ * Two different points in time are still deliberately kept apart, and must stay apart:
+ *   - PERFORMANCE (who owned an area in the window being reviewed) is resolved per period
+ *     inside the canonical engine. It must never be rewritten from today's org.
+ *   - ACCESS (who may open the module today) comes from the live org tree. A seat that was
+ *     vacant during the window can be filled now, and vice versa — that is not a conflict,
+ *     and collapsing the two would either leak data or hide a manager's own numbers.
  */
 import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
@@ -36,8 +37,8 @@ import ExcelJS from "exceljs";
 // owner's machine, so nobody else could reproduce the output.
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "..", "..", "..", "..");
-const DATA = path.join(ROOT, "src/lib/business-review-s1/data");
-const OUT = "C:/Users/satoh/Downloads/Phoenix S1 Business Review - ACCESS MAPPING (confirm me).xlsx";
+const DATA = path.join(ROOT, "src/lib/business-review/data");
+const OUT = "C:/Users/satoh/Downloads/Phoenix Business Review - ACCESS MAPPING (confirm me).xlsx";
 const PROD_REF = "ozucdzovmcqvepbozvqf";
 
 // ---- env (never printed) ----
@@ -55,28 +56,6 @@ const LINES = [
   { key: "cns", label: "CNS", code: "cns" },
   { key: "anti", label: "Anti-Infective", code: "anti_infective" },
 ];
-const ds = Object.fromEntries(
-  LINES.map((l) => [l.key, JSON.parse(readFileSync(path.join(DATA, `${l.key}-s1.json`), "utf8"))]),
-);
-
-const ngeo = (s) => String(s ?? "").trim().toLowerCase().replace(/\s+/g, " ");
-/** Canonicalise an area/area name down to what both worlds agree on. Only spelling,
- *  spacing and the Gharbia/Sohag/Assiut numbering noise — nothing semantic. */
-function canon(s) {
-  let x = ngeo(s)
-    .replace(/assuit/g, "assiut")
-    .replace(/\bsohag\s*(\d)/g, "sohag $1")
-    .replace(/\bqena\s*(\d)/g, "qena $1")
-    .replace(/\bminia\s*(\d)/g, "minia $1")
-    .replace(/gharbia\s*\d*\s*\(/g, "gharbia (")
-    .replace(/kafr el-?sheikh\s*\d*/g, "kafr el-sheikh")
-    .replace(/october\s*-\s*zayed/g, "october - zayed")
-    .replace(/\bmenofia\b/g, "menoufia")
-    .replace(/[\s-]+/g, " ")
-    .trim();
-  return x;
-}
-
 const rows = (r) => { if (r.error) throw new Error(r.error.message); return r.data ?? []; };
 
 const tree = rows(await db.from("au_v_org_tree")
@@ -94,13 +73,11 @@ const lineOf = new Map(emps.map((e) => [String(e.hr_id).trim().toUpperCase(), li
 const roleOf = new Map(auth.map((a) => [String(a.hr_id).trim().toUpperCase(), a]));
 const up = (s) => String(s ?? "").trim().toUpperCase();
 
-// ---------- REP seats: canon(area) -> seat, per line ----------
-const repSeats = new Map();  // `${lineKey}|${canon}` -> seat row
+// ---------- REP seats, per line ----------
 const repByLine = new Map(LINES.map((l) => [l.key, []]));
 for (const t of tree.filter((r) => r.seat_tier === "REP")) {
   const line = LINES.find((l) => l.code === t.line_code);
   if (!line) continue;
-  repSeats.set(`${line.key}|${canon(t.area_name)}`, t);
   repByLine.get(line.key).push(t);
 }
 // ---------- DM / RSM seats ----------
@@ -119,37 +96,26 @@ for (const r of rsmSeats) {
   rsmScope.set(r.seat_id, (kids.length ? kids : fallback));
 }
 
-// ---------- match every S1 area to today's rep seat ----------
-const repRows = [], confirmRows = [];
+// ---------- REP seats, straight from today's org tree ----------
+// One row per live rep seat. There is nothing left to reconcile: the review reads its own
+// area list from the canonical engine, which is built on these same seats.
+const repRows = [];
 for (const l of LINES) {
-  for (const a of [...ds[l.key].areas].sort((x, y) => (x.region + x.area).localeCompare(y.region + y.area))) {
-    const seat = repSeats.get(`${l.key}|${canon(a.area)}`);
-    if (seat) {
-      const hr = up(seat.occupant_hr_id);
-      repRows.push({
-        line: l.label, area: a.area, dmS1: a.dm, regionS1: a.region,
-        s1Vacant: a.vacant, seat: seat.seat_id, areaCode: seat.area_code,
-        repHr: seat.occupant_hr_id ?? "", repName: hr ? (nameOf.get(hr) ?? "") : "",
-        seatVacantToday: !!seat.is_vacant,
-        note: seat.is_vacant ? "seat vacant today" : "from org tree (authoritative)",
-      });
-    } else {
-      // candidates: same line, sharing a leading token — offered, never auto-applied
-      const tok = canon(a.area).split(" ")[0];
-      const cands = repByLine.get(l.key).filter((s) => canon(s.area_name).startsWith(tok)).map((s) => s.area_name);
-      confirmRows.push({
-        line: l.label, area: a.area, dmS1: a.dm, regionS1: a.region,
-        s1Vacant: a.vacant,
-        reason: cands.length ? "no exact seat — candidates offered, not applied" : "no rep seat exists in today's org tree",
-        candidates: cands.join(" | "),
-      });
-      repRows.push({
-        line: l.label, area: a.area, dmS1: a.dm, regionS1: a.region,
-        s1Vacant: a.vacant, seat: "", areaCode: "", repHr: "", repName: "",
-        seatVacantToday: null,
-        note: cands.length ? `NEEDS CONFIRM — candidates: ${cands.join(" | ")}` : "NEEDS CONFIRM — no seat in today's org tree",
-      });
-    }
+  for (const seat of [...repByLine.get(l.key)].sort((x, y) =>
+    ((x.region_code ?? "") + (x.area_name ?? "")).localeCompare((y.region_code ?? "") + (y.area_name ?? "")),
+  )) {
+    const hr = up(seat.occupant_hr_id);
+    repRows.push({
+      line: l.label,
+      area: seat.area_name ?? "",
+      region: seat.region_code ?? "",
+      seat: seat.seat_id,
+      areaCode: seat.area_code,
+      repHr: seat.occupant_hr_id ?? "",
+      repName: hr ? (nameOf.get(hr) ?? "") : "",
+      seatVacantToday: !!seat.is_vacant,
+      note: seat.is_vacant ? "seat vacant today" : "from org tree (authoritative)",
+    });
   }
 }
 
@@ -238,7 +204,7 @@ function put(ws, vals, fills, wrap = []) {
 }
 
 // --- MANAGERS ---
-let ws = sheet("MANAGERS", "MANAGERS — who may open the S1 Business Review today",
+let ws = sheet("MANAGERS", "MANAGERS — who may open the Business Review today",
   "Pulled from app_auth_users (the role Phoenix gates on) + au_v_org_tree. Green = resolved from live data. Please confirm, and correct anything wrong.",
   [{ h: "HR ID", w: 11 }, { h: "Name", w: 34 }, { h: "App role (gating)", w: 22 }, { h: "Job title", w: 22 },
    { h: "Line", w: 15 }, { h: "ACCESS SCOPE", w: 18 }, { h: "DM seats / seat", w: 40 },
@@ -251,33 +217,23 @@ for (const m of mgr) {
 ws.autoFilter = { from: { row: 3, column: 1 }, to: { row: ws.rowCount, column: 9 } };
 
 // --- REPS ---
-ws = sheet("REPS", "REPS — today's rep behind each S1 area",
-  "Rep identity is TODAY's org tree (for access). The S1 columns are the Jan–Jun owner (for performance) and are intentionally left as-is.",
-  [{ h: "Line", w: 15 }, { h: "S1 area", w: 30 }, { h: "S1 DM (Jan–Jun)", w: 22 }, { h: "S1 region", w: 12 },
-   { h: "S1 vacant?", w: 10 }, { h: "Area code", w: 10 }, { h: "REP NAME (today)", w: 34 },
-   { h: "REP HR ID", w: 12 }, { h: "Seat vacant today?", w: 12 }, { h: "Source / action", w: 54 }]);
-let matched = 0, needConfirm = 0, seatVacant = 0;
+ws = sheet("REPS", "REPS — today's rep behind each area",
+  "Every REP seat in the live org tree. Rep identity is TODAY's org tree, which is what access is decided on; performance is resolved per period by the canonical engine and is not shown here.",
+  [{ h: "Line", w: 15 }, { h: "Area", w: 30 }, { h: "Region", w: 12 }, { h: "Area code", w: 10 },
+   { h: "REP NAME (today)", w: 34 }, { h: "REP HR ID", w: 12 }, { h: "Seat vacant today?", w: 12 },
+   { h: "Source", w: 40 }]);
+let seatVacant = 0;
 for (const r of repRows) {
   const has = !!r.repName;
-  if (r.seat) matched++; else needConfirm++;
   if (r.seatVacantToday) seatVacant++;
-  put(ws, [r.line, r.area, r.dmS1, r.regionS1, r.s1Vacant ? "VACANT" : "active",
-           r.areaCode, r.repName, r.repHr,
-           r.seatVacantToday === null ? "" : (r.seatVacantToday ? "VACANT" : "filled"), r.note],
-    (i) => (i === 7 || i === 8 ? (has ? GREEN : WARM) : COOL), [10]);
+  put(ws, [r.line, r.area, r.region, r.areaCode, r.repName, r.repHr,
+           r.seatVacantToday ? "VACANT" : "filled", r.note],
+    (i) => (i === 5 || i === 6 ? (has ? GREEN : WARM) : COOL), [8]);
 }
-ws.autoFilter = { from: { row: 3, column: 1 }, to: { row: ws.rowCount, column: 10 } };
+ws.autoFilter = { from: { row: 3, column: 1 }, to: { row: ws.rowCount, column: 8 } };
 
-// --- CONFIRM ---
-ws = sheet("CONFIRM THESE", "AREAS I COULD NOT MAP SAFELY — your call",
-  "The S1 workbooks use an older geography than today's area codes. These did not match exactly, so nothing was applied. Candidates are suggestions only.",
-  [{ h: "Line", w: 15 }, { h: "S1 area", w: 30 }, { h: "S1 DM", w: 22 }, { h: "S1 region", w: 12 },
-   { h: "S1 vacant?", w: 10 }, { h: "Why", w: 44 }, { h: "Candidate seats in today's org tree", w: 60 }]);
-for (const c of confirmRows) {
-  put(ws, [c.line, c.area, c.dmS1, c.regionS1, c.s1Vacant ? "VACANT" : "active", c.reason, c.candidates],
-    (i) => (i === 7 ? WARM : COOL), [6, 7]);
-}
-ws.autoFilter = { from: { row: 3, column: 1 }, to: { row: ws.rowCount, column: 7 } };
+// The CONFIRM sheet is gone with the workbook reconciliation it existed for: there is no
+// second geography left to disagree with the org tree, so nothing can fail to match.
 
 // --- ROLE GAPS: someone holds a manager seat but their login role won't grant access ---
 // Access is gated on app_auth_users.role, not on the org seat or the job title. A DM who
@@ -325,10 +281,10 @@ for (const t of [...rsmSeats, ...dmSeats].sort((a, b) => (a.line_code + a.seat_t
 }
 
 // ================= access-map.json (consumed by the portal scope resolver) =================
-// The S1 datasets are keyed by DM display name and area name; the portal knows only an
-// HR_ID. This file is the bridge, and it is built from the seat map rather than by matching
-// names — per PR #1479 the seat map is the authoritative answer to "which areas may this
-// manager see", and three separate defects in this build came from name-matching.
+// The portal knows only an HR_ID; the review is keyed on seats. This file is the bridge, and
+// it is built from the seat map rather than by matching names — per PR #1479 the seat map is
+// the authoritative answer to "which areas may this manager see", and three separate defects
+// in this build came from name-matching.
 //
 // `unmappedAreas` is emitted deliberately. An area the portal cannot resolve must be
 // reported to the viewer, not silently omitted: PR #1486 documents the same class of bug
@@ -379,6 +335,8 @@ for (const l of LINES) {
     dmSeatIds: (rsmScope.get(r.seat_id) ?? []).map((d) => d.seat_id),
   }));
   const areas = {};
+  // Retained (always empty now) so the consumed shape does not change: an area the portal
+  // cannot resolve must still be reportable rather than silently omitted — see PR #1486.
   const unmapped = [];
   for (const r of repRows.filter((x) => x.line === l.label)) {
     if (!r.seat) { unmapped.push(r.area); continue; }
@@ -392,7 +350,7 @@ for (const l of LINES) {
       repHrId: r.repHr || null, repName: r.repName || null,
       seatVacantToday: r.seatVacantToday === null ? null : !!r.seatVacantToday,
       dmSeatId: owningDm?.seatId ?? null, dmHrId: owningDm?.hrId ?? null,
-      s1Dm: r.dmS1, s1Region: r.regionS1,
+      regionCode: r.region || null,
     };
   }
   accessMap.lines[l.key] = { label: l.label, lineCode: l.code, dmSeats: dmsForLine, rsmSeats: rsmForLine, areas, unmappedAreas: unmapped };
@@ -402,8 +360,7 @@ writeFileSync(path.join(DATA, "access-map.json"), JSON.stringify(accessMap, null
 await wb.xlsx.writeFile(OUT);
 console.log("========= ACCESS MAPPING (from live employee master) =========");
 console.log(`MANAGERS   : ${mgr.length} rows | ${mgr.filter((m) => m.scope !== "(no access)").length} get access, ${mgr.filter((m) => m.scope === "(no access)").length} blocked as inactive`);
-console.log(`REPS       : ${repRows.length} areas | ${matched} mapped to a seat | ${needConfirm} need confirming | ${seatVacant} seats vacant today`);
-console.log(`CONFIRM    : ${confirmRows.length} areas listed for your call`);
+console.log(`REPS       : ${repRows.length} rep seats | ${seatVacant} vacant today`);
 console.log(`ROLE GAPS  : ${gaps.length} seat holders whose login role won't grant access`);
 for (const g of gaps) console.log(`             ${g.hr} ${g.name} — ${g.note}`);
 console.log("WROTE", OUT);
