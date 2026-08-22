@@ -443,6 +443,7 @@ import { runOrganogramGodmodeTests } from "./organogram-godmode.test.ts";
 import { runOrganogramPhantomSeatSuppressionTests } from "./organogram-phantom-seat-suppression.test.ts";
 import { runVacancyReportSourceTests } from "./vacancy-report-source.test.ts";
 import { runOrganogramNodeDetailPrivacyTests } from "./organogram-node-detail-privacy.test.ts";
+import { runOrganogramAudienceTests } from "./organogram-audience.test.ts";
 import { runProbationStabilizationTests } from "./probation-stabilization.test.ts";
 import { runProbationFeedbackSecurityTests } from "./probation-feedback-security.test.ts";
 import { runGoogleRoutesShortestTests } from "./google-routes-shortest.test.ts";
@@ -1418,6 +1419,10 @@ await runTest("organogram godmode", runOrganogramGodmodeTests);
 await runTest("organogram phantom seat suppression (stale-manager phantom DSM + same-area placeholder dup + NSM-direct vanish)", runOrganogramPhantomSeatSuppressionTests);
 await runTest("vacancy report source", runVacancyReportSourceTests);
 await runTest("organogram node-detail popup privacy boundary", runOrganogramNodeDetailPrivacyTests);
+await runTest(
+  "organogram audience picker (scoped filters cascade, ticks beat filters, emails dedupe, and the export sheet stays work-fields-only)",
+  runOrganogramAudienceTests,
+);
 await runTest("probation stabilization", runProbationStabilizationTests);
 await runTest("probation feedback security", runProbationFeedbackSecurityTests);
   await runTest("google routes fastest", runGoogleRoutesShortestTests);
