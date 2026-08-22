@@ -191,19 +191,41 @@ function testAmbiguousKeepsAnAgreedArea() {
     })
     .join("\n");
 
+  /**
+   * The ONE assignment for `column` in the UPDATE's set-list, bounded by the next assignment (or by
+   * the end of the set-list) — a real edge, not a byte count.
+   *
+   * Every check below used to reach a fixed 240 characters from the column name. That measures how
+   * long the column's case expression happens to be, not whether the branch it is looking for is
+   * still there: `mapped_area_code` is already a four-line CASE, so adding one WHEN above the
+   * ambiguous one would push it out of reach and this would report "dropping it is the bug" about a
+   * branch still sitting in the file. In the other direction 240 characters spans the next column
+   * outright, so `mapped_brick_id` could have been cleared by its NEIGHBOUR's text.
+   */
+  function assignment(column: string): string {
+    const setList = sql.indexOf("update public.marketing_pharmacy_distributor_codes");
+    const start = sql.indexOf(`\n      ${column} `, setList);
+    if (start < 0) return "";
+    const rest = sql.slice(start + 1);
+    const next = rest.search(/\n {6}\w+\s+=|\n {4}from /);
+    return rest.slice(0, next >= 0 ? next : rest.length);
+  }
+
   // 1. The territory columns gain an ambiguous branch, and keep their original one.
   for (const [column, agreed] of [
     ["mapped_area_code", "area_agreed"],
     ["mapped_region_code", "region_agreed"],
   ] as const) {
+    const branch = assignment(column);
+    assert.ok(branch, `${column} must still be assigned in the resolver's UPDATE set-list`);
     assert.match(
-      sql,
-      new RegExp(`${column}[\\s\\S]{0,240}?when v\\.kind = 'ambiguous' and v\\.${agreed}`),
+      branch,
+      new RegExp(`when v[.]kind = 'ambiguous' and v[.]${agreed}`),
       `${column} must be written for an ambiguous match whose candidates agree — dropping it is the bug`,
     );
     assert.match(
-      sql,
-      new RegExp(`${column}[\\s\\S]{0,240}?when v\\.kind in \\('exact', 'digit_normalized'\\)`),
+      branch,
+      /when v\.kind in \('exact', 'digit_normalized'\)/,
       `${column} must keep its exact/digit_normalized branch written out separately, so a pinned `
         + "match cannot regress",
     );
@@ -213,10 +235,10 @@ function testAmbiguousKeepsAnAgreedArea() {
   //    unknown", which is the truth. If any of these gained an ambiguous branch the row would start
   //    claiming an identity the master never agreed on.
   for (const column of ["mapped_distributor_code", "mapped_customer_code", "mapped_brick_id"] as const) {
-    const from = sql.indexOf(`${column} `, sql.indexOf("update public.marketing_pharmacy_distributor_codes"));
-    const next = sql.indexOf("\n      mapped_", from + 1);
+    const branch = assignment(column);
+    assert.ok(branch, `${column} must still be assigned in the resolver's UPDATE set-list`);
     assert.doesNotMatch(
-      sql.slice(from, next > from ? next : from + 240),
+      branch,
       /ambiguous/,
       `${column} must stay null for an ambiguous match — the identity is exactly what is in doubt`,
     );

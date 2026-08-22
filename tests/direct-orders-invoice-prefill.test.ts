@@ -548,9 +548,14 @@ export function runDirectOrderInvoicePrefillTests() {
       !/while\s*\(|for\s*\([^)]*retr/i.test(extractor),
       "THE RETRY MUST RUN EXACTLY ONCE: a loop turns a dark photograph into a stack of identical calls and a rep watching a spinner",
     );
-    const retryBlock = extractor.slice(extractor.indexOf("if (text(parsed.customer_code) == null)"));
+    // The retry block's OWN closing brace, not 1400 bytes. The block is ~800 bytes, so the window
+    // ran 600 bytes past its end into the code that follows — a `} catch {` down there would have
+    // satisfied this while the retry itself had none.
+    const retryAt = extractor.indexOf("if (text(parsed.customer_code) == null)");
+    const retryEnd = extractor.slice(retryAt).search(/^  \}$/m);
+    const retryBlock = extractor.slice(retryAt, retryEnd >= 0 ? retryAt + retryEnd : extractor.length);
     assert.match(
-      retryBlock.slice(0, 1400),
+      retryBlock,
       /\} catch \{/,
       "A FAILED RESCUE MUST BE SWALLOWED: the first read is still worth returning, and an attempt to improve it must never be the reason an otherwise usable read becomes an error the submitter sees",
     );

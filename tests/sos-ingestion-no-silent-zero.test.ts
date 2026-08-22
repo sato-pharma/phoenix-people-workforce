@@ -50,7 +50,12 @@ export function runSosIngestionNoSilentZeroTests() {
 
   // ── discountFrac rejects rather than clamps ────────────────────────────────
   {
-    const fn = engine.slice(engine.indexOf("function discountFrac"), engine.indexOf("function discountFrac") + 900);
+    // Slice to the END of discountFrac, not a fixed byte count — a byte count measures how long
+    // the function happens to be, not whether the silent clamp stayed gone.
+    const discountAt = engine.indexOf("function discountFrac");
+    const discountRest = engine.slice(discountAt + 1);
+    const nextDecl = discountRest.search(/^(?:export )?(?:async )?function |^(?:export )?(?:const|type|interface|class) /m);
+    const fn = engine.slice(discountAt, nextDecl >= 0 ? discountAt + 1 + nextDecl : engine.length);
     assert.ok(
       !/Math\.min\(1, Math\.max\(0, fraction\)\)/.test(fn),
       "the silent clamp must stay gone — it turned a '150' typo into a row-zeroing 100% discount",

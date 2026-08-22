@@ -177,7 +177,12 @@ export function runDeductionsCrmSingleMonthScanTests() {
     -1,
     "the per-leaver loop was not found in crm.ts — if it was renamed, this guard is inspecting nothing and must be re-pointed",
   );
-  const loopWindow = connectorSource.slice(loopAt, loopAt + 600);
+  // Bound the loop by its own closing brace, not by 600 bytes. The loop body runs past 1,000
+  // bytes, so the byte window stopped around the `collectLeaverCrmCandidate({` call and never
+  // reached the lines below it — an awaited call re-added at the bottom of the loop would have
+  // sailed straight through this guard.
+  const loopEnd = connectorSource.slice(loopAt).search(/^ {4}\}$/m);
+  const loopWindow = connectorSource.slice(loopAt, loopEnd >= 0 ? loopAt + loopEnd : connectorSource.length);
   assert.ok(
     !loopWindow.includes("await collectLeaverCrmCandidate"),
     "the per-leaver loop must stay free of awaited I/O — that loop is what serialised 10 company-wide scans",

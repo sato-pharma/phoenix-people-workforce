@@ -53,18 +53,31 @@ export function runWorkflowRegistryRetargetGuardTests() {
     const source = readFileSync(file, "utf8");
     if (!source.includes("expectedNextStatus")) return;
 
-    // The two fields are written in either order across the codebase, so pair them both ways
-    // within a small window rather than assuming one layout.
-    for (const match of source.matchAll(/actionKey:\s*["']([\w-]+)["']/g)) {
-      const ahead = source.slice(match.index + match[0].length, match.index + match[0].length + 400);
-      const status = /expectedNextStatus:\s*["']([\w-]+)["']/.exec(ahead);
+    // The two fields are written in either order across the codebase, so pair them both ways — but
+    // bound each pairing by the ENCLOSING CALL and by the neighbouring field, never by a byte
+    // count. A 400-byte window measures how long the options literal happens to be, and it
+    // silently DROPPED `revive_held -> pending_approval` in direct-orders/service.ts: the literal
+    // that names the action and the call that asserts the status sit 60 lines apart. A dropped
+    // pair does not fail here — the action just vanishes from the map, and section 3 then skips
+    // every migration that retargets it. The window was quietly the weaker check.
+    const actionKeys = [...source.matchAll(/actionKey:\s*["']([\w-]+)["']/g)];
+    const statuses = [...source.matchAll(/expectedNextStatus:\s*["']([\w-]+)["']/g)];
+
+    actionKeys.forEach((match, index) => {
+      const from = match.index + match[0].length;
+      const sibling = index + 1 < actionKeys.length ? actionKeys[index + 1].index : source.length;
+      const callEnd = source.indexOf("});", from);
+      const stop = Math.min(sibling, callEnd < 0 ? source.length : callEnd);
+      const status = statuses.find((entry) => entry.index >= from && entry.index < stop);
       if (status) record(match[1], status[1]);
-    }
-    for (const match of source.matchAll(/expectedNextStatus:\s*["']([\w-]+)["']/g)) {
-      const behind = source.slice(Math.max(0, match.index - 400), match.index);
-      const actions = [...behind.matchAll(/actionKey:\s*["']([\w-]+)["']/g)];
-      if (actions.length > 0) record(actions[actions.length - 1][1], match[1]);
-    }
+    });
+    statuses.forEach((match, index) => {
+      const sibling = index > 0 ? statuses[index - 1].index + statuses[index - 1][0].length : 0;
+      const callStart = source.lastIndexOf("({", match.index);
+      const from = Math.max(sibling, callStart < 0 ? 0 : callStart);
+      const owners = actionKeys.filter((entry) => entry.index >= from && entry.index < match.index);
+      if (owners.length > 0) record(owners[owners.length - 1][1], match[1]);
+    });
   });
 
   assert.ok(
@@ -79,13 +92,42 @@ export function runWorkflowRegistryRetargetGuardTests() {
   const retargets: Array<{ action: string; file: string; target: string }> = [];
   const migrationsDir = path.join(repoRoot, "supabase", "migrations");
 
+  /**
+   * Pull every `{to}` retarget out of one SQL body: the `key =` predicate that guards it (behind)
+   * and the status it writes (ahead).
+   *
+   * Both sides are bounded by REAL edges — the enclosing statement, and the neighbouring `{to}`
+   * writes — never by a byte count. A 500/300-byte window measures how long the surrounding SQL
+   * happens to be, and when it falls short the retarget is not flagged, it is simply NOT SEEN:
+   * section 3 then iterates a list that is missing it and goes green on precisely the migration
+   * this guard exists to stop. That is the failure mode with no symptom.
+   *
+   * Section 4 runs this SAME function against the synthetic incident body, so the self-test can no
+   * longer drift from the scraper it claims to be proving — it used to be a copy of it.
+   */
+  function scrapeRetargets(sql: string): Array<{ action: string; target: string }> {
+    const found: Array<{ action: string; target: string }> = [];
+    const writes = [...sql.matchAll(/['"]\{to\}['"]/g)];
+    writes.forEach((match, index) => {
+      const previousWrite = index > 0 ? writes[index - 1].index + writes[index - 1][0].length : 0;
+      const statementStart = sql.lastIndexOf(";", match.index) + 1;
+      const nextWrite = index + 1 < writes.length ? writes[index + 1].index : sql.length;
+      const statementEnd = sql.indexOf(";", match.index);
+      const behind = sql.slice(Math.max(previousWrite, statementStart), match.index);
+      const ahead = sql.slice(match.index, Math.min(nextWrite, statementEnd < 0 ? sql.length : statementEnd));
+      const action = [...behind.matchAll(/->>\s*['"]key['"]\s*=\s*'([\w-]+)'/g)].pop();
+      const target = /'"([\w-]+)"'/.exec(ahead);
+      if (action && target) found.push({ action: action[1], target: target[1] });
+    });
+    return found;
+  }
+
   for (const name of readdirSync(migrationsDir)) {
     if (!name.endsWith(".sql")) continue;
     const sql = readFileSync(path.join(migrationsDir, name), "utf8");
     if (!sql.includes("workflow_registry_modules")) continue;
 
-    // A retarget writes the jsonb path {to}. Find each one and read the action it is guarded by
-    // (behind) and the value it writes (ahead). Comments are stripped first so PROSE describing a
+    // A retarget writes the jsonb path {to}. Comments are stripped first so PROSE describing a
     // past retarget cannot trip the guard — a lesson from a sibling test that matched its own
     // explanatory comment.
     const code = sql
@@ -93,12 +135,8 @@ export function runWorkflowRegistryRetargetGuardTests() {
       .filter((line) => !line.trim().startsWith("--"))
       .join("\n");
 
-    for (const match of code.matchAll(/['"]\{to\}['"]/g)) {
-      const behind = code.slice(Math.max(0, match.index - 500), match.index);
-      const ahead = code.slice(match.index, match.index + 300);
-      const action = [...behind.matchAll(/->>\s*['"]key['"]\s*=\s*'([\w-]+)'/g)].pop();
-      const target = /'"([\w-]+)"'/.exec(ahead);
-      if (action && target) retargets.push({ action: action[1], file: name, target: target[1] });
+    for (const hit of scrapeRetargets(code)) {
+      retargets.push({ action: hit.action, file: name, target: hit.target });
     }
   }
 
@@ -132,14 +170,9 @@ export function runWorkflowRegistryRetargetGuardTests() {
                            else action end order by ordinality)
                from jsonb_array_elements(actions) with ordinality as t(action, ordinality))
      where module_key = 'outstation_expenses';`;
-  const seen: Array<{ action: string; target: string }> = [];
-  for (const match of synthetic.matchAll(/['"]\{to\}['"]/g)) {
-    const behind = synthetic.slice(Math.max(0, match.index - 500), match.index);
-    const ahead = synthetic.slice(match.index, match.index + 300);
-    const action = [...behind.matchAll(/->>\s*['"]key['"]\s*=\s*'([\w-]+)'/g)].pop();
-    const target = /'"([\w-]+)"'/.exec(ahead);
-    if (action && target) seen.push({ action: action[1], target: target[1] });
-  }
+  // Run the SAME scraper section 2 runs. This used to be a hand-copied duplicate of it, which
+  // could pass while the real loop above had stopped matching anything.
+  const seen = scrapeRetargets(synthetic);
   assert.deepEqual(
     seen,
     [{ action: "submit", target: "pending_departure_photo" }],

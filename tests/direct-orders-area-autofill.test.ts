@@ -14,6 +14,20 @@ import { readFileSync } from "node:fs";
 // That is why this test spends most of its assertions on what the payload may NOT contain.
 // ─────────────────────────────────────────────────────────────────────────────
 
+/**
+ * Slice a top-level declaration out of a source file by its REAL end — the next top-level
+ * declaration — instead of a fixed byte count. A magic window measures source LENGTH, not the
+ * invariant it claims to guard: it false-FAILS the moment the pinned function grows past the
+ * window (the regression fixed in PR #2288), and it false-PASSES when a function that genuinely
+ * lost its marker spills into the next function's copy of it.
+ */
+function topLevelBlock(source: string, start: number): string {
+  if (start < 0) return "";
+  const rest = source.slice(start + 1);
+  const next = rest.search(/^(?:export )?(?:async )?function |^(?:export )?(?:const|type|interface|class) /m);
+  return source.slice(start, next >= 0 ? start + 1 + next : source.length);
+}
+
 export function runDirectOrdersAreaAutofillTests() {
   const serviceSource = readFileSync(new URL("../src/lib/direct-orders/service.ts", import.meta.url), "utf8");
   const routeSource = readFileSync(
@@ -45,7 +59,7 @@ export function runDirectOrdersAreaAutofillTests() {
   {
     const fnIdx = serviceSource.indexOf("export async function ensureDirectOrderPharmacyFromDirectory(");
     assert.ok(fnIdx > -1, "ensureDirectOrderPharmacyFromDirectory must still be the materialization entrypoint");
-    const fn = serviceSource.slice(fnIdx, fnIdx + 4000);
+    const fn = topLevelBlock(serviceSource, fnIdx);
 
     assert.match(
       fn,
@@ -74,7 +88,7 @@ export function runDirectOrdersAreaAutofillTests() {
   // the area column keeps the order where it was filed.
   {
     const fnIdx = serviceSource.indexOf("export async function ensureDirectOrderPharmacyFromDirectory(");
-    const fn = serviceSource.slice(fnIdx, fnIdx + 4000);
+    const fn = topLevelBlock(serviceSource, fnIdx);
     assert.match(fn, /area_code/, "the area code must be carried explicitly");
     assert.ok(
       !/areaCode:\s*(?:await\s*)?(?:resolve|lookup|derive)\w*[Bb]rick/.test(fn),
@@ -86,7 +100,11 @@ export function runDirectOrdersAreaAutofillTests() {
   {
     const callIdx = formSource.indexOf('"/api/direct-orders/pharmacies/from-directory"');
     assert.ok(callIdx > -1, "the submit form must still resolve a picked pharmacy through the from-directory route");
-    const call = formSource.slice(callIdx, callIdx + 700);
+    // The picked PATH is the region, bounded by the close of its own `if` branch. The 700-byte
+    // window was 300 bytes short of reading into the hand-created path below, which legitimately
+    // does send an areaCode — a byte count away from failing on entirely correct code.
+    const callEnd = formSource.slice(callIdx).search(/^ {4}\}$/m);
+    const call = formSource.slice(callIdx, callEnd >= 0 ? callIdx + callEnd : formSource.length);
     assert.match(call, /phoenixPharmacyCode: pickedHit\.phoenixPharmacyCode/, "the form must send the picked row's Phoenix code");
     assert.ok(
       !/areaCode|regionCode|brickId/.test(call),
@@ -107,7 +125,10 @@ export function runDirectOrdersAreaAutofillTests() {
     );
     const handIdx = formSource.indexOf('"/api/direct-orders/pharmacies"');
     assert.ok(handIdx > -1, "the hand-created path must still exist — refusing it only ever produced an invented code");
-    const hand = formSource.slice(handIdx, handIdx + 700);
+    // Bounded by the fetch call's own closing `});` — the body is a list of fields that grows,
+    // and a byte count would quietly stop checking below the cut.
+    const handEnd = formSource.slice(handIdx).search(/^ {4}\}\);$/m);
+    const hand = formSource.slice(handIdx, handEnd >= 0 ? handIdx + handEnd : formSource.length);
     assert.match(
       hand,
       /areaCode: selectedBrick\?\.areaCode/,

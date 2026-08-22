@@ -32,6 +32,20 @@ function steps(...defs: Array<Partial<DirectOrderStepState> & { order: number; s
   }));
 }
 
+/**
+ * Slice a top-level declaration out of a source file by its REAL end — the next top-level
+ * declaration — instead of a fixed byte count. A magic window measures source LENGTH, not the
+ * invariant it claims to guard: it false-FAILS the moment the pinned function grows past the
+ * window (the regression fixed in PR #2288), and it false-PASSES when a function that genuinely
+ * lost its marker spills into the next function's copy of it.
+ */
+function topLevelBlock(source: string, start: number): string {
+  if (start < 0) return "";
+  const rest = source.slice(start + 1);
+  const next = rest.search(/^(?:export )?(?:async )?function |^(?:export )?(?:const|type|interface|class) /m);
+  return source.slice(start, next >= 0 ? start + 1 + next : source.length);
+}
+
 export function runDirectOrdersApprovalFlowTests() {
   // ---- Missing management line: flagged, never blocked (owner decision, 2026-08-19) ----
   // A District Manager always has a National Sales Manager above them, so a chain with no person
@@ -133,7 +147,7 @@ export function runDirectOrdersApprovalFlowTests() {
 
     const readerIdx = serviceSource.indexOf("export async function getDirectOrderRequest(");
     assert.ok(readerIdx > -1, "getDirectOrderRequest must still be the single read entrypoint");
-    const readerBody = serviceSource.slice(readerIdx, readerIdx + 1600);
+    const readerBody = topLevelBlock(serviceSource, readerIdx);
     assert.match(
       readerBody,
       /if \(!\(await canViewDirectOrderRequest\(access, request, steps\)\)\) return null;/,
@@ -155,7 +169,7 @@ export function runDirectOrdersApprovalFlowTests() {
   {
     const serviceSource = readFileSync(new URL("../src/lib/direct-orders/service.ts", import.meta.url), "utf8");
     const walkIdx = serviceSource.indexOf("async function resolveVisibleRequesterHrIds(");
-    const walkBody = serviceSource.slice(walkIdx, walkIdx + 1600);
+    const walkBody = topLevelBlock(serviceSource, walkIdx);
     assert.match(walkBody, /pendingManagerReplacementForHrId/, "the walk must follow the vacant-seat continuity edge too");
     assert.match(walkBody, /resolveEmployeeIdentityId\(access\)/, "the viewer must be resolved by employee identity, not the raw session hrId");
   }

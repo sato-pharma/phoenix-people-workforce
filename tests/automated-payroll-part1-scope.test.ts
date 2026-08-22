@@ -365,16 +365,24 @@ export function runAutomatedPayrollPart1ScopeTests() {
   // the wiring, which is the thing that actually broke, and it is a source guard
   // because resolvePayrollPopulationAndSources reads the employee directory and
   // cannot be exercised without a database.
-  const populationSource = readFileSync(
+  const populationFileSource = readFileSync(
     new URL("../src/lib/automated-payroll/recommend.ts", import.meta.url),
     "utf8",
-  ).slice(
-    readFileSync(new URL("../src/lib/automated-payroll/recommend.ts", import.meta.url), "utf8").indexOf(
-      "export async function resolvePayrollPopulationAndSources",
-    ),
+  );
+  // Bound the function by its REAL end — the next top-level declaration — instead of 3000 bytes.
+  // The function is already 3,357 bytes, so 357 of them were invisible: had the hire-date guard
+  // sat down there, this would have reported it missing while it was still in the file.
+  const populationStart = populationFileSource.indexOf("export async function resolvePayrollPopulationAndSources");
+  const populationRest = populationFileSource.slice(populationStart + 1);
+  const populationNext = populationRest.search(
+    /^(?:export )?(?:async )?function |^(?:export )?(?:const|type|interface|class) /m,
+  );
+  const populationSource = populationFileSource.slice(
+    populationStart,
+    populationNext >= 0 ? populationStart + 1 + populationNext : populationFileSource.length,
   );
   assert.match(
-    populationSource.slice(0, 3000),
+    populationSource,
     /isAfterPeriod\(employee\.hireDate, period\)\)\s*continue/,
     "the payroll population must drop anyone hired after the period ends — without this they are paid a full unprorated month they never worked",
   );

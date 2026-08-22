@@ -35,8 +35,13 @@ export function runSosCustomerMapKeysetTests() {
     const text = readFileSync(file, "utf8");
     let idx = text.indexOf(FROM);
     while (idx !== -1) {
-      // A query chain is short; only look forward from this `.from(...)`.
-      const window = text.slice(idx, idx + 1200);
+      // A chain runs until the NEXT `.from(...)` opens one — that is the real boundary, and the
+      // `rangeBelongsElsewhere` check below already assumed exactly it. A fixed 1200 bytes was
+      // neither: a chain longer than the window hid the very `.range()` this guard exists to find.
+      // (Ending at the statement's `;` would be wrong here — customer-map.ts holds the builder in
+      // a variable and calls `.range()` on it two statements later, and that read must stay in.)
+      const nextChain = text.indexOf(".from(", idx + FROM.length);
+      const window = text.slice(idx, nextChain === -1 ? text.length : nextChain);
       const rangeAt = window.indexOf(".range(");
       if (rangeAt !== -1) {
         const chainBeforeRange = window.slice(0, rangeAt);

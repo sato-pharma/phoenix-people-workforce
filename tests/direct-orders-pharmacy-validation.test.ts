@@ -98,8 +98,14 @@ export function runDirectOrdersPharmacyValidationTests() {
   // Rejection must leave the order held — never quietly release it.
   const rejectIdx = validationSource.indexOf('if (input.decision === "reject")');
   assert.ok(rejectIdx > 0, "a reject branch must exist");
+  // Bounded by the close of the reject branch itself. The branch is ~900 bytes today, so the old
+  // window sat exactly on its edge: one more audit field and it would have started reading the
+  // `match` branch below — which DOES confirm the pharmacy, and would have failed this check on
+  // entirely correct code.
+  const rejectEnd = validationSource.slice(rejectIdx).search(/^  \}$/m);
+  const rejectBranch = validationSource.slice(rejectIdx, rejectEnd >= 0 ? rejectIdx + rejectEnd : validationSource.length);
   assert.ok(
-    !validationSource.slice(rejectIdx, rejectIdx + 900).includes("acknowledgeDirectOrderPharmacy"),
+    !rejectBranch.includes("acknowledgeDirectOrderPharmacy"),
     "rejecting must NOT confirm the pharmacy — the order stays held",
   );
 

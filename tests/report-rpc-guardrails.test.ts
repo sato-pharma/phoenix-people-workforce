@@ -70,8 +70,17 @@ function resolvedStatementTimeout(funcName: string): string | null {
     createRe.lastIndex = 0;
     for (let m = createRe.exec(sql); m; m = createRe.exec(sql)) {
       const rest = sql.slice(m.index);
+      // The header ends where the BODY opens or where the STATEMENT ends, whichever comes first —
+      // both real edges. `rest` runs to end of file, so without the statement bound a CREATE with
+      // no dollar-quoted body borrows a LATER function's `as $tag$` and the "header" swallows
+      // everything in between; the old 2000-byte fallback only applied when no `as $tag$` existed
+      // in the rest of the file at all, which is not the case that goes wrong.
       const bodyStart = /\bas\s+\$[a-zA-Z_]*\$/i.exec(rest);
-      const header = bodyStart ? rest.slice(0, bodyStart.index) : rest.slice(0, 2000);
+      const statementEnd = rest.indexOf(";");
+      const header = rest.slice(
+        0,
+        Math.min(bodyStart ? bodyStart.index : rest.length, statementEnd >= 0 ? statementEnd : rest.length),
+      );
       const declared = /set\s+statement_timeout\s*(?:=|to)\s*'?([\w]+)'?/i.exec(header);
       events.push({ at: m.index, timeout: declared ? declared[1]! : null });
     }

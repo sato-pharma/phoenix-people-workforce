@@ -26,13 +26,20 @@ export function runTerminationTruthTests() {
     ["contract non-renewal", contracts],
     ["probation intelligence decision", decision],
   ] as const) {
-    const call = source.slice(source.indexOf("resignEmployeeAndOpenVacancy("));
+    // The call's OWN closing paren, at the indent the call opens on — a real end. 1400 bytes ran
+    // well past every one of these three calls (they are 600-700), so the flag could have been
+    // satisfied by a DIFFERENT call sitting below the one under test.
+    const callAt = source.indexOf("resignEmployeeAndOpenVacancy(");
+    const callIndent = /^ */.exec(source.slice(source.lastIndexOf("\n", callAt) + 1))![0];
+    const callRest = source.slice(callAt);
+    const callEnd = callRest.indexOf(`\n${callIndent});`);
+    const call = callRest.slice(0, callEnd >= 0 ? callEnd : callRest.length);
     assert.ok(
       source.includes("resignEmployeeAndOpenVacancy("),
       `${label} must still route termination through the canonical helper`,
     );
     assert.match(
-      call.slice(0, 1400),
+      call,
       /suppressWorkflowNotification:\s*true/,
       `${label} is a company decision — it must pass suppressWorkflowNotification so the employee's chain is not told they resigned`,
     );

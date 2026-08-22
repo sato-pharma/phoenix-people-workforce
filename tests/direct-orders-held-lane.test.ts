@@ -13,6 +13,20 @@ import { isTerminalDirectOrderStatus } from "../src/lib/direct-orders/types.ts";
 // notice recipients are each asserted against the source, because the live path is Supabase-bound.
 // ─────────────────────────────────────────────────────────────────────────────
 
+/**
+ * Slice a top-level declaration out of a source file by its REAL end — the next top-level
+ * declaration — instead of a fixed byte count. A magic window measures source LENGTH, not the
+ * invariant it claims to guard: it false-FAILS the moment the pinned function grows past the
+ * window (the regression fixed in PR #2288), and it false-PASSES when a function that genuinely
+ * lost its marker spills into the next function's copy of it.
+ */
+function topLevelBlock(source: string, start: number): string {
+  if (start < 0) return "";
+  const rest = source.slice(start + 1);
+  const next = rest.search(/^(?:export )?(?:async )?function |^(?:export )?(?:const|type|interface|class) /m);
+  return source.slice(start, next >= 0 ? start + 1 + next : source.length);
+}
+
 export function runDirectOrdersHeldLaneTests() {
   const serviceSource = readFileSync(new URL("../src/lib/direct-orders/service.ts", import.meta.url), "utf8");
   const migrationSource = readFileSync(
@@ -96,7 +110,7 @@ export function runDirectOrdersHeldLaneTests() {
   // Fresh chain at revival, defensively replacing any stale steps.
   const reviveIdx = serviceSource.indexOf("async function moveHeldDirectOrdersIntoChain(");
   assert.ok(reviveIdx > 0, "the revival function must exist");
-  const reviveBody = serviceSource.slice(reviveIdx, reviveIdx + 4200);
+  const reviveBody = topLevelBlock(serviceSource, reviveIdx);
   assert.match(reviveBody, /await buildApprovalChain\(\{/, "revival must build the chain fresh (today's managers)");
   assert.match(reviveBody, /\.delete\(\)\s*\n\s*\.eq\("request_id", request\.id\)/, "revival must wipe stale steps before seeding");
   assert.match(
@@ -142,7 +156,7 @@ export function runDirectOrdersHeldLaneTests() {
   );
   const noticeIdx = serviceSource.indexOf("export async function sendHeldDirectOrderNotices(");
   assert.match(
-    serviceSource.slice(noticeIdx, noticeIdx + 3000),
+    topLevelBlock(serviceSource, noticeIdx),
     /if \(request\.status !== "held"\) \{/,
     "a request that is no longer held must be SKIPPED — never email a stale demand",
   );

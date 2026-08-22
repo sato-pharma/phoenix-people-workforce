@@ -41,6 +41,20 @@ function typeBlock(source: string, name: string): string {
   return source.slice(start, end + 2);
 }
 
+/**
+ * Slice a top-level declaration out of a source file by its REAL end — the next top-level
+ * declaration — instead of a fixed byte count. A magic window measures source LENGTH, not the
+ * invariant it claims to guard: it false-FAILS the moment the pinned function grows past the
+ * window (the regression fixed in PR #2288), and it false-PASSES when a function that genuinely
+ * lost its marker spills into the next function's copy of it.
+ */
+function topLevelBlock(source: string, start: number): string {
+  if (start < 0) return "";
+  const rest = source.slice(start + 1);
+  const next = rest.search(/^(?:export )?(?:async )?function |^(?:export )?(?:const|type|interface|class) /m);
+  return source.slice(start, next >= 0 ? start + 1 + next : source.length);
+}
+
 export function runTerritoryPreviewLinkControlsTests() {
   const here = import.meta.url;
   const domain = readFileSync(new URL("../src/lib/territory-management/preview-links.ts", here), "utf8");
@@ -71,7 +85,7 @@ export function runTerritoryPreviewLinkControlsTests() {
     ]) {
       const idx = domain.indexOf(`export async function ${fn}(`);
       assert.ok(idx > -1, `${fn} must still exist`);
-      const body = domain.slice(idx, idx + 900);
+      const body = topLevelBlock(domain, idx);
       const gateAt = body.indexOf("await assertMayPublish(access);");
       assert.ok(gateAt > -1, `${fn} must call assertMayPublish`);
       const dbAt = body.search(/getSupabaseAdmin\(\)|loadTerritoryFilters\(/);
@@ -132,7 +146,7 @@ export function runTerritoryPreviewLinkControlsTests() {
   {
     const idx = domain.indexOf("export async function assertTerritoryPreviewToken(");
     assert.ok(idx > -1, "assertTerritoryPreviewToken must remain the single liveness check");
-    const gate = domain.slice(idx, idx + 1800);
+    const gate = topLevelBlock(domain, idx);
     assert.match(gate, /if \(link\.revoked_at\) throw forbiddenError\(/, "a revoked link must be refused");
     assert.match(
       gate,
@@ -165,7 +179,7 @@ export function runTerritoryPreviewLinkControlsTests() {
   // ── 4. The frozen area list is the containment ──────────────────────────────
   {
     const createIdx = domain.indexOf("export async function createTerritoryPreviewLink(");
-    const create = domain.slice(createIdx, createIdx + 2200);
+    const create = topLevelBlock(domain, createIdx);
     assert.match(
       create,
       /const filters = await loadTerritoryFilters\(lineCode, access\);/,
@@ -186,7 +200,7 @@ export function runTerritoryPreviewLinkControlsTests() {
     );
 
     const areaIdx = domain.indexOf("export async function loadTerritoryPreviewArea(");
-    const areaFn = domain.slice(areaIdx, areaIdx + 1200);
+    const areaFn = topLevelBlock(domain, areaIdx);
     const guardAt = areaFn.indexOf("link.areaCodes.has(requested.toUpperCase())");
     const loadAt = areaFn.indexOf("loadTerritoryMap(");
     assert.ok(guardAt > -1, "the requested area must be intersected against the link's frozen list");
