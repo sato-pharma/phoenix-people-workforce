@@ -24,6 +24,9 @@ export type AuditEntityType =
   | "deduction_comment"
   | "deduction_decision"
   | "crm_master_export"
+  // Pulling the mobile numbers behind the organogram export. The only route in the module
+  // that hands back personal contact details in bulk, so who took the list is recorded.
+  | "organogram_contact_export"
   | "crm_plan_sync"
   | "sos_raw_template_export"
   | "deduction_export"

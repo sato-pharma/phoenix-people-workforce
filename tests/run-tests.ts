@@ -1513,7 +1513,7 @@ await runTest("phase 22 role matrix security", runPhase22RoleMatrixSecurityTests
 await runTest("CEO organogram visibility", runCeoOrganogramVisibilityTests);
 await runTest("Organogram WhatsApp number", runOrganogramWhatsAppNumberTests);
 await runTest(
-  "Organogram WhatsApp gate (line scope refuses an off-chart person with 404, and the number never reaches the row, the browser or the sheet)",
+  "Organogram WhatsApp gate (line scope refuses an off-chart person with 404, the number never reaches the row or the browser, and it reaches the sheet only from the audited server route)",
   runOrganogramWhatsAppGateTests,
 );
 await runTest("CEO command center", runCeoCommandCenterTests);

@@ -111,6 +111,22 @@ export function hasWhatsAppNumber(raw: string | null | undefined): boolean {
 }
 
 /**
+ * The same repair, rendered as the LOCAL form a person actually dials — `01012345678`,
+ * not the `20…` that wa.me wants. Used by the organogram export, where the reader is a
+ * human with a phone rather than a URL.
+ *
+ * Returns null on exactly the inputs `toWhatsAppNumber` refuses, so a number that cannot
+ * be read confidently is never printed into a sheet as though it were trustworthy. The
+ * export shows the raw stored text in that case — honest about what is on file, rather
+ * than blank (which reads as "no number on record") or repaired-by-guessing.
+ */
+export function toDialableLocalMobile(raw: string | null | undefined): string | null {
+  const international = toWhatsAppNumber(raw);
+  if (!international) return null;
+  return `0${international.slice(EGYPT_COUNTRY_CODE.length)}`;
+}
+
+/**
  * The chat URL. No `text` parameter on purpose: the owner asked to be taken to the
  * person's WhatsApp ready to write, and a canned opening line put words in his mouth.
  */

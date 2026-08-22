@@ -20,13 +20,26 @@
  * (organogram-employee-detail.ts). And the organogram itself is manager/head-office
  * only: `app/employee-portals/organogram/page.tsx` admits just the company-scoped and
  * line-scoped roles. So this changes the ergonomics of reaching those addresses, not
- * who may see them. The mobile number is in that same safe section and is deliberately
- * left out of both the clipboard and the sheet — owner instruction, 2026-08-22:
- * "no personal data, work fields only".
+ * who may see them.
+ *
+ * ## The mobile number is in the SHEET only, and never on the row
+ *
+ * The mobile sits in that same safe Contact section, and on 2026-08-23 the owner asked for
+ * it in the export. Two boundaries hold it in place:
+ *
+ * - **Not in the clipboard.** Copy exists to fill a To or Bcc field; a phone number in
+ *   that string is noise at best.
+ * - **Not on `OrganogramReportRow`.** The sheet is built in the browser, so a field on the
+ *   row would hand every viewer's page every colleague's number on every load, exported or
+ *   not. `buildOrganogramExportRows` takes the numbers as a separate argument instead,
+ *   fetched from `/api/reports/organogram/contact-numbers` at the moment Export is pressed
+ *   (`organogram-contact-numbers-client.ts`). `tests/organogram-whatsapp-gate.test.ts`
+ *   pins the row half of that.
  */
 
 import type { ExportColumn, ExportRow } from "@/lib/export/table-workbook";
 import { formatDateOnly } from "@/lib/date-only";
+import { canonicalHrIdKey } from "@/lib/hr-id";
 import {
   normalizeSearchValue,
   rowKey,
@@ -241,11 +254,12 @@ export function formatOrganogramEmailList(emails: string[]): string {
 
 /**
  * The structure sheet's columns — the flattened SAFE sections of the node-detail popup
- * (Identity, Placement, Reporting & tenure, Contact) minus the mobile number.
+ * (Identity, Placement, Reporting & tenure, Contact).
  *
  * No column is `numeric`, so the builder adds no TOTAL row: summing HR IDs or hire
  * dates would be meaningless. **Do not add a salary, national ID, birth date, gender,
- * address or bank column here** — see OrganogramWorkFields.
+ * address or bank column here** — see OrganogramWorkFields. Contact details stop at the
+ * work email and the mobile, which is where the popup's safe section stops too.
  */
 export const ORGANOGRAM_EXPORT_COLUMNS: ExportColumn[] = [
   { key: "hrId", label: "HR ID", width: 12 },
@@ -256,6 +270,10 @@ export const ORGANOGRAM_EXPORT_COLUMNS: ExportColumn[] = [
   { key: "type", label: "Type", width: 11 },
   { key: "status", label: "Status", width: 12 },
   { key: "workEmail", label: "Work Email", width: 32 },
+  // Filled from the server at export time, never from the row. `text` keeps Excel from
+  // eating the leading zero — which is exactly how 124 of the 175 stored numbers lost
+  // theirs before they ever reached this app.
+  { key: "mobile", label: "Mobile", text: true, width: 16 },
   { key: "department", label: "Department", width: 18 },
   { key: "line", label: "Line", width: 18 },
   { key: "region", label: "Region", width: 18 },
@@ -283,9 +301,21 @@ function titleCase(value: string | null | undefined): string {
     .join(" ");
 }
 
-export function buildOrganogramExportRows(rows: OrganogramReportRow[]): ExportRow[] {
+/**
+ * Flatten the picked rows into sheet rows.
+ *
+ * `mobileByHrId` is separate from `rows` on purpose — see the header. It is keyed by
+ * `canonicalHrIdKey`, comes from `fetchOrganogramMobileNumbers()`, and is optional:
+ * omit it and the Mobile column is blank, which is what every caller that has no
+ * business pulling numbers gets, tests included.
+ */
+export function buildOrganogramExportRows(
+  rows: OrganogramReportRow[],
+  mobileByHrId?: ReadonlyMap<string, string> | null,
+): ExportRow[] {
   return rows.map((row) => {
     const isVacancy = row.type === "vacancy";
+    const mobileKey = canonicalHrIdKey(row.hrId);
     return {
       area: row.areaName ?? "",
       contractRenewal: exportDate(row.contractRenewalDate),
@@ -297,6 +327,8 @@ export function buildOrganogramExportRows(rows: OrganogramReportRow[]): ExportRo
       line: row.lineName ?? "",
       manager: row.managerName ?? "",
       managerHrId: row.managerHrId ?? "",
+      // A vacant seat has nobody to call, so it stays blank rather than borrowing a number.
+      mobile: isVacancy || !mobileKey ? "" : (mobileByHrId?.get(mobileKey) ?? ""),
       name: isVacancy ? "Open Vacancy" : organogramAudienceName(row),
       nameAr: row.nameAr ?? "",
       region: row.regionName ?? "",

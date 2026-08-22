@@ -634,6 +634,14 @@ export const accessRegistry = [
   sessionApi({ methods: allMethods, pattern: "/api/recruitment/hiring-manager/applications/**", permission: { resource: "hiring_interviews", action: "read" }, csrfRequired: true }),
   sessionApi({ methods: allMethods, pattern: "/api/recruitment/hiring-manager/interviews/**", permission: { resource: "hiring_interviews", action: "update" }, csrfRequired: true }),
   sessionApi({ methods: readOnly, pattern: "/api/reports/vacancies", permission: { resource: "vacancies", action: "read" } }),
+  // Listed AHEAD of the blanket /api/reports/** below, which would otherwise swallow it. The
+  // permission is identical — this entry exists to DECLARE the audit. It is the one organogram
+  // route that hands back personal contact data in bulk (the mobile numbers for the caller's
+  // whole chart, for the XLSX export), so who pulled that list, and when, is worth recording.
+  // The row itself is written by writeRequiredAuditLog inside the handler: this file is a
+  // declarative inventory that only tests and scripts read, and declaring an audit here has
+  // never caused one to be written.
+  sessionApi({ audit: { classification: "export", required: true }, methods: readOnly, pattern: "/api/reports/organogram/contact-numbers", permission: { resource: "organogram", action: "read" } }),
   sessionApi({ methods: readOnly, pattern: "/api/reports/**", permission: { resource: "organogram", action: "read" } }),
   sessionApi({ methods: allMethods, pattern: "/api/resignations/**", permission: { resource: "resignations", action: "read" }, csrfRequired: true }),
   sessionApi({ audit: { classification: "access-read", required: true }, methods: ["GET"], pattern: "/api/weekly-plans", permission: { resource: "weekly_plans", action: "read" }, guard: "domain-helper" }),

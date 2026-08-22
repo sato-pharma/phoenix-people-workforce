@@ -34,6 +34,7 @@ import {
   type OrganogramAudienceFacet,
   type OrganogramAudienceFilters,
 } from "@/lib/reports/organogram-audience";
+import { fetchOrganogramMobileNumbers } from "@/lib/reports/organogram-contact-numbers-client";
 import type { OrganogramRow } from "@/lib/reports/organogram-view-model";
 import { cn } from "@/lib/utils";
 
@@ -127,6 +128,13 @@ export function OrganogramAudienceDialog({ onClose, rows, scopeLabel }: Props) {
     [picked],
   );
   const exportRows = React.useMemo(() => buildOrganogramExportRows(picked), [picked]);
+  // Numbers are pulled at export time so the dialog never holds them — see the header of
+  // organogram-audience.ts. The server answers for the whole chart; only the picked rows
+  // ever look themselves up in it.
+  const resolveExportRows = React.useCallback(async () => {
+    const mobileByHrId = await fetchOrganogramMobileNumbers();
+    return buildOrganogramExportRows(picked, mobileByHrId);
+  }, [picked]);
 
   const tickedCount = React.useMemo(
     () => filtered.filter((row) => selectedKeys.has(organogramAudienceKey(row))).length,
@@ -418,6 +426,7 @@ export function OrganogramAudienceDialog({ onClose, rows, scopeLabel }: Props) {
               <ExportXlsxButton
                 columns={ORGANOGRAM_EXPORT_COLUMNS}
                 label={`Export ${picked.length} to XLSX`}
+                resolveRows={resolveExportRows}
                 rows={exportRows}
                 sheetName="Organogram"
                 subtitle={`${scopeLabel} · ${picked.length} rows`}

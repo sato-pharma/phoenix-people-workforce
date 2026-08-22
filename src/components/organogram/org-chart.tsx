@@ -44,6 +44,7 @@ import {
   ORGANOGRAM_EXPORT_COLUMNS,
   buildOrganogramExportRows,
 } from "@/lib/reports/organogram-audience";
+import { fetchOrganogramMobileNumbers } from "@/lib/reports/organogram-contact-numbers-client";
 import { calculateOrganogramStructureKpis } from "@/lib/reports/organogram-safety";
 import {
   type ManagerLane,
@@ -1025,6 +1026,13 @@ export function OrgChartTree({
   // come from the shared audience module so this sheet and the picker's filtered sheet
   // are the same sheet, never two drifting definitions of "the organogram export".
   const exportRows = React.useMemo(() => buildOrganogramExportRows(rows), [rows]);
+  // The Mobile column is fetched when Export is pressed, never carried on the rows the
+  // chart holds — see the header of organogram-audience.ts for why that distinction is
+  // the whole point.
+  const resolveExportRows = React.useCallback(async () => {
+    const mobileByHrId = await fetchOrganogramMobileNumbers();
+    return buildOrganogramExportRows(rows, mobileByHrId);
+  }, [rows]);
 
   const kpiIconClassName = "h-4 w-4";
   const kpiCards: Array<{ actual: number; icon: React.ReactNode; label: string; tone: KpiTone; total: number; vacant: number }> = [
@@ -1105,6 +1113,7 @@ export function OrgChartTree({
           </button>
           <ExportXlsxButton
             columns={ORGANOGRAM_EXPORT_COLUMNS}
+            resolveRows={resolveExportRows}
             rows={exportRows}
             sheetName="Organogram"
             subtitle={`${resolvedLineName} · ${employeeCount} employees`}
