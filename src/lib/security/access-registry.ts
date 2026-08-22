@@ -353,6 +353,12 @@ export const accessRegistry = [
   sessionApi({ methods: allMethods, pattern: "/api/excuses/**", permission: { resource: "employee_profile", action: "read" }, guard: "domain-helper" }),
   sessionApi({ audit: { classification: "export", required: true }, methods: readOnly, pattern: "/api/exports", permission: { resource: "probation", action: "export" }, guard: "domain-helper" }),
   sessionApi({ methods: allMethods, pattern: "/api/hiring-documents/**", permission: { resource: "employee_documents", action: "read" } }),
+  // The hiring pack — the printable contract and Form 1 — is the same workflow as the tracker above
+  // seen from the other end, so it is gated on the same resource. Reading or printing needs `read`;
+  // saving the profile and recording a signature need `update`, which is why this is two entries
+  // and not one blanket: a blanket would say `read` and quietly understate what a PUT can do.
+  sessionApi({ methods: readOnly, pattern: "/api/hiring-pack/**", permission: { resource: "employee_documents", action: "read" } }),
+  sessionApi({ methods: ["PUT", "POST"], pattern: "/api/hiring-pack/**", permission: { resource: "employee_documents", action: "update" }, csrfRequired: true }),
   sessionApi({ methods: allMethods, pattern: "/api/imports/**", permission: { resource: "employees", action: "import" } }),
   sessionApi({ audit: { classification: "export", required: true }, methods: readOnly, pattern: "/api/admin/users/bulk", permission: { resource: "user_admin", action: "export" } }),
   sessionApi({ methods: ["GET"], pattern: "/api/marketing/roi-refresh", permission: { resource: "overview", action: "read" }, guard: "domain-helper" }),

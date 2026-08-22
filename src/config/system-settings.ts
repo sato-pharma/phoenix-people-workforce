@@ -99,6 +99,62 @@ export const systemDocuments = {
   },
 } as const;
 
+/**
+ * The employing company as it must appear on legal paperwork.
+ *
+ * Read by the hiring pack — the employment contract and social-insurance Form 1 — which are the
+ * only two places in Phoenix that speak for the company as a legal person rather than as a brand.
+ * Everything here is transcribed verbatim from the signed contract template, Arabic orthography
+ * included, because a contract that spells the registered address differently from the commercial
+ * register is a contract with a defect in it.
+ *
+ * The four `registration` values are the company's own government identifiers. They are NOT in this
+ * repository's history, no Phoenix table holds them, and they cannot be guessed — so an empty
+ * string here deliberately prints as a visible gap on the form rather than as plausible-looking
+ * wrong digits, which is the failure that matters when the reader is an insurance office clerk.
+ * Fill them once and every future Form 1 carries them.
+ */
+export const systemLegalEntity = {
+  legalNameAr: "شركة ساتو فارما",
+  legalNameEn: "Sato Pharma",
+  headOfficeAr: "القاهرة – 1 ش محمد عبد المنعم، منشية السد العالي – قسم أول السلام – القاهرة",
+  /** The city named in the contract's opening line ("وفي مدينة القاهرة"). */
+  contractCityAr: "القاهرة",
+  /** Signs as الطرف الأول. Named in the contract body, so a change here is a contract change. */
+  responsibleManagerAr: "الدكتور/ أنور إبراهيم أحمد إبراهيم",
+  responsibleManagerTitleAr: "المدير المسئول",
+  registration: {
+    /** رقم المنشأة — eight digits, the establishment's NOSI number (the form prints 8 boxes). */
+    insuranceEstablishmentNumber: "",
+    /** قطاع المنشأة — two digits. */
+    insuranceSectorCode: "",
+    /** رقم التسجيل الضريبي — printed as three groups (nnn/nnnnn/nnn). */
+    taxRegistrationNumber: "",
+    /** The default NOSI branch office ("مكتب ..........") for new files. */
+    defaultInsuranceOffice: "",
+  },
+} as const;
+
+/**
+ * Commercial terms that appear as blanks in the employment contract but are company policy rather
+ * than facts about a person. A hiring profile row may override any of them for one hire; when it
+ * does not, these are what print.
+ */
+export const systemContractDefaults = {
+  /** مادة (4) — contract length, and the three-month probation inside it. */
+  durationMonths: 12,
+  probationMonths: 3,
+  /** مادة (10) — the sustained-underachievement threshold and its window. */
+  underperformanceThresholdPct: 70,
+  underperformanceMonths: 3,
+  /** مادة (14) — service owed after a company-funded course. */
+  trainingBondMonths: 12,
+  /** مادة (19) — "حُرر هذا العقد من أربع نسخ". Four copies, each signed. */
+  contractCopies: 4,
+  /** Form 1 back-page instruction 1 — "من أصل وصورتين". An original and two copies. */
+  form1Copies: 3,
+} as const;
+
 export const systemAuthEmailText = {
   accountSetupSubject: `${systemIdentity.appName} account setup`,
   accountSetupSummary: `Use this one-time link to create your ${systemIdentity.appName} password. After that, sign in with your HR_ID and the password you choose.`,

@@ -69,6 +69,10 @@ export function runEmployeePortalBottomNavTests() {
     "/employee-portals/recruitment",
     "/employee-portals/cv-database",
     "/employee-portals/hiring-documents",
+    // Contract & Form 1: the same Talent-Acquisition-only class, and it is the least mobile page in
+    // the module — a long statutory data-entry form whose only output is paper. Nobody prints four
+    // contracts and three duplex Form 1s from a phone. Desk work by definition.
+    "/employee-portals/hiring-pack",
     // Inbound Intake Health: same Talent-Acquisition-only class again, and it is a wide read-only
     // table (a 30-day funnel plus the dead-letter list). Desk work, not a phone shortcut.
     "/employee-portals/intake-health",
