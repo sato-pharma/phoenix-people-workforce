@@ -120,6 +120,61 @@ export function normalizeRegionCode(value: string | null | undefined) {
   return String(value ?? "").trim().toUpperCase();
 }
 
+export type PlanningOwner = {
+  /**
+   * The district the AU seat model states for this employee outright — from the seats they
+   * manage, else the seat they occupy. This is the authority: the seat model is the source of
+   * truth for org structure, and unlike the two fields below it is not hand-typed. Resolves for
+   * 15 employees the other two miss (measured against production 2026-08-22), and disagrees
+   * with neither of them anywhere.
+   */
+  seatRegionCode?: string | null;
+  /**
+   * The area on the plan owner's employee row, matched against the seat map. Second choice: it
+   * is free text, so it misses composite territories ("Fayoum-Beni Suef") and manager rows that
+   * carry a region word ("Cairo", "Upper Egypt") instead of an area.
+   */
+  areaName?: string | null;
+  /** Last resort, and often null in practice. Hand-editable, and observed drifting. */
+  regionCode?: string | null;
+};
+
+/**
+ * Which DM district the plan owner sits in.
+ *
+ * Preference order, most authoritative first: the district the seat model states for them, then
+ * the district their employee-row area falls in, then the hand-typed region code. Each step is
+ * skipped when it yields nothing, so a blank at one level falls through instead of pinning the
+ * answer to "" and silently widening the picker to the whole region.
+ *
+ * The area step assumes an area name maps to ONE district within a line. That holds because the
+ * seat map is restricted to currently-effective rows (see loadPlanningAreaSeats), the same
+ * reasoning region-resolver.ts relies on. Rather than trust it blindly, an ambiguous name — one
+ * matching seats in two districts — is treated as unresolved and falls through to the region
+ * code, so a mid-transition or duplicated seat row can never silently pick a district by
+ * whichever row the view happened to return first.
+ */
+function resolveOwnDistrict(
+  seats: readonly PlanningAreaSeat[],
+  owner: PlanningOwner | null | undefined,
+): string {
+  const fromSeatModel = normalizeRegionCode(owner?.seatRegionCode);
+  if (fromSeatModel) return fromSeatModel;
+
+  const areaKey = owner?.areaName?.trim().toLowerCase();
+  if (areaKey) {
+    const codes = new Set(
+      seats
+        .filter((seat) => seat.areaName.trim().toLowerCase() === areaKey)
+        .map((seat) => normalizeRegionCode(seat.regionCode))
+        .filter(Boolean),
+    );
+    if (codes.size === 1) return [...codes][0];
+  }
+
+  return normalizeRegionCode(owner?.regionCode);
+}
+
 /**
  * The areas offered for `selectedRegion`, in display order.
  *
@@ -128,33 +183,6 @@ export function normalizeRegionCode(value: string | null | undefined) {
  * Qena. When they pick some other region (a trip outside their territory) the whole of that
  * region's areas for their line are offered, so the picker is never empty.
  */
-export type PlanningOwner = {
-  /** The area on the plan owner's employee row. Preferred: (line, area) determines the
-   *  district in the au model, whereas the region columns are hand-editable and do drift. */
-  areaName?: string | null;
-  /** Fallback only, and often null in practice. */
-  regionCode?: string | null;
-};
-
-/**
- * Which DM district the plan owner sits in. Their AREA decides, because the au seat model
- * derives region from (line, area) — see region-resolver.ts. The region columns on the
- * employee row are hand-editable and have been observed contradicting the area (a rep whose
- * area is Minia 1, a UE-1 area, carrying region_name "Upper Egypt 2" and a null region_code),
- * so they are only consulted when the area resolves to nothing.
- */
-function resolveOwnDistrict(
-  seats: readonly PlanningAreaSeat[],
-  owner: PlanningOwner | null | undefined,
-): string {
-  const areaKey = owner?.areaName?.trim().toLowerCase();
-  if (areaKey) {
-    const hit = seats.find((seat) => seat.areaName?.trim().toLowerCase() === areaKey);
-    if (hit) return normalizeRegionCode(hit.regionCode);
-  }
-  return normalizeRegionCode(owner?.regionCode);
-}
-
 export function planningAreaOptions(
   seats: readonly PlanningAreaSeat[],
   selectedRegion: string | null | undefined,
@@ -181,4 +209,29 @@ export function planningAreaOptions(
     areas.push(areaName);
   }
   return areas.sort((left, right) => left.localeCompare(right));
+}
+
+/**
+ * Whether `area` is a seat area that sits in `region` for this line — the server-side check
+ * behind the Area picker.
+ *
+ * Deliberately answers `true` for an area the seat map has never heard of. 48 of the 325 live
+ * plan rows in production carry a legacy spelling ("Gharbia (1)", "Tanta", "Qaluibia") that no
+ * longer matches a seat, and rejecting those would block real people mid-plan for a data
+ * problem they cannot fix. Only a KNOWN area filed under the WRONG region is a real error, and
+ * exactly one live row is in that state.
+ */
+export function planningAreaBelongsToRegion(
+  seats: readonly PlanningAreaSeat[],
+  selectedRegion: string | null | undefined,
+  area: string | null | undefined,
+): boolean {
+  const areaKey = area?.trim().toLowerCase();
+  if (!areaKey) return true;
+  const targetRegion = canonicalPlanningRegionName(selectedRegion);
+  if (!targetRegion) return true;
+
+  const matches = seats.filter((seat) => seat.areaName.trim().toLowerCase() === areaKey);
+  if (matches.length === 0) return true;
+  return matches.some((seat) => canonicalPlanningRegionName(seat.regionName) === targetRegion);
 }

@@ -1,3 +1,4 @@
+import { normalizeHrIdForAccess } from "@/lib/hr-id";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { normalizeRegionCode, type PlanningAreaSeat } from "@/lib/weekly-planning/regions";
 
@@ -57,4 +58,81 @@ export async function loadPlanningAreaSeats(lineId: number | null | undefined): 
     seats.push({ areaName, regionCode, regionName: regionNameByCode.get(regionCode) ?? null });
   }
   return seats;
+}
+
+/**
+ * What the AU seat model knows about people, keyed by HR id.
+ *
+ * The employee roster's free-text `area_name` is blank for five currently-occupied areas
+ * (Beni Suef, Fayoum, Dokki - Mohandseen - Bolak, Gharbia 1 (Tanta), Port said - Domiat), which
+ * is why the Area picker was moved onto the seat model in the first place. The rep list still
+ * reads that same blank column, so those areas were offered with no rep behind them. This gives
+ * both lookups from one small read — the view is 97 rows.
+ */
+export type PlanningSeatDirectory = {
+  /** HR id -> the area their AU rep seat covers. Fills the blank the employee row leaves. */
+  areaByHrId: Map<string, string>;
+  /** HR id -> the DM district the seat model states: seats they MANAGE first, else the seat they occupy. */
+  districtByHrId: Map<string, string>;
+};
+
+type SeatDriftRow = {
+  hr_id?: string | null;
+  seat_tier?: string | null;
+  seat_area_name?: string | null;
+  seat_region_code?: string | null;
+  seat_manager_hr_id?: string | null;
+};
+
+// MUST match the key service.ts builds with normalizeHrId — that lowercases AND strips the
+// hyphen ("B-1" -> "b1"), so a plain trim/uppercase key here would never match anything.
+const normalizeSeatHrId = (value: string | null | undefined) => normalizeHrIdForAccess(value) ?? "";
+
+/** Collapse a multimap to the entries with exactly one distinct value — an ambiguous id stays unresolved. */
+function onlyUnambiguous(values: Map<string, Set<string>>): Map<string, string> {
+  const resolved = new Map<string, string>();
+  for (const [key, set] of values) {
+    if (set.size === 1) resolved.set(key, [...set][0]);
+  }
+  return resolved;
+}
+
+export async function loadPlanningSeatDirectory(): Promise<PlanningSeatDirectory> {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("au_v_employee_seat_drift")
+    .select("hr_id,seat_tier,seat_area_name,seat_region_code,seat_manager_hr_id");
+  if (error) throw new Error(error.message);
+
+  const areaByHrId = new Map<string, string>();
+  const managed = new Map<string, Set<string>>();
+  const occupied = new Map<string, Set<string>>();
+
+  for (const row of (data ?? []) as SeatDriftRow[]) {
+    const hrId = normalizeSeatHrId(row.hr_id);
+    const areaName = row.seat_area_name?.trim();
+    const regionCode = normalizeRegionCode(row.seat_region_code);
+    const managerHrId = normalizeSeatHrId(row.seat_manager_hr_id);
+
+    if (hrId && areaName && row.seat_tier === "REP" && !areaByHrId.has(hrId)) {
+      areaByHrId.set(hrId, areaName);
+    }
+    if (!regionCode) continue;
+    // A manager's own REP seat (an acting DM still covering a territory) would otherwise make
+    // them look like they occupy a district they merely sit inside; managed seats win below.
+    if (managerHrId) {
+      const set = managed.get(managerHrId) ?? new Set<string>();
+      set.add(regionCode);
+      managed.set(managerHrId, set);
+    }
+    if (hrId) {
+      const set = occupied.get(hrId) ?? new Set<string>();
+      set.add(regionCode);
+      occupied.set(hrId, set);
+    }
+  }
+
+  const districtByHrId = onlyUnambiguous(occupied);
+  for (const [hrId, code] of onlyUnambiguous(managed)) districtByHrId.set(hrId, code);
+  return { areaByHrId, districtByHrId };
 }

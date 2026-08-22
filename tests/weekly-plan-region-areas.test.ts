@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import {
   APPROVED_PLANNING_REGIONS,
   canonicalPlanningRegionName,
+  planningAreaBelongsToRegion,
   planningAreaOptions,
   planningAreasForRegion,
 } from "../src/lib/weekly-planning/regions.ts";
@@ -120,6 +121,99 @@ export function runWeeklyPlanRegionAreasTests() {
     ["Beni Suef", "Minia 1", "Minia 2"],
   );
 
+  // ------------------------------------------- 2b. the seat model outranks both hand-typed fields
+
+  // The AU seat model states the district outright, and it wins over BOTH the area and the
+  // region code. This is what makes the narrowing work for the 15 employees — mostly District
+  // Sales Managers — whose employee row carries a region word like "Upper Egypt" or "Cairo" in
+  // area_name and no region code at all, so neither hand-typed field can place them.
+  assert.deepEqual(
+    planningAreaOptions(ANTI_INFECTIVE_SEATS, "Upper Egypt", {
+      seatRegionCode: "UE-1",
+      areaName: "Assuit 1",
+      regionCode: "UE-2",
+    }),
+    ["Beni Suef", "Minia 1", "Minia 2"],
+    "the seat model's district must outrank both the area and the region code",
+  );
+  // A manager whose area_name holds a region word, with the seat model behind them.
+  assert.deepEqual(
+    planningAreaOptions(ANTI_INFECTIVE_SEATS, "Upper Egypt", {
+      seatRegionCode: "UE-1",
+      areaName: "Upper Egypt",
+      regionCode: null,
+    }),
+    ["Beni Suef", "Minia 1", "Minia 2"],
+    "a manager whose area_name is a region word must still get their own district",
+  );
+  // THE manager shape that dominates production: area_name is a region word ("Cairo", "Giza",
+  // "Upper Egypt", "Delta (1)" — 22 of the 25 active DSM/NSM rows), no region code, and no seat
+  // behind them either. Nothing can place them, so they get the whole region rather than an
+  // empty picker. Pinned so the fallback stays deliberate rather than accidental.
+  assert.equal(
+    planningAreaOptions(ANTI_INFECTIVE_SEATS, "Upper Egypt", { areaName: "Upper Egypt" }).length,
+    9,
+    "an unplaceable manager gets the whole region, never an empty picker",
+  );
+  assert.equal(
+    planningAreaOptions(ANTI_INFECTIVE_SEATS, "Cairo", { areaName: "Cairo" }).length,
+    2,
+    "the same holds in a region with no district split",
+  );
+  // A composite territory that is nobody's seat area ("Fayoum-Beni Suef", carried by two live
+  // reps) must still reach the region code rather than dead-ending on the failed area match.
+  assert.deepEqual(
+    planningAreaOptions(ANTI_INFECTIVE_SEATS, "Upper Egypt", {
+      areaName: "Fayoum-Beni Suef",
+      regionCode: "UE-1",
+    }),
+    ["Beni Suef", "Minia 1", "Minia 2"],
+  );
+  // A blank seat district must FALL THROUGH to the next authority, not pin the answer to "".
+  assert.deepEqual(
+    planningAreaOptions(ANTI_INFECTIVE_SEATS, "Upper Egypt", { seatRegionCode: "   ", regionCode: "UE-1" }),
+    ["Beni Suef", "Minia 1", "Minia 2"],
+    "a blank seat district must not swallow the region code",
+  );
+  assert.deepEqual(
+    planningAreaOptions(
+      [{ areaName: "Minia 1", regionCode: "", regionName: "Upper Egypt 1" }, ...ANTI_INFECTIVE_SEATS],
+      "Upper Egypt",
+      { areaName: "Minia 1", regionCode: "UE-1" },
+    ),
+    ["Beni Suef", "Minia 1", "Minia 2"],
+    "a seat with a blank region code must not swallow the region code either",
+  );
+  // An area name matching seats in TWO districts is ambiguous, so it resolves to neither and
+  // falls through — never to whichever row happened to come first.
+  assert.equal(
+    planningAreaOptions(
+      [{ areaName: "Minia 1", regionCode: "UE-2", regionName: "Upper Egypt 2" }, ...ANTI_INFECTIVE_SEATS],
+      "Upper Egypt",
+      { areaName: "Minia 1" },
+    ).length,
+    9,
+    "an area mapped to two districts must not silently pick one by row order",
+  );
+
+  // ------------------------------------------------- 2c. the server-side area check
+  // Only a KNOWN area filed under the WRONG region is rejected. Legacy spellings the seat map
+  // has never heard of pass, because 48 of the 325 live plan rows carry one.
+  assert.equal(planningAreaBelongsToRegion(ANTI_INFECTIVE_SEATS, "Upper Egypt", "Minia 1"), true);
+  assert.equal(planningAreaBelongsToRegion(ANTI_INFECTIVE_SEATS, "Upper Egypt", "  minia 1 "), true);
+  assert.equal(
+    planningAreaBelongsToRegion(ANTI_INFECTIVE_SEATS, "Cairo", "Minia 1"),
+    false,
+    "an Upper Egypt area chosen under Cairo must be rejected",
+  );
+  assert.equal(
+    planningAreaBelongsToRegion(ANTI_INFECTIVE_SEATS, "Delta 1", "Gharbia (1)"),
+    true,
+    "a legacy spelling the seat map does not know must pass, not block a submission",
+  );
+  assert.equal(planningAreaBelongsToRegion(ANTI_INFECTIVE_SEATS, "Upper Egypt", null), true);
+  assert.equal(planningAreaBelongsToRegion([], "Upper Egypt", "Minia 1"), true, "no seat map = no check");
+
   // The mirror case: a UE-2 rep gets UE-2 and never Minia or Beni Suef.
   const ue2 = planningAreaOptions(ANTI_INFECTIVE_SEATS, "Upper Egypt", { regionCode: "UE-2" });
   assert.deepEqual(ue2, ["Assuit 1", "Assuit 2", "Qena 1", "Qena 2", "Sohag1", "Sohag2"]);
@@ -220,13 +314,40 @@ export function runWeeklyPlanRegionAreasTests() {
     /planningAreaOptions\(source\.seats, region, source\.owner\)[\s\S]{0,200}planningAreasForRegion\(source\.roster/,
     "areasForRegion must try the seat model first and fall back to the roster",
   );
-  // The owner's own area has to actually reach the client — it is what decides the district.
+  // All THREE district authorities have to reach the client, in order. Each is pinned
+  // separately: the seat code is the one that resolves for 15 people the others miss, the area
+  // is second, and the region code is the ONLY route for the 8 field-force employees whose area
+  // is blank or unknown to the seat map — Hanan Safwat (AI-0012, Beni Suef) among them, which
+  // is the rep the original empty-picker bug was about.
+  assert.match(serviceSrc, /seatRegionCode: ownSeatRegionCode/, "the payload must carry the owner's seat district");
   assert.match(serviceSrc, /areaName: employee\.areaName/, "the payload must carry the owner's area");
   assert.match(serviceSrc, /regionCode: employee\.regionCode \?\? null/, "the payload must carry the owner's region code");
   assert.match(serviceSrc, /planningAreaSeats,/, "the payload must carry the seat map");
+  // Passing the whole employee row is what keeps those three from drifting apart — the picker
+  // must not be handed a hand-copied subset of it.
   assert.match(
     workspaceSrc,
-    /areaName: workspace\.currentEmployee\?\.areaName \?\? null/,
-    "the Area picker must be given the owner's own area",
+    /owner: workspace\.currentEmployee,/,
+    "the Area picker must be given the owner's whole employee row",
+  );
+  assert.ok(
+    !/ownSeat/.test(workspaceSrc),
+    "the owner's row must be held once, not copied into a second ownSeat field",
+  );
+
+  // The seat model must be read for the two things the employee roster cannot answer: which
+  // district the owner is in, and which area a rep with a blank area_name actually covers.
+  assert.match(loaderSrc, /from\("au_v_employee_seat_drift"\)/, "the seat directory must read the AU seat view");
+  assert.match(
+    serviceSrc,
+    /areaName: candidate\.areaName\?\.trim\(\) \|\| seats\?\.areaByHrId\.get/,
+    "a rep with a blank area_name must fall back to the area their AU seat covers",
+  );
+
+  // The submit path must check the area server-side; the picker narrowing is not enforcement.
+  assert.match(
+    serviceSrc,
+    /planningAreaBelongsToRegion\(options\.planningSeats \?\? \[\], locationText, area\)/,
+    "submitting must reject an area filed under a different region",
   );
 }

@@ -38,7 +38,13 @@ import { useDialogA11y } from "@/components/ui/use-dialog-a11y";
 import { PlanConversationThread } from "@/components/weekly-planning/plan-conversation-thread";
 import type { AccessContext } from "@/lib/auth/permissions";
 import { hrIdsMatch } from "@/lib/hr-id";
-import { APPROVED_PLANNING_REGIONS, canonicalPlanningRegionName, planningAreaOptions, planningAreasForRegion } from "@/lib/weekly-planning/regions";
+import {
+  APPROVED_PLANNING_REGIONS,
+  canonicalPlanningRegionName,
+  planningAreaOptions,
+  planningAreasForRegion,
+  type PlanningOwner,
+} from "@/lib/weekly-planning/regions";
 import { currentCairoDateOnlyIso, PHOENIX_BUSINESS_TIME_ZONE } from "@/lib/i18n/format";
 import { sameLineBookingWarning, type SameLinePlanBooking } from "@/lib/weekly-planning/calendar";
 import type { EmployeePlanKind, EmployeePlanStatus, PlanSlot, PlanWorkweek } from "@/lib/weekly-planning/plan-v1";
@@ -90,13 +96,18 @@ type DraftItem = EmployeePlanItemInput & {
 
 type MedicalRepOption = EmployeePlansWorkspace["medicalRepOptions"][number];
 // Everything the Area picker needs, bundled so it can be threaded to the mobile sheet as one
-// prop. `seats` is the AU seat model and is authoritative; the roster pair is only a fallback
-// for the case where the seat map could not be loaded at all.
+// prop. `seats` is the AU seat model and is authoritative; `roster` is only a fallback for the
+// case where the seat map could not be loaded at all.
 type AreaSource = {
   seats: EmployeePlansWorkspace["planningAreaSeats"];
-  owner: { areaName: string | null; regionCode: string | null };
   roster: MedicalRepOption[];
-  ownSeat: { areaName?: string | null; regionName?: string | null } | null;
+  /**
+   * The plan owner's own employee row, verbatim. It answers two different questions — which
+   * district narrows the seat-model list (PlanningOwner) and which area the roster fallback has
+   * to add back, since the owner is never in their own rep roster — so it is held ONCE rather
+   * than copied into two fields that can drift apart.
+   */
+  owner: (PlanningOwner & { regionName?: string | null }) | null;
 };
 type DayMode = "full" | "split";
 type PlanningActivityValue = EmployeePlanItemInput["activityType"] | "Coaching";
@@ -882,7 +893,7 @@ function needsLineSelection(options: MedicalRepOption[]): boolean {
 function areasForRegion(source: AreaSource, region: string): string[] {
   const fromSeatModel = planningAreaOptions(source.seats, region, source.owner);
   if (fromSeatModel.length > 0) return fromSeatModel;
-  return planningAreasForRegion(source.roster, region, source.ownSeat);
+  return planningAreasForRegion(source.roster, region, source.owner);
 }
 
 /** Map raw service/DB/workflow errors to short, friendly, action-oriented messages. UI-only. */
@@ -1173,14 +1184,10 @@ export function PlansWorkspace({
   const lineOptions = useMemo(() => lineOptionsFromReps(workspace.medicalRepOptions), [workspace.medicalRepOptions]);
 
   // Everything the Area picker reads, assembled once. The AU seat model decides; the roster
-  // pair below it is only reached when that map could not be loaded.
+  // below it is only reached when that map could not be loaded.
   const areaSource = useMemo<AreaSource>(
     () => ({
-      owner: {
-        areaName: workspace.currentEmployee?.areaName ?? null,
-        regionCode: workspace.currentEmployee?.regionCode ?? null,
-      },
-      ownSeat: workspace.currentEmployee ?? null,
+      owner: workspace.currentEmployee,
       roster: workspace.medicalRepOptions,
       seats: workspace.planningAreaSeats,
     }),

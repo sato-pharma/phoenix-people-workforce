@@ -1,8 +1,17 @@
 import crypto from "crypto";
 
 import { writeAuditLog } from "@/lib/admin/audit";
-import { APPROVED_PLANNING_REGIONS, canonicalPlanningRegionName } from "@/lib/weekly-planning/regions";
-import { loadPlanningAreaSeats, type PlanningAreaSeat } from "@/lib/weekly-planning/planning-areas";
+import {
+  APPROVED_PLANNING_REGIONS,
+  canonicalPlanningRegionName,
+  planningAreaBelongsToRegion,
+} from "@/lib/weekly-planning/regions";
+import {
+  loadPlanningAreaSeats,
+  loadPlanningSeatDirectory,
+  type PlanningAreaSeat,
+  type PlanningSeatDirectory,
+} from "@/lib/weekly-planning/planning-areas";
 
 /**
  * Typed errors raised by the weekly-plan state-transition RPCs introduced in
@@ -367,6 +376,8 @@ export type EmployeePlansWorkspace = {
     managerName: string | null;
     regionCode: string | null;
     regionName: string | null;
+    /** The DM district the AU seat model states for the owner — the Area picker's first authority. */
+    seatRegionCode: string | null;
     workweek: PlanWorkweek;
   } | null;
   /** AU seat-model areas for the plan owner's line — the authority behind the Area picker. */
@@ -674,13 +685,29 @@ function vacantMedicalRepOptionsForEmployee(
     }));
 }
 
+/** The owner's line seat map, for the submit-time area check. Fails soft to an empty list,
+ *  which makes that check pass everything rather than block a submission on a read failure. */
+async function planningSeatsForOwner(owner: EmployeeDirectoryRow | null): Promise<PlanningAreaSeat[]> {
+  try {
+    return await loadPlanningAreaSeats(owner?.lineId ?? null);
+  } catch {
+    return [];
+  }
+}
+
 async function medicalRepOptionsForEmployee(
   employee: EmployeeDirectoryRow | null,
   orgWide = false,
   allowedLineNames: string[] | null = null,
+  seatDirectory: PlanningSeatDirectory | null = null,
 ) {
   if (!employee) return [];
   const directory = await getEmployeeDirectory();
+  // A rep whose employee row has a blank area_name is invisible to every area-keyed lookup
+  // (auto-assign, areaHasAssignableRep), so the area the seat model now offers had no rep
+  // behind it. Five occupied areas are in that state, Beni Suef among them. Fails soft: an
+  // unreachable seat view leaves the roster exactly as it was.
+  const seats = seatDirectory ?? (await loadPlanningSeatDirectory().catch(() => null));
   // When the plan owner has a multi-line scope override (e.g. a Product Manager
   // covering both Pedia and Anti infective), the double-visit rep pool must span
   // every scoped line, not just the single line on their own employee row. With
@@ -700,7 +727,7 @@ async function medicalRepOptionsForEmployee(
         : isSameLine(candidate, employee)),
     )
     .map((candidate) => ({
-      areaName: candidate.areaName,
+      areaName: candidate.areaName?.trim() || seats?.areaByHrId.get(normalizeHrId(candidate.hrId)) || null,
       fullName: candidate.displayName,
       hrId: candidate.hrId,
       lineName: candidate.lineName,
@@ -780,6 +807,12 @@ function assertCeoReviewer(access: AccessContext) {
 
 type NormalizeItemsOptions = {
   submit?: boolean;
+  /**
+   * The AU seat map for the plan owner's line. Empty when it could not be loaded, which makes
+   * the area check below pass everything — the picker's narrowing is a convenience, and a
+   * transient read failure must never block a submission.
+   */
+  planningSeats?: readonly PlanningAreaSeat[];
 };
 
 type PlanningMedicalRepOption = {
@@ -925,6 +958,19 @@ function normalizeItem(
   }
   if (options.submit && requiresGeography && !area) {
     throw new Error(`${isCoaching ? "Coaching" : activityDisplayLabel(activityType)} requires selecting an area.`);
+  }
+  // The Area picker narrows to the owner's district, but until now nothing server-side looked
+  // at the area at all — any string was stored. This is the backstop. It rejects only an area
+  // the seat map KNOWS and files under a different region; a spelling the map has never heard
+  // of passes, because 48 of the 325 live plan rows carry legacy spellings ("Gharbia (1)",
+  // "Tanta") that people cannot be asked to fix mid-plan.
+  if (
+    options.submit &&
+    area &&
+    locationText &&
+    !planningAreaBelongsToRegion(options.planningSeats ?? [], locationText, area)
+  ) {
+    throw new Error(`"${area}" is not an area of ${locationText}. Pick an area from the list.`);
   }
   // An area with no real rep at all (vacant seat or none) is a valid, submittable choice —
   // it's only a real gap when a rep does exist for the area but couldn't be resolved (e.g.
@@ -1801,10 +1847,18 @@ export async function getEmployeePlansWorkspace(access: AccessContext): Promise<
   const employee = directory.employees.find((item) => normalizeHrId(item.hrId) === viewerHrId) ?? null;
   const canSubmitPlans = Boolean(employee && canSubmitFromEmployee(employee, access.role) && await canAccess(access, "weekly_plans", "create"));
   const canAcknowledgeHr = isHrReviewer(access, employee);
+  // One read, two jobs: it names the owner's district outright (the Area picker's first
+  // authority) and fills the blank area_name that hides five reps from the rep list.
+  // Fails soft for the same reason the seat map below does.
+  const seatDirectory = await loadPlanningSeatDirectory().catch(() => null);
+  const ownSeatRegionCode = employee
+    ? seatDirectory?.districtByHrId.get(normalizeHrId(employee.hrId)) ?? null
+    : null;
   const medicalRepOptions = await medicalRepOptionsForEmployee(
     employee,
     isOrgWidePlanningEmployee(employee, access.role),
     await resolveViewerAllowedLines(access),
+    seatDirectory,
   );
   const workplaceRegions = workplaceRegionsForEmployee(employee, directory.employees);
   // Fails soft: an unreachable/empty seat map leaves the picker on its roster-derived
@@ -1846,6 +1900,7 @@ export async function getEmployeePlansWorkspace(access: AccessContext): Promise<
             managerName: employee.managerName,
             regionCode: employee.regionCode ?? null,
             regionName: employee.regionName,
+            seatRegionCode: ownSeatRegionCode,
             workweek: resolvePlanWorkweek({
               jobTitle: employeeTitle(employee, access.role),
               role: access.role,
@@ -1877,6 +1932,7 @@ export async function getEmployeePlansWorkspace(access: AccessContext): Promise<
             managerName: employee.managerName,
             regionCode: employee.regionCode ?? null,
             regionName: employee.regionName,
+            seatRegionCode: ownSeatRegionCode,
             workweek: resolvePlanWorkweek({
               jobTitle: employeeTitle(employee, access.role),
               role: access.role,
@@ -2650,7 +2706,7 @@ export async function createEmployeePlan(access: AccessContext, input: {
       isOrgWidePlanningEmployee(employee, access.role),
       await resolveViewerAllowedLines(access),
     ),
-    { submit: Boolean(input.submit) },
+    { planningSeats: await planningSeatsForOwner(employee), submit: Boolean(input.submit) },
   );
   if (input.submit) {
     await assertSubmissionComplete({
@@ -2736,7 +2792,7 @@ export async function updateEmployeePlan(access: AccessContext, planId: string, 
         isOrgWidePlanningEmployee(owner, access.role),
         await resolveViewerAllowedLines(access),
       ),
-      { submit: Boolean(input.submit) },
+      { planningSeats: await planningSeatsForOwner(owner), submit: Boolean(input.submit) },
     );
     if (input.submit) {
       await assertSubmissionComplete({
@@ -2805,7 +2861,7 @@ export async function updateEmployeePlan(access: AccessContext, planId: string, 
       isOrgWidePlanningEmployee(owner, access.role),
       await resolveViewerAllowedLines(access),
     ),
-    { submit: Boolean(input.submit) },
+    { planningSeats: await planningSeatsForOwner(owner), submit: Boolean(input.submit) },
   );
   if (input.submit) {
     await assertSubmissionComplete({

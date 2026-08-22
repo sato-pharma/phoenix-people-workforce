@@ -279,7 +279,13 @@ export function runWeeklyMonthlyPlansV1Tests() {
   for (const fn of ["createEmployeePlan", "updateEmployeePlan", "decideEmployeePlan", "acknowledgeEmployeePlan", "cancelEmployeePlan"]) {
     const fnStart = serviceSource.indexOf(`export async function ${fn}`);
     assert.ok(fnStart >= 0, `${fn} must be exported from service.ts`);
-    const fnBody = serviceSource.slice(fnStart, fnStart + 3000);
+    // Slice to the END of the function, not a fixed byte count. A magic window both
+    // false-FAILS when the function grows past it and false-PASSES by spilling into the
+    // next function's rpc call, so it measured source length rather than the invariant.
+    const rest = serviceSource.slice(fnStart + 1);
+    const nextFn = rest.search(/^export (?:async )?function /m);
+    const fnEnd = nextFn >= 0 ? fnStart + 1 + nextFn : serviceSource.length;
+    const fnBody = serviceSource.slice(fnStart, fnEnd);
     const callsRpcDirectly = fnBody.includes('rpc("phx_weekly_plan_');
     const callsRpcWrapper = /rpc(?:Replace|Decide|Acknowledge|Cancel)Plan(?:Items)?\(/.test(fnBody);
     assert.ok(
