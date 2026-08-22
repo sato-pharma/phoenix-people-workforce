@@ -199,6 +199,17 @@ export function runEmployeePortalNavigationTests() {
   assert.equal(districtManager.showMyCoachingTab, false, "DSM should not see My Coaching Reports");
   assert.equal(districtManager.showTeamCoachingTab, true, "DSM should see Team Coaching Reports");
   assert.equal(districtManager.showTrainingManagerCreateCoachingTab, false, "DSM should not see Create Coaching Report");
+  // Added 2026-08-22 with isLineScopedOrganogramRole's District Manager branch. The DSM held
+  // organogram: ["read"] with no link and no scope gate, so the audience picker inside OrgChartTree
+  // was unreachable for him. The second assertion is the point of the exact-match spelling: the
+  // legacy Head-Office "Manager" rung holds NO organogram grant, so a link there would bounce off
+  // assertPermission — isDistrictManager would have handed it one.
+  assert.equal(districtManager.showOrganogramTab, true, "DSM should see the Organogram (line-scoped, same grain as RM)");
+  assert.equal(
+    resolveEmployeePortalNavVisibility("Manager").showOrganogramTab,
+    false,
+    "The legacy Head-Office 'Manager' rung has no organogram grant and must not get the tab",
+  );
 
   // Regional Manager sits above the DSMs but previously saw NONE of the oversight tabs its own
   // read-permissions already imply — the data layers were RM-ready and only the sidebar flags were

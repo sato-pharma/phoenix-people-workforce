@@ -159,7 +159,19 @@ export function isLineScopedOrganogramRole(access: AccessContext) {
   // inside the whole line, and an RM already has line-wide people visibility through the
   // organogram/team read grants. Sensitive per-person domains (payroll, expenses) stay bounded by
   // their own role-keyed scope resolvers and are unaffected by this.
+  //
+  // District Manager added 2026-08-22 (owner: the audience picker must be on every organogram,
+  // "everyone can copy and paste his scope"). He is the THIRD role to hit the two-gate trap
+  // documented in canAccessCompanyOrganogram above, and the last one left holding it: he has
+  // carried organogram: ["read"] in defaultPermissionMatrix all along, which admitted him past
+  // gate one and dropped him straight into the portal page's redirect, so the grant did nothing
+  // at all. LINE grain, not team grain, for exactly the reason given for the Regional Manager
+  // directly above — the chart's worth is seeing where your own district sits inside the whole
+  // line — and because the report has only company and line modes, never a team one. Sensitive
+  // fields stay shut either way: canViewOrganogramSensitiveFields does NOT list him, so he gets
+  // the safe org + contact profile (work email included) and never salary or national ID.
   return (
+    access.role === "District Manager" ||
     access.role === "National Sales Manager" ||
     access.role === "Regional Manager" ||
     access.role === "Product Manager" ||
