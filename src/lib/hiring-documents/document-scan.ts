@@ -1,5 +1,5 @@
 import { PDFDocument } from "pdf-lib";
-import sharp from "sharp";
+
 
 import { logError } from "@/lib/observability/log";
 import type { HiringDocumentScanMode } from "@/lib/hiring-documents/types";
@@ -25,6 +25,33 @@ import type { HiringDocumentScanMode } from "@/lib/hiring-documents/types";
 // documents that are genuinely black-on-white — a handwritten declaration, a photocopied
 // certificate — where a grey paper background is the problem rather than the point.
 // ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * sharp is loaded ON DEMAND, never at module load. This is not a micro-optimisation — it is why
+ * the Hiring Documents page renders at all.
+ *
+ * `service.ts` imports this module for `scanPagesToPdf`, and the page imports `service.ts` for its
+ * dashboard. A top-level `import sharp from "sharp"` therefore put a native library on the critical
+ * path of a page that does no image work, and when that library failed to load the whole page
+ * returned 500 instead of a checklist. It did fail: the runtime image is Alpine, and Next's
+ * standalone tracer copies sharp's JS binding but not the libvips shared object it links against —
+ * the tracer reads imports, and a DT_NEEDED entry inside a .so is not an import.
+ *
+ * Deferring the load contains that blast radius to the one action that actually needs pixels. If
+ * sharp cannot load, `polishDocumentPhoto` falls back exactly as it does for any other sharp
+ * failure: the page is filed unenhanced rather than lost, and pdf-lib still assembles the PDF
+ * without ever touching sharp.
+ */
+type SharpFactory = typeof import("sharp").default;
+
+let cachedSharp: SharpFactory | null = null;
+
+async function loadSharp(): Promise<SharpFactory> {
+  if (!cachedSharp) {
+    cachedSharp = (await import("sharp")).default;
+  }
+  return cachedSharp;
+}
 
 /**
  * The long edge, in pixels, that a polished page is capped at.
@@ -102,6 +129,7 @@ export async function polishDocumentPhoto(input: {
   if (input.bytes.length === 0) return original;
 
   try {
+    const sharp = await loadSharp();
     let pipeline = sharp(input.bytes)
       // FIRST, and on its own line, because it is the one step that fixes an unusable scan
       // outright: phones record orientation in EXIF rather than rotating the pixels, so a page
@@ -172,6 +200,7 @@ async function convertToEmbeddable(
   original: PolishedPage,
 ): Promise<PolishedPage> {
   try {
+    const sharp = await loadSharp();
     const converted = await sharp(input.bytes).rotate().jpeg({ quality: HIRING_SCAN_JPEG_QUALITY }).toBuffer();
     if (converted.length > 0) {
       return {
