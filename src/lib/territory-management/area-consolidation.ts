@@ -258,7 +258,9 @@ async function previewTable(
     .eq("area_id", areaId)
     .limit(PREVIEW_SAMPLE_LIMIT);
 
-  const rows = ((data ?? []) as Record<string, unknown>[]).map((row) => {
+  // `unknown` first: the table name is a runtime value, so supabase-js widens `data` to
+  // `GenericStringError[]` and refuses a direct cast to a row shape it cannot prove.
+  const rows = ((data ?? []) as unknown as Record<string, unknown>[]).map((row) => {
     const pk = String(row[spec.primaryKey] ?? "");
     const named = spec.displayColumn ? String(row[spec.displayColumn] ?? "").trim() : "";
     return { primaryKey: pk, label: named || pk };
@@ -488,7 +490,7 @@ export async function applyAreaConsolidation(
       .select(spec.primaryKey)
       .eq("area_id", source.id);
 
-    const keys = ((affected ?? []) as Record<string, unknown>[])
+    const keys = ((affected ?? []) as unknown as Record<string, unknown>[])
       .map((row) => String(row[spec.primaryKey] ?? ""))
       .filter(Boolean);
     if (keys.length === 0) continue;

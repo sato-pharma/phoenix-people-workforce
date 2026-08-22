@@ -691,6 +691,17 @@ export const accessRegistry = [
   sessionApi({ audit: { classification: "access-read", required: true }, methods: readOnly, pattern: "/api/territory-management/map", permission: { resource: "sales", action: "read" } }),
   sessionApi({ audit: { classification: "access-read", required: true }, methods: readOnly, pattern: "/api/territory-management/search", permission: { resource: "sales", action: "read" } }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/territory-management/pin", permission: { resource: "sales", action: "import" }, csrfExemptReason: "Authenticated Super-Admin-only JSON write: stores one hand-placed brick coordinate after a server-side role check and an Egypt bounding-box validation." }),
+  // Area Consolidation — the Super Admin's own button for retiring a legacy area onto the area it
+  // actually means. `permission: null, guard: "domain-helper"` is the honest declaration: there is no
+  // coarse resource gate here, the boundary is assertAreaConsolidationAccess() inside
+  // src/lib/territory-management/area-consolidation.ts, and it admits Super Admin alone. Claiming a
+  // resource nothing checks would make this registry lie about where the gate is. The apply and
+  // revert halves move EMPLOYEES between territories, so both are csrfRequired and both call
+  // assertSameOriginMutation(request) before the session is even resolved.
+  sessionApi({ audit: { classification: "access-read", required: true }, methods: readOnly, pattern: "/api/territory-management/area-consolidation", permission: null, guard: "domain-helper" }),
+  sessionApi({ audit: { classification: "access-read", required: true }, methods: readOnly, pattern: "/api/territory-management/area-consolidation/:areaId", permission: null, guard: "domain-helper" }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/territory-management/area-consolidation/:areaId/apply", permission: null, guard: "domain-helper", csrfRequired: true }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/territory-management/area-consolidation/reverts/:consolidationId", permission: null, guard: "domain-helper", csrfRequired: true }),
   // Mints and revokes the passwordless preview links below. Gated on EXPORT, never on read:
   // publishing territory past the login wall is the strongest export there is, so a reader who may
   // not download the map must not be able to hand out a public link to it instead. The domain adds

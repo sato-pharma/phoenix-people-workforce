@@ -87,9 +87,12 @@ export function AreaConsolidationWorkspace() {
   const [confirming, setConfirming] = useState<"apply" | "revert" | null>(null);
   const [notes, setNotes] = useState("");
 
+  // Deliberately sets nothing before its first `await`. The mount effect below calls this, and
+  // `react-hooks/set-state-in-effect` is an ERROR in this repo — a synchronous setState anywhere on
+  // an effect's call path fails the build. `loading` already starts true, so the mount spinner is
+  // covered; the post-mutation refreshes call this too and are covered by `busy` instead, which is
+  // better anyway — reverting a consolidation no longer blanks the whole screen to a spinner.
   const loadCandidates = useCallback(async () => {
-    setLoading(true);
-    setError(null);
     try {
       const response = await fetch("/api/territory-management/area-consolidation", {
         cache: "no-store",
@@ -105,6 +108,10 @@ export function AreaConsolidationWorkspace() {
   }, []);
 
   useEffect(() => {
+    // A mount fetch is the one thing this rule cannot express: the compiler traces THROUGH the async
+    // function and flags every setState it can reach, even the ones after the await. Same disable
+    // and same shape as finance-download-panel.tsx and a dozen other panels in this repo.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void loadCandidates();
   }, [loadCandidates]);
 
@@ -217,7 +224,7 @@ export function AreaConsolidationWorkspace() {
       >
         {(candidates ?? []).length === 0 ? (
           <PortalEmptyState
-            description="Every active area resolves to a current Direct Order area, and nothing is stranded."
+            message="Every active area resolves to a current Direct Order area, and nothing is stranded."
             title="Nothing to consolidate"
           />
         ) : (
