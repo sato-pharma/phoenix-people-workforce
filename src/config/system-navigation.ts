@@ -49,6 +49,7 @@ import {
   Settings2,
   ShieldAlert,
   ShieldCheck,
+  Shuffle,
   SlidersHorizontal,
   Sparkles,
   Stethoscope,
@@ -1705,6 +1706,15 @@ export const masterDataPageItems: readonly AdminToolsPageItem[] = [
     label: "Customers Database",
     description: "Customer directory, mapping, pharmacy master, and marketing's customer database — in one place.",
     roles: ["Super Admin", "SFE Manager", "CEO"],
+  },
+  {
+    href: "/admin/master-data/area-consolidation",
+    icon: Shuffle,
+    label: "Area Consolidation",
+    description: "Move everything off a legacy area onto the area it actually means — you read the list, you press the button.",
+    // Owner, 2026-08-22: Super Admin only. This moves employees and teams between territories in
+    // bulk; it is the most sensitive button in Master Data and nobody else gets it.
+    roles: ["Super Admin"],
   },
 ] as const satisfies readonly AdminToolsPageItem[];
 
