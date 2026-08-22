@@ -56,7 +56,11 @@ export function runSosUiTruthTests() {
     // publishing is a per-(line, period) act and has no filter.
     const exportStart = workspace.indexOf("async function handleExport()");
     assert.ok(exportStart >= 0, "handleExport must exist");
-    const exportBody = workspace.slice(exportStart, exportStart + 1400);
+    // Bound handleExport by its own closing brace at this indent — a real end of function. The
+    // comment above says "scope to handleExport only"; 1400 bytes did that only by luck of
+    // length, and the neighbouring publish call is exactly what it was trying to stay out of.
+    const exportEnd = workspace.slice(exportStart).search(/^  \}$/m);
+    const exportBody = workspace.slice(exportStart, exportEnd >= 0 ? exportStart + exportEnd : workspace.length);
 
     assert.ok(
       !/body: JSON\.stringify\(\{ line: selectedLine, period: selectedPeriod \}\)/.test(exportBody),

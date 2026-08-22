@@ -44,7 +44,12 @@ export function runAutomatedPayrollNotifyPart1ReviewTests() {
   );
   const confirmStart = runServiceSource.indexOf("export async function confirmPart1");
   assert.ok(confirmStart >= 0, "confirmPart1 must exist in run-service.ts");
-  const confirmBody = runServiceSource.slice(confirmStart, confirmStart + 2000);
+  // Slice to the END of confirmPart1, not a fixed byte count. A magic window measures source
+  // LENGTH, not the invariant: it false-FAILS once the function grows past it, and false-PASSES
+  // by spilling into the next function's copy of the marker.
+  const confirmRest = runServiceSource.slice(confirmStart + 1);
+  const nextDecl = confirmRest.search(/^(?:export )?(?:async )?function |^(?:export )?(?:const|type|interface|class) /m);
+  const confirmBody = runServiceSource.slice(confirmStart, nextDecl >= 0 ? confirmStart + 1 + nextDecl : runServiceSource.length);
   assert.ok(
     confirmBody.includes("await notifyPart1Ready(updated);") && confirmBody.includes("await notifyPart1SubmittedForReview(updated);"),
     "both notifications must fire on Part 1 confirm, additive to each other",

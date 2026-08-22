@@ -14,6 +14,32 @@ import { readFileSync } from "node:fs";
 // are invisible: the sheet looks perfectly normal either way.
 // ─────────────────────────────────────────────────────────────────────────────
 
+/**
+ * The WHOLE of one Apps Script function, and nothing past it: bounded by its own closing brace at
+ * column 0, which is a real end.
+ *
+ * Every pin below used to take a fixed byte count instead, and three of the five were already
+ * wrong when this was written. Measured against the live file:
+ *
+ *   headerMatches        1,002 bytes read through a   900-byte window — 102 bytes invisible, and
+ *                        one of its two checks is a `!includes("sheet.getLastColumn()")`, so
+ *                        anything down there would have PASSED
+ *   paintEditable          669 bytes read through a   900-byte window — 231 bytes of the NEXT
+ *                        function, whose text the assertion could have matched instead
+ *   buildEditableFrame   2,190 bytes read through a 2,200-byte window — ten bytes of headroom on
+ *                        a `doesNotMatch`, which goes blind rather than red when it runs out
+ *
+ * A byte count measures how long the function happens to be, never the invariant it claims to
+ * guard, and it fails silently in both directions.
+ */
+function scriptFunction(source: string, name: string): string {
+  const start = source.indexOf(`function ${name}`);
+  if (start < 0) return "";
+  const rest = source.slice(start + 1);
+  const close = rest.search(/^\}/m);
+  return source.slice(start, close >= 0 ? start + 2 + close : source.length);
+}
+
 export function runDirectOrdersSheetEditableColumnsTests() {
   const source = readFileSync(new URL("../docs/direct-orders-live-sheet.gs", import.meta.url), "utf8");
 
@@ -42,16 +68,16 @@ export function runDirectOrdersSheetEditableColumnsTests() {
     /var NOTES_KEY_HEADER = "Request ID";/,
     "notes must be keyed on the Request ID column the report already renders",
   );
-  const capture = source.slice(source.indexOf("function captureEditableByRequestId"));
+  const capture = scriptFunction(source, "captureEditableByRequestId");
   assert.match(
-    capture.slice(0, 1400),
+    capture,
     /var id = String\(ids\[r\]\[0\] \|\| ""\)\.trim\(\);/,
     "the capture must read the id sitting on each row, which is the only pairing still true at " +
       "that moment",
   );
-  const paint = source.slice(source.indexOf("function paintEditable"));
+  const paint = scriptFunction(source, "paintEditable");
   assert.match(
-    paint.slice(0, 900),
+    paint,
     /store\[orderedIds\[r\]\]/,
     "the repaint must look each note up BY ID against the new row order — indexing the store by " +
       "row number is exactly how a note lands on a different order",
@@ -111,7 +137,7 @@ export function runDirectOrdersSheetEditableColumnsTests() {
       "the edge throws and the refresh dies on a sheet that has never been built",
   );
   assert.match(
-    capture.slice(0, 1400),
+    capture,
     /if \(sheet\.getMaxRows\(\) < needRows \|\| sheet\.getMaxColumns\(\) < needCols\) return out;/,
     "the capture must bail out on a sheet too small to hold the block, rather than throwing and " +
       "aborting the refresh",
@@ -147,14 +173,14 @@ export function runDirectOrdersSheetEditableColumnsTests() {
   // Comparing getLastColumn() to Phoenix's width made the answer depend on anything to the RIGHT
   // of the table. Empty, the widths matched and the frame was never built; populated, they stopped
   // matching and the entire layout rebuilt every minute — flicker and mid-read column resizing.
-  const matcher = source.slice(source.indexOf("function headerMatches"));
+  const matcher = scriptFunction(source, "headerMatches");
   assert.ok(
-    !matcher.slice(0, 900).includes("sheet.getLastColumn()"),
+    !matcher.includes("sheet.getLastColumn()"),
     "headerMatches must not measure the sheet's full width: the team's block sits to the right of " +
       "Phoenix's columns, so getLastColumn() makes a note the trigger for a full layout rebuild",
   );
   assert.match(
-    matcher.slice(0, 900),
+    matcher,
     /sheet\.getRange\(at, 1, 1, header\.length\)/,
     "the header comparison must be bounded by Phoenix's own column count",
   );
@@ -191,9 +217,9 @@ export function runDirectOrdersSheetEditableColumnsTests() {
   // ── One palette, no near-misses ───────────────────────────────────────────
   // It shipped with three raw hex values found nowhere else in the workbook — a muddy orange
   // beside ORANGE, an off-white beside TILE_BG. Near-misses of a house colour read as bolted on.
-  const frame = source.slice(source.indexOf("function buildEditableFrame"));
+  const frame = scriptFunction(source, "buildEditableFrame");
   assert.doesNotMatch(
-    frame.slice(0, 2200),
+    frame,
     /#[0-9a-fA-F]{6}/,
     "the team's block must use the workbook's own constants, never a raw hex value — the owner's " +
       "standing rule is to match the module's design identity, never invent a one-off look",
@@ -206,7 +232,7 @@ export function runDirectOrdersSheetEditableColumnsTests() {
       "centred — a half-centred sheet looks like a mistake rather than a choice",
   );
   assert.doesNotMatch(
-    source.slice(source.indexOf("function buildOrdersFrame")).slice(0, 4000),
+    scriptFunction(source, "buildOrdersFrame"),
     /setHorizontalAlignment\("right"\)/,
     "no column on the orders tab may stay right-aligned once the sheet is centred",
   );

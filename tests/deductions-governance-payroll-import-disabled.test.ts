@@ -46,16 +46,25 @@ export function runDeductionsGovernancePayrollImportDisabledTests() {
   //    Wiring assertions: a unit test cannot reach these without a database.
   const handoff = readFileSync("src/lib/deductions-governance/payroll-handoff.ts", "utf8");
 
-  const previewBody = handoff.slice(handoff.indexOf("export async function previewDeductionsPayrollImport"));
+  // "Before doing any work" has a real edge, and it is not 600 bytes: it is the function's first
+  // `await`. Bounding on it says what the assertion means, cannot be outgrown by a longer comment
+  // above the check, and is TIGHTER than the byte window was (~250 bytes here, not 600).
+  const prelude = (name: string) => {
+    const start = handoff.indexOf(`export async function ${name}`);
+    const rest = handoff.slice(start + 1);
+    const body = rest.slice(0, rest.search(/^(?:export )?(?:async )?function |^(?:export )?(?:const|type|interface|class) /m) + 1 || rest.length);
+    const firstAwait = body.indexOf("await ");
+    return firstAwait >= 0 ? body.slice(0, firstAwait) : body;
+  };
+
   assert.match(
-    previewBody.slice(0, 600),
+    prelude("previewDeductionsPayrollImport"),
     /if \(!DEDUCTIONS_GOVERNANCE_PAYROLL_IMPORT_ENABLED\)/,
     "previewDeductionsPayrollImport must check the flag before doing any work",
   );
 
-  const confirmBody = handoff.slice(handoff.indexOf("export async function confirmDeductionsPayrollImport"));
   assert.match(
-    confirmBody.slice(0, 600),
+    prelude("confirmDeductionsPayrollImport"),
     /if \(!DEDUCTIONS_GOVERNANCE_PAYROLL_IMPORT_ENABLED\)/,
     "confirmDeductionsPayrollImport is the one that WRITES salary_records — it must gate on its own, not rely on preview()",
   );

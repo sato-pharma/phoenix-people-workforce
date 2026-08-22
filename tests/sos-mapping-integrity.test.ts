@@ -67,7 +67,11 @@ export function runSosMappingIntegrityTests() {
     const mapping = read("src/lib/sales/normalizer/mapping.ts");
     const start = mapping.indexOf("if (territoryRows.length)");
     assert.ok(start >= 0, "saveMappings must still write territory aliases");
-    const block = mapping.slice(start, start + 1600);
+    // Bound the block by its own closing brace — a real end — rather than by 1600 bytes. The
+    // ordering assertion below compares two indexes INSIDE this window, so a window that stops
+    // short reports "the upsert is missing" when it is merely below the cut.
+    const blockEnd = mapping.slice(start).search(/^  \}$/m);
+    const block = mapping.slice(start, blockEnd >= 0 ? start + blockEnd : mapping.length);
 
     assert.match(
       block,

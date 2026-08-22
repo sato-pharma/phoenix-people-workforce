@@ -198,15 +198,22 @@ export function runDirectOrdersUnbookedQueueTests() {
   // ignore badges — and this gate is the only thing stopping it, since the row itself cannot be
   // narrowed without hiding the module from the roles that legitimately read it.
   const service = read(SERVICE_PATH);
-  const badgeFn = service.slice(service.indexOf("export async function getDirectOrderUnbookedBadge"));
+  // The badge function, bounded by the next top-level declaration — a real end. The three checks
+  // below took 700, 700 and 1200 bytes of it. The function is 1,278 bytes of code, so the 1200 one
+  // — a `doesNotMatch` — was already 78 bytes short, and a `doesNotMatch` that runs out of text
+  // PASSES rather than failing.
+  const badgeAt = service.indexOf("export async function getDirectOrderUnbookedBadge");
+  const badgeRest = service.slice(badgeAt + 1);
+  const badgeNext = badgeRest.search(/^(?:export )?(?:async )?function |^(?:export )?(?:const|type|interface|class) /m);
+  const badgeFn = service.slice(badgeAt, badgeNext >= 0 ? badgeAt + 1 + badgeNext : service.length);
   assert.ok(badgeFn.length > 0, "getDirectOrderUnbookedBadge must exist");
   assert.match(
-    badgeFn.slice(0, 700),
+    badgeFn,
     /if \(!canSetDirectOrderSalesMonth\(access\)\) return \{ count: 0, overdue: false \};/,
     "a viewer who cannot book a sales month must always see a zero count",
   );
   assert.match(
-    badgeFn.slice(0, 700),
+    badgeFn,
     /assertPermission\(access, "direct_orders", "read"\)/,
     "the badge must assert its own permission — it is reachable as a bare endpoint too",
   );
@@ -215,7 +222,7 @@ export function runDirectOrdersUnbookedQueueTests() {
   // tests/direct-orders-badge-fast-path.test.ts — the slow countDirectOrderAwaiting that used to
   // load the whole workspace for one integer was deleted on 2026-08-11.
   assert.doesNotMatch(
-    badgeFn.slice(0, 1200),
+    badgeFn,
     /getDirectOrderWorkspaceData/,
     "the badge must not load the whole workspace on a 30-second poll",
   );

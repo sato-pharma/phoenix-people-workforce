@@ -178,9 +178,18 @@ export async function runRecruitmentCandidatePoolTableTests() {
   assert.match(workspace, /window\.scrollTo\(\{ behavior: "auto", top: returnTo \}\)/, "closing must scroll back to it");
   assert.match(workspace, /Back to the pool/, "and the way back must be visible without scrolling the profile");
 
-  const profilePanel = workspace.slice(workspace.indexOf("{profile ? ("));
+  // Two byte counts replaced by two real edges. The panel is bounded by its own branch end, and
+  // the HEADER is found by the ref the component already puts on it rather than by "somewhere in
+  // the first 1600 bytes" — the panel is 21,070 bytes long, so that window was only ever asserting
+  // that some sticky element appeared early, and it would have reported the header as missing the
+  // moment anything was inserted above it.
+  const panelAt = workspace.indexOf("{profile ? (");
+  const panelEnd = workspace.slice(panelAt).search(/^ {6}\) : \(/m);
+  const profilePanel = workspace.slice(panelAt, panelEnd >= 0 ? panelAt + panelEnd : workspace.length);
+  const headerRefAt = profilePanel.indexOf("ref={profileHeaderRef}");
+  assert.ok(headerRefAt >= 0, "the profile panel's header must still be the element carrying profileHeaderRef");
   assert.match(
-    profilePanel.slice(0, 1600),
+    profilePanel.slice(profilePanel.lastIndexOf("<", headerRefAt), headerRefAt),
     /className="sticky top-0/,
     "the profile's own header must stay put — the panel is long enough to scroll on its own",
   );

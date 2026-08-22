@@ -54,6 +54,20 @@ function candidate(overrides: Partial<DirectOrderAutoLinkCandidate> = {}): Direc
   };
 }
 
+/**
+ * Slice a top-level declaration out of a source file by its REAL end — the next top-level
+ * declaration — instead of a fixed byte count. A magic window measures source LENGTH, not the
+ * invariant it claims to guard: it false-FAILS the moment the pinned function grows past the
+ * window (the regression fixed in PR #2288), and it false-PASSES when a function that genuinely
+ * lost its marker spills into the next function's copy of it.
+ */
+function topLevelBlock(source: string, start: number): string {
+  if (start < 0) return "";
+  const rest = source.slice(start + 1);
+  const next = rest.search(/^(?:export )?(?:async )?function |^(?:export )?(?:const|type|interface|class) /m);
+  return source.slice(start, next >= 0 ? start + 1 + next : source.length);
+}
+
 export function runDirectOrderHoldReleaseTests() {
   // ── Code normalization: the master pads, humans type bare ─────────────────────────────────
   assert.equal(normalizeCustomerCode("0001573270"), "1573270");
@@ -256,7 +270,7 @@ export function runDirectOrderHoldReleaseTests() {
   // The ownership check must FAIL CLOSED. If we cannot prove a pair is unclaimed, it is not proof.
   const ownershipIdx = service.indexOf("async function attachCodeOwnership(");
   assert.ok(ownershipIdx > 0, "attachCodeOwnership must exist");
-  const ownershipBody = service.slice(ownershipIdx, ownershipIdx + 1800);
+  const ownershipBody = topLevelBlock(service, ownershipIdx);
   assert.match(
     ownershipBody,
     /ownedByOtherPharmacyId: "unknown"/,
@@ -715,7 +729,11 @@ export function runDirectOrderHoldReleaseTests() {
       `${label} must read the candidate ONCE, so the distributor fields and the callout below them cannot describe different things`,
     );
     const idx = source.indexOf("distributors.length === 0");
-    const emptyBranch = source.slice(idx, idx + 4000);
+    // Bounded by the ternary's own else arm at this nesting depth — a real sibling anchor — so the
+    // branch can grow without the window needing to be widened after it, and no marker can leak in
+    // from the arm below and answer for a branch that lost it.
+    const elseArm = source.slice(idx).search(/^ {10}\) : \(/m);
+    const emptyBranch = source.slice(idx, elseArm >= 0 ? idx + elseArm : source.length);
     assert.match(
       emptyBranch,
       /candidateMatch \? \(/,

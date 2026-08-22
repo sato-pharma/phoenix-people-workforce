@@ -183,7 +183,11 @@ export function runDirectOrderBadgeFastPathTests() {
   const validationSource = read("../src/lib/direct-orders/pharmacy-validation.ts");
   const countStart = validationSource.indexOf("export async function countDirectOrderPendingValidations");
   assert.ok(countStart > -1, "countDirectOrderPendingValidations must exist");
-  const countFn = validationSource.slice(countStart, countStart + 900);
+  // Slice to the END of the function, not a fixed byte count — a byte count measures source
+  // length, not whether the count still sends `head: true`.
+  const countRest = validationSource.slice(countStart + 1);
+  const nextDecl = countRest.search(/^(?:export )?(?:async )?function |^(?:export )?(?:const|type|interface|class) /m);
+  const countFn = validationSource.slice(countStart, nextDecl >= 0 ? countStart + 1 + nextDecl : validationSource.length);
   assert.match(
     countFn,
     /head: true/,

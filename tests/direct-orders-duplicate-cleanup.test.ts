@@ -64,6 +64,20 @@ function request(overrides: Partial<RequestForDedupe> = {}): RequestForDedupe {
   };
 }
 
+/**
+ * Slice a top-level declaration out of a source file by its REAL end — the next top-level
+ * declaration — instead of a fixed byte count. A magic window measures source LENGTH, not the
+ * invariant it claims to guard: it false-FAILS the moment the pinned function grows past the
+ * window (the regression fixed in PR #2288), and it false-PASSES when a function that genuinely
+ * lost its marker spills into the next function's copy of it.
+ */
+function topLevelBlock(source: string, start: number): string {
+  if (start < 0) return "";
+  const rest = source.slice(start + 1);
+  const next = rest.search(/^(?:export )?(?:async )?function |^(?:export )?(?:const|type|interface|class) /m);
+  return source.slice(start, next >= 0 ? start + 1 + next : source.length);
+}
+
 export function runDirectOrderDuplicateCleanupTests() {
   // ── Identity is the DISTRIBUTOR CODE, never the name ──────────────────────────────────────
   assert.deepEqual(
@@ -384,15 +398,19 @@ export function runDirectOrderDuplicateCleanupTests() {
     const service = readFileSync(new URL("../src/lib/direct-orders/service.ts", import.meta.url), "utf8");
     const gateStart = service.indexOf("function assertDirectOrderCleanupAccess");
     assert.ok(gateStart > 0, "the cleanup access gate must exist");
-    const gate = service.slice(gateStart, gateStart + 400);
+    const gate = topLevelBlock(service, gateStart);
     assert.match(gate, /"SFE Manager"/, "the owner put SFE in the reviewer's seat for this cleanup");
     assert.match(gate, /"Super Admin"/, "Super Admin keeps access too");
 
     const nav = readFileSync(new URL("../src/config/system-navigation.ts", import.meta.url), "utf8");
     const navIdx = nav.indexOf('href: "/admin/direct-orders/cleanup"');
     assert.ok(navIdx > 0, "the cleanup desk must be reachable from the nav, not only by typing a URL");
+    // Bounded by the nav item's own closing brace, not 700 bytes. The item is ~640 bytes today —
+    // one more line of description and the window would stop before the `roles:` line it exists
+    // to read, and report a role drift that never happened.
+    const navEnd = nav.slice(navIdx).search(/^  \},$/m);
     assert.match(
-      nav.slice(navIdx, navIdx + 700),
+      nav.slice(navIdx, navEnd >= 0 ? navIdx + navEnd : nav.length),
       /roles: \["Super Admin", "SFE Manager"\]/,
       "the link and the server gate must admit the SAME roles — a wider link only leads to a 403, a narrower one hides the page from the person who owns the work",
     );

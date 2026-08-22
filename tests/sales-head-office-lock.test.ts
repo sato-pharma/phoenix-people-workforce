@@ -115,9 +115,18 @@ export function runSalesHeadOfficeLockTests() {
 
   // analytics_sos_by_customer measures active_batches (a COUNT) off a different view and has no
   // value column, so it must NOT gain the argument — its signature never grew one.
-  const byCustomerLoader = analytics.slice(analytics.indexOf("loadSosByCustomerUncached"));
+  // Bounded by the next top-level declaration, not 900 bytes. The loader is 892 bytes of code —
+  // eight bytes of headroom on a NEGATIVE check, which stops seeing the loader rather than
+  // failing when it runs out, so a `confidentialRevealArg` added below the cut ships green.
+  const byCustomerAt = analytics.indexOf("loadSosByCustomerUncached");
+  const byCustomerRest = analytics.slice(byCustomerAt + 1);
+  const byCustomerNext = byCustomerRest.search(/^(?:export )?(?:async )?function |^(?:export )?(?:const|type|interface|class) /m);
+  const byCustomerLoader = analytics.slice(
+    byCustomerAt,
+    byCustomerNext >= 0 ? byCustomerAt + 1 + byCustomerNext : analytics.length,
+  );
   assert.ok(
-    !byCustomerLoader.slice(0, 900).includes("confidentialRevealArg"),
+    !byCustomerLoader.includes("confidentialRevealArg"),
     "by_customer is a count view with no value column — it must not take the confidential argument",
   );
 

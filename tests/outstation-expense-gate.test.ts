@@ -13,6 +13,24 @@ import {
  * real money moves, so every path below asserts the payroll verdict explicitly rather than
  * inferring it from the blocker.
  */
+/**
+ * One top-level declaration, bounded by the next one — a real end of function, not a byte count.
+ *
+ * Both regions below were pinned by length, and both were wrong in a different direction.
+ * `getOwnOutstationRequestsAwaitingDeparturePhoto` is 1,401 bytes of code, so the 2,000-byte
+ * window ran ~600 bytes PAST it into the next function's doc comment: its `doesNotMatch` on a
+ * status-equality query could have been tripped by prose describing one, and its `match` could
+ * have been satisfied by a neighbour. `releaseOutstationRequestToPayrollIfReady` is 2,332 inside
+ * 2,500 — 168 bytes of headroom on two checks whose failure mode is to go blind, not red.
+ */
+function topLevelBlock(source: string, declaration: string): string {
+  const start = source.indexOf(declaration);
+  if (start < 0) return "";
+  const rest = source.slice(start + 1);
+  const next = rest.search(/^(?:export )?(?:async )?function |^(?:export )?(?:const|type|interface|class) /m);
+  return source.slice(start, next >= 0 ? start + 1 + next : source.length);
+}
+
 export function runOutstationExpenseGateTests() {
   const complete = {
     employeeRole: "District Manager",
@@ -180,16 +198,14 @@ export function runOutstationExpenseGateTests() {
   );
   // The release must re-derive the verdict rather than trust its caller: it runs from more than
   // one trigger, and a caller that "knows" the gate is clear is how a hold gets bypassed.
-  const releaseSlice = service.slice(
-    service.indexOf("export async function releaseOutstationRequestToPayrollIfReady"),
-  );
+  const releaseSlice = topLevelBlock(service, "export async function releaseOutstationRequestToPayrollIfReady");
   assert.match(
-    releaseSlice.slice(0, 2500),
+    releaseSlice,
     /resolveOutstationGateState\(/,
     "the release path must re-resolve the gate itself, never accept a caller's word that it is satisfied",
   );
   assert.match(
-    releaseSlice.slice(0, 2500),
+    releaseSlice,
     /getLinkedOutstationPayrollExpense/,
     "and must refuse to push a request that is already in payroll, or a retry pays the same trip twice",
   );
@@ -197,13 +213,13 @@ export function runOutstationExpenseGateTests() {
   // assertion above passed for months while the release was broken. The row exists as soon as the
   // claim is QUEUED; only a batch id or an import timestamp means it was actually paid.
   assert.doesNotMatch(
-    releaseSlice.slice(0, 2500),
+    releaseSlice,
     /if \(linked\) \{/,
     "the release gate must not test the expense ROW's existence — a queued row is not a paid one, " +
       "and that reading answered 'already in payroll' for all 360 production rows, stranding every held claim",
   );
   assert.match(
-    releaseSlice.slice(0, 2500),
+    releaseSlice,
     /isOutstationExpenseInPayroll\(linked\)/,
     "it must ask the shared predicate, so this reading and the five others in service.ts cannot drift apart",
   );
@@ -220,17 +236,15 @@ export function runOutstationExpenseGateTests() {
     "the submit insert must SET the gate status from the photos it actually has, never inherit the column default",
   );
 
-  const dueSlice = service.slice(
-    service.indexOf("export async function getOwnOutstationRequestsAwaitingDeparturePhoto"),
-  );
+  const dueSlice = topLevelBlock(service, "export async function getOwnOutstationRequestsAwaitingDeparturePhoto");
   assert.doesNotMatch(
-    dueSlice.slice(0, 2000),
+    dueSlice,
     /\.eq\("evidence_gate_status"/,
     "the departure-photo queue must not be a status-EQUALITY query — an unexpected value makes it " +
       "silently return nothing, which is exactly how the stranding above happened",
   );
   assert.match(
-    dueSlice.slice(0, 2000),
+    dueSlice,
     /resolveOutstationGateState\(/,
     "it must decide membership with the SAME resolver the payroll gate uses, so the queue and the " +
       "thing withholding the money can never disagree",

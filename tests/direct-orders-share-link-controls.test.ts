@@ -16,6 +16,20 @@ import { readFileSync } from "node:fs";
 //            passcode; the sheet's own Google sharing is the access control.
 // ─────────────────────────────────────────────────────────────────────────────
 
+/**
+ * Slice a top-level declaration out of a source file by its REAL end — the next top-level
+ * declaration — instead of a fixed byte count. A magic window measures source LENGTH, not the
+ * invariant it claims to guard: it false-FAILS the moment the pinned function grows past the
+ * window (the regression fixed in PR #2288), and it false-PASSES when a function that genuinely
+ * lost its marker spills into the next function's copy of it.
+ */
+function topLevelBlock(source: string, start: number): string {
+  if (start < 0) return "";
+  const rest = source.slice(start + 1);
+  const next = rest.search(/^(?:export )?(?:async )?function |^(?:export )?(?:const|type|interface|class) /m);
+  return source.slice(start, next >= 0 ? start + 1 + next : source.length);
+}
+
 export function runDirectOrdersShareLinkControlsTests() {
   const source = readFileSync(new URL("../src/lib/direct-orders/report-share-links.ts", import.meta.url), "utf8");
   const liveRoute = readFileSync(
@@ -44,7 +58,7 @@ export function runDirectOrdersShareLinkControlsTests() {
     ]) {
       const idx = source.indexOf(`export async function ${fn}(`);
       assert.ok(idx > -1, `${fn} must still exist`);
-      const body = source.slice(idx, idx + 900);
+      const body = topLevelBlock(source, idx);
       assert.match(
         body,
         /assertPermission\(access, "direct_orders", "export"\)/,
@@ -62,7 +76,7 @@ export function runDirectOrdersShareLinkControlsTests() {
   // ── D5b: the human link must carry a passcode, and the feed must not ───────
   {
     const createIdx = source.indexOf("export async function createDirectOrderReportShareLink(");
-    const create = source.slice(createIdx, createIdx + 2600);
+    const create = topLevelBlock(source, createIdx);
     assert.match(
       create,
       /if \(surface === "live" && passcode\.length < 4\)/,
@@ -132,7 +146,7 @@ export function runDirectOrdersShareLinkControlsTests() {
   {
     const assertIdx = source.indexOf("export async function assertDirectOrderShareToken(");
     assert.ok(assertIdx > -1, "assertDirectOrderShareToken must remain the single liveness check");
-    const gate = source.slice(assertIdx, assertIdx + 1800);
+    const gate = topLevelBlock(source, assertIdx);
     assert.match(gate, /if \(link\.revoked_at\) throw forbiddenError\(/, "a revoked link must be refused");
     assert.match(
       gate,
@@ -157,12 +171,12 @@ export function runDirectOrdersShareLinkControlsTests() {
   // pasted the link into an email agreed to.
   {
     const createIdx = source.indexOf("export async function createDirectOrderReportShareLink(");
-    const create = source.slice(createIdx, createIdx + 2600);
+    const create = topLevelBlock(source, createIdx);
     assert.match(create, /const scope = resolveDirectOrderReportScope\(access\);/, "the creator's scope must be captured at creation");
     assert.match(create, /scope_hr_id: hrId/, "the creator's identity must be frozen onto the link");
 
     const resolveIdx = source.indexOf("export async function resolveDirectOrderReportShareLink(");
-    const resolve = source.slice(resolveIdx, resolveIdx + 2400);
+    const resolve = topLevelBlock(source, resolveIdx);
     assert.match(
       resolve,
       /const creatorHrId = String\(link\.scope_hr_id \?\? ""\);/,
@@ -238,7 +252,7 @@ export function runDirectOrdersShareLinkControlsTests() {
   {
     const resolveIdx = source.indexOf("export async function resolveDirectOrderReportShareLink(");
     assert.ok(resolveIdx > -1, "resolveDirectOrderReportShareLink must still exist");
-    const resolveBody = source.slice(resolveIdx, resolveIdx + 2400);
+    const resolveBody = topLevelBlock(source, resolveIdx);
     assert.match(resolveBody, /last_accessed_at:/, "every open must be stamped");
     assert.match(
       resolveBody,

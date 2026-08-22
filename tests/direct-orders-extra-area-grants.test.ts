@@ -60,7 +60,12 @@ export function runDirectOrdersExtraAreaGrantTests() {
   {
     const fnIdx = serviceSource.indexOf("export async function listDirectOrderAreaAndBrickOptions(");
     assert.ok(fnIdx > -1, "listDirectOrderAreaAndBrickOptions must still be the single scope point");
-    const fn = serviceSource.slice(fnIdx, fnIdx + 3000);
+    // Slice to the END of the function, not a fixed byte count. A magic window measures source
+    // LENGTH rather than the invariant: it false-FAILS once the function grows past it, and
+    // false-PASSES by spilling into the next declaration's copy of the marker.
+    const rest = serviceSource.slice(fnIdx + 1);
+    const nextDecl = rest.search(/^(?:export )?(?:async )?function |^(?:export )?(?:const|type|interface|class) /m);
+    const fn = serviceSource.slice(fnIdx, nextDecl >= 0 ? fnIdx + 1 + nextDecl : serviceSource.length);
 
     assert.match(
       fn,

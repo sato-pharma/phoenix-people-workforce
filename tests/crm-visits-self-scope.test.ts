@@ -126,7 +126,11 @@ export function runCrmVisitsSelfScopeTests() {
     "the client workspace must not VALUE-import the server-only my-crm-visits module (use my-crm-visits-constants; `import type` is fine)",
   );
   const teamFnIdx = dataLayer.indexOf("export async function fetchTeamVisits(");
-  const teamFnBody = dataLayer.slice(teamFnIdx, teamFnIdx + 1800);
+  // Slice to the END of fetchTeamVisits, not a fixed byte count — a byte count measures how long
+  // the function happens to be, not whether it still uses the bounded reader.
+  const teamRest = dataLayer.slice(teamFnIdx + 1);
+  const nextDecl = teamRest.search(/^(?:export )?(?:async )?function |^(?:export )?(?:const|type|interface|class) /m);
+  const teamFnBody = dataLayer.slice(teamFnIdx, nextDecl >= 0 ? teamFnIdx + 1 + nextDecl : dataLayer.length);
   assert.match(teamFnBody, /queryVisitsLimited</, "the team feed must use the bounded reader");
   assert.match(teamFnBody, /limit: TEAM_VISIT_ROW_CAP/, "the team feed must pass the declared cap");
 

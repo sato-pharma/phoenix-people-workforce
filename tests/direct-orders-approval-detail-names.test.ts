@@ -23,6 +23,20 @@ import {
 } from "../src/lib/employees/area-rep-resolver.ts";
 import type { DirectOrderApprovalDetail, DirectOrderRequest } from "../src/lib/direct-orders/types.ts";
 
+/**
+ * Slice a top-level declaration out of a source file by its REAL end — the next top-level
+ * declaration — instead of a fixed byte count. A magic window measures source LENGTH, not the
+ * invariant it claims to guard: it false-FAILS the moment the pinned function grows past the
+ * window (the regression fixed in PR #2288), and it false-PASSES when a function that genuinely
+ * lost its marker spills into the next function's copy of it.
+ */
+function topLevelBlock(source: string, start: number): string {
+  if (start < 0) return "";
+  const rest = source.slice(start + 1);
+  const next = rest.search(/^(?:export )?(?:async )?function |^(?:export )?(?:const|type|interface|class) /m);
+  return source.slice(start, next >= 0 ? start + 1 + next : source.length);
+}
+
 function request(overrides: Partial<DirectOrderRequest> = {}): DirectOrderRequest {
   return {
     id: "req-1",
@@ -610,7 +624,7 @@ export function runDirectOrdersApprovalDetailNamesTests() {
 
     // Changing the month must rebuild BOTH periods, or the sales double or vanish.
     const setterIdx = serviceSource.indexOf("export async function setDirectOrderSalesMonth(");
-    const setterBody = serviceSource.slice(setterIdx, setterIdx + 3200);
+    const setterBody = topLevelBlock(serviceSource, setterIdx);
     assert.match(
       setterBody,
       /\[previousMonth, nextMonth\]/,
@@ -793,12 +807,16 @@ export function runDirectOrdersApprovalDetailNamesTests() {
       new URL("../src/lib/direct-orders/approval-fields.ts", import.meta.url),
       "utf8",
     );
+    // Bound the banner branch by the close of its own `if` block — a real end — rather than by a
+    // fixed 700 bytes. That window measured how long the sentence happened to be: lengthen the
+    // message and the check silently stops reading before the end of the thing it is checking.
+    const bannerAnchor = approvalFieldsSourceForBannerCheck.indexOf('pharmacy?.verificationStatus === "pending_review"');
+    const bannerRest = bannerAnchor < 0 ? "" : approvalFieldsSourceForBannerCheck.slice(bannerAnchor);
+    const bannerBranchEnd = bannerRest.search(/^  \}$/m);
+    const bannerBranch = bannerBranchEnd >= 0 ? bannerRest.slice(0, bannerBranchEnd) : bannerRest;
     for (const [label, source] of [
       ["the refusal message", decideBody],
-      [
-        "the approval-window banner",
-        approvalFieldsSourceForBannerCheck.split("pharmacy?.verificationStatus === \"pending_review\"")[1]?.slice(0, 700) ?? "",
-      ],
+      ["the approval-window banner", bannerBranch],
     ] as const) {
       assert.notEqual(source, "", `${label} source slice must not be empty — the anchor text must still exist to check`);
       assert.doesNotMatch(source, /catalogue/i, `${label} must not use the word "catalogue"`);
@@ -972,7 +990,7 @@ export function runDirectOrdersApprovalDetailNamesTests() {
     // being the assigned approver of the confirming rung instead, which is why the write itself
     // lives in a module-private helper rather than behind this exported guard.
     const ackIdx = serviceSource.indexOf("export async function acknowledgeDirectOrderPharmacy(");
-    const ackBody = serviceSource.slice(ackIdx, ackIdx + 1600);
+    const ackBody = topLevelBlock(serviceSource, ackIdx);
     assert.match(ackBody, /access\.scope === "system" \|\| access\.role === "Super Admin"/);
     assert.match(ackBody, /Forbidden: only a System Admin can acknowledge a pharmacy\./);
     assert.ok(
@@ -981,7 +999,7 @@ export function runDirectOrdersApprovalDetailNamesTests() {
     );
     const writeIdx = serviceSource.indexOf("async function markDirectOrderPharmacyVerified(");
     assert.match(
-      serviceSource.slice(writeIdx, writeIdx + 1600),
+      topLevelBlock(serviceSource, writeIdx),
       /writeRequiredAuditLog\(/,
       "clearing a pharmacy must be audited with its prior state",
     );
@@ -1245,7 +1263,7 @@ export function runDirectOrdersApprovalDetailNamesTests() {
     const serviceSource = readFileSync(new URL("../src/lib/direct-orders/service.ts", import.meta.url), "utf8");
     // Enrichment happens at the single read choke point, not in a component.
     const detailIdx = serviceSource.indexOf("export async function getDirectOrderApprovalDetail(");
-    const detailBody = serviceSource.slice(detailIdx, detailIdx + 2200);
+    const detailBody = topLevelBlock(serviceSource, detailIdx);
     assert.match(detailBody, /loadDirectOrderGeoNames\(/, "the detail payload must resolve geography names");
     assert.match(detailBody, /resolveAreaRep\(/, "the detail payload must resolve the area's medical rep");
 
@@ -1335,12 +1353,15 @@ export function runDirectOrdersApprovalDetailNamesTests() {
       const source = readFileSync(new URL(path, import.meta.url), "utf8");
       const idx = source.indexOf("distributors.length === 0");
       assert.ok(idx > -1, `${label} must handle a pharmacy with no distributor codes`);
-      // Window widened 1500 → 4000 on 2026-08-08. The empty branch legitimately grew: it now
-      // renders explicit "Distributor / Distributor code: Not provided" fields (a missing FIELD read
-      // as "the screen forgot to ask"), and it forks into THREE states rather than one, because
-      // "no code exists anywhere" and "a real code exists but was never linked to this record"
-      // demand opposite reactions and were briefly printed on top of each other.
-      const emptyBranch = source.slice(idx, idx + 4000);
+      // The empty branch legitimately grew — it now renders explicit "Distributor / Distributor
+      // code: Not provided" fields (a missing FIELD reads as "the screen forgot to ask") and forks
+      // into THREE states rather than one, because "no code exists anywhere" and "a real code exists
+      // but was never linked to this record" demand opposite reactions and were briefly printed on
+      // top of each other. The window was widened 1500 → 4000 twice to chase that. It is bounded by
+      // the ternary's own else arm at this nesting depth now — a real sibling anchor — so the branch
+      // can keep growing, and no marker can leak in from the arm below.
+      const elseArm = source.slice(idx).search(/^ {10}\) : \(/m);
+      const emptyBranch = source.slice(idx, elseArm >= 0 ? idx + elseArm : source.length);
       assert.match(
         emptyBranch,
         /No distributor customer code on file/,
@@ -1353,7 +1374,7 @@ export function runDirectOrdersApprovalDetailNamesTests() {
       );
       // The exact regression: a lone dash as the entire empty state.
       assert.doesNotMatch(
-        emptyBranch.slice(0, 220),
+        emptyBranch,
         /className="mt-0\.5 text-sm font-semibold text-slate-\d00">[—-]</,
         `${label} must not render a bare dash for "no distributor codes"`,
       );
@@ -1362,7 +1383,7 @@ export function runDirectOrdersApprovalDetailNamesTests() {
     // The notification carries the same fact to an approver who never opens the window.
     const fieldsSource = readFileSync(new URL("../src/lib/direct-orders/approval-fields.ts", import.meta.url), "utf8");
     const metricsIdx = fieldsSource.indexOf("export function buildDirectOrderNotificationMetrics(");
-    const metricsBody = fieldsSource.slice(metricsIdx, metricsIdx + 1800);
+    const metricsBody = topLevelBlock(fieldsSource, metricsIdx);
     assert.match(
       metricsBody,
       /none on file — distributor sales cannot be linked to this pharmacy/,
@@ -1507,7 +1528,7 @@ export function runDirectOrdersApprovalDetailNamesTests() {
     ]) {
       const idx = serviceSource.indexOf(`export async function ${fn}(`);
       assert.ok(idx > -1, `${fn} must exist`);
-      const body = serviceSource.slice(idx, idx + 900);
+      const body = topLevelBlock(serviceSource, idx);
       assert.match(body, /assertPharmacyRegistryAccess\(access\)/, `${fn} must gate on the registry roles`);
     }
 
@@ -1537,7 +1558,7 @@ export function runDirectOrdersApprovalDetailNamesTests() {
     // Editing a code is not the same act as confirming a pharmacy. Folding them together would
     // let an SFE Manager clear a pending pharmacy by changing one character.
     const replaceIdx = serviceSource.indexOf("export async function replaceDirectOrderPharmacyCodes(");
-    const replaceBody = serviceSource.slice(replaceIdx, replaceIdx + 2200);
+    const replaceBody = topLevelBlock(serviceSource, replaceIdx);
     assert.doesNotMatch(
       replaceBody,
       /verification_status/,

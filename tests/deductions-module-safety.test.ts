@@ -404,9 +404,14 @@ export async function runDeductionsModuleSafetyTests(): Promise<void> {
     // Promise.all silently lost 43 of 57 fingerprint audit rows — scattered at
     // random, no error surfaced, because writeAuditLog swallows its own
     // failures. An audit trail that is usually complete is not an audit trail.
-    const auditSection = service.slice(service.indexOf("const auditable ="));
+    // Bound the audit section by the END OF ITS FUNCTION, not by 1200 bytes. The loop it is
+    // guarding already runs to ~1000 bytes, so two more lines would have pushed the fan-out this
+    // forbids past the cut — and a `doesNotMatch` that cannot see the code PASSES.
+    const auditStart = service.indexOf("const auditable =");
+    const auditEnd = service.slice(auditStart).search(/^\}$/m);
+    const auditSection = service.slice(auditStart, auditEnd >= 0 ? auditStart + auditEnd : service.length);
     assert.doesNotMatch(
-      auditSection.slice(0, 1200),
+      auditSection,
       /Promise\.all/,
       "audit rows must be written sequentially — parallel fan-out silently dropped 43 of 57 rows in production",
     );
