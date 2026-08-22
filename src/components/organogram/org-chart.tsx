@@ -30,14 +30,19 @@ import {
   Plus,
   Printer,
   UserRound,
+  Users,
   UsersRound,
 } from "lucide-react";
 import * as React from "react";
 
+import { OrganogramAudienceDialog } from "@/components/organogram/organogram-audience-dialog";
 import { OrganogramNodeDetailModal } from "@/components/organogram/organogram-node-detail-modal";
 import { ExportXlsxButton } from "@/components/ui/export-xlsx-button";
 import { formatDateOnly } from "@/lib/date-only";
-import type { ExportColumn, ExportRow } from "@/lib/export/table-workbook";
+import {
+  ORGANOGRAM_EXPORT_COLUMNS,
+  buildOrganogramExportRows,
+} from "@/lib/reports/organogram-audience";
 import { calculateOrganogramStructureKpis } from "@/lib/reports/organogram-safety";
 import {
   type ManagerLane,
@@ -842,6 +847,10 @@ export function OrgChartTree({
     setSelectedRow(row);
   }, []);
 
+  // "Select & email" — pick a slice of this (already server-scoped) chart, copy their
+  // work emails, or export just that slice.
+  const [audienceOpen, setAudienceOpen] = React.useState(false);
+
   const [collapsedKeys, setCollapsedKeys] = React.useState<Set<string>>(new Set());
   const collapsedKeysRef = React.useRef(collapsedKeys);
   React.useEffect(() => {
@@ -983,32 +992,11 @@ export function OrgChartTree({
     ...otherGroups.map((group, index) => `other-${group.name}-${index}`),
   ];
 
-  // Flat structure export — the same rows the chart renders (already server-scoped
-  // to the viewer), downloaded as a premium Phoenix-styled sheet.
-  const exportColumns: ExportColumn[] = [
-    { key: "hrId", label: "HR ID", width: 12 },
-    { key: "name", label: "Name", width: 26 },
-    { key: "title", label: "Title", width: 26 },
-    { key: "type", label: "Type", width: 12 },
-    { key: "line", label: "Line", width: 18 },
-    { key: "area", label: "Area", width: 18 },
-    { key: "region", label: "Region", width: 18 },
-    { key: "hireDate", label: "Hire Date", width: 14 },
-    { key: "manager", label: "Reports To", width: 24 },
-    { key: "managerHrId", label: "Manager HR ID", width: 14 },
-  ];
-  const exportRows: ExportRow[] = rows.map((row) => ({
-    area: row.areaName ?? "",
-    hireDate: row.hireDate ? formatHireDate(row.hireDate) : "",
-    hrId: row.hrId,
-    line: row.lineName ?? "",
-    manager: row.managerName ?? "",
-    managerHrId: row.managerHrId ?? "",
-    name: row.type === "vacancy" ? "Open Vacancy" : row.displayName ?? row.fullName,
-    region: row.regionName ?? "",
-    title: row.positionTitle ?? row.jobTitle ?? "",
-    type: row.type === "vacancy" ? "Vacancy" : "Employee",
-  }));
+  // Flat structure export — the same rows the chart renders (already server-scoped to
+  // the viewer), downloaded as a premium Phoenix-styled sheet. Columns and cell values
+  // come from the shared audience module so this sheet and the picker's filtered sheet
+  // are the same sheet, never two drifting definitions of "the organogram export".
+  const exportRows = React.useMemo(() => buildOrganogramExportRows(rows), [rows]);
 
   const kpiIconClassName = "h-4 w-4";
   const kpiCards: Array<{ actual: number; icon: React.ReactNode; label: string; tone: KpiTone; total: number; vacant: number }> = [
@@ -1088,13 +1076,29 @@ export function OrgChartTree({
             PNG
           </button>
           <ExportXlsxButton
-            columns={exportColumns}
+            columns={ORGANOGRAM_EXPORT_COLUMNS}
             rows={exportRows}
             sheetName="Organogram"
             subtitle={`${resolvedLineName} · ${employeeCount} employees`}
             title={`Organogram — ${resolvedLineName}`}
           />
+          <button
+            className="inline-flex h-9 items-center gap-1.5 whitespace-nowrap border border-[#F97316] bg-[#F97316] px-3 text-xs font-bold text-white shadow-sm transition hover:bg-[#EA580C] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F97316]/40"
+            onClick={() => setAudienceOpen(true)}
+            type="button"
+          >
+            <Users className="h-3.5 w-3.5" />
+            Select &amp; email
+          </button>
         </div>
+      ) : null}
+
+      {audienceOpen ? (
+        <OrganogramAudienceDialog
+          onClose={() => setAudienceOpen(false)}
+          rows={rows}
+          scopeLabel={resolvedLineName}
+        />
       ) : null}
 
       {/* KPI strip */}

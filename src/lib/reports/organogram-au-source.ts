@@ -1,6 +1,10 @@
 import { normalizeLineName } from "@/lib/auth/permissions";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
-import type { OrganogramReportRow, VacancyReportData } from "@/lib/reports/vacancies";
+import type {
+  OrganogramReportRow,
+  OrganogramWorkFields,
+  VacancyReportData,
+} from "@/lib/reports/vacancies";
 
 /**
  * Area-unification organogram source.
@@ -38,6 +42,21 @@ type AuTreeRow = {
   line_id: number | null;
 };
 
+/** The employee-master columns joined onto each occupied seat. Work fields only. */
+type EmployeeWorkRow = {
+  contract_renewal_date: string | null;
+  contract_type: string | null;
+  department_name: string | null;
+  employment_status: string | null;
+  full_name: string | null;
+  hire_date: string | null;
+  hr_id: string | null;
+  job_title: string | null;
+  name_ar: string | null;
+  team_name: string | null;
+  work_email: string | null;
+};
+
 const TITLE_BY_TIER: Record<AuTreeRow["seat_tier"], string> = {
   CEO: "CEO",
   NSM: "National Sales Manager",
@@ -71,24 +90,56 @@ export async function buildOrganogramSeatReport(): Promise<VacancyReportData> {
   if (error) throw new Error(`organogram seat source failed: ${error.message}`);
   const tree = (treeData ?? []) as AuTreeRow[];
 
-  // Resolve occupant display names and hire dates from the employee master
-  // (best-effort). The seat model itself carries no tenure, so hire date is
-  // joined here so every person node can show when they joined.
+  // Resolve occupant display names, hire dates and the WORK-ONLY employee fields from
+  // the employee master (best-effort). The seat model itself carries no tenure or
+  // contact data, so it is joined here — widening this ONE existing select rather than
+  // adding a second query, because every round trip crosses to Frankfurt.
+  //
+  // The column list is the safe set defined on OrganogramWorkFields: nothing personal
+  // (no national ID, birth date, gender, address, mobile) and nothing from payroll.
+  // Read that type's note before adding a column here.
   const { data: empData } = await supabase
     .from("employees")
-    .select("hr_id, full_name, hire_date");
+    .select(
+      "hr_id, full_name, name_ar, work_email, job_title, employment_status, contract_type, contract_renewal_date, hire_date, department_name, team_name",
+    );
   const nameByHr = new Map<string, string>();
   const hireDateByHr = new Map<string, string>();
-  for (const e of (empData ?? []) as Array<{
-    hr_id: string | null;
-    full_name: string | null;
-    hire_date: string | null;
-  }>) {
+  const workByHr = new Map<string, EmployeeWorkRow>();
+  for (const e of (empData ?? []) as EmployeeWorkRow[]) {
     if (!e.hr_id) continue;
     const key = e.hr_id.trim().toLowerCase();
     nameByHr.set(key, e.full_name ?? e.hr_id);
     if (e.hire_date) hireDateByHr.set(key, e.hire_date);
+    workByHr.set(key, e);
   }
+  // Vacant seats have no employee to read from, so every field stays null and the
+  // export renders an empty cell rather than inventing a placeholder.
+  const workFieldsFor = (hrId: string | null): OrganogramWorkFields => {
+    const employee = hrId ? workByHr.get(hrId.trim().toLowerCase()) : undefined;
+    if (!employee) {
+      return {
+        contractRenewalDate: null,
+        contractType: null,
+        employeeDepartmentName: null,
+        employeeJobTitle: null,
+        employeeTeamName: null,
+        employmentStatus: null,
+        nameAr: null,
+        workEmail: null,
+      };
+    }
+    return {
+      contractRenewalDate: employee.contract_renewal_date,
+      contractType: employee.contract_type,
+      employeeDepartmentName: employee.department_name,
+      employeeJobTitle: employee.job_title,
+      employeeTeamName: employee.team_name,
+      employmentStatus: employee.employment_status,
+      nameAr: employee.name_ar,
+      workEmail: employee.work_email,
+    };
+  };
   const displayNameFor = (hrId: string | null): string => {
     if (!hrId) return "Vacant";
     return nameByHr.get(hrId.trim().toLowerCase()) ?? hrId;
@@ -171,9 +222,12 @@ export async function buildOrganogramSeatReport(): Promise<VacancyReportData> {
     const occupied = Boolean(s.occupant_hr_id && s.occupant_hr_id.trim());
 
     rows.push({
+      ...workFieldsFor(s.occupant_hr_id),
       areaId: null,
       areaName: s.area_name,
       departmentId: null,
+      // Stays null, as it always has. The employee master's department reaches the
+      // export through `employeeDepartmentName` instead — see OrganogramWorkFields.
       departmentName: null,
       displayName: displayNameFor(s.occupant_hr_id),
       fullName: displayNameFor(s.occupant_hr_id),

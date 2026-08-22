@@ -71,7 +71,41 @@ export type VacancyReportRow = {
   vacancyCode: string;
 };
 
-export type OrganogramReportRow = {
+/**
+ * WORK-ONLY employee fields carried on an organogram row.
+ *
+ * These exist so the structure export and the "copy emails" picker can read a person's
+ * work identity without a second round trip. They are deliberately the SAFE subset —
+ * exactly the Identity / Placement / Reporting / Contact sections every organogram
+ * viewer can already open on a node (organogram-employee-detail.ts), minus the mobile
+ * number. **Never widen this with a personal or compensation field** (national ID,
+ * birth date, gender, address, bank, salary): the row is shipped to the browser for
+ * every viewer of the chart and lands in a downloadable sheet, so anything added here
+ * becomes a bulk disclosure, not a one-person popup gated by
+ * canViewOrganogramSensitiveFields. Owner instruction, 2026-08-22: "work fields only".
+ *
+ * All optional — the legacy position_vacancies path never populates them, and a vacant
+ * seat has no employee to populate them from.
+ */
+export type OrganogramWorkFields = {
+  contractRenewalDate?: string | null;
+  contractType?: string | null;
+  /** employees.department_name / employees.team_name. Deliberately NOT written into the
+   *  row's own `departmentName` / `teamName`, which stay null on the seat path: those two
+   *  feed chart classification (isSalesDepartment, the position slot key, the Cairo-market
+   *  check), so filling them would quietly change what the organogram DRAWS. These
+   *  export-only twins give the sheet its columns and touch nothing else. */
+  employeeDepartmentName?: string | null;
+  employeeTeamName?: string | null;
+  /** employees.job_title — the HR record's own title, which can differ from the seat
+   *  tier title in `jobTitle`/`positionTitle` (an acting DM is titled a rep). */
+  employeeJobTitle?: string | null;
+  employmentStatus?: string | null;
+  nameAr?: string | null;
+  workEmail?: string | null;
+};
+
+export type OrganogramReportRow = OrganogramWorkFields & {
   areaId: number | null;
   areaName: string | null;
   departmentId: number | null;

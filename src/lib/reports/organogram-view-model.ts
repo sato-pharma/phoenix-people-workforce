@@ -112,6 +112,9 @@ export function organogramSearchText(row: OrganogramRow) {
     row.areaName,
     row.regionName,
     row.teamName,
+    // Work email is searchable so the audience picker can be driven by an address the
+    // viewer already has in hand ("who is jane.doe@…?"), not only by a name.
+    row.workEmail,
   ]
     .map((value) => normalizeSearchValue(value))
     .filter(Boolean)
