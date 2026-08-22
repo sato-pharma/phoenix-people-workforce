@@ -89,28 +89,18 @@ History and verification detail: [docs/agents-incident-history.md](docs/agents-i
 - **The production scheduler is the third-party `cron-job.org`.** Automation is **running, not stalled**: daily notifications, the outbox drain, and iReports sync/reconcile all fire from that account. The 8 GCP Cloud Scheduler jobs still fire but **401 on every route** — a red herring, not proof anything is down. **Do not tell the owner notifications/outbox/iReports are stalled without checking `cron-job.org` first.** It caps request timeout at 30s, so a long route logs a false `Failed (timeout)` while the server still finishes the work. `src/lib/cron-control/*` is a dashboard over the dead GCP scheduler and remains inert.
 - **There IS a live Railway `staging` environment — verified 2026-08-13, and confirmed to keep.** Same project, service `phoenix-people-workforce`, reachable at `https://phoenix-people-workforce-staging.up.railway.app` (returns 200, `/api/healthz` responds). Its service source tracks git branch `main` (not the git branch named `staging`) — so confusingly, this Railway *environment* named "staging" was, until the production fix above, actually fresher than the Railway *environment* named "production". `railway variables --environment staging` confirms `NEXT_PUBLIC_SUPABASE_URL` points at the staging Supabase project (`cifwmndunmlxjhyjugxa`), not production — safe to use as a real verification target. Owner decision 2026-08-13: keep it.
 - Vercel: fully legacy/decommissioned (old project `phoenix-workforce`) — never deploy to or verify against it.
-- Production Supabase project ref: `ozucdzovmcqvepbozvqf`. Staging Supabase project ref:
-  `cifwmndunmlxjhyjugxa` (`Phoenix-HR-Staging`, Pro org, eu-central-1).
-- **The account can see FOUR projects, not two, and two more refs are DEAD.** Full inventory below,
-  rebuilt from a live `list_projects` on **2026-08-23** — not copied from any doc. Resolve a ref here
-  before a database action; if a ref is not in this table, stop and run `list_projects` rather than
-  guessing which one it is.
+- **Supabase project refs — the complete list `list_projects` returns, verified live 2026-08-23.** Two of these four belong to this app; the other two do not, and are listed precisely so an unfamiliar ref is identifiable instead of alarming.
 
-  | Ref | Project | Region | Organization |
-  | --- | --- | --- | --- |
-  | `ozucdzovmcqvepbozvqf` | **Phoenix HR — PRODUCTION** | eu-central-1 | `rovnkzmhokgsruftjsaw` |
-  | `cifwmndunmlxjhyjugxa` | Phoenix-HR-Staging | eu-central-1 | `rovnkzmhokgsruftjsaw` |
-  | `plleofqyfbknvwcotzqo` | Future Talents Hub — **unrelated to Phoenix** | eu-north-1 | `rovnkzmhokgsruftjsaw` |
-  | `mlbpzvaanusdejqnimst` | the owner's personal project on his second (Outlook) account — **different organization**, nothing to do with Phoenix | eu-central-1 | `xadcyivhxyjtehyheowl` |
-  | `izhmxvgiktiafqusolot` | **DEAD** — the old free-tier staging, resolves to nothing | — | — |
-  | `oaifhavixhdtwmseshff` | **DEAD** — named as half the project pair by an older memory file | — | — |
+  | Ref | Name | Region | Org | What it is |
+  | --- | --- | --- | --- | --- |
+  | `ozucdzovmcqvepbozvqf` | Phoenix HR | eu-central-1 | `rovnkzmhokgsruftjsaw` | **PRODUCTION** — real payroll data |
+  | `cifwmndunmlxjhyjugxa` | Phoenix-HR-Staging | eu-central-1 | `rovnkzmhokgsruftjsaw` | **STAGING** (Pro org, created 2026-07-11) |
+  | `plleofqyfbknvwcotzqo` | Future Talents Hub | eu-north-1 | `rovnkzmhokgsruftjsaw` | unrelated to this app |
+  | `mlbpzvaanusdejqnimst` | the owner's personal project (his second, Outlook account) | eu-central-1 | **`xadcyivhxyjtehyheowl`** | unrelated — **different organization**, created 2026-08-11 |
 
-  **Neither region nor organization is a guard.** Two live projects share production's `eu-central-1`,
-  and the fourth sits in a *different* organization yet is still returned by the same call — so the
-  `project_id` argument remains the only thing that separates production from anything else (§8).
-  Treat any doc, prompt, or memory naming either dead ref as stale. This entry recorded only
-  `izhmxvgiktiafqusolot` as dead until 2026-08-23, so a session repairing a stale memory *from this
-  file* would have left the second error standing.
+  **Dead refs — treat any doc, memory, or prompt still naming one as stale:** `izhmxvgiktiafqusolot` (the prior free-tier staging) and `oaifhavixhdtwmseshff` (an older secondary project). Neither is returned by `list_projects` any more. This list named only the first as dead until 2026-08-23; both were live in older memories, and one of them sat in the `reference` memory a session consults to answer "which project is which".
+
+  **Three of the four are `eu-central-1`, and a different organization does not stop anyone passing a ref** — so neither region nor org is a guard. Combined with the rule below that both named MCP servers see **all four**, the `project_id` argument remains the only thing that separates staging from production on every call. Resolve with `list_projects` before acting; never trust a ref pasted from a prompt or copied from an older doc.
 - GitHub Actions secret `STAGING_SUPABASE_SERVICE_ROLE_KEY`: the staging service-role key, used by `ci.yml`'s login-smoke step (so its noise lands in staging, not production `audit_logs`) and by both staging legs of `migration-drift-check.yml`. **There is no `preview-smoke` job any more** — the smoke test is a step inside `validate`.
 - **`.env.local` points at PRODUCTION Supabase.** `pnpm run dev` mutates production data.
 
@@ -301,7 +291,7 @@ console, network/API response, deployment logs, and database/RLS evidence before
 - **Supabase writes are pre-authorized end to end — NO approval prompt** (owner's `autoMode` grant in `~/.claude/settings.json`, applied by hand 2026-08-02, which deliberately removes the §6 gate for Supabase). It covers the `supabase-staging` and `supabase-production` MCP servers, the owner's connector `mcp__45bb6356-…`, and the `supabase` CLI (`supabase` / `npx` / `pnpm` / `pnpm dlx`, incl. `db push`), on staging AND production (`ozucdzovmcqvepbozvqf`) — every read tool and every write tool: `execute_sql` mutations, `apply_migration`, bulk and destructive SQL. **You do NOT wait for a separate approval.** The one standing condition: **announce any destructive or bulk PRODUCTION change (it can mutate real payroll data) in plain words before you run it, and give the owner a chance to stop it** — the removed prompt is a UI gate, not licence to skip telling him. (This grant does NOT cover creating/deleting a project or reading secrets — see §6.) `mcp__b345e47e-…` stays denied.
 - All schema changes must be migration-based, repeatable, reviewable, and rollback-aware. Never patch production manually.
 - Before any database action, print and verify the exact project ref, resolving it with `list_projects` rather than trusting a ref pasted in a prompt or copied from an older doc — this line once named a long-deleted staging project, so "verify the ref" confirmed a dead value and the obvious recovery pointed at production.
-- Both Supabase MCP servers (`supabase-staging`, `supabase-production`) can see **every project the account is entitled to — four as of 2026-08-23, not two** (inventory in §3). **The server name guarantees nothing — the `project_id` argument is the only thing separating staging from production on every call.**
+- Both Supabase MCP servers (`supabase-staging`, `supabase-production`) can see **every project the account is entitled to — all four in the §3 table, not just the two that belong to this app**. **The server name guarantees nothing — the `project_id` argument is the only thing separating staging from production on every call.**
 - Prefer those two named servers for all routine work. Any UUID-named Supabase tool (a claude.ai account connector) has an identity you cannot verify from its name alone, so it stays deny-listed by default — never call an unrecognized one, and flag it if it reappears. `mcp__b345e47e-3198-4b48-97cc-07b47bbb3087__*` remains denied.
 - **Owner-confirmed exception (2026-08-02):** `mcp__45bb6356-8105-4482-9464-25bfd754baec__*` is the owner's own claude.ai Supabase connector. He confirmed ownership and instructed its removal from the deny list, so it is callable. Note its consent grant is **broader than either named server** — read+write on Secrets, Environment, and Projects, meaning it can read project secrets and create or delete projects. Reach for the named servers first; use this one only when it is actually the right tool. Its DB writes fall under the pre-authorized grant above (announce destructive/bulk prod changes; no wait), but **creating/deleting a project or reading secrets is NOT covered — get an explicit go for those** (see §6).
 - Before destructive or bulk live-data work, inventory the target, create or verify a backup, show the exact mutation, and define post-change counts or checks.
