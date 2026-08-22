@@ -9,6 +9,7 @@ import {
   hiringDocumentsErrorMessage,
   isHiringDocumentsSchemaMissing,
 } from "@/lib/hiring-documents/service";
+import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import type { CreateHiringDocumentDefinitionInput } from "@/lib/hiring-documents/types";
 
 export const runtime = "nodejs";
@@ -27,6 +28,9 @@ function apiError(error: unknown) {
 
 export async function POST(request: Request) {
   try {
+    const csrfError = assertSameOriginMutation(request);
+    if (csrfError) return csrfError;
+
     const access = await resolveAccessContext(request);
     await assertPermission(access, "employee_documents", "update");
     const payload = (await request.json()) as {

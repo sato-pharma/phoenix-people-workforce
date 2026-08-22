@@ -352,7 +352,16 @@ export const accessRegistry = [
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["GET", "PATCH"], pattern: "/api/employee-portal/account-activation", permission: [{ resource: "account_activation", action: "read" }, { resource: "account_activation", action: "update" }], csrfRequired: true }),
   sessionApi({ methods: allMethods, pattern: "/api/excuses/**", permission: { resource: "employee_profile", action: "read" }, guard: "domain-helper" }),
   sessionApi({ audit: { classification: "export", required: true }, methods: readOnly, pattern: "/api/exports", permission: { resource: "probation", action: "export" }, guard: "domain-helper" }),
-  sessionApi({ methods: allMethods, pattern: "/api/hiring-documents/**", permission: { resource: "employee_documents", action: "read" } }),
+  // Split for the same reason the hiring pack below is: the blanket said `read` for a PATCH that
+  // changes a checklist, and a registry that understates what a route can do is worse than no
+  // registry entry, because it reads as though somebody checked.
+  sessionApi({ methods: readOnly, pattern: "/api/hiring-documents/**", permission: { resource: "employee_documents", action: "read" } }),
+  sessionApi({ methods: ["PATCH", "POST", "DELETE"], pattern: "/api/hiring-documents/**", permission: { resource: "employee_documents", action: "update" }, csrfRequired: true }),
+  // The scans and photographs behind the ticks. Reading one streams a birth certificate or a
+  // national ID out of a private bucket, so it stays on `employee_documents:read` and never on a
+  // public URL; attaching and deleting are `update` and same-origin only.
+  sessionApi({ methods: readOnly, pattern: "/api/hiring-documents/files/**", permission: { resource: "employee_documents", action: "read" } }),
+  sessionApi({ methods: ["POST", "DELETE"], pattern: "/api/hiring-documents/files/**", permission: { resource: "employee_documents", action: "update" }, csrfRequired: true }),
   // The hiring pack — the printable contract and Form 1 — is the same workflow as the tracker above
   // seen from the other end, so it is gated on the same resource. Reading or printing needs `read`;
   // saving the profile and recording a signature need `update`, which is why this is two entries

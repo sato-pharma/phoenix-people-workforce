@@ -529,6 +529,7 @@ import { runPostgrestArrayFilterGuardTests } from "./postgrest-array-filter-guar
 import { runActivityTrackingTests } from "./activity-tracking.test.ts";
 import { runActivityManagerViewAccessTests } from "./activity-manager-view-access.test.ts";
 import { runAttendanceSelfScopeTests } from "./attendance-self-scope.test.ts";
+import { runHiringDocumentCaptureTests } from "./hiring-document-capture.test.ts";
 import { runHiringDocumentsAccessTests } from "./hiring-documents-access.test.ts";
 import { runHiringPackTests } from "./hiring-pack.test.ts";
 import { runSalesNullVsZeroTests } from "./sales-null-vs-zero.test.ts";
@@ -1540,6 +1541,7 @@ await runTest("activity tracking", runActivityTrackingTests);
 await runTest("activity manager view access (self + direct reports)", runActivityManagerViewAccessTests);
 await runTest("attendance self-scope", runAttendanceSelfScopeTests);
 await runTest("hiring documents access (Talent Acquisition company-wide bypass)", runHiringDocumentsAccessTests);
+await runTest("hiring document capture (polish keeps colour, pages become one A4 PDF, paths never collide)", runHiringDocumentCaptureTests);
 await runTest("hiring pack (Form 1 coordinate map, blank back page, تفقيط agreement)", runHiringPackTests);
 await runTest("sales null-vs-zero dashboard", runSalesNullVsZeroTests);
 await runTest("sos analytics (MoM movers + pareto)", runSosAnalyticsTests);

@@ -9,6 +9,7 @@ import {
   hiringDocumentsErrorMessage,
   isHiringDocumentsSchemaMissing,
 } from "@/lib/hiring-documents/service";
+import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -29,6 +30,9 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
+    const csrfError = assertSameOriginMutation(request);
+    if (csrfError) return csrfError;
+
     const access = await resolveAccessContext(request);
     await assertPermission(access, "employee_documents", "update");
     const { id } = await params;

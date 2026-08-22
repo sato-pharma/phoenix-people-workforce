@@ -2,12 +2,24 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { canSeeHrScopedRecord, type AccessContext } from "@/lib/auth/permissions";
 import { canonicalHrIdForDisplay } from "@/lib/hr-id";
 import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
+import { scanPagesToPdf } from "@/lib/hiring-documents/document-scan";
+import {
+  assertHiringDocumentFileAllowed,
+  buildHiringDocumentFilePath,
+  downloadHiringDocumentFile,
+  HIRING_DOCUMENTS_BUCKET,
+  removeHiringDocumentFiles,
+  uploadHiringDocumentFile,
+} from "@/lib/hiring-documents/file-storage";
 import { summarizeHiringDocumentReadiness } from "@/lib/recruitment/onboarding-metrics";
 import type {
+  AttachHiringDocumentFilesInput,
   CreateHiringDocumentDefinitionInput,
   HiringDocumentDefinition,
   HiringDocumentEmployeeRow,
   HiringDocumentEntry,
+  HiringDocumentFile,
+  HiringDocumentFileSource,
   HiringDocumentsDashboardData,
   HiringDocumentStatus,
   UpdateHiringDocumentNotesInput,
@@ -120,8 +132,9 @@ async function loadLines(lineIds: number[]) {
   return new Map((data as LineDbRow[]).map((row) => [row.id, row.name ?? ""]));
 }
 
-async function loadManagerNames(managerHrIds: string[]) {
-  const uniqueHrIds = Array.from(new Set(managerHrIds.map(normalizeHrId).filter(Boolean))) as string[];
+/** Resolve HR_IDs to the display name shown in the UI. Used for managers and for file uploaders. */
+async function loadEmployeeDisplayNames(hrIds: string[]) {
+  const uniqueHrIds = Array.from(new Set(hrIds.map(normalizeHrId).filter(Boolean))) as string[];
   const result = new Map<string, string>();
   if (uniqueHrIds.length === 0) return result;
 
@@ -162,10 +175,15 @@ function defaultEntry(documentId: string): HiringDocumentEntry {
   return {
     documentId,
     dueDate: null,
+    fileCount: 0,
     notes: null,
     status: "pending",
     updatedAt: null,
   };
+}
+
+function pairKey(employeeHrId: string, documentId: string) {
+  return `${employeeHrId}::${documentId}`;
 }
 
 function summarize(employees: HiringDocumentEmployeeRow[], documents: HiringDocumentDefinition[]) {
@@ -197,7 +215,7 @@ export async function getHiringDocumentsDashboard(): Promise<HiringDocumentsDash
   const employeeHrIds = employeeRows.map((row) => normalizeHrId(row.hr_id) ?? "").filter(Boolean);
   const [lineNames, managerNames] = await Promise.all([
     loadLines(employeeRows.map((row) => row.line_id).filter((value): value is number => typeof value === "number")),
-    loadManagerNames(employeeRows.map((row) => row.manager_hr_id).filter(Boolean) as string[]),
+    loadEmployeeDisplayNames(employeeRows.map((row) => row.manager_hr_id).filter(Boolean) as string[]),
   ]);
 
   // PostgREST folds every .in() value into the request URL; an unbatched array of a few hundred
@@ -205,9 +223,17 @@ export async function getHiringDocumentsDashboard(): Promise<HiringDocumentsDash
   // HeadersOverflowError — employeeHrIds is company-wide here, so batch both lookups.
   const statusRows: HiringDocumentStatusDbRow[] = [];
   const noteRows: HiringDocumentEmployeeNoteDbRow[] = [];
+  const fileCounts = new Map<string, number>();
+  // The file table ships in a migration that is applied AFTER the code deploys. Until then every
+  // read of it errors, and the whole checklist — which worked perfectly well before files existed —
+  // would go down with it. So the first schema-missing answer turns the lookup off for the rest of
+  // the pass instead of throwing, and instead of paying for one failing Atlantic round trip per
+  // batch. A real error (permissions, a network fault) still throws: only "this table does not
+  // exist yet" is treated as an expected state.
+  let fileTableReady = true;
   for (let i = 0; i < employeeHrIds.length; i += 100) {
     const batch = employeeHrIds.slice(i, i + 100);
-    const [statusData, noteData] = await Promise.all([
+    const [statusData, noteData, fileData] = await Promise.all([
       supabase
         .from("hiring_document_statuses")
         .select("employee_hr_id,document_id,status,due_date,notes,updated_at")
@@ -216,11 +242,24 @@ export async function getHiringDocumentsDashboard(): Promise<HiringDocumentsDash
         .from("hiring_document_employee_notes")
         .select("employee_hr_id,notes")
         .in("employee_hr_id", batch),
+      fileTableReady
+        ? supabase.from("hiring_document_files").select("employee_hr_id,document_id").in("employee_hr_id", batch)
+        : Promise.resolve({ data: [], error: null }),
     ]);
     if (statusData.error) throw new Error(statusData.error.message);
     if (noteData.error) throw new Error(noteData.error.message);
     statusRows.push(...((statusData.data ?? []) as HiringDocumentStatusDbRow[]));
     noteRows.push(...((noteData.data ?? []) as HiringDocumentEmployeeNoteDbRow[]));
+
+    if (fileData.error) {
+      if (!isSchemaMissingMessage(fileData.error.message)) throw new Error(fileData.error.message);
+      fileTableReady = false;
+    } else {
+      for (const row of (fileData.data ?? []) as Array<{ document_id: string; employee_hr_id: string }>) {
+        const key = pairKey(normalizeHrId(row.employee_hr_id) ?? "", row.document_id);
+        fileCounts.set(key, (fileCounts.get(key) ?? 0) + 1);
+      }
+    }
   }
 
   const documentIds = new Set(documents.map((document) => document.id));
@@ -233,6 +272,7 @@ export async function getHiringDocumentsDashboard(): Promise<HiringDocumentsDash
     entries[row.document_id] = {
       documentId: row.document_id,
       dueDate: row.due_date,
+      fileCount: fileCounts.get(pairKey(hrId, row.document_id)) ?? 0,
       notes: row.notes,
       status,
       updatedAt: row.updated_at,
@@ -248,7 +288,14 @@ export async function getHiringDocumentsDashboard(): Promise<HiringDocumentsDash
     const hrId = normalizeHrId(row.hr_id) ?? "";
     const documentsById: Record<string, HiringDocumentEntry> = {};
     for (const document of documents) {
-      documentsById[document.id] = statusByEmployee.get(hrId)?.[document.id] ?? defaultEntry(document.id);
+      const entry = statusByEmployee.get(hrId)?.[document.id];
+      // The fallback carries the file count too. A pair with files but no status row should not
+      // exist — attaching a file always writes one — but if it ever does, the cell that shows
+      // "nothing filed" would be the single most misleading thing on the page.
+      documentsById[document.id] = entry ?? {
+        ...defaultEntry(document.id),
+        fileCount: fileCounts.get(pairKey(hrId, document.id)) ?? 0,
+      };
     }
 
     return {
@@ -386,4 +433,369 @@ export function filterHiringDocumentsForAccess(
     employees,
     summary: summarize(employees, dashboard.documents),
   };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The files behind the ticks
+// ─────────────────────────────────────────────────────────────────────────────
+
+type HiringDocumentFileDbRow = {
+  content_type: string;
+  document_id: string;
+  employee_hr_id: string;
+  file_name: string;
+  id: string;
+  page_count: number | null;
+  size_bytes: number;
+  source: HiringDocumentFileSource | null;
+  storage_bucket: string | null;
+  storage_path: string;
+  uploaded_at: string;
+  uploaded_by_hr_id: string | null;
+};
+
+const HIRING_DOCUMENT_FILE_COLUMNS =
+  "id,employee_hr_id,document_id,storage_bucket,storage_path,file_name,content_type,size_bytes,page_count,source,uploaded_by_hr_id,uploaded_at";
+
+/**
+ * The same visibility rule the dashboard applies, for a single employee.
+ *
+ * `filterHiringDocumentsForAccess` protects the grid by dropping rows the viewer may not see. That
+ * is no help at all to a route that is handed one HR_ID or one file id, so this is the gate for
+ * every file operation. It lives in the service rather than in each route deliberately: a route
+ * that forgets to call a guard is the single most common way a document leaks, and there are four
+ * entry points here.
+ */
+async function assertCanReachEmployeeDocuments(access: AccessContext, employeeHrId: string) {
+  if (access.scope === "system" || access.role === "Super Admin" || access.role === "Talent Acquisition") {
+    return;
+  }
+
+  const { data, error } = await getSupabaseAdmin()
+    .from("employees")
+    .select("hr_id,manager_hr_id")
+    .eq("hr_id", employeeHrId)
+    .maybeSingle();
+
+  if (error) throw new Error(error.message);
+
+  const row = data as { hr_id: string; manager_hr_id: string | null } | null;
+  // An unknown HR_ID is refused, not treated as "nothing to protect". Answering "no such employee"
+  // to anyone who asks turns this route into a way to enumerate who exists.
+  const allowed =
+    Boolean(row) &&
+    canSeeHrScopedRecord(access, { employeeHrId: row!.hr_id, managerHrId: row!.manager_hr_id });
+
+  if (!allowed) {
+    throw new Error("Forbidden: you do not have access to this employee's hiring documents.");
+  }
+}
+
+function toHiringDocumentFile(row: HiringDocumentFileDbRow, uploaderNames: Map<string, string>): HiringDocumentFile {
+  const uploadedByHrId = normalizeHrId(row.uploaded_by_hr_id);
+  return {
+    contentType: row.content_type,
+    documentId: row.document_id,
+    employeeHrId: normalizeHrId(row.employee_hr_id) ?? row.employee_hr_id,
+    fileName: row.file_name,
+    id: row.id,
+    pageCount: row.page_count,
+    sizeBytes: row.size_bytes,
+    source: row.source === "scan" ? "scan" : "upload",
+    uploadedAt: row.uploaded_at,
+    uploadedByHrId,
+    uploadedByName: uploadedByHrId ? uploaderNames.get(uploadedByHrId) ?? null : null,
+  };
+}
+
+/** Every file on record for one employee × document pair, newest first. */
+export async function listHiringDocumentFiles(
+  access: AccessContext,
+  input: { documentId: string; employeeHrId: string },
+): Promise<HiringDocumentFile[]> {
+  const employeeHrId = normalizeHrId(input.employeeHrId);
+  const documentId = cleanText(input.documentId);
+  if (!employeeHrId || !documentId) throw new Error("Employee and document are required.");
+
+  await assertCanReachEmployeeDocuments(access, employeeHrId);
+
+  const { data, error } = await getSupabaseAdmin()
+    .from("hiring_document_files")
+    .select(HIRING_DOCUMENT_FILE_COLUMNS)
+    .eq("employee_hr_id", employeeHrId)
+    .eq("document_id", documentId)
+    .order("uploaded_at", { ascending: false });
+
+  if (error) throw new Error(error.message);
+
+  const rows = (data ?? []) as HiringDocumentFileDbRow[];
+  const uploaderNames = await loadEmployeeDisplayNames(
+    rows.map((row) => row.uploaded_by_hr_id).filter(Boolean) as string[],
+  );
+
+  return rows.map((row) => toHiringDocumentFile(row, uploaderNames));
+}
+
+/**
+ * Store one or more pages against a hiring document, and tick the checklist.
+ *
+ * `mode: "scan"` is the CamScanner path — every page is polished and the whole set becomes ONE PDF,
+ * because a birth certificate photographed as three pages is one document, and filing it as three
+ * files makes "is this complete?" unanswerable. `mode: "upload"` stores each file exactly as it
+ * arrived, because a scanner's own PDF and a photo of a page are already what they are.
+ *
+ * Storage is written before the database row, so a failure between the two leaves an orphan object
+ * rather than a row pointing at nothing. The rollback below removes those objects — a row that
+ * promises a certificate and cannot produce it is far worse than a few stray bytes in a bucket.
+ */
+export async function attachHiringDocumentFiles(
+  access: AccessContext,
+  input: AttachHiringDocumentFilesInput,
+): Promise<HiringDocumentFile[]> {
+  const employeeHrId = normalizeHrId(input.employeeHrId);
+  const documentId = cleanText(input.documentId);
+  if (!employeeHrId || !documentId) throw new Error("Employee and document are required.");
+  if (input.pages.length === 0) throw new Error("Choose at least one file or photograph to attach.");
+
+  await assertCanReachEmployeeDocuments(access, employeeHrId);
+
+  const supabase = getSupabaseAdmin();
+  // The foreign key would catch an unknown id, but not a RETIRED one. A document HR deleted from
+  // the checklist still exists as a soft-deleted row, and accepting a scan against it would file a
+  // certificate somewhere nothing will ever show it again.
+  const { data: definition, error: definitionError } = await supabase
+    .from("hiring_document_definitions")
+    .select("id,is_active")
+    .eq("id", documentId)
+    .maybeSingle();
+
+  if (definitionError) throw new Error(definitionError.message);
+  if (!definition || (definition as { is_active: boolean }).is_active !== true) {
+    throw new Error("That hiring document is no longer on the checklist.");
+  }
+
+  const pending: Array<{
+    contentType: string;
+    fileName: string;
+    bytes: Buffer;
+    pageCount: number | null;
+  }> = [];
+
+  if (input.mode === "scan") {
+    // Validate every page BEFORE spending CPU on polishing any of them: a rejected fourth page
+    // should not cost three polish passes, and it certainly should not leave a half-assembled PDF.
+    for (const page of input.pages) {
+      assertHiringDocumentFileAllowed({ contentType: page.contentType, size: page.bytes.length });
+    }
+
+    const scan = await scanPagesToPdf({
+      mode: input.scanMode,
+      pages: input.pages.map((page) => ({ bytes: page.bytes, mimeType: page.contentType })),
+    });
+
+    assertHiringDocumentFileAllowed({ contentType: "application/pdf", size: scan.bytes.length });
+    pending.push({
+      bytes: scan.bytes,
+      contentType: "application/pdf",
+      fileName: buildScanFileName(input.pages[0]?.fileName ?? null),
+      pageCount: scan.pageCount,
+    });
+  } else {
+    for (const page of input.pages) {
+      assertHiringDocumentFileAllowed({ contentType: page.contentType, size: page.bytes.length });
+      pending.push({
+        bytes: page.bytes,
+        contentType: page.contentType.trim().toLowerCase(),
+        fileName: page.fileName,
+        pageCount: null,
+      });
+    }
+  }
+
+  const uploadedPaths: string[] = [];
+  try {
+    const rows: Array<Record<string, string | number | null>> = [];
+    for (const file of pending) {
+      const path = buildHiringDocumentFilePath({ documentId, employeeHrId, fileName: file.fileName });
+      await uploadHiringDocumentFile({ bytes: file.bytes, contentType: file.contentType, path });
+      uploadedPaths.push(path);
+      rows.push({
+        content_type: file.contentType,
+        document_id: documentId,
+        employee_hr_id: employeeHrId,
+        file_name: file.fileName,
+        page_count: file.pageCount,
+        size_bytes: file.bytes.length,
+        source: input.mode,
+        storage_bucket: HIRING_DOCUMENTS_BUCKET,
+        storage_path: path,
+        uploaded_by_hr_id: normalizeHrId(input.uploadedByHrId),
+      });
+    }
+
+    const { data, error } = await supabase
+      .from("hiring_document_files")
+      .insert(rows)
+      .select(HIRING_DOCUMENT_FILE_COLUMNS);
+
+    if (error) throw new Error(error.message);
+
+    // The evidence arriving IS the document being submitted. Leaving the cell on "pending" after a
+    // certificate has been filed would mean HR has to remember to tick it separately, and the whole
+    // point of this feature is that the checklist stops depending on anyone's memory.
+    await markHiringDocumentSubmitted(employeeHrId, documentId);
+
+    const inserted = (data ?? []) as HiringDocumentFileDbRow[];
+    const uploaderNames = await loadEmployeeDisplayNames(
+      inserted.map((row) => row.uploaded_by_hr_id).filter(Boolean) as string[],
+    );
+    invalidateHiringDocumentsDashboardCache();
+    return inserted.map((row) => toHiringDocumentFile(row, uploaderNames));
+  } catch (error) {
+    await removeHiringDocumentFiles(uploadedPaths);
+    throw error;
+  }
+}
+
+/**
+ * Delete one stored file, and un-tick the checklist if it was the last one.
+ *
+ * The revert is the part worth being deliberate about. A cell that still reads "submitted" with no
+ * file behind it is a lie the system tells itself, and it is exactly the state this feature exists
+ * to eliminate. It reverts to `pending` rather than `missing`: `missing` carries a deadline and
+ * means "we asked and it has not come", which is a claim nobody made by deleting a bad scan.
+ *
+ * A cell ticked by hand before files existed keeps its tick — there is nothing to un-tick, because
+ * this only fires when a file that DID exist has just been removed.
+ */
+export async function removeHiringDocumentFile(access: AccessContext, fileId: string) {
+  const id = cleanText(fileId);
+  if (!id) throw new Error("File id is required.");
+
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("hiring_document_files")
+    .select("id,employee_hr_id,document_id,storage_path")
+    .eq("id", id)
+    .maybeSingle();
+
+  if (error) throw new Error(error.message);
+  const row = data as
+    | { document_id: string; employee_hr_id: string; id: string; storage_path: string }
+    | null;
+  if (!row) throw new Error("That file is no longer on record.");
+
+  const employeeHrId = normalizeHrId(row.employee_hr_id) ?? row.employee_hr_id;
+  await assertCanReachEmployeeDocuments(access, employeeHrId);
+
+  const { error: deleteError } = await supabase.from("hiring_document_files").delete().eq("id", id);
+  if (deleteError) throw new Error(deleteError.message);
+
+  // The row goes first and the object second. If the object delete fails, what is left is an
+  // unreferenced blob in a private bucket — invisible, and removable later. The other order would
+  // leave a row promising a file that no longer exists, which is what a user actually notices.
+  await removeHiringDocumentFiles([row.storage_path]);
+
+  const { count, error: countError } = await supabase
+    .from("hiring_document_files")
+    .select("id", { count: "exact", head: true })
+    .eq("employee_hr_id", employeeHrId)
+    .eq("document_id", row.document_id);
+
+  if (countError) throw new Error(countError.message);
+
+  if ((count ?? 0) === 0) {
+    const { error: statusError } = await supabase
+      .from("hiring_document_statuses")
+      .update({ status: "pending", updated_at: new Date().toISOString() })
+      .eq("employee_hr_id", employeeHrId)
+      .eq("document_id", row.document_id)
+      .eq("status", "submitted");
+
+    if (statusError) throw new Error(statusError.message);
+  }
+
+  invalidateHiringDocumentsDashboardCache();
+  return { documentId: row.document_id, employeeHrId, remainingFiles: count ?? 0 };
+}
+
+/** Read one stored file's bytes, behind the same visibility gate as everything else here. */
+export async function getHiringDocumentFileForDownload(access: AccessContext, fileId: string) {
+  const id = cleanText(fileId);
+  if (!id) throw new Error("File id is required.");
+
+  const { data, error } = await getSupabaseAdmin()
+    .from("hiring_document_files")
+    .select("id,employee_hr_id,document_id,storage_path,file_name,content_type")
+    .eq("id", id)
+    .maybeSingle();
+
+  if (error) throw new Error(error.message);
+  const row = data as
+    | {
+        content_type: string;
+        document_id: string;
+        employee_hr_id: string;
+        file_name: string;
+        id: string;
+        storage_path: string;
+      }
+    | null;
+  if (!row) return null;
+
+  await assertCanReachEmployeeDocuments(access, normalizeHrId(row.employee_hr_id) ?? row.employee_hr_id);
+
+  // The storage path comes from the row, never from the request. That is the whole containment:
+  // the caller names a file id, and only the server knows which object that is.
+  const bytes = await downloadHiringDocumentFile(row.storage_path);
+  return { bytes, contentType: row.content_type, fileName: row.file_name };
+}
+
+/**
+ * Upsert the pair to `submitted` without disturbing the notes or the deadline already on it.
+ *
+ * `updateHiringDocumentStatus` cannot be reused here: it writes `notes` from its input, so calling
+ * it would blank whatever HR had typed in that cell just because a scan arrived.
+ */
+async function markHiringDocumentSubmitted(employeeHrId: string, documentId: string) {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("hiring_document_statuses")
+    .select("employee_hr_id")
+    .eq("employee_hr_id", employeeHrId)
+    .eq("document_id", documentId)
+    .maybeSingle();
+
+  if (error) throw new Error(error.message);
+
+  const { error: writeError } = data
+    ? await supabase
+        .from("hiring_document_statuses")
+        // due_date is cleared: it only means anything while a document is outstanding, and the
+        // document has just arrived.
+        .update({ due_date: null, status: "submitted", updated_at: new Date().toISOString() })
+        .eq("employee_hr_id", employeeHrId)
+        .eq("document_id", documentId)
+    : await supabase.from("hiring_document_statuses").insert({
+        document_id: documentId,
+        employee_hr_id: employeeHrId,
+        status: "submitted",
+        updated_at: new Date().toISOString(),
+      });
+
+  if (writeError) throw new Error(writeError.message);
+}
+
+/**
+ * Name the assembled PDF after what HR photographed, falling back to a plain name.
+ *
+ * The original file name from a phone is `IMG_0042.jpg`, which tells nobody anything, so a scan
+ * taken with a camera is named for what it is instead. A name HR actually chose — including an
+ * Arabic one — is kept; the download route encodes it per RFC 5987 rather than dropping it.
+ */
+function buildScanFileName(firstPageName: string | null) {
+  const base = cleanText(firstPageName)?.replace(/\.[a-z0-9]+$/i, "") ?? "";
+  const looksLikeACameraName = /^(img|image|photo|pxl|dsc|screenshot)[-_ ]?\d*$/i.test(base);
+  if (!base || looksLikeACameraName) return "scanned-document.pdf";
+  return `${base}.pdf`;
 }

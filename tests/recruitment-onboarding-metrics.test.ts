@@ -16,8 +16,15 @@ export function runRecruitmentOnboardingMetricsTests() {
     [
       {
         documents: {
-          id: { documentId: "id", dueDate: null, notes: null, status: "submitted", updatedAt: null },
-          contract: { documentId: "contract", dueDate: "2000-01-01", notes: null, status: "missing", updatedAt: null },
+          id: { documentId: "id", dueDate: null, fileCount: 0, notes: null, status: "submitted", updatedAt: null },
+          contract: {
+            documentId: "contract",
+            dueDate: "2000-01-01",
+            fileCount: 0,
+            notes: null,
+            status: "missing",
+            updatedAt: null,
+          },
         },
         employmentStatus: "active",
         fullName: "Employee One",
