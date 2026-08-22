@@ -78,4 +78,49 @@ export async function runDeductionsCurrentMonthGuardTests(): Promise<void> {
       "the check must sit in collectOneConnectorForMonth, the single door every connector passes through",
     );
   }
+
+  // ── The ADMIN UI must not offer a run the server will refuse ─────────────
+  // The server guard was correct and still produced a scary, misleading screen: the month selector
+  // is seeded to the CURRENT Cairo month on purpose, so for the whole of an unfinished month the
+  // Run button fired one request per connector, all six were refused, and the summary rendered
+  // "6 connector(s) failed" in red. A working safety guard presented as six failures is what gets a
+  // guard "fixed" at 4am. The button must be disabled and the reason stated in plain words instead.
+  {
+    const workspace = readFileSync("src/components/admin/deductions-workspace.tsx", "utf8");
+
+    assert.match(
+      workspace,
+      /const monthHasFinished = monthKey < currentCairoMonthKey;/,
+      "the workspace must derive whether the selected month has finished, from a boundary passed by the server page",
+    );
+    assert.match(
+      workspace,
+      /disabled=\{collecting \|\| !monthHasFinished\}/,
+      "the Run collection button must be DISABLED for a month that has not finished — otherwise it fires six requests the server refuses and reports them as failures",
+    );
+    assert.match(
+      workspace,
+      /if \(!monthHasFinished\) return;/,
+      "runCollection must also refuse directly, so a stray call cannot fan out into six refusals",
+    );
+    assert.match(
+      workspace,
+      /has not finished — collection runs once the month is over/,
+      "the page must SAY why the button is disabled; a silently dead button reads as a broken page",
+    );
+
+    // The client compares strings rather than importing the collector module. That module reaches
+    // the database, so importing it here would drag server-only code into the browser bundle.
+    assert.ok(
+      !/from "@\/lib\/deductions\/collect/.test(workspace),
+      "the client workspace must NOT import the server-side collector module — compare the month keys as strings instead",
+    );
+
+    const page = readFileSync("app/(admin)/admin/deductions/page.tsx", "utf8");
+    assert.match(
+      page,
+      /currentCairoMonthKey=\{initialMonthKey\}/,
+      "the server page must pass the Cairo month boundary to the workspace — the client has no trustworthy clock for this",
+    );
+  }
 }

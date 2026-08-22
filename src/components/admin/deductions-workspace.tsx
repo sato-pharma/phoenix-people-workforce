@@ -1,7 +1,7 @@
 "use client";
 
 import { Fragment, useEffect, useMemo, useState } from "react";
-import { AlertTriangle, CheckCircle2, Download, PlayCircle, RotateCcw, UserPlus, XCircle } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Clock3, Download, PlayCircle, RotateCcw, UserPlus, XCircle } from "lucide-react";
 
 import {
   DEDUCTIONS_CATEGORY_CONFIG,
@@ -1429,12 +1429,31 @@ function ByEmployeeTab({ monthKey }: { monthKey: string }) {
   );
 }
 
-export function DeductionsWorkspace({ canDecide, initialMonthKey }: { canDecide: boolean; initialMonthKey: string }) {
+export function DeductionsWorkspace({
+  canDecide,
+  currentCairoMonthKey,
+  initialMonthKey,
+}: {
+  canDecide: boolean;
+  currentCairoMonthKey: string;
+  initialMonthKey: string;
+}) {
   const [monthKey, setMonthKey] = useState(initialMonthKey);
   const [activeTab, setActiveTab] = useState<"overview" | "by_employee" | DeductionsCategory>("overview");
   const [collecting, setCollecting] = useState(false);
   const [collectMessage, setCollectMessage] = useState<{ tone: "success" | "error"; text: string } | null>(null);
   const [collectorRuns, setCollectorRuns] = useState<CollectorRun[]>([]);
+
+  // `isCollectableMonth` on the server is the real enforcement and stays that way — this is only the
+  // matching UI. Without it the page was a trap. The month selector is seeded to the CURRENT Cairo
+  // month on purpose (that is the month publish files under), so for the whole of an unfinished month
+  // pressing Run fired one request per connector, every one was refused, and the summary rendered
+  // "6 connector(s) failed" in red with a red cross. Nothing had failed — the guard had worked.
+  // Presenting a working safety guard as six errors is precisely how somebody ends up "fixing" the
+  // guard, and that guard exists because collecting an in-progress month charged real people
+  // 39,225.73 EGP on 2026-08-03. Lexicographic compare is exact for `YYYY-MM`, and comparing strings
+  // keeps the server-only collector module out of this client bundle.
+  const monthHasFinished = monthKey < currentCairoMonthKey;
 
   const [year, month] = useMemo(() => monthKey.split("-").map(Number), [monthKey]);
 
@@ -1443,6 +1462,8 @@ export function DeductionsWorkspace({ canDecide, initialMonthKey }: { canDecide:
   // stepping through them keeps every request bounded and lets a slow connector
   // fail on its own instead of taking the whole run down with it.
   async function runCollection() {
+    // The button is disabled, but never let a stray call fan out into six refusals.
+    if (!monthHasFinished) return;
     setCollecting(true);
     setCollectMessage(null);
     setCollectorRuns([]);
@@ -1522,7 +1543,7 @@ export function DeductionsWorkspace({ canDecide, initialMonthKey }: { canDecide:
         {canDecide ? (
           <button
             className="ml-auto inline-flex items-center gap-1.5 rounded-sm bg-orange-500 px-3 py-1.5 text-[11px] font-black uppercase tracking-[0.08em] text-white transition hover:bg-orange-600 disabled:opacity-50"
-            disabled={collecting}
+            disabled={collecting || !monthHasFinished}
             onClick={runCollection}
             type="button"
           >
@@ -1531,6 +1552,17 @@ export function DeductionsWorkspace({ canDecide, initialMonthKey }: { canDecide:
           </button>
         ) : null}
       </div>
+
+      {canDecide && !monthHasFinished ? (
+        <div className="flex items-start gap-2 border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-semibold text-slate-700">
+          <Clock3 className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
+          <span>
+            {monthLabel(monthKey)} has not finished — collection runs once the month is over. A day with no
+            activity only means something after that day has ended, so collecting now would charge people
+            for days they are still working. Select a completed month to run collection.
+          </span>
+        </div>
+      ) : null}
 
       {collectMessage ? (
         <div

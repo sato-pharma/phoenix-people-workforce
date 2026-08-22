@@ -33,7 +33,16 @@ export default async function AdminDeductionsPage() {
         title="Deductions"
         subtitle="Single source of truth for every payroll deduction — Fingerprint, CRM, No Records Activity, Unpaid Vacation, Insufficient Balance Vacation, Loan, and Other. Compute, decide, and (once published) feed Automated Payroll and the employee portal."
       />
-      <DeductionsWorkspace canDecide={access.role === "Super Admin"} initialMonthKey={initialMonthKey} />
+      {/* Both props hold the current Cairo month, but they mean different things and must not be
+          collapsed into one. `initialMonthKey` is what the workspace SELECTS and what publish files
+          deductions under — seeding it to the current month is deliberate. `currentCairoMonthKey` is
+          the boundary the collection control compares against to decide whether the month has
+          finished, which is what stops it firing six requests the server will refuse. */}
+      <DeductionsWorkspace
+        canDecide={access.role === "Super Admin"}
+        currentCairoMonthKey={initialMonthKey}
+        initialMonthKey={initialMonthKey}
+      />
     </div>
   );
 }
