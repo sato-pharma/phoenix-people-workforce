@@ -33,6 +33,9 @@
 // database.
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { promisify } from "node:util";
+import { gunzip, gzip } from "node:zlib";
+
 import { cache } from "react";
 import { unstable_cache } from "next/cache";
 
@@ -192,6 +195,62 @@ const ACHIEVEMENT_RANGE_CACHE_PREFIX = "sales-vs-target-achievement-range";
 const ACHIEVEMENT_RANGE_CACHE_TTL_SECONDS = 3600;
 
 /**
+ * A ceiling well under Next's hard 2MB data-cache limit, and the reason the rows below are
+ * stored COMPRESSED rather than raw.
+ *
+ * Next refuses any entry whose serialized size exceeds 2MB, and the refusal is violent. In dev
+ * it THROWS, and the throw lands on a promise Next itself never awaits and never catches —
+ * `workStore.pendingRevalidates[key] = cacheNewResult(...)` in
+ * next/dist/server/web/spec-extension/unstable-cache.js — so it surfaces as an
+ * unhandledRejection and Node kills the entire dev server (exit 0xC0000409). There is no catch
+ * site anywhere in our code that can stop it; the only defence is to never hand over an
+ * oversize entry. In production the same branch only `console.warn`s and skips the write, which
+ * is quieter and in one way worse: the cache silently stops existing and nothing says so.
+ *
+ * This range crossed 2MB around 2026-05 and nobody noticed. Measured against production
+ * 2026-08-22: 6,950 rows for 2026-01..2026-08 serialize to 2,799,322 bytes on their own, and
+ * Next measured 3,189,652 once wrapped in its own cache envelope — 1.5x the limit, growing by
+ * one ~870-row / ~415KB month every month, so no floor-anchored range will ever fit raw again.
+ * Every caller anchored at SALES_HISTORY_FLOOR had therefore been paying the full
+ * 2.38s of database time on EVERY render — this is the field force's single most expensive
+ * query — while believing it was cached.
+ *
+ * The payload is ~6,950 repetitions of the same 19 keys, which is precisely what gzip is best
+ * at, so the compressed entry lands far below this ceiling and the cache does what it was
+ * written to do again. A gunzip on each hit costs a few milliseconds against a 2.38s round trip
+ * to eu-central-1.
+ */
+export const ACHIEVEMENT_RANGE_CACHE_MAX_BYTES = 1_500_000;
+
+const gzipAsync = promisify(gzip);
+const gunzipAsync = promisify(gunzip);
+
+/**
+ * Rows -> a base64 gzip payload, or null when even compressed it would not fit.
+ *
+ * The null return is the load-bearing part, not a formality: it is the single thing that
+ * guarantees an oversize entry is never handed to the data cache, and so the only thing
+ * standing between a future data-growth month and the dev-server kill described above.
+ *
+ * base64 rather than a binary string because the entry is stored through JSON.stringify: the
+ * base64 alphabet needs no JSON escaping, so the encoding overhead stays a predictable 4/3 and
+ * the size checked here is the size Next will measure.
+ *
+ * Async (not gzipSync) so the compression runs on libuv's threadpool instead of blocking the
+ * event loop of a single-replica server for the length of a 3MB deflate.
+ */
+export async function packAchievementRows(rows: AchievementRow[]): Promise<string | null> {
+  const packed = (await gzipAsync(JSON.stringify(rows))).toString("base64");
+  return packed.length > ACHIEVEMENT_RANGE_CACHE_MAX_BYTES ? null : packed;
+}
+
+/** The exact inverse of packAchievementRows. */
+export async function unpackAchievementRows(packed: string): Promise<AchievementRow[]> {
+  const json = (await gunzipAsync(Buffer.from(packed, "base64"))).toString("utf8");
+  return JSON.parse(json) as AchievementRow[];
+}
+
+/**
  * The unstable_cache key parts for one achievement range. Exported ONLY so a test can pin that
  * the freshness token participates in the key: drop the token and two reads taken either side of
  * a seat/target/actuals change would collide on the same entry and the cache could hand back a
@@ -262,11 +321,17 @@ export async function loadAchievementRange(from: string, to: string): Promise<Ac
   const token = await loadAchievementCacheToken();
   if (!token) return loadAchievementRangeUncached(from, to);
   const cached = unstable_cache(
-    () => loadAchievementRangeUncached(from, to),
+    async () => packAchievementRows(await loadAchievementRangeUncached(from, to)),
     achievementRangeCacheKeyParts(from, to, token),
     { revalidate: ACHIEVEMENT_RANGE_CACHE_TTL_SECONDS },
   );
-  return cached();
+  const packed = await cached();
+  // null means this range does not fit even compressed, so nothing usable was stored. Read live:
+  // correct-but-slow is the right trade against handing the data cache an entry that would take
+  // the process down. The null marker itself is cached for the epoch, so later calls in the same
+  // epoch skip straight here instead of re-compressing a payload already known not to fit.
+  if (packed === null) return loadAchievementRangeUncached(from, to);
+  return unpackAchievementRows(packed);
 }
 
 /**
