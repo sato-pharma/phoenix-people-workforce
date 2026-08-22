@@ -89,6 +89,20 @@ export type VacancyReportRow = {
  */
 export type OrganogramWorkFields = {
   contractRenewalDate?: string | null;
+  /**
+   * Whether this person's stored mobile resolves to a dialable WhatsApp chat — a
+   * BOOLEAN, never the number. It exists so the chart can hide the WhatsApp button on
+   * the 28 of 175 people (measured 2026-08-22) who would otherwise get one that leads
+   * nowhere: 26 with no number on file and 2 whose number cannot be read confidently.
+   *
+   * This is deliberately not a widening of the rule above. A flag cannot be harvested
+   * into a contact list, carries nothing about the person beyond "reachable", and is
+   * absent from ORGANOGRAM_EXPORT_COLUMNS so it never reaches the sheet. **The number
+   * itself must never be added here** — the button links to
+   * /api/reports/organogram/whatsapp/[hrId], which resolves it server-side per press, so no
+   * viewer's browser ever holds the mobile numbers of everyone on their chart.
+   */
+  hasWhatsApp?: boolean;
   contractType?: string | null;
   /** employees.department_name / employees.team_name. Deliberately NOT written into the
    *  row's own `departmentName` / `teamName`, which stay null on the seat path: those two

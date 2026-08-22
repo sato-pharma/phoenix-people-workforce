@@ -1,4 +1,5 @@
 import { normalizeLineName } from "@/lib/auth/permissions";
+import { hasWhatsAppNumber } from "@/lib/reports/organogram-whatsapp";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import type {
   OrganogramReportRow,
@@ -52,6 +53,8 @@ type EmployeeWorkRow = {
   hire_date: string | null;
   hr_id: string | null;
   job_title: string | null;
+  /** Read ONLY to compute the hasWhatsApp boolean below — never placed on a row. */
+  mobile_number: string | null;
   name_ar: string | null;
   team_name: string | null;
   work_email: string | null;
@@ -96,12 +99,17 @@ export async function buildOrganogramSeatReport(): Promise<VacancyReportData> {
   // adding a second query, because every round trip crosses to Frankfurt.
   //
   // The column list is the safe set defined on OrganogramWorkFields: nothing personal
-  // (no national ID, birth date, gender, address, mobile) and nothing from payroll.
-  // Read that type's note before adding a column here.
+  // (no national ID, birth date, gender, address) and nothing from payroll. Read that
+  // type's note before adding a column here.
+  //
+  // mobile_number is the ONE exception and it never leaves this function: it is reduced
+  // immediately to the hasWhatsApp boolean, so the chart learns whether a person is
+  // reachable and never what their number is. The number is resolved per press by
+  // /api/reports/organogram/whatsapp/[hrId] instead.
   const { data: empData } = await supabase
     .from("employees")
     .select(
-      "hr_id, full_name, name_ar, work_email, job_title, employment_status, contract_type, contract_renewal_date, hire_date, department_name, team_name",
+      "hr_id, full_name, name_ar, work_email, mobile_number, job_title, employment_status, contract_type, contract_renewal_date, hire_date, department_name, team_name",
     );
   const nameByHr = new Map<string, string>();
   const hireDateByHr = new Map<string, string>();
@@ -125,6 +133,7 @@ export async function buildOrganogramSeatReport(): Promise<VacancyReportData> {
         employeeJobTitle: null,
         employeeTeamName: null,
         employmentStatus: null,
+        hasWhatsApp: false,
         nameAr: null,
         workEmail: null,
       };
@@ -136,6 +145,7 @@ export async function buildOrganogramSeatReport(): Promise<VacancyReportData> {
       employeeJobTitle: employee.job_title,
       employeeTeamName: employee.team_name,
       employmentStatus: employee.employment_status,
+      hasWhatsApp: hasWhatsAppNumber(employee.mobile_number),
       nameAr: employee.name_ar,
       workEmail: employee.work_email,
     };
