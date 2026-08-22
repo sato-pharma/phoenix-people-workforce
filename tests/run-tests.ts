@@ -59,6 +59,7 @@ import { runPayrollEngineHardeningTests } from "./payroll-engine-hardening.test.
 import { runPayrollSheetMappingTests } from "./payroll-sheet-mapping.test.ts";
 import { runPayrollWorkflowTests } from "./payroll-workflow.test.ts";
 import { runCspHeaderTests } from "./csp-headers.test.ts";
+import { runPdfCanvasTraceTests } from "./pdf-canvas-trace.test.ts";
 import { runMoneyPathSilentFailureTests } from "./money-path-silent-failures.test.ts";
 import { runReadyPayrollProrationTests } from "./ready-payroll-proration.test.ts";
 import { runReadyPayrollTemplateFormulaTests } from "./ready-payroll-template-formulas.test.ts";
@@ -981,6 +982,7 @@ await runTest("automated payroll assembleRows + reconcile (each deduction counte
 await runTest("automated payroll population diff (silent-disappearance guard)", runAutomatedPayrollPopulationDiffTests);
 await runTest("automated payroll data quality (a missing field must never become a default that pays money)", runAutomatedPayrollDataQualityTests);
 await runTest("content security policy headers (wasm + maps + onesignal)", runCspHeaderTests);
+await runTest("pdf canvas file-tracing (@napi-rs/canvas + its musl binary reach .next/standalone)", runPdfCanvasTraceTests);
 await runTest("ready payroll proration (real month length, not a fixed 30)", runReadyPayrollProrationTests);
 await runTest("ready payroll template formulas", runReadyPayrollTemplateFormulaTests);
 await runTest("payroll engine hardening", runPayrollEngineHardeningTests);

@@ -91,11 +91,18 @@ function readableChars(text: string): number {
 /**
  * The page images inside a scanned PDF.
  *
- * Deliberately extracts the EMBEDDED images rather than rendering the pages. Rendering would need a
- * canvas — a native dependency, on a platform where the standalone build already loses files the
- * tracer cannot see (see the pdf.worker.mjs note in next.config.ts). Every scanned CV in the corpus
- * is exactly one embedded image per page, which is what a phone photo wrapped in a PDF always looks
- * like, so extraction gets the same pixels for none of the risk.
+ * Extracts the EMBEDDED images rather than rendering the pages: every scanned CV in the corpus is
+ * exactly one embedded image per page, which is what a phone photo wrapped in a PDF always looks
+ * like, so extraction gets the same pixels for a fraction of the work.
+ *
+ * It does NOT, however, avoid the canvas. This comment used to claim exactly that — that the native
+ * @napi-rs/canvas dependency was sidestepped because nothing is rendered — and it was wrong:
+ * pdf-parse builds a canvas to DECODE an embedded image too (di._createCanvas). Next's production
+ * file-tracer does not copy that native addon on its own, so this function threw "Cannot find
+ * module '@napi-rs/canvas'" on every scanned PDF in production from the day it shipped — silently,
+ * because the caller below turns any failure into a null and falls back to the model. The addon is
+ * traced explicitly now; see the outputFileTracingIncludes note in next.config.ts, and keep those
+ * entries in step if this file ever moves.
  */
 async function pdfPageImages(bytes: Buffer): Promise<Buffer[]> {
   const { PDFParse } = await import("pdf-parse");
