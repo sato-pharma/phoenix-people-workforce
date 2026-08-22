@@ -7,6 +7,7 @@ import {
   ChevronUp,
   FileCheck2,
   FilePlus2,
+  Paperclip,
   RefreshCw,
   Search,
   SlidersHorizontal,
@@ -25,6 +26,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { HiringDocumentCapture } from "@/components/hiring-documents/hiring-document-capture";
 import { Input } from "@/components/ui/input";
 import { PortalDesktopTable } from "@/components/employee-portal/portal-primitives";
 import type {
@@ -42,7 +44,7 @@ type Props = {
   initialError: string | null;
 };
 
-type ActiveTab = "documents" | "control";
+type ActiveTab = "documents" | "capture" | "control";
 
 const allValue = "__all__";
 const tableHeaderClassName =
@@ -117,6 +119,9 @@ export function HiringDocumentsManager({ canManage, initialData, initialError }:
   const [completionMin, setCompletionMin] = React.useState("");
   const [completionMax, setCompletionMax] = React.useState("");
   const [busyKey, setBusyKey] = React.useState<string | null>(null);
+  // Which employee x document pair the Scan & Upload tab opens on. Set by the paperclip in a grid
+  // cell, so HR never has to re-find in two dropdowns the row she is already looking at.
+  const [captureTarget, setCaptureTarget] = React.useState<{ documentId: string; employeeHrId: string } | null>(null);
   const [isRefreshing, setIsRefreshing] = React.useState(false);
   const [newDocumentName, setNewDocumentName] = React.useState("");
   const [newDocumentDescription, setNewDocumentDescription] = React.useState("");
@@ -234,6 +239,14 @@ export function HiringDocumentsManager({ canManage, initialData, initialError }:
     } finally {
       setIsRefreshing(false);
     }
+  }
+
+  /** Jump to Scan & Upload already pointed at the cell that was clicked. */
+  function openCapture(employeeHrId: string, documentId: string) {
+    setCaptureTarget({ documentId, employeeHrId });
+    setActiveTab("capture");
+    setNotice(null);
+    setError(null);
   }
 
   async function updateDocumentStatus(
@@ -432,12 +445,36 @@ export function HiringDocumentsManager({ canManage, initialData, initialError }:
           </Button>
           <Button
             className="h-10 rounded-xl"
+            onClick={() => setActiveTab("capture")}
+            variant={activeTab === "capture" ? "default" : "ghost"}
+          >
+            Scan &amp; Upload
+          </Button>
+          <Button
+            className="h-10 rounded-xl"
             onClick={() => setActiveTab("control")}
             variant={activeTab === "control" ? "default" : "ghost"}
           >
             Hiring Documents Control
           </Button>
         </div>
+
+        {activeTab === "capture" ? (
+          <AdminTableShell
+            description="Photograph a document with the camera and Phoenix turns the pages into one clean PDF, or upload a file the office scanner already produced. Attaching a document ticks it on the checklist."
+            title="Scan & Upload"
+          >
+            <HiringDocumentCapture
+              canManage={canManage}
+              documents={documents}
+              employees={employees}
+              initialDocumentId={captureTarget?.documentId ?? null}
+              initialEmployeeHrId={captureTarget?.employeeHrId ?? null}
+              key={`${captureTarget?.employeeHrId ?? ""}:${captureTarget?.documentId ?? ""}`}
+              onChanged={refreshDashboard}
+            />
+          </AdminTableShell>
+        ) : null}
 
         {activeTab === "documents" ? (
           <>
@@ -634,7 +671,28 @@ export function HiringDocumentsManager({ canManage, initialData, initialError }:
                                     >
                                       <X className="h-4 w-4" />
                                     </Button>
+                                    <Button
+                                      aria-label={`Scan or upload ${document.name} for ${employee.fullName}`}
+                                      className="h-8 gap-1 rounded-lg px-2"
+                                      onClick={() => openCapture(employee.hrId, document.id)}
+                                      title={
+                                        entry?.fileCount
+                                          ? `${entry.fileCount} on file — open Scan & Upload`
+                                          : "Nothing on file — open Scan & Upload"
+                                      }
+                                      variant="secondary"
+                                    >
+                                      <Paperclip className="h-4 w-4" />
+                                      <span className="text-xs font-bold">{entry?.fileCount ?? 0}</span>
+                                    </Button>
                                   </div>
+                                  {/* The combination worth seeing at a glance: somebody ticked this
+                                      from memory and no scan ever arrived. */}
+                                  {status === "submitted" && (entry?.fileCount ?? 0) === 0 ? (
+                                    <p className="whitespace-nowrap text-[11px] font-semibold text-[#B45309]">
+                                      Ticked, no scan on file
+                                    </p>
+                                  ) : null}
                                   {status === "missing" ? (
                                     <label className="block">
                                       <span className="mb-1 block text-[10px] font-black uppercase tracking-[0.12em] text-[#64748B]">Deadline</span>
@@ -787,7 +845,22 @@ export function HiringDocumentsManager({ canManage, initialData, initialError }:
                                     >
                                       <X className="h-4 w-4" />
                                     </Button>
+                                    <Button
+                                      aria-label={`Scan or upload ${document.name} for ${employee.fullName}`}
+                                      className="h-8 gap-1 rounded-lg px-2"
+                                      onClick={() => openCapture(employee.hrId, document.id)}
+                                      title="Open Scan & Upload"
+                                      variant="secondary"
+                                    >
+                                      <Paperclip className="h-4 w-4" />
+                                      <span className="text-xs font-bold">{entry?.fileCount ?? 0}</span>
+                                    </Button>
                                   </div>
+                                  {status === "submitted" && (entry?.fileCount ?? 0) === 0 ? (
+                                    <p className="mt-2 whitespace-nowrap text-[11px] font-semibold text-[#B45309]">
+                                      Ticked, no scan on file
+                                    </p>
+                                  ) : null}
                                   {status === "missing" ? (
                                     <label className="mt-2 block">
                                       <span className="mb-1 block text-[10px] font-black uppercase tracking-[0.12em] text-[#64748B]">Deadline</span>
