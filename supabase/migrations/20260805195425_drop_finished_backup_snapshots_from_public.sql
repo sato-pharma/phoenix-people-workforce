@@ -3,7 +3,7 @@
 -- This change was applied straight to production and never written back as a migration file. It is
 -- recovered here verbatim -- not paraphrased -- from
 -- `supabase_migrations.schema_migrations.statements` for version 20260805195425
--- (name `drop_finished_backup_snapshots_from_public`, created_by o-gaweesh@outlook.com). The
+-- (name `drop_finished_backup_snapshots_from_public`, created_by the owner's personal account). The
 -- executable statements below are exactly the SQL that ran, and the original commentary is kept
 -- intact. The only additions are this preamble and the `-- SAFE:` annotations that
 -- `scripts/check-migrations.mjs` requires next to a DROP TABLE; both are comments and neither
