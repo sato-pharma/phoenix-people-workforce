@@ -29,6 +29,7 @@ import { Card } from "@/components/ui/card";
 import { HiringDocumentCapture } from "@/components/hiring-documents/hiring-document-capture";
 import { Input } from "@/components/ui/input";
 import { PortalDesktopTable } from "@/components/employee-portal/portal-primitives";
+import { hiringDeadlineChanged, normalizeHiringDeadline } from "@/lib/hiring-documents/deadline";
 import type {
   HiringDocumentDefinition,
   HiringDocumentEmployeeRow,
@@ -126,6 +127,9 @@ export function HiringDocumentsManager({ canManage, initialData, initialError }:
   const [newDocumentName, setNewDocumentName] = React.useState("");
   const [newDocumentDescription, setNewDocumentDescription] = React.useState("");
   const [draftNotes, setDraftNotes] = React.useState<Record<string, string>>({});
+  // What a deadline box held when it gained focus. A date field has no "done" button, so it
+  // saves on blur — and without this, simply tabbing across a row wrote to production.
+  const deadlineOnFocusRef = React.useRef<string | null>(null);
   const tableContainerRef = React.useRef<HTMLDivElement>(null);
   const topScrollRef = React.useRef<HTMLDivElement>(null);
   const [tableScrollWidth, setTableScrollWidth] = React.useState(0);
@@ -699,7 +703,12 @@ export function HiringDocumentsManager({ canManage, initialData, initialError }:
                                       <Input
                                         className="h-9 rounded-lg border-[#FCA5A5] text-xs"
                                         disabled={!canManage || busy}
-                                        onBlur={(event) => void updateDocumentStatus(employee, document, "missing", event.target.value || null)}
+                                        onBlur={(event) => {
+                                          const previous = deadlineOnFocusRef.current;
+                                          deadlineOnFocusRef.current = null;
+                                          if (previous !== null && !hiringDeadlineChanged(previous, event.target.value)) return;
+                                          void updateDocumentStatus(employee, document, "missing", normalizeHiringDeadline(event.target.value));
+                                        }}
                                         onChange={(event) => {
                                           const value = event.target.value;
                                           setData((current) => {
@@ -722,6 +731,9 @@ export function HiringDocumentsManager({ canManage, initialData, initialError }:
                                                 : row),
                                             };
                                           });
+                                        }}
+                                        onFocus={(event) => {
+                                          deadlineOnFocusRef.current = event.target.value;
                                         }}
                                         type="date"
                                         value={dueDate}
@@ -867,7 +879,12 @@ export function HiringDocumentsManager({ canManage, initialData, initialError }:
                                       <Input
                                         className="h-9 rounded-lg border-[#FCA5A5] text-xs"
                                         disabled={!canManage || busy}
-                                        onBlur={(event) => void updateDocumentStatus(employee, document, "missing", event.target.value || null)}
+                                        onBlur={(event) => {
+                                          const previous = deadlineOnFocusRef.current;
+                                          deadlineOnFocusRef.current = null;
+                                          if (previous !== null && !hiringDeadlineChanged(previous, event.target.value)) return;
+                                          void updateDocumentStatus(employee, document, "missing", normalizeHiringDeadline(event.target.value));
+                                        }}
                                         onChange={(event) => {
                                           const value = event.target.value;
                                           setData((current) => {
@@ -890,6 +907,9 @@ export function HiringDocumentsManager({ canManage, initialData, initialError }:
                                                 : row),
                                             };
                                           });
+                                        }}
+                                        onFocus={(event) => {
+                                          deadlineOnFocusRef.current = event.target.value;
                                         }}
                                         type="date"
                                         value={dueDate}
