@@ -265,6 +265,11 @@ export function runOrganogramAudienceTests() {
   // THE LOCK: no personal or compensation field may reach the sheet. Checked on the
   // column keys AND the labels, so neither a renamed key nor a relabelled column slips
   // one past. If this test fails, the fix is to remove the column — not to widen the list.
+  //
+  // "mobile" was on this list until 2026-08-23, when the owner asked for the number in the
+  // export. It came off for that reason and no other — the number still never rides on the
+  // row, which tests/organogram-whatsapp-gate.test.ts pins. Nothing else comes off without
+  // the same kind of instruction.
   const FORBIDDEN = [
     "salary",
     "gross",
@@ -283,7 +288,6 @@ export function runOrganogramAudienceTests() {
     "address",
     "residence",
     "education",
-    "mobile",
     "phone",
     "passport",
   ];
@@ -334,4 +338,18 @@ export function runOrganogramAudienceTests() {
   assert.equal(exported[1].status, "Open Seat");
   assert.equal(exported[1].workEmail, "");
   assert.equal(exported[1].seatId, "SEAT-AIF-DM-UE-2");
+
+  // The Mobile column is filled from the SERVER, at export time, never from the row —
+  // which is why the call above leaves it empty and this one does not.
+  assert.equal(
+    exported[0].mobile,
+    "",
+    "without the server's numbers the mobile cell is empty, not absent — an absent key would be an undeclared column",
+  );
+  const withNumbers = buildOrganogramExportRows(
+    [MINIA, OPEN_SEAT],
+    new Map([[MINIA.hrId.toLowerCase(), "01001234567"]]),
+  );
+  assert.equal(withNumbers[0].mobile, "01001234567");
+  assert.equal(withNumbers[1].mobile, "", "an open seat has nobody to call");
 }

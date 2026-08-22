@@ -10,6 +10,17 @@ export type ExportColumn = {
   label: string;
   /** Right-align + include in the SUM() totals row. */
   numeric?: boolean;
+  /**
+   * Force the cell to Excel's text format (`@`).
+   *
+   * A JS string already lands as a text cell, so the value is correct on open without
+   * this. What it buys is durability: a digit-only string like `01012345678` is one
+   * retype or one paste away from Excel deciding it is the number 1012345678 and eating
+   * the leading zero. That is not hypothetical here — it is precisely how 124 of 175
+   * rows in `employees.mobile_number` were damaged in the first place. Set it on any
+   * column holding digits that are an identifier rather than a quantity.
+   */
+  text?: boolean;
   width?: number;
 };
 
@@ -109,6 +120,9 @@ export function addPhoenixTableSheet(workbook: ExcelJS.Workbook, input: BuildTab
   const alignRight = { vertical: "middle", horizontal: "right", wrapText: false } as const;
   const zebraFill = { type: "pattern", pattern: "solid", fgColor: { argb: ORANGE_SOFT } } as const;
   const colAlign = input.columns.map((col) => (col.numeric ? alignRight : alignLeft));
+  // Precomputed alongside colAlign for the same reason: one lookup per cell, no per-cell
+  // allocation. A shared string literal costs nothing to reuse.
+  const colTextFormat = input.columns.map((col) => (col.text ? "@" : null));
   input.rows.forEach((row, r) => {
     const excelRow = sheet.getRow(firstDataRow + r);
     const zebra = r % 2 === 1;
@@ -119,6 +133,8 @@ export function addPhoenixTableSheet(workbook: ExcelJS.Workbook, input: BuildTab
       cell.font = dataFont;
       cell.alignment = colAlign[i];
       cell.border = dataBorder;
+      const textFormat = colTextFormat[i];
+      if (textFormat) cell.numFmt = textFormat;
       if (zebra) cell.fill = zebraFill;
     });
   });

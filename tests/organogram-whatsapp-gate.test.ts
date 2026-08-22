@@ -19,12 +19,18 @@ import type { OrganogramReportRow } from "../src/lib/reports/vacancies.ts";
  *   1. WHO you may resolve a number for — a line-scoped viewer must not be able to open
  *      a chat with someone off their chart, and the refusal must be 404 rather than 403.
  *   2. That the chart never CARRIES the number. OrganogramWorkFields ships to every
- *      viewer's browser AND into the XLSX, so a mobile placed there would be a bulk
- *      disclosure to everyone with organogram access, export column or not.
+ *      viewer's browser, so a mobile placed there would be a standing bulk disclosure to
+ *      everyone with organogram access, all day, whether or not anyone ever exports.
+ *
+ * The SHEET does have a Mobile column — the owner asked for one on 2026-08-23. That is
+ * not a hole in claim 2, it is the reason claim 2 has to be pinned: the numbers are
+ * fetched from the server when Export is pressed and handed to buildOrganogramExportRows
+ * as a SEPARATE argument, so the sheet can carry them while the page never does. The
+ * assertions below hold those two facts apart.
  *
  * Claim 2 is the one most likely to be undone by accident: the mobile is already visible
- * one click away in the node popup's Contact section, so adding it to the row reads like
- * a harmless convenience. It is not. The assertions below are what stops it.
+ * one click away in the node popup's Contact section, and now in the sheet as well, so
+ * adding it to the row reads like a harmless simplification. It is not.
  */
 
 const SENTINEL_MOBILE = "01000000009";
@@ -119,28 +125,86 @@ export function runOrganogramWhatsAppGateTests() {
     "a lowercase hrId must still match — otherwise the gate 404s someone the viewer CAN see",
   );
 
-  // ---- 3. the number never reaches the export ----
+  // ---- 3. the number reaches the sheet ONLY from the server ----
+  // Exactly one contact-number column, and no second one under another name.
   for (const column of ORGANOGRAM_EXPORT_COLUMNS) {
-    for (const word of ["mobile", "phone", "whatsapp", "msisdn"]) {
+    for (const word of ["phone", "whatsapp", "msisdn", "telephone"]) {
       assert.ok(
         !column.key.toLowerCase().includes(word),
-        "export column key \"" + column.key + "\" looks like a phone column — the sheet is work fields only",
+        "export column key \"" + column.key + "\" is a second phone column — the organogram sheet has one, keyed \"mobile\"",
       );
       assert.ok(
         !column.label.toLowerCase().includes(word),
-        "export column label \"" + column.label + "\" looks like a phone column — the sheet is work fields only",
+        "export column label \"" + column.label + "\" is a second phone column — the organogram sheet has one, labelled \"Mobile\"",
       );
     }
   }
 
-  const exported = JSON.stringify(buildOrganogramExportRows(CHART));
+  const mobileColumns = ORGANOGRAM_EXPORT_COLUMNS.filter((column) =>
+    column.key.toLowerCase().includes("mobile"),
+  );
+  assert.equal(
+    mobileColumns.length,
+    1,
+    "the organogram export must declare exactly one mobile column",
+  );
+  assert.equal(
+    mobileColumns[0].text,
+    true,
+    "the mobile column must be text-formatted — an Excel number cell eats the leading zero, which is how 124 of the 175 stored numbers were damaged before they ever reached this app",
+  );
+
+  // THE LOCK. Every fixture row carries a sentinel mobile the row type does not declare.
+  // Build with no server map and the column must still come out empty: a value here means
+  // the builder read the number off the row, which is the disclosure this file exists to
+  // prevent.
+  const exportedWithoutNumbers = buildOrganogramExportRows(CHART);
   assert.ok(
-    !exported.includes(SENTINEL_MOBILE),
+    !JSON.stringify(exportedWithoutNumbers).includes(SENTINEL_MOBILE),
     "buildOrganogramExportRows must pick named fields, never spread the row — a mobile on the row reached the sheet",
   );
-  assert.ok(
-    !/[0-9]{10,}/u.test(exported),
-    "no run of 10+ digits may appear anywhere in the organogram export — that shape is a phone number",
+  for (const exportedRow of exportedWithoutNumbers) {
+    assert.equal(
+      exportedRow.mobile,
+      "",
+      "with no server map every mobile cell must be empty — a number here came off the row",
+    );
+  }
+
+  // With a map, the number lands in the mobile cell of the person the server named, and
+  // in no other cell and on no other person.
+  const numbersByHrId = new Map([
+    ["pd-rep-1", "01111111111"],
+    ["seat-vacant-1", "01222222222"],
+  ]);
+  const exportedWithNumbers = buildOrganogramExportRows(CHART, numbersByHrId);
+  for (const exportedRow of exportedWithNumbers) {
+    for (const [key, value] of Object.entries(exportedRow)) {
+      if (key === "mobile") continue;
+      assert.ok(
+        !/[0-9]{10,}/u.test(String(value ?? "")),
+        "a run of 10+ digits reached the organogram export column \"" + key + "\" — that shape is a phone number",
+      );
+    }
+  }
+
+  const pediaRep = exportedWithNumbers.find((exportedRow) => exportedRow.hrId === "PD-REP-1");
+  assert.equal(
+    pediaRep?.mobile,
+    "01111111111",
+    "the server's number must reach the row of the person it was answered for",
+  );
+  assert.equal(
+    exportedWithNumbers.find((exportedRow) => exportedRow.hrId === "CEO-1")?.mobile,
+    "",
+    "a person the server did not answer for exports a blank mobile, never a borrowed one",
+  );
+
+  // An open seat has nobody to call. It stays blank even when the map holds its seat id.
+  assert.equal(
+    exportedWithNumbers.find((exportedRow) => exportedRow.type === "Vacancy")?.mobile,
+    "",
+    "an open seat must never export a phone number",
   );
 
   // ---- 4. the number never reaches the BROWSER either ----
@@ -167,7 +231,7 @@ export function runOrganogramWhatsAppGateTests() {
       !/mobile|phone|whatsapp_?number/iu.test(line),
       "OrganogramWorkFields must never carry a number — found \"" +
         line.trim() +
-        "\". It ships to every viewer's browser and into the XLSX; the button resolves the number server-side per press instead.",
+        "\". It ships to every viewer's browser on every load; both the button and the export resolve numbers server-side, per press, instead.",
     );
   }
 
@@ -208,5 +272,75 @@ export function runOrganogramWhatsAppGateTests() {
   assert.ok(
     routeSource.includes("NextResponse.redirect(whatsAppChatUrl(number), 302)"),
     "the route must redirect rather than return the number as JSON — returning it would put the mobile in the page",
+  );
+
+  // ---- 6. the EXPORT's number route is gated the same way, and is audited ----
+  // This one does return numbers as JSON, in bulk, which is exactly why it must carry the
+  // same chart-membership rule and leave a record of who pulled the list.
+  const contactRouteSource = readFileSync(
+    new URL("../app/api/reports/organogram/contact-numbers/route.ts", import.meta.url),
+    "utf8",
+  );
+  assert.ok(
+    contactRouteSource.includes("assertPermission(access, \"organogram\", \"read\")"),
+    "the contact-numbers route must assert the organogram read permission server-side",
+  );
+  assert.ok(
+    contactRouteSource.includes("if (row.type !== \"employee\") continue;"),
+    "the contact-numbers route must build its allow-list from employees only — a vacant seat has nobody to answer for",
+  );
+  assert.ok(
+    contactRouteSource.includes("allowed.has(key)"),
+    "the contact-numbers route must filter the directory to the caller's own chart",
+  );
+  for (const verb of ["POST", "PUT", "PATCH", "DELETE"]) {
+    assert.ok(
+      !new RegExp("export async function " + verb + "\b", "u").test(contactRouteSource),
+      "the contact-numbers route must expose " + verb + " to nobody — it is a read",
+    );
+  }
+
+  // The registry DECLARES the audit; only this call writes one. Checking the declaration
+  // alone is how a route gets described as audited when nothing reaches audit_logs.
+  //
+  // This is a source check, so be clear about its reach: it catches the call being removed,
+  // renamed, or left unawaited. It cannot catch a call that is still present but does not
+  // run. Removal is the regression that actually happens.
+  assert.ok(
+    contactRouteSource.includes("await writeRequiredAuditLog({"),
+    "the contact-numbers route must AWAIT its own audit write — a registry entry declares an audit, it never produces one, and an unawaited write races the response",
+  );
+  const auditAt = contactRouteSource.indexOf("await writeRequiredAuditLog({");
+  const returnAt = contactRouteSource.indexOf("return NextResponse.json({ contacts })");
+  assert.ok(returnAt > 0, "the contact-numbers route must still answer with the contacts payload");
+  assert.ok(
+    auditAt < returnAt,
+    "the audit row must be written BEFORE the numbers are returned — numbers handed out that nobody can account for later are worse than a failed export",
+  );
+
+  const registrySource = readFileSync(
+    new URL("../src/lib/security/access-registry.ts", import.meta.url),
+    "utf8",
+  );
+  const contactEntryAt = registrySource.indexOf("/api/reports/organogram/contact-numbers");
+  assert.ok(
+    contactEntryAt > 0,
+    "the contact-numbers route must have its OWN registry entry — the blanket /api/reports/** rule carries no audit classification",
+  );
+  const contactEntry = registrySource.slice(
+    registrySource.lastIndexOf("sessionApi(", contactEntryAt),
+    contactEntryAt,
+  );
+  assert.ok(
+    contactEntry.includes("classification: \"export\"") && contactEntry.includes("required: true"),
+    "pulling every colleague's number must be audited as an export",
+  );
+
+  // Ahead of the blanket rule, or it is never reached and the audit never fires.
+  const blanketAt = registrySource.indexOf("pattern: \"/api/reports/**\"");
+  assert.ok(blanketAt > 0, "the blanket /api/reports/** rule must still exist");
+  assert.ok(
+    contactEntryAt < blanketAt,
+    "the contact-numbers entry must be listed BEFORE /api/reports/**, which would otherwise match first and swallow the audit",
   );
 }
