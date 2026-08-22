@@ -117,6 +117,30 @@ RUN cd /tmp && npm init -y >/dev/null 2>&1 \
  && cp -R /tmp/node_modules/. /app/node_modules/ \
  && rm -rf /tmp/node_modules /tmp/package.json /tmp/package-lock.json
 
+# sharp, for the same reason and by the same method — but it failed differently, so read this
+# before changing it. The standalone trace DID copy sharp's JS and its `@img/sharp-linuxmusl-x64`
+# binding; what it left behind was `@img/sharp-libvips-linuxmusl-x64`, which ships the
+# `libvips-cpp.so` that the binding links against. A JS tracer follows imports, and a DT_NEEDED
+# entry inside a compiled .so is not an import — so the trace looked complete and the module threw
+# ERR_DLOPEN_FAILED at runtime instead. That took down the whole Hiring Documents page on
+# 2026-08-22, because a top-level `import sharp` sat on its render path (now loaded on demand,
+# see src/lib/hiring-documents/document-scan.ts).
+#
+# Two live features need this: direct-order invoice extraction and hiring-document scanning.
+# Removing the traced copies first matters — copying over a pnpm symlink writes THROUGH it into
+# the store instead of replacing it, and leaves the broken resolution in place.
+#
+# Keep the version in sync with pnpm-lock.yaml (sharp@0.35.3).
+RUN cd /tmp && npm init -y >/dev/null 2>&1 \
+ && npm install --omit=dev sharp@0.35.3 >/dev/null 2>&1 \
+ && rm -rf /app/node_modules/sharp /app/node_modules/@img \
+ && cp -R /tmp/node_modules/. /app/node_modules/ \
+ && rm -rf /tmp/node_modules /tmp/package.json /tmp/package-lock.json
+
+# Fail the BUILD if sharp still cannot load, rather than discovering it as a 500 in production —
+# which is exactly how the 2026-08-22 outage was found. This is the check that would have caught it.
+RUN cd /app && node -e "const s=require('sharp'); s({create:{width:1,height:1,channels:3,background:'#000'}}).jpeg().toBuffer().then(()=>console.log('sharp loads and encodes OK'))"
+
 USER nextjs
 
 EXPOSE 8080
