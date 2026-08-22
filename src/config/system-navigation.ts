@@ -1987,6 +1987,13 @@ export const customersDatabasePageItems: readonly AdminToolsPageItem[] = [
     description: "Validation view of customer, pharmacy, and distributor-code rows for marketing requests.",
     roles: ["SFE Manager", "Super Admin"],
   },
+  {
+    href: "/admin/marketing-requests/validated-customers",
+    icon: ClipboardCheck,
+    label: "Validated Customers",
+    description: "Validated marketing customers by employee — check the data, then hand one to Direct Orders.",
+    roles: ["SFE Manager", "Super Admin"],
+  },
 ] as const satisfies readonly AdminToolsPageItem[];
 
 // ── Attendance Management hub (app/(admin)/attendance/page.tsx) ─────────────────

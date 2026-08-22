@@ -1,0 +1,267 @@
+import assert from "node:assert/strict";
+
+import { createAccessContext } from "../src/lib/auth/permissions.ts";
+import {
+  buildValidatedCustomerCompleteness,
+  canOpenValidatedCustomerRegister,
+  listValidatedMarketingCustomers,
+  revertValidatedCustomerTransfer,
+  transferValidatedCustomerToDirectOrders,
+} from "../src/lib/marketing-requests/validated-customer-transfer.ts";
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The admin Validated Customers register, and the hand-off to Direct Orders.
+//
+// Two things are pinned here, and they are the two that would actually cost something if they
+// broke:
+//
+//   1. THE GATE. Every entry point — read, transfer, revert — refuses a role that is not Super
+//      Admin or SFE Manager. The owner's requirement was "As an admin, only can do this", and the
+//      transfer WRITES to a second module, so a hole here is not a visibility bug, it is an
+//      unauthorized write. Each assertion drives the real service function; the gate throws before
+//      any Supabase call, so no database is needed.
+//
+//   2. THE COMPLETENESS VERDICT. Its whole job is to tell a tired admin at 2am what the automatic
+//      validation did NOT check. If a missing field silently reads as "ok", the screen becomes
+//      worse than nothing, because it looks like a check happened.
+//
+// What is deliberately NOT asserted: that a blocker prevents a transfer. It must not. The owner
+// ruled that the admin decides and the confirmation dialog is the only gate — "Don't block." The
+// `blockerDoesNotImplyRefusal` case below pins that ruling so a later reader cannot "fix" the
+// completeness panel into a hard gate.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Roles that must never reach this register. Includes the marketing workflow roles: they raise
+ *  and approve spend, they do not run the customer desk or write into Direct Orders. */
+const FORBIDDEN_ROLES = [
+  "Employee",
+  "Medical Rep",
+  "District Manager",
+  "Regional Manager",
+  "National Sales Manager",
+  "Product Manager",
+  "Group Product Manager",
+  "Marketing Manager",
+  "Finance Manager",
+  "Training Manager",
+  "Talent Acquisition",
+  "Manager",
+  "CEO",
+] as const;
+
+const ALLOWED_ROLES = ["Super Admin", "SFE Manager"] as const;
+
+const SOME_CUSTOMER_ID = "00000000-0000-0000-0000-000000000001";
+const SOME_TRANSFER_ID = "00000000-0000-0000-0000-000000000002";
+
+/** A record with nothing missing, used as the baseline every failure case deviates from. */
+function completeInput() {
+  return {
+    capturedAccuracyMeters: 12,
+    capturedAddress: "1 Test Street, Shibin el Kom",
+    capturedLatitude: 30.55,
+    capturedLongitude: 31.01,
+    contactMobile: "01000000000",
+    contactName: "Dr Test",
+    customerType: "account",
+    displayName: "Test Pharmacy",
+    distributorCode: "DIST-1",
+    distributorCustomerCode: "CUST-1",
+    duplicateCount: 0,
+    evidenceStatus: "complete",
+    hasEvidencePhoto: true,
+    linkedPharmacyCount: 1,
+    marketingAreaName: "Menoufia 1",
+    resolvedAreaCode: "D12",
+  };
+}
+
+function itemFor(result: ReturnType<typeof buildValidatedCustomerCompleteness>, key: string) {
+  const item = result.items.find((entry) => entry.key === key);
+  assert.ok(item, `completeness result must contain an item keyed "${key}"`);
+  return item;
+}
+
+async function testReadGateRefusesNonAdmins() {
+  for (const role of FORBIDDEN_ROLES) {
+    const access = createAccessContext({ hrId: "TEST-1", role });
+    await assert.rejects(
+      () => listValidatedMarketingCustomers(access),
+      /Forbidden/i,
+      `${role} must not be able to list every rep's validated customers`,
+    );
+  }
+}
+
+async function testTransferGateRefusesNonAdmins() {
+  for (const role of FORBIDDEN_ROLES) {
+    const access = createAccessContext({ hrId: "TEST-1", role });
+    await assert.rejects(
+      () => transferValidatedCustomerToDirectOrders(access, { customerId: SOME_CUSTOMER_ID }),
+      /Forbidden/i,
+      `${role} must not be able to write a pharmacy into Direct Orders`,
+    );
+  }
+}
+
+async function testRevertGateRefusesNonAdmins() {
+  for (const role of FORBIDDEN_ROLES) {
+    const access = createAccessContext({ hrId: "TEST-1", role });
+    await assert.rejects(
+      () => revertValidatedCustomerTransfer(access, { transferId: SOME_TRANSFER_ID }),
+      /Forbidden/i,
+      `${role} must not be able to revert a transfer`,
+    );
+  }
+}
+
+function testAllowedRolesPassThePredicate() {
+  for (const role of ALLOWED_ROLES) {
+    assert.equal(
+      canOpenValidatedCustomerRegister({ role, scope: "company" }),
+      true,
+      `${role} must be able to open the validated customer register`,
+    );
+  }
+  for (const role of FORBIDDEN_ROLES) {
+    assert.equal(
+      canOpenValidatedCustomerRegister({ role, scope: "company" }),
+      false,
+      `${role} must not pass the register predicate`,
+    );
+  }
+  // The page guard and the service gate share this predicate; a system-scope caller passes both.
+  assert.equal(canOpenValidatedCustomerRegister({ role: "Employee", scope: "system" }), true);
+}
+
+function testCompleteRecordReportsNothingOutstanding() {
+  const result = buildValidatedCustomerCompleteness(completeInput());
+  assert.equal(result.blockers, 0, "a fully populated record must report no blockers");
+  assert.equal(result.warnings, 0, "a fully populated record must report no warnings");
+  assert.equal(result.isComplete, true, "a fully populated record must read as complete");
+}
+
+function testMissingNameIsABlocker() {
+  const result = buildValidatedCustomerCompleteness({ ...completeInput(), displayName: null });
+  assert.equal(itemFor(result, "name").severity, "blocker");
+  assert.equal(result.isComplete, false);
+}
+
+function testMissingAddressIsABlocker() {
+  const result = buildValidatedCustomerCompleteness({ ...completeInput(), capturedAddress: "   " });
+  assert.equal(
+    itemFor(result, "address").severity,
+    "blocker",
+    "a whitespace-only address must not count as an address",
+  );
+}
+
+function testMissingGpsIsABlocker() {
+  const result = buildValidatedCustomerCompleteness({
+    ...completeInput(),
+    capturedLatitude: null,
+    capturedLongitude: null,
+  });
+  assert.equal(itemFor(result, "gps").severity, "blocker");
+}
+
+function testNoLinkedPharmacyIsABlocker() {
+  // Direct Orders validates a PHARMACY. A customer with none has nothing to send at all.
+  const result = buildValidatedCustomerCompleteness({ ...completeInput(), linkedPharmacyCount: 0 });
+  assert.equal(itemFor(result, "pharmacy").severity, "blocker");
+}
+
+function testUnresolvableAreaIsABlocker() {
+  // The live `delta_1` case: four validated customers sit on a marketing area that maps to no
+  // Direct Order area, so a transfer would land a shop in nobody's territory.
+  const result = buildValidatedCustomerCompleteness({
+    ...completeInput(),
+    marketingAreaName: "Delta (1)",
+    resolvedAreaCode: null,
+  });
+  const item = itemFor(result, "area");
+  assert.equal(item.severity, "blocker");
+  assert.match(
+    item.detail,
+    /Delta \(1\)/,
+    "the admin must be told WHICH area failed to map, not just that one did",
+  );
+}
+
+function testMissingMobileIsOnlyAWarning() {
+  // 9 of the 22 live validated customers have no mobile. Direct Orders does not require one, so
+  // this must never harden into a blocker.
+  const result = buildValidatedCustomerCompleteness({ ...completeInput(), contactMobile: null });
+  assert.equal(itemFor(result, "mobile").severity, "warning");
+  assert.equal(result.blockers, 0, "a missing mobile must not produce a blocker");
+  assert.equal(result.isComplete, false, "but it must still stop the record reading as full");
+}
+
+function testUnmatchedDistributorCodeIsOnlyAWarning() {
+  // Owner ruling, 2026-08-12: an unmatched code is released and FLAGGED, never blocked — a gap in
+  // Phoenix's own reference table says nothing about whether the rep stood at the shop.
+  const result = buildValidatedCustomerCompleteness({
+    ...completeInput(),
+    distributorCode: null,
+    distributorCustomerCode: null,
+  });
+  assert.equal(itemFor(result, "distributor_code").severity, "warning");
+  assert.equal(result.blockers, 0);
+}
+
+function testDuplicateNameIsSurfacedAsAWarning() {
+  // The live case this exists for: حضانه النيل captured twice by the same rep eight minutes apart,
+  // and محمد رويشة captured by two different reps. Neither is visible on a per-rep screen.
+  const result = buildValidatedCustomerCompleteness({ ...completeInput(), duplicateCount: 1 });
+  const item = itemFor(result, "duplicate");
+  assert.equal(item.severity, "warning");
+  assert.match(item.detail, /1 other active customer/, "the count must be named, not implied");
+}
+
+function testEvidencePendingIsAWarningNotABlocker() {
+  // `sfe_validated` rows are cleared by a HUMAN and legitimately carry pending evidence. Treating
+  // that as a blocker would flag six real records as broken.
+  const result = buildValidatedCustomerCompleteness({
+    ...completeInput(),
+    evidenceStatus: "pending",
+    hasEvidencePhoto: false,
+  });
+  assert.equal(itemFor(result, "evidence").severity, "warning");
+  assert.equal(itemFor(result, "photo").severity, "warning");
+  assert.equal(result.blockers, 0, "a human-validated record with no photo must not read as broken");
+}
+
+function testBlockerDoesNotImplyRefusal() {
+  // Pins the owner's ruling: the completeness panel INFORMS, the confirmation dialog gates.
+  // `buildValidatedCustomerCompleteness` is a pure verdict — it returns counts and nothing that
+  // could be read as permission — so a caller cannot accidentally turn it into a hard gate.
+  const result = buildValidatedCustomerCompleteness({
+    ...completeInput(),
+    capturedAddress: null,
+    displayName: null,
+  });
+  assert.ok(result.blockers >= 2, "both missing fields must be reported");
+  assert.equal(
+    Object.prototype.hasOwnProperty.call(result, "canTransfer"),
+    false,
+    "the completeness verdict must not carry a transfer permission — the admin decides, not this function",
+  );
+}
+
+export async function runValidatedCustomerTransferTests() {
+  await testReadGateRefusesNonAdmins();
+  await testTransferGateRefusesNonAdmins();
+  await testRevertGateRefusesNonAdmins();
+  testAllowedRolesPassThePredicate();
+  testCompleteRecordReportsNothingOutstanding();
+  testMissingNameIsABlocker();
+  testMissingAddressIsABlocker();
+  testMissingGpsIsABlocker();
+  testNoLinkedPharmacyIsABlocker();
+  testUnresolvableAreaIsABlocker();
+  testMissingMobileIsOnlyAWarning();
+  testUnmatchedDistributorCodeIsOnlyAWarning();
+  testDuplicateNameIsSurfacedAsAWarning();
+  testEvidencePendingIsAWarningNotABlocker();
+  testBlockerDoesNotImplyRefusal();
+}
