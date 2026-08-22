@@ -497,6 +497,7 @@ import { runPhase21SecurityHardeningTests } from "./phase21-security-hardening.t
 import { runPhase22RoleMatrixSecurityTests } from "./phase22-role-matrix-security.test.ts";
 import { runCeoOrganogramVisibilityTests } from "./ceo-organogram-visibility.test.ts";
 import { runOrganogramWhatsAppNumberTests } from "./organogram-whatsapp-number.test.ts";
+import { runOrganogramWhatsAppGateTests } from "./organogram-whatsapp-gate.test.ts";
 import { runCeoCommandCenterTests } from "./ceo-command-center.test.ts";
 import { runPhase23BrowserRoleWalkthroughTests } from "./phase23-browser-role-walkthrough.test.ts";
 import { runPhase24RealAuthRlsApiSmokeTests } from "./phase24-real-auth-rls-api-smoke.test.ts";
@@ -1509,6 +1510,10 @@ await runTest("phase 21 security hardening", runPhase21SecurityHardeningTests);
 await runTest("phase 22 role matrix security", runPhase22RoleMatrixSecurityTests);
 await runTest("CEO organogram visibility", runCeoOrganogramVisibilityTests);
 await runTest("Organogram WhatsApp number", runOrganogramWhatsAppNumberTests);
+await runTest(
+  "Organogram WhatsApp gate (line scope refuses an off-chart person with 404, and the number never reaches the row, the browser or the sheet)",
+  runOrganogramWhatsAppGateTests,
+);
 await runTest("CEO command center", runCeoCommandCenterTests);
 await runTest("CEO account contract", runCeoAccountContractTests);
 await runTest("phase 23 browser role walkthrough", runPhase23BrowserRoleWalkthroughTests);
