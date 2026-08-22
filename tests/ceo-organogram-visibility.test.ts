@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { createAccessContext } from "../src/lib/auth/permissions.ts";
 import {
   canAccessCompanyOrganogram,
+  isLineScopedOrganogramRole,
   scopeOrganogramReportData,
 } from "../src/lib/reports/organogram.ts";
 import type {
@@ -88,6 +89,23 @@ export function runCeoOrganogramVisibilityTests() {
     canAccessCompanyOrganogram(districtManager),
     false,
     "District Manager has no company organogram",
+  );
+
+  // 1b) ...but he MUST clear the line-scoped gate. Regression guard for the two-gate trap
+  // (2026-08-22): District Manager carried organogram: ["read"] in defaultPermissionMatrix while
+  // appearing in NEITHER scope function, so he passed canAccess and was then redirected away by
+  // app/employee-portals/organogram/page.tsx — the only role in the whole matrix that held the
+  // grant and could not reach a chart. Both halves are asserted together on purpose: the fix must
+  // give him the LINE view without quietly promoting him to the company one.
+  assert.equal(
+    isLineScopedOrganogramRole(districtManager),
+    true,
+    "District Manager must reach the line-scoped organogram (his organogram:read grant is otherwise dead)",
+  );
+  assert.equal(
+    isLineScopedOrganogramRole(medicalRep),
+    false,
+    "Medical Rep holds no organogram grant and must not reach a line-scoped chart",
   );
 
   // Training Manager and Marketing Manager get company-wide (all 3 commercial lines)

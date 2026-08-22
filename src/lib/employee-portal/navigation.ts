@@ -417,8 +417,14 @@ export function resolveEmployeePortalNavVisibility(
     showMyCoachingTab: isMedicalRep,
     showReportItTab: isA3Account,
     showReportItDashboardTab: isProductManager || isGroupProductManager || isMarketingManager || isTrainingManager,
+    // District Manager added 2026-08-22 alongside isLineScopedOrganogramRole in
+    // src/lib/reports/organogram.ts, which is the enforcing gate; this flag only surfaces the
+    // link. Spelled `resolvedRole === "District Manager"` deliberately, NOT isDistrictManager:
+    // the latter also matches the Head-Office "Manager" rung, which holds no organogram grant at
+    // all in defaultPermissionMatrix and would get a link that bounces off assertPermission.
     showOrganogramTab:
       showMedRepsPerformanceTab ||
+      resolvedRole === "District Manager" ||
       isRegionalManager ||
       isProductManager ||
       isGroupProductManager ||
