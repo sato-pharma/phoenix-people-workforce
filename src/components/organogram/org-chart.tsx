@@ -37,6 +37,7 @@ import * as React from "react";
 
 import { OrganogramAudienceDialog } from "@/components/organogram/organogram-audience-dialog";
 import { OrganogramNodeDetailModal } from "@/components/organogram/organogram-node-detail-modal";
+import { OrganogramWhatsAppButton } from "@/components/organogram/whatsapp-button";
 import { ExportXlsxButton } from "@/components/ui/export-xlsx-button";
 import { formatDateOnly } from "@/lib/date-only";
 import {
@@ -281,6 +282,12 @@ function PersonNode({
       ) : (
         <div className="flex min-w-0 flex-1 items-start gap-2.5">{identity}</div>
       )}
+      {/* Sibling of the press target, never nested inside it — an anchor within a button
+          resolves unpredictably. Hidden for vacancies (nobody to message) and for anyone
+          whose stored number cannot be dialled, which hasWhatsApp already answers. */}
+      {!isVacancy && row.hasWhatsApp ? (
+        <OrganogramWhatsAppButton hrId={row.hrId} name={formatEmployeeDisplayName(row.displayName)} />
+      ) : null}
       {onToggle ? (
         <button
           aria-expanded={!collapsed}
@@ -463,6 +470,13 @@ function ManagerLane({
           );
         })()}
         <div className="flex shrink-0 items-center gap-1.5">
+          {!isVacantManagerSeat && dsmRow?.hasWhatsApp ? (
+            <OrganogramWhatsAppButton
+              hrId={dsmRow.hrId}
+              name={formatEmployeeDisplayName(group.name)}
+              tone="dark"
+            />
+          ) : null}
           <span
             className={cn(
               "rounded-md px-1.5 py-1 text-center text-[10px] font-black leading-none ring-1",
@@ -602,15 +616,29 @@ function SpineNode({
   // The CEO and NSM boxes are backed by a real row → pressable; the "Line" box is
   // just the line name → rendered as a plain div.
   if (canOpen && row && onSelect) {
+    // The card itself IS the press target here, so the WhatsApp link cannot live inside
+    // it. A relative wrapper carrying the card's own width keeps the flex centering of
+    // the spine identical while giving the anchor somewhere to sit as a true sibling.
     return (
-      <button
-        aria-label={`View details for ${name}`}
-        className={cn(cardClass, "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-400/60")}
-        onClick={() => onSelect(row)}
-        type="button"
-      >
-        {body}
-      </button>
+      <div className="relative w-full max-w-md">
+        <button
+          aria-label={`View details for ${name}`}
+          className={cn(cardClass, "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-400/60")}
+          onClick={() => onSelect(row)}
+          type="button"
+        >
+          {body}
+        </button>
+        {row.type === "employee" && row.hasWhatsApp ? (
+          <span className="absolute right-2 top-2">
+            <OrganogramWhatsAppButton
+              hrId={row.hrId}
+              name={name}
+              tone={tone === "dark" ? "dark" : "light"}
+            />
+          </span>
+        ) : null}
+      </div>
     );
   }
 
