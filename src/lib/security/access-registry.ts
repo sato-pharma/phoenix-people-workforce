@@ -691,6 +691,18 @@ export const accessRegistry = [
   sessionApi({ audit: { classification: "access-read", required: true }, methods: readOnly, pattern: "/api/territory-management/map", permission: { resource: "sales", action: "read" } }),
   sessionApi({ audit: { classification: "access-read", required: true }, methods: readOnly, pattern: "/api/territory-management/search", permission: { resource: "sales", action: "read" } }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/territory-management/pin", permission: { resource: "sales", action: "import" }, csrfExemptReason: "Authenticated Super-Admin-only JSON write: stores one hand-placed brick coordinate after a server-side role check and an Egypt bounding-box validation." }),
+  // Area Consolidation — the Super Admin folds a legacy area's live rows onto a current one, and
+  // can put them back. The gate is assertAreaConsolidationAccess INSIDE
+  // src/lib/territory-management/area-consolidation.ts, not in the handlers: the routes are
+  // transport and the service is the boundary, so these carry guard: "domain-helper" like
+  // /api/admin/pm-products, rather than naming a permission resource they do not check.
+  sessionApi({ audit: { classification: "access-read", required: true }, methods: readOnly, pattern: "/api/territory-management/area-consolidation", permission: null, guard: "domain-helper" }),
+  sessionApi({ audit: { classification: "access-read", required: true }, methods: readOnly, pattern: "/api/territory-management/area-consolidation/:areaId", permission: null, guard: "domain-helper" }),
+  // The two writes. Both rewrite area_id on live current-assignment rows, so both are mutations —
+  // never reads — and both declare CSRF required, which the handlers already satisfy with
+  // assertSameOriginMutation(request) rather than claiming the blanket session exemption.
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/territory-management/area-consolidation/:areaId/apply", permission: null, guard: "domain-helper", csrfRequired: true }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/territory-management/area-consolidation/reverts/:consolidationId", permission: null, guard: "domain-helper", csrfRequired: true }),
   // Mints and revokes the passwordless preview links below. Gated on EXPORT, never on read:
   // publishing territory past the login wall is the strongest export there is, so a reader who may
   // not download the map must not be able to hand out a public link to it instead. The domain adds

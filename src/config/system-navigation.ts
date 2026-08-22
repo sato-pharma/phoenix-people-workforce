@@ -49,6 +49,7 @@ import {
   Settings2,
   ShieldAlert,
   ShieldCheck,
+  Shuffle,
   SlidersHorizontal,
   Sparkles,
   Stethoscope,
@@ -1706,6 +1707,15 @@ export const masterDataPageItems: readonly AdminToolsPageItem[] = [
     description: "Customer directory, mapping, pharmacy master, and marketing's customer database — in one place.",
     roles: ["Super Admin", "SFE Manager", "CEO"],
   },
+  {
+    href: "/admin/master-data/area-consolidation",
+    icon: Shuffle,
+    label: "Area Consolidation",
+    description: "Move everything off a legacy area onto the area it actually means — you read the list, you press the button.",
+    // Owner, 2026-08-22: Super Admin only. This moves employees and teams between territories in
+    // bulk; it is the most sensitive button in Master Data and nobody else gets it.
+    roles: ["Super Admin"],
+  },
 ] as const satisfies readonly AdminToolsPageItem[];
 
 export const adminToolsPageItems: readonly AdminToolsPageItem[] = [
@@ -1986,6 +1996,15 @@ export const customersDatabasePageItems: readonly AdminToolsPageItem[] = [
     label: "Customer Database",
     description: "Validation view of customer, pharmacy, and distributor-code rows for marketing requests.",
     roles: ["SFE Manager", "Super Admin"],
+  },
+  {
+    href: "/admin/marketing-requests/validated-customers",
+    icon: ClipboardCheck,
+    label: "Validated Customers",
+    description: "Validated marketing customers by employee — check the data, then hand one to Direct Orders.",
+    // Owner, 2026-08-22: "Only super admin." Narrower than the Customer Database row above on
+    // purpose — this one carries the button that writes a pharmacy into Direct Orders.
+    roles: ["Super Admin"],
   },
 ] as const satisfies readonly AdminToolsPageItem[];
 
