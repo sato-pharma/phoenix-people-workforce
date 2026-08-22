@@ -121,9 +121,17 @@ overrides:
 # (supply-chain guard).
 # - supabase: postinstall downloads the Supabase CLI binary into node_modules;
 #   required by the db:*/phase* migration-gate scripts (`pnpm exec supabase ...`).
-# - sharp: transitive (next@16 image optimization) + direct devDep
-#   (scripts/optimize-brand-assets.mjs); prebuilt binaries via optional deps,
-#   script is a fallback compile — same as under npm.
+# - sharp: transitive (next@16 image optimization) + a direct RUNTIME dependency.
+#   Moved out of devDependencies on 2026-08-22: three code paths import it, and two of them
+#   serve production — src/lib/direct-orders/invoice-scan.ts (invoice extraction) and
+#   src/lib/hiring-documents/document-scan.ts (hiring-document scanning); the third is the
+#   build-time scripts/optimize-brand-assets.mjs. It only ever reached production because the
+#   Dockerfile installs dev dependencies too, so the declaration was a lie that a `--prod`
+#   install or a dependency tidy-up would have turned into a runtime crash.
+#   Prebuilt binaries via optional deps, script is a fallback compile — same as under npm.
+#   NOTE: this does NOT fix the standalone-trace gap that took the Hiring Documents page down
+#   the same day — the missing libvips .so is invisible to a JS tracer regardless of which
+#   section declares the package. That fix lives in the Dockerfile and must stay.
 # - protobufjs (via @google-cloud/logging): trivial postinstall (version aliasing).
 # - unrs-resolver (via eslint-config-next): napi-postinstall fallback for the
 #   prebuilt native binding.
