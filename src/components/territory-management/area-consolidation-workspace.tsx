@@ -42,7 +42,7 @@ function TableBreakdown({ entry }: { entry: AreaConsolidationTablePreview }) {
   return (
     <div className="rounded-lg border border-slate-200 bg-white p-3">
       <div className="flex items-center justify-between gap-3">
-        <p className="overflow-hidden text-ellipsis whitespace-nowrap text-[13px] font-semibold text-slate-900">
+        <p className="min-w-0 text-[13px] font-semibold text-slate-900 md:overflow-hidden md:text-ellipsis md:whitespace-nowrap">
           {entry.label}
         </p>
         <Badge variant={entry.role === "historical" ? "neutral" : "warning"}>
@@ -57,9 +57,14 @@ function TableBreakdown({ entry }: { entry: AreaConsolidationTablePreview }) {
       {entry.rows.length > 0 ? (
         <ul className="mt-2 space-y-1">
           {entry.rows.map((row) => (
+            // These names are the entire point of the screen — he reads them, THEN presses. So the
+            // one place a name must never be hidden is here. Measured at 375px, the longest employee
+            // on any legacy area ("Mahmoud El Husseinin Elemam Moslam El Husseinin", 47 chars)
+            // needed 287px in a 243px row and was ellipsis-truncated. It wraps on a phone now and
+            // stays on one line from md: up, so nothing is hidden at either size.
             <li
               key={`${entry.table}-${row.primaryKey}`}
-              className="overflow-hidden text-ellipsis whitespace-nowrap text-[12px] font-medium text-slate-700"
+              className="text-[12px] font-medium text-slate-700 md:overflow-hidden md:text-ellipsis md:whitespace-nowrap"
             >
               {row.label}
             </li>
@@ -222,6 +227,12 @@ export function AreaConsolidationWorkspace() {
         </div>
       ) : null}
 
+      {/*
+        PortalSection renders {children} straight into a `p-0` Card, so any child without padding of
+        its own sits flush against the section border. Every sibling in the portal pads it — see
+        `grid gap-3 p-4 md:grid-cols-2` in portal-review.client.tsx. That is why each section below
+        wraps its content in a padded div rather than relying on the section for spacing.
+      */}
       <PortalSection
         description="Areas from the old coding scheme that still have rows attached. Nothing here moves until you press the button."
         title="Legacy areas"
@@ -232,7 +243,7 @@ export function AreaConsolidationWorkspace() {
             title="Nothing to consolidate"
           />
         ) : (
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-3">
             {(candidates ?? []).map((candidate) => (
               <button
                 className={`rounded-lg border p-3 text-left transition ${
@@ -244,10 +255,10 @@ export function AreaConsolidationWorkspace() {
                 onClick={() => void openPreview(candidate.source.id)}
                 type="button"
               >
-                <p className="overflow-hidden text-ellipsis whitespace-nowrap text-[13px] font-bold text-slate-900">
+                <p className="text-[13px] font-bold text-slate-900 md:overflow-hidden md:text-ellipsis md:whitespace-nowrap">
                   {candidate.source.name}
                 </p>
-                <p className="mt-0.5 overflow-hidden text-ellipsis whitespace-nowrap text-[12px] font-medium text-slate-600">
+                <p className="mt-0.5 text-[12px] font-medium text-slate-600 md:overflow-hidden md:text-ellipsis md:whitespace-nowrap">
                   {candidate.target
                     ? `Ruled to move into ${candidate.target.name}`
                     : "No ruling yet — nothing can move"}
@@ -280,6 +291,7 @@ export function AreaConsolidationWorkspace() {
                 : `${preview.source.name} — no ruling yet`
             }
           >
+            <div className="p-4">
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
               <PortalMetricCard label="Rows that move" value={String(preview.totalToMove)} />
               <PortalMetricCard label="Left untouched" value={String(untouchedTotal)} />
@@ -309,6 +321,7 @@ export function AreaConsolidationWorkspace() {
                 <TableBreakdown entry={entry} key={entry.table} />
               ))}
             </div>
+            </div>
           </PortalSection>
 
           {untouchedTotal > 0 ? (
@@ -316,7 +329,7 @@ export function AreaConsolidationWorkspace() {
               description="These record where something WAS. They are deliberately not rewritten."
               title="Left untouched"
             >
-              <div className="space-y-2">
+              <div className="space-y-2 p-4">
                 {preview.untouched.map((entry) => (
                   <TableBreakdown entry={entry} key={entry.table} />
                 ))}
@@ -325,6 +338,7 @@ export function AreaConsolidationWorkspace() {
           ) : null}
 
           <PortalSection description="Nothing is deleted, and every move can be undone." title="Action">
+            <div className="p-4">
             {confirming === "apply" && preview.target ? (
               <div className="rounded-lg border border-amber-300 bg-amber-50 p-4">
                 <p className="text-[13px] font-bold leading-6 text-amber-900">
@@ -416,6 +430,7 @@ export function AreaConsolidationWorkspace() {
                 ) : null}
               </div>
             )}
+            </div>
           </PortalSection>
         </>
       ) : null}
