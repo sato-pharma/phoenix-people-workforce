@@ -1,4 +1,4 @@
-// S1 Business Review — premium XLSX export. READ-ONLY: reads the bundled, verified
+// Business Review — premium XLSX export. READ-ONLY: reads the bundled, verified
 // datasets and writes a workbook. Styling follows the established Phoenix export
 // identity (see src/lib/attendance/monthly-summary-export.ts): orange title band,
 // slate column headers, hairline borders, banded achievement cells.
@@ -9,23 +9,29 @@
 //     recomputed or averaged here;
 //   - company doctors use the cross-line UNION (summing the per-line counts would
 //     double-count doctors covered by two lines);
-//   - lines with no CRM export show "N/A", never 0, for visit-derived columns.
+//   - a source that holds no rows for the window shows "no data", never 0, so a blank
+//     period can never be read as a month in which nobody did anything.
+//
+// The workbook covers whatever window the caller asked for, and the Coverage sheet states
+// what that window actually holds — the same block the screen reads.
 
 import ExcelJS from "exceljs";
 
 import { systemDocuments } from "@/config/system-settings";
 import {
   bandFor,
-  getS1Company,
-  loadS1Review,
+  getReviewCompany,
+  loadBusinessReview,
   payoutPercentageFor,
-  S1_LINES,
-  S1_RESTATEMENT_NOTICE,
-  type S1Line,
-  type S1Review,
-  type S1View,
+  REVIEW_LINES,
+  REVIEW_SOURCE_NOTICE,
+  type ReviewLine,
+  type BusinessReview,
+  type ReviewView,
 } from "./service";
-import type { AreaSummary, DmSummary, S1Company, S1Dataset } from "./types";
+import { describePeriods } from "./coverage";
+import { periodColumnLabel } from "./period-format";
+import type { AreaSummary, DmSummary, ReviewCompany, ReviewDataset } from "./types";
 
 const ORANGE = "FFC2410C";
 const SLATE = "FF0F172A";
@@ -139,16 +145,16 @@ function bodyRow(
   row.height = 18;
 }
 
-const naOr = (v: number, available: boolean): number | string => (available ? v : "N/A");
+const naOr = (v: number, available: boolean): number | string => (available ? v : "no data");
 const pctOr = (v: number | null): number | string => (v == null ? "—" : v);
 
 // ============================== COVER ==============================
-function addCover(wb: ExcelJS.Workbook, company: S1Company, scopeLabel: string) {
+function addCover(wb: ExcelJS.Workbook, company: ReviewCompany, scopeLabel: string) {
   const sheet = wb.addWorksheet("Cover", { properties: { tabColor: { argb: ORANGE } } });
-  titleBand(sheet, 4, "PHOENIX · S1 2026 BUSINESS REVIEW", `${company.meta.period} · ${scopeLabel}`);
+  titleBand(sheet, 4, "PHOENIX · BUSINESS REVIEW", `${company.meta.period} · ${scopeLabel}`);
   sheet.mergeCells(3, 1, 3, 4);
   const notice = sheet.getCell(3, 1);
-  notice.value = S1_RESTATEMENT_NOTICE;
+  notice.value = REVIEW_SOURCE_NOTICE;
   notice.font = { bold: true, color: { argb: "FF92400E" }, size: 9, italic: true };
   notice.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFEF3C7" } };
   notice.alignment = { wrapText: true, vertical: "middle" };
@@ -174,8 +180,8 @@ function addCover(wb: ExcelJS.Workbook, company: S1Company, scopeLabel: string) 
     s.font = { color: { argb: MUTED }, size: 9, italic: true };
     r += 1;
   };
-  kpi("Company achievement", T.allProducts.ach ?? 0, "sum(sales) / sum(target) — never an average of line %s", "pct", T.allProducts.ach);
-  kpi("Sales", T.allProducts.sales, "all products, all areas", "egp");
+  kpi("Company achievement", T.allProducts.ach ?? 0, "sum(covered sales) / sum(target) — never an average of line %s, and never the full sales figure above", "pct", T.allProducts.ach);
+  kpi("Sales", T.allProducts.sales, `all products, all areas — ${fmt(T.allProducts.covered)} of it sits on a product with a target and is what the % above divides`, "egp");
   kpi("Target", T.allProducts.target, "", "egp");
   kpi("Doctors reached", T.customersTotal, company.meta.doctorNote);
   kpi("Visits", T.visits, `${T.reps} reps · ${T.doubleVisits} double visits`);
@@ -212,7 +218,7 @@ function addCover(wb: ExcelJS.Workbook, company: S1Company, scopeLabel: string) 
 }
 
 // ============================== COMPANY ==============================
-function addCompanySheets(wb: ExcelJS.Workbook, review: S1Review, company: S1Company) {
+function addCompanySheets(wb: ExcelJS.Workbook, review: BusinessReview, company: ReviewCompany) {
   const T = company.total;
 
   // -- Line comparison --
@@ -267,7 +273,7 @@ function addCompanySheets(wb: ExcelJS.Workbook, review: S1Review, company: S1Com
   headerRow(s2, 4, dl);
   r = 5;
   company.dms.forEach((d, i) => {
-    const region = regionOfDm(review, d.lineId as S1Line, d.dm);
+    const region = regionOfDm(review, d.lineId as ReviewLine, d.dm);
     bodyRow(s2, r++, dl, [
       i + 1, d.dm, d.line, region, d.vacant ? "VACANT" : "active",
       pctOr(d.allProducts.ach), bandLabel(d.allProducts.ach),
@@ -280,7 +286,7 @@ function addCompanySheets(wb: ExcelJS.Workbook, review: S1Review, company: S1Com
 
   // -- Company monthly trend --
   const months = company.meta.months;
-  const mt: Col[] = [{ label: "Metric", width: 24 }, ...months.map((m) => ({ label: m, width: 13, kind: "num" as const }))];
+  const mt: Col[] = [{ label: "Metric", width: 24 }, ...months.map((m) => ({ label: periodColumnLabel(m, months), width: 13, kind: "num" as const }))];
   const s3 = wb.addWorksheet("Company · Monthly");
   titleBand(s3, mt.length, "COMPANY MONTHLY TREND", company.meta.period, company.meta.doctorNote);
   headerRow(s3, 4, mt);
@@ -289,7 +295,7 @@ function addCompanySheets(wb: ExcelJS.Workbook, review: S1Review, company: S1Com
   bodyRow(s3, 6, mt, ["Doctors reached (unique)", ...months.map((m) => T.customersByMonth[m] ?? 0)], { zebra: true });
 }
 
-function regionOfDm(review: S1Review, line: S1Line, dm: string): string {
+function regionOfDm(review: BusinessReview, line: ReviewLine, dm: string): string {
   return review.datasets[line].dms.find((d) => d.dm === dm)?.region ?? "";
 }
 function bandLabel(ach: number | null): string {
@@ -304,7 +310,7 @@ function bandLabel(ach: number | null): string {
 }
 
 // ============================== PER LINE ==============================
-function addLineSheets(wb: ExcelJS.Workbook, line: S1Line, ds: S1Dataset) {
+function addLineSheets(wb: ExcelJS.Workbook, line: ReviewLine, ds: ReviewDataset) {
   const label = ds.meta.line;
   const months = ds.meta.months;
   const avail = ds.visits.available;
@@ -381,7 +387,7 @@ function addLineSheets(wb: ExcelJS.Workbook, line: S1Line, ds: S1Dataset) {
   // -- Products + families per month --
   const pc: Col[] = [
     { label: "Family", width: 18 }, { label: "Product", width: 28 }, { label: "Counts?", width: 10 },
-    ...months.map((m) => ({ label: `${m} %`, width: 11, kind: "pct" as const })),
+    ...months.map((m) => ({ label: `${periodColumnLabel(m, months)} %`, width: 11, kind: "pct" as const })),
     { label: "Total %", width: 12, kind: "pct" }, { label: "Sales", width: 15, kind: "egp" },
     { label: "Target", width: 15, kind: "egp" },
   ];
@@ -439,7 +445,7 @@ function addLineSheets(wb: ExcelJS.Workbook, line: S1Line, ds: S1Dataset) {
   }
 
   // -- Monthly trend + per-DSM monthly achievement --
-  const mc: Col[] = [{ label: "DSM / Metric", width: 26 }, ...months.map((m) => ({ label: m, width: 12, kind: "num" as const }))];
+  const mc: Col[] = [{ label: "DSM / Metric", width: 26 }, ...months.map((m) => ({ label: periodColumnLabel(m, months), width: 12, kind: "num" as const }))];
   const s4 = wb.addWorksheet(`${label} · Monthly`.slice(0, 31));
   titleBand(s4, mc.length, `${label.toUpperCase()} — MONTHLY DETAIL`, ds.meta.period,
     avail ? undefined : "This line has no CRM visits export — visit and doctor rows are omitted rather than shown as zero.");
@@ -493,23 +499,23 @@ const fmt = (n: number) => `EGP ${Math.round(n).toLocaleString("en-US")}`;
 /** Executive one-pager: the headline numbers, the line table and the full DSM ranking —
  * no per-area, per-product or per-month detail. Same stored values as the full
  * workbook, so the two can never disagree. */
-function addSummarySheet(wb: ExcelJS.Workbook, review: S1Review, company: S1Company, view: S1View) {
+function addSummarySheet(wb: ExcelJS.Workbook, review: BusinessReview, company: ReviewCompany, view: ReviewView) {
   const isCompany = view === "company";
   const T = company.total;
   const sheet = wb.addWorksheet("Executive Summary", { properties: { tabColor: { argb: ORANGE } } });
   const NC = 9;
-  const lineLabel = isCompany ? "" : review.datasets[view as S1Line].meta.line;
+  const lineLabel = isCompany ? "" : review.datasets[view as ReviewLine].meta.line;
   titleBand(
     sheet, NC,
-    isCompany ? "PHOENIX · S1 2026 BUSINESS REVIEW — EXECUTIVE SUMMARY"
-              : `PHOENIX · S1 2026 — ${lineLabel.toUpperCase()} EXECUTIVE SUMMARY`,
+    isCompany ? "PHOENIX · BUSINESS REVIEW — EXECUTIVE SUMMARY"
+              : `PHOENIX · ${lineLabel.toUpperCase()} EXECUTIVE SUMMARY`,
     `${company.meta.period} · ${isCompany ? "3 lines consolidated" : `${lineLabel} line`}`,
-    `${S1_RESTATEMENT_NOTICE} · ≥90% unlocks incentive (locked 2026 curve). Vacant areas are a coverage gap, never an earner or a rep failure.`,
+    `${REVIEW_SOURCE_NOTICE} · ≥90% unlocks incentive (locked 2026 curve). Vacant areas are a coverage gap, never an earner or a rep failure.`,
   );
   [26, 16, 16, 14, 14, 13, 11, 11, 24].forEach((w, i) => { sheet.getColumn(i + 1).width = w; });
 
   // headline block
-  const scoped = isCompany ? null : review.datasets[view as S1Line];
+  const scoped = isCompany ? null : review.datasets[view as ReviewLine];
   const ach = scoped ? scoped.line.allProducts.ach : T.allProducts.ach;
   const sales = scoped ? scoped.line.allProducts.sales : T.allProducts.sales;
   const target = scoped ? scoped.line.allProducts.target : T.allProducts.target;
@@ -538,7 +544,7 @@ function addSummarySheet(wb: ExcelJS.Workbook, review: S1Review, company: S1Comp
     s.font = { color: { argb: MUTED }, size: 9, italic: true };
     r += 1;
   };
-  kpi("Achievement", ach ?? 0, "sum(sales) / sum(target)", "pct", ach);
+  kpi("Achievement", ach ?? 0, "sum(covered sales) / sum(target)", "pct", ach);
   kpi("Sales", sales, `of ${fmt(target)} target`, "egp");
   kpi("Marketing + expenses", mkt + outn, `${fmt(mkt)} marketing + ${fmt(outn)} outstation`, "egp");
   kpi("Visits", visAvail ? visits : "N/A", visAvail ? `${docs.toLocaleString("en-US")} doctors reached` : "no CRM visits export for this line");
@@ -594,10 +600,10 @@ function addSummarySheet(wb: ExcelJS.Workbook, review: S1Review, company: S1Comp
   headerRow(sheet, r, dc); r += 1;
   const seats = isCompany
     ? company.dms.map((d) => ({
-        dm: d.dm, line: d.line, region: regionOfDm(review, d.lineId as S1Line, d.dm), vacant: d.vacant,
+        dm: d.dm, line: d.line, region: regionOfDm(review, d.lineId as ReviewLine, d.dm), vacant: d.vacant,
         ach: d.allProducts.ach, sales: d.allProducts.sales, mkt: d.marketingCost, exp: d.outstationCost,
       }))
-    : (scoped as S1Dataset).dms.filter((d) => d.allProducts.target > 0).map((d) => ({
+    : (scoped as ReviewDataset).dms.filter((d) => d.allProducts.target > 0).map((d) => ({
         dm: d.dm, line: lineLabel, region: d.region, vacant: d.vacant,
         ach: d.allProducts.ach, sales: d.allProducts.sales, mkt: d.marketingCost, exp: d.outstationCost,
       }));
@@ -618,16 +624,24 @@ function addSummarySheet(wb: ExcelJS.Workbook, review: S1Review, company: S1Comp
 }
 
 // ============================== ENTRY ==============================
-export type S1WorkbookVariant = "full" | "summary";
+export type ReviewWorkbookVariant = "full" | "summary";
 
 /**
- * Builds the whole workbook from ONE canonical range call — all three lines, all six
- * months. The caller (the export route) does not load the review itself, so a company
- * export and a single-line export never risk reading two different snapshots.
+ * Builds the whole workbook from ONE canonical range call — all three lines, every month
+ * in the requested window. The caller (the export route) does not load the review itself,
+ * so a company export and a single-line export never risk reading two different snapshots.
+ *
+ * Returns the window it actually built, because the request may have been clamped: the
+ * filename and the audit row must name the window in the file, never the one that was asked
+ * for and not delivered.
  */
-export async function generateS1ReviewWorkbook(view: S1View, variant: S1WorkbookVariant = "full") {
-  const review = await loadS1Review();
-  const company = getS1Company(review);
+export async function generateReviewWorkbook(
+  view: ReviewView,
+  variant: ReviewWorkbookVariant = "full",
+  range?: { from?: string | null; to?: string | null },
+) {
+  const { review, resolution } = await loadBusinessReview(range);
+  const company = getReviewCompany(review);
   const wb = new ExcelJS.Workbook();
   wb.creator = systemDocuments.workbookCreator;
   wb.company = systemDocuments.workbookCompany;
@@ -637,25 +651,125 @@ export async function generateS1ReviewWorkbook(view: S1View, variant: S1Workbook
   const isCompany = view === "company";
   const scopeLabel = isCompany
     ? "All company — 3 lines consolidated"
-    : `${review.datasets[view as S1Line].meta.line} line`;
+    : `${review.datasets[view as ReviewLine].meta.line} line`;
 
   if (variant === "summary") {
     addSummarySheet(wb, review, company, view);
-    return wb;
+    addCoverageSheet(wb, review);
+    return { workbook: wb, window: resolution.window };
   }
 
   addCover(wb, company, scopeLabel);
   if (isCompany) {
     addCompanySheets(wb, review, company);
-    for (const { id } of S1_LINES) addLineSheets(wb, id, review.datasets[id]);
+    for (const { id } of REVIEW_LINES) addLineSheets(wb, id, review.datasets[id]);
   } else {
-    addLineSheets(wb, view, review.datasets[view as S1Line]);
+    addLineSheets(wb, view, review.datasets[view as ReviewLine]);
   }
-  return wb;
+  // Last sheet on purpose: a reader who scrolls to the end finds the caveats, and a reader
+  // who does not still saw "no data" in place of every figure the window cannot support.
+  addCoverageSheet(wb, review);
+  return { workbook: wb, window: resolution.window };
 }
 
-export function s1WorkbookFileName(view: S1View, variant: S1WorkbookVariant = "full") {
-  const scope = view === "company" ? "All-Company" : (S1_LINES.find((l) => l.id === view)?.label ?? view).replace(/\s+/g, "-");
+/**
+ * The system sheet: where every figure came from, what counts toward it, which months are
+ * missing, and what could not be attributed to anybody. Generated from the same coverage
+ * block the figures were computed with, so it cannot drift from the numbers beside it.
+ */
+function addCoverageSheet(wb: ExcelJS.Workbook, review: BusinessReview) {
+  const cov = review.coverage;
+  const prov = review.provenance;
+  const cols: Col[] = [
+    { label: "Metric", width: 22 },
+    { label: "Status", width: 12 },
+    { label: "Rows", width: 10, kind: "num" },
+    { label: "Where it comes from", width: 52 },
+    { label: "What counts", width: 68 },
+    { label: "Months without data", width: 34 },
+  ];
+  const sheet = wb.addWorksheet("Coverage & Sources", { properties: { tabColor: { argb: ORANGE } } });
+  titleBand(
+    sheet,
+    cols.length,
+    "COVERAGE & SOURCES",
+    cov.window.label,
+    "A month with no rows is reported as \u201cno data\u201d, never as a zero.",
+  );
+  headerRow(sheet, 4, cols);
+  cov.sources.forEach((src, i) => {
+    bodyRow(sheet, 5 + i, cols, [
+      src.label,
+      src.status === "complete" ? "Complete" : src.status === "partial" ? "Partial" : "No data",
+      src.rows,
+      src.origin,
+      src.rule,
+      src.periodsWithoutData.length === 0 ? "None" : describePeriods(src.periodsWithoutData),
+    ], { zebra: i % 2 === 1 });
+  });
+
+  let row = 6 + cov.sources.length;
+  const facts: [string, string][] = [
+    [
+      "Requested window",
+      cov.adjustment ? `Adjusted: ${cov.adjustment}. Built for ${cov.window.label}.` : cov.window.label,
+    ],
+    [
+      "Distributor uploads",
+      cov.notUploaded
+        ? cov.notUploaded.note
+        : `All ${prov.uploadedPeriods.length} months have a validated upload.`,
+    ],
+    [
+      "Gradeability",
+      cov.ungradeable
+        ? `No targets are loaded for ${describePeriods(cov.window.periods)}, so nothing in this window is graded. Values only.`
+        : "Achievement is covered actual \u00f7 target. Sales on a key with no target are reported by value and excluded from the percentage.",
+    ],
+    [
+      "Sales on no line",
+      prov.unlinedRows === 0
+        ? "Every sales row resolved to a line."
+        : `${prov.unlinedRows} rows are in the company total and in no line dataset.`,
+    ],
+    [
+      "Duplicate visits",
+      `${prov.visitsCollapsed} re-saves of an already-counted stop were collapsed. One rep, one doctor, one day, one type is one visit.`,
+    ],
+    [
+      "Resigned agents",
+      `${prov.visitsFromExcludedAgents} visit rows belong to agents on the resigned floor and are INCLUDED on purpose — a rep who left in March still worked in January.`,
+    ],
+    [
+      "Rows that reached no district",
+      `${prov.unplaced.marketingRequests} marketing requests, ${prov.unplaced.outstationRows} outstation claims, ${prov.unplaced.visitRows} visit rows. Counted in the company total, absent from every district row.`,
+    ],
+    [
+      "Doctors",
+      "Unioned, never summed. An area\u2019s window total is not the sum of its months, and the company total is not the sum of the lines.",
+    ],
+    ["Timezone", "Every month boundary is Africa/Cairo local time."],
+  ];
+  const factCols: Col[] = [{ label: "Fact", width: 26 }, { label: "Detail", width: 120 }];
+  headerRow(sheet, row, factCols);
+  facts.forEach(([term, detail], i) => {
+    bodyRow(sheet, row + 1 + i, factCols, [term, detail], { zebra: i % 2 === 1 });
+  });
+  row += facts.length + 2;
+  sheet.getCell(row, 1).value = REVIEW_SOURCE_NOTICE;
+  sheet.getCell(row, 1).font = { bold: true, color: { argb: "FF92400E" }, size: 9, italic: true };
+}
+
+/** The window goes in the NAME. Two exports of the same scope for different periods must not
+ *  land in a downloads folder under one filename — that is how the wrong period gets read
+ *  out in a meeting. */
+export function reviewWorkbookFileName(
+  view: ReviewView,
+  variant: ReviewWorkbookVariant = "full",
+  window?: { from: string; to: string },
+) {
+  const scope = view === "company" ? "All-Company" : (REVIEW_LINES.find((l) => l.id === view)?.label ?? view).replace(/\s+/g, "-");
   const suffix = variant === "summary" ? "-Summary" : "";
-  return `Phoenix-S1-2026-Business-Review-${scope}${suffix}.xlsx`;
+  const range = window ? `-${window.from}_${window.to}` : "";
+  return `Phoenix-Business-Review-${scope}${range}${suffix}.xlsx`;
 }

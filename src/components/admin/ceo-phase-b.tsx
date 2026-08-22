@@ -826,7 +826,7 @@ const SFE_NAV_ITEMS = [
   { href: "/admin/crm",                              icon: MapPinned,    label: "CRM Workspace",      sub: "Visits, check-ins & contacts" },
   { href: "/admin/crm-integrity",                    icon: ShieldCheck,  label: "CRM Integrity",      sub: "Check-in vs visit correlation" },
   { href: "/probation",                              icon: ClipboardCheck, label: "Probation",        sub: "SFE assessments & decisions" },
-  { href: "/business-review-s1",                     icon: LayoutDashboard, label: "S1 Business Review", sub: "Semester business review" },
+  { href: "/business-review",                     icon: LayoutDashboard, label: "Business Review", sub: "Live business review, any period" },
 ];
 
 function SmartNavGrid({ access, variant }: { access: AccessContext; variant: "ceo" | "sfe" }) {

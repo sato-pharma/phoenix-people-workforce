@@ -17,7 +17,7 @@
  * the module produced no corrective action by construction. Owner decision 2026-08-08: DM sees own
  * reps, Medical Rep sees own panel, RM sees own region, PM/GPM see their line, MM stays company.
  *
- * Design constraints carried over verbatim from business-review-s1/portal-scope.ts, because each
+ * Design constraints carried over verbatim from business-review/portal-scope.ts, because each
  * one of them was paid for with a real defect in this repo:
  *
  *  - Scope comes from the ORG TREE, never a region or line LABEL on the viewer's own row. PR #1479:
@@ -194,8 +194,8 @@ function finalizeAgents(
  * IO wrapper: resolve the live directory, then the pure core.
  *
  * `access.role` must come from the live AccessContext, never from client input — the same rule the
- * S1 portal scope enforces. A company-scoped role short-circuits before the directory read, so the
- * CEO command center does not pay for a directory fetch it will not filter on.
+ * Business Review portal scope enforces. A company-scoped role short-circuits before the directory
+ * read, so the CEO command center does not pay for a directory fetch it will not filter on.
  */
 export async function getDoctorCoverageScope(access: AccessContext): Promise<DoctorCoverageScope> {
   const basis = doctorCoverageScopeBasisForRole(access.role);

@@ -14,10 +14,16 @@ import {
 } from "@/components/employee-portal/portal-primitives";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
-import type { AreaSummary, CompanyLineRow, DmSummary, ProductRow } from "@/lib/business-review-s1/types";
+import { hasFigures, type ReviewCoverage } from "@/lib/business-review/coverage";
+import { periodColumnLabel } from "@/lib/business-review/period-format";
+import type { ReviewWindow } from "@/lib/business-review/period";
+import type { AreaSummary, CompanyLineRow, DmSummary, ProductRow } from "@/lib/business-review/types";
+import { CoverageBanner, HardEmptyWindow } from "./coverage.client";
+import { ReviewPeriodFilter } from "./review-filter.client";
+import { CustomersByAreaTable } from "./rollups.client";
 
 /**
- * S1 Business Review — the employee-portal view, at every scope breadth.
+ * Business Review — the employee-portal view, at every scope breadth.
  *
  * Deliberately NOT the admin dashboard, for two reasons:
  *
@@ -54,12 +60,17 @@ type Props = {
   /** Cross-line comparison. Company breadth only. */
   lineRows: CompanyLineRow[];
   thresholds: { repFailBelow: number; dsmFailBelow: number };
-  /** Rebuilt from canonical SoS — see canonical.ts's S1_RESTATEMENT_NOTICE. Shown on every
+  /** Rebuilt from canonical SoS — see canonical.ts's REVIEW_SOURCE_NOTICE. Shown on every
    *  scope breadth; H1 incentives were paid against the retired sales engine and are closed. */
   restatementNotice: string;
   mapGeneratedAt: string;
   /** Fallback when a DM row carries no own flag (single-line scopes). */
   visitsAvailable: boolean;
+  /** The window every figure answers, and what the sources actually hold for it. */
+  window: ReviewWindow;
+  coverage: ReviewCoverage;
+  /** Months the filter may offer, discovered from the data. */
+  available: string[];
 };
 
 /* ---------- formatting ---------- */
@@ -70,8 +81,9 @@ const egp = (n: number) =>
   );
 const pct = (n: number | null) => (n == null ? "—" : `${n.toFixed(1)}%`);
 const num = (n: number | null | undefined) => (n != null && Number.isFinite(n) ? n.toLocaleString("en-US") : "0");
-/** "N/A", never a misleading 0, when the line has no CRM visits export at all. */
-const numOrNA = (n: number | null | undefined, available: boolean) => (available ? num(n) : "N/A");
+/** "no data", never a misleading 0, when the source holds no rows for this window. */
+const numOrNA = (n: number | null | undefined, available: boolean) => (available ? num(n) : "no data");
+const egpOrNA = (n: number, available: boolean) => (available ? egp(n) : "no data");
 
 function achClass(a: number | null) {
   if (a == null) return "text-slate-400";
@@ -133,6 +145,7 @@ const TABS = [
   { id: "performance", label: "Performance" },
   { id: "gaps", label: "Performance Gaps" },
   { id: "detail", label: "Detail" },
+  { id: "doctors", label: "Doctors" },
 ] as const;
 type TabId = (typeof TABS)[number]["id"];
 
@@ -151,7 +164,7 @@ function Fields({ items }: { items: { label: string; value: string }[] }) {
 
 /* ---------- component ---------- */
 
-export function S1PortalReview({
+export function BusinessReviewPortal({
   areas,
   restatementNotice,
   dms,
@@ -164,18 +177,29 @@ export function S1PortalReview({
   scopeLabel,
   thresholds,
   visitsAvailable,
+  window: reviewWindow,
+  coverage,
+  available,
 }: Props) {
   const [tab, setTab] = useState<TabId>("performance");
   const [excludeVacant, setExcludeVacant] = useState(false);
+  // Coverage decides whether a figure may be a number at all. Read it BEFORE the figure.
+  const customersOk = hasFigures(coverage, "customers");
+  const marketingOk = hasFigures(coverage, "marketing");
+  const outstationOk = hasFigures(coverage, "outstation");
+  const spendOk = marketingOk || outstationOk;
 
   // Achievement is ALWAYS computed on every granted area — the toggle only hides vacant rows
-  // from the lists, it never changes a percentage. And it is sum(sales)/sum(target), never an
-  // average of the per-area percentages.
+  // from the lists, it never changes a percentage. It is sum(covered)/sum(target): never an
+  // average of the per-area percentages, and never sum(sales)/sum(target) — sales on a product
+  // with no target would lift the numerator against a denominator they never entered, which is
+  // exactly how the admin headline came to read 130.73% for a 50.67% window.
   const totals = useMemo(() => {
     const sales = areas.reduce((sum, a) => sum + a.allProducts.sales, 0);
     const target = areas.reduce((sum, a) => sum + a.allProducts.target, 0);
+    const covered = areas.reduce((sum, a) => sum + a.allProducts.covered, 0);
     const spend = dms.reduce((sum, d) => sum + d.marketingCost + d.outstationCost, 0);
-    return { ach: target > 0 ? (100 * sales) / target : null, sales, spend, target };
+    return { ach: target > 0 ? (100 * covered) / target : null, sales, spend, target };
   }, [areas, dms]);
 
   const graded = useMemo(() => areas.filter((a) => a.hasTarget && a.allProducts.ach != null), [areas]);
@@ -220,10 +244,9 @@ export function S1PortalReview({
   const dmKey = (row: PortalDmRow) => `${row.line ?? ""}:${row.dm}`;
   const nothing = (message: string) => <PortalEmptyState message={message} title="Nothing to show" />;
 
-  return (
-    <div className="space-y-4">
-      {/* ---------- header ---------- */}
-      <div className={cn(portalSubtlePanelClassName, "flex flex-col gap-3 p-4 sm:flex-row sm:items-end sm:justify-between")}>
+  const header = (
+    <div className={cn(portalSubtlePanelClassName, "space-y-3 p-4")}>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div className="min-w-0">
           <p className="text-[10px] font-black uppercase tracking-[0.18em] text-orange-600">My scope · read-only</p>
           <h2 className="mt-1 text-lg font-black tracking-tight text-slate-950 sm:text-xl">{headline}</h2>
@@ -236,11 +259,38 @@ export function S1PortalReview({
           <span className="whitespace-nowrap text-sm font-bold text-slate-700">Exclude vacant</span>
         </label>
       </div>
+      {/* A GET form, so applying a window re-runs this page's server-side scope resolution
+          rather than a client fetch reusing the scope that was granted for the last one. */}
+      <ReviewPeriodFilter
+        action="/employee-portals/business-review"
+        available={available}
+        from={reviewWindow.from}
+        to={reviewWindow.to}
+      />
+    </div>
+  );
+
+  // A window with no sales renders NO tables — a page of zeros in a viewer's own scope reads
+  // as a personal failure rather than as missing data.
+  if (coverage.empty) {
+    return (
+      <div className="space-y-4">
+        {header}
+        <HardEmptyWindow available={available} coverage={coverage} />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      {header}
 
       <div className="flex items-start gap-2.5 rounded border border-amber-200 bg-amber-50 p-4">
         <AlertTriangle aria-hidden className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
         <p className="text-xs font-semibold leading-5 text-amber-900">{restatementNotice}</p>
       </div>
+
+      <CoverageBanner coverage={coverage} />
 
       {/* ---------- KPIs, summed from the granted rows only ----------
           No icons: the owner's portal design rule is monochrome, functional cards — a thin
@@ -256,7 +306,12 @@ export function S1PortalReview({
         <PortalMetricCard accent="emerald" label="Earners ≥ 90%" note={`of ${num(graded.length)} graded areas`} value={num(earners.length)} />
         <PortalMetricCard accent="rose" label={`Below ${thresholds.repFailBelow}%`} note="vacant areas excluded" value={num(failAreas.length)} />
         <PortalMetricCard accent="slate" label="Vacant areas" note="coverage gap, not a failure" value={num(vacantAreas.length)} />
-        <PortalMetricCard accent="amber" label="Marketing + outstation" note="approved spend in my scope" value={egp(totals.spend)} />
+        <PortalMetricCard
+          accent="amber"
+          label="Marketing + outstation"
+          note={spendOk ? "committed spend in my scope" : "no requests or claims in this window"}
+          value={egpOrNA(totals.spend, spendOk)}
+        />
       </section>
 
       <PortalSegmentedTabs>
@@ -723,7 +778,7 @@ export function S1PortalReview({
                   <dl className="mt-2 grid grid-cols-3 gap-2">
                     {months.map((month, index) => (
                       <div className="rounded border border-slate-100 bg-slate-50 px-2 py-1.5" key={month}>
-                        <dt className={FIELD_LABEL}>{month}</dt>
+                        <dt className={FIELD_LABEL}>{periodColumnLabel(month, months)}</dt>
                         <dd
                           className={cn(
                             "mt-0.5 whitespace-nowrap text-xs font-bold",
@@ -744,7 +799,7 @@ export function S1PortalReview({
                       <th className={TH}>Area</th>
                       {months.map((month) => (
                         <th className={THR} key={month}>
-                          {month}
+                          {periodColumnLabel(month, months)}
                         </th>
                       ))}
                     </tr>
@@ -879,10 +934,29 @@ export function S1PortalReview({
         </div>
       ) : null}
 
+      {/* ================= DOCTORS ================= */}
+      {tab === "doctors" ? (
+        <div className="space-y-4">
+          <CustomersByAreaTable
+            areas={visibleAreas.map((row) => ({
+              area: row.area,
+              line: row.line,
+              dm: row.dm,
+              vacant: row.vacant,
+              customersTotal: row.customersTotal,
+              customersByMonth: row.customersByMonth,
+            }))}
+            months={months}
+            showLine={showLines}
+            visitsAvailable={customersOk}
+          />
+        </div>
+      ) : null}
+
       <p className="px-1 text-[11px] font-semibold leading-5 text-slate-400">
-        Territory resolved from the live organogram seat map (snapshot {mapGeneratedAt.slice(0, 10)}). S1 figures are the
-        Jan–Jun actuals for these areas and are not restated when a seat changes hands, so an area shown as vacant for S1 may
-        have an occupant today.
+        Territory resolved from the live organogram seat map (snapshot {mapGeneratedAt.slice(0, 10)}). Figures are the
+        actuals for {reviewWindow.label} and are not restated when a seat changes hands, so an area shown as vacant for this
+        window may have an occupant today.
       </p>
     </div>
   );

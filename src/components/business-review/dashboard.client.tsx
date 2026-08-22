@@ -5,16 +5,37 @@ import Link from "next/link";
 import { AlertTriangle, Download, FileSpreadsheet } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
-import { S1_VIEWS, type S1Line, type S1View } from "@/lib/business-review-s1/service";
-import type { AreaSummary, DmSummary, ProductRow, S1Company, S1Dataset } from "@/lib/business-review-s1/types";
+import { REVIEW_VIEWS, type ReviewLine, type ReviewView } from "@/lib/business-review/service";
+import { hasFigures, type ReviewCoverage } from "@/lib/business-review/coverage";
+import { periodColumnLabel } from "@/lib/business-review/period-format";
+import type { ReviewWindow } from "@/lib/business-review/period";
+import type { AreaSummary, DmSummary, ProductRow, ReviewCompany, ReviewDataset } from "@/lib/business-review/types";
+import {
+  CoverageBanner,
+  CoverageTab,
+  HardEmptyWindow,
+  type CoverageProvenance,
+} from "./coverage.client";
+import { ReviewPeriodFilter } from "./review-filter.client";
+import { CustomersByAreaTable, PeopleActivityTable, RoleActivityTable } from "./rollups.client";
 
 type DmRow = DmSummary & { payoutPct: number; band: string; activePayoutPct: number; activeBand: string };
 type AreaRow = AreaSummary & { payoutPct: number; band: string };
-type LineTag = { line: string; lineId: S1Line };
+type LineTag = { line: string; lineId: ReviewLine };
 type CoDmRow = DmRow & LineTag & { keyProducts: string[]; families: string[]; visitsAvailable: boolean };
 type CoAreaRow = AreaRow & LineTag;
 type Thresholds = { repFailBelow: number; dsmFailBelow: number };
-type Shared = { viewerRole: string; company: S1Company; restatementNotice: string };
+type Shared = {
+  viewerRole: string;
+  company: ReviewCompany;
+  restatementNotice: string;
+  /** The window every figure on the page answers, and what the source data holds for it. */
+  window: ReviewWindow;
+  coverage: ReviewCoverage;
+  provenance: CoverageProvenance;
+  /** Months the filter may offer. Discovered from the data, never hardcoded. */
+  available: string[];
+};
 /** Discriminated on `view`: the company rollup consolidates every line's areas and DM
  * seats; a line view carries exactly one dataset. Keeps each branch free of null checks. */
 type Props =
@@ -22,17 +43,19 @@ type Props =
       view: "company";
       companyDms: CoDmRow[];
       companyAreas: CoAreaRow[];
-      companyProductTables: { id: S1Line; label: string; products: ProductRow[] }[];
+      companyProductTables: { id: ReviewLine; label: string; products: ProductRow[] }[];
       companyThresholds: Thresholds;
     } & Shared)
-  | ({ view: S1Line; ds: S1Dataset; dms: DmRow[]; areas: AreaRow[] } & Shared);
+  | ({ view: ReviewLine; ds: ReviewDataset; dms: DmRow[]; areas: AreaRow[] } & Shared);
 
 const egp = (n: number) =>
   new Intl.NumberFormat("en-US", { style: "currency", currency: "EGP", maximumFractionDigits: 0 }).format(Number.isFinite(n) ? n : 0);
 const pct = (n: number | null) => (n == null ? "—" : `${n.toFixed(1)}%`);
 const num = (n: number | null | undefined) => (n != null && Number.isFinite(n) ? n.toLocaleString("en-US") : "0");
-/** Renders "N/A" instead of a misleading 0 when this line has no CRM visits export. */
-const numOrNA = (n: number | null | undefined, available: boolean) => (available ? num(n) : "N/A");
+/** Renders "no data" instead of a misleading 0 when the source holds no rows for this
+ *  window. A zero here would read as "nobody visited anybody", which is an accusation. */
+const numOrNA = (n: number | null | undefined, available: boolean) => (available ? num(n) : "no data");
+const egpOrNA = (n: number, available: boolean) => (available ? egp(n) : "no data");
 
 function achColor(a: number | null) {
   if (a == null) return "text-muted-foreground";
@@ -73,16 +96,17 @@ const TABS = [
   { id: "achievers", label: "Achievers" },
   { id: "fails", label: "Performance Gaps" },
   { id: "deep", label: "Deep Analysis" },
+  { id: "coverage", label: "Coverage & Sources" },
 ] as const;
 type TabId = (typeof TABS)[number]["id"];
 
 /** Top switcher — All Company first, then each line. Server-rendered links so every
  * switch re-runs the page's role gate. */
-function ViewSwitcher({ current }: { current: S1View }) {
+function ViewSwitcher({ current, window }: { current: ReviewView; window: ReviewWindow }) {
   return (
     <nav className="flex flex-wrap gap-1 rounded-lg border border-border bg-card p-1">
-      {S1_VIEWS.map((v) => (
-        <Link key={v.id} href={`/business-review-s1?line=${v.id}`}
+      {REVIEW_VIEWS.map((v) => (
+        <Link key={v.id} href={`/business-review?line=${v.id}&from=${window.from}&to=${window.to}`}
           className={cn("rounded-md px-3 py-1.5 text-sm font-semibold transition-colors",
             current === v.id ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-bg-muted")}>
           {v.label}
@@ -94,16 +118,17 @@ function ViewSwitcher({ current }: { current: S1View }) {
 
 /** Plain links, not fetch+blob: the browser streams the file straight from the route and
  * the server's own role gate is what authorises it. */
-function ExportButtons({ view }: { view: S1View }) {
+function ExportButtons({ view, window }: { view: ReviewView; window: ReviewWindow }) {
+  const range = `from=${window.from}&to=${window.to}`;
   const base = "flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm font-semibold text-muted-foreground transition-colors hover:bg-bg-muted hover:text-foreground";
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <a href={`/api/business-review-s1/export?line=${view}&variant=summary`} className={base}
+      <a href={`/api/business-review/export?line=${view}&${range}&variant=summary`} className={base}
         title="One-page executive summary: headline numbers, line table and DSM ranking">
         <FileSpreadsheet className="size-4" aria-hidden />
         Summary
       </a>
-      <a href={`/api/business-review-s1/export?line=${view}`} className={base}
+      <a href={`/api/business-review/export?line=${view}&${range}`} className={base}
         title="Full workbook: every area, product, month and spend line">
         <Download className="size-4" aria-hidden />
         Full Excel
@@ -112,35 +137,81 @@ function ExportButtons({ view }: { view: S1View }) {
   );
 }
 
-function ReviewHeader({ title, subtitle, current, children }: { title: string; subtitle: string; current: S1View; children?: React.ReactNode }) {
+function ReviewHeader({
+  title,
+  subtitle,
+  current,
+  window,
+  available,
+  children,
+}: {
+  title: string;
+  subtitle: string;
+  current: ReviewView;
+  window: ReviewWindow;
+  available: string[];
+  children?: React.ReactNode;
+}) {
   return (
-    <header className="flex flex-wrap items-end justify-between gap-4 border-b border-border pb-4">
-      <div>
-        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-primary">Business Review · Read-only</p>
-        <h1 className="mt-1 text-2xl font-bold tracking-tight">{title}</h1>
-        <p className="mt-0.5 text-sm text-muted-foreground">{subtitle}</p>
+    <header className="space-y-3 border-b border-border pb-4">
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-primary">Business Review · Read-only</p>
+          <h1 className="mt-1 text-2xl font-bold tracking-tight">{title}</h1>
+          <p className="mt-0.5 text-sm text-muted-foreground">{subtitle}</p>
+        </div>
+        <div className="flex flex-wrap items-center gap-3">
+          <ViewSwitcher current={current} window={window} />
+          {children}
+          <ExportButtons view={current} window={window} />
+        </div>
       </div>
-      <div className="flex flex-wrap items-center gap-3">
-        <ViewSwitcher current={current} />
-        {children}
-        <ExportButtons view={current} />
-      </div>
+      {/* A GET form: applying a window is a real navigation, so the server role gate re-runs. */}
+      <ReviewPeriodFilter
+        action="/business-review"
+        available={available}
+        from={window.from}
+        to={window.to}
+        hidden={{ line: current }}
+      />
     </header>
   );
 }
 
-export function S1ReviewDashboard(props: Props) {
+export function BusinessReviewDashboard(props: Props) {
+  // A window with no sales renders NO tables. A page of zeros and a 0% company achievement is
+  // the most misleading thing this module could put in front of a head of department.
+  if (props.coverage.empty) {
+    return (
+      <div className="space-y-5">
+        <ReviewHeader
+          current={props.view}
+          window={props.window}
+          available={props.available}
+          title={`Business Review — ${props.window.label}`}
+          subtitle={`No data in this window · viewing as ${props.viewerRole}`}
+        />
+        <HardEmptyWindow coverage={props.coverage} available={props.available} />
+      </div>
+    );
+  }
   if (props.view === "company") return <CompanyDashboard {...props} />;
   return <LineDashboard {...props} />;
 }
 
 function CompanyDashboard({
   company, viewerRole, companyDms, companyAreas, companyProductTables, companyThresholds, restatementNotice,
+  window: reviewWindow, coverage, provenance, available,
 }: Extract<Props, { view: "company" }>) {
   const [tab, setTab] = useState<TabId>("achievers");
   const [excludeVacant, setExcludeVacant] = useState(false);
   const M = company.meta.months;
   const T = company.total;
+  // Coverage decides whether a tile shows a number at all. Read it BEFORE the figure.
+  const visitsOk = hasFigures(coverage, "visits");
+  const customersOk = hasFigures(coverage, "customers");
+  const marketingOk = hasFigures(coverage, "marketing");
+  const outstationOk = hasFigures(coverage, "outstation");
 
   const vDms = useMemo(() => (excludeVacant ? companyDms.filter((d) => !d.vacant) : companyDms), [companyDms, excludeVacant]);
   const vAreas = useMemo(() => (excludeVacant ? companyAreas.filter((a) => !a.vacant) : companyAreas), [companyAreas, excludeVacant]);
@@ -153,8 +224,10 @@ function CompanyDashboard({
     <div className="space-y-5">
       <ReviewHeader
         current="company"
-        title="All Company — Semester 1 2026"
-        subtitle={`${company.meta.period} · ${company.meta.lines.length} lines consolidated · ≥90% = earner · viewing as ${viewerRole}`}
+        window={reviewWindow}
+        available={available}
+        title={`All Company — ${reviewWindow.label}`}
+        subtitle={`${company.meta.lines.length} lines consolidated · ≥90% = earner · viewing as ${viewerRole}`}
       >
         <label className="flex items-center gap-2.5 rounded-lg border border-border bg-card px-3 py-2">
           <Switch checked={excludeVacant} onChange={setExcludeVacant} label="Exclude vacant territories" />
@@ -163,13 +236,14 @@ function CompanyDashboard({
       </ReviewHeader>
 
       <RestatementBanner notice={restatementNotice} />
+      <CoverageBanner coverage={coverage} />
 
       <section className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
-        <Kpi label="Company achievement" value={pct(T.allProducts.ach)} sub="all 3 lines · all areas" accent={achColor(T.allProducts.ach)} />
-        <Kpi label="Sales (total)" value={egp(T.allProducts.sales)} sub={`of ${egp(T.allProducts.target)}`} />
-        <Kpi label="Doctors reached" value={num(T.customersTotal)} sub="unique across all lines" />
-        <Kpi label="Marketing + exp." value={egp(T.marketingCost + T.outstationCost)} sub={`${egp(T.marketingCost)} + ${egp(T.outstationCost)}`} />
-        <Kpi label="Visits" value={num(T.visits)} sub={`${num(T.reps)} reps · ${num(T.doubleVisits)} doubles`} />
+        <Kpi label="Company achievement" value={coverage.ungradeable ? "not gradeable" : pct(T.allProducts.ach)} sub={coverage.ungradeable ? "no targets loaded for this window" : "all 3 lines · all areas"} accent={coverage.ungradeable ? undefined : achColor(T.allProducts.ach)} />
+        <Kpi label="Sales (total)" value={egp(T.allProducts.sales)} sub={coverage.ungradeable ? "value only" : `of ${egp(T.allProducts.target)}`} />
+        <Kpi label="Doctors reached" value={numOrNA(T.customersTotal, customersOk)} sub={customersOk ? "unique across all lines" : "no CRM rows in this window"} />
+        <Kpi label="Marketing + exp." value={marketingOk || outstationOk ? egp(T.marketingCost + T.outstationCost) : "no data"} sub={`${egpOrNA(T.marketingCost, marketingOk)} + ${egpOrNA(T.outstationCost, outstationOk)}`} />
+        <Kpi label="Visits" value={numOrNA(T.visits, visitsOk)} sub={visitsOk ? `${num(T.reps)} reps · ${num(T.doubleVisits)} doubles` : "no CRM rows in this window"} />
       </section>
 
       <nav className="flex gap-1 rounded-lg border border-border bg-card p-1">
@@ -183,15 +257,32 @@ function CompanyDashboard({
 
       {tab === "achievers" && <CompanyAchieversTab company={company} dms={rankedDms} areas={vAreas} />}
       {tab === "fails" && <CompanyFailsTab dms={rankedDms} areas={vAreas} thresholds={companyThresholds} />}
-      {tab === "deep" && <CompanyDeepTab company={company} dms={rankedDms} months={M} productTables={companyProductTables} />}
+      {tab === "deep" && (
+        <CompanyDeepTab
+          company={company}
+          dms={rankedDms}
+          areas={vAreas}
+          months={M}
+          productTables={companyProductTables}
+          customersOk={customersOk}
+        />
+      )}
+      {tab === "coverage" && <CoverageTab coverage={coverage} provenance={provenance} />}
     </div>
   );
 }
 
-function LineDashboard({ ds, dms, areas, viewerRole, view: currentLine, restatementNotice }: Extract<Props, { ds: S1Dataset }>) {
+function LineDashboard({
+  ds, dms, areas, viewerRole, view: currentLine, restatementNotice,
+  window: reviewWindow, coverage, provenance, available, company,
+}: Extract<Props, { ds: ReviewDataset }>) {
   const [tab, setTab] = useState<TabId>("achievers");
   const [excludeVacant, setExcludeVacant] = useState(false);
   const M = ds.meta.months;
+  const visitsOk = hasFigures(coverage, "visits");
+  const customersOk = hasFigures(coverage, "customers");
+  const marketingOk = hasFigures(coverage, "marketing");
+  const outstationOk = hasFigures(coverage, "outstation");
 
   const vDms = useMemo(() => (excludeVacant ? dms.filter((d) => !d.vacant) : dms), [dms, excludeVacant]);
   const vAreas = useMemo(() => (excludeVacant ? areas.filter((a) => !a.vacant) : areas), [areas, excludeVacant]);
@@ -210,8 +301,10 @@ function LineDashboard({ ds, dms, areas, viewerRole, view: currentLine, restatem
     <div className="space-y-5">
       <ReviewHeader
         current={currentLine}
-        title={`${ds.meta.line} Line — Semester 1 2026`}
-        subtitle={`${ds.meta.period} · all products · ≥90% = earner · viewing as ${viewerRole}`}
+        window={reviewWindow}
+        available={available}
+        title={`${ds.meta.line} Line — ${reviewWindow.label}`}
+        subtitle={`all products · ≥90% = earner · viewing as ${viewerRole}`}
       >
         <label className="flex items-center gap-2.5 rounded-lg border border-border bg-card px-3 py-2">
           <Switch checked={excludeVacant} onChange={setExcludeVacant} label="Exclude vacant territories" />
@@ -220,14 +313,15 @@ function LineDashboard({ ds, dms, areas, viewerRole, view: currentLine, restatem
       </ReviewHeader>
 
       <RestatementBanner notice={restatementNotice} />
+      <CoverageBanner coverage={coverage} />
 
       <section className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
-        <Kpi label="Line achievement" value={pct(line.ach)} sub="all areas · all products" accent={achColor(line.ach)} />
-        <Kpi label="Sales (total)" value={egp(line.sales)} sub={`of ${egp(line.target)}`} />
-        <Kpi label="Doctors reached" value={numOrNA(ds.line.customersTotal, ds.visits.available)} sub={ds.visits.available ? `${num(ds.line.customersByMonth[M[0]])} → ${num(ds.line.customersByMonth[M[M.length - 1]])} /mo` : "no CRM export for this line"} />
-        <Kpi label="Marketing cost" value={egp(ds.line.marketingCost)} sub="GM-approved only" />
-        <Kpi label="Outstation exp." value={egp(ds.line.outstationCost)} sub={`${ds.outstation.monthsCovered.length} mo`} />
-        <Kpi label="Visits / rep / mo" value={numOrNA(ds.line.visitsAvgPerRepPerMonth, ds.visits.available)} sub={ds.visits.available ? `${num(ds.line.visits)} total` : "no CRM export for this line"} />
+        <Kpi label="Line achievement" value={ds.line.allProducts.target > 0 ? pct(line.ach) : "not gradeable"} sub={ds.line.allProducts.target > 0 ? "all areas · all products" : "no targets loaded for this window"} accent={ds.line.allProducts.target > 0 ? achColor(line.ach) : undefined} />
+        <Kpi label="Sales (total)" value={egp(line.sales)} sub={line.target > 0 ? `of ${egp(line.target)}` : "value only"} />
+        <Kpi label="Doctors reached" value={numOrNA(ds.line.customersTotal, customersOk)} sub={customersOk ? `${num(ds.line.customersByMonth[M[0]] ?? 0)} → ${num(ds.line.customersByMonth[M[M.length - 1]] ?? 0)} /mo` : "no CRM rows in this window"} />
+        <Kpi label="Marketing cost" value={egpOrNA(ds.line.marketingCost, marketingOk)} sub={marketingOk ? "committed only" : "no requests in this window"} />
+        <Kpi label="Outstation exp." value={egpOrNA(ds.line.outstationCost, outstationOk)} sub={outstationOk ? `${egp(ds.line.outstationApproved)} HR-approved` : "no claims in this window"} />
+        <Kpi label="Visits / rep / mo" value={numOrNA(ds.line.visitsAvgPerRepPerMonth, visitsOk)} sub={visitsOk ? `${num(ds.line.visits)} total · ${num(ds.line.visitingReps)} reps` : "no CRM rows in this window"} />
       </section>
 
       <nav className="flex gap-1 rounded-lg border border-border bg-card p-1">
@@ -239,9 +333,21 @@ function LineDashboard({ ds, dms, areas, viewerRole, view: currentLine, restatem
         ))}
       </nav>
 
-      {tab === "achievers" && <AchieversTab dms={rankedDms} areas={vAreas} visitsAvailable={ds.visits.available} />}
+      {tab === "achievers" && <AchieversTab dms={rankedDms} areas={vAreas} visitsAvailable={visitsOk} />}
       {tab === "fails" && <FailsTab dms={rankedDms} areas={vAreas} thresholds={ds.meta.thresholds} keyProducts={keyProducts} />}
-      {tab === "deep" && <DeepTab ds={ds} dms={rankedDms} months={M} keyProducts={keyProducts} />}
+      {tab === "deep" && (
+        <DeepTab
+          ds={ds}
+          dms={rankedDms}
+          areas={vAreas}
+          months={M}
+          keyProducts={keyProducts}
+          customersOk={customersOk}
+          roles={company.roles}
+          people={company.people}
+        />
+      )}
+      {tab === "coverage" && <CoverageTab coverage={coverage} provenance={provenance} />}
     </div>
   );
 }
@@ -416,33 +522,46 @@ type FamilyRow = { family: string; skuCount: number; byMonth: Record<string, num
  * (e.g. Lacto Advanced 1/2 vs Lacto LF), summing everything would blend cross-line
  * noise into what's supposed to be an incentive-relevant comparison. A family with
  * zero included SKUs (Pedia's Tebofortin, entirely excluded there) is dropped. */
-function familyRowsOf(ds: S1Dataset): FamilyRow[] {
+function familyRowsOf(ds: ReviewDataset): FamilyRow[] {
   const months = ds.meta.months;
-  const acc = new Map<string, { skuCount: number; sales: Record<string, number>; target: Record<string, number>; totalSales: number; totalTarget: number }>();
+  const acc = new Map<string, { skuCount: number; covered: Record<string, number>; target: Record<string, number>; totalCovered: number; totalTarget: number }>();
   for (const p of ds.products) {
     if (!p.include) continue;
-    const f = acc.get(p.family) ?? { skuCount: 0, sales: {}, target: {}, totalSales: 0, totalTarget: 0 };
+    const f = acc.get(p.family) ?? { skuCount: 0, covered: {}, target: {}, totalCovered: 0, totalTarget: 0 };
     f.skuCount += 1;
     for (const m of months) {
-      f.sales[m] = (f.sales[m] ?? 0) + (p.byMonth[m]?.sales ?? 0);
+      f.covered[m] = (f.covered[m] ?? 0) + (p.byMonth[m]?.covered ?? 0);
       f.target[m] = (f.target[m] ?? 0) + (p.byMonth[m]?.target ?? 0);
     }
-    f.totalSales += p.total.sales;
+    f.totalCovered += p.total.covered;
     f.totalTarget += p.total.target;
     acc.set(p.family, f);
   }
-  const ach = (sales: number, target: number) => (target > 0 ? (100 * sales) / target : null);
+  // sum(covered)/sum(target). A SKU with sales and no target is real money and appears in the
+  // value columns, but it must not lift the family percentage — see the Slice doc comment.
+  const ach = (covered: number, target: number) => (target > 0 ? (100 * covered) / target : null);
   return Array.from(acc.entries())
     .map(([family, f]) => ({
       family,
       skuCount: f.skuCount,
-      byMonth: Object.fromEntries(months.map((m) => [m, ach(f.sales[m] ?? 0, f.target[m] ?? 0)])),
-      total: ach(f.totalSales, f.totalTarget),
+      byMonth: Object.fromEntries(months.map((m) => [m, ach(f.covered[m] ?? 0, f.target[m] ?? 0)])),
+      total: ach(f.totalCovered, f.totalTarget),
     }))
     .sort((a, b) => (b.total ?? -1) - (a.total ?? -1));
 }
 
-function DeepTab({ ds, dms, months, keyProducts }: { ds: S1Dataset; dms: DmRow[]; months: string[]; keyProducts: string[] }) {
+function DeepTab({
+  ds, dms, areas, months, keyProducts, customersOk, roles, people,
+}: {
+  ds: ReviewDataset;
+  dms: DmRow[];
+  areas: AreaRow[];
+  months: string[];
+  keyProducts: string[];
+  customersOk: boolean;
+  roles: ReviewCompany["roles"];
+  people: ReviewCompany["people"];
+}) {
   const families = familyRowsOf(ds);
   // Family views only earn their place when families genuinely collapse the SKU list
   // (CNS 15 SKUs -> 5 families; Pedia 4 -> 3, collapsing Lacto Advanced 1+2). On a
@@ -472,7 +591,7 @@ function DeepTab({ ds, dms, months, keyProducts }: { ds: S1Dataset; dms: DmRow[]
           <div className="grid gap-3 p-3 lg:grid-cols-[1.6fr_1fr]">
             <div className="overflow-x-auto">
               <table className="w-full min-w-[440px] border-collapse">
-                <thead><tr className="border-b border-border"><th className={TH}>Monthly</th>{months.map((m) => <th key={m} className={THR}>{m}</th>)}</tr></thead>
+                <thead><tr className="border-b border-border"><th className={TH}>Monthly</th>{months.map((m) => <th key={m} className={THR}>{periodColumnLabel(m, months)}</th>)}</tr></thead>
                 <tbody>
                   <MiniMonth label="Achievement" months={months} values={months.map((m) => d.achByMonth?.[m] ?? null)} kind="ach" />
                   {ds.visits.available && <MiniMonth label="Visits" months={months} values={months.map((m) => d.visitsByMonth?.[m] ?? 0)} kind="num" />}
@@ -504,7 +623,7 @@ function DeepTab({ ds, dms, months, keyProducts }: { ds: S1Dataset; dms: DmRow[]
       {mixByFamily && (
         <Section title="Achievement per product family per month" note="rolled up across each family's include-eligible SKUs">
           <table className="w-full min-w-[720px] border-collapse">
-            <thead><tr className="border-b border-border"><th className={TH}>Family</th>{months.map((m) => <th key={m} className={THR}>{m}</th>)}<th className={THR}>Total</th></tr></thead>
+            <thead><tr className="border-b border-border"><th className={TH}>Family</th>{months.map((m) => <th key={m} className={THR}>{periodColumnLabel(m, months)}</th>)}<th className={THR}>Total</th></tr></thead>
             <tbody>
               {families.map((f) => (
                 <tr key={f.family} className="border-b border-border/60 last:border-0">
@@ -520,7 +639,7 @@ function DeepTab({ ds, dms, months, keyProducts }: { ds: S1Dataset; dms: DmRow[]
 
       <Section title="Achievement per product per month" note="★ include products">
         <table className="w-full min-w-[720px] border-collapse">
-          <thead><tr className="border-b border-border"><th className={TH}>Product</th>{months.map((m) => <th key={m} className={THR}>{m}</th>)}<th className={THR}>Total</th></tr></thead>
+          <thead><tr className="border-b border-border"><th className={TH}>Product</th>{months.map((m) => <th key={m} className={THR}>{periodColumnLabel(m, months)}</th>)}<th className={THR}>Total</th></tr></thead>
           <tbody>
             {ds.products.filter((p) => p.total.target > 0 || p.total.sales > 0).map((p) => (
               <tr key={p.product} className="border-b border-border/60 last:border-0">
@@ -533,16 +652,34 @@ function DeepTab({ ds, dms, months, keyProducts }: { ds: S1Dataset; dms: DmRow[]
         </table>
       </Section>
 
-      <Section title="Line trend" note={ds.visits.available ? `${num(ds.visits.totalDeduped)} visits · ${num(ds.line.customersTotal)} doctors` : "no CRM visits export for this line"}>
+      <Section title="Line trend" note={ds.visits.available ? `${num(ds.visits.totalDeduped)} visits · ${num(ds.line.customersTotal)} doctors` : "no CRM visit rows in this window"}>
         <table className="w-full min-w-[620px] border-collapse">
-          <thead><tr className="border-b border-border"><th className={TH}>Metric</th>{months.map((m) => <th key={m} className={THR}>{m}</th>)}</tr></thead>
+          <thead><tr className="border-b border-border"><th className={TH}>Metric</th>{months.map((m) => <th key={m} className={THR}>{periodColumnLabel(m, months)}</th>)}</tr></thead>
           <tbody>
             <MiniMonth label="Sales achievement" months={months} values={months.map((m) => ds.line.byMonth[m]?.allProducts.ach ?? null)} kind="ach" />
+            <MiniMonth label="Sales value" months={months} values={months.map((m) => ds.line.byMonth[m]?.allProducts.sales ?? 0)} kind="num" />
             {ds.visits.available && <MiniMonth label="Visits" months={months} values={months.map((m) => ds.visits.byMonth[m] ?? 0)} kind="num" />}
             {ds.visits.available && <MiniMonth label="Doctors reached" months={months} values={months.map((m) => ds.line.customersByMonth[m] ?? 0)} kind="num" />}
           </tbody>
         </table>
       </Section>
+
+      {/* The question the owner asked for by name: how many customers did this area have,
+          month by month. A union per month, never a sum across the reps who share the area. */}
+      <CustomersByAreaTable
+        areas={areas.map((a) => ({
+          area: a.area,
+          dm: a.dm,
+          vacant: a.vacant,
+          customersTotal: a.customersTotal,
+          customersByMonth: a.customersByMonth,
+        }))}
+        months={months}
+        visitsAvailable={customersOk}
+      />
+
+      <RoleActivityTable roles={roles} />
+      <PeopleActivityTable people={people} />
     </div>
   );
 }
@@ -551,7 +688,7 @@ const LineChip = ({ line }: { line: string }) => (
   <span className="rounded bg-bg-muted px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground">{line}</span>
 );
 
-function CompanyAchieversTab({ company, dms, areas }: { company: S1Company; dms: CoDmRow[]; areas: CoAreaRow[] }) {
+function CompanyAchieversTab({ company, dms, areas }: { company: ReviewCompany; dms: CoDmRow[]; areas: CoAreaRow[] }) {
   const T = company.total;
   // Same rule as a line view: vacant areas never count as earners.
   const earners = areas
@@ -570,7 +707,7 @@ function CompanyAchieversTab({ company, dms, areas }: { company: S1Company; dms:
             {company.lines.map((l) => (
               <tr key={l.id} className="border-b border-border/60 last:border-0">
                 <td className={cn(TD, "font-semibold")}>
-                  <Link href={`/business-review-s1?line=${l.id}`} className="hover:text-primary hover:underline">{l.label}</Link>
+                  <Link href={`/business-review?line=${l.id}`} className="hover:text-primary hover:underline">{l.label}</Link>
                 </td>
                 <td className={TD}>{achCell(l.allProducts.ach)}</td>
                 <td className={cn(TDR, "text-muted-foreground")}>{egp(l.allProducts.sales)}</td>
@@ -745,14 +882,21 @@ function CompanyFailsTab({ dms, areas, thresholds }: { dms: CoDmRow[]; areas: Co
 }
 
 function CompanyDeepTab({
-  company, dms, months, productTables,
-}: { company: S1Company; dms: CoDmRow[]; months: string[]; productTables: { id: S1Line; label: string; products: ProductRow[] }[] }) {
+  company, dms, areas, months, productTables, customersOk,
+}: {
+  company: ReviewCompany;
+  dms: CoDmRow[];
+  areas: CoAreaRow[];
+  months: string[];
+  productTables: { id: ReviewLine; label: string; products: ProductRow[] }[];
+  customersOk: boolean;
+}) {
   const T = company.total;
   return (
     <div className="space-y-4">
       <Section title="Company monthly trend" note={company.meta.doctorNote}>
         <table className="w-full min-w-[620px] border-collapse">
-          <thead><tr className="border-b border-border"><th className={TH}>Metric</th>{months.map((m) => <th key={m} className={THR}>{m}</th>)}</tr></thead>
+          <thead><tr className="border-b border-border"><th className={TH}>Metric</th>{months.map((m) => <th key={m} className={THR}>{periodColumnLabel(m, months)}</th>)}</tr></thead>
           <tbody>
             <MiniMonth label="Sales achievement" months={months} values={months.map((m) => T.byMonth[m]?.ach ?? null)} kind="ach" />
             <MiniMonth label="Doctors reached" months={months} values={months.map((m) => T.customersByMonth[m] ?? 0)} kind="num" />
@@ -788,7 +932,7 @@ function CompanyDeepTab({
             <div className="grid gap-3 p-3 lg:grid-cols-[1.6fr_1fr]">
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[440px] border-collapse">
-                  <thead><tr className="border-b border-border"><th className={TH}>Monthly</th>{months.map((m) => <th key={m} className={THR}>{m}</th>)}</tr></thead>
+                  <thead><tr className="border-b border-border"><th className={TH}>Monthly</th>{months.map((m) => <th key={m} className={THR}>{periodColumnLabel(m, months)}</th>)}</tr></thead>
                   <tbody>
                     <MiniMonth label="Achievement" months={months} values={months.map((m) => d.achByMonth?.[m] ?? null)} kind="ach" />
                     {d.visitsAvailable && <MiniMonth label="Visits" months={months} values={months.map((m) => d.visitsByMonth?.[m] ?? 0)} kind="num" />}
@@ -819,7 +963,7 @@ function CompanyDeepTab({
       {productTables.map((pt) => (
         <Section key={pt.id} title={`${pt.label} — achievement per product per month`} note="★ include products">
           <table className="w-full min-w-[720px] border-collapse">
-            <thead><tr className="border-b border-border"><th className={TH}>Product</th>{months.map((m) => <th key={m} className={THR}>{m}</th>)}<th className={THR}>Total</th></tr></thead>
+            <thead><tr className="border-b border-border"><th className={TH}>Product</th>{months.map((m) => <th key={m} className={THR}>{periodColumnLabel(m, months)}</th>)}<th className={THR}>Total</th></tr></thead>
             <tbody>
               {pt.products.map((p) => (
                 <tr key={p.product} className="border-b border-border/60 last:border-0">
@@ -832,6 +976,25 @@ function CompanyDeepTab({
           </table>
         </Section>
       ))}
+
+      {/* Doctors per area, month by month, across every line. Areas are unique per line, so the
+          line column is shown here and not in the per-line view. */}
+      <CustomersByAreaTable
+        areas={areas.map((a) => ({
+          area: a.area,
+          line: a.line,
+          dm: a.dm,
+          vacant: a.vacant,
+          customersTotal: a.customersTotal,
+          customersByMonth: a.customersByMonth,
+        }))}
+        months={months}
+        showLine
+        visitsAvailable={customersOk}
+      />
+
+      <RoleActivityTable roles={company.roles} />
+      <PeopleActivityTable people={company.people} />
     </div>
   );
 }

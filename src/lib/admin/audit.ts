@@ -12,6 +12,11 @@ export type AuditEntityType =
   | "attendance_settlement"
   | "attendance_settlement_correction"
   | "auth_session"
+  // The Business Review workbook export. The window is part of the entity id, so an audit row
+  // says WHICH period was handed over, not just that something was.
+  | "business_review_export"
+  // Retired name, kept in the union so historical audit rows still typecheck. Nothing writes
+  // it any more: the module stopped being a fixed S1 report when it grew a period filter.
   | "business_review_s1_export"
   | "calendar_event"
   | "cron_job_control"

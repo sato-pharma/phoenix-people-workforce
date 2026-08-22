@@ -3,7 +3,7 @@
 // GPM, MM) are redirected to /employee-portals by app/(admin)/layout.tsx before this page's gate
 // could ever run, so they reach the identical board through the portal twin at
 // app/employee-portals/doctor-coverage. Month switch is a URL search param so every switch re-runs
-// the gate server-side (same posture as the S1 Business Review admin page).
+// the gate server-side (same posture as the Business Review admin page).
 //
 // The role list is NOT maintained here. Both twins ask src/lib/crm/doctor-coverage-scope.ts, so
 // they cannot drift apart on who may see whose reps — the failure this replaced, where this page

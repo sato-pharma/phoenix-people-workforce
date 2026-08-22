@@ -1,4 +1,4 @@
-import { access } from "node:fs/promises";
+import { access, readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -86,4 +86,27 @@ export async function resolve(specifier, context, nextResolve) {
   }
 
   return nextResolve(specifier, context);
+}
+
+/**
+ * JSON imported as a plain module.
+ *
+ * Next's bundler turns `import map from "./x.json"` into a default export; raw Node under
+ * type-stripping demands `with { type: "json" }` and throws ERR_IMPORT_ATTRIBUTE_MISSING without
+ * it. That single difference made every module holding a committed data file untestable —
+ * src/lib/business-review/portal-scope.ts, which decides what each role may see, among them.
+ *
+ * Parsed at runtime rather than inlined into the source string, so a value that is valid JSON but
+ * awkward JS cannot change meaning on the way through.
+ */
+export async function load(url, context, nextLoad) {
+  if (url.endsWith(".json") && context.importAttributes?.type !== "json") {
+    const source = await readFile(fileURLToPath(url), "utf8");
+    return {
+      format: "module",
+      shortCircuit: true,
+      source: `export default JSON.parse(${JSON.stringify(source)});`,
+    };
+  }
+  return nextLoad(url, context);
 }

@@ -183,7 +183,7 @@ export async function loadVsTargetRange(from: string, to: string): Promise<Achie
  *
  * Identical query and identical mapping — the only difference is which floor rejects the
  * range. Reach for this from a surface that reports history (employee-360, the monthly
- * dashboard, the admin KPI, reconciliation, the S1 review); reach for loadVsTargetRange
+ * dashboard, the admin KPI, reconciliation, the Business Review); reach for loadVsTargetRange
  * from /sales-vs-target and anything that must obey the owner's July picker decision.
  *
  * One round trip for the whole range. Do NOT loop a per-period RPC over this instead —
@@ -269,8 +269,12 @@ export function achievementRangeCacheKeyParts(from: string, to: string, token: s
  *
  * Returns null on ANY failure. A null stamp makes loadAchievementRange read live rather than
  * risk serving a stale rep/DM attribution from the cache — slow-but-correct, never stale.
+ *
+ * Exported because it is the right key for ANY cache built on top of this range — Business
+ * Review caches its whole built bundle on it. Callers outside this module must treat null the
+ * same way this one does: build live, never serve a possibly-stale entry.
  */
-const loadAchievementCacheToken = cache(async (): Promise<string | null> => {
+export const loadAchievementCacheStamp = cache(async (): Promise<string | null> => {
   try {
     const supabase = getSupabaseAdmin();
     const { data, error } = await supabase.rpc("phx_sales_vs_target_cache_token");
@@ -318,7 +322,7 @@ export async function loadAchievementRange(from: string, to: string): Promise<Ac
   // Self-invalidating cross-request cache. The token changes the cache key whenever actuals,
   // targets, or seat occupancy move — none of which share an invalidation chokepoint — so a
   // cache hit can never serve a stale rep/DM attribution. No token ⇒ read live (never stale).
-  const token = await loadAchievementCacheToken();
+  const token = await loadAchievementCacheStamp();
   if (!token) return loadAchievementRangeUncached(from, to);
   const cached = unstable_cache(
     async () => packAchievementRows(await loadAchievementRangeUncached(from, to)),

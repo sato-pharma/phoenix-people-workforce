@@ -227,8 +227,8 @@ export function runNavigationActivePathTests() {
   const ceoExecutiveNav = getSections(adminNavigationSections, "admin", { "probation:read": true, "organogram:read": true }, "CEO");
   assert.equal(
     ceoExecutiveNav.find((section) => section.id === "command-center")?.items.map((item) => item.href).join(","),
-    "/admin/ceo-command-center,/business-review-s1,/organogram",
-    "CEO command center section must include S1 Business Review and Organogram as separate executive tabs",
+    "/admin/ceo-command-center,/business-review,/organogram",
+    "CEO command center section must include Business Review and Organogram as separate executive tabs",
   );
   assert.equal(
     ceoExecutiveNav.some((section) => section.items.some((item) => item.href === "/admin/ceo-probation")),
