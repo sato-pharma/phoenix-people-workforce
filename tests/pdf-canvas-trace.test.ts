@@ -1,40 +1,48 @@
 import assert from "node:assert/strict";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 
 /**
- * The @napi-rs/canvas native addon must survive Next's production file-tracing.
+ * The @napi-rs/canvas native addon must be REACHABLE in Next's standalone production build.
  *
- * THE BUG THIS PINS (found 2026-08-22 in a live Railway log). pdf-parse reaches @napi-rs/canvas
- * through a runtime createRequire, which Next's tracer cannot follow, so the addon was never copied
- * into `.next/standalone` — and the Dockerfile's runner stage copies ONLY that directory. The
- * package is a real dependency of pdf-parse and resolves fine on a dev machine, so this failed
- * exclusively in production:
+ * THE BUG (found 2026-08-22 in a live Railway log). pdf-parse reaches @napi-rs/canvas through a
+ * runtime createRequire that Next's tracer cannot follow, so the addon never entered
+ * `.next/standalone` — and the Dockerfile's runner stage copies only that directory:
  *
  *   Warning: Cannot load "@napi-rs/canvas" package: "Error: Cannot find module '@napi-rs/canvas'
  *
- * getText() (all CV text extraction) is unaffected because it never rasterizes. getImage() — how
- * cv-ocr.ts pulls the pages out of a SCANNED PDF for free OCR — throws, and cv-ocr.ts turns any
- * failure into a null, so the free-OCR safety net was simply absent in production with nothing said.
- * That net exists for exactly the case where the vision model is down, rate-limited or out of
- * credit, so it was missing at the one moment it was needed.
+ * getText() is unaffected (it never rasterizes), so CV text extraction kept working. getImage() —
+ * how cv-ocr.ts pulls the pages out of a SCANNED PDF for free OCR — throws, and cv-ocr.ts turns any
+ * failure into a null, so the free-OCR safety net was silently absent in production. It exists for
+ * when the vision model is down, rate-limited or out of credit, so it was gone at the one moment it
+ * was needed.
  *
- * This is the THIRD instance of the same tracer gap in this one dependency (DOMMatrix →
- * pdf-dommatrix-polyfill.ts; pdf.worker.mjs → outputFileTracingIncludes), which is why it is worth a
- * test rather than another comment.
+ * THE FIRST FIX SHIPPED AND DID NOTHING (#2299), which is why this test asserts what it does.
+ * Tracing an include copies real FILES (glob with `nodir: true`), never pnpm's symlinks. Under
+ * pnpm a TRANSITIVE package is reachable only through symlinks — the one pdfjs-dist uses to see the
+ * wrapper, and the one the wrapper uses to see its own Skia binary — and neither is recreated in
+ * standalone. So the bytes shipped and production threw the identical MODULE_NOT_FOUND. Hoisting via
+ * publicHoistPattern puts both packages in the ROOT node_modules, where Node's ordinary walk-up
+ * finds them.
+ *
+ * Both halves are load-bearing and BOTH are asserted below, because either alone ships green and
+ * broken:
+ *   1. the hoist, or the root path does not exist at all;
+ *   2. a glob that actually MATCHES it — `@napi-rs/**` matches ZERO files, since `**` does not
+ *      traverse a symlinked directory. Only `@napi-rs/*\/**` works. A glob matching nothing is
+ *      indistinguishable from a correct one by inspection, which is exactly how #2299 passed review.
+ *
+ * The last assertion therefore runs the config's own globs through NEXT'S OWN glob implementation
+ * and requires real files back. Nothing weaker can tell a working entry from a decorative one.
  *
  * WHY THIS READS SOURCE rather than importing next.config.ts: that module evaluates `__dirname`,
- * which does not exist under the ESM test runner, so importing it throws. Same reason
- * csp-headers.test.ts reads source.
- *
- * The load-bearing assertion is the LAST one, and it is derived rather than hardcoded: the platform
- * binary's package name is read out of the installed @napi-rs/canvas loader, so if a pdf-parse bump
- * renames or restructures the platform packages, this test fails instead of production going quiet
- * again.
+ * which does not exist under the ESM test runner. Same reason csp-headers.test.ts reads source.
  */
-export function runPdfCanvasTraceTests() {
-  const config = readFileSync(new URL("../next.config.ts", import.meta.url), "utf8");
-  const pnpmDir = fileURLToPath(new URL("../node_modules/.pnpm", import.meta.url));
+export async function runPdfCanvasTraceTests() {
+  const repoUrl = (relative: string) => new URL(`../${relative}`, import.meta.url);
+  const repoPath = (relative: string) => fileURLToPath(repoUrl(relative));
+  const config = readFileSync(repoUrl("next.config.ts"), "utf8");
 
   // ── Parse the "/api/**/*" trace list out of next.config.ts ─────────────────
   const block = /outputFileTracingIncludes:\s*\{([\s\S]*?)\n\s{2}\},/.exec(config);
@@ -44,75 +52,64 @@ export function runPdfCanvasTraceTests() {
   const globs = [...apiEntry[1].matchAll(/"([^"]+)"/g)].map((match) => match[1]);
   assert.ok(globs.length >= 4, "the /api trace list must not have been emptied");
 
-  /**
-   * Wildcard match, no regex compilation: every literal run between the `*`s must appear in order,
-   * with the first anchored at the start. A half-matching prefix — the typo actually worth catching
-   * here — fails, because a later literal run will not be found.
-   */
-  const matches = (glob: string, path: string) => {
-    const parts = glob.replace(/^[.][/]/, "").split(/[*]+/);
-    let cursor = 0;
-    for (const [index, part] of parts.entries()) {
-      if (part === "") continue;
-      if (index === 0) {
-        if (!path.startsWith(part)) return false;
-        cursor = part.length;
-        continue;
-      }
-      const at = path.indexOf(part, cursor);
-      if (at < 0) return false;
-      cursor = at + part.length;
-    }
-    return true;
+  // ── 1. The hoist ───────────────────────────────────────────────────────────
+  // Without it there is no root path to trace, and no amount of glob-fixing helps.
+  const workspace = readFileSync(repoUrl("pnpm-workspace.yaml"), "utf8");
+  assert.match(
+    workspace,
+    /publicHoistPattern:\s*\n\s*-\s*"@napi-rs\/\*"/,
+    "pnpm-workspace.yaml must hoist @napi-rs/* — a transitive package is otherwise unreachable in .next/standalone",
+  );
+  assert.ok(
+    existsSync(repoPath("node_modules/@napi-rs/canvas/index.js")),
+    "@napi-rs/canvas must be hoisted to the root node_modules — re-run pnpm install if this fails locally",
+  );
+
+  // The platform binary must be hoisted alongside it: the wrapper loads it BY PACKAGE NAME, so it
+  // needs the same walk-up treatment. Its name is platform-specific (musl in production, gnu on CI,
+  // msvc locally), so this checks for any sibling carrying a native addon rather than a fixed name.
+  const hoisted = readdirSync(repoPath("node_modules/@napi-rs"));
+  const platformPackages = hoisted.filter((name) => name.startsWith("canvas-"));
+  assert.ok(
+    platformPackages.length > 0,
+    `@napi-rs/canvas's platform binary package must be hoisted too, found only: ${hoisted.join(", ")}`,
+  );
+
+  // ── 2. The premise ─────────────────────────────────────────────────────────
+  // If pdf-parse ever stops depending on canvas, all of this becomes dead weight and should go.
+  const pdfParsePkg = JSON.parse(readFileSync(repoPath("node_modules/pdf-parse/package.json"), "utf8")) as {
+    dependencies?: Record<string, string>;
   };
-
-  // ── The wrapper package ────────────────────────────────────────────────────
-  // Resolve what pnpm ACTUALLY installed, then require a glob to match it. A hardcoded version in
-  // the config would rot on the next pdf-parse bump; a glob matching nothing would be silent.
-  const canvasDir = readdirSync(pnpmDir).find((name) => name.startsWith("@napi-rs+canvas@"));
-  assert.ok(canvasDir, "@napi-rs/canvas must be installed — it is a direct dependency of pdf-parse");
-  const canvasRel = `node_modules/.pnpm/${canvasDir}/node_modules/@napi-rs/canvas/index.js`;
-  assert.ok(
-    existsSync(fileURLToPath(new URL(`../${canvasRel}`, import.meta.url))),
-    "the installed @napi-rs/canvas layout changed — the trace globs are keyed on it",
-  );
-  assert.ok(
-    globs.some((glob) => matches(glob, canvasRel)),
-    "the @napi-rs/canvas JS wrapper must be traced into .next/standalone, or pdf-parse getImage() cannot load",
-  );
-
-  // ── The premise ────────────────────────────────────────────────────────────
-  // If pdf-parse ever stops depending on canvas, these entries become dead weight and should go.
-  const pdfParseDir = readdirSync(pnpmDir).find((name) => name.startsWith("pdf-parse@"));
-  assert.ok(pdfParseDir, "pdf-parse must be installed");
-  const pdfParsePkg = JSON.parse(
-    readFileSync(
-      fileURLToPath(
-        new URL(`../node_modules/.pnpm/${pdfParseDir}/node_modules/pdf-parse/package.json`, import.meta.url),
-      ),
-      "utf8",
-    ),
-  ) as { dependencies?: Record<string, string> };
   assert.ok(
     pdfParsePkg.dependencies?.["@napi-rs/canvas"],
-    "pdf-parse no longer depends on @napi-rs/canvas — re-check whether these trace entries are still needed",
+    "pdf-parse no longer depends on @napi-rs/canvas — re-check whether the trace entries are still needed",
   );
 
-  // ── THE HEADLINE: the platform binary Alpine actually loads ────────────────
-  // The wrapper is pure JS; the Skia binary lives in a separate per-platform package that
-  // js-binding.js picks at runtime. Production is node:24-alpine, so that is the MUSL build — and
-  // tracing only the wrapper would fail in production exactly as before, one require deeper.
-  const jsBinding = readFileSync(
-    fileURLToPath(new URL(`../${canvasRel.replace("index.js", "js-binding.js")}`, import.meta.url)),
-    "utf8",
-  );
-  const muslPackage = /require\('(@napi-rs\/canvas-linux-x64-musl)'\)/.exec(jsBinding)?.[1];
+  // ── 3. THE HEADLINE: the globs must MATCH, not merely exist ────────────────
+  // Run them through the same glob Next runs, with the same options
+  // (collect-build-traces.js: `globOrig(pattern, { cwd: dir, nodir: true, dot: true })`).
+  const require_ = createRequire(import.meta.url);
+  let globOrig: (p: string, o: object, cb: (e: unknown, f: string[]) => void) => void;
+  try {
+    globOrig = require_("next/dist/compiled/glob");
+  } catch {
+    assert.fail("next/dist/compiled/glob has moved — update this test to whatever collect-build-traces.js now uses");
+  }
+  const runGlob = (pattern: string) =>
+    new Promise<string[]>((resolve, reject) => {
+      globOrig(pattern, { cwd: repoPath("."), nodir: true, dot: true }, (error, files) =>
+        error ? reject(error) : resolve(files),
+      );
+    });
+
+  const matched = (await Promise.all(globs.map((glob) => runGlob(glob)))).flat().map((file) => file.replace(/\\/g, "/"));
+
   assert.ok(
-    muslPackage,
-    "@napi-rs/canvas no longer loads a linux-x64-musl platform package — the production trace entry must be renamed to whatever replaced it",
+    matched.some((file) => file.endsWith("node_modules/@napi-rs/canvas/index.js")),
+    "the trace globs must actually RESOLVE the hoisted @napi-rs/canvas — a glob that matches nothing is how #2299 shipped green and broken",
   );
   assert.ok(
-    globs.some((glob) => glob.includes(muslPackage)),
-    "the musl canvas binary the Alpine production image loads must be traced into .next/standalone",
+    matched.some((file) => file.includes("node_modules/@napi-rs/canvas-") && file.endsWith(".node")),
+    "the trace globs must also resolve the native Skia binary — the wrapper alone cannot render anything",
   );
 }

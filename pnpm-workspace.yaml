@@ -162,3 +162,24 @@ allowBuilds:
 auditConfig:
   ignoreGhsas:
     - GHSA-mh99-v99m-4gvg
+
+# Hoist the canvas addon to the root node_modules so Next's standalone build can actually LOAD it.
+#
+# pnpm's isolated layout puts a TRANSITIVE package under node_modules/.pnpm and links it only into
+# the node_modules of packages that declare it. That works at runtime here, but it does not survive
+# Next's production file-tracing: outputFileTracingIncludes copies real FILES (its glob runs with
+# nodir:true), never pnpm's symlinks. So a package traced into .next/standalone arrives at its .pnpm
+# path with NONE of the links that made it resolvable, and require('@napi-rs/canvas') throws
+# MODULE_NOT_FOUND in production while working perfectly in dev.
+#
+# That cost a production deploy on 2026-08-22 (#2299): the trace globs were correct and the bytes
+# shipped, but two separate links were missing — the one pdfjs-dist uses to see the canvas wrapper,
+# and the one the wrapper uses to see its own per-platform Skia binary. Hoisting @napi-rs/* puts
+# both packages where Node's ordinary walk-up finds them from any depth, which is what makes the
+# trace entries in next.config.ts usable at all. pdf-parse -> pdfjs-dist reaches canvas by package
+# NAME through a runtime createRequire, so a resolvable location is the entire requirement.
+#
+# Layout only: this changes where packages are linked, never which versions resolve, so
+# pnpm-lock.yaml is unaffected.
+publicHoistPattern:
+  - "@napi-rs/*"
