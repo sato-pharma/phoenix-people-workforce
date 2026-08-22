@@ -525,6 +525,14 @@ type RepAggBucket = {
   dmHrId: string | null;
   areaCode: string | null;
   salesValue: number;
+  /**
+   * The slice of `salesValue` sitting on a product that HAS a target this month — the numerator
+   * `achievementPct` divides. `salesValue` is every sale the rep made on this line; a percentage
+   * cannot be re-aggregated, only the parts it divides can, and both parts must describe the same
+   * population. Dividing all sales by the covered target credits a rep with revenue their target
+   * never asked for. Same rule as `vs-target.ts` and `monthly-targets.ts`.
+   */
+  coveredSalesValue: number;
   targetValue: number;
   salesUnits: number;
   targetUnits: number;
@@ -613,6 +621,7 @@ async function loadClosingByEmployeeUncached(filters: ClosingFilters): Promise<C
     const bucket = buckets.get(key) ?? {
       areaCode: r.area_code,
       dmHrId: r.dm_hr_id,
+      coveredSalesValue: 0,
       hasTarget: false,
       lineCode: r.line_code,
       period: r.period,
@@ -624,7 +633,11 @@ async function loadClosingByEmployeeUncached(filters: ClosingFilters): Promise<C
     };
     bucket.salesValue += n(r.actual_value);
     bucket.salesUnits += n(r.actual_units);
+    // `has_target` is the engine's own per-row flag; `target_value != null` is how this loader has
+    // always detected the same thing, so the graded slice follows that existing test rather than
+    // introducing a second, subtly different one.
     if (r.target_value != null) {
+      bucket.coveredSalesValue += n(r.actual_value);
       bucket.targetValue += n(r.target_value);
       bucket.hasTarget = true;
     }
@@ -642,7 +655,11 @@ async function loadClosingByEmployeeUncached(filters: ClosingFilters): Promise<C
     .map((b) => {
       const area = b.areaCode ? areaNames.get(b.areaCode) : null;
       return {
-        achievementPct: b.hasTarget && b.targetValue > 0 ? round2((b.salesValue / b.targetValue) * 100) : null,
+        // COVERED sales, not all sales — see RepAggBucket.coveredSalesValue. Measured on
+        // production 2026-08-23 this moved one July rep-line by 4.1 points and four February ones
+        // by up to 2.3; small here because a rep with untargeted sales usually still holds a target
+        // for the line, unlike the DM roll-up where it reached 46 points.
+        achievementPct: b.hasTarget && b.targetValue > 0 ? round2((b.coveredSalesValue / b.targetValue) * 100) : null,
         employeeHrId: b.repHrId,
         employeeName: nameByHrId ? (nameByHrId.get(b.repHrId.trim().toUpperCase()) ?? UNKNOWN_NAME) : UNKNOWN_NAME,
         line: REP_ACHIEVEMENT_LINE_DISPLAY[b.lineCode] ?? b.lineCode,

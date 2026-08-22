@@ -358,10 +358,33 @@ export async function loadMonthlyAchievement(period: string): Promise<Achievemen
 // ── Pure roll-ups (no IO) ─────────────────────────────────────────────────────
 // Sum actuals + targets up the org hierarchy and recompute achievement from the
 // SUMS (never average per-row %). Rows without the grouping key are skipped.
+//
+// The numerator is `coveredActualValue`, NOT `actualValue`. A percentage cannot be
+// re-aggregated — only the parts it divides can — and the two parts have to describe
+// the same population. `au.f_monthly_achievement` returns one row per
+// (line, area, product): rows carrying a target row (`hasTarget`) and rows that do
+// not. Only the covered ones have anything in the denominator, so dividing ALL sales
+// by covered target credits a seat with revenue its target never asked for. Measured
+// on production 2026-08-23, before this was fixed: Pedia February read 67.99% for a
+// 35.71% month, and one district manager read 48.5% for a 2.2% July. This is the same
+// rule `vs-target.ts` and `business-review/canonical.ts` already follow — see
+// `addRow` in vs-target.ts, which is the definition this mirrors deliberately.
+//
+// `coveredActualValue` is NOT bounded above by `actualValue`: returns and credits land
+// as negative rows and can be uncovered, so an untargeted line of pure returns makes
+// the covered figure the LARGER of the two (CNS January 2026 does exactly this). Do
+// not "correct" that with a clamp — both figures are right and the difference is real.
 
 export type AchievementTotal = {
   actualValue: number;
   actualUnits: number;
+  /**
+   * The slice of `actualValue` sitting on a key that HAS a target — the numerator
+   * `achievementValue` really divides. Carried on every total so a parent can be built
+   * from children without re-deriving it, and so the UI can show WHICH sales were graded.
+   */
+  coveredActualValue: number;
+  coveredActualUnits: number;
   targetValue: number;
   targetUnits: number;
   achievementValue: number | null;
@@ -375,15 +398,27 @@ function foldAchievement<K>(
   for (const row of rows) {
     const key = keyOf(row);
     if (key == null) continue;
-    const current = totals.get(key) ?? { actualValue: 0, actualUnits: 0, targetValue: 0, targetUnits: 0, achievementValue: null };
+    const current = totals.get(key) ?? {
+      actualValue: 0,
+      actualUnits: 0,
+      coveredActualValue: 0,
+      coveredActualUnits: 0,
+      targetValue: 0,
+      targetUnits: 0,
+      achievementValue: null,
+    };
     current.actualValue += row.actualValue;
     current.actualUnits += row.actualUnits;
+    if (row.hasTarget) {
+      current.coveredActualValue += row.actualValue;
+      current.coveredActualUnits += row.actualUnits;
+    }
     current.targetValue += row.targetValue ?? 0;
     current.targetUnits += row.targetUnits ?? 0;
     totals.set(key, current);
   }
   for (const total of totals.values()) {
-    total.achievementValue = total.targetValue !== 0 ? total.actualValue / total.targetValue : null;
+    total.achievementValue = total.targetValue !== 0 ? total.coveredActualValue / total.targetValue : null;
   }
   return totals;
 }

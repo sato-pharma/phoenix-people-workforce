@@ -1,6 +1,12 @@
 import { redirect } from "next/navigation";
 
-import { TargetsWorkspace, type TargetGridRow } from "@/components/sales/targets-workspace";
+import {
+  TargetsWorkspace,
+  type DmRollup,
+  type LineTotal,
+  type RegionRollup,
+  type TargetGridRow,
+} from "@/components/sales/targets-workspace";
 import { resolveLandingPathForRole } from "@/lib/auth/landing";
 import { assertPermission, canAccess, resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
@@ -73,9 +79,9 @@ export default async function TargetsPage({
   const selectedPeriod = sp.period && periods.includes(sp.period) ? sp.period : current;
 
   let rows: TargetGridRow[] = [];
-  let lineTotal: { actualValue: number; targetValue: number; achievementValue: number | null } | null = null;
-  let byRegion: Array<{ region: string; actualValue: number; targetValue: number; achievementValue: number | null }> = [];
-  let byDm: Array<{ dmName: string; actualValue: number; targetValue: number; achievementValue: number | null }> = [];
+  let lineTotal: LineTotal = null;
+  let byRegion: RegionRollup[] = [];
+  let byDm: DmRollup[] = [];
   let sourceFiles: SourceFileRow[] = [];
   let error: string | null = null;
 
@@ -117,17 +123,26 @@ export default async function TargetsPage({
       .sort((left, right) => left.areaCode.localeCompare(right.areaCode) || left.productCode.localeCompare(right.productCode));
 
     const line = rollupAchievementByLine(lineRows)[0];
-    lineTotal = line ? { actualValue: line.actualValue, targetValue: line.targetValue, achievementValue: line.achievementValue } : null;
+    lineTotal = line
+      ? { actualValue: line.actualValue, coveredActualValue: line.coveredActualValue, targetValue: line.targetValue, achievementValue: line.achievementValue }
+      : null;
     byRegion = rollupAchievementByRegion(lineRows)
       .map((entry) => ({
         region: regionName(entry.regionCode),
         actualValue: entry.actualValue,
+        coveredActualValue: entry.coveredActualValue,
         targetValue: entry.targetValue,
         achievementValue: entry.achievementValue,
       }))
       .sort((left, right) => left.region.localeCompare(right.region));
     byDm = rollupAchievementByDm(lineRows)
-      .map((entry) => ({ dmName: nameFor(entry.key) ?? entry.key, actualValue: entry.actualValue, targetValue: entry.targetValue, achievementValue: entry.achievementValue }))
+      .map((entry) => ({
+        dmName: nameFor(entry.key) ?? entry.key,
+        actualValue: entry.actualValue,
+        coveredActualValue: entry.coveredActualValue,
+        targetValue: entry.targetValue,
+        achievementValue: entry.achievementValue,
+      }))
       .sort((left, right) => left.dmName.localeCompare(right.dmName));
   } catch (loadError) {
     error = loadError instanceof Error ? loadError.message : "Failed to load targets.";

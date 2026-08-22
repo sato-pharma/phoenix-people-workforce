@@ -1,7 +1,13 @@
 import { redirect } from "next/navigation";
 
 import { EmployeePortalPageShell } from "@/components/employee-portal/enterprise-shell";
-import { TargetsWorkspace, type TargetGridRow } from "@/components/sales/targets-workspace";
+import {
+  TargetsWorkspace,
+  type DmRollup,
+  type LineTotal,
+  type RegionRollup,
+  type TargetGridRow,
+} from "@/components/sales/targets-workspace";
 import { resolveLandingPathForRole } from "@/lib/auth/landing";
 import { assertPermission } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
@@ -74,9 +80,9 @@ export default async function PortalTargetsPage({
   let selectedLine = requestedLine ?? SALES_LINES[0].code;
 
   let rows: TargetGridRow[] = [];
-  let lineTotal: { actualValue: number; targetValue: number; achievementValue: number | null } | null = null;
-  let byRegion: Array<{ region: string; actualValue: number; targetValue: number; achievementValue: number | null }> = [];
-  let byDm: Array<{ dmName: string; actualValue: number; targetValue: number; achievementValue: number | null }> = [];
+  let lineTotal: LineTotal = null;
+  let byRegion: RegionRollup[] = [];
+  let byDm: DmRollup[] = [];
   let error: string | null = null;
 
   try {
@@ -134,11 +140,14 @@ export default async function PortalTargetsPage({
       .sort((left, right) => left.areaCode.localeCompare(right.areaCode) || left.productCode.localeCompare(right.productCode));
 
     const line = rollupAchievementByLine(lineRows)[0];
-    lineTotal = line ? { actualValue: line.actualValue, targetValue: line.targetValue, achievementValue: line.achievementValue } : null;
+    lineTotal = line
+      ? { actualValue: line.actualValue, coveredActualValue: line.coveredActualValue, targetValue: line.targetValue, achievementValue: line.achievementValue }
+      : null;
     byRegion = rollupAchievementByRegion(lineRows)
       .map((entry) => ({
         region: regionName(entry.regionCode),
         actualValue: entry.actualValue,
+        coveredActualValue: entry.coveredActualValue,
         targetValue: entry.targetValue,
         achievementValue: entry.achievementValue,
       }))
@@ -147,6 +156,7 @@ export default async function PortalTargetsPage({
       .map((entry) => ({
         dmName: nameFor(entry.key) ?? entry.key,
         actualValue: entry.actualValue,
+        coveredActualValue: entry.coveredActualValue,
         targetValue: entry.targetValue,
         achievementValue: entry.achievementValue,
       }))

@@ -320,6 +320,7 @@ import { runClosingMatrixFoldTests } from "./closing-matrix-fold.test.ts";
 import { runMasterWorkbookKeysetTests } from "./master-workbook-keyset.test.ts";
 import { runSalesVsTargetCacheTests } from "./sales-vs-target-cache.test.ts";
 import { runBusinessReviewAchievementArithmeticTests } from "./business-review-achievement-arithmetic.test.ts";
+import { runTargetsRollupAchievementTests } from "./targets-rollup-achievement.test.ts";
 import { runBusinessReviewPortalScopeTests } from "./business-review-portal-scope.test.ts";
 import { runBusinessReviewWindowAndCoverageTests } from "./business-review-window-and-coverage.test.ts";
 import { runMonthlySalesRunTests } from "./monthly-sales-run.test.ts";
@@ -1780,6 +1781,10 @@ await runTest(
 await runTest(
   "business review achievement arithmetic (a percentage is re-aggregated by summing the parts it divides, never by dividing the full sales figure: the company headline, a district manager's own portal total and the product-family mix all divide covered sales by target, so a month carrying sales nobody set a target for cannot lift the grade -- the defect that made Jan-Aug 2026 read 130.73% where it means 50.67%, and an ungraded area still reports its sales while grading as null rather than 0%)",
   runBusinessReviewAchievementArithmeticTests,
+);
+await runTest(
+  "targets rollup achievement (the admin and portal Targets pages share one fold, and it divided ALL sales by the COVERED target -- Pedia February 2026 read 67.99% for a 35.71% month and one district manager read 48.5% for a 2.2% July; the grade now divides the graded slice, an untargeted return may legitimately exceed the full actual and is never clamped, a month with no target grades null and never 0%, and both pages show WHICH sales were graded so the card's own arithmetic divides out)",
+  runTargetsRollupAchievementTests,
 );
 await runTest(
   "achievement counts the unmapped channel (no channel filter survives, the line_code rejoins are NULL-safe so a line-less sale is not zeroed, and service_role keeps execute)",
