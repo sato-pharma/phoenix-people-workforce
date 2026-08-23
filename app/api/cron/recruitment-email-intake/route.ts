@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { isProductionRuntime } from "@/config/system-settings";
-import { logCronUnauthorized, logError, logInfo } from "@/lib/observability/log";
+import { logCronUnauthorized, logError, logInfo, logWarning } from "@/lib/observability/log";
 import { withDeadMansSwitch } from "@/lib/observability/dead-mans-switch";
 import {
   pollAllRecruitmentMailboxes,
@@ -97,6 +97,21 @@ class RecruitmentIntakePollError extends Error {
 }
 
 /**
+ * Only a DETERMINISTIC fault pages. `api_unreachable` (Meta rejects our credentials) and
+ * `webhook_misrouted` (Meta is configured to deliver somewhere that is not us) are both facts about
+ * the current configuration, checked directly, and both are actionable the moment they appear.
+ *
+ * `silent` is deliberately NOT in this set any more. Measured on production, this channel's normal
+ * inbound gap has reached 333 hours against a 96-hour threshold - so silence fired for roughly ten
+ * straight days in early August 2026 with nothing whatsoever wrong, and it is firing again now. An
+ * alert that is on during normal operation cannot signal an outage; it only trains its reader to
+ * ignore it, and the real 2026-07-26 block would have been invisible inside that noise. Silence is
+ * still computed and still logged - as a WARNING, which does not page - because it remains useful
+ * context once something else has drawn attention.
+ */
+const PAGING_STATUSES = new Set<WhatsAppIntakeHealth["status"]>(["api_unreachable", "webhook_misrouted"]);
+
+/**
  * WhatsApp health is logged, never thrown. Failing this route on it would turn the email cron red
  * for a problem in a different channel and, worse, would stop reporting the mailbox result
  * accurately. logError emits an ERROR-severity Cloud Logging entry, which is what the production
@@ -104,13 +119,24 @@ class RecruitmentIntakePollError extends Error {
  */
 async function reportWhatsAppIntakeHealth(): Promise<WhatsAppIntakeHealth> {
   const health = await checkWhatsAppIntakeHealth();
-  if (health.status === "api_unreachable" || health.status === "silent") {
+  if (health.status === "silent") {
+    logWarning("Inbound WhatsApp CV intake has been quiet", {
+      labels: {
+        event: "whatsapp_intake_quiet",
+        hoursSinceLastInbound: health.hoursSinceLastInbound === null ? null : Math.floor(health.hoursSinceLastInbound),
+        job: "recruitment-email-intake",
+        routingOk: health.routing?.ok ?? null,
+      },
+    });
+  }
+  if (PAGING_STATUSES.has(health.status)) {
     logError("Inbound WhatsApp CV intake is not healthy", {
       context: {
         apiError: health.apiError,
         detail: health.detail,
         lastInboundAt: health.lastInboundAt,
         probes: health.probes,
+        routing: health.routing,
       },
       labels: {
         event: "whatsapp_intake_unhealthy",

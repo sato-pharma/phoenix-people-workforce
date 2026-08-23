@@ -31,6 +31,49 @@ Email is inherently resilient (IMAP retains messages — a poller outage never l
 re-poll). WhatsApp Cloud API has **no inbound history API**, so a dropped webhook is gone — which is
 why the fast ack, verification, and the 10-minute health alert matter most there.
 
+## What pages, and what does not (changed 2026-08-23)
+
+**Only a deterministic fault pages.** `checkWhatsAppIntakeHealth` now returns two statuses that
+reach a phone, and one that does not:
+
+| Status | What it means | Pages? |
+| --- | --- | --- |
+| `api_unreachable` | Meta rejects our credentials (the 2026-07-26 block) | **yes** — Telegram + push |
+| `webhook_misrouted` | Meta is configured to deliver somewhere that is not us | **yes** — Telegram + push |
+| `silent` | Nothing has arrived for a while, delivery config verified fine | no — WARNING log only |
+| `ok` / `not_configured` | — | no |
+
+`webhook_misrouted` is checked directly against Graph on every 10-minute tick, using credentials the
+app already holds (the app id is read back from `debug_token`, so there is no extra env var to drift):
+
+1. `GET /{app-id}/subscriptions` — the `whatsapp_business_account` entry must be `active`, must
+   include the **`messages`** field, and its `callback_url` must equal the production webhook URL.
+2. `GET /{phone-number-id}?fields=webhook_configuration` — a **per-number override beats the
+   app-level URL**, so a stale one silently reroutes every message while everything else looks right.
+
+An unanswerable check (no `WHATSAPP_APP_SECRET`, or Graph unreachable) yields `ok: null` — never
+`false`. A network blip must not page anyone with a fake misconfiguration.
+
+### Why silence stopped paging
+
+Silence was the primary alert and it did not work. Measured on production 2026-08-23, over the
+channel's whole recorded history:
+
+- The normal inbound gap has reached **333 hours** (08-01 → 08-14) against a **96-hour** threshold.
+  The alert therefore fired for roughly **ten consecutive days in early August with nothing wrong**,
+  and was firing again at the time of this change while every layer verified healthy.
+- Organic CVs run at **0–6/day**, and **371 of 390** recorded WhatsApp intake events were bulk
+  forward-imports, not applicants. A bulk import also **resets the silence clock**, so a genuine
+  applicant drought is masked by an HR forward while an ordinary quiet week trips the alarm.
+
+An alert that is on during normal operation cannot signal an outage — the real 2026-07-26 block
+would have been invisible inside that noise. So silence is still computed, still logged, and still
+returned in the cron payload; it just no longer pages. The deterministic checks above carry that
+duty, and they catch the actual failure mode in one tick instead of after 96 hours.
+
+**`RECRUITMENT_WHATSAPP_SILENCE_ALERT_HOURS` now only controls when the WARNING appears.** Raising
+it reduces log noise; it no longer affects whether anyone is paged.
+
 ## Applicant auto-reply (built, OFF by default)
 
 `src/lib/recruitment/inbound/whatsapp-reply.ts` can send a "we received your CV" **approved

@@ -147,12 +147,19 @@ export async function notifyDailyCvDigest(digest: DailyCvDigest): Promise<void> 
  * never itself break the cron that raised it.
  */
 export async function notifyWhatsAppIntakeUnhealthy(health: WhatsAppIntakeHealth, now: Date = new Date()): Promise<void> {
-  if (health.status !== "api_unreachable" && health.status !== "silent") return;
+  // Only the two DETERMINISTIC faults reach a phone. "silent" was removed on 2026-08-23: this
+  // channel's normal inbound gap has measured 333h against a 96h threshold, so the quiet alert
+  // pushed for ~10 consecutive days in early August with nothing wrong. A push that arrives during
+  // normal operation is a push that stops being read.
+  if (health.status !== "api_unreachable" && health.status !== "webhook_misrouted") return;
 
   const recipientHrIds = await hrIdsForRoles(recruitmentManageRoles);
   if (recipientHrIds.length === 0) return;
 
-  const title = health.status === "api_unreachable" ? "WhatsApp CV intake is DOWN" : "WhatsApp CV intake has gone quiet";
+  const title =
+    health.status === "api_unreachable"
+      ? "WhatsApp CV intake is DOWN"
+      : "WhatsApp CV intake is not being delivered here";
   const numbersDown = health.probes.filter((probe) => !probe.ok).map((probe) => probe.displayNumber ?? probe.phoneNumberId);
 
   await createSystemNotificationForRecipients(
@@ -167,6 +174,7 @@ export async function notifyWhatsAppIntakeUnhealthy(health: WhatsAppIntakeHealth
         apiError: health.apiError,
         idempotencyKey: `whatsapp-intake-health:${health.status}:${cairoDateKey(now)}`,
         numbersDown,
+        routingProblems: health.routing?.problems ?? [],
         status: health.status,
       },
       module: "recruitment",
