@@ -635,6 +635,12 @@ export type MarketingValidationWorkspace = {
   reusablePharmacies: MarketingReusablePharmacy[];
   rows: MarketingValidationReportRow[];
   summary: Record<MarketingValidationStatus, number>;
+  /**
+   * Who is looking at this workspace. Carried only so the browser's crash-recovery draft can be
+   * scoped to one person — field phones are shared, and a recovered capture must never be offered
+   * to whoever logs in next, who would then save another rep's visit under his own name.
+   */
+  viewerHrId: string;
 };
 
 export type MarketingCustomerDatabaseRow = {

@@ -5168,6 +5168,7 @@ export async function getMarketingValidationWorkspace(access: AccessContext): Pr
       reusablePharmacies,
       rows: [],
       summary: emptyValidationSummary(),
+      viewerHrId: normalizeHrId(access.hrId) ?? "",
     };
   }
 
@@ -5210,6 +5211,7 @@ export async function getMarketingValidationWorkspace(access: AccessContext): Pr
     reusablePharmacies,
     rows: report.rows,
     summary: report.summary,
+    viewerHrId: normalizeHrId(access.hrId) ?? "",
   };
 }
 

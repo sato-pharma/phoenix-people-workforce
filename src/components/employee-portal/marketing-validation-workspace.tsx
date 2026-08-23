@@ -7,6 +7,7 @@ import {
   CheckCircle2,
   ClipboardCheck,
   Clock,
+  History,
   MapPin,
   Plus,
   RefreshCcw,
@@ -43,6 +44,23 @@ import type {
   MarketingValidationStatus,
   MarketingValidationWorkspace as MarketingValidationWorkspacePayload,
 } from "@/lib/marketing-requests/types";
+import {
+  describeRestoredDraft,
+  isDraftWorthKeeping,
+  MARKETING_DRAFT_EVIDENCE_MAX_AGE_MS,
+  MARKETING_DRAFT_VERSION,
+  parseStoredDraft,
+  restoreDraft,
+  type MarketingValidationDraft,
+} from "@/lib/marketing-requests/validation-draft";
+import {
+  clearValidationDraft,
+  clearValidationQueue,
+  readValidationDraft,
+  readValidationQueue,
+  saveValidationDraft,
+  saveValidationQueue,
+} from "@/lib/marketing-requests/validation-draft-store";
 import {
   VENUE_TYPES,
   venueRequiresDistributorCode,
@@ -110,7 +128,59 @@ function useOfflineQueue(onReplay: (payload: unknown) => Promise<void>) {
   const [queue, setQueue] = useState<QueuedSubmission[]>([]);
   // Always start `true` to match SSR output --- sync real value in useEffect
   const [isOnline, setIsOnline] = useState(true);
+  /** Offline submissions found on disk that were too old to send. Surfaced, never dropped quietly. */
+  const [expiredCount, setExpiredCount] = useState(0);
   const replayingRef = useRef(false);
+  // Set once the stored queue has been read back, so the persist effect below cannot write its
+  // empty initial state over a real queue in the moment before the read returns.
+  const hydratedRef = useRef(false);
+
+  // Reload the queue left behind by a previous tab.
+  //
+  // Until 2026-08-23 this queue lived only in React state, so a rep who pressed Save with no signal
+  // was told "Saved offline. Will sync automatically when connection returns." and then lost the
+  // submission outright on the next reload --- no error, no row, nothing to notice it by. That is
+  // worse than losing an unsaved form, because he has already been told the work is safe.
+  //
+  // A restored entry still has to age out. Its payload carries a complete GPS fix and live photo,
+  // and `evidenceStatusFromInput` on the server grants `system_validated` on their PRESENCE without
+  // ever comparing the timestamp to now --- so replaying a two-day-old queue would quietly assert a
+  // visit that did not happen that day. `timestamp` is stamped at enqueue, seconds after the
+  // capture, so it is a fair proxy for when the rep actually stood there.
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const stored = await readValidationQueue();
+      if (cancelled) return;
+      if (Array.isArray(stored) && stored.length > 0) {
+        const entries = stored as QueuedSubmission[];
+        const cutoff = Date.now() - MARKETING_DRAFT_EVIDENCE_MAX_AGE_MS;
+        const usable = entries.filter((entry) => Number(entry.timestamp) >= cutoff);
+        if (usable.length > 0) {
+          // eslint-disable-next-line react-hooks/set-state-in-effect
+          setQueue(usable);
+        }
+        if (usable.length < entries.length) {
+          // eslint-disable-next-line react-hooks/set-state-in-effect
+          setExpiredCount(entries.length - usable.length);
+        }
+      }
+      hydratedRef.current = true;
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Mirror every change to disk. Runs after the read above has settled.
+  useEffect(() => {
+    if (!hydratedRef.current) return;
+    if (queue.length === 0) {
+      void clearValidationQueue();
+      return;
+    }
+    void saveValidationQueue(queue);
+  }, [queue]);
 
   useEffect(() => {
     // Sync real browser state after hydration --- must live in useEffect to avoid SSR mismatch
@@ -161,7 +231,13 @@ function useOfflineQueue(onReplay: (payload: unknown) => Promise<void>) {
     setQueue((current) => [...current, submission]);
   }
 
-  return { enqueue, isOnline, queueLength: queue.length };
+  return {
+    dismissExpired: () => setExpiredCount(0),
+    enqueue,
+    expiredCount,
+    isOnline,
+    queueLength: queue.length,
+  };
 }
 
 /* --------------------------------------------------------------------- Types --------------------------------------------------------------------- */
@@ -363,6 +439,7 @@ function emptyWorkspace(): MarketingValidationWorkspacePayload {
       sfe_validated: 0,
       system_validated: 0,
     },
+    viewerHrId: "",
   };
 }
 
@@ -1533,7 +1610,7 @@ export function MarketingValidationWorkspace() {
       return { ...current, rows: [...rows, ...current.rows], summary };
     });
   }, []);
-  const { enqueue, isOnline, queueLength } = useOfflineQueue(replaySubmission);
+  const { dismissExpired, enqueue, expiredCount, isOnline, queueLength } = useOfflineQueue(replaySubmission);
 
   const loadWorkspace = useCallback(async () => {
     try {
@@ -1554,6 +1631,7 @@ export function MarketingValidationWorkspace() {
         reusablePharmacies: payload.reusablePharmacies ?? [],
         rows: payload.rows ?? [],
         summary: payload.summary ?? emptyWorkspace().summary,
+        viewerHrId: typeof payload.viewerHrId === "string" ? payload.viewerHrId : "",
       });
       setCustomers((current) =>
         current.map((customer) => ({
@@ -1581,6 +1659,104 @@ export function MarketingValidationWorkspace() {
     }, 0);
     return () => window.clearTimeout(timeout);
   }, [loadWorkspace]);
+
+  /* --------- Crash / refresh recovery --------- */
+
+  /**
+   * What the recovery banner says, or null when there is nothing to recover.
+   *
+   * Written on 2026-08-23, after a Product Manager lost a captured doctor to a page refresh at a
+   * clinic in Kafr Selim. The form had held the whole capture --- name, GPS fix and live photo ---
+   * in React state and written it nowhere, so a full sweep of every table in production and of the
+   * evidence bucket found no trace of it and the only recovery was to drive back.
+   */
+  const [draftNotice, setDraftNotice] = useState<string | null>(null);
+  /**
+   * Blocks the save effect below until the stored draft has been read back. Without it the empty
+   * form mounts, the effect fires, and the draft is overwritten with nothing --- the exact bug this
+   * feature exists to prevent, reintroduced by the fix for it.
+   */
+  const draftReadyRef = useRef(false);
+  const draftRestoredRef = useRef(false);
+  /**
+   * A live mirror of the form, read by the restore below.
+   *
+   * The stored draft arrives after two awaits — the workspace GET, then the IndexedDB read — and
+   * the form is typeable throughout. Without this check a rep who started typing in that window
+   * would have his work replaced by the recovered draft, which is the same loss this feature exists
+   * to prevent, arriving through the fix for it.
+   */
+  const customersRef = useRef(customers);
+  useEffect(() => {
+    customersRef.current = customers;
+  }, [customers]);
+
+  const viewerHrId = workspace.viewerHrId;
+
+  useEffect(() => {
+    // Waits for the workspace load, because a draft is only ever offered back to the person who
+    // typed it and the viewer's id arrives with that payload. Field phones are shared.
+    if (!viewerHrId || draftRestoredRef.current) return;
+    draftRestoredRef.current = true;
+
+    let cancelled = false;
+    void (async () => {
+      try {
+        const restore = restoreDraft<CustomerLine>({
+          // The stored value is validated structurally before it is trusted; the cast carries the
+          // concrete line type back, which the shape check cannot express on its own.
+          draft: parseStoredDraft(await readValidationDraft()) as MarketingValidationDraft<CustomerLine> | null,
+          nowMs: Date.now(),
+          viewerHrId,
+        });
+        if (cancelled) return;
+
+        if (!restore) {
+          await clearValidationDraft();
+          return;
+        }
+
+        // Whatever the rep has typed while waiting outranks anything on disk.
+        if (isDraftWorthKeeping(customersRef.current)) return;
+
+        setCustomers(restore.customers);
+        setOnBehalfHrId(restore.onBehalfHrId);
+        setDraftNotice(describeRestoredDraft(restore));
+      } catch {
+        // A draft that cannot be read is a draft that is thrown away. It must never be the reason
+        // the capture screen fails to open --- a rep who cannot work at all is the worse outcome.
+        await clearValidationDraft();
+      } finally {
+        if (!cancelled) draftReadyRef.current = true;
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [viewerHrId]);
+
+  useEffect(() => {
+    if (!draftReadyRef.current || !viewerHrId) return;
+
+    // Debounced: a capture holds base64 photos, and writing them on every keystroke would put a
+    // megabyte-scale serialisation between the rep and the next character he types.
+    const timeout = window.setTimeout(() => {
+      if (!isDraftWorthKeeping(customers)) {
+        void clearValidationDraft();
+        return;
+      }
+      void saveValidationDraft({
+        customers,
+        onBehalfHrId,
+        ownerHrId: viewerHrId,
+        savedAt: new Date().toISOString(),
+        version: MARKETING_DRAFT_VERSION,
+      });
+    }, 800);
+
+    return () => window.clearTimeout(timeout);
+  }, [customers, onBehalfHrId, viewerHrId]);
 
   const defaultDistributorId = String(workspace.distributors[0]?.id ?? "");
   // Desk mode is driven purely by whether an employee is selected. The server re-checks the role on
@@ -2012,8 +2188,23 @@ export function MarketingValidationWorkspace() {
     };
   }
 
+  /**
+   * Clears the form AND the stored draft together.
+   *
+   * Every caller is a point where the work has left the browser for good --- saved, or queued for
+   * replay. Leaving the draft behind would mean the next visit offers to "recover" a capture that
+   * is already a row in production, and the rep would save it a second time.
+   */
   function resetForm() {
     setCustomers([newCustomerLine(defaultDistributorId)]);
+    setDraftNotice(null);
+    void clearValidationDraft();
+  }
+
+  /** "Discard" on the recovery banner: throw the recovered capture away and start clean. */
+  function discardRecoveredDraft() {
+    resetForm();
+    setMessage(null);
   }
 
   /**
@@ -2172,6 +2363,40 @@ export function MarketingValidationWorkspace() {
             : `Syncing ${queueLength} queued submission${queueLength > 1 ? "s" : ""}...`}
         </div>
       )}
+
+      {/* --------- Recovered Draft --------- */}
+      {hasMounted && draftNotice ? (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-sm border border-amber-200 bg-amber-50 px-3.5 py-2.5 text-[13px] font-semibold text-amber-800">
+          <span className="flex min-w-0 items-start gap-2">
+            <History className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+            {draftNotice}
+          </span>
+          <button
+            className="shrink-0 rounded-sm border border-amber-300 bg-white px-2.5 py-1 text-[12px] font-semibold text-amber-800 hover:bg-amber-100"
+            onClick={discardRecoveredDraft}
+            type="button"
+          >
+            Discard
+          </button>
+        </div>
+      ) : null}
+
+      {/* --------- Offline Submissions That Aged Out --------- */}
+      {hasMounted && expiredCount > 0 ? (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-sm border border-red-200 bg-red-50 px-3.5 py-2.5 text-[13px] font-semibold text-red-800">
+          <span className="flex min-w-0 items-start gap-2">
+            <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+            {`${expiredCount} offline submission${expiredCount > 1 ? "s were" : " was"} waiting to sync but the live photo and location on ${expiredCount > 1 ? "them are" : "it is"} now too old to count as evidence of the visit. Capture ${expiredCount > 1 ? "them" : "it"} again.`}
+          </span>
+          <button
+            className="shrink-0 rounded-sm border border-red-300 bg-white px-2.5 py-1 text-[12px] font-semibold text-red-800 hover:bg-red-100"
+            onClick={dismissExpired}
+            type="button"
+          >
+            Dismiss
+          </button>
+        </div>
+      ) : null}
 
       {/* --------- Summary Metrics --------- */}
       <div className="rounded-sm border border-slate-200 bg-white p-3 shadow-sm sm:p-4">

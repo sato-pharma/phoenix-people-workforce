@@ -349,6 +349,7 @@ import { runMarketingMasterResolutionTests } from "./marketing-master-resolution
 import { runMarketingReferenceImporterTests } from "./marketing-reference-importer.test.ts";
 import { runMarketingRequestAccessTests } from "./marketing-request-access.test.ts";
 import { runMarketingRequestServiceTests } from "./marketing-request-service.test.ts";
+import { runMarketingValidationDraftTests } from "./marketing-validation-draft.test.ts";
 import { runReportRpcGuardrailTests } from "./report-rpc-guardrails.test.ts";
 import { runMarketingReviewRoutingTests } from "./marketing-review-routing.test.ts";
 import { runMarketingApproverHrIdCasingTests } from "./marketing-approver-hrid-casing.test.ts";
@@ -1407,6 +1408,7 @@ await runTest(
   runMarketingVenueMergeTests,
 );
 await runTest("marketing request overlap detection (double-count guard)", runMarketingRequestOverlapTests);
+await runTest("marketing validation draft recovery (stale evidence must never be restored)", runMarketingValidationDraftTests);
 await runTest("marketing ROI live lifecycle stages (rejected never counts as committed)", runMarketingRoiLiveStagesTests);
 await runTest("marketing ROI confidence score (measurement trust, not performance)", runMarketingRoiConfidenceTests);
 await runTest("marketing ROI explain (diagnostic classifier + read-only guards)", runMarketingRoiExplainTests);
