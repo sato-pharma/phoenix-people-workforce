@@ -141,9 +141,13 @@ rather than on merge. All of that is gone.
 `https://phoenix-hr.satopharma.com` (Railway service `phoenix-people-workforce`, region
 `europe-west4-drams3a` — Amsterdam, EU West, colocated with the Frankfurt Supabase project on
 purpose; see [AGENTS.md](../AGENTS.md) § Stable Environment Facts).
-**There is no staging app.** There is no per-branch preview deployment. To confirm what is actually
-live, request `/api/healthz` and read `revision` — the running commit SHA — rather than trusting a
-workflow list or a merged PR.
+There **is** a staging app — a second Railway environment (`staging`) of the same service, at
+`https://phoenix-people-workforce-staging.up.railway.app`, pointed at the staging Supabase project.
+But there is still no per-branch preview deployment: staging tracks `main` too, so it normally
+serves the same commit production does. To confirm what is actually live, request `/api/healthz`
+on **the production domain** and read `revision` — the running commit SHA — rather than trusting a
+workflow list, a merged PR, or a staging response. See
+[deployment.md](deployment.md) § Staging Environment for what staging can and cannot verify.
 
 Full triggers, timing caveats, and verification commands live in
 [AGENTS.md](../AGENTS.md) (§ Stable Environment Facts, § Hard-Learned Rules) and
