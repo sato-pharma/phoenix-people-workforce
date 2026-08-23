@@ -268,8 +268,17 @@ export function runDirectOrdersShareLinkControlsTests() {
   {
     assert.match(
       source,
-      /if \(!isAdmin\) query = query\.eq\("created_by_hr_id"/,
+      /if \(!isAdmin\) query = query\.in\("created_by_hr_id", hrIdLookupKeys\(access\.hrId\)\);/,
       "a non-admin sees only their own links; a Super Admin sees every one",
+    );
+    // `.in(hrIdLookupKeys(...))` and not `.eq(access.hrId)`: access.hrId is lower-cased by
+    // canonicalHrIdKey, while created_by_hr_id keeps whatever case the creating session had —
+    // 40 of 41 rows lower-case in production, 1 upper. An exact match hid a creator's own links
+    // from them. The widening is case-only and cannot reach another person's links, because
+    // hrIdLookupKeys never produces a different HR_ID. See tests/direct-orders-hr-id-case.test.ts.
+    assert.ok(
+      !/query\.eq\("created_by_hr_id"/.test(source),
+      "the owner filter must not be case-sensitive — an exact match hides links stored in the other case",
     );
   }
 

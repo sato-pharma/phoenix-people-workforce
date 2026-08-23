@@ -595,7 +595,7 @@ export async function listMyDirectOrderPharmacies(access: AccessContext): Promis
   const { data, error } = await supabase
     .from("direct_order_pharmacies")
     .select("*")
-    .eq("created_by_hr_id", access.hrId)
+    .in("created_by_hr_id", hrIdLookupKeys(access.hrId))
     .eq("active", true)
     .order("pharmacy_name", { ascending: true });
   if (error) throw error;
@@ -1393,10 +1393,16 @@ export async function listMyApprovedDirectOrderPharmacies(access: AccessContext)
   await assertPermission(access, "direct_orders", "read");
   const supabase = getSupabaseAdmin();
 
+  // No HR_ID means no "mine" to answer with. Returning early also keeps the .or() below from being
+  // built with an empty in-list (`created_by_hr_id.in.()`), which PostgREST rejects as a syntax
+  // error rather than simply matching nothing.
+  const myHrIdKeys = hrIdLookupKeys(access.hrId);
+  if (myHrIdKeys.length === 0) return [];
+
   const { data: orderRows, error: orderError } = await supabase
     .from("direct_order_requests")
     .select("pharmacy_id")
-    .eq("requester_hr_id", access.hrId)
+    .in("requester_hr_id", myHrIdKeys)
     .eq("status", "approved");
   if (orderError) throw orderError;
   const fromApprovedOrders = new Set(
@@ -1410,8 +1416,8 @@ export async function listMyApprovedDirectOrderPharmacies(access: AccessContext)
     .eq("verification_status", "verified")
     .or(
       fromApprovedOrders.size > 0
-        ? `created_by_hr_id.eq.${access.hrId},id.in.(${Array.from(fromApprovedOrders).join(",")})`
-        : `created_by_hr_id.eq.${access.hrId}`,
+        ? `created_by_hr_id.in.(${quoteInList(myHrIdKeys)}),id.in.(${Array.from(fromApprovedOrders).join(",")})`
+        : `created_by_hr_id.in.(${quoteInList(myHrIdKeys)})`,
     )
     .order("pharmacy_name", { ascending: true });
   if (mineError) throw mineError;
@@ -4884,11 +4890,15 @@ export async function countDirectOrderAwaitingFast(access: AccessContext): Promi
 /** The caller's own direct order requests (any status), newest first — for the "My direct orders" list. */
 export async function listMyDirectOrders(access: AccessContext): Promise<DirectOrderApprovalListItem[]> {
   await assertPermission(access, "direct_orders", "read");
+  // .in(hrIdLookupKeys(...)) not .eq(access.hrId): access.hrId is lower-cased by
+  // canonicalHrIdKey, but these columns hold whatever case the submitting session had. 36 of 50
+  // request rows and 40 of 41 pharmacy rows are lower-case in production, the rest upper — the
+  // SAME person appears both ways. An exact match therefore hides part of a rep's own history.
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .from("direct_order_requests")
     .select("*")
-    .eq("requester_hr_id", access.hrId ?? "")
+    .in("requester_hr_id", hrIdLookupKeys(access.hrId))
     .order("created_at", { ascending: false });
   if (error) throw error;
   const requests = ((data ?? []) as Array<Record<string, unknown>>).map(mapRequestRow);

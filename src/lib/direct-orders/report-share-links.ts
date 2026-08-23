@@ -3,6 +3,7 @@ import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { writeRequiredAuditLog } from "@/lib/admin/audit";
 import type { AccessContext } from "@/lib/auth/permissions";
 import { assertPermission, systemAccessContext } from "@/lib/auth/permissions";
+import { hrIdLookupKeys } from "@/lib/hr-id";
 import { forbiddenError, notFoundError, validationError } from "@/lib/http/api-errors";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import {
@@ -135,7 +136,9 @@ export async function listDirectOrderReportShareLinks(access: AccessContext): Pr
   let query = supabase.from("direct_order_report_share_links").select("*").order("created_at", { ascending: false });
   // A Super Admin sees every link, because "who else has published our numbers" is exactly the
   // question this table exists to answer. Everyone else sees only their own.
-  if (!isAdmin) query = query.eq("created_by_hr_id", access.hrId ?? "");
+  // Case-insensitive for the same reason the request lists are: access.hrId is lower-cased by
+  // canonicalHrIdKey while the stored column keeps whatever case the creating session had.
+  if (!isAdmin) query = query.in("created_by_hr_id", hrIdLookupKeys(access.hrId));
   const { data, error } = await query;
   if (error) throw error;
   return ((data ?? []) as Array<Record<string, unknown>>).map((row) => ({
