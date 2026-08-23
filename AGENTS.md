@@ -164,7 +164,9 @@ file holding the full account, under
 - **Another SESSION can remove a worktree under you.** `another-session-can-remove-a-worktree-under-you`
 - **A gitignored `_wt-*/` scratch folder makes a worktree look clean.**
   `gitignored-wt-scratch-makes-a-worktree-look-clean`
-- **A bare worktree cannot PUSH** — the pre-push gate needs `node_modules`.
+- **The pre-push gate is GONE — a bare worktree pushes fine** (verified 2026-08-24: `.git/hooks`
+  holds only `pre-push.bak-20260730`). What a bare worktree cannot do is RUN a suite; junction
+  `node_modules` from the primary for that, invoke `node` directly, and never `pnpm` inside it.
   `bare-worktree-cannot-push-pre-push-gate-needs-node-modules`
 - **"Permission denied" on `git worktree remove` still DEREGISTERS the worktree.**
   `worktree-remove-permission-denied-still-deregisters`
