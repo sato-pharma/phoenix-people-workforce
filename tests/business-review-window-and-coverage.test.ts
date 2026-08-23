@@ -2,13 +2,19 @@ import assert from "node:assert/strict";
 
 import { buildCoverage, gradedRowsOf } from "../src/lib/business-review/canonical.ts";
 import { describePeriods, hasFigures } from "../src/lib/business-review/coverage.ts";
-import { periodColumnLabel, resolveReviewWindow, type ReviewWindow } from "../src/lib/business-review/period.ts";
+import {
+  REVIEW_FLOOR,
+  periodColumnLabel,
+  resolveReviewWindow,
+  type ReviewWindow,
+} from "../src/lib/business-review/period.ts";
 import { buildOverlays } from "../src/lib/business-review/sources/rollup.ts";
 import type { AttributionMap, Placement } from "../src/lib/business-review/sources/attribution.ts";
 import type { MarketingLoad } from "../src/lib/business-review/sources/marketing.ts";
 import type { OutstationLoad } from "../src/lib/business-review/sources/outstation.ts";
 import type { VisitAgentFact, VisitsLoad } from "../src/lib/business-review/sources/visits.ts";
 import type { AchievementRow } from "../src/lib/sales/monthly-targets.ts";
+import { SALES_HISTORY_FLOOR } from "../src/lib/sales/vs-target.ts";
 
 /**
  * Business Review — the window filter and the coverage gate.
@@ -613,5 +619,46 @@ export async function runBusinessReviewWindowAndCoverageTests() {
     // And the ordinary case is untouched: nothing is held out when every month has landed.
     assert.equal(gradedRowsOf(rows, UPLOADED(window)).length, 8);
     assert.equal(gradedRowsOf(rows, new Set<string>()).length, 0, "and nothing survives an empty ledger");
+  }
+
+  // -------------------------------------------- 6. the review opens on July 2026
+  // Owner's decision, 2026-08-23. The review must not open on a month it cannot grade.
+  //
+  // This block exists because REVIEW_FLOOR USED to be `= SALES_HISTORY_FLOOR`, and the comment
+  // above it actively invited a reader to keep the two identical ("not a second, drifting
+  // constant"). Re-aliasing them would silently reopen the review on January without touching a
+  // single line of window logic, so pin BOTH halves: the value, and the divergence.
+  {
+    assert.equal(REVIEW_FLOOR, "2026-07", "the Business Review opens on July 2026");
+    assert.notEqual(
+      REVIEW_FLOOR,
+      SALES_HISTORY_FLOOR,
+      "the review floor is deliberately LATER than the engine floor - do not re-alias them",
+    );
+    assert.equal(
+      SALES_HISTORY_FLOOR,
+      "2026-01",
+      "and the engine floor must NOT be dragged forward instead: the employee portal, " +
+        "employee-360 and the sales dashboard all share it",
+    );
+
+    // availableReviewPeriods() filters the closing list with exactly `p >= REVIEW_FLOOR`, so a
+    // ledger that still holds the spring months must offer none of them to the picker.
+    const closings = ["2026-01", "2026-02", "2026-03", "2026-04", "2026-05", "2026-06", "2026-07", "2026-08"];
+    const offered = closings.filter((period) => period >= REVIEW_FLOOR);
+    assert.deepEqual(offered, ["2026-07", "2026-08"], "only July onward reaches the filter");
+    assert.ok(
+      !offered.some((period) => period >= "2026-03" && period <= "2026-06"),
+      "March-June carry no targets at all, so they must never be selectable",
+    );
+
+    // A bookmarked pre-July URL still renders, clamped forward, and SAYS what it did.
+    const bookmarked = resolveReviewWindow("2026-02", "2026-08", offered);
+    assert.deepEqual([bookmarked.window.from, bookmarked.window.to], ["2026-07", "2026-08"]);
+    assert.match(
+      bookmarked.adjustment ?? "",
+      /data starts at Jul 2026/,
+      "a clamped window must announce itself rather than answer a different question",
+    );
   }
 }

@@ -9,7 +9,6 @@
 // render month headers without pulling the sales domain into the browser bundle. It is re-exported
 // here so server-side callers have one place to import from.
 
-import { SALES_HISTORY_FLOOR } from "@/lib/sales/vs-target";
 import { enumeratePeriods } from "@/lib/sales/sos-coverage";
 
 import { isReviewPeriod, periodLabel, windowLabel } from "./period-format";
@@ -26,9 +25,25 @@ export {
   windowLabel,
 } from "./period-format";
 
-/** The first month the canonical engine holds anything for. Re-exported so the review's own
- *  floor is visibly the engine's data floor and not a second, drifting constant. */
-export const REVIEW_FLOOR = SALES_HISTORY_FLOOR;
+/**
+ * The first month the Business Review opens on — deliberately LATER than the engine's own
+ * `SALES_HISTORY_FLOOR` ("2026-01"), which still governs every other sales surface.
+ *
+ * Owner's decision, 2026-08-23: the review starts at July 2026, because nothing before it is
+ * comparable on this page.
+ *
+ *   - March–June 2026 carry no targets at all — zero rows in `au.monthly_targets` against
+ *     43,572,462 EGP of sales — so any window touching them renders an achievement that
+ *     silently means "January and February only".
+ *   - January and February carry most of the sales that can never be graded: 2,119,551 EGP
+ *     sits on a district (sometimes only NATIONAL) with no area, and a target is keyed per
+ *     area, so no target can ever match it.
+ *
+ * This is the one place the review's floor may differ from the engine's. Do NOT "restore" it to
+ * `SALES_HISTORY_FLOOR` — that constant is shared with the employee portal, employee-360 and the
+ * sales dashboard, so moving IT would change what those pages show. Move this one instead.
+ */
+export const REVIEW_FLOOR = "2026-07";
 
 export type ReviewWindow = {
   from: string;
