@@ -57,6 +57,7 @@ import { runOutstationFuelPolicyTests } from "./outstation-fuel-policy.test.ts";
 import { runDeadMansSwitchTests } from "./dead-mans-switch.test.ts";
 import { runDirectOrdersSweepLivenessTests } from "./direct-orders-sweep-liveness.test.ts";
 import { runDirectOrdersHrIdCaseTests } from "./direct-orders-hr-id-case.test.ts";
+import { runSyntheticJourneysLivenessTests } from "./synthetic-journeys-liveness.test.ts";
 import { runPayrollEngineHardeningTests } from "./payroll-engine-hardening.test.ts";
 import { runPayrollSheetMappingTests } from "./payroll-sheet-mapping.test.ts";
 import { runPayrollWorkflowTests } from "./payroll-workflow.test.ts";
@@ -177,6 +178,7 @@ import { runDeductionsSupersedeCarriesDecisionTests } from "./deductions-superse
 import { runDeductionsModuleAppliedDaysTests } from "./deductions-module-applied-days.test.ts";
 import { runDeductionsHolidayBridgeTests } from "./deductions-holiday-bridge.test.ts";
 import { runDeductionsCurrentMonthGuardTests } from "./deductions-current-month-guard.test.ts";
+import { runDeductionsLeaverSettlementTests } from "./deductions-leaver-settlement.test.ts";
 import { runDeductionsDsmNoRecordTests } from "./deductions-dsm-no-record.test.ts";
 import { runDeductionsVacationLedgerGuardTests } from "./deductions-vacation-ledger-guard.test.ts";
 import { runWeeklyPlanningFoundationTests } from "./weekly-planning-foundation.test.ts";
@@ -975,6 +977,10 @@ await runTest("outstation fuel policy (an unmeasurable car distance must block, 
 await runTest("dead-man's-switch (Healthchecks.io ping helper)", runDeadMansSwitchTests);
 await runTest("direct orders sweeps stay watched (dead-man's-switch wiring)", runDirectOrdersSweepLivenessTests);
 await runTest("direct orders hr-id filters are case-insensitive", runDirectOrdersHrIdCaseTests);
+await runTest(
+  "synthetic journeys liveness (a refused dispatch must ping /fail, not a green check)",
+  runSyntheticJourneysLivenessTests,
+);
 await runTest("money path silent failures (a confident zero is worse than an error)", runMoneyPathSilentFailureTests);
 await runTest("payroll sheet mapping", runPayrollSheetMappingTests);
 await runTest("payroll workflow", runPayrollWorkflowTests);
@@ -1152,6 +1158,10 @@ await runTest(
 await runTest(
   "deductions current-month guard (an unfinished month is never collectable, on Cairo boundaries)",
   runDeductionsCurrentMonthGuardTests,
+);
+await runTest(
+  "deductions leaver settlement (a finished employment settles mid-month; insert-only, never reconcile)",
+  runDeductionsLeaverSettlementTests,
 );
 await runTest(
   "deductions DSM no-record (the narrow manager exception, and every guard that keeps a gap from becoming a wrong deduction)",
