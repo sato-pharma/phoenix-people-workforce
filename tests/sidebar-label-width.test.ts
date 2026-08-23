@@ -7,7 +7,11 @@ import {
   type NavigationSection,
 } from "../src/config/system-navigation.ts";
 import { getSections, type PermissionLookup } from "../src/lib/navigation/active-path.ts";
-import { labelBudgetPx, SIDEBAR_LABEL_SNAPSHOT_PATH } from "../src/config/sidebar-metrics.ts";
+import {
+  labelBudgetPx,
+  SIDEBAR_LABEL_SNAPSHOT_PATH,
+  type SidebarShell,
+} from "../src/config/sidebar-metrics.ts";
 import {
   permissionActions,
   permissionMatrix,
@@ -20,17 +24,25 @@ import {
  *
  * It was being broken silently. On 2026-08-10 nine labels clipped — worst was
  * "Weekly / Monthly Plan Approvals" at 191px against a 118px budget, rendering as
- * "Weekly / Monthly Pl…". Nothing caught it because the label span carries Tailwind's `truncate`,
- * which turns an overflow into a tidy ellipsis rather than a visible layout break.
+ * "Weekly / Monthly Pl…". Nothing caught it because the admin label span carries Tailwind's
+ * `truncate`, which turns an overflow into a tidy ellipsis rather than a visible layout break.
  *
- * The span keeps `truncate` as a last-resort net (a clipped label still beats one overlapping the
- * pin star). This test asserts the net is never reached.
+ * That span keeps `truncate` as a last-resort net (a clipped label still beats one overlapping the
+ * pin star). This test asserts the net is never reached. The PORTAL span has no `truncate` at all,
+ * so there an over-long label does not ellipsise — it pushes its row's badge out and overflows. Same
+ * assertion, uglier failure.
  *
  * Widths are MEASURED, not modelled: the app resolves to Aptos, and a per-character advance model
  * was off by up to 9px on strings like "Weekly / Monthly Plans" — more than the ~5px of slack the
  * tightest label has. `pnpm run ui:measure-sidebar-labels` re-measures in headless Chromium and
  * rewrites the snapshot. A label with no snapshot entry FAILS here rather than being skipped, so
  * adding or renaming one cannot quietly bypass the check.
+ *
+ * Both the budget and the measurement are PER SHELL. The admin rail and the employee portal share
+ * no geometry and no type scale, and until #2353's follow-up this test charged every portal row an
+ * admin budget — so widening the admin rail silently raised the allowance for portal labels that
+ * live in a component the model had never seen. `labelBudgetPx` now requires a `shell` so that
+ * substitution cannot happen again.
  */
 
 const ROLES = Object.keys(permissionMatrix) as PhoenixRole[];
@@ -45,16 +57,16 @@ function lookupForRole(role: PhoenixRole): PermissionLookup {
   return lookup;
 }
 
-type Measured = { badge: boolean; hub: boolean; label: string; roles: string[]; shell: string };
+type Measured = { badge: boolean; hub: boolean; label: string; roles: string[]; shell: SidebarShell };
 
 /**
- * A row's chrome depends on the role viewing it: a section that resolves to exactly ONE visible
- * item renders as a standalone hub row carrying the ↗, which costs 20px. So each label is charged
- * the WORST context it reaches across every role, not a nominal one.
+ * A row's chrome depends on the role viewing it: in the admin rail a section that resolves to
+ * exactly ONE visible item renders as a standalone hub row carrying the ↗, which costs 20px. So each
+ * label is charged the WORST context it reaches across every role, not a nominal one.
  */
 function worstCaseRows(): Measured[] {
   const byKey = new Map<string, Measured>();
-  const shells: [string, readonly NavigationSection[], "admin" | "employee-portal"][] = [
+  const shells: [SidebarShell, readonly NavigationSection[], "admin" | "employee-portal"][] = [
     ["admin", adminNavigationSections, "admin"],
     ["portal", employeePortalNavigationSections, "employee-portal"],
   ];
@@ -85,21 +97,30 @@ function worstCaseRows(): Measured[] {
 }
 
 export function runSidebarLabelWidthTests() {
-  const widths = JSON.parse(readFileSync(SIDEBAR_LABEL_SNAPSHOT_PATH, "utf8")) as Record<string, number>;
+  const widths = JSON.parse(readFileSync(SIDEBAR_LABEL_SNAPSHOT_PATH, "utf8")) as Partial<
+    Record<SidebarShell, Record<string, number>>
+  >;
+  assert.ok(
+    widths.admin && widths.portal,
+    "the snapshot must hold a per-shell map — re-run `pnpm run ui:measure-sidebar-labels`",
+  );
+
   const rows = worstCaseRows();
   assert.ok(rows.length > 100, `expected the full nav to resolve, got ${rows.length} rows`);
 
-  const missing = rows.filter((row) => typeof widths[row.label] !== "number").map((row) => row.label);
+  const missing = rows
+    .filter((row) => typeof widths[row.shell]?.[row.label] !== "number")
+    .map((row) => `${row.shell}: ${row.label}`);
   assert.deepEqual(
     [...new Set(missing)],
     [],
-    "every sidebar label needs a measured width — run `pnpm run ui:measure-sidebar-labels` after adding or renaming one",
+    "every sidebar label needs a measured width IN ITS OWN SHELL — run `pnpm run ui:measure-sidebar-labels` after adding or renaming one",
   );
 
   const clipped: string[] = [];
   for (const row of rows) {
-    const budget = labelBudgetPx({ badge: row.badge, hub: row.hub });
-    const width = widths[row.label];
+    const budget = labelBudgetPx({ badge: row.badge, hub: row.hub, shell: row.shell });
+    const width = widths[row.shell]![row.label];
     if (width > budget) {
       clipped.push(
         `"${row.label}" [${row.shell}${row.badge ? " +badge" : ""}${row.hub ? " +hub" : ""}] needs ${width}px but gets ${budget}px ` +
@@ -113,14 +134,33 @@ export function runSidebarLabelWidthTests() {
     `sidebar labels must never clip — the owner's rule is no ellipsis, no wrap:\n  ${clipped.join("\n  ")}`,
   );
 
-  // The budgets themselves must stay honest. If someone narrows the rail or grows the icon box
+  // The budgets themselves must stay honest. If someone narrows a rail or grows an icon box
   // without re-checking, these pin the arithmetic that the assertions above depend on.
-  assert.equal(labelBudgetPx({ badge: false, hub: false }), 157, "plain row budget");
-  assert.equal(labelBudgetPx({ badge: false, hub: true }), 137, "hub row budget (pays for the ↗)");
-  assert.equal(labelBudgetPx({ badge: true, hub: false }), 125, "badge row budget");
+  assert.equal(labelBudgetPx({ badge: false, hub: false, shell: "admin" }), 157, "admin plain row budget");
   assert.equal(
-    labelBudgetPx({ badge: true, hub: true }),
+    labelBudgetPx({ badge: false, hub: true, shell: "admin" }),
+    137,
+    "admin hub row budget (pays for the ↗)",
+  );
+  assert.equal(labelBudgetPx({ badge: true, hub: false, shell: "admin" }), 125, "admin badge row budget");
+  assert.equal(
+    labelBudgetPx({ badge: true, hub: true, shell: "admin" }),
     125,
-    "a hub row with a badge drops the ↗, so it is charged the same as any badge row",
+    "an admin hub row with a badge drops the ↗, so it is charged the same as any badge row",
+  );
+
+  assert.equal(labelBudgetPx({ badge: false, hub: false, shell: "portal" }), 147, "portal plain row budget");
+  assert.equal(labelBudgetPx({ badge: true, hub: false, shell: "portal" }), 109, "portal badge row budget");
+  assert.equal(
+    labelBudgetPx({ badge: false, hub: true, shell: "portal" }),
+    147,
+    "the portal renders no hub arrow, so a one-item section costs a portal label nothing",
+  );
+
+  // The two shells must not silently converge on one number again.
+  assert.notEqual(
+    labelBudgetPx({ badge: false, hub: false, shell: "admin" }),
+    labelBudgetPx({ badge: false, hub: false, shell: "portal" }),
+    "admin and portal budgets are different rails and must be modelled separately",
   );
 }
