@@ -1,5 +1,5 @@
 /**
- * Measures every sidebar nav label at the rail's real geometry and writes the snapshot that
+ * Measures every sidebar nav label at its rail's real typography and writes the snapshot that
  * tests/sidebar-label-width.test.ts asserts against.
  *
  * Why a script and not a pure test: label width depends on the actual font (this app resolves to
@@ -8,51 +8,75 @@
  * more than the 5px of real slack the tightest label has. So widths are MEASURED here in headless
  * Chromium and committed; the test then needs no browser and stays fast.
  *
+ * Measured PER SHELL since #2353's follow-up. The admin rail renders labels at 13px/600/-0.01em and
+ * the employee portal at 12px/700 — a label that appears in both (e.g. "Territory Management") is
+ * genuinely two different widths, and one number could only ever be right for one of them.
+ *
  * Run after adding or renaming any sidebar label:
  *   pnpm run ui:measure-sidebar-labels
  */
 import { writeFileSync } from "node:fs";
 import { chromium } from "playwright";
 
-import { adminNavigationSections, employeePortalNavigationSections } from "@/config/system-navigation";
-import { LABEL_FONT_CSS, SIDEBAR_LABEL_SNAPSHOT_PATH } from "@/config/sidebar-metrics";
+import { labelFontCss, SIDEBAR_LABEL_SNAPSHOT_PATH, type SidebarShell } from "@/config/sidebar-metrics";
+import {
+  adminNavigationSections,
+  employeePortalNavigationSections,
+  type NavigationSection,
+} from "@/config/system-navigation";
 
 // Canonical label AND every `labelByRole` override — the sidebar test resolves per-role labels
 // through getSections before measuring, so an override that never appears here would always read
 // as missing (getSections would hand back a label this script never probed).
-const labels = [
-  ...new Set(
-    [...adminNavigationSections, ...employeePortalNavigationSections].flatMap((section) =>
-      section.items.flatMap((navItem) => [navItem.label, ...Object.values(navItem.labelByRole ?? {})]),
+function labelsOf(sections: readonly NavigationSection[]): string[] {
+  return [
+    ...new Set(
+      sections.flatMap((section) =>
+        section.items.flatMap((navItem) => [navItem.label, ...Object.values(navItem.labelByRole ?? {})]),
+      ),
     ),
-  ),
-].sort();
+  ].sort();
+}
 
-// LABEL_FONT_CSS carries double-quoted font names, so it must live in a <style> block — inlining it
-// into a style="" attribute silently terminates the attribute and the probe falls back to a serif.
-const html = `<style>
-  body{margin:0}
-  #probe{position:absolute;white-space:nowrap;width:auto;${LABEL_FONT_CSS}}
-</style><span id="probe"></span>`;
+const shells: { labels: string[]; shell: SidebarShell }[] = [
+  { labels: labelsOf(adminNavigationSections), shell: "admin" },
+  { labels: labelsOf(employeePortalNavigationSections), shell: "portal" },
+];
 
 const browser = await chromium.launch();
 const page = await browser.newPage();
-await page.setContent(html);
-const widths = await page.evaluate((list: string[]) => {
-  const probe = document.getElementById("probe") as HTMLElement;
-  const out: Record<string, number> = {};
-  for (const label of list) {
-    probe.textContent = label;
-    // Round UP: a fractional pixel still clips, and the budget comparison must be conservative.
-    out[label] = Math.ceil(probe.getBoundingClientRect().width);
-  }
-  return out;
-}, labels);
-const font = await page.evaluate(() => getComputedStyle(document.getElementById("probe")!).fontFamily);
+const snapshot: Record<string, Record<string, number>> = {};
+
+for (const { labels, shell } of shells) {
+  // The font CSS carries double-quoted family names, so it must live in a <style> block — inlining
+  // it into a style="" attribute silently terminates the attribute and the probe falls back to a
+  // serif, which measures narrower and would certify labels that clip.
+  await page.setContent(`<style>
+  body{margin:0}
+  #probe{position:absolute;white-space:nowrap;width:auto;${labelFontCss(shell)}}
+</style><span id="probe"></span>`);
+
+  snapshot[shell] = await page.evaluate((list: string[]) => {
+    const probe = document.getElementById("probe") as HTMLElement;
+    const out: Record<string, number> = {};
+    for (const label of list) {
+      probe.textContent = label;
+      // Round UP: a fractional pixel still clips, and the budget comparison must be conservative.
+      out[label] = Math.ceil(probe.getBoundingClientRect().width);
+    }
+    return out;
+  }, labels);
+
+  const resolved = await page.evaluate(() => {
+    const cs = getComputedStyle(document.getElementById("probe")!);
+    return `${cs.fontSize} / ${cs.fontWeight} / ${cs.fontFamily}`;
+  });
+  const widest = Object.entries(snapshot[shell]).sort((a, b) => b[1] - a[1])[0];
+  console.log(`${shell}: ${labels.length} labels at ${resolved}`);
+  console.log(`${shell}: widest "${widest[0]}" at ${widest[1]}px`);
+}
+
 await browser.close();
 
-writeFileSync(SIDEBAR_LABEL_SNAPSHOT_PATH, `${JSON.stringify(widths, null, 2)}\n`, "utf8");
-console.log(`font: ${font}`);
-console.log(`measured ${Object.keys(widths).length} distinct sidebar labels -> ${SIDEBAR_LABEL_SNAPSHOT_PATH}`);
-const widest = Object.entries(widths).sort((a, b) => b[1] - a[1])[0];
-console.log(`widest: "${widest[0]}" at ${widest[1]}px`);
+writeFileSync(SIDEBAR_LABEL_SNAPSHOT_PATH, `${JSON.stringify(snapshot, null, 2)}\n`, "utf8");
+console.log(`-> ${SIDEBAR_LABEL_SNAPSHOT_PATH}`);
