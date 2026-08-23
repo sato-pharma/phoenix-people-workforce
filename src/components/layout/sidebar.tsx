@@ -80,7 +80,7 @@ const COLLAPSED_KEY_PREFIX = "phoenix-sidebar-collapsed-v2";
 const COLLAPSED_EVENT = "phoenix-sidebar-collapsed-change";
 const PREFS_EVENT = "phoenix-sidebar-prefs-change";
 
-const SIDEBAR_WIDTH_EXPANDED = "w-[280px]";
+const SIDEBAR_WIDTH_EXPANDED = "w-[292px]";
 const SIDEBAR_WIDTH_RAIL = "w-[76px]";
 
 // ── Persistence: collapsed-section set (cross-tab synced) ─────────────────────

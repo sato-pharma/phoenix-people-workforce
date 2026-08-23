@@ -7,12 +7,36 @@
  * tests/sidebar-label-width.test.ts asserts that net is never reached — so a label that would clip
  * fails CI instead of shipping as "Finance Command …".
  *
- * Every number below is read off the Tailwind classes in sidebar.tsx. Keep them in sync; the test
- * is only as honest as these constants.
+ * Most numbers below are read off the Tailwind classes in sidebar.tsx. Two of them are NOT visible
+ * in that JSX at all — the aside's border and the nav scroller's reserved scrollbar gutter — and
+ * their absence is exactly what let this file certify labels that were visibly clipping in Chrome.
+ * Both were measured in a real browser on 2026-08-23; see ASIDE_BORDER and SCROLLBAR_GUTTER.
+ *
+ * Keep them in sync; the test is only as honest as these constants.
  */
 
-/** `SIDEBAR_WIDTH_EXPANDED = "w-[280px]"` on the <aside>. */
-export const SIDEBAR_WIDTH = 280;
+/** `SIDEBAR_WIDTH_EXPANDED = "w-[292px]"` on the <aside>. This is its OFFSET width — border included. */
+export const SIDEBAR_WIDTH = 292;
+
+/**
+ * The aside's own `border-r`. Tailwind sets `box-sizing: border-box`, so the 1px rule lives INSIDE
+ * the declared width and the content box is 1px narrower. Measured on the pre-widening rail:
+ * asideOffsetWidth 280, asideClientWidth 279.
+ */
+const ASIDE_BORDER = 1;
+
+/**
+ * The nav scroller's permanently reserved scrollbar track. `.phoenix-admin-sidebar-scroll` in
+ * app/globals.css sets `scrollbar-gutter: stable` alongside `scrollbar-width: thin`, so Chromium
+ * holds the track open whether or not the nav is scrolling — that space is never given back to the
+ * label.
+ *
+ * Invisible in sidebar.tsx, which is why the model missed it. Measured in Chromium 2026-08-23:
+ * navOffsetWidth 279, navClientWidth 269. The employee-portal rail
+ * (`.phoenix-employee-sidebar-scroll`, 220 → 210) reserves the same 10px, so this is the engine's
+ * thin-track width rather than anything specific to the admin shell.
+ */
+const SCROLLBAR_GUTTER = 10;
 
 /** Nav scroller `px-3` (12 each side) + the item group's `px-1` (4 each side). */
 const CONTAINER_PADDING = 12 * 2 + 4 * 2;
@@ -40,9 +64,23 @@ const BADGE = 18 + 4 * 2 + 6;
  * Pixels a label actually gets. `hub` is a section that resolves to exactly ONE visible item —
  * sidebar.tsx renders those as a standalone row carrying the ↗. The arrow is suppressed when the
  * row also has a badge (two trailing adornments do not fit), which is why they never both apply.
+ *
+ * 292 - 1 border - 10 gutter - 24 nav px-3 - 8 group px-1 - 20 row px-2.5 - 36 icon - 12 gap
+ * - 24 pin = 157 for a plain row; a hub row pays 20 more for the ↗ (137), a badge row 32 (125).
+ * Cross-checked against the live DOM before the rail was widened: at 280 this chain predicted a
+ * 125px hub label box and Chromium measured exactly 125px, so the model is calibrated — widening
+ * to 292 moves every budget by the same 12px.
  */
 export function labelBudgetPx({ hub, badge }: { badge: boolean; hub: boolean }): number {
-  let budget = SIDEBAR_WIDTH - CONTAINER_PADDING - ROW_PADDING - ICON_BOX - ICON_GAP - PIN_RESERVE;
+  let budget =
+    SIDEBAR_WIDTH -
+    ASIDE_BORDER -
+    SCROLLBAR_GUTTER -
+    CONTAINER_PADDING -
+    ROW_PADDING -
+    ICON_BOX -
+    ICON_GAP -
+    PIN_RESERVE;
   if (badge) budget -= BADGE;
   else if (hub) budget -= HUB_ARROW;
   return budget;
