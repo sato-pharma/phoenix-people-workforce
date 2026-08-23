@@ -1,4 +1,5 @@
 import type { PhoenixRole } from "@/lib/auth/permissions";
+import type { VenueType } from "@/lib/venues/venue-type";
 import type { DirectOrderBasketLine } from "@/lib/direct-orders/basket-label";
 import type { DirectOrderValidationRow } from "@/lib/direct-orders/pharmacy-validation";
 import type { DirectOrderGeographyCheck } from "@/lib/direct-orders/geography-check";
@@ -311,6 +312,13 @@ export type DirectOrderPharmacy = {
   /** Phoenix-generated stable code, e.g. "DOP-000123". */
   phoenixPharmacyCode: string;
   pharmacyName: string;
+  /**
+   * `pharmacy` or `nursery`. A nursery has no distributor account at all, so it can never carry a
+   * distributor code and can never appear on an invoice line. Registering one as a pharmacy is what
+   * produced the invented codes this column exists to end — production still holds
+   * "حضانه زمزم" with "000000" on one row and "00000" on another.
+   */
+  venueType: VenueType;
   brickId: string | null;
   areaCode: string | null;
   regionCode: string | null;

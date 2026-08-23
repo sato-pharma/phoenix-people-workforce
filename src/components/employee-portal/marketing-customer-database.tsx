@@ -20,6 +20,7 @@ import type {
   MarketingCustomerDatabaseWorkspace,
   MarketingValidationStatus,
 } from "@/lib/marketing-requests/types";
+import { venueCanAttributeSales, venueTypeLabel } from "@/lib/venues/venue-type";
 
 const PAGE_SIZE = 25;
 
@@ -71,6 +72,29 @@ function PhotoCell({ value }: { value: string | null }) {
   return <CodeCell value={value} />;
 }
 
+/**
+ * A venue with no distributor account did not FAIL to capture a vendor — it has none to capture.
+ * A blank or a `-` reads as missing data and sends someone hunting for a code that does not exist,
+ * which is how the invented ones (`0000`, `0001000000`, `0001511111`) reached production.
+ */
+function vendorNameLabel(row: MarketingCustomerDatabaseRow): string {
+  if (row.distributorName) return row.distributorName;
+  return venueCanAttributeSales(row.venueType) ? "Not captured" : "No distributor account";
+}
+
+function VendorCodeCell({
+  row,
+  value,
+}: {
+  row: MarketingCustomerDatabaseRow;
+  value: number | string | null | undefined;
+}) {
+  if (!value && !venueCanAttributeSales(row.venueType)) {
+    return <span className="whitespace-nowrap text-xs font-bold text-slate-500">No distributor account</span>;
+  }
+  return <CodeCell value={value} />;
+}
+
 function CustomerRowCard({ row }: { row: MarketingCustomerDatabaseRow }) {
   return (
     <PortalRecordCard
@@ -79,6 +103,10 @@ function CustomerRowCard({ row }: { row: MarketingCustomerDatabaseRow }) {
         <span className="inline-flex flex-wrap gap-1.5">
           <CodeCell value={row.customerCode} />
           <span className="capitalize">{row.customerType}</span>
+          {/* Only worth a chip when it changes how the row reads — a pharmacy's vendor columns already say it. */}
+          {venueCanAttributeSales(row.venueType) ? null : (
+            <span className="font-black text-orange-700">{venueTypeLabel(row.venueType)}</span>
+          )}
         </span>
       }
       status={<Badge variant={statusVariant(row.validationStatus)}>{row.validationStatus.replace(/_/g, " ")}</Badge>}
@@ -89,8 +117,11 @@ function CustomerRowCard({ row }: { row: MarketingCustomerDatabaseRow }) {
           { label: "Customer area", value: row.customerArea || "Not captured" },
           { label: "Governorate", value: row.customerGovernorate || "Not captured" },
           { label: "Pharmacy", value: row.pharmacyName || "Not captured" },
-          { label: "Vendor", value: row.distributorName || "Not captured" },
-          { label: "Vendor code", value: row.vendorPharmacyCode || "-" },
+          { label: "Vendor", value: vendorNameLabel(row) },
+          {
+            label: "Vendor code",
+            value: row.vendorPharmacyCode || (venueCanAttributeSales(row.venueType) ? "-" : "None"),
+          },
           { label: "Phone", value: row.customerPhone || "Not captured" },
         ]}
       />
@@ -199,7 +230,7 @@ export function MarketingCustomerDatabase() {
           items={pagedRows}
           renderCard={(row) => <CustomerRowCard row={row} />}
           renderTable={() => (
-            <PortalDesktopTable minWidth="1500px">
+            <PortalDesktopTable minWidth="1620px">
             <thead className="bg-slate-50 text-[11px] font-black uppercase tracking-[0.12em] text-slate-500">
               <tr>
                 <th className="px-4 py-3">Customer Type</th>
@@ -215,6 +246,7 @@ export function MarketingCustomerDatabase() {
                 <th className="px-4 py-3">Pharmacy Area</th>
                 <th className="px-4 py-3">Pharmacy Governorate</th>
                 <th className="px-4 py-3">Pharmacy Address</th>
+                <th className="px-4 py-3">Venue Type</th>
                 <th className="px-4 py-3">Vendor ID</th>
                 <th className="px-4 py-3">Vendor</th>
                 <th className="px-4 py-3">Vendor Pharmacy Code</th>
@@ -238,10 +270,11 @@ export function MarketingCustomerDatabase() {
                   <td className="px-4 py-3"><TextCell value={row.pharmacyArea} /></td>
                   <td className="px-4 py-3"><TextCell value={row.pharmacyGovernorate} /></td>
                   <td className="max-w-[280px] px-4 py-3 leading-5"><TextCell value={row.pharmacyAddress} /></td>
-                  <td className="px-4 py-3"><CodeCell value={row.distributorCode || row.distributorId} /></td>
-                  <td className="px-4 py-3 font-bold text-slate-800">{row.distributorName}</td>
-                  <td className="px-4 py-3"><CodeCell value={row.vendorPharmacyCode} /></td>
-                  <td className="px-4 py-3"><CodeCell value={row.pharmacyDistributorCodeId} /></td>
+                  <td className="whitespace-nowrap px-4 py-3 font-bold text-slate-700">{venueTypeLabel(row.venueType)}</td>
+                  <td className="px-4 py-3"><VendorCodeCell row={row} value={row.distributorCode || row.distributorId} /></td>
+                  <td className="whitespace-nowrap px-4 py-3 font-bold text-slate-800">{vendorNameLabel(row)}</td>
+                  <td className="px-4 py-3"><VendorCodeCell row={row} value={row.vendorPharmacyCode} /></td>
+                  <td className="px-4 py-3"><VendorCodeCell row={row} value={row.pharmacyDistributorCodeId} /></td>
                   <td className="px-4 py-3">
                     <Badge variant={statusVariant(row.validationStatus)}>{row.validationStatus.replace(/_/g, " ")}</Badge>
                   </td>
