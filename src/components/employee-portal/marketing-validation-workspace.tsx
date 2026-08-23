@@ -19,6 +19,12 @@ import {
   WifiOff,
 } from "lucide-react";
 
+import {
+  buildEvidenceStampLines,
+  fetchEvidenceLocation,
+  readEvidenceLocationStamp,
+  resolveEvidenceLocationStamp,
+} from "@/components/outstation/evidence-watermark";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -160,6 +166,15 @@ type CaptureState = {
   capturedAt: string | null;
   latitude: number | null;
   longitude: number | null;
+  /**
+   * The burned-in location block: full address, Phoenix brick/area/region, coordinates.
+   *
+   * Separate from `address` on purpose. `address` is the SHOP's address and is stored on the
+   * customer record; these lines describe where the PHOTO was taken, which is evidence about the
+   * rep, not about the pharmacy. Empty until the lookup returns — the camera stays locked until
+   * then, so no photo is ever stamped with a half-resolved place.
+   */
+  locationLines: string[];
   photoCapturedAt: string | null;
   photoDataUrl: string | null;
   photoName: string;
@@ -260,6 +275,9 @@ const customerTypes: Array<{ label: string; value: MarketingCustomerType }> = [
 
 /* --------------------------------------------------------------------- Utility Helpers --------------------------------------------------------------------- */
 
+/** Where this module resolves an evidence stamp. Gated on the marketing creator roles. */
+const MARKETING_LOCATION_ENDPOINT = "/api/marketing-requests/reverse-geocode";
+
 let keyCounter = 0;
 function stableKey(prefix: string) {
   return `${prefix}-${++keyCounter}`;
@@ -272,6 +290,7 @@ function emptyCapture(): CaptureState {
     capturedAt: null,
     latitude: null,
     longitude: null,
+    locationLines: [],
     photoCapturedAt: null,
     photoDataUrl: null,
     photoName: "",
@@ -812,9 +831,19 @@ function CapturePanel({
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0">
           <p className="text-[13px] font-bold text-slate-800">{label}</p>
-          <p className="mt-0.5 text-[12px] font-medium text-slate-500">
-            {hasLocation ? capture.address || `${capture.latitude?.toFixed(5)}, ${capture.longitude?.toFixed(5)}` : "No GPS capture yet"}
-          </p>
+          {/* Address and territory, one per line. The coordinate pair stays on the photo and in
+              the record — on screen it only ever answered a question nobody asked. */}
+          {hasLocation && capture.locationLines.length > 0 ? (
+            <div className="mt-0.5 space-y-0.5 text-[12px] font-medium text-slate-500">
+              {capture.locationLines.slice(0, 2).map((line, index) => (
+                <p key={`${index}-${line}`}>{line}</p>
+              ))}
+            </div>
+          ) : (
+            <p className="mt-0.5 text-[12px] font-medium text-slate-500">
+              {hasLocation ? "Resolving the address…" : "No GPS capture yet"}
+            </p>
+          )}
         </div>
         <div className="flex shrink-0 gap-2">
           <Button
@@ -975,11 +1004,19 @@ function PlaceSearchPanel({
         <MapPin className="h-3.5 w-3.5 shrink-0 text-sky-600" />
         <p className="text-[13px] font-bold text-slate-800">{label}</p>
       </div>
-      <p className="mt-0.5 text-[12px] font-medium text-slate-500">
-        {hasLocation
-          ? capture.address || `${capture.latitude?.toFixed(5)}, ${capture.longitude?.toFixed(5)}`
-          : "Search the address or place name, then pick the nearest point."}
-      </p>
+      {hasLocation && capture.locationLines.length > 0 ? (
+        <div className="mt-0.5 space-y-0.5 text-[12px] font-medium text-slate-500">
+          {capture.locationLines.slice(0, 2).map((line, index) => (
+            <p key={`${index}-${line}`}>{line}</p>
+          ))}
+        </div>
+      ) : (
+        <p className="mt-0.5 text-[12px] font-medium text-slate-500">
+          {hasLocation
+            ? capture.address || "Resolving the address…"
+            : "Search the address or place name, then pick the nearest point."}
+        </p>
+      )}
 
       <div className="relative mt-2.5">
         <Input
@@ -1171,10 +1208,13 @@ function LiveCameraModal({
   const [isStarting, setIsStarting] = useState(false);
   const [message, setMessage] = useState("Camera permission is required.");
   const [pendingPhoto, setPendingPhoto] = useState<{ capturedAt: string; dataUrl: string } | null>(null);
+  // `locationLines`, not `address`: the address used to be filled in with the raw coordinates the
+  // instant the pin arrived, so this gate opened before the place was known and a rep could stamp
+  // a photo whose caption was a number pair. It now waits for the resolved block.
   const hasLocationStamp = capture.latitude !== null &&
     capture.longitude !== null &&
     Boolean(capture.capturedAt) &&
-    Boolean(capture.address);
+    capture.locationLines.length > 0;
 
   const startCamera = useCallback(async () => {
     if (!window.isSecureContext) {
@@ -1258,13 +1298,15 @@ function LiveCameraModal({
     const lineHeight = Math.round(fontSize * 1.38);
     const padding = Math.round(fontSize * 0.75);
     const maxTextWidth = canvas.width - padding * 2;
-    const stampLines = [
-      `${targetLabel} live evidence`,
-      `Photo date/time: ${photoCapturedAtIso}`,
-      `GPS: ${capture.latitude?.toFixed(6)}, ${capture.longitude?.toFixed(6)}${capture.accuracy ? ` (accuracy ${Math.round(capture.accuracy)}m)` : ""}`,
-      `GPS captured at: ${capture.capturedAt}`,
-      `Address: ${capture.address}`,
-    ];
+    // One shared wording for every Phoenix evidence photo (owner instruction 2026-08-23): full
+    // address, then the Phoenix brick / area / region, then the coordinates as fine print. The
+    // timestamps are Cairo local — they used to be printed as raw UTC ISO strings.
+    const stampLines = buildEvidenceStampLines({
+      capturedAt: photoCapturedAtIso,
+      locationCapturedAt: capture.capturedAt,
+      locationLines: capture.locationLines,
+      title: `${targetLabel} live evidence`,
+    });
 
     context.font = `700 ${fontSize}px sans-serif`;
     const wrappedLines = stampLines.flatMap((line) => wrapCanvasText(context, line, maxTextWidth));
@@ -1618,14 +1660,17 @@ export function MarketingValidationWorkspace() {
   // nothing. Compute the same reason here so it can be shown without requiring a tap at all.
   const missingRequirement = !isSaving ? describeMissingRequirement(customers, isDeskMode) : null;
 
-  async function reverseGeocode(latitude: number, longitude: number) {
-    const response = await fetch("/api/marketing-requests/reverse-geocode", {
-      body: JSON.stringify({ latitude, longitude }),
-      headers: { "Content-Type": "application/json" },
-      method: "POST",
-    });
-    if (!response.ok) return null;
-    return await response.json() as { area?: string | null; city?: string | null; governorate?: string | null; label?: string | null };
+  /**
+   * The location block for a pin, resolved through the shared evidence stamp so this screen, the
+   * Direct Order storefront capture and the outstation arrival photo all word it identically.
+   */
+  function resolveStampLines(target: LocationTarget, latitude: number, longitude: number, accuracyMeters: number | null) {
+    void resolveEvidenceLocationStamp(
+      MARKETING_LOCATION_ENDPOINT,
+      latitude,
+      longitude,
+      accuracyMeters,
+    ).then((location) => patchLocation(target, { locationLines: location.lines }));
   }
 
   function updateCustomer(customerKey: string, patch: Partial<CustomerLine>) {
@@ -1776,18 +1821,42 @@ export function MarketingValidationWorkspace() {
         const capturedAt = new Date(position.timestamp || Date.now()).toISOString();
         patchLocation(target, {
           accuracy: position.coords.accuracy,
-          address: `${position.coords.latitude.toFixed(6)}, ${position.coords.longitude.toFixed(6)}`,
+          // Deliberately NOT seeded with the coordinate pair any more. That placeholder was what
+          // reached the photo caption whenever a rep shot before the lookup returned.
+          address: "",
           capturedAt,
           latitude: position.coords.latitude,
           longitude: position.coords.longitude,
+          locationLines: [],
         });
 
-        void reverseGeocode(position.coords.latitude, position.coords.longitude).then((result) => {
+        // ONE round trip carries both halves: Google's area/governorate for the customer record,
+        // and the burned-in evidence block. It cannot hang — `fetchEvidenceLocation` aborts itself,
+        // and a null result still produces a stamp, so the camera always unlocks.
+        void fetchEvidenceLocation(
+          MARKETING_LOCATION_ENDPOINT,
+          position.coords.latitude,
+          position.coords.longitude,
+          position.coords.accuracy ?? null,
+        ).then((result) => {
           const area = result?.area ?? "";
           const governorate = result?.governorate ?? result?.city ?? "";
           const label = result?.label || [area, governorate].filter(Boolean).join(", ");
-          if (!label) return;
-          patchLocation(target, { address: label }, { area, governorate });
+          const stamp = readEvidenceLocationStamp(
+            result,
+            position.coords.latitude,
+            position.coords.longitude,
+            position.coords.accuracy ?? null,
+          );
+          // The place patch is applied ONLY when the lookup actually answered — the previous code
+          // bailed out entirely on an empty label, and writing `{ area: "", governorate: "" }`
+          // here would erase a customer's territory every time Google was unreachable. The stamp
+          // lines are written either way: they say so when the lookup failed.
+          patchLocation(
+            target,
+            { ...(label ? { address: label } : {}), locationLines: stamp.lines },
+            label ? { area, governorate } : undefined,
+          );
         });
         setCaptureTarget(null);
       },
@@ -1821,9 +1890,13 @@ export function MarketingValidationWorkspace() {
         capturedAt: new Date().toISOString(),
         latitude: place.lat,
         longitude: place.lng,
+        locationLines: [],
       },
       { area: place.area ?? "", governorate: place.governorate ?? "" },
     );
+    // A desk-picked pin gets the same address + brick/area/region block as a live GPS capture, so
+    // the two are comparable on the screen that reviews them.
+    resolveStampLines(target, place.lat, place.lng, null);
   }
 
   function applyLivePhoto(dataUrl: string, photoCapturedAt: string) {

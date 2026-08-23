@@ -470,6 +470,13 @@ export const accessRegistry = [
   // evidence, so the registry permission is the module's `create`/`read` while the REAL gate is
   // the identity check inside the service — same idiom as the acknowledge route.
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["GET", "POST"], pattern: "/api/direct-orders/pharmacy-validations", permission: { resource: "direct_orders", action: "read" }, guard: "domain-helper", csrfRequired: true }),
+  // The evidence stamp for the pharmacy-validation storefront photo: turns the rep's GPS pin
+  // into a street address plus the Phoenix brick/area/region burned onto the JPEG. `create` is
+  // deliberately the SAME permission as the capture it serves — this route reveals the geography
+  // of a point the caller already holds, and must not be reachable by anyone who cannot file the
+  // evidence in the first place. Audit is classified but not required: it resolves and returns,
+  // persisting nothing.
+  sessionApi({ audit: { classification: "access-read", required: false }, methods: ["POST"], pattern: "/api/direct-orders/reverse-geocode", permission: { resource: "direct_orders", action: "create" }, guard: "assert-permission", csrfRequired: true }),
   // "Did you mean…" candidates for a claimed pharmacy name (spec B4). Read-only, area-agnostic on
   // purpose: the point is to show the rep a pharmacy they may have mis-spelled, wherever it sits.
   sessionApi({ methods: ["GET"], pattern: "/api/direct-orders/pharmacy-suggestions", permission: { resource: "direct_orders", action: "read" }, guard: "domain-helper" }),

@@ -738,6 +738,7 @@ import { runReconciliationHarnessTests } from "./reconciliation-harness.test.ts"
 import { runOutstationSubmitEmailRoutingTests } from "./outstation-submit-email-routing.test.ts";
 import { runOutstationExpenseGateTests } from "./outstation-expense-gate.test.ts";
 import { runOutstationDepartureEvidenceTests } from "./outstation-departure-evidence.test.ts";
+import { runEvidenceLocationStampTests, runEvidencePanelLayoutTests } from "./evidence-location-stamp.test.ts";
 import { runOutstationWorkloadRollupTests } from "./outstation-workload-rollup.test.ts";
 import { runOutstationDeparturePhotoReminderTests } from "./outstation-departure-photo-reminder.test.ts";
 import { runOutstationDeparturePhotoResendTests } from "./outstation-departure-photo-resend.test.ts";
@@ -1765,6 +1766,8 @@ await runTest("reconciliation harness (a breach names both figures and their sou
 await runTest("outstation submit email envelope (employee To, managers Cc, Super Admins Bcc; a CEO skip-level is dropped but a CEO direct manager is kept; one mailbox never lands in two headers)", runOutstationSubmitEmailRoutingTests);
 await runTest("outstation two-photo + workload payroll gate (both photos AND a captured workload before payroll; a 'complete' status with no photo behind it never pays; pre-rule requests are exempt, not blocked)", runOutstationExpenseGateTests);
 await runTest("outstation departure photo review (distance is flagged not blocked; both photos at once is flagged; the window closes at the end of the trip's last CAIRO day, DST included)", runOutstationDepartureEvidenceTests);
+await runTest("evidence photo location stamp (full address + Phoenix brick/area/region; a far brick carries its distance; NO line is ever a bare lat/long pair)", runEvidenceLocationStampTests);
+await runTest("evidence photo watermark panel (grows to hold the location block; nothing is drawn past the bottom edge; shrinks the font rather than truncating)", runEvidencePanelLayoutTests);
 await runTest("workflow registry retarget guard (a migration must never point an action at a status no code expects — the mismatch that wedged every outstation submit on 2026-08-04)", runWorkflowRegistryRetargetGuardTests);
 await runTest("outstation workload repair (a hand-entered figure is refused not coerced; a blank box is never a measured zero; a re-grab restates the match status so the row cannot contradict itself; the retry reports the release's own reason; the panel lists what the GATE holds rather than only what was accepted, never a rejected request, and never a trip still running; both repairs are Super Admin only, the list is read-only)", runOutstationWorkloadRepairTests);
 await runTest("outstation departure-photo reminder (only the departure blocker triggers it; never before the trip's last day; the LAST-DAY reminder had never once fired in production because the 06:36 job cannot see a request submitted at 20:49, so the submit path raises it too; the email must name its subject employee or it is skipped outright)", runOutstationDeparturePhotoReminderTests);

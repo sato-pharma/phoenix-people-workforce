@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
+import { formatEvidenceLocationLines } from "../src/lib/evidence/location-stamp.ts";
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Stage 2: Pharmacy Validation, probation, and the did-you-mean matcher
 // (spec A2/A3/B4 — docs/specs/direct-orders-v2.md).
@@ -43,7 +45,42 @@ export function runDirectOrdersPharmacyValidationTests() {
     "the shutter must refuse before a location exists — a photo with no coordinates is not evidence of a place",
   );
   // The stamp is burned into the pixels, so the image carries its own provenance.
-  assert.match(captureSource, /GPS: \$\{capture\.latitude\?\.toFixed\(6\)\}/, "coordinates must be burned into the photo");
+  //
+  // Until 2026-08-23 this was a one-line source match on `GPS: ${capture.latitude?.toFixed(6)}`,
+  // which the storefront photo composed inline and which was ALL it said about the place. The
+  // caption now comes from the shared evidence stamp, so the same guarantee is asserted in two
+  // halves — the component must draw the shared lines, and the shared lines must carry the pin.
+  assert.match(
+    captureSource,
+    /buildEvidenceStampLines\(\{/,
+    "the burned caption must be built by the shared evidence stamp, not composed inline here",
+  );
+  assert.match(
+    captureSource,
+    /locationLines: capture\.location\?\.lines \?\? \[\]/,
+    "and it must be fed the RESOLVED location, so the photo carries the address and territory",
+  );
+  assert.match(captureSource, /ctx\.fillText\(line,/, "those captions must actually be drawn onto the pixels");
+  {
+    const stamped = formatEvidenceLocationLines({
+      accuracyMeters: 12,
+      address: "12 Ahmed Orabi Street, Mohandessin",
+      areaName: "Giza",
+      brickDistanceKm: 0.4,
+      brickName: "Mohandessin",
+      latitude: 30.059482,
+      longitude: 31.223145,
+      regionName: "Cairo",
+    });
+    assert.ok(
+      stamped.some((line) => line.startsWith("GPS: ") && line.includes("30.059482") && line.includes("31.223145")),
+      "coordinates must be burned into the photo",
+    );
+    assert.ok(
+      stamped.some((line) => line.startsWith("Address: 12 Ahmed Orabi Street")),
+      "and the address must be burned in alongside them — the pin alone is not a place",
+    );
+  }
   assert.match(captureSource, /toDataURL\("image\/jpeg", 0\.86\)/, "same JPEG quality as the other live-capture flows");
 
   // ── The GPS verdict is computed SERVER-SIDE ────────────────────────────────────────────

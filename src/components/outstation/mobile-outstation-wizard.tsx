@@ -46,7 +46,7 @@ import type { ManagerAreaRepOption } from "@/lib/outstation/area-rep-options";
 import {
   drawEvidenceWatermark,
   getCompressedEvidenceCanvasSize,
-  resolveReadableLocation,
+  resolveEvidenceLocationStamp,
 } from "@/components/outstation/evidence-watermark";
 import { ZoomablePhoto } from "@/components/ui/zoomable-photo";
 
@@ -1040,20 +1040,22 @@ export function MobileOutstationWizard({
 
       context.drawImage(video, 0, 0, canvas.width, canvas.height);
       const capturedAt = new Date().toISOString();
-      const capturedLocationLabel = await resolveReadableLocation(
+      // Resolved BEFORE the watermark is drawn, so the address and the Phoenix brick/area/region
+      // are burned into the JPEG itself rather than only stored beside it.
+      const location = await resolveEvidenceLocationStamp(
+        "/api/outstation/reverse-geocode",
         position.coords.latitude,
         position.coords.longitude,
+        position.coords.accuracy ?? null,
       );
 
       await drawEvidenceWatermark(context, canvas, {
         capturedAt,
-        capturedLatitude: position.coords.latitude,
-        capturedLocationLabel,
-        capturedLongitude: position.coords.longitude,
         employeeHrId,
         // Named in the burned-in panel so the arrival and departure photos are tellable apart
         // from the image alone, without trusting the filename or the database row.
         label: "Arrival photo",
+        locationLines: location.lines,
         reference: `Draft: ${carEvidenceDraftId}`,
       });
 
@@ -1062,7 +1064,7 @@ export function MobileOutstationWizard({
       setCarEvidence({
         capturedAt,
         capturedLatitude: position.coords.latitude,
-        capturedLocationLabel,
+        capturedLocationLabel: location.label,
         capturedLongitude: position.coords.longitude,
         imageDataUrl,
         requestDraftId: carEvidenceDraftId,
@@ -1131,28 +1133,29 @@ export function MobileOutstationWizard({
 
       context.drawImage(image, 0, 0, canvas.width, canvas.height);
       const capturedAt = new Date().toISOString();
-      const capturedLocationLabel = await resolveReadableLocation(
+      // The TRIP's destination capture, not the file's own — an uploaded photo carries no
+      // trustworthy position. Accuracy is deliberately null: this pin was not measured here.
+      const location = await resolveEvidenceLocationStamp(
+        "/api/outstation/reverse-geocode",
         captured.capturedLatitude,
         captured.capturedLongitude,
       );
 
       await drawEvidenceWatermark(context, canvas, {
         capturedAt,
-        capturedLatitude: captured.capturedLatitude,
-        capturedLocationLabel,
-        capturedLongitude: captured.capturedLongitude,
         employeeHrId,
         // Says "uploaded" on the face of the image. An approver reading the photo alone must not
         // mistake it for a live capture, and the burned-in panel is the one part of the evidence
         // that survives being screenshotted out of the app.
         label: "Arrival photo (uploaded)",
+        locationLines: location.lines,
         reference: `Draft: ${carEvidenceDraftId}`,
       });
 
       setCarEvidence({
         capturedAt,
         capturedLatitude: captured.capturedLatitude,
-        capturedLocationLabel,
+        capturedLocationLabel: location.label,
         capturedLongitude: captured.capturedLongitude,
         imageDataUrl: canvas.toDataURL("image/jpeg", 0.74),
         requestDraftId: carEvidenceDraftId,

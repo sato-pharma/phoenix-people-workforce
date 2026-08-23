@@ -2,6 +2,12 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import {
+  buildEvidenceStampLines,
+  resolveEvidenceLocationStamp,
+  wrapWatermarkText,
+  type ResolvedEvidenceLocation,
+} from "@/components/outstation/evidence-watermark";
 import { ZoomablePhoto } from "@/components/ui/zoomable-photo";
 
 type Props = {
@@ -17,9 +23,18 @@ type Capture = {
   accuracy: number | null;
   capturedAt: string | null;
   address: string | null;
+  /** The full evidence stamp — address, Phoenix brick/area/region, coordinates. */
+  location: ResolvedEvidenceLocation | null;
 };
 
-const EMPTY: Capture = { latitude: null, longitude: null, accuracy: null, capturedAt: null, address: null };
+const EMPTY: Capture = {
+  latitude: null,
+  longitude: null,
+  accuracy: null,
+  capturedAt: null,
+  address: null,
+  location: null,
+};
 
 type Suggestion = {
   distributorCode: string;
@@ -121,6 +136,14 @@ export function PharmacyValidationCapture({ pharmacyId, pharmacyName, requestId,
     }
   }
 
+  /**
+   * GPS, then the readable place, then the shutter unlocks.
+   *
+   * The address and territory are resolved HERE rather than at photo time on purpose: `takePhoto`
+   * is synchronous and guards on `capture.latitude`, so writing the coordinates before the lookup
+   * finishes would let a rep shoot a photo captioned with a half-resolved location. Nothing is
+   * written into state until the whole stamp exists.
+   */
   function captureLocation() {
     setError(null);
     if (!navigator.geolocation) {
@@ -130,14 +153,24 @@ export function PharmacyValidationCapture({ pharmacyId, pharmacyName, requestId,
     setMessage("Getting your location…");
     navigator.geolocation.getCurrentPosition(
       (position) => {
-        setCapture({
-          latitude: position.coords.latitude,
-          longitude: position.coords.longitude,
-          accuracy: position.coords.accuracy,
-          capturedAt: new Date(position.timestamp || Date.now()).toISOString(),
-          address: `${position.coords.latitude.toFixed(6)}, ${position.coords.longitude.toFixed(6)}`,
+        const capturedAt = new Date(position.timestamp || Date.now()).toISOString();
+        setMessage("Location captured. Resolving the address…");
+        void resolveEvidenceLocationStamp(
+          "/api/direct-orders/reverse-geocode",
+          position.coords.latitude,
+          position.coords.longitude,
+          position.coords.accuracy ?? null,
+        ).then((location) => {
+          setCapture({
+            latitude: position.coords.latitude,
+            longitude: position.coords.longitude,
+            accuracy: position.coords.accuracy,
+            capturedAt,
+            address: location.label,
+            location,
+          });
+          setMessage("Location captured. Now take the photo.");
         });
-        setMessage("Location captured. Now take the photo.");
       },
       () => setError("Location capture failed. Allow location access and try again."),
       { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 },
@@ -167,12 +200,21 @@ export function PharmacyValidationCapture({ pharmacyId, pharmacyName, requestId,
     const fontSize = Math.max(16, Math.round(canvas.width * 0.022));
     const lineHeight = Math.round(fontSize * 1.38);
     const pad = Math.round(fontSize * 0.75);
-    const lines = [
-      "Pharmacy validation live evidence",
-      `Photo date/time: ${takenAt}`,
-      `GPS: ${capture.latitude?.toFixed(6)}, ${capture.longitude?.toFixed(6)}${capture.accuracy ? ` (accuracy ${Math.round(capture.accuracy)}m)` : ""}`,
-      `GPS captured at: ${capture.capturedAt}`,
-    ];
+    // Same wording as every other Phoenix evidence photo: full address, then the Phoenix brick,
+    // area and region, then the coordinates as fine print. Owner instruction 2026-08-23 — a bare
+    // latitude/longitude tells an approver nothing about whether this is the right pharmacy.
+    const captions = buildEvidenceStampLines({
+      capturedAt: takenAt,
+      locationCapturedAt: capture.capturedAt,
+      locationLines: capture.location?.lines ?? [],
+      title: "Pharmacy validation live evidence",
+    });
+    ctx.font = `${fontSize}px Arial, Helvetica, sans-serif`;
+    // Wrapped, never truncated: a long Egyptian street address is exactly the caption most worth
+    // reading, and it is the one a fixed line count would have cut.
+    const lines = captions.flatMap((caption) =>
+      wrapWatermarkText(ctx, caption, canvas.width - pad * 2),
+    );
     const boxHeight = lines.length * lineHeight + pad * 2;
     ctx.fillStyle = "rgba(15,23,42,0.72)";
     ctx.fillRect(0, canvas.height - boxHeight, canvas.width, boxHeight);
@@ -299,10 +341,11 @@ export function PharmacyValidationCapture({ pharmacyId, pharmacyName, requestId,
             </button>
           </div>
           {capture.latitude != null ? (
-            <p className="mt-2 text-[11px] font-semibold text-emerald-700">
-              Location: {capture.latitude.toFixed(6)}, {capture.longitude?.toFixed(6)}
-              {capture.accuracy ? ` (±${Math.round(capture.accuracy)}m)` : ""}
-            </p>
+            <div className="mt-2 space-y-0.5 text-[11px] font-semibold text-emerald-700">
+              {(capture.location?.lines ?? []).map((line, index) => (
+                <p key={`${index}-${line}`}>{line}</p>
+              ))}
+            </div>
           ) : null}
           <video ref={videoRef} playsInline muted className={`mt-2 w-full max-w-md border border-slate-200 ${cameraReady ? "" : "hidden"}`} />
           {photo ? (

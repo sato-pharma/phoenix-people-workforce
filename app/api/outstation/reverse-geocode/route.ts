@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
-import { googleReverseGeocode } from "@/lib/google-maps/server";
+import { parseEvidenceLocationBody, resolveEvidenceLocation } from "@/lib/evidence/location-service";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
@@ -18,23 +18,26 @@ export async function POST(request: Request) {
     await assertPermission(access, "outstation", "create");
 
     const body = (await request.json()) as Record<string, unknown>;
-    const latitude = Number(body.latitude);
-    const longitude = Number(body.longitude);
+    const parsed = parseEvidenceLocationBody(body);
 
-    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+    if (!parsed) {
       return NextResponse.json(
         { error: "missing_coordinates", message: "Coordinates are required." },
         { status: 400 },
       );
     }
 
-    const result = await googleReverseGeocode({ lat: latitude, lng: longitude });
-    const label = result?.formattedAddress ?? [result?.area, result?.city].filter(Boolean).join(", ");
+    // `location` carries the full evidence stamp — address, Phoenix brick/area/region, and the
+    // exact lines to burn into the arrival and departure photos (owner instruction 2026-08-23).
+    // `area`, `city` and `label` are the original three fields, unchanged, so nothing that already
+    // reads this route has to change at the same time.
+    const location = await resolveEvidenceLocation(parsed);
 
     return NextResponse.json({
-      area: result?.area ?? null,
-      city: result?.city ?? null,
-      label: label || null,
+      area: location.components.area,
+      city: location.components.city,
+      label: location.address,
+      location,
     });
   } catch (error) {
     const message =
