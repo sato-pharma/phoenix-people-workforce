@@ -9,6 +9,8 @@ import {
 import { getSections, type PermissionLookup } from "../src/lib/navigation/active-path.ts";
 import {
   labelBudgetPx,
+  PORTAL_GEOMETRY_CHECKPOINT,
+  portalNavClientWidthFor,
   SIDEBAR_LABEL_SNAPSHOT_PATH,
   type SidebarShell,
 } from "../src/config/sidebar-metrics.ts";
@@ -149,12 +151,21 @@ export function runSidebarLabelWidthTests() {
     "an admin hub row with a badge drops the ↗, so it is charged the same as any badge row",
   );
 
-  assert.equal(labelBudgetPx({ badge: false, hub: false, shell: "portal" }), 147, "portal plain row budget");
-  assert.equal(labelBudgetPx({ badge: true, hub: false, shell: "portal" }), 109, "portal badge row budget");
+  assert.equal(labelBudgetPx({ badge: false, hub: false, shell: "portal" }), 159, "portal plain row budget");
+  assert.equal(labelBudgetPx({ badge: true, hub: false, shell: "portal" }), 121, "portal badge row budget");
   assert.equal(
     labelBudgetPx({ badge: false, hub: true, shell: "portal" }),
-    147,
+    159,
     "the portal renders no hub arrow, so a one-item section costs a portal label nothing",
+  );
+
+  // The portal nav's width is DERIVED from the aside rather than re-measured on every change. That
+  // shortcut is only legitimate while the derivation still reproduces the one reading actually
+  // taken in a browser — so pin it against that reading rather than trusting the chain on its word.
+  assert.equal(
+    portalNavClientWidthFor(PORTAL_GEOMETRY_CHECKPOINT.asideWidth),
+    PORTAL_GEOMETRY_CHECKPOINT.navClientWidth,
+    "the portal geometry chain no longer reproduces the measured 312px rail — re-measure in a browser before touching these constants",
   );
 
   // The two shells must not silently converge on one number again.

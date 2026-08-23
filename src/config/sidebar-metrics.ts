@@ -67,14 +67,27 @@ const BADGE = 18 + 4 * 2 + 6;
 // ── Employee-portal rail (src/components/employee-portal/employee-portal-layout.tsx) ──
 
 /**
- * The portal's desktop nav scroller, MEASURED rather than derived: its width comes from a flex
- * layout inside a 312px aside, not from a `w-[…]` class anyone can read off the JSX.
- * Chromium 2026-08-23: asideOffsetWidth 312, navOffsetWidth 220, navClientWidth 210 — the same 10px
- * gutter as the admin rail, because `.phoenix-employee-sidebar-scroll` carries the same
- * `scrollbar-gutter: stable`. clientWidth already excludes that gutter, so it is not subtracted
- * again below.
+ * `w-[324px]` on the portal <aside> (the collapsed icon rail is `w-[78px]` and renders no labels).
+ * Widened from 312 in #2357: `Doctor Coverage Settings` measured 147px against a 147px budget —
+ * it fit by exactly zero pixels, and the portal label span has no `truncate`, so the next label to
+ * exceed it would not ellipsise, it would shove the row's badge out.
  */
-const PORTAL_NAV_CLIENT_WIDTH = 210;
+export const PORTAL_SIDEBAR_WIDTH = 324;
+
+/** The card inside the aside is `w-full` with a 1px `border` on each side. */
+const PORTAL_CARD_BORDER = 1 * 2;
+
+/** The dark icon-rail column beside the labels, `w-[58px] shrink-0`. */
+const PORTAL_ICON_RAIL = 58;
+
+/** The label column's `px-4`. */
+const PORTAL_COLUMN_PADDING = 16 * 2;
+
+/**
+ * The same permanently reserved thin scrollbar track as the admin rail —
+ * `.phoenix-employee-sidebar-scroll` carries `scrollbar-gutter: stable` too.
+ */
+const PORTAL_SCROLLBAR_GUTTER = 10;
 
 /** The desktop nav's `pr-1`. */
 const PORTAL_NAV_PADDING = 4;
@@ -94,6 +107,31 @@ const PORTAL_ICON_GAP = 12;
 const PORTAL_BADGE = 18 + 4 * 2 + 12;
 
 /**
+ * The portal nav's usable width, DERIVED from the aside rather than pinned to one measurement.
+ *
+ * #2355 stored a bare `PORTAL_NAV_CLIENT_WIDTH = 210` because the nav's width comes from a flex
+ * layout rather than a `w-[…]` class. That was honest but brittle: it would silently go stale the
+ * moment anyone touched the aside. The full chain is readable after all —
+ *
+ *   aside `w-[324px]` -> card `w-full` less its 1px borders -> icon rail `w-[58px] shrink-0`
+ *   -> label column `flex-1` less its `px-4` -> nav `flex-1` less the reserved scrollbar track
+ *
+ * — and it reproduces the real browser exactly at the old width: 312 - 2 - 58 - 32 = 220 against a
+ * measured navOffsetWidth of 220, then - 10 = 210 against a measured navClientWidth of 210. That
+ * agreement is what licenses using the derivation instead of a fresh measurement, and
+ * PORTAL_GEOMETRY_CHECKPOINT below pins it so a future edit to these constants cannot quietly
+ * drift away from the one reading taken in a real browser.
+ */
+export function portalNavClientWidthFor(asideWidth: number): number {
+  return (
+    asideWidth - PORTAL_CARD_BORDER - PORTAL_ICON_RAIL - PORTAL_COLUMN_PADDING - PORTAL_SCROLLBAR_GUTTER
+  );
+}
+
+/** Chromium, 2026-08-23, on the pre-widening 312px rail. The derivation must still reproduce it. */
+export const PORTAL_GEOMETRY_CHECKPOINT = { asideWidth: 312, navClientWidth: 210 } as const;
+
+/**
  * Pixels a label actually gets, in the shell it is rendered in.
  *
  * `shell` is REQUIRED and deliberately has no default. Until #2353 this function modelled only the
@@ -106,8 +144,8 @@ const PORTAL_BADGE = 18 + 4 * 2 + 12;
  * - 12 gap - 24 pin = 157 plain; a hub row pays 20 more for the ↗ (137), a badge row 32 (125).
  * A hub row that also has a badge drops the ↗, so it is charged as a badge row.
  *
- * Portal: 210 nav client - 4 pr-1 - 32 row px-4 - 15 icon - 12 gap = 147 plain; a badge row pays
- * 38 more (109). The portal has no hub arrow and no pin star (grep: zero `ArrowUpRight`, zero
+ * Portal: 222 nav client - 4 pr-1 - 32 row px-4 - 15 icon - 12 gap = 159 plain; a badge row pays
+ * 38 more (121). The portal has no hub arrow and no pin star (grep: zero `ArrowUpRight`, zero
  * `pr-6`), so `hub` is ignored there rather than silently costing nothing in a model that pretends
  * to account for it.
  */
@@ -122,7 +160,11 @@ export function labelBudgetPx({
 }): number {
   if (shell === "portal") {
     const budget =
-      PORTAL_NAV_CLIENT_WIDTH - PORTAL_NAV_PADDING - PORTAL_ROW_PADDING - PORTAL_ICON - PORTAL_ICON_GAP;
+      portalNavClientWidthFor(PORTAL_SIDEBAR_WIDTH) -
+      PORTAL_NAV_PADDING -
+      PORTAL_ROW_PADDING -
+      PORTAL_ICON -
+      PORTAL_ICON_GAP;
     return badge ? budget - PORTAL_BADGE : budget;
   }
 
