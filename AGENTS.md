@@ -107,7 +107,7 @@ file holding the full account, under
 - **Deleting a branch does not remove its pushed commit**, and **reusing a squash-merged branch makes a
   conflicting PR.** `deleting-a-branch-does-not-remove-a-pushed-commit` ·
   `reusing-a-squash-merged-branch-makes-a-conflicting-pr`
-- **`git push` to origin hangs — kill it at ~60s and retry immediately.** A push OOM is a 500MB
+- **`git push` to origin hangs — kill it at ~60s and retry immediately.** A push or fetch that dies with `fatal: Out of memory, malloc failed (tried to allocate 524288000 bytes)` was never a real memory fault or a network problem: `http.postBuffer` was set to 500MB in `.git/config` and git allocates the whole buffer up front, so it died before sending a byte whenever free RAM dipped under it. **Fixed 2026-08-23 — that key is now `8388608` (8MB), verified with an unoverridden fetch, ls-remote and push.** Do NOT restore 500MB; if a genuine large-push failure ever appears, raise to 50MB at most. `git-push-to-origin-hangs-retry-immediately` · `git-push-oom-is-a-500mb-postbuffer-in-repo-config`
   `postBuffer` in the repo config, not a real memory fault. `git-push-to-origin-hangs-retry-immediately`
   · `git-push-oom-is-a-500mb-postbuffer-in-repo-config`
 - **A merge to `main` mid-session silently orphans your next push.**
