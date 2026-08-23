@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 
-import { buildCoverage, gradedRowsOf } from "../src/lib/business-review/canonical.ts";
+import {
+  REVIEW_SOURCE_NOTICE,
+  buildCoverage,
+  gradedRowsOf,
+} from "../src/lib/business-review/canonical.ts";
 import { describePeriods, hasFigures } from "../src/lib/business-review/coverage.ts";
 import {
   REVIEW_FLOOR,
@@ -659,6 +663,32 @@ export async function runBusinessReviewWindowAndCoverageTests() {
       bookmarked.adjustment ?? "",
       /data starts at Jul 2026/,
       "a clamped window must announce itself rather than answer a different question",
+    );
+  }
+
+  // -------------------------------------------- 7. the notice cannot outlive the floor
+  // The banner used to end with "H1 2026 incentives were paid against the retired sales engine
+  // and are closed; some bands here differ from what was actually paid." The moment REVIEW_FLOOR
+  // moved to July 2026 that sentence became unreachable - the picker cannot offer an H1 month, so
+  // the module was warning a head of department about months it refuses to render.
+  //
+  // Pin the INVARIANT, not the sentence: the label must never name a period below the floor,
+  // otherwise the next floor move strands it again in exactly the same way.
+  {
+    assert.doesNotMatch(
+      REVIEW_SOURCE_NOTICE,
+      /\b(H1|S1|Semester 1|Jan|Feb|Mar|Apr|May|Jun)\b/i,
+      "the review notice names a period below REVIEW_FLOOR that the picker cannot offer",
+    );
+    assert.match(
+      REVIEW_SOURCE_NOTICE,
+      /not a payout record/i,
+      "the one thing the notice exists to say must survive every rewording",
+    );
+    assert.match(
+      REVIEW_SOURCE_NOTICE,
+      /Monthly Closing/,
+      "and it must still name the engine the review was rebuilt from",
     );
   }
 }
