@@ -9,7 +9,7 @@ import {
   type PhoenixRole,
 } from "@/lib/auth/permissions";
 import { isSamePerson } from "@/lib/auth/identity-aliases";
-import { writeAuditLog } from "@/lib/admin/audit";
+import { writeAuditLog, writeRequiredAuditLog } from "@/lib/admin/audit";
 // Pure, JSX-free SLA tone helper (see src/lib/approvals-hub/service.ts, which imports it the same
 // way) so the marketing badge graduates to "overdue" on exactly the rule the other badges use.
 import { slaTone } from "@/components/approvals-hub/sla-thresholds";
@@ -89,6 +89,7 @@ import type {
   MarketingValidationReportRow,
   MarketingValidationStatus,
   MarketingValidationWorkspace,
+  MarketingVenueMergeResult,
   MarketingDecisionLabels,
   MarketingStepKind,
   MarketingWorkflowApprovalScope,
@@ -360,6 +361,10 @@ type MarketingPharmacyDbRow = {
   id: string;
   line_id: number | string | null;
   manager_hr_id: string | null;
+  /** Absent on every row written before 2026-08-23; a venue that is not a duplicate leaves it null. */
+  merged_at?: string | null;
+  merged_by_hr_id?: string | null;
+  merged_into_pharmacy_id?: string | null;
   normalized_name?: string | null;
   owner_hr_id: string | null;
   pharmacy_code?: string | null;
@@ -4121,6 +4126,9 @@ function mapMarketingPharmacy(row: MarketingPharmacyDbRow): MarketingPharmacy {
     id: row.id,
     lineId: row.line_id === null ? null : Number(row.line_id),
     managerHrId: row.manager_hr_id,
+    mergedAt: row.merged_at ?? null,
+    mergedByHrId: row.merged_by_hr_id ?? null,
+    mergedIntoPharmacyId: row.merged_into_pharmacy_id ?? null,
     normalizedName: row.normalized_name ?? String(row.display_name ?? row.id).trim().toLowerCase(),
     ownerHrId: row.owner_hr_id,
     pharmacyCode: row.pharmacy_code ?? row.id,
@@ -8203,4 +8211,161 @@ export function assertMarketingDraftCanBeSubmitted(draft: MarketingRequestDraftD
   if (draft.products.length === 0) throw conflictError("At least one product is required before submitting.");
   if (draft.pharmacies.length === 0) throw conflictError("At least one pharmacy tracking code is required before submitting.");
   if (draft.roiStatus === "not_calculated") throw conflictError("ROI must be calculated before submitting.");
+}
+
+/**
+ * Move every child row of one venue onto another, one row at a time.
+ *
+ * Row by row rather than a single bulk `update ... where pharmacy_id = loser` on purpose: three
+ * partial unique indexes make collisions ordinary here rather than exceptional, and one bulk
+ * statement would abort every other move the moment a single row hit one.
+ *
+ * A collision (Postgres 23505) means the survivor ALREADY holds the equivalent child — which is
+ * precisely the end state a merge is reaching for, so it is counted and stepped over, not thrown.
+ * The colliding row stays on the losing venue, which is deactivated moments later, so it survives
+ * as history and simply stops being reachable.
+ */
+export async function moveMarketingVenueChildren(
+  supabase: SupabaseClient,
+  table: string,
+  column: string,
+  loserId: string,
+  survivorId: string,
+): Promise<{ alreadyOnSurvivor: number; moved: number }> {
+  const { data, error } = await supabase.from(table).select("id").eq(column, loserId);
+  if (error) throw error;
+
+  let moved = 0;
+  let alreadyOnSurvivor = 0;
+  for (const row of (data ?? []) as Array<{ id: string }>) {
+    const { error: moveError } = await supabase
+      .from(table)
+      .update({ [column]: survivorId })
+      .eq("id", row.id);
+    if (!moveError) {
+      moved += 1;
+      continue;
+    }
+    if (String((moveError as { code?: string }).code) !== "23505") throw moveError;
+    alreadyOnSurvivor += 1;
+  }
+
+  return { alreadyOnSurvivor, moved };
+}
+
+/**
+ * Fold a duplicate marketing venue into the one that survives.
+ *
+ * Marketing had no way to express this until 2026-08-23. The only available move was to deactivate
+ * the duplicate and write a sentence into `validation_notes`, which is not navigable: a
+ * `pharmacy_code` quoted in an older report resolved to a dead row with nothing saying where the
+ * live one went, and any pair of same-named rows invited the same investigation over again.
+ *
+ * Identity is the caller's judgement and the `reason` is the record of it. This function refuses
+ * the structurally impossible (a venue merged into itself, into a venue that is itself a merged
+ * duplicate, or twice) and nothing else — it deliberately does NOT guess identity from a similar
+ * name, which is typed by hand in two languages and proves nothing.
+ */
+export async function mergeMarketingVenue(
+  access: AccessContext,
+  input: { loserId: string; reason: string; survivorId: string },
+): Promise<MarketingVenueMergeResult> {
+  assertMarketingControlAccess(access);
+
+  const survivorId = String(input.survivorId ?? "").trim();
+  const loserId = String(input.loserId ?? "").trim();
+  const reason = String(input.reason ?? "").trim();
+
+  if (!survivorId || !loserId) throw validationError("Both the surviving venue and the duplicate must be named.");
+  // Also enforced by marketing_pharmacies_merged_not_self_check, but refused here so the caller
+  // gets a sentence rather than a constraint name.
+  if (survivorId === loserId) throw validationError("A venue cannot be merged into itself.");
+  if (!reason) {
+    throw validationError("A merge needs a written reason — it is the only record of why two rows were judged one place.");
+  }
+
+  const supabase = getSupabaseAdmin();
+  const venuesResult = await supabase.from("marketing_pharmacies").select("*").in("id", [survivorId, loserId]);
+  if (venuesResult.error) throw venuesResult.error;
+
+  const venues = new Map(
+    ((venuesResult.data ?? []) as MarketingPharmacyDbRow[]).map((row) => [row.id, mapMarketingPharmacy(row)]),
+  );
+  const survivor = venues.get(survivorId);
+  const loser = venues.get(loserId);
+  if (!survivor) throw notFoundError("The surviving venue does not exist.");
+  if (!loser) throw notFoundError("The duplicate venue does not exist.");
+  if (loser.mergedIntoPharmacyId) {
+    throw conflictError(`"${loser.displayName}" was already merged into another venue.`);
+  }
+  // Merging into a tombstone would build a chain that every reader then has to walk.
+  if (survivor.mergedIntoPharmacyId) {
+    throw conflictError(
+      `"${survivor.displayName}" is itself a merged duplicate — merge into the venue that survived instead.`,
+    );
+  }
+
+  const customerLinks = await moveMarketingVenueChildren(
+    supabase, "marketing_customer_pharmacies", "pharmacy_id", loserId, survivorId,
+  );
+  const requestTargets = await moveMarketingVenueChildren(
+    supabase, "marketing_request_pharmacies", "pharmacy_id", loserId, survivorId,
+  );
+  const codes = await moveMarketingVenueChildren(
+    supabase, "marketing_pharmacy_distributor_codes", "pharmacy_id", loserId, survivorId,
+  );
+  const transfers = await moveMarketingVenueChildren(
+    supabase, "marketing_customer_direct_order_transfers", "marketing_pharmacy_id", loserId, survivorId,
+  );
+
+  const mergedAt = new Date().toISOString();
+  const actorHrId = access.hrId ?? access.loginId ?? null;
+  const markResult = await supabase
+    .from("marketing_pharmacies")
+    .update({
+      // Deactivating is what actually removes it from every screen: the Customer Database, the
+      // target picker and the master matcher all filter on `active` or on an active link. A
+      // merged-but-active row would be a duplicate the module still offers, which is how second
+      // copies get created in the first place.
+      active: false,
+      merged_at: mergedAt,
+      merged_by_hr_id: actorHrId,
+      merged_into_pharmacy_id: survivorId,
+      updated_at: mergedAt,
+    })
+    .eq("id", loserId)
+    // Idempotence guard, matching Direct Orders: if a parallel session merged it a moment ago,
+    // this updates nothing rather than overwriting their survivor with ours.
+    .is("merged_into_pharmacy_id", null);
+  if (markResult.error) throw markResult.error;
+
+  const result: MarketingVenueMergeResult = {
+    alreadyOnSurvivor:
+      customerLinks.alreadyOnSurvivor + requestTargets.alreadyOnSurvivor
+      + codes.alreadyOnSurvivor + transfers.alreadyOnSurvivor,
+    codesMoved: codes.moved,
+    customerLinksMoved: customerLinks.moved,
+    loserId,
+    requestTargetsMoved: requestTargets.moved,
+    survivorId,
+    transfersMoved: transfers.moved,
+  };
+
+  // Required, not best-effort: a structural change that retires one physical place in favour of
+  // another must not be able to happen silently.
+  await writeRequiredAuditLog({
+    actorLoginId: access.loginId ?? access.hrId,
+    entityId: loserId,
+    entityType: "marketing_pharmacy",
+    newValues: { active: false, mergedIntoPharmacyId: survivorId },
+    oldValues: { active: loser.active, mergedIntoPharmacyId: null },
+    summary:
+      `Marketing venue "${loser.displayName}" (${loser.pharmacyCode}) merged into `
+      + `"${survivor.displayName}" (${survivor.pharmacyCode}). Moved ${result.customerLinksMoved} customer link(s), `
+      + `${result.requestTargetsMoved} request target(s), ${result.codesMoved} distributor code(s), `
+      + `${result.transfersMoved} transfer(s); ${result.alreadyOnSurvivor} already on the survivor. `
+      + `Reason: ${reason}`,
+  });
+
+  return result;
 }

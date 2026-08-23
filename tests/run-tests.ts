@@ -358,6 +358,7 @@ import { runMarketingRoiConfidenceTests } from "./marketing-roi-confidence.test.
 import { runMarketingRoiLiveStagesTests } from "./marketing-roi-live-stages.test.ts";
 import { runMarketingSubmissionCaptureGateTests } from "./marketing-submission-capture-gates.test.ts";
 import { runNurseryVenueTypeTests } from "./nursery-venue-type.test.ts";
+import { runMarketingVenueMergeTests } from "./marketing-venue-merge.test.ts";
 import { runMarketingRoiTrackerTests } from "./marketing-roi-tracker.test.ts";
 import { runMarketingRoiExplainTests } from "./marketing-roi-explain.test.ts";
 import { runMarketingRoiBusinessReportTests } from "./marketing-roi-business-report.test.ts";
@@ -1369,6 +1370,10 @@ await runTest(
   + "combinations, the reference_status gate can actually fire, ROI lists an unattributable target "
   + "instead of dropping it, and the migration drops both NOT NULLs)",
   runNurseryVenueTypeTests,
+);
+await runTest(
+  "marketing venue merge (a colliding child is counted not thrown, one collision does not abort the rest, a real failure still surfaces, all four child tables move, the loser is deactivated, the mark is idempotent, the FK is SET NULL so deleting a survivor keeps its duplicates' record, and the backfill cannot fire on the wrong database)",
+  runMarketingVenueMergeTests,
 );
 await runTest("marketing request overlap detection (double-count guard)", runMarketingRequestOverlapTests);
 await runTest("marketing ROI live lifecycle stages (rejected never counts as committed)", runMarketingRoiLiveStagesTests);

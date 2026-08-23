@@ -51,6 +51,10 @@ export type AuditEntityType =
   | "hiring_document_note"
   | "hiring_document_status"
   | "marketing_customer"
+  // A venue merge is neither a customer nor a request change: it retires one physical place in
+  // favour of another and moves every link between them. audit_logs has no CHECK on entity_type
+  // (verified against production 2026-08-23), so this needs no migration of its own.
+  | "marketing_pharmacy"
   | "marketing_request"
   | "module_control_assignment"
   | "notification"
