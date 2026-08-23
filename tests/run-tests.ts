@@ -56,6 +56,7 @@ import { runResidenceGeocodePolicyTests } from "./residence-geocode-policy.test.
 import { runOutstationFuelPolicyTests } from "./outstation-fuel-policy.test.ts";
 import { runDeadMansSwitchTests } from "./dead-mans-switch.test.ts";
 import { runDirectOrdersSweepLivenessTests } from "./direct-orders-sweep-liveness.test.ts";
+import { runHealthchecksScheduleSyncTests } from "./healthchecks-schedule-sync.test.ts";
 import { runDirectOrdersHrIdCaseTests } from "./direct-orders-hr-id-case.test.ts";
 import { runSheetTokenRotationLivenessTests } from "./sheet-token-rotation-liveness.test.ts";
 import { runSyntheticJourneysLivenessTests } from "./synthetic-journeys-liveness.test.ts";
@@ -985,6 +986,10 @@ await runTest("residence geocode policy (a failed geocode must never null a stor
 await runTest("outstation fuel policy (an unmeasurable car distance must block, a measured 0 must not)", runOutstationFuelPolicyTests);
 await runTest("dead-man's-switch (Healthchecks.io ping helper)", runDeadMansSwitchTests);
 await runTest("direct orders sweeps stay watched (dead-man's-switch wiring)", runDirectOrdersSweepLivenessTests);
+await runTest(
+  "healthchecks schedule sync (docs/observability.md is the source of truth for every check)",
+  runHealthchecksScheduleSyncTests,
+);
 await runTest("direct orders hr-id filters are case-insensitive", runDirectOrdersHrIdCaseTests);
 await runTest(
   "synthetic journeys liveness (a refused dispatch must ping /fail, not a green check)",

@@ -1,0 +1,116 @@
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+
+import { parseDesiredChecks, parseDuration, diffCheck } from "../scripts/healthchecks-sync.mjs";
+
+/**
+ * `scripts/healthchecks-sync.mjs` treats the table in docs/observability.md as the source of truth
+ * for every Healthchecks schedule. Two things make that fragile enough to pin.
+ *
+ * First, the table's shape has already changed once (a "What actually pings it" column was added,
+ * and a Simple-period row appeared alongside the cron ones). A parser that quietly matches nothing
+ * turns the sync into a no-op that prints a cheerful summary and changes nothing — the exact
+ * failure mode this observability layer exists to catch, reproduced in the tool meant to fix it.
+ *
+ * Second, the timezone. Every schedule in that table is Africa/Cairo, because cron-job.org fires
+ * them in Africa/Cairo. A check left on UTC has its expected-ping window two to three hours off the
+ * real one and drifts again at every Egyptian DST change — so it goes red against a job that is
+ * running perfectly, and people learn to ignore the dashboard.
+ */
+
+const DOC = "docs/observability.md";
+
+type DesiredCheck = {
+  slug: string;
+  kind: string;
+  schedule?: string;
+  tz?: string;
+  timeout?: number;
+  grace: number;
+};
+
+export async function runHealthchecksScheduleSyncTests() {
+  const checks = parseDesiredChecks(readFileSync(DOC, "utf8")) as DesiredCheck[];
+
+  assert.ok(
+    checks.length >= 14,
+    `${DOC} must yield at least the 14 known checks, got ${checks.length} — the table format ` +
+      "probably changed and the sync would silently do nothing",
+  );
+
+  const bySlug = new Map(checks.map((c) => [c.slug, c] as const));
+
+  // The two Direct Orders clocks: the reason this script was written. Their live cron-job.org jobs
+  // fire at 02:17 and 02:27 Africa/Cairo, staggered so the sweeps never overlap.
+  assert.deepEqual(bySlug.get("phoenix-direct-orders-expire-held"), {
+    slug: "phoenix-direct-orders-expire-held",
+    kind: "cron",
+    schedule: "17 2 * * *",
+    tz: "Africa/Cairo",
+    grace: 7200,
+  });
+  assert.deepEqual(bySlug.get("phoenix-direct-orders-probation"), {
+    slug: "phoenix-direct-orders-probation",
+    kind: "cron",
+    schedule: "27 2 * * *",
+    tz: "Africa/Cairo",
+    grace: 7200,
+  });
+
+  // No cron check may be left on UTC, and every one needs a real 5-field expression.
+  for (const c of checks) {
+    assert.ok(c.grace > 0, `${c.slug} must declare a positive grace`);
+    if (c.kind === "cron") {
+      assert.equal(
+        c.tz,
+        "Africa/Cairo",
+        `${c.slug} must be Africa/Cairo — a UTC check alerts on a perfectly healthy job`,
+      );
+      assert.equal(
+        (c.schedule ?? "").trim().split(/\s+/).length,
+        5,
+        `${c.slug} must have a 5-field cron expression, got "${c.schedule}"`,
+      );
+    } else {
+      assert.ok((c.timeout ?? 0) > 0, `${c.slug} is a Simple check and must declare a period`);
+    }
+  }
+
+  // Grace/period parsing: an "h" silently read as minutes would set a 2-minute grace on a daily job.
+  assert.equal(parseDuration("10m"), 600);
+  assert.equal(parseDuration("2h"), 7200);
+  assert.equal(parseDuration("12h"), 43200);
+  assert.equal(parseDuration("nonsense"), null);
+
+  // diffCheck is what decides whether anything is written. Prove it actually sees each drift,
+  // rather than returning "ok" for everything and making the sync a very confident no-op.
+  const want = { slug: "x", kind: "cron", schedule: "17 2 * * *", tz: "Africa/Cairo", grace: 7200 };
+  assert.equal(diffCheck(want, { schedule: "17 2 * * *", tz: "Africa/Cairo", grace: 7200 }).action, "ok");
+  assert.equal(diffCheck(want, undefined).action, "create");
+  assert.equal(
+    diffCheck(want, { schedule: "17 2 * * *", tz: "UTC", grace: 7200 }).action,
+    "update",
+    "a check sitting on UTC must be reported as drift — that is the whole point",
+  );
+  assert.equal(
+    diffCheck(want, { schedule: "17 2 * * *", tz: "Africa/Cairo", grace: 3600 }).action,
+    "update",
+    "a wrong grace must be reported — auto-provisioned checks default to 1 hour",
+  );
+  // The default an auto-provisioned check is born with: a 1-day period, no cron at all.
+  assert.equal(
+    diffCheck(want, { schedule: null, timeout: 86400, tz: "UTC", grace: 3600 }).action,
+    "update",
+    "a freshly auto-provisioned check must be reported as needing its real schedule",
+  );
+
+  // A slug listed twice would let one row silently win.
+  assert.throws(
+    () =>
+      parseDesiredChecks(
+        "| `phoenix-dupe` | `1 2 * * *` | 1h | a |\n| `phoenix-dupe` | `3 4 * * *` | 2h | b |\n",
+      ),
+    /appears twice/,
+    "a duplicated slug must fail loudly rather than pick one row",
+  );
+}

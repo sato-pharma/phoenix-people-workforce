@@ -109,6 +109,7 @@
     "worktree:sync-env": "node scripts/sync-worktree-env.mjs",
     "env:refresh-local": "node scripts/refresh-local-env.mjs",
     "repo:doctor": "node scripts/repo-doctor.mjs",
+    "healthchecks:sync": "node scripts/healthchecks-sync.mjs",
     "sync:pdfjs-assets": "node scripts/sync-pdfjs-assets.mjs",
     "coverage": "c8 --reporter=text --reporter=html --reporter=json node --experimental-strip-types --experimental-specifier-resolution=node --experimental-loader ./tests/alias-loader.mjs tests/run-tests.ts",
     "ci": "pnpm run check:routes && pnpm run check:migrations && pnpm run check:sql-backups && pnpm run check:deductions-write-contract && pnpm run check:no-stale-domains && pnpm run lint && pnpm exec next typegen && pnpm run typecheck && pnpm run test && pnpm run build",
