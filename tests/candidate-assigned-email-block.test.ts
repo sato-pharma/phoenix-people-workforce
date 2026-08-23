@@ -5,14 +5,18 @@ import {
   isCandidateAssignedEvent,
 } from "../src/lib/notifications/recruitment-candidate-assigned-channel-guard.ts";
 import { resolveNotificationPolicy } from "../src/lib/notifications/policy.ts";
+import { defaultTelegramPolicyFor } from "../src/lib/notifications/telegram-governance.ts";
 
-// Owner rule (2026-08-24): a candidate pushed to a hiring manager reaches them IN-APP and by PUSH.
-// Never email. Asked for while sending a 14-person shortlist to the anti-infective National Sales
-// Manager, when it turned out the button emailed unconditionally and nothing could stop it.
+// Owner rule (2026-08-24): a candidate pushed to a hiring manager reaches them IN-APP, by TELEGRAM
+// and by PUSH. Never email. Asked for while sending a 14-person shortlist to the anti-infective
+// National Sales Manager, when it turned out the button emailed unconditionally and nothing could
+// stop it; Telegram was added the same day on the follow-up "add telegram too".
 //
-// Two independent things have to hold, and the rule is only as quiet as the weakest one:
-//   1. the policy row must not ASK for email
+// Three independent things have to hold, and the rule is only as loud or as quiet as the weakest:
+//   1. the policy row must not ASK for email, and must ask for the three that are wanted
 //   2. the guard must strip email even when something else asks for it anyway
+//   3. Telegram must be explicitly allowed and non-generic for the module, or the fail-safe leaves
+//      a channel that is configured but silently never delivers anything readable
 //
 // Plus the thing that makes a guard dangerous rather than useful: it must not widen. Every other
 // recruitment notification — offers, interviews, everything under recruitment.* — keeps its email.
@@ -27,7 +31,8 @@ export function runCandidateAssignedEmailBlockTests() {
       "the recruitment.candidate_assigned policy row must not request the email channel",
     );
     assert.equal(policy.channels.includes("in_app"), true, "in-app is how the manager actually sees it");
-    assert.equal(policy.channels.includes("push"), true, "push is the second delivery channel");
+    assert.equal(policy.channels.includes("telegram"), true, "Telegram is what reaches a sales manager in the field");
+    assert.equal(policy.channels.includes("push"), true, "push is the third delivery channel");
 
     // The row has to EXIST, not merely resolve. recruitment.* carries email, so a missing specific
     // row falls through to it and emails the exact notice this rule forbids — the same trap the
@@ -54,6 +59,14 @@ export function runCandidateAssignedEmailBlockTests() {
       enforceCandidateAssignedEmailBlock(["in_app", "email", "push"], "recruitment", "candidate_assigned"),
       ["in_app", "push"],
       "this is the shape the call site used to pass; email is stripped and both authorized channels survive",
+    );
+    // The live shape since Telegram was added. This is a block on ONE channel, not an allow-list of
+    // the others — so a channel the owner adds later must pass through untouched, and this assert
+    // is what proves the guard was not quietly rewritten into a whitelist.
+    assert.deepEqual(
+      enforceCandidateAssignedEmailBlock(["in_app", "telegram", "email", "push"], "recruitment", "candidate_assigned"),
+      ["in_app", "telegram", "push"],
+      "email is stripped and all THREE authorized channels survive, Telegram among them",
     );
     assert.deepEqual(
       enforceCandidateAssignedEmailBlock(["email"], "recruitment", "candidate_assigned"),
@@ -91,6 +104,26 @@ export function runCandidateAssignedEmailBlockTests() {
         `${String(other)}/candidate_assigned must keep its email channel — the event name alone is not the key`,
       );
     }
+  }
+
+  // ── 4. Telegram must be allowed AND non-generic, or it delivers nothing useful ───
+  {
+    // Configuring a channel is not the same as it working. The unknown-module fail-safe disables
+    // Telegram, and genericOnly collapses the message to "you have a notification" — which for this
+    // event would strip out the one thing it exists to carry, the candidates' names. The sibling
+    // `offers` module is deliberately disabled for exactly this sensitivity, so recruitment being
+    // enabled is a real decision and not an accident to be tidied away.
+    const policy = defaultTelegramPolicyFor("recruitment");
+    assert.equal(
+      policy.enabled,
+      true,
+      "recruitment needs Telegram enabled — the unknown-module fail-safe disables it, and the channel would then be configured but silently never send",
+    );
+    assert.equal(
+      policy.genericOnly,
+      false,
+      "a generic 'you have a notification' ping cannot tell a manager WHO was sent to them, which is the entire content of this alert",
+    );
   }
 
   // ── Predicate ───────────────────────────────────────────────────────────────────

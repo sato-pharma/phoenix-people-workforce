@@ -996,7 +996,7 @@ await runTest("marketing SLA email block (SLA reminders never emailed)", runMark
 await runTest("Early Birds email block (in-app + Telegram only)", runEarlyBirdsEmailBlockTests);
 await runTest("recruitment attachment filename never becomes an envelope name", runRecruitmentAttachmentFilenameNameTests);
 await runTest("recruitment CV-received notice never emails (in-app + Telegram only)", runRecruitmentCvNoEmailTests);
-await runTest("candidate pushed to a hiring manager never emails (in-app + push only)", runCandidateAssignedEmailBlockTests);
+await runTest("candidate pushed to a hiring manager never emails (in-app + Telegram + push)", runCandidateAssignedEmailBlockTests);
 await runTest("active roster only (resigned reps never reach a board)", runActiveRosterOnlyTests);
 await runTest("telegram operations", runTelegramOperationsTests);
 await runTest("telegram admin control center", runTelegramAdminControlCenterTests);
