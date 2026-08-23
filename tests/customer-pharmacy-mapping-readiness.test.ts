@@ -1,9 +1,12 @@
 import assert from "node:assert/strict";
 
 import {
+  DESK_VALIDATION_MARKER,
   INFERRED_HISTORY_MARKER,
   buildCustomerPharmacyReadiness,
+  isDeskValidated,
   isInferredFromHistory,
+  isNotFieldValidated,
   type BuildCustomerPharmacyReadinessInput,
   type CustomerPharmacyReadinessRow,
   type CustomerPharmacyValidationStatus,
@@ -52,6 +55,9 @@ const APPROVED_INFERRED_NOTE =
   "Inferred from approved historical marketing requests — not GPS field-validated. Backfill script 2026-07-02.";
 const REJECTED_INFERRED_NOTE =
   "Inferred from pending/rejected historical marketing requests — not GPS field-validated. Backfill script 2026-07-02.";
+// The shape a desk validation actually writes in production, with the people's names taken out.
+const DESK_NOTE =
+  "Validated at the desk by an admin on behalf of a rep. Location chosen from map search — no field GPS or live photo.";
 
 export async function runCustomerPharmacyMappingReadinessTests() {
   // ── isInferredFromHistory ─────────────────────────────────────────────────────
@@ -62,6 +68,22 @@ export async function runCustomerPharmacyMappingReadinessTests() {
   assert.equal(isInferredFromHistory("Manually approved by SFE"), false, "manual note is not inferred");
   assert.equal(isInferredFromHistory(null), false, "null note is not inferred");
   assert.equal(isInferredFromHistory(undefined), false, "undefined note is not inferred");
+
+  // ── isDeskValidated / isNotFieldValidated ──────────────────────────────────
+  //
+  // A desk validation says "no field GPS or live photo"; the backfill says "not GPS field-validated".
+  // Different wording, same absence of evidence — and the two must stay SEPARATE, because the
+  // Customer Pharmacy Mapping page's "Inferred" filter is about origin and would otherwise relabel
+  // all 11 production desk links as backfill rows.
+  assert.equal(isDeskValidated(DESK_NOTE), true, "the production desk note is a desk validation");
+  assert.equal(isDeskValidated(`prefix ${DESK_VALIDATION_MARKER} suffix`), true, "raw desk marker substring is a desk validation");
+  assert.equal(isDeskValidated(APPROVED_INFERRED_NOTE), false, "a backfill note is NOT a desk validation");
+  assert.equal(isDeskValidated(null), false, "null note is not a desk validation");
+  assert.equal(isInferredFromHistory(DESK_NOTE), false, "a desk note must NOT read as backfill-inferred");
+  assert.equal(isNotFieldValidated(DESK_NOTE), true, "a desk note carries no field evidence");
+  assert.equal(isNotFieldValidated(APPROVED_INFERRED_NOTE), true, "a backfill note carries no field evidence");
+  assert.equal(isNotFieldValidated("GPS field-validated on site by rep"), false, "a real capture IS field-validated");
+  assert.equal(isNotFieldValidated(null), false, "a note-less link makes no claim either way");
 
   // ── Bucket calculation ─────────────────────────────────────────────────────────
   const bucketInput: BuildCustomerPharmacyReadinessInput = {

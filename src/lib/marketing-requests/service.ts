@@ -22,7 +22,7 @@ import { conflictError, forbiddenError, notFoundError, validationError } from "@
 // The one definition of "this link was inferred, not field-validated". Imported rather than
 // re-implemented so the validation report and the Customer Pharmacy Mapping page can never drift
 // into disagreeing about which links the backfill wrote.
-import { isInferredFromHistory } from "@/lib/customer-pharmacy-mapping/readiness";
+import { isDeskValidated, isInferredFromHistory } from "@/lib/customer-pharmacy-mapping/readiness";
 import {
   deleteMarketingEvidencePhotos,
   loadMarketingEvidencePhoto,
@@ -4828,6 +4828,7 @@ function mapValidationReportRows(params: {
     summary[link.validationStatus] += 1;
     rows.push({
       customer,
+      deskValidated: isDeskValidated(link.validationNotes),
       distributorCode,
       distributorName: distributorCode
         ? distributorNames.get(distributorCode.distributorId) ?? "Unknown distributor"
@@ -5310,6 +5311,7 @@ export async function getMarketingCustomerDatabaseWorkspace(
       customerPhone,
       customerType: customer.customerType,
       customerValidationPhoto: customer.evidencePhotoName,
+      deskValidated: isDeskValidated(link.validation_notes),
       distributorCode: distributorCode
         ? distributor?.distributorCode ?? String(distributorCode.distributorId)
         : null,
@@ -6033,6 +6035,8 @@ export async function createMarketingValidationRecord(
 
           rows.push({
             customer,
+            // A REUSED link can be a desk validation just as easily as a backfill one.
+            deskValidated: isDeskValidated(reusedLink.validationNotes),
             distributorCode,
             distributorName: reusedDistributor
               ? mapDistributor(reusedDistributor).displayName
@@ -6214,6 +6218,9 @@ export async function createMarketingValidationRecord(
 
         rows.push({
           customer,
+          // Read from the notes for the same reason as `inferredFromHistory` below: one rule, not
+          // one rule and one assumption. An on-behalf submission writes the desk marker here.
+          deskValidated: isDeskValidated(link.validationNotes),
           distributorCode,
           distributorName: distributorRow ? mapDistributor(distributorRow).displayName : null,
           id: link.id,
