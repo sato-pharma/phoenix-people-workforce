@@ -129,10 +129,14 @@ export function AttendanceExceptionsManager({ canReview, employees, initialData,
   function review(id: number, decision: "approved" | "rejected") {
     startTransition(async () => {
       try {
+        // An untouched review box means "I have nothing to add", not "erase what the requester
+        // wrote" — the row renders their note directly above this box. Send no notes key at all
+        // so the server leaves the cell alone.
+        const reviewNote = reviewNotes[id]?.trim();
         const res = await fetch(`/api/attendance/exceptions/${id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ decision, notes: reviewNotes[id] ?? null }),
+          body: JSON.stringify(reviewNote ? { decision, notes: reviewNote } : { decision }),
         });
         if (!res.ok) {
           const data = await res.json().catch(() => ({}));

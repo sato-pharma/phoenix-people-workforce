@@ -1,4 +1,5 @@
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { resolveAttendanceExceptionNotesPatch } from "@/lib/attendance/exception-notes";
 import { normalizeAttendanceHrId } from "@/lib/attendance/metrics";
 
 export type AttendanceExceptionStatus = "approved" | "pending" | "rejected";
@@ -190,14 +191,19 @@ export async function reviewAttendanceException(
 ): Promise<AttendanceException> {
   const supabase = getSupabaseAdmin();
 
+  const now = new Date().toISOString();
+
+  // Spread, never a plain `notes:` key — an absent note must leave the column out of the update
+  // altogether so Postgres does not touch it. See exception-notes.ts: the requester and the
+  // reviewer share this one cell, and the review box starts empty on every render.
   const { data, error } = await supabase
     .from("attendance_exceptions")
     .update({
-      notes: input.notes ?? null,
-      reviewed_at: new Date().toISOString(),
+      ...resolveAttendanceExceptionNotesPatch(input.notes),
+      reviewed_at: now,
       reviewed_by: input.reviewedBy,
       status: input.decision,
-      updated_at: new Date().toISOString(),
+      updated_at: now,
     })
     .eq("id", input.id)
     .select("id,employee_hr_id,exception_date,reason,status,requested_by,reviewed_by,reviewed_at,notes,created_at")

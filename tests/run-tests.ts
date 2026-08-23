@@ -546,6 +546,7 @@ import { runPostgrestArrayFilterGuardTests } from "./postgrest-array-filter-guar
 import { runActivityTrackingTests } from "./activity-tracking.test.ts";
 import { runActivityManagerViewAccessTests } from "./activity-manager-view-access.test.ts";
 import { runAttendanceSelfScopeTests } from "./attendance-self-scope.test.ts";
+import { runAttendanceExceptionNotesTests } from "./attendance-exception-notes.test.ts";
 import { runHiringDocumentCaptureTests } from "./hiring-document-capture.test.ts";
 import { runHiringDocumentsAccessTests } from "./hiring-documents-access.test.ts";
 import { runHiringDocumentsAuditTests } from "./hiring-documents-audit.test.ts";
@@ -1598,6 +1599,7 @@ await runTest("postgrest array filter guard", runPostgrestArrayFilterGuardTests)
 await runTest("activity tracking", runActivityTrackingTests);
 await runTest("activity manager view access (self + direct reports)", runActivityManagerViewAccessTests);
 await runTest("attendance self-scope", runAttendanceSelfScopeTests);
+await runTest("attendance exception notes (approving must not erase the requester's note)", runAttendanceExceptionNotesTests);
 await runTest("hiring documents access (Talent Acquisition company-wide bypass)", runHiringDocumentsAccessTests);
 await runTest("hiring document audit (every write names its actor, before-images read first)", runHiringDocumentsAuditTests);
 await runTest("hiring document capture (polish keeps colour, pages become one A4 PDF, paths never collide)", runHiringDocumentCaptureTests);

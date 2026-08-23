@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { readAttendanceExceptionNotes } from "@/lib/attendance/exception-notes";
 import { deleteAttendanceException, reviewAttendanceException } from "@/lib/attendance/exceptions";
 import { assertSystemAdministratorWorkspaceAccess } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
@@ -36,16 +37,19 @@ export async function PATCH(
     if (!Number.isInteger(id) || id <= 0) throw validationError("Invalid exception id.");
 
     const payload = await request.json();
-    const { decision, notes } = payload as Record<string, unknown>;
+    const { decision } = payload as Record<string, unknown>;
     if (decision !== "approved" && decision !== "rejected") {
       throw validationError("decision must be 'approved' or 'rejected'.");
     }
 
+    // A bare string-or-null coercion used to live here, which flattened a body that never
+    // mentioned notes into an explicit "clear it" before the service could tell the difference.
+    // The reviewer's note and the requester's note share one column.
     const reviewedBy = access.hrId ?? access.loginId ?? "system";
     const result = await reviewAttendanceException({
       decision,
       id,
-      notes: typeof notes === "string" ? notes : null,
+      notes: readAttendanceExceptionNotes(payload as Record<string, unknown>),
       reviewedBy,
     });
     return NextResponse.json(result);
