@@ -19,6 +19,7 @@
 //
 // Read-only and side-effect free: it reports, the caller decides what to log or fail.
 
+import { systemDeployment } from "@/config/system-settings";
 import { isFieldWorkforceWeeklyOff } from "@/lib/field-workforce-compliance/weekend-policy";
 import { PHOENIX_BUSINESS_TIME_ZONE } from "@/lib/i18n/format";
 import { recruitmentDb } from "@/lib/recruitment/db";
@@ -32,7 +33,109 @@ const PROBE_TIMEOUT_MS = 8_000;
 const BUSINESS_HOUR_START = 10;
 const BUSINESS_HOUR_END = 20;
 
-export type WhatsAppIntakeHealthStatus = "ok" | "not_configured" | "api_unreachable" | "silent";
+export type WhatsAppIntakeHealthStatus =
+  | "ok"
+  | "not_configured"
+  | "api_unreachable"
+  | "webhook_misrouted"
+  | "silent";
+
+/** The webhook path Meta must call. Mirrors app/api/webhooks/whatsapp/route.ts. */
+const WEBHOOK_PATH = "/api/webhooks/whatsapp";
+
+/** The callback URL Meta is supposed to hold, derived from the one configured production URL. */
+export function expectedWebhookUrl(): string {
+  return `${systemDeployment.productionUrl.replace(/\/+$/, "")}${WEBHOOK_PATH}`;
+}
+
+/**
+ * Trailing slashes and case in the host are not meaningful to Meta, so they must not be meaningful
+ * here either — otherwise this check invents an outage out of a cosmetic difference.
+ */
+export function normalizeCallbackUrl(url: string | null | undefined): string | null {
+  const raw = (url ?? "").trim();
+  if (!raw) return null;
+  try {
+    const parsed = new URL(raw);
+    const path = parsed.pathname.replace(/\/+$/, "");
+    return `${parsed.protocol}//${parsed.host.toLowerCase()}${path}`;
+  } catch {
+    return raw.replace(/\/+$/, "");
+  }
+}
+
+/**
+ * Where Meta is currently configured to deliver inbound messages, and whether that is us.
+ *
+ * `ok: null` means the question could not be answered (no app secret, or Graph unreachable). That
+ * is deliberately NOT the same as `false` — an unanswerable check must never be reported as a
+ * healthy one, and must never page as if it were a confirmed outage.
+ */
+export type WhatsAppWebhookRouting = {
+  ok: boolean | null;
+  /** Callback URL on the app-level subscription, as Meta currently holds it. */
+  callbackUrl: string | null;
+  /** Meta disables a subscription that keeps failing; nothing arrives once it does. */
+  active: boolean | null;
+  /** Without the `messages` field subscribed, config looks fine and no CV ever arrives. */
+  messagesSubscribed: boolean | null;
+  /** A per-number override, when the number carries one. It wins over the app-level URL. */
+  numberOverrideUrl: string | null;
+  /** Human-readable reasons, safe to put straight into a log or an alert. */
+  problems: string[];
+};
+
+/**
+ * Turns the raw Graph answers into a routing verdict. Pure, so every failure mode is testable
+ * without touching Meta.
+ *
+ * This is the check that replaces "we have not heard anything in a while" as the thing that pages.
+ * Silence cannot distinguish a dead webhook from a quiet week — measured on this channel, a normal
+ * gap has reached 333 hours against a 96-hour threshold — whereas each condition below is a
+ * deterministic fact about how Meta is configured RIGHT NOW.
+ */
+export function evaluateWebhookRouting(input: {
+  expectedCallbackUrl: string;
+  /** The `whatsapp_business_account` entry of GET /{app-id}/subscriptions, or null if absent. */
+  subscription: { active?: boolean; callback_url?: string; fields?: Array<{ name?: string }> } | null;
+  /** webhook_configuration.application on the phone number, when set. */
+  numberOverrideUrl: string | null;
+  /** False when the check could not run at all (missing app secret, Graph error). */
+  answerable: boolean;
+}): WhatsAppWebhookRouting {
+  const expected = normalizeCallbackUrl(input.expectedCallbackUrl);
+  const callbackUrl = input.subscription?.callback_url ?? null;
+  const active = input.subscription?.active ?? null;
+  const messagesSubscribed = input.subscription
+    ? (input.subscription.fields ?? []).some((field) => field?.name === "messages")
+    : null;
+  const numberOverrideUrl = input.numberOverrideUrl;
+
+  const base = { active, callbackUrl, messagesSubscribed, numberOverrideUrl };
+  if (!input.answerable) {
+    return { ...base, ok: null, problems: [] };
+  }
+
+  const problems: string[] = [];
+  if (!input.subscription) {
+    problems.push("the app has no whatsapp_business_account webhook subscription at all");
+  } else {
+    if (active === false) problems.push("Meta has DISABLED the webhook subscription");
+    if (messagesSubscribed === false) problems.push('the "messages" webhook field is not subscribed');
+    const actual = normalizeCallbackUrl(callbackUrl);
+    if (actual !== expected) {
+      problems.push(`the callback URL is ${actual ?? "unset"}, not ${expected}`);
+    }
+  }
+  // An override on the number wins over the app-level URL, so a wrong one silently reroutes every
+  // message even when everything above looks correct.
+  const override = normalizeCallbackUrl(numberOverrideUrl);
+  if (override !== null && override !== expected) {
+    problems.push(`the number's own webhook override points at ${override}, not ${expected}`);
+  }
+
+  return { ...base, ok: problems.length === 0, problems };
+}
 
 /** Per-number result of the Graph API probe. */
 export type WhatsAppNumberProbe = {
@@ -70,6 +173,8 @@ export type WhatsAppIntakeHealthCore = {
   apiError: string | null;
   lastInboundAt: string | null;
   hoursSinceLastInbound: number | null;
+  /** Where Meta is configured to deliver, and whether that is still us. Null when unanswerable. */
+  routing: WhatsAppWebhookRouting | null;
   /** One-line explanation, safe to put straight into a log message. */
   detail: string;
 };
@@ -185,12 +290,15 @@ export function evaluateWhatsAppIntakeHealth(input: {
   lastInboundAt: Date | null;
   now: Date;
   silenceThresholdHours: number;
+  /** Omitted or null when routing could not be checked — never treated as a pass or a failure. */
+  routing?: WhatsAppWebhookRouting | null;
 }): WhatsAppIntakeHealthCore {
   const lastInboundAt = input.lastInboundAt ? input.lastInboundAt.toISOString() : null;
   const hoursSinceLastInbound = input.lastInboundAt
     ? (input.now.getTime() - input.lastInboundAt.getTime()) / (60 * 60 * 1000)
     : null;
-  const base = { apiError: input.apiError, hoursSinceLastInbound, lastInboundAt };
+  const routing = input.routing ?? null;
+  const base = { apiError: input.apiError, hoursSinceLastInbound, lastInboundAt, routing };
 
   if (!input.configured) {
     return { ...base, detail: "WhatsApp intake is not configured (no access token).", status: "not_configured" };
@@ -204,6 +312,17 @@ export function evaluateWhatsAppIntakeHealth(input: {
     };
   }
 
+  // A deterministic misconfiguration outranks silence, because it EXPLAINS the silence and is the
+  // one thing here that is actionable without guesswork. This is the check that actually catches
+  // the 2026-07-26 failure mode; the silence heuristic below never could.
+  if (routing && routing.ok === false) {
+    return {
+      ...base,
+      detail: `Meta will not deliver inbound WhatsApp messages here: ${routing.problems.join("; ")}.`,
+      status: "webhook_misrouted",
+    };
+  }
+
   // No inbound message has EVER arrived — nothing to compare against, so this cannot be called a
   // regression. Staying quiet here is what keeps the check inert on a freshly connected number.
   if (hoursSinceLastInbound === null) {
@@ -211,9 +330,19 @@ export function evaluateWhatsAppIntakeHealth(input: {
   }
 
   if (hoursSinceLastInbound > input.silenceThresholdHours && isSilenceAlertWindow(input.now)) {
+    // The old wording ended "check the WABA's webhook subscription and callback URL" — advice that
+    // is now stale, because `fetchWebhookRouting` has just checked exactly those two things. Say
+    // what was verified instead, so nobody re-does by hand the work the check already did.
+    // Only three states can reach here: verified healthy, unanswerable, or no routing object at
+    // all — `ok === false` already returned above as webhook_misrouted. So anything that is not a
+    // confirmed pass must read as "not verified"; there is no silent third case to fall through to.
+    const routingNote =
+      routing?.ok === true
+        ? " Delivery config was verified healthy, so this is a quiet channel, not a broken one."
+        : " Delivery config could not be verified on this run.";
     return {
       ...base,
-      detail: `No inbound WhatsApp message for ${Math.floor(hoursSinceLastInbound)}h (threshold ${input.silenceThresholdHours}h) while the API is healthy — check the WABA's webhook subscription and callback URL.`,
+      detail: `No inbound WhatsApp message for ${Math.floor(hoursSinceLastInbound)}h (threshold ${input.silenceThresholdHours}h).${routingNote}`,
       status: "silent",
     };
   }
@@ -267,6 +396,71 @@ export async function probeAllWhatsAppNumbers(): Promise<WhatsAppNumberProbe[]> 
   const ids = resolveConfiguredPhoneNumberIds();
   if (!token || ids.length === 0) return [];
   return Promise.all(ids.map((id) => probeWhatsAppNumber(id, token)));
+}
+
+/**
+ * Reads how Meta is ACTUALLY configured to deliver, using only credentials the app already holds.
+ *
+ * The app id is read back from `debug_token` rather than added as another environment variable —
+ * one more var is one more thing that can silently drift from the token beside it. The app-level
+ * subscription needs an app access token (`{app-id}|{app-secret}`), which is why this is skipped
+ * entirely when `WHATSAPP_APP_SECRET` is unset: unanswerable, not unhealthy.
+ *
+ * Never throws. A Graph failure yields `ok: null`, so a transient network blip cannot page anyone
+ * with a fake misconfiguration.
+ */
+export async function fetchWebhookRouting(): Promise<WhatsAppWebhookRouting> {
+  const token = process.env.WHATSAPP_ACCESS_TOKEN?.trim();
+  const appSecret = process.env.WHATSAPP_APP_SECRET?.trim();
+  const expectedCallbackUrl = expectedWebhookUrl();
+  const unanswerable = () =>
+    evaluateWebhookRouting({ answerable: false, expectedCallbackUrl, numberOverrideUrl: null, subscription: null });
+
+  if (!token || !appSecret) return unanswerable();
+
+  const get = async (path: string, bearer: string): Promise<unknown | null> => {
+    try {
+      const response = await fetch(`https://graph.facebook.com/${graphApiVersion()}/${path}`, {
+        headers: { Authorization: `Bearer ${bearer}` },
+        signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
+      });
+      if (!response.ok) return null;
+      return (await response.json().catch(() => null)) as unknown;
+    } catch {
+      return null;
+    }
+  };
+
+  const debug = (await get(`debug_token?input_token=${encodeURIComponent(token)}`, token)) as
+    | { data?: { app_id?: string } }
+    | null;
+  const appId = debug?.data?.app_id?.trim();
+  if (!appId) return unanswerable();
+
+  const subs = (await get(`${appId}/subscriptions`, `${appId}|${appSecret}`)) as
+    | { data?: Array<{ object?: string; active?: boolean; callback_url?: string; fields?: Array<{ name?: string }> }> }
+    | null;
+  if (!subs || !Array.isArray(subs.data)) return unanswerable();
+
+  const subscription = subs.data.find((entry) => entry?.object === "whatsapp_business_account") ?? null;
+
+  // A per-number override beats the app-level URL, so every configured number is checked. Report the
+  // first one that disagrees with the expected URL; failing that, the first override that exists.
+  const overrides = await Promise.all(
+    resolveConfiguredPhoneNumberIds().map(async (id) => {
+      const node = (await get(`${id}?fields=webhook_configuration`, token)) as
+        | { webhook_configuration?: { application?: string } }
+        | null;
+      return node?.webhook_configuration?.application ?? null;
+    }),
+  );
+  const expectedNormalized = normalizeCallbackUrl(expectedCallbackUrl);
+  const numberOverrideUrl =
+    overrides.find((url) => url !== null && normalizeCallbackUrl(url) !== expectedNormalized) ??
+    overrides.find((url) => url !== null) ??
+    null;
+
+  return evaluateWebhookRouting({ answerable: true, expectedCallbackUrl, numberOverrideUrl, subscription });
 }
 
 async function lastInboundWhatsAppAt(): Promise<Date | null> {
@@ -328,9 +522,10 @@ export async function checkWhatsAppIntakeHealth(now: Date = new Date()): Promise
   }
 
   const threshold = silenceAlertHours();
-  const [probes, lastInbound] = await Promise.all([
+  const [probes, lastInbound, routing] = await Promise.all([
     probeAllWhatsAppNumbers(),
     lastInboundWhatsAppAt().catch(() => null),
+    fetchWebhookRouting(),
   ]);
 
   // Attach each line's own last-inbound (best-effort — a query failure just leaves it null/uncheckable).
@@ -346,6 +541,7 @@ export async function checkWhatsAppIntakeHealth(now: Date = new Date()): Promise
     configured: true,
     lastInboundAt: lastInbound,
     now,
+    routing,
     silenceThresholdHours: threshold,
   });
 
