@@ -179,6 +179,20 @@ file holding the full account, under
   `--force` eats the new branch's work. Re-read `status -sb -uall` and `git log origin/main..HEAD` in
   the worktree at the moment of removal, never the report: on 2026-08-23 one listed retirable on merged
   #2362 sat on a NEW branch with 90 uncommitted lines and an unpushed migration, and opened #2364.
+- **A squash-merged branch reads as "on NO origin ref" — that means BACKED UP, not stranded.**
+  `delete_branch_on_merge` is ON, so GitHub deletes the branch's own remote ref at merge and pure
+  reachability then calls every successfully merged worktree unbacked-up. repo-doctor did exactly
+  that until 2026-08-24, printing a STOP that told you to **push** the branch — which is how you get
+  a conflicting PR, and a conflicted PR runs no CI at all. It now asks about CONTENT
+  (`scripts/repo-doctor-unpushed.mjs`, pinned by `tests/repo-doctor-unpushed-commits.test.ts`):
+  the branch's CUMULATIVE diff from its merge base against each upstream commit's patch-id, plus
+  `git cherry` for anything cherry-picked or rebased on its own. Both are needed — `git cherry`
+  alone marks every commit of a MULTI-commit squash `+` "not upstream", which is what makes the old
+  advice look sound right up until it is not. To check an OLD report by hand, compare
+  `git diff <mergeBase> <tip> | git patch-id --stable` with the merge commit's; comparing the tip
+  commit alone only works when the PR carried exactly one commit. Never push a merged branch to
+  "rescue" it; `git branch rescue/<name> <tip>` keeps the tip locally at zero risk.
+  `repo-doctor-no-origin-ref-is-usually-squash-residue`
 - **Self-removing a worktree MUTES its own session-end guard.**
   `self-removing-a-worktree-mutes-its-own-session-end-guard`
 

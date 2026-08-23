@@ -70,9 +70,12 @@
 //
 // THE THREE CONDITIONS, all required, all re-proven immediately before deletion:
 //   1. Zero uncommitted files. Something uncommitted exists only on this disk.
-//   2. Zero commits absent from every origin ref. If it is not on GitHub, it is not backed up.
-//      Checked with `rev-list HEAD --not --remotes=origin`, which is squash-merge-safe — unlike
-//      comparing against origin/main, where a squashed branch always looks unmerged.
+//   2. Zero commits whose CONTENT is absent from GitHub. If the work is nowhere upstream, it is
+//      not backed up. Reachability alone cannot answer that: `delete_branch_on_merge` is ON, so a
+//      merged branch's own remote ref is gone and its commits sit on no origin ref — while the
+//      work itself is on main under the squash commit's SHA. `repo-doctor-unpushed.mjs` pairs the
+//      reachability sweep with `git cherry` so a squash artifact stops counting and genuinely
+//      stranded work still does.
 //   3. Idle longer than the threshold, measured from the newest SOURCE write (node_modules,
 //      .next and .git excluded — those churn constantly and would mask a dormant worktree).
 // Condition 3 is the one that matters most: on 2026-08-04 a worktree that had been clean an hour
@@ -82,6 +85,8 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+
+import { countUnpushedCommits } from "./repo-doctor-unpushed.mjs";
 
 const args = process.argv.slice(2);
 const deep = args.includes("--deep");
@@ -230,14 +235,12 @@ function idleMinutes(dir) {
 }
 
 /**
- * Commits reachable from HEAD but from no origin ref. Squash-merge-safe: comparing against
- * origin/main would report every squashed branch as unpushed, because a squash merge never
- * makes the branch an ancestor of main (AGENTS.md section 2).
+ * Commits that exist ONLY on this laptop. Lives in its own module so a test can drive it against a
+ * real squash-merge topology — see the header of `repo-doctor-unpushed.mjs` for why reachability
+ * alone got this wrong, and got it wrong in the dangerous direction, on every merged worktree.
  */
 function unpushedCount(dir) {
-  const out = git(["-C", dir, "rev-list", "HEAD", "--not", "--remotes=origin"]);
-  if (out === null) return null; // could not determine — caller must refuse
-  return out === "" ? 0 : out.split("\n").length;
+  return countUnpushedCommits(dir);
 }
 
 // ── Collect every worktree-shaped folder, wherever this repo puts them ──────────────
@@ -370,7 +373,7 @@ if (merged.length) {
     if (m.dirty === null) warn.push("CANNOT READ git status");
     else if (m.dirty) warn.push(`${num(m.dirty)} uncommitted file(s)`);
     if (m.unpushed === null) warn.push("CANNOT DETERMINE what is pushed");
-    else if (m.unpushed) warn.push(`${num(m.unpushed)} commit(s) on NO origin ref`);
+    else if (m.unpushed) warn.push(`${num(m.unpushed)} commit(s) found NOWHERE upstream`);
     const note = warn.length ? `  -- ${warn.join(" + ")}, review before removing` : "";
     console.log(`  PR #${m.pr}  ${m.branch}${note}`);
     console.log(`    git worktree remove "${m.dir}"`);
@@ -379,9 +382,12 @@ if (merged.length) {
       console.log("    # ^^ STOP — cannot determine what is pushed here. Verify by hand first.");
     } else if (m.unpushed > 0) {
       console.log(
-        `    # ^^ STOP — ${num(m.unpushed)} commit(s) exist on NO origin ref. That line strands them as`,
+        `    # ^^ STOP — ${num(m.unpushed)} commit(s) hold work found NOWHERE upstream, not even under`,
       );
-      console.log("    #    dangling objects. Push or `git branch rescue/<name> <tip>` them FIRST.");
+      console.log("    #    another SHA. That line strands them as dangling objects. Rescue them with");
+      console.log("    #    `git branch rescue/<name> <tip>` FIRST — do NOT push this branch. It is");
+      console.log("    #    already merged, and pushing a squash-merged branch is what makes a");
+      console.log("    #    conflicting PR (AGENTS.md section 2.1).");
     }
     console.log(`    node scripts/repo-doctor.mjs --fix   # then clear the husk it leaves behind`);
   }
@@ -892,7 +898,7 @@ if (stripIdle) {
       continue;
     }
     if (unpushed > 0) {
-      console.log(`  SKIP  ${label.padEnd(52)} ${unpushed} commit(s) not on any origin ref — not backed up`);
+      console.log(`  SKIP  ${label.padEnd(52)} ${unpushed} commit(s) found nowhere upstream — not backed up`);
       continue;
     }
     const idle = idleMinutes(r.dir);

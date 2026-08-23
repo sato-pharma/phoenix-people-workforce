@@ -921,6 +921,7 @@ import { runRecruitmentRereadModelConstantsTests } from "./recruitment-reread-mo
 import { runRecruitmentExtractionRecordsIsCvTests } from "./recruitment-extraction-records-is-cv.test.ts";
 import { runRecruitmentRereadNotACvSkipsTests } from "./recruitment-reread-not-a-cv-skips.test.ts";
 import { runWorktreeExitGuardPreRemovalTests } from "./worktree-exit-guard-pre-removal.test.ts";
+import { runRepoDoctorUnpushedCommitsTests } from "./repo-doctor-unpushed-commits.test.ts";
 
 import { runCvRereadAppliesWhatItReadsTests } from "./cv-reread-applies-what-it-reads.test.ts";
 
@@ -2504,6 +2505,13 @@ await runTest(
   + "warns on unpushed commits and uncommitted files, logs the clean case too so silence cannot be "
   + "mistaken for coverage, and never blocks the removal)",
   runWorktreeExitGuardPreRemovalTests,
+);
+
+await runTest(
+  "Repo doctor counts stranded work by CONTENT, not reachability (a squash-merged branch whose "
+  + "remote ref GitHub already deleted is backed up and must not be flagged, work that exists "
+  + "nowhere upstream still is, and a target it cannot read reports unknown rather than clean)",
+  runRepoDoctorUnpushedCommitsTests,
 );
 
 await runTest(
