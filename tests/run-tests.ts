@@ -396,6 +396,7 @@ import { runMarketingCoverageUrlStateTests } from "./marketing-coverage-url-stat
 import { runWeeklyExportTests } from "./weekly-export-workbook.test.ts";
 import { runMarketingValidationServiceTests } from "./marketing-validation-service.test.ts";
 import { runMarketingCompleteExistingCustomerTests } from "./marketing-complete-existing-customer.test.ts";
+import { runMarketingCompleteExistingVenueTests } from "./marketing-complete-existing-venue.test.ts";
 import { runMarketingGovernorateCheckTests } from "./marketing-governorate-check.test.ts";
 import { runMarketingValidationPharmacyCardMinWidthTests } from "./marketing-validation-pharmacy-card-min-width.test.ts";
 import { runMarketingEvidencePhotoStorageTests } from "./marketing-evidence-photo-storage.test.ts";
@@ -1452,6 +1453,10 @@ await runTest("marketing validation service", runMarketingValidationServiceTests
 await runTest(
   "marketing validation: capturing a customer already on record completes it instead of duplicating it",
   runMarketingCompleteExistingCustomerTests,
+);
+await runTest(
+  "marketing validation: capturing a shop already on record completes the evidence it never had",
+  runMarketingCompleteExistingVenueTests,
 );
 await runTest("marketing governorate check", runMarketingGovernorateCheckTests);
 await runTest(

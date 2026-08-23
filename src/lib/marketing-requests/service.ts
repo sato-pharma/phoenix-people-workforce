@@ -88,6 +88,7 @@ import type {
   MarketingReusablePharmacy,
   MarketingValidationCustomerInput,
   MarketingValidationInput,
+  MarketingValidationExistingPharmacyInput,
   MarketingValidationPharmacyEntry,
   MarketingValidationPharmacyInput,
   MarketingValidationReportRow,
@@ -1814,6 +1815,14 @@ export const MARKETING_RELEASED_BY_COMPLETION_NOTE =
 export const MARKETING_COMPLETED_CUSTOMER_NOTE =
   "The customer has since been captured in the field, so this hold is now a human decision, not a missing photo.";
 
+/** Stamped on a link released because the SHOP it points at was finally captured in the field. */
+export const MARKETING_RELEASED_BY_VENUE_COMPLETION_NOTE =
+  "Released after the pharmacy's own evidence was captured in the field.";
+
+/** The venue twin of `MARKETING_COMPLETED_CUSTOMER_NOTE`. The hold itself still stands. */
+export const MARKETING_COMPLETED_VENUE_NOTE =
+  "The pharmacy has since been captured in the field, so this hold is now a human decision, not a missing photo.";
+
 /**
  * Emits `MARKETING_PENDING_EVIDENCE_NOTE` only when the evidence is genuinely the thing missing.
  *
@@ -1871,31 +1880,64 @@ function normalizeCustomerSpeciality(value: unknown, label: string) {
 }
 
 /**
- * An empty normalized pharmacy carrying nothing but the id of the record to reuse.
+ * Drops every key whose value is null or undefined.
  *
- * The zeros and nulls are placeholders, never written: the caller branches on `existingPharmacyId`
- * and reads the stored pharmacy row instead. Keeping one normalized shape (rather than a union)
- * leaves every existing call site untouched.
+ * For `.update()` only, and it exists because of a trap this repo has paid for before: an OPTIONAL
+ * column written unconditionally is a SILENT ERASE. A null means "the caller had nothing to say
+ * about this column", which on an INSERT is the right starting value and on an UPDATE destroys
+ * whatever the row already held.
  */
-function normalizeReusedValidationPharmacy(existingPharmacyId: string): NormalizedMarketingValidationPharmacy {
+function definedColumns<T extends Record<string, unknown>>(columns: T): Partial<T> {
+  return Object.fromEntries(
+    Object.entries(columns).filter(([, value]) => value !== null && value !== undefined),
+  ) as Partial<T>;
+}
+
+/**
+ * A normalized pharmacy carrying the id of the record to reuse, plus whatever evidence the rep
+ * captured while standing in front of it.
+ *
+ * IDENTITY is still placeholder and still never written — `displayName`, `normalizedName`,
+ * `vendorCodes` and `venueType` are read from the stored row, so pointing at a record can never
+ * rename or re-code it. That is the same split the reused-CUSTOMER path draws: evidence may be
+ * supplied for a record that exists, identity may not.
+ *
+ * Evidence, since 2026-08-23, is normalized exactly as a fresh capture is — same coordinate
+ * bounds, same timestamp parsing, same photo rule, same `evidenceStatusFromInput`. With nothing
+ * supplied every field lands null and the status falls to "missing" / "pending", which is what
+ * this function returned unconditionally before, so the attach-only path is unchanged.
+ */
+function normalizeReusedValidationPharmacy(
+  existingPharmacyId: string,
+  inputEntry: MarketingValidationExistingPharmacyInput,
+  label: string,
+): NormalizedMarketingValidationPharmacy {
+  const photoName = cleanText(inputEntry.evidencePhotoName);
+  const evidence = {
+    capturedAccuracyMeters: nonNegativeNumber(inputEntry.capturedAccuracyMeters) || null,
+    capturedAddress: cleanText(inputEntry.capturedAddress),
+    capturedAt: nullableIsoTimestamp(inputEntry.capturedAt, `${label} capture time`),
+    capturedLatitude: nullableCoordinate(inputEntry.capturedLatitude, `${label} latitude`, -90, 90),
+    capturedLongitude: nullableCoordinate(inputEntry.capturedLongitude, `${label} longitude`, -180, 180),
+    evidenceHasTimestamp: inputEntry.evidenceHasTimestamp === true,
+    evidencePhotoCapturedAt: nullableIsoTimestamp(
+      inputEntry.evidencePhotoCapturedAt,
+      `${label} photo capture time`,
+    ),
+    evidencePhotoDataUrl: normalizeEvidencePhotoDataUrl(inputEntry.evidencePhotoDataUrl, label, photoName),
+    evidencePhotoName: photoName,
+    extractedAreaName: cleanText(inputEntry.extractedAreaName),
+    extractedGovernorateName: cleanText(inputEntry.extractedGovernorateName),
+    regionName: cleanText(inputEntry.regionName),
+  };
+  const evidenceStatus = evidenceStatusFromInput(evidence);
   return {
-    capturedAccuracyMeters: null,
-    capturedAddress: null,
-    capturedAt: null,
-    capturedLatitude: null,
-    capturedLongitude: null,
+    ...evidence,
     displayName: "",
-    evidenceHasTimestamp: false,
-    evidencePhotoCapturedAt: null,
-    evidencePhotoDataUrl: null,
-    evidencePhotoName: null,
-    evidenceStatus: "missing",
+    evidenceStatus,
     existingPharmacyId,
-    extractedAreaName: null,
-    extractedGovernorateName: null,
     normalizedName: "",
-    regionName: null,
-    validationStatus: "pending",
+    validationStatus: systemStatusFromEvidence(evidenceStatus),
     vendorCodes: [],
     venueType: DEFAULT_VENUE_TYPE,
   };
@@ -1909,7 +1951,7 @@ function normalizeValidationPharmacy(
   if ("existingPharmacyId" in inputEntry && inputEntry.existingPharmacyId !== undefined) {
     const existingPharmacyId = cleanText(inputEntry.existingPharmacyId);
     if (!existingPharmacyId) throw validationError(`${label} did not name which pharmacy to link.`);
-    return normalizeReusedValidationPharmacy(existingPharmacyId);
+    return normalizeReusedValidationPharmacy(existingPharmacyId, inputEntry, label);
   }
 
   const inputPharmacy = inputEntry as MarketingValidationPharmacyInput;
@@ -4799,6 +4841,141 @@ async function refreshLinksAfterCustomerCompletion(input: {
   return promoted;
 }
 
+/**
+ * The venue twin of `refreshLinksAfterCustomerCompletion`, and the half that makes completing a
+ * shop worth anything at all.
+ *
+ * A link's status is frozen from the evidence that existed when the link was written. Every
+ * customer already attached to a shop that had no photo was therefore stamped `pending` and stayed
+ * there — so supplying the shop's missing proof would fix the venue row and leave every customer
+ * waiting on it exactly as stuck as before. The three production venues this was built for carry
+ * four such doctors between them.
+ *
+ * Deliberately keyed on the PHARMACY, and it re-reads each link's own customer: the customer half
+ * of the verdict is whatever that customer's evidence says, which differs link by link and is none
+ * of this submission's business. The governorate check is re-run too, against the fix just taken in
+ * front of the shop — the previous verdict was computed with no captured address at all.
+ *
+ * Promotion only. A `rejected` link and a manual hold are human decisions; the hold is annotated so
+ * the next reader sees a decision to make rather than a row waiting for a photograph.
+ */
+async function refreshLinksAfterPharmacyCompletion(input: {
+  actorHrId: string | null;
+  isOnBehalf: boolean;
+  pharmacyRow: MarketingPharmacyDbRow;
+  supabase: SupabaseClient;
+}): Promise<number> {
+  const { actorHrId, isOnBehalf, pharmacyRow, supabase } = input;
+
+  const linkQuery = await supabase
+    .from("marketing_customer_pharmacies")
+    .select("*")
+    .eq("pharmacy_id", pharmacyRow.id)
+    .eq("validation_status", "pending")
+    .neq("active", false);
+  if (linkQuery.error) throw linkQuery.error;
+  const links = (linkQuery.data ?? []) as MarketingCustomerPharmacyDbRow[];
+  if (links.length === 0) return 0;
+
+  const customerRows = await fetchRowsByIds<MarketingCustomerDbRow>(
+    supabase,
+    "marketing_customers",
+    Array.from(new Set(links.map((link) => link.customer_id).filter(Boolean))),
+  );
+  const customersById = new Map(customerRows.map((row) => [String(row.id), row]));
+
+  const codeRows = await fetchRowsByIds<MarketingPharmacyDistributorCodeDbRow>(
+    supabase,
+    "marketing_pharmacy_distributor_codes",
+    Array.from(new Set(links.map((link) => link.distributor_code_id).filter((id): id is string => Boolean(id)))),
+  );
+  const codesById = new Map(codeRows.map((row) => [String(row.id), row]));
+
+  const referenceRows = await fetchRowsByIds<MarketingPharmacyCodeReferenceDbRow>(
+    supabase,
+    "marketing_pharmacy_code_references",
+    Array.from(
+      new Set(
+        codeRows
+          .map((row) => Number(row.reference_id ?? 0))
+          .filter((referenceId) => Number.isFinite(referenceId) && referenceId > 0),
+      ),
+    ),
+  );
+  const referencesById = new Map(referenceRows.map((row) => [Number(row.id), row]));
+
+  const pharmacyEvidenceStatus = (pharmacyRow.evidence_status ?? "missing") as MarketingEvidenceStatus;
+  const venueType = normalizeVenueType(pharmacyRow.venue_type);
+  const nowIso = new Date().toISOString();
+  let promoted = 0;
+
+  for (const link of links) {
+    const existingNotes = typeof link.validation_notes === "string" ? link.validation_notes : "";
+
+    if (existingNotes.includes(MARKETING_MANUAL_HOLD_MARKER)) {
+      if (!existingNotes.includes(MARKETING_COMPLETED_VENUE_NOTE)) {
+        const annotate = await supabase
+          .from("marketing_customer_pharmacies")
+          .update({
+            updated_at: nowIso,
+            updated_by_hr_id: actorHrId,
+            validation_notes: `${existingNotes} ${MARKETING_COMPLETED_VENUE_NOTE}`.trim(),
+          })
+          .eq("id", link.id);
+        if (annotate.error) throw annotate.error;
+      }
+      continue;
+    }
+
+    const customerRow = customersById.get(String(link.customer_id));
+    const codeRow = link.distributor_code_id ? codesById.get(String(link.distributor_code_id)) : null;
+    // Mirrors the customer sweep: a link whose other half has gone is not something to reason
+    // about, and a missing code is only a defect on a venue that is supposed to carry one.
+    if (!customerRow) continue;
+    if (!codeRow && venueRequiresDistributorCode(venueType)) continue;
+
+    const distributorCode = codeRow ? mapDistributorCode(codeRow) : null;
+    const reference = referencesById.get(Number(codeRow?.reference_id ?? 0));
+    const governorateCheck = checkCapturedGovernorate({
+      capturedAddress: pharmacyRow.captured_address,
+      registeredAddress: reference?.raw_pharmacy_address,
+      registeredRegion: reference?.raw_region,
+    });
+    const nextStatus = resolveMarketingValidationRecordStatus({
+      isOnBehalf,
+      systemStatus: resolveMarketingSystemValidationStatus({
+        customerEvidenceStatus: (customerRow.evidence_status ?? "missing") as MarketingEvidenceStatus,
+        governorateVerdict: governorateCheck.verdict,
+        pharmacyEvidenceStatus,
+      }),
+    });
+    if (nextStatus === "pending") continue;
+
+    const update = await supabase
+      .from("marketing_customer_pharmacies")
+      .update({
+        updated_at: nowIso,
+        updated_by_hr_id: actorHrId,
+        validation_notes: [
+          distributorCode ? buildUntrackedDistributorCodeNote(distributorCode.referenceStatus) : null,
+          distributorCode ? null : venueNonAttributableReason(venueType),
+          buildGovernorateMismatchNote(governorateCheck),
+          MARKETING_RELEASED_BY_VENUE_COMPLETION_NOTE,
+        ].filter(Boolean).join(" ") || null,
+        validation_status: nextStatus,
+      })
+      .eq("id", link.id)
+      // Repeats the precondition so a link an admin ruled on while this ran is not overwritten.
+      .eq("validation_status", "pending")
+      .select("id")
+      .maybeSingle();
+    if (update.error) throw update.error;
+    if (update.data) promoted += 1;
+  }
+
+  return promoted;
+}
+
 function mapValidationReportRows(params: {
   customers: MarketingCustomerDbRow[];
   distributorCodes: MarketingPharmacyDistributorCodeDbRow[];
@@ -5788,6 +5965,10 @@ export async function createMarketingValidationRecord(
   // must never survive its own evidence applies here exactly as it does to a minted one. Undoing
   // means restoring the values that were read at preload time, not removing a row.
   const completedCustomerUndo: Array<{ before: MarketingCustomerDbRow; id: string }> = [];
+  // The same idea for venues: a pharmacy this submission COMPLETED rather than created. Like a
+  // completed customer it predates the request, so a rollback restores its evidence instead of
+  // deleting the row.
+  const completedPharmacyUndo: Array<{ before: MarketingPharmacyDbRow; id: string }> = [];
   // Every distributor-code row minted here, so the Source-of-Sales master resolver can be pointed
   // at exactly this submission once the writes are done. Collected rather than re-queried because
   // the ids are already in hand, and because an explicit list is what keeps the resolver off the
@@ -5931,8 +6112,91 @@ export async function createMarketingValidationRecord(
       // usable, exactly as a freshly captured one would, so reusing a shop can never launder a
       // pharmacy that was never photographed into a validated customer.
       if (normalizedPharmacy.existingPharmacyId) {
-        const reusedRow = reusedPharmacyRows.get(normalizedPharmacy.existingPharmacyId);
-        if (!reusedRow) throw notFoundError("That pharmacy was not found.", "pharmacy_not_found");
+        const storedRow = reusedPharmacyRows.get(normalizedPharmacy.existingPharmacyId);
+        if (!storedRow) throw notFoundError("That pharmacy was not found.", "pharmacy_not_found");
+        // Supplying the proof a venue never had. Before this the capture columns on
+        // `marketing_pharmacies` were writable ONLY by the insert that created the row — the reuse
+        // branch wrote the link and returned — so a venue first recorded without a photo could
+        // never be completed by anyone, however many reps stood in front of it afterwards.
+        //
+        // Written only when the new capture is COMPLETE. A venue row is shared by every customer
+        // in the area, so replacing one rep's partial capture with another's partial is churn that
+        // improves nothing; "complete" is the only state worth taking the write for, and it can
+        // never be a downgrade.
+        //
+        // Evidence ONLY. `validation_status`, `validated_by_hr_id`, `validated_at` and
+        // `validation_notes` are deliberately NOT in this update: they record a human's verdict on
+        // this shop — including a Super Admin's desk validation — and a rep supplying a missing
+        // photo is evidence, not an appeal against that verdict. The columns are omitted rather
+        // than written back, so a concurrent edit to any of them survives untouched. What the new
+        // evidence DOES move is every link status computed below, which is the point: the customer
+        // that was parked on "Not Usable Yet" for want of a shop photo becomes usable.
+        const reusedRow = await (async () => {
+          if (normalizedPharmacy.evidenceStatus !== "complete") return storedRow;
+          if (storedRow.evidence_status === "complete") return storedRow;
+          const pharmacyEvidenceUpdate = await supabase
+            .from("marketing_pharmacies")
+            .update({
+              // Guaranteed present: "complete" is only reachable with a coordinate, a capture
+              // time, a photo name and the photo's own timestamp (evidenceStatusFromInput).
+              captured_at: normalizedPharmacy.capturedAt,
+              captured_latitude: normalizedPharmacy.capturedLatitude,
+              captured_longitude: normalizedPharmacy.capturedLongitude,
+              evidence_has_timestamp: normalizedPharmacy.evidenceHasTimestamp,
+              evidence_photo_captured_at: normalizedPharmacy.evidencePhotoCapturedAt,
+              evidence_photo_name: normalizedPharmacy.evidencePhotoName,
+              evidence_status: normalizedPharmacy.evidenceStatus,
+              updated_at: new Date().toISOString(),
+              updated_by_hr_id: actorHrId,
+              // NOT guaranteed: accuracy and the reverse-geocoded descriptors can all come back
+              // empty from a fix that is otherwise perfectly complete. Each is OMITTED rather than
+              // written as null, because on an `.update()` a null for "the client had nothing to
+              // say" erases what the row already held. They travel with the coordinate rather than
+              // being left behind, so the matcher never reads a new GPS fix against a stale
+              // governorate.
+              ...definedColumns({
+                captured_accuracy_meters: normalizedPharmacy.capturedAccuracyMeters,
+                captured_address: normalizedPharmacy.capturedAddress,
+                extracted_area_name: normalizedPharmacy.extractedAreaName,
+                extracted_governorate_name: normalizedPharmacy.extractedGovernorateName,
+                region_name: normalizedPharmacy.regionName,
+              }),
+            })
+            .eq("id", storedRow.id)
+            // Repeats the precondition above so a rep who lost the race leaves the capture that
+            // landed first alone. Unlike the customer path this must NOT throw: completing the
+            // venue is a bonus on a submission whose actual purpose is the link, and losing the
+            // race is a success for the shop, not a failure for this rep.
+            .neq("evidence_status", "complete")
+            .select("*")
+            .maybeSingle();
+          if (pharmacyEvidenceUpdate.error) throw pharmacyEvidenceUpdate.error;
+          if (!pharmacyEvidenceUpdate.data) return storedRow;
+          const completedRow = pharmacyEvidenceUpdate.data as MarketingPharmacyDbRow;
+          completedPharmacyUndo.push({ before: storedRow, id: storedRow.id });
+          // So a venue attached to several customers in one submission is completed once, and
+          // every later customer in the loop reads the row as it now stands.
+          reusedPharmacyRows.set(storedRow.id, completedRow);
+          if (normalizedPharmacy.evidencePhotoDataUrl) {
+            evidencePhotoPaths.push(await storeMarketingEvidencePhoto({
+              imageDataUrl: normalizedPharmacy.evidencePhotoDataUrl,
+              record: {
+                capturedAccuracyMeters: normalizedPharmacy.capturedAccuracyMeters,
+                capturedAddress: normalizedPharmacy.capturedAddress,
+                capturedAt: normalizedPharmacy.evidencePhotoCapturedAt ?? normalizedPharmacy.capturedAt,
+                capturedLatitude: normalizedPharmacy.capturedLatitude,
+                capturedLongitude: normalizedPharmacy.capturedLongitude,
+                entityId: completedRow.id,
+                entityType: "pharmacy",
+                hasTimestamp: normalizedPharmacy.evidenceHasTimestamp,
+                originalFileName: normalizedPharmacy.evidencePhotoName,
+                uploadedByHrId: actorHrId,
+              },
+              supabase,
+            }));
+          }
+          return completedRow;
+        })();
         const pharmacy = mapMarketingPharmacy(reusedRow);
         // NOT pushed onto `pharmacyIds`: it predates this submission and must survive a rollback.
 
@@ -6272,6 +6536,22 @@ export async function createMarketingValidationRecord(
     }
     }
 
+    // Every customer ALREADY waiting on a shop this submission completed. Runs after the customer
+    // loop, so this submission's own links exist and are already correct, and once per venue rather
+    // than once per customer that attached it. Without this the rep photographs the shop, the venue
+    // row goes green, and the doctors who have been stuck on it since the day it was recorded stay
+    // exactly where they were — which is the entire reason the shop needed completing.
+    for (const undo of completedPharmacyUndo) {
+      const completedRow = reusedPharmacyRows.get(undo.id);
+      if (!completedRow) continue;
+      await refreshLinksAfterPharmacyCompletion({
+        actorHrId,
+        isOnBehalf,
+        pharmacyRow: completedRow,
+        supabase,
+      });
+    }
+
     // Connect what was just written to the Source-of-Sales customer master, while the ids are in
     // hand and before anyone can look at the row. Awaited rather than fired and forgotten: an
     // unawaited promise here would race the response, and a row left unresolved is invisible —
@@ -6339,6 +6619,31 @@ export async function createMarketingValidationRecord(
           validated_by_hr_id: undo.before.validated_by_hr_id ?? null,
           validation_notes: undo.before.validation_notes ?? null,
           validation_status: undo.before.validation_status ?? "pending",
+        })
+        .eq("id", undo.id);
+    }
+    // A completed pharmacy is restored, never deleted — same reasoning as the customer above, and
+    // the same column set the update wrote, so the verdict columns it deliberately left alone stay
+    // untouched on the way back too.
+    for (const undo of completedPharmacyUndo) {
+      await supabase
+        .from("marketing_pharmacies")
+        .update({
+          captured_accuracy_meters: undo.before.captured_accuracy_meters ?? null,
+          captured_address: undo.before.captured_address ?? null,
+          captured_at: undo.before.captured_at ?? null,
+          captured_latitude: undo.before.captured_latitude ?? null,
+          captured_longitude: undo.before.captured_longitude ?? null,
+          evidence_has_timestamp: undo.before.evidence_has_timestamp ?? null,
+          evidence_photo_captured_at: undo.before.evidence_photo_captured_at ?? null,
+          evidence_photo_name: undo.before.evidence_photo_name ?? null,
+          evidence_status: undo.before.evidence_status ?? "missing",
+          // Restored unconditionally even though the update writes them only when supplied: the
+          // before-image is what the row held either way, so putting it back is a no-op when the
+          // update skipped them and a real repair when it did not.
+          extracted_area_name: undo.before.extracted_area_name ?? null,
+          extracted_governorate_name: undo.before.extracted_governorate_name ?? null,
+          region_name: undo.before.region_name ?? null,
         })
         .eq("id", undo.id);
     }

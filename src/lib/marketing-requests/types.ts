@@ -540,13 +540,36 @@ export type MarketingValidationInput = {
 /**
  * "Link the pharmacy I already validated" — the My Pharmacies half of the form's pharmacy tabs.
  *
- * Deliberately carries the id and nothing else. Name, location, live photo and distributor codes
- * are read from the stored record on the server, so a client can never re-describe a shop it is
- * only pointing at, and the evidence attached to a link is always the evidence someone actually
- * captured in front of that shop.
+ * Carries the id, and NOTHING that could re-describe the shop. Name, distributor codes, area and
+ * owner are still read from the stored record on the server, so a client pointing at a record can
+ * never rename it or move it.
+ *
+ * The evidence fields below are the one exception, added 2026-08-23. Until then a venue's GPS and
+ * live photo were writable only by the INSERT that created it: the reuse branch updated the link
+ * row and returned, so a venue first captured without proof — a desk validation, or a rep who
+ * could not photograph the front — stayed `evidence_status = 'pending'` for the rest of its life,
+ * no matter who stood in front of it afterwards. Three production venues carrying four
+ * desk-validated doctors were in exactly that state with no route out of it.
+ *
+ * Optional, always. Supplying them completes a venue that is short of proof; omitting them behaves
+ * exactly as attaching always has. The rep is not asked to be at the shop to attach it — the
+ * system flags what is missing, it does not refuse (owner's standing rule).
  */
 export type MarketingValidationExistingPharmacyInput = {
+  capturedAccuracyMeters?: number | null;
+  capturedAddress?: string | null;
+  capturedAt?: string | null;
+  capturedLatitude?: number | null;
+  capturedLongitude?: number | null;
+  evidenceHasTimestamp?: boolean;
+  evidencePhotoCapturedAt?: string | null;
+  /** See `MarketingValidationCustomerInput.evidencePhotoDataUrl`. */
+  evidencePhotoDataUrl?: string | null;
+  evidencePhotoName?: string | null;
   existingPharmacyId: string;
+  extractedAreaName?: string | null;
+  extractedGovernorateName?: string | null;
+  regionName?: string | null;
 };
 
 /** Either half of the pharmacy tabs: capture a new shop, or point at one already validated. */
