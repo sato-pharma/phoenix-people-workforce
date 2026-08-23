@@ -148,6 +148,7 @@ import { runRecruitmentInboundCvIntakeTests } from "./recruitment-inbound-cv-int
 import { runRecruitmentIntakeFinalizePatchTests } from "./recruitment-intake-finalize-patch.test.ts";
 import { runRecruitmentEmailIntakeTests } from "./recruitment-email-intake.test.ts";
 import { runRecruitmentWhatsAppIntakeTests } from "./recruitment-whatsapp-intake.test.ts";
+import { runWhatsAppCoexistenceHistoryTests } from "./recruitment-whatsapp-coexistence-history.test.ts";
 import {
   runRecruitmentWhatsAppHealthTests,
   runWhatsAppWebhookRoutingTests,
@@ -1125,6 +1126,10 @@ await runTest("recruitment inbound cv intake", runRecruitmentInboundCvIntakeTest
 await runTest("recruitment intake finalize patch (a late throw must not erase the candidate it recorded)", runRecruitmentIntakeFinalizePatchTests);
 await runTest("recruitment email intake", runRecruitmentEmailIntakeTests);
 await runTest("recruitment whatsapp intake", runRecruitmentWhatsAppIntakeTests);
+await runTest(
+  "recruitment whatsapp coexistence history (the backlog Meta replays)",
+  runWhatsAppCoexistenceHistoryTests,
+);
 await runTest("recruitment whatsapp intake health (Meta API probe + silence gate)", runRecruitmentWhatsAppHealthTests);
 await runTest(
   "recruitment whatsapp webhook routing (deterministic delivery check)",

@@ -537,12 +537,18 @@ export async function fetchWebhookRouting(): Promise<WhatsAppWebhookRouting> {
   return evaluateWebhookRouting({ answerable: true, expectedCallbackUrl, numberOverrideUrl, subscription });
 }
 
+// A coexistence history replay is not an arrival — it is the past being delivered late. Excluding
+// it needs an explicit null branch: the key is ABSENT on every live row, and `historyImport != true`
+// evaluates to NULL (not true) for those, which would silently discard exactly the rows we want.
+const NOT_HISTORY = "raw_metadata->>historyImport.is.null,raw_metadata->>historyImport.neq.true";
+
 async function lastInboundWhatsAppAt(): Promise<Date | null> {
   const supabase = recruitmentDb();
   const { data, error } = await supabase
     .from("ats_cv_intake_events")
     .select("created_at")
     .eq("channel", "whatsapp")
+    .or(NOT_HISTORY)
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
@@ -562,6 +568,7 @@ async function lastInboundWhatsAppAtByNumber(phoneNumberId: string): Promise<Dat
     .select("created_at")
     .eq("channel", "whatsapp")
     .eq("raw_metadata->>deliveredToPhoneNumberId", phoneNumberId)
+    .or(NOT_HISTORY)
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
@@ -580,7 +587,8 @@ async function lastInboundWhatsAppAtByNumber(phoneNumberId: string): Promise<Dat
  * intake events on this system are forwarded batches, and counting them as arrivals is precisely
  * what hid a 25-day public outage — a forward RESETS every naive freshness measure. The sender is
  * ALSO checked against the import list directly, so a handset message that predates the stamp, or
- * one whose metadata is missing, cannot slip through as an applicant.
+ * one whose metadata is missing, cannot slip through as an applicant. `raw_metadata.historyImport`
+ * is excluded for the same reason — a coexistence replay is the past arriving late, not reach.
  *
  * Never throws: reach is diagnostics. A query failure yields null, which is treated as unmeasured
  * rather than healthy or broken.
@@ -615,6 +623,11 @@ export async function measurePublicReach(now: Date, windowHours: number): Promis
       if (!sender) continue;
       const bulk = row.raw_metadata?.bulkImport;
       if (bulk === true || bulk === "true") continue;
+      // Same reasoning as a forward: a coexistence backfill lands hundreds of real applicants at
+      // once, all stamped with today's timestamp. Counting them as reach would prove the channel
+      // is open using messages that arrived on a channel that was shut.
+      const history = row.raw_metadata?.historyImport;
+      if (history === true || history === "true") continue;
       if (isWhatsAppImportSender(sender, importSenders)) continue;
       outside.add(sender);
     }

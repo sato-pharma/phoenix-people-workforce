@@ -52,6 +52,43 @@ offered in the dashboard. **Under that design a WhatsApp intake event measures H
 activity, not applicant demand** — which is why 371 of 390 events are bulk forwards and why the
 2026-08-23 gap was never a quiet channel: it was CVs piling up unread on a phone.
 
+### Coexistence — what changes when the handset is linked (2026-08-23)
+
+The owner completed the Meta **Coexistence** QR scan for `01159888247`, which puts the advertised
+handset on the Cloud API **without** taking WhatsApp Business off the phone. From that point:
+
+- **New** applicant messages to the handset are delivered to this webhook on the `messages` field,
+  exactly like the existing line. **No code or config change is needed for those** — the webhook has
+  never filtered on `phone_number_id`; it records which line a message arrived on and accepts it.
+- The **backlog** — every chat already on the handset — is replayed on a *different* webhook field,
+  `history`, in a *different* envelope: `entry[].changes[].value.history[].threads[].messages[]`,
+  two levels deeper than a live message and containing **both directions** of every conversation.
+
+Two things follow, and both are now handled:
+
+1. **The parser reads both envelopes.** Until this change it read `value.messages` only, so a
+   backfill would have been answered `200 OK` and discarded — an entire CV backlog lost with no
+   error recorded anywhere. Outgoing messages inside a replayed thread (whose `from` is the
+   receiving line) are skipped, so the company is never filed as an applicant to itself.
+2. **A replay is not an arrival.** Every replayed message is stamped `raw_metadata.historyImport`
+   and excluded from the silence clock, from the public-reach measurement, from the live text
+   buffer, and from the applicant auto-reply. Without that, linking the handset would reset every
+   freshness measure at once — the same failure as a bulk forward, but with months of messages —
+   and would thank every past applicant for a CV they sent weeks ago.
+
+**`history` is not subscribed yet.** Read live 2026-08-23, the app's `whatsapp_business_account`
+subscription carries 10 fields — `messages` among them — but **not** `history`,
+`smb_message_echoes` or `smb_app_state_sync`. So new CVs flow the moment the scan takes effect; the
+backlog does not, until `history` is added in the Meta app dashboard. Adding it is what triggers the
+replay this code now understands.
+
+> **The exclusion filter has a NULL trap, measured, not guessed.** `historyImport` is *absent* on a
+> live row, and PostgREST `raw_metadata->>historyImport=neq.true` evaluates to NULL — not true — for
+> those rows, so it returns **nothing at all**. Against production the naive form matched **0 of 390**
+> rows where the correct `or=(…is.null,…neq.true)` form matched **19 of 390** (390 total minus 371
+> bulk forwards). A silence clock built on the naive filter would have reported "no inbound message
+> ever" forever. Never write this filter as a bare `neq`.
+
 ### The four statuses
 
 | Status | What it means | Pages? |
@@ -148,6 +185,7 @@ data-processing terms / zero-retention posture meet the org's requirements befor
 | `RECRUITMENT_EMAIL_MAX_MESSAGES_PER_POLL` | UIDs enqueued per folder per poll | 40 |
 | `WHATSAPP_PHONE_NUMBER_IDS` | comma-separated intake lines to health-check | falls back to `WHATSAPP_PHONE_NUMBER_ID` |
 | `RECRUITMENT_WHATSAPP_IMPORT_SENDERS` | numbers whose messages are a bulk forward-import | unset |
+| `RECRUITMENT_WHATSAPP_DIRECT_INTAKE` | `true` once applicants reach a line directly (coexistence live), which arms `public_channel_dead` | unset = forwarding mode |
 | `RECRUITMENT_WHATSAPP_SILENCE_ALERT_HOURS` | silence threshold (business hours only) | 24 |
 | `RECRUITMENT_INBOUND_CV_MAX_BYTES` | max accepted CV size (also the WhatsApp media pre-download guard) | 15 MB |
 | `RECRUITMENT_INBOUND_QUEUE_MAX_PER_RUN` | queue rows drained per worker tick | 10 |
