@@ -31,20 +31,45 @@ Email is inherently resilient (IMAP retains messages — a poller outage never l
 re-poll). WhatsApp Cloud API has **no inbound history API**, so a dropped webhook is gone — which is
 why the fast ack, verification, and the 10-minute health alert matter most there.
 
-## What pages, and what does not (changed 2026-08-23)
+## What pages, and what does not (rewritten 2026-08-23, later the same day)
 
-**Only a deterministic fault pages.** `checkWhatsAppIntakeHealth` now returns two statuses that
-reach a phone, and one that does not:
+**Read this before changing any alert here.** Everything in this section exists because on
+2026-08-23 every check in this module passed while the WhatsApp channel had been shut to the public
+for 25 days.
+
+### The shape of the channel decides what silence means
+
+There are **two** numbers, and only one of them is on the Cloud API:
+
+| Number | What it is |
+| --- | --- |
+| `01159888247` | The **advertised** HR handset — a normal WhatsApp Business app phone, **not** on the Cloud API |
+| `+20 10 98500699` | The Cloud API line (`WHATSAPP_PHONE_NUMBER_ID`) that this webhook actually receives on |
+
+So an applicant's CV lands on the handset and enters the ATS **only when a human forwards a batch**
+to the Cloud API line. This was a deliberate decision on 2026-07-27, when Meta Coexistence was not
+offered in the dashboard. **Under that design a WhatsApp intake event measures HR's forwarding
+activity, not applicant demand** — which is why 371 of 390 events are bulk forwards and why the
+2026-08-23 gap was never a quiet channel: it was CVs piling up unread on a phone.
+
+### The four statuses
 
 | Status | What it means | Pages? |
 | --- | --- | --- |
 | `api_unreachable` | Meta rejects our credentials (the 2026-07-26 block) | **yes** — Telegram + push |
 | `webhook_misrouted` | Meta is configured to deliver somewhere that is not us | **yes** — Telegram + push |
-| `silent` | Nothing has arrived for a while, delivery config verified fine | no — WARNING log only |
+| `public_channel_dead` | Applicants are provably applying by email, and **none** reached WhatsApp | **yes** — Telegram + push |
+| `silent` | Nothing has arrived at all for longer than the threshold | **yes** — Telegram + push |
 | `ok` / `not_configured` | — | no |
 
-`webhook_misrouted` is checked directly against Graph on every 10-minute tick, using credentials the
-app already holds (the app id is read back from `debug_token`, so there is no extra env var to drift):
+Precedence is deliberate and one incident raises one alert: a credential block outranks everything
+(it explains the rest), a named misconfiguration outranks the measurement (it explains why nobody got
+through), and the measurement outranks bare silence (it is the more specific statement).
+
+### `webhook_misrouted` — configuration, checked directly
+
+Checked against Graph on every 10-minute tick using credentials the app already holds (the app id is
+read back from `debug_token`, so there is no extra env var to drift):
 
 1. `GET /{app-id}/subscriptions` — the `whatsapp_business_account` entry must be `active`, must
    include the **`messages`** field, and its `callback_url` must equal the production webhook URL.
@@ -54,25 +79,45 @@ app already holds (the app id is read back from `debug_token`, so there is no ex
 An unanswerable check (no `WHATSAPP_APP_SECRET`, or Graph unreachable) yields `ok: null` — never
 `false`. A network blip must not page anyone with a fake misconfiguration.
 
-### Why silence stopped paging
+### `public_channel_dead` — the only check that can see an outage the config cannot
 
-Silence was the primary alert and it did not work. Measured on production 2026-08-23, over the
-channel's whole recorded history:
+`measurePublicReach` counts, over the same window as the silence threshold:
 
-- The normal inbound gap has reached **333 hours** (08-01 → 08-14) against a **96-hour** threshold.
-  The alert therefore fired for roughly **ten consecutive days in early August with nothing wrong**,
-  and was firing again at the time of this change while every layer verified healthy.
-- Organic CVs run at **0–6/day**, and **371 of 390** recorded WhatsApp intake events were bulk
-  forward-imports, not applicants. A bulk import also **resets the silence clock**, so a genuine
-  applicant drought is masked by an HR forward while an ordinary quiet week trips the alarm.
+- **`outsideSenders`** — distinct WhatsApp senders, excluding the forwarding handsets. The split is
+  on `raw_metadata.bulkImport` (stamped by the webhook whenever the sender is in
+  `RECRUITMENT_WHATSAPP_IMPORT_SENDERS`), **and** on the import list directly, so an unstamped
+  handset message cannot pass as an applicant. Counting forwards here is exactly what hid the outage.
+- **`emailSenders`** — distinct people whose CV arrived by **email** in the same window, counting
+  only `candidate_created` / `candidate_matched` so newsletters and bounces cannot inflate it.
 
-An alert that is on during normal operation cannot signal an outage — the real 2026-07-26 block
-would have been invisible inside that noise. So silence is still computed, still logged, and still
-returned in the cron payload; it just no longer pages. The deterministic checks above carry that
-duty, and they catch the actual failure mode in one tick instead of after 96 hours.
+Email is the control group: an independent transport with no Meta dependency. It answers the one
+question configuration never can — *are people applying at all right now?* The status fires only
+when `outsideSenders === 0` **and** `emailSenders >= 5`, so a hiring pause, Eid, or a national
+holiday reads as a quiet week rather than a broken channel.
 
-**`RECRUITMENT_WHATSAPP_SILENCE_ALERT_HOURS` now only controls when the WARNING appears.** Raising
-it reduces log noise; it no longer affects whether anyone is paged.
+**It only pages when `RECRUITMENT_WHATSAPP_DIRECT_INTAKE=true`.** Set that once the advertised
+number itself delivers into the Cloud API (Coexistence). Until then zero outside senders is the
+designed behaviour, so the numbers are still measured and returned in the cron payload — they are
+what makes the channel's true state visible — but they cannot page. This is an explicit switch
+rather than something inferred from the number count, because the two architectures disagree about
+what silence means and guessing that wrong is the entire bug.
+
+### Why `silent` pages again (reversing PR #2327)
+
+PR #2327 removed `silent` from the paging set on 2026-08-23, reasoning that the channel's normal
+inbound gap had measured **333 hours** against a 96-hour threshold, so the alert fired for ~10
+consecutive days in early August "with nothing wrong". **That reasoning was wrong and was reversed
+hours later.** Given the forwarding architecture above, those 333 hours were not a quiet channel —
+they were nearly two weeks of applicants' CVs sitting unread on the handset. Silence was the right
+signal all along; what it needed was the correct *explanation* attached to it, not switching off.
+
+The message now names which of the two situations the gap describes — "nobody has forwarded a CV
+batch from the HR handset, so CVs are accumulating there unread" under forwarding, or "no applicant
+has messaged the line" once direct intake is on — instead of restating the number of hours.
+
+`RECRUITMENT_WHATSAPP_SILENCE_ALERT_HOURS` (96 in Railway) sets both the paging threshold and the
+reach window. Once Coexistence is live, applicants arrive continuously and this stops firing on its
+own; until then it firing means real work is queued on a phone.
 
 ## Applicant auto-reply (built, OFF by default)
 
