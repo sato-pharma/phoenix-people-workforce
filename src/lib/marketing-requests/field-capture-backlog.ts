@@ -135,7 +135,7 @@ export function groupFieldCaptureBacklog(
     staffByArea.set(employee.areaId, bucket);
   }
 
-  const ownerBuckets = new Map<string, { customers: FieldCaptureBacklogCustomer[]; routedVia: "manager" | "owner" }>();
+  const ownerBuckets = new Map<string, { customers: FieldCaptureBacklogCustomer[]; routedVia: "area" | "manager" | "owner" }>();
   const unassigned: FieldCaptureBacklogCustomer[] = [];
   let customerCount = 0;
 
