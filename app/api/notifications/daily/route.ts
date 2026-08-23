@@ -11,6 +11,7 @@ import { runHolidayConfirmationReminder } from "@/app/api/notifications/holiday-
 import { runVacationSlaDaily } from "@/lib/vacation/service";
 import { runFieldWorkforceComplianceDeductionsAutoSync } from "@/lib/deductions-governance/connectors/field-workforce-compliance";
 import { backfillMissingMarketingAssignmentEmails, runMarketingSlaDaily } from "@/lib/marketing-requests/service";
+import { runMarketingFieldCaptureNudge } from "@/lib/marketing-requests/field-capture-backlog";
 import { runRecruitmentDailyNotifications } from "@/lib/recruitment/notifications";
 import { remindHeldNotifications } from "@/lib/notifications/held-notification-alert";
 import { runTelegramDailyHrDigest } from "@/lib/notifications/telegram-operations";
@@ -101,6 +102,7 @@ async function runDailyNotifications(request: Request) {
     notificationRetention,
     activityRetention,
     sosMonthlyReportCheck,
+    marketingFieldCapture,
     // Must stay LAST and in the same position as its Promise.all entry — the 2026-07-18
     // off-by-one noted above happened exactly here, by adding a job without its name.
     heldNotificationReminder,
@@ -207,6 +209,20 @@ async function runDailyNotifications(request: Request) {
         errors: [{ period: "unknown", error: message }],
       })),
     ),
+    // Tells each rep which of THEIR marketing customers still show a validated status with no
+    // field capture behind them (139 customers to 64 people, measured 2026-08-24). Reuses the badge's own
+    // `customerFieldEvidenceGap`, so the list a rep is sent can never disagree with the badge he
+    // sees. In-app/Telegram/push only — bulk email is never fired from this system, and 64
+    // recipients is bulk by any reading.
+    runMarketingFieldCaptureNudge().catch(
+      onJobFailure("daily-marketing-field-capture", (message) => ({
+        customersCovered: 0,
+        notified: 0,
+        skipped: 0,
+        unassignedCustomers: 0,
+        error: message,
+      })),
+    ),
     // Keeps asking while any email sits held at /admin/notification-confidence. The hold-time
     // alert fires once and never repeats, which is how 30 held emails — including 8 password
     // resets and 4 account-setup links — went undelivered for up to 15 days (measured
@@ -224,7 +240,7 @@ async function runDailyNotifications(request: Request) {
   // One structured line per run that states the real outcome. This — not the HTTP status, and not
   // the dead-man's-switch ping (which only proves the route executed) — is the signal to alert on:
   // `event="cron_run_summary" job="notifications/daily" failedCount>0`.
-  const totalJobs = 23;
+  const totalJobs = 24;
   if (failures.length > 0) {
     logError(
       `Daily notification run completed with ${failures.length} of ${totalJobs} sub-job(s) FAILED: ${failures.map((f) => f.job).join(", ")}`,
@@ -266,6 +282,7 @@ async function runDailyNotifications(request: Request) {
     fieldWorkforceComplianceDeductionsAutoSync,
     heldNotificationReminder,
     holidayConfirmation,
+    marketingFieldCapture,
     marketingSla,
     notificationRetention,
     outstationGeocodeWarmup,
