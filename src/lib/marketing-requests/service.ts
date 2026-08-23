@@ -5314,6 +5314,7 @@ export async function getMarketingCustomerDatabaseWorkspace(
         : null,
       distributorId: distributorCode?.distributorId ?? null,
       distributorName: distributorCode ? distributor?.displayName ?? "Unknown distributor" : null,
+      inferredFromHistory: isInferredFromHistory(link.validation_notes),
       pharmacyAddress: pharmacy.capturedAddress,
       pharmacyArea: pharmacy.extractedAreaName,
       pharmacyCode: pharmacy.pharmacyCode,
