@@ -128,8 +128,13 @@ export function diffCheck(desired, actual) {
   return { action: changes.length ? "update" : "ok", changes };
 }
 
-function payload(desired) {
-  const base = { name: desired.slug, grace: desired.grace, unique: ["name"] };
+export function payload(desired) {
+  // `slug` MUST be sent. A check created through this API is stored with an EMPTY slug unless it is
+  // given one explicitly - and the app pings by slug (`hc-ping.com/<ping-key>/<slug>?create=1`), not
+  // by name. A slugless check therefore never receives the ping it is watching for: it goes red on
+  // its own schedule while the job runs perfectly, and the next real ping auto-provisions a SECOND
+  // check beside it. Found on the first live run, by the read-back below.
+  const base = { name: desired.slug, slug: desired.slug, grace: desired.grace, unique: ["name"] };
   return desired.kind === "cron"
     ? { ...base, schedule: desired.schedule, tz: desired.tz }
     : { ...base, timeout: desired.timeout };

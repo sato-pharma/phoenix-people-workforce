@@ -229,6 +229,13 @@ policy):
    Reformat the table freely, but re-run `pnpm run test` — a parser that silently matches nothing
    turns the sync into a no-op that reports success.
 
+   🔴 **A check created through the management API is stored with an EMPTY slug unless one is sent
+   explicitly** — and the app pings by slug (`hc-ping.com/<ping-key>/<slug>?create=1`), never by name.
+   A slugless check therefore never receives the ping it is waiting for: it goes red on schedule while
+   the job runs perfectly, and the next real ping quietly auto-provisions a **second** check beside
+   it. The sync sends `slug` on every write for this reason. Found on the first live run, on
+   2026-08-23, by the read-back the script performs after writing.
+
    The fourth column is the point of the table. A slug in the code proves only that the app *would*
    ping if something called it; it says nothing about whether anything does. Every row above was
    read back out of the live cron-job.org account on **2026-08-23** (17 jobs, 12 enabled) or traced
