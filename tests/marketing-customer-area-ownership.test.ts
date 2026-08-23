@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import type { AccessContext } from "@/lib/auth/permissions";
 import type { EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
@@ -57,6 +58,23 @@ function rep(hrId: string, areaId: number | null, lineId: number | null, manager
 
 function accessFor(hrId: string, role: AccessContext["role"] = "Medical Rep"): AccessContext {
   return { hrId, loginId: hrId, role, scope: "self", source: "session" } as AccessContext;
+}
+
+/**
+ * The source of one function in the marketing service, bounded by the NEXT declaration rather than
+ * by a fixed byte count. A fixed window slides off its target the moment anything above it grows,
+ * and then passes for the wrong reason.
+ */
+function marketingServiceFunction(name: string) {
+  const source = readFileSync(
+    new URL("../src/lib/marketing-requests/service.ts", import.meta.url),
+    "utf8",
+  );
+  const start = source.indexOf(`async function ${name}`);
+  assert.notEqual(start, -1, `${name} must still exist in the marketing service`);
+  const rest = source.slice(start + 1);
+  const nextDeclaration = rest.search(/\n(?:export )?(?:async )?function /);
+  return nextDeclaration === -1 ? rest : rest.slice(0, nextDeclaration);
 }
 
 export function runMarketingCustomerAreaOwnershipTests() {
@@ -176,4 +194,24 @@ export function runMarketingCustomerAreaOwnershipTests() {
   // ── 8. viewerAreaIdFor is the single source of the viewer's area. ─────────────────────────────
   assert.equal(viewerAreaIdFor(accessFor(replacement.hrId), directory), MENOUFIA_2);
   assert.equal(viewerAreaIdFor(accessFor("NOT-IN-DIRECTORY"), directory), null);
+
+  // ── 9. The area rule did NOT make the picker's owner filter redundant. ─────────────────────────
+  //
+  // The rule proven above is exactly the reasoning that would delete the next line of code, so it
+  // is pinned here rather than beside the picker. `buildReusableMarketingPharmacies` excludes rows
+  // with no `owner_hr_id`, and reading "a venue belongs to an AREA, not a person" invites a
+  // session to call that filter a leftover of the ownership model and remove it as a tidy-up.
+  //
+  // It is not a leftover. Measured on production 2026-08-24: 280 active seeded venues, written by
+  // one 2026-06-20 backfill, all `evidence_status = 'missing'`, none owned — and every single
+  // one carrying an `area_id`, over 37 areas, up to 26 in a single area. The owner filter is what
+  // excludes them and NOTHING else does: the area branch of `canReuseMarketingPharmacy` would
+  // offer them to every rep in those 37 areas, and `canSeeMarketingHierarchyRecord` would hand all
+  // 280 to every company-wide role. Each one linked parks its customer on "Not Usable Yet" with no
+  // route out for anybody.
+  assert.match(
+    marketingServiceFunction("buildReusableMarketingPharmacies"),
+    /\.not\("owner_hr_id", "is", null\)/,
+    "The My Pharmacies picker must keep its owner_hr_id filter — it is the ONLY thing excluding the 280 seeded venues, and every one of them carries an area_id, so the area rule offers them to 37 areas the moment it goes",
+  );
 }
