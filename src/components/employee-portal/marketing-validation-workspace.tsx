@@ -568,6 +568,45 @@ function describeMissingRequirement(customers: CustomerLine[], isDeskMode: boole
   return null;
 }
 
+/**
+ * A capture good enough to stand as a venue's proof: a pin, a time, and the stamped photo itself.
+ *
+ * Mirrors `evidenceStatusFromInput` on the server, which is what actually decides. Kept here so the
+ * form only sends a capture for an attached shop when that capture could change anything — an
+ * ordinary attach still sends the id and nothing else.
+ */
+function hasCompleteCapture(capture: CaptureState) {
+  return (
+    capture.latitude !== null &&
+    capture.longitude !== null &&
+    Boolean(capture.capturedAt) &&
+    Boolean(capture.photoName) &&
+    Boolean(capture.photoCapturedAt) &&
+    Boolean(capture.photoDataUrl)
+  );
+}
+
+/**
+ * The attached shop this rep could complete right now, or null.
+ *
+ * A venue's GPS and live photo used to be writable only by the capture that created it, so a shop
+ * first recorded without proof — a desk validation, or a visit where the front could not be
+ * photographed — stayed short of evidence for good, and every customer attached to it stayed on
+ * "Not Usable Yet". A rep standing in front of that shop now has a way to supply what is missing.
+ *
+ * Never offered in desk mode: a point chosen from map search is not field proof, which is the whole
+ * reason those rows are short in the first place.
+ */
+function reusableNeedingEvidence(
+  options: MarketingReusablePharmacy[],
+  selectedId: string,
+  isDeskMode: boolean,
+) {
+  if (isDeskMode || !selectedId) return null;
+  const selected = options.find((row) => row.id === selectedId);
+  return selected && selected.evidenceStatus !== "complete" ? selected : null;
+}
+
 function buildValidatedPharmacyDetails(rows: MarketingValidationReportRow[]) {
   const pharmacies = new Map<string, ValidatedPharmacyDetail>();
   for (const row of rows) {
@@ -2184,10 +2223,23 @@ export function MarketingValidationWorkspace() {
         regionName: [customer.area, customer.governorate].filter(Boolean).join(", "),
         speciality: customer.speciality || null,
         pharmacies: customer.pharmacies.map((pharmacy) =>
-          // An attached pharmacy sends its id and nothing else. Re-describing a shop the server
-          // already has on file is how the stored name, address or photo would drift.
+          // An attached pharmacy sends its id, and describes the shop only when the rep actually
+          // stood in front of it and completed the proof it was missing. Name and distributor codes
+          // are never sent on this path — re-describing a shop the server already has on file is
+          // how a stored name or code would drift — but a capture is not a re-description: it is
+          // the evidence the record has been short of, and until now had no route to receive.
           pharmacy.source === "existing"
-            ? { existingPharmacyId: pharmacy.existingPharmacyId }
+            ? {
+              existingPharmacyId: pharmacy.existingPharmacyId,
+              ...(hasCompleteCapture(pharmacy.capture)
+                ? {
+                  ...payloadCapture(pharmacy.capture),
+                  extractedAreaName: pharmacy.area,
+                  extractedGovernorateName: pharmacy.governorate,
+                  regionName: [pharmacy.area, pharmacy.governorate].filter(Boolean).join(", "),
+                }
+                : {}),
+            }
             : {
               ...payloadCapture(pharmacy.capture),
               displayName: pharmacy.name,
@@ -2800,13 +2852,44 @@ export function MarketingValidationWorkspace() {
                           </div>
 
                           {pharmacy.source === "existing" ? (
-                          <ReusablePharmacyPicker
-                            onSelect={(pharmacyId) =>
-                              updatePharmacy(customer.key, pharmacy.key, { existingPharmacyId: pharmacyId })
-                            }
-                            options={workspace.reusablePharmacies}
-                            selectedId={pharmacy.existingPharmacyId}
-                          />
+                          <div className="space-y-3">
+                            <ReusablePharmacyPicker
+                              onSelect={(pharmacyId) =>
+                                updatePharmacy(customer.key, pharmacy.key, { existingPharmacyId: pharmacyId })
+                              }
+                              options={workspace.reusablePharmacies}
+                              selectedId={pharmacy.existingPharmacyId}
+                            />
+                            {/* Offered, never demanded. The shop can be attached exactly as before
+                                with this left untouched — the system flags what is missing, it does
+                                not refuse (owner's standing rule). Taking it is what finally lets a
+                                venue that has been short of proof since the day it was recorded
+                                become complete, and with it every customer waiting on it. */}
+                            {reusableNeedingEvidence(
+                              workspace.reusablePharmacies,
+                              pharmacy.existingPharmacyId,
+                              isDeskMode,
+                            ) ? (
+                              <div className="space-y-2 rounded-sm border border-amber-200 bg-amber-50/60 p-3">
+                                <p className="text-[11px] font-bold text-amber-800">
+                                  This shop has no complete field proof on file. If you are standing in front of it,
+                                  capture its GPS and live sign photo now and the record is completed for everyone.
+                                  Optional — you can attach it without this.
+                                </p>
+                                <CapturePanel
+                                  capture={pharmacy.capture}
+                                  isCapturing={captureTarget === `${customer.key}::${pharmacy.key}`}
+                                  label="Pharmacy GPS + live sign photo"
+                                  onCaptureLocation={() =>
+                                    captureLocation({ customerKey: customer.key, pharmacyKey: pharmacy.key })
+                                  }
+                                  onOpenCamera={() =>
+                                    setCameraTarget({ customerKey: customer.key, pharmacyKey: pharmacy.key })
+                                  }
+                                />
+                              </div>
+                            ) : null}
+                          </div>
                           ) : (
                           <div className="grid gap-3 lg:grid-cols-6">
                             <div className="lg:col-span-2">
