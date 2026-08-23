@@ -4,6 +4,7 @@ import { isProductionRuntime } from "@/config/system-settings";
 import { systemAccessContext } from "@/lib/auth/permissions";
 import { runDirectOrderProbationSweep } from "@/lib/direct-orders/pharmacy-probation";
 import { sendDirectOrderPhantomReport } from "@/lib/direct-orders/phantom-report";
+import { withDeadMansSwitch } from "@/lib/observability/dead-mans-switch";
 import { logCronUnauthorized, logError } from "@/lib/observability/log";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 import { bearerSecretMatches } from "@/lib/security/constant-time";
@@ -27,6 +28,14 @@ function isAuthorized(request: Request) {
  *
  * The report is only SENT when there is something to report. A daily "nothing to report" email
  * trains people to ignore the one that matters.
+ *
+ * WIRED TO THE DEAD-MAN'S-SWITCH 2026-08-23, after this clock ran dead for nine nights unseen.
+ * `CRON_SECRET` was rotated on Railway on 2026-08-14; the GitHub Actions copy that
+ * .github/workflows/direct-orders-sweeps.yml sends was never re-aligned, so every nightly run
+ * 401'd from 2026-08-14 to 2026-08-22 and nobody was told. The workflow's own comment claims a red
+ * run "emails the owner" — nine silent nights say otherwise, and a red run in a log nobody opens is
+ * not an alert. Healthchecks alerts on the ping that DIDN'T arrive, so it catches the case the
+ * workflow cannot report on: the request never reaching this handler at all.
  */
 export async function GET(request: Request) {
   if (!isAuthorized(request)) {
@@ -34,10 +43,15 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
   try {
-    const result = await runDirectOrderProbationSweep(systemAccessContext);
-    if (result.flagged.length > 0) {
-      await sendDirectOrderPhantomReport(result.flagged);
-    }
+    const result = await withDeadMansSwitch("phoenix-direct-orders-probation", async () => {
+      const sweep = await runDirectOrderProbationSweep(systemAccessContext);
+      // Inside the switch on purpose: a sweep that finds phantoms and then fails to report them
+      // is not a job that ran. The whole point of the sweep is the report reaching a human.
+      if (sweep.flagged.length > 0) {
+        await sendDirectOrderPhantomReport(sweep.flagged);
+      }
+      return sweep;
+    });
     return NextResponse.json({
       success: true,
       checked: result.checked,
