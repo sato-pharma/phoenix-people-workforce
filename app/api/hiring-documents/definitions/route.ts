@@ -44,7 +44,7 @@ export async function POST(request: Request) {
       );
     }
 
-    await createHiringDocumentDefinition(payload.document);
+    await createHiringDocumentDefinition(access, payload.document);
     return NextResponse.json(filterHiringDocumentsForAccess(await getHiringDocumentsDashboard(), access));
   } catch (error) {
     const { message, status } = apiError(error);

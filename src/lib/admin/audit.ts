@@ -44,6 +44,12 @@ export type AuditEntityType =
   | "employee_resignation"
   | "excuse_request"
   | "field_workforce_compliance_import"
+  // The hiring-document checklist. Four types because the module writes four different
+  // things and "who changed the checklist" is a different question from "who filed a scan".
+  | "hiring_document_definition"
+  | "hiring_document_file"
+  | "hiring_document_note"
+  | "hiring_document_status"
   | "marketing_customer"
   | "marketing_request"
   | "module_control_assignment"

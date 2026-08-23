@@ -37,7 +37,7 @@ export async function DELETE(
     await assertPermission(access, "employee_documents", "update");
     const { id } = await params;
 
-    await deleteHiringDocumentDefinition(id);
+    await deleteHiringDocumentDefinition(access, id);
     return NextResponse.json(filterHiringDocumentsForAccess(await getHiringDocumentsDashboard(), access));
   } catch (error) {
     const { message, status } = apiError(error);
