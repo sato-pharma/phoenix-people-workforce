@@ -18,6 +18,11 @@ import { canonicalizeRegionName, resolveSalesAccessScope } from "@/lib/sales/acc
 import { listSourceOfSalesProducts, loadSalesReferenceData } from "@/lib/sales/monthly-distributor-import";
 import { resolveRegionalManagerRegionCodes } from "@/lib/sales/portal-sos-dashboard";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import {
+  normalizeVenueType,
+  venueRequiresDistributorCode,
+  venueTypeLabel,
+} from "@/lib/venues/venue-type";
 import { pingDirectOrderSheet } from "@/lib/direct-orders/sheet-webhook";
 import { summarizeDirectOrderBasket } from "@/lib/direct-orders/basket-label";
 import { canCancelHeldDirectOrder } from "@/lib/direct-orders/cancel-visibility";
@@ -638,6 +643,7 @@ function mapPharmacyRow(row: Record<string, unknown>): DirectOrderPharmacy {
     regionCode: row.region_code ? String(row.region_code) : null,
     doctorName: row.doctor_name ? String(row.doctor_name) : null,
     pharmacyAddress: row.pharmacy_address ? String(row.pharmacy_address) : null,
+    venueType: normalizeVenueType(row.venue_type),
     distributorCodes: [],
     contestedCodeClaims: normalizeContestedCodeClaims(row.contested_code_claims),
     geoVarianceResolved: row.geo_variance_resolved === true,
@@ -1064,6 +1070,8 @@ export async function createDirectOrderPharmacy(
     doctorName?: string | null;
     pharmacyAddress?: string | null;
     distributorCodes: Array<{ distributorCode: string; customerCode: string }>;
+    /** Defaults to `pharmacy`. A nursery may not carry a distributor code — see below. */
+    venueType?: string | null;
     /**
      * The submitter was shown the pharmacy that already holds a code they typed, and answered that
      * theirs is a DIFFERENT pharmacy.
@@ -1078,6 +1086,15 @@ export async function createDirectOrderPharmacy(
   await assertPermission(access, "direct_orders", "create");
   const name = input.pharmacyName?.trim();
   if (!name) badRequest("Pharmacy name is required.");
+  const venueType = normalizeVenueType(input.venueType);
+  // The whole reason the column exists. A venue with no distributor account has no code to give, so
+  // accepting one here would just re-open the door to an invented one under a new label.
+  if (!venueRequiresDistributorCode(venueType) && (input.distributorCodes ?? []).length > 0) {
+    badRequest(
+      `A ${venueTypeLabel(venueType).toLowerCase()} has no distributor account, so it cannot carry a distributor code. ` +
+        "Register it without one.",
+    );
+  }
   const doctorName = input.doctorName?.trim();
   if (!doctorName) badRequest("Doctor name is required.");
   const pharmacyAddress = input.pharmacyAddress?.trim();
@@ -1182,6 +1199,7 @@ export async function createDirectOrderPharmacy(
       pharmacy_address: pharmacyAddress,
       created_by_hr_id: access.hrId,
       contested_code_claims: contestedCodeClaims,
+      venue_type: venueType,
     },
     p_codes: buildDistributorCodeRows(null, claimablePairs, mapByKey),
   });
@@ -2803,11 +2821,20 @@ export async function registerDirectOrderPharmacy(
     doctorName?: string | null;
     pharmacyAddress?: string | null;
     distributorCodes: Array<{ distributorCode: string; customerCode: string }>;
+    /** Defaults to `pharmacy` — see createDirectOrderPharmacy for the rule this carries. */
+    venueType?: string | null;
   },
 ): Promise<DirectOrderPharmacy> {
   assertPharmacyRegistryAccess(access);
   const name = input.pharmacyName?.trim();
   if (!name) badRequest("Pharmacy name is required.");
+  const venueType = normalizeVenueType(input.venueType);
+  if (!venueRequiresDistributorCode(venueType) && (input.distributorCodes ?? []).length > 0) {
+    badRequest(
+      `A ${venueTypeLabel(venueType).toLowerCase()} has no distributor account, so it cannot carry a distributor code. ` +
+        "Register it without one.",
+    );
+  }
   const doctorName = input.doctorName?.trim() || null;
   const pharmacyAddress = input.pharmacyAddress?.trim() || null;
   const byDistributor = normalizeDistributorCodePairs(input.distributorCodes, await distributorNameResolver());
@@ -2828,6 +2855,7 @@ export async function registerDirectOrderPharmacy(
       entry_source: "catalogue",
       verified_by_hr_id: access.hrId ?? null,
       verified_at: now,
+      venue_type: venueType,
     })
     .select("*")
     .single();

@@ -355,6 +355,7 @@ import { runMarketingRequestOverlapTests } from "./marketing-request-overlap.tes
 import { runMarketingRoiConfidenceTests } from "./marketing-roi-confidence.test.ts";
 import { runMarketingRoiLiveStagesTests } from "./marketing-roi-live-stages.test.ts";
 import { runMarketingSubmissionCaptureGateTests } from "./marketing-submission-capture-gates.test.ts";
+import { runNurseryVenueTypeTests } from "./nursery-venue-type.test.ts";
 import { runMarketingRoiTrackerTests } from "./marketing-roi-tracker.test.ts";
 import { runMarketingRoiExplainTests } from "./marketing-roi-explain.test.ts";
 import { runMarketingRoiBusinessReportTests } from "./marketing-roi-business-report.test.ts";
@@ -1356,6 +1357,15 @@ await runTest("marketing ROI report helpers (date math + body parse)", runMarket
 await runTest("marketing ROI forecast-vs-actual labeling", runMarketingRoiLabelingTests);
 await runTest("marketing ROI Tracker (composes the authoritative engine, adds no fifth)", runMarketingRoiTrackerTests);
 await runTest("marketing submission capture gates (not_found pharmacy code refused at write time, the portal offers the written-reason override, one shared minimum length)", runMarketingSubmissionCaptureGateTests);
+
+await runTest(
+  "nursery venue type (the rule is one predicate, an unknown type falls back to pharmacy, a "
+  + "pharmacy target is byte-identical to its old distributor code id, both write loops go through "
+  + "venueCodeSlots so a codeless venue still gets its link row, capture refuses both wrong "
+  + "combinations, the reference_status gate can actually fire, ROI lists an unattributable target "
+  + "instead of dropping it, and the migration drops both NOT NULLs)",
+  runNurseryVenueTypeTests,
+);
 await runTest("marketing request overlap detection (double-count guard)", runMarketingRequestOverlapTests);
 await runTest("marketing ROI live lifecycle stages (rejected never counts as committed)", runMarketingRoiLiveStagesTests);
 await runTest("marketing ROI confidence score (measurement trust, not performance)", runMarketingRoiConfidenceTests);

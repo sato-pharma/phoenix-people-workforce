@@ -3,6 +3,7 @@ import { writeRequiredAuditLog } from "@/lib/admin/audit";
 import { forbiddenError } from "@/lib/http/api-errors";
 import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { normalizeVenueType, venueCanAttributeSales, venueTypeLabel } from "@/lib/venues/venue-type";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Probation and the phantom report (spec A3 — docs/specs/direct-orders-v2.md).
@@ -117,7 +118,7 @@ export async function runDirectOrderProbationSweep(
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .from("direct_order_pharmacies")
-    .select("id, pharmacy_name, phoenix_pharmacy_code, probation_started_at, created_by_hr_id")
+    .select("id, pharmacy_name, phoenix_pharmacy_code, probation_started_at, created_by_hr_id, venue_type")
     .eq("trust_state", "provisional")
     .eq("active", true);
   if (error) throw error;
@@ -127,6 +128,7 @@ export async function runDirectOrderProbationSweep(
     pharmacy_name: string | null;
     phoenix_pharmacy_code: string | null;
     probation_started_at: string | null;
+    venue_type?: string | null;
     created_by_hr_id: string | null;
   }>;
 
@@ -169,6 +171,14 @@ export async function runDirectOrderProbationSweep(
       const orderRows = (orders ?? []) as Array<{ sales_value: unknown; requester_hr_id: string | null }>;
       const salesValue = orderRows.reduce((sum, o) => sum + (Number(o.sales_value) || 0), 0);
       const daysOnProbation = Math.floor((now.getTime() - startedAt.getTime()) / (24 * 60 * 60 * 1000));
+      // Half of "no footprint" is unreachable for a venue with no distributor account: a nursery
+      // can never appear in the SoS import rows however real it is, so the sentence "no distributor
+      // sales" would read as evidence against it when it is simply not a test it can sit. Say which
+      // proof was actually available, or the reviewer draws a conclusion the data does not support.
+      const venueType = normalizeVenueType(row.venue_type);
+      const missingProof = venueCanAttributeSales(venueType)
+        ? "no distributor sales and no payment"
+        : `no payment (a ${venueTypeLabel(venueType).toLowerCase()} has no distributor account, so distributor sales can never appear for it)`;
 
       await supabase
         .from("direct_order_pharmacies")
@@ -181,10 +191,10 @@ export async function runDirectOrderProbationSweep(
         entityType: "direct_order_request",
         entityId: `pharmacy:${row.id}`,
         oldValues: { trustState: "provisional" },
-        newValues: { trustState: "phantom_suspected", daysOnProbation, orders: orderRows.length, salesValue },
+        newValues: { trustState: "phantom_suspected", daysOnProbation, orders: orderRows.length, salesValue, venueType },
         summary:
-          `Pharmacy ${row.pharmacy_name ?? row.id} completed ${daysOnProbation} days on probation with no ` +
-          `distributor sales and no payment. ${orderRows.length} order(s), ${Math.round(salesValue).toLocaleString("en-US")} EGP.`,
+          `${venueTypeLabel(venueType)} ${row.pharmacy_name ?? row.id} completed ${daysOnProbation} days on probation ` +
+          `with ${missingProof}. ${orderRows.length} order(s), ${Math.round(salesValue).toLocaleString("en-US")} EGP.`,
       });
 
       result.flagged.push({

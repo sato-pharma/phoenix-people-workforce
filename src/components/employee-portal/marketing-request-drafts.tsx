@@ -56,6 +56,7 @@ import type {
   MarketingRequestStepProgress,
 } from "@/lib/marketing-requests/service";
 import { UNVERIFIED_CODE_REASON_MIN_LENGTH } from "@/lib/marketing-requests/types";
+import { venueTypeLabel } from "@/lib/venues/venue-type";
 import type {
   MarketingApprovedRequestRow,
   MarketingRequestPharmacyOption,
@@ -663,9 +664,9 @@ function MarketingRequestDraftWorkspaceInner() {
   //
   // The API has accepted `unverifiedCodeReason` since the capture gate was added, but no screen
   // ever sent one — so a rep who genuinely stood in front of a real shop was refused at submit
-  // with "record why it must be used as-is" and given nowhere to record it. Keyed by
-  // distributorCodeId, so switching customer leaves stale keys that are simply never read, exactly
-  // like `deselectedPharmacyIds` above.
+  // with "record why it must be used as-is" and given nowhere to record it. Keyed by the option's
+  // `targetId`, so switching customer leaves stale keys that are simply never read, exactly like
+  // `deselectedPharmacyIds` above.
   const [unverifiedCodeReasons, setUnverifiedCodeReasons] = useState<Record<string, string>>({});
   const [estimatedCost, setEstimatedCost] = useState("");
   const [roiDurationMonths, setRoiDurationMonths] = useState("3");
@@ -825,7 +826,7 @@ function MarketingRequestDraftWorkspaceInner() {
   const selectedPharmacyIds = useMemo(
     () =>
       pharmacyOptions
-        .map((option) => option.distributorCodeId)
+        .map((option) => option.targetId)
         .filter((id) => !deselectedPharmacyIds.includes(id)),
     [pharmacyOptions, deselectedPharmacyIds],
   );
@@ -838,7 +839,7 @@ function MarketingRequestDraftWorkspaceInner() {
       pharmacyOptions.filter(
         (option) =>
           option.referenceStatus === "not_found" &&
-          selectedPharmacyIds.includes(option.distributorCodeId),
+          selectedPharmacyIds.includes(option.targetId),
       ),
     [pharmacyOptions, selectedPharmacyIds],
   );
@@ -850,7 +851,7 @@ function MarketingRequestDraftWorkspaceInner() {
     () =>
       unverifiedSelections.filter(
         (option) =>
-          (unverifiedCodeReasons[option.distributorCodeId] ?? "").trim().length <
+          (unverifiedCodeReasons[option.targetId] ?? "").trim().length <
           UNVERIFIED_CODE_REASON_MIN_LENGTH,
       ),
     [unverifiedSelections, unverifiedCodeReasons],
@@ -862,8 +863,11 @@ function MarketingRequestDraftWorkspaceInner() {
   const captureConfidence = useMemo(() => {
     const suspectByCode = new Map(
       pharmacyOptions.map((option) => [
-        option.distributorCodeId,
-        option.referenceStatus === "not_found" || option.referenceStatus === "ambiguous",
+        option.targetId,
+        // A venue with no distributor account is not a SUSPECT code — it is no code at all. Scoring
+        // it as suspect would mark every nursery request low-confidence for a fault it cannot have.
+        option.venueType === "pharmacy"
+        && (option.referenceStatus === "not_found" || option.referenceStatus === "ambiguous"),
       ]),
     );
     return draftCaptureConfidence({
@@ -1160,9 +1164,9 @@ function MarketingRequestDraftWorkspaceInner() {
       // The reason rides per pharmacy, not per request: a request can target several pharmacies
       // where only one code is unverified, and a request-level note would not say which. Sent only
       // where one was actually typed, so a verified code carries nothing extra.
-      pharmacies: selectedPharmacyIds.map((distributorCodeId) => {
-        const reason = (unverifiedCodeReasons[distributorCodeId] ?? "").trim();
-        return reason ? { distributorCodeId, unverifiedCodeReason: reason } : { distributorCodeId };
+      pharmacies: selectedPharmacyIds.map((targetId) => {
+        const reason = (unverifiedCodeReasons[targetId] ?? "").trim();
+        return reason ? { targetId, unverifiedCodeReason: reason } : { targetId };
       }),
       products: productLines
         .filter((line) => line.productId && fieldNumber(line.quantity) > 0)
@@ -1622,13 +1626,16 @@ function MarketingRequestDraftWorkspaceInner() {
                       ) : (
                         <div className="flex flex-col gap-1 border border-slate-200 p-2">
                           {pharmacyOptions.map((option) => {
-                            const checked = selectedPharmacyIds.includes(option.distributorCodeId);
-                            const unverified = option.referenceStatus === "not_found";
-                            const reason = unverifiedCodeReasons[option.distributorCodeId] ?? "";
+                            const checked = selectedPharmacyIds.includes(option.targetId);
+                            // Never true for a codeless venue: there is no code to be unrecognised,
+                            // and the server does not ask for a reason it would have nothing to say.
+                            const unverified =
+                              option.venueType === "pharmacy" && option.referenceStatus === "not_found";
+                            const reason = unverifiedCodeReasons[option.targetId] ?? "";
                             const reasonTooShort =
                               reason.trim().length < UNVERIFIED_CODE_REASON_MIN_LENGTH;
                             return (
-                              <div key={option.distributorCodeId}>
+                              <div key={option.targetId}>
                                 <label
                                   className="flex cursor-pointer items-center gap-2 text-xs"
                                 >
@@ -1636,17 +1643,30 @@ function MarketingRequestDraftWorkspaceInner() {
                                     checked={checked}
                                     onChange={() =>
                                       setDeselectedPharmacyIds((current) =>
-                                        current.includes(option.distributorCodeId)
-                                          ? current.filter((id) => id !== option.distributorCodeId)
-                                          : [...current, option.distributorCodeId],
+                                        current.includes(option.targetId)
+                                          ? current.filter((id) => id !== option.targetId)
+                                          : [...current, option.targetId],
                                       )
                                     }
                                     type="checkbox"
                                   />
                                   <span className="text-slate-800">{option.pharmacyName}</span>
                                   <span className="text-slate-500">
-                                    {option.pharmacyCode} · {option.distributorName}
+                                    {option.distributorName
+                                      ? `${option.pharmacyCode} · ${option.distributorName}`
+                                      : venueTypeLabel(option.venueType)}
                                   </span>
+                                  {/*
+                                    Stated on the row, not left to be noticed: spend here is allowed
+                                    and its return can never be read off a sales figure. The ROI
+                                    panel would otherwise show a zero, which says something much
+                                    worse and much less true than "this cannot be measured that way".
+                                  */}
+                                  {option.distributorName ? null : (
+                                    <span className="text-slate-500">
+                                      — no distributor account, so sales cannot be attributed
+                                    </span>
+                                  )}
                                   {unverified ? (
                                     <span className="text-amber-700">
                                       — code not recognised, sales here will not be counted
@@ -1669,7 +1689,7 @@ function MarketingRequestDraftWorkspaceInner() {
                                         const value = event.target.value;
                                         setUnverifiedCodeReasons((current) => ({
                                           ...current,
-                                          [option.distributorCodeId]: value,
+                                          [option.targetId]: value,
                                         }));
                                       }}
                                       placeholder={`Why must code ${option.pharmacyCode} be used as-is?`}

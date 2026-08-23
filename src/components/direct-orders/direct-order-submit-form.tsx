@@ -26,6 +26,12 @@ import type {
   DirectOrderPharmacy,
   DirectOrderPharmacyPreflight,
 } from "@/lib/direct-orders/types";
+import {
+  VENUE_TYPES,
+  venueRequiresDistributorCode,
+  venueTypeLabel,
+  type VenueType,
+} from "@/lib/venues/venue-type";
 
 type ProductOption = {
   productCode: string;
@@ -111,6 +117,13 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
   const [newBrickId, setNewBrickId] = useState("");
   const [newDoctor, setNewDoctor] = useState("");
   const [newAddress, setNewAddress] = useState("");
+  /**
+   * What is actually being registered. A nursery has no distributor account, so it has no customer
+   * code to give. Leaving the codes empty has been allowed here since 2026-08-04 — what was missing
+   * is any way to say WHY they are empty, which is the difference between a venue that has no code
+   * and one whose code nobody has typed yet.
+   */
+  const [newVenueType, setNewVenueType] = useState<VenueType>("pharmacy");
   const [distRows, setDistRows] = useState<Array<{ distributorCode: string; customerCode: string }>>([
     { distributorCode: "", customerCode: "" },
   ]);
@@ -190,9 +203,14 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
             // declared above it, so naming it in the dependency array would be a TDZ error at
             // render. The server falls back to the area's own region when this is null anyway.
             regionCode: bricks.find((brick) => brick.brickId === newBrickId)?.regionCode ?? null,
-            distributorCodes: distRows
-              .map((row) => ({ distributorCode: row.distributorCode.trim(), customerCode: row.customerCode.trim() }))
-              .filter((row) => row.distributorCode && row.customerCode),
+            // Never for a codeless venue: a stale row would raise a collision against a code this
+            // venue is not going to claim, and the answer to it ("no, mine is different") would be
+            // recorded as a contested claim on someone else's code.
+            distributorCodes: venueRequiresDistributorCode(newVenueType)
+              ? distRows
+                .map((row) => ({ distributorCode: row.distributorCode.trim(), customerCode: row.customerCode.trim() }))
+                .filter((row) => row.distributorCode && row.customerCode)
+              : [],
           }),
         });
         const data = (await res.json().catch(() => ({}))) as Partial<DirectOrderPharmacyPreflight>;
@@ -211,7 +229,7 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
     // distRowsKey is a content-derived proxy for distRows, kept out of the array on purpose so a
     // re-render that doesn't actually change any row doesn't reset the debounce timer.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [newName, newAreaCode, newBrickId, bricks, pharmacyMode, distRowsKey]);
+  }, [newName, newAreaCode, newBrickId, bricks, pharmacyMode, newVenueType, distRowsKey]);
 
   // "My pharmacies" is fetched once, the first time the tab is opened. It is a short, personal list
   // that only changes when one of this rep's own orders is approved, so re-fetching on every visit
@@ -365,6 +383,9 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
   // never sent them, so the refusal could not fire. Blocking here is what the warning promises.
   const halfFilledDistRow =
     pharmacyMode === "new" &&
+    // A codeless venue does not render these rows at all, so a leftover half-typed row from before
+    // the type was switched must not silently disable the submit button with nothing to point at.
+    venueRequiresDistributorCode(newVenueType) &&
     distRows.some((row) => Boolean(row.distributorCode.trim()) !== Boolean(row.customerCode.trim()));
 
   // A bonus deal is valued on the pharmacy price alone. Without one the server refuses the
@@ -452,7 +473,10 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
         regionCode: selectedBrick?.regionCode ?? null,
         doctorName: newDoctor.trim(),
         pharmacyAddress: newAddress.trim(),
-        distributorCodes: pairs,
+        // The server refuses a code on a venue that cannot hold one, so the rows left behind by a
+        // type switch would 400 the whole registration rather than being quietly ignored.
+        distributorCodes: venueRequiresDistributorCode(newVenueType) ? pairs : [],
+        venueType: newVenueType,
         // "No, mine is a different pharmacy." The server re-checks the collision and records the
         // contested claim; it never takes this flag as permission to claim the code.
         acknowledgedCodeConflict,
@@ -923,7 +947,37 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
                     ← Back to search
                   </button>
                 </div>
-                <input className={inputClass()} value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="Pharmacy name *" />
+                <div className="border border-[#eef1f3] p-2">
+                  <p className="text-[11px] font-black uppercase tracking-wider text-slate-500">What is this?</p>
+                  <div className="mt-1 flex items-center gap-1.5">
+                    {VENUE_TYPES.map((venueType) => (
+                      <button
+                        className={
+                          newVenueType === venueType
+                            ? "border border-orange-300 bg-orange-50 px-2.5 py-1 text-[12px] font-black text-orange-700"
+                            : "border border-[#eef1f3] bg-white px-2.5 py-1 text-[12px] font-bold text-slate-600 hover:bg-slate-50"
+                        }
+                        key={venueType}
+                        onClick={() => setNewVenueType(venueType)}
+                        type="button"
+                      >
+                        {venueTypeLabel(venueType)}
+                      </button>
+                    ))}
+                  </div>
+                  {venueRequiresDistributorCode(newVenueType) ? null : (
+                    <p className="mt-1 text-[11px] font-semibold text-slate-500">
+                      A {venueTypeLabel(newVenueType).toLowerCase()} has no distributor account, so it has no
+                      customer code. Register it as one — never as a pharmacy with a made-up code.
+                    </p>
+                  )}
+                </div>
+                <input
+                  className={inputClass()}
+                  onChange={(e) => setNewName(e.target.value)}
+                  placeholder={`${venueTypeLabel(newVenueType)} name *`}
+                  value={newName}
+                />
                 <select
                   className={inputClass()}
                   value={newAreaCode}
@@ -1010,10 +1064,15 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
                   </div>
                 ) : null}
                 <input className={inputClass()} value={newDoctor} onChange={(e) => setNewDoctor(e.target.value)} placeholder="Doctor name *" />
-                <input className={inputClass()} value={newAddress} onChange={(e) => setNewAddress(e.target.value)} placeholder="Pharmacy address *" />
+                <input
+                  className={inputClass()}
+                  onChange={(e) => setNewAddress(e.target.value)}
+                  placeholder={`${venueTypeLabel(newVenueType)} address *`}
+                  value={newAddress}
+                />
 
                 {/* Optional since 2026-08-04 — the note explains what leaving it empty costs. */}
-                <div className="border border-[#eef1f3] p-2">
+                <div className={venueRequiresDistributorCode(newVenueType) ? "border border-[#eef1f3] p-2" : "hidden"}>
                   <p className="text-[11px] font-black uppercase tracking-wider text-slate-500">Distributor customer codes</p>
                   <p className="mb-1 text-[11px] font-semibold text-slate-500">
                     Optional. Leave it empty if you do not know them — but the order cannot be

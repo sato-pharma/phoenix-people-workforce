@@ -94,6 +94,15 @@ import type {
   MarketingWorkflowApprovalScope,
   MarketingWorkflowStep,
 } from "@/lib/marketing-requests/types";
+import { decodeVenueTarget, encodeVenueTarget } from "@/lib/marketing-requests/venue-type";
+import {
+  DEFAULT_VENUE_TYPE,
+  normalizeVenueType,
+  venueNonAttributableReason,
+  venueRequiresDistributorCode,
+  venueTypeLabel,
+  type VenueType,
+} from "@/lib/venues/venue-type";
 import { getUserProductScopeOverride } from "@/lib/auth/scope-visibility";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { resolveMarketingPharmacyCodes } from "@/lib/marketing-requests/master-resolution";
@@ -361,6 +370,8 @@ type MarketingPharmacyDbRow = {
   validated_by_hr_id?: string | null;
   validation_notes?: string | null;
   validation_status?: MarketingValidationStatus;
+  /** Absent on every row written before 2026-08-23 — `normalizeVenueType` reads those as pharmacies. */
+  venue_type?: string | null;
 };
 
 type MarketingCustomerContactDbRow = {
@@ -394,7 +405,7 @@ type MarketingCustomerPharmacyDbRow = {
   created_at?: string | null;
   created_by_hr_id?: string | null;
   customer_id: string;
-  distributor_code_id: string;
+  distributor_code_id: string | null;
   id: string;
   pharmacy_id: string;
   updated_at?: string | null;
@@ -474,7 +485,7 @@ type MarketingRequestProductDbRow = {
 
 type MarketingRequestPharmacyDbRow = {
   created_at?: string | null;
-  distributor_code_id: string;
+  distributor_code_id: string | null;
   id: string;
   notes: string | null;
   pharmacy_id: string;
@@ -743,7 +754,7 @@ export type MarketingApproverOversightRow = Omit<MarketingApproverUpcomingRow, "
 
 export type PreparedMarketingRequestDraft = {
   pharmacyRows: Array<{
-    distributor_code_id: string;
+    distributor_code_id: string | null;
     notes: string | null;
     pharmacy_id: string;
     request_id?: string;
@@ -828,13 +839,28 @@ type NormalizedMarketingValidationPharmacy = {
   extractedGovernorateName: string | null;
   normalizedName: string;
   regionName: string | null;
+  /** Empty only when `venueType` needs no distributor account. */
   vendorCodes: Array<{
     distributorId: number;
     distributorPharmacyCode: string;
     normalizedPharmacyCode: string;
   }>;
   validationStatus: MarketingValidationStatus;
+  venueType: VenueType;
 };
+
+/**
+ * What to iterate when writing a venue's links: one entry per distributor code, or a single `null`
+ * for a venue that has none.
+ *
+ * Both write paths below used to loop over `vendorCodes` directly, which meant a venue with zero
+ * codes silently produced NO customer link at all — the customer would be created, the shop would
+ * be created, and nothing would join them. That is the failure this returns `[null]` to prevent.
+ */
+function venueCodeSlots<T>(venueType: VenueType, codes: T[]): Array<T | null> {
+  if (codes.length > 0) return codes;
+  return venueRequiresDistributorCode(venueType) ? [] : [null];
+}
 
 type NormalizedMarketingValidationCustomer = {
   capturedAccuracyMeters: number | null;
@@ -1460,17 +1486,26 @@ function normalizeDraftPharmacies(inputPharmacies: MarketingRequestDraftPharmacy
   if (!Array.isArray(inputPharmacies)) return [];
 
   const seen = new Set<string>();
-  const rows: Array<{ distributorCodeId: string; notes: string | null; unverifiedCodeReason: string | null }> = [];
+  const rows: Array<{
+    distributorCodeId: string | null;
+    notes: string | null;
+    pharmacyId: string | null;
+    unverifiedCodeReason: string | null;
+  }> = [];
   for (const pharmacy of inputPharmacies) {
-    const distributorCodeId = cleanText(pharmacy?.distributorCodeId);
-    if (!distributorCodeId) {
-      throw validationError("Distributor pharmacy code ID is required.");
+    // `targetId` first, `distributorCodeId` as the fallback — a draft saved before the venue type
+    // existed carries only the second, and for a pharmacy the two are the same string anyway.
+    const target = decodeVenueTarget(pharmacy?.targetId ?? pharmacy?.distributorCodeId);
+    if (!target) {
+      throw validationError("Target pharmacy is required.");
     }
-    if (seen.has(distributorCodeId)) continue;
-    seen.add(distributorCodeId);
+    const key = target.distributorCodeId ?? `venue::${target.pharmacyId}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
     rows.push({
-      distributorCodeId,
+      distributorCodeId: target.distributorCodeId,
       notes: cleanText(pharmacy?.notes),
+      pharmacyId: target.pharmacyId,
       unverifiedCodeReason: cleanText(pharmacy?.unverifiedCodeReason),
     });
   }
@@ -1852,6 +1887,7 @@ function normalizeReusedValidationPharmacy(existingPharmacyId: string): Normaliz
     regionName: null,
     validationStatus: "pending",
     vendorCodes: [],
+    venueType: DEFAULT_VENUE_TYPE,
   };
 }
 
@@ -1869,8 +1905,23 @@ function normalizeValidationPharmacy(
   const inputPharmacy = inputEntry as MarketingValidationPharmacyInput;
   const displayName = cleanText(inputPharmacy?.displayName);
   if (!displayName) throw validationError(`${label} name is required.`);
-  if (!Array.isArray(inputPharmacy.vendorCodes) || inputPharmacy.vendorCodes.length === 0) {
+  const venueType = normalizeVenueType(inputPharmacy.venueType);
+  const vendorCodeInputs = Array.isArray(inputPharmacy.vendorCodes) ? inputPharmacy.vendorCodes : [];
+  // A pharmacy still must name a code — a shop nobody can invoice attributes nothing, and that has
+  // been refused since the module shipped. What changed on 2026-08-23 is that "must name a code" is
+  // no longer the same statement as "is a venue": a nursery has no distributor account, and this
+  // gate is what left inventing one as the only way through the form.
+  if (venueType === "pharmacy" && vendorCodeInputs.length === 0) {
     throw validationError(`${label} needs at least one vendor code.`);
+  }
+  // The mirror image, and the reason this is a check and not just a relaxation: a code typed onto a
+  // nursery is a code that will resolve against somebody else's shop. Refuse it at the door rather
+  // than storing it and discovering later whose sales it stole.
+  if (venueType !== "pharmacy" && vendorCodeInputs.length > 0) {
+    throw validationError(
+      `${label} is a ${venueTypeLabel(venueType).toLowerCase()}, which has no distributor account, so it cannot carry a vendor code.`,
+      "venue_cannot_have_vendor_code",
+    );
   }
 
   const pharmacyPhotoName = cleanText(inputPharmacy.evidencePhotoName);
@@ -1896,7 +1947,7 @@ function normalizeValidationPharmacy(
   };
   const pharmacyEvidenceStatus = evidenceStatusFromInput(pharmacy);
   const seenVendorCodes = new Set<string>();
-  const vendorCodes = inputPharmacy.vendorCodes.map((vendorCode, vendorIndex) => {
+  const vendorCodes = vendorCodeInputs.map((vendorCode, vendorIndex) => {
     const distributorId = numberId(vendorCode.distributorId, `${label} vendor ${vendorIndex + 1}`);
     const distributorPharmacyCode = cleanText(vendorCode.distributorPharmacyCode);
     if (!distributorPharmacyCode) {
@@ -1923,6 +1974,7 @@ function normalizeValidationPharmacy(
     existingPharmacyId: null,
     validationStatus: systemStatusFromEvidence(pharmacyEvidenceStatus),
     vendorCodes,
+    venueType,
   };
 }
 
@@ -2056,6 +2108,8 @@ export function prepareMarketingRequestDraft(params: {
   input: MarketingRequestCreateDraft;
   pharmacyCodes?: MarketingPharmacyDistributorCodeDbRow[];
   products: MarketingProductDbRow[];
+  /** The codeless targets — see `fetchVenuePharmacies`. */
+  venuePharmacies?: Array<{ id: string; display_name: string | null; active?: boolean | null; venue_type?: string | null }>;
   requestCode?: string;
   requestType: MarketingRequestTypeDbRow;
   requester: Pick<EmployeeDirectoryRow, "areaId" | "hrId" | "lineId" | "managerHrId"> & { lineName?: string | null };
@@ -2133,8 +2187,36 @@ export function prepareMarketingRequestDraft(params: {
       : requesterLineId;
   const managerHrId = cleanText(params.customer.manager_hr_id) ?? cleanText(params.requester.managerHrId);
   const pharmacyCodesById = new Map((params.pharmacyCodes ?? []).map((code) => [code.id, code]));
+  const venuePharmaciesById = new Map((params.venuePharmacies ?? []).map((venue) => [venue.id, venue]));
 
   const pharmacyRows = normalized.pharmacies.map((pharmacy) => {
+    // A venue with no distributor account — spend on it is allowed, and can never be attributed to
+    // a sale, so there is no code to look up and no capture gate to pass. Everything the gate below
+    // protects is about matching an invoice line, which this venue will never appear on.
+    if (!pharmacy.distributorCodeId) {
+      const venue = pharmacy.pharmacyId ? venuePharmaciesById.get(pharmacy.pharmacyId) : undefined;
+      if (!venue || venue.active === false) {
+        throw notFoundError("That venue was not found or is inactive.", "pharmacy_not_found");
+      }
+      const venueType = normalizeVenueType(venue.venue_type);
+      // Refuses the one way this could be abused: pointing a codeless target at an ordinary
+      // pharmacy to slip past the capture gate that guards its code.
+      if (venueRequiresDistributorCode(venueType)) {
+        throw validationError(
+          `"${venue.display_name ?? "That venue"}" is a pharmacy, so a request must target one of its distributor codes.`,
+          "pharmacy_code_required",
+        );
+      }
+      return {
+        distributor_code_id: null,
+        notes: [
+          pharmacy.notes,
+          venueNonAttributableReason(venueType),
+        ].filter(Boolean).join(" | ") || null,
+        pharmacy_id: venue.id,
+      };
+    }
+
     const code = pharmacyCodesById.get(pharmacy.distributorCodeId);
     if (!code || code.active === false) {
       throw notFoundError("Distributor pharmacy code was not found or is inactive.", "pharmacy_code_not_found");
@@ -4049,6 +4131,7 @@ function mapMarketingPharmacy(row: MarketingPharmacyDbRow): MarketingPharmacy {
     validatedByHrId: row.validated_by_hr_id ?? null,
     validationNotes: row.validation_notes ?? null,
     validationStatus: row.validation_status ?? "pending",
+    venueType: normalizeVenueType(row.venue_type),
   };
 }
 
@@ -4344,17 +4427,54 @@ async function fetchActiveProducts(supabase: SupabaseClient, productIds: number[
   return (data ?? []) as MarketingProductDbRow[];
 }
 
+/**
+ * The distributor codes a draft is targeting.
+ *
+ * `reference_status`, `distributor_pharmacy_code` and `normalized_pharmacy_code` are NOT optional
+ * extras: the CAPTURE GATE in `prepareMarketingRequestDraft` branches on `reference_status` and
+ * builds its message from the other two. This selected only `id, pharmacy_id, active` until
+ * 2026-08-23, so `code.reference_status` was `undefined` on every draft ever prepared and
+ * `undefined === "not_found"` is false — the gate could not fire, and the whole override-reason
+ * requirement was unreachable code.
+ *
+ * It did no damage only by luck. All 22 request targets written to production so far resolve
+ * `matched`, so there was never a `not_found` case for the gate to miss. There is one offerable
+ * `not_found` target today, and it is the fabricated nursery code this same change exists to
+ * retire. Keep every column the gate reads in this select.
+ */
 async function fetchPharmacyCodes(supabase: SupabaseClient, distributorCodeIds: string[]) {
   if (distributorCodeIds.length === 0) return [];
 
   const { data, error } = await supabase
     .from("marketing_pharmacy_distributor_codes")
-    .select("id, pharmacy_id, active")
+    .select("id, pharmacy_id, active, reference_status, distributor_pharmacy_code, normalized_pharmacy_code")
     .in("id", distributorCodeIds)
     .or("active.is.null,active.eq.true");
 
   if (error) throw error;
   return (data ?? []) as MarketingPharmacyDistributorCodeDbRow[];
+}
+
+/**
+ * The codeless venues a draft is targeting, for the half of the picker that has no distributor code
+ * to look up. Returns the venue itself rather than a code row, because that is all a nursery has.
+ */
+async function fetchVenuePharmacies(supabase: SupabaseClient, pharmacyIds: string[]) {
+  if (pharmacyIds.length === 0) return [];
+
+  const { data, error } = await supabase
+    .from("marketing_pharmacies")
+    .select("id, display_name, active, venue_type")
+    .in("id", pharmacyIds)
+    .or("active.is.null,active.eq.true");
+
+  if (error) throw error;
+  return (data ?? []) as Array<{
+    id: string;
+    display_name: string | null;
+    active?: boolean | null;
+    venue_type?: string | null;
+  }>;
 }
 
 function emptyValidationSummary(): Record<MarketingValidationStatus, number> {
@@ -4571,7 +4691,7 @@ async function refreshLinksAfterCustomerCompletion(input: {
   const codeRows = await fetchRowsByIds<MarketingPharmacyDistributorCodeDbRow>(
     supabase,
     "marketing_pharmacy_distributor_codes",
-    Array.from(new Set(links.map((link) => link.distributor_code_id).filter(Boolean))),
+    Array.from(new Set(links.map((link) => link.distributor_code_id).filter((id): id is string => Boolean(id)))),
   );
   const codesById = new Map(codeRows.map((row) => [String(row.id), row]));
 
@@ -4613,13 +4733,16 @@ async function refreshLinksAfterCustomerCompletion(input: {
     }
 
     const pharmacyRow = pharmaciesById.get(String(link.pharmacy_id));
-    const codeRow = codesById.get(String(link.distributor_code_id));
-    // A link whose shop or code has gone is not something to reason about — leave it exactly as it
-    // is and let the mapping screen surface it.
-    if (!pharmacyRow || !codeRow) continue;
+    const codeRow = link.distributor_code_id ? codesById.get(String(link.distributor_code_id)) : null;
+    // A link whose shop has gone is not something to reason about — leave it exactly as it is and
+    // let the mapping screen surface it. A MISSING code is only a defect when the venue is supposed
+    // to have one: a nursery link legitimately carries none, and refusing to reason about it here
+    // is what would leave it held at "Not Usable Yet" after its customer was fully evidenced.
+    if (!pharmacyRow) continue;
+    if (!codeRow && venueRequiresDistributorCode(normalizeVenueType(pharmacyRow.venue_type))) continue;
 
-    const distributorCode = mapDistributorCode(codeRow);
-    const reference = referencesById.get(Number(codeRow.reference_id ?? 0));
+    const distributorCode = codeRow ? mapDistributorCode(codeRow) : null;
+    const reference = referencesById.get(Number(codeRow?.reference_id ?? 0));
     const governorateCheck = checkCapturedGovernorate({
       capturedAddress: pharmacyRow.captured_address,
       registeredAddress: reference?.raw_pharmacy_address,
@@ -4642,7 +4765,10 @@ async function refreshLinksAfterCustomerCompletion(input: {
         updated_at: nowIso,
         updated_by_hr_id: actorHrId,
         validation_notes: [
-          buildUntrackedDistributorCodeNote(distributorCode.referenceStatus),
+          distributorCode ? buildUntrackedDistributorCodeNote(distributorCode.referenceStatus) : null,
+          // The same sentence the capture path writes, so a link released later reads identically
+          // to one released at capture rather than losing the only note that explains its ROI.
+          distributorCode ? null : venueNonAttributableReason(normalizeVenueType(pharmacyRow.venue_type)),
           buildGovernorateMismatchNote(governorateCheck),
           MARKETING_RELEASED_BY_COMPLETION_NOTE,
         ].filter(Boolean).join(" ") || null,
@@ -4678,14 +4804,21 @@ function mapValidationReportRows(params: {
     const link = mapCustomerPharmacy(linkRow);
     const customer = customers.get(link.customerId);
     const pharmacy = pharmacies.get(link.pharmacyId);
-    const distributorCode = distributorCodes.get(link.distributorCodeId);
-    if (!customer || !pharmacy || !distributorCode) continue;
+    const distributorCode = link.distributorCodeId
+      ? distributorCodes.get(link.distributorCodeId) ?? null
+      : null;
+    if (!customer || !pharmacy) continue;
+    // A link that NAMES a code we could not load is broken and stays skipped. One that names none
+    // is a venue with no distributor account, and belongs on the report like any other.
+    if (link.distributorCodeId && !distributorCode) continue;
 
     summary[link.validationStatus] += 1;
     rows.push({
       customer,
       distributorCode,
-      distributorName: distributorNames.get(distributorCode.distributorId) ?? "Unknown distributor",
+      distributorName: distributorCode
+        ? distributorNames.get(distributorCode.distributorId) ?? "Unknown distributor"
+        : null,
       id: link.id,
       pharmacy,
       validationNotes: link.validationNotes,
@@ -4954,9 +5087,14 @@ async function buildReusableMarketingPharmacies(params: {
   }
 
   return visible
-    // A pharmacy with no distributor code has nothing to link a sale to, so there is nothing to
+    // A PHARMACY with no distributor code has nothing to link a sale to, so there is nothing to
     // reuse — offering it would create a customer with an empty target list in the request form.
-    .filter((row) => (codesByPharmacyId.get(row.id) ?? []).length > 0)
+    //
+    // A nursery is the opposite case and must NOT be filtered out here: having no code is its
+    // normal, correct state, and hiding it is what would send the next rep back to inventing one.
+    .filter((row) =>
+      (codesByPharmacyId.get(row.id) ?? []).length > 0
+      || !venueRequiresDistributorCode(normalizeVenueType(row.venue_type)))
     .map((row) => {
       const ownerHrId = normalizeHrId(row.owner_hr_id);
       return {
@@ -4973,6 +5111,7 @@ async function buildReusableMarketingPharmacies(params: {
         pharmacyCode: row.pharmacy_code ?? "",
         validationStatus: row.validation_status ?? "pending",
         vendorCodes: codesByPharmacyId.get(row.id) ?? [],
+        venueType: normalizeVenueType(row.venue_type),
       };
     });
 }
@@ -5038,7 +5177,7 @@ export async function getMarketingValidationWorkspace(access: AccessContext): Pr
     fetchRowsByIds<MarketingPharmacyDistributorCodeDbRow>(
       supabase,
       "marketing_pharmacy_distributor_codes",
-      links.map((row) => row.distributor_code_id),
+      links.map((row) => row.distributor_code_id).filter((id): id is string => Boolean(id)),
     ),
   ]);
 
@@ -5100,7 +5239,9 @@ export async function getMarketingCustomerDatabaseWorkspace(
 
   const customerIds = Array.from(new Set(links.map((row) => row.customer_id)));
   const pharmacyIds = Array.from(new Set(links.map((row) => row.pharmacy_id)));
-  const distributorCodeIds = Array.from(new Set(links.map((row) => row.distributor_code_id)));
+  const distributorCodeIds = Array.from(
+    new Set(links.map((row) => row.distributor_code_id).filter((id): id is string => Boolean(id))),
+  );
 
   const [customerRows, pharmacyRows, codeRows, contactDataRows] = await Promise.all([
     fetchRowsByIds<MarketingCustomerDbRow>(supabase, "marketing_customers", customerIds),
@@ -5132,10 +5273,13 @@ export async function getMarketingCustomerDatabaseWorkspace(
   const rows = links.flatMap((link) => {
     const customer = mappedCustomers.get(link.customer_id);
     const pharmacy = mappedPharmacies.get(link.pharmacy_id);
-    const distributorCode = mappedCodes.get(link.distributor_code_id);
-    if (!customer || !pharmacy || !distributorCode) return [];
+    const distributorCode = link.distributor_code_id ? mappedCodes.get(link.distributor_code_id) : null;
+    if (!customer || !pharmacy) return [];
+    // A missing code is a broken row for a pharmacy and the normal state for a nursery. Dropping
+    // the second kind would hide a validated venue from the screen whose whole job is to list them.
+    if (!distributorCode && venueRequiresDistributorCode(pharmacy.venueType)) return [];
 
-    const distributor = distributors.get(distributorCode.distributorId);
+    const distributor = distributorCode ? distributors.get(distributorCode.distributorId) : undefined;
     const contact = contactsByCustomer.get(customer.id);
     const customerPhone = cleanText(contact?.mobile_number) ?? null;
 
@@ -5150,19 +5294,22 @@ export async function getMarketingCustomerDatabaseWorkspace(
       customerPhone,
       customerType: customer.customerType,
       customerValidationPhoto: customer.evidencePhotoName,
-      distributorCode: distributor?.distributorCode ?? String(distributorCode.distributorId),
-      distributorId: distributorCode.distributorId,
-      distributorName: distributor?.displayName ?? "Unknown distributor",
+      distributorCode: distributorCode
+        ? distributor?.distributorCode ?? String(distributorCode.distributorId)
+        : null,
+      distributorId: distributorCode?.distributorId ?? null,
+      distributorName: distributorCode ? distributor?.displayName ?? "Unknown distributor" : null,
       pharmacyAddress: pharmacy.capturedAddress,
       pharmacyArea: pharmacy.extractedAreaName,
       pharmacyCode: pharmacy.pharmacyCode,
-      pharmacyDistributorCodeId: distributorCode.id,
+      pharmacyDistributorCodeId: distributorCode?.id ?? null,
       pharmacyGovernorate: pharmacy.extractedGovernorateName,
       pharmacyId: pharmacy.id,
       pharmacyName: pharmacy.displayName,
       rowId: link.id,
       validationStatus: link.validation_status ?? "pending",
-      vendorPharmacyCode: distributorCode.distributorPharmacyCode,
+      vendorPharmacyCode: distributorCode?.distributorPharmacyCode ?? null,
+      venueType: pharmacy.venueType,
     }];
   });
 
@@ -5172,7 +5319,7 @@ export async function getMarketingCustomerDatabaseWorkspace(
       customers: new Set(rows.map((row) => row.customerId)).size,
       pharmacies: new Set(rows.map((row) => row.pharmacyId)).size,
       rows: rows.length,
-      vendors: new Set(rows.map((row) => row.distributorId)).size,
+      vendors: new Set(rows.map((row) => row.distributorId).filter((id) => id !== null)).size,
     },
   };
 }
@@ -5599,7 +5746,16 @@ export async function createMarketingValidationRecord(
       .in("customer_id", existingCustomerIds);
     if (existingLinkQuery.error) throw existingLinkQuery.error;
     for (const row of (existingLinkQuery.data ?? []) as MarketingCustomerPharmacyDbRow[]) {
-      existingLinksByCustomerAndCode.set(`${row.customer_id}::${row.distributor_code_id}`, row);
+      // Keyed on the pharmacy when there is no code. Postgres does not treat two NULLs as equal, so
+      // the unique index on (customer_id, distributor_code_id) does NOT stop a codeless venue being
+      // linked to the same customer twice — this lookup and the partial index added alongside it in
+      // migration 20260823060000 are what do.
+      existingLinksByCustomerAndCode.set(
+        row.distributor_code_id
+          ? `${row.customer_id}::${row.distributor_code_id}`
+          : `${row.customer_id}::venue::${row.pharmacy_id}`,
+        row,
+      );
     }
   }
 
@@ -5756,13 +5912,13 @@ export async function createMarketingValidationRecord(
         const pharmacy = mapMarketingPharmacy(reusedRow);
         // NOT pushed onto `pharmacyIds`: it predates this submission and must survive a rollback.
 
-        for (const codeRow of reusedCodesByPharmacyId.get(reusedRow.id) ?? []) {
-          const distributorCode = mapDistributorCode(codeRow);
+        for (const codeRow of venueCodeSlots(pharmacy.venueType, reusedCodesByPharmacyId.get(reusedRow.id) ?? [])) {
+          const distributorCode = codeRow ? mapDistributorCode(codeRow) : null;
           // Compared against the SHOP'S OWN capture, not this customer's: the reuse path
           // deliberately re-captures nothing, so the only GPS fix that ever described this shop is
           // the one taken when it was first created. A shop whose capture contradicts its code is
           // held here too, or attaching it to a second customer would launder it clean.
-          const reusedReference = reusedReferencesById.get(Number(codeRow.reference_id ?? 0));
+          const reusedReference = reusedReferencesById.get(Number(codeRow?.reference_id ?? 0));
           const governorateCheck = checkCapturedGovernorate({
             capturedAddress: reusedRow.captured_address,
             registeredAddress: reusedReference?.raw_pharmacy_address,
@@ -5783,8 +5939,9 @@ export async function createMarketingValidationRecord(
                 customerEvidenceStatus: normalizedCustomer.evidenceStatus,
                 pharmacyEvidenceStatus: pharmacy.evidenceStatus,
               }),
-            buildUntrackedDistributorCodeNote(distributorCode.referenceStatus),
+            distributorCode ? buildUntrackedDistributorCodeNote(distributorCode.referenceStatus) : null,
             buildGovernorateMismatchNote(governorateCheck),
+            distributorCode ? null : venueNonAttributableReason(pharmacy.venueType),
             // Says on the row itself that this shop was not re-captured for this customer, so an
             // evidence photo dated before the customer is explainable rather than suspicious.
             `Linked from an existing validated pharmacy (${pharmacy.pharmacyCode || pharmacy.displayName}).`,
@@ -5800,7 +5957,11 @@ export async function createMarketingValidationRecord(
           // freshly computed one. Both are human decisions, and a rep re-photographing a shop is
           // not an appeal against either.
           const existingLinkRow = existingCustomerRow
-            ? existingLinksByCustomerAndCode.get(`${customer.id}::${distributorCode.id}`) ?? null
+            ? existingLinksByCustomerAndCode.get(
+              distributorCode
+                ? `${customer.id}::${distributorCode.id}`
+                : `${customer.id}::venue::${pharmacy.id}`,
+            ) ?? null
             : null;
           if (existingLinkRow?.validation_status === "rejected") {
             throw validationError(
@@ -5833,7 +5994,7 @@ export async function createMarketingValidationRecord(
               .insert({
                 created_by_hr_id: actorHrId,
                 customer_id: customer.id,
-                distributor_code_id: distributorCode.id,
+                distributor_code_id: distributorCode?.id ?? null,
                 pharmacy_id: pharmacy.id,
                 updated_by_hr_id: actorHrId,
                 validation_notes: linkValidationNotes,
@@ -5843,14 +6004,16 @@ export async function createMarketingValidationRecord(
               .single();
           if (reusedLinkInsert.error) throw reusedLinkInsert.error;
           const reusedLink = mapCustomerPharmacy(reusedLinkInsert.data as MarketingCustomerPharmacyDbRow);
-          const reusedDistributor = distributorsById.get(distributorCode.distributorId);
+          const reusedDistributor = distributorCode
+            ? distributorsById.get(distributorCode.distributorId)
+            : undefined;
 
           rows.push({
             customer,
             distributorCode,
             distributorName: reusedDistributor
               ? mapDistributor(reusedDistributor).displayName
-              : "Unknown distributor",
+              : distributorCode ? "Unknown distributor" : null,
             id: reusedLink.id,
             pharmacy,
             validationNotes: reusedLink.validationNotes,
@@ -5891,6 +6054,7 @@ export async function createMarketingValidationRecord(
             isOnBehalf,
             systemStatus: normalizedPharmacy.validationStatus,
           }),
+          venue_type: normalizedPharmacy.venueType,
         })
         .select("*")
         .single();
@@ -5919,19 +6083,26 @@ export async function createMarketingValidationRecord(
         }));
       }
 
-      for (const vendorCode of normalizedPharmacy.vendorCodes) {
-        const reference = await resolvePharmacyCodeReference({
-          distributorId: vendorCode.distributorId,
-          normalizedPharmacyCode: vendorCode.normalizedPharmacyCode,
-          supabase,
-        });
+      // `venueCodeSlots`, not `vendorCodes`: everything below — including the customer↔pharmacy
+      // link itself — used to live inside a loop over the codes, so a venue with none produced a
+      // customer and a shop with nothing joining them. A nursery gets exactly one codeless pass.
+      for (const vendorCode of venueCodeSlots(normalizedPharmacy.venueType, normalizedPharmacy.vendorCodes)) {
+        const reference = vendorCode
+          ? await resolvePharmacyCodeReference({
+            distributorId: vendorCode.distributorId,
+            normalizedPharmacyCode: vendorCode.normalizedPharmacyCode,
+            supabase,
+          })
+          : null;
         // Runs BEFORE the status is decided, because since 2026-08-20 it is part of deciding it.
         // Nothing in Phoenix compared these two addresses before: a code whose registered
         // governorate contradicts the GPS fix used to save and validate silently.
+        // A codeless venue has no registered address to contradict, so this returns the same
+        // verdict it returns for a code the reference database has never seen — no claim either way.
         const governorateCheck = checkCapturedGovernorate({
           capturedAddress: normalizedPharmacy.capturedAddress,
-          registeredAddress: reference.registeredAddress,
-          registeredRegion: reference.registeredRegion,
+          registeredAddress: reference?.registeredAddress,
+          registeredRegion: reference?.registeredRegion,
         });
         const linkValidationStatus = resolveMarketingValidationRecordStatus({
           isOnBehalf,
@@ -5946,7 +6117,7 @@ export async function createMarketingValidationRecord(
         // would read zero forever. Say so on the row rather than letting it look fully healthy.
         // Since the code stopped gating the status (2026-08-12) this warning is the ONLY thing
         // carrying that consequence, so it now rides on validated rows as well as pending ones.
-        const untrackedCodeNote = buildUntrackedDistributorCodeNote(reference.status);
+        const untrackedCodeNote = reference ? buildUntrackedDistributorCodeNote(reference.status) : null;
         // On a contradiction this is the REASON the row above came back pending, so it must be on
         // the row — a held link with no stated reason is unreleasable by the Super Admin / CEO who
         // is the only one allowed to release it.
@@ -5957,7 +6128,6 @@ export async function createMarketingValidationRecord(
         // would report zero ROI forever — the badge would say tracked and the money would not
         // arrive. The rep's own entry is preserved untouched in distributor_pharmacy_code.
         // Only set on a single unambiguous match; otherwise nothing has been proven.
-        const storedPharmacyCode = reference.canonicalCode ?? vendorCode.normalizedPharmacyCode;
         const linkValidationNotes = [
           isOnBehalf
             ? adminValidationNote
@@ -5967,32 +6137,42 @@ export async function createMarketingValidationRecord(
             }),
           untrackedCodeNote,
           governorateNote,
+          // Stated on the row rather than left to be inferred from an empty code column: spend on
+          // this venue is real, and its return can never be measured through sales.
+          vendorCode ? null : venueNonAttributableReason(normalizedPharmacy.venueType),
         ].filter(Boolean).join(" ") || null;
-        const distributorCodeInsert = await supabase
-          .from("marketing_pharmacy_distributor_codes")
-          .insert({
-            created_by_hr_id: actorHrId,
-            distributor_id: vendorCode.distributorId,
-            distributor_pharmacy_code: vendorCode.distributorPharmacyCode,
-            normalized_pharmacy_code: storedPharmacyCode,
-            pharmacy_id: pharmacy.id,
-            reference_id: reference.referenceId,
-            reference_match_count: reference.matchCount,
-            reference_status: reference.status,
-            validation_notes: reference.status === "matched" ? null : `Reference ${reference.status.replace(/_/g, " ")}.`,
-          })
-          .select("*")
-          .single();
-        if (distributorCodeInsert.error) throw distributorCodeInsert.error;
-        const distributorCode = mapDistributorCode(distributorCodeInsert.data as MarketingPharmacyDistributorCodeDbRow);
-        distributorCodeIds.push(distributorCode.id);
+        // Narrowed in one place: a venue with no distributor account writes no code row at all,
+        // so everything below this point can talk about a real code without optional chaining —
+        // which is what keeps the canonical-code rule a plain, checkable statement.
+        let distributorCode: MarketingPharmacyDistributorCode | null = null;
+        if (vendorCode && reference) {
+          const storedPharmacyCode = reference.canonicalCode ?? vendorCode.normalizedPharmacyCode;
+          const distributorCodeInsert = await supabase
+            .from("marketing_pharmacy_distributor_codes")
+            .insert({
+              created_by_hr_id: actorHrId,
+              distributor_id: vendorCode.distributorId,
+              distributor_pharmacy_code: vendorCode.distributorPharmacyCode,
+              normalized_pharmacy_code: storedPharmacyCode,
+              pharmacy_id: pharmacy.id,
+              reference_id: reference.referenceId,
+              reference_match_count: reference.matchCount,
+              reference_status: reference.status,
+              validation_notes: reference.status === "matched" ? null : `Reference ${reference.status.replace(/_/g, " ")}.`,
+            })
+            .select("*")
+            .single();
+          if (distributorCodeInsert.error) throw distributorCodeInsert.error;
+          distributorCode = mapDistributorCode(distributorCodeInsert.data as MarketingPharmacyDistributorCodeDbRow);
+          distributorCodeIds.push(distributorCode.id);
+        }
 
         const linkInsert = await supabase
           .from("marketing_customer_pharmacies")
           .insert({
             created_by_hr_id: actorHrId,
             customer_id: customer.id,
-            distributor_code_id: distributorCode.id,
+            distributor_code_id: distributorCode?.id ?? null,
             pharmacy_id: pharmacy.id,
             updated_by_hr_id: actorHrId,
             validation_notes: linkValidationNotes,
@@ -6002,12 +6182,12 @@ export async function createMarketingValidationRecord(
           .single();
         if (linkInsert.error) throw linkInsert.error;
         const link = mapCustomerPharmacy(linkInsert.data as MarketingCustomerPharmacyDbRow);
-        const distributor = mapDistributor(distributorsById.get(vendorCode.distributorId) as MarketingDistributorDbRow);
+        const distributorRow = vendorCode ? distributorsById.get(vendorCode.distributorId) : undefined;
 
         rows.push({
           customer,
           distributorCode,
-          distributorName: distributor.displayName,
+          distributorName: distributorRow ? mapDistributor(distributorRow).displayName : null,
           id: link.id,
           pharmacy,
           validationNotes: link.validationNotes,
@@ -6280,7 +6460,7 @@ export async function getMarketingRequestDraftWorkspace(access: AccessContext): 
       .order("pay_date", { ascending: false, nullsFirst: false })
       .limit(MARKETING_WORKSPACE_SAFETY_LIMIT),
     // Display data for the target-pharmacy picker. Both tables are small reference sets.
-    supabase.from("marketing_pharmacies").select("id, display_name, pharmacy_code"),
+    supabase.from("marketing_pharmacies").select("id, display_name, pharmacy_code, venue_type"),
     supabase
       .from("marketing_pharmacy_distributor_codes")
       .select("id, pharmacy_id, distributor_id, distributor_pharmacy_code, reference_status")
@@ -6467,8 +6647,14 @@ export async function getMarketingRequestDraftWorkspace(access: AccessContext): 
   if (pharmaciesResult.error) throw pharmaciesResult.error;
   if (distributorCodesResult.error) throw distributorCodesResult.error;
   const pharmacyNameById = new Map(
-    ((pharmaciesResult.data ?? []) as Array<{ id: string; display_name: string | null; pharmacy_code: string | null }>)
-      .map((row) => [row.id, { code: row.pharmacy_code ?? "", name: row.display_name ?? "" }] as const),
+    ((pharmaciesResult.data ?? []) as Array<{
+      id: string; display_name: string | null; pharmacy_code: string | null; venue_type?: string | null;
+    }>)
+      .map((row) => [row.id, {
+        code: row.pharmacy_code ?? "",
+        name: row.display_name ?? "",
+        venueType: normalizeVenueType(row.venue_type),
+      }] as const),
   );
   const distributorNameById = new Map(
     ((distributorsResult.data ?? []) as MarketingDistributorDbRow[]).map((row) => [Number(row.id), row.display_name]),
@@ -6482,19 +6668,27 @@ export async function getMarketingRequestDraftWorkspace(access: AccessContext): 
 
   const pharmaciesByCustomer: Record<string, MarketingRequestPharmacyOption[]> = {};
   for (const link of (validatedLinksResult.data ?? []) as Array<{
-    customer_id: string; distributor_code_id: string; pharmacy_id: string;
+    customer_id: string; distributor_code_id: string | null; pharmacy_id: string;
   }>) {
-    const code = codeById.get(link.distributor_code_id);
-    if (!code) continue;
     const pharmacy = pharmacyNameById.get(link.pharmacy_id);
+    const code = link.distributor_code_id ? codeById.get(link.distributor_code_id) : null;
+    // A link with no code is offerable only when its venue is genuinely codeless. Anything else is
+    // a broken row, and offering it would put a target in the picker the server would then refuse.
+    if (!code && (!pharmacy || venueRequiresDistributorCode(pharmacy.venueType))) continue;
     const list = pharmaciesByCustomer[link.customer_id] ?? [];
     list.push({
       distributorCodeId: link.distributor_code_id,
-      distributorName: distributorNameById.get(Number(code.distributor_id)) ?? "Unknown distributor",
-      pharmacyCode: code.distributor_pharmacy_code ?? "",
+      distributorName: code ? distributorNameById.get(Number(code.distributor_id)) ?? "Unknown distributor" : null,
+      pharmacyCode: code?.distributor_pharmacy_code ?? "",
+      pharmacyId: link.pharmacy_id,
       pharmacyName: pharmacy?.name || pharmacy?.code || "Unnamed pharmacy",
       // Surfaced so the form can warn BEFORE submission rather than the server refusing after.
-      referenceStatus: code.reference_status ?? "pending",
+      referenceStatus: code?.reference_status ?? "pending",
+      targetId: encodeVenueTarget({
+        distributorCodeId: link.distributor_code_id,
+        pharmacyId: link.pharmacy_id,
+      }),
+      venueType: pharmacy?.venueType ?? DEFAULT_VENUE_TYPE,
     });
     pharmaciesByCustomer[link.customer_id] = list;
   }
@@ -6553,7 +6747,7 @@ export async function createMarketingRequestDraft(
   const allowedProductCodes = toProductCodeSet(await getUserProductScopeOverride(access.loginId ?? ""));
   const normalized = normalizeMarketingRequestDraftInput(input);
 
-  const [customerResult, requestTypeResult, contactResult, productRows, pharmacyCodes] = await Promise.all([
+  const [customerResult, requestTypeResult, contactResult, productRows, pharmacyCodes, venuePharmacies] = await Promise.all([
     supabase
       .from("marketing_customers")
       .select("id, owner_hr_id, manager_hr_id, line_id, area_id, active")
@@ -6572,7 +6766,14 @@ export async function createMarketingRequestDraft(
         .maybeSingle()
       : Promise.resolve({ data: null, error: null }),
     fetchActiveProducts(supabase, normalized.products.map((product) => product.productId)),
-    fetchPharmacyCodes(supabase, normalized.pharmacies.map((pharmacy) => pharmacy.distributorCodeId)),
+    fetchPharmacyCodes(
+      supabase,
+      normalized.pharmacies.map((pharmacy) => pharmacy.distributorCodeId).filter((id): id is string => Boolean(id)),
+    ),
+    fetchVenuePharmacies(
+      supabase,
+      normalized.pharmacies.map((pharmacy) => pharmacy.pharmacyId).filter((id): id is string => Boolean(id)),
+    ),
   ]);
 
   if (customerResult.error) throw customerResult.error;
@@ -6609,6 +6810,7 @@ export async function createMarketingRequestDraft(
     products: productRows,
     requestType: requestTypeResult.data as MarketingRequestTypeDbRow,
     requester,
+    venuePharmacies,
     unrestrictedProductLines: canUseAnyMarketingProductLine(access),
     allowedProductCodes,
   });
@@ -6742,14 +6944,21 @@ export async function resubmitReturnedMarketingRequest(
   }
 
   const normalized = normalizeMarketingRequestDraftInput(input);
-  const [customerResult, requestTypeResult, contactResult, productRows, pharmacyCodes] = await Promise.all([
+  const [customerResult, requestTypeResult, contactResult, productRows, pharmacyCodes, venuePharmacies] = await Promise.all([
     supabase.from("marketing_customers").select("id, owner_hr_id, manager_hr_id, line_id, area_id, active").eq("id", normalized.customerId).maybeSingle(),
     supabase.from("marketing_request_types").select("id, code, name, description, requires_description, sort_order, active").eq("id", normalized.requestTypeId).maybeSingle(),
     normalized.customerContactId
       ? supabase.from("marketing_customer_contacts").select("id, customer_id, active").eq("id", normalized.customerContactId).maybeSingle()
       : Promise.resolve({ data: null, error: null }),
     fetchActiveProducts(supabase, normalized.products.map((product) => product.productId)),
-    fetchPharmacyCodes(supabase, normalized.pharmacies.map((pharmacy) => pharmacy.distributorCodeId)),
+    fetchPharmacyCodes(
+      supabase,
+      normalized.pharmacies.map((pharmacy) => pharmacy.distributorCodeId).filter((id): id is string => Boolean(id)),
+    ),
+    fetchVenuePharmacies(
+      supabase,
+      normalized.pharmacies.map((pharmacy) => pharmacy.pharmacyId).filter((id): id is string => Boolean(id)),
+    ),
   ]);
   if (customerResult.error) throw customerResult.error;
   if (requestTypeResult.error) throw requestTypeResult.error;
@@ -6773,6 +6982,7 @@ export async function resubmitReturnedMarketingRequest(
     requestCode: existing.requestCode,
     requestType: requestTypeResult.data as MarketingRequestTypeDbRow,
     requester,
+    venuePharmacies,
     unrestrictedProductLines: canUseAnyMarketingProductLine(access),
     allowedProductCodes,
   });
