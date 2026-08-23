@@ -5,8 +5,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
   drawEvidenceWatermark,
+  evidenceLocationWithoutFix,
   getCompressedEvidenceCanvasSize,
-  resolveReadableLocation,
+  resolveEvidenceLocationStamp,
 } from "@/components/outstation/evidence-watermark";
 import { formatPhoenixLongDate } from "@/lib/i18n/format";
 
@@ -164,19 +165,23 @@ export function DeparturePhotoCard({
 
         const latitude = position?.coords.latitude ?? null;
         const longitude = position?.coords.longitude ?? null;
-        const capturedLocationLabel =
+        const location =
           latitude != null && longitude != null
-            ? await resolveReadableLocation(latitude, longitude)
-            : "Location unavailable";
+            ? await resolveEvidenceLocationStamp(
+                "/api/outstation/reverse-geocode",
+                latitude,
+                longitude,
+                position?.coords.accuracy ?? null,
+              )
+            : evidenceLocationWithoutFix();
+        const capturedLocationLabel = location.label;
         const capturedAt = new Date().toISOString();
 
         await drawEvidenceWatermark(context, canvas, {
           capturedAt,
-          capturedLatitude: latitude ?? 0,
-          capturedLocationLabel,
-          capturedLongitude: longitude ?? 0,
           employeeHrId,
           label: "Departure photo",
+          locationLines: location.lines,
           reference: `Request: ${request.id}`,
         });
 
