@@ -916,6 +916,8 @@ import { runRecruitmentExtractionRecordsIsCvTests } from "./recruitment-extracti
 import { runRecruitmentRereadNotACvSkipsTests } from "./recruitment-reread-not-a-cv-skips.test.ts";
 import { runWorktreeExitGuardPreRemovalTests } from "./worktree-exit-guard-pre-removal.test.ts";
 
+import { runCvRereadAppliesWhatItReadsTests } from "./cv-reread-applies-what-it-reads.test.ts";
+
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
@@ -2502,6 +2504,11 @@ await runTest(
     + "the origin's fault, before Google is called, never as an unreachable destination; a missing "
     + "Maps key is 503 named as configuration; a markaz no longer trips the region warning)",
   runOutstationDistanceFailureTests,
+);
+
+await runTest(
+  "CV re-read applies what it reads (every extraction persister also writes to the candidate)",
+  runCvRereadAppliesWhatItReadsTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);

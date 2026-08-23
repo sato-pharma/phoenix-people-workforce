@@ -32,7 +32,8 @@ import {
   PhoenixOpenAiError,
 } from "@/lib/ai/openai-client";
 import { logError } from "@/lib/observability/log";
-import { getCandidate } from "@/lib/recruitment/candidates";
+import { getCandidate, updateCandidate } from "@/lib/recruitment/candidates";
+import { selectAutoApplyFields } from "@/lib/recruitment/cv-auto-apply";
 import {
   normalizeStoredExtractionFields,
   type ExtractedCandidateFields,
@@ -964,6 +965,46 @@ export async function extractCandidateFieldsFromCv(
     positionKey: schema.positionKey,
   });
   const extractionId = await persistCvExtraction({ access, candidateId, extraction, fileId: cvFile.id });
+
+  // Fill the candidate's still-empty columns from this read, by the same conservative rule inbound
+  // intake uses (selectAutoApplyFields: high confidence, column storage, blank column only).
+  //
+  // Why this is here and not only in cv-intake-service: this function is the RE-READ path — the
+  // per-candidate "re-run extraction" button and every bulk re-read — and until now it persisted
+  // what it found and returned, applying nothing. That was correct while a review queue existed to
+  // pick the proposals up; that queue was removed on 2026-08-15, having been opened for 5 of 194
+  // CVs. From then on a re-read wrote to extracted_fields and stopped there permanently, with no
+  // screen anywhere that would surface it.
+  //
+  // Measured on production 2026-08-23, on the 189 candidates whose governorate was still blank:
+  // every one of the 169 read by a rules-involving model had been extracted 65-80 HOURS after the
+  // candidate was created — i.e. by a bulk re-read, never by intake — and not one field had
+  // reached the row, against ~130 high-confidence universities sitting in extracted_fields. The
+  // 37 read at intake by the model had their university applied 33 times out of 33. The gap was
+  // never the extractor and never the confidence gate; it was that this path had no writer.
+  //
+  // candidateWasCreatedByThisIntake is FALSE here by construction — this candidate already
+  // existed — so phone stays excluded, which is the documented behaviour for a record whose
+  // identity was resolved by some other CV. Gap-fill only, so a human edit always wins.
+  //
+  // Best-effort: the extraction is persisted and returned either way. Enrichment must never turn a
+  // successful read into a failed one, which is the same contract cv-intake-service holds.
+  try {
+    const autoApply = selectAutoApplyFields({
+      candidate,
+      candidateWasCreatedByThisIntake: false,
+      extractedFields: extraction.fields,
+      positionKey: extraction.positionKey,
+    });
+    if (Object.keys(autoApply).length > 0) {
+      await updateCandidate(candidateId, autoApply);
+    }
+  } catch (autoApplyError) {
+    logError("CV re-read could not auto-apply its high-confidence fields", {
+      error: autoApplyError,
+      labels: { candidateId, event: "cv_reread_auto_apply_failed" },
+    });
+  }
 
   return { extractionId, fields: extraction.fields, model: extraction.model, positionKey: extraction.positionKey };
 }
