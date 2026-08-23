@@ -2,22 +2,29 @@ import { strict as assert } from "node:assert";
 import { readFileSync } from "node:fs";
 
 import {
+  EGYPT_COUNTRY_CENTROID,
+  isUnresolvedResidenceCoordinate,
   mapsNotConfiguredFailure,
   noDrivingRouteFailure,
+  unresolvedResidenceFailure,
 } from "@/lib/outstation/distance-failure";
 
 /**
- * Reported 2026-08-23: adding a manager outstation expense showed "Google Maps could not
- * calculate distance / Google Maps could not calculate a driving route to the selected
- * destination." The production Maps key was healthy at the time (Cairo -> Alexandria answered
- * 218.4 km, HTTP 200), and all 132 employee residences on record sit inside Egypt — so nothing
- * was broken. Google simply returns HTTP 200 with an EMPTY routes array when the destination
- * has no road near it, which is what a governorate's map centre is: New Valley, Marsa Matrouh,
- * Red Sea and South Sinai centres all answer zero routes, while every city routes fine.
+ * Reported 2026-08-23, destination "Ebshaway El Fayoum": "Google Maps could not calculate
+ * distance / Google Maps could not calculate a driving route to the selected destination."
  *
- * The old copy blamed Google for a destination the admin chose, and — worse — said exactly the
- * same thing when GOOGLE_MAPS_SERVER_KEY was missing, because the Routes helper answers with
- * nulls in both cases. These tests pin the two failures apart.
+ * The destination was innocent. Measured live that day from a Cairo residence, Ebshaway routes
+ * fine at 109.0 km, as does the Ibsheway markaz centre (109.3 km) and Faiyum Governorate's own
+ * centre (116.0 km). What could not be routed was the ORIGIN: 23 rows in employee_locations
+ * (16 of them active) store 26.820553, 30.802498 — the coordinate Google returns for the bare
+ * word "Egypt", the country's centroid, in roadless Western Desert. From there Google returns
+ * zero routes to Ebshaway, Faiyum, Cairo and Alexandria alike, and the old copy reported every
+ * one of them as an unreachable destination.
+ *
+ * Two more faults shared that one sentence: a missing GOOGLE_MAPS_SERVER_KEY (the Routes helper
+ * answers with nulls either way, so the 2026-08-01 outage shape would have read as a bad
+ * destination), and a "this is a region" warning that fired on any markaz — 0.3 km from the town
+ * it was warning about. These tests pin all of them apart.
  */
 
 const routeSource = readFileSync(
@@ -30,6 +37,10 @@ const modalSource = readFileSync(
 );
 const mapsSource = readFileSync(
   new URL("../src/lib/google-maps/server.ts", import.meta.url),
+  "utf8",
+);
+const placeDetailsSource = readFileSync(
+  new URL("../app/api/admin/outstation/place-details/route.ts", import.meta.url),
   "utf8",
 );
 
@@ -117,6 +128,52 @@ export function runOutstationDistanceFailureTests() {
     "with no label the coordinates alone must still read as a sentence",
   );
 
+  // --- a residence that never geocoded is the origin's fault, not the destination's -----------
+  assert.equal(EGYPT_COUNTRY_CENTROID.lat, 26.820553);
+  assert.equal(EGYPT_COUNTRY_CENTROID.lng, 30.802498);
+  assert.equal(
+    isUnresolvedResidenceCoordinate(26.820553, 30.802498),
+    true,
+    "the exact stored fallback must be recognised",
+  );
+  assert.equal(
+    isUnresolvedResidenceCoordinate(26.8206, 30.8024),
+    true,
+    "a rounded copy of the same fallback must still be recognised",
+  );
+  for (const [label, lat, lng] of [
+    ["Cairo", 30.0444, 31.2357],
+    ["Ebshaway, Fayoum", 29.3599615, 30.6890055],
+    ["Assiut", 27.1839316, 31.1830756],
+    ["Minya, ~150 km north of the centroid", 28.11083, 30.7484795],
+  ] as const) {
+    assert.equal(
+      isUnresolvedResidenceCoordinate(lat, lng),
+      false,
+      `a real residence (${label}) must never be mistaken for the country centroid`,
+    );
+  }
+
+  const unresolved = unresolvedResidenceFailure("B-52");
+  assert.equal(unresolved.error, "residence_not_geocoded");
+  assert.equal(unresolved.status, 422);
+  assert.match(unresolved.message, /B-52/, "the employee must be named so HR can fix the address");
+  assert.match(
+    unresolved.message,
+    /26.82055, 30.80250/,
+    "the useless coordinate actually stored must be shown",
+  );
+  assert.doesNotMatch(
+    unresolved.message,
+    /destination/i,
+    "a broken origin must never be reported as a problem with the destination",
+  );
+  assert.match(
+    unresolved.message,
+    /employee directory/,
+    "the admin must be told where the real fix lives",
+  );
+
   // --- the wiring that makes any of the above reachable ---------------------------------------
   assert.match(
     mapsSource,
@@ -166,4 +223,37 @@ export function runOutstationDistanceFailureTests() {
     /Google Maps could not calculate distance/,
     "the headline must not blame Google for a missing key or a region the admin picked",
   );
+
+  // The origin guard must run BEFORE Google is called — a centroid origin is knowable without it.
+  const guardAt = routeSource.indexOf("isUnresolvedResidenceCoordinate(");
+  const callAt = routeSource.indexOf("await googleDirectionsRoute(");
+  assert.notEqual(guardAt, -1, "the route must check for a never-geocoded residence");
+  assert.ok(
+    guardAt < callAt,
+    "the never-geocoded residence check must run before the Routes call, not after it",
+  );
+
+  // A markaz is a town, not a region — warning on it was 0.3 km of noise.
+  const broadRegionBlock = placeDetailsSource.slice(
+    placeDetailsSource.indexOf("const BROAD_REGION_TYPES"),
+    placeDetailsSource.indexOf("const isAdministrativeArea"),
+  );
+  assert.ok(
+    broadRegionBlock.includes("administrative_area_level_1"),
+    "a governorate must still count as a broad region",
+  );
+  assert.ok(
+    broadRegionBlock.includes("country"),
+    "a country must still count as a broad region",
+  );
+  for (const level of [
+    "administrative_area_level_2",
+    "administrative_area_level_3",
+    "administrative_area_level_4",
+  ]) {
+    assert.ok(
+      !broadRegionBlock.includes(level),
+      level + " is town-level in Egypt and must not trigger the region warning",
+    );
+  }
 }

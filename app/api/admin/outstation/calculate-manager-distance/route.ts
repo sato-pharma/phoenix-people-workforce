@@ -3,7 +3,12 @@ import { NextResponse } from "next/server";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { googleDirectionsRoute, isGoogleMapsServerKeyConfigured } from "@/lib/google-maps/server";
 import { assertOutstationAdminAccess } from "@/lib/outstation/admin-access";
-import { mapsNotConfiguredFailure, noDrivingRouteFailure } from "@/lib/outstation/distance-failure";
+import {
+  isUnresolvedResidenceCoordinate,
+  mapsNotConfiguredFailure,
+  noDrivingRouteFailure,
+  unresolvedResidenceFailure,
+} from "@/lib/outstation/distance-failure";
 import { getResidenceLocationForEmployee } from "@/lib/outstation/service";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
@@ -75,6 +80,23 @@ export async function POST(request: Request) {
           message: `No registered residence location found for employee ${managerHrId}. Please ensure their address is set in the employee directory.`,
         },
         { status: 422 },
+      );
+    }
+
+    if (
+      isUnresolvedResidenceCoordinate(
+        residence.residenceLatitude,
+        residence.residenceLongitude,
+      )
+    ) {
+      const failure = unresolvedResidenceFailure(managerHrId);
+      console.warn(
+        `[outstation] residence never geocoded for ${managerHrId} `
+          + "(stored as the Egypt country centroid, which has no road)",
+      );
+      return NextResponse.json(
+        { error: failure.error, message: failure.message },
+        { status: failure.status },
       );
     }
 

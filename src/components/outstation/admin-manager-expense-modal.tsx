@@ -657,9 +657,9 @@ export function AdminManagerExpenseModal({
               <div className="mt-2 flex items-start gap-2 rounded-md border border-[#FED7AA] bg-[#FFF7ED] px-3 py-2 text-xs text-[#9A3412]">
                 <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-[#EA580C]" />
                 <span>
-                  <span className="font-black">This is a region, not a specific place.</span>{" "}
-                  Distance is measured to the region&rsquo;s map center, which can be far from
-                  the actual city. Pick a city or an exact location for an accurate distance.
+                  <span className="font-black">This is a governorate, not a specific place.</span>{" "}
+                  Distance is measured to its map centre, which can be far from the town you mean.
+                  Pick a city or an exact location for an accurate distance.
                 </span>
               </div>
             ) : null}

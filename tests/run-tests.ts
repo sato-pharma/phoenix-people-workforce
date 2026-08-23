@@ -2454,9 +2454,9 @@ await runTest(
 );
 
 await runTest(
-  "outstation manager distance failures (a missing Maps key is 503 and never described as a bad "
-    + "destination; a governorate centroid names itself and says pick a city; the region flag is "
-    + "passed explicitly so the same-tick React state cannot send a stale false)",
+  "outstation manager distance failures (a residence stored as the Egypt centroid is reported as "
+    + "the origin's fault, before Google is called, never as an unreachable destination; a missing "
+    + "Maps key is 503 named as configuration; a markaz no longer trips the region warning)",
   runOutstationDistanceFailureTests,
 );
 

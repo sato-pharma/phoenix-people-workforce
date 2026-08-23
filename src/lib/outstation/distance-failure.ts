@@ -15,13 +15,47 @@
  */
 
 export type DistanceFailure = {
-  error: "maps_not_configured" | "route_not_found";
+  error: "maps_not_configured" | "residence_not_geocoded" | "route_not_found";
   message: string;
   status: 422 | 503;
 };
 
 function formatCoordinate(value: number) {
   return value.toFixed(5);
+}
+
+/**
+ * What Google returns when it geocodes the bare word "Egypt": the country's geometric centre, in
+ * the Western Desert with no road anywhere near it. Production holds this exact pair in
+ * `employee_locations` for 23 employees (16 of them active) whose address never resolved — stored
+ * indistinguishably from a real home. Verified 2026-08-23: a route FROM this point returns zero
+ * routes to Ebshaway, Faiyum, Cairo and Alexandria alike, so the failure reads as "the destination
+ * is unreachable" no matter where the trip actually went.
+ */
+export const EGYPT_COUNTRY_CENTROID = { lat: 26.820553, lng: 30.802498 } as const;
+
+/** ~100 m — no real home sits that close to the centre of the Western Desert. */
+const CENTROID_TOLERANCE_DEGREES = 0.001;
+
+export function isUnresolvedResidenceCoordinate(latitude: number, longitude: number) {
+  return (
+    Math.abs(latitude - EGYPT_COUNTRY_CENTROID.lat) < CENTROID_TOLERANCE_DEGREES
+    && Math.abs(longitude - EGYPT_COUNTRY_CENTROID.lng) < CENTROID_TOLERANCE_DEGREES
+  );
+}
+
+/** The employee has a stored coordinate, but it is the never-geocoded fallback. */
+export function unresolvedResidenceFailure(employeeHrId: string): DistanceFailure {
+  return {
+    error: "residence_not_geocoded",
+    message:
+      `The home address on file for ${employeeHrId} was never resolved to a real location — it is `
+      + `stored as the geographic centre of Egypt (${formatCoordinate(EGYPT_COUNTRY_CENTROID.lat)}, `
+      + `${formatCoordinate(EGYPT_COUNTRY_CENTROID.lng)}), open desert with no road. No distance can `
+      + "be measured from it to anywhere. Fix the address in the employee directory — or type the "
+      + "distance below.",
+    status: 422,
+  };
 }
 
 /** The server has no Google Maps key at all — nothing about the destination is at fault. */
