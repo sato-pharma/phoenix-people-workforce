@@ -425,6 +425,7 @@ import { runOutstationLocalDraftTests } from "./outstation-local-draft.test.ts";
 import { runOutstationPayrollExpenseMappingTests } from "./outstation-payroll-expense-mapping.test.ts";
 import { runOutstationPolicyClassificationTests } from "./outstation-policy-classification.test.ts";
 import { runOutstationNotificationsTests } from "./outstation-notifications.test.ts";
+import { runGeocodePrecisionTests } from "./geocode-precision.test.ts";
 import { runOutstationDistanceFailureTests } from "./outstation-distance-failure.test.ts";
 import { runOutstationEmployeeLookupStatusTests } from "./outstation-employee-lookup-status.test.ts";
 import { runMedicalRepExpensesTests } from "./medical-rep-expenses.test.ts";
@@ -2471,6 +2472,13 @@ await runTest(
   + "warns on unpushed commits and uncommitted files, logs the clean case too so silence cannot be "
   + "mistaken for coverage, and never blocks the removal)",
   runWorktreeExitGuardPreRemovalTests,
+);
+
+await runTest(
+  "google geocode precision (a query that resolves only to the country is discarded instead of "
+    + "stored as the Egypt centroid, which is what put 23 employees' homes in the Western Desert; "
+    + "governorates and districts still geocode)",
+  runGeocodePrecisionTests,
 );
 
 await runTest(
