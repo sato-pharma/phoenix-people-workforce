@@ -1,6 +1,15 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import { pingBrevoApiKey } from "../src/lib/email/brevo-keepalive.ts";
+
+const ROUTE = "app/api/cron/brevo-keepalive/route.ts";
+const SLUG = "phoenix-brevo-keepalive";
+const OBSERVABILITY_DOC = "docs/observability.md";
+
+/** Monthly, 1st at 04:09 Africa/Cairo — cron-job.org job 8313297, created 2026-08-23. */
+const DOCUMENTED_CRON = "9 4 1 * *";
+const CRON_JOB_ID = "8313297";
 
 // Guards the Brevo FAILOVER keepalive (see src/lib/email/brevo-keepalive.ts).
 //
@@ -83,4 +92,42 @@ export async function runBrevoKeepaliveTests() {
     if (savedKey === undefined) delete process.env.BREVO_API_KEY;
     else process.env.BREVO_API_KEY = savedKey;
   }
+
+  // ---- 5. The keepalive must actually be SCHEDULED, and the schedule must be findable ----
+  //
+  // Everything above proves the ping does the right thing when something calls it. Until
+  // 2026-08-23 nothing did: the route was wired to `phoenix-brevo-keepalive` and had no cron job
+  // behind it, so the check had never even been created — auto-provisioning needs a first ping, and
+  // a job that never runs produces silence rather than red. A keepalive that never runs is the
+  // exact silent expiry this whole file exists to prevent, one layer further back.
+  //
+  // The schedule lives in a third-party account this repository cannot read, so the job id is the
+  // only handle on it and has to survive in the docs that depend on it.
+  const routeSource = readFileSync(ROUTE, "utf8");
+  assert.ok(
+    routeSource.includes(`withDeadMansSwitch("${SLUG}"`),
+    `${ROUTE} must ping ${SLUG} — a keepalive nobody watches is how an unused failover key dies quietly`,
+  );
+
+  const doc = readFileSync(OBSERVABILITY_DOC, "utf8");
+  assert.ok(
+    doc.includes(`\`${SLUG}\` | \`${DOCUMENTED_CRON}\``),
+    `${OBSERVABILITY_DOC} must document ${SLUG} with the schedule that is actually configured ` +
+      `(${DOCUMENTED_CRON}) — without a row the check keeps the auto-provisioned 1-day period and ` +
+      "goes red 29 days out of every 30",
+  );
+  assert.ok(
+    doc.includes(CRON_JOB_ID),
+    `${OBSERVABILITY_DOC} must record cron-job.org job ${CRON_JOB_ID}, so the documented schedule can ` +
+      "be checked against the account rather than believed",
+  );
+
+  // Monthly is not arbitrary: Brevo's window is 90 days, so this must stay well inside it.
+  const [, , dayOfMonth] = DOCUMENTED_CRON.split(" ");
+  assert.notEqual(
+    dayOfMonth,
+    "*",
+    "the keepalive must run on a fixed day of the month — a daily or weekly cadence would be wasted " +
+      "calls, and anything sparser than monthly leaves no margin inside Brevo's 90-day window",
+  );
 }

@@ -31,11 +31,19 @@ const OBSERVABILITY_DOC = "docs/observability.md";
  */
 const DOCUMENTED_CRON = "0 * * * *";
 
-/** Routes with no schedule in cron-job.org. Wiring one produces a permanently red check. */
-const DELIBERATELY_UNWIRED = [
+/**
+ * Cron routes that nothing in cron-job.org calls. Wiring one to a check produces a permanently red
+ * dashboard entry, which is worse than no check at all.
+ *
+ * Three routes came off this list on 2026-08-23 — both `*-rotate-sheet-token` routes and
+ * `/api/cron/brevo-keepalive` — in every case because a schedule was CREATED for them, not because
+ * the evidence about them changed. See tests/sheet-token-rotation-liveness.test.ts and
+ * tests/brevo-keepalive.test.ts, which pin those schedules. Of the two left, only the first is
+ * unscheduled on purpose.
+ */
+const UNWATCHED_ROUTES = [
   "/api/cron/marketing-assignment-backfill",
-  "/api/cron/direct-orders-rotate-sheet-token",
-  "/api/cron/marketing-requests-rotate-sheet-token",
+  "/api/cron/reconciliation-check",
 ];
 
 export async function runSyntheticJourneysLivenessTests() {
@@ -99,13 +107,13 @@ export async function runSyntheticJourneysLivenessTests() {
   );
 
   // Keep the unscheduled routes named. Without this, the next sweep for "cron routes missing a
-  // dead-man's-switch" finds them again, wires them blind, and creates three permanently red
-  // checks — which is worse than none, because it teaches the dashboard's reader to ignore red.
-  for (const route of DELIBERATELY_UNWIRED) {
+  // dead-man's-switch" finds them again and wires them blind, creating checks with no schedule
+  // behind them — worse than none, because it teaches the dashboard's reader to ignore red.
+  for (const route of UNWATCHED_ROUTES) {
     assert.ok(
       doc.includes(route),
-      `${OBSERVABILITY_DOC} must record why ${route} is deliberately not watched, or a later sweep ` +
-        "will wire it to a check that has no schedule to be measured against",
+      `${OBSERVABILITY_DOC} must record that nothing calls ${route}, or a later sweep will wire it ` +
+        "to a check that has no schedule to be measured against",
     );
   }
 }

@@ -182,21 +182,50 @@ policy):
 6. **Tune each check's schedule** — auto-provisioned defaults (Simple: 1-day period, 1-hour grace)
    are wrong for most of these jobs. For each check, switch **Schedule** to **Cron Expression**,
    paste the matching row below, set **Time Zone** to `Africa/Cairo` (Healthchecks defaults to
-   UTC), and set the grace period:
+   UTC), and set the grace period. One row is deliberately **Simple** rather than a cron
+   expression — it is pinged on an interval, not at a wall-clock time:
 
-   | Check slug | Cron expression | Suggested grace |
-   |---|---|---|
-   | `phoenix-notify-daily` | `36 6 * * *` | 1h |
-   | `phoenix-process-notifications` | `*/5 * * * *` | 10m |
-   | `phoenix-background-jobs` | `0 3 * * 5` | 2h |
-   | `phoenix-inbound-intake` | `*/2 * * * *` | 10m |
-   | `phoenix-ireports360-sync` | `7 9,12,19 * * *` | 30m |
-   | `phoenix-reconcile-visits` | `24 4 * * 0` | 2h |
-   | `phoenix-ireports360-live-sync` | `1,16,31,46 8-12 * * *` | 15m |
-   | `phoenix-recruitment-email-intake` | `4-59/10 * * * *` | 10m |
-   | `phoenix-direct-orders-expire-held` | `17 2 * * *` | 2h |
-   | `phoenix-direct-orders-probation` | `27 2 * * *` | 2h |
-   | `phoenix-run-synthetic-journeys` | `0 * * * *` | 1h |
+   | Check slug | Cron expression | Suggested grace | What actually pings it |
+   |---|---|---|---|
+   | `phoenix-notify-daily` | `36 6 * * *` | 1h | cron-job.org job `8200909` |
+   | `phoenix-process-notifications` | `*/5 * * * *` | 10m | cron-job.org job `8200914` |
+   | `phoenix-background-jobs` | `0 3 * * 5` | 2h | cron-job.org job `8200915` |
+   | `phoenix-inbound-intake` | `*/2 * * * *` | 10m | cron-job.org job `8200920` |
+   | `phoenix-recruitment-email-intake` | `4-59/10 * * * *` | 10m | cron-job.org job `8200919` |
+   | `phoenix-run-synthetic-journeys` | `0 * * * *` | 1h | cron-job.org job `8220577` |
+   | `phoenix-direct-orders-rotate-sheet-token` | `23 3 * * 5` | 2h | cron-job.org job `8313169` |
+   | `phoenix-marketing-requests-rotate-sheet-token` | `43 3 * * 5` | 2h | cron-job.org job `8313171` |
+   | `phoenix-brevo-keepalive` | `9 4 1 * *` | 12h | cron-job.org job `8313297` |
+   | `phoenix-direct-orders-expire-held` | `17 2 * * *` | 2h | cron-job.org job `8313165` |
+   | `phoenix-direct-orders-probation` | `27 2 * * *` | 2h | cron-job.org job `8313177` |
+   | `phoenix-ireports360-live-poll` | **Simple**, period `5m` | 15m | the in-process poller, every tick |
+   | `phoenix-ireports360-sync` | `0 6-21/3 * * *` | 2h | the in-process poller, when due |
+   | `phoenix-reconcile-visits` | `0 4 * * 0` | 12h | the in-process poller, when due |
+
+   The fourth column is the point of the table. A slug in the code proves only that the app *would*
+   ping if something called it; it says nothing about whether anything does. Every row above was
+   read back out of the live cron-job.org account on **2026-08-23** (17 jobs, 12 enabled) or traced
+   to the code that pings it, and the two rows that did not survive that check are called out below.
+
+   **Three of these are pinged by the app itself, not by any scheduler.** `src/lib/crm/live-poller.ts`
+   runs inside the production process and absorbed the iReports360 cron work: it pings
+   `phoenix-ireports360-live-poll` on **every tick** (20 s in the 08:00–12:30 Cairo compliance
+   window, 30 s daytime, 120 s overnight — hence a Simple 5-minute period rather than a cron
+   expression, with a grace wide enough to survive a deploy restart), and it pings
+   `phoenix-ireports360-sync` / `phoenix-reconcile-visits` when their deep runs come due. Those two
+   fire on an elapsed-time guard, not a wall clock — 3 h since the last success and no earlier than
+   06:00 Cairo for the rolling sync, 5.5 days and Sunday from 04:00 for the wide reconcile — so the
+   expressions above are the *envelope* they run inside, and the graces are wide on purpose. The
+   old rows (`7 9,12,19 * * *` at 30 m, `24 4 * * 0` at 2 h) were copied from the dead GCP script
+   and would now go red daily: a poller sync at 09:00 Cairo does not satisfy a check expecting one
+   after 09:07.
+
+   🔴 **`phoenix-ireports360-live-sync` is no longer in this table, and if that check exists in the
+   dashboard it should be deleted.** `/api/cron/ireports360-visits-live-sync` is still wired to the
+   switch, but its only caller — cron-job.org job `8200918` — is **disabled**, last fired
+   2026-08-16, and nothing else pings that slug. It was made redundant by the in-process poller, so
+   the check has been red since 2026-08-16 for no reason at all. This table used to instruct the
+   owner to give it a 15-minute schedule, which would have kept it red forever.
 
    The two `phoenix-direct-orders-*` rows **moved into cron-job.org on 2026-08-23** — jobs `8313165`
    (02:17) and `8313177` (02:27), both Africa/Cairo, staggered so the two sweeps never overlap. They
@@ -214,8 +243,8 @@ policy):
    these two Healthchecks checks to that timezone rather than UTC, or the expected-ping window sits
    two to three hours off the real one and shifts again at every Egyptian DST change.
 
-   `phoenix-run-synthetic-journeys` is the one row above that was **measured rather than copied**,
-   so it is not subject to the drift warning that follows. `/api/cron/run-synthetic-journeys` does
+   `phoenix-run-synthetic-journeys` was the first row here to be **measured rather than copied**.
+   `/api/cron/run-synthetic-journeys` does
    not do the work itself — it asks GitHub to start `synthetic-journeys.yml` — so its cadence is
    visible in this repository's own Actions history: `gh run list --workflow=synthetic-journeys.yml`
    shows **177 `workflow_dispatch` events between 2026-08-15 and 2026-08-23, every one 4-12 seconds
@@ -230,36 +259,74 @@ policy):
    run list), which is the entire reason the cron-job.org trigger exists. Only the
    `workflow_dispatch` events are this job's real clock.
 
-   ⚠️ These expressions were copied from `scripts/setup-gcp-cron.sh`, which is **no longer the
-   schedule source of truth** — the live schedules are in the cron-job.org account and have already
-   drifted from this table (the weekly reconcile moved to Sunday 07:25, and the 15-minute live-sync
-   job is redundant now that the in-process CRM poller exists). Read the real schedule out of
-   cron-job.org before tuning a grace period, or the switch will alert on a job that is running
-   fine — see [deployment.md](deployment.md) § Cron Jobs.
+   The two `*-rotate-sheet-token` rows are **not copied from anywhere either** — those jobs did not
+   exist until 2026-08-23, when they were created to fix the second half of the same problem: those
+   routes were not merely unwatched, *nothing was calling them at all*, and the live feed tokens
+   they exist to rotate had sat unchanged since 2026-08-05. cron-job.org jobs `8313169` (Fridays
+   03:23) and `8313171` (Fridays 03:43) are now the schedule, and the rows above simply restate
+   them. Weekly, on the Egyptian weekend, twenty minutes apart so two 30 s requests can never
+   overlap: rotation is cheap and safely repeatable, but each run is one more chance to disturb a
+   live sheet the owner reads, so it happens when nobody is reading it. **That cadence is a
+   judgement call, not a requirement** — moving either job to daily is harmless, and needs only the
+   row above and the route's own comment changed to match.
+
+   `phoenix-brevo-keepalive` is the odd one out: **monthly**, because the thing it defends against
+   is a 90-day clock, not a daily one. Brevo expires an API key after 90 consecutive days of
+   inactivity regardless of its stated expiry date, and `BREVO_API_KEY` is the email **failover** —
+   by design it is never exercised while Resend is healthy, so left alone it dies quietly and the
+   backup is gone at the exact moment it is needed. Monthly gives three pings per expiry window, so
+   two consecutive failures still leave a month of margin. The route does a single authenticated
+   `GET /v3/account` — no email, no send credit — and **throws** on a 401, so a revoked key pings
+   fail immediately rather than waiting for a missing ping. The 12h grace only has to cover a
+   deploy window.
+
+   ⚠️ **The cron-job.org account, not this table, is the schedule.** Every expression here was
+   verified against it on 2026-08-23, but nobody can see or change that account from this
+   repository, so the table can drift again silently — and it has: these rows originally came from
+   `scripts/setup-gcp-cron.sh`, which stopped being the source of truth when GCP died, and two of
+   them were still describing jobs the in-process poller had taken over. Re-read the account before
+   tuning a grace period, or the switch will alert on a job that is running perfectly well.
+
+   **One enabled job has no row here, and that is deliberate.**
+   `phoenix-db-health-snapshot` (`17 0,6,12,18 * * *`, job `8242721`) has no check because that
+   route opts out of the switch on purpose, with a comment in the route saying why. See
+   [deployment.md](deployment.md) § Cron Jobs.
 
    Note also that cron-job.org caps request timeout at 30 s, so a slow route logs `Failed
    (timeout)` there while the server finishes the work and pings Healthchecks successfully. The
    two systems will disagree, and Healthchecks is the one telling the truth about whether the work
    completed.
 
-**Three `/api/cron/*` routes are deliberately NOT wired, and must stay that way** unless someone
-first creates a real schedule for them. A dead-man's-switch check is a statement that a job is
-*expected* at a known cadence; auto-provisioning defaults to a 1-day period with a 1-hour grace, so
-pointing one at a route nobody schedules produces a permanently red check — which is worse than no
-check, because it teaches whoever reads the dashboard that red is the normal colour. Checked
-2026-08-23:
+**Two `/api/cron/*` routes are NOT watched, and only one of them is deliberate.** A
+dead-man's-switch check is a statement that a job is *expected* at a known cadence; auto-provisioning
+defaults to a 1-day period with a 1-hour grace, so pointing one at a route nobody schedules produces
+a permanently red check — which is worse than no check, because it teaches whoever reads the
+dashboard that red is the normal colour. Checked against the live cron-job.org account 2026-08-23:
 
-| Route | Why it is not watched |
+| Route | State |
 |---|---|
-| `/api/cron/marketing-assignment-backfill` | **On-demand by design, and its work is already watched elsewhere.** `backfillMissingMarketingAssignmentEmails()` runs as a sub-job of the daily notification run (PR #2211), so it is already covered by `phoenix-notify-daily`. This route exists only so the same sweep can be driven by hand in production without firing every other daily notification alongside it. |
-| `/api/cron/direct-orders-rotate-sheet-token` | **No schedule exists.** Both webhook variables are set on Railway, exactly one live `feed` share link exists (so none of the no-op branches apply), and the sheet is demonstrably alive — `direct_order_report_share_links` shows 25,156 reads with the newest at 2026-08-23 09:19 Cairo. A rotation under those conditions succeeds and leaves a trail (a revoked row plus an audit row). The live token was minted **2026-08-05 and has not rotated since**, so nothing has been calling this route on any cadence shorter than the elapsed window. |
-| `/api/cron/marketing-requests-rotate-sheet-token` | **No schedule exists**, on the same evidence: `MARKETING_SHEET_REFRESH_WEBHOOK_URL`/`_SECRET` both set, one live feed link, 24,820 reads with the newest at 2026-08-23 09:18 Cairo, live token minted 2026-08-05 and never rotated since. The last two `system:rotation` audit rows are both from 2026-08-05. |
+| `/api/cron/marketing-assignment-backfill` | **Unwired on purpose, and its work is already watched elsewhere.** `backfillMissingMarketingAssignmentEmails()` runs as a sub-job of the daily notification run (PR #2211), so it is already covered by `phoenix-notify-daily`. This route exists only so the same sweep can be driven by hand in production without firing every other daily notification alongside it. Leave it alone. |
+| `/api/cron/reconciliation-check` | **Wired to `phoenix-reconciliation-check`, but nothing calls it.** Read-only harness that compares each domain service against an independent derivation. Harmless to leave unscheduled — but the wiring implies a watch that does not exist, so do not read its slug as evidence anything is being reconciled on a cadence. |
 
-Neither rotation route appearing in [deployment.md](deployment.md) § Cron Jobs is consistent with
-this: that inventory has never listed them. **Rotation therefore is not actually happening** —
-separate from monitoring, and worth the owner's decision rather than a silent assumption. If either
-route is given a cron-job.org job, wire it in the same commit and add its row above; the wiring is
-one import and one wrapper call, and it is the schedule, not the code, that is missing.
+`/api/cron/brevo-keepalive` was in this table for a few hours on 2026-08-23 and left it the same way
+the rotations did: it was wired to `phoenix-brevo-keepalive` and called by **nothing at all**, so
+its check had never even been created — auto-provisioning needs a first ping, and a job that never
+runs produces silence rather than red. That was not cosmetic. The route exists to reset Brevo's
+90-day inactivity expiry on the email **failover** key, and an unused backup key that nobody pings
+is exactly the key that is dead on the day the primary fails. It now runs monthly (cron-job.org job
+`8313297`), which is three pings per expiry window.
+
+The two `*-rotate-sheet-token` routes were in this table until 2026-08-23, and how they left it is
+the lesson worth keeping. The evidence that they had no schedule was entirely indirect: both webhook
+variable pairs were set on Railway, each report had exactly one live `feed` share link (so none of
+the no-op branches applied), and both sheets were demonstrably alive —
+`direct_order_report_share_links` showed 25,156 reads with the newest at 2026-08-23 09:19 Cairo, the
+marketing equivalent 24,820 with the newest at 09:18. A rotation under those conditions succeeds and
+leaves a trail. Yet both live tokens were minted **2026-08-05 and had never rotated**, and the only
+two `system:rotation` audit rows are from that same day. Nothing was calling either route, and the
+code written to rotate them looked perfectly healthy for eighteen days. They are wired now because
+the **schedule** was created, not because the code changed. Before wiring any route here, prove
+something calls it — and if nothing does, that is the bug, not the missing check.
 
 **What it does NOT replace:** the Confidence Gate (holds a suspicious send before it goes out),
 the held-notification alert (tells you when the gate held something), or fix #3's truthful
