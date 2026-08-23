@@ -31,6 +31,31 @@ export function runAttendanceCalendarSourceTests() {
   assert.equal(resolveDeviceMappingStatus({ employeeHrId: "E001", isActive: false }), "inactive");
   assert.equal(resolveDeviceMappingStatus({ employeeHrId: "E001", isActive: true }), "active");
 
+  // A device user who is deliberately not an employee - a driver, guard or cleaner enrolled on
+  // the reader - must read as its own status, never as "unmapped". Both carry a null HR_ID, but
+  // only one of them is an unanswered question, and counting the answered one as missing is what
+  // kept device user 18 in the unmapped panel for months.
+  assert.equal(
+    resolveDeviceMappingStatus({ employeeHrId: null, isActive: false, nonEmployeeLabel: "Driver" }),
+    "non_employee",
+  );
+  // A blank or whitespace label is not an answer, so it must fall back to unmapped rather than
+  // silently promoting an unknown id to "identified".
+  assert.equal(
+    resolveDeviceMappingStatus({ employeeHrId: null, isActive: false, nonEmployeeLabel: "   " }),
+    "unmapped",
+  );
+  assert.equal(
+    resolveDeviceMappingStatus({ employeeHrId: null, isActive: false, nonEmployeeLabel: null }),
+    "unmapped",
+  );
+  // An employee always wins. The DB constraint makes this combination impossible, but the
+  // resolver must not depend on the constraint being there.
+  assert.equal(
+    resolveDeviceMappingStatus({ employeeHrId: "E001", isActive: true, nonEmployeeLabel: "Driver" }),
+    "active",
+  );
+
   const mappingSummary = summarizeDeviceUserMappings([
     { employeeHrId: "E001", isActive: true },
     { employeeHrId: "E002", isActive: false },
@@ -39,8 +64,26 @@ export function runAttendanceCalendarSourceTests() {
   assert.deepEqual(mappingSummary, {
     active: 1,
     inactive: 1,
+    nonEmployee: 0,
     readinessRate: 2 / 3,
     total: 3,
+    unmapped: 1,
+  });
+
+  // The headline: labelling one of two unknown ids must move it out of `unmapped` and lift
+  // readiness, not merely rename it. 3 of 4 resolved, not 2 of 4.
+  const nonEmployeeSummary = summarizeDeviceUserMappings([
+    { employeeHrId: "E001", isActive: true },
+    { employeeHrId: "E002", isActive: false },
+    { employeeHrId: null, isActive: false, nonEmployeeLabel: "Driver" },
+    { employeeHrId: null, isActive: false },
+  ]);
+  assert.deepEqual(nonEmployeeSummary, {
+    active: 1,
+    inactive: 1,
+    nonEmployee: 1,
+    readinessRate: 3 / 4,
+    total: 4,
     unmapped: 1,
   });
 
@@ -314,6 +357,29 @@ export function runAttendanceCalendarSourceTests() {
   const mappingSource = readFileSync("src/lib/attendance/device-user-mapping.ts", "utf8");
   assert.match(mappingSource, /resolveDeviceMappingStatus/);
   assert.match(mappingSource, /summarizeDeviceUserMappings/);
+  assert.match(mappingSource, /non_employee_label/, "the dashboard read must select the non-employee label or every labelled device user reverts to unmapped on screen");
+  // The silent-erase guard. The bulk XLSX upload calls this service without knowing the column
+  // exists; if the column were written unconditionally, every upload would wipe every label.
+  assert.match(
+    mappingSource,
+    /nonEmployeeLabelProvided = input\.nonEmployeeLabel !== undefined/,
+    "saveAttendanceDeviceUserMapping must distinguish an omitted non-employee label from an explicit null, and omit the column entirely when the caller did not supply it",
+  );
+
+  const nonEmployeeMigrationSource = readFileSync(
+    "supabase/migrations/20260823170000_attendance_non_employee_device_users.sql",
+    "utf8",
+  );
+  assert.match(
+    nonEmployeeMigrationSource,
+    /attendance_device_user_map_non_employee_exclusive/,
+    "a non-employee label must be mutually exclusive with employee_hr_id at the database level, not only in the service",
+  );
+  assert.match(
+    nonEmployeeMigrationSource,
+    /is_active = false/,
+    "a labelled non-employee must be pinned inactive so their punches are never ingested into payroll-bearing attendance",
+  );
 
   const policySource = readFileSync("src/lib/attendance/policies.ts", "utf8");
   assert.match(policySource, /summarizeAttendancePolicies/);
@@ -359,4 +425,9 @@ export function runAttendanceCalendarSourceTests() {
   assert.match(overviewSource, /platformMetrics\.attendance\.mappingReadinessRate/);
   const dataHealthSource = readFileSync("src/lib/admin/service.ts", "utf8");
   assert.match(dataHealthSource, /summarizeDeviceUserMappings/);
+  assert.match(
+    dataHealthSource,
+    /nonEmployeeLabel: rowText\(row, "non_employee_label"\)/,
+    "the admin data-health tile must read the non-employee label too, or it keeps reporting identified drivers as missing device mappings",
+  );
 }
