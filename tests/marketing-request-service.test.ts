@@ -178,9 +178,10 @@ export async function runMarketingRequestServiceTests() {
   // with no photo. The report labels a row by its LINK, so those read as field-proven. These pin
   // the rule that decides the badge — in BOTH directions, because the "some" reading would call a
   // rep who really made the visit a liar.
-  const inferredLink = { deskValidated: false, inferredFromHistory: true };
-  const deskLink = { deskValidated: true, inferredFromHistory: false };
-  const capturedLink = { deskValidated: false, inferredFromHistory: false };
+  const noEvidence = { customerEvidenceStatus: "missing", pharmacyEvidenceStatus: "missing" } as const;
+  const inferredLink = { deskValidated: false, inferredFromHistory: true, ...noEvidence };
+  const deskLink = { deskValidated: true, inferredFromHistory: false, ...noEvidence };
+  const capturedLink = { deskValidated: false, inferredFromHistory: false, ...noEvidence };
 
   assert.equal(
     customerFieldEvidenceGap([inferredLink, inferredLink, inferredLink]),
@@ -218,6 +219,42 @@ export async function runMarketingRequestServiceTests() {
     "no links means no validation claim on screen, so there is nothing for the badge to qualify",
   );
 
+  // ── ...and the same rule applied to evidence that arrived AFTER the note was written ─────────
+  //
+  // A link's `validation_notes` are written once and never rewritten, so reading only them is
+  // reading a claim about the past as a claim about the present. Production the day this was
+  // fixed, 2026-08-23: 15 links across 8 customers already held a complete capture on one half or
+  // the other and were badged regardless. Each shape below is one of those groups.
+  const deskLinkVenueCaptured = { ...deskLink, pharmacyEvidenceStatus: "complete" } as const;
+  const inferredLinkVenueCaptured = { ...inferredLink, pharmacyEvidenceStatus: "complete" } as const;
+  const inferredLinkCustomerCaptured = { ...inferredLink, customerEvidenceStatus: "complete" } as const;
+  const deskLinkCoordinateOnly = { ...deskLink, customerEvidenceStatus: "pending" } as const;
+
+  assert.equal(
+    customerFieldEvidenceGap([deskLinkVenueCaptured, deskLinkVenueCaptured]),
+    null,
+    "a desk validation whose SHOP was later photographed in the field must clear — this is وليد كمال (B-116), 4 links whose two venues were completed on 2026-08-18, two days AFTER the desk entry, and the note still said nobody had been",
+  );
+  assert.equal(
+    customerFieldEvidenceGap([inferredLinkVenueCaptured]),
+    null,
+    "a backfilled link whose SHOP carries a complete capture must clear too — 6 links across 6 customers in production, where the venue is the only half that can still be captured because the customer is not at the shop when a rep calls",
+  );
+  assert.equal(
+    customerFieldEvidenceGap([inferredLinkCustomerCaptured]),
+    null,
+    "a backfilled link whose CUSTOMER was photographed on site must clear — 5 links in production, and badging them is the exact lie this function documents as the worse one: telling a rep who made the trip that nobody ever went",
+  );
+  assert.equal(
+    customerFieldEvidenceGap([inferredLink, inferredLinkVenueCaptured]),
+    null,
+    "one capture among several links clears the whole customer, exactly as a note-clean link always has — the every/some rule is about the customer, not about which column the evidence sits in",
+  );
+  assert.equal(
+    customerFieldEvidenceGap([deskLinkCoordinateOnly, deskLinkCoordinateOnly]),
+    "desk",
+    "a PENDING half must never clear the badge: pending is a coordinate with no live photo, which is precisely the shape a map-search desk validation leaves behind and the reason the row is badged at all — 5 links across 4 customers in production",
+  );
   // Both screens must render the SHARED badge. Two screens each carrying their own copy is exactly
   // how one of them ends up silently claiming field evidence the other one denies.
   for (const [label, rel] of [
@@ -230,6 +267,16 @@ export async function runMarketingRequestServiceTests() {
       `the ${label} must import the shared not-field-validated badge`,
     );
   }
+
+  // The workspace groups REPORT rows, which carry the customer and the pharmacy whole, so the two
+  // evidence statuses have to be narrowed off them. Hand-assembling the input is what would put the
+  // notes-only reading back without touching this file — typecheck catches passing the raw rows,
+  // but not a literal with the evidence stubbed out.
+  assert.match(
+    source("src/components/employee-portal/marketing-validation-workspace.tsx"),
+    /customerFieldEvidenceGap\(group\.rows\.map\(fieldEvidenceGapInput\)\)/,
+    "the validation workspace must narrow its report rows through fieldEvidenceGapInput, so the badge sees the live evidence and not just the link's notes",
+  );
 
   const serviceSource = source("src/lib/marketing-requests/service.ts");
   const policySource = source("src/lib/notifications/policy.ts");

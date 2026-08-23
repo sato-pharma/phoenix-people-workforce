@@ -11,10 +11,15 @@ const LABELS: Record<FieldEvidenceGap, string> = {
   mixed: "Not GPS field-validated",
 };
 
+/**
+ * Wider than the labels because a tooltip has no width budget, and precise about WHAT is missing:
+ * the badge only renders once neither the customer nor its shop holds a complete capture, so
+ * "nobody captured this customer" would now understate what the row is actually short of.
+ */
 const TITLES: Record<FieldEvidenceGap, string> = {
-  desk: "Entered at a desk from a map search — no rep captured this customer on site",
-  inferred: "Inferred from historical marketing requests — no rep captured this customer on site",
-  mixed: "Part inferred from history, part desk-entered — no rep captured this customer on site",
+  desk: "Entered at a desk from a map search — no complete field capture on this customer or on its shop",
+  inferred: "Inferred from historical marketing requests — no complete field capture on this customer or on its shop",
+  mixed: "Part inferred from history, part desk-entered — no complete field capture on this customer or on its shop",
 };
 
 /**
@@ -35,6 +40,12 @@ const TITLES: Record<FieldEvidenceGap, string> = {
  *
  * Both writers were honest in their own `validation_notes`; this is the same admission, in the same
  * words, on the screens where the claim is actually made.
+ *
+ * What those notes CANNOT say is what happened afterwards. They are written once and never
+ * rewritten, while a capture can arrive later on either half — a customer has always been
+ * completable on a second visit, and since #2352 so has a venue. So the badge is decided from the
+ * live evidence columns as well as the notes, and one complete capture on either half retires it.
+ * See `linkHasFieldEvidence` for why either half is enough and why `pending` is not.
  *
  * ONE component, imported by every screen that needs it — the whole point is that these cannot
  * disagree. Deliberately neutral rather than a warning colour: nothing is broken and nothing is
