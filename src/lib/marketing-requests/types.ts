@@ -606,6 +606,18 @@ export type MarketingValidationReportRow = {
   distributorCode: MarketingPharmacyDistributorCode | null;
   distributorName: string | null;
   id: string;
+  /**
+   * True when this link's `system_validated` was written by the 2026-07-02 history backfill rather
+   * than earned by a field capture.
+   *
+   * A report row is labelled with its LINK's status, not its customer's, so 154 backfilled links
+   * across 82 `ROI-C-…` customers read as validated on this screen while the customer behind them
+   * is still `pending` with `evidence_status = 'missing'` and no photo at all. The backfill said so
+   * in its own `validation_notes` — "not GPS field-validated" — and the Customer Pharmacy Mapping
+   * page has always badged them. This carries the same admission onto the validation report, so a
+   * customer nobody ever stood in front of stops reading as field-proven.
+   */
+  inferredFromHistory: boolean;
   pharmacy: MarketingPharmacy;
   validationNotes: string | null;
   validationStatus: MarketingValidationStatus;

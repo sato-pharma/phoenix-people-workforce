@@ -61,6 +61,7 @@ import {
   saveValidationDraft,
   saveValidationQueue,
 } from "@/lib/marketing-requests/validation-draft-store";
+import { isCustomerInferredFromHistory } from "@/lib/marketing-requests/validation-report";
 import {
   VENUE_TYPES,
   venueRequiresDistributorCode,
@@ -335,6 +336,12 @@ type ValidatedCustomerGroup = {
   customerType: string;
   /** True when a Super Admin validated this at the desk rather than a rep capturing it in the field. */
   isAdminValidated: boolean;
+  /**
+   * True when EVERY link behind this customer was validated by the 2026-07-02 history backfill —
+   * i.e. nobody has ever stood in front of it. One genuine field capture among the links clears
+   * this, because the customer then does have evidence.
+   */
+  isInferredFromHistory: boolean;
   key: string;
   rows: MarketingValidationReportRow[];
   status: MarketingValidationStatus;
@@ -920,6 +927,31 @@ function UntrackedCodeBadge() {
   return (
     <span className="inline-flex items-center rounded-sm border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-700">
       Sales not trackable
+    </span>
+  );
+}
+
+/**
+ * Shown on a customer whose validation came from the 2026-07-02 history backfill, not from a rep.
+ *
+ * Every row on this report is labelled with its LINK's status, and that backfill wrote
+ * `system_validated` onto 154 links across 82 `ROI-C-…` customers so the historical marketing
+ * requests had something to attach to. Those customers are still `pending` with no photo and no
+ * GPS fix — nobody has ever stood in front of them — yet they read here exactly like a customer a
+ * rep photographed this morning. The script was honest in its own `validation_notes`
+ * ("not GPS field-validated") and the Customer Pharmacy Mapping page has always shown that; this
+ * badge is the same admission, in the same words, on the screen where the claim is actually made.
+ *
+ * Deliberately the SAME neutral tone as the mapping page rather than a warning colour: nothing is
+ * broken and nothing is blocked, the label simply must not be read as field evidence.
+ */
+function InferredHistoryBadge() {
+  return (
+    <span
+      className="inline-flex items-center whitespace-nowrap rounded-sm border border-slate-300 bg-slate-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-600"
+      title="Inferred from historical marketing requests — no rep captured this customer on site"
+    >
+      Inferred — not GPS field-validated
     </span>
   );
 }
@@ -1782,13 +1814,19 @@ export function MarketingValidationWorkspace() {
           // A desk entry is the only path that stamps validated_at, so it is the honest signal for
           // "an admin typed this" — never a field capture.
           isAdminValidated: Boolean(row.customer.validatedAt),
+          isInferredFromHistory: row.inferredFromHistory,
           key,
           rows: [row],
           status: row.validationStatus,
         });
       }
     }
-    return Array.from(groups.values());
+    // Decided once per customer, over ALL of its links — never accumulated row by row. The rule is
+    // "every link inferred", and only the finished group knows that.
+    return Array.from(groups.values()).map((group) => ({
+      ...group,
+      isInferredFromHistory: isCustomerInferredFromHistory(group.rows),
+    }));
   }, [workspace.rows]);
   /**
    * The customers this rep captured that are NOT in her marketing request list.
@@ -1812,12 +1850,16 @@ export function MarketingValidationWorkspace() {
         customerName: row.customer.displayName,
         customerType: row.customer.customerType,
         isAdminValidated: Boolean(row.customer.validatedAt),
+        isInferredFromHistory: row.inferredFromHistory,
         key,
         rows: [row],
         status: row.validationStatus,
       });
     }
-    return Array.from(groups.values());
+    return Array.from(groups.values()).map((group) => ({
+      ...group,
+      isInferredFromHistory: isCustomerInferredFromHistory(group.rows),
+    }));
   }, [workspace.rows]);
   const selectedValidatedGroup = useMemo(
     () =>
@@ -3201,6 +3243,7 @@ export function MarketingValidationWorkspace() {
                               <div className="mt-1 flex flex-wrap items-center gap-2">
                                 <span className="text-[11px] font-medium capitalize text-slate-500">{group.customerType}</span>
                                 <StatusBadge status={group.status} />
+                                {group.isInferredFromHistory ? <InferredHistoryBadge /> : null}
                                 {group.isAdminValidated ? <AdminValidatedBadge /> : null}
                                 {untrackedVendorCodes(group.rows).length > 0 ? <UntrackedCodeBadge /> : null}
                               </div>
@@ -3255,6 +3298,7 @@ export function MarketingValidationWorkspace() {
                                 <div className="mt-1 flex flex-wrap items-center gap-1.5">
                                   <span className="text-[11px] font-medium capitalize text-slate-500">{group.customerType}</span>
                                   <StatusBadge status={group.status} />
+                                  {group.isInferredFromHistory ? <InferredHistoryBadge /> : null}
                                   {group.isAdminValidated ? <AdminValidatedBadge /> : null}
                                   {untrackedVendorCodes(group.rows).length > 0 ? <UntrackedCodeBadge /> : null}
                                 </div>
