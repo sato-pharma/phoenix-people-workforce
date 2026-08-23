@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { isProductionRuntime } from "@/config/system-settings";
+import { pingDeadMansSwitch } from "@/lib/observability/dead-mans-switch";
 import { dispatchSyntheticJourneys } from "@/lib/observability/dispatch-synthetic-journeys";
 import { logCronUnauthorized, logError } from "@/lib/observability/log";
 import { bearerSecretMatches } from "@/lib/security/constant-time";
@@ -8,6 +9,18 @@ import { bearerSecretMatches } from "@/lib/security/constant-time";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
+
+/**
+ * Healthchecks slug, `phoenix-<route>` like every other watched cron route.
+ *
+ * Measured cadence before this was wired (so the check could be tuned instead of guessed): 177
+ * `workflow_dispatch` events on synthetic-journeys.yml between 2026-08-15 and 2026-08-23, every one
+ * of them landing 4-12 seconds past the top of the hour, every UTC hour of the day represented, one
+ * single missed hour in eight days. Railway's HTTP log names the caller: cron-job.org, GET, 200.
+ * That is `0 * * * *`; docs/observability.md carries the row and tests/synthetic-journeys-liveness
+ * .test.ts keeps the two from drifting apart.
+ */
+const JOB_SLUG = "phoenix-run-synthetic-journeys";
 
 function isAuthorized(request: Request) {
   const secret = process.env.CRON_SECRET;
@@ -36,6 +49,18 @@ function isAuthorized(request: Request) {
  *
  * Returns 200 with `{ dispatched: false, reason }` when the token is unset — an unconfigured
  * deployment is a normal outcome, not a failure.
+ *
+ * WHY THE SWITCH IS PINGED DIRECTLY, NOT VIA withDeadMansSwitch.
+ * The wrapper is for routes whose throw/no-throw shape already means what it says. This one's does
+ * not, deliberately: a refused, unreachable or unset dispatch answers HTTP 200 with
+ * `{ dispatched: false }` so cron-job.org is never trained to read a normal state as an outage —
+ * and the wrapper would forward exactly that as a success ping. GITHUB_ACTIONS_DISPATCH_TOKEN is a
+ * fine-grained PAT, so it WILL expire. The hour it does, every dispatch 401s, the synthetic suite
+ * stops running, `logError` writes a row nothing pages anyone about, and a wrapper-shaped ping
+ * would hold the check green while the system's only "is production actually working?" signal is
+ * dead. That is the nine-nights-of-401 failure one layer up. So the outcome is derived from the
+ * dispatch's own answer, the same way notifications/daily derives its ping from its sub-job
+ * failures — a single ping per run, carrying the truth.
  */
 export async function GET(request: Request) {
   if (!isAuthorized(request)) {
@@ -44,12 +69,26 @@ export async function GET(request: Request) {
   }
   try {
     const result = await dispatchSyntheticJourneys();
+
+    await pingDeadMansSwitch(
+      JOB_SLUG,
+      result.dispatched ? "success" : "fail",
+      result.dispatched ? undefined : `the run was not dispatched: ${result.reason}`,
+    );
+
     return NextResponse.json({ success: true, ...result });
   } catch (error) {
     logError("Synthetic journeys dispatch failed", {
       labels: { event: "synthetic_dispatch_failed" },
       error,
     });
+    // A crash never reaches the ping above, and this is the single most important case for the
+    // external monitor to catch — nothing about this run's outcome would otherwise leave the app.
+    await pingDeadMansSwitch(
+      JOB_SLUG,
+      "fail",
+      error instanceof Error ? `${error.name}: ${error.message}` : String(error),
+    );
     return NextResponse.json({ success: false, error: "dispatch_failed" }, { status: 500 });
   }
 }

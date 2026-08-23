@@ -156,7 +156,7 @@ the `withDeadMansSwitch` wrapper, or directly for `notifications/daily`'s partia
 case — see that file's own comment) after its real work completes. Healthchecks.io alerts when an
 **expected ping doesn't arrive**, which is exactly the failure shape a paused/crashed/misconfigured
 job produces. Uses Healthchecks' [Ping Key + slug API](https://healthchecks.io/docs/http_api/) —
-one secret (`HEALTHCHECKS_PING_KEY`) covers all 8 jobs, addressed by slug instead of a per-check
+one secret (`HEALTHCHECKS_PING_KEY`) covers every check, addressed by slug instead of a per-check
 UUID, with [auto-provisioning](https://healthchecks.io/docs/autoprovisioning/) (`?create=1`) so
 each check is created automatically on its job's first real ping. Fails silent by design: no key
 configured, or non-production runtime, means the code never attempts a network call at all — see
@@ -193,6 +193,23 @@ policy):
    | `phoenix-reconcile-visits` | `24 4 * * 0` | 2h |
    | `phoenix-ireports360-live-sync` | `1,16,31,46 8-12 * * *` | 15m |
    | `phoenix-recruitment-email-intake` | `4-59/10 * * * *` | 10m |
+   | `phoenix-run-synthetic-journeys` | `0 * * * *` | 1h |
+
+   `phoenix-run-synthetic-journeys` is the one row above that was **measured rather than copied**,
+   so it is not subject to the drift warning that follows. `/api/cron/run-synthetic-journeys` does
+   not do the work itself — it asks GitHub to start `synthetic-journeys.yml` — so its cadence is
+   visible in this repository's own Actions history: `gh run list --workflow=synthetic-journeys.yml`
+   shows **177 `workflow_dispatch` events between 2026-08-15 and 2026-08-23, every one 4-12 seconds
+   past the top of the hour, all 24 UTC hours represented, one single missed hour in eight days**.
+   Railway's HTTP log names the caller (`@path:/api/cron/run-synthetic-journeys` → `clientUa`
+   `cron-job.org`, GET, 200). Hence `0 * * * *`. The 1h grace deliberately tolerates exactly one
+   missed hour — that has already happened once (2026-08-17 18:00 UTC) without anything being wrong,
+   and a check that pages on a single blip is a check people learn to ignore.
+
+   Ignore the `schedule:` block inside `synthetic-journeys.yml` when tuning this: GitHub's own
+   scheduler fires it at effectively random minutes (visible as the `schedule` events in the same
+   run list), which is the entire reason the cron-job.org trigger exists. Only the
+   `workflow_dispatch` events are this job's real clock.
 
    ⚠️ These expressions were copied from `scripts/setup-gcp-cron.sh`, which is **no longer the
    schedule source of truth** — the live schedules are in the cron-job.org account and have already
@@ -205,6 +222,25 @@ policy):
    (timeout)` there while the server finishes the work and pings Healthchecks successfully. The
    two systems will disagree, and Healthchecks is the one telling the truth about whether the work
    completed.
+
+**Three `/api/cron/*` routes are deliberately NOT wired, and must stay that way** unless someone
+first creates a real schedule for them. A dead-man's-switch check is a statement that a job is
+*expected* at a known cadence; auto-provisioning defaults to a 1-day period with a 1-hour grace, so
+pointing one at a route nobody schedules produces a permanently red check — which is worse than no
+check, because it teaches whoever reads the dashboard that red is the normal colour. Checked
+2026-08-23:
+
+| Route | Why it is not watched |
+|---|---|
+| `/api/cron/marketing-assignment-backfill` | **On-demand by design, and its work is already watched elsewhere.** `backfillMissingMarketingAssignmentEmails()` runs as a sub-job of the daily notification run (PR #2211), so it is already covered by `phoenix-notify-daily`. This route exists only so the same sweep can be driven by hand in production without firing every other daily notification alongside it. |
+| `/api/cron/direct-orders-rotate-sheet-token` | **No schedule exists.** Both webhook variables are set on Railway, exactly one live `feed` share link exists (so none of the no-op branches apply), and the sheet is demonstrably alive — `direct_order_report_share_links` shows 25,156 reads with the newest at 2026-08-23 09:19 Cairo. A rotation under those conditions succeeds and leaves a trail (a revoked row plus an audit row). The live token was minted **2026-08-05 and has not rotated since**, so nothing has been calling this route on any cadence shorter than the elapsed window. |
+| `/api/cron/marketing-requests-rotate-sheet-token` | **No schedule exists**, on the same evidence: `MARKETING_SHEET_REFRESH_WEBHOOK_URL`/`_SECRET` both set, one live feed link, 24,820 reads with the newest at 2026-08-23 09:18 Cairo, live token minted 2026-08-05 and never rotated since. The last two `system:rotation` audit rows are both from 2026-08-05. |
+
+Neither rotation route appearing in [deployment.md](deployment.md) § Cron Jobs is consistent with
+this: that inventory has never listed them. **Rotation therefore is not actually happening** —
+separate from monitoring, and worth the owner's decision rather than a silent assumption. If either
+route is given a cron-job.org job, wire it in the same commit and add its row above; the wiring is
+one import and one wrapper call, and it is the schedule, not the code, that is missing.
 
 **What it does NOT replace:** the Confidence Gate (holds a suspicious send before it goes out),
 the held-notification alert (tells you when the gate held something), or fix #3's truthful
