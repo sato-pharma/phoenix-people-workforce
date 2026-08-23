@@ -226,27 +226,48 @@ async function claimIntakeEvent(input: InboundCvIntakeInput): Promise<IntakeEven
   };
 }
 
-async function finalizeIntakeEvent(
-  eventId: string,
-  patch: {
-    outcome: InboundCvIntakeOutcome;
-    candidateId?: string | null;
-    fileId?: string | null;
-    matchReason?: string | null;
-    errorMessage?: string | null;
-  },
-): Promise<void> {
+export type IntakeEventPatch = {
+  outcome: InboundCvIntakeOutcome;
+  candidateId?: string | null;
+  fileId?: string | null;
+  matchReason?: string | null;
+  errorMessage?: string | null;
+};
+
+/**
+ * The columns a finalize should actually write.
+ *
+ * It is called `patch` and it must behave like one. Every field except `outcome` is optional, and
+ * writing them all unconditionally means a LATER, thinner call erases what an earlier, fuller one
+ * recorded: ingestInboundCv's outer catch finalizes with only an outcome and a message, so a throw
+ * after the success path had already stored candidate_id/file_id would null both — losing the
+ * event's only pointers to a candidate and a CV that really do exist. claimIntakeEvent relies on
+ * the same durability when it threads a dead attempt's candidate_id back into a retry.
+ *
+ * An absent key is therefore left out of the statement entirely. A key present as null still
+ * clears, which is what every "nothing to record here" call site intends.
+ */
+export function intakeEventUpdateColumns(patch: IntakeEventPatch): {
+  candidate_id?: string | null;
+  error_message?: string | null;
+  file_id?: string | null;
+  match_reason?: string | null;
+  outcome: InboundCvIntakeOutcome;
+} {
+  return {
+    ...(patch.candidateId !== undefined ? { candidate_id: patch.candidateId } : {}),
+    ...(patch.errorMessage !== undefined ? { error_message: patch.errorMessage } : {}),
+    ...(patch.fileId !== undefined ? { file_id: patch.fileId } : {}),
+    ...(patch.matchReason !== undefined ? { match_reason: patch.matchReason } : {}),
+    outcome: patch.outcome,
+  };
+}
+
+async function finalizeIntakeEvent(eventId: string, patch: IntakeEventPatch): Promise<void> {
   const supabase = recruitmentDb();
   const { error } = await supabase
     .from("ats_cv_intake_events")
-    .update({
-      candidate_id: patch.candidateId ?? null,
-      error_message: patch.errorMessage ?? null,
-      file_id: patch.fileId ?? null,
-      match_reason: patch.matchReason ?? null,
-      outcome: patch.outcome,
-      updated_at: new Date().toISOString(),
-    })
+    .update({ ...intakeEventUpdateColumns(patch), updated_at: new Date().toISOString() })
     .eq("id", eventId);
   if (error) throw error;
 }
@@ -254,8 +275,21 @@ async function finalizeIntakeEvent(
 // An unknown position_key falls back to the default schema rather than reporting zero, so a
 // misconfigured position can never silently swallow the "someone needs to look at this" signal.
 function unappliedFieldCount(extraction: CvFieldExtraction, candidate: Candidate): number {
-  const schema = getCvPositionSchema(extraction.positionKey) ?? getCvPositionSchema(defaultCvPositionKey);
-  return schema ? countUnappliedCvFields(extraction.fields, candidate, schema) : 0;
+  // Total by construction. This is evaluated while building the argument object of the
+  // notifyTalentAcquisitionOfInboundCv call, which sits AFTER the success finalize — and an
+  // argument expression runs before the promise exists, so the trailing `.catch()` cannot see it.
+  // A throw here would unwind into ingestInboundCv's outer catch and re-finalize a successful
+  // intake as an error. A notification count is never worth that.
+  try {
+    const schema = getCvPositionSchema(extraction.positionKey) ?? getCvPositionSchema(defaultCvPositionKey);
+    return schema ? countUnappliedCvFields(extraction.fields, candidate, schema) : 0;
+  } catch (countError) {
+    logError("CV field count for the intake notification failed", {
+      error: countError,
+      labels: { event: "cv_unapplied_field_count_failed", positionKey: extraction.positionKey },
+    });
+    return 0;
+  }
 }
 
 // The extraction schema's own label for a field key, so the held-back reason on Inbound Intake
@@ -271,6 +305,11 @@ export async function ingestInboundCv(input: InboundCvIntakeInput): Promise<Inbo
   const claim = await claimIntakeEvent(input);
   if (!claim) return { outcome: "ignored_duplicate" };
   const { claimedCandidateId, claimedMatchReason, eventId } = claim;
+
+  // Set once the event has been finalized as a success. Anything that throws after that point is
+  // reporting a problem with the AFTERMATH — a notification, a log line — not with the intake, and
+  // must not be allowed to rewrite a recorded candidate_created as an error.
+  let settled: InboundCvIntakeResult | null = null;
 
   try {
     if (!input.attachment) {
@@ -529,6 +568,10 @@ export async function ingestInboundCv(input: InboundCvIntakeInput): Promise<Inbo
       outcome,
     });
 
+    // The row now says candidate_created/matched with its candidate and file attached. From here
+    // on the work is done and the outcome is the truth, whatever the notification does.
+    settled = { candidateId: candidate.id, fileId, matchReason, outcome };
+
     await notifyTalentAcquisitionOfInboundCv({
       candidateId: candidate.id,
       channel: input.channel,
@@ -552,6 +595,13 @@ export async function ingestInboundCv(input: InboundCvIntakeInput): Promise<Inbo
 
     return { candidateId: candidate.id, fileId, matchReason, outcome };
   } catch (error) {
+    if (settled) {
+      logError("Inbound CV intake threw after the event was finalized; the recorded outcome stands", {
+        error,
+        labels: { candidateId: settled.candidateId ?? "unknown", event: "cv_intake_post_finalize_throw" },
+      });
+      return settled;
+    }
     await finalizeIntakeEvent(eventId, {
       errorMessage: error instanceof Error ? error.message : "Inbound CV intake failed.",
       outcome: "error",
