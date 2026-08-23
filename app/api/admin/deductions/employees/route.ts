@@ -1,11 +1,30 @@
 import { NextResponse } from "next/server";
 
 import { assertPermission } from "@/lib/auth/permissions";
-import { ACTIVE_EMPLOYMENT_STATUSES } from "@/lib/auth/session-lifecycle";
+import { ACTIVE_EMPLOYMENT_STATUSES, isTerminalEmploymentStatus } from "@/lib/auth/session-lifecycle";
 import { calculateDeductionAmountFromBaseSalary } from "@/lib/deductions/calculations.ts";
 import { resolveAccessContext, jsonError } from "@/lib/deductions/http.ts";
 import { assertDeductionsDecisionActor } from "@/lib/deductions/permissions.ts";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+
+/**
+ * First and last-plus-one day of a YYYY-MM month key, or null when absent or
+ * malformed. Half-open so the last day of the month is included without any
+ * month-length arithmetic.
+ */
+function finalSettlementBounds(monthKey: string): { start: string; end: string } | null {
+  const match = /^(\d{4})-(\d{2})$/.exec(monthKey);
+  if (!match) return null;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  if (!Number.isInteger(year) || month < 1 || month > 12) return null;
+  const nextYear = month === 12 ? year + 1 : year;
+  const nextMonth = month === 12 ? 1 : month + 1;
+  return {
+    start: `${match[1]}-${match[2]}-01`,
+    end: `${String(nextYear).padStart(4, "0")}-${String(nextMonth).padStart(2, "0")}-01`,
+  };
+}
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -81,27 +100,53 @@ export async function GET(request: Request) {
       return NextResponse.json({ success: true, employees: [] });
     }
 
-    const { data, error } = await supabase
+    // Only CURRENT staff, PLUS whoever left during the month being worked on.
+    //
+    // A person is chosen here to be DEDUCTED FROM, so a resigned employee must
+    // not surface in general — this picker once filtered on name alone and
+    // offered them for any month. But excluding them outright made a leaver's
+    // FINAL month unrecordable too: collection refuses an unfinished month, and
+    // with nobody selectable here there was no second route. All 13 of August
+    // 2026's leavers were stranded that way while their settlements were paid.
+    //
+    // So the roster widens by exactly one case: the month you are working on is
+    // the month they left in. The write path re-checks this independently
+    // (isFinalSettlementMonth in the manual route) — this only decides who is
+    // offered, never who is allowed.
+    const searchMonthKey = url.searchParams.get("monthKey")?.trim() ?? "";
+    const monthBounds = finalSettlementBounds(searchMonthKey);
+
+    let search = supabase
       .from("employees")
-      .select("hr_id, full_name, job_title, employment_status")
-      .ilike("full_name", `%${query}%`)
-      // Only CURRENT staff. A person is chosen here to be DEDUCTED FROM, so a
-      // resigned/terminated employee must never surface — this picker previously
-      // filtered on name alone and offered them as selectable. Mirrors the
-      // active-status constraint the other deduction rosters already apply.
-      .in("employment_status", Array.from(ACTIVE_EMPLOYMENT_STATUSES))
-      .order("full_name")
-      .limit(20);
+      .select("hr_id, full_name, job_title, employment_status, last_working_date")
+      .ilike("full_name", `%${query}%`);
+    search = monthBounds
+      ? search.or(
+          `employment_status.in.(${Array.from(ACTIVE_EMPLOYMENT_STATUSES).join(",")}),` +
+            `and(last_working_date.gte.${monthBounds.start},last_working_date.lt.${monthBounds.end})`,
+        )
+      : search.in("employment_status", Array.from(ACTIVE_EMPLOYMENT_STATUSES));
+
+    const { data, error } = await search.order("full_name").limit(20);
     if (error) throw new Error(`Employee search failed: ${error.message}`);
 
     const employees = ((data ?? []) as Array<Record<string, unknown>>)
       .filter((row) => String(row.full_name ?? "").trim())
-      .map((row) => ({
-        hrId: String(row.hr_id ?? ""),
-        name: String(row.full_name ?? ""),
-        jobTitle: (row.job_title as string | null) ?? null,
-        employmentStatus: (row.employment_status as string | null) ?? null,
-      }));
+      .map((row) => {
+        const status = (row.employment_status as string | null) ?? null;
+        const lastWorkingDate = (row.last_working_date as string | null) ?? null;
+        return {
+          hrId: String(row.hr_id ?? ""),
+          name: String(row.full_name ?? ""),
+          jobTitle: (row.job_title as string | null) ?? null,
+          employmentStatus: status,
+          lastWorkingDate,
+          // The form labels these differently — the entry is a final
+          // settlement, not an ongoing deduction, and HR should see that
+          // before they type a number.
+          isFinalSettlement: isTerminalEmploymentStatus(status) && Boolean(lastWorkingDate),
+        };
+      });
 
     return NextResponse.json({ success: true, employees });
   } catch (error) {

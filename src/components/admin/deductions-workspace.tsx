@@ -1,7 +1,7 @@
 "use client";
 
 import { Fragment, useEffect, useMemo, useState } from "react";
-import { AlertTriangle, CheckCircle2, Clock3, Download, PlayCircle, RotateCcw, UserPlus, XCircle } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Clock3, Download, PlayCircle, RotateCcw, UserMinus, UserPlus, XCircle } from "lucide-react";
 
 import {
   DEDUCTIONS_CATEGORY_CONFIG,
@@ -646,7 +646,30 @@ function CandidateDecideRow({
   );
 }
 
-type EmployeeMatch = { hrId: string; name: string; jobTitle: string | null; employmentStatus: string | null };
+type EmployeeMatch = {
+  hrId: string;
+  name: string;
+  jobTitle: string | null;
+  employmentStatus: string | null;
+  lastWorkingDate?: string | null;
+  isFinalSettlement?: boolean;
+};
+
+/**
+ * "9 Aug 2026" from a YYYY-MM-DD string, without going through Date().
+ *
+ * `new Date("2026-08-09")` is parsed as UTC midnight and then rendered in
+ * the BROWSER's timezone, which shows the 8th to anyone west of UTC. The
+ * date is already the calendar day we want, so read it as written.
+ */
+const SHORT_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+function readableDate(value: string | null | undefined): string | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(value ?? "").trim());
+  if (!match) return null;
+  const monthName = SHORT_MONTHS[Number(match[2]) - 1];
+  if (!monthName) return null;
+  return `${Number(match[3])} ${monthName} ${match[1]}`;
+}
 
 /**
  * Add an employee to a manual category (Loan / Other) and deduct from them.
@@ -702,7 +725,9 @@ function AddManualDeduction({
     let cancelled = false;
     setSearching(true);
     const timer = setTimeout(() => {
-      fetchJson<{ employees: EmployeeMatch[] }>(`/api/admin/deductions/employees?q=${encodeURIComponent(term)}`)
+      fetchJson<{ employees: EmployeeMatch[] }>(
+        `/api/admin/deductions/employees?q=${encodeURIComponent(term)}&monthKey=${encodeURIComponent(monthKey)}`,
+      )
         .then((payload) => {
           if (!cancelled) setMatches(payload.employees);
         })
@@ -717,7 +742,7 @@ function AddManualDeduction({
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [query]);
+  }, [query, monthKey]);
 
   async function pick(match: EmployeeMatch) {
     setError(null);
@@ -818,6 +843,11 @@ function AddManualDeduction({
                     <span className="whitespace-nowrap text-xs font-bold text-slate-900">{match.name}</span>
                     {match.jobTitle ? (
                       <span className="whitespace-nowrap text-[10px] text-slate-500">{match.jobTitle}</span>
+                    ) : null}
+                    {match.isFinalSettlement ? (
+                      <span className="whitespace-nowrap text-[10px] font-bold text-amber-700">
+                        {`Left ${readableDate(match.lastWorkingDate) ?? "this month"} — final settlement`}
+                      </span>
                     ) : null}
                   </button>
                 </li>
@@ -1429,6 +1459,196 @@ function ByEmployeeTab({ monthKey }: { monthKey: string }) {
   );
 }
 
+/**
+ * Final settlement for ONE leaver, inside a month that has not finished.
+ *
+ * The month guard is right that an unfinished month cannot be collected
+ * company-wide. It is not right about somebody who already left: their days
+ * ARE over, and the only moment their deductions are worth anything is BEFORE
+ * their final settlement is paid. August 2026 is the case that proved it -
+ * 13 leavers, every one already resigned, every route to record them shut,
+ * and their settlements went out while the workspace insisted on waiting for
+ * September.
+ *
+ * Deliberately one person at a time and one connector per request: the scans
+ * are company-wide underneath, and bundling them is what blew the 300s limit
+ * and got this module reverted (#1377).
+ */
+function LeaverSettlementPanel({ monthKey }: { monthKey: string }) {
+  const [query, setQuery] = useState("");
+  const [matches, setMatches] = useState<EmployeeMatch[]>([]);
+  const [picked, setPicked] = useState<EmployeeMatch | null>(null);
+  const [running, setRunning] = useState(false);
+  const [runs, setRuns] = useState<CollectorRun[]>([]);
+  const [message, setMessage] = useState<{ tone: "success" | "error"; text: string } | null>(null);
+
+  const [year, month] = useMemo(() => monthKey.split("-").map(Number), [monthKey]);
+
+  useEffect(() => {
+    const term = query.trim();
+    if (term.length < 2 || picked) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setMatches([]);
+      return;
+    }
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      fetchJson<{ employees: EmployeeMatch[] }>(
+        `/api/admin/deductions/employees?q=${encodeURIComponent(term)}&monthKey=${encodeURIComponent(monthKey)}`,
+      )
+        .then((payload) => {
+          // Only leavers here. An active employee's month is not over, so this
+          // panel must never offer them - that is the company-wide run's job.
+          if (!cancelled) setMatches(payload.employees.filter((entry) => entry.isFinalSettlement));
+        })
+        .catch(() => {
+          if (!cancelled) setMatches([]);
+        });
+    }, 250);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [query, monthKey, picked]);
+
+  async function runSettlement() {
+    if (!picked || running) return;
+    setRunning(true);
+    setMessage(null);
+    setRuns([]);
+    try {
+      const { plan, eligibility } = await fetchJson<{
+        plan: Array<{ key: string; label: string }>;
+        eligibility: { eligible: boolean; reason?: string };
+      }>("/api/admin/deductions/settlement", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ month, year, employeeHrId: picked.hrId }),
+      });
+      if (!eligibility.eligible) {
+        setMessage({ tone: "error", text: eligibility.reason ?? "This employee cannot be settled for this month." });
+        return;
+      }
+
+      let stepped: CollectorRun[] = plan.map((entry) => ({ ...entry, state: "pending" }));
+      setRuns(stepped);
+
+      for (const entry of plan) {
+        stepped = stepped.map((run) => (run.key === entry.key ? { ...run, state: "running" } : run));
+        setRuns(stepped);
+        try {
+          const payload = await fetchJsonWithTimeout<{
+            result: { created: number; skippedExisting: number; warnings: string[] };
+          }>(
+            "/api/admin/deductions/settlement",
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ month, year, employeeHrId: picked.hrId, connector: entry.key }),
+            },
+            COLLECT_REQUEST_TIMEOUT_MS,
+          );
+          stepped = stepped.map((run) =>
+            run.key === entry.key ? { ...run, state: "done" as const, ...payload.result } : run,
+          );
+        } catch (error) {
+          stepped = stepped.map((run) =>
+            run.key === entry.key
+              ? { ...run, state: "failed" as const, error: error instanceof Error ? error.message : "Connector failed." }
+              : run,
+          );
+        }
+        setRuns(stepped);
+      }
+
+      const created = stepped.reduce((sum, run) => sum + (run.created ?? 0), 0);
+      const failed = stepped.filter((run) => run.state === "failed");
+      setMessage({
+        tone: failed.length > 0 ? "error" : "success",
+        text:
+          `Settlement for ${picked.name}: ${created} candidate(s) found.` +
+          (failed.length > 0 ? ` ${failed.length} connector(s) failed.` : " They go to Pending for your decision."),
+      });
+    } catch (error) {
+      setMessage({ tone: "error", text: error instanceof Error ? error.message : "Settlement run failed." });
+    } finally {
+      setRunning(false);
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-2 border border-amber-200 bg-amber-50 px-4 py-3">
+      <div className="flex items-start gap-2">
+        <UserMinus className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+        <span className="text-sm font-semibold text-slate-700">
+          Someone who already left can still be settled. Their last working day has passed, so their days are
+          final — and this is the only moment their deductions can come off before the final payment goes out.
+        </span>
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative">
+          <input
+            className="w-72 border border-amber-300 bg-white px-2 py-1.5 text-xs font-semibold text-slate-900 outline-none focus:border-amber-500"
+            onChange={(event) => {
+              setPicked(null);
+              setQuery(event.target.value);
+            }}
+            placeholder="Search a leaver by name…"
+            value={query}
+          />
+          {matches.length > 0 ? (
+            <ul className="absolute top-full z-10 max-h-56 w-72 overflow-y-auto border border-amber-300 bg-white shadow-lg">
+              {matches.map((match) => (
+                <li key={match.hrId}>
+                  <button
+                    className="flex w-full flex-col items-start gap-0.5 px-2 py-1.5 text-left transition hover:bg-amber-50"
+                    onClick={() => {
+                      setPicked(match);
+                      setQuery(match.name);
+                      setMatches([]);
+                    }}
+                    type="button"
+                  >
+                    <span className="whitespace-nowrap text-xs font-bold text-slate-900">{match.name}</span>
+                    <span className="whitespace-nowrap text-[10px] font-bold text-amber-700">
+                      {`Left ${readableDate(match.lastWorkingDate) ?? "this month"}`}
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
+        <button
+          className="inline-flex items-center gap-1.5 border border-amber-600 bg-amber-600 px-3 py-1.5 text-xs font-black uppercase tracking-[0.08em] text-white transition hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-40"
+          disabled={!picked || running}
+          onClick={runSettlement}
+          type="button"
+        >
+          <PlayCircle className="h-3.5 w-3.5" />
+          {running ? "Running…" : "Run final settlement"}
+        </button>
+      </div>
+      {message ? (
+        <span
+          className={`whitespace-nowrap text-xs font-bold ${message.tone === "error" ? "text-red-700" : "text-emerald-700"}`}
+        >
+          {message.text}
+        </span>
+      ) : null}
+      {runs.length > 0 ? (
+        <ul className="flex flex-col gap-0.5">
+          {runs.map((run) => (
+            <li className="whitespace-nowrap text-[11px] font-semibold text-slate-600" key={run.key}>
+              {`${run.label}: ${run.state === "done" ? `${run.created ?? 0} found` : run.state === "failed" ? (run.error ?? "failed") : run.state}`}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </div>
+  );
+}
+
 export function DeductionsWorkspace({
   canDecide,
   currentCairoMonthKey,
@@ -1563,6 +1783,8 @@ export function DeductionsWorkspace({
           </span>
         </div>
       ) : null}
+
+      {canDecide && !monthHasFinished ? <LeaverSettlementPanel monthKey={monthKey} /> : null}
 
       {collectMessage ? (
         <div
