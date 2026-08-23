@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-import { parseDesiredChecks, parseDuration, diffCheck } from "../scripts/healthchecks-sync.mjs";
+import { parseDesiredChecks, parseDuration, diffCheck, payload } from "../scripts/healthchecks-sync.mjs";
 
 /**
  * `scripts/healthchecks-sync.mjs` treats the table in docs/observability.md as the source of truth
@@ -103,6 +103,32 @@ export async function runHealthchecksScheduleSyncTests() {
     "update",
     "a freshly auto-provisioned check must be reported as needing its real schedule",
   );
+
+  // Every write MUST carry an explicit slug. The API stores an empty slug otherwise, and the app
+  // pings by slug — so a check created without one never receives the ping it exists to wait for,
+  // goes red against a healthy job, and a duplicate gets created beside it by the next real ping.
+  // That happened on the very first live run; the read-back inside the script is what caught it.
+  const cronBody: Record<string, unknown> = payload({
+    slug: "phoenix-x",
+    kind: "cron",
+    schedule: "17 2 * * *",
+    tz: "Africa/Cairo",
+    grace: 7200,
+  });
+  assert.equal(cronBody.slug, "phoenix-x", "a cron check must be created with its slug");
+  assert.equal(cronBody.name, "phoenix-x");
+  assert.equal(cronBody.schedule, "17 2 * * *");
+  assert.equal(cronBody.tz, "Africa/Cairo");
+
+  const simpleBody: Record<string, unknown> = payload({
+    slug: "phoenix-y",
+    kind: "simple",
+    timeout: 300,
+    grace: 900,
+  });
+  assert.equal(simpleBody.slug, "phoenix-y", "a period check must be created with its slug too");
+  assert.equal(simpleBody.timeout, 300);
+  assert.equal(simpleBody.schedule, undefined, "a period check must not carry a cron expression");
 
   // A slug listed twice would let one row silently win.
   assert.throws(
