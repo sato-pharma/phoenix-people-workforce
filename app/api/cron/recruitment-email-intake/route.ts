@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { isProductionRuntime } from "@/config/system-settings";
-import { logCronUnauthorized, logError, logInfo, logWarning } from "@/lib/observability/log";
+import { logCronUnauthorized, logError, logInfo } from "@/lib/observability/log";
 import { withDeadMansSwitch } from "@/lib/observability/dead-mans-switch";
 import {
   pollAllRecruitmentMailboxes,
@@ -101,15 +101,24 @@ class RecruitmentIntakePollError extends Error {
  * `webhook_misrouted` (Meta is configured to deliver somewhere that is not us) are both facts about
  * the current configuration, checked directly, and both are actionable the moment they appear.
  *
- * `silent` is deliberately NOT in this set any more. Measured on production, this channel's normal
- * inbound gap has reached 333 hours against a 96-hour threshold - so silence fired for roughly ten
- * straight days in early August 2026 with nothing whatsoever wrong, and it is firing again now. An
- * alert that is on during normal operation cannot signal an outage; it only trains its reader to
- * ignore it, and the real 2026-07-26 block would have been invisible inside that noise. Silence is
- * still computed and still logged - as a WARNING, which does not page - because it remains useful
- * context once something else has drawn attention.
+ * `public_channel_dead` is the measured one, and the only check here that can see an outage the
+ * configuration cannot: applicants are provably applying by email while not one of them reached
+ * WhatsApp. That is the exact shape of the 2026-08-23 incident, in which every config check passed
+ * for 25 days while the public could not get through at all.
+ *
+ * `silent` is BACK in this set, reversing PR #2327 the same day it shipped. That PR removed it on
+ * the reasoning that a 333-hour gap was measured-normal quiet for a low-volume channel. The
+ * reasoning was wrong: an intake event on this channel happens only when a human forwards a batch
+ * from the HR handset, so a long gap never meant a quiet channel - it meant applicants' CVs sitting
+ * unread on a phone. Silence was the right signal all along; what it needed was the correct
+ * explanation attached to it, not switching off.
  */
-const PAGING_STATUSES = new Set<WhatsAppIntakeHealth["status"]>(["api_unreachable", "webhook_misrouted"]);
+const PAGING_STATUSES = new Set<WhatsAppIntakeHealth["status"]>([
+  "api_unreachable",
+  "webhook_misrouted",
+  "public_channel_dead",
+  "silent",
+]);
 
 /**
  * WhatsApp health is logged, never thrown. Failing this route on it would turn the email cron red
@@ -119,16 +128,6 @@ const PAGING_STATUSES = new Set<WhatsAppIntakeHealth["status"]>(["api_unreachabl
  */
 async function reportWhatsAppIntakeHealth(): Promise<WhatsAppIntakeHealth> {
   const health = await checkWhatsAppIntakeHealth();
-  if (health.status === "silent") {
-    logWarning("Inbound WhatsApp CV intake has been quiet", {
-      labels: {
-        event: "whatsapp_intake_quiet",
-        hoursSinceLastInbound: health.hoursSinceLastInbound === null ? null : Math.floor(health.hoursSinceLastInbound),
-        job: "recruitment-email-intake",
-        routingOk: health.routing?.ok ?? null,
-      },
-    });
-  }
   if (PAGING_STATUSES.has(health.status)) {
     logError("Inbound WhatsApp CV intake is not healthy", {
       context: {
@@ -136,6 +135,7 @@ async function reportWhatsAppIntakeHealth(): Promise<WhatsAppIntakeHealth> {
         detail: health.detail,
         lastInboundAt: health.lastInboundAt,
         probes: health.probes,
+        reach: health.reach,
         routing: health.routing,
       },
       labels: {
@@ -143,6 +143,8 @@ async function reportWhatsAppIntakeHealth(): Promise<WhatsAppIntakeHealth> {
         hoursSinceLastInbound: health.hoursSinceLastInbound === null ? null : Math.floor(health.hoursSinceLastInbound),
         job: "recruitment-email-intake",
         numbersDown: health.probes.filter((probe) => !probe.ok).length,
+        outsideSenders: health.reach?.outsideSenders ?? null,
+        emailSenders: health.reach?.emailSenders ?? null,
         status: health.status,
       },
     });

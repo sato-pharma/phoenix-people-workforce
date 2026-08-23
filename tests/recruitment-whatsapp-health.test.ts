@@ -14,6 +14,7 @@ import {
   isSilenceAlertWindow,
   resolveConfiguredPhoneNumberIds,
   type WhatsAppNumberProbe,
+  type WhatsAppPublicReach,
 } from "../src/lib/recruitment/inbound/whatsapp-health.ts";
 import { autoReplyConfig, isWhatsAppAutoReplyEnabled } from "../src/lib/recruitment/inbound/whatsapp-reply.ts";
 
@@ -578,5 +579,126 @@ export function runWhatsAppWebhookRoutingTests() {
     }).status,
     "ok",
     "no routing answer plus recent inbound is still plainly ok",
+  );
+}
+
+// ===================================================================================================
+// PUBLIC REACH — the check that measures whether applicants actually GOT THROUGH.
+//
+// Why this exists: on 2026-08-23 every configuration check in this module passed — number CONNECTED,
+// subscription active, `messages` subscribed, callback URL correct, per-number override correct —
+// while the public channel had been shut for 25 days. The advertised number was a normal WhatsApp
+// Business handset that is not on the Cloud API at all, so applicants' CVs sat on a phone and
+// entered the ATS only when a human forwarded a batch. Config was flawless and irrelevant: it can
+// prove Meta is WILLING to call us, never that anybody arrived.
+//
+// The contrast with email is what makes this measurable. Email is an independent transport with no
+// Meta dependency, so "nobody reached WhatsApp" and "149 different people emailed a CV" together
+// mean something neither says alone.
+// ===================================================================================================
+
+export function runWhatsAppPublicReachTests() {
+  const reach = (over: Partial<WhatsAppPublicReach> = {}): WhatsAppPublicReach => ({
+    directDeliveryExpected: true,
+    emailSenders: 40,
+    outsideSenders: 0,
+    windowHours: 96,
+    ...over,
+  });
+  const hoursAgo = (hours: number) => new Date(CAIRO_NOON.getTime() - hours * 60 * 60 * 1000);
+  const verdict = (
+    r: WhatsAppPublicReach | null,
+    extra: { apiError?: string | null; routing?: ReturnType<typeof evaluateWebhookRouting> | null; lastInboundHoursAgo?: number } = {},
+  ) =>
+    evaluateWhatsAppIntakeHealth({
+      apiError: extra.apiError ?? null,
+      configured: true,
+      lastInboundAt: hoursAgo(extra.lastInboundHoursAgo ?? 200),
+      now: CAIRO_NOON,
+      reach: r,
+      routing: extra.routing ?? null,
+      silenceThresholdHours: 96,
+    });
+
+  // --- THE REGRESSION THIS SHIPS FOR ---------------------------------------------------------
+  {
+    const dead = verdict(reach());
+    assert.equal(
+      dead.status,
+      "public_channel_dead",
+      "applicants applying by email while NONE reached WhatsApp is an outage, however green the config",
+    );
+    assert.match(
+      dead.detail,
+      /40 different people sent a CV by email/,
+      "the alert must carry the contrast that proves applicants exist - that is the whole evidence",
+    );
+    assert.equal(dead.reach?.outsideSenders, 0, "the verdict must carry the measurement it was based on");
+  }
+
+  // --- under MANUAL FORWARDING the very same numbers are correct, not an outage ----------------
+  {
+    const forwarding = verdict(reach({ directDeliveryExpected: false }));
+    assert.notEqual(
+      forwarding.status,
+      "public_channel_dead",
+      "while CVs arrive only by manual forwarding, zero outside senders is the DESIGN - paging on it would fire forever",
+    );
+    assert.equal(forwarding.status, "silent");
+    assert.match(
+      forwarding.detail,
+      /nobody has forwarded a CV batch from the HR handset/,
+      "silence on a forwarding channel must name the actual cause, not restate the gap",
+    );
+  }
+
+  // --- nobody applying ANYWHERE is a quiet week, not a broken channel --------------------------
+  assert.notEqual(
+    verdict(reach({ emailSenders: 0 })).status,
+    "public_channel_dead",
+    "with both transports quiet this is a holiday or a hiring pause - the contrast is what makes it an outage",
+  );
+  assert.notEqual(
+    verdict(reach({ emailSenders: 4 })).status,
+    "public_channel_dead",
+    "a trickle below the contrast floor is not proof that applicants are trying",
+  );
+  assert.equal(
+    verdict(reach({ emailSenders: 5 })).status,
+    "public_channel_dead",
+    "at the floor the contrast is proven and it must fire",
+  );
+
+  // --- applicants getting through is plainly ok -------------------------------------------------
+  assert.equal(
+    verdict(reach({ outsideSenders: 12 }), { lastInboundHoursAgo: 1 }).status,
+    "ok",
+    "a channel real applicants are reaching is healthy",
+  );
+
+  // --- precedence: one incident, one alert -------------------------------------------------------
+  assert.equal(
+    verdict(reach(), { apiError: "API access blocked" }).status,
+    "api_unreachable",
+    "dead credentials outrank an unreachable public channel - they already explain it",
+  );
+  assert.equal(
+    verdict(reach(), {
+      routing: evaluateWebhookRouting({
+        answerable: true,
+        expectedCallbackUrl: expectedWebhookUrl(),
+        numberOverrideUrl: null,
+        subscription: null,
+      }),
+    }).status,
+    "webhook_misrouted",
+    "a NAMED misconfiguration outranks the measurement, because it explains why nobody got through",
+  );
+
+  // --- an unmeasured reach must never invent an outage -------------------------------------------
+  assert.equal(
+    verdict(null).status,
+    "silent",
+    "when reach could not be measured the verdict must fall back, never fabricate public_channel_dead",
   );
 }

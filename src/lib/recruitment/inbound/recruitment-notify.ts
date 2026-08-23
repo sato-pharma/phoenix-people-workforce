@@ -147,19 +147,27 @@ export async function notifyDailyCvDigest(digest: DailyCvDigest): Promise<void> 
  * never itself break the cron that raised it.
  */
 export async function notifyWhatsAppIntakeUnhealthy(health: WhatsAppIntakeHealth, now: Date = new Date()): Promise<void> {
-  // Only the two DETERMINISTIC faults reach a phone. "silent" was removed on 2026-08-23: this
-  // channel's normal inbound gap has measured 333h against a 96h threshold, so the quiet alert
-  // pushed for ~10 consecutive days in early August with nothing wrong. A push that arrives during
-  // normal operation is a push that stops being read.
-  if (health.status !== "api_unreachable" && health.status !== "webhook_misrouted") return;
+  // Four statuses reach a phone. "silent" was briefly removed on 2026-08-23 (PR #2327) on the
+  // reasoning that a 333h gap was normal quiet - reversed hours later, because on a channel fed by
+  // manual forwarding a long gap means applicants' CVs sitting unread on a handset, which is
+  // exactly what someone needs woken for. Throttling still holds it to one push per status per
+  // Cairo day, so a persistent fault reminds rather than spams.
+  const PUSHABLE = ["api_unreachable", "webhook_misrouted", "public_channel_dead", "silent"] as const;
+  if (!(PUSHABLE as readonly string[]).includes(health.status)) return;
 
   const recipientHrIds = await hrIdsForRoles(recruitmentManageRoles);
   if (recipientHrIds.length === 0) return;
 
+  // Each title names the fault, not the symptom, so the phone notification alone is enough to know
+  // what to go and do.
   const title =
     health.status === "api_unreachable"
       ? "WhatsApp CV intake is DOWN"
-      : "WhatsApp CV intake is not being delivered here";
+      : health.status === "webhook_misrouted"
+        ? "WhatsApp CV intake is not being delivered here"
+        : health.status === "public_channel_dead"
+          ? "Applicants cannot reach you on WhatsApp"
+          : "No CVs have come through WhatsApp";
   const numbersDown = health.probes.filter((probe) => !probe.ok).map((probe) => probe.displayNumber ?? probe.phoneNumberId);
 
   await createSystemNotificationForRecipients(
@@ -173,7 +181,9 @@ export async function notifyWhatsAppIntakeUnhealthy(health: WhatsAppIntakeHealth
       metadata: {
         apiError: health.apiError,
         idempotencyKey: `whatsapp-intake-health:${health.status}:${cairoDateKey(now)}`,
+        emailSendersInWindow: health.reach?.emailSenders ?? null,
         numbersDown,
+        outsideSendersInWindow: health.reach?.outsideSenders ?? null,
         routingProblems: health.routing?.problems ?? [],
         status: health.status,
       },

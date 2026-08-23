@@ -23,6 +23,7 @@ import { systemDeployment } from "@/config/system-settings";
 import { isFieldWorkforceWeeklyOff } from "@/lib/field-workforce-compliance/weekend-policy";
 import { PHOENIX_BUSINESS_TIME_ZONE } from "@/lib/i18n/format";
 import { recruitmentDb } from "@/lib/recruitment/db";
+import { isWhatsAppImportSender, parseWhatsAppImportSenders } from "@/lib/recruitment/inbound/whatsapp-payload-parser";
 
 const DEFAULT_GRAPH_API_VERSION = "v23.0";
 const DEFAULT_SILENCE_ALERT_HOURS = 24;
@@ -33,11 +34,18 @@ const PROBE_TIMEOUT_MS = 8_000;
 const BUSINESS_HOUR_START = 10;
 const BUSINESS_HOUR_END = 20;
 
+// How many DISTINCT people must have sent a CV by EMAIL in the same window before a WhatsApp
+// channel with no applicants on it is called an outage. Email is an independent transport with no
+// Meta dependency, so it is the control group: it proves people are applying right now. Without
+// this floor a genuine hiring pause, Eid, or a national holiday would page as a broken channel.
+const MIN_CONTRAST_EMAIL_SENDERS = 5;
+
 export type WhatsAppIntakeHealthStatus =
   | "ok"
   | "not_configured"
   | "api_unreachable"
   | "webhook_misrouted"
+  | "public_channel_dead"
   | "silent";
 
 /** The webhook path Meta must call. Mirrors app/api/webhooks/whatsapp/route.ts. */
@@ -137,6 +145,42 @@ export function evaluateWebhookRouting(input: {
   return { ...base, ok: problems.length === 0, problems };
 }
 
+/**
+ * Whether applicants can actually REACH us on WhatsApp — measured, never inferred from config.
+ *
+ * Every other check in this module verifies how Meta is CONFIGURED. On 2026-08-23 all of them
+ * passed while the public channel had been shut for 25 days: the advertised number was a normal
+ * WhatsApp Business handset that is not on the Cloud API at all, so applicants CVs sat on a phone
+ * and reached the ATS only when somebody forwarded a batch by hand. The configuration was flawless
+ * and entirely beside the point. Config can only ever prove Meta is willing to call us; it can
+ * never prove anybody arrived.
+ */
+export type WhatsAppPublicReach = {
+  /** The window these counts are measured over. */
+  windowHours: number;
+  /** Distinct WhatsApp senders in the window, EXCLUDING the forwarding handsets. */
+  outsideSenders: number;
+  /** Distinct people whose CV arrived by email in the same window — the control group. */
+  emailSenders: number;
+  /**
+   * True once applicants are expected to reach the Cloud API directly (Meta Coexistence on the
+   * advertised number). While CVs still arrive only by manual forwarding, zero outside senders is
+   * the DESIGNED behaviour, so it is measured and reported but must never page.
+   */
+  directDeliveryExpected: boolean;
+};
+
+/**
+ * Set to "true" once the ADVERTISED number itself delivers into the Cloud API (Coexistence).
+ *
+ * This is an explicit switch rather than something inferred from the number count, because the two
+ * architectures differ in what silence MEANS, and guessing that wrong is the whole bug: under
+ * forwarding, no outside senders is correct; under coexistence, it is an outage.
+ */
+export function isDirectIntakeExpected(): boolean {
+  return (process.env.RECRUITMENT_WHATSAPP_DIRECT_INTAKE ?? "").trim().toLowerCase() === "true";
+}
+
 /** Per-number result of the Graph API probe. */
 export type WhatsAppNumberProbe = {
   phoneNumberId: string;
@@ -175,6 +219,8 @@ export type WhatsAppIntakeHealthCore = {
   hoursSinceLastInbound: number | null;
   /** Where Meta is configured to deliver, and whether that is still us. Null when unanswerable. */
   routing: WhatsAppWebhookRouting | null;
+  /** Who actually got through, and whether anyone was trying. Null when it could not be measured. */
+  reach: WhatsAppPublicReach | null;
   /** One-line explanation, safe to put straight into a log message. */
   detail: string;
 };
@@ -292,13 +338,16 @@ export function evaluateWhatsAppIntakeHealth(input: {
   silenceThresholdHours: number;
   /** Omitted or null when routing could not be checked — never treated as a pass or a failure. */
   routing?: WhatsAppWebhookRouting | null;
+  /** Omitted or null when reach could not be measured — never treated as a pass or a failure. */
+  reach?: WhatsAppPublicReach | null;
 }): WhatsAppIntakeHealthCore {
   const lastInboundAt = input.lastInboundAt ? input.lastInboundAt.toISOString() : null;
   const hoursSinceLastInbound = input.lastInboundAt
     ? (input.now.getTime() - input.lastInboundAt.getTime()) / (60 * 60 * 1000)
     : null;
   const routing = input.routing ?? null;
-  const base = { apiError: input.apiError, hoursSinceLastInbound, lastInboundAt, routing };
+  const reach = input.reach ?? null;
+  const base = { apiError: input.apiError, hoursSinceLastInbound, lastInboundAt, reach, routing };
 
   if (!input.configured) {
     return { ...base, detail: "WhatsApp intake is not configured (no access token).", status: "not_configured" };
@@ -323,6 +372,23 @@ export function evaluateWhatsAppIntakeHealth(input: {
     };
   }
 
+  // The check every other one in this file is blind to: applicants are demonstrably applying — by
+  // email, which touches nothing of Meta's — and not one of them got through on WhatsApp. Both
+  // halves are needed. Zero outside senders alone is normal on a forwarding channel and would page
+  // forever; the email contrast is what turns it into "people are trying and cannot reach us".
+  if (
+    reach &&
+    reach.directDeliveryExpected &&
+    reach.outsideSenders === 0 &&
+    reach.emailSenders >= MIN_CONTRAST_EMAIL_SENDERS
+  ) {
+    return {
+      ...base,
+      detail: `No applicant reached WhatsApp in ${reach.windowHours}h, while ${reach.emailSenders} different people sent a CV by email in the same window. Applicants cannot get through on WhatsApp.`,
+      status: "public_channel_dead",
+    };
+  }
+
   // No inbound message has EVER arrived — nothing to compare against, so this cannot be called a
   // regression. Staying quiet here is what keeps the check inert on a freshly connected number.
   if (hoursSinceLastInbound === null) {
@@ -338,11 +404,19 @@ export function evaluateWhatsAppIntakeHealth(input: {
     // confirmed pass must read as "not verified"; there is no silent third case to fall through to.
     const routingNote =
       routing?.ok === true
-        ? " Delivery config was verified healthy, so this is a quiet channel, not a broken one."
+        ? " Delivery config was verified healthy."
         : " Delivery config could not be verified on this run.";
+    // PR #2327 made this stop paging, reasoning that a 333h gap was "measured-normal quiet" on a
+    // low-volume channel. That reasoning was wrong, and the correction is the point of this file:
+    // an intake event on a FORWARDING channel happens only when a human forwards a batch, so a long
+    // gap is not a quiet channel at all — it is CVs piling up unread on the handset. Name which of
+    // the two situations the gap actually describes instead of just restating the number.
+    const cause = reach?.directDeliveryExpected
+      ? "no applicant has messaged the line"
+      : "nobody has forwarded a CV batch from the HR handset, so CVs are accumulating there unread";
     return {
       ...base,
-      detail: `No inbound WhatsApp message for ${Math.floor(hoursSinceLastInbound)}h (threshold ${input.silenceThresholdHours}h).${routingNote}`,
+      detail: `No inbound WhatsApp message for ${Math.floor(hoursSinceLastInbound)}h (threshold ${input.silenceThresholdHours}h) — ${cause}.${routingNote}`,
       status: "silent",
     };
   }
@@ -499,6 +573,70 @@ async function lastInboundWhatsAppAtByNumber(phoneNumberId: string): Promise<Dat
 }
 
 /**
+ * Counts who actually got through in the window, on both transports.
+ *
+ * WhatsApp rows are split on `raw_metadata.bulkImport`, which the webhook stamps whenever the sender
+ * is one of the forwarding handsets. That split is essential and not cosmetic: 371 of 390 WhatsApp
+ * intake events on this system are forwarded batches, and counting them as arrivals is precisely
+ * what hid a 25-day public outage — a forward RESETS every naive freshness measure. The sender is
+ * ALSO checked against the import list directly, so a handset message that predates the stamp, or
+ * one whose metadata is missing, cannot slip through as an applicant.
+ *
+ * Never throws: reach is diagnostics. A query failure yields null, which is treated as unmeasured
+ * rather than healthy or broken.
+ */
+export async function measurePublicReach(now: Date, windowHours: number): Promise<WhatsAppPublicReach | null> {
+  try {
+    const since = new Date(now.getTime() - windowHours * 60 * 60 * 1000).toISOString();
+    const supabase = recruitmentDb();
+    const importSenders = parseWhatsAppImportSenders(process.env.RECRUITMENT_WHATSAPP_IMPORT_SENDERS);
+
+    const [whatsapp, email] = await Promise.all([
+      supabase
+        .from("ats_cv_intake_events")
+        .select("sender_identifier, raw_metadata")
+        .eq("channel", "whatsapp")
+        .gte("created_at", since),
+      // Only outcomes that produced a real candidate count as an applicant. The email mailbox also
+      // records ignored_no_attachment for newsletters, bounces and internal traffic, and counting
+      // those as "people are applying" would make the contrast lie in the dangerous direction.
+      supabase
+        .from("ats_cv_intake_events")
+        .select("sender_identifier")
+        .eq("channel", "email")
+        .gte("created_at", since)
+        .in("outcome", ["candidate_created", "candidate_matched"]),
+    ]);
+    if (whatsapp.error || email.error) return null;
+
+    const outside = new Set<string>();
+    for (const row of (whatsapp.data ?? []) as Array<{ sender_identifier?: string | null; raw_metadata?: Record<string, unknown> | null }>) {
+      const sender = row.sender_identifier?.trim();
+      if (!sender) continue;
+      const bulk = row.raw_metadata?.bulkImport;
+      if (bulk === true || bulk === "true") continue;
+      if (isWhatsAppImportSender(sender, importSenders)) continue;
+      outside.add(sender);
+    }
+
+    const emailSenders = new Set<string>();
+    for (const row of (email.data ?? []) as Array<{ sender_identifier?: string | null }>) {
+      const sender = row.sender_identifier?.trim().toLowerCase();
+      if (sender) emailSenders.add(sender);
+    }
+
+    return {
+      directDeliveryExpected: isDirectIntakeExpected(),
+      emailSenders: emailSenders.size,
+      outsideSenders: outside.size,
+      windowHours,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Composes the per-number API probes + a channel-wide silence window + a PER-NUMBER silence check
  * into one reportable status. Per-number silence uses the `deliveredToPhoneNumberId` stamped on each
  * intake event, so a line that goes quiet while another stays busy is caught (a channel-wide check
@@ -522,10 +660,11 @@ export async function checkWhatsAppIntakeHealth(now: Date = new Date()): Promise
   }
 
   const threshold = silenceAlertHours();
-  const [probes, lastInbound, routing] = await Promise.all([
+  const [probes, lastInbound, routing, reach] = await Promise.all([
     probeAllWhatsAppNumbers(),
     lastInboundWhatsAppAt().catch(() => null),
     fetchWebhookRouting(),
+    measurePublicReach(now, threshold),
   ]);
 
   // Attach each line's own last-inbound (best-effort — a query failure just leaves it null/uncheckable).
@@ -541,6 +680,7 @@ export async function checkWhatsAppIntakeHealth(now: Date = new Date()): Promise
     configured: true,
     lastInboundAt: lastInbound,
     now,
+    reach,
     routing,
     silenceThresholdHours: threshold,
   });

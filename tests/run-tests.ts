@@ -151,6 +151,7 @@ import { runRecruitmentWhatsAppIntakeTests } from "./recruitment-whatsapp-intake
 import {
   runRecruitmentWhatsAppHealthTests,
   runWhatsAppWebhookRoutingTests,
+  runWhatsAppPublicReachTests,
 } from "./recruitment-whatsapp-health.test.ts";
 import { runRecruitmentInboundQueueTests } from "./recruitment-inbound-queue.test.ts";
 import { runRecruitmentInboundMasteryTests } from "./recruitment-inbound-mastery.test.ts";
@@ -1127,6 +1128,10 @@ await runTest("recruitment whatsapp intake health (Meta API probe + silence gate
 await runTest(
   "recruitment whatsapp webhook routing (deterministic delivery check)",
   runWhatsAppWebhookRoutingTests,
+);
+await runTest(
+  "recruitment whatsapp public reach (did anyone actually get through)",
+  runWhatsAppPublicReachTests,
 );
 await runTest("recruitment inbound intake queue (backoff, dead-letter, dedupe key)", runRecruitmentInboundQueueTests);
 await runTest("recruitment inbound mastery (analytics, spike, fuzzy dedup, cv-link allowlist)", runRecruitmentInboundMasteryTests);
