@@ -257,12 +257,18 @@ export function AdminManagerExpenseModal({
     }
   }
 
-  async function calculateDistance(dest: ManagerExpenseDestination, hrId: string) {
+  async function calculateDistance(
+    dest: ManagerExpenseDestination,
+    hrId: string,
+    isRegion: boolean,
+  ) {
     setCalculatingDistance(true);
     setDistanceError(null);
     try {
       const response = await fetch("/api/admin/outstation/calculate-manager-distance", {
         body: JSON.stringify({
+          destinationIsRegion: isRegion,
+          destinationLabel: dest.label,
           destinationLat: dest.latitude,
           destinationLng: dest.longitude,
           managerHrId: hrId,
@@ -333,7 +339,8 @@ export function AdminManagerExpenseModal({
         return;
       }
 
-      setDestinationIsRegion(Boolean(placePayload.isAdministrativeArea));
+      const isRegion = Boolean(placePayload.isAdministrativeArea);
+      setDestinationIsRegion(isRegion);
 
       const resolved: ManagerExpenseDestination = {
         area: placePayload.area ?? null,
@@ -348,7 +355,7 @@ export function AdminManagerExpenseModal({
       setResolvingPlace(false);
 
       if (hrIdForDistance) {
-        await calculateDistance(resolved, hrIdForDistance);
+        await calculateDistance(resolved, hrIdForDistance, isRegion);
       }
     } catch {
       setPlaceError("Failed to resolve place details.");
@@ -371,6 +378,10 @@ export function AdminManagerExpenseModal({
   useEffect(() => {
     destinationRef.current = destination;
   }, [destination]);
+  const destinationIsRegionRef = useRef(destinationIsRegion);
+  useEffect(() => {
+    destinationIsRegionRef.current = destinationIsRegion;
+  }, [destinationIsRegion]);
   const prevHrIdRef = useRef(hrIdForDistance);
 
   useEffect(() => {
@@ -381,7 +392,7 @@ export function AdminManagerExpenseModal({
       setDistanceResult(null);
       setDistanceError(null);
       setManualDistanceKm("");
-      void calculateDistance(dest, hrIdForDistance);
+      void calculateDistance(dest, hrIdForDistance, destinationIsRegionRef.current);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [employeeHrId]);
@@ -669,7 +680,7 @@ export function AdminManagerExpenseModal({
                 <div className="flex items-start gap-2 rounded-md border border-[#FECACA] bg-[#FEF2F2] p-3 text-sm">
                   <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-[#B91C1C]" />
                   <div>
-                    <p className="font-black text-[#B91C1C]">Google Maps could not calculate distance</p>
+                    <p className="font-black text-[#B91C1C]">Distance could not be measured</p>
                     <p className="mt-0.5 text-xs font-semibold text-[#B91C1C]">{distanceError}</p>
                   </div>
                 </div>

@@ -422,6 +422,7 @@ import { runOutstationLocalDraftTests } from "./outstation-local-draft.test.ts";
 import { runOutstationPayrollExpenseMappingTests } from "./outstation-payroll-expense-mapping.test.ts";
 import { runOutstationPolicyClassificationTests } from "./outstation-policy-classification.test.ts";
 import { runOutstationNotificationsTests } from "./outstation-notifications.test.ts";
+import { runOutstationDistanceFailureTests } from "./outstation-distance-failure.test.ts";
 import { runOutstationEmployeeLookupStatusTests } from "./outstation-employee-lookup-status.test.ts";
 import { runMedicalRepExpensesTests } from "./medical-rep-expenses.test.ts";
 import { runAuthSessionTests } from "./auth-session.test.ts";
@@ -2450,6 +2451,13 @@ await runTest(
   "CV re-read skips confirmed non-CVs (every skip entry carries its evidence, and the run reports "
   + "what it actually skipped so a stale id cannot read as coverage)",
   runRecruitmentRereadNotACvSkipsTests,
+);
+
+await runTest(
+  "outstation manager distance failures (a missing Maps key is 503 and never described as a bad "
+    + "destination; a governorate centroid names itself and says pick a city; the region flag is "
+    + "passed explicitly so the same-tick React state cannot send a stale false)",
+  runOutstationDistanceFailureTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
