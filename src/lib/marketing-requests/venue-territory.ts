@@ -20,14 +20,31 @@ import { logWarning } from "@/lib/observability/log";
 // delta_2 3, giza 3, cairo 3, upper_egypt 2, alex_bhr 2), so this was not one unlucky capture.
 //
 // WHAT THIS DOES. After the Source-of-Sales master resolver has run over the codes a submission
-// just wrote, and ONLY when the capturer's own area is not a selling territory, the venue and the
-// customers minted with it adopt the area the registered code resolved to. That is the owner's
-// standing rule — the registered code beats live GPS — applied to the column that governs sight.
+// just wrote, the venue and the customers minted with it adopt the area the registered code
+// resolved to — and so does a customer this submission COMPLETED that was already stranded off
+// every selling territory. That is the owner's standing rule — the registered code beats live GPS —
+// applied to the column that governs sight.
 //
-// WHAT IT DELIBERATELY DOES NOT DO. A capturer who already sits on a real territory is left
-// completely alone: their area is their patch, and a rep must not have their own customer moved out
-// from under them by a mapping table. Nothing here infers a territory from GPS either — an
-// unmatched code yields no claim, and no claim means no change.
+// TWO SEPARATE GATES, BECAUSE THE TWO SETS ARE NOT ALIKE.
+//   * Rows this submission MINTED carry the capturer's area by construction, so the question is
+//     about the CAPTURER: only when they have no selling territory of their own is that area a
+//     wrong answer worth replacing. A rep already on a real patch is left completely alone — a rep
+//     must not have their own customer moved out from under them by a mapping table.
+//   * A customer this submission merely COMPLETED predates it, and its area was chosen by whoever
+//     created it — possibly on purpose. So the question is about the ROW: it is re-filed only when
+//     it sits on no area at all, or on an organisational bucket no rep sells in. Either of those
+//     means invisible to the entire field, and nobody chooses that on purpose. A completed customer
+//     already on a real territory is never touched, whoever completes it.
+//
+// Nothing here infers a territory from GPS. An unmatched code yields no claim, and no claim means
+// no change.
+//
+// WHICH CODES ANSWER THE QUESTION. The area comes from every code the submission ATTACHED, minted
+// or already on file — a customer completed at a pharmacy that was already on file mints no code at
+// all, so reading only the minted ones would leave this unable to fire in the very case the second
+// gate exists for. Rows the submission MINTED still additionally require a minted code, so a rep
+// attaching an existing pharmacy gets exactly the behaviour they have always had. Disagreement
+// between two attached codes vetoes everything, as it always has.
 //
 // WHY IT NEVER THROWS — READ THIS BEFORE CHANGING ANYTHING HERE. The only caller is
 // `createMarketingValidationRecord`, and it calls this from INSIDE the try block whose catch
@@ -38,8 +55,15 @@ import { logWarning } from "@/lib/observability/log";
 // same reason, as `src/lib/marketing-requests/master-resolution.ts`.
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** The methods this needs from a Supabase client — reads and two narrow updates, no RPC. */
+/** The methods this needs from a Supabase client — reads and narrow updates, no RPC. */
 export type VenueTerritoryClient = Pick<SupabaseClient, "from">;
+
+/** A completed customer as this module weighs it: its id, and the area it is sitting on today. */
+type CompletedCustomerRow = { areaId: number | null; id: string };
+
+function uniqueIds(ids: readonly string[]): string[] {
+  return Array.from(new Set(ids.map((id) => String(id ?? "").trim()).filter(Boolean)));
+}
 
 /**
  * The one area code every supplied code row agrees on, or null when they do not speak with one
@@ -97,37 +121,158 @@ export async function isSellingTerritory(
 }
 
 /**
- * Give the venues a submission just minted the territory their registered code resolved to, when —
- * and only when — the capturer's own area is not one.
+ * The batch form of the question above: which of these area codes are selling territories?
+ *
+ * Returns the subset that are, or null when the table could not be read — and null must be treated
+ * exactly as `isSellingTerritory`'s null is, as "we could not tell", never as "none of them".
+ * Reading a failed read as "none" would mark every customer stranded and move the lot.
+ */
+export async function sellingTerritoryCodes(
+  supabase: VenueTerritoryClient,
+  areaCodes: readonly string[],
+): Promise<Set<string> | null> {
+  const codes = Array.from(
+    new Set(areaCodes.map((code) => String(code ?? "").trim()).filter(Boolean)),
+  );
+  if (codes.length === 0) return new Set<string>();
+  const { data, error } = await supabase
+    .from("source_of_sales_bricks")
+    .select("area_code")
+    .in("area_code", codes);
+  if (error) return null;
+  const found = new Set<string>();
+  for (const row of (data ?? []) as Array<{ area_code?: string | null }>) {
+    const code = String(row.area_code ?? "").trim();
+    if (code) found.add(code);
+  }
+  return found;
+}
+
+/**
+ * Of the customers this submission completed, which are stranded where no rep can see them?
+ *
+ * Stranded means: no area at all, or an area that is not a selling territory. Anything else — a
+ * real territory, or an area row that could not be read — is left alone, because unknown is never
+ * permission to move a row somebody else placed.
+ *
+ * Returns null when any read failed, which the caller turns into "change nothing".
+ */
+async function strandedCompletedCustomers(
+  supabase: VenueTerritoryClient,
+  ids: readonly string[],
+): Promise<CompletedCustomerRow[] | null> {
+  if (ids.length === 0) return [];
+  const customers = await supabase
+    .from("marketing_customers")
+    .select("id, area_id")
+    .in("id", ids);
+  if (customers.error) return null;
+  const rows = (customers.data ?? []) as Array<{
+    area_id?: number | string | null;
+    id?: string | null;
+  }>;
+
+  const areaIds = Array.from(
+    new Set(
+      rows
+        .map((row) => (row.area_id === null || row.area_id === undefined ? null : Number(row.area_id)))
+        .filter((value): value is number => value !== null && Number.isFinite(value)),
+    ),
+  );
+  const codeByAreaId = new Map<number, string>();
+  if (areaIds.length > 0) {
+    const areas = await supabase.from("areas").select("id, code").in("id", areaIds);
+    if (areas.error) return null;
+    for (const row of (areas.data ?? []) as Array<{ code?: string | null; id?: number | string | null }>) {
+      const id = Number(row.id);
+      const code = String(row.code ?? "").trim();
+      if (Number.isFinite(id) && code) codeByAreaId.set(id, code);
+    }
+  }
+
+  const territorial = await sellingTerritoryCodes(supabase, Array.from(codeByAreaId.values()));
+  if (territorial === null) return null;
+
+  const stranded: CompletedCustomerRow[] = [];
+  for (const row of rows) {
+    const id = String(row.id ?? "").trim();
+    if (!id) continue;
+    const rawArea = row.area_id === null || row.area_id === undefined ? null : Number(row.area_id);
+    if (rawArea !== null && !Number.isFinite(rawArea)) continue;
+    if (rawArea === null) {
+      // No area is exactly as invisible as a nationwide bucket, and nobody chose it.
+      stranded.push({ areaId: null, id });
+      continue;
+    }
+    const code = codeByAreaId.get(rawArea) ?? null;
+    // An area id with no readable `areas` row is unknown, not stranded.
+    if (code === null) continue;
+    if (territorial.has(code)) continue;
+    stranded.push({ areaId: rawArea, id });
+  }
+  return stranded;
+}
+
+/**
+ * Give a submission's venues the territory their registered code resolved to.
+ *
+ * `customerIds` / `pharmacyIds` are the rows this submission MINTED; `completedCustomerIds` are
+ * customers that already existed and were completed by it. The two sets are gated differently — see
+ * the module header.
+ *
+ * `distributorCodeIds` are the codes this submission minted; `linkedDistributorCodeIds` are all the
+ * codes it attached, minted ones included. The area is read from the second; the first only decides
+ * whether the MINTED rows are eligible to move at all.
  *
  * Returns the `areas.id` actually applied, or null when nothing was changed for any reason: no
- * codes, a capturer already on a real territory, no agreed master area, an area code the `areas`
- * table does not carry, or any failure at all.
+ * codes, nothing eligible to move, no agreed master area, an area code the `areas` table does not
+ * carry, or any failure at all.
  *
  * Never throws. See the module header.
  */
 export async function applyMasterTerritoryToVenues(params: {
+  completedCustomerIds: readonly string[];
   customerIds: readonly string[];
   distributorCodeIds: readonly string[];
+  linkedDistributorCodeIds?: readonly string[];
   ownerAreaId: number | null;
   pharmacyIds: readonly string[];
   supabase: VenueTerritoryClient;
 }): Promise<number | null> {
-  const codeIds = Array.from(
-    new Set(params.distributorCodeIds.map((id) => String(id ?? "").trim()).filter(Boolean)),
-  );
-  const pharmacyIds = Array.from(new Set(params.pharmacyIds.filter(Boolean)));
-  const customerIds = Array.from(new Set(params.customerIds.filter(Boolean)));
+  const mintedCodeIds = uniqueIds(params.distributorCodeIds);
+  // Every code the submission attached, minted or already on file. A customer completed at a
+  // pharmacy that was already on file mints no code at all, so reading only the minted ones would
+  // have left this fix unable to fire in the very case it exists for.
+  const codeIds = uniqueIds([...(params.linkedDistributorCodeIds ?? []), ...mintedCodeIds]);
+  const pharmacyIds = uniqueIds(params.pharmacyIds);
+  const mintedCustomerIds = uniqueIds(params.customerIds);
+  const mintedSet = new Set(mintedCustomerIds);
+  // A row cannot be both minted and completed, but the caller assembles the two lists separately
+  // and a row appearing in both would be updated twice, under two different guards.
+  const completedCustomerIds = uniqueIds(params.completedCustomerIds)
+    .filter((id) => !mintedSet.has(id));
   // A codeless venue — a nursery gets exactly one codeless pass — has nothing to derive a territory
-  // from, and a submission that minted nothing has nothing to move.
+  // from. With no code there is no claim to make about ANY of these rows, minted or completed.
   if (codeIds.length === 0) return null;
-  if (pharmacyIds.length === 0 && customerIds.length === 0) return null;
+  if (
+    pharmacyIds.length === 0
+    && mintedCustomerIds.length === 0
+    && completedCustomerIds.length === 0
+  ) {
+    return null;
+  }
 
   try {
-    // STEP 1 — is the capturer already on a real patch? If so this module has no business here.
+    // STEP 1 — GATE ON THE CAPTURER, for the rows this submission minted. If the capturer is
+    // already on a real patch, this module has no business re-filing their own new rows.
     // A capturer with NO area at all falls through deliberately: `area_id` null is just as
     // invisible as a nationwide bucket, and the registered code can answer for both.
-    if (params.ownerAreaId !== null) {
+    // A submission that minted no code of its own does not re-file its OWN new rows off the back
+    // of a venue that was already on file. That case — the reused-pharmacy path — is deliberately
+    // still open, and the reason is that nobody has yet asked for it: today a rep attaching an
+    // existing pharmacy gets exactly the behaviour they have always had.
+    let mintedMayMove = mintedCodeIds.length > 0;
+    if (mintedMayMove && params.ownerAreaId !== null) {
       const ownerArea = await params.supabase
         .from("areas")
         .select("code")
@@ -138,8 +283,18 @@ export async function applyMasterTerritoryToVenues(params: {
         params.supabase,
         (ownerArea.data as { code?: string | null } | null)?.code ?? null,
       );
-      // null = we could not tell. Unknown is not permission to move a rep's customer.
-      if (territorial === null || territorial) return null;
+      // null = we could not tell. Unknown is not permission to move anything at all.
+      if (territorial === null) return null;
+      if (territorial) mintedMayMove = false;
+    }
+    const movablePharmacyIds = mintedMayMove ? pharmacyIds : [];
+    const movableMintedCustomerIds = mintedMayMove ? mintedCustomerIds : [];
+    if (
+      movablePharmacyIds.length === 0
+      && movableMintedCustomerIds.length === 0
+      && completedCustomerIds.length === 0
+    ) {
+      return null;
     }
 
     // STEP 2 — what did the master say? Read back rather than passed in, because the resolver is a
@@ -170,12 +325,17 @@ export async function applyMasterTerritoryToVenues(params: {
     if (areaId === null || areaId === undefined) return null;
     const resolvedAreaId = Number(areaId);
     if (!Number.isFinite(resolvedAreaId)) return null;
-    if (resolvedAreaId === params.ownerAreaId) return null;
 
-    // STEP 4 — move only rows that still carry the value this module is entitled to replace. If a
+    // STEP 4 — GATE ON THE ROW, for the customers that predate this submission.
+    const stranded = await strandedCompletedCustomers(params.supabase, completedCustomerIds);
+    if (stranded === null) return null;
+
+    // STEP 5 — move only rows that still carry the value this module is entitled to replace. If a
     // parallel session or a human has already put a considered area on the row, it stays.
+    let applied = false;
     const applyTo = async (table: string, ids: readonly string[]) => {
       if (ids.length === 0) return;
+      if (resolvedAreaId === params.ownerAreaId) return;
       const update = params.supabase
         .from(table)
         .update({ area_id: resolvedAreaId })
@@ -185,11 +345,28 @@ export async function applyMasterTerritoryToVenues(params: {
         : update.eq("area_id", params.ownerAreaId);
       const { error } = await guarded;
       if (error) throw error;
+      applied = true;
     };
-    await applyTo("marketing_pharmacies", pharmacyIds);
-    await applyTo("marketing_customers", customerIds);
+    await applyTo("marketing_pharmacies", movablePharmacyIds);
+    await applyTo("marketing_customers", movableMintedCustomerIds);
 
-    return resolvedAreaId;
+    for (const row of stranded) {
+      // Each completed customer is guarded on ITS OWN current area, because that is the value this
+      // module read and judged — they do not share one.
+      if (row.areaId === resolvedAreaId) continue;
+      const update = params.supabase
+        .from("marketing_customers")
+        .update({ area_id: resolvedAreaId })
+        .eq("id", row.id);
+      const guarded = row.areaId === null
+        ? update.is("area_id", null)
+        : update.eq("area_id", row.areaId);
+      const { error } = await guarded;
+      if (error) throw error;
+      applied = true;
+    }
+
+    return applied ? resolvedAreaId : null;
   } catch (error) {
     // WARNING, not ERROR: the venue is saved, correct and usable — it is simply filed under the
     // capturer's area, which is exactly where it would have been filed before this module existed.
