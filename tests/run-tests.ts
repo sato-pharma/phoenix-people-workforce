@@ -905,6 +905,7 @@ import { runRecruitmentCvReadHonestyTests } from "./recruitment-cv-read-honesty.
 import { runRecruitmentRereadModelConstantsTests } from "./recruitment-reread-model-constants.test.ts";
 import { runRecruitmentExtractionRecordsIsCvTests } from "./recruitment-extraction-records-is-cv.test.ts";
 import { runRecruitmentRereadNotACvSkipsTests } from "./recruitment-reread-not-a-cv-skips.test.ts";
+import { runWorktreeExitGuardPreRemovalTests } from "./worktree-exit-guard-pre-removal.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -2455,6 +2456,13 @@ await runTest(
   "CV re-read skips confirmed non-CVs (every skip entry carries its evidence, and the run reports "
   + "what it actually skipped so a stale id cannot read as coverage)",
   runRecruitmentRereadNotACvSkipsTests,
+);
+
+await runTest(
+  "Worktree backup guard logs before the worktree goes (the pre-removal check names the target, "
+  + "warns on unpushed commits and uncommitted files, logs the clean case too so silence cannot be "
+  + "mistaken for coverage, and never blocks the removal)",
+  runWorktreeExitGuardPreRemovalTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
