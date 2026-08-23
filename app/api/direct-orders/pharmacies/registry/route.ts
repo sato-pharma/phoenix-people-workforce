@@ -65,6 +65,8 @@ export async function POST(request: Request) {
       doctorName?: string | null;
       pharmacyAddress?: string | null;
       distributorCodes?: CodePair[];
+      /** See the same field on POST /api/direct-orders/pharmacies — normalized by the service. */
+      venueType?: string | null;
     };
 
     if (body.action === "register") {
@@ -75,6 +77,7 @@ export async function POST(request: Request) {
         regionCode: body.regionCode ?? null,
         doctorName: body.doctorName ?? null,
         pharmacyAddress: body.pharmacyAddress ?? null,
+        venueType: body.venueType ?? null,
         distributorCodes: pairs(body.distributorCodes),
       });
       return NextResponse.json({ pharmacy, success: true });

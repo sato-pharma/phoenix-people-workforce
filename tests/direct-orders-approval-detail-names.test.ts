@@ -111,6 +111,7 @@ function detail(overrides: Partial<DirectOrderApprovalDetail> = {}): DirectOrder
       regionCode: "RG-1",
       doctorName: "Dr Nour",
       pharmacyAddress: "12 El Merghany Street, Heliopolis, Cairo",
+      venueType: "pharmacy",
       distributorCodes: [],
       contestedCodeClaims: [],
       geoVarianceResolved: false,

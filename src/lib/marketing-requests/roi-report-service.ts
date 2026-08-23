@@ -435,10 +435,12 @@ async function buildRoiIndex(access: AccessContext, revealRestricted: boolean): 
         "request_id, product_id",
         allIds,
       ),
-      loadByRequestIds<{ request_id: string; distributor_code_id: string }>(
+      // `pharmacy_id` too: a target with no distributor code (a nursery) has nothing to look up
+      // in the code table, and without this it would be dropped from the report entirely.
+      loadByRequestIds<{ request_id: string; distributor_code_id: string | null; pharmacy_id: string }>(
         supabase,
         "marketing_request_pharmacies",
-        "request_id, distributor_code_id",
+        "request_id, distributor_code_id, pharmacy_id",
         allIds,
       ),
       loadByRequestIds<{ request_id: string; assigned_role: string | null; is_cc: boolean | null; status: string | null }>(
@@ -519,7 +521,11 @@ async function buildRoiIndex(access: AccessContext, revealRestricted: boolean): 
     parentByNormalized.set(row.marketing_normalized_name.trim().toLowerCase(), row.parent_distributor_code);
   }
 
-  const pharmacyIds = Array.from(new Set(Array.from(codeById.values()).map((entry) => entry.pharmacyId).filter(Boolean)));
+  const pharmacyIds = Array.from(new Set([
+    ...Array.from(codeById.values()).map((entry) => entry.pharmacyId),
+    // The codeless targets, which reach the name lookup by no other route.
+    ...pharmacyLinks.filter((link) => !link.distributor_code_id).map((link) => link.pharmacy_id),
+  ].filter(Boolean)));
   const pharmacyNameById = new Map<string, string>();
   for (const part of chunk(pharmacyIds)) {
     if (part.length === 0) continue;
@@ -553,8 +559,21 @@ async function buildRoiIndex(access: AccessContext, revealRestricted: boolean): 
 
   const pharmaciesByRequest = new Map<string, Array<{ key: string; name: string; parentCode: string | null }>>();
   for (const link of pharmacyLinks) {
-    const code = codeById.get(link.distributor_code_id);
-    if (!code) continue;
+    const code = link.distributor_code_id ? codeById.get(link.distributor_code_id) : null;
+    // A target with no distributor code is NOT a broken row to skip past — it is a venue with no
+    // distributor account, and the money spent on it is just as real. Listed with no parent
+    // distributor, which is what makes it visibly unattributable rather than invisibly absent.
+    if (!code) {
+      if (link.distributor_code_id) continue;
+      const list = pharmaciesByRequest.get(link.request_id) ?? [];
+      list.push({
+        key: link.pharmacy_id,
+        name: pharmacyNameById.get(link.pharmacy_id) || link.pharmacy_id,
+        parentCode: null,
+      });
+      pharmaciesByRequest.set(link.request_id, list);
+      continue;
+    }
     const normalized = code.distributorId != null ? distributorNormalizedById.get(code.distributorId) ?? null : null;
     const parentCode = normalized ? parentByNormalized.get(normalized) ?? null : null;
     const list = pharmaciesByRequest.get(link.request_id) ?? [];
@@ -1373,10 +1392,10 @@ export async function loadMarketingRoiExportDetail(
       "request_id, product_id, product_name_snapshot, line_snapshot, factory_price_snapshot, forecast_quantity, expected_value, value_share",
       ids,
     ),
-    loadByRequestIds<{ request_id: string; distributor_code_id: string; tracking_status: string | null }>(
+    loadByRequestIds<{ request_id: string; distributor_code_id: string | null; pharmacy_id: string; tracking_status: string | null }>(
       supabase,
       "marketing_request_pharmacies",
-      "request_id, distributor_code_id, tracking_status",
+      "request_id, distributor_code_id, pharmacy_id, tracking_status",
       ids,
     ),
     loadByRequestIds<{ request_id: string; sequence: number | string; step_name: string | null; assigned_role: string | null; assigned_hr_id: string | null; status: string | null; decision_by_hr_id: string | null; decision_at: string | null; decision_note: string | null; is_cc: boolean | null }>(
@@ -1453,7 +1472,10 @@ export async function loadMarketingRoiExportDetail(
   for (const row of (rollupRows.data ?? []) as Array<{ marketing_normalized_name: string; parent_distributor_code: string }>) {
     parentByNormalized.set(row.marketing_normalized_name.trim().toLowerCase(), row.parent_distributor_code);
   }
-  const pharmacyIds = Array.from(new Set(Array.from(codeInfo.values()).map((entry) => entry.pharmacyId).filter(Boolean)));
+  const pharmacyIds = Array.from(new Set([
+    ...Array.from(codeInfo.values()).map((entry) => entry.pharmacyId),
+    ...pharmacyLinks.filter((link) => !link.distributor_code_id).map((link) => link.pharmacy_id),
+  ].filter(Boolean)));
   const pharmacyNameById = new Map<string, string>();
   for (const part of chunk(pharmacyIds)) {
     if (part.length === 0) continue;
@@ -1464,8 +1486,21 @@ export async function loadMarketingRoiExportDetail(
     }
   }
   for (const link of pharmacyLinks) {
-    const info = codeInfo.get(link.distributor_code_id);
-    if (!info) continue;
+    const info = link.distributor_code_id ? codeInfo.get(link.distributor_code_id) : null;
+    // Same rule as the report above: an unattributable target still appears, with empty code
+    // columns saying so. Dropping it would understate how many venues a request actually paid for.
+    if (!info) {
+      if (link.distributor_code_id) continue;
+      pharmacies.push({
+        requestId: link.request_id,
+        requestCode: codeByRequest.get(link.request_id) ?? link.request_id,
+        pharmacyName: pharmacyNameById.get(link.pharmacy_id) || link.pharmacy_id,
+        customerCode: "",
+        distributorCode: null,
+        trackingStatus: link.tracking_status,
+      });
+      continue;
+    }
     const normalized = info.distributorId != null ? normalizedByDistributor.get(info.distributorId) ?? null : null;
     pharmacies.push({
       requestId: link.request_id,
@@ -1649,7 +1684,7 @@ export async function getMarketingRequestViewSales(
     .select("distributor_code_id")
     .eq("request_id", cleanId);
   if (pharmacyLinks.error) throw pharmacyLinks.error;
-  const codeIds = Array.from(new Set(((pharmacyLinks.data ?? []) as Array<{ distributor_code_id: string }>).map((row) => row.distributor_code_id).filter(Boolean)));
+  const codeIds = Array.from(new Set(((pharmacyLinks.data ?? []) as Array<{ distributor_code_id: string | null }>).map((row) => row.distributor_code_id).filter((id): id is string => Boolean(id))));
   const pharmacies: Array<{ code: string; name: string }> = [];
   const requestPharmacyCodes = new Set<string>();
   if (codeIds.length > 0) {
@@ -1845,9 +1880,9 @@ async function buildReverseLookup(params: {
         .select("request_id, distributor_code_id")
         .in("distributor_code_id", idPart);
       if (linkResult.error) throw linkResult.error;
-      for (const link of (linkResult.data ?? []) as Array<{ request_id: string; distributor_code_id: string }>) {
+      for (const link of (linkResult.data ?? []) as Array<{ request_id: string; distributor_code_id: string | null }>) {
         if (link.request_id === excludeRequestId) continue;
-        const code = codeIdToCode.get(link.distributor_code_id);
+        const code = link.distributor_code_id ? codeIdToCode.get(link.distributor_code_id) : undefined;
         if (!code) continue;
         const set = sharedByRequest.get(link.request_id) ?? new Set<string>();
         set.add(code);

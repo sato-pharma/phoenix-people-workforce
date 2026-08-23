@@ -46,6 +46,12 @@ export async function POST(request: Request) {
        * can never skip the check.
        */
       acknowledgedCodeConflict?: boolean;
+      /**
+       * "pharmacy" or "nursery". Not trusted as typed — the service normalizes it and the RPC
+       * whitelists the stored value, so an unknown string lands as a pharmacy rather than as a
+       * venue type nothing downstream knows how to read.
+       */
+      venueType?: string | null;
     };
     const pharmacy = await createDirectOrderPharmacy(access, {
       acknowledgedCodeConflict: body.acknowledgedCodeConflict === true,
@@ -55,6 +61,7 @@ export async function POST(request: Request) {
       regionCode: body.regionCode ?? null,
       doctorName: body.doctorName ?? null,
       pharmacyAddress: body.pharmacyAddress ?? null,
+      venueType: body.venueType ?? null,
       distributorCodes: (body.distributorCodes ?? []).map((pair) => ({
         distributorCode: String(pair.distributorCode ?? "").trim(),
         customerCode: String(pair.customerCode ?? "").trim(),

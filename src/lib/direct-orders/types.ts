@@ -1,4 +1,5 @@
 import type { PhoenixRole } from "@/lib/auth/permissions";
+import type { VenueType } from "@/lib/venues/venue-type";
 import type { DirectOrderBasketLine } from "@/lib/direct-orders/basket-label";
 import type { DirectOrderValidationRow } from "@/lib/direct-orders/pharmacy-validation";
 import type { DirectOrderGeographyCheck } from "@/lib/direct-orders/geography-check";
@@ -311,6 +312,17 @@ export type DirectOrderPharmacy = {
   /** Phoenix-generated stable code, e.g. "DOP-000123". */
   phoenixPharmacyCode: string;
   pharmacyName: string;
+  /**
+   * `pharmacy` or `nursery`. A nursery has no distributor account at all, so it can never carry a
+   * distributor code and can never appear on an invoice line.
+   *
+   * Direct Orders never FORCED an invented code — a codeless pharmacy has been admissible here
+   * since 2026-08-04, and none of the six nursery rows in production carries one (verified
+   * 2026-08-23). What it had no way to say is what the venue IS, so a nursery was indistinguishable
+   * from a pharmacy that simply had not given its code yet — which is what the probation sweep then
+   * reported as missing proof. Marketing is where the invented codes actually landed.
+   */
+  venueType: VenueType;
   brickId: string | null;
   areaCode: string | null;
   regionCode: string | null;

@@ -1,3 +1,5 @@
+import type { VenueType } from "@/lib/venues/venue-type";
+
 /**
  * Every customer type the database accepts — `marketing_customers_type_check` allows exactly these
  * five, so this list is the schema, not a preference.
@@ -266,6 +268,8 @@ export type MarketingPharmacy = MarketingCapturedLocation & MarketingEvidenceCap
   validatedByHrId: string | null;
   validationNotes: string | null;
   validationStatus: MarketingValidationStatus;
+  /** `pharmacy` or `nursery`. Reads back as `pharmacy` for every row written before 2026-08-23. */
+  venueType: VenueType;
 };
 
 export type MarketingPharmacyDistributorCode = {
@@ -286,15 +290,30 @@ export type MarketingPharmacyDistributorCode = {
   validationNotes: string | null;
 };
 
-/** One selectable target pharmacy, already resolved to what the picker needs to show. */
+/** One selectable target venue, already resolved to what the picker needs to show. */
 export type MarketingRequestPharmacyOption = {
-  /** The value the form submits — attribution is keyed on this, not on the pharmacy id. */
-  distributorCodeId: string;
-  pharmacyName: string;
+  /**
+   * The distributor code sales attribute through, or null for a venue that has no distributor
+   * account. Was the option's identity until 2026-08-23; `targetId` is now, because a nursery has
+   * no code and two codeless nurseries would otherwise be the same option.
+   */
+  distributorCodeId: string | null;
+  /** Null for a venue with no distributor account. */
+  distributorName: string | null;
   pharmacyCode: string;
-  distributorName: string;
+  /** Always set. The venue itself, whether or not a code hangs off it. */
+  pharmacyId: string;
+  pharmacyName: string;
   /** Lets the form warn about an unverified code before submitting, not after being refused. */
   referenceStatus: MarketingPharmacyCodeReferenceStatus;
+  /**
+   * The value the form submits and keys its checkboxes on. For a pharmacy this IS the distributor
+   * code id, byte for byte — so a draft saved before this field existed still submits exactly what
+   * it always did and still resolves. Build and read it only through `encodeVenueTarget` /
+   * `decodeVenueTarget` in ./venue-type; never assemble the string by hand.
+   */
+  targetId: string;
+  venueType: VenueType;
 };
 
 export type MarketingCustomerPharmacy = {
@@ -302,7 +321,8 @@ export type MarketingCustomerPharmacy = {
   createdAt: string;
   createdByHrId: string | null;
   customerId: string;
-  distributorCodeId: string;
+  /** Null only for a venue with no distributor account — see VenueType. */
+  distributorCodeId: string | null;
   id: string;
   pharmacyId: string;
   updatedAt: string;
@@ -341,7 +361,13 @@ export type MarketingReusablePharmacy = {
   ownerName: string | null;
   pharmacyCode: string;
   validationStatus: MarketingValidationStatus;
-  /** Every active distributor code on the pharmacy. Picking it links all of them, as capturing would. */
+  /**
+   * Every active distributor code on the pharmacy. Picking it links all of them, as capturing would.
+   *
+   * Empty for a nursery, which has no distributor account — that is the whole point of the venue
+   * type. Do NOT reintroduce a "hide rows with no codes" filter here without checking `venueType`:
+   * one existed until 2026-08-23 and it is what would have hidden every nursery from the picker.
+   */
   vendorCodes: Array<{
     distributorCodeId: string;
     distributorId: number;
@@ -349,6 +375,8 @@ export type MarketingReusablePharmacy = {
     distributorPharmacyCode: string;
     referenceStatus: MarketingPharmacyCodeReferenceStatus;
   }>;
+  /** `pharmacy` or `nursery` — see `venueRequiresDistributorCode` in ./venue-type. */
+  venueType: VenueType;
 };
 
 /**
@@ -513,10 +541,18 @@ export type MarketingValidationPharmacyInput = {
   extractedAreaName?: string | null;
   extractedGovernorateName?: string | null;
   regionName?: string | null;
+  /**
+   * Empty ONLY when `venueType` is a type that carries no distributor account. A pharmacy with an
+   * empty list is refused at capture, as it always has been — a shop nobody can invoice cannot
+   * attribute a sale, and inventing a code to get past that gate is exactly the damage this venue
+   * type was added to stop.
+   */
   vendorCodes: Array<{
     distributorId: number | string;
     distributorPharmacyCode: string;
   }>;
+  /** Defaults to `pharmacy` when absent, so an offline replay of an older draft still means what it did. */
+  venueType?: VenueType;
 };
 
 export type MarketingValidationLegacyPharmacyInput = {
@@ -538,8 +574,9 @@ export type MarketingValidationLegacyPharmacyInput = {
 
 export type MarketingValidationReportRow = {
   customer: MarketingCustomer;
-  distributorCode: MarketingPharmacyDistributorCode;
-  distributorName: string;
+  /** Null for a venue with no distributor account. */
+  distributorCode: MarketingPharmacyDistributorCode | null;
+  distributorName: string | null;
   id: string;
   pharmacy: MarketingPharmacy;
   validationNotes: string | null;
@@ -583,19 +620,25 @@ export type MarketingCustomerDatabaseRow = {
   customerPhone: string | null;
   customerType: MarketingCustomerType;
   customerValidationPhoto: string | null;
-  distributorCode: string;
-  distributorId: number;
-  distributorName: string;
+  /**
+   * All four distributor columns are null together, and only for a venue with no distributor
+   * account. Render them as the venue type rather than as a blank or a zero — the row is complete,
+   * it simply has no sales channel to name.
+   */
+  distributorCode: string | null;
+  distributorId: number | null;
+  distributorName: string | null;
   pharmacyAddress: string | null;
   pharmacyArea: string | null;
   pharmacyCode: string;
-  pharmacyDistributorCodeId: string;
+  pharmacyDistributorCodeId: string | null;
   pharmacyGovernorate: string | null;
   pharmacyId: string;
   pharmacyName: string;
   rowId: string;
   validationStatus: MarketingValidationStatus;
-  vendorPharmacyCode: string;
+  vendorPharmacyCode: string | null;
+  venueType: VenueType;
 };
 
 export type MarketingCustomerDatabaseWorkspace = {
@@ -730,7 +773,8 @@ export type MarketingRequestProduct = {
 
 export type MarketingRequestPharmacy = {
   createdAt: string;
-  distributorCodeId: string;
+  /** Null only for a venue with no distributor account, whose spend can never attribute to sales. */
+  distributorCodeId: string | null;
   id: string;
   notes: string | null;
   pharmacyId: string;
@@ -854,8 +898,14 @@ export type MarketingRequestDraftProductInput = {
 export const UNVERIFIED_CODE_REASON_MIN_LENGTH = 10;
 
 export type MarketingRequestDraftPharmacyInput = {
-  distributorCodeId: string;
+  /**
+   * Legacy key, still accepted so a draft saved before 2026-08-23 replays unchanged. New clients
+   * send `targetId`; when both are absent the entry is rejected.
+   */
+  distributorCodeId?: string;
   notes?: string | null;
+  /** See `MarketingRequestPharmacyOption.targetId`. */
+  targetId?: string;
   /**
    * Written justification for using a pharmacy code the reference database cannot find.
    *

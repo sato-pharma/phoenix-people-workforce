@@ -43,6 +43,12 @@ import type {
   MarketingValidationStatus,
   MarketingValidationWorkspace as MarketingValidationWorkspacePayload,
 } from "@/lib/marketing-requests/types";
+import {
+  VENUE_TYPES,
+  venueRequiresDistributorCode,
+  venueTypeLabel,
+  type VenueType,
+} from "@/lib/venues/venue-type";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { ZoomablePhoto } from "@/components/ui/zoomable-photo";
 
@@ -206,6 +212,13 @@ type PharmacyLine = {
   area: string;
   source: PharmacySource;
   vendorCodes: VendorCodeLine[];
+  /**
+   * What kind of venue this is. A nursery has no distributor account, so it carries no vendor codes
+   * at all — which is why the codes block below disappears when this is set. Before this existed
+   * the form demanded a code from every venue, and reps supplied invented ones (`0000`,
+   * `0001000000`, `0001511111` are all in production) because there was no other way to save.
+   */
+  venueType: VenueType;
 };
 
 /**
@@ -317,6 +330,7 @@ function newPharmacyLine(distributorId = ""): PharmacyLine {
     // deliberately switches to the pharmacies he already has.
     source: "new",
     vendorCodes: [newVendorCodeLine(distributorId)],
+    venueType: "pharmacy",
   };
 }
 
@@ -410,10 +424,14 @@ function pendingBlockLabel(rows: MarketingValidationReportRow[]): string {
 function untrackedVendorCodes(rows: MarketingValidationReportRow[]) {
   const seen = new Map<string, { code: string; distributorName: string }>();
   for (const row of rows) {
+    // A venue with no distributor account has no vendor code to be untracked. Listing it here
+    // would report a fault it cannot have; the row's own note already states why its ROI is
+    // unmeasurable.
+    if (!row.distributorCode) continue;
     if (row.distributorCode.referenceStatus === "matched") continue;
     seen.set(row.distributorCode.id, {
       code: row.distributorCode.distributorPharmacyCode,
-      distributorName: row.distributorName,
+      distributorName: row.distributorName ?? "Unknown distributor",
     });
   }
   return Array.from(seen.values());
@@ -449,6 +467,9 @@ function describeMissingRequirement(customers: CustomerLine[], isDeskMode: boole
       }
       if (!pharmacy.name.trim()) return `Enter a name for Pharmacy ${pharmacyIndex + 1} under ${customerLabel}.`;
       if (isDeskMode && !hasPin(pharmacy.capture)) return `Pin ${pharmacyLabel}'s location on the map.`;
+      // A venue with no distributor account has nothing to check here, and the codes block is not
+      // even rendered for it. Asking for a code would be asking the rep to make one up again.
+      if (!venueRequiresDistributorCode(pharmacy.venueType)) continue;
       if (pharmacy.vendorCodes.length === 0) return `${pharmacyLabel} needs at least one distributor code.`;
 
       for (const [codeIndex, line] of pharmacy.vendorCodes.entries()) {
@@ -465,15 +486,19 @@ function buildValidatedPharmacyDetails(rows: MarketingValidationReportRow[]) {
   const pharmacies = new Map<string, ValidatedPharmacyDetail>();
   for (const row of rows) {
     const current = pharmacies.get(row.pharmacy.id);
-    const vendorCode = {
-      code: row.distributorCode.distributorPharmacyCode,
-      distributorName: row.distributorName,
-      id: row.distributorCode.id,
-      status: row.distributorCode.referenceStatus.replace(/_/g, " "),
-    };
+    // Null for a venue with no distributor account. The pharmacy still gets its row — dropping it
+    // would leave a validated venue out of the summary that lists what was just validated.
+    const vendorCode = row.distributorCode
+      ? {
+        code: row.distributorCode.distributorPharmacyCode,
+        distributorName: row.distributorName ?? "Unknown distributor",
+        id: row.distributorCode.id,
+        status: row.distributorCode.referenceStatus.replace(/_/g, " "),
+      }
+      : null;
 
     if (current) {
-      if (!current.vendorCodes.some((line) => line.id === vendorCode.id)) {
+      if (vendorCode && !current.vendorCodes.some((line) => line.id === vendorCode.id)) {
         current.vendorCodes.push(vendorCode);
       }
       continue;
@@ -484,7 +509,7 @@ function buildValidatedPharmacyDetails(rows: MarketingValidationReportRow[]) {
       governorate: row.pharmacy.extractedGovernorateName ?? "",
       id: row.pharmacy.id,
       name: row.pharmacy.displayName,
-      vendorCodes: [vendorCode],
+      vendorCodes: vendorCode ? [vendorCode] : [],
     });
   }
 
@@ -685,7 +710,9 @@ function ReusablePharmacyPicker({
             <option key={option.id} value={option.id}>
               {[
                 option.displayName || option.pharmacyCode,
-                option.vendorCodes.map((code) => code.distributorPharmacyCode).join(" / "),
+                option.vendorCodes.length > 0
+                  ? option.vendorCodes.map((code) => code.distributorPharmacyCode).join(" / ")
+                  : venueTypeLabel(option.venueType),
                 option.areaName ?? "",
                 option.isOwn ? "Yours" : option.ownerName ?? "",
               ].filter(Boolean).join(" · ")}
@@ -716,6 +743,16 @@ function ReusablePharmacyPicker({
             <p className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-500">
               Vendor codes that will be attached
             </p>
+            {/*
+              An empty list is the correct, complete answer for a venue with no distributor account.
+              Said in words, because a heading with nothing under it reads as a loading failure.
+            */}
+            {selected.vendorCodes.length === 0 ? (
+              <p className="text-[12px] font-semibold text-slate-600">
+                None — a {venueTypeLabel(selected.venueType).toLowerCase()} has no distributor account, so sales
+                cannot be attributed to it.
+              </p>
+            ) : null}
             {selected.vendorCodes.map((code) => (
               <div className="overflow-x-auto" key={code.distributorCodeId}>
                 <p className="whitespace-nowrap text-[12px] font-semibold text-slate-700">
@@ -1960,10 +1997,15 @@ export function MarketingValidationWorkspace() {
               extractedAreaName: pharmacy.area,
               extractedGovernorateName: pharmacy.governorate,
               regionName: [pharmacy.area, pharmacy.governorate].filter(Boolean).join(", "),
-              vendorCodes: pharmacy.vendorCodes.map((line) => ({
-                distributorId: Number(line.distributorId),
-                distributorPharmacyCode: line.distributorCode,
-              })),
+              // Empty for a codeless venue — the server refuses a code on one, so sending the
+              // half-typed rows that were on screen before the rep switched type would 400.
+              vendorCodes: venueRequiresDistributorCode(pharmacy.venueType)
+                ? pharmacy.vendorCodes.map((line) => ({
+                  distributorId: Number(line.distributorId),
+                  distributorPharmacyCode: line.distributorCode,
+                }))
+                : [],
+              venueType: pharmacy.venueType,
             },
         ),
       })),
@@ -2575,7 +2617,35 @@ export function MarketingValidationWorkspace() {
                             </div>
                             <div className="lg:col-span-6">
                               <div className="space-y-2.5">
-                                <div className="flex items-center justify-between gap-3">
+                                <div className="flex items-center gap-2">
+                                  {VENUE_TYPES.map((venueType) => (
+                                    <Button
+                                      className={
+                                        pharmacy.venueType === venueType
+                                          ? "h-7 rounded-sm border border-orange-300 bg-orange-50 px-2.5 text-[11px] font-bold text-orange-700"
+                                          : "h-7 rounded-sm border border-slate-200 bg-white px-2.5 text-[11px] font-bold text-slate-600 hover:bg-slate-50"
+                                      }
+                                      key={venueType}
+                                      onClick={() => updatePharmacy(customer.key, pharmacy.key, { venueType })}
+                                      type="button"
+                                    >
+                                      {venueTypeLabel(venueType)}
+                                    </Button>
+                                  ))}
+                                </div>
+                                {venueRequiresDistributorCode(pharmacy.venueType) ? null : (
+                                  <p className="text-[11px] text-slate-600">
+                                    A {venueTypeLabel(pharmacy.venueType).toLowerCase()} has no distributor account, so it
+                                    carries no code. Spend on it is allowed and can never be matched to a sale.
+                                  </p>
+                                )}
+                                <div
+                                  className={
+                                    venueRequiresDistributorCode(pharmacy.venueType)
+                                      ? "flex items-center justify-between gap-3"
+                                      : "hidden"
+                                  }
+                                >
                                   <p className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-500">
                                     Vendor Codes
                                   </p>
@@ -2592,7 +2662,7 @@ export function MarketingValidationWorkspace() {
                                     Add
                                   </Button>
                                 </div>
-                                {pharmacy.vendorCodes.map((line) => {
+                                {!venueRequiresDistributorCode(pharmacy.venueType) ? null : pharmacy.vendorCodes.map((line) => {
                                   const codeCheck = codeChecks[line.key];
                                   return (
                                   <div key={line.key}>
