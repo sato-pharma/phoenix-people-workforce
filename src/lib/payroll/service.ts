@@ -83,6 +83,63 @@ function isDuplicatePayrollPeriodError(error: unknown) {
   );
 }
 
+/**
+ * The `salary_records_batch_hr_unique` index, added 2026-08-24: one salary record per employee per
+ * batch, keyed on `lower(hr_id)`.
+ *
+ * Neither `phx_create_salary_batch` nor `phx_replace_salary_batch` carries an ON CONFLICT clause,
+ * so before that index a sheet listing one employee on two lines produced two salary rows, two
+ * payslips, and — once the outstation import runs — that employee's approved expense credited
+ * twice, all without an error anywhere. It now fails the upload instead, which is the right moment
+ * to find out: a sheet with one employee twice cannot be paid correctly at all.
+ */
+export function isDuplicateEmployeeInBatchError(error: unknown) {
+  return (
+    payrollErrorCode(error) === "23505" &&
+    payrollErrorMessage(error).toLowerCase().includes("salary_records_batch_hr_unique")
+  );
+}
+
+/** Only the three fields the message needs, so a caller — or a test — need not build a whole sheet row. */
+export type DuplicateEmployeeRow = Pick<SalaryValidationRow, "hrId" | "fullName" | "row">;
+
+/**
+ * Name the duplicated people and the sheet rows they sit on.
+ *
+ * Read off the uploaded rows rather than parsed out of the Postgres detail line: the detail carries
+ * only the hr_id, and the person fixing this needs a name and a row number to find it in their
+ * file. Case- and whitespace-insensitive, matching the index expression exactly — 'PH-014' and
+ * 'ph-014 ' are the same employee to the database and must read as the same employee here.
+ */
+export function duplicateEmployeeInBatchMessage(records: readonly DuplicateEmployeeRow[]) {
+  const byEmployee = new Map<string, DuplicateEmployeeRow[]>();
+  for (const row of records) {
+    const key = row.hrId.trim().toLowerCase();
+    if (!key) {
+      continue;
+    }
+    const existing = byEmployee.get(key);
+    if (existing) {
+      existing.push(row);
+    } else {
+      byEmployee.set(key, [row]);
+    }
+  }
+
+  const duplicated = [...byEmployee.values()].filter((rows) => rows.length > 1);
+  if (duplicated.length === 0) {
+    // The index fired but the uploaded rows look clean — a concurrent upload of the same period is
+    // the only way here. Say that rather than inventing a name.
+    return "This month already has a salary record for one of these employees. Another payroll upload for the same month may have finished first — reload the batch and try again.";
+  }
+
+  const named = duplicated
+    .map((rows) => `${rows[0].fullName} (sheet rows ${rows.map((row) => row.row).join(", ")})`)
+    .join("; ");
+
+  return `The uploaded sheet lists the same employee more than once for this month: ${named}. Each employee must appear on exactly one row — remove the duplicate and upload again.`;
+}
+
 function isLikelyUuid(value: string) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
 }
@@ -1305,6 +1362,10 @@ export async function createSalaryBatch(input: CreateSalaryBatchInput) {
       throw new PayrollConflictError(payrollErrorMessage(batchError));
     }
 
+    if (isDuplicateEmployeeInBatchError(batchError)) {
+      throw new PayrollConflictError(duplicateEmployeeInBatchMessage(input.records));
+    }
+
     if (
       isMissingColumnError(batchError, "base_salary") ||
       isMissingColumnError(batchError, "governmental_deductions") ||
@@ -1455,6 +1516,10 @@ export async function replaceSalaryBatch(
       message.toLowerCase().includes("payroll batch period changed")
     ) {
       throw new PayrollConflictError(message);
+    }
+
+    if (isDuplicateEmployeeInBatchError(replaceError)) {
+      throw new PayrollConflictError(duplicateEmployeeInBatchMessage(input.records));
     }
     if (
       isMissingColumnError(replaceError, "base_salary") ||
