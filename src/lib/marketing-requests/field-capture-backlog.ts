@@ -10,6 +10,7 @@
 // reverse. If that rule changes, both move together or neither does.
 
 import { cairoTodayIso } from "@/lib/attendance/working-days";
+import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
 import { isDeskValidated, isInferredFromHistory } from "@/lib/customer-pharmacy-mapping/readiness";
 import { createSystemNotification, logNotificationSendFailure } from "@/lib/notifications/system";
 import type { MarketingEvidenceStatus } from "@/lib/marketing-requests/types";
@@ -66,10 +67,11 @@ export type FieldCaptureBacklogOwner = {
   customers: FieldCaptureBacklogCustomer[];
   hrId: string;
   /**
-   * `owner` when the customer names its own rep, `manager` when it does not and the nudge falls
-   * through to the manager. Reported so a run can be read without guessing why someone was picked.
+   * How this person was chosen: `owner` when the customer names its own rep, `manager` when it
+   * names only a manager, `area` when it names neither and the nudge fell through to the territory.
+   * Reported so a run can be read without guessing why somebody was picked.
    */
-  routedVia: "manager" | "owner";
+  routedVia: "area" | "manager" | "owner";
 };
 
 export type MarketingFieldCaptureBacklog = {
@@ -80,10 +82,12 @@ export type MarketingFieldCaptureBacklog = {
     unassignedCustomers: number;
   };
   /**
-   * Customers naming neither a rep nor a manager. Production had 53 such links on 2026-08-23, and
-   * they are the ones that would vanish silently from a naive "group by owner" — so they are
-   * returned separately and reported, never dropped. Nobody can be nudged about them; they need an
-   * owner assigned first.
+   * Customers nobody can be nudged about: no rep, no manager, and no colleague working their area.
+   * These are what a naive "group by owner" drops in silence, so they are returned and reported
+   * rather than vanishing. Production 2026-08-23 had 20 customers naming neither a rep nor a
+   * manager — but every one of them carried an `area_id`, so the territory fallback below reaches
+   * all of them and this list is expected to be EMPTY. A non-empty one means a customer sits in an
+   * area with no active employee in it, which is a staffing fact, not a notification bug.
    */
   unassigned: FieldCaptureBacklogCustomer[];
 };
@@ -93,6 +97,8 @@ export type MarketingFieldCaptureBacklog = {
  * production combinations can be tested without a database in the way.
  */
 export type FieldCaptureBacklogInput = {
+  /** The territory the customer belongs to — what grants sight of the row, per the 2026-08-19 ruling. */
+  areaId: number | null;
   customerCode: string;
   customerEvidenceStatus: MarketingEvidenceStatus;
   customerId: string;
@@ -114,7 +120,21 @@ export type FieldCaptureBacklogInput = {
  */
 export function groupFieldCaptureBacklog(
   customers: readonly FieldCaptureBacklogInput[],
+  areaStaff: ReadonlyArray<{ areaId: number | null; hrId: string }> = [],
 ): MarketingFieldCaptureBacklog {
+  // Who works each territory. This mirrors `canSeeMarketingCustomer`'s area test exactly — a
+  // non-null `employees.area_id` equal to the customer's — so anybody reached this way is
+  // guaranteed to find the row on the page the nudge links to. An employee with no area (most of
+  // head office) matches nothing, which is the same way the visibility rule treats them.
+  const staffByArea = new Map<number, string[]>();
+  for (const employee of areaStaff) {
+    const hrId = cleanHrId(employee.hrId);
+    if (hrId === null || employee.areaId === null) continue;
+    const bucket = staffByArea.get(employee.areaId) ?? [];
+    if (!bucket.includes(hrId)) bucket.push(hrId);
+    staffByArea.set(employee.areaId, bucket);
+  }
+
   const ownerBuckets = new Map<string, { customers: FieldCaptureBacklogCustomer[]; routedVia: "manager" | "owner" }>();
   const unassigned: FieldCaptureBacklogCustomer[] = [];
   let customerCount = 0;
@@ -143,16 +163,30 @@ export function groupFieldCaptureBacklog(
       ),
     };
 
+    // A customer belongs to a TERRITORY, not to a person (owner's ruling, 2026-08-19): nothing is
+    // re-stamped when somebody resigns, because the new hire's area already matches the row. So
+    // `owner_hr_id` is only the first answer to "who owes this", never the only one — falling
+    // straight to `unassigned` would abandon 20 live customers to nobody.
     const ownerHrId = cleanHrId(customer.ownerHrId);
-    const routedTo = ownerHrId ?? cleanHrId(customer.managerHrId);
-    if (!routedTo) {
+    const managerHrId = cleanHrId(customer.managerHrId);
+    const named = ownerHrId ?? managerHrId;
+    const routedTo: string[] = named
+      ? [named]
+      : customer.areaId === null
+        ? []
+        : (staffByArea.get(customer.areaId) ?? []);
+    const routedVia: "area" | "manager" | "owner" = ownerHrId ? "owner" : managerHrId ? "manager" : "area";
+
+    if (routedTo.length === 0) {
       unassigned.push(entry);
       continue;
     }
 
-    const bucket = ownerBuckets.get(routedTo) ?? { customers: [], routedVia: ownerHrId ? "owner" : "manager" };
-    bucket.customers.push(entry);
-    ownerBuckets.set(routedTo, bucket);
+    for (const hrId of routedTo) {
+      const bucket = ownerBuckets.get(hrId) ?? { customers: [], routedVia };
+      bucket.customers.push(entry);
+      ownerBuckets.set(hrId, bucket);
+    }
   }
 
   const owners: FieldCaptureBacklogOwner[] = Array.from(ownerBuckets.entries())
@@ -171,6 +205,7 @@ export function groupFieldCaptureBacklog(
 }
 
 type CustomerRow = {
+  area_id: number | string | null;
   customer_code: string | null;
   display_name: string | null;
   evidence_status: string | null;
@@ -223,7 +258,7 @@ export async function loadMarketingFieldCaptureBacklog(): Promise<MarketingField
   const [customersResult, pharmaciesResult] = await Promise.all([
     supabase
       .from("marketing_customers")
-      .select("id, customer_code, display_name, evidence_status, owner_hr_id, manager_hr_id")
+      .select("id, customer_code, display_name, evidence_status, owner_hr_id, manager_hr_id, area_id")
       .in("id", customerIds),
     supabase.from("marketing_pharmacies").select("id, display_name, evidence_status").in("id", pharmacyIds),
   ]);
@@ -239,6 +274,7 @@ export async function loadMarketingFieldCaptureBacklog(): Promise<MarketingField
   }
 
   const inputs: FieldCaptureBacklogInput[] = ((customersResult.data ?? []) as CustomerRow[]).map((customer) => ({
+    areaId: customer.area_id === null || customer.area_id === undefined ? null : Number(customer.area_id),
     customerCode: customer.customer_code ?? "",
     customerEvidenceStatus: evidenceStatus(customer.evidence_status),
     customerId: customer.id,
@@ -252,7 +288,12 @@ export async function loadMarketingFieldCaptureBacklog(): Promise<MarketingField
     ownerHrId: customer.owner_hr_id,
   }));
 
-  return groupFieldCaptureBacklog(inputs);
+  // Active employees only — chasing a leaver reaches nobody. Cached by the directory itself.
+  const employees = await getEmployeeDirectoryRows();
+  return groupFieldCaptureBacklog(
+    inputs,
+    employees.map((employee) => ({ areaId: employee.areaId, hrId: employee.hrId })),
+  );
 }
 
 /**
@@ -268,8 +309,12 @@ export function fieldCaptureNudgeMessage(owner: FieldCaptureBacklogOwner): strin
     .filter(Boolean);
   const remainder = count - named.length;
   const list = named.length > 0 ? ` Starting with ${named.join(", ")}${remainder > 0 ? ` and ${remainder} more` : ""}.` : "";
+  // "your customers" is only true when the row names this person. Reached through the territory
+  // they are a colleague who CAN close it, not the owner, and telling someone a customer is theirs
+  // when it is not is how a nudge gets dismissed as wrong rather than acted on.
+  const whose = owner.routedVia === "area" ? `${count} marketing ${noun} in your area` : `${count} of your marketing ${noun}`;
   return (
-    `${count} of your marketing ${noun} show a validated status with no field capture behind them.` +
+    `${whose} show a validated status with no field capture behind them.` +
     `${list} Photographing the shop on your next visit closes it — the customer does not have to be there.`
   );
 }
@@ -302,10 +347,11 @@ export async function runMarketingFieldCaptureNudge(): Promise<MarketingFieldCap
   const today = cairoTodayIso();
   let notified = 0;
   let skipped = 0;
-  let customersCovered = 0;
+  // DISTINCT customers, not the sum of the per-person lists: area routing deliberately sends one
+  // customer to every colleague who can see it, and summing would report more work than exists.
+  const customersCovered = backlog.totals.customers - backlog.totals.unassignedCustomers;
 
   for (const owner of backlog.owners) {
-    customersCovered += owner.customers.length;
     try {
       await createSystemNotification({
         actionUrl: FIELD_CAPTURE_ACTION_URL,

@@ -18,6 +18,7 @@ const DESK_NOTE = `Location chosen from map search — ${DESK_VALIDATION_MARKER}
 
 function customer(overrides: Partial<FieldCaptureBacklogInput> = {}): FieldCaptureBacklogInput {
   return {
+    areaId: null,
     customerCode: "MKT-C-0001",
     customerEvidenceStatus: "missing",
     customerId: "c1",
@@ -115,6 +116,54 @@ export function runMarketingFieldCaptureBacklogTests() {
   assert.equal(orphaned.unassigned[0].customerCode, "MKT-C-0002");
   assert.equal(orphaned.owners.length, 1, "and it is billed to nobody");
 
+  // ── A customer belongs to a TERRITORY, not to a person ───────────────────────────
+  // Owner's ruling, 2026-08-19. Production 2026-08-23 held 20 customers naming neither a rep nor a
+  // manager, and every one of them carried an area — so stopping at owner/manager would abandon
+  // all 20 to nobody. The area test mirrors `canSeeMarketingCustomer` exactly, which is what makes
+  // it safe: everyone reached this way can actually see the row on the page the nudge links to.
+  const byArea = groupFieldCaptureBacklog(
+    [customer({ areaId: 7, customerCode: "MKT-C-0010", customerId: "c10", managerHrId: null, ownerHrId: null })],
+    [
+      { areaId: 7, hrId: "HR-701" },
+      { areaId: 7, hrId: "hr-702" },
+      { areaId: 9, hrId: "HR-901" },
+    ],
+  );
+  assert.equal(byArea.totals.unassignedCustomers, 0, "an ownerless customer in a staffed area is not abandoned");
+  assert.deepEqual(
+    byArea.owners.map((owner) => owner.hrId),
+    ["HR-701", "HR-702"],
+    "every colleague working that territory is told, and nobody from another area is",
+  );
+  assert.equal(byArea.owners[0].routedVia, "area", "the run says WHY this person was picked");
+
+  // Fanning one customer out to several colleagues must not inflate the backlog: it is still ONE
+  // customer of work, however many people can see it.
+  assert.equal(byArea.totals.customers, 1, "one customer stays one customer, however many are told");
+
+  // A named owner still wins outright — the territory is a fallback, not an override. Chasing a
+  // whole area about a customer that already names its rep is noise.
+  const ownerBeatsArea = groupFieldCaptureBacklog(
+    [customer({ areaId: 7, ownerHrId: "HR-100" })],
+    [{ areaId: 7, hrId: "HR-701" }],
+  );
+  assert.deepEqual(ownerBeatsArea.owners.map((owner) => owner.hrId), ["HR-100"], "a named rep is not diluted");
+
+  // An area with nobody in it is a STAFFING fact, and is reported rather than silently swallowed.
+  const emptyArea = groupFieldCaptureBacklog(
+    [customer({ areaId: 42, managerHrId: null, ownerHrId: null })],
+    [{ areaId: 7, hrId: "HR-701" }],
+  );
+  assert.equal(emptyArea.unassigned.length, 1, "an unstaffed area is still reported, not dropped");
+
+  // An employee with no area of their own matches nothing — the same way the visibility rule
+  // treats head office. Otherwise every arealess employee would be nudged about every customer.
+  const areallessStaff = groupFieldCaptureBacklog(
+    [customer({ areaId: 7, managerHrId: null, ownerHrId: null })],
+    [{ areaId: null, hrId: "HR-800" }],
+  );
+  assert.equal(areallessStaff.unassigned.length, 1, "an employee with no area is not everybody's rep");
+
   // ── HR id casing ──────────────────────────────────────────────────────────────────────────
   // This schema stores hr_id in mixed case. Two spellings of one rep must be ONE notification and
   // not two — the same trap that once hid 28% of a rep's own direct orders.
@@ -163,6 +212,16 @@ export function runMarketingFieldCaptureBacklogTests() {
   assert.ok(
     existsSync(new URL(`../app${FIELD_CAPTURE_ACTION_URL}/page.tsx`, import.meta.url)),
     "the nudge links to a page that actually exists",
+  );
+
+  // A colleague reached through the territory is not told the customer is theirs — it is not, and
+  // a nudge that misstates the relationship gets dismissed as wrong rather than acted on.
+  const areaMessage = fieldCaptureNudgeMessage(byArea.owners[0]);
+  assert.ok(areaMessage.startsWith("1 marketing customer in your area"), "territory wording, not ownership");
+  assert.ok(!areaMessage.includes("your marketing"), "a colleague is never told the customer is theirs");
+  assert.ok(
+    fieldCaptureNudgeMessage(owned.owners[0]).startsWith("1 of your marketing customer"),
+    "a named owner IS told it is theirs",
   );
 
   // ── Never email ───────────────────────────────────────────────────────────────────────────
