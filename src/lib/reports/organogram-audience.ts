@@ -271,8 +271,8 @@ export const ORGANOGRAM_EXPORT_COLUMNS: ExportColumn[] = [
   { key: "status", label: "Status", width: 12 },
   { key: "workEmail", label: "Work Email", width: 32 },
   // Filled from the server at export time, never from the row. `text` keeps Excel from
-  // eating the leading zero — which is exactly how 124 of the 175 stored numbers lost
-  // theirs before they ever reached this app.
+  // eating the leading zero — which is exactly how 124 of the 175 rows in
+  // `employees.mobile_number` lost theirs before they ever reached this app.
   { key: "mobile", label: "Mobile", text: true, width: 16 },
   { key: "department", label: "Department", width: 18 },
   { key: "line", label: "Line", width: 18 },
