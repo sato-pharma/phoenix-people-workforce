@@ -1,5 +1,6 @@
 import { getSupabaseAdmin } from "@/lib/supabase/server";
-import { canSeeHrScopedRecord, type AccessContext } from "@/lib/auth/permissions";
+import { canSeeHrScopedRecord, resolveEmployeeIdentityId, type AccessContext } from "@/lib/auth/permissions";
+import { writeRequiredAuditLog } from "@/lib/admin/audit";
 import { canonicalHrIdForDisplay } from "@/lib/hr-id";
 import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
 import { scanPagesToPdf } from "@/lib/hiring-documents/document-scan";
@@ -133,6 +134,39 @@ async function loadLines(lineIds: number[]) {
 }
 
 /** Resolve HR_IDs to the display name shown in the UI. Used for managers and for file uploaders. */
+/** Who to record as the actor. Same resolution order the vacation and payroll services use. */
+function hiringAuditActor(access: AccessContext) {
+  return access.loginId ?? resolveEmployeeIdentityId(access) ?? "system";
+}
+
+/**
+ * The names behind the two ids an audit row would otherwise carry alone.
+ *
+ * A line reading "b7f1c8e2-… for B-106" answers nothing a year later, and the owner's standing rule
+ * is that a human-facing surface shows names rather than codes — the Audit Log page is one. Both
+ * lookups are by primary key and run concurrently, so this costs one round trip rather than two.
+ *
+ * It never throws. It runs AFTER the mutation has already landed, so a failure here must not turn a
+ * completed write into an error; the ids are a poor label but an honest one.
+ */
+async function describeHiringDocumentTarget(employeeHrId: string | null, documentId: string | null) {
+  try {
+    const [names, definition] = await Promise.all([
+      employeeHrId ? loadEmployeeDisplayNames([employeeHrId]) : Promise.resolve(new Map<string, string>()),
+      documentId
+        ? getSupabaseAdmin().from("hiring_document_definitions").select("name").eq("id", documentId).maybeSingle()
+        : Promise.resolve({ data: null }),
+    ]);
+
+    return {
+      documentName: (definition?.data as { name?: string } | null)?.name ?? documentId,
+      employeeName: employeeHrId ? names.get(employeeHrId) ?? employeeHrId : null,
+    };
+  } catch {
+    return { documentName: documentId, employeeName: employeeHrId };
+  }
+}
+
 async function loadEmployeeDisplayNames(hrIds: string[]) {
   const uniqueHrIds = Array.from(new Set(hrIds.map(normalizeHrId).filter(Boolean))) as string[];
   const result = new Map<string, string>();
@@ -321,7 +355,10 @@ export async function getHiringDocumentsDashboard(): Promise<HiringDocumentsDash
   return result;
 }
 
-export async function createHiringDocumentDefinition(input: CreateHiringDocumentDefinitionInput) {
+export async function createHiringDocumentDefinition(
+  access: AccessContext,
+  input: CreateHiringDocumentDefinitionInput,
+) {
   const name = cleanText(input.name);
   if (!name) throw new Error("Document name is required.");
 
@@ -336,23 +373,47 @@ export async function createHiringDocumentDefinition(input: CreateHiringDocument
   if (maxError) throw new Error(maxError.message);
 
   const nextOrder = ((maxRows?.[0] as { display_order?: number } | undefined)?.display_order ?? 0) + 10;
-  const { error } = await supabase
+  const { data: created, error } = await supabase
     .from("hiring_document_definitions")
     .insert({
       description: cleanText(input.description),
       display_order: nextOrder,
       name,
-    });
+    })
+    .select("id")
+    .maybeSingle();
 
   if (error) throw new Error(error.message);
   invalidateHiringDocumentsDashboardCache();
+
+  await writeRequiredAuditLog({
+    actorLoginId: hiringAuditActor(access),
+    entityId: (created as { id?: string } | null)?.id ?? null,
+    entityType: "hiring_document_definition",
+    newValues: { description: cleanText(input.description), displayOrder: nextOrder, name },
+    oldValues: {},
+    summary: `Hiring document "${name}" added to the checklist.`,
+  });
 }
 
-export async function deleteHiringDocumentDefinition(documentId: string) {
+export async function deleteHiringDocumentDefinition(access: AccessContext, documentId: string) {
   const id = cleanText(documentId);
   if (!id) throw new Error("Document id is required.");
 
-  const { error } = await getSupabaseAdmin()
+  const supabase = getSupabaseAdmin();
+  // Read the name BEFORE the soft delete. This is an UPDATE, not a DELETE, so the row survives —
+  // but nothing in the payload says which document left the checklist, and a retired definition is
+  // filtered out of every later read, so afterwards the name is only recoverable by id lookup.
+  const { data: existing, error: readError } = await supabase
+    .from("hiring_document_definitions")
+    .select("is_active,name")
+    .eq("id", id)
+    .maybeSingle();
+
+  if (readError) throw new Error(readError.message);
+  const before = existing as { is_active: boolean; name: string | null } | null;
+
+  const { error } = await supabase
     .from("hiring_document_definitions")
     .update({
       is_active: false,
@@ -362,15 +423,39 @@ export async function deleteHiringDocumentDefinition(documentId: string) {
 
   if (error) throw new Error(error.message);
   invalidateHiringDocumentsDashboardCache();
+
+  await writeRequiredAuditLog({
+    actorLoginId: hiringAuditActor(access),
+    entityId: id,
+    entityType: "hiring_document_definition",
+    newValues: { isActive: false },
+    oldValues: { isActive: before?.is_active ?? null, name: before?.name ?? null },
+    summary: `Hiring document "${before?.name ?? id}" removed from the checklist.`,
+  });
 }
 
-export async function updateHiringDocumentStatus(input: UpdateHiringDocumentStatusInput) {
+export async function updateHiringDocumentStatus(
+  access: AccessContext,
+  input: UpdateHiringDocumentStatusInput,
+) {
   const employeeHrId = normalizeHrId(input.employeeHrId);
   const documentId = cleanText(input.documentId);
   if (!employeeHrId || !documentId) throw new Error("Employee and document are required.");
   if (!validDocumentStatuses.has(input.status)) throw new Error(`Invalid document status: ${input.status}.`);
 
   const dueDate = input.status === "missing" ? cleanText(input.dueDate) : null;
+  // Before-image. This is an upsert, so after it runs the previous status and deadline are gone —
+  // an audit row that cannot say what a value WAS answers only half of what it is asked.
+  const { data: existingStatus, error: statusReadError } = await getSupabaseAdmin()
+    .from("hiring_document_statuses")
+    .select("due_date,notes,status")
+    .eq("employee_hr_id", employeeHrId)
+    .eq("document_id", documentId)
+    .maybeSingle();
+
+  if (statusReadError) throw new Error(statusReadError.message);
+  const before = existingStatus as { due_date: string | null; notes: string | null; status: string } | null;
+
   const { error } = await getSupabaseAdmin()
     .from("hiring_document_statuses")
     .upsert(
@@ -387,18 +472,46 @@ export async function updateHiringDocumentStatus(input: UpdateHiringDocumentStat
 
   if (error) throw new Error(error.message);
   invalidateHiringDocumentsDashboardCache();
+
+  const target = await describeHiringDocumentTarget(employeeHrId, documentId);
+  await writeRequiredAuditLog({
+    actorLoginId: hiringAuditActor(access),
+    entityId: `${employeeHrId}:${documentId}`,
+    entityType: "hiring_document_status",
+    newValues: { dueDate, notes: cleanText(input.notes), status: input.status },
+    oldValues: before ? { dueDate: before.due_date, notes: before.notes, status: before.status } : {},
+    summary: `${target.documentName} for ${target.employeeName} set to ${input.status}`
+      + `${dueDate ? ` (deadline ${dueDate})` : ""}`
+      + `${before ? ` — was ${before.status}${before.due_date ? ` (deadline ${before.due_date})` : ""}` : ""}.`,
+  });
 }
 
-export async function updateHiringDocumentEmployeeNotes(input: UpdateHiringDocumentNotesInput) {
+export async function updateHiringDocumentEmployeeNotes(
+  access: AccessContext,
+  input: UpdateHiringDocumentNotesInput,
+) {
   const employeeHrId = normalizeHrId(input.employeeHrId);
   if (!employeeHrId) throw new Error("Employee is required.");
+
+  // Before-image. This is the write that went unattributed on B-106 (2026-08-23): the note ended up
+  // empty, the row's updated_at moved, and nothing anywhere could say what the note had said or who
+  // cleared it. Reading the old text first is the whole difference.
+  const { data: existingNote, error: noteReadError } = await getSupabaseAdmin()
+    .from("hiring_document_employee_notes")
+    .select("notes")
+    .eq("employee_hr_id", employeeHrId)
+    .maybeSingle();
+
+  if (noteReadError) throw new Error(noteReadError.message);
+  const previousNotes = (existingNote as { notes: string | null } | null)?.notes ?? null;
+  const nextNotes = cleanText(input.notes);
 
   const { error } = await getSupabaseAdmin()
     .from("hiring_document_employee_notes")
     .upsert(
       {
         employee_hr_id: employeeHrId,
-        notes: cleanText(input.notes),
+        notes: nextNotes,
         updated_at: new Date().toISOString(),
       },
       { onConflict: "employee_hr_id" },
@@ -406,6 +519,16 @@ export async function updateHiringDocumentEmployeeNotes(input: UpdateHiringDocum
 
   if (error) throw new Error(error.message);
   invalidateHiringDocumentsDashboardCache();
+
+  const target = await describeHiringDocumentTarget(employeeHrId, null);
+  await writeRequiredAuditLog({
+    actorLoginId: hiringAuditActor(access),
+    entityId: employeeHrId,
+    entityType: "hiring_document_note",
+    newValues: { notes: nextNotes },
+    oldValues: { notes: previousNotes },
+    summary: `Hiring notes for ${target.employeeName} ${nextNotes ? "updated" : "cleared"}.`,
+  });
 }
 
 export function filterHiringDocumentsForAccess(
@@ -650,6 +773,26 @@ export async function attachHiringDocumentFiles(
       inserted.map((row) => row.uploaded_by_hr_id).filter(Boolean) as string[],
     );
     invalidateHiringDocumentsDashboardCache();
+
+    // One row for the whole attachment, not one per page: a four-page scan is a single act. The
+    // implicit tick from markHiringDocumentSubmitted is recorded here rather than as its own row,
+    // because it is a consequence of this action and not a separate decision by anyone.
+    const target = await describeHiringDocumentTarget(employeeHrId, documentId);
+    await writeRequiredAuditLog({
+      actorLoginId: hiringAuditActor(access),
+      entityId: `${employeeHrId}:${documentId}`,
+      entityType: "hiring_document_file",
+      newValues: {
+        fileNames: inserted.map((row) => row.file_name),
+        markedSubmitted: true,
+        mode: input.mode,
+        totalBytes: inserted.reduce((sum, row) => sum + (row.size_bytes ?? 0), 0),
+      },
+      oldValues: {},
+      summary: `${inserted.length} file(s) filed against ${target.documentName} for ${target.employeeName}`
+        + ` by ${input.mode}, and the checklist ticked.`,
+    });
+
     return inserted.map((row) => toHiringDocumentFile(row, uploaderNames));
   } catch (error) {
     await removeHiringDocumentFiles(uploadedPaths);
@@ -675,13 +818,20 @@ export async function removeHiringDocumentFile(access: AccessContext, fileId: st
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .from("hiring_document_files")
-    .select("id,employee_hr_id,document_id,storage_path")
+    .select("id,employee_hr_id,document_id,storage_path,file_name,size_bytes")
     .eq("id", id)
     .maybeSingle();
 
   if (error) throw new Error(error.message);
   const row = data as
-    | { document_id: string; employee_hr_id: string; id: string; storage_path: string }
+    | {
+      document_id: string;
+      employee_hr_id: string;
+      file_name: string | null;
+      id: string;
+      size_bytes: number | null;
+      storage_path: string;
+    }
     | null;
   if (!row) throw new Error("That file is no longer on record.");
 
@@ -704,7 +854,8 @@ export async function removeHiringDocumentFile(access: AccessContext, fileId: st
 
   if (countError) throw new Error(countError.message);
 
-  if ((count ?? 0) === 0) {
+  const revertedTick = (count ?? 0) === 0;
+  if (revertedTick) {
     const { error: statusError } = await supabase
       .from("hiring_document_statuses")
       .update({ status: "pending", updated_at: new Date().toISOString() })
@@ -716,6 +867,26 @@ export async function removeHiringDocumentFile(access: AccessContext, fileId: st
   }
 
   invalidateHiringDocumentsDashboardCache();
+
+  // Destroying evidence is the single most important thing in this module to be able to attribute:
+  // the bytes are gone from the bucket and the row is gone from the table, so this audit line is
+  // the only surviving trace that the file ever existed.
+  const target = await describeHiringDocumentTarget(employeeHrId, row.document_id);
+  await writeRequiredAuditLog({
+    actorLoginId: hiringAuditActor(access),
+    entityId: `${employeeHrId}:${row.document_id}`,
+    entityType: "hiring_document_file",
+    newValues: { remainingFiles: count ?? 0, revertedToPending: revertedTick },
+    oldValues: {
+      fileId: row.id,
+      fileName: row.file_name,
+      sizeBytes: row.size_bytes,
+      storagePath: row.storage_path,
+    },
+    summary: `${row.file_name ?? "A file"} deleted from ${target.documentName} for ${target.employeeName}`
+      + `${revertedTick ? " — last one, so the checklist tick was reverted to pending" : ""}.`,
+  });
+
   return { documentId: row.document_id, employeeHrId, remainingFiles: count ?? 0 };
 }
 
