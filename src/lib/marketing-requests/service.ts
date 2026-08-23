@@ -19,6 +19,10 @@ import type { EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { resolveJobFunctionRole } from "@/lib/employees/job-function";
 import { resolveGovernorate } from "@/lib/geo/egypt-locations";
 import { conflictError, forbiddenError, notFoundError, validationError } from "@/lib/http/api-errors";
+// The one definition of "this link was inferred, not field-validated". Imported rather than
+// re-implemented so the validation report and the Customer Pharmacy Mapping page can never drift
+// into disagreeing about which links the backfill wrote.
+import { isInferredFromHistory } from "@/lib/customer-pharmacy-mapping/readiness";
 import {
   deleteMarketingEvidencePhotos,
   loadMarketingEvidencePhoto,
@@ -4828,6 +4832,7 @@ function mapValidationReportRows(params: {
         ? distributorNames.get(distributorCode.distributorId) ?? "Unknown distributor"
         : null,
       id: link.id,
+      inferredFromHistory: isInferredFromHistory(link.validationNotes),
       pharmacy,
       validationNotes: link.validationNotes,
       validationStatus: link.validationStatus,
@@ -5168,6 +5173,7 @@ export async function getMarketingValidationWorkspace(access: AccessContext): Pr
       reusablePharmacies,
       rows: [],
       summary: emptyValidationSummary(),
+      viewerHrId: normalizeHrId(access.hrId) ?? "",
     };
   }
 
@@ -5210,6 +5216,7 @@ export async function getMarketingValidationWorkspace(access: AccessContext): Pr
     reusablePharmacies,
     rows: report.rows,
     summary: report.summary,
+    viewerHrId: normalizeHrId(access.hrId) ?? "",
   };
 }
 
@@ -6023,6 +6030,10 @@ export async function createMarketingValidationRecord(
               ? mapDistributor(reusedDistributor).displayName
               : distributorCode ? "Unknown distributor" : null,
             id: reusedLink.id,
+            // A REUSED link can be one the backfill wrote, so this is read from its notes rather
+            // than assumed false — attaching a fresh pharmacy to an old link does not turn an
+            // inferred validation into a field-validated one.
+            inferredFromHistory: isInferredFromHistory(reusedLink.validationNotes),
             pharmacy,
             validationNotes: reusedLink.validationNotes,
             validationStatus: reusedLink.validationStatus,
@@ -6197,6 +6208,9 @@ export async function createMarketingValidationRecord(
           distributorCode,
           distributorName: distributorRow ? mapDistributor(distributorRow).displayName : null,
           id: link.id,
+          // Written by this submission, from a live capture — never the 2026-07-02 backfill. Read
+          // from the notes anyway so there is one rule, not one rule and one assumption.
+          inferredFromHistory: isInferredFromHistory(link.validationNotes),
           pharmacy,
           validationNotes: link.validationNotes,
           validationStatus: link.validationStatus,
