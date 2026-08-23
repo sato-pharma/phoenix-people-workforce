@@ -94,6 +94,31 @@ app.MapPost("/test-device", async (HttpRequest request, AgentConfig cfg, ZktecoD
   }
 });
 
+// Read-only: lists the users ENROLLED ON THE DEVICE, with the names the device itself stores.
+// This exists because a device user id that has no row in attendance_device_user_map is otherwise
+// anonymous - its punches are skipped on every sync and nothing anywhere can say who it belongs to.
+// The SDK also returns each user's password; it is deliberately read into a discard and never
+// serialised, so the response carries identity only.
+app.MapGet("/device-users", async (HttpRequest request, AgentConfig cfg, ZktecoDeviceClient deviceClient) => {
+  if (!Auth.IsAuthorized(request, cfg.AttendanceAgentToken)) {
+    return Results.Unauthorized();
+  }
+
+  try {
+    var tcpReachable = await NetworkChecks.CanConnectTcpAsync(cfg.DeviceIp, cfg.DevicePort, TimeSpan.FromSeconds(5));
+    if (!tcpReachable) {
+      return Results.Json(new { ok = false, message = $"Device {cfg.DeviceIp}:{cfg.DevicePort} is not reachable." },
+        statusCode: StatusCodes.Status503ServiceUnavailable);
+    }
+
+    var users = await deviceClient.ReadDeviceUsersAsync();
+    return Results.Json(new { ok = true, deviceId = cfg.DeviceId, count = users.Count, users });
+  } catch (Exception ex) {
+    Log.Error("device_users_failed", ex);
+    return Results.Json(new { ok = false, error = ex.Message }, statusCode: StatusCodes.Status500InternalServerError);
+  }
+});
+
 app.MapPost("/sync-now", async (HttpRequest request, AgentConfig cfg, AttendanceSyncRunner syncRunner) => {
   if (!Auth.IsAuthorized(request, cfg.AttendanceAgentToken)) {
     return Results.Unauthorized();
@@ -379,6 +404,52 @@ sealed class ZktecoDeviceClient(AgentConfig config) {
     }
   }
 
+  public async Task<List<DeviceUser>> ReadDeviceUsersAsync() {
+    await deviceLock.WaitAsync();
+    try {
+      return await WithDeviceTimeout(StaRunner.RunAsync(() => {
+        using var device = Connect();
+        dynamic zkem = device.Instance;
+
+        Log.Info("device_user_read_started", new { method = "ssr" });
+        // Always SSR_GetAllUserInfo, even when DEVICE_READ_METHOD is legacy - unlike the punch
+        // readers, which mirror that setting. The legacy GetAllUserID takes `ref string` for the
+        // name and password, and a ref-string argument cannot be marshalled through C# dynamic
+        // COM dispatch: the call dies with "Could not convert argument 3 for call to GetAllUserID"
+        // (confirmed against the live device, 2026-08-23). SSR_GetAllUserInfo uses out-params,
+        // marshals correctly, and is supported by the firmware this agent talks to.
+        return ReadDeviceUsersSsr(zkem);
+      }), "device user list read");
+    } finally {
+      deviceLock.Release();
+    }
+  }
+
+  List<DeviceUser> ReadDeviceUsersSsr(dynamic zkem) {
+    return ReadWithDeviceDisabled<DeviceUser>((object)zkem, () => {
+      if (!zkem.ReadAllUserID(1)) {
+        throw new InvalidOperationException("Connected to device, but ReadAllUserID failed.");
+      }
+
+      var users = new List<DeviceUser>();
+      while (true) {
+        string enrollNumber = "";
+        string name = "";
+        string password = "";
+        int privilege = 0;
+        bool enabled = false;
+
+        bool ok = zkem.SSR_GetAllUserInfo(1, out enrollNumber, out name, out password, out privilege, out enabled);
+        if (!ok) break;
+        if (string.IsNullOrWhiteSpace(enrollNumber)) continue;
+
+        users.Add(new DeviceUser(enrollNumber.Trim(), (name ?? "").Trim(), privilege, enabled));
+      }
+
+      return users;
+    }, "device_user_read_completed");
+  }
+
   public async Task<List<DevicePunch>> ReadPunchesAsync() {
     await deviceLock.WaitAsync();
     try {
@@ -398,7 +469,7 @@ sealed class ZktecoDeviceClient(AgentConfig config) {
   }
 
   List<DevicePunch> ReadPunchesLegacy(dynamic zkem) {
-    return ReadPunchesWithDeviceDisabled((object)zkem, () => {
+    return ReadWithDeviceDisabled<DevicePunch>((object)zkem, () => {
       if (!zkem.ReadGeneralLogData(1)) {
         throw new InvalidOperationException("Connected to device, but ReadGeneralLogData failed.");
       }
@@ -438,11 +509,11 @@ sealed class ZktecoDeviceClient(AgentConfig config) {
       }
 
       return punches;
-    });
+    }, "device_log_read_completed");
   }
 
   List<DevicePunch> ReadPunchesSsr(dynamic zkem) {
-    return ReadPunchesWithDeviceDisabled((object)zkem, () => {
+    return ReadWithDeviceDisabled<DevicePunch>((object)zkem, () => {
       if (!zkem.ReadGeneralLogData(1)) {
         throw new InvalidOperationException("Connected to device, but ReadGeneralLogData failed.");
       }
@@ -482,17 +553,19 @@ sealed class ZktecoDeviceClient(AgentConfig config) {
       }
 
       return punches;
-    });
+    }, "device_log_read_completed");
   }
 
-  List<DevicePunch> ReadPunchesWithDeviceDisabled(object zkemObject, Func<List<DevicePunch>> read) {
+  // Shared by the punch read and the user-list read: both must disable the device for the
+  // duration of an SDK bulk read and re-enable it afterwards, whatever happens.
+  List<T> ReadWithDeviceDisabled<T>(object zkemObject, Func<List<T>> read, string completedEvent) {
     dynamic zkem = zkemObject;
     var disabled = false;
     try {
       disabled = zkem.EnableDevice(1, false);
-      var punches = read();
-      Log.Info("device_log_read_completed", new { method = config.DeviceReadMethod, totalRead = punches.Count });
-      return punches;
+      var items = read();
+      Log.Info(completedEvent, new { method = config.DeviceReadMethod, totalRead = items.Count });
+      return items;
     } finally {
       if (disabled) {
         try {
@@ -572,6 +645,14 @@ sealed class ZktecoDeviceClient(AgentConfig config) {
     }
   }
 }
+
+// Identity only. The SDK also hands back each user's device password; it is never captured here.
+sealed record DeviceUser(
+  string DeviceUserId,
+  string Name,
+  int Privilege,
+  bool Enabled
+);
 
 sealed record DevicePunch(
   string DeviceId,
