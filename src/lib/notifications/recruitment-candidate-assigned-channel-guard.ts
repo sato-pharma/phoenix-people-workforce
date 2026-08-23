@@ -1,7 +1,12 @@
 import type { SystemNotificationChannel } from "@/lib/notifications/system";
 
 // Owner rule (2026-08-24): sending a candidate to a hiring manager must NEVER be delivered by
-// email. The manager is told in-app and by push only.
+// email. The manager is told in-app, by Telegram and by push.
+//
+// Telegram was added the same day, on the owner's follow-up ("add telegram too"). It changes
+// nothing about this file — the guard strips email and only email, so every other channel the call
+// site or the policy row asks for passes straight through. That is the point: this is a block on
+// one channel, not an allow-list of the other three, so adding a channel never needs it reopened.
 //
 // The ask arrived the moment the feature was first used in anger: a shortlist of 14 people for the
 // vacant Upper Egypt 2 anti-infective district manager seat was ready to push to the line's

@@ -171,7 +171,12 @@ export async function pushCandidatesToManager(input: {
     // where the notification is written; the guarantee is enforceCandidateAssignedEmailBlock, which
     // strips email from the RESOLVED list whatever this line, the policy row, or the
     // Telegram-failure fallback asks for.
-    channels: ["in_app", "push"],
+    //
+    // Telegram added the same day, on the owner's follow-up. It is the channel that actually
+    // reaches a District or National Sales Manager in the field, where the portal bell only works
+    // once they open it. The recruitment module is governed `enabled: true, genericOnly: false`, so
+    // the message goes out in full rather than as an unactionable "you have a notification" ping.
+    channels: ["in_app", "telegram", "push"],
     eventType: "candidate_assigned",
     message: `${joinNames(names)} ${many ? "have" : "has"} been sent to you to review.`,
     module: "recruitment",
@@ -229,8 +234,10 @@ export async function notifyHiringManagerOfCandidate(input: {
   await createSystemNotification({
     actionUrl: "/employee-portals/recruitment-candidates",
     // Same owner rule as the push above — the requisition-level assignment is the same event type
-    // reaching the same person, so it is silenced by the same guard.
-    channels: ["in_app", "push"],
+    // reaching the same person, so it is silenced by the same guard and carried on the same three
+    // channels. The two lists are kept identical deliberately: a manager should not learn about a
+    // candidate differently depending on which screen the recruiter happened to start from.
+    channels: ["in_app", "telegram", "push"],
     eventType: "candidate_assigned",
     message: `${input.candidateName} has been assigned to your ${input.jobTitle} position.`,
     module: "recruitment",
