@@ -198,7 +198,7 @@ export function runMarketingFieldCaptureBacklogTests() {
   // ── The rep must be able to OPEN what the nudge links to ────────────────────────
   // The Customer Database screen is the obvious-looking destination and a 403 for every one of
   // them: `assertMarketingCustomerDatabaseAccess` admits Super Admin and SFE Manager ONLY. A
-  // daily notification to 51 medical reps pointing at a forbidden page is worse than no
+  // daily notification to 64 field colleagues pointing at a forbidden page is worse than no
   // notification at all, because it teaches them to ignore the next one.
   assert.ok(FIELD_CAPTURE_ACTION_URL.startsWith("/employee-portals/"), "a rep cannot open an admin route");
   assert.ok(

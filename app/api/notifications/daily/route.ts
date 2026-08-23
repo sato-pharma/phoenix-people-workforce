@@ -210,9 +210,9 @@ async function runDailyNotifications(request: Request) {
       })),
     ),
     // Tells each rep which of THEIR marketing customers still show a validated status with no
-    // field capture behind them (150 of 177 customers on 2026-08-23). Reuses the badge's own
+    // field capture behind them (139 customers to 64 people, measured 2026-08-24). Reuses the badge's own
     // `customerFieldEvidenceGap`, so the list a rep is sent can never disagree with the badge he
-    // sees. In-app/Telegram/push only — bulk email is never fired from this system, and 51
+    // sees. In-app/Telegram/push only — bulk email is never fired from this system, and 64
     // recipients is bulk by any reading.
     runMarketingFieldCaptureNudge().catch(
       onJobFailure("daily-marketing-field-capture", (message) => ({

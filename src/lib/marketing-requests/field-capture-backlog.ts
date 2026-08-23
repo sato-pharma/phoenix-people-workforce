@@ -1,7 +1,9 @@
 // Marketing field-capture backlog — who owes a real visit, and telling them so.
 //
-// The badge added in #2347/#2354 tells the truth on screen: 150 of 177 marketing customers carry a
-// validated status that no rep ever proved in the field. Truth on a screen is not the same as work
+// The badge added in #2347/#2354 tells the truth on screen: a large majority of marketing customers
+// carry a validated status that no rep ever proved in the field. Measured against production on
+// 2026-08-24 this reaches 139 customers and 64 people (44 named as owner, 20 through their area),
+// a median of 2 customers each and 10 at the worst. Truth on a screen is not the same as work
 // getting done, and the owner's standing rule is that the system chases people, he does not. So the
 // same rule that draws the badge also drives a daily nudge to the person who can actually close it.
 //
@@ -32,9 +34,9 @@ export const FIELD_CAPTURE_ACTION_URL = "/employee-portals/marketing-requests/va
 
 /**
  * IN-APP, TELEGRAM AND PUSH ONLY — never email, and exported so a test can say so out loud. Two
- * standing owner rules meet here: bulk email is never fired from this system, and 51 recipients is
+ * standing owner rules meet here: bulk email is never fired from this system, and 64 recipients is
  * bulk by any reading. Passed explicitly rather than left to the notification policy table, so a
- * future policy edit cannot quietly put email back on a 51-recipient daily job.
+ * future policy edit cannot quietly put email back on a daily job of this size.
  */
 export const FIELD_CAPTURE_CHANNELS = ["in_app", "telegram", "push"] as const;
 
@@ -330,9 +332,10 @@ export type MarketingFieldCaptureNudgeResult = {
  * Tell each rep what they owe, once a day.
  *
  * IN-APP, TELEGRAM AND PUSH ONLY — never email. Two standing owner rules meet here: bulk email is
- * never to be fired from this system, and this is by definition bulk (51 recipients in production).
+ * never to be fired from this system, and this is by definition bulk (64 recipients in production,
+ * measured 2026-08-24).
  * The channel list is passed explicitly rather than left to the policy table so that a future
- * policy edit cannot quietly reintroduce email on a 51-recipient daily job.
+ * policy edit cannot quietly reintroduce email on a daily job of this size.
  *
  * Each recipient gets their OWN message, so this loops the single-recipient call rather than using
  * `createSystemNotificationForRecipients` — that helper exists to consolidate ONE shared email
