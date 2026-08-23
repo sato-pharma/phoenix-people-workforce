@@ -976,7 +976,7 @@ export function EmployeePortalSidebar({
   };
 
   return (
-    <aside className={`hidden shrink-0 self-start transition-[width] duration-200 lg:block ${collapsed ? "w-[78px]" : "w-[312px]"}`}>
+    <aside className={`hidden shrink-0 self-start transition-[width] duration-200 lg:block ${collapsed ? "w-[78px]" : "w-[324px]"}`}>
       <div className="sticky top-[78px] flex max-h-[calc(100vh-104px)] w-full overflow-hidden rounded-sm border border-slate-200/90 bg-white/96 shadow-[0_24px_70px_rgba(15,23,42,0.14)] ring-1 ring-white/80 backdrop-blur">
         <div className={`${collapsed ? "w-full" : "w-[58px]"} shrink-0 bg-[#101a31]`}>
           <div className="flex h-full min-h-0 flex-col items-center py-4">
