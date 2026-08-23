@@ -278,6 +278,20 @@ type LeaverVisitRow = {
 export function collectLeaverCrmCandidate(input: {
   hrId: string;
   crmId: string | null;
+  /**
+   * The employee's name as at collection time, stored on the candidate.
+   *
+   * `service.ts` treats the stored name as the historical snapshot — "the stored
+   * name wins when it exists — it is the name as at collection time", and the
+   * employees directory only fills a gap. The leaver path used to pass nothing,
+   * so every leaver candidate landed with `employee_name = NULL` and depended
+   * entirely on that gap-filler. Nothing rendered wrong, because
+   * `listCandidatesForMonth` merges the directory over every row before any
+   * consumer sees it — but the snapshot was lost, a direct SQL read showed a
+   * bare HR code, and each settlement run needed a manual backfill (August 2026:
+   * 7 rows, July 2026: 6 more).
+   */
+  employeeName?: string | null;
   jobTitle: string | null;
   hireDate: string | null;
   lastWorkingDate: string;
@@ -364,6 +378,10 @@ export function collectLeaverCrmCandidate(input: {
     sourceSystem: "crm_visits_mirror",
     sourceRecordId: `leaver:${input.hrId}:${monthKey}`,
     employeeHrId: input.hrId,
+    // Trimmed to null: a blank name stored is worse than an absent one, because
+    // `storedName || known?.fullName` in service.ts treats "" as falsy and falls
+    // through, while a whitespace-only string would win and render as nothing.
+    employeeName: input.employeeName?.trim() || null,
     monthKey,
     month: input.month,
     year: input.year,
@@ -688,11 +706,13 @@ export async function collectCrmCandidates(input: {
     const supabase = getSupabaseAdmin();
     const { data, error } = await supabase
       .from("employees")
-      .select("hr_id,crm_id,job_title,hire_date")
+      // full_name is what lands in the candidate's employee_name — the collection-time
+      // snapshot. Without it every leaver candidate stored NULL; see collectLeaverCrmCandidate.
+      .select("hr_id,crm_id,full_name,job_title,hire_date")
       .in("hr_id", Array.from(leaverRoster.values(), (entry) => entry.hrId));
     if (error) throw new Error(`Failed to load leaver employee records: ${error.message}`);
 
-    for (const employeeRow of (data ?? []) as Array<{ hr_id: string; crm_id: string | null; job_title: string | null; hire_date: string | null }>) {
+    for (const employeeRow of (data ?? []) as Array<{ hr_id: string; crm_id: string | null; full_name: string | null; job_title: string | null; hire_date: string | null }>) {
       const key = canonicalHrIdKey(employeeRow.hr_id) ?? "";
       const roster = key ? leaverRoster.get(key) : undefined;
       if (!roster) continue;
@@ -702,6 +722,7 @@ export async function collectCrmCandidates(input: {
       const draft = collectLeaverCrmCandidate({
         hrId: roster.hrId,
         crmId: employeeRow.crm_id,
+        employeeName: employeeRow.full_name,
         jobTitle: employeeRow.job_title,
         hireDate: employeeRow.hire_date,
         lastWorkingDate: roster.lastWorkingDate,
