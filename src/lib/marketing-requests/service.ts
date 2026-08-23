@@ -5793,9 +5793,9 @@ export async function createMarketingValidationRecord(
   const distributorCodeIds: string[] = [];
   // Every distributor code this submission ATTACHED to a venue, minted or already on file. The
   // resolver above must only ever see the minted ones — re-resolving an old code is work nobody
-  // asked for — but deciding WHERE a submission stands is a question its reused venues can answer
-  // just as well, and a customer completed at a pharmacy already on file has no minted code at all.
-  const linkedDistributorCodeIds: string[] = [];
+  // asked for — but deciding WHERE a submission stands is a question its reused venues answer just
+  // as well: a pharmacy already on file has a registered code, and that code is already resolved.
+  const attachedDistributorCodeIds: string[] = [];
   // Storage objects written by THIS submission. Tracked alongside the row ids because a bucket
   // object outlives a rolled-back insert unless it is explicitly removed, and an orphaned photo of
   // a real shop front is exactly the kind of thing that must not linger unreferenced.
@@ -6026,7 +6026,7 @@ export async function createMarketingValidationRecord(
               .single();
           if (reusedLinkInsert.error) throw reusedLinkInsert.error;
           const reusedLink = mapCustomerPharmacy(reusedLinkInsert.data as MarketingCustomerPharmacyDbRow);
-          if (distributorCode) linkedDistributorCodeIds.push(distributorCode.id);
+          if (distributorCode) attachedDistributorCodeIds.push(distributorCode.id);
           const reusedDistributor = distributorCode
             ? distributorsById.get(distributorCode.distributorId)
             : undefined;
@@ -6192,7 +6192,7 @@ export async function createMarketingValidationRecord(
           if (distributorCodeInsert.error) throw distributorCodeInsert.error;
           distributorCode = mapDistributorCode(distributorCodeInsert.data as MarketingPharmacyDistributorCodeDbRow);
           distributorCodeIds.push(distributorCode.id);
-          linkedDistributorCodeIds.push(distributorCode.id);
+          attachedDistributorCodeIds.push(distributorCode.id);
         }
 
         const linkInsert = await supabase
@@ -6281,6 +6281,9 @@ export async function createMarketingValidationRecord(
     // resolver above never throws — the catch below deletes the whole submission, and enrichment
     // must never be able to trigger that. See src/lib/marketing-requests/venue-territory.ts.
     await applyMasterTerritoryToVenues({
+      // Every code attached, not the minted-only list the resolver above was handed: a submission
+      // whose venues were all already on file mints nothing, and still knows where it stands.
+      attachedDistributorCodeIds,
       // A customer COMPLETED here predates the submission, so it is deliberately absent from
       // `customerIds` (that list is the rollback set, and unwinding it deletes). It still needs
       // re-filing when it is stranded off every selling territory: an admin-created stub inherits
@@ -6288,8 +6291,6 @@ export async function createMarketingValidationRecord(
       // customer whose evidence just landed stayed invisible to the team that has to visit it.
       completedCustomerIds: completedCustomerUndo.map((entry) => entry.id),
       customerIds,
-      distributorCodeIds,
-      linkedDistributorCodeIds,
       ownerAreaId: owner.areaId ?? null,
       pharmacyIds,
       supabase,

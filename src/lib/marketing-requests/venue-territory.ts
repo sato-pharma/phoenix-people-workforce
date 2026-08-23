@@ -40,11 +40,12 @@ import { logWarning } from "@/lib/observability/log";
 // no change.
 //
 // WHICH CODES ANSWER THE QUESTION. The area comes from every code the submission ATTACHED, minted
-// or already on file — a customer completed at a pharmacy that was already on file mints no code at
-// all, so reading only the minted ones would leave this unable to fire in the very case the second
-// gate exists for. Rows the submission MINTED still additionally require a minted code, so a rep
-// attaching an existing pharmacy gets exactly the behaviour they have always had. Disagreement
-// between two attached codes vetoes everything, as it always has.
+// or already on file — never the narrower minted-only list the resolver is handed. A submission
+// whose venues were all already on file mints no code at all, and reading only the minted ones
+// would leave it unable to answer for either set: not the customer it completed there, and not the
+// customer it minted there. A pharmacy already on file has a registered code and that code has
+// already been resolved; there is nothing provisional about it. Disagreement between two attached
+// codes vetoes everything, as it always has.
 //
 // WHY IT NEVER THROWS — READ THIS BEFORE CHANGING ANYTHING HERE. The only caller is
 // `createMarketingValidationRecord`, and it calls this from INSIDE the try block whose catch
@@ -220,9 +221,10 @@ async function strandedCompletedCustomers(
  * customers that already existed and were completed by it. The two sets are gated differently — see
  * the module header.
  *
- * `distributorCodeIds` are the codes this submission minted; `linkedDistributorCodeIds` are all the
- * codes it attached, minted ones included. The area is read from the second; the first only decides
- * whether the MINTED rows are eligible to move at all.
+ * `attachedDistributorCodeIds` is every code the submission attached to a venue — the ones it
+ * minted and the ones that were already on file. Deliberately NOT the narrower minted-only list the
+ * resolver is handed: a submission whose venues were all already on file mints nothing, and it
+ * knows perfectly well where it stands.
  *
  * Returns the `areas.id` actually applied, or null when nothing was changed for any reason: no
  * codes, nothing eligible to move, no agreed master area, an area code the `areas` table does not
@@ -231,19 +233,14 @@ async function strandedCompletedCustomers(
  * Never throws. See the module header.
  */
 export async function applyMasterTerritoryToVenues(params: {
+  attachedDistributorCodeIds: readonly string[];
   completedCustomerIds: readonly string[];
   customerIds: readonly string[];
-  distributorCodeIds: readonly string[];
-  linkedDistributorCodeIds?: readonly string[];
   ownerAreaId: number | null;
   pharmacyIds: readonly string[];
   supabase: VenueTerritoryClient;
 }): Promise<number | null> {
-  const mintedCodeIds = uniqueIds(params.distributorCodeIds);
-  // Every code the submission attached, minted or already on file. A customer completed at a
-  // pharmacy that was already on file mints no code at all, so reading only the minted ones would
-  // have left this fix unable to fire in the very case it exists for.
-  const codeIds = uniqueIds([...(params.linkedDistributorCodeIds ?? []), ...mintedCodeIds]);
+  const codeIds = uniqueIds(params.attachedDistributorCodeIds);
   const pharmacyIds = uniqueIds(params.pharmacyIds);
   const mintedCustomerIds = uniqueIds(params.customerIds);
   const mintedSet = new Set(mintedCustomerIds);
@@ -267,12 +264,8 @@ export async function applyMasterTerritoryToVenues(params: {
     // already on a real patch, this module has no business re-filing their own new rows.
     // A capturer with NO area at all falls through deliberately: `area_id` null is just as
     // invisible as a nationwide bucket, and the registered code can answer for both.
-    // A submission that minted no code of its own does not re-file its OWN new rows off the back
-    // of a venue that was already on file. That case — the reused-pharmacy path — is deliberately
-    // still open, and the reason is that nobody has yet asked for it: today a rep attaching an
-    // existing pharmacy gets exactly the behaviour they have always had.
-    let mintedMayMove = mintedCodeIds.length > 0;
-    if (mintedMayMove && params.ownerAreaId !== null) {
+    let mintedMayMove = true;
+    if (params.ownerAreaId !== null) {
       const ownerArea = await params.supabase
         .from("areas")
         .select("code")

@@ -17,7 +17,9 @@ import {
 //   2. a rep already sitting on a real patch is never moved, whatever the mapping table says; and
 //   3. a customer that PREDATES the submission and is completed by it is re-filed only when it is
 //      stranded — no area at all, or an organisational bucket — because any real area on such a row
-//      was somebody's choice.
+//      was somebody's choice; and
+//   4. a submission that attached only venues already on file mints no distributor code, and is
+//      placed from the codes those venues already carry rather than left unplaceable.
 //
 // (2) is the dangerous direction. Getting it wrong would let a mapping table quietly reassign a
 // rep's own customer out from under them, which is worse than the bug this module fixes. (3) is
@@ -172,9 +174,9 @@ function headOfficeCapture(overrides: Partial<StubResponses> = {}) {
 
 async function run(client: VenueTerritoryClient, ownerAreaId: number | null = HEAD_OFFICE_AREA_ID) {
   return applyMasterTerritoryToVenues({
+    attachedDistributorCodeIds: ["code-1"],
     completedCustomerIds: [],
     customerIds: ["customer-1", "customer-2"],
-    distributorCodeIds: ["code-1"],
     ownerAreaId,
     pharmacyIds: ["pharmacy-1"],
     supabase: client,
@@ -302,9 +304,9 @@ async function testNeverThrowsWhateverTheDatabaseDoes() {
 async function testNoCodesMeansNoWork() {
   const { client, ops } = headOfficeCapture();
   const applied = await applyMasterTerritoryToVenues({
+    attachedDistributorCodeIds: [],
     completedCustomerIds: ["completed-1"],
     customerIds: ["customer-1"],
-    distributorCodeIds: [],
     ownerAreaId: HEAD_OFFICE_AREA_ID,
     pharmacyIds: [],
     supabase: client,
@@ -394,9 +396,9 @@ async function runCompleted(
   minted: { customerIds?: string[]; pharmacyIds?: string[] } = {},
 ) {
   return applyMasterTerritoryToVenues({
+    attachedDistributorCodeIds: ["code-1"],
     completedCustomerIds: [COMPLETED_ID],
     customerIds: minted.customerIds ?? [],
-    distributorCodeIds: ["code-1"],
     ownerAreaId,
     pharmacyIds: minted.pharmacyIds ?? [],
     supabase: client,
@@ -494,20 +496,20 @@ async function testACompletedCustomerWithNoAreaIsRefiled() {
 }
 
 /**
- * THE CASE THE SECOND GATE EXISTS FOR. A customer completed at a pharmacy that was already on file
- * mints no distributor code at all, so a fix that read only the MINTED codes could never fire here.
- * The area comes from the codes the submission ATTACHED — and the submission's own new rows still
- * stay put, because that path (a reused pharmacy re-filing minted rows) is deliberately untouched.
+ * A REUSED PHARMACY IS STILL AN ANSWER. Attaching a venue that was already on file mints no
+ * distributor code, so a submission that reuses every venue has an empty MINTED list — and reading
+ * only that list leaves the whole submission unplaceable. Both sets are decided from the codes it
+ * ATTACHED: the customer it completed there, and the customer it minted there.
  */
-async function testAReusedPharmacyStillPlacesTheCompletedCustomer() {
+async function testAReusedPharmacyPlacesBothTheCompletedAndTheMintedCustomer() {
   const { client, ops } = completedCapture();
 
   const applied = await applyMasterTerritoryToVenues({
+    // Nothing minted: every venue on this submission was already on file, so the only code in
+    // hand is the one the reused pharmacy already carries.
+    attachedDistributorCodeIds: ["code-1"],
     completedCustomerIds: [COMPLETED_ID],
     customerIds: ["minted-1"],
-    // Nothing minted: every venue on this submission was already on file.
-    distributorCodeIds: [],
-    linkedDistributorCodeIds: ["code-1"],
     ownerAreaId: HEAD_OFFICE_AREA_ID,
     pharmacyIds: [],
     supabase: client,
@@ -517,15 +519,18 @@ async function testAReusedPharmacyStillPlacesTheCompletedCustomer() {
     applied,
     BEHIRA_2_AREA_ID,
     "a submission that minted no code still knows where it stands — the pharmacy it attached "
-      + "carries a registered code, and without reading it this fix cannot fire on the reused-"
-      + "pharmacy path at all",
+      + "carries a registered code, already resolved, and there is nothing provisional about it",
   );
-  const updates = ops.filter((op) => op.op === "update");
+  const moved = ops
+    .filter((op) => op.op === "update")
+    .flatMap((op) => op.filters.filter(([column]) => column === "id").map(([, value]) => value))
+    .flatMap((value) => (Array.isArray(value) ? value : [value]))
+    .sort();
   assert.deepEqual(
-    updates.map((op) => op.filters.find(([column]) => column === "id")?.[1]),
-    [COMPLETED_ID],
-    "and only the completed customer moves — re-filing the submission's OWN new rows off a venue "
-      + "that was already on file is a separate change nobody has asked for",
+    moved,
+    [COMPLETED_ID, "minted-1"].sort(),
+    "BOTH move: the customer minted against a reused venue is filed under the capturer's own area "
+      + "exactly like any other minted row, so leaving it behind would strand the newer of the two",
   );
 }
 
@@ -570,7 +575,7 @@ export async function runMarketingVenueTerritoryTests() {
     testACompletedCustomerOnARealTerritoryIsLeftAlone,
     testARepCompletingAStrandedCustomerStillRefilesIt,
     testACompletedCustomerWithNoAreaIsRefiled,
-    testAReusedPharmacyStillPlacesTheCompletedCustomer,
+    testAReusedPharmacyPlacesBothTheCompletedAndTheMintedCustomer,
     testAnUnreadableAreaLeavesACompletedCustomerAlone,
   ];
   for (const test of tests) await test();
