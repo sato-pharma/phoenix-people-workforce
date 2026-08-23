@@ -6,11 +6,15 @@ import { calculateDeductionAmountFromBaseSalary } from "@/lib/deductions/calcula
 
 export const standardAttendanceDayMs = 8 * 60 * 60 * 1000;
 
-export type AttendanceDeviceMappingStatus = "active" | "inactive" | "unmapped";
+// "unmapped" means nobody knows who this device user is. "non_employee" means somebody DOES -
+// a driver, guard or cleaner enrolled on the reader who is not on payroll. Both carry a null
+// employeeHrId and both stay un-ingested; only one of them is an open question.
+export type AttendanceDeviceMappingStatus = "active" | "inactive" | "non_employee" | "unmapped";
 
 export type AttendanceDeviceMappingMetricInput = {
   employeeHrId: string | null;
   isActive: boolean;
+  nonEmployeeLabel?: string | null;
   status?: AttendanceDeviceMappingStatus;
 };
 
@@ -86,9 +90,14 @@ export function attendanceDeviceUserKey(deviceId: string, deviceUserId: string) 
 }
 
 export function resolveDeviceMappingStatus(
-  row: Pick<AttendanceDeviceMappingMetricInput, "employeeHrId" | "isActive">,
+  row: Pick<AttendanceDeviceMappingMetricInput, "employeeHrId" | "isActive" | "nonEmployeeLabel">,
 ): AttendanceDeviceMappingStatus {
-  if (!row.employeeHrId) return "unmapped";
+  // The label is checked BEFORE the HR_ID, not after: a labelled row always has a null
+  // employeeHrId (the DB constraint enforces it), so checking the HR_ID first would return
+  // "unmapped" and the label would never be reachable.
+  if (!row.employeeHrId) {
+    return String(row.nonEmployeeLabel ?? "").trim() ? "non_employee" : "unmapped";
+  }
   return row.isActive ? "active" : "inactive";
 }
 
@@ -96,6 +105,7 @@ export function summarizeDeviceUserMappings(rows: AttendanceDeviceMappingMetricI
   const summary = {
     active: 0,
     inactive: 0,
+    nonEmployee: 0,
     readinessRate: 1,
     total: rows.length,
     unmapped: 0,
@@ -105,9 +115,13 @@ export function summarizeDeviceUserMappings(rows: AttendanceDeviceMappingMetricI
     const status = row.status ?? resolveDeviceMappingStatus(row);
     if (status === "active") summary.active += 1;
     else if (status === "inactive") summary.inactive += 1;
+    else if (status === "non_employee") summary.nonEmployee += 1;
     else summary.unmapped += 1;
   }
 
+  // Readiness asks "how many device users are still an open question", so an identified
+  // non-employee counts as resolved even though it will never be ingested. Only genuinely
+  // unknown ids hold the rate down.
   summary.readinessRate = summary.total > 0 ? (summary.total - summary.unmapped) / summary.total : 1;
   return summary;
 }

@@ -148,9 +148,11 @@ import { runRecruitmentInboundCvIntakeTests } from "./recruitment-inbound-cv-int
 import { runRecruitmentIntakeFinalizePatchTests } from "./recruitment-intake-finalize-patch.test.ts";
 import { runRecruitmentEmailIntakeTests } from "./recruitment-email-intake.test.ts";
 import { runRecruitmentWhatsAppIntakeTests } from "./recruitment-whatsapp-intake.test.ts";
+import { runWhatsAppCoexistenceHistoryTests } from "./recruitment-whatsapp-coexistence-history.test.ts";
 import {
   runRecruitmentWhatsAppHealthTests,
   runWhatsAppWebhookRoutingTests,
+  runWhatsAppPublicReachTests,
 } from "./recruitment-whatsapp-health.test.ts";
 import { runRecruitmentInboundQueueTests } from "./recruitment-inbound-queue.test.ts";
 import { runRecruitmentInboundMasteryTests } from "./recruitment-inbound-mastery.test.ts";
@@ -905,6 +907,7 @@ import { runRecruitmentCvReadHonestyTests } from "./recruitment-cv-read-honesty.
 import { runRecruitmentRereadModelConstantsTests } from "./recruitment-reread-model-constants.test.ts";
 import { runRecruitmentExtractionRecordsIsCvTests } from "./recruitment-extraction-records-is-cv.test.ts";
 import { runRecruitmentRereadNotACvSkipsTests } from "./recruitment-reread-not-a-cv-skips.test.ts";
+import { runWorktreeExitGuardPreRemovalTests } from "./worktree-exit-guard-pre-removal.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -1124,10 +1127,18 @@ await runTest("recruitment inbound cv intake", runRecruitmentInboundCvIntakeTest
 await runTest("recruitment intake finalize patch (a late throw must not erase the candidate it recorded)", runRecruitmentIntakeFinalizePatchTests);
 await runTest("recruitment email intake", runRecruitmentEmailIntakeTests);
 await runTest("recruitment whatsapp intake", runRecruitmentWhatsAppIntakeTests);
+await runTest(
+  "recruitment whatsapp coexistence history (the backlog Meta replays)",
+  runWhatsAppCoexistenceHistoryTests,
+);
 await runTest("recruitment whatsapp intake health (Meta API probe + silence gate)", runRecruitmentWhatsAppHealthTests);
 await runTest(
   "recruitment whatsapp webhook routing (deterministic delivery check)",
   runWhatsAppWebhookRoutingTests,
+);
+await runTest(
+  "recruitment whatsapp public reach (did anyone actually get through)",
+  runWhatsAppPublicReachTests,
 );
 await runTest("recruitment inbound intake queue (backoff, dead-letter, dedupe key)", runRecruitmentInboundQueueTests);
 await runTest("recruitment inbound mastery (analytics, spike, fuzzy dedup, cv-link allowlist)", runRecruitmentInboundMasteryTests);
@@ -2451,6 +2462,13 @@ await runTest(
   "CV re-read skips confirmed non-CVs (every skip entry carries its evidence, and the run reports "
   + "what it actually skipped so a stale id cannot read as coverage)",
   runRecruitmentRereadNotACvSkipsTests,
+);
+
+await runTest(
+  "Worktree backup guard logs before the worktree goes (the pre-removal check names the target, "
+  + "warns on unpushed commits and uncommitted files, logs the clean case too so silence cannot be "
+  + "mistaken for coverage, and never blocks the removal)",
+  runWorktreeExitGuardPreRemovalTests,
 );
 
 await runTest(

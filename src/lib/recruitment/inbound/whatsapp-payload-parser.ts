@@ -1,6 +1,7 @@
-// Recruitment / ATS — pure WhatsApp Cloud API webhook payload parsing (no I/O). Flattens Meta's
-// nested entry[].changes[].value.messages[] structure and matches each message to its sender's
-// self-reported profile name via the sibling contacts[] array (matched by wa_id).
+// Recruitment / ATS — pure WhatsApp Cloud API webhook payload parsing (no I/O). Flattens BOTH of
+// Meta's envelopes — the live entry[].changes[].value.messages[] structure and the coexistence
+// entry[].changes[].value.history[].threads[].messages[] backfill — and matches each message to
+// its sender's self-reported profile name via the sibling contacts[] array (matched by wa_id).
 //
 // A CV arrives as a `type: "document"` message OR a `type: "image"` message — applicants very
 // commonly PHOTOGRAPH their CV rather than attach a file, and the downstream vision path reads
@@ -40,6 +41,11 @@ export type ParsedWhatsAppMessage = {
   // the receiving number. Null when Meta omits metadata (older payload shapes / test fixtures).
   deliveredToPhoneNumberId: string | null;
   deliveredToDisplayNumber: string | null;
+  // True when this message came from a coexistence HISTORY sync (Meta replaying the HR handset's
+  // past chats) rather than arriving live. Same message shape, completely different meaning: it
+  // already happened, sometimes months ago. Anything that treats an arrival as "recent" — the
+  // silence clock, the public-reach measurement, the applicant auto-reply — must exclude these.
+  historical: boolean;
 };
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -48,6 +54,55 @@ function asRecord(value: unknown): Record<string, unknown> | null {
 
 function asString(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+type MessageContext = {
+  contactNameByWaId: Map<string, string>;
+  deliveredToDisplayNumber: string | null;
+  deliveredToPhoneNumberId: string | null;
+  historical: boolean;
+};
+
+// One Meta message node -> a ParsedWhatsAppMessage, or null when it carries no usable identity.
+// Shared by the live `messages` array and the coexistence `history` backfill: the two envelopes
+// differ, the message node inside them does not.
+function parseMessageNode(raw: unknown, ctx: MessageContext): ParsedWhatsAppMessage | null {
+  const message = asRecord(raw);
+  const wamid = asString(message?.id);
+  const from = asString(message?.from);
+  if (!wamid || !from) return null;
+
+  const messageType = asString(message?.type) ?? "unknown";
+  // A document OR an image (photographed CV) both carry a CV. The image node has the same
+  // id/mime_type/caption shape as document, just no filename.
+  const mediaNode =
+    messageType === "document"
+      ? asRecord(message?.document)
+      : messageType === "image"
+        ? asRecord(message?.image)
+        : null;
+  const mediaId = asString(mediaNode?.id);
+  const document: ParsedWhatsAppDocument | null = mediaId
+    ? {
+        caption: asString(mediaNode?.caption),
+        filename: asString(mediaNode?.filename),
+        mediaId,
+        mimeType: asString(mediaNode?.mime_type) ?? "application/octet-stream",
+      }
+    : null;
+
+  return {
+    contactName: ctx.contactNameByWaId.get(from) ?? null,
+    deliveredToDisplayNumber: ctx.deliveredToDisplayNumber,
+    deliveredToPhoneNumberId: ctx.deliveredToPhoneNumberId,
+    document,
+    forwarded: asRecord(message?.context)?.forwarded === true,
+    from,
+    historical: ctx.historical,
+    messageType,
+    text: messageType === "text" ? asString(asRecord(message?.text)?.body) : null,
+    wamid,
+  };
 }
 
 export function parseWhatsAppWebhookPayload(payload: unknown): ParsedWhatsAppMessage[] {
@@ -76,43 +131,35 @@ export function parseWhatsAppWebhookPayload(payload: unknown): ParsedWhatsAppMes
         if (waId && name) contactNameByWaId.set(waId, name);
       }
 
+      const base = { contactNameByWaId, deliveredToDisplayNumber, deliveredToPhoneNumberId };
+
       const rawMessages = Array.isArray(value.messages) ? value.messages : [];
       for (const raw of rawMessages) {
-        const message = asRecord(raw);
-        const wamid = asString(message?.id);
-        const from = asString(message?.from);
-        if (!wamid || !from) continue;
+        const parsed = parseMessageNode(raw, { ...base, historical: false });
+        if (parsed) messages.push(parsed);
+      }
 
-        const messageType = asString(message?.type) ?? "unknown";
-        // A document OR an image (photographed CV) both carry a CV. The image node has the same
-        // id/mime_type/caption shape as document, just no filename.
-        const mediaNode =
-          messageType === "document"
-            ? asRecord(message?.document)
-            : messageType === "image"
-              ? asRecord(message?.image)
-              : null;
-        const mediaId = asString(mediaNode?.id);
-        const document: ParsedWhatsAppDocument | null = mediaId
-          ? {
-              caption: asString(mediaNode?.caption),
-              filename: asString(mediaNode?.filename),
-              mediaId,
-              mimeType: asString(mediaNode?.mime_type) ?? "application/octet-stream",
-            }
-          : null;
-
-        messages.push({
-          contactName: contactNameByWaId.get(from) ?? null,
-          deliveredToDisplayNumber,
-          deliveredToPhoneNumberId,
-          document,
-          forwarded: asRecord(message?.context)?.forwarded === true,
-          from,
-          messageType,
-          text: messageType === "text" ? asString(asRecord(message?.text)?.body) : null,
-          wamid,
-        });
+      // Coexistence history sync. Once the HR handset is linked, Meta replays that phone's past
+      // conversations under `history` rather than `messages` — the same message nodes, two levels
+      // deeper (history[].threads[].messages[]). Reading only `messages` means a backfill is
+      // acknowledged with a 200 and then discarded, which is exactly how a backlog of real CVs
+      // would vanish with no error recorded anywhere.
+      const history = Array.isArray(value.history) ? value.history : [];
+      for (const chunk of history) {
+        const threads = Array.isArray(asRecord(chunk)?.threads) ? (asRecord(chunk)!.threads as unknown[]) : [];
+        for (const thread of threads) {
+          const threadRecord = asRecord(thread);
+          const threadMessages = Array.isArray(threadRecord?.messages) ? (threadRecord!.messages as unknown[]) : [];
+          for (const raw of threadMessages) {
+            const parsed = parseMessageNode(raw, { ...base, historical: true });
+            if (!parsed) continue;
+            // A thread replays BOTH directions. The business's own outgoing messages carry the
+            // receiving number as `from`; turning those into candidates would file the company as
+            // an applicant to itself, once per past conversation.
+            if (isSameWhatsAppNumber(parsed.from, deliveredToDisplayNumber)) continue;
+            messages.push(parsed);
+          }
+        }
       }
     }
   }
@@ -130,6 +177,13 @@ export const parseWhatsAppImportSenders = parseImportSenderList;
 function phoneTail(value: string): string | null {
   const digits = normalizePhone(value)?.replace(/^0+/, "") ?? null;
   return digits && digits.length >= 9 ? digits.slice(-9) : null;
+}
+
+/** Whether two numbers are the same line, tolerating Meta's spaced display form. */
+function isSameWhatsAppNumber(a: string | null, b: string | null): boolean {
+  if (!a || !b) return false;
+  const left = phoneTail(a);
+  return left !== null && left === phoneTail(b);
 }
 
 /**
@@ -163,6 +217,10 @@ export function buildWhatsAppIntakeInput(
     wa_id: message.from,
     ...(message.forwarded ? { forwarded: true } : {}),
     ...(isImport ? { bulkImport: true } : {}),
+    // Marks a coexistence backfill so it is never mistaken for a fresh application. Read by the
+    // intake health check, which must not let a replay of the past reset the silence clock or
+    // claim that applicants are getting through right now.
+    ...(message.historical ? { historyImport: true } : {}),
     // Recorded on every intake event so the two lines are distinguishable in the data and a
     // future per-number silence check can query it. Only present when Meta supplied metadata.
     ...(message.deliveredToPhoneNumberId ? { deliveredToPhoneNumberId: message.deliveredToPhoneNumberId } : {}),

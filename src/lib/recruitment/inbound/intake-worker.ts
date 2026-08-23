@@ -70,6 +70,7 @@ async function processWhatsAppRow(payload: WhatsAppQueuePayload): Promise<Inboun
     document: { caption: payload.caption, filename: payload.filename, mediaId: payload.mediaId, mimeType: downloaded.mimeType },
     forwarded: payload.forwarded,
     from: payload.from,
+    historical: payload.historical === true,
     messageType: payload.messageType,
     text: null,
     wamid: payload.wamid,
@@ -104,9 +105,11 @@ async function processWhatsAppRow(payload: WhatsAppQueuePayload): Promise<Inboun
   }
 
   // Acknowledge a genuinely NEW direct applicant (flag-gated; strict no-op when off). Never on an
-  // import (that's a forwarder, not the applicant) and never on a match (they already applied).
+  // import (that's a forwarder, not the applicant), never on a match (they already applied), and
+  // never on a coexistence history replay — thanking someone for a CV they sent two months ago,
+  // the instant the handset is linked, would message every past applicant at once.
   // Best-effort — an acknowledgement must never affect the CV that was already captured.
-  if (!isImport && result.outcome === "candidate_created" && isWhatsAppAutoReplyEnabled()) {
+  if (!isImport && !payload.historical && result.outcome === "candidate_created" && isWhatsAppAutoReplyEnabled()) {
     await sendWhatsAppCvAcknowledgement({ phoneNumberId: payload.deliveredToPhoneNumberId, toWaId: payload.from }).catch(() => {});
   }
   return result;

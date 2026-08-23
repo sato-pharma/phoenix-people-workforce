@@ -27,6 +27,10 @@ export type WhatsAppQueuePayload = {
   caption: string | null;
   contactName: string | null;
   forwarded: boolean;
+  // Set by the webhook when this came from a coexistence history backfill rather than a live
+  // message. Optional on purpose: rows enqueued by an older build have no such key, and reading
+  // one back must not become a type lie during a rolling deploy.
+  historical?: boolean;
   deliveredToPhoneNumberId: string | null;
   deliveredToDisplayNumber: string | null;
   // Assembled at webhook time (caption + the sender's preceding buffered messages) so the context

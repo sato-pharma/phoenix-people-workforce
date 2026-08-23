@@ -13,6 +13,7 @@ type MappingPayload = {
   deviceUserId?: unknown;
   employeeHrId?: unknown;
   isActive?: unknown;
+  nonEmployeeLabel?: unknown;
 };
 
 function text(value: unknown) {
@@ -40,6 +41,9 @@ function parsePayload(payload: unknown) {
     deviceUserId,
     employeeHrId: employeeHrId || null,
     isActive: input.isActive,
+    // Absent key stays undefined so the service omits the column and keeps any existing label.
+    // Present-but-empty is a deliberate clear. See saveAttendanceDeviceUserMapping.
+    nonEmployeeLabel: "nonEmployeeLabel" in input ? text(input.nonEmployeeLabel) || null : undefined,
   };
 }
 
