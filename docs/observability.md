@@ -43,8 +43,9 @@ work, not a solved problem.
 - **Local dev never writes here (since 2026-07-30).** `shouldPersistErrorEvents()`
   (`src/lib/error-monitor/derived-status.ts`) makes `logAppError()` skip the insert and log to
   the console instead whenever `NODE_ENV !== "production"` — i.e. under `next dev` only. The
-  Railway service builds with `NODE_ENV=production`. (There is no staging app any more, so every
-  non-dev row is production.) Override with
+  Railway service builds with `NODE_ENV=production`. (The staging app builds that way too, but it
+  writes to the staging Supabase project — so every non-dev row in *this* table is still
+  production. Staging's own error rows live in `cifwmndunmlxjhyjugxa`.) Override with
   `PHOENIX_PERSIST_DEV_ERROR_EVENTS=true` when deliberately debugging ingestion.
   - *Why:* `.env.local` on the maintainer machines points at the **production** Supabase project
     (a deliberate, documented setup), so local iterate-and-reload churn was inserting straight

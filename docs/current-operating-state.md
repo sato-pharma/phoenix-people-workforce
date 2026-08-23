@@ -1,6 +1,6 @@
 # Current Operating State
 
-Last updated: 2026-08-04 (Railway cutover corrections).
+Last updated: 2026-08-23 (staging app re-verified live; see deployment.md § Staging Environment).
 
 > **This file deliberately does not restate hosting, deploy, or cron facts.** It used to, and it
 > drifted: after the 2026-08-01 GCP shutdown it still described Cloud Run deploys, a staging app,
@@ -16,7 +16,8 @@ Last updated: 2026-08-04 (Railway cutover corrections).
 | Codebase layout, auth, API conventions, deployment-model summary | [architecture.md](architecture.md) |
 
 The one-line version: **Railway, and a merge to `main` ships to production immediately at full
-traffic.** There is no staging app. Confirm what is live with `/api/healthz` → `revision`.
+traffic.** Confirm what is live with `/api/healthz` → `revision`, on the production domain — a
+staging app exists but tracks `main` as well, so it usually reports the same SHA.
 
 ## Git Branches
 

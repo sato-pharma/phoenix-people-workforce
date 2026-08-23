@@ -18,7 +18,7 @@
 > | Migrations | applied by hand, **before** the merge — the Railway build runs none |
 > | Scheduler | third-party **cron-job.org**, outside this repo (§7) — not GCP Cloud Scheduler (still fires, always 401s, ignore it) and not Railway's own `phoenix-cron` (disabled, never worked) |
 > | Alerting | 🔴 **nothing pages the owner.** Healthchecks.io (cron liveness only) is the one survivor — see §1 |
-> | Staging | **no staging app** — only the staging Supabase database survives |
+> | Staging | Railway env `staging` of the same service — `https://phoenix-people-workforce-staging.up.railway.app`, on the staging Supabase project `cifwmndunmlxjhyjugxa`. Tracks `main`, so it is **not** a preview of an unmerged branch and is **not** a second copy of production data (see deployment.md § Staging Environment) |
 >
 > **Railway identifiers** (verified live 2026-08-04 via `railway status`; scripted CLI calls below
 > use IDs, not names — that's the proven-reliable pattern here):

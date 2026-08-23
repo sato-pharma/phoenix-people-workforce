@@ -10,7 +10,7 @@ retirement).
 | Component | Service | Notes |
 |---|---|---|
 | Application hosting (production) | **Railway** | Project `Phoenix-HR-Workforce`, service `phoenix-people-workforce`, region `europe-west4-drams3a` (Amsterdam, EU West) — colocated with the Frankfurt Supabase project on purpose; **must stay in Europe** if re-platformed |
-| Application hosting (staging) | **none** | The staging *app* died with Cloud Run and has no Railway replacement |
+| Application hosting (staging) | **Railway** | Same project and service, environment `staging` — `https://phoenix-people-workforce-staging.up.railway.app`, also `europe-west4-drams3a`. Tracks `main` and uses the staging Supabase project; see "Staging Environment" below |
 | Database + Auth | Supabase | Separate production (`ozucdzovmcqvepbozvqf`) and staging (`cifwmndunmlxjhyjugxa`) projects |
 | Scheduled jobs | **cron-job.org** (third-party, outside this repo) | See "Cron Jobs" below |
 | Email delivery | Resend | — |
@@ -84,7 +84,10 @@ To confirm a deploy happened at all, use the GitHub deployments API or the Railw
 gh api repos/Gawish-1997/phoenix-people-workforce/deployments
 ```
 
-There is **no staging app** to check. Only the staging *database* survives.
+The staging environment has its own deployment and its own `/api/healthz`
+(`https://phoenix-people-workforce-staging.up.railway.app/api/healthz`). Because it also tracks
+`main`, its `revision` normally matches production's — seeing the same SHA on both is expected,
+not evidence that you checked production. Read the production domain when you mean production.
 
 ## Database Deployment
 
@@ -145,14 +148,75 @@ Railway CLI, not the web UI). See docs/environment.md for the full list and
 
 ## Staging Environment
 
-The staging **application** is gone — it died with Cloud Run on 2026-08-01 and has no Railway
-replacement. Any rule requiring "verify against staging" currently has nothing to run against; say
-so plainly rather than pretending the gate exists.
+There **is** a staging application, and it is running. It is a second Railway environment in the
+same project, not a separate service — verified live 2026-08-23:
 
-The staging **database** survives as its own isolated Supabase project (`cifwmndunmlxjhyjugxa`),
-with no shared third-party secrets with production. The login smoke test step inside CI's `validate`
-job points at it, so its expected session-rejection noise lands there instead of in production
-`audit_logs`; `migration-drift-check.yml`'s staging legs point at it too.
+| Property | Value |
+|---|---|
+| Railway project | `Phoenix-HR-Workforce` (`dc218ad3-99b7-4aff-be38-953a57524a71`) |
+| Environment | `staging` (`c766d42b-9e0b-4027-b00f-b13a1651b214`) |
+| Service | `phoenix-people-workforce` — the **same** service as production, a different environment of it |
+| URL | `https://phoenix-people-workforce-staging.up.railway.app` |
+| Region / replicas | `europe-west4-drams3a`, 1 replica — same as production |
+| Build | `DOCKERFILE` (`/Dockerfile`), so `NODE_ENV=production` — same as production |
+| Source branch | **`main`** |
+| Database | staging Supabase `cifwmndunmlxjhyjugxa` (`Phoenix-HR-Staging`) — **not** production |
+
+Every Supabase credential in the environment resolves to the staging project, not just the URL:
+`NEXT_PUBLIC_SUPABASE_URL`, `SUPABASE_PROJECT_REF`, `SUPABASE_PROJECT_ID`, and the `ref` claim inside
+both the anon and the service-role JWTs all read `cifwmndunmlxjhyjugxa`. Writes made through the app
+on staging land in the staging database.
+
+```bash
+railway status --environment staging --json
+```
+
+🔴 **Staging tracks `main`, exactly like production — so by default it is not a preview of your
+branch.** Both environments deploy the same commit; at the time of writing `/api/healthz` returned
+revision `4ebbf45c` on *both* the production domain and the staging domain. What staging gives you
+by default is the shipped code running against a throwaway database, not your unmerged work.
+
+### What staging can verify
+
+- **That the code runs.** Same Dockerfile, same region, same `NODE_ENV=production` build, so a page
+  that renders here renders in production.
+- **A migration, before it touches payroll data.** Apply it to `cifwmndunmlxjhyjugxa` first and load
+  the pages that read the changed columns — this is the one rehearsal that catches "the deploy
+  applies no migrations" (§ Database Deployment) before real employees see a 500.
+- **Role gates — but only through real logins.** Sign in as a staging user with the role you want to
+  test. The dev-auth header shortcut is **not** available here (see the next list).
+- **A risky change, before the merge that ships it** — but only if you deliberately point the
+  environment's source at your branch first, and put it back on `main` afterwards.
+
+### What staging cannot verify
+
+- **Your branch, without a deliberate repoint.** Its source is `main`. Pushing a branch does nothing
+  here; there is still no per-branch preview deployment anywhere.
+- **Anything that depends on production's data shape.** Staging's rows are not production's rows, so
+  the specific broken data that motivated a fix generally is not there. Bulk or corrective work whose
+  whole risk lives in the real data cannot be rehearsed here — only its SQL can.
+- **Scheduled jobs.** cron-job.org points at the production domain (§ Cron Jobs). Nothing fires
+  against staging on a schedule; a cron route has to be invoked by hand there.
+- 🔴 **A dev-auth role sweep — despite `PHOENIX_ENABLE_DEV_AUTH_HEADERS=true` being set there.**
+  That variable is necessary but nowhere near sufficient. Both the `x-phoenix-role` header path
+  (`isLocalDevHeaderRequest` in `src/lib/auth/server.ts`) and the `/api/dev-auth` route
+  (`isLocalDevelopmentRequest` in `src/lib/auth/dev-preview.ts`) additionally require
+  `NODE_ENV === "development"` **and** a loopback hostname — and staging is a Dockerfile build on a
+  public domain, so it fails both. Verified 2026-08-23:
+  `GET https://phoenix-people-workforce-staging.up.railway.app/api/dev-auth?role=Super%20Admin`
+  returns **404**. Reading the variable and concluding the sweep works is the trap; role sweeps stay
+  a localhost-only technique.
+- **Email deliverability.** `PHOENIX_EMAIL_DELIVERY_MODE=log`, `PHOENIX_EMAIL_FORCE_TESTING=true`,
+  and `NOTIFICATION_TEST_MODE=true`, so mail is logged rather than sent. That is the safe default and
+  it should stay that way — but note a live `RESEND_API_KEY` **is** present in the environment, so
+  flipping the delivery mode would send real mail from staging.
+
+The staging **database** is its own isolated Supabase project (`cifwmndunmlxjhyjugxa`,
+`Phoenix-HR-Staging`), with no shared third-party secrets with production. The login smoke test
+step inside CI's `validate` job points at it, so its expected session-rejection noise lands there
+instead of in production `audit_logs`; `migration-drift-check.yml`'s staging legs point at it too.
+CI reaches it with the `STAGING_SUPABASE_SERVICE_ROLE_KEY` Actions secret, independently of the
+Railway environment above — the two share the database, nothing else.
 
 `PHOENIX_PREVIEW_READ_ONLY` / the `proxy.ts` preview-read-only guard are legacy from the Vercel
 preview model and are inert (nothing sets `APP_ENV=preview`).
