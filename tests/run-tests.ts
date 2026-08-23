@@ -350,6 +350,7 @@ import { runMarketingReferenceImporterTests } from "./marketing-reference-import
 import { runMarketingRequestAccessTests } from "./marketing-request-access.test.ts";
 import { runMarketingRequestServiceTests } from "./marketing-request-service.test.ts";
 import { runMarketingValidationDraftTests } from "./marketing-validation-draft.test.ts";
+import { runMarketingVenueTerritoryTests } from "./marketing-venue-territory.test.ts";
 import { runReportRpcGuardrailTests } from "./report-rpc-guardrails.test.ts";
 import { runMarketingReviewRoutingTests } from "./marketing-review-routing.test.ts";
 import { runMarketingApproverHrIdCasingTests } from "./marketing-approver-hrid-casing.test.ts";
@@ -1388,6 +1389,7 @@ await runTest("customer map import", runCustomerMapImportTests);
 await runTest("customer directory rollup", runCustomerDirectoryRollupTests);
 await runTest("marketing manager role", runMarketingManagerRoleTests);
 await runTest("marketing pharmacy master resolution (write path + never-throws guard)", runMarketingMasterResolutionTests);
+await runTest("marketing venue territory (head office adopts master area, rep never moved)", runMarketingVenueTerritoryTests);
 await runTest("marketing reference importer", runMarketingReferenceImporterTests);
 await runTest("marketing ROI", runMarketingRoiTests);
 await runTest("marketing ROI sheet import (dry-run)", runMarketingRoiSheetImportTests);
