@@ -424,6 +424,7 @@ import { runOutstationLocalDraftTests } from "./outstation-local-draft.test.ts";
 import { runOutstationPayrollExpenseMappingTests } from "./outstation-payroll-expense-mapping.test.ts";
 import { runOutstationPolicyClassificationTests } from "./outstation-policy-classification.test.ts";
 import { runOutstationNotificationsTests } from "./outstation-notifications.test.ts";
+import { runOutstationDistanceFailureTests } from "./outstation-distance-failure.test.ts";
 import { runOutstationEmployeeLookupStatusTests } from "./outstation-employee-lookup-status.test.ts";
 import { runMedicalRepExpensesTests } from "./medical-rep-expenses.test.ts";
 import { runAuthSessionTests } from "./auth-session.test.ts";
@@ -2468,6 +2469,13 @@ await runTest(
   + "warns on unpushed commits and uncommitted files, logs the clean case too so silence cannot be "
   + "mistaken for coverage, and never blocks the removal)",
   runWorktreeExitGuardPreRemovalTests,
+);
+
+await runTest(
+  "outstation manager distance failures (a residence stored as the Egypt centroid is reported as "
+    + "the origin's fault, before Google is called, never as an unreachable destination; a missing "
+    + "Maps key is 503 named as configuration; a markaz no longer trips the region warning)",
+  runOutstationDistanceFailureTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
