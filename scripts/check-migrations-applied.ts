@@ -252,6 +252,153 @@ const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // sufficient test — it answered "excluded" while a second query still counted a product that
   // would disappear, because that one read the SOURCE table. Only reading the full view
   // definition settled it. Do not re-open this on the strength of a substring match.
+
+  // ── Added 2026-08-23, after this workflow had been red on EVERY scheduled run since
+  // 2026-08-11 — 13 consecutive days, last green 2026-08-10. Run 32626124071 flagged 15 files on
+  // production and 14 on staging (29 flag-instances, 24 distinct files).
+  //
+  // Every one was judged by querying pg_catalog directly — pg_class, pg_proc, pg_index,
+  // pg_policy, pg_attribute, pg_default_acl, pg_namespace — never from schema_migrations. For a
+  // `create or replace` file, EXISTENCE IS NOT ENOUGH: the function's pg_proc.prosrc was matched
+  // against a string only the new body contains. That is the single check that separated the 19
+  // files below from the 6 that turned out to be genuinely missing on staging (applied 2026-08-23
+  // and now recorded, so they need no entry here) and the 1 still missing on production.
+  //
+  // STILL DELIBERATELY FAILING, and it is the only flag left: 20260813120000_ci_schema_shape_
+  // private_usage.sql on PRODUCTION. phx_ci_schema_shape() is live there with the OLD body —
+  // prosrc carries neither `private_schema_usage` nor `policies_using_private_schema`. It is the
+  // DETECTOR for the `private`-schema USAGE gap that made every staging RLS test vacuous for
+  // three weeks, so a silenced entry here would be the exact mistake this list must never make.
+  // Left red until an owner approves the production apply (AGENTS.md §6). The underlying gap is
+  // currently CLOSED on both projects — pg_namespace.nspacl on `private` reads
+  // {postgres=UC, authenticated=U, service_role=U} and has_schema_privilege('authenticated',
+  // 'private','USAGE') is true, with 67 policies depending on it — so what is missing is the
+  // alarm, not the grant.
+  //
+  // TWO MECHANISMS produced all 19, and neither is a fault in this check:
+  //   1. Applied via MCP apply_migration under a slug that is not the filename's slug. The
+  //      matcher tries version, slug, and version-as-substring; all three miss when the recorded
+  //      name is `early_birds_module_tables` and the file's slug is `early_birds_module`.
+  //   2. Run outside the ledger entirely, through execute_sql or a script — objects in
+  //      pg_catalog, no schema_migrations row at all, not even a drifted one. This is the larger
+  //      group. Established by searching every recorded statement body for each migration's
+  //      distinctive text; reliable here because only 3 of the 85 ledger rows in the window have
+  //      an empty `statements` array, and all three are unrelated files.
+  //
+  // The durable fix for (2) is to stop hand-running DDL and use apply_migration with the repo
+  // filename as the name — then version drift still happens but the substring match catches it.
+
+  // Applied on PRODUCTION, recorded as TWO drifted rows: 20260808212342/early_birds_module_tables
+  // and 20260808212424/early_birds_module_rpcs, neither equal to this file's slug
+  // `early_birds_module`. Verified: all 6 tables present (early_birds_period_snapshots,
+  // _candidates, _decisions, _winners, _national_winners, _audit), function
+  // early_birds_candidates_guard_frozen() present, and its trigger
+  // early_birds_candidates_guard_frozen_trg live on early_birds_candidates.
+  "20260808234500_early_birds_module.sql",
+  // Applied on PRODUCTION. This file's ENTIRE effect is an ACL revoke, so pg_proc.proacl is the
+  // whole proof: phx_unlock_monthly_closing(text,text,text,text) and
+  // phx_reject_write_to_locked_closing() both read {postgres=X/postgres, service_role=X/postgres}
+  // — no `=X` PUBLIC entry, no anon, no authenticated. Ledger row 20260809231535 /
+  // monthly_closing_lock carries the statements.
+  "20260810150000_monthly_closing_lock_revoke_anon_execute.sql",
+  // Applied on PRODUCTION outside the ledger. Verified: table pg_stat_statements_snapshots
+  // present, views v_slow_query_deltas and v_db_health both present (pg_class.relkind='v'), and
+  // function phx_capture_query_stats(p_top integer) present with proacl
+  // {postgres=X, service_role=X} exactly as the file writes it.
+  "20260811000500_pg_health_query_observability.sql",
+  // Applied on PRODUCTION outside the ledger. Verified: phx_ci_stale_snapshot_schemas(
+  // p_max_age_days integer) present with proacl {postgres=X, service_role=X}.
+  "20260811000600_pg_health_snapshot_expiry_gate.sql",
+  // Applied on PRODUCTION outside the ledger. Both halves verified on pg_class:
+  // relrowsecurity = true on direct_order_pharmacy_validations, and relacl =
+  // {postgres=arwdDxtm, service_role=arwdDxtm} — anon and authenticated already revoked, which
+  // is this file's other statement.
+  "20260812090000_direct_order_pharmacy_validations_rls.sql",
+  // Applied on PRODUCTION outside the ledger. Both of the file's two targets carry
+  // service_role=arwdDxtm in pg_class.relacl: direct_order_pharmacy_validations and
+  // monthly_closing_locks.
+  "20260812100000_service_role_table_grants_parity.sql",
+  // Applied on PRODUCTION outside the ledger. Verified on pg_default_acl: grantor postgres,
+  // schema public, defaclobjtype 'r' reads {postgres=arwdDxtm, service_role=arwdDxtm}.
+  "20260812100100_public_default_privileges_grant_service_role.sql",
+  // Applied on BOTH projects outside the ledger. A data migration, so the proof is the data:
+  // workflow_registry_modules for module_key='direct_orders' contains both declared statuses,
+  // `held` and `expired`. Confirmed separately on production and on staging.
+  "20260812135000_direct_orders_declare_held_expired_statuses.sql",
+  // Applied on BOTH projects outside the ledger. Same registry row contains the action
+  // `repair_approval_rung`. Confirmed separately on production and on staging.
+  "20260812140000_direct_orders_repair_approval_rung.sql",
+  // Applied on PRODUCTION outside the ledger — the ledger has expense_claims phases 0, 2, 3 and
+  // 4 but no phase 1. Verified by the data this file exists to produce: 375 rows in
+  // expense_claims, ZERO of them lacking both legacy_request_id and legacy_expense_id, and 2 rows
+  // in expense_imports. An unrun backfill leaves the table empty.
+  //
+  // DO NOT RE-RUN THIS FILE ANYWHERE. It opens by deleting expense_claim_events,
+  // expense_payroll_links, expense_claims and expense_imports, then rebuilds them. Its own guard
+  // ("Refusing to backfill: % claim(s) have no legacy link") only trips once writes have cut over
+  // and native claims exist — with zero native claims it does NOT stop, so the guard is no
+  // protection against a well-meaning catch-up apply. Listing it here is what keeps that apply
+  // from ever looking necessary.
+  "20260812160100_expense_claims_phase1_backfill.sql",
+  // NOT APPLICABLE on production, by the file's own design — its header states "SELF-NO-OP ON
+  // PRODUCTION AND ON A REBUILD. Everything is gated on GZ8/GZ9 existing and UE9 not." Verified
+  // that gate is false: au.canonical_areas holds no GZ8 and no GZ9, and source_of_sales_areas
+  // already reads GZ6 = Fayoum, UE9 = Beni Suef. There is nothing for it to do and it was never
+  // going to record.
+  "20260813090000_converge_staging_gz8_gz9_to_gz6_ue9.sql",
+  // NOT APPLICABLE now: the effect landed first, by hand. weekly_sales_branch_region_map holds
+  // exactly the counts this file writes — 11 rows on GZ6, 18 on UE9 — but stamped
+  // updated_by='claude-brick-fill-2026-08-12' / 'chatgpt_branch_area_import_2026-08-12', never
+  // 'weekly_fayoum_beni_suef_area_seed'. Both special-cased rows (PS/الفيوم/sales and
+  // PS/بني سويف/sales) already carry region_code='GZ', region_name='Giza' — the corrected values
+  // this file would set, not the stale 'UE'/'AB' its header describes. Its UPDATEs are gated
+  // `where area_code is null`, so re-running now touches 0 rows.
+  "20260813130000_weekly_fayoum_beni_suef_area_seed.sql",
+  // Applied on PRODUCTION outside the ledger; applied to STAGING 2026-08-23 (it was genuinely
+  // absent there — no function of that name in ANY schema — and is now recorded, so this entry
+  // covers the production leg). Verified on production:
+  // phx_direct_order_pharmacy_normalized_names(p_ids uuid[]) present with proacl
+  // {postgres=X, service_role=X}.
+  "20260813180000_direct_order_pharmacy_normalized_names.sql",
+  // Applied on BOTH projects outside the ledger. Verified on each: index
+  // sos_customer_directory_rollup_area_period_idx present on
+  // source_of_sales_customer_directory_rollup. It was never going to appear in the ledger on
+  // production — the file's own header says production receives this as a hand-run CREATE INDEX
+  // CONCURRENTLY, to avoid the write lock a plain build would take.
+  "20260816070000_territory_area_pharmacies_area_index.sql",
+
+  // ── The five below were flagged on STAGING only; production already matched them by name.
+  // Applied on staging, verified by pg_catalog there.
+  //
+  // Applied under a drifted name. phx_decide_marketing_request_step(...)'s prosrc contains the
+  // guard string `marketing_self_approval_refused`, so the refusal is live. Carried by ledger row
+  // 20260813030305 / marketing_reject_terminalises_chain — a later migration that replaced the
+  // same function and preserved the guard.
+  "20260813170000_marketing_refuse_self_approval.sql",
+  // Applied under a drifted name (ledger row 20260814024026 /
+  // closing_channel_breakdown_reuse_rollup). Verified: table
+  // source_of_sales_channel_customer_rollup present with its
+  // source_of_sales_channel_customer_rollup_service_role_all policy in pg_policy, plus functions
+  // phx_refresh_sos_channel_rollup(uuid) and phx_closing_channel_totals(7 args).
+  "20260814130000_closing_channel_customer_rollup.sql",
+  // Applied under drifted names — three ledger rows carry it, including 20260815140406 /
+  // proto_dp_rollup_table_and_refresh. Verified: table
+  // source_of_sales_distributor_product_rollup present with its service-role policy, plus
+  // phx_refresh_sos_distributor_product_rollup(uuid) and
+  // phx_closing_distributor_product(text,text), both parallel safe.
+  "20260815160000_closing_distributor_product_rollup.sql",
+  // Applied outside the ledger. All three of the file's effects verified independently:
+  // marketing_pharmacy_code_references.source_row is `bigint` in pg_attribute (the whole point of
+  // section 1 — the map id passed 736,844 and integer would overflow), view
+  // phx_v_sales_pharmacy_code_candidates exists, and function
+  // phx_sync_sales_pharmacy_codes_into_marketing() exists.
+  "20260819210000_marketing_sales_code_sync_is_additive.sql",
+  // Applied outside the ledger. This one replaces the function the file above creates, so
+  // existence proves nothing and the BODY is the evidence: prosrc contains
+  // `references_retained_linked`, the variable introduced by this file's third retirement
+  // condition — the condition that stops the sync deleting the 2,671 codes the owner's EPDA and
+  // Ibn Sina vendor merges produced.
+  "20260819220000_sync_retirement_must_not_undo_a_vendor_merge.sql",
 ]);
 
 type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };
