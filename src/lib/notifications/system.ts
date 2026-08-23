@@ -27,6 +27,7 @@ import { enforceAttendanceAlertEmailBlock } from "@/lib/notifications/attendance
 import { enforceEarlyBirdsEmailBlock } from "@/lib/notifications/early-birds-channel-guard";
 import { enforceMarketingSlaEmailBlock } from "@/lib/notifications/marketing-sla-channel-guard";
 import { enforceRecruitmentCvEmailBlock } from "@/lib/notifications/recruitment-cv-channel-guard";
+import { enforceCandidateAssignedEmailBlock } from "@/lib/notifications/recruitment-candidate-assigned-channel-guard";
 import { resolveTelegramGovernance } from "@/lib/notifications/telegram-governance";
 import { GENERIC_NOTIFICATION_TITLE, GENERIC_PAYSLIP_MESSAGE, TelegramTemplateError } from "@/lib/notifications/telegram-template-types";
 import { currentCairoMinutesOfDay } from "@/lib/i18n/format";
@@ -348,7 +349,13 @@ function basePolicyChannels(input: CreateSystemNotificationInput, preferred: Sys
   // Same hard guarantee for the "new CV received" notice (owner request 2026-08-15): in-app and
   // Telegram only, never email — see recruitment-cv-channel-guard.ts. Scoped to the single
   // recruitment_inbound_cv eventType; every other recruitment notification keeps its email.
-  return enforceRecruitmentCvEmailBlock(withoutAttendanceAlertEmail, input.module, input.eventType);
+  const withoutRecruitmentCvEmail = enforceRecruitmentCvEmailBlock(withoutAttendanceAlertEmail, input.module, input.eventType);
+  // Same hard guarantee for a candidate pushed to a hiring manager (owner rule 2026-08-24): in-app
+  // and push only, never email — see recruitment-candidate-assigned-channel-guard.ts. Scoped to the
+  // single candidate_assigned eventType, so offers, interviews and the rest of recruitment keep
+  // theirs. Chained after the CV block rather than replacing it: the two guard disjoint event sets,
+  // and collapsing them would silently restore email for whichever one lost.
+  return enforceCandidateAssignedEmailBlock(withoutRecruitmentCvEmail, input.module, input.eventType);
 }
 
 function resolveBasePolicyChannels(input: CreateSystemNotificationInput, preferred: SystemNotificationChannel) {

@@ -44,6 +44,7 @@ import { runEarlyBirdsEmailBlockTests } from "./early-birds-email-block.test.ts"
 import { runMarketingSlaEmailBlockTests } from "./marketing-sla-email-block.test.ts";
 import { runRecruitmentAttachmentFilenameNameTests } from "./recruitment-attachment-filename-name.test.ts";
 import { runRecruitmentCvNoEmailTests } from "./recruitment-cv-no-email.test.ts";
+import { runCandidateAssignedEmailBlockTests } from "./candidate-assigned-email-block.test.ts";
 import { runTelegramOperationsTests } from "./telegram-operations.test.ts";
 import { runTelegramAdminControlCenterTests } from "./telegram-admin-control-center.test.ts";
 import { runEmailAdminControlCenterTests } from "./email-admin-control-center.test.ts";
@@ -995,6 +996,7 @@ await runTest("marketing SLA email block (SLA reminders never emailed)", runMark
 await runTest("Early Birds email block (in-app + Telegram only)", runEarlyBirdsEmailBlockTests);
 await runTest("recruitment attachment filename never becomes an envelope name", runRecruitmentAttachmentFilenameNameTests);
 await runTest("recruitment CV-received notice never emails (in-app + Telegram only)", runRecruitmentCvNoEmailTests);
+await runTest("candidate pushed to a hiring manager never emails (in-app + push only)", runCandidateAssignedEmailBlockTests);
 await runTest("active roster only (resigned reps never reach a board)", runActiveRosterOnlyTests);
 await runTest("telegram operations", runTelegramOperationsTests);
 await runTest("telegram admin control center", runTelegramAdminControlCenterTests);
