@@ -117,16 +117,43 @@ Two other schedulers still point at production and neither works:
 `src/lib/cron-control/*` (the `/admin/cron-control` dashboard) is a UI over the dead GCP scheduler
 and is inert.
 
-Job inventory as of 2026-08-02 — **confirm against the cron-job.org account before relying on it**:
+**Full job inventory, read out of the account 2026-08-23 — 17 jobs, 12 enabled.** This is a
+snapshot of a place nobody can see from git, so re-read it rather than trusting the age of this
+table. Times are Cairo, as the account is set to `Africa/Cairo` throughout.
 
 | Job | Schedule (Cairo) | Endpoint | Purpose |
 |---|---|---|---|
 | `phoenix-notify-daily` | 6:36 AM daily | `/api/notifications/daily` | Birthdays, contract renewals, vacation/marketing/outstation SLA, recruitment, resignation SLA, weekly-plan drift, Telegram HR digest |
 | `phoenix-process-notifications` | every 5 min | `/api/notifications/process?limit=50` | Drains the notification outbox, probation reminders, deferred/Telegram retries |
+| `phoenix-inbound-intake` | every 2 min | `/api/cron/inbound-intake` | Inbound mail/message intake |
+| `phoenix-recruitment-email-intake` | every 10 min, at :04 | `/api/cron/recruitment-email-intake` | Pulls CVs out of the recruitment mailbox |
+| `phoenix-synthetic-journeys` | hourly, on the hour | `/api/cron/run-synthetic-journeys` | Asks GitHub to run `synthetic-journeys.yml` (the route does not do the work itself) |
+| `phoenix-db-health-snapshot` | 0:17 / 6:17 / 12:17 / 18:17 daily | `/api/cron/db-health-snapshot` | Database health snapshot — deliberately **not** on the dead-man's-switch |
 | `phoenix-background-jobs` | Fridays 3:00 AM | `/api/cron/background-jobs?limit=10` | Drains queued admin-requested exports, Super-Admin Telegram recap |
-| `phoenix-ireports360-sync` | 9:07 / 12:07 / 19:07 daily | `/api/cron/ireports360-visits-sync` | Rolling 10-day iReports360 CRM visit sync + probation double-visit auto-tick |
-| `phoenix-ireports360-reconcile` | Sundays 7:25 AM | `/api/cron/ireports360-visits-reconcile` | Wide reconciliation over a rotating slice of a 120-day window |
-| `phoenix-reconcile-visits` | Sundays 4:24 AM | same as above | **Disabled** duplicate at the old GCP time — kept so 4:24 can be restored |
+| `phoenix-direct-orders-rotate-sheet-token` | Fridays 3:23 AM | `/api/cron/direct-orders-rotate-sheet-token` | Rotates the Direct Orders live-sheet feed token (**new 2026-08-23** — nothing called this route before) |
+| `phoenix-marketing-requests-rotate-sheet-token` | Fridays 3:43 AM | `/api/cron/marketing-requests-rotate-sheet-token` | Rotates the Marketing Requests live-sheet feed token (**new 2026-08-23**, same story) |
+| `phoenix-brevo-keepalive` | 4:09 AM on the 1st | `/api/cron/brevo-keepalive` | Resets Brevo's 90-day inactivity expiry on the email **failover** key, and health-checks it (**new 2026-08-23** — nothing called this route before either) |
+| `phoenix-direct-orders-expire-held` | 2:17 AM daily | `/api/cron/direct-orders-expire-held` | Direct Orders hold-expiry sweep (**new 2026-08-23**, replaces the GitHub Actions schedule that 401'd nightly from 2026-08-14) |
+| `phoenix-direct-orders-probation` | 2:27 AM daily | `/api/cron/direct-orders-probation` | Direct Orders probation sweep (same replacement) |
+
+**Five jobs are DISABLED, and four of them are disabled on purpose** — do not "fix" them by
+switching them back on:
+
+| Disabled job | Schedule it had | Why it is off |
+|---|---|---|
+| `phoenix-ireports360-sync` | 9:07 / 12:07 / 19:07 daily | Superseded by the in-process poller, which runs the same rolling 10-day sync itself and pings the same `phoenix-ireports360-sync` check |
+| `phoenix-ireports360-reconcile` | Sundays 7:25 AM | Superseded the same way by the poller's weekly wide reconcile |
+| `phoenix-reconcile-visits` | Sundays 4:24 AM | Older duplicate of the same reconcile endpoint, off long before the poller |
+| `phoenix-ireports360-live-sync` | :01/:16/:31/:46, 8 AM–12 PM | Superseded by the poller's 20–30 s ticks. ⚠️ Its route is still wired to the `phoenix-ireports360-live-sync` dead-man's-switch and **nothing else pings that slug**, so that check has been red since 2026-08-16 for no real reason — delete the check (see [observability.md](observability.md)) |
+| `phoenix-inbound-intake (Copy)` | every 2 min | An accidental duplicate of the live intake job. Harmless while off; **never enable it** — it would double every intake run |
+
+All four iReports360 jobs being off is expected and is **not** an outage: PR #1631 moved that work
+into a continuous in-process poller (`src/lib/crm/live-poller.ts`, started from `instrumentation.ts`,
+gated on `PHOENIX_LIVE_CRM_POLL=true`, which is set on the service). It probes a 2-day window every
+20 s in the 08:00–12:30 Cairo compliance window, 30 s daytime and 120 s overnight, and runs the
+rolling 10-day sync (every 3 h from 06:00) and the weekly wide reconcile (Sundays from 04:00) from
+the same loop. Their last external firings were all 2026-08-16; CRM freshness has not depended on
+cron since.
 
 🔴 **cron-job.org caps request timeout at 30 s and refuses a higher value.** A route that runs
 longer is logged `Failed (timeout)` even though the request *was* delivered and the server finishes
@@ -134,11 +161,6 @@ the work (routes carry `maxDuration = 300`, and `withDeadMansSwitch` pings at th
 Healthchecks.io still sees success). `phoenix-notify-daily` logs a 30 s timeout every morning and is
 **not** failing. Never diagnose a cron from the cron-job.org status alone — check
 `ireports360_visits_sync_runs` or the outbox instead.
-
-iReports360 freshness no longer depends on cron at all: PR #1631 added a continuous in-process
-poller (`src/lib/crm/live-poller.ts`, started from `instrumentation.ts`, gated on
-`PHOENIX_LIVE_CRM_POLL=true`, which is set on the service). The rolling 3×/day sync and weekly
-reconcile are still needed — the poller's horizon is 2 days.
 
 ## Environment Variables
 

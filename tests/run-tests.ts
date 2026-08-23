@@ -57,6 +57,7 @@ import { runOutstationFuelPolicyTests } from "./outstation-fuel-policy.test.ts";
 import { runDeadMansSwitchTests } from "./dead-mans-switch.test.ts";
 import { runDirectOrdersSweepLivenessTests } from "./direct-orders-sweep-liveness.test.ts";
 import { runDirectOrdersHrIdCaseTests } from "./direct-orders-hr-id-case.test.ts";
+import { runSheetTokenRotationLivenessTests } from "./sheet-token-rotation-liveness.test.ts";
 import { runSyntheticJourneysLivenessTests } from "./synthetic-journeys-liveness.test.ts";
 import { runPayrollEngineHardeningTests } from "./payroll-engine-hardening.test.ts";
 import { runPayrollSheetMappingTests } from "./payroll-sheet-mapping.test.ts";
@@ -983,6 +984,10 @@ await runTest("direct orders hr-id filters are case-insensitive", runDirectOrder
 await runTest(
   "synthetic journeys liveness (a refused dispatch must ping /fail, not a green check)",
   runSyntheticJourneysLivenessTests,
+);
+await runTest(
+  "sheet token rotation liveness (a rotation that did not rotate must ping /fail)",
+  runSheetTokenRotationLivenessTests,
 );
 await runTest("money path silent failures (a confident zero is worse than an error)", runMoneyPathSilentFailureTests);
 await runTest("payroll sheet mapping", runPayrollSheetMappingTests);
