@@ -179,11 +179,30 @@ policy):
    SMS/etc. under **Integrations** if wanted) — this is what actually pages you.
 5. Deploy. Each job's check auto-appears in the dashboard the first time it pings after step 3 —
    nothing to pre-create.
-6. **Tune each check's schedule** — auto-provisioned defaults (Simple: 1-day period, 1-hour grace)
-   are wrong for most of these jobs. For each check, switch **Schedule** to **Cron Expression**,
-   paste the matching row below, set **Time Zone** to `Africa/Cairo` (Healthchecks defaults to
-   UTC), and set the grace period. One row is deliberately **Simple** rather than a cron
-   expression — it is pinged on an interval, not at a wall-clock time:
+6. **Tune each check's schedule — run the script, do not do this by hand:**
+
+   ```bash
+   pnpm run healthchecks:sync            # dry run: print what would change
+   pnpm run healthchecks:sync --apply    # push it
+   ```
+
+   Auto-provisioned defaults (Simple: 1-day period, 1-hour grace) are wrong for most of these jobs,
+   so every check is born red and stays red until someone corrects it — and a dashboard that is
+   always red is one nobody reads. [`scripts/healthchecks-sync.mjs`](../scripts/healthchecks-sync.mjs)
+   reads the table below and makes Healthchecks match it: cron expression, `Africa/Cairo` timezone
+   (Healthchecks defaults to UTC), and grace. It is idempotent, it reads back after writing rather
+   than trusting the POST, and it changes nothing without `--apply`.
+
+   It needs `HEALTHCHECKS_API_KEY` in `.env.local` — a Healthchecks **project API key**
+   (Settings › API keys, full access), which is **not** `HEALTHCHECKS_PING_KEY`. A ping key can
+   create a check but cannot set its schedule, which is exactly why every check has been sitting on
+   defaults. The script never prints the key.
+
+   Doing it in the web UI instead — switch **Schedule** to **Cron Expression**, paste the row, set
+   **Time Zone**, set the grace — still works and is the fallback if the key is unavailable.
+
+   One row is deliberately **Simple** rather than a cron expression: it is pinged on an interval,
+   not at a wall-clock time.
 
    | Check slug | Cron expression | Suggested grace | What actually pings it |
    |---|---|---|---|
@@ -201,6 +220,14 @@ policy):
    | `phoenix-ireports360-live-poll` | **Simple**, period `5m` | 15m | the in-process poller, every tick |
    | `phoenix-ireports360-sync` | `0 6-21/3 * * *` | 2h | the in-process poller, when due |
    | `phoenix-reconcile-visits` | `0 4 * * 0` | 12h | the in-process poller, when due |
+
+   **This table is machine-read.** `scripts/healthchecks-sync.mjs` parses these rows — slug in
+   backticks, then either a backticked cron expression or a **Simple** cell naming its period, then
+   the grace as `10m` / `2h`. `tests/healthchecks-schedule-sync.test.ts` fails in CI if that stops
+   parsing, if a row loses `Africa/Cairo`, or if either Direct Orders row drifts from its live
+   cron-job.org clock.
+   Reformat the table freely, but re-run `pnpm run test` — a parser that silently matches nothing
+   turns the sync into a no-op that reports success.
 
    The fourth column is the point of the table. A slug in the code proves only that the app *would*
    ping if something called it; it says nothing about whether anything does. Every row above was
