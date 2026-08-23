@@ -7,14 +7,18 @@
 // snapshots that used to supply the non-sales half are gone as data sources, because a frozen
 // Jan–Jun figure cannot answer a question about March, or about next January.
 //
-// WHY THIS IS A RESTATED REVIEW, NOT A PAYOUT RECORD
+// WHY THIS IS A REVIEW, NOT A PAYOUT RECORD
 //
-// H1 2026 payouts were settled against the legacy `sales_records` engine and are closed (owner
-// decision, 2026-08-13: the Incentive tab moves forward to Semester 2 and does not restate H1).
-// Rebuilt from canonical, some areas and districts land in a different band than the one they
-// were actually paid in. That is the point of the rebuild — it makes the review agree with the
-// sales truth — and it is exactly why every surface rendering this must label it a restated
-// review. `REVIEW_SOURCE_NOTICE` is that label; do not render this dataset without it.
+// This was written as a RESTATEMENT warning: H1 2026 payouts were settled against the legacy
+// `sales_records` engine and are closed (owner decision, 2026-08-13: the Incentive tab moves
+// forward to Semester 2 and does not restate H1), so rebuilding H1 from canonical landed some
+// areas in a different band than the one they were actually paid in.
+//
+// That specific warning is now unreachable. REVIEW_FLOOR is "2026-07" (owner, 2026-08-23), so no
+// H1 month can be selected and the notice was describing months this module cannot render. What
+// survives is the part that is still true for EVERY window: this is built from the canonical
+// closing engine, and a band shown here is a review figure, not the record anyone was paid on.
+// `REVIEW_SOURCE_NOTICE` is that label; do not render this dataset without it.
 //
 // WHERE EACH NUMBER COMES FROM — the map the review shows on its own Coverage tab
 //
@@ -109,11 +113,17 @@ import type {
 
 export type ReviewLine = "pedia" | "cns" | "anti";
 
-/** The label every surface rendering this dataset must show. Not optional. */
+/**
+ * The label every surface rendering this dataset must show. Not optional.
+ *
+ * It must stay true for ANY window the viewer picks. The previous wording did not: it warned that
+ * H1 2026 bands here differ from what was actually paid, which stopped being reachable the moment
+ * REVIEW_FLOOR moved to July 2026 — it described months the picker no longer offers.
+ */
 export const REVIEW_SOURCE_NOTICE =
-  "Restated review — not a payout record. Rebuilt from SoS Monthly Closing, the same engine " +
-  "as Sales vs Target. H1 2026 incentives were paid against the retired sales engine and are " +
-  "closed; some bands here differ from what was actually paid.";
+  "Review, not a payout record. Rebuilt live from SoS Monthly Closing — the same engine as " +
+  "Sales vs Target — for the window you picked. Incentive payouts are settled separately, so a " +
+  "band shown here is not a payment.";
 
 /** The owner's fail thresholds. Unchanged from the workbook, and the same for all three lines. */
 export const REVIEW_THRESHOLDS = { repFailBelow: 20, dsmFailBelow: 50 } as const;
