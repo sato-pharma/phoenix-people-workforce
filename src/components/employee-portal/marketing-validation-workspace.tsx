@@ -62,7 +62,11 @@ import {
   saveValidationDraft,
   saveValidationQueue,
 } from "@/lib/marketing-requests/validation-draft-store";
-import { customerFieldEvidenceGap, type FieldEvidenceGap } from "@/lib/marketing-requests/validation-report";
+import {
+  customerFieldEvidenceGap,
+  type FieldEvidenceGap,
+  fieldEvidenceGapInput,
+} from "@/lib/marketing-requests/validation-report";
 import {
   VENUE_TYPES,
   venueRequiresDistributorCode,
@@ -337,9 +341,10 @@ type ValidatedCustomerGroup = {
   customerType: string;
   /**
    * Why this customer's validated status is not field evidence, or null when it is. Set when EVERY
-   * link behind it came from the 2026-07-02 history backfill or from a desk entry — i.e. nobody has
-   * ever stood in front of it. One genuine field capture among the links clears it, because the
-   * customer then does have evidence.
+   * link behind it came from the 2026-07-02 history backfill or from a desk entry AND none of those
+   * links has since been given a complete capture on either half — i.e. nobody has ever stood in
+   * front of the customer or of the shop it was recorded at. One genuine capture among the links
+   * clears it, whichever half it landed on.
    */
   fieldEvidenceGap: FieldEvidenceGap | null;
   /** True when a Super Admin validated this at the desk rather than a rep capturing it in the field. */
@@ -1843,7 +1848,7 @@ export function MarketingValidationWorkspace() {
     // "every link inferred", and only the finished group knows that.
     return Array.from(groups.values()).map((group) => ({
       ...group,
-      fieldEvidenceGap: customerFieldEvidenceGap(group.rows),
+      fieldEvidenceGap: customerFieldEvidenceGap(group.rows.map(fieldEvidenceGapInput)),
     }));
   }, [workspace.rows]);
   /**
@@ -1876,7 +1881,7 @@ export function MarketingValidationWorkspace() {
     }
     return Array.from(groups.values()).map((group) => ({
       ...group,
-      fieldEvidenceGap: customerFieldEvidenceGap(group.rows),
+      fieldEvidenceGap: customerFieldEvidenceGap(group.rows.map(fieldEvidenceGapInput)),
     }));
   }, [workspace.rows]);
   const selectedValidatedGroup = useMemo(

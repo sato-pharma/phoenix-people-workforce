@@ -689,6 +689,14 @@ export type MarketingCustomerDatabaseRow = {
   customerAddress: string | null;
   customerArea: string | null;
   customerCode: string;
+  /**
+   * The customer row's evidence AS IT STANDS NOW. Carried beside `deskValidated` and
+   * `inferredFromHistory` because those two are frozen the day the link is written while this is
+   * not: a customer can be completed on a later visit, and the badge must not go on calling a rep
+   * who made that visit a liar. `customerValidationPhoto` is the photo's NAME and says nothing
+   * about the location or the timestamp, so it cannot stand in for this.
+   */
+  customerEvidenceStatus: MarketingEvidenceStatus;
   customerGovernorate: string | null;
   customerId: string;
   customerName: string;
@@ -719,6 +727,12 @@ export type MarketingCustomerDatabaseRow = {
   pharmacyArea: string | null;
   pharmacyCode: string;
   pharmacyDistributorCodeId: string | null;
+  /**
+   * The venue's evidence as it stands now. `complete` means a rep photographed this shop on site —
+   * which since #2352 can happen years after the link was written, and is often the ONLY capture
+   * still obtainable, because the customer is rarely at the shop when a rep calls.
+   */
+  pharmacyEvidenceStatus: MarketingEvidenceStatus;
   pharmacyGovernorate: string | null;
   pharmacyId: string;
   pharmacyName: string;
