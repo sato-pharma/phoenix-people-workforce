@@ -262,18 +262,33 @@ const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // `create or replace` file, EXISTENCE IS NOT ENOUGH: the function's pg_proc.prosrc was matched
   // against a string only the new body contains. That is the single check that separated the 19
   // files below from the 6 that turned out to be genuinely missing on staging (applied 2026-08-23
-  // and now recorded, so they need no entry here) and the 1 still missing on production.
+  // and now recorded, so they need no entry here) and the 1 then still missing on production
+  // (applied the same day once the owner approved it — see RESOLVED below).
   //
-  // STILL DELIBERATELY FAILING, and it is the only flag left: 20260813120000_ci_schema_shape_
-  // private_usage.sql on PRODUCTION. phx_ci_schema_shape() is live there with the OLD body —
-  // prosrc carries neither `private_schema_usage` nor `policies_using_private_schema`. It is the
-  // DETECTOR for the `private`-schema USAGE gap that made every staging RLS test vacuous for
-  // three weeks, so a silenced entry here would be the exact mistake this list must never make.
-  // Left red until an owner approves the production apply (AGENTS.md §6). The underlying gap is
-  // currently CLOSED on both projects — pg_namespace.nspacl on `private` reads
-  // {postgres=UC, authenticated=U, service_role=U} and has_schema_privilege('authenticated',
-  // 'private','USAGE') is true, with 67 policies depending on it — so what is missing is the
-  // alarm, not the grant.
+  // RESOLVED 2026-08-23 — 20260813120000_ci_schema_shape_private_usage.sql is APPLIED ON
+  // PRODUCTION, and needs no entry in this list. apply_migration recorded it as
+  // 20260823122837/20260813120000_ci_schema_shape_private_usage; that name contains the file's
+  // version, so the substring rule above matches it and the check passes on its own merits.
+  //
+  // Kept as a record, because the six hours it spent failing are the point. It is the DETECTOR
+  // for the `private`-schema USAGE gap that made every staging RLS test vacuous for three weeks,
+  // so an entry here would have been the exact mistake this list must never make. It was left
+  // red rather than silenced until an owner approved the production apply (AGENTS.md §6).
+  //
+  // Verified on production by prosrc, not by the ledger: length 4351 -> 5470, md5 589516e2... ->
+  // b1092463..., BYTE-FOR-BYTE IDENTICAL to the staging copy applied from the same file, with
+  // both `private_schema_usage` and `policies_using_private_schema` present. Calling it returns
+  // private_schema_usage {anon:false, authenticated:true, service_role:true} and
+  // policies_using_private_schema: 67 — the alarm now measures the gap it was written for.
+  // proacl unchanged at {postgres=X/postgres, service_role=X/postgres}; still stable, still
+  // security invoker.
+  //
+  // A caution for whoever reads this next: the SCHEMA-SHAPE leg of the same workflow is still
+  // red on production, and nothing in THIS file can clear it. That is missing_primary_key
+  // (severity "error" in check-schema-shape.ts) on 8 zz_* ad-hoc backup tables. All 8 hold
+  // relacl {postgres, service_role} — no anon, no authenticated — so it is not a repeat of the
+  // 2026-08-01 anon-exposure incident; they are someone's pre-surgery state and dropping them is
+  // an owner decision. Do not read "drift check red" as "a migration is missing".
   //
   // TWO MECHANISMS produced all 19, and neither is a fault in this check:
   //   1. Applied via MCP apply_migration under a slug that is not the filename's slug. The
