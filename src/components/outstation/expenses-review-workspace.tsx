@@ -346,8 +346,25 @@ export function ExpensesReviewWorkspace() {
         return;
       }
 
+      // The carried-forward and stranded figures are named separately rather than folded into the
+      // one total. An expense approved in an earlier month is paid here because its own month can
+      // no longer be reopened — but it is not this month's spend, and anyone reconciling payroll
+      // needs to see which is which. Stranded money is money that still could not be paid at all.
+      const carriedForward = payload.carriedForwardTotal ?? 0;
+      const stranded = payload.strandedTotal ?? 0;
       setExpenseApprovalMessage(
-        `${payload.importedEmployees ?? 0} employees updated in payroll ${month}/${year}. Imported approved outstation expenses ${formatEGP(payload.importedTotal ?? 0)}.`,
+        [
+          `${payload.importedEmployees ?? 0} employees updated in payroll ${month}/${year}.`,
+          `Imported approved outstation expenses ${formatEGP(payload.importedTotal ?? 0)}.`,
+          carriedForward > 0
+            ? `Of that, ${formatEGP(carriedForward)} was carried forward from earlier months (${payload.carriedForwardRows ?? 0} claims).`
+            : "",
+          stranded > 0
+            ? `${formatEGP(stranded)} still could not be paid — ${payload.strandedEmployees ?? 0} employees are not in this payroll.`
+            : "",
+        ]
+          .filter(Boolean)
+          .join(" "),
       );
       window.setTimeout(() => {
         window.location.href = `/payroll?batchId=${payload.targetBatch.id}`;

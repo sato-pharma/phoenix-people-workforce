@@ -28,6 +28,18 @@ import { join } from "node:path";
  * actually been harmed. That is luck — the batch-status gate blocks it — not design, and the gate is
  * about *when* the import may run, not *what* it does. This test guards the "what".
  *
+ * CARRY FORWARD (owner decision, 2026-08-24) is guarded here too. An approved expense whose own
+ * month has closed can never be paid from that month again — a closed batch is not reopened — so it
+ * has to ride along with the next batch that is open. A filter pinned to the exact payout period
+ * strands that money permanently, and silently: production had ~EGP 34,299 of approved, unimported
+ * expenses sitting across 2026-02..2026-07 with no route to anyone's salary. Rehearsed on staging
+ * across three periods plus a future one — the future claim was correctly left unpaid, and a second
+ * run added nothing.
+ *
+ * The split in the return value is guarded for the same reason the amounts are: money carried in
+ * from April must not appear in a single total that reads as July's spend, and money that still
+ * could not be paid (a leaver in no later batch) must be named rather than silently skipped.
+ *
  * Deliberately reads the newest migration that defines the function rather than pinning a byte
  * range: a later migration that legitimately rewrites the body still gets checked, and a whitespace
  * change never produces a false failure.
@@ -90,26 +102,51 @@ export function runOutstationImportIsAdditiveTests() {
   // This is what makes an additive write safe to re-run. Without it a second call pays every
   // approved expense a second time.
   //
-  // Scoped to the `approved_totals` CTE ON PURPOSE, and this is not pedantry. The same predicate
-  // also appears in `marked_expenses`, where it stops an earlier import's stamp being overwritten —
-  // useful, but it does nothing to prevent double payment. Only the copy in `approved_totals`
-  // decides what gets SUMMED into salaries. An earlier version of this test searched the whole
-  // function body and passed happily with the `approved_totals` filter deleted, because it found the
-  // phrase in `marked_expenses` instead.
+  // Scoped to the `importable` CTE ON PURPOSE, and this is not pedantry. The same predicate can also
+  // appear in `marked_expenses`, where it stops an earlier import's stamp being overwritten —
+  // useful, but it does nothing to prevent double payment. Only the copy in `importable` decides
+  // what gets SUMMED into salaries. An earlier version of this test searched the whole function body
+  // and passed happily with that filter deleted, because it found the phrase elsewhere.
+  const importableStart = code.search(/importable\s+as\s*\(/i);
   const approvedTotalsStart = code.search(/approved_totals\s+as\s*\(/i);
-  const matchedTotalsStart = code.search(/matched_totals\s+as\s*\(/i);
   assert.ok(
-    approvedTotalsStart >= 0 && matchedTotalsStart > approvedTotalsStart,
-    `${newest}: could not locate the approved_totals CTE ahead of matched_totals — the shape has drifted`,
+    importableStart >= 0 && approvedTotalsStart > importableStart,
+    `${newest}: could not locate the importable CTE ahead of approved_totals — the shape has drifted`,
   );
-  const approvedTotals = code.slice(approvedTotalsStart, matchedTotalsStart);
+  const importable = code.slice(importableStart, approvedTotalsStart);
 
   assert.ok(
-    /imported_to_payroll_at\s+is\s+null/i.test(approvedTotals) && /imported_payroll_batch_id\s+is\s+null/i.test(approvedTotals),
-    `${newest}: the approved_totals CTE must exclude rows already stamped as imported ` +
+    /imported_to_payroll_at\s+is\s+null/i.test(importable) && /imported_payroll_batch_id\s+is\s+null/i.test(importable),
+    `${newest}: the importable CTE must exclude rows already stamped as imported ` +
       "(`imported_to_payroll_at is null` and `imported_payroll_batch_id is null`), or re-running pays the same expense twice. " +
       "The identical filter in marked_expenses does NOT satisfy this — it guards lineage, not double payment",
   );
+
+  // ---- CARRY FORWARD: earlier unpaid periods must be reachable. ---------------------------------
+  // Owner decision 2026-08-24. An approved expense whose own month has closed can never be paid
+  // from that month again — the batch cannot be reopened — so it has to ride along with the next
+  // open batch. A filter pinned to the exact period strands that money permanently and silently.
+  assert.ok(
+    /<=\s*v_target_period/i.test(importable),
+    `${newest}: the importable CTE must accept periods at or before the target ` +
+      "(`<= v_target_period`), otherwise approved expenses from closed months can never be paid at all",
+  );
+
+  assert.ok(
+    !/payout_month\s*=\s*p_month/i.test(importable),
+    `${newest}: the importable CTE pins to the exact payout month again — that is the bug carry-forward ` +
+      "exists to fix, because a closed month's batch can never be reopened to pay it",
+  );
+
+  // The split must survive into the return value. Folding carried-forward money into one unlabelled
+  // total is how an older month's expense silently shows up as if it were this month's.
+  for (const key of ["current_period_total", "carried_forward_total", "stranded_total"]) {
+    assert.ok(
+      new RegExp(`'${key}'`).test(code),
+      `${newest}: the return value must report '${key}' — without the split nobody can tell ` +
+        "this month's expenses from money carried in from an earlier one, or see what still could not be paid",
+    );
+  }
 
   // ---- CALLER CONTRACT: the gate message keeps the substring the app matches on. ----------------
   // src/lib/outstation/expenses.ts turns this into a PayrollConflictError by substring test. If the
