@@ -3,14 +3,20 @@
  *
  * ## Why this is not a one-liner
  *
- * Measured against production on 2026-08-22, across 175 active employees:
+ * Measured against production on 2026-08-23, across all 175 rows of
+ * `employees.mobile_number`:
  *
- * | shape                                   | people | share |
+ * | shape                                   | rows   | share |
  * | --------------------------------------- | ------ | ----- |
  * | 10 digits, leading zero LOST (`1012…`)  | 124    | 70.9% |
  * | no number on file                       | 26     | 14.9% |
  * | proper local 11 digits (`01012…`)       | 18     | 10.3% |
  * | two numbers in one field, or malformed  | 7      | 4.0%  |
+ *
+ * The denominator is every employee row, not the active subset — until 2026-08-23 this
+ * line read “175 active employees”, which conflated the two (only 112 rows are
+ * `employment_status = 'active'`). Do not narrow it back: narrowing does not soften the
+ * picture, it sharpens it — 88 of those 112 lost the leading zero, nearly eight in ten.
  *
  * So the raw column is dialable as-is for almost nobody: seven in ten rows lost their
  * leading zero (the classic spreadsheet-import-as-number), and a handful hold two

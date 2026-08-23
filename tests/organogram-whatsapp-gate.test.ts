@@ -151,7 +151,7 @@ export function runOrganogramWhatsAppGateTests() {
   assert.equal(
     mobileColumns[0].text,
     true,
-    "the mobile column must be text-formatted — an Excel number cell eats the leading zero, which is how 124 of the 175 stored numbers were damaged before they ever reached this app",
+    "the mobile column must be text-formatted — an Excel number cell eats the leading zero, which is how 124 of the 175 rows in employees.mobile_number were damaged before they ever reached this app",
   );
 
   // THE LOCK. Every fixture row carries a sentinel mobile the row type does not declare.

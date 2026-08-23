@@ -10,8 +10,9 @@ export function runOrganogramWhatsAppNumberTests() {
   const EXPECTED = "201012345678";
 
   // The three shapes production actually holds. The first is the common case by a wide
-  // margin (124 of 175 active employees on 2026-08-22) — a leading zero lost to a
-  // spreadsheet import, which is why it must be accepted rather than treated as junk.
+  // margin (124 of all 175 employee rows on 2026-08-23; 88 of the 112 active ones) — a
+  // leading zero lost to a spreadsheet import, which is why it must be accepted rather
+  // than treated as junk.
   assert.equal(toWhatsAppNumber("1012345678"), EXPECTED, "10 digits, leading zero lost");
   assert.equal(toWhatsAppNumber("01012345678"), EXPECTED, "11-digit local form");
   assert.equal(toWhatsAppNumber("201012345678"), EXPECTED, "12-digit international form");
