@@ -174,6 +174,11 @@ file holding the full account, under
   husk** — `fs.rmSync` EPERMs on dangling pnpm junctions. Use `rmdir /s /q`, then re-check the folder:
   an OLD `CreationTime` proves it never went. `repo-doctor-strip-idle-cannot-run-with-sessions-open` ·
   `repo-doctor-fix-cannot-delete-a-wt-husk-pnpm-junctions-eperm`
+- **repo-doctor's RETIRABLE verdict names the branch a folder HAD at scan time** — a parallel session
+  can repoint the tree first, and the report prints a paste-ready `git worktree remove` beside it, so
+  `--force` eats the new branch's work. Re-read `status -sb -uall` and `git log origin/main..HEAD` in
+  the worktree at the moment of removal, never the report: on 2026-08-23 one listed retirable on merged
+  #2362 sat on a NEW branch with 90 uncommitted lines and an unpushed migration, and opened #2364.
 - **Self-removing a worktree MUTES its own session-end guard.**
   `self-removing-a-worktree-mutes-its-own-session-end-guard`
 
