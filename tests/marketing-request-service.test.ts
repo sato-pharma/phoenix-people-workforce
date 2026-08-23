@@ -24,6 +24,7 @@ import {
   resolveMarketingRequestUuid,
 } from "@/lib/marketing-requests/service";
 import type { MarketingRequest, MarketingRequestCreateDraft } from "@/lib/marketing-requests/types";
+import { isCustomerInferredFromHistory } from "@/lib/marketing-requests/validation-report";
 
 const baseInput: MarketingRequestCreateDraft = {
   customerId: "11111111-1111-1111-1111-111111111111",
@@ -170,6 +171,37 @@ function fakeCcSupabase(rows: Array<{ hr_id: string; role?: string }>) {
 const ccRequest = { areaId: 30, id: "REQ-CC", lineId: 7 } as unknown as MarketingRequest;
 
 export async function runMarketingRequestServiceTests() {
+  // ── The validation report's "inferred, not GPS field-validated" badge ────────────────────────
+  //
+  // Production, 2026-08-23: 154 active links carry `system_validated` from the 2026-07-02 backfill
+  // across 82 `ROI-C-…` customers whose own rows are still `pending` / `evidence_status = missing`
+  // with no photo. The report labels a row by its LINK, so those read as field-proven. These pin
+  // the rule that decides the badge — in BOTH directions, because the "some" reading would call a
+  // rep who really made the visit a liar.
+  const inferredLink = { inferredFromHistory: true };
+  const capturedLink = { inferredFromHistory: false };
+
+  assert.equal(
+    isCustomerInferredFromHistory([inferredLink, inferredLink, inferredLink]),
+    true,
+    "a customer whose every link came from the backfill must be badged — nobody has ever stood in front of it, and without the badge it reads exactly like this morning's capture",
+  );
+  assert.equal(
+    isCustomerInferredFromHistory([inferredLink, capturedLink]),
+    false,
+    "ONE genuine field capture must clear the badge — reading this as \"some\" would tell a rep who actually made the trip that nobody ever visited the customer, which is a worse lie than the one the badge exists to fix",
+  );
+  assert.equal(
+    isCustomerInferredFromHistory([capturedLink]),
+    false,
+    "a purely field-captured customer must never be badged",
+  );
+  assert.equal(
+    isCustomerInferredFromHistory([]),
+    false,
+    "no links means no validation claim on screen, so there is nothing for the badge to qualify",
+  );
+
   const serviceSource = source("src/lib/marketing-requests/service.ts");
   const policySource = source("src/lib/notifications/policy.ts");
   const telegramTemplatesSource = source("src/lib/notifications/telegram-templates.ts");
