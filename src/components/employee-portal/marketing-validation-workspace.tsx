@@ -26,7 +26,7 @@ import {
   readEvidenceLocationStamp,
   resolveEvidenceLocationStamp,
 } from "@/components/outstation/evidence-watermark";
-import { InferredHistoryBadge } from "@/components/marketing-requests/inferred-history-badge";
+import { NotFieldValidatedBadge } from "@/components/marketing-requests/not-field-validated-badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -62,7 +62,7 @@ import {
   saveValidationDraft,
   saveValidationQueue,
 } from "@/lib/marketing-requests/validation-draft-store";
-import { isCustomerInferredFromHistory } from "@/lib/marketing-requests/validation-report";
+import { customerFieldEvidenceGap, type FieldEvidenceGap } from "@/lib/marketing-requests/validation-report";
 import {
   VENUE_TYPES,
   venueRequiresDistributorCode,
@@ -335,14 +335,15 @@ type LocationTarget = {
 type ValidatedCustomerGroup = {
   customerName: string;
   customerType: string;
+  /**
+   * Why this customer's validated status is not field evidence, or null when it is. Set when EVERY
+   * link behind it came from the 2026-07-02 history backfill or from a desk entry — i.e. nobody has
+   * ever stood in front of it. One genuine field capture among the links clears it, because the
+   * customer then does have evidence.
+   */
+  fieldEvidenceGap: FieldEvidenceGap | null;
   /** True when a Super Admin validated this at the desk rather than a rep capturing it in the field. */
   isAdminValidated: boolean;
-  /**
-   * True when EVERY link behind this customer was validated by the 2026-07-02 history backfill —
-   * i.e. nobody has ever stood in front of it. One genuine field capture among the links clears
-   * this, because the customer then does have evidence.
-   */
-  isInferredFromHistory: boolean;
   key: string;
   rows: MarketingValidationReportRow[];
   status: MarketingValidationStatus;
@@ -1787,10 +1788,12 @@ export function MarketingValidationWorkspace() {
         groups.set(key, {
           customerName: row.customer.displayName,
           customerType: row.customer.customerType,
+          // Placeholder: recomputed over the whole group below, because a per-row value here would
+          // be wrong for any customer whose links disagree.
+          fieldEvidenceGap: null,
           // A desk entry is the only path that stamps validated_at, so it is the honest signal for
           // "an admin typed this" — never a field capture.
           isAdminValidated: Boolean(row.customer.validatedAt),
-          isInferredFromHistory: row.inferredFromHistory,
           key,
           rows: [row],
           status: row.validationStatus,
@@ -1801,7 +1804,7 @@ export function MarketingValidationWorkspace() {
     // "every link inferred", and only the finished group knows that.
     return Array.from(groups.values()).map((group) => ({
       ...group,
-      isInferredFromHistory: isCustomerInferredFromHistory(group.rows),
+      fieldEvidenceGap: customerFieldEvidenceGap(group.rows),
     }));
   }, [workspace.rows]);
   /**
@@ -1825,8 +1828,8 @@ export function MarketingValidationWorkspace() {
       groups.set(key, {
         customerName: row.customer.displayName,
         customerType: row.customer.customerType,
+        fieldEvidenceGap: null,
         isAdminValidated: Boolean(row.customer.validatedAt),
-        isInferredFromHistory: row.inferredFromHistory,
         key,
         rows: [row],
         status: row.validationStatus,
@@ -1834,7 +1837,7 @@ export function MarketingValidationWorkspace() {
     }
     return Array.from(groups.values()).map((group) => ({
       ...group,
-      isInferredFromHistory: isCustomerInferredFromHistory(group.rows),
+      fieldEvidenceGap: customerFieldEvidenceGap(group.rows),
     }));
   }, [workspace.rows]);
   const selectedValidatedGroup = useMemo(
@@ -3219,7 +3222,7 @@ export function MarketingValidationWorkspace() {
                               <div className="mt-1 flex flex-wrap items-center gap-2">
                                 <span className="text-[11px] font-medium capitalize text-slate-500">{group.customerType}</span>
                                 <StatusBadge status={group.status} />
-                                {group.isInferredFromHistory ? <InferredHistoryBadge /> : null}
+                                {group.fieldEvidenceGap ? <NotFieldValidatedBadge reason={group.fieldEvidenceGap} /> : null}
                                 {group.isAdminValidated ? <AdminValidatedBadge /> : null}
                                 {untrackedVendorCodes(group.rows).length > 0 ? <UntrackedCodeBadge /> : null}
                               </div>
@@ -3274,7 +3277,7 @@ export function MarketingValidationWorkspace() {
                                 <div className="mt-1 flex flex-wrap items-center gap-1.5">
                                   <span className="text-[11px] font-medium capitalize text-slate-500">{group.customerType}</span>
                                   <StatusBadge status={group.status} />
-                                  {group.isInferredFromHistory ? <InferredHistoryBadge /> : null}
+                                  {group.fieldEvidenceGap ? <NotFieldValidatedBadge reason={group.fieldEvidenceGap} /> : null}
                                   {group.isAdminValidated ? <AdminValidatedBadge /> : null}
                                   {untrackedVendorCodes(group.rows).length > 0 ? <UntrackedCodeBadge /> : null}
                                 </div>

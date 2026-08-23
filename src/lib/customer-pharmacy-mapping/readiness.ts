@@ -139,6 +139,33 @@ export function isInferredFromHistory(validationNotes: string | null | undefined
   return (validationNotes ?? "").includes(INFERRED_HISTORY_MARKER);
 }
 
+/**
+ * A DESK validation writes this into `validation_notes`: an admin validated on someone's behalf and
+ * picked the location from a map search instead of a rep capturing it on site. Same absence of field
+ * evidence as the backfill marker above, different origin — and NOT caught by it, because the
+ * wording differs ("no field GPS or live photo" vs "not GPS field-validated").
+ *
+ * Production 2026-08-23: 11 links across 6 customers carry it, which is EVERY `sfe_validated` link
+ * there is. Five of those customers hold a coordinate and no photo, so they read as field-proven
+ * while the coordinate came off a map at a desk, not off a phone in the street.
+ */
+export const DESK_VALIDATION_MARKER = "no field GPS or live photo";
+
+export function isDeskValidated(validationNotes: string | null | undefined): boolean {
+  return (validationNotes ?? "").includes(DESK_VALIDATION_MARKER);
+}
+
+/**
+ * The union the badges care about: this link carries NO field evidence, whatever put it there.
+ *
+ * Kept separate from `isInferredFromHistory`, which still means the 2026-07-02 backfill and nothing
+ * else — the Customer Pharmacy Mapping page's "Inferred" filter and badge are about ORIGIN, and
+ * widening them would silently relabel 11 desk links as backfill rows.
+ */
+export function isNotFieldValidated(validationNotes: string | null | undefined): boolean {
+  return isInferredFromHistory(validationNotes) || isDeskValidated(validationNotes);
+}
+
 function isValidatedStatus(status: CustomerPharmacyValidationStatus): boolean {
   return VALIDATED_STATUSES.has(status);
 }

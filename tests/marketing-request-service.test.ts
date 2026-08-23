@@ -24,7 +24,7 @@ import {
   resolveMarketingRequestUuid,
 } from "@/lib/marketing-requests/service";
 import type { MarketingRequest, MarketingRequestCreateDraft } from "@/lib/marketing-requests/types";
-import { isCustomerInferredFromHistory } from "@/lib/marketing-requests/validation-report";
+import { customerFieldEvidenceGap } from "@/lib/marketing-requests/validation-report";
 
 const baseInput: MarketingRequestCreateDraft = {
   customerId: "11111111-1111-1111-1111-111111111111",
@@ -178,29 +178,58 @@ export async function runMarketingRequestServiceTests() {
   // with no photo. The report labels a row by its LINK, so those read as field-proven. These pin
   // the rule that decides the badge — in BOTH directions, because the "some" reading would call a
   // rep who really made the visit a liar.
-  const inferredLink = { inferredFromHistory: true };
-  const capturedLink = { inferredFromHistory: false };
+  const inferredLink = { deskValidated: false, inferredFromHistory: true };
+  const deskLink = { deskValidated: true, inferredFromHistory: false };
+  const capturedLink = { deskValidated: false, inferredFromHistory: false };
 
   assert.equal(
-    isCustomerInferredFromHistory([inferredLink, inferredLink, inferredLink]),
-    true,
+    customerFieldEvidenceGap([inferredLink, inferredLink, inferredLink]),
+    "inferred",
     "a customer whose every link came from the backfill must be badged — nobody has ever stood in front of it, and without the badge it reads exactly like this morning's capture",
   );
   assert.equal(
-    isCustomerInferredFromHistory([inferredLink, capturedLink]),
-    false,
+    customerFieldEvidenceGap([deskLink, deskLink]),
+    "desk",
+    "a customer validated only at a desk must be badged too — that is EVERY sfe_validated link in production, five of whose customers hold a map-search coordinate and no photo, and so read as field-proven while nobody ever went",
+  );
+  assert.equal(
+    customerFieldEvidenceGap([inferredLink, deskLink]),
+    "mixed",
+    "ROI-C-7986552D8DC1 is exactly this shape after the 2026-08-21 owner merge — one backfill link plus two desk links — and naming it either origin alone would be half wrong",
+  );
+  assert.equal(
+    customerFieldEvidenceGap([inferredLink, capturedLink]),
+    null,
     "ONE genuine field capture must clear the badge — reading this as \"some\" would tell a rep who actually made the trip that nobody ever visited the customer, which is a worse lie than the one the badge exists to fix",
   );
   assert.equal(
-    isCustomerInferredFromHistory([capturedLink]),
-    false,
+    customerFieldEvidenceGap([deskLink, capturedLink]),
+    null,
+    "a desk link beside a real capture clears it for the same reason — the customer does have field evidence, whatever the other link says",
+  );
+  assert.equal(
+    customerFieldEvidenceGap([capturedLink]),
+    null,
     "a purely field-captured customer must never be badged",
   );
   assert.equal(
-    isCustomerInferredFromHistory([]),
-    false,
+    customerFieldEvidenceGap([]),
+    null,
     "no links means no validation claim on screen, so there is nothing for the badge to qualify",
   );
+
+  // Both screens must render the SHARED badge. Two screens each carrying their own copy is exactly
+  // how one of them ends up silently claiming field evidence the other one denies.
+  for (const [label, rel] of [
+    ["Customer Database", "src/components/employee-portal/marketing-customer-database.tsx"],
+    ["Validation Workspace", "src/components/employee-portal/marketing-validation-workspace.tsx"],
+  ] as const) {
+    assert.match(
+      source(rel),
+      /marketing-requests\/not-field-validated-badge/,
+      `the ${label} must import the shared not-field-validated badge`,
+    );
+  }
 
   const serviceSource = source("src/lib/marketing-requests/service.ts");
   const policySource = source("src/lib/notifications/policy.ts");

@@ -602,6 +602,12 @@ export type MarketingValidationLegacyPharmacyInput = {
 
 export type MarketingValidationReportRow = {
   customer: MarketingCustomer;
+  /**
+   * True when this link was validated at a desk — an admin picked the location from a map search
+   * rather than a rep capturing it on site. Every `sfe_validated` link in production is one of
+   * these, so without it the screens have no way to tell a map pin from a street capture.
+   */
+  deskValidated: boolean;
   /** Null for a venue with no distributor account. */
   distributorCode: MarketingPharmacyDistributorCode | null;
   distributorName: string | null;
@@ -666,6 +672,11 @@ export type MarketingCustomerDatabaseRow = {
   customerPhone: string | null;
   customerType: MarketingCustomerType;
   customerValidationPhoto: string | null;
+  /**
+   * True when this link was validated at a desk from a map search rather than captured on site.
+   * Pairs with `inferredFromHistory`: both mean "no field evidence", from different origins.
+   */
+  deskValidated: boolean;
   /**
    * All four distributor columns are null together, and only for a venue with no distributor
    * account. Render them as the venue type rather than as a blank or a zero — the row is complete,

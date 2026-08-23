@@ -14,13 +14,14 @@ import {
   PortalResponsiveDataList,
   PortalSection,
 } from "@/components/employee-portal/portal-primitives";
-import { InferredHistoryBadge } from "@/components/marketing-requests/inferred-history-badge";
+import { LinkFieldEvidenceBadge, NotFieldValidatedBadge } from "@/components/marketing-requests/not-field-validated-badge";
 import { LoadingSpinner } from "@/components/ui/loading-state";
 import type {
   MarketingCustomerDatabaseRow,
   MarketingCustomerDatabaseWorkspace,
   MarketingValidationStatus,
 } from "@/lib/marketing-requests/types";
+import { customerFieldEvidenceGap } from "@/lib/marketing-requests/validation-report";
 import { venueCanAttributeSales, venueTypeLabel } from "@/lib/venues/venue-type";
 
 const PAGE_SIZE = 25;
@@ -97,6 +98,8 @@ function VendorCodeCell({
 }
 
 function CustomerRowCard({ row }: { row: MarketingCustomerDatabaseRow }) {
+  // One card = one LINK, so the gap is decided over that single link rather than over a group.
+  const fieldEvidenceGap = customerFieldEvidenceGap([row]);
   return (
     <PortalRecordCard
       accent={row.validationStatus === "rejected" ? "rose" : row.validationStatus === "pending" ? "amber" : "emerald"}
@@ -119,9 +122,9 @@ function CustomerRowCard({ row }: { row: MarketingCustomerDatabaseRow }) {
           right-aligned beside the status pill crowds a phone card, and the badge belongs next to
           the fields anyway: the status pill is the LINK's, and this is what explains how it can
           say "system validated" while the customer's evidence photo column is empty. */}
-      {row.inferredFromHistory ? (
+      {fieldEvidenceGap ? (
         <div className="mb-2">
-          <InferredHistoryBadge />
+          <NotFieldValidatedBadge reason={fieldEvidenceGap} />
         </div>
       ) : null}
       <PortalRecordFields
@@ -291,7 +294,7 @@ export function MarketingCustomerDatabase() {
                     <span className="inline-flex flex-col items-start gap-1">
                       <Badge variant={statusVariant(row.validationStatus)}>{row.validationStatus.replace(/_/g, " ")}</Badge>
                       {/* Stacked, not inline: this column already sits at the far right of a wide table. */}
-                      {row.inferredFromHistory ? <InferredHistoryBadge /> : null}
+                      <LinkFieldEvidenceBadge link={row} />
                     </span>
                   </td>
                 </tr>
