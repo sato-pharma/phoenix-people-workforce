@@ -1291,10 +1291,16 @@ export async function importApprovedExpensesToPayroll(input: {
   }
 
   const result = (importResult ?? null) as {
+    carried_forward_rows?: number;
+    carried_forward_total?: number;
+    current_period_total?: number;
     imported_employees?: number;
     imported_total?: number;
     locked_expenses?: number;
     matched_employees?: string[];
+    stranded_employees?: number;
+    stranded_rows?: number;
+    stranded_total?: number;
     target_batch_id?: string | null;
     target_batch_month?: number | null;
     target_batch_year?: number | null;
@@ -1303,11 +1309,17 @@ export async function importApprovedExpensesToPayroll(input: {
   if (!result?.target_batch_id) {
     invalidateExecutiveDashboardCache("expenses imported to payroll", ["expenses", "payroll"]);
     return {
+      carriedForwardRows: 0,
+      carriedForwardTotal: 0,
+      currentPeriodTotal: 0,
       importedEmployees: 0,
       importedTotal: 0,
       lockedExpenses: 0,
       matchedEmployees: [],
       saved: savedExpenses.length,
+      strandedEmployees: 0,
+      strandedRows: 0,
+      strandedTotal: 0,
       targetBatch: null,
     };
   }
@@ -1318,11 +1330,22 @@ export async function importApprovedExpensesToPayroll(input: {
   const batchMonth = Number(result.target_batch_month);
   const batchYear = Number(result.target_batch_year);
   return {
+    // Carried-forward money is reported separately from this month's on purpose. Folding the two
+    // into one total is how an expense approved in, say, April silently shows up looking like a
+    // July claim — and the person reconciling payroll has no way to notice.
+    carriedForwardRows: Number(result.carried_forward_rows ?? 0),
+    carriedForwardTotal: Number(result.carried_forward_total ?? 0),
+    currentPeriodTotal: Number(result.current_period_total ?? 0),
     importedEmployees: Number(result.imported_employees ?? 0),
     importedTotal: Number(result.imported_total ?? 0),
     lockedExpenses: Number(result.locked_expenses ?? 0),
     matchedEmployees,
     saved: savedExpenses.length,
+    // Approved and unpaid, but the employee is not in this batch — a leaver, typically. Surfaced so
+    // it can be chased rather than disappearing the way it did before carry-forward existed.
+    strandedEmployees: Number(result.stranded_employees ?? 0),
+    strandedRows: Number(result.stranded_rows ?? 0),
+    strandedTotal: Number(result.stranded_total ?? 0),
     targetBatch: {
       id: batchId,
       month: batchMonth,
