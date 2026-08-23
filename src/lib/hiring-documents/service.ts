@@ -12,6 +12,7 @@ import {
   removeHiringDocumentFiles,
   uploadHiringDocumentFile,
 } from "@/lib/hiring-documents/file-storage";
+import { resolveHiringDocumentNotes } from "@/lib/hiring-documents/status-notes";
 import { summarizeHiringDocumentReadiness } from "@/lib/recruitment/onboarding-metrics";
 import type {
   AttachHiringDocumentFilesInput,
@@ -456,6 +457,11 @@ export async function updateHiringDocumentStatus(
   if (statusReadError) throw new Error(statusReadError.message);
   const before = existingStatus as { due_date: string | null; notes: string | null; status: string } | null;
 
+  // An absent `notes` key means "leave the cell alone", not "clear it" — see status-notes.ts. The
+  // UI's status payload carries no notes at all, so the previous unconditional write blanked the
+  // cell on every Mark submitted, Mark missing and deadline save.
+  const nextNotes = resolveHiringDocumentNotes(before?.notes, input.notes);
+
   const { error } = await getSupabaseAdmin()
     .from("hiring_document_statuses")
     .upsert(
@@ -463,7 +469,7 @@ export async function updateHiringDocumentStatus(
         document_id: documentId,
         due_date: dueDate,
         employee_hr_id: employeeHrId,
-        notes: cleanText(input.notes),
+        notes: nextNotes,
         status: input.status,
         updated_at: new Date().toISOString(),
       },
@@ -478,7 +484,7 @@ export async function updateHiringDocumentStatus(
     actorLoginId: hiringAuditActor(access),
     entityId: `${employeeHrId}:${documentId}`,
     entityType: "hiring_document_status",
-    newValues: { dueDate, notes: cleanText(input.notes), status: input.status },
+    newValues: { dueDate, notes: nextNotes, status: input.status },
     oldValues: before ? { dueDate: before.due_date, notes: before.notes, status: before.status } : {},
     summary: `${target.documentName} for ${target.employeeName} set to ${input.status}`
       + `${dueDate ? ` (deadline ${dueDate})` : ""}`
@@ -923,10 +929,14 @@ export async function getHiringDocumentFileForDownload(access: AccessContext, fi
 }
 
 /**
- * Upsert the pair to `submitted` without disturbing the notes or the deadline already on it.
+ * Upsert the pair to `submitted`, keeping whatever note is on it and clearing the deadline.
  *
- * `updateHiringDocumentStatus` cannot be reused here: it writes `notes` from its input, so calling
- * it would blank whatever HR had typed in that cell just because a scan arrived.
+ * This existed because `updateHiringDocumentStatus` wrote `notes` straight from its input, so
+ * reusing it would blank whatever HR had typed just because a scan arrived. That is fixed — an
+ * absent key now leaves the cell alone, see status-notes.ts — so the note is no longer the reason
+ * to keep this separate. What is: the tick is a consequence of the scan rather than a decision of
+ * its own, so it belongs inside the caller's single `hiring_document_file` audit row and must not
+ * raise a second `hiring_document_status` one.
  */
 async function markHiringDocumentSubmitted(employeeHrId: string, documentId: string) {
   const supabase = getSupabaseAdmin();
