@@ -156,7 +156,7 @@ the `withDeadMansSwitch` wrapper, or directly for `notifications/daily`'s partia
 case — see that file's own comment) after its real work completes. Healthchecks.io alerts when an
 **expected ping doesn't arrive**, which is exactly the failure shape a paused/crashed/misconfigured
 job produces. Uses Healthchecks' [Ping Key + slug API](https://healthchecks.io/docs/http_api/) —
-one secret (`HEALTHCHECKS_PING_KEY`) covers all 8 jobs, addressed by slug instead of a per-check
+one secret (`HEALTHCHECKS_PING_KEY`) covers every check, addressed by slug instead of a per-check
 UUID, with [auto-provisioning](https://healthchecks.io/docs/autoprovisioning/) (`?create=1`) so
 each check is created automatically on its job's first real ping. Fails silent by design: no key
 configured, or non-production runtime, means the code never attempts a network call at all — see
@@ -193,6 +193,15 @@ policy):
    | `phoenix-reconcile-visits` | `24 4 * * 0` | 2h |
    | `phoenix-ireports360-live-sync` | `1,16,31,46 8-12 * * *` | 15m |
    | `phoenix-recruitment-email-intake` | `4-59/10 * * * *` | 10m |
+   | `phoenix-direct-orders-expire-held` | `17 23 * * *` | 2h |
+   | `phoenix-direct-orders-probation` | `17 23 * * *` | 2h |
+
+   The two `phoenix-direct-orders-*` rows are the exception to the warning below: their schedule
+   is **not** in cron-job.org, it is `.github/workflows/direct-orders-sweeps.yml` in this repo
+   (`17 23 * * *` UTC = ~02:17 Cairo), so that expression is authoritative and reviewable. They
+   were added 2026-08-23 after both clocks 401'd nightly for nine days unnoticed — the GitHub
+   Actions copy of `CRON_SECRET` was left stale by the 2026-08-14 Railway rotation. A red
+   scheduled-workflow run proved not to reach anyone; a missing ping does.
 
    ⚠️ These expressions were copied from `scripts/setup-gcp-cron.sh`, which is **no longer the
    schedule source of truth** — the live schedules are in the cron-job.org account and have already

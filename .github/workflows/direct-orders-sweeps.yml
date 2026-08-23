@@ -13,8 +13,20 @@ name: Direct Orders daily sweeps
 # The rest of production's cron lives in a free-tier third-party account whose schedule exists only
 # inside that account - AGENTS.md calls it out as an undocumented single point of failure that no
 # runbook describes. A workflow in this repo is version-controlled, reviewable in a PR, and visible
-# to anyone reading the code. It also fails loudly: a red workflow run emails the owner, whereas a
-# silently deleted third-party job looks exactly like a job that is working.
+# to anyone reading the code, whereas a silently deleted third-party job looks exactly like a job
+# that is working.
+#
+# THIS WORKFLOW DOES NOT ALERT ANYONE. An earlier version of this comment claimed "a red workflow
+# run emails the owner". It does not, or nobody reads it: both steps 401'd every single night from
+# 2026-08-14 to 2026-08-22 - nine consecutive red runs - and the failure was found by an unrelated
+# audit, not by a notification. Cause: CRON_SECRET was rotated on Railway on 2026-08-14 and the
+# GitHub Actions copy below was never re-aligned. Do not re-add that claim.
+#
+# The alerting is in the ROUTES, not here: both are wrapped in withDeadMansSwitch (Healthchecks.io,
+# slugs phoenix-direct-orders-expire-held / phoenix-direct-orders-probation, see
+# docs/observability.md). Healthchecks alerts on the ping that DIDN'T arrive, which is the only
+# thing that can report a request never reaching the handler - exactly this failure. If you change
+# the schedule below, change the matching Healthchecks check schedule too.
 #
 # Timing: 23:17 UTC is ~02:17 Cairo, well clear of the working day. Deliberately off the hour -
 # GitHub's scheduler is busiest on the hour and delays those runs the most. Egypt's DST shifts this
@@ -70,7 +82,14 @@ jobs:
           # A non-200 must fail the run. A sweep that quietly 401s looks identical to one with
           # nothing to do - both print a small number and move on.
           if [ "$code" != "200" ]; then
-            echo "::error::${ROUTE} returned HTTP $code"
+            # 401 has exactly one cause worth naming: this repository's CRON_SECRET no longer
+            # matches the one Railway serves. It happened on 2026-08-14 and cost nine nights of
+            # dead clocks, so say the fix out loud instead of printing a bare status code.
+            if [ "$code" = "401" ]; then
+              echo "::error::${ROUTE} returned HTTP 401 - this repository's CRON_SECRET is STALE. Re-align it from Railway production (railway variables --environment production --service phoenix-people-workforce --json | jq -r .CRON_SECRET | gh secret set CRON_SECRET) and re-run this workflow."
+            else
+              echo "::error::${ROUTE} returned HTTP $code"
+            fi
             exit 1
           fi
 
@@ -105,6 +124,13 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
           if [ "$code" != "200" ]; then
-            echo "::error::${ROUTE} returned HTTP $code"
+            # 401 has exactly one cause worth naming: this repository's CRON_SECRET no longer
+            # matches the one Railway serves. It happened on 2026-08-14 and cost nine nights of
+            # dead clocks, so say the fix out loud instead of printing a bare status code.
+            if [ "$code" = "401" ]; then
+              echo "::error::${ROUTE} returned HTTP 401 - this repository's CRON_SECRET is STALE. Re-align it from Railway production (railway variables --environment production --service phoenix-people-workforce --json | jq -r .CRON_SECRET | gh secret set CRON_SECRET) and re-run this workflow."
+            else
+              echo "::error::${ROUTE} returned HTTP $code"
+            fi
             exit 1
           fi
