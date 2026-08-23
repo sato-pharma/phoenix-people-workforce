@@ -63,7 +63,8 @@ export type AttendanceDeviceUserMappingRow = {
   id: number;
   isActive: boolean;
   latestPunchAt: string | null;
-  status: "active" | "inactive" | "unmapped";
+  nonEmployeeLabel: string | null;
+  status: "active" | "inactive" | "non_employee" | "unmapped";
   updatedAt: string;
 };
 
@@ -74,6 +75,7 @@ export type AttendanceDeviceUserMappingDashboard = {
   summary: {
     active: number;
     inactive: number;
+    nonEmployee: number;
     total: number;
     unmapped: number;
   };
@@ -87,6 +89,7 @@ type MappingDbRow = {
   id: number;
   is_active: boolean;
   last_seen_punch_at?: string | null;
+  non_employee_label?: string | null;
   updated_at: string;
 };
 
@@ -110,7 +113,7 @@ export async function getAttendanceDeviceUserMappingDashboard(): Promise<Attenda
   const [mappingResult, employeeResult, punchResult] = await Promise.all([
     supabase
       .from("attendance_device_user_map")
-      .select("id,device_id,device_user_id,employee_hr_id,is_active,last_seen_punch_at,created_at,updated_at")
+      .select("id,device_id,device_user_id,employee_hr_id,is_active,last_seen_punch_at,non_employee_label,created_at,updated_at")
       .order("last_seen_punch_at", { ascending: false, nullsFirst: false })
       .order("device_id")
       .order("device_user_id"),
@@ -159,6 +162,7 @@ export async function getAttendanceDeviceUserMappingDashboard(): Promise<Attenda
       id: row.id,
       isActive: row.is_active,
       latestPunchAt,
+      nonEmployeeLabel: row.non_employee_label?.trim() || null,
       status: "unmapped" as AttendanceDeviceUserMappingRow["status"],
       updatedAt: row.updated_at,
     };
@@ -187,11 +191,18 @@ export async function saveAttendanceDeviceUserMapping(input: {
   deviceUserId: string;
   employeeHrId: string | null;
   isActive: boolean;
+  // OPTIONAL on purpose, and undefined is not the same as null. A caller that does not know
+  // about non-employees at all - the bulk XLSX upload is one - leaves this undefined, and the
+  // column is then omitted from the UPDATE so an existing label survives. Passing null is an
+  // explicit "this is not a non-employee any more" and does clear it.
+  nonEmployeeLabel?: string | null;
 }) {
   const supabase = getSupabaseAdmin();
   const deviceId = input.deviceId.trim();
   const deviceUserId = input.deviceUserId.trim();
   const employeeHrId = normalizeHrId(input.employeeHrId);
+  const nonEmployeeLabelProvided = input.nonEmployeeLabel !== undefined;
+  const nonEmployeeLabel = String(input.nonEmployeeLabel ?? "").trim() || null;
 
   if (!deviceId) {
     throw new Error("device_id is required.");
@@ -201,6 +212,14 @@ export async function saveAttendanceDeviceUserMapping(input: {
   }
   if (input.isActive && !employeeHrId) {
     throw new Error("employee_hr_id is required for an active mapping.");
+  }
+  // Mirrors attendance_device_user_map_non_employee_exclusive. Caught here so the caller gets a
+  // sentence instead of a raw constraint violation.
+  if (nonEmployeeLabel && employeeHrId) {
+    throw new Error("A device user cannot be both an employee and a non-employee.");
+  }
+  if (nonEmployeeLabel && input.isActive) {
+    throw new Error("A non-employee device user cannot be active - their punches are never ingested.");
   }
 
   if (employeeHrId) {
@@ -225,13 +244,22 @@ export async function saveAttendanceDeviceUserMapping(input: {
 
   if (existingError) throw existingError;
 
-  const row = {
+  const row: Record<string, unknown> = {
     device_id: deviceId,
     device_user_id: deviceUserId,
     employee_hr_id: employeeHrId,
     is_active: input.isActive,
     updated_at: new Date().toISOString(),
   };
+
+  // Naming an employee always ends any non-employee identity, whether or not the caller said so
+  // - otherwise the write would fail the exclusivity constraint. Beyond that the column is only
+  // touched when the caller actually supplied it.
+  if (employeeHrId) {
+    row.non_employee_label = null;
+  } else if (nonEmployeeLabelProvided) {
+    row.non_employee_label = nonEmployeeLabel;
+  }
 
   if (existing) {
     const { error } = await supabase

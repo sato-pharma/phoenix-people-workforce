@@ -309,7 +309,7 @@ async function getDataHealthStatsUncached(): Promise<DataHealthStats> {
     fetchAllRows<Record<string, unknown>>(() =>
       supabase
         .from("attendance_device_user_map")
-        .select("employee_hr_id,is_active"),
+        .select("employee_hr_id,is_active,non_employee_label"),
     "id"),
     fetchAllRows<Record<string, unknown>>(() =>
       supabase
@@ -485,6 +485,9 @@ async function getDataHealthStatsUncached(): Promise<DataHealthStats> {
     attendanceMappings.map((row) => ({
       employeeHrId: rowText(row, "employee_hr_id"),
       isActive: row.is_active !== false,
+      // Without this the data-health tile keeps counting identified drivers and guards as
+      // missing mappings, which is the whole defect this column exists to close.
+      nonEmployeeLabel: rowText(row, "non_employee_label"),
     })),
   );
   const leaveMetrics = buildVacationPlatformMetrics(

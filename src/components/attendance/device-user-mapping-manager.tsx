@@ -80,12 +80,20 @@ function formatDate(value: string | null) {
   }).format(new Date(value));
 }
 
+// Sentinel value for the employee dropdown. Not an HR_ID, and deliberately cannot collide with
+// one: it marks the row as belonging to somebody who is not in `employees` at all.
+const NON_EMPLOYEE_OPTION = "__non_employee__";
+
 function statusBadge(row: AttendanceDeviceUserMappingRow) {
   if (row.status === "active") {
     return <Badge variant="success">Mapped</Badge>;
   }
   if (row.status === "inactive") {
     return <Badge variant="neutral">Inactive</Badge>;
+  }
+  // Grey, not orange: a named driver or guard is a settled answer, not an outstanding one.
+  if (row.status === "non_employee") {
+    return <Badge variant="neutral">Not an employee</Badge>;
   }
   return <Badge variant="warning">Unmapped</Badge>;
 }
@@ -102,16 +110,26 @@ function MappingRow({
 }: {
   canUpdate: boolean;
   employees: AttendanceDeviceUserMappingDashboard["employees"];
-  onSave: (input: { deviceId: string; deviceUserId: string; employeeHrId: string | null; isActive: boolean }) => Promise<void>;
+  onSave: (input: { deviceId: string; deviceUserId: string; employeeHrId: string | null; isActive: boolean; nonEmployeeLabel: string | null }) => Promise<void>;
   row: AttendanceDeviceUserMappingRow;
 }) {
   const [employeeHrId, setEmployeeHrId] = useState(row.employeeHrId ?? "");
   const [isActive, setIsActive] = useState(row.isActive && Boolean(row.employeeHrId));
+  const [nonEmployee, setNonEmployee] = useState(Boolean(row.nonEmployeeLabel));
+  const [nonEmployeeLabel, setNonEmployeeLabel] = useState(row.nonEmployeeLabel ?? "");
   const [saving, setSaving] = useState(false);
   const savedEmployeeHrId = row.employeeHrId ?? "";
   const savedIsActive = row.isActive && Boolean(row.employeeHrId);
-  const hasChanges = employeeHrId !== savedEmployeeHrId || isActive !== savedIsActive;
-  const cannotSave = !canUpdate || saving || !hasChanges || (isActive && !employeeHrId);
+  const savedNonEmployeeLabel = row.nonEmployeeLabel ?? "";
+  const trimmedLabel = nonEmployeeLabel.trim();
+  const hasChanges =
+    employeeHrId !== savedEmployeeHrId
+    || isActive !== savedIsActive
+    || (nonEmployee ? trimmedLabel : "") !== savedNonEmployeeLabel;
+  // An empty label is refused rather than saved as a blank: "not an employee, and no idea which"
+  // is exactly the unmapped state this option exists to get out of.
+  const cannotSave =
+    !canUpdate || saving || !hasChanges || (isActive && !employeeHrId) || (nonEmployee && !trimmedLabel);
 
   async function save() {
     setSaving(true);
@@ -121,6 +139,9 @@ function MappingRow({
         deviceUserId: row.deviceUserId,
         employeeHrId: employeeHrId || null,
         isActive,
+        // Always sent, never omitted: this screen knows about the field, so clearing the choice
+        // here is a real instruction to drop the label, not an absent-minded omission.
+        nonEmployeeLabel: nonEmployee ? trimmedLabel : null,
       });
     } finally {
       setSaving(false);
@@ -137,14 +158,22 @@ function MappingRow({
         <SearchableSelect
           className="h-9 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-800 outline-none transition focus:border-orange-400 focus:ring-2 focus:ring-orange-100 disabled:bg-slate-50 disabled:text-slate-400"
           disabled={!canUpdate || saving}
-          value={employeeHrId}
+          value={nonEmployee ? NON_EMPLOYEE_OPTION : employeeHrId}
           onChange={(event) => {
-            const nextHrId = event.target.value;
-            setEmployeeHrId(nextHrId);
-            if (!nextHrId) setIsActive(false);
+            const next = event.target.value;
+            if (next === NON_EMPLOYEE_OPTION) {
+              setNonEmployee(true);
+              setEmployeeHrId("");
+              setIsActive(false);
+              return;
+            }
+            setNonEmployee(false);
+            setEmployeeHrId(next);
+            if (!next) setIsActive(false);
           }}
         >
           <option value="">Select employee HR_ID</option>
+          <option value={NON_EMPLOYEE_OPTION}>Not an employee (driver / guard / cleaner)</option>
           {employees.map((employee) => (
             <option key={employee.hrId} value={employee.hrId}>
               {employeeLabel(employee.hrId, employee.fullName)}
@@ -153,7 +182,19 @@ function MappingRow({
         </SearchableSelect>
       </td>
       <td className="min-w-[180px] px-4 py-3 text-sm text-slate-600">
-        {row.employeeName ?? "Not assigned"}
+        {nonEmployee ? (
+          <input
+            className="h-9 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-800 outline-none transition focus:border-orange-400 focus:ring-2 focus:ring-orange-100 disabled:bg-slate-50 disabled:text-slate-400"
+            disabled={!canUpdate || saving}
+            maxLength={80}
+            placeholder="Driver, guard, cleaner"
+            type="text"
+            value={nonEmployeeLabel}
+            onChange={(event) => setNonEmployeeLabel(event.target.value)}
+          />
+        ) : (
+          row.employeeName ?? "Not assigned"
+        )}
       </td>
       <td className="whitespace-nowrap px-4 py-3">
         <label className="inline-flex items-center gap-2 text-sm font-semibold text-slate-700">
@@ -190,7 +231,7 @@ export function DeviceUserMappingManager({ agentIsRemotelyReachable, canUpdate, 
   const [refreshing, setRefreshing] = useState(false);
   const [agentHealth, setAgentHealth] = useState<AgentHealth | null>(null);
   const [startingAgent, setStartingAgent] = useState(false);
-  const [statusFilter, setStatusFilter] = useState<"all" | "active" | "inactive" | "unmapped">("all");
+  const [statusFilter, setStatusFilter] = useState<"all" | "active" | "inactive" | "non_employee" | "unmapped">("all");
   const [syncing, setSyncing] = useState(false);
   const [syncResult, setSyncResult] = useState<SyncResult | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -235,7 +276,7 @@ export function DeviceUserMappingManager({ agentIsRemotelyReachable, canUpdate, 
     }
   }
 
-  async function save(input: { deviceId: string; deviceUserId: string; employeeHrId: string | null; isActive: boolean }) {
+  async function save(input: { deviceId: string; deviceUserId: string; employeeHrId: string | null; isActive: boolean; nonEmployeeLabel: string | null }) {
     setError(null);
     setNotice(null);
     const response = await fetch("/api/attendance/device-user-mappings", {
@@ -351,6 +392,7 @@ export function DeviceUserMappingManager({ agentIsRemotelyReachable, canUpdate, 
           <>
             <AdminInsightChip>{data?.summary.total ?? 0} device users</AdminInsightChip>
             <AdminInsightChip tone="orange">{data?.summary.unmapped ?? 0} unmapped</AdminInsightChip>
+            <AdminInsightChip tone="neutral">{data?.summary.nonEmployee ?? 0} not employees</AdminInsightChip>
             <AdminInsightChip tone="slate">{data?.summary.active ?? 0} active mappings</AdminInsightChip>
           </>
         )}
@@ -489,6 +531,7 @@ export function DeviceUserMappingManager({ agentIsRemotelyReachable, canUpdate, 
           >
             <option value="all">All users</option>
             <option value="unmapped">Unmapped</option>
+            <option value="non_employee">Not an employee</option>
             <option value="active">Mapped active</option>
             <option value="inactive">Inactive</option>
           </SearchableSelect>
@@ -515,7 +558,7 @@ export function DeviceUserMappingManager({ agentIsRemotelyReachable, canUpdate, 
                 <MappingRow
                   canUpdate={canUpdate}
                   employees={data?.employees ?? []}
-                  key={`${row.deviceId}-${row.deviceUserId}-${row.employeeHrId ?? ""}-${row.isActive ? "active" : "inactive"}`}
+                  key={`${row.deviceId}-${row.deviceUserId}-${row.employeeHrId ?? ""}-${row.nonEmployeeLabel ?? ""}-${row.isActive ? "active" : "inactive"}`}
                   row={row}
                   onSave={save}
                 />
