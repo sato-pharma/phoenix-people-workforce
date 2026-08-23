@@ -258,6 +258,19 @@ export type MarketingPharmacy = MarketingCapturedLocation & MarketingEvidenceCap
   id: string;
   lineId: number | null;
   managerHrId: string | null;
+  /** When the merge happened. Null unless `mergedIntoPharmacyId` is set. */
+  mergedAt: string | null;
+  /**
+   * Who performed the merge. Null for a row backfilled from a duplicate the system had already
+   * deactivated, because no person made that call through the application.
+   */
+  mergedByHrId: string | null;
+  /**
+   * The surviving venue this duplicate was folded into, or null for a venue that is not a
+   * duplicate — which is nearly all of them. Deliberately the same shape as
+   * `direct_order_pharmacies`, so one mental model covers both modules.
+   */
+  mergedIntoPharmacyId: string | null;
   normalizedName: string;
   ownerHrId: string | null;
   pharmacyCode: string;
@@ -270,6 +283,21 @@ export type MarketingPharmacy = MarketingCapturedLocation & MarketingEvidenceCap
   validationStatus: MarketingValidationStatus;
   /** `pharmacy` or `nursery`. Reads back as `pharmacy` for every row written before 2026-08-23. */
   venueType: VenueType;
+};
+
+/**
+ * What a venue merge actually moved. Every count is rows that CHANGED — a child already sitting on
+ * the survivor is counted as `alreadyOnSurvivor`, not as moved, because reporting it as moved would
+ * overstate what the merge did.
+ */
+export type MarketingVenueMergeResult = {
+  alreadyOnSurvivor: number;
+  codesMoved: number;
+  customerLinksMoved: number;
+  loserId: string;
+  requestTargetsMoved: number;
+  survivorId: string;
+  transfersMoved: number;
 };
 
 export type MarketingPharmacyDistributorCode = {
