@@ -167,7 +167,11 @@ export async function pushCandidatesToManager(input: {
     // District Managers it was built to reach. My Candidates lists the pushes by HR_ID, newest
     // first, so the person named in this alert is at the top whether one or five were sent.
     actionUrl: "/employee-portals/recruitment-candidates",
-    channels: ["in_app", "email", "push"],
+    // Owner rule 2026-08-24: never email a candidate push. Stated here so the intent is readable
+    // where the notification is written; the guarantee is enforceCandidateAssignedEmailBlock, which
+    // strips email from the RESOLVED list whatever this line, the policy row, or the
+    // Telegram-failure fallback asks for.
+    channels: ["in_app", "push"],
     eventType: "candidate_assigned",
     message: `${joinNames(names)} ${many ? "have" : "has"} been sent to you to review.`,
     module: "recruitment",
@@ -224,7 +228,9 @@ export async function notifyHiringManagerOfCandidate(input: {
 
   await createSystemNotification({
     actionUrl: "/employee-portals/recruitment-candidates",
-    channels: ["in_app", "email", "push"],
+    // Same owner rule as the push above — the requisition-level assignment is the same event type
+    // reaching the same person, so it is silenced by the same guard.
+    channels: ["in_app", "push"],
     eventType: "candidate_assigned",
     message: `${input.candidateName} has been assigned to your ${input.jobTitle} position.`,
     module: "recruitment",

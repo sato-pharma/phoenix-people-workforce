@@ -163,6 +163,11 @@ const policyTable: Record<string, Partial<NotificationPolicy>> = {
   // 30 days). Same rule, same two layers — it needs its own row because `recruitment.*` below
   // carries email, so falling through would have emailed the very notice the owner said must not be.
   "recruitment.recruitment_daily_cv_digest": { channels: ["in_app", "telegram", "push"], telegramAllowed: true },
+  // Owner rule 2026-08-24: pushing a candidate to a hiring manager must never be emailed — in-app
+  // and push only. Needs its own row for the same reason the two CV rows above do: `recruitment.*`
+  // below carries email, so falling through would email the very notice the owner said must not.
+  // The hard guarantee is recruitment-candidate-assigned-channel-guard.ts; this row is the intent.
+  "recruitment.candidate_assigned": { channels: ["in_app", "push"], permissionResource: "recruitment", recipientStrategy: ["assigned_approver", "permission_based"] },
   "recruitment.*": { channels: ["in_app", "email", "push"], permissionResource: "recruitment", recipientStrategy: ["assigned_approver", "permission_based"] },
   // Owner-set 2026-08-09: a resignation is told to Super Admin and Talent Acquisition ONLY —
   // deliberately not the CEO, and deliberately not the leaver's manager chain. The emitter
