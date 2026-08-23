@@ -108,14 +108,21 @@ file holding the full account, under
   conflicting PR.** `deleting-a-branch-does-not-remove-a-pushed-commit` ·
   `reusing-a-squash-merged-branch-makes-a-conflicting-pr`
 - **`git push` to origin hangs — kill it at ~60s and retry immediately.** A push or fetch that dies with `fatal: Out of memory, malloc failed (tried to allocate 524288000 bytes)` was never a real memory fault or a network problem: `http.postBuffer` was set to 500MB in `.git/config` and git allocates the whole buffer up front, so it died before sending a byte whenever free RAM dipped under it. **Fixed 2026-08-23 — that key is now `8388608` (8MB), verified with an unoverridden fetch, ls-remote and push.** Do NOT restore 500MB; if a genuine large-push failure ever appears, raise to 50MB at most. `git-push-to-origin-hangs-retry-immediately` · `git-push-oom-is-a-500mb-postbuffer-in-repo-config`
-  `postBuffer` in the repo config, not a real memory fault. `git-push-to-origin-hangs-retry-immediately`
-  · `git-push-oom-is-a-500mb-postbuffer-in-repo-config`
 - **A merge to `main` mid-session silently orphans your next push.**
   `a-merge-mid-session-orphans-your-next-push-silently` · `two-sessions-fixed-one-bug-main-was-never-ci-validated`
 - **Deleted branch tips and stashes live under `refs/deleted-*` and are the ONLY copy — never pushed.**
   `git for-each-ref 'refs/deleted-*'` reads **0** because `*` never crosses `/`; use the full prefix
   `'refs/deleted-*/**'`. Verified 2026-08-23: **44** refs (34 branch tips, 10 stashes). Count it live
   before believing any number. `deleted-branch-tips-live-in-refs-deleted-branches`
+- **An empty `git log <branch> --not --remotes=origin` is NOT proof a branch is safe to delete.** A
+  squash merge deletes the remote branch, but `git fetch` never prunes — so `refs/remotes/origin/<branch>`
+  survives at the branch's OWN tip and the check compares the branch against itself, returning empty
+  forever. Confirmed again 2026-08-23: it read empty while `git ls-remote --heads origin <branch>`
+  returned **0** lines; the `git remote prune origin` that followed cleared **8** such ghosts at once.
+  Gate deletion on the merged PR. And when the blobs DO differ from `main`, that is a question not a
+  verdict — name the later commit with `git log <squashSHA>..origin/main -- <files>` before calling
+  anything stranded. `not-remotes-flips-when-remote-refs-are-pruned` ·
+  `repo-doctor-no-origin-ref-is-usually-squash-residue`
 
 **CI and PRs**
 
