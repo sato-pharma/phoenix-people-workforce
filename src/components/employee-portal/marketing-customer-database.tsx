@@ -14,6 +14,7 @@ import {
   PortalResponsiveDataList,
   PortalSection,
 } from "@/components/employee-portal/portal-primitives";
+import { InferredHistoryBadge } from "@/components/marketing-requests/inferred-history-badge";
 import { LoadingSpinner } from "@/components/ui/loading-state";
 import type {
   MarketingCustomerDatabaseRow,
@@ -112,6 +113,17 @@ function CustomerRowCard({ row }: { row: MarketingCustomerDatabaseRow }) {
       status={<Badge variant={statusVariant(row.validationStatus)}>{row.validationStatus.replace(/_/g, " ")}</Badge>}
       title={row.customerName || row.pharmacyName || "Customer row"}
     >
+      {/* In the card BODY, not the `status` slot. Measured both at 375px: the status slot does NOT
+          overflow (its wrapper is a block div, so `shrink-0` still resolves to fill-available and
+          the inner flex wraps) — this is a readability choice, not an overflow fix. A 218px badge
+          right-aligned beside the status pill crowds a phone card, and the badge belongs next to
+          the fields anyway: the status pill is the LINK's, and this is what explains how it can
+          say "system validated" while the customer's evidence photo column is empty. */}
+      {row.inferredFromHistory ? (
+        <div className="mb-2">
+          <InferredHistoryBadge />
+        </div>
+      ) : null}
       <PortalRecordFields
         fields={[
           { label: "Customer area", value: row.customerArea || "Not captured" },
@@ -276,7 +288,11 @@ export function MarketingCustomerDatabase() {
                   <td className="px-4 py-3"><VendorCodeCell row={row} value={row.vendorPharmacyCode} /></td>
                   <td className="px-4 py-3"><VendorCodeCell row={row} value={row.pharmacyDistributorCodeId} /></td>
                   <td className="px-4 py-3">
-                    <Badge variant={statusVariant(row.validationStatus)}>{row.validationStatus.replace(/_/g, " ")}</Badge>
+                    <span className="inline-flex flex-col items-start gap-1">
+                      <Badge variant={statusVariant(row.validationStatus)}>{row.validationStatus.replace(/_/g, " ")}</Badge>
+                      {/* Stacked, not inline: this column already sits at the far right of a wide table. */}
+                      {row.inferredFromHistory ? <InferredHistoryBadge /> : null}
+                    </span>
                   </td>
                 </tr>
               ))}

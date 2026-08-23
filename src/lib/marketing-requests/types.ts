@@ -674,6 +674,13 @@ export type MarketingCustomerDatabaseRow = {
   distributorCode: string | null;
   distributorId: number | null;
   distributorName: string | null;
+  /**
+   * True when this row's `system_validated` was written by the 2026-07-02 history backfill rather
+   * than earned by a field capture. `validationStatus` here comes from the LINK while
+   * `customerValidationPhoto` comes from the CUSTOMER, which is why this screen can show
+   * "system validated" beside an empty photo cell and be telling the truth about both.
+   */
+  inferredFromHistory: boolean;
   pharmacyAddress: string | null;
   pharmacyArea: string | null;
   pharmacyCode: string;
