@@ -1414,6 +1414,9 @@ await runTest(
 await runTest(
   "marketing venue merge (a colliding child is counted not thrown, one collision does not abort the rest, a real failure still surfaces, all four child tables move, the loser is deactivated, the mark is idempotent, the FK is SET NULL so deleting a survivor keeps its duplicates' record, and the backfill cannot fire on the wrong database)",
   runMarketingVenueMergeTests,
+);
+await runTest(
+  "marketing venue merge route + admin action (the merge is reachable at all, the route delegates authorization instead of re-deciding it, it is registered as its own audited CSRF mutation rather than falling through the /api/marketing-requests/** blanket, the picker reads the venue table so an unlinked duplicate is still offerable, and the Customer Database gate still matches the service's)",
   runMarketingVenueMergeRouteTests,
 );
 await runTest("marketing request overlap detection (double-count guard)", runMarketingRequestOverlapTests);
