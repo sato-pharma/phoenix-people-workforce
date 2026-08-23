@@ -115,12 +115,12 @@ export function runSidebarLabelWidthTests() {
 
   // The budgets themselves must stay honest. If someone narrows the rail or grows the icon box
   // without re-checking, these pin the arithmetic that the assertions above depend on.
-  assert.equal(labelBudgetPx({ badge: false, hub: false }), 156, "plain row budget");
-  assert.equal(labelBudgetPx({ badge: false, hub: true }), 136, "hub row budget (pays for the ↗)");
-  assert.equal(labelBudgetPx({ badge: true, hub: false }), 124, "badge row budget");
+  assert.equal(labelBudgetPx({ badge: false, hub: false }), 157, "plain row budget");
+  assert.equal(labelBudgetPx({ badge: false, hub: true }), 137, "hub row budget (pays for the ↗)");
+  assert.equal(labelBudgetPx({ badge: true, hub: false }), 125, "badge row budget");
   assert.equal(
     labelBudgetPx({ badge: true, hub: true }),
-    124,
+    125,
     "a hub row with a badge drops the ↗, so it is charged the same as any badge row",
   );
 }

@@ -16,7 +16,7 @@ export function AppShellLoading({
       <div className="flex min-h-screen">
         <aside
           aria-label="Loading navigation"
-          className={`hidden w-[280px] shrink-0 border-r lg:block ${
+          className={`hidden w-[292px] shrink-0 border-r lg:block ${
             isAdminMode ? "border-[#1a1a1a] bg-[#000000]" : "border-[#E2E8F0] bg-white"
           }`}
         >
