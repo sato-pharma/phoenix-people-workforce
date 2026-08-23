@@ -1,3 +1,5 @@
+import { isCountryLevelGeocode } from "@/lib/google-maps/geocode-precision";
+
 type LatLng = { lat: number; lng: number };
 
 export type GoogleRoutesApiRoute = {
@@ -308,16 +310,37 @@ export async function googleGeocodeAddress(address: string): Promise<LatLng | nu
   }
 
   const payload = (await response.json()) as {
-    results?: Array<{ geometry?: { location?: { lat?: number; lng?: number } } }>;
+    results?: Array<{
+      formatted_address?: string;
+      geometry?: { location?: { lat?: number; lng?: number } };
+      types?: string[];
+    }>;
     status?: string;
   };
 
-  const location = payload.results?.[0]?.geometry?.location;
+  const top = payload.results?.[0];
+  const location = top?.geometry?.location;
   if (!location || !Number.isFinite(location.lat) || !Number.isFinite(location.lng)) {
     return null;
   }
 
-  return { lat: Number(location.lat), lng: Number(location.lng) };
+  const lat = Number(location.lat);
+  const lng = Number(location.lng);
+
+  // Google never says "not found" for an address it cannot place -- it climbs the hierarchy and
+  // answers with whatever DID match. Every query here ends in ", Egypt", so the floor is the
+  // country itself, returned as its geometric centre with status OK. Storing that is what put 23
+  // employees' homes in the middle of the Western Desert. Treat it as no result at all: every
+  // caller already handles null correctly (omit the columns, mark 'failed', don't cache).
+  if (isCountryLevelGeocode({ lat, lng, types: top?.types })) {
+    console.warn(
+      `[google-maps] geocode for "${address}" resolved only to the country `
+      + `(${top?.formatted_address ?? "Egypt"}); discarding it rather than storing the centroid`,
+    );
+    return null;
+  }
+
+  return { lat, lng };
 }
 
 function extractAddressComponent(

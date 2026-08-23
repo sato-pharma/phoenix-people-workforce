@@ -1,3 +1,8 @@
+import {
+  EGYPT_COUNTRY_CENTROID,
+  isEgyptCountryCentroid,
+} from "@/lib/google-maps/geocode-precision";
+
 /**
  * Why a residence -> destination distance could not be measured, in words an admin can act on.
  *
@@ -31,17 +36,19 @@ function formatCoordinate(value: number) {
  * indistinguishably from a real home. Verified 2026-08-23: a route FROM this point returns zero
  * routes to Ebshaway, Faiyum, Cairo and Alexandria alike, so the failure reads as "the destination
  * is unreachable" no matter where the trip actually went.
+ *
+ * All 19 active rows were repaired in production on 2026-08-23; only resigned employees still
+ * hold it. This check stays because the coordinate is still REACHABLE — anything that writes a
+ * geocode can produce it again, which is why `isCountryLevelGeocode` now refuses it at the source.
  */
-export const EGYPT_COUNTRY_CENTROID = { lat: 26.820553, lng: 30.802498 } as const;
+export { EGYPT_COUNTRY_CENTROID };
 
-/** ~100 m — no real home sits that close to the centre of the Western Desert. */
-const CENTROID_TOLERANCE_DEGREES = 0.001;
-
+/**
+ * One definition, in src/lib/google-maps/geocode-precision.ts, so the check that REJECTS this
+ * coordinate on the way in and the check that EXPLAINS it on the way out can never drift apart.
+ */
 export function isUnresolvedResidenceCoordinate(latitude: number, longitude: number) {
-  return (
-    Math.abs(latitude - EGYPT_COUNTRY_CENTROID.lat) < CENTROID_TOLERANCE_DEGREES
-    && Math.abs(longitude - EGYPT_COUNTRY_CENTROID.lng) < CENTROID_TOLERANCE_DEGREES
-  );
+  return isEgyptCountryCentroid(latitude, longitude);
 }
 
 /** The employee has a stored coordinate, but it is the never-geocoded fallback. */
