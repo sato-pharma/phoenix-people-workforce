@@ -112,6 +112,7 @@ import { getUserProductScopeOverride } from "@/lib/auth/scope-visibility";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { resolveMarketingPharmacyCodes } from "@/lib/marketing-requests/master-resolution";
 import { pingMarketingRequestSheet } from "@/lib/marketing-requests/sheet-webhook";
+import { applyMasterTerritoryToVenues } from "@/lib/marketing-requests/venue-territory";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 type MarketingProductDbRow = {
@@ -6264,6 +6265,21 @@ export async function createMarketingValidationRecord(
     // never throws, which is what makes it safe to await INSIDE this try block: the catch below
     // deletes the whole submission, and enrichment must never be able to trigger that.
     await resolveMarketingPharmacyCodes(supabase, distributorCodeIds);
+
+    // Now that the master has spoken, file the venue in the territory it STANDS IN rather than the
+    // one its photographer belongs to — but only when that photographer has no territory of their
+    // own. A rep's area is their patch and is never touched. Ordered strictly after the resolver:
+    // `mapped_area_code` is written by that database function, so reading it any earlier reads the
+    // column as it was before this submission existed. Never throws, for the same reason the
+    // resolver above never throws — the catch below deletes the whole submission, and enrichment
+    // must never be able to trigger that. See src/lib/marketing-requests/venue-territory.ts.
+    await applyMasterTerritoryToVenues({
+      customerIds,
+      distributorCodeIds,
+      ownerAreaId: owner.areaId ?? null,
+      pharmacyIds,
+      supabase,
+    });
 
     // A newly validated customer or pharmacy changes the evidence and validation columns the
     // sheet shows, so it is worth a refresh even though no request row moved.
