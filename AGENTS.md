@@ -79,6 +79,110 @@ protection, CI cost, the deploy path, or the region.
 - **`list_migrations` reports the migration ledger, not reality.** To prove an object exists, query `pg_class`/`pg_proc`.
 - **Auto-git workflows are permanently banned.** Auto-executing commit/push/PR/merge was tried and reverted **twice**. Always ask first.
 
+### 2.1 Session-level traps (relocated from the memory index, 2026-08-23)
+
+These are **agent-operating** facts, not Phoenix business rules. They lived in `MEMORY.md`, which the
+memory loader truncates at **24,400 bytes** — past that the tail is silently dropped and the last
+entries stop existing. This file has no such cliff and auto-loads in full via `CLAUDE.md`'s
+`@AGENTS.md`, so these belong here: same reach, plus review and version control. Each names the memory
+file holding the full account, under
+`C:\Users\satoh\.claude\projects\F--Phoenix-Workforce-phoenix-workforce\memory\`.
+
+**Shell and tooling**
+
+- **`grep -r` hangs on this checkout — use `git grep` or `rg`.** Worktree payload is ~1.9M paths; tools
+  honouring `.gitignore` never see it. `shell-grep-unusable-use-git-grep-or-rg`
+- **`pnpm run <script>` tries to PURGE `node_modules`** when the lockfile has moved, destroying the
+  install before the script runs. Invoke directly: `node scripts/repo-doctor.mjs`.
+  `pnpm-run-tries-to-purge-node-modules-when-the-lockfile-moved`
+- **`git show <ref>:<path>` returns EMPTY under MSYS** — the colon path is mangled. Use the PowerShell
+  tool. `git-ref-colon-path-is-mangled-by-msys-returns-empty`
+- **A role probe cannot trust the HTTP status code**, and **a POST to ANY `/api/**` path returns 403
+  even when the route does not exist** — probe a deploy with GET and read 404/405/403.
+  `a-role-probe-cannot-trust-the-http-status-code` ·
+  `a-post-to-any-api-path-returns-403-even-if-it-does-not-exist`
+
+**Git**
+
+- **Deleting a branch does not remove its pushed commit**, and **reusing a squash-merged branch makes a
+  conflicting PR.** `deleting-a-branch-does-not-remove-a-pushed-commit` ·
+  `reusing-a-squash-merged-branch-makes-a-conflicting-pr`
+- **`git push` to origin hangs — kill it at ~60s and retry immediately.** A push OOM is a 500MB
+  `postBuffer` in the repo config, not a real memory fault. `git-push-to-origin-hangs-retry-immediately`
+  · `git-push-oom-is-a-500mb-postbuffer-in-repo-config`
+- **A merge to `main` mid-session silently orphans your next push.**
+  `a-merge-mid-session-orphans-your-next-push-silently` · `two-sessions-fixed-one-bug-main-was-never-ci-validated`
+- **Deleted branch tips and stashes live under `refs/deleted-*` and are the ONLY copy — never pushed.**
+  `git for-each-ref 'refs/deleted-*'` reads **0** because `*` never crosses `/`; use the full prefix
+  `'refs/deleted-*/**'`. Verified 2026-08-23: **44** refs (34 branch tips, 10 stashes). Count it live
+  before believing any number. `deleted-branch-tips-live-in-refs-deleted-branches`
+
+**CI and PRs**
+
+- **CI jobs failing in SECONDS mean billing, not code.** `ci-jobs-failing-in-seconds-means-billing-not-code`
+- **`secret-scan` is a required check — there are 4 total**, because a personal account has no GHAS/OSS
+  scanning. `github-personal-account-no-ghas-oss-scanning`
+- **`gh pr checks` LAGS behind the real job state.** `gh-pr-checks-lags-behind-the-real-job-state`
+- **`check-runs: 0` also means CONFLICTED** — a conflicted PR runs no CI at all, which reads as "not
+  started". `a-conflicted-pr-runs-no-ci-at-all`
+- **ONE new hub page trips FOUR separate CI gates.** `adding-a-hub-page-trips-four-separate-ci-gates`
+
+**Migrations**
+
+- **A migration FILE written is not a migration APPLIED**, and **a merged migration file does not mean
+  the grants are live.** `migration-file-written-is-not-migration-applied` ·
+  `merged-migration-file-does-not-mean-grants-are-live`
+- **Migration timestamps COLLIDE across parallel branches**, and **the ledger version never matches the
+  filename.** `migration-timestamp-collides-across-parallel-branches` ·
+  `migration-ledger-version-never-matches-the-filename`
+
+**Validation**
+
+- **RAM-saturated? WAIT — do not skip validation for it.** `dont-skip-validation-for-ram-wait-instead`
+- **Source-pinning tests slice a fixed BYTE window and false-FAIL** when the file shifts.
+  `source-pinning-tests-slice-a-fixed-byte-window`
+- **A heredoc eats backslashes** and yields a test that only ever passes.
+  `heredoc-eats-backslashes-and-makes-a-test-that-only-passes`
+- **`parseDiagnostics` is SYNTAX-ONLY — it cannot see a typecheck error.**
+  `parse-diagnostics-cannot-see-a-typecheck-error`
+- **`setState` inside `useEffect` is a lint ERROR here.** `set-state-in-effect-is-a-lint-error-here`
+
+**Worktrees** (see also §5)
+
+- **Another SESSION can remove a worktree under you.** `another-session-can-remove-a-worktree-under-you`
+- **A gitignored `_wt-*/` scratch folder makes a worktree look clean.**
+  `gitignored-wt-scratch-makes-a-worktree-look-clean`
+- **A bare worktree cannot PUSH** — the pre-push gate needs `node_modules`.
+  `bare-worktree-cannot-push-pre-push-gate-needs-node-modules`
+- **"Permission denied" on `git worktree remove` still DEREGISTERS the worktree.**
+  `worktree-remove-permission-denied-still-deregisters`
+- **`--fix` / `--strip-idle` need exactly ONE live session**, and **`--fix` can NEVER clear a `_wt-*`
+  husk** — `fs.rmSync` EPERMs on dangling pnpm junctions. Use `rmdir /s /q`, then re-check the folder:
+  an OLD `CreationTime` proves it never went. `repo-doctor-strip-idle-cannot-run-with-sessions-open` ·
+  `repo-doctor-fix-cannot-delete-a-wt-husk-pnpm-junctions-eperm`
+- **Self-removing a worktree MUTES its own session-end guard.**
+  `self-removing-a-worktree-mutes-its-own-session-end-guard`
+
+**Next.js runtime**
+
+- **A >2MB `unstable_cache` entry KILLS the dev server** — it throws only in dev, is uncatchable, and is
+  muted in prod. Gzip rows; return null over the ceiling.
+  `next-2mb-data-cache-throws-only-in-dev-and-kills-the-server`
+- **Standalone tracing copies FILES, not pnpm SYMLINKS** (fixed 2026-08-22 with a hoist plus a `*/**`
+  glob, now CI-gated), and **a top-level `import sharp` 500s a whole PAGE** when the `.so` is missing.
+  Load native modules on demand and assert at BUILD. `next-tracing-copies-files-not-pnpm-symlinks` ·
+  `next-standalone-trace-misses-a-native-librarys-so-dependency`
+
+**Browser and dev-auth**
+
+- **Click by TEXT — blind coordinate clicks once fired a real production collection run.**
+  `blind-coordinate-clicks-fired-a-production-collection-run`
+- **Dev login is `GET /api/dev-auth?role=`** — it is header-only and the Browser pane cannot use it.
+  `dev-auth-is-header-only-browser-pane-cannot-use-it`
+- **Turbopack 500s with `0xc0000142` when the commit charge is exhausted** — close a session, do not
+  debug the code. `turbopack-500s-with-0xc0000142-when-commit-is-full`
+- **Verify a 375px mobile layout with NO dev server.** `verify-a-mobile-layout-without-a-dev-server`
+
 ## 3. Stable Environment Facts
 
 History and verification detail: [docs/agents-incident-history.md](docs/agents-incident-history.md).
@@ -293,7 +397,7 @@ console, network/API response, deployment logs, and database/RLS evidence before
 - Before any database action, print and verify the exact project ref, resolving it with `list_projects` rather than trusting a ref pasted in a prompt or copied from an older doc — this line once named a long-deleted staging project, so "verify the ref" confirmed a dead value and the obvious recovery pointed at production.
 - Both Supabase MCP servers (`supabase-staging`, `supabase-production`) can see **every project the account is entitled to — all four in the §3 table, not just the two that belong to this app**. **The server name guarantees nothing — the `project_id` argument is the only thing separating staging from production on every call.**
 - Prefer those two named servers for all routine work. Any UUID-named Supabase tool (a claude.ai account connector) has an identity you cannot verify from its name alone, so it stays deny-listed by default — never call an unrecognized one, and flag it if it reappears. `mcp__b345e47e-3198-4b48-97cc-07b47bbb3087__*` remains denied.
-- **Owner-confirmed exception (2026-08-02):** `mcp__45bb6356-8105-4482-9464-25bfd754baec__*` is the owner's own claude.ai Supabase connector. He confirmed ownership and instructed its removal from the deny list, so it is callable. Note its consent grant is **broader than either named server** — read+write on Secrets, Environment, and Projects, meaning it can read project secrets and create or delete projects. Reach for the named servers first; use this one only when it is actually the right tool. Its DB writes fall under the pre-authorized grant above (announce destructive/bulk prod changes; no wait), but **creating/deleting a project or reading secrets is NOT covered — get an explicit go for those** (see §6).
+- **Owner-confirmed exception (2026-08-02):** `mcp__45bb6356-8105-4482-9464-25bfd754baec__*` is the owner's own claude.ai Supabase connector. He confirmed ownership and instructed its removal from the deny list, so it is callable. **VERIFIED 2026-08-23: it is back IN that list, so the previous sentence no longer describes live state.** `permissions.deny` in `~/.claude/settings.json` currently holds **two** entries — `mcp__b345e47e-…` *and* this connector — and a `deny` is a silent hard block rather than a prompt, so a session following the sentence above hits a wall with no dialog to explain it. Nothing on record says who re-added it or why. **Ask the owner before relying on this connector, and do not quietly re-allow it.** Do not read the block as evidence the connector is untrusted either — the two named servers in §3 cover routine work regardless. Note its consent grant is **broader than either named server** — read+write on Secrets, Environment, and Projects, meaning it can read project secrets and create or delete projects. Reach for the named servers first; use this one only when it is actually the right tool. Its DB writes fall under the pre-authorized grant above (announce destructive/bulk prod changes; no wait), but **creating/deleting a project or reading secrets is NOT covered — get an explicit go for those** (see §6).
 - Before destructive or bulk live-data work, inventory the target, create or verify a backup, show the exact mutation, and define post-change counts or checks.
 - Verify RLS, grants, RPC authorization, service-role boundaries, and browser-role exposure whenever permissions or data access change. Service-role credentials and privileged operations stay server-only.
 - Visibility in this app is **application-scoped, not RLS-scoped** — most code paths use the service-role client. Changing auth or sessions will not move what a user can see, but a `?? getSupabaseAdmin()` fallback is a silent fail-open.
