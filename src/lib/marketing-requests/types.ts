@@ -290,6 +290,26 @@ export type MarketingPharmacy = MarketingCapturedLocation & MarketingEvidenceCap
  * the survivor is counted as `alreadyOnSurvivor`, not as moved, because reporting it as moved would
  * overstate what the merge did.
  */
+/**
+ * One venue as the merge picker sees it. Deliberately NOT derived from the Customer Database rows:
+ * those are customer LINKS, so a duplicate venue that was created and never linked to anybody —
+ * the easiest duplicate to make and the one most worth retiring — would be absent from the very
+ * list you need it in.
+ *
+ * `mergedIntoPharmacyId` travels with the row so the picker can label an already-merged venue
+ * instead of offering it, which the service would refuse anyway.
+ */
+export type MarketingVenueMergeCandidate = {
+  active: boolean;
+  area: string | null;
+  displayName: string;
+  governorate: string | null;
+  id: string;
+  mergedIntoPharmacyId: string | null;
+  pharmacyCode: string;
+  venueType: VenueType;
+};
+
 export type MarketingVenueMergeResult = {
   alreadyOnSurvivor: number;
   codesMoved: number;

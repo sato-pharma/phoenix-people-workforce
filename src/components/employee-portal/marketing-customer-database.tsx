@@ -1,9 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { RefreshCcw } from "lucide-react";
+import { Merge, RefreshCcw } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   PortalDesktopTable,
   PortalEmptyState,
@@ -16,10 +18,12 @@ import {
 } from "@/components/employee-portal/portal-primitives";
 import { LinkFieldEvidenceBadge, NotFieldValidatedBadge } from "@/components/marketing-requests/not-field-validated-badge";
 import { LoadingSpinner } from "@/components/ui/loading-state";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import type {
   MarketingCustomerDatabaseRow,
   MarketingCustomerDatabaseWorkspace,
   MarketingValidationStatus,
+  MarketingVenueMergeCandidate,
 } from "@/lib/marketing-requests/types";
 import { customerFieldEvidenceGap } from "@/lib/marketing-requests/validation-report";
 import { venueCanAttributeSales, venueTypeLabel } from "@/lib/venues/venue-type";
@@ -149,6 +153,237 @@ function CustomerRowCard({ row }: { row: MarketingCustomerDatabaseRow }) {
   );
 }
 
+type MergeOutcome = {
+  alreadyOnSurvivor: number;
+  codesMoved: number;
+  customerLinksMoved: number;
+  requestTargetsMoved: number;
+  transfersMoved: number;
+};
+
+function venueOptionLabel(venue: MarketingVenueMergeCandidate): string {
+  const place = venue.area || venue.governorate;
+  const parts = [`${venue.displayName} (${venue.pharmacyCode})`];
+  if (place) parts.push(place);
+  parts.push(venueTypeLabel(venue.venueType));
+  if (venue.mergedIntoPharmacyId) parts.push("already merged");
+  else if (!venue.active) parts.push("inactive");
+  return parts.join(" · ");
+}
+
+/**
+ * Retire a duplicate venue by folding it into the one that survives.
+ *
+ * This screen is the only place in the module where two rows for one physical shop sit next to
+ * each other, which is why the action lives here rather than on Marketing Control. Reaching this
+ * page is already Super Admin / SFE Manager only — the same pair `mergeMarketingVenue` admits — so
+ * the panel needs no gate of its own beyond the server's.
+ *
+ * The survivor and the duplicate are the caller's judgement. Nothing here guesses identity from a
+ * similar name: the names are typed by hand in two languages and two different shops routinely
+ * share one. The written reason is the only record of why a human decided otherwise.
+ */
+function MergeVenuesPanel({ onMerged }: { onMerged: () => void }) {
+  const [venues, setVenues] = useState<MarketingVenueMergeCandidate[]>([]);
+  const [isLoadingVenues, setIsLoadingVenues] = useState(true);
+  const [survivorId, setSurvivorId] = useState("");
+  const [loserId, setLoserId] = useState("");
+  const [reason, setReason] = useState("");
+  const [isMerging, setIsMerging] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [outcome, setOutcome] = useState<MergeOutcome | null>(null);
+
+  async function loadVenues() {
+    setIsLoadingVenues(true);
+    try {
+      const response = await fetch("/api/marketing-requests/venue-merge", { cache: "no-store" });
+      const payload = await response.json();
+      if (!response.ok) {
+        setVenues([]);
+        setError(payload.message ?? "Unable to load the venue list.");
+        return;
+      }
+      setVenues(payload.venues ?? []);
+    } catch {
+      setVenues([]);
+      setError("Unable to load the venue list.");
+    } finally {
+      setIsLoadingVenues(false);
+    }
+  }
+
+  useEffect(() => {
+    const timeout = window.setTimeout(() => {
+      void loadVenues();
+    }, 0);
+    return () => window.clearTimeout(timeout);
+  }, []);
+
+  // A merged venue on either side is refused by the service, so offering one only produces an
+  // error the caller has to read. They stay in the loaded list, though, so the counter still
+  // reports how many rows the module actually holds.
+  const mergeable = useMemo(() => venues.filter((venue) => !venue.mergedIntoPharmacyId), [venues]);
+  const survivor = useMemo(() => venues.find((venue) => venue.id === survivorId) ?? null, [survivorId, venues]);
+  const loser = useMemo(() => venues.find((venue) => venue.id === loserId) ?? null, [loserId, venues]);
+  const canMerge = Boolean(survivorId && loserId && survivorId !== loserId && reason.trim() && !isMerging);
+
+  async function submitMerge() {
+    if (!canMerge || !survivor || !loser) return;
+    const confirmed = window.confirm(
+      `Merge "${loser.displayName}" (${loser.pharmacyCode}) into "${survivor.displayName}" (${survivor.pharmacyCode})?\n\n`
+      + "Every customer link, request target, distributor code and transfer moves to the survivor, "
+      + "and the duplicate is deactivated. This is written to the audit log and is not undone from this screen.",
+    );
+    if (!confirmed) return;
+
+    setIsMerging(true);
+    setError(null);
+    setOutcome(null);
+    try {
+      const response = await fetch("/api/marketing-requests/venue-merge", {
+        body: JSON.stringify({ loserId, reason: reason.trim(), survivorId }),
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      });
+      const payload = await response.json();
+      if (!response.ok) {
+        setError(payload.message ?? "Could not merge the venues.");
+        return;
+      }
+      setOutcome({
+        alreadyOnSurvivor: Number(payload.alreadyOnSurvivor ?? 0),
+        codesMoved: Number(payload.codesMoved ?? 0),
+        customerLinksMoved: Number(payload.customerLinksMoved ?? 0),
+        requestTargetsMoved: Number(payload.requestTargetsMoved ?? 0),
+        transfersMoved: Number(payload.transfersMoved ?? 0),
+      });
+      setLoserId("");
+      setReason("");
+      await loadVenues();
+      onMerged();
+    } catch {
+      setError("Could not merge the venues.");
+    } finally {
+      setIsMerging(false);
+    }
+  }
+
+  return (
+    <PortalSection
+      actions={<Badge variant="neutral">{venues.length} venues</Badge>}
+      description="Fold a duplicate shop into the row that survives. Every customer link, request target, distributor code and transfer moves across, the duplicate is deactivated, and the merge is written to the audit log."
+      eyebrow="Customer Database"
+      title="Merge duplicate venues"
+    >
+      <div className="grid gap-4 p-4 sm:p-5">
+        <div className="grid gap-4 lg:grid-cols-2">
+          <div className="grid gap-1.5">
+            <label
+              className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-500"
+              htmlFor="venue-merge-survivor"
+            >
+              Venue that survives
+            </label>
+            <SearchableSelect
+              className="h-10 w-full rounded border border-slate-200 bg-white px-3 text-sm font-bold text-slate-800 outline-none transition focus:border-orange-300 focus:ring-4 focus:ring-orange-100"
+              disabled={isLoadingVenues || isMerging}
+              id="venue-merge-survivor"
+              onChange={(event) => setSurvivorId(event.target.value)}
+              value={survivorId}
+            >
+              <option value="">Search by name or code</option>
+              {mergeable.map((venue) => (
+                <option key={venue.id} value={venue.id}>{venueOptionLabel(venue)}</option>
+              ))}
+            </SearchableSelect>
+          </div>
+
+          <div className="grid gap-1.5">
+            <label
+              className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-500"
+              htmlFor="venue-merge-loser"
+            >
+              Duplicate to retire
+            </label>
+            <SearchableSelect
+              className="h-10 w-full rounded border border-slate-200 bg-white px-3 text-sm font-bold text-slate-800 outline-none transition focus:border-orange-300 focus:ring-4 focus:ring-orange-100"
+              disabled={isLoadingVenues || isMerging}
+              id="venue-merge-loser"
+              onChange={(event) => setLoserId(event.target.value)}
+              value={loserId}
+            >
+              <option value="">Search by name or code</option>
+              {mergeable
+                .filter((venue) => venue.id !== survivorId)
+                .map((venue) => (
+                  <option key={venue.id} value={venue.id}>{venueOptionLabel(venue)}</option>
+                ))}
+            </SearchableSelect>
+          </div>
+        </div>
+
+        <div className="grid gap-1.5">
+          <label
+            className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-500"
+            htmlFor="venue-merge-reason"
+          >
+            Why these two are one shop
+          </label>
+          <Input
+            className="h-10 border-slate-200 bg-white font-bold"
+            disabled={isMerging}
+            id="venue-merge-reason"
+            onChange={(event) => setReason(event.target.value)}
+            placeholder="Same shop registered twice under two codes"
+            value={reason}
+          />
+        </div>
+
+        {survivor && loser ? (
+          <div className="rounded border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold leading-6 text-slate-700">
+            <span className="font-black text-slate-950">{loser.displayName}</span>
+            <span className="font-mono text-xs font-black text-slate-600"> ({loser.pharmacyCode})</span>
+            {" is retired into "}
+            <span className="font-black text-slate-950">{survivor.displayName}</span>
+            <span className="font-mono text-xs font-black text-slate-600"> ({survivor.pharmacyCode})</span>
+          </div>
+        ) : null}
+
+        {error ? (
+          <div className="rounded border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-900">
+            {error}
+          </div>
+        ) : null}
+
+        {outcome ? (
+          <div className="rounded border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold leading-6 text-emerald-900">
+            {`Merged. Moved ${outcome.customerLinksMoved} customer link(s), ${outcome.requestTargetsMoved} request target(s), `}
+            {`${outcome.codesMoved} distributor code(s) and ${outcome.transfersMoved} transfer(s); `}
+            {`${outcome.alreadyOnSurvivor} were already on the survivor.`}
+          </div>
+        ) : null}
+
+        <div className="flex flex-wrap items-center gap-3">
+          <Button
+            className="gap-2 rounded bg-orange-600 px-3 font-black hover:bg-orange-700"
+            disabled={!canMerge}
+            onClick={() => void submitMerge()}
+            type="button"
+          >
+            {isMerging ? <LoadingSpinner /> : <Merge className="h-4 w-4" />}
+            Merge venues
+          </Button>
+          {isLoadingVenues ? (
+            <span className="inline-flex items-center gap-2 text-xs font-bold text-slate-500">
+              <LoadingSpinner /> Loading venues...
+            </span>
+          ) : null}
+        </div>
+      </div>
+    </PortalSection>
+  );
+}
+
 export function MarketingCustomerDatabase() {
   const [workspace, setWorkspace] = useState<MarketingCustomerDatabaseWorkspace>(emptyWorkspace);
   const [isLoading, setIsLoading] = useState(true);
@@ -222,6 +457,8 @@ export function MarketingCustomerDatabase() {
           {message}
         </div>
       ) : null}
+
+      <MergeVenuesPanel onMerged={() => void loadWorkspace()} />
 
       <PortalSection
         actions={<Badge variant="neutral">{workspace.rows.length} rows</Badge>}

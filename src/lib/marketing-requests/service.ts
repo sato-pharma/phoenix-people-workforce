@@ -94,6 +94,7 @@ import type {
   MarketingValidationReportRow,
   MarketingValidationStatus,
   MarketingValidationWorkspace,
+  MarketingVenueMergeCandidate,
   MarketingVenueMergeResult,
   MarketingDecisionLabels,
   MarketingStepKind,
@@ -8611,6 +8612,47 @@ export async function moveMarketingVenueChildren(
   }
 
   return { alreadyOnSurvivor, moved };
+}
+
+/**
+ * Every venue a merge could name, for the picker on the Customer Database screen.
+ *
+ * Reads `marketing_pharmacies` directly rather than reusing the Customer Database rows, which are
+ * customer LINKS: a duplicate venue created and never linked to anybody has no link row, so it
+ * would be missing from exactly the list that exists to retire it. Inactive venues are included
+ * for the same reason — the module deactivates a duplicate as its way of hiding one, and those
+ * rows are the merge backlog, not noise.
+ *
+ * Already-merged venues stay in the list so the caller can SEE that a code resolves to a
+ * tombstone; `mergedIntoPharmacyId` is what the UI labels them with, and the service refuses them
+ * on either side of a merge regardless.
+ */
+export async function listMarketingVenueMergeCandidates(
+  access: AccessContext,
+): Promise<MarketingVenueMergeCandidate[]> {
+  assertMarketingControlAccess(access);
+
+  const supabase = getSupabaseAdmin();
+  const result = await supabase
+    .from("marketing_pharmacies")
+    .select("*")
+    .order("display_name", { ascending: true })
+    .limit(MARKETING_WORKSPACE_SAFETY_LIMIT);
+  if (result.error) throw result.error;
+
+  return ((result.data ?? []) as MarketingPharmacyDbRow[]).map((row) => {
+    const venue = mapMarketingPharmacy(row);
+    return {
+      active: venue.active,
+      area: venue.extractedAreaName,
+      displayName: venue.displayName,
+      governorate: venue.extractedGovernorateName,
+      id: venue.id,
+      mergedIntoPharmacyId: venue.mergedIntoPharmacyId,
+      pharmacyCode: venue.pharmacyCode,
+      venueType: venue.venueType,
+    };
+  });
 }
 
 /**
