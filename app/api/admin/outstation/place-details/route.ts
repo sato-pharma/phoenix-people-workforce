@@ -110,10 +110,14 @@ export async function GET(request: Request) {
 
     const displayName = result.displayName?.text ?? "";
 
-    // Detect broad administrative regions (e.g. a whole governorate/markaz).
-    // Google pins these at the region's representative point, which can be far
-    // from the actual city — measuring distance to it is misleading, so we flag
-    // it and let the UI warn the admin to pick a city or specific place.
+    // Detect regions whose representative point can sit far from the place the admin means —
+    // a governorate or coarser. NOT a markaz/qism: administrative_area_level_2..4 in Egypt are
+    // town-level, and their centre IS the town. Measured 2026-08-23 from a Cairo residence:
+    // Ibsheway markaz centre 109.3 km vs the locality Ibshaway 109.0 km — 0.3 km apart, so
+    // warning on it was pure noise. A governorate centre is a different animal: Faiyum
+    // Governorate centre is 116.0 km vs Faiyum city 100.2 km, and the centres of New Valley,
+    // Marsa Matrouh, Red Sea and South Sinai are roadless desert that Google cannot route to
+    // at all.
     const types = Array.isArray(result.types) ? result.types : [];
     const SPECIFIC_PLACE_TYPES = new Set([
       "locality",
@@ -132,9 +136,6 @@ export async function GET(request: Request) {
     ]);
     const BROAD_REGION_TYPES = new Set([
       "administrative_area_level_1",
-      "administrative_area_level_2",
-      "administrative_area_level_3",
-      "administrative_area_level_4",
       "country",
       "colloquial_area",
       "archipelago",

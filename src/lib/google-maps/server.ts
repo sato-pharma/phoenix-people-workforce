@@ -89,6 +89,16 @@ function getServerKey() {
   return process.env.GOOGLE_MAPS_SERVER_KEY ?? "";
 }
 
+/**
+ * Whether a server-side Maps key exists at all. Every Routes/Places helper here answers with
+ * nulls when the key is missing, which is indistinguishable from a genuine "no result" — callers
+ * that report the failure to a human must check this first so a configuration outage is never
+ * described as a bad destination.
+ */
+export function isGoogleMapsServerKeyConfigured() {
+  return getServerKey().trim().length > 0;
+}
+
 function parseDurationSeconds(value: unknown) {
   const raw = String(value ?? "").trim();
   if (!raw.endsWith("s")) return null;

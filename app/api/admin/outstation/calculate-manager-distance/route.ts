@@ -1,8 +1,14 @@
 import { NextResponse } from "next/server";
 
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
-import { googleDirectionsRoute } from "@/lib/google-maps/server";
+import { googleDirectionsRoute, isGoogleMapsServerKeyConfigured } from "@/lib/google-maps/server";
 import { assertOutstationAdminAccess } from "@/lib/outstation/admin-access";
+import {
+  isUnresolvedResidenceCoordinate,
+  mapsNotConfiguredFailure,
+  noDrivingRouteFailure,
+  unresolvedResidenceFailure,
+} from "@/lib/outstation/distance-failure";
 import { getResidenceLocationForEmployee } from "@/lib/outstation/service";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
@@ -23,6 +29,8 @@ export async function POST(request: Request) {
     await assertOutstationAdminAccess(access, "approve");
 
     const body = (await request.json().catch(() => ({}))) as {
+      destinationIsRegion?: boolean;
+      destinationLabel?: string;
       destinationLat?: number;
       destinationLng?: number;
       managerHrId?: string;
@@ -31,6 +39,9 @@ export async function POST(request: Request) {
     const managerHrId = typeof body.managerHrId === "string" ? body.managerHrId.trim() : "";
     const destinationLat = Number(body.destinationLat);
     const destinationLng = Number(body.destinationLng);
+    const destinationIsRegion = body.destinationIsRegion === true;
+    const destinationLabel =
+      typeof body.destinationLabel === "string" ? body.destinationLabel.trim() || null : null;
 
     if (!managerHrId) {
       return NextResponse.json(
@@ -43,6 +54,17 @@ export async function POST(request: Request) {
       return NextResponse.json(
         { error: "invalid_destination", message: "destinationLat and destinationLng must be valid numbers." },
         { status: 400 },
+      );
+    }
+
+    if (!isGoogleMapsServerKeyConfigured()) {
+      const failure = mapsNotConfiguredFailure();
+      console.error(
+        "[outstation] distance calculation unavailable: GOOGLE_MAPS_SERVER_KEY is not set",
+      );
+      return NextResponse.json(
+        { error: failure.error, message: failure.message },
+        { status: failure.status },
       );
     }
 
@@ -61,18 +83,42 @@ export async function POST(request: Request) {
       );
     }
 
+    if (
+      isUnresolvedResidenceCoordinate(
+        residence.residenceLatitude,
+        residence.residenceLongitude,
+      )
+    ) {
+      const failure = unresolvedResidenceFailure(managerHrId);
+      console.warn(
+        `[outstation] residence never geocoded for ${managerHrId} `
+          + "(stored as the Egypt country centroid, which has no road)",
+      );
+      return NextResponse.json(
+        { error: failure.error, message: failure.message },
+        { status: failure.status },
+      );
+    }
+
     const directions = await googleDirectionsRoute(
       { lat: residence.residenceLatitude, lng: residence.residenceLongitude },
       { lat: destinationLat, lng: destinationLng },
     );
 
     if (directions.distanceMeters == null) {
+      const failure = noDrivingRouteFailure({
+        destinationIsRegion,
+        destinationLabel,
+        destinationLat,
+        destinationLng,
+      });
+      console.warn(
+        `[outstation] no driving route for ${managerHrId} to ${destinationLat},${destinationLng}`
+          + `${destinationIsRegion ? " (administrative region)" : ""}`,
+      );
       return NextResponse.json(
-        {
-          error: "route_not_found",
-          message: "Google Maps could not calculate a driving route to the selected destination.",
-        },
-        { status: 422 },
+        { error: failure.error, message: failure.message },
+        { status: failure.status },
       );
     }
 
