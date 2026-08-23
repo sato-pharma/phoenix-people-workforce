@@ -45,6 +45,10 @@ import type { OutstationExpenseRequest } from "@/lib/outstation/types";
 import { formatEmployeeDisplayName } from "@/lib/utils";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { ZoomablePhoto } from "@/components/ui/zoomable-photo";
+import {
+  PortalRecordCard,
+  PortalRecordFields,
+} from "@/components/employee-portal/portal-primitives";
 
 
 type AdminAction = "approve" | "delete" | "reject";
@@ -1071,7 +1075,68 @@ export function OutstationRequestsAdmin({
               </div>
             </div>
 
-            <div className="max-h-[68vh] overflow-auto">
+            {/* Below `md` the queue is a card list. The table is 1,240px wide with two sticky
+                columns, so on a phone the Actions column — View and Edit, the only things you can
+                actually DO here — sat permanently off the right edge behind a sideways scroll.
+                Tapping the employee name selects the request, which is what tapping the row does
+                on desktop; View and Edit are real buttons, so they cannot nest inside it. */}
+            <div className="divide-y divide-slate-100 md:hidden">
+              {filtered.length === 0 ? (
+                <p className="px-4 py-8 text-center text-sm font-semibold text-slate-400">
+                  No requests match these filters.
+                </p>
+              ) : (
+                filtered.map((request) => (
+                  <PortalRecordCard
+                    accent={request.id === selectedRequest?.id ? "orange" : "slate"}
+                    actions={
+                      <>
+                        <Button
+                          className="gap-1.5 rounded-xl border border-[#DDE6F1] bg-white px-3 py-2 text-xs font-black text-[#0F172A]"
+                          onClick={() => openDetails(request)}
+                          type="button"
+                        >
+                          <Eye className="h-3.5 w-3.5" />
+                          View
+                        </Button>
+                        <Button
+                          className="gap-1.5 rounded-xl border border-[#FED7AA] bg-[#FFF7ED] px-3 py-2 text-xs font-black text-[#EA580C]"
+                          onClick={() => setManagerExpenseModal({ mode: "edit", request })}
+                          type="button"
+                        >
+                          <Edit2 className="h-3.5 w-3.5" />
+                          Edit
+                        </Button>
+                      </>
+                    }
+                    key={request.id}
+                    meta={`${request.employeeHrId} - ${request.employeeRole}`}
+                    status={
+                      <span className={`inline-flex rounded-full px-3 py-1 text-xs font-bold ring-1 ${requestStatusTone(request.status)}`}>
+                        {formatStatus(request.status)}
+                      </span>
+                    }
+                    title={
+                      <button className="text-left" onClick={() => selectRequest(request)} type="button">
+                        {formatEmployeeDisplayName(request.employeeName)}
+                      </button>
+                    }
+                  >
+                    <PortalRecordFields
+                      fields={[
+                        { label: "Trip", value: `${formatDate(request.tripStartDate)} to ${formatDate(request.tripEndDate)}` },
+                        { label: "Distance", value: formatKm(request.distanceFromResidenceKm) },
+                        { label: "Eligibility", value: formatStatus(request.eligibilityStatus) },
+                        { label: "Claimed", value: formatCurrency(request.claimedTotalAmount) },
+                        { label: "Recommendation", value: formatStatus(request.approvalRecommendation) },
+                      ]}
+                    />
+                  </PortalRecordCard>
+                ))
+              )}
+            </div>
+
+            <div className="hidden max-h-[68vh] overflow-auto md:block">
               <table className="min-w-[1240px] w-full border-separate border-spacing-0 text-left text-sm">
                 <thead className="sticky top-0 z-40 bg-[#F8FAFC] text-[11px] uppercase tracking-[0.16em] text-[#64748B]">
                   <tr>

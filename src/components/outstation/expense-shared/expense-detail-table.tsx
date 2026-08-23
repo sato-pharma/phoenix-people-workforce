@@ -4,6 +4,12 @@ import { useMemo, useState } from "react";
 import { ArrowDown, ArrowUp, ChevronsUpDown } from "lucide-react";
 
 import { AdminTableShell } from "@/components/admin/admin-design-system";
+import {
+  PortalDesktopTable,
+  PortalRecordCard,
+  PortalRecordFields,
+  PortalResponsiveDataList,
+} from "@/components/employee-portal/portal-primitives";
 import { egp, EXPENSE_SOURCE_LABELS, formatShortDate } from "@/components/outstation/expense-shared/formatters";
 import type {
   ExpenseCommandRow,
@@ -169,8 +175,65 @@ export function ExpenseDetailTable({
         </span>
       }
     >
-      <div className="w-full overflow-x-auto">
-        <table className="w-full table-fixed border-collapse text-sm">
+      {/* Sorting lives in the table header, which is desktop-only — so the phone gets its own
+          control. Without it the mobile card list would be permanently stuck on the default
+          date-descending order, which is a lost capability rather than a restyle. */}
+      <div className="flex items-center gap-2 border-b border-slate-100 px-3 py-2.5 md:hidden">
+        <label className="text-[10px] font-black uppercase tracking-[0.12em] text-slate-400" htmlFor="expense-sort">
+          Sort
+        </label>
+        <select
+          className="min-w-0 flex-1 rounded border border-slate-200 bg-white px-2 py-1.5 text-xs font-bold text-slate-700"
+          id="expense-sort"
+          onChange={(event) => setSortKey(event.target.value as ColumnKey)}
+          value={sortKey}
+        >
+          {columns.map((column) => (
+            <option key={column.key} value={column.key}>
+              {column.label}
+            </option>
+          ))}
+        </select>
+        <button
+          className="shrink-0 rounded border border-slate-200 bg-white px-2 py-1.5 text-xs font-bold text-slate-700"
+          onClick={() => setSortDir((dir) => (dir === "asc" ? "desc" : "asc"))}
+          type="button"
+        >
+          {sortDir === "asc" ? "Ascending" : "Descending"}
+        </button>
+      </div>
+
+      <PortalResponsiveDataList
+        empty={
+          <p className="px-3 py-12 text-center text-sm font-semibold text-slate-400">
+            No expense rows match these filters.
+          </p>
+        }
+        getKey={(row, index) => `${row.tripId}-${index}`}
+        items={visible}
+        renderCard={(row) => {
+          const sub = [row.region, row.line].filter(Boolean).join(" · ");
+          return (
+            <PortalRecordCard
+              accent="orange"
+              meta={[formatShortDate(row.date), variant === "admin" ? sub : ""].filter(Boolean).join(" · ")}
+              status={<span className="text-sm font-black tabular-nums text-[#0F172A]">{egp(row.total)}</span>}
+              title={(variant === "admin" ? row.specialist : row.to || row.location) || "—"}
+            >
+              <PortalRecordFields
+                fields={[
+                  { label: "Destination", value: row.to || row.location || "—" },
+                  { label: "Type", value: row.tripType || "—" },
+                  { label: "Source", value: renderCell("source", row) },
+                  { label: "Status", value: renderCell("status", row) },
+                  { label: "KM", value: Math.round(row.km ?? 0).toLocaleString() },
+                ]}
+              />
+            </PortalRecordCard>
+          );
+        }}
+        renderTable={() => (
+          <PortalDesktopTable className="table-fixed border-collapse" minWidth="0px">
           <colgroup>
             {columns.map((column) => (
               <col key={column.key} style={column.width ? { width: column.width } : undefined} />
@@ -209,37 +272,29 @@ export function ExpenseDetailTable({
             </tr>
           </thead>
           <tbody>
-            {visible.length === 0 ? (
-              <tr>
-                <td
-                  className="px-3 py-12 text-center text-sm font-semibold text-slate-400"
-                  colSpan={columns.length}
-                >
-                  No expense rows match these filters.
-                </td>
+            {/* No empty branch here: PortalResponsiveDataList renders `empty` and never calls
+                renderTable when the list is empty, so a copy of the empty row would be dead. */}
+            {visible.map((row, index) => (
+              <tr
+                key={`${row.tripId}-${index}`}
+                className="border-b border-[#F6E8D8] bg-white transition-colors odd:bg-[#FFFCF8] hover:bg-[#FFF3E6]"
+              >
+                {columns.map((column) => (
+                  <td
+                    key={column.key}
+                    className={`px-3 py-2.5 align-middle ${alignClass(column.align)} ${
+                      column.numeric ? "tabular-nums" : ""
+                    }`}
+                  >
+                    {renderCell(column.key, row)}
+                  </td>
+                ))}
               </tr>
-            ) : (
-              visible.map((row, index) => (
-                <tr
-                  key={`${row.tripId}-${index}`}
-                  className="border-b border-[#F6E8D8] bg-white transition-colors odd:bg-[#FFFCF8] hover:bg-[#FFF3E6]"
-                >
-                  {columns.map((column) => (
-                    <td
-                      key={column.key}
-                      className={`px-3 py-2.5 align-middle ${alignClass(column.align)} ${
-                        column.numeric ? "tabular-nums" : ""
-                      }`}
-                    >
-                      {renderCell(column.key, row)}
-                    </td>
-                  ))}
-                </tr>
-              ))
-            )}
+            ))}
           </tbody>
-        </table>
-      </div>
+          </PortalDesktopTable>
+        )}
+      />
     </AdminTableShell>
   );
 }

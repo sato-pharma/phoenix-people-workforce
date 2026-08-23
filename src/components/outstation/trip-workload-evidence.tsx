@@ -7,6 +7,12 @@ import { FieldWorkforceRouteMap } from "@/components/field-workforce-compliance/
 import { Badge } from "@/components/ui/badge";
 import { formatDateValue, formatNumberValue } from "@/lib/i18n/format";
 import { cn } from "@/lib/utils";
+import {
+  PortalDesktopTable,
+  PortalRecordCard,
+  PortalRecordFields,
+  PortalResponsiveDataList,
+} from "@/components/employee-portal/portal-primitives";
 
 type WorkloadVisitDetail = {
   ampm: string | null;
@@ -231,11 +237,40 @@ export function TripWorkloadEvidencePanel({
           </p>
         </div>
       </div>
-      {/* overflow-x-auto, not overflow-hidden: seven columns with nowrap dates do not fit a phone,
-          and hidden CLIPPED the later columns with no way to reach them. Scrolling keeps the table
-          whole and keeps the sideways movement inside this box. */}
-      <div className="overflow-x-auto rounded-xl border border-[#e4e9ec]">
-        <table className="w-full text-left text-xs">
+      {/* Seven columns with nowrap dates never fitted a phone. This used to be a bare
+          `overflow-x-auto` — chosen over `overflow-hidden` because hidden CLIPPED the later
+          columns with no way to reach them — but a sideways-scrolling table is not what the phone
+          is supposed to get at all (AGENTS.md §4). The table is now desktop-only and the same days
+          render as cards below `md`, so nothing scrolls sideways and nothing is clipped. */}
+      <div className="overflow-hidden rounded-xl border border-[#e4e9ec]">
+        <PortalResponsiveDataList
+          empty={<p className="px-3 py-6 text-center text-xs font-semibold text-slate-400">No days in range.</p>}
+          getKey={(day) => day.date}
+          items={data.dateBreakdown}
+          renderCard={(day) => (
+            <PortalRecordCard
+              accent={day.total === 0 ? "rose" : "sky"}
+              status={
+                day.total === 0 ? (
+                  <span className="text-xs font-bold text-rose-600">No activity</span>
+                ) : (
+                  <span className="text-xs font-semibold text-emerald-700">{fmt(day.total)} field visits</span>
+                )
+              }
+              title={formatDateValue(day.date)}
+            >
+              <PortalRecordFields
+                fields={[
+                  { label: "AM", value: fmt(day.am) },
+                  { label: "PM", value: fmt(day.pm) },
+                  { label: "Regular", value: fmt(day.regular) },
+                  { label: "Campaign", value: fmt(day.campaign) },
+                ]}
+              />
+            </PortalRecordCard>
+          )}
+          renderTable={() => (
+            <PortalDesktopTable className="text-xs" minWidth="0px">
           <thead className="bg-slate-50 text-[10px] uppercase tracking-[0.1em] text-slate-500">
             <tr>
               <th className="px-3 py-2 font-bold">Day</th>
@@ -266,7 +301,9 @@ export function TripWorkloadEvidencePanel({
               </tr>
             ))}
           </tbody>
-        </table>
+            </PortalDesktopTable>
+          )}
+        />
       </div>
 
       {/* Inline visit + route detail: the actual visits and GPS check-ins with submission time
