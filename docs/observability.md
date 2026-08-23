@@ -193,16 +193,25 @@ policy):
    | `phoenix-reconcile-visits` | `24 4 * * 0` | 2h |
    | `phoenix-ireports360-live-sync` | `1,16,31,46 8-12 * * *` | 15m |
    | `phoenix-recruitment-email-intake` | `4-59/10 * * * *` | 10m |
-   | `phoenix-direct-orders-expire-held` | `17 23 * * *` | 2h |
-   | `phoenix-direct-orders-probation` | `17 23 * * *` | 2h |
+   | `phoenix-direct-orders-expire-held` | `17 2 * * *` | 2h |
+   | `phoenix-direct-orders-probation` | `27 2 * * *` | 2h |
    | `phoenix-run-synthetic-journeys` | `0 * * * *` | 1h |
 
-   The two `phoenix-direct-orders-*` rows are the exception to the warning below: their schedule
-   is **not** in cron-job.org, it is `.github/workflows/direct-orders-sweeps.yml` in this repo
-   (`17 23 * * *` UTC = ~02:17 Cairo), so that expression is authoritative and reviewable. They
-   were added 2026-08-23 after both clocks 401'd nightly for nine days unnoticed — the GitHub
-   Actions copy of `CRON_SECRET` was left stale by the 2026-08-14 Railway rotation. A red
-   scheduled-workflow run proved not to reach anyone; a missing ping does.
+   The two `phoenix-direct-orders-*` rows **moved into cron-job.org on 2026-08-23** — jobs `8313165`
+   (02:17) and `8313177` (02:27), both Africa/Cairo, staggered so the two sweeps never overlap. They
+   are therefore covered by the drift warning below like every other row: read the live schedule out
+   of the account before tuning their grace.
+
+   They ran from `.github/workflows/direct-orders-sweeps.yml` for one day before that. The move
+   happened because scheduling from GitHub put `CRON_SECRET` in a second, independently rotated
+   store: the 2026-08-14 Railway rotation was never mirrored into Actions, both clocks 401'd nightly
+   for nine days, and nobody noticed — a red scheduled-workflow run proved not to reach anyone; a
+   missing ping does. That workflow still exists with `workflow_dispatch` and **no `schedule:`**, as
+   a manual fallback; re-adding a schedule there would double-fire both sweeps.
+
+   Both expressions above are **Africa/Cairo local**, matching how cron-job.org is configured. Set
+   these two Healthchecks checks to that timezone rather than UTC, or the expected-ping window sits
+   two to three hours off the real one and shifts again at every Egyptian DST change.
 
    `phoenix-run-synthetic-journeys` is the one row above that was **measured rather than copied**,
    so it is not subject to the drift warning that follows. `/api/cron/run-synthetic-journeys` does
