@@ -145,6 +145,11 @@ file holding the full account, under
 
 **Validation**
 
+- **A test name appended beside an existing one in `tests/run-tests.ts` becomes an ARGUMENT, not a
+  registration** — `runTest(name, fn)` takes exactly two, so the third silently never runs; #2357
+  escaped only because the surplus argument was also a `TS2554`. One `await runTest(name, fn)` per
+  test (`docs/testing.md` step 5). Check by AST, not a local `tsc`: 883 `runTest` calls, all 2-arg,
+  the new fn a second argument exactly once — a comma count cannot work, the names are long prose.
 - **RAM-saturated? WAIT — do not skip validation for it.** `dont-skip-validation-for-ram-wait-instead`
 - **Source-pinning tests slice a fixed BYTE window and false-FAIL** when the file shifts.
   `source-pinning-tests-slice-a-fixed-byte-window`
