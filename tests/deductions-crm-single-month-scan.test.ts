@@ -271,4 +271,45 @@ export function runDeductionsCrmSingleMonthScanTests() {
     0,
     "a month with no confirmed holidays is a legitimate empty set, not a failure",
   );
+
+  // ---- A LEAVER CANDIDATE MUST CARRY THE COLLECTION-TIME NAME ---------------
+  //
+  // `service.ts` stores employee_name as the historical snapshot — "the stored name
+  // wins when it exists — it is the name as at collection time" — and only falls back
+  // to the live employees directory to fill a gap. The leaver path passed no name at
+  // all, so every leaver candidate stored NULL and leaned entirely on that fallback.
+  //
+  // Nothing rendered wrong (listCandidatesForMonth merges the directory before any
+  // consumer sees a row), which is exactly why this went unnoticed: the damage was to
+  // the stored record, not the screen. A direct SQL read showed a bare HR code, and
+  // each settlement run needed a manual backfill — August 2026 produced 7 nameless
+  // rows and July 2026 another 6, all repaired by hand on 2026-08-23.
+  const named = collectLeaverCrmCandidate({
+    ...LEAVER,
+    employeeName: "Soad Atef",
+    monthVisits: inSpan,
+    holidayDates,
+  });
+  assert.ok(named, "the fixture must produce a candidate, otherwise this test proves nothing");
+  assert.equal(
+    named.employeeName,
+    "Soad Atef",
+    "a leaver candidate must store the collection-time name — a NULL here is what forced the manual backfills of August and July 2026",
+  );
+
+  // Absent stays null rather than becoming the string "undefined" — the directory
+  // fallback in service.ts is keyed on falsiness, so only null lets it engage.
+  assert.equal(
+    collectLeaverCrmCandidate({ ...LEAVER, monthVisits: inSpan, holidayDates })?.employeeName,
+    null,
+    "a leaver with no name available must store null, so service.ts's directory fallback still engages",
+  );
+
+  // Whitespace is the dangerous case: "   " is TRUTHY, so `storedName || known?.fullName`
+  // would keep it and render an empty cell where a name belongs.
+  assert.equal(
+    collectLeaverCrmCandidate({ ...LEAVER, employeeName: "   ", monthVisits: inSpan, holidayDates })?.employeeName,
+    null,
+    "a whitespace-only name must collapse to null — it is truthy, so it would win over the directory fallback and render as a blank",
+  );
 }
