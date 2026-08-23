@@ -5220,12 +5220,26 @@ function canReuseMarketingPharmacy(
 /**
  * The pharmacies the validation form offers back on its "My Pharmacies" tab.
  *
- * Restricted to rows somebody actually validated (`owner_hr_id` set). The 286 history-seeded
- * pharmacies carry no owner, no area and `evidence_status = 'missing'`, so they belong to nobody's
- * list, and linking one would park the customer that picked it on "Not Usable Yet" for a reason the
- * rep never caused. Evidence status still rides on every row returned, because a rep's OWN pharmacy
- * can be short of a photo too — the picker flags that rather than hiding the row (owner's standing
- * rule: the system flags, it does not refuse).
+ * Restricted to rows somebody actually validated (`owner_hr_id` set), because linking a venue
+ * nobody has ever stood in front of parks the customer that picked it on "Not Usable Yet" for a
+ * reason the rep never caused.
+ *
+ * That filter is the ONLY thing holding the seeded rows back. It is NOT redundant with the area
+ * check in `canReuseMarketingPharmacy`, and dropping it is not a tidy-up. Measured in production
+ * on 2026-08-24: 280 active seeded venues, every one written by the same 2026-06-20 backfill, all
+ * `evidence_status = 'missing'`, none carrying an owner or a manager, and every one carrying a
+ * vendor code — so the no-code filter further down does not stop them either.
+ *
+ * The area is the part an earlier version of this comment had wrong, and it is the load-bearing
+ * part: those rows do NOT have a null `area_id`. All 280 carry one, spread over 37 areas, up to 26
+ * in a single area (Menoufia 2). Remove the owner filter and `canReuseMarketingPharmacy` admits
+ * them on its area branch to every rep in those 37 areas, and admits all 280 to every company-wide
+ * role — `canSeeMarketingHierarchyRecord` returns true for Super Admin, CEO, Finance Manager,
+ * Financial Advisor, Marketing Manager and SFE Manager before it ever looks at the row.
+ *
+ * Evidence status still rides on every row returned, because a rep's OWN pharmacy can be short of a
+ * photo too — the picker flags that rather than hiding the row (owner's standing rule: the system
+ * flags, it does not refuse).
  */
 async function buildReusableMarketingPharmacies(params: {
   access: AccessContext;
