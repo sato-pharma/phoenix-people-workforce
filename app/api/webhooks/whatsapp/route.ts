@@ -80,7 +80,9 @@ export async function POST(request: Request) {
     try {
       // A plain text message is buffered so its first few lines can be shown next to the candidate
       // once their CV document arrives. Buffering is best-effort — never fail the message over it.
-      if (message.text) {
+      // A history replay is excluded: those lines were typed weeks ago, and letting them into the
+      // live buffer would staple one applicant's old chat onto the next applicant's CV.
+      if (message.text && !message.historical) {
         await bufferWhatsAppMessage(message.from, message.text).catch((bufferError) => {
           logError("WhatsApp message buffering failed", {
             error: bufferError,
@@ -99,11 +101,13 @@ export async function POST(request: Request) {
       // Snapshot the source context NOW (caption + the sender's preceding messages), so it reflects
       // what was true when the CV arrived — not minutes later when the worker runs. Preceding
       // messages are skipped for a bulk forward-import (they belong to the forwarder, not the
-      // applicant); the per-CV caption is still kept. Best-effort.
+      // applicant) and for a history replay (the buffer holds live traffic, not the past); the
+      // per-CV caption is still kept either way. Best-effort.
       const isImport = isWhatsAppImportSender(message.from, importSenders);
       let sourceContext = null;
       try {
-        const buffered = isImport ? [] : await takeRecentWhatsAppMessages(message.from, MAX_WHATSAPP_SOURCE_MESSAGES);
+        const useBuffer = !isImport && !message.historical;
+        const buffered = useBuffer ? await takeRecentWhatsAppMessages(message.from, MAX_WHATSAPP_SOURCE_MESSAGES) : [];
         sourceContext = assembleWhatsAppSourceContext(message.document.caption, buffered);
       } catch (contextError) {
         logError("WhatsApp source-context assembly failed", {
@@ -122,6 +126,7 @@ export async function POST(request: Request) {
           filename: message.document.filename,
           forwarded: message.forwarded,
           from: message.from,
+          historical: message.historical,
           kind: "whatsapp",
           mediaId: message.document.mediaId,
           messageType: message.messageType,
