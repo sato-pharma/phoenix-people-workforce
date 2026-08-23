@@ -427,6 +427,7 @@ import { runOutstationCarEvidenceValidationTests } from "./outstation-car-eviden
 import { runOutstationExpenseExportTests } from "./outstation-expense-export.test.ts";
 import { runOutstationLocalDraftTests } from "./outstation-local-draft.test.ts";
 import { runOutstationPayrollExpenseMappingTests } from "./outstation-payroll-expense-mapping.test.ts";
+import { runOutstationImportIsAdditiveTests } from "./outstation-import-is-additive.test.ts";
 import { runOutstationPolicyClassificationTests } from "./outstation-policy-classification.test.ts";
 import { runOutstationNotificationsTests } from "./outstation-notifications.test.ts";
 import { runGeocodePrecisionTests } from "./geocode-precision.test.ts";
@@ -1494,6 +1495,7 @@ await runTest("outstation car evidence validation", runOutstationCarEvidenceVali
 await runTest("outstation expense export", runOutstationExpenseExportTests);
 await runTest("outstation local draft", runOutstationLocalDraftTests);
 await runTest("outstation payroll expense mapping", runOutstationPayrollExpenseMappingTests);
+await runTest("outstation import is additive and hr_id-scoped", runOutstationImportIsAdditiveTests);
 await runTest("outstation policy classification", runOutstationPolicyClassificationTests);
 await runTest("outstation notifications", runOutstationNotificationsTests);
 await runTest("outstation employee-lookup status (isActive cosmetic field)", runOutstationEmployeeLookupStatusTests);
