@@ -56,6 +56,7 @@ import { runResidenceGeocodePolicyTests } from "./residence-geocode-policy.test.
 import { runOutstationFuelPolicyTests } from "./outstation-fuel-policy.test.ts";
 import { runDeadMansSwitchTests } from "./dead-mans-switch.test.ts";
 import { runDirectOrdersSweepLivenessTests } from "./direct-orders-sweep-liveness.test.ts";
+import { runDirectOrdersHrIdCaseTests } from "./direct-orders-hr-id-case.test.ts";
 import { runPayrollEngineHardeningTests } from "./payroll-engine-hardening.test.ts";
 import { runPayrollSheetMappingTests } from "./payroll-sheet-mapping.test.ts";
 import { runPayrollWorkflowTests } from "./payroll-workflow.test.ts";
@@ -973,6 +974,7 @@ await runTest("residence geocode policy (a failed geocode must never null a stor
 await runTest("outstation fuel policy (an unmeasurable car distance must block, a measured 0 must not)", runOutstationFuelPolicyTests);
 await runTest("dead-man's-switch (Healthchecks.io ping helper)", runDeadMansSwitchTests);
 await runTest("direct orders sweeps stay watched (dead-man's-switch wiring)", runDirectOrdersSweepLivenessTests);
+await runTest("direct orders hr-id filters are case-insensitive", runDirectOrdersHrIdCaseTests);
 await runTest("money path silent failures (a confident zero is worse than an error)", runMoneyPathSilentFailureTests);
 await runTest("payroll sheet mapping", runPayrollSheetMappingTests);
 await runTest("payroll workflow", runPayrollWorkflowTests);
