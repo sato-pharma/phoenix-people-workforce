@@ -51,6 +51,44 @@ function userIdFromAccess(access: Pick<AccessContext, "hrId" | "loginId">) {
   return access.loginId ?? access.hrId ?? "";
 }
 
+// Uppercased to match system.ts's cleanHrId() convention (the form used for
+// include_aliases.external_id / hasActivePushSubscription's query) — must stay identical to
+// what /api/notifications/push/context hands the client for OneSignal.login(), or the stored
+// row silently never matches a real send/lookup.
+function normalizedPushHrId(hrId: string | null | undefined) {
+  const trimmed = hrId ? hrId.trim().toUpperCase() : "";
+  return trimmed ? trimmed : null;
+}
+
+export type PushSubscriptionSkipReason = "no-user" | "no-subscription-id" | "no-hr-id";
+
+/**
+ * Why this caller's browser cannot be recorded in `push_subscriptions`, or null when it can.
+ *
+ * `no-hr-id` is the one that is easy to get wrong, so it is worth stating plainly: an HR ID is
+ * not optional here, it is the ONLY handle a push send has. Every notification targets
+ * `include_aliases.external_id` built from it, `hasActivePushSubscription` queries by it, and
+ * `push_subscriptions.hr_id` is NOT NULL with no default. So a session with no employee behind
+ * it — the `admin-HR` system-administrator console login, which carries `hr_id = NULL` by design
+ * and cannot be given one — has nothing storable: the insert is rejected by the schema, and even
+ * if it landed the row could never be targeted by anything.
+ *
+ * Until 2026-08-24 the guard asked only for `loginId ?? hrId`, which such a session satisfies on
+ * its login id alone. It then wrote `hr_id: null` and every single page load ended in
+ * `23502 null value in column "hr_id" ... violates not-null constraint`, surfacing as a 500 from
+ * POST /api/notifications/push/register. Skipping is the honest answer, not a workaround: there
+ * is no row this caller could usefully store.
+ */
+export function pushSubscriptionSkipReason(
+  access: Pick<AccessContext, "hrId" | "loginId">,
+  onesignalSubscriptionId: string | null | undefined,
+): PushSubscriptionSkipReason | null {
+  if (!userIdFromAccess(access)) return "no-user";
+  if (!onesignalSubscriptionId || !onesignalSubscriptionId.trim()) return "no-subscription-id";
+  if (!normalizedPushHrId(access.hrId)) return "no-hr-id";
+  return null;
+}
+
 function tableMissing(error: unknown) {
   const text = (error instanceof Error ? error.message : `${String(error)} ${JSON.stringify(error)}`).toLowerCase();
   return text.includes("does not exist") || text.includes("schema cache") || text.includes("notification_preferences") || text.includes("telegram_connections");
@@ -109,8 +147,8 @@ export async function getNotificationSettings(access: Pick<AccessContext, "hrId"
         .order("updated_at", { ascending: false })
         .limit(1)
         .maybeSingle(),
-      // Uppercased to match how upsertPushSubscription stores hr_id — see that function's
-      // comment for why the casing must be kept identical everywhere.
+      // Uppercased to match how upsertPushSubscription stores hr_id — see normalizedPushHrId
+      // for why the casing must be kept identical everywhere.
       access.hrId
         ? supabase.from("push_subscriptions").select("device_type,status").eq("hr_id", access.hrId.trim().toUpperCase())
         : Promise.resolve({ data: [], error: null }),
@@ -426,16 +464,12 @@ export async function upsertPushSubscription(
     userAgent?: string | null;
   },
 ): Promise<{ skipped: boolean }> {
+  if (pushSubscriptionSkipReason(access, input.onesignalSubscriptionId)) return { skipped: true };
+
   const userId = userIdFromAccess(access);
   const subscriptionId = input.onesignalSubscriptionId.trim();
-  if (!userId || !subscriptionId) return { skipped: true };
-
   const now = new Date().toISOString();
-  // Uppercased to match system.ts's cleanHrId() convention (the form used for
-  // include_aliases.external_id / hasActivePushSubscription's query) — must stay
-  // identical to what /api/notifications/push/context hands the client for
-  // OneSignal.login(), or this row silently never matches a real send/lookup.
-  const normalizedHrId = access.hrId ? access.hrId.trim().toUpperCase() : null;
+  const normalizedHrId = normalizedPushHrId(access.hrId);
   const payload: Record<string, unknown> = {
     device_type: input.deviceType,
     hr_id: normalizedHrId,
