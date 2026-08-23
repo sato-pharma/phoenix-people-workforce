@@ -101,8 +101,8 @@ import {
   venueNonAttributableReason,
   venueRequiresDistributorCode,
   venueTypeLabel,
+  type VenueType,
 } from "@/lib/venues/venue-type";
-import type { VenueType } from "@/lib/venues/venue-type";
 import { getUserProductScopeOverride } from "@/lib/auth/scope-visibility";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { resolveMarketingPharmacyCodes } from "@/lib/marketing-requests/master-resolution";
@@ -4765,7 +4765,10 @@ async function refreshLinksAfterCustomerCompletion(input: {
         updated_at: nowIso,
         updated_by_hr_id: actorHrId,
         validation_notes: [
-          buildUntrackedDistributorCodeNote(distributorCode.referenceStatus),
+          distributorCode ? buildUntrackedDistributorCodeNote(distributorCode.referenceStatus) : null,
+          // The same sentence the capture path writes, so a link released later reads identically
+          // to one released at capture rather than losing the only note that explains its ROI.
+          distributorCode ? null : venueNonAttributableReason(normalizeVenueType(pharmacyRow.venue_type)),
           buildGovernorateMismatchNote(governorateCheck),
           MARKETING_RELEASED_BY_COMPLETION_NOTE,
         ].filter(Boolean).join(" ") || null,
@@ -4801,14 +4804,21 @@ function mapValidationReportRows(params: {
     const link = mapCustomerPharmacy(linkRow);
     const customer = customers.get(link.customerId);
     const pharmacy = pharmacies.get(link.pharmacyId);
-    const distributorCode = distributorCodes.get(link.distributorCodeId);
-    if (!customer || !pharmacy || !distributorCode) continue;
+    const distributorCode = link.distributorCodeId
+      ? distributorCodes.get(link.distributorCodeId) ?? null
+      : null;
+    if (!customer || !pharmacy) continue;
+    // A link that NAMES a code we could not load is broken and stays skipped. One that names none
+    // is a venue with no distributor account, and belongs on the report like any other.
+    if (link.distributorCodeId && !distributorCode) continue;
 
     summary[link.validationStatus] += 1;
     rows.push({
       customer,
       distributorCode,
-      distributorName: distributorNames.get(distributorCode.distributorId) ?? "Unknown distributor",
+      distributorName: distributorCode
+        ? distributorNames.get(distributorCode.distributorId) ?? "Unknown distributor"
+        : null,
       id: link.id,
       pharmacy,
       validationNotes: link.validationNotes,
@@ -6118,7 +6128,6 @@ export async function createMarketingValidationRecord(
         // would report zero ROI forever — the badge would say tracked and the money would not
         // arrive. The rep's own entry is preserved untouched in distributor_pharmacy_code.
         // Only set on a single unambiguous match; otherwise nothing has been proven.
-        const storedPharmacyCode = reference?.canonicalCode ?? vendorCode?.normalizedPharmacyCode ?? "";
         const linkValidationNotes = [
           isOnBehalf
             ? adminValidationNote
@@ -6132,8 +6141,13 @@ export async function createMarketingValidationRecord(
           // this venue is real, and its return can never be measured through sales.
           vendorCode ? null : venueNonAttributableReason(normalizedPharmacy.venueType),
         ].filter(Boolean).join(" ") || null;
-        const distributorCodeInsert = vendorCode && reference
-          ? await supabase
+        // Narrowed in one place: a venue with no distributor account writes no code row at all,
+        // so everything below this point can talk about a real code without optional chaining —
+        // which is what keeps the canonical-code rule a plain, checkable statement.
+        let distributorCode: MarketingPharmacyDistributorCode | null = null;
+        if (vendorCode && reference) {
+          const storedPharmacyCode = reference.canonicalCode ?? vendorCode.normalizedPharmacyCode;
+          const distributorCodeInsert = await supabase
             .from("marketing_pharmacy_distributor_codes")
             .insert({
               created_by_hr_id: actorHrId,
@@ -6147,13 +6161,11 @@ export async function createMarketingValidationRecord(
               validation_notes: reference.status === "matched" ? null : `Reference ${reference.status.replace(/_/g, " ")}.`,
             })
             .select("*")
-            .single()
-          : null;
-        if (distributorCodeInsert?.error) throw distributorCodeInsert.error;
-        const distributorCode = distributorCodeInsert
-          ? mapDistributorCode(distributorCodeInsert.data as MarketingPharmacyDistributorCodeDbRow)
-          : null;
-        if (distributorCode) distributorCodeIds.push(distributorCode.id);
+            .single();
+          if (distributorCodeInsert.error) throw distributorCodeInsert.error;
+          distributorCode = mapDistributorCode(distributorCodeInsert.data as MarketingPharmacyDistributorCodeDbRow);
+          distributorCodeIds.push(distributorCode.id);
+        }
 
         const linkInsert = await supabase
           .from("marketing_customer_pharmacies")

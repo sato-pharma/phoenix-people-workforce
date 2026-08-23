@@ -43,8 +43,12 @@ import type {
   MarketingValidationStatus,
   MarketingValidationWorkspace as MarketingValidationWorkspacePayload,
 } from "@/lib/marketing-requests/types";
-import { VENUE_TYPES, venueRequiresDistributorCode, venueTypeLabel } from "@/lib/venues/venue-type";
-import type { VenueType } from "@/lib/venues/venue-type";
+import {
+  VENUE_TYPES,
+  venueRequiresDistributorCode,
+  venueTypeLabel,
+  type VenueType,
+} from "@/lib/venues/venue-type";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { ZoomablePhoto } from "@/components/ui/zoomable-photo";
 
@@ -420,10 +424,14 @@ function pendingBlockLabel(rows: MarketingValidationReportRow[]): string {
 function untrackedVendorCodes(rows: MarketingValidationReportRow[]) {
   const seen = new Map<string, { code: string; distributorName: string }>();
   for (const row of rows) {
+    // A venue with no distributor account has no vendor code to be untracked. Listing it here
+    // would report a fault it cannot have; the row's own note already states why its ROI is
+    // unmeasurable.
+    if (!row.distributorCode) continue;
     if (row.distributorCode.referenceStatus === "matched") continue;
     seen.set(row.distributorCode.id, {
       code: row.distributorCode.distributorPharmacyCode,
-      distributorName: row.distributorName,
+      distributorName: row.distributorName ?? "Unknown distributor",
     });
   }
   return Array.from(seen.values());

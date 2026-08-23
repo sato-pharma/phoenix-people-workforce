@@ -314,9 +314,13 @@ export type DirectOrderPharmacy = {
   pharmacyName: string;
   /**
    * `pharmacy` or `nursery`. A nursery has no distributor account at all, so it can never carry a
-   * distributor code and can never appear on an invoice line. Registering one as a pharmacy is what
-   * produced the invented codes this column exists to end — production still holds
-   * "حضانه زمزم" with "000000" on one row and "00000" on another.
+   * distributor code and can never appear on an invoice line.
+   *
+   * Direct Orders never FORCED an invented code — a codeless pharmacy has been admissible here
+   * since 2026-08-04, and none of the six nursery rows in production carries one (verified
+   * 2026-08-23). What it had no way to say is what the venue IS, so a nursery was indistinguishable
+   * from a pharmacy that simply had not given its code yet — which is what the probation sweep then
+   * reported as missing proof. Marketing is where the invented codes actually landed.
    */
   venueType: VenueType;
   brickId: string | null;

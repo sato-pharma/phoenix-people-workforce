@@ -119,8 +119,9 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
   const [newAddress, setNewAddress] = useState("");
   /**
    * What is actually being registered. A nursery has no distributor account, so it has no customer
-   * code to give — and until this existed the only way to save one was to invent a code. Production
-   * holds three of those: "000000" and "00000" on حضانه زمزم, and "0000" on حضانه النيل.
+   * code to give. Leaving the codes empty has been allowed here since 2026-08-04 — what was missing
+   * is any way to say WHY they are empty, which is the difference between a venue that has no code
+   * and one whose code nobody has typed yet.
    */
   const [newVenueType, setNewVenueType] = useState<VenueType>("pharmacy");
   const [distRows, setDistRows] = useState<Array<{ distributorCode: string; customerCode: string }>>([
