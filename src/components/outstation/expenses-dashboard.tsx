@@ -32,6 +32,12 @@ import type {
 } from "@/lib/payroll/types";
 import { cn } from "@/lib/utils";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import {
+  PortalDesktopTable,
+  PortalRecordCard,
+  PortalRecordFields,
+  PortalResponsiveDataList,
+} from "@/components/employee-portal/portal-primitives";
 
 
 const panelClassName =
@@ -265,8 +271,32 @@ function MonthlyComparison({ rows }: { rows: GroupRow[] }) {
         </div>
       </div>
       <div className="mt-4 overflow-hidden rounded-2xl border border-[#E2E8F0] bg-white shadow-[0_12px_30px_rgba(15,23,42,0.05)]">
-        <div className="overflow-x-auto">
-          <table className="min-w-[760px] w-full text-left text-sm">
+        <PortalResponsiveDataList
+          empty={<p className="px-3 py-8 text-center text-sm font-semibold text-slate-400">No months in range.</p>}
+          getKey={(row) => row.key}
+          items={rows}
+          renderCard={(row) => (
+            <PortalRecordCard
+              accent="orange"
+              meta={`${formatNumber(row.count)} trips · ${formatNumber(row.km)} km`}
+              status={<span className="text-sm font-black tabular-nums text-[#EA580C]">{formatEGP(row.total)}</span>}
+              title={compactMonth(row.key)}
+            >
+              <PortalRecordFields
+                fields={[
+                  { label: "Travel", value: formatEGP(row.travel) },
+                  { label: "Meeting", value: formatEGP(row.meeting) },
+                  { label: "Allowance", value: formatEGP(row.allowance) },
+                  { label: "Other", value: formatEGP(row.other) },
+                ]}
+              />
+              <div className="mt-3 h-2 w-full rounded-full bg-[#F1F5F9] shadow-inner">
+                <div className="h-full rounded-full bg-gradient-to-r from-[#F97316] to-[#FDBA74]" style={{ width: `${Math.min((row.total / max) * 100, 100)}%` }} />
+              </div>
+            </PortalRecordCard>
+          )}
+          renderTable={() => (
+            <PortalDesktopTable minWidth="760px">
             <thead className="bg-[#F8FAFC] text-[11px] uppercase tracking-[0.12em] text-[#64748B]">
               <tr>
                 <th className={adminTableHeaderClassName}>Month</th>
@@ -299,8 +329,9 @@ function MonthlyComparison({ rows }: { rows: GroupRow[] }) {
                 </tr>
               ))}
             </tbody>
-          </table>
-        </div>
+            </PortalDesktopTable>
+          )}
+        />
       </div>
     </Card>
   );
@@ -312,8 +343,31 @@ function SpecialistComparison({ rows }: { rows: GroupRow[] }) {
       <h2 className="text-sm font-black uppercase tracking-[0.12em] text-[#0F172A]">Specialist Detailed Comparison</h2>
       <p className="mt-1 text-xs text-[#64748B]">Compare specialists by trips, total, KM, cost per trip, and cost per KM.</p>
       <div className="mt-4 overflow-hidden rounded-2xl border border-[#E2E8F0] bg-white shadow-[0_12px_30px_rgba(15,23,42,0.05)]">
-        <div className="overflow-x-auto">
-          <table className="min-w-[860px] w-full text-left text-sm">
+        <PortalResponsiveDataList
+          empty={<p className="px-3 py-8 text-center text-sm font-semibold text-slate-400">No specialists in range.</p>}
+          getKey={(row) => row.key}
+          items={rows.slice(0, 50)}
+          renderCard={(row) => (
+            <PortalRecordCard
+              accent="orange"
+              meta={`${formatNumber(row.count)} trips · ${formatNumber(row.km)} km`}
+              status={<span className="text-sm font-black tabular-nums text-[#EA580C]">{formatEGP(row.total)}</span>}
+              title={row.key}
+            >
+              <PortalRecordFields
+                fields={[
+                  { label: "Travel", value: formatEGP(row.travel) },
+                  { label: "Meeting", value: formatEGP(row.meeting) },
+                  { label: "Allowance", value: formatEGP(row.allowance) },
+                  { label: "Other", value: formatEGP(row.other) },
+                  { label: "Cost / Trip", value: formatEGP(row.count ? row.total / row.count : 0) },
+                  { label: "Cost / KM", value: formatEGP(row.km ? row.total / row.km : 0) },
+                ]}
+              />
+            </PortalRecordCard>
+          )}
+          renderTable={() => (
+            <PortalDesktopTable minWidth="860px">
             <thead className="bg-[#F8FAFC] text-[11px] uppercase tracking-[0.12em] text-[#64748B]">
               <tr>
                 <th className={adminTableHeaderClassName}>Specialist</th>
@@ -344,8 +398,9 @@ function SpecialistComparison({ rows }: { rows: GroupRow[] }) {
                 </tr>
               ))}
             </tbody>
-          </table>
-        </div>
+            </PortalDesktopTable>
+          )}
+        />
       </div>
     </Card>
   );

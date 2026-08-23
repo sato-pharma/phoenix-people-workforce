@@ -665,6 +665,7 @@ import { runDirectOrdersApprovalWindowMobileTests } from "./direct-orders-approv
 import { runEmployeePortalMobileInputZoomTests } from "./employee-portal-mobile-input-zoom.test.ts";
 import { runEmployeePortalMobileTableCardTests } from "./employee-portal-mobile-table-cards.test.ts";
 import { runCrmMobileTableCardTests } from "./crm-mobile-table-cards.test.ts";
+import { runOutstationMobileTableCardTests } from "./outstation-mobile-table-cards.test.ts";
 import { runDoctorCoveragePaginationTests } from "./crm-doctor-coverage-pagination.test.ts";
 import { runPharmacySearchTests } from "./pharmacy-search.test.ts";
 import { runRscClientFunctionPropTests } from "./rsc-client-function-props.test.ts";
@@ -1749,6 +1750,7 @@ await runTest("direct orders approval window on mobile (every table desktop-only
 await runTest("employee portal mobile input zoom (16px floor on every portal input/select/textarea under 768px, max() not a flat size, the shell class still exists, pinch-zoom never disabled)", runEmployeePortalMobileInputZoomTests);
 await runTest("employee portal mobile table cards (every converted table is desktop-gated with cards beside it, one shared SourceBreakdown, no <table> nested inside PortalDesktopTable)", runEmployeePortalMobileTableCardTests);
 await runTest("CRM mobile table cards (whole-directory scan: every CRM table desktop-gated, every table file has a card path, no bare overflow-x-auto, both coverage boards moved together)", runCrmMobileTableCardTests);
+await runTest("Outstation mobile table cards (whole-directory scan: every outstation table desktop-gated, every table file has a card path, no bare overflow-x-auto, HR decision controls shared by both halves)", runOutstationMobileTableCardTests);
 await runTest("Doctor Coverage drill-down is windowed (both halves draw the same page, page clamps, controls exist, xlsx export still spans every row, call list cap intact)", runDoctorCoveragePaginationTests);
 await runTest("RSC boundary (no server component hands a function prop to a client component — the crash that 500d Doctor Coverage; follows the real import graph so client-parent files are not flagged)", runRscClientFunctionPropTests);
 await runTest("direct orders invoice scan (a dim page gains real contrast, a failed prepare returns the original, EXIF rotation is applied, no binarisation, the reader is sent the PREPARED image)", runDirectOrdersInvoiceScanTests);

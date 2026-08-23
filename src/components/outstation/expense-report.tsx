@@ -35,6 +35,12 @@ import { cn } from "@/lib/utils";
 import { panelClassName, payrollMonths } from "@/components/payroll/dashboard/shared";
 import { TableHeaderMenu } from "@/components/payroll/dashboard/table-header-menu";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import {
+  PortalDesktopTable,
+  PortalRecordCard,
+  PortalRecordFields,
+  PortalResponsiveDataList,
+} from "@/components/employee-portal/portal-primitives";
 
 
 function formatEGP(value: number) {
@@ -282,6 +288,63 @@ function buildExpenseValidation(records: ExpenseTripRecord[], warnings: string[]
     warnings,
     zeroTotalRows,
   };
+}
+
+type HrApprovalDraft = { hrApproved: boolean; hrComment: string; approvedAmount: number };
+
+/**
+ * The HR decision controls, rendered by BOTH the desktop row and the mobile card.
+ *
+ * Deliberately one component rather than two copies: these inputs write the amount an employee is
+ * actually reimbursed, so a phone-only copy that drifted from the desktop one — a missing reason
+ * field, a different rounding, a stale disabled rule — would be a payroll defect, not a styling
+ * one. Whatever changes here changes in both places or in neither.
+ */
+function HrDecisionControls({
+  amountChanged,
+  approval,
+  onUpdate,
+  originalTotal,
+  reasonMissing,
+}: {
+  amountChanged: boolean;
+  approval: HrApprovalDraft;
+  onUpdate: (patch: Partial<HrApprovalDraft>) => void;
+  originalTotal: number;
+  reasonMissing: boolean;
+}) {
+  return (
+    <div className="flex flex-col gap-2">
+      <Switch
+        checked={approval.hrApproved}
+        label={approval.hrApproved ? "Approved" : "Approve"}
+        onChange={(checked) => onUpdate({ hrApproved: checked })}
+      />
+      <div className="flex items-center gap-2">
+        <span className="w-12 shrink-0 text-[10px] font-bold uppercase tracking-[0.1em] text-text-secondary">
+          Amount
+        </span>
+        <input
+          className="h-8 w-28 rounded-lg border border-border bg-white px-2 text-right font-mono text-xs text-text focus:border-[#F97316] focus:outline-none"
+          inputMode="decimal"
+          min={0}
+          onChange={(event) => onUpdate({ approvedAmount: Number(event.target.value) || 0 })}
+          type="number"
+          value={String(approval.approvedAmount)}
+        />
+        {amountChanged ? <Badge variant="warning">was {formatEGP(originalTotal)}</Badge> : null}
+      </div>
+      <Input
+        className={cn("h-8 text-xs", reasonMissing && "border-rose-400")}
+        onChange={(event) => onUpdate({ hrComment: event.target.value })}
+        placeholder={amountChanged ? "Reason for adjusted amount (required)" : "Reason / comment"}
+        value={approval.hrComment}
+      />
+      {reasonMissing ? (
+        <p className="text-[10px] font-semibold text-rose-600">Add a reason for the changed amount.</p>
+      ) : null}
+    </div>
+  );
 }
 
 function ExpenseErrorBanner({
@@ -595,7 +658,34 @@ export function ExpenseReport({
           </div>
         </div>
         <div className="overflow-hidden rounded-xl border border-slate-200">
-          <table className="w-full text-left text-xs">
+          <PortalResponsiveDataList
+            empty={<p className="px-3 py-6 text-center text-xs font-semibold text-slate-400">No days in range.</p>}
+            getKey={(day) => day.date}
+            items={data.dateBreakdown}
+            renderCard={(day) => (
+              <PortalRecordCard
+                accent={day.total === 0 ? "rose" : "sky"}
+                status={
+                  day.total === 0 ? (
+                    <span className="text-xs font-semibold text-rose-600">No activity</span>
+                  ) : (
+                    <span className="text-xs text-emerald-700">{formatNumber(day.total)} field visits</span>
+                  )
+                }
+                title={formatPayrollDate(day.date)}
+              >
+                <PortalRecordFields
+                  fields={[
+                    { label: "AM", value: formatNumber(day.am) },
+                    { label: "PM", value: formatNumber(day.pm) },
+                    { label: "Regular", value: formatNumber(day.regular) },
+                    { label: "Campaign", value: formatNumber(day.campaign) },
+                  ]}
+                />
+              </PortalRecordCard>
+            )}
+            renderTable={() => (
+              <PortalDesktopTable className="text-xs" minWidth="0px">
             <thead className="bg-slate-50 text-[10px] uppercase tracking-[0.1em] text-text-secondary">
               <tr>
                 <th className="px-3 py-2 font-semibold">Day</th>
@@ -626,7 +716,9 @@ export function ExpenseReport({
                 </tr>
               ))}
             </tbody>
-          </table>
+              </PortalDesktopTable>
+            )}
+          />
         </div>
       </div>
     );
@@ -1277,16 +1369,78 @@ export function ExpenseReport({
             ) : null}
 
             <div className="overflow-hidden rounded-[28px] border border-[#E2E8F0] bg-white shadow-[0_16px_38px_rgba(15,23,42,0.06)]">
+              {/* Below `md` the review is a card list. This table is 1,240px+ with a sticky
+                  employee column and a sticky HR-decision column, so on a phone it was a sideways
+                  scroll whose *decision controls* — the whole point of the screen — sat off the
+                  right edge. The cards carry the same <HrDecisionControls>, so nothing is
+                  read-only on mobile that is editable on desktop. */}
+              <div className="divide-y divide-slate-100 md:hidden">
+                {records.length === 0 ? (
+                  <p className="px-4 py-8 text-center text-sm text-text-secondary">
+                    No expenses match the current filters.
+                  </p>
+                ) : (
+                  records.slice(0, 250).map((record) => {
+                    const issues = expenseRecordIssues(record);
+                    const approval = approvalFor(record);
+                    const amountChanged = Math.abs(approval.approvedAmount - record.total) > 0.5;
+                    const reasonMissing = amountChanged && !approval.hrComment.trim();
+                    const isExpanded = expandedTrips.has(record.tripId);
+
+                    return (
+                      <PortalRecordCard
+                        accent={reasonMissing ? "rose" : issues.length > 0 ? "amber" : "orange"}
+                        key={`card-${record.tripId}-${record.row}`}
+                        meta={record.hrId ? record.hrId : "HR ID not mapped"}
+                        status={
+                          <Badge variant={issues.length > 0 ? "warning" : "success"}>
+                            {issues.length > 0 ? issues.join(", ") : "Ready"}
+                          </Badge>
+                        }
+                        title={record.specialist || "Unassigned"}
+                      >
+                        <PortalRecordFields
+                          fields={visibleDetailColumns
+                            .filter((column) => column.key !== "validation" && column.key !== "hrId")
+                            .map((column) => ({
+                              label: column.label,
+                              value: expenseColumnDisplayValue(record, column.key),
+                            }))}
+                        />
+                        <div className="mt-3 border-t border-slate-100 pt-3">
+                          <HrDecisionControls
+                            amountChanged={amountChanged}
+                            approval={approval}
+                            onUpdate={(patch) => updateApproval(record, patch)}
+                            originalTotal={record.total}
+                            reasonMissing={reasonMissing}
+                          />
+                        </div>
+                        <button
+                          className="mt-3 inline-flex items-center gap-1 rounded-md border border-slate-200 px-1.5 py-0.5 text-[10px] font-semibold text-slate-600"
+                          onClick={() => toggleTripExpand(record)}
+                          type="button"
+                        >
+                          {isExpanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+                          {isExpanded ? "Hide" : "Verify"} workload
+                        </button>
+                        {isExpanded ? <div className="mt-3">{renderTripEvidence(record)}</div> : null}
+                      </PortalRecordCard>
+                    );
+                  })
+                )}
+              </div>
+
               <div
                 aria-hidden="true"
-                className="overflow-x-auto overflow-y-hidden border-b border-[#EEF2F6] bg-[#F8FAFC] [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-300 hover:[&::-webkit-scrollbar-thumb]:bg-slate-400 [&::-webkit-scrollbar]:h-3"
+                className="hidden overflow-x-auto overflow-y-hidden border-b border-[#EEF2F6] bg-[#F8FAFC] md:block [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-300 hover:[&::-webkit-scrollbar-thumb]:bg-slate-400 [&::-webkit-scrollbar]:h-3"
                 onScroll={handleTopScroll}
                 ref={topScrollRef}
               >
                 <div style={{ height: 1, width: tableScrollWidth }} />
               </div>
               <div
-                className="max-h-[70vh] overflow-auto [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-300 hover:[&::-webkit-scrollbar-thumb]:bg-slate-400 [&::-webkit-scrollbar]:h-3 [&::-webkit-scrollbar]:w-3"
+                className="hidden max-h-[70vh] overflow-auto md:block [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-300 hover:[&::-webkit-scrollbar-thumb]:bg-slate-400 [&::-webkit-scrollbar]:h-3 [&::-webkit-scrollbar]:w-3"
                 onScroll={handleBodyScroll}
                 ref={bodyScrollRef}
               >
@@ -1416,42 +1570,13 @@ export function ExpenseReport({
                               reasonMissing && "bg-rose-50/80 group-hover:bg-rose-50",
                             )}
                           >
-                            <div className="flex flex-col gap-2">
-                              <Switch
-                                checked={approval.hrApproved}
-                                label={approval.hrApproved ? "Approved" : "Approve"}
-                                onChange={(checked) => updateApproval(record, { hrApproved: checked })}
-                              />
-                              <div className="flex items-center gap-2">
-                                <span className="w-12 shrink-0 text-[10px] font-bold uppercase tracking-[0.1em] text-text-secondary">
-                                  Amount
-                                </span>
-                                <input
-                                  className="h-8 w-28 rounded-lg border border-border bg-white px-2 text-right font-mono text-xs text-text focus:border-[#F97316] focus:outline-none"
-                                  inputMode="decimal"
-                                  min={0}
-                                  onChange={(event) =>
-                                    updateApproval(record, { approvedAmount: Number(event.target.value) || 0 })
-                                  }
-                                  type="number"
-                                  value={String(approval.approvedAmount)}
-                                />
-                                {amountChanged ? (
-                                  <Badge variant="warning">was {formatEGP(record.total)}</Badge>
-                                ) : null}
-                              </div>
-                              <Input
-                                className={cn("h-8 text-xs", reasonMissing && "border-rose-400")}
-                                onChange={(event) => updateApproval(record, { hrComment: event.target.value })}
-                                placeholder={amountChanged ? "Reason for adjusted amount (required)" : "Reason / comment"}
-                                value={approval.hrComment}
-                              />
-                              {reasonMissing ? (
-                                <p className="text-[10px] font-semibold text-rose-600">
-                                  Add a reason for the changed amount.
-                                </p>
-                              ) : null}
-                            </div>
+                            <HrDecisionControls
+                              amountChanged={amountChanged}
+                              approval={approval}
+                              onUpdate={(patch) => updateApproval(record, patch)}
+                              originalTotal={record.total}
+                              reasonMissing={reasonMissing}
+                            />
                           </td>
                         </tr>
                         {isExpanded ? (
