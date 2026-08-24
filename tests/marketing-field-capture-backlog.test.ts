@@ -4,6 +4,7 @@ import { existsSync } from "node:fs";
 import { DESK_VALIDATION_MARKER, INFERRED_HISTORY_MARKER } from "../src/lib/customer-pharmacy-mapping/readiness.ts";
 import { marketingCreatorRoles } from "../src/lib/marketing-requests/service.ts";
 import {
+  countRoutes,
   FIELD_CAPTURE_ACTION_URL,
   FIELD_CAPTURE_CHANNELS,
   fieldCaptureNudgeMessage,
@@ -94,10 +95,12 @@ export function runMarketingFieldCaptureBacklogTests() {
   const owned = groupFieldCaptureBacklog([customer({ managerHrId: "HR-900", ownerHrId: "HR-100" })]);
   assert.equal(owned.owners[0].hrId, "HR-100", "the rep who owns it is chased, not their manager");
   assert.equal(owned.owners[0].routedVia, "owner");
+  assert.equal(owned.owners[0].customers[0].routedVia, "owner", "the reason lives on the customer");
 
   const managed = groupFieldCaptureBacklog([customer({ managerHrId: "HR-900", ownerHrId: null })]);
   assert.equal(managed.owners[0].hrId, "HR-900", "with no rep named, the manager is chased");
   assert.equal(managed.owners[0].routedVia, "manager");
+  assert.equal(managed.owners[0].customers[0].routedVia, "manager");
 
   // An empty string is not an owner — the column is free text, and a blank is not a person.
   const blank = groupFieldCaptureBacklog([customer({ managerHrId: "HR-900", ownerHrId: "   " })]);
@@ -136,6 +139,7 @@ export function runMarketingFieldCaptureBacklogTests() {
     "every colleague working that territory is told, and nobody from another area is",
   );
   assert.equal(byArea.owners[0].routedVia, "area", "the run says WHY this person was picked");
+  assert.equal(byArea.owners[0].customers[0].routedVia, "area");
 
   // Fanning one customer out to several colleagues must not inflate the backlog: it is still ONE
   // customer of work, however many people can see it.
@@ -191,8 +195,12 @@ export function runMarketingFieldCaptureBacklogTests() {
   assert.ok(message.includes("Ahmed Fouad"), "the message names the customer, never a bare code");
   assert.ok(!message.includes("…") && !message.includes("..."), "never truncate with an ellipsis");
   assert.ok(
-    fieldCaptureNudgeMessage(unproven.owners[0]).startsWith("1 of your marketing customer "),
-    "one customer reads as English, not as a plural",
+    fieldCaptureNudgeMessage(unproven.owners[0]).startsWith("1 of your marketing customers shows "),
+    "one customer reads as English: one OF several, and it shows rather than show",
+  );
+  assert.ok(
+    fieldCaptureNudgeMessage(unproven.owners[0]).includes("no field capture behind it."),
+    "a single customer is an it, not a them",
   );
 
   // ── The rep must be able to OPEN what the nudge links to ────────────────────────
@@ -222,6 +230,73 @@ export function runMarketingFieldCaptureBacklogTests() {
   assert.ok(
     fieldCaptureNudgeMessage(owned.owners[0]).startsWith("1 of your marketing customer"),
     "a named owner IS told it is theirs",
+  );
+
+  // ── A MIXED list must not be described by one word ────────────────────────────────
+  // The first live run, 06:36 Cairo on 2026-08-24, shipped one routing reason per PERSON, captured
+  // when their bucket was created and never revisited. 25 of the 139 customers therefore sat under
+  // the wrong word, reaching 19 of the 64 people: a rep named as owner of one customer was told his
+  // area-fallback customers were "yours" too. Nobody was missed and no wrong page was linked, but
+  // that is precisely the misstatement the wording above exists to prevent.
+  const mixedRoutes = groupFieldCaptureBacklog(
+    [
+      customer({ areaId: 7, customerCode: "MKT-C-0020", customerId: "c20", customerName: "Basma Adel", ownerHrId: "HR-701" }),
+      customer({
+        areaId: 7,
+        customerCode: "MKT-C-0021",
+        customerId: "c21",
+        customerName: "Karim Sobhy",
+        managerHrId: null,
+        ownerHrId: null,
+      }),
+      customer({
+        areaId: 7,
+        customerCode: "MKT-C-0022",
+        customerId: "c22",
+        customerName: "Laila Samir",
+        managerHrId: null,
+        ownerHrId: null,
+      }),
+    ],
+    [{ areaId: 7, hrId: "HR-701" }],
+  );
+  const mixedOwner = mixedRoutes.owners[0];
+  assert.equal(mixedOwner.hrId, "HR-701", "one person holds both kinds of customer");
+  assert.equal(mixedOwner.customers.length, 3);
+  assert.equal(mixedOwner.routedVia, "mixed", "one word cannot describe a list holding two answers");
+  assert.deepEqual(
+    mixedOwner.customers.map((entry) => `${entry.customerName}:${entry.routedVia}`),
+    ["Basma Adel:owner", "Karim Sobhy:area", "Laila Samir:area"],
+    "each customer carries its OWN routing reason, whoever is holding it",
+  );
+
+  // The same split, written into the notification so a run can be audited without re-deriving the
+  // routing from `marketing_customers` — checking the per-person summary alone is exactly what made
+  // the first run look correct while 25 customers sat under the wrong word.
+  assert.deepEqual(countRoutes(mixedOwner.customers), { area: 2, manager: 0, owner: 1 });
+  assert.deepEqual(countRoutes([]), { area: 0, manager: 0, owner: 0 }, "an empty list counts nothing");
+
+  const mixedMessage = fieldCaptureNudgeMessage(mixedOwner);
+  assert.ok(
+    mixedMessage.startsWith("1 of your marketing customers and 2 more in your area show "),
+    "a split list is described as a split, never rolled up into whichever answer came first",
+  );
+  assert.ok(!mixedMessage.includes("3 of your marketing"), "the two area customers are never claimed as his");
+  assert.ok(!mixedMessage.includes("…") && !mixedMessage.includes("..."), "never truncate with an ellipsis");
+
+  // The same customer reached through the territory by a colleague reads as the territory for them,
+  // because the reason belongs to the ROW, not to whoever is being told about it.
+  const sharedByArea = groupFieldCaptureBacklog(
+    [customer({ areaId: 7, customerCode: "MKT-C-0021", customerId: "c21", managerHrId: null, ownerHrId: null })],
+    [
+      { areaId: 7, hrId: "HR-701" },
+      { areaId: 7, hrId: "HR-702" },
+    ],
+  );
+  assert.deepEqual(
+    sharedByArea.owners.map((entry) => entry.routedVia),
+    ["area", "area"],
+    "a fanned-out customer reads the same for every colleague who can close it",
   );
 
   // ── Never email ───────────────────────────────────────────────────────────────────────────

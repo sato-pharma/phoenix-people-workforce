@@ -1,11 +1,12 @@
 // Marketing field-capture backlog — who owes a real visit, and telling them so.
 //
 // The badge added in #2347/#2354 tells the truth on screen: a large majority of marketing customers
-// carry a validated status that no rep ever proved in the field. Measured against production on
-// 2026-08-24 this reaches 139 customers and 64 people (44 named as owner, 20 through their area),
-// a median of 2 customers each and 10 at the worst. Truth on a screen is not the same as work
-// getting done, and the owner's standing rule is that the system chases people, he does not. So the
-// same rule that draws the badge also drives a daily nudge to the person who can actually close it.
+// carry a validated status that no rep ever proved in the field. The first live run, 06:36 Cairo on
+// 2026-08-24, reached 139 customers and 64 people — 119 of those customers name their own rep and
+// 20 name nobody and travelled through their area — a median of 2 customers each and 10 at the
+// worst. Truth on a screen is not the same as work getting done, and the owner's standing rule is
+// that the system chases people, he does not. So the same rule that draws the badge also drives a
+// daily nudge to the person who can actually close it.
 //
 // The rule is NOT re-implemented here. `customerFieldEvidenceGap` is imported from the badge's own
 // module, so a customer can never be badged on screen and absent from someone's list, or the
@@ -50,12 +51,47 @@ function cleanHrId(value: string | null | undefined): string | null {
   return trimmed ? trimmed.toUpperCase() : null;
 }
 
+/**
+ * One word for how a whole list was routed, or `mixed` when there is no one word for it. An empty
+ * list cannot happen — a bucket exists only because a customer was put in it — but `area` is the
+ * safe answer if it ever did, since it claims nothing about ownership.
+ */
+function summarizeRoute(customers: readonly FieldCaptureBacklogCustomer[]): "mixed" | FieldCaptureRoute {
+  const routes = new Set(customers.map((customer) => customer.routedVia));
+  if (routes.size > 1) return "mixed";
+  return customers[0]?.routedVia ?? "area";
+}
+
+/** How many customers in one person's list arrived by each route. */
+export function countRoutes(
+  customers: readonly FieldCaptureBacklogCustomer[],
+): Record<FieldCaptureRoute, number> {
+  return {
+    area: customers.filter((customer) => customer.routedVia === "area").length,
+    manager: customers.filter((customer) => customer.routedVia === "manager").length,
+    owner: customers.filter((customer) => customer.routedVia === "owner").length,
+  };
+}
+
+/**
+ * How a customer reached the person being told about it: `owner` when the row names its own rep,
+ * `manager` when it names only a manager, `area` when it names neither and the nudge fell through
+ * to the territory.
+ *
+ * This is a property of the CUSTOMER, not of the person — the row names a rep or it does not, and
+ * that answer is the same for everybody who receives it. It lives on the customer because the
+ * first live run proved that anywhere else is a lie: see `FieldCaptureBacklogOwner.routedVia`.
+ */
+export type FieldCaptureRoute = "area" | "manager" | "owner";
+
 export type FieldCaptureBacklogCustomer = {
   customerCode: string;
   customerId: string;
   customerName: string;
   /** Why it is unproven — the same three answers the badge gives. */
   gap: FieldEvidenceGap;
+  /** How this customer reached whoever is being told about it. */
+  routedVia: FieldCaptureRoute;
   /**
    * The shops linked to this customer. Named because the VENUE half is usually the only capture
    * still obtainable: a doctor is rarely standing in his pharmacy when the rep calls, which is why
@@ -69,11 +105,19 @@ export type FieldCaptureBacklogOwner = {
   customers: FieldCaptureBacklogCustomer[];
   hrId: string;
   /**
-   * How this person was chosen: `owner` when the customer names its own rep, `manager` when it
-   * names only a manager, `area` when it names neither and the nudge fell through to the territory.
-   * Reported so a run can be read without guessing why somebody was picked.
+   * How this person was chosen, across their WHOLE list — `mixed` when one list holds more than one
+   * answer. Reported so a run can be read without guessing why somebody was picked.
+   *
+   * This used to be a single reason captured when the person's bucket was first created and never
+   * revisited, which quietly made it wrong for anybody holding both kinds of customer. The first
+   * live run, 2026-08-24 06:36 Cairo, measured the damage: 25 of the 139 customers sat inside a
+   * message whose ownership wording did not match how they were actually routed, reaching 19 of
+   * the 64 people. Nobody was missed and no wrong page was linked — but a rep first reached as the
+   * named owner of one customer was then told his area-fallback customers were "yours" too, which
+   * is the exact misstatement `fieldCaptureNudgeMessage` was written to avoid. Derived from the
+   * customers now, so it cannot drift from them again.
    */
-  routedVia: "area" | "manager" | "owner";
+  routedVia: "mixed" | FieldCaptureRoute;
 };
 
 export type MarketingFieldCaptureBacklog = {
@@ -137,7 +181,7 @@ export function groupFieldCaptureBacklog(
     staffByArea.set(employee.areaId, bucket);
   }
 
-  const ownerBuckets = new Map<string, { customers: FieldCaptureBacklogCustomer[]; routedVia: "area" | "manager" | "owner" }>();
+  const ownerBuckets = new Map<string, FieldCaptureBacklogCustomer[]>();
   const unassigned: FieldCaptureBacklogCustomer[] = [];
   let customerCount = 0;
 
@@ -155,15 +199,6 @@ export function groupFieldCaptureBacklog(
     if (!gap) continue;
 
     customerCount += 1;
-    const entry: FieldCaptureBacklogCustomer = {
-      customerCode: customer.customerCode,
-      customerId: customer.customerId,
-      customerName: customer.customerName,
-      gap,
-      venueNames: Array.from(
-        new Set(customer.links.map((link) => link.pharmacyName).filter((name) => name.length > 0)),
-      ),
-    };
 
     // A customer belongs to a TERRITORY, not to a person (owner's ruling, 2026-08-19): nothing is
     // re-stamped when somebody resigns, because the new hire's area already matches the row. So
@@ -177,7 +212,22 @@ export function groupFieldCaptureBacklog(
       : customer.areaId === null
         ? []
         : (staffByArea.get(customer.areaId) ?? []);
-    const routedVia: "area" | "manager" | "owner" = ownerHrId ? "owner" : managerHrId ? "manager" : "area";
+
+    // Decided here, on the customer, BEFORE it is handed to anybody. The same entry object is
+    // shared by every colleague an area customer fans out to, and that is safe precisely because
+    // this answer does not vary by recipient.
+    const routedVia: FieldCaptureRoute = ownerHrId ? "owner" : managerHrId ? "manager" : "area";
+
+    const entry: FieldCaptureBacklogCustomer = {
+      customerCode: customer.customerCode,
+      customerId: customer.customerId,
+      customerName: customer.customerName,
+      gap,
+      routedVia,
+      venueNames: Array.from(
+        new Set(customer.links.map((link) => link.pharmacyName).filter((name) => name.length > 0)),
+      ),
+    };
 
     if (routedTo.length === 0) {
       unassigned.push(entry);
@@ -185,18 +235,17 @@ export function groupFieldCaptureBacklog(
     }
 
     for (const hrId of routedTo) {
-      const bucket = ownerBuckets.get(hrId) ?? { customers: [], routedVia };
-      bucket.customers.push(entry);
+      const bucket = ownerBuckets.get(hrId) ?? [];
+      bucket.push(entry);
       ownerBuckets.set(hrId, bucket);
     }
   }
 
   const owners: FieldCaptureBacklogOwner[] = Array.from(ownerBuckets.entries())
-    .map(([hrId, bucket]) => ({
-      customers: [...bucket.customers].sort((a, b) => a.customerName.localeCompare(b.customerName)),
-      hrId,
-      routedVia: bucket.routedVia,
-    }))
+    .map(([hrId, bucketCustomers]) => {
+      const sorted = [...bucketCustomers].sort((a, b) => a.customerName.localeCompare(b.customerName));
+      return { customers: sorted, hrId, routedVia: summarizeRoute(sorted) };
+    })
     .sort((a, b) => b.customers.length - a.customers.length || a.hrId.localeCompare(b.hrId));
 
   return {
@@ -304,19 +353,37 @@ export async function loadMarketingFieldCaptureBacklog(): Promise<MarketingField
  */
 export function fieldCaptureNudgeMessage(owner: FieldCaptureBacklogOwner): string {
   const count = owner.customers.length;
-  const noun = count === 1 ? "customer" : "customers";
+  // "your customers" is only true of the rows that name this person. Reached through the territory
+  // they are a colleague who CAN close it, not the owner, and telling someone a customer is theirs
+  // when it is not is how a nudge gets dismissed as wrong rather than acted on. Counted per
+  // CUSTOMER rather than read off one label for the whole list, which is what got this wrong on
+  // the first live run for 19 of 64 people.
+  const mine = owner.customers.filter((customer) => customer.routedVia !== "area").length;
+  const territory = count - mine;
+
+  const noun = (value: number) => (value === 1 ? "customer" : "customers");
+  // "1 of your marketing customers" is correct English — one OF several — so the plural stands in
+  // both halves of a split sentence, and only the standalone territory phrase bends to its count.
+  const minePhrase = `${mine} of your marketing customers`;
+  const territoryPhrase = `${territory} marketing ${noun(territory)} in your area`;
+  const whose =
+    mine > 0 && territory > 0
+      ? `${minePhrase} and ${territory} more in your area`
+      : mine > 0
+        ? minePhrase
+        : territoryPhrase;
+  const verb = count === 1 ? "shows" : "show";
+  const behind = count === 1 ? "behind it" : "behind them";
+
   const named = owner.customers
     .slice(0, 3)
     .map((customer) => customer.customerName || customer.customerCode)
     .filter(Boolean);
   const remainder = count - named.length;
   const list = named.length > 0 ? ` Starting with ${named.join(", ")}${remainder > 0 ? ` and ${remainder} more` : ""}.` : "";
-  // "your customers" is only true when the row names this person. Reached through the territory
-  // they are a colleague who CAN close it, not the owner, and telling someone a customer is theirs
-  // when it is not is how a nudge gets dismissed as wrong rather than acted on.
-  const whose = owner.routedVia === "area" ? `${count} marketing ${noun} in your area` : `${count} of your marketing ${noun}`;
+
   return (
-    `${whose} show a validated status with no field capture behind them.` +
+    `${whose} ${verb} a validated status with no field capture ${behind}.` +
     `${list} Photographing the shop on your next visit closes it — the customer does not have to be there.`
   );
 }
@@ -366,6 +433,11 @@ export async function runMarketingFieldCaptureNudge(): Promise<MarketingFieldCap
           customerCount: owner.customers.length,
           idempotencyKey: `marketing-field-capture:${today}:${owner.hrId}`,
           routedVia: owner.routedVia,
+          // Per CUSTOMER, so a run can be audited without re-deriving the routing from
+          // `marketing_customers`. Checking the summary alone is what made the first run look
+          // correct: 44 buckets said `owner` and 20 said `area`, matching the plan exactly, while
+          // 25 individual customers sat under the wrong word.
+          routedViaCounts: countRoutes(owner.customers),
         },
         module: "marketing_requests",
         priority: "normal",
