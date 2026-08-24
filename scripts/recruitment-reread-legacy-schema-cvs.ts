@@ -114,6 +114,9 @@ function countFilled(fields: ExtractedCandidateFields): number {
 }
 
 function cairo(iso: string): string {
+  // A never-read candidate has no read timestamp; formatting "" prints "Invalid Date", which reads
+  // as a fault in the report rather than as the plain fact that there was never a read.
+  if (!iso) return "never";
   return new Intl.DateTimeFormat("en-GB", {
     dateStyle: "medium",
     timeStyle: "short",
@@ -125,6 +128,10 @@ async function main(): Promise<void> {
   const args = process.argv.slice(2);
   const dryRun = args.includes("--dry-run");
   const includeTitled = args.includes("--include-titled");
+  // A candidate with a stored file and NO extraction row at all was never read once. They are
+  // not "legacy schema", so the main filter skips them forever — and they are the worst case in
+  // the pool, since nothing whatsoever is known about them. 10 in production on 2026-08-25.
+  const includeNeverRead = args.includes("--never-read");
   const limitArg = args.find((a) => a.startsWith("--limit"));
   const limit = limitArg ? Number(limitArg.split("=")[1] ?? args[args.indexOf(limitArg) + 1]) : Number.NaN;
 
@@ -169,6 +176,7 @@ async function main(): Promise<void> {
   const withAFile = new Set((fileRows ?? []).map((row) => String((row as { candidate_id: unknown }).candidate_id)));
 
   let legacyCount = 0;
+  let neverReadCount = 0;
   let notACvCount = 0;
   let noFileCount = 0;
   let alreadyTitledCount = 0;
@@ -177,12 +185,18 @@ async function main(): Promise<void> {
   for (const row of (allCandidates ?? []) as Array<{ current_job_title: unknown; full_name: unknown; id: unknown }>) {
     const id = String(row.id);
     const read = newest.get(id);
-    if (!read || !LEGACY_CV_POSITION_KEYS.has(read.positionKey)) continue;
-    legacyCount += 1;
+    const neverRead = !read;
+    if (neverRead) {
+      if (!includeNeverRead) continue;
+      neverReadCount += 1;
+    } else {
+      if (!LEGACY_CV_POSITION_KEYS.has(read.positionKey)) continue;
+      legacyCount += 1;
+    }
     // An explicit false is a verdict the model already gave: this file is not a CV. Reading it
     // again buys the same nothing at full price — 23 of these in production are photographed
     // certificates. NULL is not a verdict and stays in the set.
-    if (read.isCv === false) {
+    if (read?.isCv === false) {
       notACvCount += 1;
       continue;
     }
@@ -199,13 +213,14 @@ async function main(): Promise<void> {
       current_job_title: title || null,
       full_name: typeof row.full_name === "string" ? row.full_name : null,
       id,
-      legacy_key: read.positionKey,
-      read_at: read.createdAt,
+      legacy_key: read?.positionKey ?? "(never read)",
+      read_at: read?.createdAt ?? "",
     });
   }
 
   console.log(`\nCandidates total : ${(allCandidates ?? []).length}`);
   console.log(`Newest read legacy: ${legacyCount}   (position_key in ${[...LEGACY_CV_POSITION_KEYS].join(", ")})`);
+  console.log(`Never read at all : ${neverReadCount}${includeNeverRead ? "" : "   (not included — pass --never-read)"}`);
   console.log(`  confirmed not a CV : skipped ${notACvCount}`);
   console.log(`  no stored file     : skipped ${noFileCount}`);
   console.log(
