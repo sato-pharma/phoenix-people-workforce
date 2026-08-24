@@ -24,6 +24,16 @@ import { Check, ChevronLeft, ChevronRight, FileWarning, Loader2, SkipForward, X 
 import { CandidateFactsSummary } from "@/components/recruitment/candidate-facts-summary";
 import { CvDocumentView } from "@/components/recruitment/cv-preview-modal";
 import { candidateDisplayName } from "@/lib/recruitment/candidate-display";
+import { candidateRowAppliedFor } from "@/lib/recruitment/applied-for";
+import { candidateScreeningFacts, candidateScreeningRoleFamily } from "@/lib/recruitment/candidate-screening-facts";
+import {
+  countByBand,
+  orderForScreening,
+  screeningBandDescriptions,
+  screeningBandForFamily,
+  screeningBandLabels,
+  type ScreeningOrderInput,
+} from "@/lib/recruitment/screening-order";
 import {
   candidateStatusLabels,
   CANDIDATE_STATUS_NOTE_MAX_LENGTH,
@@ -36,6 +46,28 @@ import type { Candidate } from "@/lib/recruitment/types";
 
 type LoadedCandidate = { profile: CandidateProfile; extraction: StoredCvExtraction | null };
 
+// Chip colours. Deliberately muted against the dark header: this says where you are in the queue,
+// it is not a verdict on the person, and a red badge beside somebody's name reads as one.
+const bandChipClass: Record<ReturnType<typeof screeningBandForFamily>, string> = {
+  field_force: "bg-emerald-500/15 text-emerald-300",
+  pharma_adjacent: "bg-sky-500/15 text-sky-300",
+  unknown: "bg-amber-500/15 text-amber-300",
+  unrelated: "bg-slate-500/20 text-slate-300",
+};
+
+/**
+ * What the ordering needs to know about one candidate, resolved through the SAME functions the row
+ * and the Role filter use — so the queue cannot disagree with the table about who someone is.
+ */
+function describeForOrder(candidate: Candidate): ScreeningOrderInput {
+  const facts = candidateScreeningFacts(candidate);
+  return {
+    createdAt: candidate.createdAt,
+    family: candidateScreeningRoleFamily(facts, candidateRowAppliedFor(candidate).text),
+    hasPharmaExperience: facts.pharmaRep?.value ?? null,
+  };
+}
+
 export function CandidateScreeningSession({
   candidates,
   onClose,
@@ -43,11 +75,18 @@ export function CandidateScreeningSession({
   candidates: Candidate[];
   onClose: (decidedCount: number) => void;
 }) {
+  // Best worth meeting first. The TABLE stays newest-first — that is a record of what arrived —
+  // but only ~53 of 381 undecided CVs are field-force shaped, so meeting them in arrival order
+  // means seven strangers between every real candidate. Nothing is hidden and nothing is
+  // auto-rejected: every candidate is still in this queue and still gets a human decision.
+  const queue = useMemo(() => orderForScreening(candidates, describeForOrder), [candidates]);
+  const bands = useMemo(() => countByBand(candidates, describeForOrder), [candidates]);
+
   // Start where the work is. Re-entering the queue after a break should not make you click past
   // everyone you already judged.
   const firstUndecided = Math.max(
     0,
-    candidates.findIndex((candidate) => (candidate.status ?? "new") === "new"),
+    queue.findIndex((candidate) => (candidate.status ?? "new") === "new"),
   );
   const [index, setIndex] = useState(firstUndecided);
   const [loaded, setLoaded] = useState<Record<string, LoadedCandidate>>({});
@@ -58,8 +97,8 @@ export function CandidateScreeningSession({
   const [error, setError] = useState<string | null>(null);
   const noteRef = useRef<HTMLInputElement | null>(null);
 
-  const current = candidates[index] ?? null;
-  const total = candidates.length;
+  const current = queue[index] ?? null;
+  const total = queue.length;
 
   // One fetch per candidate, ever — the cache is keyed by id and never evicted, so stepping back
   // through people you have already seen is instant.
@@ -92,9 +131,9 @@ export function CandidateScreeningSession({
   // The current one, then the next — the prefetch is the whole point. By the time a decision is
   // made on this candidate, the following profile is usually already in hand.
   useEffect(() => {
-    void load(candidates[index]?.id);
-    void load(candidates[index + 1]?.id);
-  }, [candidates, index, load]);
+    void load(queue[index]?.id);
+    void load(queue[index + 1]?.id);
+  }, [queue, index, load]);
 
   const entry = current ? loaded[current.id] : undefined;
   const cvFile = useMemo(() => (entry ? primaryCvFile(entry.profile.files) : null), [entry]);
@@ -186,6 +225,7 @@ export function CandidateScreeningSession({
   // The status the row already carried before this session — so a candidate somebody judged last
   // week is not silently presented as untouched.
   const existingStatus = (current.status ?? "new") as CandidateStatus;
+  const currentBand = screeningBandForFamily(describeForOrder(current).family);
   const loadError = failed[current.id];
 
   return (
@@ -205,6 +245,15 @@ export function CandidateScreeningSession({
           </div>
         </div>
         <p className="min-w-0 flex-1 truncate text-sm font-semibold">{candidateDisplayName(current.fullName)}</p>
+        {/* Which group this person is in, and how many are in it. Without this the queue's order is
+            invisible and reads as random — and the one thing a screener must never have to wonder
+            is why they are being shown this person now. */}
+        <span
+          className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-black uppercase tracking-wide ${bandChipClass[currentBand]}`}
+          title={screeningBandDescriptions[currentBand]}
+        >
+          {screeningBandLabels[currentBand]} · {bands[currentBand]}
+        </span>
         <div className="flex items-center gap-3 text-xs tabular-nums">
           <span className="text-emerald-400">{shortlisted} shortlisted</span>
           <span className="text-rose-400">{rejected} rejected</span>

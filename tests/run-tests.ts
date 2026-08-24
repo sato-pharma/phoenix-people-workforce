@@ -159,6 +159,7 @@ import { runRecruitmentIntakeFinalizePatchTests } from "./recruitment-intake-fin
 import { runCandidateRoleRegionTests } from "./recruitment-candidate-role-region.test.ts";
 import { runCandidateScreeningFactsTests } from "./recruitment-candidate-screening-facts.test.ts";
 import { runCvFileChoiceTests } from "./recruitment-cv-file-choice.test.ts";
+import { runRecruitmentScreeningOrderTests } from "./recruitment-screening-order.test.ts";
 import { runRecruitmentEmailIntakeTests } from "./recruitment-email-intake.test.ts";
 import { runRecruitmentWhatsAppIntakeTests } from "./recruitment-whatsapp-intake.test.ts";
 import { runWhatsAppCoexistenceHistoryTests } from "./recruitment-whatsapp-coexistence-history.test.ts";
@@ -1193,6 +1194,10 @@ await runTest(
 await runTest(
   "recruitment CV file choice (screening mode picks the newest renderable CV, and says so when there is none)",
   runCvFileChoiceTests,
+);
+await runTest(
+  "recruitment screening order (the queue meets field-force candidates first; nothing is hidden or auto-rejected)",
+  runRecruitmentScreeningOrderTests,
 );
 await runTest("recruitment whatsapp intake", runRecruitmentWhatsAppIntakeTests);
 await runTest(
