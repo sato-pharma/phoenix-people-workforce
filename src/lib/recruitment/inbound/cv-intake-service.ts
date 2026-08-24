@@ -46,6 +46,7 @@ import { uploadCandidateFile } from "@/lib/recruitment/files";
 import { inboxCvGate } from "@/lib/recruitment/inbound/email-mailboxes-config";
 import { heldBackReason, strictGateHoldsBack } from "@/lib/recruitment/inbound/inbox-cv-gate";
 import { notifyTalentAcquisitionOfInboundCv } from "@/lib/recruitment/inbound/recruitment-notify";
+import { extractChannelCode } from "@/lib/recruitment/outreach/channel-code";
 import type { Candidate } from "@/lib/recruitment/types";
 
 export type InboundCvChannel = "email" | "whatsapp";
@@ -176,6 +177,13 @@ async function claimIntakeEvent(input: InboundCvIntakeInput): Promise<IntakeEven
       raw_metadata: input.rawMetadata ?? {},
       sender_display_name: input.senderDisplayName ?? null,
       sender_identifier: input.senderIdentifier,
+      // Which advert brought this person in. The code rides inside the applicant's own first
+      // message — coverMessage already holds exactly that (an email's subject and body, or a
+      // WhatsApp caption plus the messages sent just before the CV), so there is nothing extra to
+      // capture at either channel. Null is the ordinary result and means "we do not know", never
+      // "no channel": every CV predating this feature, and everyone who typed their own message
+      // instead of tapping the link, legitimately carries nothing.
+      source_channel_code: extractChannelCode([input.coverMessage, input.subject]),
       subject: input.subject ?? null,
     })
     .select("id")

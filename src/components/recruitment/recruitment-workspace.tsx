@@ -37,6 +37,7 @@ import {
   PortalResponsiveDataList,
 } from "@/components/employee-portal/portal-primitives";
 import { Input } from "@/components/ui/input";
+import { JobAdvertPanel } from "@/components/recruitment/job-advert-panel";
 import type { ApplicationWithContext } from "@/lib/recruitment/applications";
 import type { CandidateProfile } from "@/lib/recruitment/candidates";
 import { APPLIED_FOR_SOURCE_LABEL, APPLIED_FOR_SOURCE_SHORT, candidateRowAppliedFor } from "@/lib/recruitment/applied-for";
@@ -137,7 +138,7 @@ type Props = {
   positionCatalogue: PositionCatalogueOption[];
 };
 
-type TabKey = "pipeline" | "requisitions" | "candidates";
+type TabKey = "pipeline" | "requisitions" | "candidates" | "advertise";
 
 const fieldClass =
   "w-full border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-orange-400 focus:outline-none";
@@ -1026,7 +1027,11 @@ export function RecruitmentWorkspace(props: Props) {
 
       {/* Candidates first, because it is where the work is and where the module now opens. */}
       <div className="flex flex-wrap gap-2">
-        {(["candidates", "requisitions", "pipeline"] as TabKey[]).map((key) => (
+        {/* Advertise is management-only: it hands out apply links and retires channels. */}
+        {(props.canManage
+          ? (["candidates", "requisitions", "pipeline", "advertise"] as TabKey[])
+          : (["candidates", "requisitions", "pipeline"] as TabKey[])
+        ).map((key) => (
           <Button key={key} variant={tab === key ? "default" : "ghost"} onClick={() => setTab(key)}>
             {humanizeRecruitmentTerm(key)}
           </Button>
@@ -1037,6 +1042,8 @@ export function RecruitmentWorkspace(props: Props) {
         <AdminCallout tone="warning">
           Recruitment data could not be loaded. If this is a fresh environment, apply the recruitment migrations on staging.
         </AdminCallout>
+      ) : tab === "advertise" ? (
+        <JobAdvertPanel />
       ) : tab === "pipeline" ? (
         <PipelineTab
           applications={applications}

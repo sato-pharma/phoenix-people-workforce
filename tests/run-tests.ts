@@ -152,6 +152,7 @@ import { runRecruitmentLabelTests } from "./recruitment-labels.test.ts";
 import { runHiringDocumentsLabelTests } from "./hiring-documents-labels.test.ts";
 import { runSearchableSelectNoEllipsisTests } from "./searchable-select-no-ellipsis.test.ts";
 import { runRecruitmentAppliedForTests } from "./recruitment-applied-for.test.ts";
+import { runRecruitmentJobPostChannelTests } from "./recruitment-job-post-channels.test.ts";
 import { runRecruitmentHubPortalCoverageTests } from "./recruitment-hub-portal-coverage.test.ts";
 import { runRecruitmentPortalCvViewTests } from "./recruitment-portal-cv-view.test.ts";
 import { runRecruitmentInboundCvIntakeTests } from "./recruitment-inbound-cv-intake.test.ts";
@@ -1177,6 +1178,10 @@ await runTest(
 await runTest(
   "recruitment \"Applying for\" (the evidence ladder that lifts the column from 15 answered rows to 394, on verbatim production strings)",
   runRecruitmentAppliedForTests,
+);
+await runTest(
+  "recruitment advertising channels (the code round-trips from apply link to intake, or every CV loses its source)",
+  runRecruitmentJobPostChannelTests,
 );
 await runTest("recruitment hub -> portal coverage (Talent Acquisition can reach every hub tool)", runRecruitmentHubPortalCoverageTests);
 await runTest("recruitment portal \"View CV\" opens the viewer instead of downloading", runRecruitmentPortalCvViewTests);
