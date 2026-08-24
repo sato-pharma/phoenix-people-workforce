@@ -1420,6 +1420,11 @@ function buildViewer(
     }),
     hrId: viewerHrId ? viewerHrId.toUpperCase() : null,
     role: access.role,
+    // resolveNavigationMode is a pure, cheap function of `access` — the "Matched sales rows" panel
+    // needs the viewer's own shell base so its internal view-sales links do not cross into the other
+    // shell. Resolved on its own line rather than hoisted into a shared const, so the decision-bar
+    // argument above keeps the exact inline call its source-text pin matches on.
+    viewSalesBasePath: resolveNavigationMode(access) === "admin" ? "/admin" : "/employee-portals",
   };
 }
 
