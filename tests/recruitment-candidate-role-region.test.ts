@@ -1,0 +1,119 @@
+import assert from "node:assert/strict";
+
+import {
+  candidateRegionForGovernorate,
+  candidateRegionLabels,
+  normalizeGovernorate,
+} from "../src/lib/recruitment/candidate-region.ts";
+import {
+  candidateRoleFamily,
+  candidateRoleFamilyLabels,
+  candidateRoleFamilyOrNull,
+  normalizeJobTitle,
+} from "../src/lib/recruitment/candidate-role-family.ts";
+
+export function runCandidateRoleRegionTests() {
+  // --- The misspelling. Three people in production wrote "manger" on their CV, and a text search
+  // --- for "district manager" returns none of them. This is the whole reason the family exists.
+  for (const spelling of ["district manger", "district Manger", "District Manger"]) {
+    assert.equal(
+      candidateRoleFamily(spelling),
+      "district_manager",
+      `"${spelling}" is a District Manager despite the spelling`,
+    );
+  }
+
+  // --- "District Sales Manager" does not contain the substring "district manager", so six more
+  // --- people are invisible to a text search. Same family.
+  for (const title of ["District Sales Manager", "district sales manager", "Pharmaceutical Area / District Sales Manager"]) {
+    assert.equal(candidateRoleFamily(title), "district_manager", `"${title}" is a District Manager`);
+  }
+
+  // --- Compound titles name two jobs. The more senior, more specific one wins.
+  assert.equal(
+    candidateRoleFamily("Medical Sales Professional | District Manager"),
+    "district_manager",
+    "a compound title is judged on District Manager, not on the medical-sales half",
+  );
+  assert.equal(
+    candidateRoleFamily("SENIOR DISTRICT MANAGER | PHARMACEUTICAL SALES & LEADERSHIP"),
+    "district_manager",
+  );
+  assert.equal(candidateRoleFamily("District Manager /Upper Egypt 2"), "district_manager");
+  assert.equal(candidateRoleFamily("Acting District Manager"), "district_manager");
+
+  // --- This pool's own data equates Territory Manager with Medical Rep: one person wrote both.
+  assert.equal(candidateRoleFamily("Medical representative ( territory manager )"), "medical_rep");
+  assert.equal(candidateRoleFamily("Territory Manager"), "medical_rep");
+  assert.equal(candidateRoleFamily("Senior Product Specialist"), "medical_rep");
+  assert.equal(candidateRoleFamily("Senior Med. Rep."), "medical_rep");
+
+  // --- A bare honorific must never read as Medical Rep.
+  assert.equal(
+    candidateRoleFamily("Mr Ahmed Hassan"),
+    "other",
+    "a title carrying the honorific Mr is not a Medical Representative",
+  );
+  assert.equal(
+    candidateRoleFamily("Benefits & Medical Insurance Specialist"),
+    "other",
+    "medical insurance is not medical sales",
+  );
+
+  assert.equal(candidateRoleFamily("Regional Manager \u2013 Upper Egypt"), "area_regional_manager");
+  assert.equal(candidateRoleFamily("Area Supervisor"), "area_regional_manager");
+  assert.equal(candidateRoleFamily("Product Manager (Respiratory & Anti-Infective)"), "product_manager");
+  assert.equal(candidateRoleFamily("Senior HR Generalist"), "human_resources");
+  assert.equal(candidateRoleFamily("Sr. Payroll & Personnel Specialist"), "human_resources",
+    "payroll and personnel are HR work here, not finance");
+  assert.equal(candidateRoleFamily("Senior Tax & Accounts Payable"), "finance");
+  assert.equal(candidateRoleFamily("\u0645\u062d\u0627\u0633\u0628 \u0639\u0627\u0645"), "finance", "Arabic accountant");
+  assert.equal(candidateRoleFamily("Community Pharmacist"), "pharmacist");
+
+  // --- No title is not the same claim as "none of these".
+  assert.equal(candidateRoleFamilyOrNull(null), null, "a missing title is unjudged, not Other");
+  assert.equal(candidateRoleFamilyOrNull("   "), null);
+  assert.equal(candidateRoleFamilyOrNull("Receptionist & Call Center"), "other");
+  assert.equal(normalizeJobTitle("  District   MANGER | x "), "district manager x");
+
+  // --- Region: the owner's decision is the COMPANY grouping, not plain geography.
+  for (const gov of ["Sohag", "Assiut", "Minya", "Qena", "assuit", "SOHAG"]) {
+    assert.equal(candidateRegionForGovernorate(gov), "UE", `${gov} is Upper Egypt`);
+  }
+  assert.equal(
+    candidateRegionForGovernorate("Beni Suef"),
+    "GZ",
+    "Beni Suef is the company's Giza region, not Upper Egypt \u2014 owner decision 2026-08-24",
+  );
+  assert.equal(candidateRegionForGovernorate("Fayoum"), "GZ", "Fayoum is Giza, matching the Organogram");
+  assert.equal(candidateRegionForGovernorate("Aswan"), "OT", "Aswan is Others, not Upper Egypt");
+  assert.equal(candidateRegionForGovernorate("Luxor"), "OT");
+
+  // --- Both spellings in production must land on one region, or each hides the other's people.
+  assert.equal(candidateRegionForGovernorate("Qalyubia"), "D1");
+  assert.equal(
+    candidateRegionForGovernorate("Al-Qalyubia"),
+    candidateRegionForGovernorate("Qalyubia"),
+    "Al-Qalyubia and Qalyubia are one place and must group together",
+  );
+  assert.equal(candidateRegionForGovernorate("\u0627\u0644\u0642\u0627\u0647\u0631\u0629"), "CA", "Arabic Cairo");
+  assert.equal(candidateRegionForGovernorate("Cairo, Egypt"), "CA", "a trailing country name still resolves");
+
+  // --- Unknown is NOT Others. "Others" is a real selling region with real areas in it.
+  assert.equal(candidateRegionForGovernorate(null), null);
+  assert.equal(candidateRegionForGovernorate(""), null);
+  assert.equal(
+    candidateRegionForGovernorate("Atlantis"),
+    null,
+    "an unrecognised place is unknown, never folded into the Others region",
+  );
+  assert.equal(normalizeGovernorate("  Al-Qalyubia Governorate "), "qalyubia");
+
+  // --- Every family and region has a human-readable label, never a raw code on screen.
+  for (const label of Object.values(candidateRoleFamilyLabels)) {
+    assert.ok(label.length > 0 && !label.includes("_"), `role label "${label}" is human-readable`);
+  }
+  for (const label of Object.values(candidateRegionLabels)) {
+    assert.ok(label.length > 0 && !label.includes("_"), `region label "${label}" is human-readable`);
+  }
+}

@@ -24,6 +24,18 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { formatDurationMonths, type CvExperienceStatus } from "@/lib/cv/cv-database";
 import { CV_LIBRARY_BLANK, summarizeCvLibrary, type CvLibraryRow } from "@/lib/cv/cv-library";
+import {
+  candidateRegionCodes,
+  candidateRegionForGovernorate,
+  candidateRegionLabels,
+  type CandidateRegionCode,
+} from "@/lib/recruitment/candidate-region";
+import {
+  candidateRoleFamilies,
+  candidateRoleFamilyLabels,
+  candidateRoleFamilyOrNull,
+  type CandidateRoleFamily,
+} from "@/lib/recruitment/candidate-role-family";
 import { cn } from "@/lib/utils";
 
 type ExperienceFilter = "all" | CvExperienceStatus;
@@ -154,6 +166,11 @@ export function CvDatabaseManager({ rows }: { rows: CvLibraryRow[] }) {
   const [query, setQuery] = React.useState("");
   const [experienceFilter, setExperienceFilter] = React.useState<ExperienceFilter>("all");
   const [governorate, setGovernorate] = React.useState("");
+  // The governorate dropdown answers one place at a time. "Upper Egypt" is four of them, and
+  // "district manager" is a family whose members spell it three different ways — neither question
+  // could be asked here before. Both read a domain classifier, not the raw column.
+  const [roleFilter, setRoleFilter] = React.useState<CandidateRoleFamily | "" | "unknown">("");
+  const [regionFilter, setRegionFilter] = React.useState<CandidateRegionCode | "" | "unknown">("");
 
   const summary = React.useMemo(() => summarizeCvLibrary(rows), [rows]);
 
@@ -173,6 +190,14 @@ export function CvDatabaseManager({ rows }: { rows: CvLibraryRow[] }) {
     return rows.filter((row) => {
       if (experienceFilter !== "all" && row.medicalSales !== experienceFilter) return false;
       if (governorate && row.governorate !== governorate) return false;
+      if (roleFilter) {
+        const family = candidateRoleFamilyOrNull(row.currentJobTitle);
+        if (roleFilter === "unknown" ? family !== null : family !== roleFilter) return false;
+      }
+      if (regionFilter) {
+        const region = candidateRegionForGovernorate(row.governorate);
+        if (regionFilter === "unknown" ? region !== null : region !== regionFilter) return false;
+      }
       if (!normalizedQuery) return true;
 
       const searchable = [
@@ -193,14 +218,16 @@ export function CvDatabaseManager({ rows }: { rows: CvLibraryRow[] }) {
 
       return searchable.includes(normalizedQuery);
     });
-  }, [experienceFilter, governorate, query, rows]);
+  }, [experienceFilter, governorate, query, regionFilter, roleFilter, rows]);
 
-  const hasActiveFilters = Boolean(query || experienceFilter !== "all" || governorate);
+  const hasActiveFilters = Boolean(query || experienceFilter !== "all" || governorate || roleFilter || regionFilter);
 
   function clearFilters() {
     setQuery("");
     setExperienceFilter("all");
     setGovernorate("");
+    setRoleFilter("");
+    setRegionFilter("");
   }
 
   return (
@@ -298,6 +325,40 @@ export function CvDatabaseManager({ rows }: { rows: CvLibraryRow[] }) {
                   {label}
                 </button>
               ))}
+              <label className="sr-only" htmlFor="cv-database-role">
+                Role
+              </label>
+              <select
+                className="h-10 rounded-2xl border border-[#D7E0EA] bg-white/95 px-3 text-xs font-bold text-[#64748B] shadow-sm"
+                id="cv-database-role"
+                onChange={(event) => setRoleFilter(event.target.value as CandidateRoleFamily | "" | "unknown")}
+                value={roleFilter}
+              >
+                <option value="">Any role</option>
+                {candidateRoleFamilies.map((family) => (
+                  <option key={family} value={family}>
+                    {candidateRoleFamilyLabels[family]}
+                  </option>
+                ))}
+                <option value="unknown">No job title on file</option>
+              </select>
+              <label className="sr-only" htmlFor="cv-database-region">
+                Region
+              </label>
+              <select
+                className="h-10 rounded-2xl border border-[#D7E0EA] bg-white/95 px-3 text-xs font-bold text-[#64748B] shadow-sm"
+                id="cv-database-region"
+                onChange={(event) => setRegionFilter(event.target.value as CandidateRegionCode | "" | "unknown")}
+                value={regionFilter}
+              >
+                <option value="">Any region</option>
+                {candidateRegionCodes.map((code) => (
+                  <option key={code} value={code}>
+                    {candidateRegionLabels[code]}
+                  </option>
+                ))}
+                <option value="unknown">No governorate on file</option>
+              </select>
               {governorateOptions.length > 1 ? (
                 <label className="sr-only" htmlFor="cv-database-governorate">
                   Governorate
