@@ -76,10 +76,13 @@ export function runHiringEmployeeScopeTests() {
   // ---------------------------------------------------------------------------
   // Neither service may hand-write a status list again. Both regressions were exactly that.
   // ---------------------------------------------------------------------------
+  // These match the CALL, not the import. An earlier cut tested for the bare identifier, which the
+  // import line satisfies on its own — so replacing the predicate body with a hand-rolled status
+  // comparison left the test green, which is the exact regression it exists to catch.
   const documents = codeOnly(readFileSync("src/lib/hiring-documents/service.ts", "utf8"));
   assert.ok(
-    /isTerminalEmploymentStatus/.test(documents),
-    "hiring-documents must scope employees with the shared predicate",
+    /!isTerminalEmploymentStatus\(row\.employment_status\)/.test(documents),
+    "hiring-documents must scope employees with the shared predicate — importing it is not using it",
   );
   assert.ok(
     !/visibleEmployeeStatuses/.test(documents),
@@ -92,8 +95,8 @@ export function runHiringEmployeeScopeTests() {
 
   const pack = codeOnly(readFileSync("src/lib/hiring-pack/service.ts", "utf8"));
   assert.ok(
-    /ACTIVE_EMPLOYMENT_STATUSES_IN_LIST/.test(pack),
-    "hiring-pack must scope its roster query with the shared literal",
+    /employment_status\.is\.null,employment_status\.in\.\$\{ACTIVE_EMPLOYMENT_STATUSES_IN_LIST\}/.test(pack),
+    "hiring-pack must scope its roster query with the shared literal — importing it is not using it",
   );
   assert.ok(
     !/\.neq\("employment_status"/.test(pack),
