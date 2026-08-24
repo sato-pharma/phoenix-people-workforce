@@ -149,6 +149,14 @@ export const accessRegistry = [
   tokenApi({ authMode: "webhook-secret", methods: ["POST"], pattern: "/api/webhooks/resend", reason: "Resend webhook signature/secret protected." }),
   tokenApi({ authMode: "webhook-secret", methods: ["POST"], pattern: "/api/webhooks/brevo", reason: "Brevo transactional webhook is protected by a shared secret token (?token= / x-brevo-token) verified against BREVO_WEBHOOK_SECRET." }),
   tokenApi({ authMode: "webhook-secret", methods: ["GET", "POST"], pattern: "/api/webhooks/whatsapp", reason: "GET is Meta's one-time verify-token handshake; POST is protected by the X-Hub-Signature-256 HMAC verified against WHATSAPP_APP_SECRET. Recruitment inbound CV intake." }),
+  // Completes WhatsApp coexistence onboarding started on the public /whatsapp-connect page. Public
+  // by design: no Phoenix session exists (the owner runs it on a phone), and the credential is Meta's
+  // one-time Embedded Signup `code`, which Meta issues only to a holder of a role on our Meta app. It
+  // exchanges that code for a business token server-side (WHATSAPP_APP_SECRET) and subscribes this app
+  // to the joined WABA so its inbound routes to /api/webhooks/whatsapp; it writes nothing to our
+  // database and returns nothing sensitive. CSRF-exempt because it carries no ambient cookie authority
+  // — a forged cross-site POST reaches nothing without a valid Meta code.
+  tokenApi({ authMode: "public-token", methods: ["POST"], pattern: "/api/whatsapp/embedded-signup/exchange", reason: "Unauthenticated WhatsApp coexistence onboarding callback; the credential is Meta's one-time Embedded Signup code (issued only to a role-holder on our Meta app), exchanged server-side for a business token. No Phoenix session, no DB write, no sensitive response." }),
   tokenApi({ authMode: "webhook-secret", methods: ["POST"], pattern: "/api/integrations/telegram/webhook", reason: "Telegram bot webhook is protected by the Telegram secret-token header." }),
   tokenApi({ authMode: "machine-token", methods: ["POST"], pattern: "/api/attendance/raw-punches", reason: "Local attendance agent bearer-token ingestion route." }),
   tokenApi({ authMode: "machine-token", methods: ["GET"], pattern: "/api/sales/master-map/sheet", reason: "Read-only feed for the Master Map Google Sheet, polled every five minutes by the Apps Script bound to that workbook. A shared bearer token (MASTER_MAP_SYNC_TOKEN) rather than a session because the caller is a Google script with no Phoenix user, and Google's org policy blocks the service-account key the other direction would need. GET only and mutates nothing — the sole risk it carries is DISCLOSURE of the customer master, which is why it fails closed when the token is unset in production. Longer pattern than the /api/sales/** blanket, so it wins the longest-match and is never treated as a session route." }),

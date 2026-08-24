@@ -69,6 +69,22 @@ const contentSecurityPolicy = [
   ...(isProduction ? ["upgrade-insecure-requests"] : []),
 ].join("; ");
 
+// A CSP for /whatsapp-connect ONLY — the WhatsApp coexistence onboarding page (app/whatsapp-connect),
+// which loads Facebook's JS SDK and opens a Facebook login popup that talks back via postMessage.
+// The site-wide CSP above intentionally allows no Facebook host, so left as-is the SDK <script> is
+// blocked and the flow is dead on arrival. This derives from the site-wide policy and widens exactly
+// three directives for exactly the Facebook hosts the SDK needs — nothing else on the site is touched,
+// so payroll/HR pages keep the strict policy. Built by string-replacing the shared const rather than
+// re-typing it, so any future hardening of the base policy carries through here automatically (and so
+// tests/csp-headers.test.ts, which fingerprints the base template literal, is unaffected).
+const whatsappConnectCsp = contentSecurityPolicy
+  .replace("script-src 'self'", "script-src 'self' https://connect.facebook.net")
+  .replace(
+    "connect-src 'self'",
+    "connect-src 'self' https://connect.facebook.net https://graph.facebook.com https://*.facebook.com",
+  )
+  .concat("; frame-src 'self' https://connect.facebook.net https://*.facebook.com");
+
 const securityHeaders = [
   {
     key: "Content-Security-Policy",
@@ -236,6 +252,23 @@ const nextConfig: NextConfig = {
       {
         headers: securityHeaders,
         source: "/:path*",
+      },
+      // /whatsapp-connect — the WhatsApp coexistence onboarding page. Two per-key overrides of the
+      // site-wide security headers, and ONLY for this one path:
+      //   - Content-Security-Policy -> whatsappConnectCsp, which permits Facebook's JS SDK + graph
+      //     calls (the site-wide policy allows no Facebook host, which would block the SDK outright).
+      //   - Cross-Origin-Opener-Policy -> same-origin-allow-popups. The site-wide value is
+      //     `same-origin`, which severs window.opener for the Facebook login popup and so kills the
+      //     postMessage that returns the auth code. `-allow-popups` keeps the opener link for popups
+      //     this page opens while still isolating it from the pages that open IT.
+      // Per-key, later-array-entry-wins override — verified live against the CV-download entries below;
+      // every other header (X-Frame-Options: DENY, HSTS, etc.) is inherited unchanged from /:path*.
+      {
+        headers: [
+          { key: "Content-Security-Policy", value: whatsappConnectCsp },
+          { key: "Cross-Origin-Opener-Policy", value: "same-origin-allow-popups" },
+        ],
+        source: "/whatsapp-connect",
       },
       // CvPreviewModal renders a candidate's CV inline via <iframe src={ourOwnDownloadRoute}> —
       // the global X-Frame-Options: DENY / frame-ancestors 'none' above blocks that outright,
