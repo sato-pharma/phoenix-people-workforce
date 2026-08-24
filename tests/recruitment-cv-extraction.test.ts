@@ -703,7 +703,30 @@ export function runRecruitmentCvExtractionTests() {
   const workspaceSource = read("src/components/recruitment/recruitment-workspace.tsx");
   // Attributes are not pinned here — the column's padding is layout, and this assertion is about
   // the column existing. Pinning the bare tag once made a padding fix look like a test failure.
-  assert.match(workspaceSource, /<th[^>]*>Applying for<\/th>/, "the desktop table must carry the column");
+  //
+  // The header word changed on 2026-08-24. The column is now "Role", because it leads with the
+  // candidate's OWN job title where the record has one and falls back to the job the sender asked
+  // for — "Applying for" was only ever the name of the weaker of those two answers. What has to
+  // stay true is that the desktop table still answers the question, so what is pinned is a header
+  // for it plus the applied-for text still rendering in the row, rather than one stale label.
+  // Scoped to the candidate pool's own header row. An unscoped /<th>Role<\/th>/ passes on the
+  // requisitions table further up the same file, which is a different table about a different
+  // thing — the pin was briefly that weak, and deleting the pool's header did not turn it red.
+  const poolHead = workspaceSource.slice(
+    workspaceSource.indexOf('<thead className="font-black uppercase tracking-[0.08em]">'),
+    workspaceSource.indexOf("</thead>", workspaceSource.indexOf('<thead className="font-black uppercase tracking-[0.08em]">')),
+  );
+  assert.ok(poolHead.length > 0, "the candidate pool's header row must still be findable");
+  assert.match(
+    poolHead,
+    /<th[^>]*>(Role|Applying for)<\/th>/,
+    "the desktop table must carry the column that says what this person does",
+  );
+  assert.match(
+    workspaceSource,
+    /appliedFor\.source === "stated" \? "text-slate-900" : "italic text-slate-500"[\s\S]{0,600}?\{appliedFor\.text\}/,
+    "and the resolved applied-for text must still render in the desktop row, not only in the profile",
+  );
   // Mobile gets it as a card field — the owner's rule is desktop tables, mobile cards. Since
   // 2026-08-21 the value walks the whole evidence ladder in applied-for.ts, because a stored title
   // exists on 15 rows of 555. A card has no tooltip, so the LABEL has to say which source answered.
@@ -712,9 +735,13 @@ export function runRecruitmentCvExtractionTests() {
     /APPLIED_FOR_SOURCE_SHORT\[appliedFor\.source\]/,
     "mobile must name the source in the label — a card has no tooltip to carry it",
   );
+  // Shape, not the old one-liner: the card's value became JSX on 2026-08-24 when the field started
+  // leading with the candidate's own job title. The fallback chain is what matters — an applied-for
+  // answer if there is one, the words "Not stated" if there is not, never an empty cell that reads
+  // as a rendering fault.
   assert.match(
     workspaceSource,
-    /value: appliedFor\.text \?\? "Not stated"/,
+    /: appliedFor\.text\s*\?[\s\S]{0,200}?: "Not stated"\}/,
     "a candidate no source can answer for still reads 'Not stated', never blank",
   );
   assert.match(

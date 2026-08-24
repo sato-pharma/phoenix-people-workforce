@@ -57,16 +57,21 @@ import {
 } from "@/lib/recruitment/candidate-source-context";
 import {
   candidateRegionCodes,
-  candidateRegionForGovernorate,
   candidateRegionLabels,
   type CandidateRegionCode,
 } from "@/lib/recruitment/candidate-region";
 import {
   candidateRoleFamilies,
   candidateRoleFamilyLabels,
-  candidateRoleFamilyOrNull,
+  normalizeJobTitle,
   type CandidateRoleFamily,
 } from "@/lib/recruitment/candidate-role-family";
+import {
+  candidateScreeningFacts,
+  candidateScreeningRoleFamily,
+  formatYearsOfExperience,
+  UNCONFIRMED_FACT_TITLE,
+} from "@/lib/recruitment/candidate-screening-facts";
 import { cairoDayKey, type CandidatePoolStats } from "@/lib/recruitment/candidate-stats";
 import type { HiringManagerOption } from "@/lib/recruitment/hiring-manager-notify";
 import type { SelectionBoardEntry } from "@/lib/recruitment/selection";
@@ -100,6 +105,8 @@ import { BulkCvExtractionPanel } from "@/components/recruitment/bulk-cv-extracti
 import { CandidateFieldsPanel } from "@/components/recruitment/candidate-fields-panel";
 import { CvExtractionPanel } from "@/components/recruitment/cv-extraction-panel";
 import { CvExtractionReviewBoard } from "@/components/recruitment/cv-extraction-review-board";
+import { CandidateFactsSummary } from "@/components/recruitment/candidate-facts-summary";
+import { CandidateScreeningSession } from "@/components/recruitment/candidate-screening-session";
 import { CvPreviewModal } from "@/components/recruitment/cv-preview-modal";
 import {
   countUnappliedCvFields,
@@ -2509,6 +2516,24 @@ function CandidatePoolCard({
   // is lifted so two rows cannot expand at once.
   const [openPanel, setOpenPanel] = useState<"send" | "start" | null>(null);
 
+  // The same facts the desktop row reads, resolved by the same module. A phone screener is doing
+  // the identical job with less screen, so the card must not answer fewer questions than the table
+  // — it was showing an email address and a timestamp where the row now shows a job, a region and
+  // a length of career.
+  const appliedFor = candidateRowAppliedFor(candidate);
+  const facts = candidateScreeningFacts(candidate);
+  const roleFamily = candidateScreeningRoleFamily(facts, appliedFor.text);
+  const roleTitleAlreadySaysFamily =
+    roleFamily !== null &&
+    normalizeJobTitle(facts.roleTitle?.value ?? appliedFor.text) ===
+      normalizeJobTitle(candidateRoleFamilyLabels[roleFamily]);
+
+  // A card has no hover, so "we are not sure of this" has to survive in the text itself: grey
+  // italic and a trailing "?", the same two marks the row uses, minus the tooltip that explains
+  // them. The label carries the explanation instead — "(from CV)" rather than a sentence.
+  const shown = (value: string, confirmed: boolean) =>
+    confirmed ? value : <span className="font-medium italic text-slate-500">{value} ?</span>;
+
   return (
     <PortalRecordCard
       accent="slate"
@@ -2545,21 +2570,97 @@ function CandidatePoolCard({
     >
       <PortalRecordFields
         fields={[
-          // Mobile leads with the routing fact, same as the desktop table's second column — and
-          // reads it the same way, off whichever piece of evidence answered. The label says which
-          // one that was, since a card has no tooltip to carry it.
-          ...(() => {
-            const appliedFor = candidateRowAppliedFor(candidate);
-            return [
-              {
-                label:
-                  appliedFor.source && appliedFor.source !== "stated"
-                    ? `Applying for (${APPLIED_FOR_SOURCE_SHORT[appliedFor.source]})`
-                    : "Applying for",
-                value: appliedFor.text ?? "Not stated",
-              },
-            ];
-          })(),
+          // The three screening facts lead, ahead of every contact detail — deciding whether this
+          // CV is worth opening is the whole job, and a phone shows about four fields before the
+          // reader has to scroll. Same order as the desktop columns, for the same reason.
+          {
+            label: facts.roleTitle
+              ? facts.roleTitle.confirmed
+                ? "Role"
+                : "Role (from CV)"
+              : appliedFor.source && appliedFor.source !== "stated"
+                ? `Applying for (${APPLIED_FOR_SOURCE_SHORT[appliedFor.source]})`
+                : "Applying for",
+            value: (
+              <>
+                {facts.roleTitle
+                  ? shown(facts.roleTitle.value, facts.roleTitle.confirmed)
+                  : appliedFor.text
+                    ? shown(appliedFor.text, appliedFor.source === "stated")
+                    : "Not stated"}
+                {/* The family, and only when it is not just the title again in capitals. */}
+                {roleFamily && !roleTitleAlreadySaysFamily ? (
+                  <div className="mt-0.5 text-[10px] font-black uppercase tracking-[0.06em] text-slate-400">
+                    {candidateRoleFamilyLabels[roleFamily]}
+                  </div>
+                ) : null}
+              </>
+            ),
+          },
+          // What they asked for, when that is a different question from what they do. With no job
+          // title on file the field above already IS this line, so it would only repeat itself.
+          ...(facts.roleTitle &&
+          appliedFor.text &&
+          normalizeJobTitle(appliedFor.text) !== normalizeJobTitle(facts.roleTitle.value)
+            ? [
+                {
+                  label:
+                    appliedFor.source && appliedFor.source !== "stated"
+                      ? `Applying for (${APPLIED_FOR_SOURCE_SHORT[appliedFor.source]})`
+                      : "Applying for",
+                  value: appliedFor.text,
+                },
+              ]
+            : []),
+          // The company's region over the governorate it came from, same as the row: the map is
+          // the company's own, so the reader has to be able to see the working.
+          ...(facts.governorate
+            ? [
+                {
+                  label: facts.governorate.confirmed ? "Region" : "Region (from CV)",
+                  value: (
+                    <>
+                      {shown(
+                        facts.region ? facts.region.value.label : facts.governorate.value,
+                        facts.governorate.confirmed,
+                      )}
+                      {facts.region ? (
+                        <div className="mt-0.5 text-[10px] font-semibold text-slate-500">
+                          {facts.governorate.value}
+                        </div>
+                      ) : null}
+                    </>
+                  ),
+                },
+              ]
+            : []),
+          // `false` is an answer, not a blank — "never worked as a medical rep" is exactly what a
+          // screener of a pharma pool needs, so the pill is drawn either way.
+          ...(facts.years || facts.pharmaRep
+            ? [
+                {
+                  label: "Experience",
+                  value: (
+                    <>
+                      {facts.years
+                        ? shown(
+                            `${facts.years.confirmed ? "" : "~"}${formatYearsOfExperience(facts.years.value)}`,
+                            facts.years.confirmed,
+                          )
+                        : "Not stated"}
+                      {facts.pharmaRep ? (
+                        <div className="mt-1">
+                          <StagePill tone={facts.pharmaRep.value ? "emerald" : "slate"}>
+                            {facts.pharmaRep.value ? "Pharma rep" : "No pharma"}
+                            {facts.pharmaRep.confirmed ? "" : " ?"}
+                          </StagePill>
+                        </div>
+                      ) : null}
+                    </>
+                  ),
+                },
+              ]
+            : []),
           ...(isStatedNonEgyptian(candidate.nationality)
             ? [{ label: "Nationality", value: nonEgyptianFlagTitle(candidate.nationality) }]
             : []),
@@ -2706,6 +2807,10 @@ function CandidatesTab({
   // Which row, if any, has a picker open. One at a time: 555 rows must not each mount two
   // dropdowns, and two open pickers on screen is two places to click Send by mistake.
   const [openRowPanel, setOpenRowPanel] = useState<{ id: string; panel: "send" | "start" } | null>(null);
+  // Screening mode holds a SNAPSHOT of the queue taken when it opens, not a live view: re-sorting
+  // the list under a reader who is halfway through it is how you lose your place, which is the
+  // exact complaint this whole mode answers.
+  const [screeningQueue, setScreeningQueue] = useState<Candidate[] | null>(null);
   const [profile, setProfile] = useState<CandidateProfile | null>(null);
   const [viewCvFile, setViewCvFile] = useState<RecruitmentFile | null>(null);
   const [statusDraft, setStatusDraft] = useState("");
@@ -2779,22 +2884,41 @@ function CandidatesTab({
       if (statusFilter && normalizeCandidateStatus(c.status) !== statusFilter) return false;
       if (sourceFilter && candidateSourceChannel(c.source, c.sourceContext).label !== sourceFilter) return false;
       if (duplicatesOnly && !c.possibleDuplicate) return false;
-      // Both are three-way for the same reason the experience filter is: 249 of 426 people have no
-      // job title and 159 no governorate, and "we were never told" is not "none of the above".
-      if (roleFilter) {
-        const family = candidateRoleFamilyOrNull(c.currentJobTitle);
-        if (roleFilter === "unknown" ? family !== null : family !== roleFilter) return false;
-      }
-      if (regionFilter) {
-        const region = candidateRegionForGovernorate(c.governorate);
-        if (regionFilter === "unknown" ? region !== null : region !== regionFilter) return false;
+      // Both are three-way for the same reason the experience filter is: "we were never told" is
+      // not "none of the above", and on this pool it is the single commonest answer.
+      //
+      // Both read `candidateScreeningFacts` — the SAME resolution the row renders — rather than the
+      // raw column, and that is the point rather than a tidy-up. While the filter read
+      // `c.currentJobTitle` alone it disagreed with the screen: Mohammed Alaa Eliwa sat in the pool
+      // on 2026-08-24 showing "District Sales Manager, Alexandria" in his role cell with his title
+      // column NULL, so the one filter built to find him could not. Filtering on a different fact
+      // from the one displayed is not a narrower filter, it is a wrong one.
+      //
+      // Coverage, measured on the same 426 rows: role 177 -> 221 from the hedged CV titles alone,
+      // and further again through the resolved "Applying for" text; region 267 -> 269.
+      if (roleFilter || regionFilter) {
+        const facts = candidateScreeningFacts(c);
+        if (roleFilter) {
+          const family = candidateScreeningRoleFamily(facts, candidateRowAppliedFor(c).text);
+          if (roleFilter === "unknown" ? family !== null : family !== roleFilter) return false;
+        }
+        if (regionFilter) {
+          const region = facts.region?.value.code ?? null;
+          if (regionFilter === "unknown" ? region !== null : region !== regionFilter) return false;
+        }
       }
       // Three-way, not a checkbox: null is a real and common answer here (66 rows), and it means
       // "the CV did not say", which is not the same as "no". Folding unknown into either bucket
       // would quietly hide people.
-      if (experienceFilter === "yes" && c.hasMedicalRepExperience !== true) return false;
-      if (experienceFilter === "no" && c.hasMedicalRepExperience !== false) return false;
-      if (experienceFilter === "unknown" && typeof c.hasMedicalRepExperience === "boolean") return false;
+      //
+      // Reads the resolved fact for the same reason the two above do — 14 people have a medical-rep
+      // answer the CV reader hedged, so the column is null while the row shows "Pharma rep".
+      if (experienceFilter !== "all") {
+        const pharma = candidateScreeningFacts(c).pharmaRep?.value ?? null;
+        if (experienceFilter === "yes" && pharma !== true) return false;
+        if (experienceFilter === "no" && pharma !== false) return false;
+        if (experienceFilter === "unknown" && typeof pharma === "boolean") return false;
+      }
       if (dateFilter === "all") return true;
       if (dateFilter === "today") return cairoDayKey(c.createdAt) === todayKey;
       const created = new Date(c.createdAt).getTime();
@@ -3210,6 +3334,14 @@ function CandidatesTab({
                 <span className="tabular-nums opacity-70">{duplicateCount}</span>
               </button>
             ) : null}
+            {/* The way into screening mode, and deliberately the loudest control on the toolbar.
+                It takes the queue EXACTLY as filtered and ordered on screen, so narrowing to
+                "District Manager · Alex-BHR" and pressing this is a session with an end. */}
+            {visibleCandidates.length > 0 ? (
+              <Button onClick={() => setScreeningQueue(visibleCandidates)}>
+                Screen {visibleCandidates.length} {visibleCandidates.length === 1 ? "CV" : "CVs"}
+              </Button>
+            ) : null}
             {dateFilter !== "all" || experienceFilter !== "all" || statusFilter || sourceFilter || roleFilter || regionFilter || query || duplicatesOnly ? (
               <Button
                 variant="ghost"
@@ -3315,43 +3447,51 @@ function CandidatesTab({
              * of 555 rows have no email and 316 no phone, so two columns were spending ~340px to
              * show a dash most of the time.
              */
-            <PortalDesktopTable className="table-fixed" minWidth="1360px">
+            <PortalDesktopTable className="table-fixed" minWidth="1640px">
               {/*
-               * Every width below is the width its text actually wants, measured cell by cell
-               * against all 555 production rows on 2026-08-21 (99th percentile, at each line's own
-               * computed font, plus the 24px of cell padding):
+               * Every width below is the width its text actually wants, measured cell by cell at
+               * each line's own computed font plus the 24px of cell padding — never estimated from
+               * a character count, because these strings are Arabic, Latin and mixed.
                *
-               *   Candidate 261 · Applying for 301 · Status 50 · Received 60
+               * Re-cut 2026-08-24, second time that day, when the owner screened the pool himself
+               * and could not tell what any CV was for. The table he was given had seven columns
+               * and carried roughly one column of information: Status read "New" on 406 of the 426
+               * rows and Source read the same channel down whole screenfuls, so two of the seven
+               * were constants, while the job someone holds, where they live and how long they
+               * have worked — the three facts screening is actually made of — had no column at all.
                *
-               * Against that, the first cut of this table gave Candidate 443 and Applying-for 140.
-               * Status and Received were also 100 and 116 for content needing 50 and 60. So the one
-               * column carrying the fact that decides who a CV goes to was the only one starved,
-               * and every longer role read "Personnel and Recruitment Speci…".
+               * So Source stopped being a column and became a badge on the Received cell's second
+               * line, beside the New pill, and the 104px it cost bought most of Region. Role,
+               * Region and Experience are the three that replaced it.
                *
-               * Applying-for now takes the flexible slot — 328px at the 1172px this table renders
-               * at, 304 of it text, clear of the 301 it needs. Candidate is pinned at 280 rather
-               * than left to sprawl. Actions stays 220: six 28px icon buttons plus gaps and padding
-               * measure 212, and the strip has to fit on one line or the row grows again.
+               * Widths, measured against production on 2026-08-24 at the live 14px table font:
                *
-               * Re-measured 2026-08-24 against 574 production rows, counting the cells actually
-               * clipped rather than the widths they were given:
+               *   Role         529 max ("Sales Force Effectiveness (SFE) & Business Development
+               *                Manager | Acting HR Manager", 82 chars) — takes the flexible slot
+               *   Region        83 max ("Kafr El Sheikh"; the region label above it peaks at 77
+               *                for "Upper Egypt") -> 112
+               *   Experience    55 for "12.5 yrs" over a 60px pharma badge -> 124
+               *   Candidate    308 -> 332, unchanged and still the measured p99
+               *   Status/Received/Actions unchanged at 96 / 156 / 220
                *
-               *   Source 173 · Applying for 29 · Candidate 21 · everything else 0
+               * That is 36 + 332 + 112 + 124 + 96 + 156 + 220 = 1076 fixed, so a minWidth of 1640
+               * leaves 564 for Role against the 553 its longest row wants and nothing clips at any
+               * width. Below 1640px the wrapper scrolls sideways, which is the same trade this
+               * table already made at 1360: fitting the window is a preference, never truncating
+               * and never wrapping is the owner's rule, and the rule wins.
                *
-               * Candidate overflowed by at most 43px, so 280 → 332 ends all 21. Source's 173 were
-               * never a width problem — worst overflow 7,094px — and are fixed by not drawing a
-               * line that cannot fit (see the cell); with only the badge left it drops 116 → 104.
-               * Applying-for needed 173px more than the 292 it had, which is what the minWidth of
-               * 1360 buys: 36 + 332 + 96 + 96 + 104 + 220 = 884 fixed, leaving 476 for the flexible
-               * column against the 465 it wants. Below 1360px the wrapper scrolls; nothing clips.
+               * The employer is deliberately NOT here. Employer strings in this pool reach 285
+               * characters, so no fixed column can hold one without an ellipsis or a wrap; it is on
+               * the profile card, where the text can breathe.
                */}
               <colgroup>
                 {canManage ? <col className="w-[36px]" /> : null}
                 <col className="w-[332px]" />
                 <col />
+                <col className="w-[112px]" />
+                <col className="w-[124px]" />
                 <col className="w-[96px]" />
-                <col className="w-[96px]" />
-                <col className="w-[104px]" />
+                <col className="w-[156px]" />
                 <col className="w-[220px]" />
               </colgroup>
               {/* No colours here on purpose. The admin shell's locked rules in globals.css paint
@@ -3372,10 +3512,11 @@ function CandidatesTab({
                     </th>
                   ) : null}
                   <th className="px-3 py-2.5">Candidate</th>
-                  <th className="px-3 py-2.5">Applying for</th>
+                  <th className="px-3 py-2.5">Role</th>
+                  <th className="px-3 py-2.5">Region</th>
+                  <th className="px-3 py-2.5">Experience</th>
                   <th className="px-3 py-2.5">Status</th>
                   <th className="px-3 py-2.5">Received</th>
-                  <th className="px-3 py-2.5">Source</th>
                   <th className="px-3 py-2.5">Actions</th>
                 </tr>
               </thead>
@@ -3384,6 +3525,18 @@ function CandidatesTab({
                   const displayName = candidateDisplayName(candidate.fullName);
                   const contact = [candidate.email, candidate.phone].filter(Boolean).join(" · ");
                   const appliedFor = candidateRowAppliedFor(candidate);
+                  // Resolved ONCE and handed to all three new cells, so the row can never show a
+                  // region that disagrees with its own role cell — and so the filter above, which
+                  // calls the same function, is answering about the same person the reader sees.
+                  const facts = candidateScreeningFacts(candidate);
+                  const roleFamily = candidateScreeningRoleFamily(facts, appliedFor.text);
+                  // The family line is worth a row of height only when it adds something the line
+                  // above does not already say. `normalizeJobTitle` rather than a string compare so
+                  // "MEDICAL REPRESENTATIVE" and "Medical Representative" count as the same words.
+                  const roleTitleAlreadySaysFamily =
+                    roleFamily !== null &&
+                    normalizeJobTitle(facts.roleTitle?.value ?? appliedFor.text) ===
+                      normalizeJobTitle(candidateRoleFamilyLabels[roleFamily]);
                   return (
                     <tr className="align-top transition-colors hover:bg-orange-50/50" key={candidate.id}>
                       {canManage ? (
@@ -3443,14 +3596,35 @@ function CandidatesTab({
                           {contact || <span className="text-slate-300">No contact details</span>}
                         </div>
                       </td>
-                      {/* Second column on purpose: after the name, "which job is this for" is the
-                          one fact that decides who the CV goes to. Only 15 rows store a title, so
-                          the rest is read off whatever the sender wrote — shown in italic grey, and
-                          named in the tooltip, so a derived role never reads as a stated one. The
-                          tooltip carries the untouched wording it was read from, which is what lets
-                          a recruiter overrule it without opening the mail. */}
+                      {/* Second column on purpose: after the name, "what does this person do" is
+                          the fact that decides who a CV goes to.
+
+                          Two lines, answering two different questions. The top line is the role
+                          itself — their own job title where the record has one, otherwise the job
+                          the sender said they wanted, which is all this column showed until
+                          2026-08-24. The bottom line is the FAMILY, a fixed vocabulary of eight,
+                          and it is what makes 426 free-text titles scannable at all: "district
+                          Manger", "District Sales Manager" and "SENIOR DISTRICT MANAGER |
+                          PHARMACEUTICAL SALES & LEADERSHIP" are three spellings of one job, and all
+                          three read District Manager here. It is also exactly what the Role filter
+                          matches on, so what the reader sees is what the dropdown will find.
+
+                          Grey italic still means "we were told this rather than shown it", the same
+                          convention this cell has used since 2026-08-21 — now extended to the CV
+                          reader's own hedged answers, which the tooltip names in plain words. */}
                       <td className="px-3 py-2.5">
-                        {appliedFor.text ? (
+                        {facts.roleTitle ? (
+                          <span
+                            className={`block truncate ${facts.roleTitle.confirmed ? "text-slate-900" : "italic text-slate-500"}`}
+                            title={
+                              facts.roleTitle.confirmed
+                                ? `Their current job title, as recorded.\n${facts.roleTitle.value}`
+                                : `${UNCONFIRMED_FACT_TITLE}\n\nRead off the CV as their current job title:\n"${facts.roleTitle.value}"`
+                            }
+                          >
+                            {facts.roleTitle.value}
+                          </span>
+                        ) : appliedFor.text ? (
                           <span
                             className={`block truncate ${appliedFor.source === "stated" ? "text-slate-900" : "italic text-slate-500"}`}
                             title={
@@ -3462,9 +3636,18 @@ function CandidatesTab({
                             {appliedFor.text}
                           </span>
                         ) : null}
+                        {/* The family, under the words it was worked out from — and only when the
+                            two differ. Repeating "Medical Representative" under a title that already
+                            reads "Medical Representative" is another line that says nothing, which
+                            is the exact fault this rebuild exists to fix. */}
+                        {roleFamily && !roleTitleAlreadySaysFamily ? (
+                          <div className="mt-0.5 truncate text-[11px] font-semibold uppercase tracking-[0.06em] text-slate-400">
+                            {candidateRoleFamilyLabels[roleFamily]}
+                          </div>
+                        ) : null}
                         {/* "Not stated" gives way to the badge — it is the weaker of the two facts,
                             and stacking both would say the same nothing twice. */}
-                        {!appliedFor.text && !isNotACv(candidate) ? (
+                        {!facts.roleTitle && !appliedFor.text && !isNotACv(candidate) ? (
                           <span className="text-slate-300">Not stated</span>
                         ) : null}
                         {/* The badge lives in THIS cell rather than beside the name, deliberately
@@ -3472,12 +3655,85 @@ function CandidatesTab({
                             a warning pinned to someone's name reads as a judgement on them. And
                             this is the cell whose emptiness raises the question: a certificate
                             yields no job title, so the reader is already staring at this blank
-                            space asking why. It is also the widest column, where the 280px
+                            space asking why. It is also the widest column, where the 332px
                             Candidate cell would have squeezed a name that already truncates. */}
                         {isNotACv(candidate) ? (
-                          <div className={appliedFor.text ? "mt-0.5" : undefined}>
+                          <div className={facts.roleTitle || appliedFor.text ? "mt-0.5" : undefined}>
                             <StagePill tone="amber">
                               <span title={NOT_A_CV_TITLE}>{NOT_A_CV_LABEL}</span>
+                            </StagePill>
+                          </div>
+                        ) : null}
+                      </td>
+                      {/* Where they are, which the pool could filter on but never showed — so a
+                          screener narrowing to Alex-BHR had to take the filter's word for it and
+                          could not tell, looking at the rows it returned, why any of them were
+                          there. The region is the company's own map of Egypt, never geography's
+                          (Beni Suef and Fayoum are Giza here, by the owner's call), so the
+                          governorate it was derived from sits underneath: the reader needs to see
+                          the working, not just the verdict. */}
+                      <td className="px-3 py-2.5">
+                        {facts.region ? (
+                          <span
+                            className={`block truncate font-semibold ${facts.region.confirmed ? "text-slate-800" : "italic font-normal text-slate-500"}`}
+                            title={
+                              facts.region.confirmed
+                                ? `Company region for ${facts.governorate?.value ?? ""}.`
+                                : `${UNCONFIRMED_FACT_TITLE}\n\nRead off the CV as: "${facts.governorate?.value ?? ""}"`
+                            }
+                          >
+                            {facts.region.value.label}
+                          </span>
+                        ) : null}
+                        {facts.governorate ? (
+                          <div className="mt-0.5 truncate text-[11px] text-slate-500" title={facts.governorate.value}>
+                            {facts.governorate.value}
+                          </div>
+                        ) : (
+                          <span className="text-slate-300">Not on file</span>
+                        )}
+                      </td>
+                      {/* How long they have worked, and whether any of it was as a medical rep —
+                          the two questions that decide whether a pharma CV is worth opening, and
+                          neither had a column.
+
+                          The years are the CV reader's arithmetic over the work history far more
+                          often than a figure printed on the CV, which is why 117 of them are hedged
+                          and why a hedged one shows in grey italic with a "~". Showing it is still
+                          right: "~7 yrs, check it" is a decision a screener can act on and a blank
+                          cell is not. */}
+                      <td className="whitespace-nowrap px-3 py-2.5">
+                        {facts.years ? (
+                          <span
+                            className={facts.years.confirmed ? "font-semibold text-slate-800" : "italic text-slate-500"}
+                            title={
+                              facts.years.confirmed
+                                ? "Total years of experience, as recorded."
+                                : `${UNCONFIRMED_FACT_TITLE}\n\nWorked out from the work history on the CV.`
+                            }
+                          >
+                            {facts.years.confirmed ? "" : "~"}
+                            {formatYearsOfExperience(facts.years.value)}
+                          </span>
+                        ) : (
+                          <span className="text-slate-300">—</span>
+                        )}
+                        {/* `false` is an ANSWER here, not an absence: "never worked as a medical
+                            rep" is exactly what a screener of a pharma pool wants to know, and
+                            leaving it blank would hide the finding. Only a missing answer is blank. */}
+                        {facts.pharmaRep ? (
+                          <div className="mt-0.5">
+                            <StagePill tone={facts.pharmaRep.value ? "emerald" : "slate"}>
+                              <span
+                                title={
+                                  facts.pharmaRep.confirmed
+                                    ? undefined
+                                    : UNCONFIRMED_FACT_TITLE
+                                }
+                              >
+                                {facts.pharmaRep.value ? "Pharma rep" : "No pharma"}
+                                {facts.pharmaRep.confirmed ? "" : " ?"}
+                              </span>
                             </StagePill>
                           </div>
                         ) : null}
@@ -3490,51 +3746,44 @@ function CandidatesTab({
                           <span title={candidate.statusNote ?? undefined}>{candidateStatusLabel(candidate.status)}</span>
                         </StagePill>
                       </td>
-                      {/* When it landed, Cairo time — the column the pool had no answer for. Date
-                          over time rather than one line, so a fixed-width column can show the whole
-                          stamp instead of clipping it; the Candidate cell is two lines anyway, so
-                          this costs no row height. The New pill marks the last 24 hours, measured
-                          from the server's stamp. */}
-                      <td className="whitespace-nowrap px-3 py-2.5 text-[11px] text-slate-600">
-                        <div>{cairoDateTime(candidate.createdAt).split(" · ")[0]}</div>
-                        <div className="mt-0.5 flex items-center gap-1.5 text-slate-400">
-                          {cairoDateTime(candidate.createdAt).split(" · ")[1] ?? ""}
-                          {isNewArrival(candidate) ? <StagePill tone="orange">New</StagePill> : null}
-                        </div>
-                      </td>
-                      {/*
-                          The channel, and only the channel. "WhatsApp or email?" is the question
-                          this column is scanned for, and a badge answers it at 104px.
+                      {/* When it landed, Cairo time, and on which channel — one column since
+                          2026-08-24, because Source was a whole column spent repeating "WhatsApp"
+                          down the screen and its 104px paid for most of Region.
 
-                          It used to carry the sender's own first line underneath, and that line was
-                          the single worst thing on this tab: 173 of the 225 rows carrying one
-                          overflowed, one of them by 7,094px, and those 173 were the bulk of the 223
-                          clipped cells on the whole page. `shortLabel` is whatever the sender wrote
-                          first — a forwarded mail stores an entire message there, reaching 1,546
-                          characters — so no column width answers it.
+                          Date over time rather than one line, so a fixed-width column shows the
+                          whole stamp instead of clipping it; every other cell in this row is two
+                          lines anyway, so the second line is free. The New pill marks the last 24
+                          hours, measured from the server's stamp.
 
-                          Nor does a length limit. Measured in the real font on 2026-08-24: only 38
-                          of the 225 lines fit the 80px of content box this column has, and what
-                          fits is "Cv.pdf", "Afroz cv", "cv" — filenames, not information. A
-                          threshold that admits those and wraps the other 187 buys nothing, and
-                          wrapping breaks the same rule the ellipsis did.
-
-                          So the line is not drawn here at all. Nothing is lost: the sender's words
-                          are this cell's hover title, they are on the mobile card under "Their
-                          words", and they are still what the search box matches.
-                      */}
+                          The channel badge used to carry the sender's own first line underneath,
+                          and that line was the single worst thing on this tab: 173 of the 225 rows
+                          carrying one overflowed, one of them by 7,094px, and those 173 were the
+                          bulk of the 223 clipped cells on the page. `shortLabel` is whatever the
+                          sender wrote first — a forwarded mail stores an entire message there,
+                          reaching 1,546 characters — so no column width answers it, and no length
+                          limit does either: only 38 of the 225 lines fit, and what fits is
+                          "Cv.pdf", "Afroz cv", "cv". So it is not drawn. The sender's words are
+                          this cell's hover title, they are on the mobile card under "Their words",
+                          and they are still what the search box matches. */}
                       <td
-                        className="px-3 py-2.5"
+                        className="whitespace-nowrap px-3 py-2.5 text-[11px] text-slate-600"
                         title={candidate.sourceContext?.detailLines.join("\n") || undefined}
                       >
-                        {(() => {
-                          const channel = candidateSourceChannel(candidate.source, candidate.sourceContext);
-                          return (
-                            <StagePill tone={sourceChannelTone[channel.key]}>
-                              <span title={channel.title}>{channel.label}</span>
-                            </StagePill>
-                          );
-                        })()}
+                        <div className="flex items-center gap-1.5">
+                          {cairoDateTime(candidate.createdAt).split(" · ")[0]}
+                          {isNewArrival(candidate) ? <StagePill tone="orange">New</StagePill> : null}
+                        </div>
+                        <div className="mt-0.5 flex items-center gap-1.5 text-slate-400">
+                          {cairoDateTime(candidate.createdAt).split(" · ")[1] ?? ""}
+                          {(() => {
+                            const channel = candidateSourceChannel(candidate.source, candidate.sourceContext);
+                            return (
+                              <StagePill tone={sourceChannelTone[channel.key]}>
+                                <span title={channel.title}>{channel.label}</span>
+                              </StagePill>
+                            );
+                          })()}
+                        </div>
                       </td>
                       <td className="px-3 py-2.5">
                         <CandidateActionsControl
@@ -3644,6 +3893,10 @@ function CandidatesTab({
               Close
             </Button>
           </div>
+
+          {/* Who this person is. Same block, same module, as screening mode — extracted
+              2026-08-24 so the drawer and the queue can never drift apart. */}
+          <CandidateFactsSummary candidate={profile.candidate} extraction={storedExtraction} />
 
           {/* The applied-for role, with the wording it was read from directly beneath it. The
               evidence is shown rather than hidden in a tooltip because this value is INFERRED from
@@ -3900,6 +4153,18 @@ function CandidatesTab({
             </div>
           </div>
           {profile.candidate.notes ? <p className="text-xs text-slate-600">Notes: {profile.candidate.notes}</p> : null}
+
+          {screeningQueue ? (
+            <CandidateScreeningSession
+              candidates={screeningQueue}
+              onClose={(decidedCount) => {
+                setScreeningQueue(null);
+                // Only pay for a reload when something actually changed. Leaving the queue after
+                // reading a few is free.
+                if (decidedCount > 0) router.refresh();
+              }}
+            />
+          ) : null}
 
           {viewCvFile ? (
             <CvPreviewModal

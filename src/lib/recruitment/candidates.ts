@@ -9,6 +9,7 @@ import {
 import { assertCanDeleteRecruitment } from "@/lib/recruitment/access";
 import { candidateAppliedFor, freeAppliedForEvidence } from "@/lib/recruitment/applied-for";
 import { describeCandidateSource, type SourceContextRow } from "@/lib/recruitment/candidate-source-context";
+import type { CandidateUnconfirmedCvFacts } from "@/lib/recruitment/candidate-screening-facts";
 import { chunkIds } from "@/lib/recruitment/db-batch";
 import { hrIdLookupKeys, hrIdsMatch } from "@/lib/hr-id";
 import {
@@ -230,6 +231,107 @@ async function loadCvJobTitlesByCandidate(ids: string[]): Promise<CvJobTitles> {
 }
 
 /**
+ * The CV reader's LOW-confidence answers, keyed by candidate id — the values the auto-apply gate
+ * correctly refused to write onto the columns.
+ *
+ * Measured on production 2026-08-24 there are 250 of them: 117 years of experience, 73 employers,
+ * 44 job titles, 14 medical-rep flags and 2 governorates. Every single one carries
+ * `confidence: "low"`, which is the whole reason `selectAutoApplyFields` declined it — a hedged
+ * value in a column the rest of the system reads as fact is worse than a gap. Nothing here changes
+ * that; the values are carried BESIDE the columns, never merged into them, and every screen that
+ * shows one marks it as unconfirmed.
+ *
+ * Deliberately selects the five jsonb PATHS rather than `extracted_fields` whole. The blob is
+ * 1.1 MB across the table and every round trip from here crosses the Atlantic, which is the reason
+ * the loader above only reads it for candidates it has to; five scalar keys cost a fraction of that,
+ * so this can afford to run for every candidate that is missing anything.
+ *
+ * Best-effort by design, exactly like its two siblings: a failure here leaves the cells reading
+ * "Not on file", which is what they read today, and never breaks the pool.
+ */
+type UnconfirmedCvFactRow = {
+  candidate_id?: unknown;
+  employer?: unknown;
+  governorate?: unknown;
+  pharma?: unknown;
+  title?: unknown;
+  years?: unknown;
+};
+
+/** One `{ value, confidence }` proposal, accepted only when the reader hedged it. */
+function lowConfidenceValue(cell: unknown): unknown {
+  if (!cell || typeof cell !== "object") return null;
+  const proposal = cell as { confidence?: unknown; value?: unknown };
+  // "high" values are already on the column — intake applied them. Reading one here would mean
+  // showing the same fact twice, once as settled and once as a guess.
+  return proposal.confidence === "low" ? (proposal.value ?? null) : null;
+}
+
+async function loadUnconfirmedCvFactsByCandidate(ids: string[]): Promise<Map<string, CandidateUnconfirmedCvFacts>> {
+  const facts = new Map<string, CandidateUnconfirmedCvFacts>();
+  if (ids.length === 0) return facts;
+  const supabase = recruitmentDb();
+  const seen = new Set<string>();
+  for (const batch of chunkIds(ids)) {
+    const { data, error } = await supabase
+      .from("ats_candidate_cv_extractions")
+      .select(
+        "candidate_id,created_at," +
+          "title:extracted_fields->currentJobTitle," +
+          "employer:extracted_fields->currentEmployer," +
+          "years:extracted_fields->yearsExperience," +
+          "governorate:extracted_fields->governorate," +
+          "pharma:extracted_fields->hasMedicalRepExperience",
+      )
+      .in("candidate_id", batch)
+      .order("created_at", { ascending: false });
+    if (error || !data) continue;
+    for (const row of data as UnconfirmedCvFactRow[]) {
+      const candidateId = textOrNull(row.candidate_id);
+      // Newest first, so the first row seen for a candidate wins and every fact on it comes from
+      // that ONE reading — never mixed across two, which would pair a title from July with an
+      // employer from August.
+      if (!candidateId || seen.has(candidateId)) continue;
+      seen.add(candidateId);
+      const years = lowConfidenceValue(row.years);
+      const pharma = lowConfidenceValue(row.pharma);
+      facts.set(candidateId, {
+        currentEmployer: textOrNull(lowConfidenceValue(row.employer)),
+        currentJobTitle: textOrNull(lowConfidenceValue(row.title)),
+        governorate: textOrNull(lowConfidenceValue(row.governorate)),
+        hasMedicalRepExperience: typeof pharma === "boolean" ? pharma : null,
+        yearsExperience: typeof years === "number" ? years : null,
+      });
+    }
+  }
+  return facts;
+}
+
+/**
+ * Attaches the hedged CV answers to the candidates that still have a hole one of them could fill.
+ *
+ * Scoped to those candidates rather than the whole pool because there is nothing to show for
+ * somebody whose five columns are already filled — 176 of the 426 production rows need no read at
+ * all — and an unconfirmed value must never appear beside a confirmed one for the same fact.
+ */
+async function attachUnconfirmedCvFacts(candidates: Candidate[]): Promise<void> {
+  const needing = candidates.filter(
+    (candidate) =>
+      !candidate.currentJobTitle ||
+      !candidate.currentEmployer ||
+      !candidate.governorate ||
+      candidate.yearsExperience === null ||
+      candidate.hasMedicalRepExperience === null,
+  );
+  if (needing.length === 0) return;
+  const facts = await loadUnconfirmedCvFactsByCandidate(needing.map((candidate) => candidate.id));
+  for (const candidate of needing) {
+    const found = facts.get(candidate.id);
+    if (found) candidate.cvUnconfirmed = found;
+  }
+}
+
+/**
  * The job title of the vacancy a candidate was formally put forward for, keyed by candidate id.
  *
  * Last rung of the ladder and the smallest — 7 applications against 2 requisitions in production —
@@ -336,7 +438,10 @@ export async function listCandidates(): Promise<Candidate[]> {
     .order("created_at", { ascending: false });
   if (error) throw error;
   const candidates = ((data ?? []) as CandidateDbRow[]).map(mapCandidate);
-  await attachAppliedFor(candidates);
+  // Concurrently: the two enrichments touch different fields on the same objects and neither reads
+  // the other's output, so serialising them would only add a second Atlantic round trip to a page
+  // that already waits on one.
+  await Promise.all([attachAppliedFor(candidates), attachUnconfirmedCvFacts(candidates)]);
   // Advisory soft-duplicate flags across the whole pool (same phone-tail / normalized name). A
   // "worth a look" marker for Talent Acquisition — nothing here merges anything by itself; the flag
   // is what the merge button in the pool reads, and a person presses it (candidate-merge.ts).
@@ -401,7 +506,11 @@ export async function listCandidatesSentToManager(managerHrId: string | null | u
   // The manager's own inbox needs the role more than any other screen — it is the whole question
   // they are answering. Without this the card read "No role stated on the application" for 540 of
   // the 555 rows, because `applied_for_job_title` is filled on 15 of them.
-  await attachAppliedFor(candidates);
+  //
+  // The hedged CV facts come too, and for the same reason: a manager asked to say yes or no to a
+  // stranger needs their years, their employer and where they live, and this list is far shorter
+  // than the pool so the extra read is cheap.
+  await Promise.all([attachAppliedFor(candidates), attachUnconfirmedCvFacts(candidates)]);
   return candidates;
 }
 

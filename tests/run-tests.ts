@@ -158,6 +158,9 @@ import { runRecruitmentPortalCvViewTests } from "./recruitment-portal-cv-view.te
 import { runRecruitmentInboundCvIntakeTests } from "./recruitment-inbound-cv-intake.test.ts";
 import { runRecruitmentIntakeFinalizePatchTests } from "./recruitment-intake-finalize-patch.test.ts";
 import { runCandidateRoleRegionTests } from "./recruitment-candidate-role-region.test.ts";
+import { runCandidateScreeningFactsTests } from "./recruitment-candidate-screening-facts.test.ts";
+import { runCvFileChoiceTests } from "./recruitment-cv-file-choice.test.ts";
+import { runRecruitmentScreeningOrderTests } from "./recruitment-screening-order.test.ts";
 import { runRecruitmentEmailIntakeTests } from "./recruitment-email-intake.test.ts";
 import { runRecruitmentWhatsAppIntakeTests } from "./recruitment-whatsapp-intake.test.ts";
 import { runWhatsAppCoexistenceHistoryTests } from "./recruitment-whatsapp-coexistence-history.test.ts";
@@ -1189,6 +1192,18 @@ await runTest("recruitment inbound cv intake", runRecruitmentInboundCvIntakeTest
 await runTest("recruitment intake finalize patch (a late throw must not erase the candidate it recorded)", runRecruitmentIntakeFinalizePatchTests);
 await runTest("recruitment email intake", runRecruitmentEmailIntakeTests);
 await runTest("recruitment candidate role and region filters", runCandidateRoleRegionTests);
+await runTest(
+  "recruitment candidate screening facts (a hedged CV read never outranks a recorded one, and the row and the filter resolve the same role family)",
+  runCandidateScreeningFactsTests,
+);
+await runTest(
+  "recruitment CV file choice (screening mode picks the newest renderable CV, and says so when there is none)",
+  runCvFileChoiceTests,
+);
+await runTest(
+  "recruitment screening order (the queue meets field-force candidates first; nothing is hidden or auto-rejected)",
+  runRecruitmentScreeningOrderTests,
+);
 await runTest("recruitment whatsapp intake", runRecruitmentWhatsAppIntakeTests);
 await runTest(
   "recruitment whatsapp coexistence history (the backlog Meta replays)",

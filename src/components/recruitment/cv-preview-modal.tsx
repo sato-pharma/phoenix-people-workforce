@@ -9,6 +9,14 @@ import { useDialogA11y } from "@/components/ui/use-dialog-a11y";
 import { detectCvFileKind } from "@/lib/recruitment/cv-file-kind";
 import { ZoomablePhoto } from "@/components/ui/zoomable-photo";
 
+type CvDocumentProps = {
+  fileName: string;
+  mimeType: string | null;
+  downloadUrl: string;
+  /** Wrapper classes. The document paints its own light page background inside whatever box it gets. */
+  className?: string;
+};
+
 type Props = {
   fileName: string;
   mimeType: string | null;
@@ -51,8 +59,15 @@ function base64ToBytes(encoded: string): Uint8Array<ArrayBuffer> {
   return bytes;
 }
 
-export function CvPreviewModal({ fileName, mimeType, downloadUrl, onClose, sidePanel }: Props) {
-  const dialogRef = useDialogA11y({ open: true, onClose });
+/**
+ * The CV itself, rendered in place — no dialog, no chrome, no close button.
+ *
+ * Split out of CvPreviewModal on 2026-08-24 so screening mode can stand the document beside the
+ * candidate's facts instead of stacking a modal on top of a drawer on top of a table. Every format
+ * quirk documented below was learned the hard way and none of it is duplicated: the modal now
+ * renders this component too, so both paths cannot drift.
+ */
+export function CvDocumentView({ className, downloadUrl, fileName, mimeType }: CvDocumentProps) {
   const kind = detectCvFileKind(mimeType ?? "", fileName);
   const separator = downloadUrl.includes("?") ? "&" : "?";
   // The Download link needs "attachment" (a real save-file prompt); "inline" is for the
@@ -177,7 +192,6 @@ export function CvPreviewModal({ fileName, mimeType, downloadUrl, onClose, sideP
     };
   }, [kind, bytesUrl, mimeType]);
 
-  if (typeof document === "undefined") return null;
 
   // A failed in-page render must never be a dead end. Whatever went wrong — a document the
   // renderer cannot read, a dropped connection, or a lazily-loaded chunk that no longer exists
@@ -232,6 +246,17 @@ export function CvPreviewModal({ fileName, mimeType, downloadUrl, onClose, sideP
         Preview isn&apos;t available for this file type — use Download instead.
       </p>
     );
+
+
+  return <div className={className}>{documentBody}</div>;
+}
+
+export function CvPreviewModal({ fileName, mimeType, downloadUrl, onClose, sidePanel }: Props) {
+  const dialogRef = useDialogA11y({ open: true, onClose });
+
+  if (typeof document === "undefined") return null;
+
+  const documentBody = <CvDocumentView downloadUrl={downloadUrl} fileName={fileName} mimeType={mimeType} />;
 
   const modal = (
     <div className="fixed inset-0 z-[200] flex items-center justify-center bg-[#020617]/65 p-4 backdrop-blur-sm">
