@@ -147,6 +147,7 @@ import { runRecruitmentSimplifyTests } from "./recruitment-simplify.test.ts";
 import { runRecruitmentManagerInboxTests } from "./recruitment-manager-inbox.test.ts";
 import { runRecruitmentCandidatePoolTableTests } from "./recruitment-candidate-pool-table.test.ts";
 import { runRecruitmentLabelTests } from "./recruitment-labels.test.ts";
+import { runHiringDocumentsLabelTests } from "./hiring-documents-labels.test.ts";
 import { runRecruitmentAppliedForTests } from "./recruitment-applied-for.test.ts";
 import { runRecruitmentHubPortalCoverageTests } from "./recruitment-hub-portal-coverage.test.ts";
 import { runRecruitmentPortalCvViewTests } from "./recruitment-portal-cv-view.test.ts";
@@ -1146,6 +1147,10 @@ await runTest(
 await runTest(
   "recruitment labels (a stored code never reaches a screen as one: no \"REQ FILLED\", no \"Hr Interview\", no \"Cv\")",
   runRecruitmentLabelTests,
+);
+await runTest(
+  "hiring documents labels (the status filter reads \"Resigned\", not \"resigned\", and no document shows its UUID)",
+  runHiringDocumentsLabelTests,
 );
 await runTest(
   "recruitment \"Applying for\" (the evidence ladder that lifts the column from 15 answered rows to 394, on verbatim production strings)",
