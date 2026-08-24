@@ -867,10 +867,15 @@ function ChainWatchList({
   const safePage = Math.min(page, pageCount - 1);
   const visible = rows.slice(safePage * WATCH_PAGE_SIZE, safePage * WATCH_PAGE_SIZE + WATCH_PAGE_SIZE);
 
+  // tests/marketing-request-service.test.ts pins this sentence in its JSX form — "an upcoming row
+  // must state where the actor's own rung sits in the chain" (owner 2026-08-04). Rewriting it as
+  // a template literal read identically on screen and silently broke that pin, so it stays JSX.
   const position = (row: MarketingApproverOversightRow & { myStepSequence?: number }) =>
-    row.myStepSequence
-      ? `Your step is ${row.myStepSequence} of ${row.totalGatingSteps}`
-      : `Step ${row.stepSequence} of ${row.totalGatingSteps}`;
+    row.myStepSequence ? (
+      <>Your step is {row.myStepSequence} of {row.totalGatingSteps}</>
+    ) : (
+      <>Step {row.stepSequence} of {row.totalGatingSteps}</>
+    );
 
   const holder = (row: MarketingApproverOversightRow) =>
     row.awaitingStepName
