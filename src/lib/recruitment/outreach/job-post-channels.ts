@@ -9,8 +9,33 @@ import type { AccessContext } from "@/lib/auth/permissions";
 import { recruitmentDb, textOrNull } from "@/lib/recruitment/db";
 import { deriveChannelCode, isValidChannelCode, normalizeChannelCode } from "@/lib/recruitment/outreach/channel-code";
 
-export const JOB_POST_CHANNEL_KINDS = ["facebook_group", "facebook_page", "job_board", "referral", "other"] as const;
+export const JOB_POST_CHANNEL_KINDS = [
+  "facebook_group",
+  "facebook_page",
+  "whatsapp_group",
+  "whatsapp_channel",
+  "telegram_group",
+  "telegram_channel",
+  "job_board",
+  "referral",
+  "other",
+] as const;
 export type JobPostChannelKind = (typeof JOB_POST_CHANNEL_KINDS)[number];
+
+/**
+ * Kinds nobody outside their admin team can post into.
+ *
+ * A WhatsApp or Telegram *channel* is a broadcast feed: following it lets you read, never write.
+ * Listing one beside a group you can actually post in — with no visible difference — is how an
+ * afternoon disappears into trying to publish somewhere that will never accept a post. The panel
+ * labels these, and they still earn a row and a tracking code, because the realistic move is to ask
+ * the admin to carry the advert and you still want to know whether that produced anyone.
+ */
+const BROADCAST_ONLY_KINDS = new Set<JobPostChannelKind>(["whatsapp_channel", "telegram_channel"]);
+
+export function isBroadcastOnly(kind: JobPostChannelKind): boolean {
+  return BROADCAST_ONLY_KINDS.has(kind);
+}
 
 export type JobPostChannel = {
   id: string;
@@ -105,7 +130,7 @@ export async function createJobPostChannels(
     rows.push({
       code,
       created_by_hr_id: access.hrId ?? null,
-      kind: input.kind ?? "facebook_group",
+      kind: input.kind ?? "other",
       name,
       notes: textOrNull(input.notes),
       url: textOrNull(input.url),

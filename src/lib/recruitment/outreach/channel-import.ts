@@ -1,15 +1,72 @@
-// Recruitment / ATS — turning a pasted block of Facebook group links into channel rows.
+// Recruitment / ATS — turning a pasted block of group links into channel rows.
 //
-// Pure (no I/O). The realistic way this list gets built is one paste out of the browser sidebar,
-// so the parser has to accept what a paste actually looks like: bare URLs, names with no URL,
-// "Name | URL", "Name<TAB>URL", blank lines, and the stray heading someone copied along with it.
+// Pure (no I/O). The realistic way this list gets built is one paste, and the paste is rarely tidy.
+// It has to accept bare URLs, names with no URL, "Name | URL", "Name<TAB>URL", blank lines, and the
+// stray heading someone copied along with it.
+//
+// It also has to accept a full research TABLE, because that is what actually arrived on
+// 2026-08-24: ten tab-separated columns per row (platform, name, URL, activity, members, region,
+// language, focus, access notes, source) — with a *second* URL in the last column. So the rule is
+// not "the first field is the name and the second is the link". It is:
+//
+//     the link is the FIRST field that looks like a URL;
+//     the name is the last readable field BEFORE it;
+//     with no field before it, read the name off the link itself.
+//
+// That one rule covers every shape above, including the two-column case, without special-casing.
+
+export type ParsedChannelKind =
+  | "facebook_group"
+  | "facebook_page"
+  | "whatsapp_group"
+  | "whatsapp_channel"
+  | "telegram_group"
+  | "telegram_channel"
+  | "other";
 
 export type ParsedChannelLine = {
   name: string;
   url: string | null;
+  /** Inferred from the link. Null when the line carried no URL to infer from. */
+  kind: ParsedChannelKind | null;
 };
 
 const SEPARATORS = /\s*[|\t]\s*/;
+
+/**
+ * Column labels from a pasted research table. A header row carries no URL, so it would otherwise
+ * become a channel named "Platform".
+ */
+const HEADER_WORDS = new Set([
+  "platform",
+  "group",
+  "channel",
+  "group / channel",
+  "channel / group",
+  "name",
+  "url",
+  "public url",
+  "invite or channel url",
+  "activity / reliability",
+  "approx. members",
+  "region",
+  "language",
+  "focus",
+  "access notes",
+  "source",
+  "evidence/source",
+  "public source url",
+]);
+
+function titleCaseSlug(slug: string): string {
+  return slug
+    .replace(/[._-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .split(" ")
+    .map((word) => (word.length > 0 ? word[0].toUpperCase() + word.slice(1) : word))
+    .join(" ");
+}
 
 /**
  * Pulls a readable group name out of a Facebook group URL.
@@ -24,22 +81,88 @@ export function nameFromGroupUrl(url: string): string | null {
   const slug = decodeURIComponent(match[1]).trim();
   if (slug.length === 0) return null;
   if (/^[0-9]+$/.test(slug)) return `Facebook group ${slug}`;
-  return slug
-    .replace(/[._-]+/g, " ")
-    .replace(/\s+/g, " ")
-    .trim()
-    .split(" ")
-    .map((word) => (word.length > 0 ? word[0].toUpperCase() + word.slice(1) : word))
-    .join(" ");
+  return titleCaseSlug(slug);
+}
+
+/**
+ * What kind of destination a link points at.
+ *
+ * The distinction that earns its keep is GROUP vs CHANNEL: a group is somewhere you can post once
+ * you have joined, a channel is a broadcast feed only its admins can write to. Getting that wrong
+ * costs an afternoon spent trying to post somewhere that will never accept a post.
+ *
+ * Telegram is the one genuine ambiguity — a public group and a public channel are both `t.me/name`
+ * and nothing in the URL separates them. Only the invite forms (`t.me/+hash`, `t.me/joinchat/…`)
+ * are unmistakably groups, so a bare handle is reported as a channel and the recruiter corrects the
+ * few that are not. Guessing the other way would be worse: it would claim you can post where you
+ * cannot.
+ */
+export function kindFromUrl(url: string | null | undefined): ParsedChannelKind | null {
+  const value = String(url ?? "").trim();
+  if (value.length === 0) return null;
+
+  if (/chat\.whatsapp\.com\//i.test(value)) return "whatsapp_group";
+  if (/whatsapp\.com\/channel\//i.test(value)) return "whatsapp_channel";
+  if (/(?:t|telegram)\.me\/(?:\+|joinchat\/)/i.test(value)) return "telegram_group";
+  if (/(?:t|telegram)\.me\//i.test(value)) return "telegram_channel";
+  if (/facebook\.com\/groups\//i.test(value)) return "facebook_group";
+  if (/facebook\.com\//i.test(value)) return "facebook_page";
+  return "other";
+}
+
+/**
+ * Reads a display name off a link, for the case where the paste gave nothing else.
+ *
+ * WhatsApp invite codes and channel ids are opaque, so those get a placeholder carrying enough of
+ * the id to tell two rows apart — a name the recruiter is expected to replace, not one pretending
+ * to be real.
+ */
+export function nameFromChannelUrl(url: string): string | null {
+  const value = String(url ?? "").trim();
+  if (value.length === 0) return null;
+
+  const facebook = nameFromGroupUrl(value);
+  if (facebook) return facebook;
+
+  const waGroup = /chat\.whatsapp\.com\/([A-Za-z0-9]+)/i.exec(value);
+  if (waGroup) return `WhatsApp group ${waGroup[1].slice(0, 6)}`;
+
+  const waChannel = /whatsapp\.com\/channel\/([A-Za-z0-9]+)/i.exec(value);
+  if (waChannel) return `WhatsApp channel ${waChannel[1].slice(-6)}`;
+
+  const telegram = /(?:t|telegram)\.me\/([^/?#]+)/i.exec(value);
+  if (telegram) {
+    const handle = decodeURIComponent(telegram[1]).trim();
+    // A join hash is not a name — it is a secret. Do not print it as one.
+    if (handle.startsWith("+") || handle.toLowerCase() === "joinchat") return "Telegram group";
+    return titleCaseSlug(handle);
+  }
+
+  return null;
 }
 
 function looksLikeUrl(value: string): boolean {
-  return /^https?:\/\//i.test(value) || /^(www\.)?facebook\.com\//i.test(value);
+  if (/^https?:\/\//i.test(value)) return true;
+  return /^(www\.)?(facebook\.com|t\.me|telegram\.me|chat\.whatsapp\.com|whatsapp\.com)\//i.test(value);
 }
 
 function normalizeUrl(value: string): string {
   const trimmed = value.trim();
   return /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+}
+
+/**
+ * Is this a column-header row rather than a channel?
+ *
+ * Two independent signals, because a header can be pasted with or without its first column: a known
+ * column label anywhere in the row, or a wide row that carries no link at all. A real channel row
+ * either has a URL or is a short hand-typed name like "Referrals from staff" — never four columns
+ * of prose with no link.
+ */
+function looksLikeHeaderRow(parts: ReadonlyArray<string>, hasUrl: boolean): boolean {
+  if (hasUrl) return false;
+  if (parts.some((part) => HEADER_WORDS.has(part.toLowerCase()))) return true;
+  return parts.length >= 4;
 }
 
 /**
@@ -61,22 +184,35 @@ export function parseChannelPasteList(text: string): ParsedChannelLine[] {
     const parts = line.split(SEPARATORS).map((part) => part.trim()).filter((part) => part.length > 0);
     if (parts.length === 0) continue;
 
+    // The first link on the row is the destination. Anything later is provenance — the research
+    // table puts its "source" URL in the last column, and attributing CVs to that would be wrong.
+    const urlIndex = parts.findIndex((part) => looksLikeUrl(part));
+    const url = urlIndex >= 0 ? normalizeUrl(parts[urlIndex]) : null;
+
+    if (looksLikeHeaderRow(parts, url !== null)) continue;
+
+    // The name is what sits immediately before the link. Scanning backwards skips the platform
+    // column ("WhatsApp", "Telegram") only when a real name follows it, which is the shape the
+    // pasted table actually has.
     let name: string | null = null;
-    let url: string | null = null;
-    for (const part of parts) {
-      if (url === null && looksLikeUrl(part)) url = normalizeUrl(part);
-      else if (name === null) name = part;
+    const before = urlIndex >= 0 ? parts.slice(0, urlIndex) : parts;
+    for (let index = before.length - 1; index >= 0; index -= 1) {
+      const candidate = before[index];
+      if (candidate.length > 0 && !looksLikeUrl(candidate)) {
+        name = candidate;
+        break;
+      }
     }
 
     // A bare URL still deserves a row — read the name off the link rather than making the
     // recruiter retype twenty group names he just copied.
-    if (!name && url) name = nameFromGroupUrl(url);
+    if (!name && url) name = nameFromChannelUrl(url);
     if (!name) continue;
 
     const key = name.toLowerCase();
     if (seen.has(key)) continue;
     seen.add(key);
-    parsed.push({ name, url });
+    parsed.push({ kind: kindFromUrl(url), name, url });
   }
 
   return parsed;
