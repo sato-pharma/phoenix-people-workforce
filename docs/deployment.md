@@ -128,7 +128,7 @@ table. Times are Cairo, as the account is set to `Africa/Cairo` throughout.
 | `phoenix-inbound-intake` | every 2 min | `/api/cron/inbound-intake` | Inbound mail/message intake |
 | `phoenix-recruitment-email-intake` | every 10 min, at :04 | `/api/cron/recruitment-email-intake` | Pulls CVs out of the recruitment mailbox |
 | `phoenix-synthetic-journeys` | hourly, on the hour | `/api/cron/run-synthetic-journeys` | Asks GitHub to run `synthetic-journeys.yml` (the route does not do the work itself) |
-| `phoenix-db-health-snapshot` | 0:17 / 6:17 / 12:17 / 18:17 daily | `/api/cron/db-health-snapshot` | Database health snapshot — deliberately **not** on the dead-man's-switch |
+| `phoenix-db-health-snapshot` | 0:17 / 6:17 / 12:17 / 18:17 daily | `/api/cron/db-health-snapshot` | Database health snapshot — watched by the `phoenix-db-health-snapshot` check since 2026-08-24; it deliberately opted out of the dead-man's-switch before that |
 | `phoenix-background-jobs` | Fridays 3:00 AM | `/api/cron/background-jobs?limit=10` | Drains queued admin-requested exports, Super-Admin Telegram recap |
 | `phoenix-direct-orders-rotate-sheet-token` | Fridays 3:23 AM | `/api/cron/direct-orders-rotate-sheet-token` | Rotates the Direct Orders live-sheet feed token (**new 2026-08-23** — nothing called this route before) |
 | `phoenix-marketing-requests-rotate-sheet-token` | Fridays 3:43 AM | `/api/cron/marketing-requests-rotate-sheet-token` | Rotates the Marketing Requests live-sheet feed token (**new 2026-08-23**, same story) |

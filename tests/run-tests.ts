@@ -61,6 +61,7 @@ import { runDeadMansSwitchTests } from "./dead-mans-switch.test.ts";
 import { runDirectOrdersSweepLivenessTests } from "./direct-orders-sweep-liveness.test.ts";
 import { runHealthchecksScheduleSyncTests } from "./healthchecks-schedule-sync.test.ts";
 import { runDirectOrdersHrIdCaseTests } from "./direct-orders-hr-id-case.test.ts";
+import { runDbHealthSnapshotLivenessTests } from "./db-health-snapshot-liveness.test.ts";
 import { runSheetTokenRotationLivenessTests } from "./sheet-token-rotation-liveness.test.ts";
 import { runSyntheticJourneysLivenessTests } from "./synthetic-journeys-liveness.test.ts";
 import { runPayrollEngineHardeningTests } from "./payroll-engine-hardening.test.ts";
@@ -1021,6 +1022,10 @@ await runTest(
 await runTest(
   "sheet token rotation liveness (a rotation that did not rotate must ping /fail)",
   runSheetTokenRotationLivenessTests,
+);
+await runTest(
+  "db health snapshot liveness (the route swallows its own error, so the catch must ping /fail)",
+  runDbHealthSnapshotLivenessTests,
 );
 await runTest("money path silent failures (a confident zero is worse than an error)", runMoneyPathSilentFailureTests);
 await runTest("payroll sheet mapping", runPayrollSheetMappingTests);
