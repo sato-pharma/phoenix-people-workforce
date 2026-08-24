@@ -116,4 +116,49 @@ export function runCandidateRoleRegionTests() {
   for (const label of Object.values(candidateRegionLabels)) {
     assert.ok(label.length > 0 && !label.includes("_"), `region label "${label}" is human-readable`);
   }
+
+  // --- Sales & Business Development. Added 2026-08-24 at the owner's request. Eight people in
+  // --- production, every one of them previously sitting in Other.
+  for (const title of [
+    "Sales Manager",
+    "Sales Manager North",
+    "Sales & Business Development Manager",
+    "key account manager",
+    "BDM & Marketing Advisor",
+    "Dental sales representative",
+  ]) {
+    assert.equal(candidateRoleFamily(title), "sales", `"${title}" is Sales & Business Development`);
+  }
+
+  // --- THE TRAP. "Salesforce" is a CRM product, not a selling job, and one candidate here is a
+  // --- Salesforce developer. A substring search for "sales" claims them; a word-boundary match
+  // --- does not, because there is no boundary inside "salesforce".
+  assert.equal(
+    candidateRoleFamily("Salesforce Developer | Salesforce Technical Consultant"),
+    "other",
+    "a Salesforce developer is not in the Sales family",
+  );
+
+  // --- Sales runs LAST, so a title another family already owns keeps that family even though it
+  // --- carries the word "sales". These four are what that placement is protecting.
+  assert.equal(candidateRoleFamily("District Sales Manager"), "district_manager");
+  assert.equal(candidateRoleFamily("Medical sales representative"), "medical_rep");
+  assert.equal(candidateRoleFamily("Pharmacy Sales Representative"), "pharmacist");
+  assert.equal(
+    candidateRoleFamily("DISTRICT MANAGER | Pharmaceutical Sales"),
+    "district_manager",
+    "the word sales in a District Manager title does not move them to Sales",
+  );
+
+  // --- Sales Force Effectiveness genuinely contains the word but is its own discipline here.
+  assert.equal(
+    candidateRoleFamily("Sales Force Effectiveness (SFE) Analyst"),
+    "other",
+    "SFE is not a selling role",
+  );
+  assert.equal(
+    candidateRoleFamily("Sales Force Effectiveness (SFE) & Business Development Manager | Acting HR Manager"),
+    "human_resources",
+    "the SFE title keeps the family it had before Sales existed",
+  );
 }

@@ -22,6 +22,7 @@ export const candidateRoleFamilies = [
   "area_regional_manager",
   "medical_rep",
   "product_manager",
+  "sales",
   "pharmacist",
   "human_resources",
   "finance",
@@ -39,6 +40,7 @@ export const candidateRoleFamilyLabels: Record<CandidateRoleFamily, string> = {
   other: "Other",
   pharmacist: "Pharmacist",
   product_manager: "Product Manager",
+  sales: "Sales & Business Development",
 };
 
 /**
@@ -100,6 +102,26 @@ export function candidateRoleFamily(raw: string | null | undefined): CandidateRo
   if (/\u0645\u062d\u0627\u0633\u0628/.test(t)) return "finance"; // محاسب — accountant
 
   if (/\bpharmacist\b|\bpharmacy\b/.test(t)) return "pharmacist";
+
+  // Sales runs LAST, and that placement is the whole design of this family. Every branch above
+  // names a specific job; "sales" is a word most of them also carry ("District Sales Manager",
+  // "Medical sales representative", "Pharmacy Sales Representative", "DISTRICT MANAGER |
+  // Pharmaceutical Sales"). Checking it last means only a title NOTHING else claimed can land
+  // here, so adding this family moved nobody out of the family they already had — verified against
+  // production 2026-08-24 by re-bucketing all 177 titled candidates before and after.
+  //
+  // \bsales\b does not match "salesforce" — there is no word boundary inside it — which is what
+  // keeps "Salesforce Developer | Salesforce Technical Consultant" out of a sales bucket without
+  // needing a special case. The SFE guard is a different problem: "Sales Force Effectiveness"
+  // really does contain the word, but SFE is its own discipline here (the company has an SFE
+  // Manager) and not a selling role, so it is excluded by name.
+  //
+  // Deliberately NOT here: a bare \bkam\b. Like the \bmr\b left out above, the abbreviation is
+  // ambiguous and nothing in this pool needs it — the one key-account title is spelled in full.
+  if (/sales\s+force\s+effectiveness|\bsfe\b/.test(t)) return "other";
+  if (/\bsales\b/.test(t)) return "sales";
+  if (/\bbusiness\s+development\b|\bbdm\b/.test(t)) return "sales";
+  if (/\bkey\s+account\b/.test(t)) return "sales";
 
   return "other";
 }
