@@ -807,6 +807,9 @@ import { runMarketingSalesEvidenceAccessTests } from "./marketing-sales-evidence
 // Registered beside its marketing siblings rather than appended at the end of the file: every PR
 // appends there, so a branch parked on that anchor conflicts with each one that lands.
 import { runMarketingCaseFileTests } from "./marketing-case-file.test.ts";
+// Beside its marketing siblings, same reason as the anchor above: every PR appends at the file's
+// end, so a branch parked there conflicts with each one that lands.
+import { runMarketingCaseFileGoDeeperTests } from "./marketing-case-file-go-deeper.test.ts";
 // Same anchor, same reason as the line above: beside its marketing siblings, not appended at the
 // end of the file where every other in-flight branch is also adding a line.
 import { runMarketingRejectedRequestVisibilityTests } from "./marketing-rejected-request-visibility.test.ts";
@@ -1994,6 +1997,11 @@ await runTest(
 await runTest(
   "marketing request case file (a failed read is never a clean one; a draft/rejected request is never dropped by the ROI status scope; too-early is not zero sales)",
   runMarketingCaseFileTests,
+);
+
+await runTest(
+  "marketing case file 'Go deeper' drill-downs open in place (the four panels render inline, never a full-navigation link at the raw JSON API route)",
+  runMarketingCaseFileGoDeeperTests,
 );
 
 await runTest(

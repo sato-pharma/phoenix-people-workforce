@@ -12,6 +12,7 @@ import type {
 } from "@/lib/marketing-requests/case-file-types";
 import { cairoDateTime, plainDate } from "@/lib/marketing-requests/request-report-columns";
 import type { MarketingRequestStatus } from "@/lib/marketing-requests/types";
+import { MarketingCaseFileGoDeeper } from "@/components/marketing-requests/marketing-case-file-go-deeper";
 import { ZoomablePhoto } from "@/components/ui/zoomable-photo";
 
 /* ────────────────────────────────────────────────────────────────────────────
@@ -711,26 +712,15 @@ export function MarketingRequestCaseFileView({ caseFile }: { caseFile: Marketing
           {lazySections.length > 0 ? (
             <>
               <SectionLabel>Go deeper</SectionLabel>
-              <div className="mt-2 space-y-1.5">
-                {lazySections.map((section) =>
-                  section.available ? (
-                    <a
-                      className="block border border-slate-200 bg-white px-3 py-2 text-[12px] font-medium text-slate-700 hover:bg-slate-50"
-                      href={section.href}
-                      key={section.key}
-                    >
-                      {section.label} →
-                    </a>
-                  ) : (
-                    <p
-                      className="border border-slate-200 bg-slate-50 px-3 py-2 text-[12px] font-medium text-slate-400"
-                      key={section.key}
-                    >
-                      {section.label} — {section.reason}
-                    </p>
-                  ),
-                )}
-              </div>
+              {/* Press-to-expand IN PLACE. These four were once plain links straight at raw JSON API
+                  routes, so pressing one navigated the reader off the Case File and dumped the
+                  route's JSON into the window. Each panel already self-fetches by request id, so the
+                  reader now opens it below the button and never leaves the page. */}
+              <MarketingCaseFileGoDeeper
+                requestId={header.requestId}
+                sections={lazySections}
+                viewSalesBasePath={viewer.viewSalesBasePath}
+              />
             </>
           ) : null}
 
