@@ -7,6 +7,7 @@ import { canAccess } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { currentCairoDateParts } from "@/lib/i18n/format";
 import { getSharedPlanningCalendarWorkspace } from "@/lib/weekly-planning/calendar-service";
+import { canExportPlanningCalendar } from "@/lib/weekly-planning/calendar";
 
 export const dynamic = "force-dynamic";
 
@@ -19,6 +20,7 @@ export default async function AdminPlanningCalendarPage() {
 
   const { year, month } = currentCairoDateParts();
   const workspace = await getSharedPlanningCalendarWorkspace(access, year, month);
+  const canExport = canExportPlanningCalendar(access.role);
 
   return (
     <div className="space-y-6">
@@ -53,7 +55,7 @@ export default async function AdminPlanningCalendarPage() {
           </div>
         }
       />
-      <PlanningCalendar initialWorkspace={workspace} />
+      <PlanningCalendar canExport={canExport} initialWorkspace={workspace} />
     </div>
   );
 }

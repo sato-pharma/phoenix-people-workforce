@@ -10,6 +10,7 @@ import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { currentCairoDateParts } from "@/lib/i18n/format";
 import { logPortalFailure } from "@/lib/observability/portal-logging";
 import { getSharedPlanningCalendarWorkspace } from "@/lib/weekly-planning/calendar-service";
+import { canExportPlanningCalendar } from "@/lib/weekly-planning/calendar";
 
 export const dynamic = "force-dynamic";
 
@@ -48,7 +49,7 @@ export default async function EmployeePlanningCalendarPage() {
       title="Planning Calendar"
     >
       {workspace ? (
-        <PlanningCalendar initialWorkspace={workspace} />
+        <PlanningCalendar canExport={canExportPlanningCalendar(access.role)} initialWorkspace={workspace} />
       ) : (
         <EmployeePortalEmptyState
           message="We could not load the planning calendar right now. Please refresh in a moment."

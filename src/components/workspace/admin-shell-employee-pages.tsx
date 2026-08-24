@@ -85,6 +85,7 @@ import { excuseErrorMessage, getExcuseWorkspace, isExcusesSchemaMissing } from "
 import { getProbationRows, isProbationSchemaMissing, probationErrorMessage } from "@/lib/probation/service";
 import type { ProbationRow } from "@/lib/probation/types";
 import { getSharedPlanningCalendarWorkspace } from "@/lib/weekly-planning/calendar-service";
+import { canExportPlanningCalendar } from "@/lib/weekly-planning/calendar";
 import { getEmployeePlansWorkspace } from "@/lib/weekly-planning/service";
 import {
   getVacationReportData,
@@ -277,13 +278,14 @@ export async function WorkspacePlanningCalendarPage() {
   const access = await requireAdminShellEmployeeWorkspaceAccess({ resource: "weekly_plans" });
   const { year, month } = currentCairoDateParts();
   const workspace = await getSharedPlanningCalendarWorkspace(access, year, month);
+  const canExport = canExportPlanningCalendar(access.role);
   return (
     <WorkspaceFrame
       description="View submitted planning activity, vacations, and conflicts from your existing employee scope."
       icon={<CalendarRange className="h-3.5 w-3.5" />}
       title="Planning Calendar"
     >
-      <PlanningCalendar initialWorkspace={workspace} />
+      <PlanningCalendar canExport={canExport} initialWorkspace={workspace} />
     </WorkspaceFrame>
   );
 }
