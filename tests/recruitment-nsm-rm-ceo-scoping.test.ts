@@ -80,9 +80,14 @@ export function runRecruitmentNsmRmCeoScopingTests() {
   assert.match(outcomeRoute, /existing\.interviewType !== hiringManagerInterviewType\(access\.role\)/);
 
   // --- CEO entry point (thin admin-shell wrapper around the same portal component) --
+  //
+  // Owner decision 2026-08-24: Super Admin may open this screen too, so the gate is a named
+  // predicate instead of a hardcoded role string. It stays a PERSONAL inbox either way — the page
+  // scopes by access.hrId and listApplications() scopes by hiring-manager ownership, so widening
+  // who may OPEN it never widens what anyone SEES.
   const ceoPage = read("app/(admin)/recruitment/candidates/page.tsx");
   assert.match(ceoPage, /RecruitmentCandidatesPortal/);
-  assert.match(ceoPage, /access\.role !== "CEO"/);
+  assert.match(ceoPage, /canOpenPersonalCandidateInbox\(access\)/);
   assert.match(ceoPage, /canAccess\(access, "hiring_interviews", "read"\)/);
 
   // --- Migrations ---------------------------------------------------------------------

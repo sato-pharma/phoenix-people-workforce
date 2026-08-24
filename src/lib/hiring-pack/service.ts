@@ -1,5 +1,6 @@
 import { systemContractDefaults, systemLegalEntity } from "@/config/system-settings";
 import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
+import { ACTIVE_EMPLOYMENT_STATUSES_IN_LIST } from "@/lib/auth/session-lifecycle";
 import { canonicalHrIdForDisplay } from "@/lib/hr-id";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import type {
@@ -330,14 +331,22 @@ async function loadEmployeeFacts(hrId: string): Promise<HiringPackEmployeeFacts>
  *
  * Ordered by hire date descending on purpose. This screen exists for the person who started this
  * week, so whoever needs a contract is at the top of the list rather than wherever an alphabetical
- * sort happens to put them. Resigned staff are left out: a leaver does not need a contract printed,
- * and keeping them only makes the list longer.
+ * sort happens to put them.
+ *
+ * Scoped to current staff. It used to exclude only "resigned", which is not the same thing: that
+ * left 2 terminated people, 15 historical payroll records and 2 system placeholders in a list whose
+ * entire purpose is printing an employment contract — 131 rows where 112 people work here. Owner
+ * decision 2026-08-24: this and the hiring-documents checklist both mean current staff.
+ *
+ * Nulls are kept: a legacy row with no status is not evidence that someone left, and
+ * ACTIVE_EMPLOYMENT_STATUSES_IN_LIST is the same set the shared predicate uses, so this query and
+ * isTerminalEmploymentStatus can never drift apart.
  */
 export async function listHiringPackCandidates(): Promise<HiringPackCandidate[]> {
   const { data, error } = await getSupabaseAdmin()
     .from("employees")
     .select("hr_id, full_name, nickname, name_ar, job_title, hire_date, employment_status")
-    .neq("employment_status", "resigned")
+    .or(`employment_status.is.null,employment_status.in.${ACTIVE_EMPLOYMENT_STATUSES_IN_LIST}`)
     .order("hire_date", { ascending: false, nullsFirst: false })
     .limit(2000);
 

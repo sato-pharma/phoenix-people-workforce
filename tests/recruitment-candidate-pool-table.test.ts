@@ -188,10 +188,26 @@ export async function runRecruitmentCandidatePoolTableTests() {
   const profilePanel = workspace.slice(panelAt, panelEnd >= 0 ? panelAt + panelEnd : workspace.length);
   const headerRefAt = profilePanel.indexOf("ref={profileHeaderRef}");
   assert.ok(headerRefAt >= 0, "the profile panel's header must still be the element carrying profileHeaderRef");
-  assert.match(
+  // This header used to be `sticky top-0 z-20` so the way back stayed reachable down a long panel.
+  // The app's own topbar is ALSO `sticky top-0 z-20` and earlier in the DOM, so the profile header
+  // painted straight over the global search box and the role chip — reported from production
+  // 2026-08-24. The guarantee is kept, by the mechanism already written for it that had never once
+  // run: the floating pill is shown when an IntersectionObserver on this very element stops
+  // intersecting, and a sticky element never stops intersecting.
+  assert.doesNotMatch(
     profilePanel.slice(profilePanel.lastIndexOf("<", headerRefAt), headerRefAt),
     /className="sticky top-0/,
-    "the profile's own header must stay put — the panel is long enough to scroll on its own",
+    "the profile header must not be sticky — it shares top-0 and z-20 with the global topbar",
+  );
+  assert.match(
+    workspace,
+    /setWayBackOffScreen\(!entry\.isIntersecting\)/,
+    "the way back must still be reachable down a long panel, via the observer on that header",
+  );
+  assert.match(
+    profilePanel,
+    /wayBackOffScreen[\s\S]{0,600}?fixed bottom-6 right-6/,
+    "the floating way-back pill must be what appears once the header scrolls away",
   );
 
   // ── 10 · Neither scroll may be "smooth" ─────────────────────────────────────

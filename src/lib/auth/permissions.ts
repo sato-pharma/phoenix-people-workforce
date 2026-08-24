@@ -224,6 +224,30 @@ export function isHrAuthorityRole(role: PhoenixRole): boolean {
   return hrAuthorityRoleSet.has(role);
 }
 
+/**
+ * Who may OPEN the personal candidate inbox at /recruitment/candidates.
+ *
+ * This widens who can reach the screen, never what any of them can see. The page is a per-person
+ * inbox rather than the candidate pool: listApplications() scopes to the requisitions the caller is
+ * hiring manager for (canSeeApplication in src/lib/recruitment/access.ts), and
+ * listCandidatesSentToManager() scopes to the caller's own HR_ID. Whoever opens it sees only the
+ * CVs addressed to them — for most roles that is an empty screen, which is the honest answer.
+ *
+ * Owner request (2026-08-24): the gate read `access.role !== "CEO"`, so the Super Admin account
+ * that owns the system was redirected off the one recruitment screen it could not otherwise
+ * inspect. Its own named set rather than a widening of hrAuthorityRoles, for the same reason
+ * outstationApprovalReviewRoles below is its own — running a hiring round and administering the
+ * system are different privileges and must be able to diverge later without one dragging the other.
+ */
+export const personalCandidateInboxRoles = ["CEO", "Super Admin"] as const satisfies readonly PhoenixRole[];
+const personalCandidateInboxRoleSet = new Set<PhoenixRole>(personalCandidateInboxRoles);
+
+export function canOpenPersonalCandidateInbox(
+  context: Pick<AccessContext, "role" | "scope">,
+): boolean {
+  return context.scope === "system" || personalCandidateInboxRoleSet.has(context.role);
+}
+
 export const systemAdministratorRoles = ["Super Admin"] as const satisfies readonly PhoenixRole[];
 const systemAdministratorRoleSet = new Set<PhoenixRole>(systemAdministratorRoles);
 
