@@ -365,6 +365,7 @@ import { runMarketingApproverHrIdCasingTests } from "./marketing-approver-hrid-c
 import { runMarketingSuperAdminOversightTests } from "./marketing-super-admin-oversight.test.ts";
 import { runMarketingApprovalHistoryTabTests } from "./marketing-approval-history-tab.test.ts";
 import { runMarketingInboxDecisionBarGatingTests } from "./marketing-inbox-decision-bar-gating.test.ts";
+import { runMarketingInboxWorkspaceLayoutTests } from "./marketing-inbox-workspace-layout.test.ts";
 import { runMarketingPremiumNotificationTests } from "./marketing-premium-notifications.test.ts";
 import { runMarketingRoiTests } from "./marketing-roi.test.ts";
 import { runMarketingRoiSheetImportTests } from "./marketing-roi-sheet-import.test.ts";
@@ -1485,6 +1486,7 @@ await runTest("marketing approver hr_id casing (FK fix)", runMarketingApproverHr
 await runTest("marketing Super Admin oversight queue", runMarketingSuperAdminOversightTests);
 await runTest("marketing approval inbox History tab (scope, read-only, stated cap)", runMarketingApprovalHistoryTabTests);
 await runTest("marketing approval inbox decision bar (per-step reject/return powers)", runMarketingInboxDecisionBarGatingTests);
+await runTest("marketing approval inbox workspace layout (queues, disclosure, desktop table)", runMarketingInboxWorkspaceLayoutTests);
 await runTest("marketing premium notifications + review view", runMarketingPremiumNotificationTests);
 await runTest("marketing request access", runMarketingRequestAccessTests);
 await runTest("marketing validation service", runMarketingValidationServiceTests);
