@@ -54,6 +54,18 @@ import {
   candidateSourceChannel,
   type CandidateSourceChannelKey,
 } from "@/lib/recruitment/candidate-source-context";
+import {
+  candidateRegionCodes,
+  candidateRegionForGovernorate,
+  candidateRegionLabels,
+  type CandidateRegionCode,
+} from "@/lib/recruitment/candidate-region";
+import {
+  candidateRoleFamilies,
+  candidateRoleFamilyLabels,
+  candidateRoleFamilyOrNull,
+  type CandidateRoleFamily,
+} from "@/lib/recruitment/candidate-role-family";
 import { cairoDayKey, type CandidatePoolStats } from "@/lib/recruitment/candidate-stats";
 import type { HiringManagerOption } from "@/lib/recruitment/hiring-manager-notify";
 import type { SelectionBoardEntry } from "@/lib/recruitment/selection";
@@ -2670,6 +2682,12 @@ function CandidatesTab({
   // the AI has already answered it on 161 of the 227 people in the pool (81 yes, 80 no, 66 it could
   // not tell). Free to filter on, and it turns a scroll through 226 rows into a look at 81.
   const [experienceFilter, setExperienceFilter] = useState<PoolExperienceFilter>("all");
+  // "Upper Egypt district managers" was impossible two ways over: there was no region grouping at
+  // all, and searching the title text for "district manager" misses nine of the 27 who are one —
+  // three spell it "manger" and six are titled "District Sales Manager". Both filters read a
+  // domain classifier rather than the raw column, so the misspelling and the variant both land.
+  const [roleFilter, setRoleFilter] = useState<CandidateRoleFamily | "" | "unknown">("");
+  const [regionFilter, setRegionFilter] = useState<CandidateRegionCode | "" | "unknown">("");
   // 132 of the 555 rows in production share a person with another row — the same CV forwarded twice,
   // or the same applicant applying again. The flag was already computed; there was no way to ask for
   // just those rows, which is the only way anyone is going to work through them.
@@ -2754,6 +2772,16 @@ function CandidatesTab({
       if (statusFilter && normalizeCandidateStatus(c.status) !== statusFilter) return false;
       if (sourceFilter && candidateSourceChannel(c.source, c.sourceContext).label !== sourceFilter) return false;
       if (duplicatesOnly && !c.possibleDuplicate) return false;
+      // Both are three-way for the same reason the experience filter is: 249 of 426 people have no
+      // job title and 159 no governorate, and "we were never told" is not "none of the above".
+      if (roleFilter) {
+        const family = candidateRoleFamilyOrNull(c.currentJobTitle);
+        if (roleFilter === "unknown" ? family !== null : family !== roleFilter) return false;
+      }
+      if (regionFilter) {
+        const region = candidateRegionForGovernorate(c.governorate);
+        if (regionFilter === "unknown" ? region !== null : region !== regionFilter) return false;
+      }
       // Three-way, not a checkbox: null is a real and common answer here (66 rows), and it means
       // "the CV did not say", which is not the same as "no". Folding unknown into either bucket
       // would quietly hide people.
@@ -3110,6 +3138,38 @@ function CandidatesTab({
                 ))}
               </select>
             </label>
+            <label className={poolFilterLabelClass}>
+              Role
+              <select
+                className={poolFilterSelectClass}
+                value={roleFilter}
+                onChange={(e) => setRoleFilter(e.target.value as CandidateRoleFamily | "" | "unknown")}
+              >
+                <option value="">Any role</option>
+                {candidateRoleFamilies.map((family) => (
+                  <option key={family} value={family}>
+                    {candidateRoleFamilyLabels[family]}
+                  </option>
+                ))}
+                <option value="unknown">No job title on file</option>
+              </select>
+            </label>
+            <label className={poolFilterLabelClass}>
+              Region
+              <select
+                className={poolFilterSelectClass}
+                value={regionFilter}
+                onChange={(e) => setRegionFilter(e.target.value as CandidateRegionCode | "" | "unknown")}
+              >
+                <option value="">Any region</option>
+                {candidateRegionCodes.map((code) => (
+                  <option key={code} value={code}>
+                    {candidateRegionLabels[code]}
+                  </option>
+                ))}
+                <option value="unknown">No governorate on file</option>
+              </select>
+            </label>
             {sourceOptions.length > 1 ? (
               <label className={poolFilterLabelClass}>
                 Source
@@ -3143,7 +3203,7 @@ function CandidatesTab({
                 <span className="tabular-nums opacity-70">{duplicateCount}</span>
               </button>
             ) : null}
-            {dateFilter !== "all" || experienceFilter !== "all" || statusFilter || sourceFilter || query || duplicatesOnly ? (
+            {dateFilter !== "all" || experienceFilter !== "all" || statusFilter || sourceFilter || roleFilter || regionFilter || query || duplicatesOnly ? (
               <Button
                 variant="ghost"
                 onClick={() => {
@@ -3151,6 +3211,8 @@ function CandidatesTab({
                   setExperienceFilter("all");
                   setStatusFilter("");
                   setSourceFilter("");
+                  setRoleFilter("");
+                  setRegionFilter("");
                   setQuery("");
                   setDuplicatesOnly(false);
                 }}
