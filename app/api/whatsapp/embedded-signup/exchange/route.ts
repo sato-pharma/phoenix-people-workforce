@@ -2,16 +2,31 @@ import { NextResponse } from "next/server";
 
 import { logError, logInfo, logWarning } from "@/lib/observability/log";
 import { WHATSAPP_EMBEDDED_SIGNUP_APP_ID } from "@/lib/recruitment/inbound/whatsapp-embedded-signup";
+import { assertApiRateLimit, isApiRateLimitError, rateLimitIdentity } from "@/lib/security/api-rate-limit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const GRAPH_HOST = "https://graph.facebook.com";
+// Both Graph calls are bounded so a slow or hung Meta response cannot pin a serverless worker open.
+const GRAPH_TIMEOUT_MS = 15_000;
 
 // Mirror whatsapp-health.ts's graphApiVersion() so every Graph call in the integration speaks the
 // same version without adding a required env var.
 function graphApiVersion(): string {
   return process.env.WHATSAPP_GRAPH_API_VERSION?.trim() || "v23.0";
+}
+
+// fetch with a hard timeout via AbortController. On timeout the abort rejects the fetch, which the
+// callers already treat as a Graph failure (502 for the exchange, a logged warning for the subscribe).
+async function fetchWithTimeout(input: URL | string, init: RequestInit = {}): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), GRAPH_TIMEOUT_MS);
+  try {
+    return await fetch(input, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /**
@@ -25,8 +40,8 @@ function graphApiVersion(): string {
  *
  * No session is required: the code is only valid for this app + secret and is issued by Facebook only
  * to a person who already holds a role on the app (Standard Access), so it cannot be forged, and the
- * only side effect — subscribing our own app to a WABA — is idempotent and harmless. It never touches
- * our own database or returns anything sensitive to the browser.
+ * only Meta-side effect — subscribing our own app to a WABA — is idempotent and harmless. It writes no
+ * business data (only the shared api_rate_limit bucket) and returns nothing sensitive to the browser.
  */
 export async function POST(request: Request) {
   const appSecret = process.env.WHATSAPP_APP_SECRET;
@@ -35,6 +50,30 @@ export async function POST(request: Request) {
       labels: { event: "embedded_signup_misconfigured" },
     });
     return NextResponse.json({ ok: false, error: "not_configured" }, { status: 500 });
+  }
+
+  // Public, unauthenticated endpoint — rate-limit by IP so it cannot be hammered to burn the Meta
+  // app's OAuth budget or hold workers open. Fail OPEN on any rate-limit *infrastructure* error: a
+  // one-time onboarding the owner runs on a phone must never be blocked because the bucket store
+  // hiccuped. A genuine over-limit still returns 429.
+  try {
+    await assertApiRateLimit({
+      identifier: rateLimitIdentity({ request }),
+      limit: 10,
+      scope: "whatsapp-embedded-signup-exchange",
+      windowMs: 60_000,
+    });
+  } catch (error) {
+    if (isApiRateLimitError(error)) {
+      return NextResponse.json(
+        { ok: false, error: "rate_limited", retryAfterSeconds: error.retryAfterSeconds },
+        { status: 429, headers: { "Retry-After": String(error.retryAfterSeconds) } },
+      );
+    }
+    logWarning("WhatsApp embedded-signup rate-limit check failed open", {
+      error,
+      labels: { event: "embedded_signup_rate_limit_error" },
+    });
   }
 
   let body: { code?: unknown; wabaId?: unknown };
@@ -61,7 +100,7 @@ export async function POST(request: Request) {
     tokenUrl.searchParams.set("client_secret", appSecret);
     tokenUrl.searchParams.set("code", code);
 
-    const tokenResponse = await fetch(tokenUrl, { cache: "no-store" });
+    const tokenResponse = await fetchWithTimeout(tokenUrl, { cache: "no-store" });
     const tokenJson = (await tokenResponse.json().catch(() => null)) as
       | { access_token?: string; error?: { message?: string } }
       | null;
@@ -87,7 +126,7 @@ export async function POST(request: Request) {
   //    since the app may already be subscribed at the account level.
   if (wabaId) {
     try {
-      const subscribeResponse = await fetch(
+      const subscribeResponse = await fetchWithTimeout(
         `${GRAPH_HOST}/${version}/${encodeURIComponent(wabaId)}/subscribed_apps`,
         {
           method: "POST",
