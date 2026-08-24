@@ -7,7 +7,12 @@ import {
   isValidChannelCode,
   normalizeChannelCode,
 } from "../src/lib/recruitment/outreach/channel-code.ts";
-import { nameFromGroupUrl, parseChannelPasteList } from "../src/lib/recruitment/outreach/channel-import.ts";
+import {
+  kindFromUrl,
+  nameFromChannelUrl,
+  nameFromGroupUrl,
+  parseChannelPasteList,
+} from "../src/lib/recruitment/outreach/channel-import.ts";
 import {
   buildApplyLink,
   buildApplyMessage,
@@ -186,12 +191,17 @@ export async function runRecruitmentJobPostChannelTests() {
   );
   assert.equal(parsed.length, 4, `four usable rows (got ${JSON.stringify(parsed)})`);
   assert.deepEqual(parsed[0], {
+    kind: "facebook_group",
     name: "Medical Reps Egypt",
     url: "https://facebook.com/groups/medical.reps.egypt",
   });
   assert.equal(parsed[1].name, "Facebook group 123456789", "a numeric group id gets a renameable placeholder");
   assert.equal(parsed[2].name, "Pharma Jobs Cairo", "a vanity slug becomes a readable name");
-  assert.deepEqual(parsed[3], { name: "Referrals from staff", url: null }, "a name with no URL is still a channel");
+  assert.deepEqual(
+    parsed[3],
+    { kind: null, name: "Referrals from staff", url: null },
+    "a name with no URL is still a channel, and there is nothing to infer a kind from",
+  );
 
   assert.equal(nameFromGroupUrl("https://facebook.com/groups/123"), "Facebook group 123");
   assert.equal(nameFromGroupUrl("https://example.com/not-a-group"), null);
@@ -199,5 +209,65 @@ export async function runRecruitmentJobPostChannelTests() {
 
   // Tab-separated, because that is what a copy out of a spreadsheet produces.
   const tabbed = parseChannelPasteList("Pharma Jobs\thttps://facebook.com/groups/999");
-  assert.deepEqual(tabbed, [{ name: "Pharma Jobs", url: "https://facebook.com/groups/999" }]);
+  assert.deepEqual(tabbed, [{ kind: "facebook_group", name: "Pharma Jobs", url: "https://facebook.com/groups/999" }]);
+
+  // ── 7 · A whole research table, pasted exactly as it arrives ───────────────
+  //
+  // This is the shape that actually turned up on 2026-08-24: a header row, ten tab-separated
+  // columns, three platforms mixed together, and a SECOND URL in the last column holding the page
+  // the row was researched from. Two things have to hold or the paste is worse than useless — the
+  // header must not become a channel named "Platform", and the FIRST link must win, because
+  // attributing a CV to the research source instead of the group it came from is a wrong number,
+  // and a wrong number is what gets used to decide which groups to stop posting in.
+  const table = parseChannelPasteList(
+    [
+      "Platform\tGroup / channel\tPublic URL\tActivity\tApprox. members\tRegion\tLanguage\tFocus\tAccess notes\tSource",
+      "WhatsApp\tAll Medical Reps – Cairo\thttps://chat.whatsapp.com/EF1I33PPgEF3b9XJ7k4pDG\tRe-shared ~4 months ago\tNot public\tCairo\tArabic / English\tMedical reps\tInvite required\thttps://www.facebook.com/groups/515545825214204/",
+      "WhatsApp Channel\tJob Way Medical Recruitment\thttps://whatsapp.com/channel/0029Va5fzfRHFxP9uRFc3Y37\tOfficial site listing\tNot public\tEgypt + Gulf\tArabic / English\tMedical recruitment\tBroadcast\thttps://www.jobway-egy.com/",
+      "Telegram\tRecruitmentblogs\thttps://t.me/Recruitmentblogs\tCurrent indexed channel\t~35.2K\tEgypt\tArabic / English\tPharma vacancies\tOpen channel\thttps://t.me/Recruitmentblogs",
+      "Facebook\tEgypt Medical Rep vacancies\thttps://www.facebook.com/groups/14921391140/\tIndexed within ~5 days\t~89.1K\tEgypt\tArabic / English\tMedical-rep vacancies\tPublic group\thttps://www.facebook.com/groups/14921391140/",
+    ].join("\n"),
+  );
+
+  assert.equal(
+    table.length,
+    4,
+    `the header row is dropped and the four channels kept (got ${JSON.stringify(table.map((row) => row.name))})`,
+  );
+  assert.equal(
+    table[0].name,
+    "All Medical Reps – Cairo",
+    "the name is the column before the link, not the platform column in front of it",
+  );
+  assert.equal(
+    table[0].url,
+    "https://chat.whatsapp.com/EF1I33PPgEF3b9XJ7k4pDG",
+    "the first link wins — the trailing source column is provenance, not the destination",
+  );
+  assert.equal(table[0].kind, "whatsapp_group");
+  assert.equal(table[1].kind, "whatsapp_channel", "whatsapp.com/channel is a broadcast feed, not a group");
+  assert.equal(table[2].kind, "telegram_channel");
+  assert.equal(table[3].kind, "facebook_group");
+
+  // Kind inference on its own. The group/channel split is the one that costs real time when wrong:
+  // it decides whether the recruiter can paste, or has to ask an admin to carry the advert.
+  assert.equal(kindFromUrl("https://t.me/+AbCdEf123"), "telegram_group", "an invite hash is unmistakably a group");
+  assert.equal(kindFromUrl("https://t.me/joinchat/AbCdEf"), "telegram_group");
+  assert.equal(
+    kindFromUrl("https://t.me/Recruitmentblogs"),
+    "telegram_channel",
+    "a bare handle is reported as a channel — claiming you can post where you cannot is the worse error",
+  );
+  assert.equal(kindFromUrl("https://www.facebook.com/SatoPharmaEgypt"), "facebook_page");
+  assert.equal(kindFromUrl("https://example.com/jobs"), "other");
+  assert.equal(kindFromUrl(null), null, "no link means nothing to infer from");
+
+  // A bare link on any platform still earns a row rather than being dropped.
+  assert.equal(nameFromChannelUrl("https://t.me/Recruitmentblogs"), "Recruitmentblogs");
+  assert.equal(nameFromChannelUrl("https://chat.whatsapp.com/EF1I33PPgEF3b9XJ7k4pDG"), "WhatsApp group EF1I33");
+  assert.equal(
+    nameFromChannelUrl("https://t.me/+SecretHash99"),
+    "Telegram group",
+    "a join hash is a secret, not a display name — it must never be printed as one",
+  );
 }
