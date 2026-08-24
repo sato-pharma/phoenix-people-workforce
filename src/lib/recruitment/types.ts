@@ -7,6 +7,7 @@
 //   supabase/_migrations_archive/pre-baseline-2026-07-11/20260605014350_recruitment_workflow_registry_module.sql
 
 import type { CandidateAppliedFor } from "@/lib/recruitment/applied-for";
+import type { CandidateUnconfirmedCvFacts } from "@/lib/recruitment/candidate-screening-facts";
 
 export const RECRUITMENT_MODULE_KEY = "recruitment" as const;
 
@@ -282,6 +283,13 @@ export type Candidate = {
   // and should not pay for the extra query. The profile panel reads the verdict straight off its
   // own StoredCvExtraction.isCv instead, which is fresher than any copy carried on the row.
   notACv?: boolean;
+  // What the CV reader answered but was NOT confident enough to write into the columns above —
+  // 250 values across the pool, every one of them `confidence: "low"`, which is exactly why
+  // selectAutoApplyFields declined them and exactly why they must never be merged into the columns
+  // themselves. Carried separately so the screening surfaces can show a hedged answer AS hedged
+  // instead of showing a blank cell. Populated by listCandidates; see
+  // src/lib/recruitment/candidate-screening-facts.ts.
+  cvUnconfirmed?: CandidateUnconfirmedCvFacts | null;
 };
 
 export type CandidateSourceContext = {

@@ -286,10 +286,20 @@ export async function runRecruitmentAppliedForTests() {
     .split('.from("ats_candidate_cv_extractions")')
     .slice(1)
     .map((rest) => rest.slice(0, rest.indexOf(")") + 1));
+  //
+  // What costs money is reading the blob WHOLE. A jsonb-PATH select — `title:extracted_fields->
+  // currentJobTitle` — is a different animal: Postgres pulls the keys out and ships scalars, so the
+  // 1.1 MB never crosses the Atlantic. Since 2026-08-24 the pool makes a second, thin visit for the
+  // CV reader's hedged answers, and counting the bare substring could not tell the two apart.
+  const readsTheBlobWhole = (select: string) => /[,"]extracted_fields[,"]/.test(select);
   assert.equal(
-    extractionSelects.filter((select) => select.includes("extracted_fields")).length,
+    extractionSelects.filter(readsTheBlobWhole).length,
     1,
     "appliedForJobTitle and currentJobTitle must be read in a single pass over extracted_fields",
+  );
+  assert.ok(
+    extractionSelects.filter((select) => select.includes("extracted_fields->")).every((select) => !readsTheBlobWhole(select)),
+    "a jsonb-path read must not drag the whole blob along beside it — that is the fat read again, wearing a hat",
   );
   for (const select of extractionSelects) {
     if (select.includes("extracted_fields")) continue;
