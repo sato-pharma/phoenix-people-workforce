@@ -235,6 +235,40 @@ export function runRecruitmentEmailIntakeTests() {
   assert.equal(isEmailImportSender("old-careers@example.com", []), false, "no configured senders -> nothing is an import");
   assert.equal(isEmailImportSender("old-careers@example.com", undefined), false);
 
+  // A "@domain" entry matches every address on that domain. Configured with one plain address, this
+  // check matched 0 of 634 production messages while 47 staff addresses forwarded CVs past it, so a
+  // per-person roster is the failure mode, not the fix.
+  assert.equal(
+    isEmailImportSender("someone.new@satopharma.com", ["@satopharma.com"]),
+    true,
+    "a @domain entry matches a colleague who was never listed by name",
+  );
+  assert.equal(
+    isEmailImportSender("HEAD.OFFICE@SatoPharma.com", ["@satopharma.com"]),
+    true,
+    "a @domain entry is matched case-insensitively",
+  );
+  assert.equal(
+    isEmailImportSender("applicant@gmail.com", ["@satopharma.com"]),
+    false,
+    "a real applicant on another domain is still read as the applicant",
+  );
+  assert.equal(
+    isEmailImportSender("someone@notsatopharma.com", ["@satopharma.com"]),
+    false,
+    "a @domain entry matches the whole domain, never a suffix of a longer one",
+  );
+  assert.equal(
+    isEmailImportSender("@satopharma.com", ["@satopharma.com"]),
+    false,
+    "a bare domain with no local part is not a sender",
+  );
+  assert.equal(
+    isEmailImportSender("someone@satopharma.com", ["careers@satopharma.com"]),
+    false,
+    "a plain address entry still matches that address alone",
+  );
+
   // --- Bulk import mode ------------------------------------------------------------------------
   // The point: forwarding 100 emails from ONE old mailbox must not all inherit that mailbox's
   // From address, which is what would collapse them into a single candidate.

@@ -48,14 +48,30 @@ export const parseEmailImportSenders = parseImportSenderList;
 
 /**
  * Whether this message came from an address configured as a bulk CV import source (an old
- * mailbox being migrated in), rather than a direct applicant emailing the recruitment mailbox.
- * Case-insensitive — email addresses are.
+ * mailbox being migrated in, or a colleague forwarding a CV in), rather than a direct applicant
+ * emailing the recruitment mailbox. Case-insensitive — email addresses are.
+ *
+ * An entry beginning with "@" matches the whole domain, so `@satopharma.com` covers every
+ * colleague who forwards a CV without naming them one by one. That matters because the list is
+ * otherwise a roster that silently goes stale: configured with a single address, this check
+ * matched 0 of 634 production messages while 47 distinct staff addresses forwarded CVs past it,
+ * each becoming a "candidate" whose address then deduped every later forward onto that one row.
+ * Matching the internal domain is safe even for a genuine internal applicant — import mode reads
+ * identity from the CV, which is better evidence than the envelope either way.
  */
 export function isEmailImportSender(email: string | null, importSenders?: readonly string[]): boolean {
   if (!email) return false;
   const sender = email.trim().toLowerCase();
   if (!sender) return false;
-  return (importSenders ?? []).some((entry) => entry.trim().toLowerCase() === sender);
+  // Guarded with `> 0` so a bare "@domain" as the SENDER has no local part and matches nothing.
+  const atIndex = sender.lastIndexOf("@");
+  const senderDomain = atIndex > 0 ? sender.slice(atIndex) : null;
+  return (importSenders ?? []).some((entry) => {
+    const configured = entry.trim().toLowerCase();
+    if (!configured) return false;
+    if (configured.startsWith("@")) return senderDomain !== null && senderDomain === configured;
+    return configured === sender;
+  });
 }
 
 // The per-message facts that are the SAME across every attachment on that message (identity, notes,
