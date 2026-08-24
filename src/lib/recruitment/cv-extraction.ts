@@ -34,6 +34,7 @@ import {
 import { logError } from "@/lib/observability/log";
 import { getCandidate, updateCandidate } from "@/lib/recruitment/candidates";
 import { selectAutoApplyFields } from "@/lib/recruitment/cv-auto-apply";
+import { resolveCandidateFullNameFromCv } from "@/lib/recruitment/candidate-name-from-cv";
 import {
   normalizeStoredExtractionFields,
   type ExtractedCandidateFields,
@@ -450,15 +451,35 @@ export function readSchemaField(parsed: Record<string, unknown>, field: { key: s
 // back to the sender's details: with no match keys at all, candidate matching cannot merge this
 // CV into an unrelated profile, so the worst case is a correctly-separate record that Talent
 // Acquisition completes by hand — never a silent collapse of many applicants into one.
+/**
+ * The identity a CV's own contents give, for a candidate about to be created.
+ *
+ * `email` and `phone` are read straight off the extraction as before. The NAME goes through
+ * resolveCandidateFullNameFromCv, because this is the one write in the module that had no
+ * confidence gate: full_name is NOT NULL, is set once at intake, and a name the model itself
+ * flagged as unsure went into it unchallenged — see candidate-name-from-cv.ts for the row that
+ * exposed it. `fileName` is the CV's own filename, used as the fallback in preference to the
+ * sender; omitting it simply skips that step.
+ */
 export function candidateIdentityFromCvFields(
   extraction: { fields: ExtractedCandidateFields } | null,
   fallbackFullName: string,
+  fileName?: string | null,
 ): { fullName: string; email: string | null; phone: string | null } {
   const read = (key: string): string | null => {
     const value = extraction?.fields?.[key]?.value;
     return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
   };
-  return { email: read("email"), fullName: read("fullName") ?? fallbackFullName, phone: read("phone") };
+  return {
+    email: read("email"),
+    fullName: resolveCandidateFullNameFromCv({
+      extractedConfidence: extraction?.fields?.fullName?.confidence ?? null,
+      extractedName: read("fullName"),
+      fileName,
+      senderFullName: fallbackFullName,
+    }),
+    phone: read("phone"),
+  };
 }
 
 function cvExtractionErrorFromOpenAi(error: PhoenixOpenAiError): CvExtractionError {

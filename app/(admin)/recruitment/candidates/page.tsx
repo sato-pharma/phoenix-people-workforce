@@ -6,7 +6,7 @@ import { PageContainer } from "@/components/layout/page-container";
 import { AdminPageHero } from "@/components/admin/admin-design-system";
 import { AppRouteLoadingState } from "@/components/ui/loading-state";
 import { RecruitmentCandidatesPortal } from "@/components/employee-portal/recruitment-candidates-portal";
-import { canAccess } from "@/lib/auth/permissions";
+import { canAccess, canOpenPersonalCandidateInbox } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { listApplications } from "@/lib/recruitment/applications";
 import { listCandidatesSentToManager } from "@/lib/recruitment/candidates";
@@ -20,7 +20,7 @@ export const dynamic = "force-dynamic";
 export default async function AdminRecruitmentCandidatesPage() {
   const access = await resolveAccessContextFromPage();
 
-  if (access.role !== "CEO" || !(await canAccess(access, "hiring_interviews", "read"))) {
+  if (!canOpenPersonalCandidateInbox(access) || !(await canAccess(access, "hiring_interviews", "read"))) {
     redirect("/overview");
   }
 

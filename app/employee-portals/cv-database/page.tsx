@@ -7,10 +7,13 @@ import {
 } from "@/components/employee-portal/enterprise-shell";
 import { canAccess, isHrAuthorityRole, resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { cvLibraryRowsFromCandidates } from "@/lib/cv/cv-library";
+import { listCandidates } from "@/lib/recruitment/candidates";
 
 export const dynamic = "force-dynamic";
 
-// Portal mirror of app/(admin)/cv-database/page.tsx.
+// Portal mirror of app/(admin)/cv-database/page.tsx — same loader, same rows, so the two shells
+// cannot show different candidates.
 export default async function EmployeePortalCvDatabasePage() {
   const access = await resolveAccessContextFromPage();
   if (resolveNavigationMode(access) !== "employee-portal") {
@@ -25,6 +28,8 @@ export default async function EmployeePortalCvDatabasePage() {
     );
   }
 
+  const rows = cvLibraryRowsFromCandidates(await listCandidates());
+
   return (
     <EmployeePortalPageShell
       badge="Talent Acquisition"
@@ -32,7 +37,7 @@ export default async function EmployeePortalCvDatabasePage() {
       errorBoundaryTitle="CV Database unavailable"
       title="CV Database"
     >
-      <CvDatabaseManager />
+      <CvDatabaseManager rows={rows} />
     </EmployeePortalPageShell>
   );
 }
