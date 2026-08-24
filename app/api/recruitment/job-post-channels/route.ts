@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { resolveApplyDestinations } from "@/lib/recruitment/outreach/apply-destinations";
-import { parseChannelPasteList } from "@/lib/recruitment/outreach/channel-import";
+import { kindFromUrl, parseChannelPasteList } from "@/lib/recruitment/outreach/channel-import";
 import {
   createJobPostChannels,
   getChannelAttribution,
@@ -56,15 +56,18 @@ export async function POST(request: Request) {
     const access = await requireRecruitmentAccess(request, "recruitment", "create");
     const body = await readJsonObject(request);
 
-    // Two shapes on purpose: a pasted block straight out of the Facebook sidebar (the fast path,
-    // and how the list realistically gets built), or explicit rows when the caller already has
-    // structure to hand.
+    // Two shapes on purpose: a pasted block straight out of a sidebar or a research table (the
+    // fast path, and how the list realistically gets built), or explicit rows when the caller
+    // already has structure to hand.
     const inputs: CreateJobPostChannelInput[] = [];
     const paste = str(body.paste);
     if (paste) {
-      const defaultKind = asKind(body.kind) ?? "facebook_group";
+      // The link says which platform it is, so one mixed paste — WhatsApp, Telegram and Facebook
+      // together — lands with every row on its own kind. An explicit `kind` in the body is only the
+      // fallback for lines that carried no URL to read.
+      const fallbackKind = asKind(body.kind) ?? "other";
       for (const line of parseChannelPasteList(paste)) {
-        inputs.push({ kind: defaultKind, name: line.name, url: line.url });
+        inputs.push({ kind: asKind(line.kind) ?? fallbackKind, name: line.name, url: line.url });
       }
     }
 
@@ -76,7 +79,7 @@ export async function POST(request: Request) {
         if (!name) continue;
         inputs.push({
           code: str(entry.code),
-          kind: asKind(entry.kind) ?? "facebook_group",
+          kind: asKind(entry.kind) ?? asKind(kindFromUrl(str(entry.url))) ?? "other",
           name,
           notes: str(entry.notes),
           url: str(entry.url),

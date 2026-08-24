@@ -29,6 +29,33 @@ type LoadedState = {
 const COMPANY_NAME = "Sato Pharma";
 
 /**
+ * How each channel kind reads on screen, and whether you can post in it yourself.
+ *
+ * A WhatsApp or Telegram *channel* is a broadcast feed — only its admins can write to it. Listing
+ * one beside a group you can post in, with nothing to tell them apart, is how an afternoon goes
+ * into trying to publish somewhere that will never accept a post. So the row says which it is, and
+ * a broadcast row offers "Copy & ask" rather than pretending the paste will land.
+ *
+ * Defined here rather than imported from the service: that module reaches the database, and pulling
+ * a value out of it would drag server code into this client bundle.
+ */
+const PLATFORM_LABELS: Record<string, { label: string; broadcast: boolean }> = {
+  facebook_group: { broadcast: false, label: "Facebook group" },
+  facebook_page: { broadcast: false, label: "Facebook page" },
+  job_board: { broadcast: false, label: "Job board" },
+  other: { broadcast: false, label: "Other" },
+  referral: { broadcast: false, label: "Referral" },
+  telegram_channel: { broadcast: true, label: "Telegram channel" },
+  telegram_group: { broadcast: false, label: "Telegram group" },
+  whatsapp_channel: { broadcast: true, label: "WhatsApp channel" },
+  whatsapp_group: { broadcast: false, label: "WhatsApp group" },
+};
+
+function platformOf(kind: string): { label: string; broadcast: boolean } {
+  return PLATFORM_LABELS[kind] ?? { broadcast: false, label: "Other" };
+}
+
+/**
  * Advertise a vacancy — write the post once, hand every group its own tracked apply link.
  *
  * There is deliberately no "post to Facebook" button, and there cannot be one. Facebook deleted the
@@ -164,6 +191,9 @@ export function JobAdvertPanel() {
 
   const channels = state?.channels ?? [];
   const activeChannels = channels.filter((channel) => channel.isActive);
+  // The number that actually matters once the list runs to forty-odd rows: how many of them will
+  // accept a post from you at all. The rest are broadcast feeds you can only ask an admin to carry.
+  const postableCount = activeChannels.filter((channel) => !platformOf(channel.kind).broadcast).length;
   const attributionRows = state?.attribution.rows ?? [];
 
   return (
@@ -260,25 +290,25 @@ export function JobAdvertPanel() {
       {/* ── 3 · The groups ─────────────────────────────────────────────── */}
       <section className="space-y-3">
         <AdminSectionHeader
-          description="Paste group links, one per line. 'Name | link' works too, and so does a bare link."
+          description="Paste links, one per line — Facebook, WhatsApp or Telegram. 'Name | link' works, a bare link works, and so does a whole copied table."
           title="Where you post it"
         />
         <textarea
           className="min-h-24 w-full rounded-md border border-slate-200 p-2 font-mono text-xs"
           onChange={(event) => setPaste(event.target.value)}
-          placeholder={"https://facebook.com/groups/medical.reps.egypt\nPharma Jobs Cairo | https://facebook.com/groups/123456789"}
+          placeholder={"https://facebook.com/groups/medical.reps.egypt\nMedical Reps Cairo | https://chat.whatsapp.com/EF1I33PPgEF3b9XJ7k4pDG\nhttps://t.me/Recruitmentblogs"}
           value={paste}
         />
         <Button disabled={busy || paste.trim().length === 0} onClick={addChannels} size="sm">
-          {busy ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <Plus className="mr-1 h-3 w-3" />} Add these groups
+          {busy ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <Plus className="mr-1 h-3 w-3" />} Add these channels
         </Button>
 
         <AdminTableShell
-          description="Copy takes the post plus that group's own link, then opens the group so you can paste."
-          title={`Groups (${activeChannels.length} active)`}
+          description="Copy takes the post plus that channel's own tracked link, then opens the channel so you can paste."
+          title={`Channels (${activeChannels.length} active, ${postableCount} you can post in)`}
         >
           <PortalResponsiveDataList
-            empty={<PortalEmptyState message="Paste your Facebook group links above." title="No groups yet" />}
+            empty={<PortalEmptyState message="Paste your group links above." title="No channels yet" />}
             getKey={(channel: JobPostChannel) => channel.id}
             items={channels}
             renderCard={(channel: JobPostChannel) => (
@@ -286,12 +316,18 @@ export function JobAdvertPanel() {
                 <PortalRecordFields
                   fields={[
                     { label: "Code", value: channel.code },
+                    {
+                      label: "Where",
+                      value: platformOf(channel.kind).broadcast
+                        ? `${platformOf(channel.kind).label} — broadcast`
+                        : platformOf(channel.kind).label,
+                    },
                     { label: "Status", value: channel.isActive ? "Active" : "Retired" },
                   ]}
                 />
                 <div className="mt-2 flex gap-2">
                   <Button onClick={() => copyForChannel(channel)} size="sm">
-                    <Copy className="mr-1 h-3 w-3" /> Copy &amp; open
+                    <Copy className="mr-1 h-3 w-3" /> {platformOf(channel.kind).broadcast ? "Copy & ask" : "Copy & open"}
                   </Button>
                   <Button disabled={busy} onClick={() => retire(channel)} size="sm" variant="ghost">
                     {channel.isActive ? "Retire" : "Restore"}
@@ -303,7 +339,8 @@ export function JobAdvertPanel() {
               <PortalDesktopTable minWidth="720px">
                 <thead>
                   <tr className="border-b border-slate-200 text-left text-xs uppercase text-slate-500">
-                    <th className="whitespace-nowrap p-2">Group</th>
+                    <th className="whitespace-nowrap p-2">Channel</th>
+                    <th className="whitespace-nowrap p-2">Where</th>
                     <th className="whitespace-nowrap p-2">Code</th>
                     <th className="whitespace-nowrap p-2">Status</th>
                     <th className="whitespace-nowrap p-2">Post it</th>
@@ -313,12 +350,19 @@ export function JobAdvertPanel() {
                   {channels.map((channel) => (
                     <tr className="border-b border-slate-100" key={channel.id}>
                       <td className="whitespace-nowrap p-2 font-medium text-slate-900">{channel.name}</td>
+                      <td className="whitespace-nowrap p-2 text-slate-600">
+                        {platformOf(channel.kind).label}
+                        {platformOf(channel.kind).broadcast ? (
+                          <span className="ml-1 text-amber-700">— broadcast, ask the admin</span>
+                        ) : null}
+                      </td>
                       <td className="whitespace-nowrap p-2 font-mono text-xs text-slate-600">{channel.code}</td>
                       <td className="whitespace-nowrap p-2 text-slate-600">{channel.isActive ? "Active" : "Retired"}</td>
                       <td className="whitespace-nowrap p-2">
                         <div className="flex gap-2">
                           <Button onClick={() => copyForChannel(channel)} size="sm">
-                            <Copy className="mr-1 h-3 w-3" /> Copy &amp; open
+                            <Copy className="mr-1 h-3 w-3" />
+                            {platformOf(channel.kind).broadcast ? "Copy & ask" : "Copy & open"}
                             {channel.url ? <ExternalLink className="ml-1 h-3 w-3" /> : null}
                           </Button>
                           <Button disabled={busy} onClick={() => retire(channel)} size="sm" variant="ghost">
