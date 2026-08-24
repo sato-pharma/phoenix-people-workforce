@@ -221,4 +221,55 @@ export async function runMarketingApprovalHistoryTabTests() {
     /<h3 className="[^"]*truncate/,
     "the customer name must never be truncated with an ellipsis — owner rule",
   );
+
+  /* ---------------------------------------------------------------------- */
+  /* 10. Desktop shows a TABLE, mobile shows cards - never cards everywhere  */
+  /* ---------------------------------------------------------------------- */
+
+  // Owner standing rule: the admin shell shows full tables on desktop and cards on mobile. The
+  // History tab shipped as a stack of full-detail cards on EVERY screen (the exact violation)
+  // until it was rebuilt to match the "In approval" tab beside it. The split must come from the
+  // portal primitives, which carry a real `hidden ... md:block` / `md:hidden` pair. The
+  // `data-portal-desktop-table` ATTRIBUTE alone is inert on an admin page (its media query is
+  // injected by the portal shell, which admin pages never mount), so the primitives are the gate.
+  assert.match(
+    historyComponent,
+    /PortalResponsiveDataList/,
+    "the History tab must render through PortalResponsiveDataList - the md: split the owner rule needs",
+  );
+  assert.match(
+    historyComponent,
+    /PortalDesktopTable/,
+    "the desktop view must be a real table, not cards - owner rule",
+  );
+
+  /* ---------------------------------------------------------------------- */
+  /* 11. A long history is WINDOWED, never a wall of expanded trails         */
+  /* ---------------------------------------------------------------------- */
+
+  assert.match(
+    historyComponent,
+    /const HISTORY_PAGE_SIZE = \d+/,
+    "the list must be windowed to a page size, not rendered all at once",
+  );
+  // Page clamped during RENDER, not from an effect - a filter that shortens the list must not
+  // strand the reader on a page that no longer exists, and setState-in-effect is a lint error here.
+  assert.match(
+    historyComponent,
+    /Math\.min\(page, pageCount - 1\)/,
+    "the current page must be clamped during render so a shrinking list cannot strand the reader",
+  );
+
+  /* ---------------------------------------------------------------------- */
+  /* 12. Accent classes are STATIC - never built by string interpolation    */
+  /* ---------------------------------------------------------------------- */
+
+  // Tailwind only ships classes it can see as whole literals. A `border-l-${tone}-500` is purged
+  // from the bundle and paints nothing, so the outcome accent must come from a map of full class
+  // strings. This one nearly shipped broken.
+  assert.doesNotMatch(
+    historyComponent,
+    /border-l-\$\{/,
+    "a Tailwind colour class must be a whole literal - an interpolated one is purged and paints nothing",
+  );
 }
