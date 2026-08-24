@@ -74,13 +74,17 @@ export function JobAdvertPanel() {
   const [location, setLocation] = useState("");
   const [requirements, setRequirements] = useState("");
   const [bodyOverride, setBodyOverride] = useState<string | null>(null);
-  // Email by default, and the note below says why. Measured on production 2026-08-24: WhatsApp
-  // intake was 434 events from 11 distinct senders — those are HR staff forwarding batches off the
-  // advertised handset, not applicants. A forward carries the CV file but not the applicant's own
-  // message, and the applicant's own message is where the tracking code lives. Email was 276 events
-  // from 213 senders, i.e. real applicants writing in, and its code rides in the subject line.
-  // Flip this to WhatsApp once Coexistence is delivering applicant messages to the webhook direct.
-  const [applyKind, setApplyKind] = useState<ApplyChannelKind>("email");
+  // WhatsApp by default — the owner decided this on 2026-08-25, after being shown what it costs.
+  // The advertised handset 01159888247 is where he wants applicants to write, and in Egypt it is
+  // where most of them will write whatever a post says.
+  //
+  // What it costs, and why the warning below stays on screen: measured on production 2026-08-24,
+  // WhatsApp intake was 434 events from 11 distinct senders — HR staff forwarding batches off that
+  // handset, not applicants — against email at 276 events from 213 senders. A forward carries the
+  // CV file but NOT the applicant's own message, and that message is the only place the tracking
+  // code lives. So WhatsApp CVs arrive, and arrive unattributed, until Coexistence delivers
+  // applicant messages to the webhook direct. Email's code rides in the subject line and survives.
+  const [applyKind, setApplyKind] = useState<ApplyChannelKind>("whatsapp");
 
   const [paste, setPaste] = useState("");
   const [notice, setNotice] = useState<string | null>(null);
