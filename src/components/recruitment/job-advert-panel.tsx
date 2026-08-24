@@ -74,7 +74,13 @@ export function JobAdvertPanel() {
   const [location, setLocation] = useState("");
   const [requirements, setRequirements] = useState("");
   const [bodyOverride, setBodyOverride] = useState<string | null>(null);
-  const [applyKind, setApplyKind] = useState<ApplyChannelKind>("whatsapp");
+  // Email by default, and the note below says why. Measured on production 2026-08-24: WhatsApp
+  // intake was 434 events from 11 distinct senders — those are HR staff forwarding batches off the
+  // advertised handset, not applicants. A forward carries the CV file but not the applicant's own
+  // message, and the applicant's own message is where the tracking code lives. Email was 276 events
+  // from 213 senders, i.e. real applicants writing in, and its code rides in the subject line.
+  // Flip this to WhatsApp once Coexistence is delivering applicant messages to the webhook direct.
+  const [applyKind, setApplyKind] = useState<ApplyChannelKind>("email");
 
   const [paste, setPaste] = useState("");
   const [notice, setNotice] = useState<string | null>(null);
@@ -267,6 +273,19 @@ export function JobAdvertPanel() {
             </Button>
           ))}
         </div>
+        {applyKind === "whatsapp" ? (
+          <AdminCallout tone="warning">
+            <div>
+              <p className="font-semibold">WhatsApp reaches you, but loses the tracking</p>
+              <p className="mt-1">
+                CVs sent to the handset only enter this system when someone forwards them, and a
+                forward carries the CV file without the applicant&apos;s own message — which is where
+                the code sits. Those CVs arrive, they just arrive unattributed. Email keeps the code,
+                because it travels in the subject line.
+              </p>
+            </div>
+          </AdminCallout>
+        ) : null}
         {destination ? (
           <p className="text-sm text-slate-600">
             Applicants will reach: <span className="font-medium text-slate-900">{destination}</span>
