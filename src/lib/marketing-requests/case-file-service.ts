@@ -1398,10 +1398,6 @@ function buildViewer(
       normalizeHrId(currentGating.assignedHrId) === viewerHrId,
   );
 
-  // One resolution, shared by both the decision hrefs and the lazy sales panel's base — a second
-  // copy is a second place for a viewer to be sent into the wrong shell.
-  const navigationMode = resolveNavigationMode(access);
-
   return {
     admittedAs,
     can: {
@@ -1418,13 +1414,17 @@ function buildViewer(
     // see the header of case-file-decision-bar.ts.
     decision: buildCaseFileDecisionBar({
       canDecide,
-      navigationMode,
+      navigationMode: resolveNavigationMode(access),
       requestId: request.id,
       step: currentGating,
     }),
     hrId: viewerHrId ? viewerHrId.toUpperCase() : null,
     role: access.role,
-    viewSalesBasePath: navigationMode === "admin" ? "/admin" : "/employee-portals",
+    // resolveNavigationMode is a pure, cheap function of `access` — the "Matched sales rows" panel
+    // needs the viewer's own shell base so its internal view-sales links do not cross into the other
+    // shell. Resolved on its own line rather than hoisted into a shared const, so the decision-bar
+    // argument above keeps the exact inline call its source-text pin matches on.
+    viewSalesBasePath: resolveNavigationMode(access) === "admin" ? "/admin" : "/employee-portals",
   };
 }
 
