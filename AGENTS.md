@@ -171,6 +171,16 @@ file holding the full account, under
 - **A green TEST run carries NO type signal.** `pnpm run test` strips types and never typechecks, so
   a passing suite says nothing about type errors — only the PR's `typecheck` job answers.
   `a-green-test-run-carries-no-type-signal-at-all`
+- **An exhaustive `Record` does NOT gate the build.** `next.config` sets
+  `typescript: { ignoreBuildErrors: true }`, so a `Record<SomeUnion, X>` missing a key compiles,
+  builds and DEPLOYS; only the PR's `typecheck` job sees it, and `strict: false` lets a PR merge on
+  a check taken before the union grew. On 2026-08-24 #2395 added a ninth role family 4 minutes after
+  #2396 added a `Record` over every family — neither CI run saw the other, and production served
+  `bandByFamily["sales"] === undefined` -> **NaN sort keys**, which do not throw: 63 real candidates
+  scattered at random through the screening queue and every band counter read 0. `main` was red 15
+  minutes. Back any such `Record` with a RUNTIME assertion in a registered test — iterate the union,
+  assert the looked-up value is real (`Number.isFinite`), and assert no key outside the union
+  appeared. `an-exhaustive-record-does-not-gate-the-build-here`
 
 **Worktrees** (see also §5)
 
