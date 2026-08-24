@@ -409,6 +409,15 @@ export type MarketingCaseFileViewer = {
   decision: MarketingCaseFileViewerDecision | null;
   hrId: string | null;
   role: PhoenixRole;
+  /**
+   * The shell base ("/admin" or "/employee-portals") for THIS viewer, resolved from
+   * resolveNavigationMode — the same source the decision bar uses. The "Matched sales rows" lazy
+   * panel (MarketingRequestSalesView) builds its own internal view-sales links off this base, so a
+   * hardcoded root would send half the chain into the wrong shell, exactly as the decision hrefs
+   * would. The Case File itself is shell-neutral (one URL for every notification recipient), which
+   * is why the base has to travel on the payload rather than be inferred from the current path.
+   */
+  viewSalesBasePath: string;
 };
 
 // ── lazy sections ────────────────────────────────────────────────────────────
