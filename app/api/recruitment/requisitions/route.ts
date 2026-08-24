@@ -49,6 +49,7 @@ export async function POST(request: Request) {
     const body = await readJsonObject(request);
     const input: CreateRequisitionInput = {
       vacancyId: num(body.vacancyId),
+      positionId: num(body.positionId),
       jobTitle: str(body.jobTitle),
       hiringManagerHrId: str(body.hiringManagerHrId),
       recruitmentOwnerHrId: str(body.recruitmentOwnerHrId),
@@ -61,13 +62,14 @@ export async function POST(request: Request) {
       recruitmentDeadline: str(body.recruitmentDeadline),
       notes: str(body.notes),
     };
-    // Either an open vacancy, OR a typed job title with a named hiring manager. The service
-    // enforces the same rule (it is the real boundary for anything that does not come through this
-    // route), but a service throw is mapped to a 500 by recruitmentApiError — and "something went
-    // wrong" is the wrong thing to tell someone who simply left a field empty.
+    // Either an open vacancy, OR a title source — a chosen catalogue position or a typed job title —
+    // with a named hiring manager. The service enforces the same rule (it is the real boundary for
+    // anything that does not come through this route), but a service throw is mapped to a 500 by
+    // recruitmentApiError — and "something went wrong" is the wrong thing to tell someone who simply
+    // left a field empty.
     if (!input.vacancyId) {
-      if (!input.jobTitle) {
-        return validationError("Type the job title, or choose an open vacancy.");
+      if (!input.jobTitle && !input.positionId) {
+        return validationError("Choose a position or type a job title, or pick an open vacancy.");
       }
       if (!input.hiringManagerHrId) {
         return validationError(

@@ -64,7 +64,7 @@ import {
   STALLED_AFTER_DAYS,
 } from "@/lib/recruitment/pipeline-metrics";
 import { isTerminalApplicationStage } from "@/lib/recruitment/types";
-import type { Candidate, Interview, InterviewType, RecruitmentActionKey, RecruitmentFile, Requisition } from "@/lib/recruitment/types";
+import type { Candidate, Interview, InterviewType, PositionCatalogueOption, RecruitmentActionKey, RecruitmentFile, Requisition } from "@/lib/recruitment/types";
 import {
   CANDIDATE_STATUS_NOTE_MAX_LENGTH,
   candidateStatuses,
@@ -120,6 +120,9 @@ type Props = {
   initialError: string | null;
   managers: ManagerOption[];
   openVacancies: VacancyReportRow[];
+  // The full catalogue of active positions (all 21) offered in the requisition Position dropdown —
+  // distinct from openVacancies, which is only the handful of positions with a vacant seat today.
+  positionCatalogue: PositionCatalogueOption[];
 };
 
 type TabKey = "pipeline" | "requisitions" | "candidates";
@@ -1044,6 +1047,7 @@ export function RecruitmentWorkspace(props: Props) {
           hiringManagers={props.hiringManagers}
           managers={props.managers}
           openVacancies={props.openVacancies}
+          positionCatalogue={props.positionCatalogue}
           pending={pending}
           requisitions={requisitions}
           run={run}
@@ -1704,6 +1708,7 @@ function RequisitionsTab({
   hiringManagers,
   managers,
   openVacancies,
+  positionCatalogue,
   pending,
   requisitions,
   run,
@@ -1714,6 +1719,7 @@ function RequisitionsTab({
   hiringManagers: HiringManagerOption[];
   managers: ManagerOption[];
   openVacancies: VacancyReportRow[];
+  positionCatalogue: PositionCatalogueOption[];
   pending: boolean;
   requisitions: Requisition[];
   run: (work: () => Promise<string | void>) => void;
@@ -1730,24 +1736,26 @@ function RequisitionsTab({
   const [priority, setPriority] = useState("normal");
   const [deadline, setDeadline] = useState("");
 
+  // The Position dropdown offers the FULL active catalogue (all 21), not only the ~3 positions that
+  // have a vacant seat. openVacancies is still what tells us, for the chosen position, whether real
+  // seats exist behind it — and that drives the Line -> vacant Area cascade when they do.
+  const matchingVacancies = posSel
+    ? openVacancies.filter((v) => String(v.positionId ?? "") === posSel)
+    : [];
+  const hasMatchingSeats = matchingVacancies.length > 0;
   // Rule 3a — cascade: Position -> Line -> vacant Area (each Position+Line+Area = one seat).
-  const positionsById = new Map<string, string>();
-  for (const v of openVacancies) {
-    if (v.positionId != null) positionsById.set(String(v.positionId), v.positionTitle ?? v.jobTitle ?? "Position");
-  }
   const linesById = new Map<string, string>();
-  for (const v of openVacancies) {
-    if (String(v.positionId ?? "") === posSel && v.lineId != null) linesById.set(String(v.lineId), v.lineName ?? "Line");
+  for (const v of matchingVacancies) {
+    if (v.lineId != null) linesById.set(String(v.lineId), v.lineName ?? "Line");
   }
-  const areaVacancies = openVacancies.filter(
-    (v) => String(v.positionId ?? "") === posSel && String(v.lineId ?? "") === lineSel,
-  );
+  const areaVacancies = matchingVacancies.filter((v) => String(v.lineId ?? "") === lineSel);
   const selectedVacancy = openVacancies.find((v) => String(v.id) === vacancyId) ?? null;
   const typedJobTitle = jobTitle.trim();
-  // Two ways in, and exactly two: an open seat, or a title with a manager attached to it. Until
-  // 2026-08-15 this read `!vacancyId`, which is why 18 of the 21 positions in the catalogue could
-  // never be recruited for — the service accepted them all along.
-  const canSubmit = vacancyId ? true : Boolean(typedJobTitle && hiringManagerHrId);
+  // Three ways in now, and the catalogue is what widened it from two: wrap an open seat, pick any of
+  // the 21 active positions, or type a free title. The last two both need a named hiring manager,
+  // because a seatless requisition is only visible to the manager (and owner) named on it. A vacancy
+  // still wins outright.
+  const canSubmit = vacancyId ? true : Boolean((posSel || typedJobTitle) && hiringManagerHrId);
 
   const requisitionActions: RequisitionActionsMap = {
     req_draft: [
@@ -1774,12 +1782,16 @@ function RequisitionsTab({
       {canCreate ? (
         <AdminTableShell
           title="Open a requisition"
-          description="Two ways in: wrap a seat that is already vacant on the organogram, or type any job title and name the manager who will hire for it. Either one is enough."
+          description="Three ways in: pick any active position from the catalogue, wrap a seat that is already vacant on the organogram, or type a free job title. A position or a typed title also needs the manager who will hire for it."
         >
           <div className="grid gap-3 p-5 sm:grid-cols-2 lg:grid-cols-3">
             <RequisitionField
-              hint="Only seats vacant on the organogram today."
-              label="Vacant seat (optional)"
+              hint={
+                hasMatchingSeats
+                  ? "This position has vacant seats — pick a line and area to wrap one."
+                  : "Every active position. Most have no vacant seat — that is fine."
+              }
+              label="Position"
             >
               <SearchableSelect
                 className={fieldClass}
@@ -1790,54 +1802,64 @@ function RequisitionsTab({
                   setVacancyId("");
                 }}
               >
-                <option value="">Choose a vacant seat…</option>
-                {Array.from(positionsById.entries()).map(([id, title]) => (
-                  <option key={id} value={id}>
-                    {title}
-                  </option>
-                ))}
-              </SearchableSelect>
-            </RequisitionField>
-            <RequisitionField label="Line">
-              <SearchableSelect
-                className={fieldClass}
-                value={lineSel}
-                disabled={!posSel}
-                onChange={(e) => {
-                  setLineSel(e.target.value);
-                  setVacancyId("");
-                }}
-              >
-                <option value="">Line…</option>
-                {Array.from(linesById.entries()).map(([id, name]) => (
-                  <option key={id} value={id}>
-                    {name}
-                  </option>
-                ))}
-              </SearchableSelect>
-            </RequisitionField>
-            <RequisitionField label="Vacant area">
-              <SearchableSelect className={fieldClass} value={vacancyId} disabled={!lineSel} onChange={(e) => setVacancyId(e.target.value)}>
-                <option value="">Vacant area…</option>
-                {areaVacancies.map((vacancy) => (
-                  <option key={vacancy.id} value={vacancy.id}>
-                    {vacancy.areaName ?? "Area"} · {vacancy.vacancyCode}
+                <option value="">Choose a position…</option>
+                {positionCatalogue.map((position) => (
+                  <option key={position.id} value={String(position.id)}>
+                    {position.title}
                   </option>
                 ))}
               </SearchableSelect>
             </RequisitionField>
             {/*
-              The cascade above only reaches seats that exist on the organogram — Medical Rep and
-              District Manager, 3 of the 21 positions in the catalogue. Everything else is hired
-              against a typed title, which the service has always accepted; this input is what makes
-              it reachable. A vacancy still wins where both are given.
-
-              It sits in the grid cell directly under the vacant-seat combobox, so an open dropdown
-              panel covers it completely. That is why it needs a standing label rather than a
-              placeholder: once the panel closes, the label is still there to say this is the other
-              way in, not a third field of the cascade above it.
+              Line and Vacant area appear only when the chosen position actually has open seats on
+              the organogram. For every other position there is nothing to cascade through, so the
+              two selects would be empty — the requisition is opened against the catalogue position
+              and its hiring manager instead (below).
             */}
-            <RequisitionField label="Or type a job title">
+            {hasMatchingSeats ? (
+              <>
+                <RequisitionField label="Line">
+                  <SearchableSelect
+                    className={fieldClass}
+                    value={lineSel}
+                    onChange={(e) => {
+                      setLineSel(e.target.value);
+                      setVacancyId("");
+                    }}
+                  >
+                    <option value="">Line…</option>
+                    {Array.from(linesById.entries()).map(([id, name]) => (
+                      <option key={id} value={id}>
+                        {name}
+                      </option>
+                    ))}
+                  </SearchableSelect>
+                </RequisitionField>
+                <RequisitionField hint="Wrapping a seat inherits its area and manager." label="Vacant area">
+                  <SearchableSelect className={fieldClass} value={vacancyId} disabled={!lineSel} onChange={(e) => setVacancyId(e.target.value)}>
+                    <option value="">Vacant area…</option>
+                    {areaVacancies.map((vacancy) => (
+                      <option key={vacancy.id} value={vacancy.id}>
+                        {vacancy.areaName ?? "Area"} · {vacancy.vacancyCode}
+                      </option>
+                    ))}
+                  </SearchableSelect>
+                </RequisitionField>
+              </>
+            ) : null}
+            {/*
+              The Position dropdown above now offers every active position, so almost nothing needs a
+              typed title any more — a role with no vacant seat is recruited against its catalogue
+              position plus a hiring manager, and the service tags it with a real position_id. This
+              free-text input remains only for a role that is not in the catalogue at all; it creates
+              a requisition with no position_id, as it always did. A wrapped vacancy wins over both.
+
+              It can sit in the grid cell directly under the Position combobox, so an open dropdown
+              panel may cover it. That is why it keeps a standing label rather than a placeholder:
+              once the panel closes, the label still says this is another way in, not a field of the
+              cascade above it.
+            */}
+            <RequisitionField hint="Only for a role that is not in the catalogue above." label="Or type a job title">
               <Input
                 placeholder="Any title — no vacant seat needed"
                 value={jobTitle}
@@ -1922,6 +1944,9 @@ function RequisitionsTab({
                   run(async () => {
                     await postJson("/api/recruitment/requisitions", {
                       vacancyId: vacancyId ? Number(vacancyId) : undefined,
+                      // Tags a seatless requisition with a real catalogue position. When a vacancy is
+                      // wrapped the server takes the seat's own position_id, so this is harmless then.
+                      positionId: posSel ? Number(posSel) : null,
                       jobTitle: typedJobTitle || undefined,
                       hiringManagerHrId: hiringManagerHrId || undefined,
                       recruitmentOwnerHrId: ownerHrId || undefined,

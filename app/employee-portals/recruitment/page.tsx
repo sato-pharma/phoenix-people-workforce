@@ -15,8 +15,8 @@ import { summarizeCandidatePool } from "@/lib/recruitment/candidate-stats";
 import { getRecruitmentDashboard, type RecruitmentDashboard } from "@/lib/recruitment/dashboard";
 import { isFileUploadEnabled } from "@/lib/recruitment/file-storage";
 import { listHiringManagerOptions, type HiringManagerOption } from "@/lib/recruitment/hiring-manager-notify";
-import { listOpenVacanciesForRequisition } from "@/lib/recruitment/requisitions";
-import type { Candidate } from "@/lib/recruitment/types";
+import { listOpenVacanciesForRequisition, listPositionCatalogue } from "@/lib/recruitment/requisitions";
+import type { Candidate, PositionCatalogueOption } from "@/lib/recruitment/types";
 import type { VacancyReportRow } from "@/lib/reports/vacancies";
 
 export const dynamic = "force-dynamic";
@@ -76,6 +76,7 @@ async function RecruitmentContent({ access }: { access: AccessContext }) {
 
   let dashboard: RecruitmentDashboard | null = null;
   let openVacancies: VacancyReportRow[] = [];
+  let positionCatalogue: PositionCatalogueOption[] = [];
   let managers: RecruitmentManagerOption[] = [];
   // Only the ~30 people whose job title says manager -- the list a candidate is actually SENT to.
   // `managers` above is the whole employee directory (it fills the requisition form), which is the
@@ -86,14 +87,16 @@ async function RecruitmentContent({ access }: { access: AccessContext }) {
   let initialError: string | null = null;
 
   try {
-    const [dashboardData, vacancies, managerOptions, employeeRows] = await Promise.all([
+    const [dashboardData, vacancies, catalogue, managerOptions, employeeRows] = await Promise.all([
       getRecruitmentDashboard(access),
       listOpenVacanciesForRequisition(),
+      listPositionCatalogue(),
       listHiringManagerOptions(),
       getEmployeeDirectoryRows(),
     ]);
     dashboard = dashboardData;
     openVacancies = vacancies;
+    positionCatalogue = catalogue;
     hiringManagers = managerOptions;
     managers = employeeRows
       .map((row) => ({ hrId: row.hrId, fullName: row.displayName }))
@@ -122,6 +125,7 @@ async function RecruitmentContent({ access }: { access: AccessContext }) {
       hiringManagers={hiringManagers}
       managers={managers}
       openVacancies={openVacancies}
+      positionCatalogue={positionCatalogue}
     />
   );
 }
