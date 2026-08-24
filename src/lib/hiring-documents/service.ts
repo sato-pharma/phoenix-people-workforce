@@ -1,4 +1,5 @@
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { isTerminalEmploymentStatus } from "@/lib/auth/session-lifecycle";
 import { canSeeHrScopedRecord, resolveEmployeeIdentityId, type AccessContext } from "@/lib/auth/permissions";
 import { writeRequiredAuditLog } from "@/lib/admin/audit";
 import { canonicalHrIdForDisplay } from "@/lib/hr-id";
@@ -66,7 +67,6 @@ type HiringDocumentEmployeeNoteDbRow = {
   notes: string | null;
 };
 
-const visibleEmployeeStatuses = new Set(["active", "on_leave", "resigned", "terminated", "inactive"]);
 const validDocumentStatuses = new Set<HiringDocumentStatus>(["pending", "submitted", "missing"]);
 const HIRING_DOCUMENTS_CACHE_TTL_MS = 30_000;
 let hiringDocumentsDashboardCache: { data: HiringDocumentsDashboardData; timestamp: number } | null = null;
@@ -84,12 +84,22 @@ function normalizeHrId(value: string | null | undefined) {
   return canonicalHrIdForDisplay(value);
 }
 
-function normalizeStatus(value: string | null | undefined) {
-  return cleanText(value)?.toLowerCase() ?? "active";
-}
-
+/**
+ * Whose documents this checklist tracks: the people Phoenix currently employs.
+ *
+ * This used to carry its own status list — {active, on_leave, resigned, terminated, inactive} —
+ * which put 44 resigned and 2 terminated people into the checklist alongside the 112 current staff,
+ * 158 rows in total. /hiring-pack meanwhile excluded only "resigned", so the two screens disagreed
+ * by 46 people about who works here. Owner decision 2026-08-24: both show current staff.
+ *
+ * Deliberately the shared predicate rather than a third hand-written list. An unset status counts
+ * as current, which is what isTerminalEmploymentStatus already says — a legacy row with no status
+ * must not silently vanish from a compliance checklist.
+ */
 function isVisibleEmployee(row: EmployeeDbRow) {
-  return Boolean(row.hr_id && cleanText(row.full_name) && visibleEmployeeStatuses.has(normalizeStatus(row.employment_status)));
+  return Boolean(
+    row.hr_id && cleanText(row.full_name) && !isTerminalEmploymentStatus(row.employment_status),
+  );
 }
 
 function isSchemaMissingMessage(message: string) {

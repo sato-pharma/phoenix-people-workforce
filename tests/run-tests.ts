@@ -929,6 +929,10 @@ import { runWorktreeExitGuardPreRemovalTests } from "./worktree-exit-guard-pre-r
 import { runRepoDoctorUnpushedCommitsTests } from "./repo-doctor-unpushed-commits.test.ts";
 
 import { runCvRereadAppliesWhatItReadsTests } from "./cv-reread-applies-what-it-reads.test.ts";
+import { runCandidateNameFromCvTests } from "./candidate-name-from-cv.test.ts";
+import { runCvLibraryTests } from "./cv-library.test.ts";
+import { runHiringEmployeeScopeTests } from "./hiring-employee-scope.test.ts";
+import { runRecruitmentPoolFilterTests } from "./recruitment-pool-filters.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -2551,6 +2555,32 @@ await runTest(
 await runTest(
   "CV re-read applies what it reads (every extraction persister also writes to the candidate)",
   runCvRereadAppliesWhatItReadsTests,
+);
+
+await runTest(
+  "candidate name from a CV (a low-confidence or institution-shaped extraction never becomes a "
+    + "candidate's name; the CV filename is preferred over the sender, and the NOT NULL column is "
+    + "always filled)",
+  runCandidateNameFromCvTests,
+);
+
+await runTest(
+  "CV library rows (the CV Database reads the candidate pool itself; Cairo received date, three "
+    + "medical-sales answers, and no null leaking onto a screen)",
+  runCvLibraryTests,
+);
+
+await runTest(
+  "hiring employee scope (Hiring Documents and Hiring Pack both mean current staff, and neither "
+    + "owns a second employment-status list)",
+  runHiringEmployeeScopeTests,
+);
+
+await runTest(
+  "recruitment pool filters (every candidate is reachable by exactly one Source option including "
+    + "the NULL-source one, the Received filter widens from now outwards, and the profile header is "
+    + "not sticky)",
+  runRecruitmentPoolFilterTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);

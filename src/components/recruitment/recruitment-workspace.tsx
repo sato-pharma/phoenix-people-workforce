@@ -2562,6 +2562,16 @@ const poolDateFilterLabels: Record<PoolDateFilter, string> = {
 };
 
 /**
+ * The order the options are OFFERED in, which is not the order they are declared in.
+ *
+ * The map above is sorted alphabetically by key, the way every other label map in this file is, and
+ * the dropdown used to render `Object.keys()` of it — so the recruiter read
+ * "All time / Last 30 days / Today / Last 7 days", with the two shortest windows either side of the
+ * longest. Widening from "now" outwards is the only order that reads as a scale.
+ */
+const poolDateFilterOrder: readonly PoolDateFilter[] = ["all", "today", "week", "month"];
+
+/**
  * Has the applicant sold pharmaceuticals before? Three answers, because the CV genuinely gives
  * three: yes, no, and it did not say. Measured in production 2026-08-15 — 81 / 80 / 66.
  */
@@ -2672,8 +2682,17 @@ function CandidatesTab({
 
   // Built from the data rather than a hardcoded list: the mailboxes and channels that feed this
   // pool change without the UI being told, and an option for a source nobody uses is noise.
+  //
+  // Keyed on the CHANNEL BADGE rather than on the raw column, so the filter offers exactly the
+  // words the Source column shows. Reading `candidate.source` directly and dropping the blanks --
+  // which is what this did — lost the one candidate whose source is NULL: the pool held 562 while
+  // Email (211) + WhatsApp (350) summed to 561, and no option in the list could reach that person.
+  // `candidateSourceChannel` already resolves NULL to "Manual" for the badge, so going through it
+  // makes the filter and the column answer from one function instead of disagreeing from two.
   const sourceOptions = Array.from(
-    new Set(candidates.map((candidate) => (candidate.source ?? "").trim()).filter(Boolean)),
+    new Set(
+      candidates.map((candidate) => candidateSourceChannel(candidate.source, candidate.sourceContext).label),
+    ),
   ).sort((left, right) => left.localeCompare(right));
 
   const duplicateCount = candidates.filter((candidate) => candidate.possibleDuplicate).length;
@@ -2708,7 +2727,7 @@ function CandidatesTab({
         return false;
       }
       if (statusFilter && normalizeCandidateStatus(c.status) !== statusFilter) return false;
-      if (sourceFilter && (c.source ?? "").trim() !== sourceFilter) return false;
+      if (sourceFilter && candidateSourceChannel(c.source, c.sourceContext).label !== sourceFilter) return false;
       if (duplicatesOnly && !c.possibleDuplicate) return false;
       // Three-way, not a checkbox: null is a real and common answer here (66 rows), and it means
       // "the CV did not say", which is not the same as "no". Folding unknown into either bucket
@@ -2821,9 +2840,12 @@ function CandidatesTab({
   /**
    * Is the way back off screen?
    *
-   * The sticky header only helps once the panel is in view. This watches it, and the moment it is
+   * The panel's own header only helps while it is in view. This watches it, and the moment it is
    * not on screen — the recruiter scrolled back up into the table, or the scroll above never
    * happened — a fixed pill appears so there is always one click back to the row they pressed.
+   *
+   * This is the ONLY way back once the panel is scrolled past, and it went unseen for as long as
+   * that header was sticky: a sticky header never stops intersecting, so this observer never fired.
    */
   useEffect(() => {
     const header = profileHeaderRef.current;
@@ -3027,7 +3049,7 @@ function CandidatesTab({
                 value={dateFilter}
                 onChange={(e) => setDateFilter(e.target.value as PoolDateFilter)}
               >
-                {(Object.keys(poolDateFilterLabels) as PoolDateFilter[]).map((key) => (
+                {poolDateFilterOrder.map((key) => (
                   <option key={key} value={key}>
                     {poolDateFilterLabels[key]}
                   </option>
@@ -3074,7 +3096,7 @@ function CandidatesTab({
                   <option value="">Any source</option>
                   {sourceOptions.map((source) => (
                     <option key={source} value={source}>
-                      {humanizeRecruitmentTerm(source)}
+                      {source}
                     </option>
                   ))}
                 </select>
@@ -3450,13 +3472,20 @@ function CandidatesTab({
       {profile ? (
         <div ref={profilePanelRef} className="space-y-3 border border-slate-200 p-4">
           {/*
-           * Sticky, because this panel opens below a 555-row table and is itself long enough to
-           * scroll. Without a header that stays put, "go back to the pool" means scrolling up
-           * through the whole profile to find the Close button — the exact complaint this answers.
-           * It carries the way back on the left and the way out on the right.
+           * NOT sticky, deliberately. It was, and it sliced the global header in half: the app's own
+           * topbar is `sticky top-0 z-20` (src/components/layout/topbar.tsx), this was `sticky top-0
+           * z-20` too, and with the same offset and the same stacking level the one later in the DOM
+           * wins — so the search box and the role chip were painted over.
+           *
+           * Pinning this lower and pushing it down by the topbar's height would mean hard-coding
+           * 81px/89px, a number nothing in the design tokens owns. There is no need: the floating
+           * pill below already does this job, and BETTER, because it is anchored to the viewport
+           * rather than to the top of a panel. It just never appeared, because it is shown when this
+           * header scrolls out of view and a sticky header never does. Removing the sticky fixes the
+           * overlap and switches on the fallback that was written for exactly this.
            */}
           <div
-            className="sticky top-0 z-20 -mx-4 -mt-4 mb-1 flex items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-2.5"
+            className="-mx-4 -mt-4 mb-1 flex items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-2.5"
             ref={profileHeaderRef}
           >
             <button

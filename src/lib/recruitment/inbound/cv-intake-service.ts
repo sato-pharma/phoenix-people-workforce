@@ -437,7 +437,15 @@ export async function ingestInboundCv(input: InboundCvIntakeInput): Promise<Inbo
     // The address and the number are still the sender's own and stay that way; only the name comes
     // from the document, and only when the extraction actually produced one — a failed or blank
     // read falls straight back to the sender, exactly as before.
-    const cvIdentity = candidateIdentityFromCvFields(extraction, input.candidate.fullName);
+    //
+    // The attachment's filename is handed over as the name fallback: it is the applicant's, where
+    // the sender may be a forwarder. resolveCandidateFullNameFromCv only reaches for it when the
+    // extracted name cannot be trusted — unsure, or an institution rather than a person.
+    const cvIdentity = candidateIdentityFromCvFields(
+      extraction,
+      input.candidate.fullName,
+      input.attachment.fileName,
+    );
     const identity =
       input.identitySource === "cv"
         ? cvIdentity
