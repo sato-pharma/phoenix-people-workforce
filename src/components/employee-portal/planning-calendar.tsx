@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import {
   ChevronLeft,
   ChevronRight,
+  Download,
   Search,
   Sparkles,
   TriangleAlert,
@@ -198,8 +199,13 @@ type PlanningCalendarDetailRow = {
 
 export function PlanningCalendar({
   initialWorkspace,
+  canExport = false,
 }: {
   initialWorkspace: PlanningCalendarWorkspace;
+  // Renders the "Export XLSX" button when true. Computed server-side per page from the
+  // viewer's role (SFE Manager / Super Admin only); the download route enforces the same
+  // check, so this prop only governs button visibility, never access.
+  canExport?: boolean;
 }) {
   const [workspace, setWorkspace] = useState(initialWorkspace);
   const [selectedDate, setSelectedDate] = useState(todayIso());
@@ -442,6 +448,16 @@ export function PlanningCalendar({
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
+              {canExport ? (
+                <a
+                  className="inline-flex h-9 items-center gap-2 whitespace-nowrap rounded-sm bg-white/10 px-3.5 text-xs font-black uppercase tracking-[0.1em] text-white/80 ring-1 ring-white/20 transition hover:bg-white/20"
+                  href={`/api/weekly-plans/calendar/export?year=${year}&month=${month}`}
+                  title="Download the detailed plans per user for this month as a styled Excel workbook"
+                >
+                  <Download className="h-3.5 w-3.5" />
+                  Export XLSX
+                </a>
+              ) : null}
               <div className="inline-flex rounded-sm border border-white/20 bg-white/10 p-0.5">
                 {(["month", "week", "list"] as const).map((mode) => (
                   <button

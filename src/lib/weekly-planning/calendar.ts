@@ -234,3 +234,38 @@ export function sameLineBookingWarning(input: {
   const repName = cleanText(input.medicalRepName) || matches[0]?.medicalRepName || "this Medical Rep";
   return `${employeeNames.join(", ")} already planned with ${repName} on this date. This is a warning only; it does not block submission.`;
 }
+
+// Human-readable label for a plan's approval status — the same wording the
+// on-screen planning calendar shows on its chips (planning-calendar.tsx keeps a
+// private copy for rendering; this is the exportable source of truth reused by
+// the XLSX export). Unknown/blank statuses fall back to the raw value.
+const planStatusLabels: Record<string, string> = {
+  ceo_approved: "CEO approved",
+  final_approved: "Final approved",
+  hr_acknowledged: "HR acknowledged",
+  manager_approved: "Manager approved",
+  submitted: "Submitted",
+};
+
+export function planStatusLabel(status: EmployeePlanStatus | string | null | undefined): string {
+  const key = cleanText(status);
+  return planStatusLabels[key] ?? key;
+}
+
+export function planKindLabel(kind: EmployeePlanKind | string | null | undefined): string {
+  const key = cleanText(kind).toLowerCase();
+  if (key === "weekly") return "Weekly";
+  if (key === "monthly") return "Monthly";
+  return cleanText(kind);
+}
+
+// Who may export the shared Planning Calendar to XLSX. Owner decision: SFE Manager
+// and Super Admin ONLY — deliberately narrower than who can VIEW the calendar (a
+// shared, company-wide view many roles open) and narrower than the generic
+// weekly_plans:"export" permission action, which today also covers CEO and Finance
+// Manager. The server export route enforces this exact check; the calendar pages
+// use it only to decide whether to render the Export button (button visibility is
+// UX, the route is the boundary).
+export function canExportPlanningCalendar(role: string | null | undefined): boolean {
+  return role === "Super Admin" || role === "SFE Manager";
+}

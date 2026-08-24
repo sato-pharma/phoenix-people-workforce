@@ -63,6 +63,10 @@ export type AuditEntityType =
   | "payroll_batch"
   | "permission_override"
   | "pharmacy_search_discovery"
+  // Who pulled the shared Planning Calendar to XLSX, for which month. Gated to SFE
+  // Manager / Super Admin; the month is the entity id so a row says WHICH period
+  // was handed over. audit_logs has no CHECK on entity_type, so this needs no migration.
+  | "planning_calendar_export"
   | "private_calendar_data_dispute"
   | "probation_case"
   | "probation_config"
