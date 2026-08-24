@@ -160,6 +160,7 @@ import { runRecruitmentIntakeFinalizePatchTests } from "./recruitment-intake-fin
 import { runCandidateRoleRegionTests } from "./recruitment-candidate-role-region.test.ts";
 import { runCandidateScreeningFactsTests } from "./recruitment-candidate-screening-facts.test.ts";
 import { runCvFileChoiceTests } from "./recruitment-cv-file-choice.test.ts";
+import { runRecruitmentEmployerNameTests } from "./recruitment-employer-name.test.ts";
 import { runRecruitmentScreeningOrderTests } from "./recruitment-screening-order.test.ts";
 import { runRecruitmentEmailIntakeTests } from "./recruitment-email-intake.test.ts";
 import { runRecruitmentWhatsAppIntakeTests } from "./recruitment-whatsapp-intake.test.ts";
@@ -1203,6 +1204,10 @@ await runTest(
 await runTest(
   "recruitment screening order (the queue meets field-force candidates first; nothing is hidden or auto-rejected)",
   runRecruitmentScreeningOrderTests,
+);
+await runTest(
+  "recruitment employer name (the Employer cell shows a company or nothing, never wreckage)",
+  runRecruitmentEmployerNameTests,
 );
 await runTest("recruitment whatsapp intake", runRecruitmentWhatsAppIntakeTests);
 await runTest(

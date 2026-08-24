@@ -36,6 +36,7 @@
 
 import { candidateRegionForGovernorate, candidateRegionLabels } from "@/lib/recruitment/candidate-region";
 import { candidateRoleFamilyOrNull, type CandidateRoleFamily } from "@/lib/recruitment/candidate-role-family";
+import { cleanEmployerName } from "@/lib/recruitment/employer-name";
 
 /**
  * One screening fact, plus whether it is safe to read as settled.
@@ -130,7 +131,9 @@ export function candidateScreeningFacts(candidate: ScreeningFactsCandidateRow): 
   const unconfirmedPharma = typeof cv.hasMedicalRepExperience === "boolean" ? cv.hasMedicalRepExperience : null;
 
   return {
-    employer: pick(text(candidate.currentEmployer), text(cv.currentEmployer)),
+    // Both sides go through the same guard. A junk value typed into the column is still junk on
+    // the card: the confirmed/hedged split says how SURE we are of a fact, not whether it is one.
+    employer: pick(cleanEmployerName(candidate.currentEmployer), cleanEmployerName(cv.currentEmployer)),
     governorate,
     pharmaRep: pick<boolean>(confirmedPharma, unconfirmedPharma),
     region: regionCode
