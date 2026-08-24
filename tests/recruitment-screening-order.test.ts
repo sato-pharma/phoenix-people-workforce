@@ -45,6 +45,7 @@ export function runRecruitmentScreeningOrderTests() {
   assert.equal(screeningBandForFamily("area_regional_manager"), "field_force");
   assert.equal(screeningBandForFamily("pharmacist"), "pharma_adjacent");
   assert.equal(screeningBandForFamily("product_manager"), "pharma_adjacent");
+  assert.equal(screeningBandForFamily("sales"), "sales");
   assert.equal(screeningBandForFamily("human_resources"), "unrelated");
   assert.equal(screeningBandForFamily("finance"), "unrelated");
 
@@ -99,6 +100,37 @@ export function runRecruitmentScreeningOrderTests() {
     orderForScreening(withNoCv, describe).map((r) => r.name),
     ["rep", "unreadable", "accountant", "certificate"],
   );
+
+  // --- SALES SITS BETWEEN THE PHARMA BANDS AND `unknown`, and never inside either. Landing it in
+  // --- `pharma_adjacent` would tell the screener these people are in pharma when nothing on the CV
+  // --- says so; landing it in `unrelated` would file a Sales Representative beside an accountant
+  // --- when selling IS the job. This band arrived on main in #2395 with no entry in the map at
+  // --- all, which made every sales candidate's sort key NaN and every band count read 0.
+  const salesPlacement = [
+    row("accountant", { family: "finance" }),
+    row("unreadable"),
+    row("salesman", { family: "sales" }),
+    row("pharmacist", { family: "pharmacist" }),
+    row("rep", { family: "medical_rep" }),
+  ];
+  assert.deepEqual(
+    orderForScreening(salesPlacement, describe).map((r) => r.name),
+    ["rep", "pharmacist", "salesman", "unreadable", "accountant"],
+  );
+
+  // --- Every band's rank is a real number. An unmapped family makes `bandRank[undefined]` NaN, and
+  // --- a NaN comparator does not throw — it silently scatters those candidates through the queue,
+  // --- which is precisely how #2395 shipped unnoticed.
+  for (const family of candidateRoleFamilies) {
+    const key = screeningSortKey(row("x", { family }));
+    assert.ok(Number.isFinite(key[0]), `${family} produced a non-finite band rank (${String(key[0])}) — it is unmapped`);
+  }
+
+  // --- ...and countByBand must not grow an "undefined" key, which is what it did on main: every
+  // --- real band read 0 and the header chip would have shown the screener nothing at all.
+  const salesCount = countByBand([row("s", { family: "sales" })], describe);
+  assert.deepEqual(Object.keys(salesCount).sort(), [...screeningBands].sort(), "countByBand grew a key that is not a band");
+  assert.equal(salesCount.sales, 1);
 
   // --- Band order, best first.
   const mixed = [
@@ -185,16 +217,17 @@ export function runRecruitmentScreeningOrderTests() {
   assert.deepEqual(countByBand(mixed, describe), {
     field_force: 1,
     pharma_adjacent: 1,
+    sales: 0,
     unknown: 1,
     unrelated: 1,
     no_cv: 0,
   });
-  assert.deepEqual(countByBand([], describe), { field_force: 0, pharma_adjacent: 0, unknown: 0, unrelated: 0, no_cv: 0 });
+  assert.deepEqual(countByBand([], describe), { field_force: 0, pharma_adjacent: 0, sales: 0, unknown: 0, unrelated: 0, no_cv: 0 });
 
   // --- The header chip must count no-CV rows in their OWN band, or the screener is told 67 people
   // --- need reading when 40 do.
   assert.deepEqual(
     countByBand([row("a", { family: "medical_rep", notACv: true }), row("b", { family: "medical_rep" })], describe),
-    { field_force: 1, pharma_adjacent: 0, unknown: 0, unrelated: 0, no_cv: 1 },
+    { field_force: 1, pharma_adjacent: 0, sales: 0, unknown: 0, unrelated: 0, no_cv: 1 },
   );
 }

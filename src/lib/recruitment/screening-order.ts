@@ -25,6 +25,12 @@ import { isNotACv } from "@/lib/recruitment/not-a-cv";
  * speak for, so only a human reading the CV can settle it. Burying those behind 137 accountants
  * would mean the one group that genuinely needs a person is the group nobody ever reaches.
  *
+ * `sales` sits between the pharma bands and `unknown`, and it exists because neither neighbour
+ * could hold it honestly. `pharma_adjacent` would claim these people are in pharma, which nothing
+ * on their CV says; `unrelated` would file a Sales Representative beside an accountant, when
+ * selling IS the job Phoenix is hiring for and only the industry differs. Its own band lets the
+ * screener see that distinction instead of being told a wrong sentence about it.
+ *
  * `no_cv` is last, and is the band that is NOT about the candidate at all. The extractor already
  * read that file and answered "this is not a CV" — a photographed certificate, a diploma, an
  * experience letter. That is a settled fact, so those rows do not belong in `unknown`, which
@@ -33,13 +39,14 @@ import { isNotACv } from "@/lib/recruitment/not-a-cv";
  * needed no human at all, and each one cost a full open-read-and-decide before the screener
  * could see there was nothing to read.
  */
-export const screeningBands = ["field_force", "pharma_adjacent", "unknown", "unrelated", "no_cv"] as const;
+export const screeningBands = ["field_force", "pharma_adjacent", "sales", "unknown", "unrelated", "no_cv"] as const;
 
 export type ScreeningBand = (typeof screeningBands)[number];
 
 export const screeningBandLabels: Record<ScreeningBand, string> = {
   field_force: "Field force",
   pharma_adjacent: "Pharma, other roles",
+  sales: "Sales, other industries",
   unknown: "Needs a read",
   unrelated: "Other fields",
   no_cv: "No CV to read",
@@ -49,6 +56,7 @@ export const screeningBandLabels: Record<ScreeningBand, string> = {
 export const screeningBandDescriptions: Record<ScreeningBand, string> = {
   field_force: "Medical reps, district managers, area and regional managers — the jobs Phoenix hires into the field.",
   pharma_adjacent: "Pharmacists and product managers — pharma people, but not a field-force job.",
+  sales: "Sales and business development, with nothing on the CV saying pharma. The job is the same shape; the industry is not.",
   unknown: "No job title could be read off the CV, so only a person can judge these.",
   unrelated: "Their title says a different industry — HR, finance, engineering and so on.",
   no_cv: "The file they sent is a certificate or a letter, not a CV. There is nothing here to read.",
@@ -63,6 +71,7 @@ const bandByFamily: Record<CandidateRoleFamily, ScreeningBand> = {
   other: "unrelated",
   pharmacist: "pharma_adjacent",
   product_manager: "pharma_adjacent",
+  sales: "sales",
 };
 
 /**
@@ -77,9 +86,10 @@ export function screeningBandForFamily(family: CandidateRoleFamily | null): Scre
 const bandRank: Record<ScreeningBand, number> = {
   field_force: 0,
   pharma_adjacent: 1,
-  unknown: 2,
-  unrelated: 3,
-  no_cv: 4,
+  sales: 2,
+  unknown: 3,
+  unrelated: 4,
+  no_cv: 5,
 };
 
 export type ScreeningOrderInput = {
@@ -146,7 +156,7 @@ export function orderForScreening<T>(items: readonly T[], describe: (item: T) =>
 
 /** How many are in each band, for the one line that tells the screener what they are about to meet. */
 export function countByBand<T>(items: readonly T[], describe: (item: T) => ScreeningOrderInput): Record<ScreeningBand, number> {
-  const counts: Record<ScreeningBand, number> = { field_force: 0, pharma_adjacent: 0, unknown: 0, unrelated: 0, no_cv: 0 };
+  const counts: Record<ScreeningBand, number> = { field_force: 0, pharma_adjacent: 0, sales: 0, unknown: 0, unrelated: 0, no_cv: 0 };
   for (const item of items) counts[screeningBand(describe(item))] += 1;
   return counts;
 }

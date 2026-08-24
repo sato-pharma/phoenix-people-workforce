@@ -51,6 +51,7 @@ type LoadedCandidate = { profile: CandidateProfile; extraction: StoredCvExtracti
 const bandChipClass: Record<ReturnType<typeof screeningBand>, string> = {
   field_force: "bg-emerald-500/15 text-emerald-300",
   pharma_adjacent: "bg-sky-500/15 text-sky-300",
+  sales: "bg-indigo-500/15 text-indigo-300",
   unknown: "bg-amber-500/15 text-amber-300",
   unrelated: "bg-slate-500/20 text-slate-300",
   no_cv: "bg-slate-500/20 text-slate-400",
