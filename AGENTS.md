@@ -123,6 +123,10 @@ file holding the full account, under
   verdict — name the later commit with `git log <squashSHA>..origin/main -- <files>` before calling
   anything stranded. `not-remotes-flips-when-remote-refs-are-pruned` ·
   `repo-doctor-no-origin-ref-is-usually-squash-residue`
+- **`git` "Authentication failed" can be the credential HELPER (GCM) going OOM, not a bad token.**
+  Git Credential Manager dies at `internal/cpu.doinit` and git then retries ANONYMOUSLY, so the token
+  is never presented — the failure is memory pressure, not auth. Look UP the output for a Go panic;
+  change NO credentials. `git-auth-failed-can-be-the-credential-helper-going-oom`
 
 **CI and PRs**
 
@@ -158,6 +162,9 @@ file holding the full account, under
 - **`parseDiagnostics` is SYNTAX-ONLY — it cannot see a typecheck error.**
   `parse-diagnostics-cannot-see-a-typecheck-error`
 - **`setState` inside `useEffect` is a lint ERROR here.** `set-state-in-effect-is-a-lint-error-here`
+- **A green TEST run carries NO type signal.** `pnpm run test` strips types and never typechecks, so
+  a passing suite says nothing about type errors — only the PR's `typecheck` job answers.
+  `a-green-test-run-carries-no-type-signal-at-all`
 
 **Worktrees** (see also §5)
 
