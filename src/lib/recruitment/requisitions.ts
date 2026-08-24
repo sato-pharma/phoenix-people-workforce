@@ -29,6 +29,7 @@ import {
   requisitionPriorities,
   type CreateRequisitionInput,
   type HeadcountType,
+  type PositionCatalogueOption,
   type RecruitmentActionKey,
   type Requisition,
   type RequisitionPriority,
@@ -103,6 +104,24 @@ export async function listOpenVacanciesForRequisition(): Promise<VacancyReportRo
   return open.filter((vacancy) => !wrapped.has(vacancy.id));
 }
 
+// The full catalogue of active positions — every role that can be recruited for, not only the ~3
+// that happen to have a vacant seat on the organogram today. getVacancyReport() only ever surfaces
+// titles that appear in vacancy rows, so this is a separate read against `positions` itself.
+// Titles are returned exactly as stored (some are awkwardly cased, e.g. "Ceo", "Qppv") — the caller
+// shows them verbatim.
+export async function listPositionCatalogue(): Promise<PositionCatalogueOption[]> {
+  const supabase = recruitmentDb();
+  const { data, error } = await supabase
+    .from("positions")
+    .select("id,title")
+    .eq("is_active", true)
+    .order("title");
+  if (error) throw error;
+  return ((data ?? []) as Array<{ id: unknown; title: unknown }>)
+    .map((row) => ({ id: numberOrNull(row.id), title: textOrNull(row.title) }))
+    .filter((row): row is PositionCatalogueOption => row.id !== null && row.title !== null);
+}
+
 function normalizeHeadcountType(value: unknown, fallback: HeadcountType): HeadcountType {
   const text = textOrNull(value);
   return text && (headcountTypes as readonly string[]).includes(text) ? (text as HeadcountType) : fallback;
@@ -144,8 +163,9 @@ export async function createRequisition(
   // A requisition with no vacancy behind it has no seat to inherit anything from, and two of those
   // inherited values are load-bearing:
   //
-  //   • job_title is the only name the requisition is ever read by. Without a vacancy it falls back
-  //     to "" (see the payload below), which puts a nameless row on everyone's screen.
+  //   • job_title is the only name the requisition is ever read by. Without a vacancy it comes from a
+  //     typed title or a chosen catalogue position's title; with neither it falls back to "" (see the
+  //     payload below), which puts a nameless row on everyone's screen.
   //   • hiring_manager_hr_id is what makes the requisition VISIBLE. canSeeRequisition
   //     (src/lib/recruitment/access.ts) scopes on hiringManagerHrId and recruitmentOwnerHrId and
   //     never on line or area — so a seatless requisition with no manager is invisible to everyone
@@ -154,12 +174,29 @@ export async function createRequisition(
   //
   // Enforced here and not only in the form because the form is not the boundary: the POST route
   // takes both fields from the request body.
+  let resolvedPositionTitle: string | null = null;
   if (!vacancy) {
-    if (!textOrNull(input.jobTitle)) {
-      throw new Error("Type the job title, or choose an open vacancy.");
-    }
     if (!textOrNull(input.hiringManagerHrId)) {
       throw new Error("Choose the hiring manager — with no vacancy behind it, nobody else can see this requisition.");
+    }
+    // A catalogue position gives a seatless requisition its name and a real position_id. Resolve it
+    // against `positions` so a bogus id cannot slip a phantom position onto the row, and use its
+    // title as the job-title fallback. This does NOT touch the organogram — position_id only tags
+    // the role; the seat model (vacancy_id) is a separate thing left untouched.
+    const positionId = numberOrNull(input.positionId);
+    if (positionId) {
+      const { data: position, error: positionError } = await supabase
+        .from("positions")
+        .select("id,title")
+        .eq("id", positionId)
+        .eq("is_active", true)
+        .maybeSingle();
+      if (positionError) throw positionError;
+      if (!position) throw new Error("Selected position was not found.");
+      resolvedPositionTitle = textOrNull((position as { title?: unknown }).title);
+    }
+    if (!textOrNull(input.jobTitle) && !resolvedPositionTitle) {
+      throw new Error("Choose a position or type a job title, or pick an open vacancy.");
     }
   }
 
@@ -175,8 +212,8 @@ export async function createRequisition(
     line_id: vacancy?.lineId ?? null,
     area_id: vacancy?.areaId ?? null,
     team_id: vacancy?.teamId ?? null,
-    position_id: vacancy?.positionId ?? null,
-    job_title: textOrNull(input.jobTitle) ?? vacancy?.jobTitle ?? vacancy?.positionTitle ?? "",
+    position_id: vacancy?.positionId ?? numberOrNull(input.positionId) ?? null,
+    job_title: textOrNull(input.jobTitle) ?? vacancy?.jobTitle ?? vacancy?.positionTitle ?? resolvedPositionTitle ?? "",
     hiring_manager_hr_id: textOrNull(input.hiringManagerHrId) ?? vacancy?.managerHrId ?? null,
     recruitment_owner_hr_id: textOrNull(input.recruitmentOwnerHrId) ?? access.hrId ?? null,
     grade: textOrNull(input.grade),

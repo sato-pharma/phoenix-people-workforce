@@ -369,8 +369,16 @@ export type RecruitmentFile = {
 // Service inputs.
 // ---------------------------------------------------------------------------
 
+// One active position from the `positions` catalogue, offered in the requisition create form's
+// Position dropdown. `title` is stored as-is (some are awkwardly cased, e.g. "Ceo", "Qppv") and is
+// shown verbatim — never re-cased.
+export type PositionCatalogueOption = { id: number; title: string };
+
 export type CreateRequisitionInput = {
   vacancyId?: number | null;
+  // A catalogue position picked in the create form. It tags the requisition with a real position_id
+  // even when no organogram seat (vacancy) sits behind it; it does NOT create or modify any seat.
+  positionId?: number | null;
   jobTitle?: string | null;
   hiringManagerHrId?: string | null;
   recruitmentOwnerHrId?: string | null;

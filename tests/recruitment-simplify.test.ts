@@ -46,16 +46,17 @@ function fakeCandidate(overrides: Partial<Candidate> = {}): Candidate {
 }
 
 export async function runRecruitmentSimplifyTests() {
-  // ── 1 · A requisition can carry a typed job title with no seat behind it ────
+  // ── 1 · A requisition can carry a title with no seat behind it ──────────────
   //
-  // The service already accepted a free title; one line of UI (`disabled={pending || !vacancyId}`)
-  // was the entire blocker, and it is why 18 of the 21 positions in the catalogue could never be
-  // recruited for.
+  // The service always accepted a free title, and now the create form's Position dropdown offers the
+  // full active catalogue too — so a role with no vacant seat is opened against its catalogue position
+  // (posSel) or a typed title, either one paired with a named hiring manager. The vacancy alone is
+  // still enough on its own.
   const workspace = read("src/components/recruitment/recruitment-workspace.tsx");
   assert.match(
     workspace,
-    /const canSubmit = vacancyId \? true : Boolean\(typedJobTitle && hiringManagerHrId\)/,
-    "either an open vacancy OR a typed title with a named manager must satisfy the form — never the vacancy alone",
+    /const canSubmit = vacancyId \? true : Boolean\(\(posSel \|\| typedJobTitle\) && hiringManagerHrId\)/,
+    "an open vacancy OR a chosen catalogue position OR a typed title (the last two with a named manager) must satisfy the form — never the vacancy alone",
   );
 
   // The hiring manager is not optional on a free-title requisition, and this is the reason:

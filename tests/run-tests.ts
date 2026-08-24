@@ -144,6 +144,7 @@ import { runRecruitmentCandidateMergeTests } from "./recruitment-candidate-merge
 import { runRecruitmentPipelineMetricsTests } from "./recruitment-pipeline-metrics.test.ts";
 import { runRecruitmentHiringManagerPushTests } from "./recruitment-hiring-manager-push.test.ts";
 import { runRecruitmentSimplifyTests } from "./recruitment-simplify.test.ts";
+import { runRecruitmentRequisitionPositionCatalogueTests } from "./recruitment-requisition-position-catalogue.test.ts";
 import { runRecruitmentManagerInboxTests } from "./recruitment-manager-inbox.test.ts";
 import { runRecruitmentCandidatePoolTableTests } from "./recruitment-candidate-pool-table.test.ts";
 import { runRecruitmentLabelTests } from "./recruitment-labels.test.ts";
@@ -1144,6 +1145,10 @@ await runTest(
 await runTest(
   "recruitment simplify (a requisition with no seat behind it, a fixed status with a note, the 405 that killed every status write, and a pool that counts CVs)",
   runRecruitmentSimplifyTests,
+);
+await runTest(
+  "recruitment requisition position catalogue (the full active catalogue is pickable; a seatless requisition carries a real position_id and borrows the position title, and still needs a hiring manager)",
+  runRecruitmentRequisitionPositionCatalogueTests,
 );
 await runTest(
   "recruitment manager inbox (a manager sees and answers what was pushed to them, the nationality flag, the pharma-experience filter, and one daily CV digest instead of 628 alerts)",
