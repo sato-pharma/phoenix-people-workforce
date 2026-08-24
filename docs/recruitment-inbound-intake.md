@@ -180,7 +180,7 @@ data-processing terms / zero-retention posture meet the org's requirements befor
 | Var | Purpose | Default |
 | --- | --- | --- |
 | `RECRUITMENT_EMAIL_INBOXES_JSON` | IMAP mailboxes (array) — add `careers@` alongside `hr@` | unset = email intake off |
-| `RECRUITMENT_EMAIL_IMPORT_SENDERS` | addresses whose mail is a bulk forward-import | unset |
+| `RECRUITMENT_EMAIL_IMPORT_SENDERS` | addresses whose mail is a forward-import, not an application — an entry beginning `@` matches the whole domain (`@satopharma.com` covers every colleague). Put **senders** here, never a mailbox the app polls | unset |
 | `RECRUITMENT_EMAIL_BACKFILL_DAYS` | first-run look-back per folder | 7 |
 | `RECRUITMENT_EMAIL_MAX_MESSAGES_PER_POLL` | UIDs enqueued per folder per poll | 40 |
 | `WHATSAPP_PHONE_NUMBER_IDS` | comma-separated intake lines to health-check | falls back to `WHATSAPP_PHONE_NUMBER_ID` |
