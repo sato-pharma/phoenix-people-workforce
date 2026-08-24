@@ -1520,7 +1520,7 @@ await runTest(
   runMarketingEvidencePhotoStorageTests,
 );
 await runTest(
-  "marketing field-capture backlog (the daily nudge reuses the badge's own rule so it can never chase a proven customer; one real visit clears every link; the rep who owns it is chased before their manager; a customer with neither is reported, not dropped; one rep is one bucket whatever the hr_id casing; and 51 recipients never means email)",
+  "marketing field-capture backlog (the daily nudge reuses the badge's own rule so it can never chase a proven customer; one real visit clears every link; the rep who owns it is chased before their manager; a customer with neither is reported, not dropped; one rep is one bucket whatever the hr_id casing; a list holding both kinds is described as a split rather than claimed whole as his; and 51 recipients never means email)",
   runMarketingFieldCaptureBacklogTests,
 );
 await runTest("support requests notifications", runSupportRequestsNotificationsTests);
