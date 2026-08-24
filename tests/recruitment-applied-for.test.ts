@@ -291,7 +291,7 @@ export async function runRecruitmentAppliedForTests() {
   // currentJobTitle` — is a different animal: Postgres pulls the keys out and ships scalars, so the
   // 1.1 MB never crosses the Atlantic. Since 2026-08-24 the pool makes a second, thin visit for the
   // CV reader's hedged answers, and counting the bare substring could not tell the two apart.
-  const readsTheBlobWhole = (select) => /[,"]extracted_fields[,"]/.test(select);
+  const readsTheBlobWhole = (select: string) => /[,"]extracted_fields[,"]/.test(select);
   assert.equal(
     extractionSelects.filter(readsTheBlobWhole).length,
     1,
