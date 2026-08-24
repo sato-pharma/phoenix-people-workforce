@@ -243,10 +243,20 @@ export async function runRecruitmentCandidatePoolTableTests() {
   // the one fact that decides who a CV goes to was the only starved column, and every longer role
   // read "Personnel and Recruitment Speci…". The flexible slot belongs to it.
   const colgroup = workspace.slice(workspace.indexOf("<colgroup>"), workspace.indexOf("</colgroup>"));
-  assert.match(
-    colgroup,
-    /<col className="w-\[280px\]" \/>\s*<col \/>/,
+  // The shape is the invariant; the pin's exact number is re-measured whenever the table is
+  // re-cut (280px on 2026-08-21, 332px on 2026-08-24 once the clipped cells were counted per
+  // column rather than assumed). Pinning the figure itself only turns a deliberate width change
+  // into a red build, so what is asserted is the shape plus the floor the measurement gives.
+  const candidatePin = colgroup.match(/<col className="w-\[(\d+)px\]" \/>\s*<col \/>/);
+  assert.ok(
+    candidatePin,
     "Candidate is pinned and Applying-for takes what is left — not the other way round",
+  );
+  const candidateWidth = Number(candidatePin?.[1] ?? 0);
+  assert.ok(
+    candidateWidth >= 323,
+    `Candidate needs 323px before its longest production name stops clipping (44 characters, `
+      + `measured across 574 rows on 2026-08-24, plus 24px of cell padding); found ${candidateWidth}px`,
   );
   assert.equal(
     (colgroup.match(/<col \/>/g) ?? []).length,
@@ -281,6 +291,27 @@ export async function runRecruitmentCandidatePoolTableTests() {
     const channelKey = key.slice('key: "'.length, key.indexOf('", label'));
     assert.ok(toneMap.includes(`${channelKey}: "`), `channel "${channelKey}" has no pill colour`);
   }
+
+  // The Source column is the badge and nothing else. That one sub-line was 173 of the 223 clipped
+  // cells on this tab — `shortLabel` is whatever the sender wrote first, reaching 1,546 characters,
+  // with a single cell overflowing by 7,094px. Measured in the real font on 2026-08-24, only 38 of
+  // the 225 lines fit the 80px of content box this column has, and what fits is "Cv.pdf" and
+  // "Afroz cv". A length threshold was tried first and is the wrong shape: it admits the filenames
+  // and wraps the other 187, and wrapping breaks the same rule the ellipsis did.
+  const sourceCellStart = workspace.indexOf('title={candidate.sourceContext?.detailLines.join("\\n") || undefined}');
+  assert.ok(
+    sourceCellStart > 0,
+    "the sender's words must survive as the Source cell's hover title once the sub-line is gone",
+  );
+  const sourceCell = workspace.slice(sourceCellStart, workspace.indexOf("</td>", sourceCellStart));
+  assert.ok(
+    !sourceCell.includes("shortLabel"),
+    "the desktop Source cell must not render shortLabel — it does not fit, and it wraps when it cannot",
+  );
+  assert.ok(
+    !/sourceLabelFits|SOURCE_LABEL_MAX_CHARS/.test(workspace),
+    'the character threshold came back — it admits "Cv.pdf" and wraps everything longer',
+  );
 
   // Mobile: the channel is unconditional. It used to be the shortLabel wearing the "Source" label,
   // so a captionless WhatsApp CV showed no source at all — exactly the row the owner was looking at.

@@ -41,6 +41,11 @@ import type { ApplicationWithContext } from "@/lib/recruitment/applications";
 import type { CandidateProfile } from "@/lib/recruitment/candidates";
 import { APPLIED_FOR_SOURCE_LABEL, APPLIED_FOR_SOURCE_SHORT, candidateRowAppliedFor } from "@/lib/recruitment/applied-for";
 import { candidateDisplayName, isShortenedCandidateName } from "@/lib/recruitment/candidate-display";
+import {
+  applicationStageLabel,
+  humanizeRecruitmentTerm,
+  requisitionStatusLabel,
+} from "@/lib/recruitment/labels";
 // offer-rules is the pure half of the offer service — no database imports — so the same
 // completeness check runs in the browser and on the server without pulling a Supabase client in.
 import { isOfferStage, missingOfferTerms } from "@/lib/recruitment/offer-rules";
@@ -145,10 +150,6 @@ function RequisitionField({ hint, label, children }: { hint?: string; label: str
       {hint ? <span className="text-[11px] text-slate-500">{hint}</span> : null}
     </div>
   );
-}
-
-function titleCase(value: string): string {
-  return value.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
 // Every moment this module shows a person is Cairo local time, never a raw UTC string.
@@ -820,7 +821,7 @@ function OfferCard({
           {offer.approvedAt ? <OfferFact label="Approved" value={cairoDateTime(offer.approvedAt)} /> : null}
           {offer.sentAt ? <OfferFact label="Sent" value={cairoDateTime(offer.sentAt)} /> : null}
           {offer.respondedAt ? (
-            <OfferFact label={titleCase(offer.response ?? "answered")} value={cairoDateTime(offer.respondedAt)} />
+            <OfferFact label={humanizeRecruitmentTerm(offer.response ?? "answered")} value={cairoDateTime(offer.respondedAt)} />
           ) : null}
           {offer.notes ? <OfferFact label="Notes" value={offer.notes} /> : null}
         </dl>
@@ -1012,7 +1013,7 @@ export function RecruitmentWorkspace(props: Props) {
       <div className="flex flex-wrap gap-2">
         {(["candidates", "requisitions", "pipeline"] as TabKey[]).map((key) => (
           <Button key={key} variant={tab === key ? "default" : "ghost"} onClick={() => setTab(key)}>
-            {titleCase(key)}
+            {humanizeRecruitmentTerm(key)}
           </Button>
         ))}
       </div>
@@ -1129,7 +1130,7 @@ function PipelineApplicationCard({
           ) : undefined
         }
         meta={application.requisition?.jobTitle ?? "—"}
-        status={<StagePill tone={stageTone(application.stage)}>{titleCase(application.stage)}</StagePill>}
+        status={<StagePill tone={stageTone(application.stage)}>{applicationStageLabel(application.stage)}</StagePill>}
         title={candidateDisplayName(application.candidate?.fullName ?? "") || "Unknown candidate"}
       >
         {/* Kept to a two-word pill so it can never wrap on a phone. Who and when is on the desktop
@@ -1327,7 +1328,7 @@ function PipelineTab({
                       </td>
                       <td className="px-3 py-2">{application.requisition?.jobTitle ?? "—"}</td>
                       <td className="px-3 py-2">
-                        <StagePill tone={stageTone(application.stage)}>{titleCase(application.stage)}</StagePill>
+                        <StagePill tone={stageTone(application.stage)}>{applicationStageLabel(application.stage)}</StagePill>
                       </td>
                       <td className="whitespace-nowrap px-3 py-2">
                         <WaitingInStage application={application} asOf={asOf} />
@@ -1372,7 +1373,7 @@ function PipelineTab({
               <div>
                 <p className="text-sm font-semibold text-slate-900">{selected.candidate?.fullName}</p>
                 <p className="text-xs text-slate-500">
-                  {selected.requisition?.jobTitle} · {titleCase(selected.stage)}
+                  {selected.requisition?.jobTitle} · {applicationStageLabel(selected.stage)}
                 </p>
               </div>
 
@@ -1684,7 +1685,7 @@ function RequisitionCard({
         />
       }
       meta={requisition.jobTitle}
-      status={<StagePill tone={requisitionStatusTone(requisition.status)}>{titleCase(requisition.status)}</StagePill>}
+      status={<StagePill tone={requisitionStatusTone(requisition.status)}>{requisitionStatusLabel(requisition.status)}</StagePill>}
       title={requisition.requisitionCode}
     >
       <PortalRecordFields
@@ -1882,7 +1883,7 @@ function RequisitionsTab({
               <SearchableSelect className={fieldClass} value={priority} onChange={(e) => setPriority(e.target.value)}>
                 {["low", "normal", "high", "urgent"].map((value) => (
                   <option key={value} value={value}>
-                    {titleCase(value)} priority
+                    {humanizeRecruitmentTerm(value)} priority
                   </option>
                 ))}
               </SearchableSelect>
@@ -2033,7 +2034,7 @@ function RequisitionsTab({
                     <td className="px-3 py-2 font-medium text-slate-900">{requisition.requisitionCode}</td>
                     <td className="px-3 py-2">{requisition.jobTitle}</td>
                     <td className="px-3 py-2">
-                      <StagePill tone={requisitionStatusTone(requisition.status)}>{titleCase(requisition.status)}</StagePill>
+                      <StagePill tone={requisitionStatusTone(requisition.status)}>{requisitionStatusLabel(requisition.status)}</StagePill>
                     </td>
                     <td className="px-3 py-2">{requisition.hiringManagerName ?? requisition.hiringManagerHrId ?? "—"}</td>
                     <td className="px-3 py-2">
@@ -3073,7 +3074,7 @@ function CandidatesTab({
                   <option value="">Any source</option>
                   {sourceOptions.map((source) => (
                     <option key={source} value={source}>
-                      {titleCase(source)}
+                      {humanizeRecruitmentTerm(source)}
                     </option>
                   ))}
                 </select>
@@ -3183,7 +3184,10 @@ function CandidatesTab({
           )}
           renderTable={() => (
             /*
-             * Rebuilt 2026-08-20 to fit the page without sideways scroll.
+             * Rebuilt 2026-08-20 to fit the page without sideways scroll; re-cut 2026-08-24 when
+             * that goal turned out to cost 223 clipped cells, which the owner's standing rule
+             * forbids outright. Fitting the window is a preference; never truncating and never
+             * wrapping is a rule, so the rule wins and the table may now scroll under 1360px.
              *
              * `table-fixed` plus the colgroup below is what makes that true rather than hopeful:
              * with a fixed layout the browser obeys the declared widths instead of sizing columns
@@ -3195,7 +3199,7 @@ function CandidatesTab({
              * of 555 rows have no email and 316 no phone, so two columns were spending ~340px to
              * show a dash most of the time.
              */
-            <PortalDesktopTable className="table-fixed" minWidth="900px">
+            <PortalDesktopTable className="table-fixed" minWidth="1360px">
               {/*
                * Every width below is the width its text actually wants, measured cell by cell
                * against all 555 production rows on 2026-08-21 (99th percentile, at each line's own
@@ -3213,17 +3217,25 @@ function CandidatesTab({
                * than left to sprawl. Actions stays 220: six 28px icon buttons plus gaps and padding
                * measure 212, and the strip has to fit on one line or the row grows again.
                *
-               * Source keeps 116 and is still the one genuinely clipped column — some rows store an
-               * entire forwarded message as the source label, so no column width fixes it; the full
-               * text is on hover, and shortening the label is a data job, not a layout one.
+               * Re-measured 2026-08-24 against 574 production rows, counting the cells actually
+               * clipped rather than the widths they were given:
+               *
+               *   Source 173 · Applying for 29 · Candidate 21 · everything else 0
+               *
+               * Candidate overflowed by at most 43px, so 280 → 332 ends all 21. Source's 173 were
+               * never a width problem — worst overflow 7,094px — and are fixed by not drawing a
+               * line that cannot fit (see the cell); with only the badge left it drops 116 → 104.
+               * Applying-for needed 173px more than the 292 it had, which is what the minWidth of
+               * 1360 buys: 36 + 332 + 96 + 96 + 104 + 220 = 884 fixed, leaving 476 for the flexible
+               * column against the 465 it wants. Below 1360px the wrapper scrolls; nothing clips.
                */}
               <colgroup>
                 {canManage ? <col className="w-[36px]" /> : null}
-                <col className="w-[280px]" />
+                <col className="w-[332px]" />
                 <col />
                 <col className="w-[96px]" />
                 <col className="w-[96px]" />
-                <col className="w-[116px]" />
+                <col className="w-[104px]" />
                 <col className="w-[220px]" />
               </colgroup>
               {/* No colours here on purpose. The admin shell's locked rules in globals.css paint
@@ -3374,14 +3386,31 @@ function CandidatesTab({
                           {isNewArrival(candidate) ? <StagePill tone="orange">New</StagePill> : null}
                         </div>
                       </td>
-                      {/* The channel first, on its own line, then the sender's own words under
-                          it. That order is the point of this cell: shortLabel is clipped on most
-                          rows — a forwarded mail stores an entire message there — so the second
-                          line may well be unreadable, and "WhatsApp or email?" is the question the
-                          column is actually scanned for. A badge stays legible at 116px; a
-                          sentence does not. Costs no row height: the Candidate and Received cells
-                          are already two lines. */}
-                      <td className="px-3 py-2.5">
+                      {/*
+                          The channel, and only the channel. "WhatsApp or email?" is the question
+                          this column is scanned for, and a badge answers it at 104px.
+
+                          It used to carry the sender's own first line underneath, and that line was
+                          the single worst thing on this tab: 173 of the 225 rows carrying one
+                          overflowed, one of them by 7,094px, and those 173 were the bulk of the 223
+                          clipped cells on the whole page. `shortLabel` is whatever the sender wrote
+                          first — a forwarded mail stores an entire message there, reaching 1,546
+                          characters — so no column width answers it.
+
+                          Nor does a length limit. Measured in the real font on 2026-08-24: only 38
+                          of the 225 lines fit the 80px of content box this column has, and what
+                          fits is "Cv.pdf", "Afroz cv", "cv" — filenames, not information. A
+                          threshold that admits those and wraps the other 187 buys nothing, and
+                          wrapping breaks the same rule the ellipsis did.
+
+                          So the line is not drawn here at all. Nothing is lost: the sender's words
+                          are this cell's hover title, they are on the mobile card under "Their
+                          words", and they are still what the search box matches.
+                      */}
+                      <td
+                        className="px-3 py-2.5"
+                        title={candidate.sourceContext?.detailLines.join("\n") || undefined}
+                      >
                         {(() => {
                           const channel = candidateSourceChannel(candidate.source, candidate.sourceContext);
                           return (
@@ -3390,14 +3419,6 @@ function CandidatesTab({
                             </StagePill>
                           );
                         })()}
-                        {candidate.sourceContext?.shortLabel ? (
-                          <div
-                            className="mt-0.5 truncate text-[11px] text-slate-500"
-                            title={candidate.sourceContext.detailLines.join("\n")}
-                          >
-                            {candidate.sourceContext.shortLabel}
-                          </div>
-                        ) : null}
                       </td>
                       <td className="px-3 py-2.5">
                         <CandidateActionsControl
@@ -3695,7 +3716,7 @@ function CandidatesTab({
               ) : (
                 profile.applications.map((entry) => (
                   <p key={entry.application.id} className="text-xs text-slate-600">
-                    {entry.jobTitle ?? "—"} · {titleCase(entry.application.stage)}
+                    {entry.jobTitle ?? "—"} · {applicationStageLabel(entry.application.stage)}
                   </p>
                 ))
               )}
@@ -3709,7 +3730,7 @@ function CandidatesTab({
               ) : (
                 profile.interviews.map((entry) => (
                   <p key={entry.interview.id} className="text-xs text-slate-600">
-                    {titleCase(entry.interview.interviewType)} · {entry.summary.average ?? "—"} · {entry.interview.outcome ?? "—"}
+                    {humanizeRecruitmentTerm(entry.interview.interviewType)} · {entry.summary.average ?? "—"} · {entry.interview.outcome ?? "—"}
                   </p>
                 ))
               )}
@@ -3749,7 +3770,7 @@ function CandidatesTab({
               ) : (
                 profile.rejectionHistory.map((event) => (
                   <p key={event.id} className="text-xs text-slate-600">
-                    {titleCase(event.action)} · {event.reason ?? "—"}
+                    {humanizeRecruitmentTerm(event.action)} · {event.reason ?? "—"}
                   </p>
                 ))
               )}
@@ -3876,13 +3897,13 @@ function InterviewsSection({
             return (
               <li key={interview.id} className="border border-slate-200 p-2 text-xs">
                 <div className="flex items-center justify-between gap-2">
-                  <span className="font-medium text-slate-800">{titleCase(interview.interviewType)}</span>
+                  <span className="font-medium text-slate-800">{humanizeRecruitmentTerm(interview.interviewType)}</span>
                   <span className="text-slate-500">
                     {interview.scheduledAt ? new Date(interview.scheduledAt).toLocaleString() : "Unscheduled"}
                   </span>
                 </div>
                 <div className="text-slate-500">
-                  Outcome: {interview.outcome ? titleCase(interview.outcome) : "—"}
+                  Outcome: {interview.outcome ? humanizeRecruitmentTerm(interview.outcome) : "—"}
                   {summary.average !== null ? ` · Avg ${summary.average}/5` : ""}
                 </div>
                 {canManage ? (
@@ -3905,7 +3926,7 @@ function InterviewsSection({
                         <option value="">Outcome…</option>
                         {interviewOutcomes.map((value) => (
                           <option key={value} value={value}>
-                            {titleCase(value)}
+                            {humanizeRecruitmentTerm(value)}
                           </option>
                         ))}
                       </SearchableSelect>
