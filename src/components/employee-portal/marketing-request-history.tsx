@@ -2,7 +2,20 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Archive, CalendarDays, CheckCircle2, Eye, History, RefreshCcw, Search, Undo2, XCircle } from "lucide-react";
+import {
+  Archive,
+  CalendarDays,
+  CheckCircle2,
+  ChevronDown,
+  ChevronRight,
+  Eye,
+  History,
+  RefreshCcw,
+  Search,
+  Undo2,
+  Wallet,
+  XCircle,
+} from "lucide-react";
 
 import {
   ApprovalHistory,
@@ -10,6 +23,12 @@ import {
   formatDate,
   formatDateTime,
 } from "@/components/employee-portal/marketing-approval-chain";
+import {
+  PortalDesktopTable,
+  PortalMetricCard,
+  PortalPagination,
+  PortalResponsiveDataList,
+} from "@/components/employee-portal/portal-primitives";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { LoadingSpinner } from "@/components/ui/loading-state";
@@ -51,44 +70,37 @@ const OUTCOME_ACCENT: Record<MarketingApproverHistoryOutcome, string> = {
   returned: "from-white via-amber-50/40 to-white",
 };
 
+/** Left-edge accent for the desktop detail row, keyed to the same tone as the badge. Written as
+ *  whole static class strings — Tailwind never sees a class name assembled from a variable at
+ *  runtime, so an interpolated colour class is purged from the bundle and paints nothing. */
+const OUTCOME_DETAIL_BORDER: Record<MarketingApproverHistoryOutcome, string> = {
+  approved: "border-l-emerald-500",
+  archived: "border-l-slate-400",
+  closed: "border-l-slate-400",
+  in_flight: "border-l-orange-500",
+  rejected: "border-l-rose-500",
+  returned: "border-l-amber-500",
+};
+
 /* --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- */
-/* --------- Row card --------------------------------------------------------------------------------------------------------------------------------------- */
+/* --------- Shared decision detail (identical on the mobile card and the desktop expansion) --------------------------------------------------------- */
 /* --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- */
 
-function HistoryRowCard({ row }: { row: MarketingApproverHistoryRow }) {
-  const Icon = OUTCOME_ICON[row.outcome];
+/**
+ * The full record of a decided request: the final response, what THIS viewer did, the whole
+ * approval trail, and the four dates/values. Rendered in one place so a past approval reads
+ * identically whether it is opened on a phone card or expanded from the desktop table.
+ */
+function HistoryDecisionDetail({ row }: { row: MarketingApproverHistoryRow }) {
   const decidedAt = formatDateTime(row.decidedAt);
   const myDecidedAt = formatDateTime(row.myDecision?.at ?? null);
 
   return (
-    <Card className="rounded-sm border border-slate-200 bg-white p-0 shadow-[0_8px_24px_rgba(15,23,42,0.05)]">
-      <div
-        className={`flex flex-wrap items-start justify-between gap-2 border-b border-slate-100 bg-gradient-to-r px-4 py-3 ${OUTCOME_ACCENT[row.outcome]}`}
-      >
-        <div className="min-w-0">
-          <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500">{row.requestCode}</p>
-          {/* Owner rules: never truncate with an ellipsis, never wrap to a second line. On a 375px
-              phone a long pharmacy name honours both by SCROLLING inside its own box — measured
-              459px of text in a 317px box, so without this it painted 113px off the screen edge. */}
-          <div className="overflow-x-auto">
-            <h3 className="mt-0.5 whitespace-nowrap text-[15px] font-black tracking-tight text-slate-950">
-              {row.customerName}
-            </h3>
-          </div>
-          <p className="mt-0.5 text-[11px] font-medium text-slate-500">
-            {row.requestType} · From {row.requesterName} ({row.requesterRole})
-          </p>
-        </div>
-        <Badge className="shrink-0" variant={OUTCOME_VARIANT[row.outcome]}>
-          <Icon className="mr-1 h-3 w-3" />
-          {row.outcomeLabel}
-        </Badge>
-      </div>
-
+    <div className="divide-y divide-slate-100">
       {/* ------ The response itself: who ended it, when, and in their own words -----------------
           This is the answer the tab is opened for. It sits ABOVE the full chain because the last
           word is what anyone is looking for, and the chain below is the supporting record. */}
-      <div className="border-b border-slate-100 px-4 py-3">
+      <div className="px-4 py-3">
         <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-slate-400">Final response</p>
         {row.finalStepName ? (
           <>
@@ -118,7 +130,7 @@ function HistoryRowCard({ row }: { row: MarketingApproverHistoryRow }) {
 
       {/* ------ What THIS viewer did, when they were part of it ----------------------------------- */}
       {row.myDecision ? (
-        <div className="border-b border-slate-100 bg-slate-900/[0.03] px-4 py-2.5">
+        <div className="bg-slate-900/[0.03] px-4 py-2.5">
           <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-slate-400">Your decision</p>
           <p className="mt-0.5 text-[12px] font-bold text-slate-800">
             {row.myDecision.stepName}
@@ -131,11 +143,11 @@ function HistoryRowCard({ row }: { row: MarketingApproverHistoryRow }) {
           ) : null}
         </div>
       ) : row.isMyRequest ? (
-        <div className="border-b border-slate-100 bg-sky-50/60 px-4 py-2 text-[11px] font-semibold text-sky-800">
+        <div className="bg-sky-50/60 px-4 py-2 text-[11px] font-semibold text-sky-800">
           You raised this request — this is the answer it came back with.
         </div>
       ) : row.viaOversight ? (
-        <div className="border-b border-slate-100 px-4 py-2 text-[11px] font-medium text-slate-400">
+        <div className="px-4 py-2 text-[11px] font-medium text-slate-400">
           You held no step on this request — shown because you can see the whole company queue.
         </div>
       ) : null}
@@ -164,7 +176,7 @@ function HistoryRowCard({ row }: { row: MarketingApproverHistoryRow }) {
         </div>
       </div>
 
-      <div className="flex flex-wrap items-center gap-2 border-t border-slate-100 bg-slate-50/50 px-4 py-3">
+      <div className="flex flex-wrap items-center gap-2 bg-slate-50/50 px-4 py-3">
         <Link
           className="inline-flex min-h-9 items-center gap-1.5 rounded-sm border border-slate-300 bg-white px-4 text-[12px] font-bold text-slate-700 shadow-sm transition hover:border-orange-200 hover:bg-orange-50 hover:text-orange-700"
           href={`/marketing-requests/${row.id}`}
@@ -173,7 +185,110 @@ function HistoryRowCard({ row }: { row: MarketingApproverHistoryRow }) {
           Open the full record
         </Link>
       </div>
+    </div>
+  );
+}
+
+/* --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- */
+/* --------- Mobile card (never a table below `md`, owner rule) -------------------------------------------------------------------------------------- */
+/* --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- */
+
+function HistoryMobileCard({ row }: { row: MarketingApproverHistoryRow }) {
+  const Icon = OUTCOME_ICON[row.outcome];
+
+  return (
+    <Card className="rounded-sm border border-slate-200 bg-white p-0 shadow-[0_8px_24px_rgba(15,23,42,0.05)]">
+      <div
+        className={`flex flex-wrap items-start justify-between gap-2 border-b border-slate-100 bg-gradient-to-r px-4 py-3 ${OUTCOME_ACCENT[row.outcome]}`}
+      >
+        <div className="min-w-0">
+          <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500">{row.requestCode}</p>
+          {/* Owner rules: never truncate with an ellipsis, never wrap to a second line. On a 375px
+              phone a long pharmacy name honours both by SCROLLING inside its own box — measured
+              459px of text in a 317px box, so without this it painted 113px off the screen edge. */}
+          <div className="overflow-x-auto">
+            <h3 className="mt-0.5 whitespace-nowrap text-[15px] font-black tracking-tight text-slate-950">
+              {row.customerName}
+            </h3>
+          </div>
+          <p className="mt-0.5 text-[11px] font-medium text-slate-500">
+            {row.requestType} · From {row.requesterName} ({row.requesterRole})
+          </p>
+        </div>
+        <Badge className="shrink-0" variant={OUTCOME_VARIANT[row.outcome]}>
+          <Icon className="mr-1 h-3 w-3" />
+          {row.outcomeLabel}
+        </Badge>
+      </div>
+
+      <HistoryDecisionDetail row={row} />
     </Card>
+  );
+}
+
+/* --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- */
+/* --------- Desktop table row (scan first; the full trail opens on click) --------------------------------------------------------------------------- */
+/* --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- */
+
+const DESKTOP_COLUMNS = 7;
+
+function HistoryTableRow({
+  isOpen,
+  onToggle,
+  row,
+}: {
+  isOpen: boolean;
+  onToggle: () => void;
+  row: MarketingApproverHistoryRow;
+}) {
+  const Icon = OUTCOME_ICON[row.outcome];
+  const Chevron = isOpen ? ChevronDown : ChevronRight;
+  // The final word, in one scannable line. Never wrapped or clipped — the table scrolls sideways
+  // inside its own box instead, so a long approver name widens the column rather than losing text.
+  const finalResponse = row.finalStepName
+    ? `${row.finalStepName}${row.finalApproverName ? ` · ${row.finalApproverName}` : ""}`
+    : "Not decided on the chain";
+
+  return (
+    <>
+      <tr
+        className="cursor-pointer border-b border-slate-100 transition hover:bg-orange-50/30"
+        onClick={onToggle}
+      >
+        <td className="whitespace-nowrap px-3 py-2.5 text-[12px] font-bold text-slate-500">{row.requestCode}</td>
+        <td className="whitespace-nowrap px-3 py-2.5 text-[13px] font-black text-slate-950">{row.customerName}</td>
+        <td className="whitespace-nowrap px-3 py-2.5">
+          <Badge variant={OUTCOME_VARIANT[row.outcome]}>
+            <Icon className="mr-1 h-3 w-3" />
+            {row.outcomeLabel}
+          </Badge>
+        </td>
+        <td className="whitespace-nowrap px-3 py-2.5 text-[12px] font-bold text-slate-700">{finalResponse}</td>
+        <td className="whitespace-nowrap px-3 py-2.5 text-[13px] font-black text-slate-950">{egp(row.estimatedCost)}</td>
+        <td className="whitespace-nowrap px-3 py-2.5 text-[12px] font-bold text-slate-700">{formatDate(row.decidedAt)}</td>
+        <td className="whitespace-nowrap px-3 py-2.5 text-right">
+          <button
+            aria-expanded={isOpen}
+            className="inline-flex min-h-9 items-center gap-1.5 rounded-sm border border-slate-200 bg-white px-3 text-[12px] font-bold text-slate-600 shadow-sm transition hover:border-orange-200 hover:bg-orange-50 hover:text-orange-700"
+            onClick={(event) => {
+              event.stopPropagation();
+              onToggle();
+            }}
+            type="button"
+          >
+            <Chevron className="h-3.5 w-3.5" />
+            {isOpen ? "Hide trail" : "Full trail"}
+          </button>
+        </td>
+      </tr>
+      {isOpen ? (
+        <tr className={`border-b border-slate-100 border-l-[3px] ${OUTCOME_DETAIL_BORDER[row.outcome]} bg-slate-50/40`}>
+          <td colSpan={DESKTOP_COLUMNS} className="p-0">
+            <HistoryDecisionDetail row={row} />
+          </td>
+        </tr>
+      ) : null}
+    </>
   );
 }
 
@@ -195,11 +310,19 @@ function HistorySkeleton() {
 /* --------- Main ------------------------------------------------------------------------------------------------------------------------------------ */
 /* --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- */
 
+const HISTORY_PAGE_SIZE = 25;
+
 /**
  * The inbox's History tab: every marketing request that has already been answered.
  *
  * Loads lazily — this component is only mounted once the tab is actually opened, so the default
  * "In approval" view costs exactly what it did before.
+ *
+ * Built to the same identity as the live "In approval" tab it sits beside: a metric strip that
+ * answers "how much was decided, and how did it land" before a single row is read; a scannable
+ * desktop TABLE with the full approval trail one click away; the rich card only below `md`, where
+ * the owner rule is cards, never a table; and the list windowed so a long history is paged, not a
+ * wall of expanded trails.
  */
 export function MarketingRequestHistory() {
   const [rows, setRows] = useState<MarketingApproverHistoryRow[]>([]);
@@ -209,6 +332,8 @@ export function MarketingRequestHistory() {
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [outcomeFilter, setOutcomeFilter] = useState<MarketingApproverHistoryOutcome | "all">("all");
+  const [page, setPage] = useState(0);
+  const [openIds, setOpenIds] = useState<ReadonlySet<string>>(new Set());
 
   const loadHistory = useCallback(async () => {
     try {
@@ -251,6 +376,21 @@ export function MarketingRequestHistory() {
     return Array.from(counts.entries()).map(([outcome, entry]) => ({ ...entry, outcome }));
   }, [rows]);
 
+  // What this history is worth and how it landed, before any of it is read.
+  const summary = useMemo(() => {
+    let approved = 0;
+    let rejected = 0;
+    let returned = 0;
+    let value = 0;
+    for (const row of rows) {
+      if (row.outcome === "approved") approved += 1;
+      else if (row.outcome === "rejected") rejected += 1;
+      else if (row.outcome === "returned") returned += 1;
+      value += row.estimatedCost ?? 0;
+    }
+    return { approved, rejected, returned, value };
+  }, [rows]);
+
   const visibleRows = useMemo(() => {
     const needle = search.trim().toLowerCase();
     return rows.filter((row) => {
@@ -262,6 +402,21 @@ export function MarketingRequestHistory() {
         .includes(needle);
     });
   }, [outcomeFilter, rows, search]);
+
+  // Clamped during render, never from an effect (which is a lint error here): a filter that
+  // shortens the list must not strand the reader on a page that no longer exists.
+  const pageCount = Math.max(1, Math.ceil(visibleRows.length / HISTORY_PAGE_SIZE));
+  const safePage = Math.min(page, pageCount - 1);
+  const pagedRows = visibleRows.slice(safePage * HISTORY_PAGE_SIZE, safePage * HISTORY_PAGE_SIZE + HISTORY_PAGE_SIZE);
+
+  const toggleRow = useCallback((id: string) => {
+    setOpenIds((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
 
   return (
     <div className="space-y-3" dir="auto">
@@ -304,6 +459,57 @@ export function MarketingRequestHistory() {
         </div>
       ) : null}
 
+      {/* ------ How this history landed, at a glance ---------------------------------------------
+          A card only when it has something to count — an empty category padded onto the strip
+          reads as a gap in the data rather than as a zero worth showing (owner rule: never pad). */}
+      {!isLoading && rows.length > 0 ? (
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <PortalMetricCard
+            accent="slate"
+            icon={History}
+            label="Decided"
+            note="Approved, rejected or returned"
+            value={rows.length}
+          />
+          {summary.approved > 0 ? (
+            <PortalMetricCard
+              accent="emerald"
+              icon={CheckCircle2}
+              label="Approved"
+              note="Cleared the whole chain"
+              value={summary.approved}
+            />
+          ) : null}
+          {summary.returned > 0 ? (
+            <PortalMetricCard
+              accent="amber"
+              icon={Undo2}
+              label="Returned"
+              note="Sent back for a change"
+              value={summary.returned}
+            />
+          ) : null}
+          {summary.rejected > 0 ? (
+            <PortalMetricCard
+              accent="rose"
+              icon={XCircle}
+              label="Rejected"
+              note="Turned down on the chain"
+              value={summary.rejected}
+            />
+          ) : null}
+          {summary.value > 0 ? (
+            <PortalMetricCard
+              accent="orange"
+              icon={Wallet}
+              label="Value decided"
+              note="Estimated cost across this history"
+              value={egp(summary.value)}
+            />
+          ) : null}
+        </div>
+      ) : null}
+
       {/* ------ Search + outcome filter ------------------------------------------------------------ */}
       {!isLoading && rows.length > 0 ? (
         <div className="flex flex-wrap items-center gap-2">
@@ -312,7 +518,10 @@ export function MarketingRequestHistory() {
             {/* 16px floor: anything smaller makes iOS Safari zoom the page on focus. */}
             <input
               className="min-h-10 w-full min-w-0 border-0 bg-transparent text-[16px] font-medium text-slate-800 outline-none placeholder:text-slate-400 sm:text-[13px]"
-              onChange={(event) => setSearch(event.target.value)}
+              onChange={(event) => {
+                setSearch(event.target.value);
+                setPage(0);
+              }}
               placeholder="Search code, customer, requester"
               type="search"
               value={search}
@@ -326,7 +535,10 @@ export function MarketingRequestHistory() {
                   ? "border-slate-900 bg-slate-900 text-white"
                   : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
               }`}
-              onClick={() => setOutcomeFilter("all")}
+              onClick={() => {
+                setOutcomeFilter("all");
+                setPage(0);
+              }}
               type="button"
             >
               All ({rows.length})
@@ -340,7 +552,10 @@ export function MarketingRequestHistory() {
                     : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
                 }`}
                 key={chip.outcome}
-                onClick={() => setOutcomeFilter(chip.outcome)}
+                onClick={() => {
+                  setOutcomeFilter(chip.outcome);
+                  setPage(0);
+                }}
                 type="button"
               >
                 {chip.label} ({chip.count})
@@ -381,11 +596,69 @@ export function MarketingRequestHistory() {
           <p className="text-[13px] font-bold text-slate-700">No request matches this filter.</p>
         </Card>
       ) : (
-        <div className="space-y-3">
-          {visibleRows.map((row) => (
-            <HistoryRowCard key={row.id} row={row} />
-          ))}
-        </div>
+        <Card className="overflow-hidden rounded-sm border border-slate-200 bg-white p-0 shadow-[0_8px_24px_rgba(15,23,42,0.05)]">
+          <PortalResponsiveDataList
+            empty={
+              <p className="px-4 py-8 text-center text-[13px] font-bold text-slate-500">
+                No request matches this filter.
+              </p>
+            }
+            getKey={(row) => `history-${row.id}`}
+            items={[...pagedRows]}
+            renderCard={(row) => <HistoryMobileCard row={row} />}
+            renderTable={() => (
+              <PortalDesktopTable minWidth="1040px">
+                <thead>
+                  <tr className="border-b border-slate-200 bg-slate-50">
+                    {["Request", "Customer", "Outcome", "Final response", "Value", "Decided", ""].map(
+                      (heading, index) => (
+                        <th
+                          className="whitespace-nowrap px-3 py-2.5 text-[10px] font-black uppercase tracking-[0.12em] text-slate-500"
+                          key={`${heading}-${index}`}
+                          scope="col"
+                        >
+                          {heading}
+                        </th>
+                      ),
+                    )}
+                  </tr>
+                </thead>
+                <tbody>
+                  {pagedRows.map((row) => (
+                    <HistoryTableRow
+                      isOpen={openIds.has(row.id)}
+                      key={`history-row-${row.id}`}
+                      onToggle={() => toggleRow(row.id)}
+                      row={row}
+                    />
+                  ))}
+                </tbody>
+              </PortalDesktopTable>
+            )}
+          />
+          {visibleRows.length > HISTORY_PAGE_SIZE ? (
+            <PortalPagination
+              label={`Showing ${safePage * HISTORY_PAGE_SIZE + 1}–${safePage * HISTORY_PAGE_SIZE + pagedRows.length} of ${visibleRows.length}`}
+            >
+              <button
+                className="min-h-9 rounded-sm border border-slate-200 bg-white px-3 text-[12px] font-bold text-slate-600 transition hover:bg-slate-50 disabled:opacity-40"
+                disabled={safePage === 0}
+                onClick={() => setPage(Math.max(0, safePage - 1))}
+                type="button"
+              >
+                Previous
+              </button>
+              <button
+                className="min-h-9 rounded-sm border border-slate-200 bg-white px-3 text-[12px] font-bold text-slate-600 transition hover:bg-slate-50 disabled:opacity-40"
+                disabled={safePage >= pageCount - 1}
+                onClick={() => setPage(Math.min(pageCount - 1, safePage + 1))}
+                type="button"
+              >
+                Next
+              </button>
+            </PortalPagination>
+          ) : null}
+        </Card>
       )}
     </div>
   );
