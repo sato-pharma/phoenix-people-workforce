@@ -146,6 +146,12 @@ file holding the full account, under
 - **Migration timestamps COLLIDE across parallel branches**, and **the ledger version never matches the
   filename.** `migration-timestamp-collides-across-parallel-branches` ·
   `migration-ledger-version-never-matches-the-filename`
+- **A PostgREST `.in()` carrying several hundred ids returns ZERO rows and NO error.** The filter goes
+  in the URL, so past some length the result comes back `{ data: [], error: null }` — an empty set
+  indistinguishable from a true answer. On 2026-08-25 a 409-id `.in()` reported "never read: 409 of
+  409" and "0 have a stored file"; chunked at 50 the truth was **10**. Chunk every `.in()` at ~50, and
+  print the row count of the intermediate fetch — a pool of 409 candidates cannot return 0 extraction
+  rows, which is what exposed it. `postgrest-in-with-hundreds-of-ids-silently-returns-nothing`
 
 **Validation**
 
