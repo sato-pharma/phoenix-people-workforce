@@ -69,7 +69,6 @@ import {
   candidateScreeningFacts,
   candidateScreeningRoleFamily,
   formatYearsOfExperience,
-  unconfirmedCvFactsFromExtraction,
   UNCONFIRMED_FACT_TITLE,
 } from "@/lib/recruitment/candidate-screening-facts";
 import { cairoDayKey, type CandidatePoolStats } from "@/lib/recruitment/candidate-stats";
@@ -105,6 +104,8 @@ import { BulkCvExtractionPanel } from "@/components/recruitment/bulk-cv-extracti
 import { CandidateFieldsPanel } from "@/components/recruitment/candidate-fields-panel";
 import { CvExtractionPanel } from "@/components/recruitment/cv-extraction-panel";
 import { CvExtractionReviewBoard } from "@/components/recruitment/cv-extraction-review-board";
+import { CandidateFactsSummary } from "@/components/recruitment/candidate-facts-summary";
+import { CandidateScreeningSession } from "@/components/recruitment/candidate-screening-session";
 import { CvPreviewModal } from "@/components/recruitment/cv-preview-modal";
 import {
   countUnappliedCvFields,
@@ -2799,6 +2800,10 @@ function CandidatesTab({
   // Which row, if any, has a picker open. One at a time: 555 rows must not each mount two
   // dropdowns, and two open pickers on screen is two places to click Send by mistake.
   const [openRowPanel, setOpenRowPanel] = useState<{ id: string; panel: "send" | "start" } | null>(null);
+  // Screening mode holds a SNAPSHOT of the queue taken when it opens, not a live view: re-sorting
+  // the list under a reader who is halfway through it is how you lose your place, which is the
+  // exact complaint this whole mode answers.
+  const [screeningQueue, setScreeningQueue] = useState<Candidate[] | null>(null);
   const [profile, setProfile] = useState<CandidateProfile | null>(null);
   const [viewCvFile, setViewCvFile] = useState<RecruitmentFile | null>(null);
   const [statusDraft, setStatusDraft] = useState("");
@@ -3321,6 +3326,14 @@ function CandidatesTab({
                 Possible duplicates
                 <span className="tabular-nums opacity-70">{duplicateCount}</span>
               </button>
+            ) : null}
+            {/* The way into screening mode, and deliberately the loudest control on the toolbar.
+                It takes the queue EXACTLY as filtered and ordered on screen, so narrowing to
+                "District Manager · Alex-BHR" and pressing this is a session with an end. */}
+            {visibleCandidates.length > 0 ? (
+              <Button onClick={() => setScreeningQueue(visibleCandidates)}>
+                Screen {visibleCandidates.length} {visibleCandidates.length === 1 ? "CV" : "CVs"}
+              </Button>
             ) : null}
             {dateFilter !== "all" || experienceFilter !== "all" || statusFilter || sourceFilter || roleFilter || regionFilter || query || duplicatesOnly ? (
               <Button
@@ -3874,130 +3887,9 @@ function CandidatesTab({
             </Button>
           </div>
 
-          {/* WHO THIS PERSON IS — added 2026-08-24, because until then the profile did not say.
-
-              What this panel showed when the owner opened a candidate to screen them was: their
-              name, their email and phone, a nag about unreviewed fields, three status buttons,
-              "Applied positions: None", "Ratings: no interviews", one filename and "Rejection
-              history: None". Not their job, not their employer, not where they live, not how long
-              they have worked, not what they studied — every one of which was already loaded on
-              this very object, and several of which the CV reader had gone and fetched. So the only
-              way to learn anything about an applicant was to download the attachment and read it,
-              which is the whole reason the module lost to reading the CVs in WhatsApp.
-
-              Ordered the way a screener asks: what do they do, where are they, how long, what did
-              they study. Unconfirmed values are grey and marked, the same convention as the pool. */}
-          {(() => {
-            const facts = candidateScreeningFacts({
-              ...profile.candidate,
-              cvUnconfirmed: unconfirmedCvFactsFromExtraction(storedExtraction?.fields),
-            });
-            const education = [
-              profile.candidate.degree,
-              profile.candidate.faculty,
-              profile.candidate.university,
-            ]
-              .filter(Boolean)
-              .join(" · ");
-            const graduated = profile.candidate.graduationYear ? `Class of ${profile.candidate.graduationYear}` : null;
-            // The pharma tenure, when the CV gave dates for it. "2019 → 2024" beats a bare yes.
-            const repFrom = profile.candidate.medicalRepExperienceFrom?.slice(0, 4) ?? null;
-            const repTo = profile.candidate.medicalRepExperienceTo?.slice(0, 4) ?? null;
-            const repSpan = repFrom ? `${repFrom} → ${repTo ?? "now"}` : null;
-
-            const cells: Array<{ hint?: string; label: string; unconfirmed?: boolean; value: string }> = [];
-            if (facts.roleTitle) {
-              cells.push({
-                hint: facts.employer ? facts.employer.value : undefined,
-                label: "Current role",
-                unconfirmed: !facts.roleTitle.confirmed,
-                value: facts.roleTitle.value,
-              });
-            }
-            if (facts.employer) {
-              cells.push({
-                label: "Employer",
-                unconfirmed: !facts.employer.confirmed,
-                value: facts.employer.value,
-              });
-            }
-            if (facts.years) {
-              cells.push({
-                label: "Experience",
-                unconfirmed: !facts.years.confirmed,
-                value: `${facts.years.confirmed ? "" : "~"}${formatYearsOfExperience(facts.years.value)}`,
-              });
-            }
-            if (facts.pharmaRep) {
-              cells.push({
-                hint: repSpan ?? undefined,
-                label: "Medical rep before",
-                unconfirmed: !facts.pharmaRep.confirmed,
-                value: facts.pharmaRep.value
-                  ? [profile.candidate.medicalRepEmployer, repSpan].filter(Boolean).join(" · ") || "Yes"
-                  : "No",
-              });
-            }
-            if (facts.governorate) {
-              cells.push({
-                hint: facts.region ? `${facts.region.value.label} region` : undefined,
-                label: "Lives in",
-                unconfirmed: !facts.governorate.confirmed,
-                value: facts.region
-                  ? `${facts.governorate.value} · ${facts.region.value.label}`
-                  : facts.governorate.value,
-              });
-            }
-            if (education) cells.push({ hint: graduated ?? undefined, label: "Studied", value: education });
-            if (!education && graduated) cells.push({ label: "Studied", value: graduated });
-
-            // Nothing known at all is itself worth saying out loud — silence reads as a rendering
-            // fault, and the reader needs to know the CV is the only place left to look.
-            if (cells.length === 0 && !profile.candidate.professionalSummary) {
-              return (
-                <div className="rounded-md border border-dashed border-slate-300 bg-slate-50/60 p-3">
-                  <p className="text-xs text-slate-600">
-                    Nothing has been read off this CV yet — open the file below, or use “Read the CV again”.
-                  </p>
-                </div>
-              );
-            }
-
-            return (
-              <div className="rounded-md border border-slate-200 bg-white p-3">
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Who this is</p>
-                <dl className="mt-2 grid grid-cols-1 gap-x-6 gap-y-2 sm:grid-cols-2 lg:grid-cols-3">
-                  {cells.map((cell) => (
-                    <div key={cell.label}>
-                      <dt className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">{cell.label}</dt>
-                      <dd
-                        className={`text-sm ${cell.unconfirmed ? "italic text-slate-500" : "font-medium text-slate-900"}`}
-                        title={
-                          cell.unconfirmed
-                            ? [UNCONFIRMED_FACT_TITLE, cell.hint].filter(Boolean).join("\n\n")
-                            : (cell.hint ?? undefined)
-                        }
-                      >
-                        {cell.value}
-                        {cell.unconfirmed ? " ?" : ""}
-                      </dd>
-                      {cell.hint && !cell.unconfirmed ? (
-                        <dd className="text-[11px] text-slate-500">{cell.hint}</dd>
-                      ) : null}
-                    </div>
-                  ))}
-                </dl>
-                {/* The candidate's own words about themselves. 201 CVs carry one and nothing has
-                    ever shown it — it is the fastest read in the whole record and answers "is this
-                    person plausible" before any structured field does. */}
-                {profile.candidate.professionalSummary ? (
-                  <p className="mt-3 border-t border-slate-100 pt-2 text-xs leading-relaxed text-slate-700">
-                    {profile.candidate.professionalSummary}
-                  </p>
-                ) : null}
-              </div>
-            );
-          })()}
+          {/* Who this person is. Same block, same module, as screening mode — extracted
+              2026-08-24 so the drawer and the queue can never drift apart. */}
+          <CandidateFactsSummary candidate={profile.candidate} extraction={storedExtraction} />
 
           {/* The applied-for role, with the wording it was read from directly beneath it. The
               evidence is shown rather than hidden in a tooltip because this value is INFERRED from
@@ -4254,6 +4146,18 @@ function CandidatesTab({
             </div>
           </div>
           {profile.candidate.notes ? <p className="text-xs text-slate-600">Notes: {profile.candidate.notes}</p> : null}
+
+          {screeningQueue ? (
+            <CandidateScreeningSession
+              candidates={screeningQueue}
+              onClose={(decidedCount) => {
+                setScreeningQueue(null);
+                // Only pay for a reload when something actually changed. Leaving the queue after
+                // reading a few is free.
+                if (decidedCount > 0) router.refresh();
+              }}
+            />
+          ) : null}
 
           {viewCvFile ? (
             <CvPreviewModal

@@ -158,6 +158,7 @@ import { runRecruitmentInboundCvIntakeTests } from "./recruitment-inbound-cv-int
 import { runRecruitmentIntakeFinalizePatchTests } from "./recruitment-intake-finalize-patch.test.ts";
 import { runCandidateRoleRegionTests } from "./recruitment-candidate-role-region.test.ts";
 import { runCandidateScreeningFactsTests } from "./recruitment-candidate-screening-facts.test.ts";
+import { runCvFileChoiceTests } from "./recruitment-cv-file-choice.test.ts";
 import { runRecruitmentEmailIntakeTests } from "./recruitment-email-intake.test.ts";
 import { runRecruitmentWhatsAppIntakeTests } from "./recruitment-whatsapp-intake.test.ts";
 import { runWhatsAppCoexistenceHistoryTests } from "./recruitment-whatsapp-coexistence-history.test.ts";
@@ -1188,6 +1189,10 @@ await runTest("recruitment candidate role and region filters", runCandidateRoleR
 await runTest(
   "recruitment candidate screening facts (a hedged CV read never outranks a recorded one, and the row and the filter resolve the same role family)",
   runCandidateScreeningFactsTests,
+);
+await runTest(
+  "recruitment CV file choice (screening mode picks the newest renderable CV, and says so when there is none)",
+  runCvFileChoiceTests,
 );
 await runTest("recruitment whatsapp intake", runRecruitmentWhatsAppIntakeTests);
 await runTest(
