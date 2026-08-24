@@ -204,13 +204,26 @@ export async function runRecruitmentManagerInboxTests() {
   //
   // null is a real and common answer here (66 production rows) and means "the CV did not say",
   // which is not "no". A checkbox would quietly hide those people.
+  //
+  // The variable name changed on 2026-08-24, when the filter started reading the RESOLVED fact
+  // instead of the raw column: 14 people have a medical-rep answer the CV reader hedged, so the
+  // column is null while the row itself shows "Pharma rep", and a filter that disagrees with the
+  // row it is filtering is the fault this rebuild exists to fix. The shape is what is pinned —
+  // `typeof x === "boolean"`, never a `!== null` that would keep an undefined.
   assert.match(
     workspace,
-    /experienceFilter === "unknown" && typeof c\.hasMedicalRepExperience === "boolean"/,
+    /experienceFilter === "unknown" && typeof [A-Za-z.]+ === "boolean"/,
     "unknown must test for the ABSENCE of a boolean — `!== null` wrongly keeps an undefined",
   );
-  assert.match(workspace, /experienceFilter === "yes" && c\.hasMedicalRepExperience !== true/);
-  assert.match(workspace, /experienceFilter === "no" && c\.hasMedicalRepExperience !== false/);
+  assert.match(
+    workspace,
+    /const pharma = candidateScreeningFacts\(c\)\.pharmaRep\?\.value \?\? null;/,
+    "and it must read the same resolved fact the row shows, or it hides people the row calls pharma reps",
+  );
+  // Same reason as the branch above: the filter reads the resolved fact, so the variable is not
+  // the raw column any more. The three branches must stay three, and "yes" must stay strict.
+  assert.match(workspace, /experienceFilter === "yes" && [A-Za-z.]+ !== true/);
+  assert.match(workspace, /experienceFilter === "no" && [A-Za-z.]+ !== false/);
   assert.match(
     workspace,
     /setExperienceFilter\("all"\)/,

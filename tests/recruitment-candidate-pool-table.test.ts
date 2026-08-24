@@ -369,10 +369,26 @@ export async function runRecruitmentCandidatePoolTableTests() {
     "listCandidates must actually call the loader, or the flag is computed nowhere and every badge below is dead markup",
   );
 
-  // Desktop. The badge sits in the Applying-for cell — the cell whose emptiness raises the question
-  // — and it takes the place of "Not stated" rather than stacking on top of it.
-  assert.ok(
-    workspace.includes("{!appliedFor.text && !isNotACv(candidate) ? ("),
+  // Desktop. The badge sits in the role cell — the cell whose emptiness raises the question — and
+  // it takes the place of "Not stated" rather than stacking on top of it.
+  //
+  // Matched as a shape, not as one exact line. On 2026-08-24 the cell gained a first line for the
+  // candidate's own job title, so the guard grew a `!facts.roleTitle &&` in front of it, and an
+  // exact-substring pin went red while the behaviour it protects had become strictly stronger.
+  // What must hold is that "Not stated" prints only when the cell has nothing else to show AND the
+  // badge is not about to say the same nothing directly underneath it.
+  const notStatedGuard = workspace.match(
+    /\{([^{}]*)\?\s*\(\s*<span className="text-slate-300">Not stated<\/span>/,
+  );
+  assert.ok(notStatedGuard, "the desktop 'Not stated' fallback must still be a guarded branch");
+  assert.match(
+    notStatedGuard?.[1] ?? "",
+    /!appliedFor\.text/,
+    "'Not stated' must not print over a row that does have an applied-for answer",
+  );
+  assert.match(
+    notStatedGuard?.[1] ?? "",
+    /!isNotACv\(candidate\)/,
     "'Not stated' must give way to the badge, not sit above it saying the same nothing twice",
   );
   assert.ok(
