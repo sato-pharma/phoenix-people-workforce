@@ -145,6 +145,7 @@ import { runRecruitmentPipelineMetricsTests } from "./recruitment-pipeline-metri
 import { runRecruitmentHiringManagerPushTests } from "./recruitment-hiring-manager-push.test.ts";
 import { runRecruitmentSimplifyTests } from "./recruitment-simplify.test.ts";
 import { runRecruitmentRequisitionPositionCatalogueTests } from "./recruitment-requisition-position-catalogue.test.ts";
+import { runRecruitmentNonRecruitablePositionsTests } from "./recruitment-non-recruitable-positions.test.ts";
 import { runRecruitmentManagerInboxTests } from "./recruitment-manager-inbox.test.ts";
 import { runRecruitmentCandidatePoolTableTests } from "./recruitment-candidate-pool-table.test.ts";
 import { runRecruitmentLabelTests } from "./recruitment-labels.test.ts";
@@ -1150,6 +1151,7 @@ await runTest(
   "recruitment requisition position catalogue (the full active catalogue is pickable; a seatless requisition carries a real position_id and borrows the position title, and still needs a hiring manager)",
   runRecruitmentRequisitionPositionCatalogueTests,
 );
+await runTest("recruitment non-recruitable positions (Ceo is excluded from the requisition Position dropdown, owner-curated display filter)", runRecruitmentNonRecruitablePositionsTests);
 await runTest(
   "recruitment manager inbox (a manager sees and answers what was pushed to them, the nationality flag, the pharma-experience filter, and one daily CV digest instead of 628 alerts)",
   runRecruitmentManagerInboxTests,

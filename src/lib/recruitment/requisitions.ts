@@ -104,20 +104,30 @@ export async function listOpenVacanciesForRequisition(): Promise<VacancyReportRo
   return open.filter((vacancy) => !wrapped.has(vacancy.id));
 }
 
+// Owner-curated: positions that exist in the org catalogue but are not hired through
+// the recruitment pipeline, so they must not appear in the requisition Position dropdown.
+// Extend this set as the owner classifies more positions.
+export const NON_RECRUITABLE_POSITION_CODES = new Set<string>(["ceo"]);
+
 // The full catalogue of active positions — every role that can be recruited for, not only the ~3
 // that happen to have a vacant seat on the organogram today. getVacancyReport() only ever surfaces
 // titles that appear in vacancy rows, so this is a separate read against `positions` itself.
 // Titles are returned exactly as stored (some are awkwardly cased, e.g. "Ceo", "Qppv") — the caller
-// shows them verbatim.
+// shows them verbatim. Owner-excluded codes (NON_RECRUITABLE_POSITION_CODES) are filtered out here
+// so every caller of this catalogue gets the same curated list.
 export async function listPositionCatalogue(): Promise<PositionCatalogueOption[]> {
   const supabase = recruitmentDb();
   const { data, error } = await supabase
     .from("positions")
-    .select("id,title")
+    .select("id,title,code")
     .eq("is_active", true)
     .order("title");
   if (error) throw error;
-  return ((data ?? []) as Array<{ id: unknown; title: unknown }>)
+  return ((data ?? []) as Array<{ id: unknown; title: unknown; code: unknown }>)
+    .filter((row) => {
+      const code = textOrNull(row.code);
+      return !code || !NON_RECRUITABLE_POSITION_CODES.has(code.toLowerCase());
+    })
     .map((row) => ({ id: numberOrNull(row.id), title: textOrNull(row.title) }))
     .filter((row): row is PositionCatalogueOption => row.id !== null && row.title !== null);
 }
