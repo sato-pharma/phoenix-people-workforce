@@ -122,6 +122,31 @@ type TabKey = "pipeline" | "requisitions" | "candidates";
 const fieldClass =
   "w-full border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-orange-400 focus:outline-none";
 
+// Same look as the candidate pool's filter labels (poolFilterLabelClass), but rendered as a plain
+// div/span rather than a <label>. SearchableSelect is a portalled combobox, not a native <select>,
+// so an implicit label would re-target the click and reopen the panel the user just dismissed.
+const requisitionFieldLabelClass = "text-[11px] font-semibold uppercase tracking-wide text-slate-500";
+
+/**
+ * A labelled cell in the "Open a requisition" grid.
+ *
+ * Every control in this form used to carry its name in a placeholder only. A placeholder is not a
+ * label: it vanishes the instant a value lands, and it cannot say which of two mutually exclusive
+ * paths a field belongs to. That is what made the typed-title path unreachable in practice — the
+ * job-title input sits in the grid cell directly beneath the vacant-seat combobox, so an open
+ * dropdown panel covers it, and with nothing but grey placeholder text to go on it read as part of
+ * the same cascade rather than the alternative to it.
+ */
+function RequisitionField({ hint, label, children }: { hint?: string; label: string; children: ReactNode }) {
+  return (
+    <div className="flex flex-col gap-1">
+      <span className={requisitionFieldLabelClass}>{label}</span>
+      {children}
+      {hint ? <span className="text-[11px] text-slate-500">{hint}</span> : null}
+    </div>
+  );
+}
+
 function titleCase(value: string): string {
   return value.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
@@ -1748,100 +1773,147 @@ function RequisitionsTab({
       {canCreate ? (
         <AdminTableShell
           title="Open a requisition"
-          description="Wrap an open vacancy, or type any job title and name the manager who will hire for it."
+          description="Two ways in: wrap a seat that is already vacant on the organogram, or type any job title and name the manager who will hire for it. Either one is enough."
         >
           <div className="grid gap-3 p-5 sm:grid-cols-2 lg:grid-cols-3">
-            <SearchableSelect
-              className={fieldClass}
-              value={posSel}
-              onChange={(e) => {
-                setPosSel(e.target.value);
-                setLineSel("");
-                setVacancyId("");
-              }}
+            <RequisitionField
+              hint="Only seats vacant on the organogram today."
+              label="Vacant seat (optional)"
             >
-              <option value="">Position…</option>
-              {Array.from(positionsById.entries()).map(([id, title]) => (
-                <option key={id} value={id}>
-                  {title}
-                </option>
-              ))}
-            </SearchableSelect>
-            <SearchableSelect
-              className={fieldClass}
-              value={lineSel}
-              disabled={!posSel}
-              onChange={(e) => {
-                setLineSel(e.target.value);
-                setVacancyId("");
-              }}
-            >
-              <option value="">Line…</option>
-              {Array.from(linesById.entries()).map(([id, name]) => (
-                <option key={id} value={id}>
-                  {name}
-                </option>
-              ))}
-            </SearchableSelect>
-            <SearchableSelect className={fieldClass} value={vacancyId} disabled={!lineSel} onChange={(e) => setVacancyId(e.target.value)}>
-              <option value="">Vacant area…</option>
-              {areaVacancies.map((vacancy) => (
-                <option key={vacancy.id} value={vacancy.id}>
-                  {vacancy.areaName ?? "Area"} · {vacancy.vacancyCode}
-                </option>
-              ))}
-            </SearchableSelect>
+              <SearchableSelect
+                className={fieldClass}
+                value={posSel}
+                onChange={(e) => {
+                  setPosSel(e.target.value);
+                  setLineSel("");
+                  setVacancyId("");
+                }}
+              >
+                <option value="">Choose a vacant seat…</option>
+                {Array.from(positionsById.entries()).map(([id, title]) => (
+                  <option key={id} value={id}>
+                    {title}
+                  </option>
+                ))}
+              </SearchableSelect>
+            </RequisitionField>
+            <RequisitionField label="Line">
+              <SearchableSelect
+                className={fieldClass}
+                value={lineSel}
+                disabled={!posSel}
+                onChange={(e) => {
+                  setLineSel(e.target.value);
+                  setVacancyId("");
+                }}
+              >
+                <option value="">Line…</option>
+                {Array.from(linesById.entries()).map(([id, name]) => (
+                  <option key={id} value={id}>
+                    {name}
+                  </option>
+                ))}
+              </SearchableSelect>
+            </RequisitionField>
+            <RequisitionField label="Vacant area">
+              <SearchableSelect className={fieldClass} value={vacancyId} disabled={!lineSel} onChange={(e) => setVacancyId(e.target.value)}>
+                <option value="">Vacant area…</option>
+                {areaVacancies.map((vacancy) => (
+                  <option key={vacancy.id} value={vacancy.id}>
+                    {vacancy.areaName ?? "Area"} · {vacancy.vacancyCode}
+                  </option>
+                ))}
+              </SearchableSelect>
+            </RequisitionField>
             {/*
               The cascade above only reaches seats that exist on the organogram — Medical Rep and
               District Manager, 3 of the 21 positions in the catalogue. Everything else is hired
               against a typed title, which the service has always accepted; this input is what makes
               it reachable. A vacancy still wins where both are given.
+
+              It sits in the grid cell directly under the vacant-seat combobox, so an open dropdown
+              panel covers it completely. That is why it needs a standing label rather than a
+              placeholder: once the panel closes, the label is still there to say this is the other
+              way in, not a third field of the cascade above it.
             */}
-            <Input
-              placeholder="Job title (no vacancy needed)"
-              value={jobTitle}
-              onChange={(e) => setJobTitle(e.target.value)}
-            />
+            <RequisitionField label="Or type a job title">
+              <Input
+                placeholder="Any title — no vacant seat needed"
+                value={jobTitle}
+                onChange={(e) => setJobTitle(e.target.value)}
+              />
+            </RequisitionField>
             {selectedVacancy ? (
-              <div className={`${fieldClass} bg-slate-50 text-slate-600`}>
-                Manager: {selectedVacancy.managerName ?? selectedVacancy.managerHrId ?? "—"}
-              </div>
+              <RequisitionField hint="Comes with the seat." label="Hiring manager">
+                <div className={`${fieldClass} bg-slate-50 text-slate-600`}>
+                  {selectedVacancy.managerName ?? selectedVacancy.managerHrId ?? "—"}
+                </div>
+              </RequisitionField>
             ) : (
               // Required with no vacancy, and not for tidiness: canSeeRequisition scopes on the
               // hiring manager and the recruitment owner, never on line or area — so a seatless
               // requisition with nobody named here is invisible to the very person meant to hire.
-              <SearchableSelect
-                className={fieldClass}
-                value={hiringManagerHrId}
-                onChange={(e) => setHiringManagerHrId(e.target.value)}
-              >
-                <option value="">Hiring manager…</option>
-                {hiringManagers.map((manager) => (
+              <RequisitionField hint="Required — they are who sees this requisition." label="Hiring manager">
+                <SearchableSelect
+                  className={fieldClass}
+                  value={hiringManagerHrId}
+                  onChange={(e) => setHiringManagerHrId(e.target.value)}
+                >
+                  <option value="">Hiring manager…</option>
+                  {hiringManagers.map((manager) => (
+                    <option key={manager.hrId} value={manager.hrId}>
+                      {manager.name} · {manager.jobTitle}
+                    </option>
+                  ))}
+                </SearchableSelect>
+              </RequisitionField>
+            )}
+            <RequisitionField label="Recruitment owner">
+              <SearchableSelect className={fieldClass} value={ownerHrId} onChange={(e) => setOwnerHrId(e.target.value)}>
+                <option value="">Recruitment owner…</option>
+                {managers.map((manager) => (
                   <option key={manager.hrId} value={manager.hrId}>
-                    {manager.name} · {manager.jobTitle}
+                    {manager.fullName} ({manager.hrId})
                   </option>
                 ))}
               </SearchableSelect>
-            )}
-            <SearchableSelect className={fieldClass} value={ownerHrId} onChange={(e) => setOwnerHrId(e.target.value)}>
-              <option value="">Recruitment owner…</option>
-              {managers.map((manager) => (
-                <option key={manager.hrId} value={manager.hrId}>
-                  {manager.fullName} ({manager.hrId})
-                </option>
-              ))}
-            </SearchableSelect>
-            <SearchableSelect className={fieldClass} value={priority} onChange={(e) => setPriority(e.target.value)}>
-              {["low", "normal", "high", "urgent"].map((value) => (
-                <option key={value} value={value}>
-                  {titleCase(value)} priority
-                </option>
-              ))}
-            </SearchableSelect>
-            <Input placeholder="Grade" value={grade} onChange={(e) => setGrade(e.target.value)} />
-            <Input placeholder="Salary band min" type="number" value={bandMin} onChange={(e) => setBandMin(e.target.value)} />
-            <Input placeholder="Salary band max" type="number" value={bandMax} onChange={(e) => setBandMax(e.target.value)} />
-            <Input placeholder="Deadline" type="date" value={deadline} onChange={(e) => setDeadline(e.target.value)} />
+            </RequisitionField>
+            <RequisitionField label="Priority">
+              <SearchableSelect className={fieldClass} value={priority} onChange={(e) => setPriority(e.target.value)}>
+                {["low", "normal", "high", "urgent"].map((value) => (
+                  <option key={value} value={value}>
+                    {titleCase(value)} priority
+                  </option>
+                ))}
+              </SearchableSelect>
+            </RequisitionField>
+            <RequisitionField label="Grade">
+              <Input placeholder="Grade" value={grade} onChange={(e) => setGrade(e.target.value)} />
+            </RequisitionField>
+            <RequisitionField label="Salary band min">
+              <Input
+                placeholder="Salary band min"
+                type="number"
+                value={bandMin}
+                onChange={(e) => setBandMin(e.target.value)}
+              />
+            </RequisitionField>
+            <RequisitionField label="Salary band max">
+              <Input
+                placeholder="Salary band max"
+                type="number"
+                value={bandMax}
+                onChange={(e) => setBandMax(e.target.value)}
+              />
+            </RequisitionField>
+            <RequisitionField label="Deadline">
+              <Input
+                placeholder="Deadline"
+                type="date"
+                value={deadline}
+                onChange={(e) => setDeadline(e.target.value)}
+              />
+            </RequisitionField>
             <div className="sm:col-span-2 lg:col-span-3">
               <Button
                 disabled={pending || !canSubmit}
