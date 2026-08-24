@@ -137,6 +137,12 @@ file holding the full account, under
 - **`check-runs: 0` also means CONFLICTED** — a conflicted PR runs no CI at all, which reads as "not
   started". `a-conflicted-pr-runs-no-ci-at-all`
 - **ONE new hub page trips FOUR separate CI gates.** `adding-a-hub-page-trips-four-separate-ci-gates`
+- **A red `main` still builds, ships, and serves perfectly** — `ignoreBuildErrors` (see the
+  exhaustive-`Record` entry under Validation below) hides it from the product, and a green PR is not
+  a green `main`: two PRs can each pass alone, on checks taken before the other existed, then merge
+  and never get validated together. After merging, check the run on **`main`'s new head**
+  (`gh run list --branch main --limit 5 --json headSha,name,status,conclusion`), not the branch's own
+  check. `a-red-main-ships-and-looks-fine-build-ignores-type-errors`
 
 **Migrations**
 
