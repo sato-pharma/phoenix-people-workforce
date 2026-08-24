@@ -29,6 +29,7 @@ import { Card } from "@/components/ui/card";
 import { HiringDocumentCapture } from "@/components/hiring-documents/hiring-document-capture";
 import { Input } from "@/components/ui/input";
 import { PortalDesktopTable } from "@/components/employee-portal/portal-primitives";
+import { employmentStatusLabel } from "@/lib/employees/employment-status-label";
 import { hiringDeadlineChanged, normalizeHiringDeadline } from "@/lib/hiring-documents/deadline";
 import type {
   HiringDocumentDefinition,
@@ -78,13 +79,16 @@ function uniqueOptions(values: Array<string | null | undefined>) {
 
 function statusBadge(status: string | null | undefined) {
   const normalized = String(status ?? "active").toLowerCase();
+  // Same words as the filter's <option> list, from the same place. The badge only ever LOOKED
+  // right because `Badge` is styled `uppercase`; the string it was handed was the stored code.
+  const label = employmentStatusLabel(normalized) || "Unknown";
   if (normalized === "active" || normalized === "on_leave") {
-    return <Badge variant="success">{normalized.replace(/_/g, " ")}</Badge>;
+    return <Badge variant="success">{label}</Badge>;
   }
   if (normalized === "resigned" || normalized === "terminated") {
-    return <Badge variant="danger">{normalized}</Badge>;
+    return <Badge variant="danger">{label}</Badge>;
   }
-  return <Badge variant="warning">{normalized || "unknown"}</Badge>;
+  return <Badge variant="warning">{label}</Badge>;
 }
 
 function documentStatusBadge(status: HiringDocumentStatus) {
@@ -538,7 +542,7 @@ export function HiringDocumentsManager({ canManage, initialData, initialError }:
                   <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">Employee Status</span>
                   <SearchableSelect className={selectClassName} onChange={(event) => setStatusFilter(event.target.value)} value={statusFilter}>
                     <option value={allValue}>All statuses</option>
-                    {statusOptions.map((status) => <option key={status} value={status}>{status.replace(/_/g, " ")}</option>)}
+                    {statusOptions.map((status) => <option key={status} value={status}>{employmentStatusLabel(status)}</option>)}
                   </SearchableSelect>
                 </label>
               </div>
@@ -1000,9 +1004,14 @@ export function HiringDocumentsManager({ canManage, initialData, initialError }:
                   ) : (
                     documents.map((document) => (
                       <tr className="hover:bg-[#FFF7ED]/40" key={document.id}>
+                        {/* The name, and not the row's UUID underneath it. That id was printed
+                            under all ten document names — "b748745e-b674-479e-915d-d01f4c84dcd4"
+                            below "National ID copy" — and it is a primary key: nothing on this
+                            screen asks for it, nobody types it, and the Delete button already
+                            carries it in the closure. Names are unique here, so it disambiguates
+                            nothing either. */}
                         <td className={tableCellClassName}>
                           <p className="font-bold text-[#0F172A]">{document.name}</p>
-                          <p className="mt-1 font-mono text-xs text-[#94A3B8]">{document.id}</p>
                         </td>
                         <td className={tableCellClassName}>{document.description ?? "-"}</td>
                         <td className={tableCellClassName}>{document.displayOrder}</td>
@@ -1024,7 +1033,7 @@ export function HiringDocumentsManager({ canManage, initialData, initialError }:
                 </tbody>
             </PortalDesktopTable>
 
-            {/* Mobile: one card per configured document (name/id as title, order as a badge). */}
+            {/* Mobile: one card per configured document (name as title, order as a badge). */}
             <div className="divide-y divide-[#E2E8F0] rounded-xl border border-[#E2E8F0] md:hidden">
               {documents.length === 0 ? (
                 <div className="px-4 py-10 text-center text-sm text-[#64748B]">
@@ -1036,7 +1045,6 @@ export function HiringDocumentsManager({ canManage, initialData, initialError }:
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
                         <p className="font-bold text-[#0F172A]">{document.name}</p>
-                        <p className="mt-1 font-mono text-xs text-[#94A3B8]">{document.id}</p>
                       </div>
                       <Badge variant="neutral">Order {document.displayOrder}</Badge>
                     </div>
