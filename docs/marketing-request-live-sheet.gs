@@ -82,6 +82,11 @@
  *   expired token or a revoked link leaves the last good data on screen rather than blanking the
  *   report — a sheet that silently empties itself reads as "all the requests are gone", which is
  *   worse than stale data.
+ *
+ *   It no longer does that in SILENCE. Row 2 turns into a red STALE banner naming when the figures
+ *   stopped moving and why the last attempt failed, and clears itself the moment the feed answers
+ *   again. Stale data you can see is safe; stale data that looks live is what cost the Direct Orders
+ *   sheet eighteen days.
  */
 
 // ── Configuration ────────────────────────────────────────────────────────────────
@@ -411,6 +416,107 @@ function onOpen() {
     .addToUi();
 }
 
+// ── Staleness banner ──────────────────────────────────────────────────────────
+//
+// Every early return below is correct — the last good data must stay on screen, because a sheet
+// that blanks itself reads as "every request is gone". But three of them returned in silence,
+// without even a console.error, and the "refreshed …" stamp simply stopped moving. A frozen
+// sheet and a live one then look identical.
+//
+// The Direct Orders sheet proved what that costs: a feed token revoked on 2026-08-05 left it
+// showing that day's figures for eighteen days, refreshing every minute the whole time, looking
+// perfectly normal. This sheet is fed by the same kind of revocable link and had the same hole.
+//
+// So a failed refresh now turns row 2 into a red banner naming when the data froze and why the
+// last attempt failed; the next good refresh puts the ordinary subtitle back. Painted only when
+// the state CHANGES, so a long outage costs nothing per minute.
+//
+// Only cells already holding a live "refreshed …" stamp are ever touched, so a tab carrying a
+// fixed description cannot be overwritten by the warning.
+var FEED_STATE_KEY = "phoenixFeedState";
+var LAST_GOOD_KEY = "phoenixLastGoodStamp";
+var STALE_MARKER = "⚠ STALE";
+var STALE_BG = "#B91C1C";
+var STALE_FG = "#FFFFFF";
+
+/** The subtitle cells that carry a live refresh stamp, and are therefore safe to repaint. */
+function stampedSubtitles(ss) {
+  var out = [];
+  for (var i = 0; i < TAB_ORDER.length; i++) {
+    var sheet = ss.getSheetByName(TAB_ORDER[i]);
+    if (!sheet) continue;
+    var cell = sheet.getRange(ROW_SUBTITLE, 1);
+    var text = String(cell.getValue() || "");
+    if (text.indexOf("refreshed ") === -1 && text.indexOf(STALE_MARKER) !== 0) continue;
+    out.push({ before: text, cell: cell, cols: Math.max(1, sheet.getLastColumn()), sheet: sheet });
+  }
+  return out;
+}
+
+/**
+ * Say, on the face of the sheet, that what it shows is no longer live.
+ *
+ * Never throws: this runs on the failure path, and a banner that breaks the trigger would turn a
+ * stale sheet into a dead one.
+ */
+function markFeedStale(reason) {
+  try {
+    var props = PropertiesService.getScriptProperties();
+    // Keyed on the reason too, so a 403 that becomes a network outage repaints with the new
+    // cause instead of leaving the first explanation up for ever.
+    var state = "stale:" + reason;
+    if (props.getProperty(FEED_STATE_KEY) === state) return;
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    if (!ss) return;
+    var frozenAt = props.getProperty(LAST_GOOD_KEY);
+    var now = Utilities.formatDate(new Date(), TZ, "dd MMM yyyy, HH:mm");
+    var message = STALE_MARKER + " — these figures stopped updating "
+      + (frozenAt ? "on " + frozenAt : "at some point before this script was updated")
+      + " (Cairo). Last attempt " + now + " failed: " + reason
+      + ". Still retrying every minute; this line clears itself the moment the feed answers.";
+    var targets = stampedSubtitles(ss);
+    for (var i = 0; i < targets.length; i++) {
+      targets[i].sheet.getRange(ROW_SUBTITLE, 1, 1, targets[i].cols).setBackground(STALE_BG);
+      targets[i].cell
+        .setValue(message)
+        .setFontColor(STALE_FG)
+        .setFontStyle("normal")
+        .setFontWeight("bold");
+    }
+    props.setProperty(FEED_STATE_KEY, state);
+  } catch (err) {
+    console.error("Could not paint the stale banner (the refresh failure above is the real problem): " + err);
+  }
+}
+
+/**
+ * Record a good refresh, and take the banner down if one is up.
+ *
+ * Called AFTER the tabs are drawn, so their own fresh subtitles win. A tab this pass did not
+ * rewrite still carries the banner text, and is given a plain stamp rather than a guess at what
+ * its description used to say.
+ */
+function markFeedFresh(ss, stamp) {
+  try {
+    var props = PropertiesService.getScriptProperties();
+    var previous = String(props.getProperty(FEED_STATE_KEY) || "");
+    props.setProperty(LAST_GOOD_KEY, stamp);
+    if (previous.indexOf("stale:") !== 0) return;
+    var targets = stampedSubtitles(ss);
+    for (var i = 0; i < targets.length; i++) {
+      var cell = targets[i].cell;
+      if (targets[i].before.indexOf(STALE_MARKER) === 0) {
+        cell.setValue(targets[i].sheet.getName() + " — refreshed " + stamp + " (Cairo)");
+      }
+      targets[i].sheet.getRange(ROW_SUBTITLE, 1, 1, targets[i].cols).setBackground(BLACK);
+      cell.setFontColor(MUTED).setFontStyle("italic").setFontWeight("normal");
+    }
+    props.setProperty(FEED_STATE_KEY, "ok");
+  } catch (err) {
+    console.error("Could not clear the stale banner: " + err);
+  }
+}
+
 // ── The refresh ─────────────────────────────────────────────────────────────────
 
 function refreshMarketingRequests() {
@@ -418,23 +524,38 @@ function refreshMarketingRequests() {
   if (!url) {
     // No FEED_TOKEN configured. Treated exactly like an unreachable feed — leave the sheet alone.
     console.error("No FEED_TOKEN script property is set — nothing to fetch. Project Settings -> Script Properties -> FEED_TOKEN.");
+    markFeedStale("no FEED_TOKEN is configured");
     return;
   }
   var response;
   try {
     response = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
   } catch (err) {
+    console.error("Feed unreachable: " + err);
+    markFeedStale("the feed could not be reached");
     return; // network blip — last good data stays on screen
   }
-  if (response.getResponseCode() !== 200) return; // revoked / expired — same rule
+  if (response.getResponseCode() !== 200) {
+    // The one that hides: 403 means the share link was revoked or has expired, so this will
+    // keep failing every minute for ever until somebody re-points FEED_TOKEN at a live link.
+    console.error("Feed returned HTTP " + response.getResponseCode());
+    markFeedStale("the feed answered HTTP " + response.getResponseCode()
+      + (response.getResponseCode() === 403 ? " (the share link was revoked or has expired)" : ""));
+    return; // revoked / expired — same rule
+  }
 
   var bundle;
   try {
     bundle = parseBundle(response.getContentText());
   } catch (err) {
+    console.error("Feed could not be parsed: " + err);
+    markFeedStale("the feed answered but could not be read");
     return; // unparseable — never clear on a bad parse
   }
-  if (!bundle || !bundle.REQUESTS || bundle.REQUESTS.length === 0) return;
+  if (!bundle || !bundle.REQUESTS || bundle.REQUESTS.length === 0) {
+    markFeedStale("the feed answered but carried no request table");
+    return;
+  }
 
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var props = PropertiesService.getScriptProperties();
@@ -493,6 +614,9 @@ function refreshMarketingRequests() {
   } catch (err) {
     console.error("Backup append failed (live tabs are unaffected): " + err);
   }
+
+  // Last of all, so the tabs' own subtitles are already in place.
+  markFeedFresh(ss, stamp);
 }
 
 /** Every tab's header row, joined. Changes only when the feed's shape changes. */
