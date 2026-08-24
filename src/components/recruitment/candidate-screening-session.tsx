@@ -29,8 +29,8 @@ import { candidateScreeningFacts, candidateScreeningRoleFamily } from "@/lib/rec
 import {
   countByBand,
   orderForScreening,
+  screeningBand,
   screeningBandDescriptions,
-  screeningBandForFamily,
   screeningBandLabels,
   type ScreeningOrderInput,
 } from "@/lib/recruitment/screening-order";
@@ -48,11 +48,12 @@ type LoadedCandidate = { profile: CandidateProfile; extraction: StoredCvExtracti
 
 // Chip colours. Deliberately muted against the dark header: this says where you are in the queue,
 // it is not a verdict on the person, and a red badge beside somebody's name reads as one.
-const bandChipClass: Record<ReturnType<typeof screeningBandForFamily>, string> = {
+const bandChipClass: Record<ReturnType<typeof screeningBand>, string> = {
   field_force: "bg-emerald-500/15 text-emerald-300",
   pharma_adjacent: "bg-sky-500/15 text-sky-300",
   unknown: "bg-amber-500/15 text-amber-300",
   unrelated: "bg-slate-500/20 text-slate-300",
+  no_cv: "bg-slate-500/20 text-slate-400",
 };
 
 /**
@@ -65,6 +66,9 @@ function describeForOrder(candidate: Candidate): ScreeningOrderInput {
     createdAt: candidate.createdAt,
     family: candidateScreeningRoleFamily(facts, candidateRowAppliedFor(candidate).text),
     hasPharmaExperience: facts.pharmaRep?.value ?? null,
+    // A file the extractor already judged not to be a CV is a settled answer, not an open question,
+    // so it goes to the back rather than sitting among the ones only a person can read.
+    notACv: candidate.notACv,
   };
 }
 
@@ -225,7 +229,7 @@ export function CandidateScreeningSession({
   // The status the row already carried before this session — so a candidate somebody judged last
   // week is not silently presented as untouched.
   const existingStatus = (current.status ?? "new") as CandidateStatus;
-  const currentBand = screeningBandForFamily(describeForOrder(current).family);
+  const currentBand = screeningBand(describeForOrder(current));
   const loadError = failed[current.id];
 
   return (

@@ -15,6 +15,7 @@
 // the queue and still gets a human decision. Only the order changes.
 
 import { type CandidateRoleFamily } from "@/lib/recruitment/candidate-role-family";
+import { isNotACv } from "@/lib/recruitment/not-a-cv";
 
 /**
  * The four groups, best first.
@@ -22,10 +23,17 @@ import { type CandidateRoleFamily } from "@/lib/recruitment/candidate-role-famil
  * `unknown` sits ABOVE `unrelated` deliberately, and it is the band worth explaining. A candidate
  * whose family could not be worked out is not a weak candidate — it is a candidate the ROW cannot
  * speak for, so only a human reading the CV can settle it. Burying those behind 137 accountants
- * would mean the one group that genuinely needs a person is the group nobody ever reaches. 75 of
- * the 381 are in this state as of 2026-08-25, down from 174 before the legacy CVs were re-read.
+ * would mean the one group that genuinely needs a person is the group nobody ever reaches.
+ *
+ * `no_cv` is last, and is the band that is NOT about the candidate at all. The extractor already
+ * read that file and answered "this is not a CV" — a photographed certificate, a diploma, an
+ * experience letter. That is a settled fact, so those rows do not belong in `unknown`, which
+ * means "only a person can judge this". Measured on production 2026-08-25, 27 of the 67 sitting
+ * in `unknown` were in exactly that state: a quarter of the band promoted for needing a human
+ * needed no human at all, and each one cost a full open-read-and-decide before the screener
+ * could see there was nothing to read.
  */
-export const screeningBands = ["field_force", "pharma_adjacent", "unknown", "unrelated"] as const;
+export const screeningBands = ["field_force", "pharma_adjacent", "unknown", "unrelated", "no_cv"] as const;
 
 export type ScreeningBand = (typeof screeningBands)[number];
 
@@ -34,6 +42,7 @@ export const screeningBandLabels: Record<ScreeningBand, string> = {
   pharma_adjacent: "Pharma, other roles",
   unknown: "Needs a read",
   unrelated: "Other fields",
+  no_cv: "No CV to read",
 };
 
 /** One line each, shown to the screener so the order is never a mystery. */
@@ -42,6 +51,7 @@ export const screeningBandDescriptions: Record<ScreeningBand, string> = {
   pharma_adjacent: "Pharmacists and product managers — pharma people, but not a field-force job.",
   unknown: "No job title could be read off the CV, so only a person can judge these.",
   unrelated: "Their title says a different industry — HR, finance, engineering and so on.",
+  no_cv: "The file they sent is a certificate or a letter, not a CV. There is nothing here to read.",
 };
 
 const bandByFamily: Record<CandidateRoleFamily, ScreeningBand> = {
@@ -69,6 +79,7 @@ const bandRank: Record<ScreeningBand, number> = {
   pharma_adjacent: 1,
   unknown: 2,
   unrelated: 3,
+  no_cv: 4,
 };
 
 export type ScreeningOrderInput = {
@@ -81,14 +92,31 @@ export type ScreeningOrderInput = {
    * of their band would punish a candidate for a gap in our own data.
    */
   hasPharmaExperience: boolean | null;
+  /**
+   * True only when a read is on record and it said the file is not a CV. Absent or false means
+   * nobody has judged it, which is a different claim — see `isNotACv`.
+   */
+  notACv?: boolean;
 };
+
+/**
+ * The band a candidate actually lands in.
+ *
+ * Checked BEFORE the family, because "there is no CV here" outranks anything a title might have
+ * said: a certificate that happens to carry the words "Medical Representative" is still not a CV,
+ * and putting it at the front of the queue would be the worst possible use of the ordering.
+ */
+export function screeningBand(input: ScreeningOrderInput): ScreeningBand {
+  if (isNotACv({ notACv: input.notACv })) return "no_cv";
+  return screeningBandForFamily(input.family);
+}
 
 /**
  * Sort key, lowest first. Exported for the test, and because a caller that wants to show WHY a
  * candidate is where they are needs the same numbers the sort used.
  */
 export function screeningSortKey(input: ScreeningOrderInput): [number, number, number] {
-  const band = screeningBandForFamily(input.family);
+  const band = screeningBand(input);
   // Confirmed pharma experience lifts a candidate within their band; an unanswered one sits in the
   // middle rather than at the bottom, so a data gap never costs somebody their place.
   const pharma = input.hasPharmaExperience === true ? 0 : input.hasPharmaExperience === null ? 1 : 2;
@@ -118,7 +146,7 @@ export function orderForScreening<T>(items: readonly T[], describe: (item: T) =>
 
 /** How many are in each band, for the one line that tells the screener what they are about to meet. */
 export function countByBand<T>(items: readonly T[], describe: (item: T) => ScreeningOrderInput): Record<ScreeningBand, number> {
-  const counts: Record<ScreeningBand, number> = { field_force: 0, pharma_adjacent: 0, unknown: 0, unrelated: 0 };
-  for (const item of items) counts[screeningBandForFamily(describe(item).family)] += 1;
+  const counts: Record<ScreeningBand, number> = { field_force: 0, pharma_adjacent: 0, unknown: 0, unrelated: 0, no_cv: 0 };
+  for (const item of items) counts[screeningBand(describe(item))] += 1;
   return counts;
 }

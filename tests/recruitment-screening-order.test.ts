@@ -4,6 +4,7 @@ import { candidateRoleFamilies } from "../src/lib/recruitment/candidate-role-fam
 import {
   countByBand,
   orderForScreening,
+  screeningBand,
   screeningBandForFamily,
   screeningBandLabels,
   screeningBandDescriptions,
@@ -53,6 +54,51 @@ export function runRecruitmentScreeningOrderTests() {
   // --- genuinely needs a human would be the group nobody ever reaches.
   assert.equal(screeningBandForFamily(null), "unknown");
   assert.equal(screeningBandForFamily("other"), "unrelated");
+
+  // --- EVERY band is explainable on screen, including the ones no family maps to. The loop above
+  // --- only reaches bands a family points at, so a band added later would ship with no label and
+  // --- render as `undefined` in the header chip.
+  for (const band of screeningBands) {
+    assert.ok(screeningBandLabels[band], `${band} needs a label`);
+    assert.ok(screeningBandDescriptions[band], `${band} needs a description`);
+  }
+
+  // --- A FILE THE EXTRACTOR ALREADY JUDGED NOT TO BE A CV outranks whatever title was read off it.
+  // --- A photographed certificate carrying the words "Medical Representative" is still not a CV,
+  // --- and putting it at the FRONT of the queue would be the worst possible use of the ordering.
+  assert.equal(
+    screeningBand({ createdAt: "2026-08-01T00:00:00Z", family: "medical_rep", hasPharmaExperience: true, notACv: true }),
+    "no_cv",
+    "not-a-CV must beat even the strongest family — there is nothing in the file to screen",
+  );
+
+  // --- ...but ONLY on a recorded `true`. Absent means nobody has judged the file, which is the
+  // --- state of every row read before the column existed; treating those as no-CV would bury most
+  // --- of the pool. This is the same distinction `isNotACv` itself is built around.
+  assert.equal(
+    screeningBand({ createdAt: "2026-08-01T00:00:00Z", family: "medical_rep", hasPharmaExperience: true }),
+    "field_force",
+    "an unjudged file must fall through to the family, not to no_cv",
+  );
+  assert.equal(
+    screeningBand({ createdAt: "2026-08-01T00:00:00Z", family: "medical_rep", hasPharmaExperience: true, notACv: false }),
+    "field_force",
+    "a file judged to BE a CV must fall through to the family",
+  );
+
+  // --- And it is LAST. 27 of the 67 candidates the queue called "needs a read" on 2026-08-25 were
+  // --- in this state — already answered, costing a full open-read-and-decide each to discover
+  // --- there was nothing to read. They sit behind even the unrelated industries.
+  const withNoCv = [
+    row("certificate", { family: "medical_rep", hasPharmaExperience: true, notACv: true }),
+    row("accountant", { family: "finance" }),
+    row("unreadable"),
+    row("rep", { family: "medical_rep" }),
+  ];
+  assert.deepEqual(
+    orderForScreening(withNoCv, describe).map((r) => r.name),
+    ["rep", "unreadable", "accountant", "certificate"],
+  );
 
   // --- Band order, best first.
   const mixed = [
@@ -141,6 +187,14 @@ export function runRecruitmentScreeningOrderTests() {
     pharma_adjacent: 1,
     unknown: 1,
     unrelated: 1,
+    no_cv: 0,
   });
-  assert.deepEqual(countByBand([], describe), { field_force: 0, pharma_adjacent: 0, unknown: 0, unrelated: 0 });
+  assert.deepEqual(countByBand([], describe), { field_force: 0, pharma_adjacent: 0, unknown: 0, unrelated: 0, no_cv: 0 });
+
+  // --- The header chip must count no-CV rows in their OWN band, or the screener is told 67 people
+  // --- need reading when 40 do.
+  assert.deepEqual(
+    countByBand([row("a", { family: "medical_rep", notACv: true }), row("b", { family: "medical_rep" })], describe),
+    { field_force: 1, pharma_adjacent: 0, unknown: 0, unrelated: 0, no_cv: 1 },
+  );
 }
