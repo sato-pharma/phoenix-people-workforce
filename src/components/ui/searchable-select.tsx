@@ -141,7 +141,12 @@ export function SearchableSelect({
   const [internalValue, setInternalValue] = React.useState<string>(() => uncontrolledDefaultValue);
   const [query, setQuery] = React.useState("");
   const [open, setOpen] = React.useState(false);
-  const [menuRect, setMenuRect] = React.useState<{ top: number; left: number; width: number } | null>(null);
+  const [menuRect, setMenuRect] = React.useState<{
+    top: number;
+    left: number;
+    width: number;
+    maxWidth: number;
+  } | null>(null);
 
   const currentValue = React.useMemo(() => {
     if (isControlled) return String(value ?? "");
@@ -183,7 +188,18 @@ export function SearchableSelect({
     const wrapper = wrapperRef.current;
     if (!wrapper) return;
     const rect = wrapper.getBoundingClientRect();
-    setMenuRect({ top: rect.bottom + 4, left: rect.left, width: rect.width });
+    // The panel is allowed to grow past the trigger it hangs from, because an option label is
+    // never clipped and never wrapped — a name has to be readable in full. A narrow field would
+    // otherwise force one of the two. Growth stops at the viewport's right edge so a field sitting
+    // near it cannot push the panel off-screen; a label longer than that scrolls inside the panel,
+    // which is the only remaining way to show all of it.
+    const roomToTheRight = window.innerWidth - rect.left - 8;
+    setMenuRect({
+      top: rect.bottom + 4,
+      left: rect.left,
+      width: rect.width,
+      maxWidth: Math.max(rect.width, roomToTheRight),
+    });
   }, []);
 
   React.useLayoutEffect(() => {
@@ -318,9 +334,14 @@ export function SearchableSelect({
               ref={dropdownRef}
               role="listbox"
               aria-label={placeholder ?? "Options"}
-              className="fixed z-[1000] max-h-64 overflow-auto rounded-lg border border-slate-200 bg-white shadow-[0_16px_36px_rgba(15,23,42,0.14)]"
+              className="fixed z-[1000] max-h-64 w-max overflow-auto rounded-lg border border-slate-200 bg-white shadow-[0_16px_36px_rgba(15,23,42,0.14)]"
               id={`${id ?? "searchable-select"}-options`}
-              style={{ top: menuRect.top, left: menuRect.left, width: menuRect.width }}
+              style={{
+                top: menuRect.top,
+                left: menuRect.left,
+                minWidth: menuRect.width,
+                maxWidth: menuRect.maxWidth,
+              }}
             >
               {filteredOptions.length === 0 ? (
                 <div className="p-2 text-xs text-[#64748B]" role="option" aria-disabled="true" aria-selected={false}>{noResultsText}</div>
@@ -335,7 +356,7 @@ export function SearchableSelect({
                         aria-disabled="true"
                         aria-selected={false}
                         className={cn(
-                          "w-full border-b border-slate-100 px-3 py-2 text-left text-sm text-slate-400",
+                          "w-full whitespace-nowrap border-b border-slate-100 px-3 py-2 text-left text-sm text-slate-400",
                           "last:border-b-0"
                         )}
                       >
@@ -359,7 +380,15 @@ export function SearchableSelect({
                         selectOption(option.value);
                       }}
                     >
-                      <span className="truncate">{option.label}</span>
+                      {/*
+                        Not `truncate`. That class is overflow-hidden + text-overflow: ellipsis,
+                        and it is what turned "Ahmed Abdallah · District Sales Manager" into
+                        "Ahmed Abdallah · District Sales Mana…" in every dropdown in the app —
+                        a person picking a manager could not tell two long names apart. `nowrap`
+                        alone keeps the one-line rule without ever clipping; the panel above is
+                        what grows to fit it.
+                      */}
+                      <span className="whitespace-nowrap">{option.label}</span>
                       {isActive ? <Check aria-hidden="true" className="h-3.5 w-3.5 shrink-0 text-orange-600" /> : null}
                     </button>
                   );

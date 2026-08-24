@@ -148,6 +148,7 @@ import { runRecruitmentManagerInboxTests } from "./recruitment-manager-inbox.tes
 import { runRecruitmentCandidatePoolTableTests } from "./recruitment-candidate-pool-table.test.ts";
 import { runRecruitmentLabelTests } from "./recruitment-labels.test.ts";
 import { runHiringDocumentsLabelTests } from "./hiring-documents-labels.test.ts";
+import { runSearchableSelectNoEllipsisTests } from "./searchable-select-no-ellipsis.test.ts";
 import { runRecruitmentAppliedForTests } from "./recruitment-applied-for.test.ts";
 import { runRecruitmentHubPortalCoverageTests } from "./recruitment-hub-portal-coverage.test.ts";
 import { runRecruitmentPortalCvViewTests } from "./recruitment-portal-cv-view.test.ts";
@@ -1151,6 +1152,10 @@ await runTest(
 await runTest(
   "hiring documents labels (the status filter reads \"Resigned\", not \"resigned\", and no document shows its UUID)",
   runHiringDocumentsLabelTests,
+);
+await runTest(
+  "searchable select (no dropdown clips an option with an ellipsis, and no option wraps to two lines)",
+  runSearchableSelectNoEllipsisTests,
 );
 await runTest(
   "recruitment \"Applying for\" (the evidence ladder that lifts the column from 15 answered rows to 394, on verbatim production strings)",
