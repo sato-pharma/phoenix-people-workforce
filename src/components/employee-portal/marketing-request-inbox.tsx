@@ -1,17 +1,22 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
   CalendarDays,
   CheckCircle2,
+  ChevronDown,
+  ChevronRight,
   Clock3,
   Eye,
   History,
   Inbox,
   MessageSquareText,
   RefreshCcw,
+  Search,
+  Timer,
   Undo2,
+  Wallet,
   XCircle,
 } from "lucide-react";
 
@@ -22,6 +27,13 @@ import {
   formatDate,
 } from "@/components/employee-portal/marketing-approval-chain";
 import { MarketingRequestHistory } from "@/components/employee-portal/marketing-request-history";
+import {
+  PortalDesktopTable,
+  PortalMetricCard,
+  PortalPagination,
+  PortalRecordCard,
+  PortalResponsiveDataList,
+} from "@/components/employee-portal/portal-primitives";
 import { MarketingRequestApproverDetail } from "@/components/marketing-requests/marketing-request-approver-detail";
 import { MarketingRequestedProductHistory } from "@/components/marketing-requests/marketing-requested-product-history";
 import { Badge } from "@/components/ui/badge";
@@ -46,8 +58,109 @@ function decisionHref(basePath: string, requestId: string, decision: "approve" |
   return `${basePath}/${requestId}?decision=${decision}`;
 }
 
+/**
+ * Whole days since submission — the number that turns "a queue" into "a queue with a problem in it".
+ *
+ * The server already computes this for the two read-only watch lists (`ageDays`), but NOT for the
+ * rows awaiting the viewer's own decision, which carry `submittedAt` and nothing else. Derived here
+ * rather than added to the payload so the two never disagree: same clock, same arithmetic as
+ * `ageDaysSinceSubmission` in the service.
+ *
+ * Safe to read `Date.now()` during render even though this file is server-rendered as a client
+ * component: rows arrive from a browser fetch, so the server always renders the skeleton and never
+ * a row. Nothing here can produce a hydration mismatch.
+ */
+function daysWaiting(submittedAt: string | null): number | null {
+  if (!submittedAt) return null;
+  const submittedAtMs = Date.parse(submittedAt);
+  if (!Number.isFinite(submittedAtMs)) return null;
+  return Math.max(0, Math.floor((Date.now() - submittedAtMs) / 86_400_000));
+}
+
+function waitLabel(days: number | null): string {
+  if (days === null) return "Submitted date not recorded";
+  if (days === 0) return "Submitted today";
+  return `${days} ${days === 1 ? "day" : "days"} waiting`;
+}
+
+/**
+ * Escalation, not decoration. A marketing request is money the company has not yet committed and a
+ * supplier who has not yet been told either way, so the cost of a stalled rung is real. Three days
+ * is the point at which the request stops being "in progress" and starts being "sitting".
+ */
+function waitTone(days: number | null): { accent: string; header: string; pill: string } {
+  if (days !== null && days >= 7) {
+    return {
+      accent: "border-l-rose-500",
+      header: "from-white via-rose-50/50 to-white",
+      pill: "border-rose-200 bg-rose-50 text-rose-800",
+    };
+  }
+  if (days !== null && days >= 3) {
+    return {
+      accent: "border-l-amber-500",
+      header: "from-white via-amber-50/50 to-white",
+      pill: "border-amber-200 bg-amber-50 text-amber-900",
+    };
+  }
+  return {
+    accent: "border-l-orange-500",
+    header: "from-white via-orange-50/30 to-white",
+    pill: "border-slate-200 bg-slate-50 text-slate-600",
+  };
+}
+
+/**
+ * Renders NOTHING when the submission date is missing, which is not a cosmetic choice.
+ *
+ * The pill is `whitespace-nowrap` because owner rules forbid both alternatives — no ellipsis, no
+ * wrapping to a second line — so its width is its longest label. "Submitted date not recorded" is
+ * 27 characters of uppercase tracking, and measured on a 375px phone (303px of content on this
+ * page, after the shell's `px-3` and the page's `p-6`) that pill plus the step badge pushed the
+ * card's right edge to 534px: a sideways-scrolling page. It also says nothing an approver can act
+ * on — the fact strip below already reports the missing date, in a cell that is free to wrap.
+ *
+ * With it gone the longest label this can hold is "365 days waiting".
+ */
+function WaitPill({ days }: { days: number | null }) {
+  if (days === null) return null;
+  return (
+    <span
+      className={`inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-sm border px-2 py-1 text-[10px] font-black uppercase tracking-[0.1em] ${waitTone(days).pill}`}
+    >
+      <Timer className="h-3 w-3" />
+      {waitLabel(days)}
+    </span>
+  );
+}
+
+/** One heading shape for every queue on the page, so four sections read as one workspace. */
+function QueueHeading({
+  description,
+  icon: Icon,
+  title,
+  tone,
+}: {
+  description: string;
+  icon: typeof Inbox;
+  title: string;
+  tone: string;
+}) {
+  return (
+    <div className="flex items-center gap-2">
+      <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-sm ring-1 ${tone}`}>
+        <Icon className="h-3.5 w-3.5" />
+      </div>
+      <div className="min-w-0">
+        <h2 className="text-[15px] font-black tracking-tight text-slate-950">{title}</h2>
+        <p className="text-[11px] font-medium text-slate-400">{description}</p>
+      </div>
+    </div>
+  );
+}
+
 /* --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- */
-/* --------- Skeleton --------------------------------------------------------------------------------------------------------------------------------------------------------- */
+/* --------- Skeleton --------------------------------------------------------------------------------------------------------------------------------------- */
 /* --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- */
 
 function RowSkeleton() {
@@ -65,13 +178,30 @@ function RowSkeleton() {
 }
 
 /* --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- */
-/* --------- Row card --------------------------------------------------------------------------------------------------------------------------------------------------------- */
+/* --------- Row card --------------------------------------------------------------------------------------------------------------------------------------- */
 /* --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- */
 
-function InboxRowCard({ decisionBasePath, row }: { decisionBasePath: string; row: MarketingApproverInboxRow }) {
+function InboxRowCard({
+  decisionBasePath,
+  isDetailOpen,
+  onToggleDetail,
+  row,
+}: {
+  decisionBasePath: string;
+  isDetailOpen: boolean;
+  onToggleDetail: () => void;
+  row: MarketingApproverInboxRow;
+}) {
+  const days = daysWaiting(row.submittedAt);
+  const tone = waitTone(days);
+
   return (
-    <Card className="rounded-sm border border-slate-200 bg-white p-0 shadow-[0_8px_24px_rgba(15,23,42,0.05)]">
-      <div className="flex flex-wrap items-start justify-between gap-2 border-b border-slate-100 bg-gradient-to-r from-white via-orange-50/30 to-white px-4 py-3">
+    <Card
+      className={`rounded-sm border border-l-[3px] border-slate-200 bg-white p-0 shadow-[0_8px_24px_rgba(15,23,42,0.05)] ${tone.accent}`}
+    >
+      <div
+        className={`flex flex-wrap items-start justify-between gap-2 border-b border-slate-100 bg-gradient-to-r px-4 py-3 ${tone.header}`}
+      >
         <div className="min-w-0">
           <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-orange-600">
             {row.requestCode}
@@ -88,27 +218,22 @@ function InboxRowCard({ decisionBasePath, row }: { decisionBasePath: string; row
             {row.requestType} · From {row.requesterName} ({row.requesterRole})
           </p>
         </div>
-        <Badge variant="warning">{row.currentStepName}</Badge>
+        {/* `w-full` below `sm`, never `shrink-0`: a shrink-0 flex-wrap box is sized by its widest
+            child and cannot give way, so the nowrap wait pill and a 31-character step name
+            ("National Sales Manager Approval") sat side by side and burst the card. Given the whole
+            width on a phone they stack under the customer instead, and neither has to wrap its own
+            text — which the owner rules forbid. */}
+        <div className="flex w-full flex-wrap items-center gap-1.5 sm:w-auto sm:justify-end">
+          <WaitPill days={days} />
+          <Badge variant="warning">{row.currentStepName}</Badge>
+        </div>
       </div>
 
-      {/* Sales history for the products THIS request promotes — owner instruction, 2026-08-04.
-          Lives on the row itself, not one click away: the approver's first question is whether
-          this customer has ever bought what is being pushed, and a request whose promoted products
-          have no history here is the one worth stopping before opening anything. */}
-      <div className="border-b border-slate-100 px-4 py-3">
-        <MarketingRequestedProductHistory requestId={row.id} />
-      </div>
-
-      {/* Everything the requester actually submitted, in place. Before this the row showed a
-          customer name, a cost and a pay date, and every other detail sat behind a decision
-          button — so reading the request meant first clicking an answer. */}
-      <div className="border-b border-slate-100 px-4 py-3">
-        <MarketingRequestApproverDetail requestId={row.id} />
-      </div>
-
-      <ApprovalHistory rungs={row.approvalHistory} />
-
-      <div className="grid gap-3 px-4 py-3 sm:grid-cols-3">
+      {/* The four numbers an approver checks BEFORE reading anything, moved to the top of the card.
+          They used to sit underneath both detail panels, so the money and the pay date were the last
+          thing on a very tall row rather than the first — reaching them meant scrolling past every
+          product line and every pharmacy on the request. */}
+      <div className="grid gap-3 border-b border-slate-100 px-4 py-3 sm:grid-cols-4">
         <div className="flex flex-col">
           <span className="text-[9px] font-bold uppercase tracking-[0.12em] text-slate-400">
             Estimated Cost
@@ -134,6 +259,62 @@ function InboxRowCard({ decisionBasePath, row }: { decisionBasePath: string; row
             {formatDate(row.submittedAt)}
           </span>
         </div>
+        <div className="flex flex-col">
+          <span className="text-[9px] font-bold uppercase tracking-[0.12em] text-slate-400">
+            Waiting
+          </span>
+          <span className="whitespace-nowrap text-[13px] font-bold text-slate-700">
+            {waitLabel(days)}
+          </span>
+        </div>
+      </div>
+
+      {/* Sales history for the products THIS request promotes — owner instruction, 2026-08-04.
+          Lives on the row itself, not one click away: the approver's first question is whether
+          this customer has ever bought what is being pushed, and a request whose promoted products
+          have no history here is the one worth stopping before opening anything.
+
+          Deliberately OUTSIDE the collapsible below. It is a one-line strip, and putting it behind
+          a disclosure — even one that opens by default — would put it one click away for anyone who
+          collapsed the row, which is exactly what that instruction forbids. */}
+      <div className="border-b border-slate-100 px-4 py-3">
+        <MarketingRequestedProductHistory requestId={row.id} />
+      </div>
+
+      <ApprovalHistory rungs={row.approvalHistory} />
+
+      {/* Everything the requester actually submitted, in place. Before this the row showed a
+          customer name, a cost and a pay date, and every other detail sat behind a decision
+          button — so reading the request meant first clicking an answer.
+
+          It is still in place: this disclosure is OPEN by default, so a row costs exactly what it
+          cost before. What it adds is the other direction — an approver holding eight requests can
+          now collapse them and scan a queue, which the old wall of always-expanded panels made
+          impossible. Collapsing also skips this panel's own per-row fetch. */}
+      <div className="border-b border-slate-100">
+        <button
+          aria-expanded={isDetailOpen}
+          className="flex w-full items-center justify-between gap-2 px-4 py-2.5 text-left transition hover:bg-slate-50"
+          onClick={onToggleDetail}
+          type="button"
+        >
+          <span className="inline-flex items-center gap-1.5 text-[10px] font-black uppercase tracking-[0.12em] text-slate-500">
+            {isDetailOpen ? (
+              <ChevronDown className="h-3.5 w-3.5" />
+            ) : (
+              <ChevronRight className="h-3.5 w-3.5" />
+            )}
+            Full request detail
+          </span>
+          <span className="whitespace-nowrap text-[10px] font-bold text-slate-400">
+            {isDetailOpen ? "Hide" : "Show"}
+          </span>
+        </button>
+        {isDetailOpen ? (
+          <div className="border-t border-slate-100 px-4 py-3">
+            <MarketingRequestApproverDetail requestId={row.id} />
+          </div>
+        ) : null}
       </div>
 
       {/* The decision bar. Approve always renders — a rung that cannot be advanced is not a rung.
@@ -188,18 +369,25 @@ function InboxRowCard({ decisionBasePath, row }: { decisionBasePath: string; row
             {row.decisionLabels.reject}
           </Link>
         ) : null}
+        <Link
+          className="ml-auto inline-flex min-h-9 items-center gap-1.5 rounded-sm border border-slate-300 bg-white px-4 text-[12px] font-bold text-slate-700 shadow-sm transition hover:border-orange-200 hover:bg-orange-50 hover:text-orange-700"
+          href={`/marketing-requests/${row.id}`}
+        >
+          <Eye className="h-3.5 w-3.5" />
+          Open the full record
+        </Link>
       </div>
     </Card>
   );
 }
 
 /* --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- */
-/* --------- Main ------------------------------------------------------------------------------------------------------------------------------------------------------------------ */
+/* --------- Main ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ */
 /* --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- */
 
 function AdvisoryRowCard({ onPosted, row }: { onPosted: () => void; row: MarketingApproverInboxRow }) {
   return (
-    <Card className="rounded-sm border border-sky-200 bg-white p-0 shadow-[0_8px_24px_rgba(15,23,42,0.05)]">
+    <Card className="rounded-sm border border-l-[3px] border-sky-200 border-l-sky-500 bg-white p-0 shadow-[0_8px_24px_rgba(15,23,42,0.05)]">
       <div className="flex flex-wrap items-start justify-between gap-2 border-b border-slate-100 bg-gradient-to-r from-white via-sky-50/40 to-white px-4 py-3">
         <div className="min-w-0">
           <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-sky-600">{row.requestCode}</p>
@@ -215,7 +403,11 @@ function AdvisoryRowCard({ onPosted, row }: { onPosted: () => void; row: Marketi
             {row.requestType} · From {row.requesterName} ({row.requesterRole})
           </p>
         </div>
-        <Badge variant="neutral">For your comment</Badge>
+        {/* Same width rule as the decision card above — `w-full` below `sm`, never `shrink-0`. */}
+        <div className="flex w-full flex-wrap items-center gap-1.5 sm:w-auto sm:justify-end">
+          <WaitPill days={daysWaiting(row.submittedAt)} />
+          <Badge variant="neutral">For your comment</Badge>
+        </div>
       </div>
 
       <div className="px-4 py-3">
@@ -224,6 +416,18 @@ function AdvisoryRowCard({ onPosted, row }: { onPosted: () => void; row: Marketi
     </Card>
   );
 }
+
+/** Which of the four queues the workspace is showing. */
+type InboxQueue = "advisory" | "decide" | "oversight" | "upcoming";
+
+/** How the decision queue is ordered. Oldest-first is the default the server already sorts to. */
+type DecideSort = "cost" | "newest" | "oldest";
+
+const DECIDE_SORTS: ReadonlyArray<{ key: DecideSort; label: string }> = [
+  { key: "oldest", label: "Longest waiting" },
+  { key: "newest", label: "Newest first" },
+  { key: "cost", label: "Highest value" },
+];
 
 function MarketingRequestInboxInner({ decisionBasePath }: { decisionBasePath: string }) {
   const [rows, setRows] = useState<MarketingApproverInboxRow[]>([]);
@@ -234,6 +438,12 @@ function MarketingRequestInboxInner({ decisionBasePath }: { decisionBasePath: st
   const [oversightRows, setOversightRows] = useState<MarketingApproverOversightRow[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [queue, setQueue] = useState<InboxQueue>("decide");
+  const [search, setSearch] = useState("");
+  const [sort, setSort] = useState<DecideSort>("oldest");
+  // Ids whose "Full request detail" panel the reader has CLOSED. Collapsed-by-exception, so the
+  // default for every row — including rows that arrive on a later refresh — stays open.
+  const [collapsedIds, setCollapsedIds] = useState<ReadonlySet<string>>(new Set());
 
   const loadInbox = useCallback(async () => {
     try {
@@ -278,6 +488,68 @@ function MarketingRequestInboxInner({ decisionBasePath }: { decisionBasePath: st
     return () => window.clearTimeout(timeout);
   }, [loadInbox]);
 
+  /* ------ What the numbers at the top actually say ------------------------------------------- */
+
+  const valueAwaitingMe = useMemo(
+    () => rows.reduce((total, row) => total + (Number.isFinite(row.estimatedCost) ? row.estimatedCost : 0), 0),
+    [rows],
+  );
+  const longestWait = useMemo(
+    () => rows.reduce((worst, row) => Math.max(worst, daysWaiting(row.submittedAt) ?? 0), 0),
+    [rows],
+  );
+
+  /* ------ The decision queue: searched, then sorted ------------------------------------------ */
+
+  const visibleRows = useMemo(() => {
+    const needle = search.trim().toLowerCase();
+    const matched = needle
+      ? rows.filter((row) =>
+          [row.requestCode, row.customerName, row.requesterName, row.requestType, row.currentStepName]
+            .join(" ")
+            .toLowerCase()
+            .includes(needle),
+        )
+      : rows;
+    const ordered = [...matched];
+    if (sort === "cost") {
+      ordered.sort((left, right) => right.estimatedCost - left.estimatedCost);
+    } else if (sort === "newest") {
+      ordered.sort((left, right) => (right.submittedAt ?? "").localeCompare(left.submittedAt ?? ""));
+    } else {
+      ordered.sort((left, right) => (left.submittedAt ?? "").localeCompare(right.submittedAt ?? ""));
+    }
+    return ordered;
+  }, [rows, search, sort]);
+
+  /* ------ Queue navigation ------------------------------------------------------------------
+      Four queues that used to be one endless scroll. Only a queue that HAS something in it gets a
+      segment — an approver with no advisory rungs should not be shown a tab that can only ever say
+      "nothing here", and padding the bar to four is exactly the kind of empty list the owner has
+      ruled out. The active queue is DERIVED, not stored: if the queue you were on empties on a
+      refresh (or you never had one), the first populated queue takes over without an effect. */
+  const segments = useMemo(
+    () =>
+      [
+        { count: rows.length, icon: Inbox, key: "decide" as const, label: "Awaiting my decision" },
+        { count: upcomingRows.length, icon: Clock3, key: "upcoming" as const, label: "Coming to me" },
+        { count: advisoryRows.length, icon: MessageSquareText, key: "advisory" as const, label: "For my comment" },
+        { count: oversightRows.length, icon: Eye, key: "oversight" as const, label: "Company queue" },
+      ].filter((segment) => segment.count > 0),
+    [advisoryRows.length, oversightRows.length, rows.length, upcomingRows.length],
+  );
+  const activeQueue: InboxQueue = segments.some((segment) => segment.key === queue)
+    ? queue
+    : (segments[0]?.key ?? "decide");
+
+  const isCompletelyEmpty =
+    rows.length === 0 &&
+    advisoryRows.length === 0 &&
+    upcomingRows.length === 0 &&
+    oversightRows.length === 0;
+
+  const openRowCount = rows.filter((row) => !collapsedIds.has(row.id)).length;
+
   return (
     <div className="space-y-3" dir="auto">
       {/* ------ Header + Refresh ------------------------------------------------------------------------------------------------------------- */}
@@ -319,16 +591,110 @@ function MarketingRequestInboxInner({ decisionBasePath }: { decisionBasePath: st
         </div>
       ) : null}
 
+      {/* ------ What this queue is worth, before any of it is read --------------------------------
+          The page opened straight onto row one and answered "how much money is stopped on me" and
+          "how long has the worst of it been stopped" only by reading every card to the bottom. */}
+      {!isLoading && !isCompletelyEmpty ? (
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <PortalMetricCard
+            accent="orange"
+            icon={Inbox}
+            label="Awaiting my decision"
+            note={rows.length === 0 ? "Nothing is stopped on you" : "Your rung is the open one"}
+            value={rows.length}
+          />
+          {rows.length > 0 ? (
+            <PortalMetricCard
+              accent="emerald"
+              icon={Wallet}
+              label="Value awaiting me"
+              note="Estimated cost of the requests above"
+              value={egp(valueAwaitingMe)}
+            />
+          ) : null}
+          {rows.length > 0 ? (
+            <PortalMetricCard
+              accent={longestWait >= 7 ? "rose" : longestWait >= 3 ? "amber" : "slate"}
+              icon={Timer}
+              label="Longest wait"
+              note="Since the requester submitted it"
+              value={waitLabel(longestWait)}
+            />
+          ) : null}
+          {upcomingRows.length > 0 ? (
+            <PortalMetricCard
+              accent="sky"
+              icon={Clock3}
+              label="Coming to me"
+              note="You approve later in the chain"
+              value={upcomingRows.length}
+            />
+          ) : null}
+          {advisoryRows.length > 0 ? (
+            <PortalMetricCard
+              accent="sky"
+              icon={MessageSquareText}
+              label="For my comment"
+              note="Non-blocking — the chain moves without you"
+              value={advisoryRows.length}
+            />
+          ) : null}
+          {oversightRows.length > 0 ? (
+            <PortalMetricCard
+              accent="slate"
+              icon={Eye}
+              label="In approval company-wide"
+              note="Held by other approvers — view only"
+              value={oversightRows.length}
+            />
+          ) : null}
+        </div>
+      ) : null}
+
+      {/* ------ Queue navigator ------------------------------------------------------------------- */}
+      {!isLoading && segments.length > 1 ? (
+        <div
+          className="flex w-full gap-1 overflow-x-auto rounded-sm border border-slate-200 bg-white p-1 shadow-[0_8px_24px_rgba(15,23,42,0.05)] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          role="tablist"
+        >
+          {segments.map((segment) => {
+            const Icon = segment.icon;
+            const isActive = segment.key === activeQueue;
+            return (
+              <button
+                aria-selected={isActive}
+                className={`inline-flex flex-1 items-center justify-center gap-2 whitespace-nowrap rounded-sm px-3 py-2 text-[12px] font-bold transition-colors ${
+                  isActive
+                    ? "bg-slate-900 text-white shadow-[0_4px_12px_rgba(15,23,42,0.18)]"
+                    : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+                }`}
+                key={segment.key}
+                onClick={() => setQueue(segment.key)}
+                role="tab"
+                type="button"
+              >
+                <Icon className="h-3.5 w-3.5 shrink-0" />
+                <span>{segment.label}</span>
+                <span
+                  className={`rounded-sm px-1.5 py-0.5 text-[10px] font-black ${
+                    isActive ? "bg-white/15 text-white" : "bg-slate-100 text-slate-600"
+                  }`}
+                >
+                  {segment.count}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
+
       {/* ------ Body ------------------------------------------------------------------------------------------------------------------------------------------- */}
       {isLoading ? (
         <div className="space-y-3">
           <RowSkeleton />
           <RowSkeleton />
         </div>
-      ) : rows.length === 0 &&
-        advisoryRows.length === 0 &&
-        upcomingRows.length === 0 &&
-        oversightRows.length === 0 ? (
+      ) : isCompletelyEmpty ? (
         <Card className="flex flex-col items-center justify-center gap-2 rounded-sm border border-slate-200 bg-white px-4 py-10 text-center shadow-[0_8px_24px_rgba(15,23,42,0.05)]">
           <div className="flex h-10 w-10 items-center justify-center rounded-sm bg-slate-50 text-slate-400 ring-1 ring-slate-100">
             <Inbox className="h-4 w-4" />
@@ -341,145 +707,307 @@ function MarketingRequestInboxInner({ decisionBasePath }: { decisionBasePath: st
             the ones still moving toward your step.
           </p>
         </Card>
-      ) : rows.length === 0 ? null : (
+      ) : activeQueue === "decide" ? (
         <div className="space-y-3">
-          {rows.map((row) => (
-          <InboxRowCard decisionBasePath={decisionBasePath} key={row.id} row={row} />
-          ))}
-        </div>
-      )}
-
-      {/* ------ Coming to you: you hold a LATER step, so this is read-only tracking ------------------
-          Owner instruction, 2026-08-04. The inbox previously queried status='current' only, so an
-          approver above rung 1 saw nothing until the request was already theirs. The CEO sits at
-          step 4 of 4 and could be on the hook for a request that had been stalled for days without
-          any way to see it. No decision buttons here — it is not their turn — but the request, where
-          it is stopped, who holds it, and how long it has been in the system are all visible. */}
-      {!isLoading && upcomingRows.length > 0 ? (
-        <div className="space-y-3 pt-2">
-          <div className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-sm bg-amber-50 text-amber-600 ring-1 ring-amber-100">
-              <Clock3 className="h-3.5 w-3.5" />
+          {/* Search, order and a single control that opens or closes every panel at once. An
+              approver holding eight requests could previously only read them in submission order,
+              in full, one wall of panels after another. */}
+          <div className="flex flex-col gap-2 rounded-sm border border-slate-200 bg-white p-3 shadow-[0_8px_24px_rgba(15,23,42,0.05)] sm:flex-row sm:flex-wrap sm:items-center">
+            <label className="flex min-w-0 flex-1 items-center gap-2 rounded-sm border border-slate-200 bg-white px-3 sm:max-w-xs">
+              <Search className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+              {/* 16px floor: anything smaller makes iOS Safari zoom the page on focus. */}
+              <input
+                className="min-h-10 w-full min-w-0 border-0 bg-transparent text-[16px] font-medium text-slate-800 outline-none placeholder:text-slate-400 sm:text-[13px]"
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Search code, customer, requester, step"
+                type="search"
+                value={search}
+              />
+            </label>
+            <div className="flex flex-wrap items-center gap-1.5">
+              {DECIDE_SORTS.map((option) => (
+                <button
+                  aria-pressed={sort === option.key}
+                  className={`min-h-9 whitespace-nowrap rounded-sm border px-3 text-[12px] font-bold transition ${
+                    sort === option.key
+                      ? "border-slate-900 bg-slate-900 text-white"
+                      : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                  }`}
+                  key={option.key}
+                  onClick={() => setSort(option.key)}
+                  type="button"
+                >
+                  {option.label}
+                </button>
+              ))}
             </div>
-            <div>
-              <h2 className="text-[15px] font-black tracking-tight text-slate-950">Coming to you</h2>
-              <p className="text-[11px] font-medium text-slate-400">
-                Requests where you approve later in the chain — not yet your turn
-              </p>
-            </div>
-          </div>
-          {upcomingRows.map((row) => (
-            <Card
-              className="rounded-sm border border-slate-200 bg-white px-4 py-3 shadow-[0_8px_24px_rgba(15,23,42,0.05)]"
-              key={row.id}
+            <button
+              className="min-h-9 whitespace-nowrap rounded-sm border border-slate-200 bg-white px-3 text-[12px] font-bold text-slate-600 shadow-sm transition hover:border-orange-200 hover:bg-orange-50 hover:text-orange-700 sm:ml-auto"
+              onClick={() =>
+                setCollapsedIds(
+                  openRowCount > 0 ? new Set(rows.map((row) => row.id)) : new Set<string>(),
+                )
+              }
+              type="button"
             >
-              <div className="flex flex-wrap items-start justify-between gap-2">
-                <div className="min-w-0">
-                  <p className="text-[14px] font-black text-slate-950">{row.customerName}</p>
-                  <p className="mt-0.5 text-[11px] font-bold text-slate-500">
-                    {row.requestCode} · {row.requesterName} · {egp(row.estimatedCost)}
-                  </p>
-                </div>
-                <span className="shrink-0 rounded-sm bg-amber-50 px-2.5 py-1 text-[11px] font-black text-amber-800">
-                  {row.ageDays === 0 ? "Submitted today" : `${row.ageDays} ${row.ageDays === 1 ? "day" : "days"} in system`}
-                </span>
-              </div>
-              <p className="mt-2 text-[12px] font-bold text-slate-700">
-                {row.awaitingStepName
-                  ? `Now with ${row.awaitingApproverName || "an unassigned approver"} — ${row.awaitingStepName}`
-                  : "No open approval step on this request."}
-              </p>
-              <p className="mt-0.5 text-[11px] font-medium text-slate-400">
-                Your step is {row.myStepSequence} of {row.totalGatingSteps}
-              </p>
-            </Card>
-          ))}
-        </div>
-      ) : null}
-
-      {/* ------ Advisory: requests awaiting your comment (non-blocking) ------------------------------- */}
-      {!isLoading && advisoryRows.length > 0 ? (
-        <div className="space-y-3 pt-2">
-          <div className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-sm bg-sky-50 text-sky-600 ring-1 ring-sky-100">
-              <MessageSquareText className="h-3.5 w-3.5" />
-            </div>
-            <div>
-              <h2 className="text-[15px] font-black tracking-tight text-slate-950">Awaiting your comment</h2>
-              <p className="text-[11px] font-medium text-slate-400">
-                {advisoryRows.length} request{advisoryRows.length === 1 ? "" : "s"} you can comment on
-              </p>
-            </div>
+              {openRowCount > 0 ? "Collapse all detail" : "Expand all detail"}
+            </button>
           </div>
+
+          {visibleRows.length === 0 ? (
+            <Card className="rounded-sm border border-slate-200 bg-white px-4 py-8 text-center shadow-[0_8px_24px_rgba(15,23,42,0.05)]">
+              <p className="text-[13px] font-bold text-slate-700">No request matches this search.</p>
+            </Card>
+          ) : (
+            visibleRows.map((row) => (
+              <InboxRowCard
+                decisionBasePath={decisionBasePath}
+                isDetailOpen={!collapsedIds.has(row.id)}
+                key={row.id}
+                onToggleDetail={() =>
+                  setCollapsedIds((current) => {
+                    const next = new Set(current);
+                    if (next.has(row.id)) next.delete(row.id);
+                    else next.add(row.id);
+                    return next;
+                  })
+                }
+                row={row}
+              />
+            ))
+          )}
+        </div>
+      ) : activeQueue === "upcoming" ? (
+        /* ------ Coming to you: you hold a LATER step, so this is read-only tracking ------------------
+            Owner instruction, 2026-08-04. The inbox previously queried status='current' only, so an
+            approver above rung 1 saw nothing until the request was already theirs. The CEO sits at
+            step 4 of 4 and could be on the hook for a request that had been stalled for days without
+            any way to see it. No decision buttons here — it is not their turn — but the request, where
+            it is stopped, who holds it, and how long it has been in the system are all visible. */
+        <div className="space-y-3">
+          <QueueHeading
+            description="Requests where you approve later in the chain — not yet your turn"
+            icon={Clock3}
+            title="Coming to you"
+            tone="bg-amber-50 text-amber-600 ring-amber-100"
+          />
+          <ChainWatchList rows={upcomingRows} />
+        </div>
+      ) : activeQueue === "advisory" ? (
+        /* ------ Advisory: requests awaiting your comment (non-blocking) ------------------------------- */
+        <div className="space-y-3">
+          <QueueHeading
+            description={`${advisoryRows.length} request${advisoryRows.length === 1 ? "" : "s"} you can comment on`}
+            icon={MessageSquareText}
+            title="Awaiting your comment"
+            tone="bg-sky-50 text-sky-600 ring-sky-100"
+          />
           {advisoryRows.map((row) => (
             <AdvisoryRowCard key={`advisory-${row.id}`} onPosted={() => void loadInbox()} row={row} />
           ))}
         </div>
-      ) : null}
+      ) : (
+        /* ------ Everything in approval: Super Admin oversight, read-only ------------------------------
+            Owner instruction, 2026-08-18. Every other queue is scoped to the viewer's own rungs, and
+            a Super Admin holds none — so this inbox showed him nothing while requests sat pending with
+            other people. The server decides who gets these rows (canViewMarketingOversightQueue); for
+            every other role the array is empty and this queue never appears in the navigator.
 
-      {/* ------ Everything in approval: Super Admin oversight, read-only ------------------------------
-          Owner instruction, 2026-08-18. Every section above is scoped to the viewer's own rungs, and
-          a Super Admin holds none — so this inbox showed him nothing while requests sat pending with
-          other people. The server decides who gets these rows (canViewMarketingOversightQueue); for
-          every other role the array is empty and this block never renders.
+            Last in the file, and with no decision controls, on purpose: it is a watch list, not a
+            queue. `tests/marketing-super-admin-oversight.test.ts` reads this module from the heading
+            below to the end of the file and fails if a decision link appears anywhere in it — which
+            is why ChainWatchList, the renderer both watch lists share, is declared BELOW rather than
+            above. The test sees the markup it actually renders. */
+        <div className="space-y-3">
+          <QueueHeading
+            description={`${oversightRows.length} request${oversightRows.length === 1 ? "" : "s"} moving through the chain — view only, the decision is the named approver's`}
+            icon={Eye}
+            title="Everything in approval"
+            tone="bg-slate-100 text-slate-600 ring-slate-200"
+          />
+          <ChainWatchList rows={oversightRows} />
+        </div>
+      )}
+    </div>
+  );
+}
 
-          Last on the page, and with no decision controls, on purpose: it is a watch list, not a
-          queue. Whose turn it is stays unambiguous — his own work is at the top, everyone else's is
-          down here with the holder's name on it. */}
-      {!isLoading && oversightRows.length > 0 ? (
-        <div className="space-y-3 pt-2">
-          <div className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-sm bg-slate-100 text-slate-600 ring-1 ring-slate-200">
-              <Eye className="h-3.5 w-3.5" />
-            </div>
-            <div>
-              <h2 className="text-[15px] font-black tracking-tight text-slate-950">
-                Everything in approval
-              </h2>
-              <p className="text-[11px] font-medium text-slate-400">
-                {oversightRows.length} request{oversightRows.length === 1 ? "" : "s"} moving through
-                the chain — view only, the decision is the named approver&rsquo;s
-              </p>
-            </div>
-          </div>
-          {oversightRows.map((row) => (
-            <Card
-              className="rounded-sm border border-slate-200 bg-white px-4 py-3 shadow-[0_8px_24px_rgba(15,23,42,0.05)]"
-              key={`oversight-${row.id}`}
-            >
-              <div className="flex flex-wrap items-start justify-between gap-2">
-                <div className="min-w-0">
-                  <p className="text-[14px] font-black text-slate-950">{row.customerName}</p>
-                  <p className="mt-0.5 text-[11px] font-bold text-slate-500">
-                    {row.requestCode} · {row.requesterName} · {egp(row.estimatedCost)}
-                  </p>
-                </div>
-                <span className="shrink-0 rounded-sm bg-slate-100 px-2.5 py-1 text-[11px] font-black text-slate-700">
-                  {row.ageDays === 0
-                    ? "Submitted today"
-                    : `${row.ageDays} ${row.ageDays === 1 ? "day" : "days"} in system`}
-                </span>
-              </div>
-              <p className="mt-2 text-[12px] font-bold text-slate-700">
-                {row.awaitingStepName
-                  ? `Now with ${row.awaitingApproverName || "an unassigned approver"} — ${row.awaitingStepName}`
-                  : "No open approval step on this request."}
-              </p>
-              <p className="mt-0.5 text-[11px] font-medium text-slate-400">
-                Step {row.stepSequence} of {row.totalGatingSteps}
-              </p>
+/* --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- */
+/* --------- The read-only watch lists ------------------------------------------------------------------------------------------------------------- */
+/* --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- */
+
+/**
+ * "Coming to me" and "Everything in approval", drawn once.
+ *
+ * Both answer the same three questions — where is it stopped, who is holding it, how long has it
+ * been there — and neither may ever decide anything. One renderer that carries no decision control
+ * is a stronger guarantee than two that happen not to.
+ *
+ * Desktop gets a table and mobile gets cards, per the admin-shell rule. The `md:` gates come from
+ * `PortalDesktopTable` / `PortalResponsiveDataList` themselves and are real CSS, not the decorative
+ * `data-portal-desktop-table` attribute — that one is injected by the PORTAL shell only and does
+ * nothing at all on an admin page.
+ *
+ * Windowed at 25. `PortalResponsiveDataList` emits the card markup AND the table markup for every
+ * item it is handed and hides one half in CSS, so an uncapped company-wide queue would ship two
+ * full renders of itself to a phone.
+ */
+const WATCH_PAGE_SIZE = 25;
+
+function ChainWatchList({
+  rows,
+}: {
+  rows: ReadonlyArray<MarketingApproverOversightRow & { myStepSequence?: number }>;
+}) {
+  const [page, setPage] = useState(0);
+  const pageCount = Math.max(1, Math.ceil(rows.length / WATCH_PAGE_SIZE));
+  // Clamped during render rather than reset from an effect: a refresh that shortens the list must
+  // not leave the reader on a page that no longer exists, and `setState` inside `useEffect` is a
+  // lint error in this repo.
+  const safePage = Math.min(page, pageCount - 1);
+  const visible = rows.slice(safePage * WATCH_PAGE_SIZE, safePage * WATCH_PAGE_SIZE + WATCH_PAGE_SIZE);
+
+  const position = (row: MarketingApproverOversightRow & { myStepSequence?: number }) =>
+    row.myStepSequence
+      ? `Your step is ${row.myStepSequence} of ${row.totalGatingSteps}`
+      : `Step ${row.stepSequence} of ${row.totalGatingSteps}`;
+
+  const holder = (row: MarketingApproverOversightRow) =>
+    row.awaitingStepName
+      ? `Now with ${row.awaitingApproverName || "an unassigned approver"} — ${row.awaitingStepName}`
+      : "No open approval step on this request.";
+
+  const age = (row: MarketingApproverOversightRow) =>
+    row.ageDays === 0 ? "Submitted today" : `${row.ageDays} ${row.ageDays === 1 ? "day" : "days"} in system`;
+
+  return (
+    <Card className="overflow-hidden rounded-sm border border-slate-200 bg-white p-0 shadow-[0_8px_24px_rgba(15,23,42,0.05)]">
+      <PortalResponsiveDataList
+        empty={
+          <p className="px-4 py-8 text-center text-[13px] font-bold text-slate-500">
+            Nothing is in this list right now.
+          </p>
+        }
+        getKey={(row) => `watch-${row.id}`}
+        items={[...visible]}
+        renderCard={(row) => (
+          <PortalRecordCard
+            accent={row.ageDays >= 7 ? "rose" : row.ageDays >= 3 ? "amber" : "slate"}
+            actions={
               <Link
-                className="mt-2 inline-flex min-h-9 items-center gap-1.5 rounded-sm border border-slate-300 bg-white px-4 text-[12px] font-bold text-slate-700 shadow-sm transition hover:border-orange-200 hover:bg-orange-50 hover:text-orange-700"
+                className="inline-flex min-h-9 items-center gap-1.5 rounded-sm border border-slate-300 bg-white px-4 text-[12px] font-bold text-slate-700 shadow-sm transition hover:border-orange-200 hover:bg-orange-50 hover:text-orange-700"
                 href={`/marketing-requests/${row.id}`}
               >
                 <Eye className="h-3.5 w-3.5" />
                 Open the full record
               </Link>
-            </Card>
-          ))}
-        </div>
+            }
+            meta={
+              <>
+                <span className="block">
+                  {row.requestCode} · {row.requesterName} · {egp(row.estimatedCost)}
+                </span>
+                <span className="mt-1 block text-slate-700">{holder(row)}</span>
+                <span className="mt-0.5 block text-slate-400">{position(row)}</span>
+              </>
+            }
+            status={
+              <span className="whitespace-nowrap rounded-sm bg-slate-100 px-2.5 py-1 text-[11px] font-black text-slate-700">
+                {age(row)}
+              </span>
+            }
+            title={row.customerName}
+          />
+        )}
+        renderTable={() => (
+          <PortalDesktopTable minWidth="900px">
+            <thead>
+              <tr className="border-b border-slate-200 bg-slate-50">
+                {["Request", "Customer", "Raised by", "Value", "Now with", "Position", "In system", ""].map(
+                  (heading, index) => (
+                    <th
+                      className="whitespace-nowrap px-3 py-2.5 text-[10px] font-black uppercase tracking-[0.12em] text-slate-500"
+                      key={`${heading}-${index}`}
+                      scope="col"
+                    >
+                      {heading}
+                    </th>
+                  ),
+                )}
+              </tr>
+            </thead>
+            <tbody>
+              {visible.map((row) => (
+                <tr className="border-b border-slate-100 transition hover:bg-orange-50/30" key={`watch-row-${row.id}`}>
+                  <td className="whitespace-nowrap px-3 py-2.5 text-[12px] font-bold text-slate-500">
+                    {row.requestCode}
+                  </td>
+                  <td className="whitespace-nowrap px-3 py-2.5 text-[13px] font-black text-slate-950">
+                    {row.customerName}
+                  </td>
+                  <td className="whitespace-nowrap px-3 py-2.5 text-[12px] font-bold text-slate-700">
+                    {row.requesterName}
+                  </td>
+                  <td className="whitespace-nowrap px-3 py-2.5 text-[13px] font-black text-slate-950">
+                    {egp(row.estimatedCost)}
+                  </td>
+                  <td className="whitespace-nowrap px-3 py-2.5 text-[12px] font-bold text-slate-700">
+                    {holder(row)}
+                  </td>
+                  <td className="whitespace-nowrap px-3 py-2.5 text-[12px] font-medium text-slate-500">
+                    {position(row)}
+                  </td>
+                  <td className="whitespace-nowrap px-3 py-2.5">
+                    <span
+                      className={`rounded-sm px-2.5 py-1 text-[11px] font-black ${
+                        row.ageDays >= 7
+                          ? "bg-rose-50 text-rose-800"
+                          : row.ageDays >= 3
+                            ? "bg-amber-50 text-amber-900"
+                            : "bg-slate-100 text-slate-700"
+                      }`}
+                    >
+                      {age(row)}
+                    </span>
+                  </td>
+                  <td className="whitespace-nowrap px-3 py-2.5 text-right">
+                    <Link
+                      className="inline-flex min-h-9 items-center gap-1.5 rounded-sm border border-slate-300 bg-white px-3 text-[12px] font-bold text-slate-700 shadow-sm transition hover:border-orange-200 hover:bg-orange-50 hover:text-orange-700"
+                      href={`/marketing-requests/${row.id}`}
+                    >
+                      <Eye className="h-3.5 w-3.5" />
+                      Open the full record
+                    </Link>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </PortalDesktopTable>
+        )}
+      />
+      {rows.length > WATCH_PAGE_SIZE ? (
+        <PortalPagination
+          label={`Showing ${safePage * WATCH_PAGE_SIZE + 1}–${safePage * WATCH_PAGE_SIZE + visible.length} of ${rows.length}`}
+        >
+          <button
+            className="min-h-9 rounded-sm border border-slate-200 bg-white px-3 text-[12px] font-bold text-slate-600 transition hover:bg-slate-50 disabled:opacity-40"
+            disabled={safePage === 0}
+            onClick={() => setPage(Math.max(0, safePage - 1))}
+            type="button"
+          >
+            Previous
+          </button>
+          <button
+            className="min-h-9 rounded-sm border border-slate-200 bg-white px-3 text-[12px] font-bold text-slate-600 transition hover:bg-slate-50 disabled:opacity-40"
+            disabled={safePage >= pageCount - 1}
+            onClick={() => setPage(Math.min(pageCount - 1, safePage + 1))}
+            type="button"
+          >
+            Next
+          </button>
+        </PortalPagination>
       ) : null}
-    </div>
+    </Card>
   );
 }
 
