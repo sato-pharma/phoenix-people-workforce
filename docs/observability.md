@@ -217,6 +217,7 @@ policy):
    | `phoenix-brevo-keepalive` | `9 4 1 * *` | 12h | cron-job.org job `8313297` |
    | `phoenix-direct-orders-expire-held` | `17 2 * * *` | 2h | cron-job.org job `8313165` |
    | `phoenix-direct-orders-probation` | `27 2 * * *` | 2h | cron-job.org job `8313177` |
+   | `phoenix-db-health-snapshot` | `17 */6 * * *` | 2h | cron-job.org job `8242721` |
    | `phoenix-ireports360-live-poll` | **Simple**, period `5m` | 15m | the in-process poller, every tick |
    | `phoenix-ireports360-sync` | `0 6-21/3 * * *` | 2h | the in-process poller, when due |
    | `phoenix-reconcile-visits` | `0 4 * * 0` | 12h | the in-process poller, when due |
@@ -321,10 +322,16 @@ policy):
    them were still describing jobs the in-process poller had taken over. Re-read the account before
    tuning a grace period, or the switch will alert on a job that is running perfectly well.
 
-   **One enabled job has no row here, and that is deliberate.**
-   `phoenix-db-health-snapshot` (`17 0,6,12,18 * * *`, job `8242721`) has no check because that
-   route opts out of the switch on purpose, with a comment in the route saying why. See
-   [deployment.md](deployment.md) § Cron Jobs.
+   **`phoenix-db-health-snapshot` had no row here until 2026-08-24, on purpose. Read why it now
+   does before removing it again.** The route opted out because a missed snapshot is a gap in a
+   graph, not an incident, and paging on it would teach the owner to ignore the pager. That
+   answered *severity* and ignored *visibility*: opting out did not make the job alert quietly, it
+   made a stopped job indistinguishable from a running one. On 2026-08-24 a half-finished
+   `CRON_SECRET` rotation left six of the twelve enabled cron-job.org jobs presenting a superseded
+   token; every one 401’d before reaching any ping, so they went silent rather than red, and the
+   only reason it was caught is that the hourly synthetic-journeys check blew its grace window. On
+   a 6-hourly clock with no check at all, this job would have stayed dark indefinitely and taken
+   the slow-query history with it. Severity is now carried by the 2h grace, not by the silence.
 
    Note also that cron-job.org caps request timeout at 30 s, so a slow route logs `Failed
    (timeout)` there while the server finishes the work and pings Healthchecks successfully. The

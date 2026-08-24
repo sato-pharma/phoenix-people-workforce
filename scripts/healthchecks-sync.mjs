@@ -7,7 +7,7 @@
  * a 1-day period and a 1-hour grace. Nothing ever corrects that. So a job that really runs weekly,
  * or at 02:17 Cairo, sits permanently red against a schedule nobody set — and a dashboard that is
  * always red is a dashboard everyone learns to ignore, which is the exact failure this whole
- * observability layer exists to prevent. Tuning fourteen checks by hand in a web UI is how that
+ * observability layer exists to prevent. Tuning every check by hand in a web UI is how that
  * correction keeps not happening.
  *
  * The table in docs/observability.md is the source of truth. This script reads it and makes
