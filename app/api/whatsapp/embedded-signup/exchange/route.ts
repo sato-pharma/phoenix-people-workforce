@@ -1,0 +1,163 @@
+import { NextResponse } from "next/server";
+
+import { logError, logInfo, logWarning } from "@/lib/observability/log";
+import { WHATSAPP_EMBEDDED_SIGNUP_APP_ID } from "@/lib/recruitment/inbound/whatsapp-embedded-signup";
+import { assertApiRateLimit, isApiRateLimitError, rateLimitIdentity } from "@/lib/security/api-rate-limit";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+const GRAPH_HOST = "https://graph.facebook.com";
+// Both Graph calls are bounded so a slow or hung Meta response cannot pin a serverless worker open.
+const GRAPH_TIMEOUT_MS = 15_000;
+
+// Mirror whatsapp-health.ts's graphApiVersion() so every Graph call in the integration speaks the
+// same version without adding a required env var.
+function graphApiVersion(): string {
+  return process.env.WHATSAPP_GRAPH_API_VERSION?.trim() || "v23.0";
+}
+
+// fetch with a hard timeout via AbortController. On timeout the abort rejects the fetch, which the
+// callers already treat as a Graph failure (502 for the exchange, a logged warning for the subscribe).
+async function fetchWithTimeout(input: URL | string, init: RequestInit = {}): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), GRAPH_TIMEOUT_MS);
+  try {
+    return await fetch(input, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * Completes the WhatsApp coexistence connection begun on /whatsapp-connect.
+ *
+ * The client sends the one-time authorization `code` returned by the Facebook Embedded Signup dialog
+ * plus the `wabaId` the handset joined. This route:
+ *   1. exchanges the code for a business access token (server-only — needs WHATSAPP_APP_SECRET),
+ *   2. subscribes THIS app to that WABA's webhooks, so the handset's inbound messages are delivered
+ *      to the existing /api/webhooks/whatsapp endpoint and flow into recruitment intake.
+ *
+ * No session is required: the code is only valid for this app + secret and is issued by Facebook only
+ * to a person who already holds a role on the app (Standard Access), so it cannot be forged, and the
+ * only Meta-side effect — subscribing our own app to a WABA — is idempotent and harmless. It writes no
+ * business data (only the shared api_rate_limit bucket) and returns nothing sensitive to the browser.
+ */
+export async function POST(request: Request) {
+  const appSecret = process.env.WHATSAPP_APP_SECRET;
+  if (!appSecret) {
+    logWarning("WhatsApp embedded-signup exchange called but WHATSAPP_APP_SECRET is not configured", {
+      labels: { event: "embedded_signup_misconfigured" },
+    });
+    return NextResponse.json({ ok: false, error: "not_configured" }, { status: 500 });
+  }
+
+  // Public, unauthenticated endpoint — rate-limit by IP so it cannot be hammered to burn the Meta
+  // app's OAuth budget or hold workers open. Fail OPEN on any rate-limit *infrastructure* error: a
+  // one-time onboarding the owner runs on a phone must never be blocked because the bucket store
+  // hiccuped. A genuine over-limit still returns 429.
+  try {
+    await assertApiRateLimit({
+      identifier: rateLimitIdentity({ request }),
+      limit: 10,
+      scope: "whatsapp-embedded-signup-exchange",
+      windowMs: 60_000,
+    });
+  } catch (error) {
+    if (isApiRateLimitError(error)) {
+      return NextResponse.json(
+        { ok: false, error: "rate_limited", retryAfterSeconds: error.retryAfterSeconds },
+        { status: 429, headers: { "Retry-After": String(error.retryAfterSeconds) } },
+      );
+    }
+    logWarning("WhatsApp embedded-signup rate-limit check failed open", {
+      error,
+      labels: { event: "embedded_signup_rate_limit_error" },
+    });
+  }
+
+  let body: { code?: unknown; wabaId?: unknown };
+  try {
+    body = (await request.json()) as { code?: unknown; wabaId?: unknown };
+  } catch {
+    return NextResponse.json({ ok: false, error: "bad_request" }, { status: 400 });
+  }
+
+  const code = typeof body.code === "string" ? body.code.trim() : "";
+  const wabaId = typeof body.wabaId === "string" ? body.wabaId.trim() : "";
+  if (!code) {
+    return NextResponse.json({ ok: false, error: "missing_code" }, { status: 400 });
+  }
+
+  const version = graphApiVersion();
+
+  // 1) Code -> business access token. redirect_uri is intentionally absent: the JS SDK embedded
+  //    signup flow does not use one.
+  let accessToken: string;
+  try {
+    const tokenUrl = new URL(`${GRAPH_HOST}/${version}/oauth/access_token`);
+    tokenUrl.searchParams.set("client_id", WHATSAPP_EMBEDDED_SIGNUP_APP_ID);
+    tokenUrl.searchParams.set("client_secret", appSecret);
+    tokenUrl.searchParams.set("code", code);
+
+    const tokenResponse = await fetchWithTimeout(tokenUrl, { cache: "no-store" });
+    const tokenJson = (await tokenResponse.json().catch(() => null)) as
+      | { access_token?: string; error?: { message?: string } }
+      | null;
+
+    if (!tokenResponse.ok || !tokenJson?.access_token) {
+      logError("WhatsApp embedded-signup code exchange failed", {
+        labels: { event: "embedded_signup_exchange_failed", status: String(tokenResponse.status) },
+        context: { graphError: tokenJson?.error?.message ?? null },
+      });
+      return NextResponse.json({ ok: false, error: "exchange_failed" }, { status: 502 });
+    }
+    accessToken = tokenJson.access_token;
+  } catch (error) {
+    logError("WhatsApp embedded-signup code exchange threw", {
+      error,
+      labels: { event: "embedded_signup_exchange_error" },
+    });
+    return NextResponse.json({ ok: false, error: "exchange_error" }, { status: 502 });
+  }
+
+  // 2) Subscribe this app to the joined WABA so its inbound routes to our webhook. Idempotent, and
+  //    best-effort: a missing waba_id or an already-subscribed WABA must not fail the whole connect,
+  //    since the app may already be subscribed at the account level.
+  if (wabaId) {
+    try {
+      const subscribeResponse = await fetchWithTimeout(
+        `${GRAPH_HOST}/${version}/${encodeURIComponent(wabaId)}/subscribed_apps`,
+        {
+          method: "POST",
+          headers: { Authorization: `Bearer ${accessToken}` },
+          cache: "no-store",
+        },
+      );
+      if (subscribeResponse.ok) {
+        logInfo("WhatsApp embedded-signup subscribed the app to the WABA", {
+          labels: { event: "embedded_signup_subscribed" },
+        });
+      } else {
+        const subscribeJson = (await subscribeResponse.json().catch(() => null)) as
+          | { error?: { message?: string } }
+          | null;
+        logWarning("WhatsApp embedded-signup could not subscribe the app to the WABA", {
+          labels: { event: "embedded_signup_subscribe_failed", status: String(subscribeResponse.status) },
+          context: { graphError: subscribeJson?.error?.message ?? null },
+        });
+      }
+    } catch (error) {
+      logWarning("WhatsApp embedded-signup subscribe threw", {
+        error,
+        labels: { event: "embedded_signup_subscribe_error" },
+      });
+    }
+  } else {
+    logWarning("WhatsApp embedded-signup finished without a WABA id", {
+      labels: { event: "embedded_signup_no_waba_id" },
+    });
+  }
+
+  return NextResponse.json({ ok: true });
+}
