@@ -1053,7 +1053,12 @@ const employeePortalNavigationSectionSeeds = [
       { href: "/employee-portals/employee-360", icon: IdCard, label: "Employee 360", permissions: [{ resource: "employee_profile" }] },
       { href: "/employee-portals/private-calendar", icon: CalendarDays, label: "Private Calendar", permissions: [{ resource: "employee_profile" }] },
       { href: "/employee-portals/plans", icon: CalendarDays, label: "Weekly / Monthly Plans", permissions: [{ resource: "weekly_plans" }], roles: ["District Manager", "Regional Manager", "National Sales Manager", "Product Manager", "Group Product Manager", "Marketing Manager", "Manager"] },
-      { href: "/employee-portals/organogram", icon: Network, label: "Organogram", permissions: [{ resource: "organogram", action: "read" }], roles: ["District Manager", "National Sales Manager", "Regional Manager", "Product Manager", "Group Product Manager", "Marketing Manager"] },
+      // Training Manager added 2026-08-25. He has held `organogram: ["read"]` and passed
+      // canAccessCompanyOrganogram the whole time — the page itself even names him in its
+      // comment as one of the company-wide roles that reach it — but he was never listed
+      // here, so the portal offered him no way in. A grant with no nav entry is not a
+      // security hole (the page gates independently); it is a page nobody can find.
+      { href: "/employee-portals/organogram", icon: Network, label: "Organogram", permissions: [{ resource: "organogram", action: "read" }], roles: ["District Manager", "National Sales Manager", "Regional Manager", "Product Manager", "Group Product Manager", "Marketing Manager", "Training Manager"] },
       { href: "/employee-portals/vacancies", icon: BriefcaseBusiness, label: "Vacancies Report", permissions: [{ resource: "vacancies", action: "read" }], roles: ["District Manager", "Regional Manager", "National Sales Manager", "Product Manager", "Group Product Manager", "Marketing Manager", "Training Manager"] },
       { href: "/employee-portals/recruitment-candidates", icon: UsersRound, label: "My Candidates", permissions: [{ resource: "hiring_interviews", action: "read" }], roles: ["District Manager", "Regional Manager", "National Sales Manager", "Manager", "Product Manager", "Group Product Manager", "Marketing Manager"] },
       { href: "/employee-portals/probation", icon: Hourglass, label: "Probation", permissions: [{ resource: "probation", action: "read" }], roles: ["District Manager", "Regional Manager", "National Sales Manager", "Product Manager", "Group Product Manager", "Marketing Manager", "Training Manager", "Manager"] },
@@ -1131,6 +1136,14 @@ const employeePortalNavigationSectionSeeds = [
     id: "people-management",
     items: [
       { href: "/employee-portals/employees", icon: UsersRound, label: "Employees", permissions: [{ resource: "employees", action: "read" }], roles: ["Talent Acquisition"] },
+      // The org chart, sitting beside the directory it charts. Added 2026-08-25 after the
+      // owner reported the Head Office organogram missing from this account: the branch was
+      // live and both of the page's gates passed for her, but she is a PORTAL-mode role, so
+      // the admin sidebar's /organogram entry never reaches her and the portal's own entry
+      // (in the employee-portal section) lists only field roles. She therefore had the
+      // permission and no link, since the 2026-07-24 expansion whose own matrix comment
+      // names "org chart" among what it granted. This is the missing half of that grant.
+      { href: "/employee-portals/organogram", icon: Network, label: "Organogram", permissions: [{ resource: "organogram", action: "read" }], roles: ["Talent Acquisition"] },
       { href: "/employee-portals/contracts", icon: CalendarClock, label: "Contract Renewal", permissions: [{ resource: "contracts", action: "read" }], roles: ["Talent Acquisition"] },
       { href: "/employee-portals/resignations", icon: FileSpreadsheet, label: "Resignations", permissions: [{ resource: "resignations", action: "read" }], roles: ["Talent Acquisition"] },
       { href: "/employee-portals/account-activation", icon: UserCog, label: "Account Activation", permissions: [{ resource: "account_activation", action: "read" }], roles: ["Talent Acquisition"] },
