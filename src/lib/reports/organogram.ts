@@ -55,9 +55,25 @@ export function canAccessHeadOffice(access: AccessContext) {
     //
     // Named by ROLE, never `access.scope === "company"`. The scope shortcut would hand Head Office
     // to every current and future company-scope role in one edit; tests/organogram-godmode.test.ts
-    // keeps Marketing Manager / Training Manager / Talent Acquisition pinned to `false` at the
-    // helper's default company scope precisely so that shortcut fails loudly if anyone reaches for it.
+    // keeps Marketing Manager and Training Manager pinned to `false` at the helper's default
+    // company scope precisely so that shortcut fails loudly if anyone reaches for it. (Talent
+    // Acquisition was a third pin until 2026-08-25 — see her entry below. The SFE Manager pair in
+    // tests/finance-manager-six-module-access.test.ts guards the same shortcut.)
     access.role === "Finance Manager" ||
+    // Talent Acquisition added 2026-08-25 (owner: "in the admin account and talent
+    // acquisition show the head office organogram"). She recruits FOR Head Office — the
+    // vacancies path already said so in a comment while the code did the opposite, since
+    // she passes canAccessCompanyOrganogram and so was caught by that route's
+    // `canAccessCompanyOrganogram && !canAccessHeadOffice` strip.
+    //
+    // This is not a new disclosure. Talent Acquisition already browses the entire employee
+    // directory (see hardBoundaryAllowedActions in permissions.ts), so every Head Office
+    // person's record was already reachable; this changes which door, not what is behind
+    // it. The salary carve-out that governs the directory governs the chart popup too —
+    // isSalaryRedactedForViewer blanks the money figures for her own manager chain and the
+    // named seniors, and the node-detail route applies it (app/api/reports/organogram/
+    // employee/[hrId]/route.ts).
+    access.role === "Talent Acquisition" ||
     access.scope === "system"
   );
 }
@@ -565,6 +581,11 @@ export async function getScopedVacancyReport(access: AccessContext): Promise<Vac
     // head-office access (Marketing / Training Manager) must not see Head Office
     // vacancies either. Talent Acquisition recruits for Head Office, so it is
     // unaffected; privileged roles (CEO / Super Admin / system) see everything.
+    //
+    // That sentence about Talent Acquisition described the INTENT, not the behaviour,
+    // until 2026-08-25: she passes canAccessCompanyOrganogram and failed
+    // canAccessHeadOffice, so this very branch stripped Head Office from her vacancies.
+    // Adding her to canAccessHeadOffice is what finally made the comment true.
     if (canAccessCompanyOrganogram(access) && !canAccessHeadOffice(access)) {
       return stripHeadOfficeRows(report);
     }

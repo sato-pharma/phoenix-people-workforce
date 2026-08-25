@@ -490,6 +490,7 @@ import { runTitlePermissionGovernanceTests } from "./title-permission-governance
 import { runOrganogramHardeningTests } from "./organogram-hardening.test.ts";
 import { runVacancyReportOrganogramConsistencyTests } from "./vacancy-report-organogram-consistency.test.ts";
 import { runOrganogramGodmodeTests } from "./organogram-godmode.test.ts";
+import { runOrganogramHeadOfficeBranchTests } from "./organogram-head-office-branch.test.ts";
 import { runOrganogramPhantomSeatSuppressionTests } from "./organogram-phantom-seat-suppression.test.ts";
 import { runVacancyReportSourceTests } from "./vacancy-report-source.test.ts";
 import { runOrganogramNodeDetailPrivacyTests } from "./organogram-node-detail-privacy.test.ts";
@@ -1599,6 +1600,7 @@ await runTest("title permission governance", runTitlePermissionGovernanceTests);
 await runTest("organogram hardening", runOrganogramHardeningTests);
 await runTest("vacancy report / organogram consistency", runVacancyReportOrganogramConsistencyTests);
 await runTest("organogram godmode", runOrganogramGodmodeTests);
+await runTest("organogram head office branch (the AU seat model has no Head Office seats — the department was on nobody's chart)", runOrganogramHeadOfficeBranchTests);
 await runTest("organogram phantom seat suppression (stale-manager phantom DSM + same-area placeholder dup + NSM-direct vanish)", runOrganogramPhantomSeatSuppressionTests);
 await runTest("vacancy report source", runVacancyReportSourceTests);
 await runTest("organogram node-detail popup privacy boundary", runOrganogramNodeDetailPrivacyTests);
