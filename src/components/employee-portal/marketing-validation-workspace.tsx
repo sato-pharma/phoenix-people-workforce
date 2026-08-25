@@ -2424,11 +2424,6 @@ export function MarketingValidationWorkspace() {
           pharmacy.source === "existing"
             ? {
               existingPharmacyId: pharmacy.existingPharmacyId,
-              // Sent whether or not a capture came with it. A licence is not a capture — it can be
-              // supplied for a shop whose storefront photo is already complete, and gating it on
-              // the capture would drop it silently for exactly that venue.
-              licenseFileDataUrl: pharmacy.license?.dataUrl ?? null,
-              licenseFileName: pharmacy.license?.fileName ?? null,
               ...(hasCompleteCapture(pharmacy.capture)
                 ? {
                   ...payloadCapture(pharmacy.capture),
@@ -2437,6 +2432,15 @@ export function MarketingValidationWorkspace() {
                   regionName: [pharmacy.area, pharmacy.governorate].filter(Boolean).join(", "),
                 }
                 : {}),
+              // OUTSIDE the capture spread, and after it so the spread stays adjacent to the id —
+              // `tests/marketing-complete-existing-venue.test.ts` pins that adjacency to prove a
+              // half-finished capture is never sent, and this feature has no business loosening it.
+              //
+              // Sent whether or not a capture came with it. A licence is not a capture: it can be
+              // supplied for a shop whose storefront photo is already complete, and gating it on
+              // the capture would drop it silently for exactly that venue.
+              licenseFileDataUrl: pharmacy.license?.dataUrl ?? null,
+              licenseFileName: pharmacy.license?.fileName ?? null,
             }
             : {
               ...payloadCapture(pharmacy.capture),
