@@ -1,4 +1,6 @@
 import { normalizeLineName } from "@/lib/auth/permissions";
+import { canonicalHrIdKey } from "@/lib/hr-id";
+import { buildHeadOfficeOrganogramRows } from "@/lib/reports/organogram-head-office";
 import { hasWhatsAppNumber } from "@/lib/reports/organogram-whatsapp";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import type {
@@ -43,7 +45,14 @@ type AuTreeRow = {
   line_id: number | null;
 };
 
-/** The employee-master columns joined onto each occupied seat. Work fields only. */
+/**
+ * The employee-master columns joined onto each occupied seat. Work fields only.
+ *
+ * The last three (`line_id`, `manager_hr_id`, `organogram_visible`) are NOT used by the seat
+ * path — they feed `buildHeadOfficeOrganogramRows`, which assembles the Head Office branch
+ * the AU seat model has no seats for. They ride on this select rather than a second query
+ * because every round trip crosses to Frankfurt; see organogram-head-office.ts.
+ */
 type EmployeeWorkRow = {
   contract_renewal_date: string | null;
   contract_type: string | null;
@@ -53,9 +62,12 @@ type EmployeeWorkRow = {
   hire_date: string | null;
   hr_id: string | null;
   job_title: string | null;
+  line_id: number | null;
+  manager_hr_id: string | null;
   /** Read ONLY to compute the hasWhatsApp boolean below — never placed on a row. */
   mobile_number: string | null;
   name_ar: string | null;
+  organogram_visible: boolean | null;
   team_name: string | null;
   work_email: string | null;
 };
@@ -109,7 +121,7 @@ export async function buildOrganogramSeatReport(): Promise<VacancyReportData> {
   const { data: empData } = await supabase
     .from("employees")
     .select(
-      "hr_id, full_name, name_ar, work_email, mobile_number, job_title, employment_status, contract_type, contract_renewal_date, hire_date, department_name, team_name",
+      "hr_id, full_name, name_ar, work_email, mobile_number, job_title, employment_status, contract_type, contract_renewal_date, hire_date, department_name, team_name, line_id, manager_hr_id, organogram_visible",
     );
   const nameByHr = new Map<string, string>();
   const hireDateByHr = new Map<string, string>();
@@ -263,7 +275,25 @@ export async function buildOrganogramSeatReport(): Promise<VacancyReportData> {
     });
   }
 
-  return { organogramRows: rows, rows: [], summary: { ...emptySummary } };
+  // The Head Office branch. The AU seat model covers the sales force only — it has no
+  // Head Office seats at all — so those employees are assembled from the employee master
+  // and hung off the CEO node. Appended here, at the single source every organogram and
+  // vacancy-tree caller reads, so the existing boundaries apply to it untouched:
+  // `scopeAuOrganogramRows` drops the branch in line mode (its rows name a line), and
+  // `getOrganogramReport` strips it in company mode for anyone without
+  // `canAccessHeadOffice`. See organogram-head-office.ts.
+  const ceoSeat = tree.find((s) => s.seat_tier === "CEO" && !isDropped(s));
+  const occupiedHrIds = new Set<string>();
+  for (const s of tree) {
+    const key = canonicalHrIdKey(s.occupant_hr_id);
+    if (key) occupiedHrIds.add(key);
+  }
+  const headOfficeRows = buildHeadOfficeOrganogramRows((empData ?? []) as EmployeeWorkRow[], {
+    ceoNodeKey: ceoSeat ? (nodeKeyBySeat.get(ceoSeat.seat_id) ?? null) : null,
+    occupiedHrIds,
+  });
+
+  return { organogramRows: [...rows, ...headOfficeRows], rows: [], summary: { ...emptySummary } };
 }
 
 /** Scope the seat rows to the viewer's line(s); CEO (line-less) is always kept. */

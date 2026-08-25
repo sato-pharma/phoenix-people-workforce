@@ -142,7 +142,15 @@ export async function runFinanceManagerSixModuleAccessTests() {
       "guard against the two functions being collapsed into one",
   );
   assert.equal(canAccessCompanyOrganogram(ctx("SFE Manager")), true, "…while still holding the company view");
-  assert.equal(canAccessHeadOffice(ctx("Talent Acquisition")), false, "company-scope role, no Head Office");
+  // Talent Acquisition WAS a second negative control here. The owner granted her Head Office on
+  // 2026-08-25 (she recruits for it, and already browses the whole employee directory), so she is
+  // now a positive. The SFE Manager pair above is what still guards the scope-collapse shortcut.
+  assert.equal(
+    canAccessHeadOffice(ctx("Talent Acquisition")),
+    true,
+    "owner decision 2026-08-25 — she recruits for Head Office; the SFE Manager above remains the " +
+      "negative control that would fail if these two functions were collapsed into a scope check",
+  );
 
   // ── 6. Resignations: read, and only read ─────────────────────────────────────────────────────
   assert.equal(await canAccess(fm, "resignations", "read"), true, "company-wide via isCompanyResignationReader");

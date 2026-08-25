@@ -148,15 +148,17 @@ export function runOrganogramGodmodeTests() {
   assert.equal(isHeadOfficeRow({ lineId: 1, lineName: "Pedia" }), false);
   assert.equal(isHeadOfficeRow({ lineId: null, lineName: null }), false);
 
-  // H-5 — only CEO / Super Admin / system scope may see Head Office. Company-org
-  // roles (Marketing / Training Manager) and Talent Acquisition may not, so the
-  // vacancies route strips Head Office for them exactly like the organogram.
+  // H-5 — only CEO / Super Admin / Finance Manager / Talent Acquisition / system scope
+  // may see Head Office. The other company-org roles (Marketing / Training Manager) may
+  // not, so the vacancies route strips Head Office for them exactly like the organogram.
+  // Talent Acquisition was added 2026-08-25 on the owner's instruction — she recruits for
+  // Head Office and already browses the whole employee directory.
   assert.equal(canAccessHeadOffice(ctx("CEO")), true);
   assert.equal(canAccessHeadOffice(ctx("Super Admin")), true);
   assert.equal(canAccessHeadOffice(ctx("Marketing Manager", "system")), true);
+  assert.equal(canAccessHeadOffice(ctx("Talent Acquisition")), true);
   assert.equal(canAccessHeadOffice(ctx("Marketing Manager")), false);
   assert.equal(canAccessHeadOffice(ctx("Training Manager")), false);
-  assert.equal(canAccessHeadOffice(ctx("Talent Acquisition")), false);
   assert.equal(canAccessHeadOffice(ctx("National Sales Manager")), false);
 
   // MD-9 — a member's node key must depend only on their identity, never on
