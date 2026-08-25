@@ -73,6 +73,8 @@ export default async function AdminMyDirectOrderDetailPage({
           pharmacyId={detail.pharmacy.id}
           pharmacyName={detail.pharmacy.pharmacyName}
           requestId={detail.request.id}
+          distributorCodeCount={detail.pharmacy.distributorCodes.length}
+          venueType={detail.pharmacy.venueType}
         />
       ) : null}
       {showCancel && detail ? (

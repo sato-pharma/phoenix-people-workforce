@@ -9,11 +9,29 @@ import {
   type ResolvedEvidenceLocation,
 } from "@/components/outstation/evidence-watermark";
 import { ZoomablePhoto } from "@/components/ui/zoomable-photo";
+import {
+  PHARMACY_LICENSE_ACCEPT_ATTRIBUTE,
+  PHARMACY_LICENSE_MAX_BYTES,
+  isPharmacyLicenseContentType,
+  pharmacyLicenseFillsTheIdentityGap,
+  pharmacyLicensePrompt,
+} from "@/lib/venues/pharmacy-license";
+import { DEFAULT_VENUE_TYPE, type VenueType } from "@/lib/venues/venue-type";
 
 type Props = {
   pharmacyId: string;
   pharmacyName: string;
   requestId?: string | null;
+  /**
+   * How many distributor codes this pharmacy holds, and what kind of venue it is. Both come from
+   * the order detail the page already loaded, and together they decide whether the pharmacy licence
+   * is the proof this venue is actually short of — see `pharmacyLicenseFillsTheIdentityGap`.
+   *
+   * Defaulted so the two pages that mount this could not silently start prompting for a licence on
+   * every venue if one of them ever forgets to pass them.
+   */
+  distributorCodeCount?: number;
+  venueType?: VenueType;
   onDone?: () => void;
 };
 
@@ -54,13 +72,27 @@ type Suggestion = {
  * survives being screenshotted, forwarded, or pasted into a chat, and a photo taken somewhere else
  * cannot be relabelled later.
  *
- * There is no file picker anywhere in this component, and that is the point: the server rejects
- * anything that is not a live JPEG, so offering an upload button would only teach reps to try.
+ * The STOREFRONT photo has no file picker, and that is the point: the server rejects anything that
+ * is not a live JPEG, so offering an upload button there would only teach reps to try.
+ *
+ * The pharmacy LICENCE below it is the deliberate exception, and the difference is what each one
+ * claims. The storefront photo claims "taken at this place, at this time"; the licence claims only
+ * "this is the document", and it usually arrives as a scan or a PDF from the pharmacist rather than
+ * being on the wall to photograph. Owner's call, 2026-08-25 — see `src/lib/venues/pharmacy-license.ts`.
  */
-export function PharmacyValidationCapture({ pharmacyId, pharmacyName, requestId, onDone }: Props) {
+export function PharmacyValidationCapture({
+  pharmacyId,
+  pharmacyName,
+  requestId,
+  distributorCodeCount = 0,
+  venueType = DEFAULT_VENUE_TYPE,
+  onDone,
+}: Props) {
   const router = useRouter();
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const licenseCameraRef = useRef<HTMLInputElement | null>(null);
+  const licenseFileRef = useRef<HTMLInputElement | null>(null);
 
   const [cameraReady, setCameraReady] = useState(false);
   const [capture, setCapture] = useState<Capture>(EMPTY);
@@ -73,6 +105,14 @@ export function PharmacyValidationCapture({ pharmacyId, pharmacyName, requestId,
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
+  const [license, setLicense] = useState<{ dataUrl: string; fileName: string; isPdf: boolean } | null>(null);
+
+  const licenseFillsTheGap = pharmacyLicenseFillsTheIdentityGap({ distributorCodeCount, venueType });
+  const licenseNote = pharmacyLicensePrompt({
+    distributorCodeCount,
+    hasLicenseOnFile: Boolean(license),
+    venueType,
+  });
 
   useEffect(() => {
     return () => {
@@ -230,6 +270,48 @@ export function PharmacyValidationCapture({ pharmacyId, pharmacyName, requestId,
     setCameraReady(false);
   }
 
+  /**
+   * Read the chosen licence into a data URL.
+   *
+   * Both the camera button and the file button land here — on a phone `capture="environment"` is
+   * the only difference between them, and it is the browser, not this code, that decides whether to
+   * open the camera or the gallery. Validated on THIS side too so the rep is told about a 20MB
+   * scan before it is base64-encoded and pushed across the wire; the server checks it again
+   * because a client-side check is a courtesy, never a gate.
+   */
+  function readLicenseFile(file: File | null | undefined) {
+    setError(null);
+    if (!file) return;
+    if (!isPharmacyLicenseContentType(file.type)) {
+      setError("The pharmacy licence must be a JPEG, a PNG, or a PDF.");
+      return;
+    }
+    if (file.size > PHARMACY_LICENSE_MAX_BYTES) {
+      setError("The pharmacy licence file is too large. Attach a file under 5 MB.");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onerror = () => setError("That file could not be read. Try attaching it again.");
+    reader.onload = () => {
+      const dataUrl = typeof reader.result === "string" ? reader.result : "";
+      if (!dataUrl) {
+        setError("That file could not be read. Try attaching it again.");
+        return;
+      }
+      setLicense({ dataUrl, fileName: file.name || "pharmacy-licence", isPdf: file.type === "application/pdf" });
+      setMessage("Pharmacy licence attached.");
+    };
+    reader.readAsDataURL(file);
+  }
+
+  function clearLicense() {
+    setLicense(null);
+    // The inputs are reset so re-choosing the SAME file fires `change` again — without this,
+    // removing a licence and picking it back leaves the control silently dead.
+    if (licenseCameraRef.current) licenseCameraRef.current.value = "";
+    if (licenseFileRef.current) licenseFileRef.current.value = "";
+  }
+
   async function submit() {
     setError(null);
     if (!photo) return setError("Take the storefront photo.");
@@ -248,6 +330,7 @@ export function PharmacyValidationCapture({ pharmacyId, pharmacyName, requestId,
           claimedDoctorName: doctor.trim() || null,
           claimedReason: reason.trim(),
           photoDataUrl: photo,
+          licenseDataUrl: license?.dataUrl ?? null,
           capturedLatitude: capture.latitude,
           capturedLongitude: capture.longitude,
           capturedAccuracyMeters: capture.accuracy,
@@ -259,6 +342,7 @@ export function PharmacyValidationCapture({ pharmacyId, pharmacyName, requestId,
       if (!res.ok || !data.success) throw new Error(data.message || "Could not submit the validation.");
       setMessage("Sent for validation. Your order stays on hold until it is reviewed.");
       setPhoto(null);
+      clearLicense();
       onDone?.();
       router.refresh();
     } catch (submitError) {
@@ -355,6 +439,78 @@ export function PharmacyValidationCapture({ pharmacyId, pharmacyName, requestId,
               className="mt-2 w-full max-w-md border border-emerald-300"
               src={photo}
             />
+          ) : null}
+        </div>
+
+        {/* The pharmacy licence (رخصة الصيدلية). Always offered, never required — a rep who has it
+            can settle the identity question on the spot instead of waiting for the desk to ask.
+            Highlighted only when it is the proof this venue is genuinely short of: no distributor
+            code anywhere. A nursery is skipped entirely — it has no distributor account by its
+            nature and no pharmacy trade licence to produce. */}
+        <div className={`border p-3 ${licenseFillsTheGap && !license ? "border-amber-300 bg-amber-50" : "border-[#eef1f3]"}`}>
+          <p className="text-[11px] font-black uppercase tracking-wider text-slate-500">
+            Pharmacy licence · رخصة الصيدلية {licenseFillsTheGap ? "" : "(optional)"}
+          </p>
+          {licenseNote ? (
+            <p className="mt-1 text-[12px] font-semibold text-amber-900" dir="auto">{licenseNote}</p>
+          ) : (
+            <p className="mt-1 text-[12px] font-medium text-slate-500">
+              Attach it if you have it — the reviewer checks the trade name on the licence against the
+              name on the shop sign.
+            </p>
+          )}
+          <input
+            accept={PHARMACY_LICENSE_ACCEPT_ATTRIBUTE}
+            capture="environment"
+            className="hidden"
+            onChange={(e) => readLicenseFile(e.target.files?.[0])}
+            ref={licenseCameraRef}
+            type="file"
+          />
+          <input
+            accept={PHARMACY_LICENSE_ACCEPT_ATTRIBUTE}
+            className="hidden"
+            onChange={(e) => readLicenseFile(e.target.files?.[0])}
+            ref={licenseFileRef}
+            type="file"
+          />
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => licenseCameraRef.current?.click()}
+              className="border border-slate-300 bg-white px-3 py-1.5 text-[12px] font-bold text-slate-700 hover:bg-slate-50"
+            >
+              Photograph licence
+            </button>
+            <button
+              type="button"
+              onClick={() => licenseFileRef.current?.click()}
+              className="border border-slate-300 bg-white px-3 py-1.5 text-[12px] font-bold text-slate-700 hover:bg-slate-50"
+            >
+              Choose file
+            </button>
+            <span className="text-[11px] font-medium text-slate-400">JPEG, PNG or PDF · up to 5 MB</span>
+          </div>
+          {license ? (
+            <div className="mt-2 border border-emerald-300 bg-emerald-50 px-3 py-2">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[12px] font-bold text-emerald-900" dir="auto">{license.fileName}</span>
+                <button type="button" onClick={clearLicense} className="text-[11px] font-bold text-orange-600">
+                  Remove
+                </button>
+              </div>
+              {/* A PDF gets its name and nothing else — an inline preview would need a viewer, and
+                  the reviewer opens it on the desk anyway. An image is shown, because a rep who
+                  photographed the wrong page should find that out here rather than at the desk. */}
+              {license.isPdf ? null : (
+                <ZoomablePhoto
+                  alt="Pharmacy licence"
+                  caption="Pharmacy licence · رخصة الصيدلية"
+                  className="mt-2 w-full max-w-md border border-emerald-200"
+                  src={license.dataUrl}
+                />
+              )}
+            </div>
           ) : null}
         </div>
 

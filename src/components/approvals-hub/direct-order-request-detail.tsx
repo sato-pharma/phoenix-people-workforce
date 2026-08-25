@@ -30,6 +30,7 @@ import { describeResolvedAddressPlace, type DirectOrderGeographyVerdict } from "
 import { describeDirectOrderAutoLinkRefusal } from "@/lib/direct-orders/hold-decision";
 import type { DirectOrderApprovalDetail } from "@/lib/direct-orders/types";
 import { ZoomablePhoto } from "@/components/ui/zoomable-photo";
+import { PharmacyLicenseEvidence } from "@/components/venues/pharmacy-license-evidence";
 
 const money = (value: number) => `${Math.round(value).toLocaleString("en-US")} EGP`;
 
@@ -434,6 +435,15 @@ export function DirectOrderRequestDetail({
                   Open the pin on the map
                 </a>
               ) : null}
+              {/* The pharmacy licence (رخصة الصيدلية), when the rep attached one. Shown to every
+                  viewer who can already open this order, on the same owner rule (2026-08-08) that
+                  made the storefront photo visible here rather than only on the Super Admin desk —
+                  an approver on the chain is deciding the same thing and needs the same evidence. */}
+              <PharmacyLicenseEvidence
+                contentType={pharmacyEvidence.licenseContentType}
+                label={pharmacyEvidence.claimedPharmacyName ?? "this pharmacy"}
+                url={pharmacyEvidence.licenseUrl}
+              />
             </div>
             <dl className="space-y-2">
               <Field
@@ -449,6 +459,20 @@ export function DirectOrderRequestDetail({
                 }
               />
               <Field label="Submitted" value={cairoStamp(pharmacyEvidence.requestedAt) ?? "—"} />
+              {/* Only rendered when a licence exists to have a verdict about. "Not checked yet" is
+                  said out loud rather than left blank — an empty row here would read as a pass. */}
+              {pharmacyEvidence.licenseUrl ? (
+                <Field
+                  label="Licence name vs shop sign"
+                  value={
+                    pharmacyEvidence.licenseNameMatchesSign === true
+                      ? "Confirmed to match"
+                      : pharmacyEvidence.licenseNameMatchesSign === false
+                        ? "Does NOT match"
+                        : "Not checked yet"
+                  }
+                />
+              ) : null}
             </dl>
           </div>
         </PanelSection>

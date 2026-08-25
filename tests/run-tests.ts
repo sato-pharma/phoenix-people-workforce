@@ -418,6 +418,7 @@ import { runMarketingCompleteExistingVenueTests } from "./marketing-complete-exi
 import { runMarketingGovernorateCheckTests } from "./marketing-governorate-check.test.ts";
 import { runMarketingValidationPharmacyCardMinWidthTests } from "./marketing-validation-pharmacy-card-min-width.test.ts";
 import { runMarketingEvidencePhotoStorageTests } from "./marketing-evidence-photo-storage.test.ts";
+import { runPharmacyLicenseEvidenceTests } from "./pharmacy-license-evidence.test.ts";
 // Registered beside its marketing siblings rather than appended at the end of the file: this
 // one pins the daily nudge to the SAME rule the badge draws, so a PR editing either sees both.
 import { runMarketingFieldCaptureBacklogTests } from "./marketing-field-capture-backlog.test.ts";
@@ -1549,6 +1550,13 @@ await runTest(
 await runTest(
   "marketing evidence photo storage (the image is retained, not just its filename; a name with no image is refused)",
   runMarketingEvidencePhotoStorageTests,
+);
+await runTest(
+  "pharmacy trade licence رخصة الصيدلية (owner, 2026-08-25: a licence can be attached beside a "
+  + "validation so the trade name can be checked against the shop sign; it NEVER raises evidence "
+  + "status, it lands in its own bucket so the JPEG-only wall on the two capture buckets stays up, "
+  + "and both desks accept exactly the same files)",
+  runPharmacyLicenseEvidenceTests,
 );
 await runTest(
   "marketing field-capture backlog (the daily nudge reuses the badge's own rule so it can never chase a proven customer; one real visit clears every link; the rep who owns it is chased before their manager; a customer with neither is reported, not dropped; one rep is one bucket whatever the hr_id casing; a list holding both kinds is described as a split rather than claimed whole as his; and 51 recipients never means email)",

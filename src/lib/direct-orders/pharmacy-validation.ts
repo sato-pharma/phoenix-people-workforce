@@ -11,6 +11,11 @@ import { assertDirectOrderWorkflowTransition } from "@/lib/direct-orders/workflo
 import { canonicalHrIdKey } from "@/lib/hr-id";
 import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import {
+  parsePharmacyLicenseDataUrl,
+  PHARMACY_LICENSE_BUCKET,
+  type PharmacyLicenseContentType,
+} from "@/lib/venues/pharmacy-license";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Pharmacy Validation (spec A2 — docs/specs/direct-orders-v2.md).
@@ -81,6 +86,27 @@ export type DirectOrderValidationRow = {
   decisionNotes: string | null;
   /** Short-lived signed URL for the evidence photo; null when there is no photo on file. */
   photoUrl: string | null;
+  /**
+   * The pharmacy trade licence (رخصة الصيدلية), when one was attached — see
+   * `src/lib/venues/pharmacy-license.ts` for why a codeless venue needs one.
+   *
+   * Signed on the same TTL as the storefront photo. `licenseContentType` travels with it because
+   * the desk has to know whether to render an image or offer a PDF to open; guessing from the URL
+   * is not possible once it is signed.
+   */
+  licenseUrl: string | null;
+  licenseContentType: PharmacyLicenseContentType | null;
+  licenseUploadedAt: string | null;
+  /**
+   * The approver's verdict that the licence trade name matches the shop sign.
+   *
+   * NULL means NOBODY WAS ASKED — no licence on file, or a claim decided before this existed — and
+   * the desk must render it as such. Same rule as `evidenceCheck`: silence here would read as
+   * "checked and fine", which is the one thing it must never mean.
+   */
+  licenseNameMatchesSign: boolean | null;
+  /** Does this pharmacy have a distributor code in any distributor? Drives the licence prompt. */
+  hasDistributorCode: boolean;
   /**
    * What the storefront photo was read to say (spec E2).
    *
@@ -196,6 +222,12 @@ export async function requestDirectOrderPharmacyValidation(
     claimedDoctorName?: string | null;
     claimedReason: string;
     photoDataUrl: string;
+    /**
+     * The pharmacy trade licence, optional always. Unlike `photoDataUrl` this may be a PDF and may
+     * come from a file picker — it is a document, not a claim about a place. See
+     * `src/lib/venues/pharmacy-license.ts` for the full reasoning.
+     */
+    licenseDataUrl?: string | null;
     capturedLatitude?: number | null;
     capturedLongitude?: number | null;
     capturedAccuracyMeters?: number | null;
@@ -277,6 +309,19 @@ export async function requestDirectOrderPharmacyValidation(
 
   const { bytes } = parseDirectOrderEvidencePhotoDataUrl(input.photoDataUrl);
 
+  // Parsed BEFORE the row is inserted, on the same reasoning as the storefront photo: a licence
+  // that is too large or is a file type nobody can open must fail while the rep is still looking
+  // at the form, not after a validation row exists claiming a document it never received.
+  // `parsePharmacyLicenseDataUrl` throws a plain Error; this module reports its refusals as 400s.
+  let license: { bytes: Buffer; contentType: PharmacyLicenseContentType; extension: string } | null = null;
+  if (String(input.licenseDataUrl ?? "").trim()) {
+    try {
+      license = parsePharmacyLicenseDataUrl(input.licenseDataUrl);
+    } catch (licenseError) {
+      badRequest(licenseError instanceof Error ? licenseError.message : "The pharmacy licence file is not valid.");
+    }
+  }
+
   const supabase = getSupabaseAdmin();
   const { data: pharmacy } = await supabase
     .from("direct_order_pharmacies")
@@ -346,6 +391,36 @@ export async function requestDirectOrderPharmacyValidation(
   }
   await supabase.from("direct_order_pharmacy_validations").update({ storage_path: path }).eq("id", validationId);
 
+  // The licence, when one was attached. Same id-keyed path shape, `-license` suffixed so the two
+  // objects for one claim can never collide — but a DIFFERENT bucket. `direct-order-evidence` is
+  // provisioned JPEG-only with a 2MB ceiling, which is a second wall behind the live-capture parser
+  // and must stay that way; the licence goes to `pharmacy-licenses`, which admits a PNG or a PDF.
+  //
+  // A FAILURE HERE UNWINDS THE WHOLE FILING, exactly as the storefront upload does. That looks
+  // harsh for an optional document, and it is the right call: the alternative is a validation row
+  // whose `license_storage_path` is null while the rep watched a licence upload and believed it was
+  // sent. A rep who is told "it did not send, try again" loses a minute; an approver who decides a
+  // codeless pharmacy believing no licence exists loses the only identity check there was.
+  if (license) {
+    const licensePath = `${pharmacyId}/${validationId}-license.${license.extension}`;
+    const { error: licenseUploadError } = await supabase.storage
+      .from(PHARMACY_LICENSE_BUCKET)
+      .upload(licensePath, license.bytes, { contentType: license.contentType, upsert: true });
+    if (licenseUploadError) {
+      await supabase.storage.from(DIRECT_ORDER_EVIDENCE_BUCKET).remove([path]).catch(() => undefined);
+      await supabase.from("direct_order_pharmacy_validations").delete().eq("id", validationId);
+      throw licenseUploadError;
+    }
+    await supabase
+      .from("direct_order_pharmacy_validations")
+      .update({
+        license_content_type: license.contentType,
+        license_storage_path: licensePath,
+        license_uploaded_at: new Date().toISOString(),
+      })
+      .eq("id", validationId);
+  }
+
   // Read the storefront evidence once, here, so the answer is already on the Super Admin's desk
   // when they open it (spec E2). The bytes are already in hand from the parse above, so nothing is
   // re-downloaded.
@@ -376,8 +451,14 @@ export async function requestDirectOrderPharmacyValidation(
     actorLoginId: access.loginId ?? access.hrId,
     entityType: "direct_order_request",
     entityId: `validation:${validationId}`,
-    newValues: { pharmacyId, status: "pending", areaCode, distanceKm: proximity.distanceKm },
-    summary: `Pharmacy validation requested by ${access.hrId ?? "unknown"} for ${claimedName}.`,
+    newValues: {
+      pharmacyId,
+      status: "pending",
+      areaCode,
+      distanceKm: proximity.distanceKm,
+      licenseAttached: Boolean(license),
+    },
+    summary: `Pharmacy validation requested by ${access.hrId ?? "unknown"} for ${claimedName}${license ? ", with a pharmacy licence attached" : ""}.`,
   });
 
   return { validationId };
@@ -439,14 +520,42 @@ async function mapValidationRow(
   row: Record<string, unknown>,
   pharmacy: ValidationPharmacyRow | undefined,
   requesterName: string,
+  /**
+   * Whether this pharmacy holds a distributor code, when the caller already knows. The desk reads
+   * it for every row in ONE query rather than one per claim; the single-row caller passes nothing
+   * and this resolves it itself.
+   */
+  hasDistributorCode?: boolean,
 ): Promise<DirectOrderValidationRow> {
+  const bucket = String(row.storage_bucket ?? DIRECT_ORDER_EVIDENCE_BUCKET);
   const storagePath = row.storage_path ? String(row.storage_path) : null;
   let photoUrl: string | null = null;
   if (storagePath) {
     const { data: signed } = await supabase.storage
-      .from(String(row.storage_bucket ?? DIRECT_ORDER_EVIDENCE_BUCKET))
+      .from(bucket)
       .createSignedUrl(storagePath, EVIDENCE_SIGNED_URL_TTL_SECONDS);
     photoUrl = signed?.signedUrl ?? null;
+  }
+  // Read from the licence bucket, NOT from `bucket` above. `storage_bucket` on this row describes
+  // the storefront photo and only that; the licence has always lived in `pharmacy-licenses`, which
+  // is one fixed name rather than a per-row value, so there is nothing on the row to consult.
+  const licensePath = row.license_storage_path ? String(row.license_storage_path) : null;
+  let licenseUrl: string | null = null;
+  if (licensePath) {
+    const { data: signedLicense } = await supabase.storage
+      .from(PHARMACY_LICENSE_BUCKET)
+      .createSignedUrl(licensePath, EVIDENCE_SIGNED_URL_TTL_SECONDS);
+    licenseUrl = signedLicense?.signedUrl ?? null;
+  }
+  // Resolved here only for the single-row caller. `head: true` sends no rows — this asks whether
+  // ANY code exists, and the answer is a boolean either way.
+  let codeKnown = hasDistributorCode;
+  if (codeKnown === undefined) {
+    const { count } = await supabase
+      .from("direct_order_pharmacy_distributor_codes")
+      .select("pharmacy_id", { count: "exact", head: true })
+      .eq("pharmacy_id", String(row.pharmacy_id));
+    codeKnown = (count ?? 0) > 0;
   }
   const proximity = await resolveAreaProximity({
     areaCode: row.requester_area_code ? String(row.requester_area_code) : null,
@@ -479,6 +588,15 @@ async function mapValidationRow(
     decidedAt: row.decided_at ? String(row.decided_at) : null,
     decisionNotes: row.decision_notes ? String(row.decision_notes) : null,
     photoUrl,
+    licenseUrl,
+    licenseContentType: row.license_content_type
+      ? (String(row.license_content_type) as PharmacyLicenseContentType)
+      : null,
+    licenseUploadedAt: row.license_uploaded_at ? String(row.license_uploaded_at) : null,
+    // Same rule as `evidenceCheck` below — null is "nobody was asked", never "checked and fine".
+    licenseNameMatchesSign:
+      row.license_name_matches_sign == null ? null : Boolean(row.license_name_matches_sign),
+    hasDistributorCode: codeKnown,
     // Read straight through: the column is null whenever there is no answer, and null must stay
     // null all the way to the screen rather than becoming a default that reads like a pass.
     evidenceCheck: (row.evidence_check as DirectOrderEvidenceCheck | null) ?? null,
@@ -549,11 +667,39 @@ export async function listDirectOrderPharmacyValidations(
     ]),
   );
 
+  // Which of these pharmacies hold a distributor code, in ONE query for the whole desk. A codeless
+  // pharmacy is the case the licence exists for, and asking per row would be an N+1 on a screen
+  // that already signs two storage URLs per claim.
+  //
+  // Chunked at 50: a PostgREST `.in()` puts every id in the URL, so past a few hundred it comes
+  // back `{ data: [], error: null }` — an empty set indistinguishable from "none of them have a
+  // code", which would silently prompt for a licence on every pharmacy in the company. This
+  // function takes an optional status filter and with none it returns EVERY claim ever filed, so
+  // the long list is reachable.
+  const pharmaciesWithCode = new Set<string>();
+  for (let i = 0; i < pharmacyIds.length; i += 50) {
+    const { data: codeRows } = await supabase
+      .from("direct_order_pharmacy_distributor_codes")
+      .select("pharmacy_id")
+      .in("pharmacy_id", pharmacyIds.slice(i, i + 50));
+    for (const codeRow of (codeRows ?? []) as Array<{ pharmacy_id: string }>) {
+      pharmaciesWithCode.add(String(codeRow.pharmacy_id));
+    }
+  }
+
   const out: DirectOrderValidationRow[] = [];
   for (const row of rows) {
     const pharmacy = pharmacyById.get(String(row.pharmacy_id));
     const hr = String(row.requested_by_hr_id ?? "");
-    out.push(await mapValidationRow(supabase, row, pharmacy, nameByHr.get(hr.toUpperCase()) ?? hr));
+    out.push(
+      await mapValidationRow(
+        supabase,
+        row,
+        pharmacy,
+        nameByHr.get(hr.toUpperCase()) ?? hr,
+        pharmaciesWithCode.has(String(row.pharmacy_id)),
+      ),
+    );
   }
   return out;
 }
@@ -637,6 +783,17 @@ export async function decideDirectOrderPharmacyValidation(
     /** Required for `match`: the real directory customer this pharmacy actually is. */
     matchDistributorCode?: string | null;
     matchCustomerCode?: string | null;
+    /**
+     * The approver's answer to the question the licence exists to ask: does the trade name printed
+     * on it match the name on the shop sign?
+     *
+     * Optional and NON-BLOCKING. Leaving it unanswered records null — "nobody was asked" — rather
+     * than refusing the decision. The system flags, it never rejects (owner's standing rule), and a
+     * codeless pharmacy the admin is otherwise sure of must not be un-decidable for want of a
+     * checkbox. It is written on every outcome including `reject`, because "I looked and the names
+     * did not match" is the most valuable rejection reason this desk can record.
+     */
+    licenseNameMatchesSign?: boolean | null;
   },
 ): Promise<void> {
   assertValidationDeskAccess(access);
@@ -678,19 +835,34 @@ export async function decideDirectOrderPharmacyValidation(
   const notes = input.notes?.trim() || null;
   const now = new Date().toISOString();
 
+  // A verdict about a licence that is not on file is not a verdict about anything — the DB refuses
+  // that shape too (`…_license_verdict_check`), and dropping it here means an older client that
+  // always sends the field cannot 500 on a claim with no licence.
+  const licenseOnFile = Boolean((row as { license_storage_path?: string | null }).license_storage_path);
+  const licenseVerdict =
+    licenseOnFile && input.licenseNameMatchesSign != null ? Boolean(input.licenseNameMatchesSign) : null;
+  const licenseColumns = licenseVerdict == null ? {} : { license_name_matches_sign: licenseVerdict };
+
   if (input.decision === "reject") {
     // The order stays held. Rejecting is not a dead end for the rep — they can still resubmit
     // the order against a pharmacy that has a real code, which is the outcome we want.
     await supabase
       .from("direct_order_pharmacy_validations")
-      .update({ status: "rejected", decided_by_hr_id: access.hrId, decided_at: now, decision_notes: notes, updated_at: now })
+      .update({
+        status: "rejected",
+        decided_by_hr_id: access.hrId,
+        decided_at: now,
+        decision_notes: notes,
+        updated_at: now,
+        ...licenseColumns,
+      })
       .eq("id", input.validationId);
     await writeRequiredAuditLog({
       actorLoginId: access.loginId ?? access.hrId,
       entityType: "direct_order_request",
       entityId: `validation:${input.validationId}`,
       oldValues: { status: "pending" },
-      newValues: { status: "rejected" },
+      newValues: { status: "rejected", licenseNameMatchesSign: licenseVerdict },
       summary: `Pharmacy validation rejected by ${access.hrId ?? "unknown"}${notes ? `: ${notes}` : "."}`,
     });
     return;
@@ -752,6 +924,7 @@ export async function decideDirectOrderPharmacyValidation(
         matched_distributor_code: distributorCode,
         matched_customer_code: customerCode,
         updated_at: now,
+        ...licenseColumns,
       })
       .eq("id", input.validationId);
   } else {
@@ -762,7 +935,14 @@ export async function decideDirectOrderPharmacyValidation(
       .eq("id", pharmacyId);
     await supabase
       .from("direct_order_pharmacy_validations")
-      .update({ status: "approved_new", decided_by_hr_id: access.hrId, decided_at: now, decision_notes: notes, updated_at: now })
+      .update({
+        status: "approved_new",
+        decided_by_hr_id: access.hrId,
+        decided_at: now,
+        decision_notes: notes,
+        updated_at: now,
+        ...licenseColumns,
+      })
       .eq("id", input.validationId);
   }
 
@@ -776,7 +956,17 @@ export async function decideDirectOrderPharmacyValidation(
     entityType: "direct_order_request",
     entityId: `validation:${input.validationId}`,
     oldValues: { status: "pending" },
-    newValues: { status: input.decision === "match" ? "matched_existing" : "approved_new", pharmacyId },
-    summary: `Pharmacy validation ${input.decision === "match" ? "matched to an existing customer" : "approved as new (provisional)"} by ${access.hrId ?? "unknown"}.`,
+    newValues: {
+      status: input.decision === "match" ? "matched_existing" : "approved_new",
+      pharmacyId,
+      licenseNameMatchesSign: licenseVerdict,
+    },
+    summary: `Pharmacy validation ${input.decision === "match" ? "matched to an existing customer" : "approved as new (provisional)"} by ${access.hrId ?? "unknown"}${
+      licenseVerdict === true
+        ? ", licence name confirmed against the shop sign"
+        : licenseVerdict === false
+          ? ", licence name did NOT match the shop sign"
+          : ""
+    }.`,
   });
 }
