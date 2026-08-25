@@ -854,6 +854,7 @@ import { runPayrollFractionalDeductionDayScalingTests } from "./payroll-fraction
 import { runDeductionsCrmSingleMonthScanTests } from "./deductions-crm-single-month-scan.test.ts";
 import { runCrmDayMapPushdownTests } from "./crm-day-map-pushdown.test.ts";
 import { runSfeManagerNavDeadLinksTests } from "./sfe-manager-nav-dead-links.test.ts";
+import { runOrganogramNavLinkExistsTests } from "./organogram-nav-link-exists-for-every-role-that-can-open-it.test.ts";
 import { runCrmDepartedExclusionHandoverTests } from "./crm-departed-exclusion-handover.test.ts";
 import { runOutstationArrivalPhotoCaptureReachableTests } from "./outstation-arrival-photo-capture-reachable.test.ts";
 import { runOutstationAdminManualExpenseGateTests } from "./outstation-admin-manual-expense-gate.test.ts";
@@ -2210,6 +2211,14 @@ await runTest(
 await runTest(
   "SFE Manager admin sales/customers-database nav cards never dead-end into a Super-Admin-only redirect",
   runSfeManagerNavDeadLinksTests,
+);
+
+await runTest(
+  "an organogram nav link exists for every role that can OPEN the organogram (Talent Acquisition and "
+  + "Training Manager both held organogram:read and passed canAccessCompanyOrganogram, so the page rendered "
+  + "the whole chart on request — but neither was listed on any sidebar entry, so there was no way to reach "
+  + "it; the owner hit this on 2026-08-25 after the Head Office branch shipped)",
+  runOrganogramNavLinkExistsTests,
 );
 
 await runTest(
