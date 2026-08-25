@@ -245,6 +245,25 @@ file holding the full account, under
   debug the code. `turbopack-500s-with-0xc0000142-when-commit-is-full`
 - **Verify a 375px mobile layout with NO dev server.** `verify-a-mobile-layout-without-a-dev-server`
 
+**Machine ceiling** (the same exhaustion the two entries above are symptoms of)
+
+- **The ceiling is the Windows COMMIT limit, not RAM — and a freeze leaves NO dump.** Commit is
+  RAM + pagefile, so the pagefile is the half that was fixable: raised to a fixed 16 GB on
+  2026-08-25, taking the limit from ~19.79 GB to **31.79 GB**. A commit-limit hang produces no
+  bugcheck and no minidump, so an empty `C:\Windows\Minidump` is the **expected** signature and never
+  an all-clear — the tell is `dwm.exe` dying with `0xC00001AD` (`STATUS_COMMITMENT_LIMIT`) minutes
+  before the freeze, with `System.OutOfMemoryException` in the Application log. **Never judge a
+  process by `VirtualSize`** — it is address-space *reservation*: on this box Edge reserves 3,621 GB
+  against 503 MB of real commit. That trap is how an ordinary `node` was read as a 22 GB runaway and
+  `repo-doctor.mjs` was wrongly blamed for three freezes on 2026-08-25 — an accusation raised and
+  then withdrawn. Judge by commit, and suspect **breadth** (many sessions plus Excel/Edge/Defender)
+  over any single process. Symptoms of a saturated commit charge — none of which mean your work was
+  wrong: bash `fork: retry: Resource temporarily unavailable` / `0xC000012D`, PowerShell refusing to
+  load `System.Management.Automation` with *"The paging file is too small"*, `gh` returning
+  *"Resource temporarily unavailable"*, and a heredoc silently failing to create its script so the
+  next command dies `MODULE_NOT_FOUND`. Check the shell with `echo alive` before blaming the task.
+  `commit-limit-not-ram-is-the-freeze-ceiling-pagefile-now-16gb`
+
 ## 3. Stable Environment Facts
 
 History and verification detail: [docs/agents-incident-history.md](docs/agents-incident-history.md).
@@ -342,9 +361,20 @@ Before editing, run `git status`, `git branch --show-current`, `git log -1 --one
 - **A memory file with no index line is invisible, not merely hard to find** — only `MEMORY.md` loads automatically, so nothing recalls an unlinked file and the next session re-derives what it already knows. A sweep on 2026-08-19 found **194 of 734** in that state, the oldest unlinked since May. `pnpm run repo:doctor` now reports them (and pointers whose file is gone) in a MEMORY INDEX section; `--deep` lists every one instead of the first 20. It is read-only and never changes the exit code — deciding whether an orphan earns a line in `MEMORY.md`, a line in `MEMORY-ARCHIVE.md`, or retirement is a judgement about what is still true.
 - **Worktree payload — not git, not tsc — is what makes this checkout feel slow.** Measured 2026-08-04: **1,887,882 file paths, 67s to walk**, against 4,107 tracked files — a 460x amplification, ~99% of it worktrees. Tools honouring `.gitignore` never see it, which is why validation looks healthy while the session crawls; what pays is agent file search, `grep -r`, `dir /s`, naive watchers. **Do not tune `tsconfig`/`eslint` for this — those excludes are already correct.** Retire merged worktrees and clear husks instead. Cost is path COUNT, not gigabytes (pnpm hardlinks).
 
-**Machine limits (the laptop's RAM is soldered at 16 GB — it cannot be upgraded).** One dev server
-at a time, ever. One typecheck/build at a time locally; parallel validation belongs to CI. Keep
-total local sessions at **4 or fewer**. Route work by tier:
+**Machine limits (RAM is soldered at 16 GB — it cannot be upgraded; the pagefile is not).** One dev
+server at a time, ever. One typecheck/build at a time locally; parallel validation belongs to CI.
+
+**The binding limit is the Windows COMMIT charge, not RAM — and it moved.** "Keep total local
+sessions at **4 or fewer**" was written against a ~19.79 GB commit limit (15.79 GB RAM + a 4 GB
+pagefile). The pagefile was raised to a fixed 16 GB on 2026-08-25, so the limit is now **31.79 GB**
+and that guidance is roughly 12 GB too conservative — measured the same day at 14 `claude.exe`,
+10.23 GB committed, **21.56 GB free**, surviving a pressure spike that had hung the machine five
+times earlier that day. Commit is still finite and the failure mode is a total freeze, so watch the
+**headroom** rather than a fixed session count: `Win32_OperatingSystem.TotalVirtualMemorySize` is the
+limit and `FreeVirtualMemory` the headroom, both in KB. **Read them live before quoting any session
+number.** Why such a freeze leaves no crash dump, and why `VirtualSize` misleads: §2.1.
+
+Route work by tier:
 
 | Tier | Where | Use for |
 | --- | --- | --- |
