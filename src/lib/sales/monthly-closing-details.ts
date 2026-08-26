@@ -9,21 +9,11 @@ import {
   resolveSalesAccessScope,
 } from "@/lib/sales/access-scope";
 import { applyClosingAreaMergesToDetails } from "@/lib/sales/closing-area-merges";
+import { countsInClosingHeadline } from "@/lib/sales/closing-headline";
 import { closingAreaOf, isRebookedRow } from "@/lib/sales/closing-row-area";
-import { JULY_2026_DIRECT_PERIOD } from "@/lib/sales/july-2026-direct-orders";
 import { loadSalesReferenceData } from "@/lib/sales/monthly-distributor-import";
 import { resolveTargetLineCode } from "@/lib/sales/monthly-targets";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
-
-/**
- * The one month whose DIRECT rows are taken as stored rather than valued at factory price —
- * the owner's ruling of 2026-08-06. See resolveClosingDetailSalesValue for the reasoning.
- *
- * Deliberately the SAME constant as July's hand-mapped direct orders rather than a second
- * `"2026-07"` literal: the ruling and the mapping describe one month, and if that month's direct
- * data ever moves, both must move together.
- */
-const STORED_VALUE_DIRECT_PERIOD: string = JULY_2026_DIRECT_PERIOD;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Monthly Closing — DETAILS.
@@ -35,7 +25,8 @@ const STORED_VALUE_DIRECT_PERIOD: string = JULY_2026_DIRECT_PERIOD;
 // It is the audit surface, so it deliberately shows rows the matrix DROPS and says why:
 //
 //   • Direct rows            -> excluded from phx_monthly_closing_matrix (`not f.is_direct`)
-//                               and reported by phx_monthly_closing_direct instead.
+//                               and reported by phx_monthly_closing_direct instead. Excluded from
+//                               that RPC, NOT from the closing — see ./closing-headline.ts.
 //   • Confidential products  -> LA003 / LA004 / SS001, excluded by the matrix RPC and visible
 //                               here only to a CEO / Super Admin who explicitly opts in.
 //
@@ -49,8 +40,16 @@ const STORED_VALUE_DIRECT_PERIOD: string = JULY_2026_DIRECT_PERIOD;
 // here understated CNS by 11,205 units.) It is still surfaced as a data-quality flag, because
 // a sale with no customer identity cannot be traced back to an outlet.
 //
-// `includedInClosing` is the single flag that says whether a row is inside the headline
-// number; `reconciliation` totals both sides so the two can never silently drift again.
+// `includedInClosing` says whether a row feeds the DISTRIBUTOR matrix — that is the flag the
+// export's Data/Total SUMIFS bridge is built on, and it must keep meaning exactly that.
+//
+// IT IS NOT THE SAME QUESTION AS "is this money in the closing". Direct is in the closing: the
+// screen and the workbook both render `injectDirectIntoMatrix(matrix, direct)`, so booked direct
+// orders sit inside the grand total. Reading `includedInClosing` as the headline is what made the
+// Finance Manager's own Monthly Closing tab report "In closing 0.00" for 2026-08 beside 290,387.57
+// of direct orders he had just booked, each row flagged "Direct (excluded)" — the money was there,
+// the label said it was not. Ask `countsInClosingHeadline(row)` (./closing-headline.ts) for that question, and
+// `reconciliation.closingHeadline` for the total.
 //
 // Scope: resolveSalesAccessScope is the authority (line + region + per-user product allowlist).
 // Confidential products and the Head Office line stay CEO / Super Admin only — the caller's
@@ -118,10 +117,17 @@ export type ClosingDetailRow = {
   missingClientCode: boolean;
   validationState: string;
 
-  /** True when this row is inside the Closing Matrix headline. */
+  /**
+   * True when this row feeds `phx_monthly_closing_matrix` — the DISTRIBUTOR half of the closing.
+   *
+   * Not the same as "this money is in the closing": direct rows are false here and are still
+   * inside the headline. Ask `countsInClosingHeadline` (./closing-headline.ts) for that. The export's Data/Total bridge
+   * is built on this flag meaning the distributor half, so it must not be widened in place.
+   */
   includedInClosing: boolean;
   exclusions: ClosingDetailExclusion[];
 };
+
 
 export type ClosingDetailsTotals = {
   rows: number;
@@ -162,9 +168,18 @@ export type ClosingDetailsResult = {
   /** All rows the viewer may see, after filters (not just this page). */
   totals: ClosingDetailsTotals;
   reconciliation: {
-    /** Rows that feed the Closing Matrix — these must tie to it exactly. */
+    /**
+     * Everything inside the closing headline — distributor rows PLUS the direct orders Finance
+     * booked into this month. This is the figure that ties to the Closing Matrix's grand total,
+     * and the one to put in front of a reader who asks "what is in the closing".
+     */
+    closingHeadline: ClosingDetailsTotals;
+    /** The DISTRIBUTOR half only — what feeds phx_monthly_closing_matrix and the export's SUMIFS. */
     includedInClosing: ClosingDetailsTotals;
-    /** Everything the matrix drops, split by reason. */
+    /**
+     * The DIRECT half: booked direct orders. Named "excluded" because it is excluded from the
+     * distributor matrix RPC, not from the closing — it is a component of `closingHeadline`.
+     */
     excludedDirect: ClosingDetailsTotals;
     excludedConfidential: ClosingDetailsTotals;
     /** Counted in the closing, but with no customer identity to trace it to. */
@@ -196,23 +211,20 @@ function num(value: unknown): number {
 /**
  * What ONE row contributes to the closing's sales value.
  *
- * This is the only place in the closing where a value is DERIVED rather than read, so it is the
- * only place the owner's July ruling can live without special-casing a sheet.
+ * This is the only place in the closing where a value is DERIVED rather than read.
  *
- * ── THE NORMAL RULE ──────────────────────────────────────────────────────────────────────────
- * effectiveUnits x factoryPrice. That is the DISTRIBUTOR formula — the same arithmetic
- * phx_monthly_closing_matrix values sell-out at (`f.effective_units * p.factory_price`) — and it is
- * correct for a distributor invoice line, whose sheet value is a restatement of it.
+ * ── DISTRIBUTOR ROWS: effectiveUnits x factoryPrice ──────────────────────────────────────────
+ * That is the DISTRIBUTOR formula — the same arithmetic phx_monthly_closing_matrix values sell-out
+ * at (`f.effective_units * p.factory_price`) — and it is correct for a distributor invoice line,
+ * whose sheet value is a restatement of it. Unchanged.
  *
- * ── THE JULY 2026 EXCEPTION (owner's ruling, 2026-08-06) ─────────────────────────────────────
- * "july exception take direct units and values as they are — 149,288.50 is accurate 100%"
+ * ── DIRECT ROWS: THE STORED VALUE IS THE VALUE, IN EVERY MONTH ───────────────────────────────
+ * A direct order is a negotiated deal — its own price, its own discount, its own bonus — so
+ * pricing it at factory price answers a question nobody asked. The locked direct-order pricing
+ * rule is explicit that "the factory price must NEVER be used in the Direct Orders module — for
+ * anything", and every other layer of the closing already reads the stored value.
  *
- * For 2026-07, and for DIRECT rows only, the STORED sheet value IS the value. It is authoritative
- * and is not re-derived from anything.
- *
- * WHY. A direct order is a negotiated deal — it carries its own price, its own discount and its own
- * bonus — so pricing it at factory price answers a question nobody asked. Measured in production on
- * 2026-08-06 for Anti Infective 2026-07 direct, 16 rows, 2,120 units:
+ * Measured in production for Anti Infective 2026-07 direct on 2026-08-06 (16 rows, 2,120 units):
  *
  *   source_of_sales_import_rows.value        149,288.50   <- the owner's own file, to the piastre
  *   source_of_sales_fact_rollup.direct_value 149,288.50
@@ -220,19 +232,29 @@ function num(value: unknown): number {
  *   phx_closing_channel_breakdown __DIRECT__ 149,288.50
  *   effectiveUnits x factoryPrice            157,518.00   <- ONLY this line, overstating by 8,229.50
  *
- * Every other surface in the closing already reads the stored value. This derivation was the single
- * disagreement, and it reached the Data sheet's "Sales Value" column, the Data/Total reconciliation
- * (`excludedDirect`) and the on-screen Closing Details panel.
+ * WHY THIS IS NO LONGER SCOPED TO JULY 2026. It was, from the owner's ruling of 2026-08-06 which
+ * named that one month; every later month kept the recompute. That left the surface Finance
+ * actually reads — Monthly Closing → Details, the Finance Manager's only closing door — disagreeing
+ * with the Closing Matrix the moment Finance booked an order into any month after July. Measured on
+ * production 2026-08-25, for the twenty approved orders Finance booked into 2026-08:
  *
- * WHY ONLY JULY, AND WHY THIS IS NOT A PRICING RULE. The owner ruled ONE month, so every other month
- * keeps exactly the behaviour it has today — deliberately, and a future month must be ruled on
- * before it is added here. This function also does not PRICE anything: it declines to. The locked
- * direct-order pricing rule (discount qty x PUBLIC x (1 - disc%), bonus qty x PHARMACY) is neither
- * read nor changed here, and factory price remains banned as a direct-order price.
+ *                    stored (matrix, RPC, rollup)   effectiveUnits x factoryPrice
+ *   Pedia                        258,858.67                    274,488.75   (+15,630.08)
+ *   Anti Infective                31,528.90                     29,947.50    (-1,581.40)
+ *   both lines                   290,387.57                    304,436.25   (+14,048.68)
+ *
+ * 290,387.57 is exactly the sum of those twenty orders' `sales_value`. The recompute errs in
+ * OPPOSITE directions on the two lines, which is what rules out any correction factor: only the
+ * deal is the deal. Under the owner's #1 golden rule — the Monthly Closing is the one sales truth
+ * and no surface keeps its own maths — a month-scoped exception could only ever be a bug waiting
+ * for its month, so the rule now reads as what it always meant: direct is taken as stored.
+ *
+ * This function still does not PRICE anything: it declines to. The locked direct-order pricing rule
+ * (discount qty x PUBLIC x (1 - disc%), bonus qty x PHARMACY) is neither read nor changed here.
  */
 export function resolveClosingDetailSalesValue(input: {
   isDirect: boolean;
-  /** The row's own invoice period, `YYYY-MM`. */
+  /** The row's own invoice period, `YYYY-MM`. Retained for callers; no longer branched on. */
   invoicePeriod: string;
   /** qty x (1 - discount). */
   effectiveUnits: number;
@@ -240,7 +262,7 @@ export function resolveClosingDetailSalesValue(input: {
   /** The value column exactly as the sheet stored it. */
   sheetValue: number;
 }): number {
-  if (input.isDirect && input.invoicePeriod.trim() === STORED_VALUE_DIRECT_PERIOD) return input.sheetValue;
+  if (input.isDirect) return input.sheetValue;
   return input.effectiveUnits * input.factoryPrice;
 }
 
@@ -482,6 +504,7 @@ export async function loadMonthlyClosingDetails(
     options: { regions: [], areas: [], products: [], distributors: [] },
     totals: emptyTotals(),
     reconciliation: {
+      closingHeadline: emptyTotals(),
       includedInClosing: emptyTotals(),
       excludedDirect: emptyTotals(),
       missingClientCode: emptyTotals(),
@@ -656,6 +679,7 @@ export async function loadMonthlyClosingDetails(
     options,
     totals: summarize(filtered, () => true),
     reconciliation: {
+      closingHeadline: summarize(filtered, countsInClosingHeadline),
       includedInClosing: summarize(filtered, (row) => row.includedInClosing),
       excludedDirect: summarize(filtered, (row) => row.isDirect),
       missingClientCode: summarize(filtered, (row) => row.missingClientCode),
@@ -706,6 +730,7 @@ export function narrowClosingDetailsToAreas(
     filteredRowCount: rows.length,
     reconciliation: {
       areaMismatches: summarize(rows, (row) => row.areaMismatch),
+      closingHeadline: summarize(rows, countsInClosingHeadline),
       excludedConfidential: summarize(rows, (row) => row.isConfidential),
       excludedDirect: summarize(rows, (row) => row.isDirect),
       includedInClosing: summarize(rows, (row) => row.includedInClosing),

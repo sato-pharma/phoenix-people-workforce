@@ -345,6 +345,7 @@ import { runOfficePivotTests } from "./office-pivot.test.ts";
 import { runOfficeAllocationTests } from "./office-allocation.test.ts";
 import { runOfficeGoldenRuleLockTests } from "./office-golden-rule-lock.test.ts";
 import { runClosingOfficeDifferentiationTests } from "./closing-office-differentiation.test.ts";
+import { runOfficeColumnIsCnsOnlyTests } from "./office-column-is-cns-only.test.ts";
 import { runClosingMatrixFoldTests } from "./closing-matrix-fold.test.ts";
 import { runMasterWorkbookKeysetTests } from "./master-workbook-keyset.test.ts";
 import { runSalesVsTargetCacheTests } from "./sales-vs-target-cache.test.ts";
@@ -766,6 +767,7 @@ import { runCrmUnrecognizedVisitTypeAlertTests } from "./crm-unrecognized-visit-
 import { runPayrollDeductionGateComposesWithPublishRuleTests } from "./payroll-deduction-gate-composes-with-publish-rule.test.ts";
 import { runJuly2026DirectOrdersTabTests } from "./july-2026-direct-orders-tab.test.ts";
 import { runJuly2026DirectValueIsStoredTests } from "./july-2026-direct-value-is-stored.test.ts";
+import { runClosingHeadlineCountsDirectTests } from "./closing-headline-counts-direct.test.ts";
 
 import { runAttendanceMonthlySummaryOutageTests } from "./attendance-monthly-summary-outage.test.ts";
 
@@ -1419,6 +1421,12 @@ await runTest("office pivot", runOfficePivotTests);
 await runTest("office allocation", runOfficeAllocationTests);
 await runTest("office golden rule LOCK (owner, 2026-08-11)", runOfficeGoldenRuleLockTests);
 await runTest('closing "of which Office" (Office units told apart from distributor sell-out)', runClosingOfficeDifferentiationTests);
+await runTest(
+  'closing "of wh. Office" is CNS ONLY (owner, 2026-08-25: the column and the Office Allocation '
+  + "sheet appear on CNS and nowhere else; every other line's Closing Matrix is identical with and "
+  + "without an Office grid, because the grid is a lens and never a source)",
+  runOfficeColumnIsCnsOnlyTests,
+);
 await runTest("closing matrix fold (matrix derived from distributor_product, matrix RPC dropped)", runClosingMatrixFoldTests);
 await runTest("master workbook keyset (single keyset pass, raw_row folded, no OFFSET rescan)", runMasterWorkbookKeysetTests);
 await runTest(
@@ -1929,10 +1937,18 @@ await runTest(
 await runTest("July 2026 direct orders (closed month still totals 684,002.15 / 5,241 units after the 2026-08-06 Anti Infective restatement; value is carried per-deal, never units × factory price)", runJuly2026DirectOrdersTabTests);
 
 await runTest(
-  "July 2026 direct value is taken AS STORED (owner's ruling 2026-08-06: Anti Infective direct is "
-  + "149,288.50, never the 157,518.00 a factory-price recompute gives; July only; the mapping and "
-  + "the month's direct sales stay one number)",
+  "direct value is taken AS STORED, in EVERY month (owner's ruling 2026-08-06: Anti Infective July "
+  + "direct is 149,288.50, never the 157,518.00 a factory-price recompute gives — widened past July "
+  + "on 2026-08-25; the mapping and the month's direct sales stay one number)",
   runJuly2026DirectValueIsStoredTests,
+);
+
+await runTest(
+  "booked direct orders are INSIDE the closing headline (the Finance Manager's Details tab read "
+  + "\"In closing 0.00\" beside the 290,387.57 he had just booked into 2026-08; the headline is the "
+  + "two channels added, confidential excluded, and `includedInClosing` still means the distributor "
+  + "half alone)",
+  runClosingHeadlineCountsDirectTests,
 );
 
 await runTest("incentive semester window (the CALENDAR semester, the same one for every rep; H1 stays closed rather than restated; a rep with no data still gets a named provisional window)", runIncentiveSemesterWindowTests);

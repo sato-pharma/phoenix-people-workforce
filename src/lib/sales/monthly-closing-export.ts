@@ -28,6 +28,7 @@ import {
 } from "@/lib/sales/monthly-closing-channel-comparison";
 import type { ClosingDetailRow, ClosingDetailsResult } from "@/lib/sales/monthly-closing-details";
 import { JULY_2026_DIRECT_PERIOD, JULY_2026_DIRECT_ROWS, type JulyDirectRow } from "@/lib/sales/july-2026-direct-orders";
+import { lineHasOfficeChannel } from "@/lib/sales/office-distributor";
 import {
   detailStoreSplitByCustomer,
   summariseStoreSplitByArea,
@@ -3239,7 +3240,11 @@ export async function buildMonthlyClosingWorkbook(
   // Plan the Calc layout first (for the formula ranges), write the visible report sheets,
   // then add the hidden Calc sheet LAST so a report sheet stays the active tab.
   const { blocks, ref } = planDataLayout(comparison.data);
-  writeMatrixSheet(workbook, matrix, options?.filterNote, options?.office);
+  // Owner's rule, 2026-08-25: Office is a CNS-only channel, so the "of wh. Office" columns and the
+  // Office Allocation sheet appear on CNS and nowhere else. Resolved once here so the column and
+  // the sheet can never disagree about whether this workbook has an Office layer.
+  const office = lineHasOfficeChannel(matrix.line) ? (options?.office ?? null) : null;
+  writeMatrixSheet(workbook, matrix, options?.filterNote, office);
   // Straight after the master, so the Office layer reads as a lens ON the closing rather than as a
   // separate report buried at the back.
   //
@@ -3248,7 +3253,7 @@ export async function buildMonthlyClosingWorkbook(
   // matrix when there is no Office data would present the ENTIRE closing as Office — 105,152 units
   // read as 42,838. Omitting the sheet says "not available"; the fallback said something false. The
   // portal path below already guarded it this way, so this also makes the two agree.
-  if (options?.office) writeOfficeSheet(workbook, options.office, options?.filterNote);
+  if (office) writeOfficeSheet(workbook, office, options?.filterNote);
   // The master's two halves, immediately beside it: the same money split by channel so the retail
   // business and the direct business can each be read on their own. Both tie back to the master.
   if (options?.channels) {
@@ -3527,8 +3532,10 @@ export async function buildPortalClosingWorkbook(
   });
   const { blocks, ref } = planDataLayout(comparison.data);
 
-  writeMatrixSheet(workbook, rebuiltMatrix, "Scoped to your own areas, region and products — never company-wide.", office);
-  if (office) writeOfficeSheet(workbook, office, "Scoped to your own areas, region and products — never company-wide.");
+  // Owner's rule, 2026-08-25 — Office is CNS-only. Same gate, same reason as the admin workbook.
+  const officeLayer = lineHasOfficeChannel(rebuiltMatrix.line) ? (office ?? null) : null;
+  writeMatrixSheet(workbook, rebuiltMatrix, "Scoped to your own areas, region and products — never company-wide.", officeLayer);
+  if (officeLayer) writeOfficeSheet(workbook, officeLayer, "Scoped to your own areas, region and products — never company-wide.");
   writeTargetAchievementSheet(workbook, rebuiltMatrix);
   writeComparisonSheet(workbook, comparison, ref);
   writeRankingsSheet(workbook, comparison, ref);

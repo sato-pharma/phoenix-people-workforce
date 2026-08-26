@@ -7,6 +7,7 @@ import { AdminCallout } from "@/components/admin/admin-design-system";
 import { cn } from "@/lib/utils";
 import { isSyntheticDirectArea } from "@/lib/sales/closing-direct-area";
 import { formatNumber, formatPercent } from "@/lib/sales/format";
+import { lineHasOfficeChannel } from "@/lib/sales/office-distributor";
 import type {
   MonthlyClosingCell,
   MonthlyClosingColumn,
@@ -469,7 +470,12 @@ export function ClosingMatrixTable({
 
   const columnGroups = groupColumns(matrix.columns);
   const multiCount = columnGroups.filter((g) => g.isMulti).length;
-  const officeLookup = buildOfficeLookup(office);
+  // Owner's rule, 2026-08-25: the Office breakdown belongs to CNS ONLY. Gated HERE rather than at
+  // each caller so a future surface cannot forget it — both the admin workspace and the portal view
+  // render through this one component. `undefined` (not null) is what removes the columns
+  // outright; null would keep them and print "—" plus the "could not be read" callout, which on a
+  // line that has no Office channel would report an outage that does not exist.
+  const officeLookup = buildOfficeLookup(lineHasOfficeChannel(matrix.line) ? office : undefined);
   // Direct money carries no Office by construction, so the national Office figures serve both the
   // retail grand total and the "incl. Direct" total unchanged.
   const natOfficeUnits = (idx: number) => officeLookup.unitsFor("NAT", matrix.columns[idx]?.productCode ?? "");

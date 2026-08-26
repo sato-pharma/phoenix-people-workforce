@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 
+import { countsInClosingHeadline } from "../src/lib/sales/closing-headline.ts";
+
 import ExcelJS from "exceljs";
 
 import { prepareClosingStoreSplit } from "../src/lib/sales/closing-store-split-export.ts";
@@ -203,6 +205,7 @@ function detailsFor(rows: ClosingDetailRow[]): ClosingDetailsResult {
     period: PERIOD,
     reconciliation: {
       areaMismatches: summarize(rows, (row) => row.areaMismatch),
+      closingHeadline: summarize(rows, countsInClosingHeadline),
       excludedConfidential: summarize(rows, (row) => row.isConfidential),
       excludedDirect: summarize(rows, (row) => row.isDirect),
       includedInClosing: summarize(rows, (row) => row.includedInClosing),
