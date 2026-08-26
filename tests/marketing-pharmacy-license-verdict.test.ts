@@ -5,6 +5,7 @@ import {
   licenseVerdictColumns,
   parseLicenseVerdict,
 } from "../src/lib/marketing-requests/pharmacy-license-verdict.ts";
+import { pharmacyLicenseVerdictLabel } from "../src/lib/venues/pharmacy-license.ts";
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 // The marketing half of "does the licence trade name match the shop sign?".
@@ -17,6 +18,8 @@ import {
 //   2. `null` means nobody was asked, and is never rendered or written as a "no".
 //   3. Recording it requires holding the request AND the pharmacy being on that request.
 //   4. It flags. It never rejects.
+//   5. It OUTLIVES the request. The desk that records it disappears the moment the request is
+//      decided; the Customer Database register is then the only place the answer can still be read.
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 
 export function runMarketingPharmacyLicenseVerdictTests() {
@@ -42,6 +45,14 @@ export function runMarketingPharmacyLicenseVerdictTests() {
   );
   const marketingServiceSource = readFileSync(
     new URL("../src/lib/marketing-requests/service.ts", import.meta.url),
+    "utf8",
+  );
+  const registerSource = readFileSync(
+    new URL("../src/components/employee-portal/marketing-customer-database.tsx", import.meta.url),
+    "utf8",
+  );
+  const directOrderDeskSource = readFileSync(
+    new URL("../src/components/approvals-hub/direct-order-request-detail.tsx", import.meta.url),
     "utf8",
   );
 
@@ -213,6 +224,113 @@ export function runMarketingPharmacyLicenseVerdictTests() {
       confirmSource,
       /does NOT match/,
       "and it must state a mismatch in words, not by colour alone",
+    );
+  }
+
+  // ── 8. THE SECOND HEADLINE: the answer has to still be readable after the request closes ──────
+  //
+  // Sections 1–7 guard the moment the verdict is RECORDED. That moment is on a screen that ceases
+  // to exist: the approver's detail view is reachable only while a request is open, and once it is
+  // approved the answer was write-only — recorded, audited, and unreadable by anyone. A check
+  // nobody can consult afterwards is a check that only ever protected the approver's own afternoon.
+  //
+  // The Customer Database register is the permanent surface. These pin the chain that carries the
+  // verdict onto it, and the two ways that chain fails QUIETLY.
+  {
+    // ── 8a. The loudest failure: a row that predates the column must read as UNASKED, not as a
+    //        mismatch. `select("*")` returns whatever the table has, so a stale PostgREST schema
+    //        cache, a not-yet-migrated environment, or any narrowed select leaves the field
+    //        `undefined`. `Boolean(undefined)` is `false`, and `false` renders "Does NOT match" —
+    //        which would accuse every pharmacy in the register of a failed identity check nobody
+    //        ever ran. `== null` is doing real work here and is not a style preference.
+    const mapper = marketingServiceSource.slice(
+      marketingServiceSource.indexOf("function mapMarketingPharmacy(row: MarketingPharmacyDbRow)"),
+      marketingServiceSource.indexOf("function mapDistributorCode("),
+    );
+    assert.ok(mapper.length > 0, "mapMarketingPharmacy must still exist — it is the only constructor");
+    assert.match(
+      mapper,
+      /licenseNameMatchesSign: row\.license_name_matches_sign == null\s*\?\s*null\s*:\s*Boolean\(row\.license_name_matches_sign\)/,
+      "ACCUSES EVERY PHARMACY: a missing license_name_matches_sign must map to null, not to false — `== null` catches the undefined a pre-migration row returns, and a bare Boolean() would print 'Does NOT match' across the whole register",
+    );
+
+    // ── 8b. And the register row must actually carry it, from the PHARMACY. The verdict is a fact
+    //        about the shop, not about the link row that happens to point at it.
+    assert.match(
+      marketingServiceSource,
+      /licenseNameMatchesSign: pharmacy\.licenseNameMatchesSign,/,
+      "the Customer Database row must carry the verdict, or the permanent surface has nothing to show",
+    );
+
+    // ── 8c. One vocabulary, one place. The register and the approver's desk are read by the same
+    //        person a day apart, and the same fact reworded reads as a different fact.
+    assert.equal(
+      pharmacyLicenseVerdictLabel(true),
+      "Confirmed to match",
+      "the wording a decided request showed must be the wording the register shows a year later",
+    );
+    assert.equal(
+      pharmacyLicenseVerdictLabel(false),
+      "Does NOT match",
+      "a mismatch must be stated in words — colour alone does not survive a printout or a screenshot",
+    );
+    assert.equal(
+      pharmacyLicenseVerdictLabel(null),
+      "Not checked yet",
+      "READS AS A PASS: an unasked verdict must be named out loud, never rendered blank",
+    );
+    assert.equal(
+      pharmacyLicenseVerdictLabel(undefined),
+      "Not checked yet",
+      "READS AS A PASS: an absent verdict must be named, never blank",
+    );
+    assert.notEqual(
+      pharmacyLicenseVerdictLabel(null),
+      pharmacyLicenseVerdictLabel(true),
+      "'nobody asked' and 'checked and fine' must never print the same words",
+    );
+    for (const [label, source] of [["the register", registerSource], ["the direct-order desk", directOrderDeskSource]] as const) {
+      assert.match(
+        source,
+        /pharmacyLicenseVerdictLabel\(/,
+        `${label} must read its wording from the shared helper — a second inline ladder is how the two ends of one check drift apart`,
+      );
+      assert.ok(
+        !/"Confirmed to match"/.test(source),
+        `${label} must not restate the verdict wording inline`,
+      );
+    }
+
+    // ── 8d. Both layouts. The owner's standing rule is desktop tables, mobile cards — a column
+    //        added to only one half is invisible to whichever audience uses the other.
+    const registerHasDesktopColumn = /<th className="px-4 py-3">Licence vs Sign<\/th>/.test(registerSource)
+      && /<td className="px-4 py-3"><LicenseVerdictCell value=\{row\.licenseNameMatchesSign\} \/><\/td>/.test(registerSource);
+    assert.ok(
+      registerHasDesktopColumn,
+      "the desktop table must carry a licence column with a matching cell — a header without a cell shifts every column after it",
+    );
+    assert.match(
+      registerSource,
+      /label: "Licence vs sign",\s*value: <LicenseVerdictCell value=\{row\.licenseNameMatchesSign\} \/>,/,
+      "MOBILE BLIND SPOT: the phone card must show the verdict too — admin shows tables, mobile shows cards, and a finding on only one of them is a finding half the readers never see",
+    );
+
+    // ── 8e. A mismatch must be legible as words. Colour alone does not survive a printout, a
+    //        screenshot pasted into WhatsApp, or a reader who cannot distinguish rose from slate.
+    const cell = registerSource.slice(
+      registerSource.indexOf("function LicenseVerdictCell("),
+      registerSource.indexOf("function CustomerRowCard("),
+    );
+    assert.ok(cell.length > 0, "the verdict cell must still exist");
+    assert.match(
+      cell,
+      /const label = pharmacyLicenseVerdictLabel\(value\);/,
+      "every branch of the cell must render the shared label, not a colour and an empty span",
+    );
+    assert.equal(
+      (cell.match(/\{label\}/g) ?? []).length,
+      3,
+      "all three states must print their words — true, false, and the null that is neither",
     );
   }
 }

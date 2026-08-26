@@ -31,6 +31,7 @@ import { describeDirectOrderAutoLinkRefusal } from "@/lib/direct-orders/hold-dec
 import type { DirectOrderApprovalDetail } from "@/lib/direct-orders/types";
 import { ZoomablePhoto } from "@/components/ui/zoomable-photo";
 import { PharmacyLicenseEvidence } from "@/components/venues/pharmacy-license-evidence";
+import { pharmacyLicenseVerdictLabel } from "@/lib/venues/pharmacy-license";
 
 const money = (value: number) => `${Math.round(value).toLocaleString("en-US")} EGP`;
 
@@ -464,13 +465,7 @@ export function DirectOrderRequestDetail({
               {pharmacyEvidence.licenseUrl ? (
                 <Field
                   label="Licence name vs shop sign"
-                  value={
-                    pharmacyEvidence.licenseNameMatchesSign === true
-                      ? "Confirmed to match"
-                      : pharmacyEvidence.licenseNameMatchesSign === false
-                        ? "Does NOT match"
-                        : "Not checked yet"
-                  }
+                  value={pharmacyLicenseVerdictLabel(pharmacyEvidence.licenseNameMatchesSign)}
                 />
               ) : null}
             </dl>

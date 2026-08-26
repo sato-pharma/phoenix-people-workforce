@@ -256,6 +256,12 @@ export type MarketingPharmacy = MarketingCapturedLocation & MarketingEvidenceCap
   extractedAreaName: string | null;
   extractedGovernorateName: string | null;
   id: string;
+  /**
+   * The approver's answer to "does the trade name on the pharmacy licence match the name on the
+   * shop sign?". Three-valued and NULL means NOBODY WAS ASKED — no licence on file, or a venue
+   * last looked at before this shipped. Never render a null as a pass.
+   */
+  licenseNameMatchesSign: boolean | null;
   lineId: number | null;
   managerHrId: string | null;
   /** When the merge happened. Null unless `mergedIntoPharmacyId` is set. */
@@ -766,6 +772,12 @@ export type MarketingCustomerDatabaseRow = {
    * "system validated" beside an empty photo cell and be telling the truth about both.
    */
   inferredFromHistory: boolean;
+  /**
+   * Carried here because this screen outlives the approval that produced it. The verdict is
+   * recorded on the approver's detail view, which exists only while a request is open — once it is
+   * decided, this register is the only place the answer can still be read.
+   */
+  licenseNameMatchesSign: boolean | null;
   pharmacyAddress: string | null;
   pharmacyArea: string | null;
   pharmacyCode: string;

@@ -26,6 +26,7 @@ import type {
   MarketingVenueMergeCandidate,
 } from "@/lib/marketing-requests/types";
 import { customerFieldEvidenceGap } from "@/lib/marketing-requests/validation-report";
+import { pharmacyLicenseVerdictLabel } from "@/lib/venues/pharmacy-license";
 import { venueCanAttributeSales, venueTypeLabel } from "@/lib/venues/venue-type";
 
 const PAGE_SIZE = 25;
@@ -101,6 +102,26 @@ function VendorCodeCell({
   return <CodeCell value={value} />;
 }
 
+/**
+ * The licence verdict, read back long after the request that produced it closed.
+ *
+ * Three looks for three states, and the middle one is why this is not a plain `<TextCell>`: a
+ * "Does NOT match" is a live finding about a venue that has no distributor code to identify it by,
+ * sitting in a 20-column table nobody scans carefully. It is coloured like a rejection because that
+ * is what it is. "Not checked yet" is deliberately grey and deliberately PRESENT — the state of
+ * almost every row in this register today, and an empty cell in its place would read as a pass.
+ */
+function LicenseVerdictCell({ value }: { value: boolean | null }) {
+  const label = pharmacyLicenseVerdictLabel(value);
+  if (value === true) {
+    return <span className="whitespace-nowrap text-xs font-black text-emerald-700">{label}</span>;
+  }
+  if (value === false) {
+    return <span className="whitespace-nowrap text-xs font-black text-rose-700">{label}</span>;
+  }
+  return <span className="whitespace-nowrap text-xs font-bold text-slate-400">{label}</span>;
+}
+
 function CustomerRowCard({ row }: { row: MarketingCustomerDatabaseRow }) {
   // One card = one LINK, so the gap is decided over that single link rather than over a group.
   const fieldEvidenceGap = customerFieldEvidenceGap([row]);
@@ -140,6 +161,12 @@ function CustomerRowCard({ row }: { row: MarketingCustomerDatabaseRow }) {
           {
             label: "Vendor code",
             value: row.vendorPharmacyCode || (venueCanAttributeSales(row.venueType) ? "-" : "None"),
+          },
+          // Directly under the vendor code on purpose: the licence is the identity proof a venue
+          // falls back on precisely BECAUSE it has no distributor code, so the two read as one fact.
+          {
+            label: "Licence vs sign",
+            value: <LicenseVerdictCell value={row.licenseNameMatchesSign} />,
           },
           { label: "Phone", value: row.customerPhone || "Not captured" },
         ]}
@@ -482,7 +509,7 @@ export function MarketingCustomerDatabase() {
           items={pagedRows}
           renderCard={(row) => <CustomerRowCard row={row} />}
           renderTable={() => (
-            <PortalDesktopTable minWidth="1620px">
+            <PortalDesktopTable minWidth="1800px">
             <thead className="bg-slate-50 text-[11px] font-black uppercase tracking-[0.12em] text-slate-500">
               <tr>
                 <th className="px-4 py-3">Customer Type</th>
@@ -499,6 +526,7 @@ export function MarketingCustomerDatabase() {
                 <th className="px-4 py-3">Pharmacy Governorate</th>
                 <th className="px-4 py-3">Pharmacy Address</th>
                 <th className="px-4 py-3">Venue Type</th>
+                <th className="px-4 py-3">Licence vs Sign</th>
                 <th className="px-4 py-3">Vendor ID</th>
                 <th className="px-4 py-3">Vendor</th>
                 <th className="px-4 py-3">Vendor Pharmacy Code</th>
@@ -523,6 +551,7 @@ export function MarketingCustomerDatabase() {
                   <td className="px-4 py-3"><TextCell value={row.pharmacyGovernorate} /></td>
                   <td className="max-w-[280px] px-4 py-3 leading-5"><TextCell value={row.pharmacyAddress} /></td>
                   <td className="whitespace-nowrap px-4 py-3 font-bold text-slate-700">{venueTypeLabel(row.venueType)}</td>
+                  <td className="px-4 py-3"><LicenseVerdictCell value={row.licenseNameMatchesSign} /></td>
                   <td className="px-4 py-3"><VendorCodeCell row={row} value={row.distributorCode || row.distributorId} /></td>
                   <td className="whitespace-nowrap px-4 py-3 font-bold text-slate-800">{vendorNameLabel(row)}</td>
                   <td className="px-4 py-3"><VendorCodeCell row={row} value={row.vendorPharmacyCode} /></td>

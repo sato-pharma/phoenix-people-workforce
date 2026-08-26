@@ -368,6 +368,8 @@ type MarketingPharmacyDbRow = {
   extracted_area_name?: string | null;
   extracted_governorate_name?: string | null;
   id: string;
+  /** Absent on every row written before 2026-08-26 — those venues were never asked the question. */
+  license_name_matches_sign?: boolean | null;
   line_id: number | string | null;
   manager_hr_id: string | null;
   /** Absent on every row written before 2026-08-23; a venue that is not a duplicate leaves it null. */
@@ -4213,6 +4215,9 @@ function mapMarketingPharmacy(row: MarketingPharmacyDbRow): MarketingPharmacy {
     extractedAreaName: row.extracted_area_name ?? null,
     extractedGovernorateName: row.extracted_governorate_name ?? null,
     id: row.id,
+    licenseNameMatchesSign: row.license_name_matches_sign == null
+      ? null
+      : Boolean(row.license_name_matches_sign),
     lineId: row.line_id === null ? null : Number(row.line_id),
     managerHrId: row.manager_hr_id,
     mergedAt: row.merged_at ?? null,
@@ -5552,6 +5557,7 @@ export async function getMarketingCustomerDatabaseWorkspace(
       distributorId: distributorCode?.distributorId ?? null,
       distributorName: distributorCode ? distributor?.displayName ?? "Unknown distributor" : null,
       inferredFromHistory: isInferredFromHistory(link.validation_notes),
+      licenseNameMatchesSign: pharmacy.licenseNameMatchesSign,
       pharmacyAddress: pharmacy.capturedAddress,
       pharmacyArea: pharmacy.extractedAreaName,
       pharmacyCode: pharmacy.pharmacyCode,
