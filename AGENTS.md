@@ -147,14 +147,32 @@ file holding the full account, under
   billing — billing creates the run and fails it in seconds; `startup_failure` is an outage
   signature too.** Check `curl -s https://www.githubstatus.com/api/v2/components.json | grep -o
   '"name":"Actions","status":"[a-z_]*"'` and `https://www.githubstatus.com/api/v2/incidents/unresolved.json`
-  BEFORE touching the spending limit. Events dropped during an outage are NEVER replayed — the PR
-  sits with no checks forever; fire a real `pull_request` event to recover it:
-  `gh pr close <n> && gh pr reopen <n>` (fires `reopened`, keeps the head SHA, no junk commit).
-  `gh workflow run ci.yml --ref <branch>` does NOT fix it: a `workflow_dispatch` run's check runs
-  land on the head SHA but never enter the PR's `statusCheckRollup`, so branch protection does not
-  count them. Verified 2026-08-26 — identical check-run names on two heads, only the
-  `pull_request`-sourced ones reached the rollup. (Cancelling such a dispatch run is harmless for
-  the same reason: its `cancelled` check runs are invisible to the rollup too.)
+  BEFORE touching the spending limit. Recover a PR with `gh pr close <n> && gh pr reopen <n>` —
+  it fires `reopened`, keeps the head SHA, and adds no junk commit. `gh workflow run ci.yml --ref
+  <branch>` does NOT fix a PR: a `workflow_dispatch` run's check runs land on the head SHA but
+  never enter the PR's `statusCheckRollup`, so branch protection does not count them. Verified
+  2026-08-26 — identical check-run names on two heads, only the `pull_request`-sourced ones
+  reached the rollup. (Cancelling such a dispatch run is harmless for the same reason.)
+- **Then WAIT — dispatch lags 20–30 MINUTES during an outage, and the events are NOT dropped.**
+  Measured on one PR 2026-08-26: reopen at `16:08:08Z` produced its runs at `16:29:29Z` (+21m); an
+  empty-commit push at `16:09:58Z` produced its runs at `16:35:23Z` (+25m). Both ran and passed.
+  The earlier claim here that dropped events are "NEVER replayed" was written from the same
+  outage, before the queue drained — it is wrong. Polling at 20s/45s/100s and concluding the event
+  fired nothing is how that session escalated for no reason: an empty commit, then a whole
+  replacement PR, renumbering #2414 to #2419 to escape a problem that was only latency. Fire ONE
+  recovery event, then leave it half an hour before believing anything.
+- **`actions/runs?head_sha=` needs the FULL 40-char SHA — an abbreviated one returns `total=0`
+  with no error.** During an outage that is indistinguishable from "no runs exist", which is
+  exactly when the query gets used: a watcher built on the 8-char form reported no runs for 8
+  minutes after they had landed and `gh run list` was already showing them. Same repo, same
+  moment: `head_sha=2c0979ca` -> `total=0`, `head_sha=2c0979cae674…` -> `total=2`. Pass all 40
+  characters, or filter `gh run list --branch <b>` on `.headSha` yourself.
+- **A push to `main` during an outage ships to PRODUCTION with no CI run at all.** Railway deploys
+  on push regardless, so the merge is live and unvalidated — and the "green PR is not a green
+  `main`" trap above applies with *nothing* having run, not merely with stale checks. On
+  2026-08-26 `ad2a0148` and `33f2b5b7` merged a minute apart and neither ever got a run. Recover
+  with `gh workflow run ci.yml --ref main` — the `statusCheckRollup` caveat does NOT apply to
+  `main`, which is not gated by a PR, so a dispatch is a real answer there.
 
 **Migrations**
 
