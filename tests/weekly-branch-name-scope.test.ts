@@ -40,16 +40,44 @@ const AREA_ROWS = [
   ["UE5", "Sohag1"], ["UE6", "Sohag2"], ["UE7", "Qena 1"], ["UE8", "Qena 2"], ["UE9", "Beni Suef"],
 ].map(([area_code, area_name]) => ({ area_code, area_name }));
 
-/** One line that maps every area above, so a reading is never hidden by an absent seat. */
+/**
+ * One line that maps every area above, so a reading is never hidden by an absent seat.
+ *
+ * The region comes off the area code by dropping ONE trailing digit — D11 is in Delta (1), D26 in
+ * Delta (2) — because that is what production does, and dropping all of them would put every Delta
+ * area in a region called "D" and make a branch named "Delta (1)" resolve to nothing at all.
+ *
+ * The two Kafr El-Sheikh areas are then moved to Alex-BHR by hand, which is not tidiness: the
+ * organogram really does seat them under the Alex-BHR manager on this line even though their codes
+ * say Delta. It is the reason a region reading has to be taken from the map and never from the code.
+ */
 const MAP_ROWS = AREA_ROWS.map((a) => ({
   line_code: "anti_infective",
   area_code: a.area_code,
-  operational_region_code: a.area_code.replace(/\d+$/, "").replace("OTMS", "OT"),
+  operational_region_code: a.area_code === "D16" || a.area_code === "D17"
+    ? "AB"
+    : a.area_code.replace(/\d$/, "").replace("OTMS", "OT"),
   effective_from: "2026-07-13",
   effective_to: null,
 }));
 
-const index = buildWeeklyAreaSplitIndex(MAP_ROWS, AREA_ROWS, "2026-08-27");
+/**
+ * A handful of real bricks, in the spelling `source_of_sales_bricks` actually uses.
+ *
+ * The owner's own correction: "El-Balyana is a brick — you can easily map it to an area. Also
+ * Mallawi." The brick table writes Mallawi with an extra alef (ملاوى) and the depot writes ملوى,
+ * one letter apart, so this fixture keeps the difference rather than papering over it.
+ */
+const BRICK_ROWS = [
+  { brick_name: "ملاوى", area_code: "UE2" },
+  { brick_name: "البلينا", area_code: "UE6" },
+  { brick_name: "شبين الكوم", area_code: "D12" },
+  // The same name in two areas answers nothing, so it must be dropped rather than guessed at.
+  { brick_name: "بيلا", area_code: "D16" },
+  { brick_name: "بيلا", area_code: "D17" },
+];
+
+const index = buildWeeklyAreaSplitIndex(MAP_ROWS, AREA_ROWS, "2026-08-27", BRICK_ROWS);
 
 /** Read a branch name and render the split as "AREA:percent", the owner's own arithmetic. */
 function split(branchName: string, region?: string): string[] {
@@ -73,6 +101,9 @@ const SOHAG_MIRROR = "ك.عملاء سوهاج_ك";
 const SOHAG = "ك.عملاء سوهاج";
 const TENDER = "مناقصات العبور";
 const WAREHOUSE_AR = "مستودع القاهره الاقليمى";
+const MALLAWI = "ملوى";
+const BALYANA = "جملة – البلينا";
+const SHEBIN = "فرع شبين الكوم";
 
 export async function runWeeklyBranchNameScopeTests() {
   // 1) HEADLINE — a district that IS an area must not be smeared over its whole governorate.
@@ -101,10 +132,14 @@ export async function runWeeklyBranchNameScopeTests() {
       ["D22:50.00", "D26:50.00"],
       "the 2 binds to Dakahlia, not to Damietta, and the two halves stay equal",
     );
+    // "Alex-BHR" is not two governorates written together — it is the NAME OF THE REGION, and the
+    // longest phrase in the name wins, so it is read as one. That matters: the region reading takes
+    // its areas from the organogram and therefore pays the two Kafr El-Sheikh areas the Alex-BHR
+    // manager actually holds, which reading it as "Alexandria and Beheira" would silently miss.
     assert.deepEqual(
       split("Direct - Alex-BHR", "AB"),
-      ["AB1:16.67", "AB2:16.67", "AB3:16.67", "AB4:25.00", "AB5:25.00"],
-      "BHR is Beheira — dropping it would quietly pay Alexandria the whole branch",
+      ["AB1:14.29", "AB2:14.29", "AB3:14.29", "AB4:14.29", "AB5:14.29", "D16:14.29", "D17:14.29"],
+      "Alex-BHR is a region — its areas come from the organogram, Kafr El-Sheikh included",
     );
   }
 
@@ -155,12 +190,35 @@ export async function runWeeklyBranchNameScopeTests() {
     assert.deepEqual(split(ASWAN, "OT"), ["OT7:100.00"], "Aswan resolves to the live area only");
   }
 
-  // 8) A name with no place falls back to its region rather than vanishing.
+  // 8) HEADLINE — a name that states a REGION is read as that region, not as a failure.
+  //    "Direct – Delta (1)" carries EGP 1,791,647 in production. Six such names carry EGP 5,918,000
+  //    between them, and treating them as unreadable strands every piastre at manager level.
+  //    Its areas come from the MAP, which is why Kafr El-Sheikh is correctly absent here.
   {
     const reading = readWeeklyBranchName(index, "Direct - Delta (1)", "D1");
-    assert.equal(reading.branchClass, "unreadable");
+    assert.equal(reading.branchClass, "territory", "the name states a place — the region itself");
     assert.deepEqual(reading.scope, { kind: "region", regionCode: "D1" } as WeeklyBranchScope);
+    assert.deepEqual(
+      split("Direct - Delta (1)", "D1"),
+      ["D11:20.00", "D12:20.00", "D13:20.00", "D14:20.00", "D15:20.00"],
+      "Delta (1) pays the five areas the organogram puts in it — not the two the code spelling suggests",
+    );
+    assert.deepEqual(split("Direct - Upper Egypt", "UE").length, 9, "Upper Egypt names all nine of its areas");
+  }
+
+  // 8b) A name with no place at all falls back to the region the branch is already mapped to, and
+  //     a bare "Delta" is deliberately one of those: EGP 900,983 sits under a name that matches
+  //     neither Delta (1) nor Delta (2), so it must be the owner's own mapping that answers.
+  {
+    const bare = readWeeklyBranchName(index, "Super KA Delta", "D1");
+    assert.equal(bare.branchClass, "unreadable", "a bare Delta names no region we have");
+    assert.deepEqual(bare.scope, { kind: "region", regionCode: "D1" } as WeeklyBranchScope);
+    assert.deepEqual(split("Super KA Delta_ك", "D1"), split("Super KA Delta", "D1"), "the mirror falls back the same way");
     assert.equal(readWeeklyBranchName(index, "Unallocated POS", "").scope, null, "no region to fall back on");
+    assert.deepEqual(
+      split("Direct - National", "NATIONAL"), [],
+      "NATIONAL is not an operational region — the fallback resolves to nothing and the row stays put",
+    );
   }
 
   // 9) Arabic folding — a lookup must not depend on which alef or final letter was typed.
@@ -176,5 +234,21 @@ export async function runWeeklyBranchNameScopeTests() {
     assert.equal(mentions.length, 1, `expected one place, got ${JSON.stringify(mentions)}`);
     assert.equal(mentions[0].governorate, "kafr el-sheikh", "the canonical label comes from the shared geo table");
     assert.equal(placeMentions("Giza Giza Giza").length, 1, "a place named three times is one place");
+  }
+
+  // 11) HEADLINE — a name that IS a brick resolves to that brick's one area, beating every coarser
+  //     reading. Both are the owner's own examples. Mallawi is spelled ملوى by the depot and ملاوى
+  //     by the brick table; read as a governorate instead it would pay Minia 1 half of a branch
+  //     that belongs entirely to Minia 2.
+  {
+    assert.deepEqual(split(MALLAWI, "UE"), ["UE2:100.00"], "Mallawi is a brick in Minia 2, not half of Minia");
+    assert.deepEqual(split(BALYANA, "UE"), ["UE6:100.00"], "El-Balyana is a brick in Sohag 2, not half of Sohag");
+    // A brick also beats the governorate reading of the same name: Shebin El Kom is in Menoufia,
+    // which would otherwise be D12 + D13 at 50% each.
+    assert.deepEqual(split(SHEBIN, "D1"), ["D12:100.00"], "a brick beats its own governorate");
+    // But only the WHOLE name is a brick. "Qena New Branch" is a depot in Qena, not a brick.
+    assert.equal(split("فرع قنا الجديد", "UE").length, 2, "a brick must be the whole name, not a word inside it");
+    // A brick name that exists in TWO areas answers nothing and must not be guessed at.
+    assert.equal(readWeeklyBranchName(index, "بيلا", "D1").scope?.kind !== "brick", true, "an ambiguous brick name is not a brick reading");
   }
 }

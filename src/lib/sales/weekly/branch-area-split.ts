@@ -35,7 +35,7 @@
 // including one parked in Others — that is a real destination and the organogram says so.
 
 import { resolveTargetLineCode } from "@/lib/sales/monthly-targets";
-import { AREAS_EXCLUDED_FROM_GOVERNORATES, GOVERNORATES_BY_AREA } from "@/lib/sales/weekly/governorates";
+import { AREAS_EXCLUDED_FROM_GOVERNORATES, GOVERNORATES_BY_AREA, normalizeArabic } from "@/lib/sales/weekly/governorates";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 /** What a branch's name resolves to. Stored per branch; interpreted per line at read time. */
@@ -68,6 +68,19 @@ export type WeeklyAreaSplitIndex = {
   areasByLineRegion: Map<string, string[]>;
   /** area code -> display name, for the calculation the mapping sheet shows. */
   areaNames: Map<string, string>;
+  /**
+   * Normalized brick name -> the ONE area that brick belongs to.
+   *
+   * The owner's own correction: "there is one called El-Balyana. Why are you putting El-Balyana?
+   * El-Balyana is a brick — you can easily map it to an area. Also Mallawi." source_of_sales_bricks
+   * is the declared authority for brick -> area, so it is read rather than transcribed: El-Balyana
+   * is UE6 Sohag 2 and Mallawi is UE2 Minia 2, and neither is a 50/50 guess across its governorate.
+   *
+   * A name living in TWO areas is excluded, not resolved. Four do (they are decoys, not the same
+   * place twice): "بيلا" is in both Kafr El-Sheikh areas, "دار السلام" is in Helwan-Maadi AND
+   * Sohag 2 — 700 kilometres apart. Splitting one of those 50/50 would be inventing a place.
+   */
+  areaByBrick: Map<string, string>;
 };
 
 const splitKey = (line: string, token: string) => `${line}||${token}`;
@@ -104,6 +117,7 @@ export type WeeklyAreaSplitMapRow = {
   effective_from?: string | null; effective_to?: string | null;
 };
 export type WeeklyAreaSplitAreaRow = { area_code?: string; area_name?: string };
+export type WeeklyAreaSplitBrickRow = { brick_name?: string; area_code?: string };
 
 /**
  * Pure index build, so the split can be proven against a fixture — and against a dump of the real
@@ -113,6 +127,7 @@ export function buildWeeklyAreaSplitIndex(
   mapRows: WeeklyAreaSplitMapRow[],
   areaRows: WeeklyAreaSplitAreaRow[],
   today: string,
+  brickRows: WeeklyAreaSplitBrickRow[] = [],
 ): WeeklyAreaSplitIndex {
   const areaNames = new Map<string, string>();
   for (const row of areaRows) {
@@ -151,20 +166,37 @@ export function buildWeeklyAreaSplitIndex(
   for (const list of areasByLineGovernorate.values()) list.sort();
   for (const list of areasByLineRegion.values()) list.sort();
 
-  return { areasByLineGovernorate, areasByLineRegion, areaNames };
+  // Bricks: keep only the names that answer to exactly one area (see areaByBrick above).
+  const seenBrickAreas = new Map<string, Set<string>>();
+  for (const row of brickRows) {
+    const name = normalizeArabic(row.brick_name);
+    const area = String(row.area_code ?? "").trim().toUpperCase();
+    if (name.length < 3 || !area) continue;
+    const areas = seenBrickAreas.get(name);
+    if (areas) areas.add(area);
+    else seenBrickAreas.set(name, new Set([area]));
+  }
+  const areaByBrick = new Map<string, string>();
+  for (const [name, areas] of seenBrickAreas) {
+    if (areas.size === 1) areaByBrick.set(name, [...areas][0]);
+  }
+
+  return { areasByLineGovernorate, areasByLineRegion, areaNames, areaByBrick };
 }
 
 /** Load the organogram and build the index. Fails soft: an empty index splits nothing. */
 export async function loadWeeklyAreaSplitIndex(): Promise<WeeklyAreaSplitIndex> {
   const supabase = getSupabaseAdmin();
-  const [mapResult, areaResult] = await Promise.all([
+  const [mapResult, areaResult, brickResult] = await Promise.all([
     supabase.from("au_v_line_area_map").select("line_code, area_code, operational_region_code, effective_from, effective_to"),
     supabase.from("source_of_sales_areas").select("area_code, area_name"),
+    supabase.from("source_of_sales_bricks").select("brick_name, area_code"),
   ]);
   return buildWeeklyAreaSplitIndex(
     mapResult.error ? [] : ((mapResult.data ?? []) as WeeklyAreaSplitMapRow[]),
     areaResult.error ? [] : ((areaResult.data ?? []) as WeeklyAreaSplitAreaRow[]),
     new Date().toISOString().slice(0, 10),
+    brickResult.error ? [] : ((brickResult.data ?? []) as WeeklyAreaSplitBrickRow[]),
   );
 }
 

@@ -159,11 +159,34 @@ const AREA_SYNONYMS: Array<[string, string[]]> = [
 ];
 
 /**
+ * Phrases that name a whole REGION of the organogram, not a governorate.
+ *
+ * These exist because the biggest depots left unread were named after regions, not places:
+ * "Direct - Delta (1)" EGP 1,791,647, "Direct - Delta (2)" 957,899, "Super KA. W Delta1" 423,113,
+ * "Direct - Upper Egypt" 506,515. A region IS a statement of territory — it is the organogram's own
+ * unit — so a depot named for one spreads across that region's areas ON THAT LINE, which is where
+ * the owner's per-line Beni Suef rule falls out for free (see areasForRegionScope).
+ *
+ * A BARE "Delta" IS DELIBERATELY ABSENT. "Super KA Delta" (EGP 900,983 plus its 1,179,245 mirror)
+ * names neither Delta 1 nor Delta 2, and choosing one would move a million pounds on the strength
+ * of one word. It falls through to the region the owner himself mapped the branch to, which is
+ * exactly today's behaviour and no worse. Same for "Canal" and "National": the first is not one of
+ * our regions, the second is the whole country and belongs to nobody.
+ */
+const REGION_SYNONYMS: Array<[string, string[]]> = [
+  ["D1", ["delta 1", "delta1"]],
+  ["D2", ["delta 2", "delta2"]],
+  ["UE", ["upper egypt", "صعيد"]],
+  ["AB", ["alex-bhr", "alex bhr"]],
+  ["OT", ["others"]],
+];
+
+/**
  * One index over BOTH tables. Longest phrase first, so "kafr el sheikh" is never eaten by the
  * shorter tokens in "kafr elzayat", and an area phrase always beats the governorate phrase it sits
  * inside.
  */
-const PLACE_INDEX: Array<{ phrase: string; area?: string; governorate?: GovernorateKey }> = [
+const PLACE_INDEX: Array<{ phrase: string; area?: string; governorate?: GovernorateKey; region?: string }> = [
   // Areas FIRST. A phrase present in both tables must resolve to the area: "امبابه" is GZ3, not a
   // hint about Giza, and the dedupe below keeps whichever entry it meets first.
   ...AREA_SYNONYMS.flatMap(([area, phrases]) => phrases.map((phrase) => ({ phrase: normalizeArabic(phrase), area }))),
@@ -171,15 +194,20 @@ const PLACE_INDEX: Array<{ phrase: string; area?: string; governorate?: Governor
     phrases.map((phrase) => ({ phrase: normalizeArabic(phrase), governorate: label.toLowerCase() }))),
   ...placeAliases.flatMap((entry) =>
     entry.aliases.map((phrase) => ({ phrase: normalizeArabic(phrase), governorate: entry.label.toLowerCase() }))),
+  // Regions LAST, so "Cairo" and "Giza" — which are both a governorate and a region — keep their
+  // governorate reading. Only a phrase no place answers to, like "Delta 1", resolves as a region.
+  ...REGION_SYNONYMS.flatMap(([region, phrases]) => phrases.map((phrase) => ({ phrase: normalizeArabic(phrase), region }))),
 ]
   .flatMap((entry) => [entry, { ...entry, phrase: stripArticle(entry.phrase) }])
   .filter((entry, i, all) => entry.phrase.length > 1 && all.findIndex((o) => o.phrase === entry.phrase) === i)
   .sort((a, b) => b.phrase.length - a.phrase.length);
 
 export type PlaceMention = {
-  /** Exactly one of these is set. An area mention is already precise; a governorate one splits. */
+  /** Exactly one of these is set. An area mention is already precise; the other two split. */
   area?: string;
   governorate?: GovernorateKey;
+  /** An organogram region code — "D1", "UE". Splits across that region's areas on the line. */
+  region?: string;
   /** Where in the normalized text it matched, so mentions come back in reading order. */
   at: number;
   /**
@@ -199,14 +227,16 @@ export type PlaceMention = {
 export function placeMentions(text: string | null | undefined): PlaceMention[] {
   let haystack = ` ${normalizeArabic(text)} `;
   const found: PlaceMention[] = [];
-  for (const { phrase, area, governorate } of PLACE_INDEX) {
+  const already = (m: PlaceMention, area?: string, governorate?: string, region?: string) =>
+    area ? m.area === area : governorate ? m.governorate === governorate : m.region === region;
+  for (const { phrase, area, governorate, region } of PLACE_INDEX) {
     for (;;) {
       const at = haystack.indexOf(phrase);
       if (at < 0) break;
       const adjacent = /^\s{0,2}(\d{1,2})(?!\d)/.exec(haystack.slice(at + phrase.length));
       haystack = haystack.slice(0, at) + " ".repeat(phrase.length) + haystack.slice(at + phrase.length);
-      if (found.some((f) => (area ? f.area === area : f.governorate === governorate))) continue;
-      found.push({ area, governorate, at, ordinal: adjacent ? Number(adjacent[1]) : null });
+      if (found.some((f) => already(f, area, governorate, region))) continue;
+      found.push({ area, governorate, region, at, ordinal: adjacent ? Number(adjacent[1]) : null });
     }
   }
   return found.sort((a, b) => a.at - b.at);

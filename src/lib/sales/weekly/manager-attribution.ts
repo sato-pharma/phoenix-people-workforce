@@ -38,9 +38,11 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 /** Printed on every manager-grouped sheet. See the header comment for why it exists. */
 export const ATTRIBUTION_CAVEAT =
-  "Managers are attributed by line + area where the branch is mapped to one, and by line + region " +
-  "otherwise. An unmapped branch is credited to its geographic manager, and Anti Infective sales in " +
-  "Upper Egypt stay unmapped until the branch carries an area, because that line's UE is two districts.";
+  "Managers are attributed by line + area. A branch mapped to an area by hand uses that area; " +
+  "otherwise the branch NAME is read, and a depot serving several territories divides its value " +
+  "evenly between them and then evenly again inside each — so \"Minia and Assiut\" pays all four " +
+  "Upper Egypt areas a quarter each. Warehouses, private hospitals and tenders are not territories " +
+  "and stay at region level; a name that states no place stays with its region's manager.";
 
 /** How a bucket was resolved. Drives section ordering: real managers first, residue last. */
 export type WeeklyManagerKind = "dm" | "ceo" | "vacant" | "unmapped";

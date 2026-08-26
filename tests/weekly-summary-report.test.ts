@@ -501,6 +501,10 @@ export async function runWeeklySummaryReportTests() {
         { areaCode: "CA2", areaName: "Nasr City", regionCode: "CA" },
       ],
       regionNames: [{ regionCode: "CA", regionName: "Cairo" }],
+      // No organogram index: the branch-name split does nothing and every tab is byte-for-byte what
+      // it was before that feature existed. That is the supported null state, not a gap in the
+      // fixture — tests/weekly-branch-attribution.test.ts is where the split itself is pinned.
+      areaSplit: null,
     };
     const julyTargets = [
       { lineLabel: "CNS", areaCode: "CA1", targetUnits: 40 },
