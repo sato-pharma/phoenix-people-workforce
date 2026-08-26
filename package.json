@@ -110,6 +110,7 @@
     "session:new": "node scripts/new-session.mjs",
     "session:status": "node scripts/new-session.mjs --status",
     "session:repair": "node scripts/new-session.mjs --repair",
+    "session:remove": "node scripts/new-session.mjs --remove",
     "env:refresh-local": "node scripts/refresh-local-env.mjs",
     "repo:doctor": "node scripts/repo-doctor.mjs",
     "healthchecks:sync": "node scripts/healthchecks-sync.mjs",

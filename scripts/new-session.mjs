@@ -27,6 +27,7 @@
 //   node scripts/new-session.mjs <task-slug>           # create ../_wt-<task-slug>
 //   node scripts/new-session.mjs --status              # headroom + folder occupancy
 //   node scripts/new-session.mjs --repair              # fix worktrees that cannot run
+//   node scripts/new-session.mjs --remove <slug>       # retire one, leaving no husk
 //   node scripts/new-session.mjs <slug> --from <ref>   # branch off <ref>, not origin/main
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
@@ -250,6 +251,156 @@ if (args.includes("--repair")) {
     if (after.ok) fixed += 1;
   }
   console.log("\n" + fixed + " worktree(s) made runnable.\n");
+  process.exit(0);
+}
+
+// A junction must be unlinked BEFORE `git worktree remove` runs. Measured with
+// a decoy target on 2026-08-26: git does NOT follow the junction (the target's
+// files survive untouched, so there is no data-loss hazard) — but it also
+// cannot delete it. It deregisters the worktree and removes every tracked file,
+// then leaves the folder behind holding just the link, with no .git entry.
+//
+// That is precisely the HUSK condition: invisible to `git worktree prune`, and
+// repo-doctor --fix refuses to clear it because the junction makes the folder
+// look like it still holds 1.9M paths. Husks then accumulate forever.
+//
+// cmd's rmdir without /s removes only the reparse point. Remove-Item in Windows
+// PowerShell 5.1 and fs.rmSync are both unreliable here — one can follow the
+// link, the other EPERMs on a dangling pnpm junction.
+function dropModulesJunction(dir) {
+  const nm = path.join(dir, "node_modules");
+  if (!fs.existsSync(nm)) return "absent";
+  let stat;
+  try {
+    stat = fs.lstatSync(nm);
+  } catch {
+    return "unreadable — left alone";
+  }
+  if (!stat.isSymbolicLink()) return "a REAL folder, not a junction — left alone";
+  try {
+    execFileSync("cmd", ["/c", "rmdir", nm], { stdio: "ignore" });
+  } catch {
+    /* fall through to the existence check below */
+  }
+  return fs.existsSync(nm) ? "could not unlink" : "unlinked";
+}
+
+// Never delete a spreadsheet or a PDF, even a stray untracked one in a folder
+// being cleaned up. Junctions are stepped over, never walked into — following
+// one would scan the primary's whole node_modules.
+function findSpreadsheets(dir) {
+  const hits = [];
+  const walk = (d) => {
+    let entries;
+    try {
+      entries = fs.readdirSync(d, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      if (entry.isSymbolicLink()) continue;
+      const full = path.join(d, entry.name);
+      if (entry.isDirectory()) {
+        if (entry.name === "node_modules" || entry.name === ".git" || entry.name === ".next") continue;
+        walk(full);
+      } else if (/\.(xlsx|xlsm|xls|pdf)$/i.test(entry.name)) {
+        hits.push(full);
+      }
+    }
+  };
+  walk(dir);
+  return hits;
+}
+
+// ---------------------------------------------------------------- --remove
+if (args.includes("--remove")) {
+  const target = args[args.indexOf("--remove") + 1];
+  if (!target) fail("name the folder to remove, e.g. `--remove payroll-rounding`.");
+  const dir = fs.existsSync(target)
+    ? path.resolve(target)
+    : path.join(siblingRoot, "_wt-" + target.replace(/^_wt-/, ""));
+
+  if (!fs.existsSync(dir)) fail(dir + " does not exist.");
+  if (path.resolve(dir) === primaryRoot) fail("that is the PRIMARY checkout. It is never removed.");
+  if (path.resolve(dir).includes(path.join(".claude", "worktrees"))) {
+    fail("that worktree belongs to another live session. Leave it alone.");
+  }
+
+  const entry = worktrees().find((w) => path.resolve(w.dir) === path.resolve(dir));
+  if (!entry) fail(dir + " is not a registered worktree.");
+
+  console.log("\nRemoving " + dir + "  (" + entry.branch + ")\n");
+
+  // Three refusals, in the order that a mistake would hurt most.
+  const strays = findSpreadsheets(dir).filter((f) => {
+    try {
+      execFileSync("git", ["ls-files", "--error-unmatch", path.relative(dir, f)], {
+        cwd: dir,
+        stdio: "ignore",
+      });
+      return false; // tracked — an identical copy is already in the repo
+    } catch {
+      return true; // untracked — this is the only copy there is
+    }
+  });
+  if (strays.length) {
+    console.error("  REFUSED — untracked spreadsheets/PDFs live here and are the only copy:");
+    for (const f of strays) console.error("    " + f);
+    fail("move them into the repo's xlsx/ folder first, then remove this worktree.");
+  }
+
+  const dirty = execFileSync("git", ["status", "--porcelain", "-uall"], {
+    cwd: dir,
+    encoding: "utf8",
+  }).trim();
+  if (dirty) {
+    console.error("  REFUSED — uncommitted work here:");
+    for (const line of dirty.split("\n").slice(0, 20)) console.error("    " + line);
+    fail("commit or stash it first — this may be another session's work.");
+  }
+
+  const unpushed = execFileSync("git", ["log", "origin/main..HEAD", "--oneline"], {
+    cwd: dir,
+    encoding: "utf8",
+  }).trim();
+  const pushed = (() => {
+    if (!entry.branch || entry.branch === "(detached)") return false;
+    try {
+      return git(["ls-remote", "--heads", "origin", entry.branch]).length > 0;
+    } catch {
+      return false;
+    }
+  })();
+  if (unpushed && !pushed) {
+    console.error("  REFUSED — commits here are on no remote branch:");
+    for (const line of unpushed.split("\n").slice(0, 10)) console.error("    " + line);
+    fail(
+      "push the branch, or keep the tip with `git branch rescue/" +
+        (entry.branch || "tip") +
+        " " +
+        entry.branch +
+        "` — that costs nothing and loses nothing.",
+    );
+  }
+
+  console.log("  spreadsheets/PDFs   none untracked");
+  console.log("  uncommitted work    none");
+  console.log("  unpushed commits    " + (unpushed ? "present, but the branch is on origin" : "none"));
+  console.log("  node_modules        " + dropModulesJunction(dir));
+
+  git(["worktree", "remove", dir]);
+  const husk = fs.existsSync(dir);
+  console.log("  worktree removed    " + (husk ? "folder REMAINS — a husk" : "yes, no husk left"));
+  if (husk) {
+    console.log("    clear it by hand:  rmdir /s /q " + JSON.stringify(dir));
+  }
+  console.log(
+    "\nThe branch " +
+      entry.branch +
+      " still exists locally. Delete it only once `gh pr list --head " +
+      entry.branch +
+      " --state merged` confirms the work landed.\n",
+  );
   process.exit(0);
 }
 
