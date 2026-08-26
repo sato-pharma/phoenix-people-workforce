@@ -3,8 +3,12 @@ import { readFileSync } from "node:fs";
 
 import ExcelJS from "exceljs";
 
+import type { ClosingDetailsResult } from "../src/lib/sales/monthly-closing-details.ts";
 import type { MonthlyClosingComparison } from "../src/lib/sales/monthly-closing-comparison.ts";
-import { buildMonthlyClosingWorkbook } from "../src/lib/sales/monthly-closing-export.ts";
+import {
+  buildMonthlyClosingWorkbook,
+  buildPortalClosingWorkbook,
+} from "../src/lib/sales/monthly-closing-export.ts";
 import {
   buildMonthlyClosingMatrix,
   type MonthlyClosingAggregateCell,
@@ -236,9 +240,101 @@ function runRendererWiringTests() {
   );
 }
 
+// ── 5. the PORTAL workbook asks it too ───────────────────────────────────────
+//
+// ADDED 2026-08-25, and only because a break-verification pass demanded it. Sections 1-4 all passed
+// with the portal gate deliberately deleted: no test in this suite had ever CALLED
+// buildPortalClosingWorkbook, so the second of the two workbook builders was uncovered and would
+// have kept the all-zero Office columns on every manager's own export forever. The admin workbook
+// being right is not evidence about this one — they are separate functions with separate gates,
+// which is precisely how one of them drifts.
+//
+// The portal builder does not take the caller's matrix as-is: it rebuilds the cells from
+// `details.rows` and reads `rebuiltMatrix.line`, not `matrix.line`. So this also pins that the
+// rebuild carries the line through — if it ever stopped, the gate would silently answer for the
+// wrong line, which no assertion in sections 1-4 could see.
+const emptyTotals = { effectiveUnits: 0, rows: 0, salesValue: 0, units: 0 };
+
+/** The thinnest ClosingDetailsResult the portal builder accepts. No rows: the Office layer is a
+ *  lens on the matrix, so whether its SHEET exists never depends on the invoice rows. */
+const detailsFor = (line: string): ClosingDetailsResult => ({
+  availableLines: [line],
+  availablePeriods: ["2026-07"],
+  canRevealConfidential: false,
+  confidentialIncluded: false,
+  filteredRowCount: 0,
+  line,
+  options: { areas: [], distributors: [], products: [], regions: [] },
+  outOfScope: false,
+  page: 1,
+  pageSize: 1_000,
+  period: "2026-07",
+  reconciliation: {
+    areaMismatches: { ...emptyTotals },
+    closingHeadline: { ...emptyTotals },
+    excludedConfidential: { ...emptyTotals },
+    excludedDirect: { ...emptyTotals },
+    includedInClosing: { ...emptyTotals },
+    missingClientCode: { ...emptyTotals },
+    unmappedBricks: { ...emptyTotals },
+  },
+  rows: [],
+  totals: { ...emptyTotals },
+});
+
+async function portalWorkbookFor(line: string, office: MonthlyClosingMatrix | undefined) {
+  const buffer = await buildPortalClosingWorkbook(
+    build(line, TOTAL_CELLS),
+    emptyComparison(line),
+    detailsFor(line),
+    office,
+  );
+  const wb = new ExcelJS.Workbook();
+  await wb.xlsx.load(buffer as unknown as ArrayBuffer);
+  return wb;
+}
+
+async function runPortalWorkbookTests() {
+  // CNS keeps it — otherwise "the gate works" would also be satisfied by a gate stuck closed.
+  const cns = await portalWorkbookFor("CNS", build("CNS", OFFICE_CELLS));
+  assert.ok(
+    cns.getWorksheet("Office Allocation"),
+    "a CNS manager's own export must still carry the Office Allocation sheet. Without this "
+    + "assertion the section below passes just as well against a gate that hides Office everywhere",
+  );
+  assert.ok(
+    matrixHeaders(cns).includes("of wh. Office"),
+    "and still carry the \"of wh. Office\" column on CNS",
+  );
+
+  for (const line of ["Pedia", "Anti Infective"]) {
+    const gated = await portalWorkbookFor(line, build(line, OFFICE_CELLS));
+    assert.equal(
+      gated.getWorksheet("Office Allocation"),
+      undefined,
+      `a ${line} manager's own export must not carry an Office Allocation sheet either. The portal `
+      + "builder has its OWN gate on rebuiltMatrix.line — deleting it left every section of this "
+      + "file green, which is how it went uncovered",
+    );
+    assert.ok(
+      !matrixHeaders(gated).includes("of wh. Office"),
+      `nor an "of wh. Office" column on a ${line} portal export`,
+    );
+
+    const plain = await portalWorkbookFor(line, undefined);
+    assert.deepEqual(
+      matrixValues(gated),
+      matrixValues(plain),
+      `${line}'s portal Closing Matrix must be identical whether or not an Office grid was supplied `
+      + "— same rule as the admin workbook: the Office grid is a lens, never a source",
+    );
+  }
+}
+
 export async function runOfficeColumnIsCnsOnlyTests() {
   runPredicateTests();
   runCnsUnchangedTests(await workbookFor("CNS", build("CNS", OFFICE_CELLS)));
   await runNonCnsTests();
+  await runPortalWorkbookTests();
   runRendererWiringTests();
 }
