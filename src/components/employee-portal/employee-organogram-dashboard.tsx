@@ -6,9 +6,9 @@ import { OrgChartTree, type OrgChartKpiLabels } from "@/components/organogram/or
 import { Card } from "@/components/ui/card";
 import { WorkspaceErrorBoundary } from "@/components/ui/workspace-error-boundary";
 import {
+  buildLinePickerOptions,
   buildOrganogramLanes,
   filterOrganogramRows,
-  isOfficeLine,
   isOrganogramVisibleRow,
 } from "@/lib/reports/organogram-view-model";
 import type { VacancyReportData } from "@/lib/reports/vacancies";
@@ -21,6 +21,9 @@ type EmployeeOrganogramDashboardProps = {
   fixedLine?: string | null;
   initialError?: string | null;
   initialReport?: VacancyReportData | null;
+  // Server-decided: does this viewer pass canAccessHeadOffice? Only then may the
+  // picker offer Head Office as a branch to open. Never inferred client-side.
+  showHeadOfficeLine?: boolean;
   showLinePicker?: boolean;
 };
 
@@ -51,6 +54,7 @@ export function EmployeeOrganogramDashboard({
   fixedLine = null,
   initialError = null,
   initialReport = null,
+  showHeadOfficeLine = false,
   showLinePicker = false,
 }: EmployeeOrganogramDashboardProps) {
   const [report, setReport] = useState<VacancyReportData | null>(initialReport);
@@ -82,18 +86,13 @@ export function EmployeeOrganogramDashboard({
     [report],
   );
 
-  const availableLines = useMemo(() => {
-    if (!showLinePicker) return [] as string[];
-    const seen = new Set<string>();
-    for (const r of rows) {
-      // Head Office/Office rows are kept in the data only as reporting-chain
-      // context (e.g. a multi-line Product Manager's Marketing Manager and CEO
-      // ancestors) — never a real selectable product line for this picker.
-      if (isOfficeLine(r)) continue;
-      if (r.lineName?.trim()) seen.add(r.lineName.trim());
-    }
-    return Array.from(seen).sort();
-  }, [showLinePicker, rows]);
+  const availableLines = useMemo(
+    () =>
+      showLinePicker
+        ? buildLinePickerOptions(rows, { includeHeadOffice: showHeadOfficeLine })
+        : ([] as string[]),
+    [showHeadOfficeLine, showLinePicker, rows],
+  );
 
   const mmReady = !showLinePicker || selectedMmLine !== null;
 
@@ -124,7 +123,9 @@ export function EmployeeOrganogramDashboard({
       {/* ---- MM Line Picker (horizontal buttons) ---- */}
       {showLinePicker && report && (
         <Card className={`rounded border border-slate-100 p-4 sm:p-5 ${cardShadow}`}>
-          <span className={`mb-2 block ${labelClassName}`}>Product Line</span>
+          <span className={`mb-2 block ${labelClassName}`}>
+            {showHeadOfficeLine ? "Line" : "Product Line"}
+          </span>
           {availableLines.length === 0 ? (
             <p className="text-sm text-slate-400">No product lines available.</p>
           ) : (
@@ -156,7 +157,9 @@ export function EmployeeOrganogramDashboard({
       {showLinePicker && !selectedMmLine && report && (
         <Card className={`rounded border border-slate-100 p-8 text-center ${cardShadow}`}>
           <h3 className="text-sm font-semibold text-slate-700">
-            Select a product line to view its organogram
+            {showHeadOfficeLine
+              ? "Select a line to view its organogram"
+              : "Select a product line to view its organogram"}
           </h3>
           <p className="mx-auto mt-2 max-w-md text-[11px] text-slate-400">
             Choose a line from the dropdown above. KPIs, vacancies, and the full hierarchy tree will appear for the selected line.

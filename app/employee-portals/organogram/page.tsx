@@ -10,6 +10,7 @@ import { assertPermission, resolveNavigationMode } from "@/lib/auth/permissions"
 import { resolveAuthenticatedPageAccess } from "@/lib/auth/page-access";
 import {
   canAccessCompanyOrganogram,
+  canAccessHeadOffice,
   getOrganogramReport,
   isLineScopedOrganogramRole,
   resolveOrganogramLinesForEmployee,
@@ -51,6 +52,11 @@ export default async function EmployeePortalOrganogramPage() {
   // organogram via canAccessCompanyOrganogram; line roles via isLineScopedOrganogramRole.
   // The page previously checked only the latter, redirecting TM/MM away despite their access.
   const isCompanyScoped = canAccessCompanyOrganogram(access);
+  // The same entitlement that keeps the Head Office rows in the report decides
+  // whether the picker may offer them. Company scope alone is not enough — a
+  // Marketing/Training Manager is company-scoped and has Head Office stripped,
+  // and a line-scoped viewer only ever holds Office rows as chain context.
+  const showHeadOfficeLine = isCompanyScoped && canAccessHeadOffice(access);
   if (!isCompanyScoped && !isLineScopedOrganogramRole(access)) {
     redirect("/employee-portals");
   }
@@ -120,6 +126,7 @@ export default async function EmployeePortalOrganogramPage() {
         fixedLine={fixedLine}
         initialError={initialError}
         initialReport={initialReport}
+        showHeadOfficeLine={showHeadOfficeLine}
         showLinePicker={showLinePicker}
       />
     </EmployeePortalPageShell>
