@@ -156,6 +156,67 @@ app.MapGet("/device-users", async (HttpRequest request, AgentConfig cfg, ZktecoD
   }
 });
 
+// Read-only: what each device user id ACTUALLY DID on the device, aggregated.
+//
+// /device-users above lists who is enrolled, but this device stores every user's name as an
+// empty string, so an enrolled id on its own identifies nobody. Meanwhile Phoenix stores only
+// punches it can attribute, and every sync reports the rest as "skipped" - 290 of them on
+// 2026-08-26, belonging to 9 device user ids with no employee mapping. Those punches exist on
+// the hardware and nowhere else: they are never inserted, so no query against Phoenix can
+// count them or say when they started.
+//
+// This turns that dead end into an answerable question. First punch dates a person's arrival,
+// the day and hour spread says whether they are still coming in and on what pattern, and both
+// together are what let a human match an anonymous id to a real employee. It reads exactly what
+// a sync already reads and writes nothing.
+app.MapGet("/device-punch-summary", async (HttpRequest request, AgentConfig cfg, ZktecoDeviceClient deviceClient) => {
+  if (!Auth.IsAuthorized(request, cfg.AttendanceAgentToken)) {
+    return Results.Unauthorized();
+  }
+
+  try {
+    var tcpReachable = await NetworkChecks.CanConnectTcpAsync(cfg.DeviceIp, cfg.DevicePort, TimeSpan.FromSeconds(5));
+    if (!tcpReachable) {
+      return Results.Json(new { ok = false, message = $"Device {cfg.DeviceIp}:{cfg.DevicePort} is not reachable." },
+        statusCode: StatusCodes.Status503ServiceUnavailable);
+    }
+
+    var punches = await deviceClient.ReadPunchesAsync();
+    var users = punches
+      .GroupBy(p => p.DeviceUserId)
+      .Select(group => {
+        var ordered = group.OrderBy(p => p.DeviceLocalTime).ToList();
+        var days = ordered.Select(p => p.DeviceLocalTime.Date).Distinct().OrderBy(d => d).ToList();
+        var earliest = ordered.Min(p => p.DeviceLocalTime.TimeOfDay);
+        var latest = ordered.Max(p => p.DeviceLocalTime.TimeOfDay);
+        return new {
+          deviceUserId = group.Key,
+          punchCount = ordered.Count,
+          distinctDays = days.Count,
+          firstPunchLocal = ordered[0].DeviceLocalTime.ToString("yyyy-MM-dd HH:mm:ss"),
+          lastPunchLocal = ordered[^1].DeviceLocalTime.ToString("yyyy-MM-dd HH:mm:ss"),
+          earliestTimeOfDay = $"{earliest.Hours:D2}:{earliest.Minutes:D2}",
+          latestTimeOfDay = $"{latest.Hours:D2}:{latest.Minutes:D2}",
+          recentDays = days.TakeLast(10).Select(d => d.ToString("yyyy-MM-dd")).ToArray(),
+        };
+      })
+      .OrderByDescending(u => u.lastPunchLocal)
+      .ToList();
+
+    Log.Info("device_punch_summary_read", new { deviceUsers = users.Count, totalPunches = punches.Count });
+    return Results.Json(new {
+      ok = true,
+      deviceId = cfg.DeviceId,
+      totalPunches = punches.Count,
+      deviceUsers = users.Count,
+      users,
+    });
+  } catch (Exception ex) {
+    Log.Error("device_punch_summary_failed", ex);
+    return Results.Json(new { ok = false, error = ex.Message }, statusCode: StatusCodes.Status500InternalServerError);
+  }
+});
+
 app.MapPost("/sync-now", async (HttpRequest request, AgentConfig cfg, AttendanceSyncRunner syncRunner) => {
   if (!Auth.IsAuthorized(request, cfg.AttendanceAgentToken)) {
     return Results.Unauthorized();
