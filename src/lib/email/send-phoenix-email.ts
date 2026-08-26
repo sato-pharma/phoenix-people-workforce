@@ -20,6 +20,7 @@ import {
 } from "@/lib/email/recipient-assurance";
 import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { ADMIN_STANDING_EMAIL, mirrorEmailToAdminTelegram } from "@/lib/email/admin-telegram-mirror";
 
 // Re-exported for back-compat: existing callers/tests import these from this module.
 export { parseRetryAfter, RetryableEmailError } from "@/lib/email/email-errors";
@@ -352,7 +353,7 @@ export async function sendPhoenixEmail(input: SendPhoenixEmailInput): Promise<Se
   // Always BCC omar.anwar@satopharma.com on every automated system email (all modules, all
   // types) - a standing copy of outbound HR/workflow mail, invisible to other recipients.
   if (!testingRecipients) {
-    const alwaysBcc = "omar.anwar@satopharma.com";
+    const alwaysBcc = ADMIN_STANDING_EMAIL;
     bcc = bcc ? [...new Set([...bcc, alwaysBcc])] : [alwaysBcc];
   }
 
@@ -406,5 +407,20 @@ export async function sendPhoenixEmail(input: SendPhoenixEmailInput): Promise<Se
   // errors never cross providers, so a send can never be duplicated. See email-providers.ts.
   const delivered = await sendPreparedEmailWithFailover(prepared);
   await markNotificationSendDelivered(reviewId, delivered.id);
+
+  // Telegram twin of the always-BCC above: mirror this just-dispatched email to the standing
+  // admin's Telegram so he receives every automated email in both channels. Fire-and-forget and
+  // best-effort — never awaited into the email result and unable to throw (see the module). Same
+  // testing guard as the BCC: no mirror when redirecting to test inboxes.
+  if (!testingRecipients) {
+    void mirrorEmailToAdminTelegram({
+      cc: prepared.cc,
+      html: prepared.html,
+      subject: prepared.subject,
+      text: prepared.text,
+      to: prepared.to,
+    });
+  }
+
   return { id: delivered.id, skipped: false };
 }
