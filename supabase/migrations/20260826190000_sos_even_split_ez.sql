@@ -372,3 +372,22 @@ begin
     r.batch_id, b.period, r.client_code, coalesce(r.official_line, ''), coalesce(r.region_code, '');
 end;
 $function$;
+
+-- ── Function privileges ──────────────────────────────────────────────────────────────────────────
+-- These are SECURITY DEFINER, so they run with the owner's rights and bypass RLS. A newly created
+-- function gets EXECUTE granted to PUBLIC by default, and anon/authenticated inherit it through
+-- PUBLIC membership — revoking only those two roles is a no-op while the PUBLIC grant stands.
+-- `phx_sos_rows_attributed` returns whole sales rows (client codes, products, quantities, values),
+-- so an anonymous PostgREST RPC call would have read the sales ledger for any period.
+-- Revoking PUBLIC on a default ACL also strips service_role, so it is re-granted explicitly.
+revoke execute on function public.phx_sos_rows_attributed(text) from public, anon, authenticated;
+grant  execute on function public.phx_sos_rows_attributed(text) to service_role;
+
+revoke execute on function public.phx_freeze_even_split_roster(text, text) from public, anon, authenticated;
+grant  execute on function public.phx_freeze_even_split_roster(text, text) to service_role;
+
+revoke execute on function public.phx_office_brick_share(text) from public, anon, authenticated;
+grant  execute on function public.phx_office_brick_share(text) to service_role;
+
+revoke execute on function public.phx_refresh_sos_fact_rollup(uuid) from public, anon, authenticated;
+grant  execute on function public.phx_refresh_sos_fact_rollup(uuid) to service_role;
