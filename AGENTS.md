@@ -101,6 +101,24 @@ file holding the full account, under
   even when the route does not exist** — probe a deploy with GET and read 404/405/403.
   `a-role-probe-cannot-trust-the-http-status-code` ·
   `a-post-to-any-api-path-returns-403-even-if-it-does-not-exist`
+- **`curl -d "@-"` creates NOTHING on Windows** — the stdin-payload form silently posts an empty body,
+  so a cron-job.org REST call "succeeds" having made no job. Write the JSON to a file and pass
+  `-d @file.json`. `cron-job-org-is-managed-by-a-rest-api-not-just-the-web-ui`
+- **Reads of `.env*` are auto-approved here — deliberately, for EVERY key, not just `NEXT_PUBLIC_`.**
+  The owner was shown the `SUPABASE_SERVICE_ROLE_KEY`/`DATABASE_URL` exposure explicitly and chose the
+  broad option; do not re-litigate it or narrow it back on your own judgement. It is licence to
+  *inspect*, never to *propagate* — §9's do-not-repeat-a-secret rule is unchanged, and a truncated
+  check beats a full dump. `env-file-reads-fully-auto-approved-2026-08-09`
+- **A Claude permission allow-rule stores the LITERAL command, so an inline env var bakes a live
+  credential into `settings.local.json` in plaintext.** A working Telegram bot token sat there in the
+  clear; the file is gitignored, so secret-scanning and CI never see it. Grep any `settings.*.json`
+  for `TOKEN=`/`KEY=`/`SECRET=`/`PASSWORD=` before copying, merging, sharing or committing it, merge
+  `allow`/`deny`/`ask` bucket by bucket (a flattened union promotes a `deny` into `allow`), and prefer
+  a wildcard rule over an inline-secret one. `permission-allowlist-rules-can-embed-a-live-secret`
+- **`mcp__supabase-staging__*` is broken — empty `list_projects`, permission error on `get_project`.**
+  That is the SERVER's own auth, not the staging database, which was healthy. Route staging work
+  through `mcp__supabase-production__*` passing the staging `project_id` (§8: the `project_id`
+  argument is the only thing separating the two). `supabase-staging-named-server-broken-2026-08-10`
 
 **Git**
 
@@ -127,6 +145,15 @@ file holding the full account, under
   Git Credential Manager dies at `internal/cpu.doinit` and git then retries ANONYMOUSLY, so the token
   is never presented — the failure is memory pressure, not auth. Look UP the output for a Go panic;
   change NO credentials. `git-auth-failed-can-be-the-credential-helper-going-oom`
+- **`F:\PHX backup` is the disaster-recovery set, and a bundle restore silently returns ZERO refs
+  without `core.longpaths`.** Phoenix's cloud side (Railway, Supabase, GitHub) survives a PC reset;
+  this set exists for the local support layer, which does not — Claude memory, every `.env*`, the git
+  bundle, the scheduled tasks, the attendance agent. Three copies: `F:\PHX backup`, a SHA256-verified
+  USB, and an encrypted 7-Zip on Google Drive. **Restoring `06-git\phoenix-ALL-REFS.bundle` needs
+  `git config core.longpaths true` FIRST**: Codex CLI writes refs past Windows' 260-char limit, git
+  transfers every object then rolls the whole ref batch back on the first one, so a perfect bundle
+  reads as 0 refs with no useful error — measured 0 without the flag, 315 with it. Three of its
+  sections hold LIVE keys, so treat the set itself as a secret. `phx-backup-disaster-recovery-set`
 
 **CI and PRs**
 
@@ -227,6 +254,18 @@ file holding the full account, under
 - **A green TEST run carries NO type signal.** `pnpm run test` strips types and never typechecks, so
   a passing suite says nothing about type errors — only the PR's `typecheck` job answers.
   `a-green-test-run-carries-no-type-signal-at-all`
+- **A test can NEVER hand a function a `process.env` literal — take the VALUE, not the bag.** Next
+  augments `NodeJS.ProcessEnv` with a required `NODE_ENV` (`next/types/global.d.ts`), so nothing in
+  this repo causes it and grepping `src/` for the reason finds nothing. Both spellings fail, and each
+  error only surfaces once you have fixed the other: `env: NodeJS.ProcessEnv = process.env` gives
+  **TS2345** at every call site passing a literal, and `env: { MY_VAR?: string } = process.env` gives
+  **TS2559** at the default (an all-optional weak type shares no property with `ProcessEnv`). An
+  existing `env: NodeJS.ProcessEnv` parameter that compiles today only does so because nothing passes
+  it a literal — that precedent does not transfer. Default the individual value at the signature
+  instead (`configuredPath: string = process.env.MY_VAR ?? ""`), or take a
+  `Record<string, string | undefined>` and use bracket access. Each attempt otherwise costs a full
+  red CI round, and the local suite cannot see it at all.
+  `a-test-can-never-hand-a-function-a-process-env-literal`
 - **An exhaustive `Record` does NOT gate the build.** `next.config` sets
   `typescript: { ignoreBuildErrors: true }`, so a `Record<SomeUnion, X>` missing a key compiles,
   builds and DEPLOYS; only the PR's `typecheck` job sees it, and `strict: false` lets a PR merge on
@@ -237,6 +276,19 @@ file holding the full account, under
   minutes. Back any such `Record` with a RUNTIME assertion in a registered test — iterate the union,
   assert the looked-up value is real (`Number.isFinite`), and assert no key outside the union
   appeared. `an-exhaustive-record-does-not-gate-the-build-here`
+
+**Memory and this index**
+
+- **Sweep memories by CLAIM, never by filename or topic.** Every staleness sweep here has been scoped
+  by topic, and that is exactly why they keep missing what matters: the 2026-08-19 sweep correctly
+  banner-stamped the files that are *about* deployment, while "ships on the 2-hourly prod deploy cron,
+  NOT on merge" and a dead Supabase ref survived untouched inside memories about an excuse module, a
+  CRM filter and a sales import. A topic sweep fixes the files a session reads when it is already
+  being careful, and misses the ones it reads when it is not. Grep the assertion itself across every
+  file, then triage each hit: a present-tense assertion gets corrected in place (the dangerous
+  bucket), an outstanding action pointing at dead infrastructure gets retired, and a dated record of
+  what was true then gets left alone — **never rewrite a dated record.**
+  `staleness-sweeps-scoped-by-topic-miss-the-dangerous-ones`
 
 **Worktrees** (see also §5)
 
@@ -290,6 +342,9 @@ file holding the full account, under
 - **Click by TEXT — blind coordinate clicks once fired a real production collection run.**
   `blind-coordinate-clicks-fired-a-production-collection-run`
 - **Dev login is `GET /api/dev-auth?role=`** — it is header-only and the Browser pane cannot use it.
+  **A HIDDEN pane also mixes correct rects with 0×0 ones** inside one measuring sweep, so a layout
+  reading taken while it is hidden is part real and part garbage. Re-measure with the pane visible;
+  do NOT retract the number — the 125px read was REAL and the repo MODEL of it was wrong (#2353).
   `dev-auth-is-header-only-browser-pane-cannot-use-it`
 - **Turbopack 500s with `0xc0000142` when the commit charge is exhausted** — close a session, do not
   debug the code. `turbopack-500s-with-0xc0000142-when-commit-is-full`
