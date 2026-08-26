@@ -46,6 +46,43 @@ export function normalizeVenueType(value: unknown): VenueType {
 }
 
 /**
+ * A venue type nobody has answered yet.
+ *
+ * `DEFAULT_VENUE_TYPE` is the right reading for a row written BEFORE this column existed — it says
+ * "that was a pharmacy, because everything was". It is the wrong reading for a venue being
+ * registered NOW, and the difference is not academic. The picker shipped on 2026-08-23 at 10:09
+ * Cairo already pre-selected `Pharmacy`; `حضانه النيل` was registered as a pharmacy at 15:31 the
+ * same day, five hours later, and sat mistyped until the owner spotted it three days on. The
+ * question was on screen and answered in advance, which is the same as not asking.
+ *
+ * So capture uses `VenueTypeChoice` and starts at `null`, reads keep `normalizeVenueType`.
+ */
+export type VenueTypeChoice = VenueType | null;
+
+/** One sentence, so all three capture points refuse in the same words. */
+export const VENUE_TYPE_UNANSWERED_MESSAGE = "Say what this venue is — pharmacy or nursery — before saving it.";
+
+export function venueTypeIsAnswered(choice: VenueTypeChoice): choice is VenueType {
+  return choice !== null;
+}
+
+/**
+ * Read a venue type that the capturer was supposed to answer.
+ *
+ * Unlike `normalizeVenueType`, absent is NOT "pharmacy" here — it is unanswered, and every caller
+ * refuses. Registration is the one moment the answer is cheap, and the only moment it is asked.
+ */
+export function parseVenueTypeChoice(value: unknown): VenueTypeChoice {
+  const text = typeof value === "string" ? value.trim().toLowerCase() : "";
+  return (VENUE_TYPES as readonly string[]).includes(text) ? (text as VenueType) : null;
+}
+
+/** Label for a choice that may be unanswered. Never renders a blank or a raw token. */
+export function venueTypeChoiceLabel(choice: VenueTypeChoice): string {
+  return venueTypeIsAnswered(choice) ? venueTypeLabel(choice) : "Venue";
+}
+
+/**
  * Whether this venue must carry at least one distributor code.
  *
  * The whole point of the feature. A pharmacy without a code cannot attribute a sale and has always
@@ -53,6 +90,17 @@ export function normalizeVenueType(value: unknown): VenueType {
  */
 export function venueRequiresDistributorCode(venueType: VenueType): boolean {
   return venueType === "pharmacy";
+}
+
+/**
+ * `venueRequiresDistributorCode` over a choice that may be unanswered.
+ *
+ * Unknown is not "yes". Demanding a distributor code before the capturer has said what the venue is
+ * asks a nursery for a code it can never have — which is precisely how the invented codes got made.
+ * Every capture-side call goes through this rather than re-deriving the null check inline.
+ */
+export function choiceRequiresDistributorCode(choice: VenueTypeChoice): boolean {
+  return venueTypeIsAnswered(choice) && venueRequiresDistributorCode(choice);
 }
 
 /**

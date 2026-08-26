@@ -69,10 +69,13 @@ import {
   fieldEvidenceGapInput,
 } from "@/lib/marketing-requests/validation-report";
 import {
+  choiceRequiresDistributorCode,
+  VENUE_TYPE_UNANSWERED_MESSAGE,
   VENUE_TYPES,
   venueRequiresDistributorCode,
+  venueTypeIsAnswered,
   venueTypeLabel,
-  type VenueType,
+  type VenueTypeChoice,
 } from "@/lib/venues/venue-type";
 import {
   PHARMACY_LICENSE_ACCEPT_ATTRIBUTE,
@@ -328,8 +331,12 @@ type PharmacyLine = {
    * at all — which is why the codes block below disappears when this is set. Before this existed
    * the form demanded a code from every venue, and reps supplied invented ones (`0000`,
    * `0001000000`, `0001511111` are all in production) because there was no other way to save.
+   *
+   * Starts NULL — unanswered. It defaulted to `pharmacy` until 2026-08-26, which meant the picker
+   * asked a question that was already filled in, and a venue saved without touching it was filed
+   * as a pharmacy on the rep's behalf.
    */
-  venueType: VenueType;
+  venueType: VenueTypeChoice;
 };
 
 /**
@@ -450,7 +457,7 @@ function newPharmacyLine(distributorId = ""): PharmacyLine {
     source: "new",
     vendorCodes: [newVendorCodeLine(distributorId)],
     license: null,
-    venueType: "pharmacy",
+    venueType: null,
   };
 }
 
@@ -588,6 +595,11 @@ function describeMissingRequirement(customers: CustomerLine[], isDeskMode: boole
       }
       if (!pharmacy.name.trim()) return `Enter a name for Pharmacy ${pharmacyIndex + 1} under ${customerLabel}.`;
       if (isDeskMode && !hasPin(pharmacy.capture)) return `Pin ${pharmacyLabel}'s location on the map.`;
+      // Asked before anything below it, because everything below it depends on the answer. An
+      // unanswered type used to read as "pharmacy" and sail straight through this loop.
+      if (!venueTypeIsAnswered(pharmacy.venueType)) {
+        return `${pharmacyLabel}: ${VENUE_TYPE_UNANSWERED_MESSAGE}`;
+      }
       // A venue with no distributor account has nothing to check here, and the codes block is not
       // even rendered for it. Asking for a code would be asking the rep to make one up again.
       if (!venueRequiresDistributorCode(pharmacy.venueType)) continue;
@@ -1030,14 +1042,18 @@ function PharmacyLicensePanel({
   license: PharmacyLicenseAttachment | null;
   onChange: (next: PharmacyLicenseAttachment | null) => void;
   distributorCodeCount: number;
-  venueType: VenueType;
+  venueType: VenueTypeChoice;
 }) {
   const cameraRef = useRef<HTMLInputElement | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   // A nursery has no distributor account by its nature and no pharmacy trade licence to produce,
-  // so the control is not shown for one at all rather than being shown and never used.
+  // so the control is not shown for one at all rather than being shown and never used. An
+  // unanswered venue is not shown it either — there is nothing yet to say it needs one. Two
+  // statements rather than one: `venueTypeIsAnswered` is the guard that narrows the type away
+  // from null, so everything below can be typed as a real venue.
+  if (!venueTypeIsAnswered(venueType)) return null;
   if (!venueRequiresDistributorCode(venueType)) return null;
 
   const fillsTheGap = pharmacyLicenseFillsTheIdentityGap({ distributorCodeCount, venueType });
@@ -2449,8 +2465,9 @@ export function MarketingValidationWorkspace() {
               extractedGovernorateName: pharmacy.governorate,
               regionName: [pharmacy.area, pharmacy.governorate].filter(Boolean).join(", "),
               // Empty for a codeless venue — the server refuses a code on one, so sending the
-              // half-typed rows that were on screen before the rep switched type would 400.
-              vendorCodes: venueRequiresDistributorCode(pharmacy.venueType)
+              // half-typed rows that were on screen before the rep switched type would 400. Also
+              // empty while the type is unanswered; the submit gate refuses that case outright.
+              vendorCodes: choiceRequiresDistributorCode(pharmacy.venueType)
                 ? pharmacy.vendorCodes.map((line) => ({
                   distributorId: Number(line.distributorId),
                   distributorPharmacyCode: line.distributorCode,
@@ -3171,31 +3188,50 @@ export function MarketingValidationWorkspace() {
                             </div>
                             <div className="lg:col-span-6">
                               <div className="space-y-2.5">
-                                <div className="flex items-center gap-2">
-                                  {VENUE_TYPES.map((venueType) => (
-                                    <Button
-                                      className={
-                                        pharmacy.venueType === venueType
-                                          ? "h-7 rounded-sm border border-orange-300 bg-orange-50 px-2.5 text-[11px] font-bold text-orange-700"
-                                          : "h-7 rounded-sm border border-slate-200 bg-white px-2.5 text-[11px] font-bold text-slate-600 hover:bg-slate-50"
-                                      }
-                                      key={venueType}
-                                      onClick={() => updatePharmacy(customer.key, pharmacy.key, { venueType })}
-                                      type="button"
-                                    >
-                                      {venueTypeLabel(venueType)}
-                                    </Button>
-                                  ))}
-                                </div>
-                                {venueRequiresDistributorCode(pharmacy.venueType) ? null : (
-                                  <p className="text-[11px] text-slate-600">
-                                    A {venueTypeLabel(pharmacy.venueType).toLowerCase()} has no distributor account, so it
-                                    carries no code. Spend on it is allowed and can never be matched to a sale.
-                                  </p>
-                                )}
+                                {/* Same box and same padding in both states — only the border and
+                                    fill change, so answering the question does not shift the row
+                                    under the rep's thumb. */}
                                 <div
                                   className={
-                                    venueRequiresDistributorCode(pharmacy.venueType)
+                                    venueTypeIsAnswered(pharmacy.venueType)
+                                      ? "rounded-sm border border-transparent p-2"
+                                      : "rounded-sm border border-orange-300 bg-orange-50/60 p-2"
+                                  }
+                                >
+                                  <p className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-500">
+                                    What is this? *
+                                  </p>
+                                  <div className="mt-1.5 flex items-center gap-2">
+                                    {VENUE_TYPES.map((venueType) => (
+                                      <Button
+                                        className={
+                                          pharmacy.venueType === venueType
+                                            ? "h-7 rounded-sm border border-orange-300 bg-orange-50 px-2.5 text-[11px] font-bold text-orange-700"
+                                            : "h-7 rounded-sm border border-slate-200 bg-white px-2.5 text-[11px] font-bold text-slate-600 hover:bg-slate-50"
+                                        }
+                                        key={venueType}
+                                        onClick={() => updatePharmacy(customer.key, pharmacy.key, { venueType })}
+                                        type="button"
+                                      >
+                                        {venueTypeLabel(venueType)}
+                                      </Button>
+                                    ))}
+                                  </div>
+                                  {/* Three states, never two: unanswered says so, nursery explains itself, pharmacy is silent. */}
+                                  {!venueTypeIsAnswered(pharmacy.venueType) ? (
+                                    <p className="mt-1.5 text-[11px] font-bold text-orange-700">
+                                      {VENUE_TYPE_UNANSWERED_MESSAGE}
+                                    </p>
+                                  ) : venueRequiresDistributorCode(pharmacy.venueType) ? null : (
+                                    <p className="mt-1.5 text-[11px] text-slate-600">
+                                      A {venueTypeLabel(pharmacy.venueType).toLowerCase()} has no distributor account, so it
+                                      carries no code. Spend on it is allowed and can never be matched to a sale.
+                                    </p>
+                                  )}
+                                </div>
+                                <div
+                                  className={
+                                    choiceRequiresDistributorCode(pharmacy.venueType)
                                       ? "flex items-center justify-between gap-3"
                                       : "hidden"
                                   }
@@ -3216,7 +3252,7 @@ export function MarketingValidationWorkspace() {
                                     Add
                                   </Button>
                                 </div>
-                                {!venueRequiresDistributorCode(pharmacy.venueType) ? null : pharmacy.vendorCodes.map((line) => {
+                                {!choiceRequiresDistributorCode(pharmacy.venueType) ? null : pharmacy.vendorCodes.map((line) => {
                                   const codeCheck = codeChecks[line.key];
                                   return (
                                   <div key={line.key}>

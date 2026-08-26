@@ -47,9 +47,9 @@ export async function POST(request: Request) {
        */
       acknowledgedCodeConflict?: boolean;
       /**
-       * "pharmacy" or "nursery". Not trusted as typed — the service normalizes it and the RPC
-       * whitelists the stored value, so an unknown string lands as a pharmacy rather than as a
-       * venue type nothing downstream knows how to read.
+       * "pharmacy" or "nursery". REQUIRED since 2026-08-26 — optional in the type only because a
+       * client can omit it, and the service's job is to refuse that rather than to guess. Anything
+       * else, absent included, is unanswered and 400s; it is no longer quietly read as a pharmacy.
        */
       venueType?: string | null;
     };

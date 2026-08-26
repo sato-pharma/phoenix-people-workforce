@@ -1,4 +1,4 @@
-import type { VenueType } from "@/lib/venues/venue-type";
+import type { VenueType, VenueTypeChoice } from "@/lib/venues/venue-type";
 
 /**
  * Every customer type the database accepts — `marketing_customers_type_check` allows exactly these
@@ -639,8 +639,15 @@ export type MarketingValidationPharmacyInput = {
     distributorId: number | string;
     distributorPharmacyCode: string;
   }>;
-  /** Defaults to `pharmacy` when absent, so an offline replay of an older draft still means what it did. */
-  venueType?: VenueType;
+  /**
+   * REFUSED when absent, since 2026-08-26 — it no longer defaults to `pharmacy`.
+   *
+   * Defaulting is what let `حضانه النيل` be filed as a pharmacy five hours after the picker
+   * shipped. A draft saved on or after 2026-08-23 carries the literal `"pharmacy"` and still
+   * replays unchanged; only a draft older than the column itself is refused, with a sentence
+   * naming what to answer.
+   */
+  venueType?: VenueTypeChoice;
   /**
    * The pharmacy trade licence (رخصة الصيدلية), as `data:image/jpeg|image/png|application/pdf;base64,…`.
    *

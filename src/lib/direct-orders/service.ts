@@ -20,7 +20,10 @@ import { resolveRegionalManagerRegionCodes } from "@/lib/sales/portal-sos-dashbo
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import {
   normalizeVenueType,
+  parseVenueTypeChoice,
+  VENUE_TYPE_UNANSWERED_MESSAGE,
   venueRequiresDistributorCode,
+  venueTypeIsAnswered,
   venueTypeLabel,
 } from "@/lib/venues/venue-type";
 import { pingDirectOrderSheet } from "@/lib/direct-orders/sheet-webhook";
@@ -1086,7 +1089,11 @@ export async function createDirectOrderPharmacy(
   await assertPermission(access, "direct_orders", "create");
   const name = input.pharmacyName?.trim();
   if (!name) badRequest("Pharmacy name is required.");
-  const venueType = normalizeVenueType(input.venueType);
+  // NOT `normalizeVenueType`: absent means unanswered here, not "pharmacy". Reads keep the
+  // forgiving version for rows written before the column existed — a REGISTRATION does not get it.
+  const venueTypeChoice = parseVenueTypeChoice(input.venueType);
+  if (!venueTypeIsAnswered(venueTypeChoice)) badRequest(VENUE_TYPE_UNANSWERED_MESSAGE);
+  const venueType = venueTypeChoice;
   // The whole reason the column exists. A venue with no distributor account has no code to give, so
   // accepting one here would just re-open the door to an invented one under a new label.
   if (!venueRequiresDistributorCode(venueType) && (input.distributorCodes ?? []).length > 0) {
@@ -2827,14 +2834,19 @@ export async function registerDirectOrderPharmacy(
     doctorName?: string | null;
     pharmacyAddress?: string | null;
     distributorCodes: Array<{ distributorCode: string; customerCode: string }>;
-    /** Defaults to `pharmacy` — see createDirectOrderPharmacy for the rule this carries. */
+    /** REQUIRED — see createDirectOrderPharmacy. This form posted nothing at all until 2026-08-26. */
     venueType?: string | null;
   },
 ): Promise<DirectOrderPharmacy> {
   assertPharmacyRegistryAccess(access);
   const name = input.pharmacyName?.trim();
   if (!name) badRequest("Pharmacy name is required.");
-  const venueType = normalizeVenueType(input.venueType);
+  // The admin registry never sent a venue type, so every pharmacy registered here was defaulted
+  // into being a pharmacy without anyone being asked. Being the System Admin is authority over the
+  // approval chain, not knowledge of whether a given address is a nursery.
+  const venueTypeChoice = parseVenueTypeChoice(input.venueType);
+  if (!venueTypeIsAnswered(venueTypeChoice)) badRequest(VENUE_TYPE_UNANSWERED_MESSAGE);
+  const venueType = venueTypeChoice;
   if (!venueRequiresDistributorCode(venueType) && (input.distributorCodes ?? []).length > 0) {
     badRequest(
       `A ${venueTypeLabel(venueType).toLowerCase()} has no distributor account, so it cannot carry a distributor code. ` +

@@ -27,10 +27,16 @@ import type {
   DirectOrderPharmacyPreflight,
 } from "@/lib/direct-orders/types";
 import {
+  choiceRequiresDistributorCode,
+  VENUE_TYPE_UNANSWERED_MESSAGE,
   VENUE_TYPES,
+  // Both predicates are used here on purpose: the `choice*` form where the type may still be
+  // unanswered, the plain one after `venueTypeIsAnswered` has narrowed it to a real venue.
   venueRequiresDistributorCode,
+  venueTypeChoiceLabel,
+  venueTypeIsAnswered,
   venueTypeLabel,
-  type VenueType,
+  type VenueTypeChoice,
 } from "@/lib/venues/venue-type";
 
 type ProductOption = {
@@ -123,7 +129,9 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
    * is any way to say WHY they are empty, which is the difference between a venue that has no code
    * and one whose code nobody has typed yet.
    */
-  const [newVenueType, setNewVenueType] = useState<VenueType>("pharmacy");
+  // Starts UNANSWERED, not "pharmacy". A pre-selected answer is not a question — see
+  // VenueTypeChoice for the venue this cost.
+  const [newVenueType, setNewVenueType] = useState<VenueTypeChoice>(null);
   const [distRows, setDistRows] = useState<Array<{ distributorCode: string; customerCode: string }>>([
     { distributorCode: "", customerCode: "" },
   ]);
@@ -206,7 +214,7 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
             // Never for a codeless venue: a stale row would raise a collision against a code this
             // venue is not going to claim, and the answer to it ("no, mine is different") would be
             // recorded as a contested claim on someone else's code.
-            distributorCodes: venueRequiresDistributorCode(newVenueType)
+            distributorCodes: choiceRequiresDistributorCode(newVenueType)
               ? distRows
                 .map((row) => ({ distributorCode: row.distributorCode.trim(), customerCode: row.customerCode.trim() }))
                 .filter((row) => row.distributorCode && row.customerCode)
@@ -385,7 +393,8 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
     pharmacyMode === "new" &&
     // A codeless venue does not render these rows at all, so a leftover half-typed row from before
     // the type was switched must not silently disable the submit button with nothing to point at.
-    venueRequiresDistributorCode(newVenueType) &&
+    // An UNANSWERED type renders none of them either, and is refused on its own below.
+    choiceRequiresDistributorCode(newVenueType) &&
     distRows.some((row) => Boolean(row.distributorCode.trim()) !== Boolean(row.customerCode.trim()));
 
   // A bonus deal is valued on the pharmacy price alone. Without one the server refuses the
@@ -408,6 +417,15 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
   const unansweredCodeConflict =
     pharmacyMode === "new" && preflight.codeConflicts.length > 0 && !acknowledgedCodeConflict;
 
+  /**
+   * A new venue whose type nobody has said yet.
+   *
+   * The picker has been on this form since 2026-08-23 and it changed nothing on its own, because it
+   * arrived pre-answered: a rep standing at a nursery types the name and moves on, and the venue is
+   * filed as a pharmacy. Blocking here is what turns it back into a question.
+   */
+  const unansweredVenueType = pharmacyMode === "new" && !venueTypeIsAnswered(newVenueType);
+
   // Mirrors submit()'s hard preconditions only. An over-cap deal is still NOT gated here —
   // over cap is flagged and submitted (owner rule, 2026-08-03).
   const readyToSubmit =
@@ -418,6 +436,7 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
     !halfFilledDistRow &&
     !missingBonusBasis &&
     !unansweredCodeConflict &&
+    !unansweredVenueType &&
     (pharmacyMode !== "mine" || !!pickedMine);
 
   function updateDistRow(index: number, patch: Partial<{ distributorCode: string; customerCode: string }>) {
@@ -452,6 +471,10 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
     if (!newName.trim()) throw new Error("New pharmacy name is required.");
     if (!newDoctor.trim()) throw new Error("Doctor name is required.");
     if (!newAddress.trim()) throw new Error("Pharmacy address is required.");
+    // readyToSubmit blocks this first. Repeated here for the same reason as the half-filled row
+    // above — so the client cannot send a venue with no stated type if that gate is ever bypassed,
+    // and so the type below narrows without an assertion.
+    if (!venueTypeIsAnswered(newVenueType)) throw new Error(VENUE_TYPE_UNANSWERED_MESSAGE);
     // Drop only rows that are entirely blank (the default empty row). A HALF-filled row is passed
     // through on purpose so the server's own refusal can fire: filtering on `code && customer`
     // discarded the submitter's distributor choice in silence, which is the very failure the
@@ -947,8 +970,12 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
                     ← Back to search
                   </button>
                 </div>
-                <div className="border border-[#eef1f3] p-2">
-                  <p className="text-[11px] font-black uppercase tracking-wider text-slate-500">What is this?</p>
+                <div
+                  className={
+                    unansweredVenueType ? "border border-orange-300 bg-orange-50/60 p-2" : "border border-[#eef1f3] p-2"
+                  }
+                >
+                  <p className="text-[11px] font-black uppercase tracking-wider text-slate-500">What is this? *</p>
                   <div className="mt-1 flex items-center gap-1.5">
                     {VENUE_TYPES.map((venueType) => (
                       <button
@@ -965,7 +992,10 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
                       </button>
                     ))}
                   </div>
-                  {venueRequiresDistributorCode(newVenueType) ? null : (
+                  {/* Three states, never two: unanswered says so, nursery explains itself, pharmacy is silent. */}
+                  {!venueTypeIsAnswered(newVenueType) ? (
+                    <p className="mt-1 text-[11px] font-bold text-orange-700">{VENUE_TYPE_UNANSWERED_MESSAGE}</p>
+                  ) : venueRequiresDistributorCode(newVenueType) ? null : (
                     <p className="mt-1 text-[11px] font-semibold text-slate-500">
                       A {venueTypeLabel(newVenueType).toLowerCase()} has no distributor account, so it has no
                       customer code. Register it as one — never as a pharmacy with a made-up code.
@@ -975,7 +1005,7 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
                 <input
                   className={inputClass()}
                   onChange={(e) => setNewName(e.target.value)}
-                  placeholder={`${venueTypeLabel(newVenueType)} name *`}
+                  placeholder={`${venueTypeChoiceLabel(newVenueType)} name *`}
                   value={newName}
                 />
                 <select
@@ -1067,12 +1097,14 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
                 <input
                   className={inputClass()}
                   onChange={(e) => setNewAddress(e.target.value)}
-                  placeholder={`${venueTypeLabel(newVenueType)} address *`}
+                  placeholder={`${venueTypeChoiceLabel(newVenueType)} address *`}
                   value={newAddress}
                 />
 
                 {/* Optional since 2026-08-04 — the note explains what leaving it empty costs. */}
-                <div className={venueRequiresDistributorCode(newVenueType) ? "border border-[#eef1f3] p-2" : "hidden"}>
+                {/* Hidden until the type is known: asking a venue for a code before it has said it
+                    is a pharmacy is exactly how the invented codes got made. */}
+                <div className={choiceRequiresDistributorCode(newVenueType) ? "border border-[#eef1f3] p-2" : "hidden"}>
                   <p className="text-[11px] font-black uppercase tracking-wider text-slate-500">Distributor customer codes</p>
                   <p className="mb-1 text-[11px] font-semibold text-slate-500">
                     Optional. Leave it empty if you do not know them — but the order cannot be

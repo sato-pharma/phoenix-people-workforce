@@ -130,6 +130,9 @@ function licenceOnlyInput(): MarketingValidationInput {
             evidencePhotoName: null,
             licenseFileDataUrl: pdfDataUrl,
             licenseFileName: "hazem-licence.pdf",
+            // Stated since 2026-08-26 — capture refuses a venue nobody named rather than
+            // defaulting it, and this fixture has to be a pharmacy for the code below to belong.
+            venueType: "pharmacy",
             // A code is present because Marketing REFUSES a pharmacy without one
             // (normalizeValidationPharmacy) — so "no code at all" is not a shape this path can
             // even produce. It changes nothing about what is under test: the licence is here, the

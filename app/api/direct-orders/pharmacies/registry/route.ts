@@ -65,7 +65,7 @@ export async function POST(request: Request) {
       doctorName?: string | null;
       pharmacyAddress?: string | null;
       distributorCodes?: CodePair[];
-      /** See the same field on POST /api/direct-orders/pharmacies — normalized by the service. */
+      /** See the same field on POST /api/direct-orders/pharmacies — REQUIRED, and refused when absent. */
       venueType?: string | null;
     };
 
