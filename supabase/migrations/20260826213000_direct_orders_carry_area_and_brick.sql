@@ -77,8 +77,11 @@ as $function$
            f.product_code;
 $function$;
 
-revoke all on function public.phx_monthly_closing_direct(text, text) from public;
-revoke all on function public.phx_monthly_closing_direct(text, text) from anon, authenticated;
+-- EXECUTE is spelled out, not "revoke all": for a function they are the same privilege, but
+-- scripts/check-migrations.mjs matches the literal `revoke execute on function` form and a
+-- required CI check fails without it. PUBLIC is named first because anon/authenticated inherit
+-- EXECUTE through PUBLIC membership, so revoking only those two is a no-op.
+revoke execute on function public.phx_monthly_closing_direct(text, text) from public, anon, authenticated;
 grant execute on function public.phx_monthly_closing_direct(text, text) to service_role;
 grant execute on function public.phx_monthly_closing_direct(text, text) to analytics_readonly;
 
@@ -369,6 +372,9 @@ as $function$
   from emitted e;
 $function$;
 
-revoke all on function public.phx_closing_channel_breakdown(text, text, text[], text[], text[], text[], text[]) from public;
-revoke all on function public.phx_closing_channel_breakdown(text, text, text[], text[], text[], text[], text[]) from anon, authenticated;
+-- EXECUTE is spelled out, not "revoke all": for a function they are the same privilege, but
+-- scripts/check-migrations.mjs matches the literal `revoke execute on function` form and a
+-- required CI check fails without it. PUBLIC is named first because anon/authenticated inherit
+-- EXECUTE through PUBLIC membership, so revoking only those two is a no-op.
+revoke execute on function public.phx_closing_channel_breakdown(text, text, text[], text[], text[], text[], text[]) from public, anon, authenticated;
 grant execute on function public.phx_closing_channel_breakdown(text, text, text[], text[], text[], text[], text[]) to service_role;
