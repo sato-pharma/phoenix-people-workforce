@@ -339,6 +339,25 @@ export function MarketingRequestDecisionConfirmation({
                     label={pharmacy.pharmacyName}
                     url={pharmacy.licenseUrl}
                   />
+                  {/* Read-back, never a control: this is the last screen before the decision, and
+                      what belongs here is what was already found, not a fresh question. "Not
+                      checked yet" is said in words on purpose — an omitted line would read as a
+                      pass to the one person who can no longer go back and look. Rendered only when
+                      a licence exists to have a verdict about. */}
+                  {pharmacy.licenseUrl ? (
+                    <p
+                      className={`mt-1 text-[11px] font-bold ${
+                        pharmacy.licenseNameMatchesSign === false ? "text-rose-700" : "text-slate-600"
+                      }`}
+                    >
+                      Licence name vs shop sign:{" "}
+                      {pharmacy.licenseNameMatchesSign === true
+                        ? "confirmed to match"
+                        : pharmacy.licenseNameMatchesSign === false
+                          ? "does NOT match"
+                          : "not checked yet"}
+                    </p>
+                  ) : null}
                   {pharmacy.notes ? (
                     <p className="mt-1 text-[11px] font-medium text-slate-600">{pharmacy.notes}</p>
                   ) : null}

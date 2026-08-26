@@ -82,6 +82,105 @@ function Field({
  * requester submitted lived behind a decision button, so the only way to read the detail was to
  * start committing to an answer. This renders it in place.
  */
+/**
+ * "Does the licence trade name match the shop sign?" — the marketing half of the check.
+ *
+ * Only rendered when there IS a licence to judge. Three-valued and undoable: clicking the active
+ * answer clears it back to "nobody was asked", which is a different fact from "no" and is stored
+ * as null rather than as false.
+ *
+ * SAVES ON CLICK rather than travelling with the approve/reject decision, unlike the Direct Orders
+ * desk. The verdict is recorded against the PHARMACY, not against this request, so it must outlive
+ * a decision that may never be taken here — an approver who compares the two names and then returns
+ * the request has still done the check, and that answer is worth keeping.
+ *
+ * It never blocks anything. A failed save says so and leaves the previous answer standing; it does
+ * not disable the decision buttons, because the system flags and never rejects.
+ */
+function LicenseNameCheck({
+  initialVerdict,
+  pharmacyId,
+  requestId,
+}: {
+  initialVerdict: boolean | null;
+  pharmacyId: string | null;
+  requestId: string;
+}) {
+  const [verdict, setVerdict] = useState<boolean | null>(initialVerdict);
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+
+  // An unresolved link has no pharmacy id to write against. Nothing to offer, so nothing is shown
+  // rather than a control that would 404 on every click.
+  if (!pharmacyId) return null;
+
+  async function record(next: boolean | null) {
+    const previous = verdict;
+    setSaveError(null);
+    setIsSaving(true);
+    // Optimistic: the answer is one bit and the round trip is short, so the button responds at once
+    // and rolls back if the write is refused.
+    setVerdict(next);
+    try {
+      const response = await fetch(`/api/marketing-requests/${encodeURIComponent(requestId)}/license-verdict`, {
+        body: JSON.stringify({ matchesSign: next, pharmacyId }),
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setVerdict(previous);
+        setSaveError(typeof payload?.message === "string" ? payload.message : "That answer could not be saved.");
+      }
+    } catch {
+      setVerdict(previous);
+      setSaveError("That answer could not be saved.");
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  return (
+    <div className="mt-1 border border-slate-200 px-2 py-1.5">
+      <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-slate-400">
+        Does the licence trade name match the shop sign?
+      </p>
+      <div className="mt-1 flex flex-wrap items-center gap-1.5">
+        {([
+          { label: "Yes, it matches", tone: "emerald", value: true },
+          { label: "No, it differs", tone: "rose", value: false },
+        ] as const).map((choice) => {
+          const active = verdict === choice.value;
+          return (
+            <button
+              key={choice.label}
+              type="button"
+              disabled={isSaving}
+              // Clicking the active choice clears it, so a mis-click is undoable in place.
+              onClick={() => void record(active ? null : choice.value)}
+              className={
+                active
+                  ? `rounded-sm border px-2 py-0.5 text-[10px] font-black ${
+                    choice.tone === "emerald"
+                      ? "border-emerald-400 bg-emerald-50 text-emerald-800"
+                      : "border-rose-400 bg-rose-50 text-rose-800"
+                  }`
+                  : "rounded-sm border border-slate-300 px-2 py-0.5 text-[10px] font-bold text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+              }
+            >
+              {choice.label}
+            </button>
+          );
+        })}
+        <span className="text-[9px] font-medium text-slate-400">
+          {isSaving ? "Saving…" : verdict === null ? "Not answered — optional" : "Recorded"}
+        </span>
+      </div>
+      {saveError ? <p className="mt-1 text-[10px] font-bold text-rose-700">{saveError}</p> : null}
+    </div>
+  );
+}
+
 export function MarketingRequestApproverDetail({ requestId }: { requestId: string }) {
   const [detail, setDetail] = useState<MarketingApproverRequestDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -312,6 +411,16 @@ export function MarketingRequestApproverDetail({ requestId }: { requestId: strin
                   label={pharmacy.pharmacyName}
                   url={pharmacy.licenseUrl}
                 />
+                {/* The answer, immediately under the two documents it compares. Only offered when
+                    a licence is actually on file — asking about one that is not there would record
+                    a verdict about nothing, which the service refuses anyway. */}
+                {pharmacy.licenseUrl ? (
+                  <LicenseNameCheck
+                    initialVerdict={pharmacy.licenseNameMatchesSign}
+                    pharmacyId={pharmacy.pharmacyId}
+                    requestId={requestId}
+                  />
+                ) : null}
                 {/* No "and no licence either" warning is drawn here on purpose. It would have to be
                     read off `distributorPharmacyCode`, which defaults to "-" for a code that exists
                     but could not be RESOLVED (see `referenceLookup` in request-loaders.ts) — so the
