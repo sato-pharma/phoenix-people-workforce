@@ -17,6 +17,7 @@ import {
   pharmacyLicensePrompt,
 } from "@/lib/venues/pharmacy-license";
 import { DEFAULT_VENUE_TYPE, type VenueType } from "@/lib/venues/venue-type";
+import { VENUE_LOCATION_REQUIRED_MESSAGE } from "@/lib/venues/venue-validation-rule";
 
 type Props = {
   pharmacyId: string;
@@ -315,6 +316,9 @@ export function PharmacyValidationCapture({
   async function submit() {
     setError(null);
     if (!photo) return setError("Take the storefront photo.");
+    // Leg 1 of the venue rule, said here as well as on the server so the rep learns it while still
+    // standing in front of the shop rather than after a round trip. Same sentence both ends.
+    if (capture.latitude == null || capture.longitude == null) return setError(VENUE_LOCATION_REQUIRED_MESSAGE);
     if (!name.trim()) return setError("Pharmacy name is required.");
     if (!reason.trim()) return setError("Say why this pharmacy is not in the master database.");
     setBusy(true);
