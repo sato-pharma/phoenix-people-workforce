@@ -1,5 +1,6 @@
 import { hasGoogleServerKey } from "@/lib/google-maps/server";
 import { aiSuggest, type AiReferenceAlias, type AiUnknown } from "@/lib/sales/normalizer/ai-suggest";
+import type { PropagationEvidence } from "@/lib/sales/normalizer/auto-apply";
 import { loadBrickCentroids } from "@/lib/sales/normalizer/brick-centroids";
 import { normalizeCustomerNameKey } from "@/lib/sales/normalizer/customer-normalize";
 import { buildPropagationIndex, propagateSuggestions, type MappedCustomerRow, type PropagatedSuggestion } from "@/lib/sales/normalizer/customer-propagate";
@@ -25,6 +26,7 @@ export type CustomerSuggestion = {
   source: "ai" | "propagated";
   matchedFrom?: PropagatedSuggestion["matchedFrom"];
   signals?: GeoSignals;
+  propagation?: PropagationEvidence;
 };
 
 type CustomerMapDbRow = {
@@ -127,7 +129,15 @@ export async function suggestCustomerBricks(unknowns: AiUnknown[]): Promise<{ su
     : [];
 
   let suggestions: CustomerSuggestion[] = [
-    ...propagated.map((p) => ({ code: p.code, confidence: p.confidence, matchedFrom: p.matchedFrom, raw: p.raw, source: "propagated" as const })),
+    ...propagated.map((p) => ({
+      code: p.code,
+      confidence: p.confidence,
+      matchedFrom: p.matchedFrom,
+      // Carried so auto-apply.ts can accept a deterministic twin that has no geocode to judge.
+      propagation: { addressCorroborated: p.addressCorroborated } satisfies PropagationEvidence,
+      raw: p.raw,
+      source: "propagated" as const,
+    })),
     ...aiSuggestions.map((s) => ({ ...s, source: "ai" as const })),
   ];
 

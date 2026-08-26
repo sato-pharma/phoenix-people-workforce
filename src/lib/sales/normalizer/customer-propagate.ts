@@ -26,6 +26,10 @@ export type PropagatedSuggestion = {
   confidence: number;
   source: "propagated";
   matchedFrom: { distributorCode: string; customerCode: string; customerName: string };
+  // The address tokens agreed (overlap >= 0.5) on top of the unambiguous name match. This is the
+  // second independent TEXTUAL signal, and it is what lets auto-apply.ts accept the suggestion
+  // when the pharmacy has no geocode — which is the case for ~97% of them.
+  addressCorroborated: boolean;
 };
 
 type IndexEntry = {
@@ -98,10 +102,12 @@ export function propagateSuggestions(unknowns: PropagationUnknown[], index: Prop
     // Address overlap boosts confidence; the base match alone is already high-signal.
     const unknownAddress = customerAddressTokens(unknown.rawAddress ?? "");
     const bestOverlap = entries.reduce((best, e) => Math.max(best, addressTokenOverlap(unknownAddress, e.addressTokens)), 0);
-    const confidence = bestOverlap >= 0.5 ? 93 : 90;
+    const addressCorroborated = bestOverlap >= 0.5;
+    const confidence = addressCorroborated ? 93 : 90;
 
     const matched = entries[0].row;
     out.push({
+      addressCorroborated,
       code: bricks[0],
       confidence,
       matchedFrom: {
