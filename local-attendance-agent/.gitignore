@@ -6,3 +6,4 @@ publish/
 .dotnet-home/
 .nuget/
 .appdata/
+logs/
