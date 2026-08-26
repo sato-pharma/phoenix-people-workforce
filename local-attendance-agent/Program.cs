@@ -232,6 +232,8 @@ app.MapPost("/sync-now", async (HttpRequest request, AgentConfig cfg, Attendance
       inserted = 0,
       duplicate = 0,
       skipped = 0,
+      skippedUnknown = 0,
+      skippedIgnored = 0,
       failed = 1,
       errors = new[] { ex.Message },
     }, statusCode: StatusCodes.Status500InternalServerError);
@@ -402,6 +404,8 @@ sealed class AttendanceSyncRunner(AgentConfig config, ZktecoDeviceClient deviceC
         inserted = 0,
         duplicate = 0,
         skipped = 0,
+        skippedUnknown = 0,
+        skippedIgnored = 0,
         failed = 0,
         errors = new[] { "Attendance sync is already running." },
       });
@@ -423,6 +427,8 @@ sealed class AttendanceSyncRunner(AgentConfig config, ZktecoDeviceClient deviceC
           inserted = 0,
           duplicate = 0,
           skipped = 0,
+          skippedUnknown = 0,
+          skippedIgnored = 0,
           failed = 1,
           errors = new[] { $"Device TCP port is not reachable at {config.DeviceIp}:{config.DevicePort}." },
         };
@@ -454,6 +460,12 @@ sealed class AttendanceSyncRunner(AgentConfig config, ZktecoDeviceClient deviceC
         response.Inserted,
         response.Duplicate,
         response.Skipped,
+        // The half of Skipped that is an open question, and the ids behind it. This is the
+        // number to watch: skippedIgnored never falls to zero, so a bare skipped total
+        // cannot tell a lost person from the driver.
+        skippedUnknown = response.SkippedUnknown,
+        skippedIgnored = response.SkippedIgnored,
+        unknownDeviceUsers = response.UnknownDeviceUsers ?? [],
         response.Failed,
         errors = response.Failures.Select(f => $"#{f.Index}: {f.Message}").ToArray(),
         elapsedMs = Math.Round(elapsedMs),
@@ -470,6 +482,8 @@ sealed class AttendanceSyncRunner(AgentConfig config, ZktecoDeviceClient deviceC
         inserted = 0,
         duplicate = 0,
         skipped = 0,
+        skippedUnknown = 0,
+        skippedIgnored = 0,
         failed = 1,
         errors = new[] { ex.Message },
       });
@@ -879,7 +893,15 @@ sealed record PhoenixIngestionResponse(
   int Duplicate,
   int Skipped,
   int Failed,
-  PunchFailure[] Failures
+  PunchFailure[] Failures,
+  // Skipped alone can never read as healthy: it counts the driver and every retired
+  // enrolment alongside a person whose attendance is genuinely going missing, and those
+  // keep punching forever. SkippedUnknown is the half that can reach zero.
+  // Optional on purpose - a Phoenix that predates the split omits all three, and the agent
+  // must keep working against it rather than fail to deserialize.
+  int SkippedUnknown = 0,
+  int SkippedIgnored = 0,
+  string[]? UnknownDeviceUsers = null
 ) {
   public PhoenixIngestionResponse Add(PhoenixIngestionResponse other) => new(
     Received + other.Received,
@@ -887,7 +909,12 @@ sealed record PhoenixIngestionResponse(
     Duplicate + other.Duplicate,
     Skipped + other.Skipped,
     Failed + other.Failed,
-    Failures.Concat(other.Failures).ToArray()
+    Failures.Concat(other.Failures).ToArray(),
+    SkippedUnknown + other.SkippedUnknown,
+    SkippedIgnored + other.SkippedIgnored,
+    // One device user shows up across many batches of the same sync, so the union is
+    // deduplicated - otherwise a busy finger is listed once per batch it appeared in.
+    (UnknownDeviceUsers ?? []).Concat(other.UnknownDeviceUsers ?? []).Distinct().OrderBy(id => id).ToArray()
   );
 }
 
