@@ -1,8 +1,7 @@
 -- Direct orders reach the closing on their REAL area and brick.
 --
 -- WHY. The Direct Orders module began stamping the customer's area and brick on every row it books:
--- 2026-08 is the first month where all 22 direct rows carry both, against 0 of 554 rows for
--- 2026-02 … 2026-06 and 0 bricks in 2026-07. `au.f_monthly_attribution` already reads that area and
+-- 2026-08 is the first month where all 22 direct rows carry BOTH. `au.f_monthly_attribution` already reads that area and
 -- credits the area's rep for the money (verified on production for 2026-08: Giza - Giza Centers is
 -- credited 40 Guamusin / 200 Ivyronc / 216 Lacto Advanced 1, Minia 2 is credited 50 / 24 / 24).
 -- The closing surfaces were the only place still discarding it, so the Closing Matrix printed
@@ -14,12 +13,27 @@
 --   2. phx_closing_channel_breakdown — stops overwriting a direct row's real area / brick / rep with
 --      the '__DIRECT__' bucket. A direct row with no geography still lands in '__DIRECT__'.
 --
+-- BOTH ARE FLOORED AT 2026-08, and the floor is the load-bearing part of this migration. A direct
+-- row simply HAVING an area_code is not evidence the Direct Orders module wrote it — measured live:
+--
+--     period      direct rows   with area   with brick
+--     2026-01          71           19           0      <- manual, provenance not the module
+--     2026-02..06     554            0           0
+--     2026-07          51           35           0      <- the OWNER'S OWN finalized mapping
+--     2026-08          22           22          22      <- the module, area AND brick
+--
+-- Reading 2026-07's areas here would break a published, LOCKED closing two ways: July CNS is not in
+-- the owner's mapping table (it covers Anti Infective and Pedia only) so it would silently fold onto
+-- areas, and shrinking the '__DIRECT__' bucket fails the penny reconciliation in
+-- applyJulyDirectAreasToBreakdown, which then refuses the mapping and prints a "they are not the
+-- same money" warning across the July sheet. So the rule is a PERIOD FLOOR, never a has-an-area test.
+--
 -- WHAT DOES NOT CHANGE.
 --   * Pricing. Direct money keeps its own value (direct_value / the row's stored value); it is never
 --     recomputed at factory price. That is the locked direct-order pricing rule, and it is exactly
 --     why direct has its own feed rather than joining the area grid.
---   * Any month before 2026-08. Those rows have no area, so both functions return what they always
---     returned and every published month renders identically.
+--   * Any month before 2026-08. The floor above makes both functions return exactly what they
+--     returned before, so every published month — including the locked ones — renders identically.
 --   * Totals. Nothing is added or removed anywhere — the same money is reported at a finer grain.
 
 -- ─────────────────────────────────────────────────────────────────────────────
@@ -40,7 +54,13 @@ set statement_timeout to '45s'
 as $function$
   select
     f.region_code,
-    coalesce(nullif(btrim(f.area_code), ''), '') as area_code,
+    -- Same period floor as phx_closing_channel_breakdown, and for the same reason: 2026-01 and
+    -- 2026-07 carry manually-placed areas, and July's belong to the owner's own mapping in
+    -- july-2026-direct-orders.ts, which covers Anti Infective and Pedia only — July CNS would
+    -- otherwise fold onto areas behind a LOCKED closing. Blank means "this month has no area",
+    -- which is what every month up to 2026-07 returned before this migration.
+    case when p_period >= '2026-08'
+         then coalesce(nullif(btrim(f.area_code), ''), '') else '' end as area_code,
     f.product_code,
     sum(f.total_qty)    as sales_units,
     sum(f.direct_value) as sales_value
@@ -51,7 +71,10 @@ as $function$
     and lower(btrim(f.official_line)) = lower(btrim(p_line))
     and f.is_direct
     and upper(btrim(coalesce(f.product_code, ''))) not in ('LA003', 'LA004', 'SS001')
-  group by f.region_code, coalesce(nullif(btrim(f.area_code), ''), ''), f.product_code;
+  group by f.region_code,
+           case when p_period >= '2026-08'
+                then coalesce(nullif(btrim(f.area_code), ''), '') else '' end,
+           f.product_code;
 $function$;
 
 revoke all on function public.phx_monthly_closing_direct(text, text) from public;
@@ -62,10 +85,11 @@ grant execute on function public.phx_monthly_closing_direct(text, text) to analy
 -- ─────────────────────────────────────────────────────────────────────────────
 -- 2. phx_closing_channel_breakdown: keep a direct row's own area, brick and rep
 -- ─────────────────────────────────────────────────────────────────────────────
--- Body is byte-identical to the deployed function except for the three `case` expressions in the
--- `keyed` CTE (area, brick, rep) and the rep LABEL, which no longer blanks itself for direct rows —
--- a rep whose only sales this month are direct would otherwise appear with no name. The `direct` CTE
--- was already selecting area_code and brick_id; they were simply discarded downstream.
+-- Body is byte-identical to the deployed function except in exactly two places: the period floor on
+-- area_code / brick_id in the `direct` CTE, and the three `case` expressions in the `keyed` CTE
+-- (area, brick, rep) plus the rep LABEL, which no longer blanks itself for direct rows — a rep whose
+-- only sales this month are direct would otherwise appear with no name. The `direct` CTE was already
+-- selecting area_code and brick_id; they were simply discarded downstream.
 -- Signature is unchanged, so CREATE OR REPLACE keeps the existing ACL.
 create or replace function public.phx_closing_channel_breakdown(
   p_line text,
@@ -122,8 +146,18 @@ as $function$
     select
       upper(btrim(coalesce(r.product_code, ''))) as product_code,
       nullif(btrim(coalesce(r.product_name, '')), '') as product_name,
-      nullif(btrim(coalesce(r.area_code, '')), '')    as area_code,
-      nullif(btrim(coalesce(r.brick_id, '')), '')     as brick_id,
+      -- THE PERIOD FLOOR. Having an area_code is not enough to trust one: 2026-01 (19 of 71 rows)
+      -- and 2026-07 (35 of 51) carry areas of MANUAL provenance and no bricks. July's placement is
+      -- the owner's own finalized mapping, applied in the app by applyJulyDirectAreasToBreakdown,
+      -- which refuses to run unless the '__DIRECT__' bucket reconciles to the penny — emitting real
+      -- areas for July would shrink that bucket, fail the check, and paper the published July sheet
+      -- with a "they are not the same money" warning. Nulling here rather than in `keyed` also keeps
+      -- the au.sos_area_crosswalk join in `seated` from firing, so older months are untouched
+      -- end to end. Mirrors DIRECT_AREA_STAMPED_FROM_PERIOD in src/lib/sales/closing-direct-area.ts.
+      case when p_period >= '2026-08'
+           then nullif(btrim(coalesce(r.area_code, '')), '') end as area_code,
+      case when p_period >= '2026-08'
+           then nullif(btrim(coalesce(r.brick_id, '')), '') end  as brick_id,
       null::text                                      as client_key,
       null::text                                      as distributor_code,
       btrim(coalesce(r.client_name, ''))              as client_name,

@@ -10,7 +10,7 @@ import {
   isHeadOfficeLine,
   RESTRICTED_PRODUCT_CODES,
 } from "@/lib/sales/access-scope";
-import { isSyntheticDirectArea } from "@/lib/sales/closing-direct-area";
+import { directRowsCarryOwnArea, isSyntheticDirectArea } from "@/lib/sales/closing-direct-area";
 import {
   allocateDirectToOperationalRegions,
   applyOperationalRegions,
@@ -3593,7 +3593,10 @@ export function injectDirectIntoMatrix(
     const productCode = normalizeCode(cell.productCode);
     const index = colIndex.get(productCode);
     if (index === undefined) return; // product not part of this line's columns
-    const areaCode = normalizeCode(cell.areaCode ?? "");
+    // The period floor, not the presence of an area, decides this. 2026-01 and 2026-07 carry areas
+    // of manual provenance that older code never read and that published months depend on staying
+    // where they are — see DIRECT_AREA_STAMPED_FROM_PERIOD.
+    const areaCode = directRowsCarryOwnArea(matrix.period) ? normalizeCode(cell.areaCode ?? "") : "";
     if (areaCode) {
       const key = `${areaCode}|${productCode}`;
       const entry = rpcByAreaProduct.get(key) ?? { salesUnits: 0, salesValue: 0 };
@@ -4464,8 +4467,13 @@ export async function loadMonthlyClosingParts(input?: {
   const cells: MonthlyClosingAggregateCell[] = matrixCellsFromDistributorRows(distributorRows);
   const officeData: MonthlyClosingAggregateCell[] = officeCellsFromDistributorRows(distributorRows);
 
+  // Belt and braces with the SQL floor: strip the area at the boundary for any month whose direct
+  // rows predate the Direct Orders module stamping one. Doing it HERE means every downstream
+  // consumer — the organogram allocator as well as the injector — sees exactly what it saw before,
+  // so no second copy of the rule can drift out of step with this one.
+  const directCarriesArea = directRowsCarryOwnArea(selectedPeriod);
   const directCells: MonthlyClosingDirectCell[] = (directData as Record<string, unknown>[]).map((row) => ({
-    areaCode: String(row.area_code ?? ""),
+    areaCode: directCarriesArea ? String(row.area_code ?? "") : "",
     productCode: String(row.product_code ?? ""),
     regionCode: String(row.region_code ?? ""),
     salesUnits: Number(row.sales_units ?? 0),

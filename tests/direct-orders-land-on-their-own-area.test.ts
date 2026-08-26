@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 
-import { isSyntheticDirectArea } from "../src/lib/sales/closing-direct-area.ts";
+import {
+  DIRECT_AREA_STAMPED_FROM_PERIOD,
+  directRowsCarryOwnArea,
+  isSyntheticDirectArea,
+} from "../src/lib/sales/closing-direct-area.ts";
 import {
   buildMonthlyClosingMatrix,
   injectDirectIntoMatrix,
@@ -16,8 +20,13 @@ import {
  * that actually earned them, and whose rep was already credited — read 0 two rows above.
  *
  * These tests pin the fix in both directions. The failure they are built to catch is not the obvious
- * one: the risk is that a change intended for 2026-08 quietly moves an OLDER month whose direct rows
- * have no area, because those months are published and two of them are locked.
+ * one: the risk is that a change intended for 2026-08 quietly moves an OLDER month, because those
+ * months are published and two of them are locked.
+ *
+ * And "older month" does NOT mean "has no area" — that assumption is exactly the trap. 2026-01 has
+ * 19 of 71 direct rows carrying a manually-placed area and 2026-07 has 35 of 51, July's being the
+ * owner's own finalized mapping. The rule is therefore a PERIOD FLOOR
+ * (`DIRECT_AREA_STAMPED_FROM_PERIOD`), and scenario 5 is the one that pins it.
  */
 
 const references: SalesReferenceData = {
@@ -153,7 +162,41 @@ export async function runDirectOrdersLandOnTheirOwnAreaTests() {
     assert.equal(grandUnits(injected, iA), before + 55, "and the grand total still holds");
   }
 
-  // ── 5. The National bucket is untouched by any of this ─────────────────────────────────────
+  // ── 5. THE PERIOD FLOOR. An older month must not fold even when handed a real area ─────────
+  // The sharp case, and the reason this is a floor rather than a has-an-area test: 2026-01 has 19
+  // of 71 direct rows carrying a manually-placed area, and 2026-07 has 35 of 51 — July's being the
+  // owner's own finalized mapping. July's mapping table covers Anti Infective and Pedia only, so
+  // July CNS reaches THIS code path in production, over a locked closing. If the SQL floor is ever
+  // removed, or a caller hands these cells in directly, the fold must still refuse.
+  for (const period of ["2026-01", "2026-07"]) {
+    const matrix = baseMatrix(period);
+    const iA = columnOf(matrix, "P-A");
+    const before = grandUnits(matrix, iA);
+    const cells: MonthlyClosingDirectCell[] = [
+      { areaCode: "A1", productCode: "P-A", regionCode: "CA", salesUnits: 216, salesValue: 57024 },
+    ];
+    const injected = injectDirectIntoMatrix(matrix, cells);
+
+    assert.equal(
+      areaRow(injected, "CA", "A1")?.cells[iA]?.salesUnits,
+      4,
+      `${period} predates the Direct Orders module stamping an area — its direct money must NOT move onto Area One`,
+    );
+    assert.equal(areaRow(injected, "CA", "A1")?.isDirect ?? false, false, `${period}: and the area must not be flagged direct-bearing`);
+    const rows = directRows(injected);
+    assert.equal(rows.length, 1, `${period}: the money keeps the anonymous Direct row it has always had`);
+    assert.equal(rows[0]?.cells[iA]?.salesUnits, 216, `${period}: and keeps every unit`);
+    assert.equal(grandUnits(injected, iA), before + 216, `${period}: the grand total is unchanged by the floor`);
+  }
+
+  // The floor is one exported rule, not a literal repeated at each call site.
+  assert.equal(DIRECT_AREA_STAMPED_FROM_PERIOD, "2026-08");
+  assert.equal(directRowsCarryOwnArea("2026-07"), false, "July is below the floor");
+  assert.equal(directRowsCarryOwnArea("2026-08"), true, "August is the first month at or above it");
+  assert.equal(directRowsCarryOwnArea("2026-09"), true, "and every later month stays above it");
+  assert.equal(directRowsCarryOwnArea(""), false, "an unknown period never folds");
+
+  // ── 6. The National bucket is untouched by any of this ─────────────────────────────────────
   {
     const matrix = baseMatrix("2026-08");
     const iA = columnOf(matrix, "P-A");
