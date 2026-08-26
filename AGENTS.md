@@ -132,7 +132,11 @@ file holding the full account, under
 
 - **CI jobs failing in SECONDS mean billing, not code.** `ci-jobs-failing-in-seconds-means-billing-not-code`
 - **`secret-scan` is a required check — there are 4 total**, because a personal account has no GHAS/OSS
-  scanning. `github-personal-account-no-ghas-oss-scanning`
+  scanning. `github-personal-account-no-ghas-oss-scanning` **It is the one required check that never
+  runs on a `main` push** — `security-scan.yml` is `on: pull_request` + a daily `schedule`,
+  deliberately not `push` (Actions cost). Its absence from a merge commit's check-runs is CORRECT,
+  not a missed gate: it ran on the PR head against the identical tree. Do not hunt for it after a
+  merge, and do not dispatch it to "complete the set".
 - **`gh pr checks` LAGS behind the real job state.** `gh-pr-checks-lags-behind-the-real-job-state`
 - **`check-runs: 0` also means CONFLICTED** — a conflicted PR runs no CI at all, which reads as "not
   started". `a-conflicted-pr-runs-no-ci-at-all`
@@ -153,6 +157,14 @@ file holding the full account, under
   never enter the PR's `statusCheckRollup`, so branch protection does not count them. Verified
   2026-08-26 — identical check-run names on two heads, only the `pull_request`-sourced ones
   reached the rollup. (Cancelling such a dispatch run is harmless for the same reason.)
+- **Simplest PR recovery of all: `gh run rerun <id>` on the PR's OWN `pull_request`-sourced run.**
+  A rerun keeps the run's `event` as `pull_request`, so unlike a dispatch its check runs DO enter
+  the rollup — and unlike close/reopen it touches nothing about the PR. Verified 2026-08-26 on
+  #2418: run `32989112637`, `event=pull_request`, attempt 1 `cancelled` -> attempt 2 `success`,
+  rollup populated with all four required checks, `mergeStateStatus` went `BLOCKED` -> `CLEAN`.
+  Wait for the backlog to drain first (poll until no `in_progress`/`queued` runs remain), or the
+  rerun is just one more racer. Branch protection reads the LATEST check run per name, so a green
+  dispatch does not stay green once a newer run of the same name starts.
 - **Then WAIT — dispatch lags 20–30 MINUTES during an outage, and the events are NOT dropped.**
   Measured on one PR 2026-08-26: reopen at `16:08:08Z` produced its runs at `16:29:29Z` (+21m); an
   empty-commit push at `16:09:58Z` produced its runs at `16:35:23Z` (+25m). Both ran and passed.
@@ -161,6 +173,14 @@ file holding the full account, under
   fired nothing is how that session escalated for no reason: an empty commit, then a whole
   replacement PR, renumbering #2414 to #2419 to escape a problem that was only latency. Fire ONE
   recovery event, then leave it half an hour before believing anything.
+- **An extra SHA is not merely useless during an outage — it ACTIVELY KILLS the real head's run.**
+  `ci.yml`'s concurrency group is `${{ github.workflow }}-${{ github.ref }}` for a `pull_request`,
+  with `cancel-in-progress: true`. On a PR `github.ref` is `refs/pull/<n>/merge` — the SAME value
+  for every commit — so both SHAs share one group. When the backlog replays it replays the
+  OBSOLETE commit's event too, and that late arrival cancels the run on the head you actually care
+  about. Measured on #2418: head `21d25e3a`'s run started `16:34:04Z`, the abandoned `88f468d4`'s
+  replayed event landed `16:35:08Z`, and attempt 1 of the head's run ended `cancelled`. It cost a
+  full extra CI cycle to recover. Never push an empty commit to force a `synchronize`.
 - **`actions/runs?head_sha=` needs the FULL 40-char SHA — an abbreviated one returns `total=0`
   with no error.** During an outage that is indistinguishable from "no runs exist", which is
   exactly when the query gets used: a watcher built on the 8-char form reported no runs for 8
