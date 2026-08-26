@@ -33,6 +33,14 @@ const vacationTableSource = readFileSync(
   new URL("../src/components/vacation/company-vacation-report-table.tsx", import.meta.url),
   "utf8",
 );
+const closingExportRouteSource = readFileSync(
+  new URL("../app/api/sales/monthly-closing/export/route.ts", import.meta.url),
+  "utf8",
+);
+const closingWorkspaceSource = readFileSync(
+  new URL("../src/components/sales/monthly-closing-workspace.tsx", import.meta.url),
+  "utf8",
+);
 
 function directOrder(overrides: Partial<DirectOrderReportRow> & { id: string }): DirectOrderReportRow {
   return {
@@ -333,5 +341,43 @@ export function runExportFollowsScreenFiltersTests() {
     vacationTableSource,
     /filterCompanyVacationReportRows\(rows, filters\)/,
     "the vacation table must narrow through the shared filter the export route also uses",
+  );
+
+  // -- Monthly Closing: the workbook must carry the Office columns the SCREEN carries -----------
+  //
+  // Owner's rule, 2026-08-26: "the export must be typical the front end -- never different data".
+  // The on-screen Closing Matrix always renders the "of wh. Office" columns, because the workspace
+  // runs the SAME filterMonthlyClosingMatrix over the Office grid that it runs over the matrix.
+  // The export route used to null the Office grid out whenever a row-level filter (distributor,
+  // included/excluded, or the details search box) was active, so the same month exported from the
+  // Details panel silently lost both the "of wh. Office" columns and the Office Allocation sheet
+  // while the screen kept showing them. Office is ~41% of the CNS closing, so this was the largest
+  // number in the workbook disappearing without a word.
+  assert.ok(
+    closingWorkspaceSource.includes("filterMonthlyClosingMatrix(office, filter)"),
+    "the Closing screen must narrow the Office grid through the SAME filter as the matrix -- this is"
+    + " the on-screen behaviour the export below is required to match",
+  );
+  assert.ok(
+    closingExportRouteSource.includes("office: officeFiltered,"),
+    "the closing export must always hand the Office grid to the workbook builder, so the file shows"
+    + " the Office columns the screen shows",
+  );
+  assert.ok(
+    !closingExportRouteSource.includes("office: rowLevelActive ? null"),
+    "the closing export must NOT gate the Office grid on rowLevelActive -- that gate is exactly what"
+    + " made a filtered workbook contradict the screen it was exported from",
+  );
+  // Office cannot be narrowed by a row-level filter (its grid carries no customer and no
+  // distributor), so the workbook has to SAY that rather than quietly drop it. Every other omission
+  // under a row-level filter is already announced in the filter note; Office was the only silent one.
+  assert.ok(
+    closingExportRouteSource.includes("rowLevelActive && officeFiltered"),
+    "a filtered closing workbook must explain that its Office figures cover the whole month",
+  );
+  assert.ok(
+    closingExportRouteSource.includes("WHOLE month's Office component"),
+    "the filter note must name the Office figures as whole-month, so a reader cannot mistake them"
+    + " for the filtered slice beside them",
   );
 }
