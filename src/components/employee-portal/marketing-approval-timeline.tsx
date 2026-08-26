@@ -1,5 +1,9 @@
 "use client";
 
+import {
+  isMarketingAdminOverrideNote,
+  MARKETING_ADMIN_OVERRIDE_NOTE_CLASSES,
+} from "@/lib/marketing-requests/admin-override-note";
 import type {
   MarketingRequestStepProgress,
   MarketingRequestTimelineStep,
@@ -143,8 +147,14 @@ function terminalSentence(status: MarketingRequestStatus): string {
 /* --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- */
 
 export function MarketingApprovalTimeline({
+  requestCode,
   steps,
 }: {
+  /**
+   * Optional, and only read to spot the one out-of-band SFE Validation note (see
+   * `admin-override-note.ts`). A caller that omits it gets the ordinary treatment on every note.
+   */
+  requestCode?: string | null;
   steps: MarketingRequestTimelineStep[];
 }) {
   if (steps.length === 0) {
@@ -217,7 +227,13 @@ export function MarketingApprovalTimeline({
                   </span>
                 ) : null}
                 {step.decisionNote ? (
-                  <p className="mt-0.5 break-words text-slate-500">
+                  <p
+                    className={`mt-0.5 break-words ${
+                      isMarketingAdminOverrideNote({ requestCode, stepName: step.stepName })
+                        ? MARKETING_ADMIN_OVERRIDE_NOTE_CLASSES
+                        : "text-slate-500"
+                    }`}
+                  >
                     {step.decisionNote}
                   </p>
                 ) : null}

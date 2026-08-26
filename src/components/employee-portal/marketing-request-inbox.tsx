@@ -281,7 +281,7 @@ function InboxRowCard({
         <MarketingRequestedProductHistory requestId={row.id} />
       </div>
 
-      <ApprovalHistory rungs={row.approvalHistory} />
+      <ApprovalHistory requestCode={row.requestCode} rungs={row.approvalHistory} />
 
       {/* Everything the requester actually submitted, in place. Before this the row showed a
           customer name, a cost and a pay date, and every other detail sat behind a decision
