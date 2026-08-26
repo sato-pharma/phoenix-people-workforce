@@ -10,7 +10,7 @@ import {
   isHeadOfficeLine,
   RESTRICTED_PRODUCT_CODES,
 } from "@/lib/sales/access-scope";
-import { isSyntheticDirectArea } from "@/lib/sales/closing-direct-area";
+import { directRowsCarryOwnArea, isSyntheticDirectArea } from "@/lib/sales/closing-direct-area";
 import {
   allocateDirectToOperationalRegions,
   applyOperationalRegions,
@@ -3249,8 +3249,18 @@ export type MonthlyClosingTargetCell = {
   targetValue: number | null;
 };
 
-// One direct-sales aggregate cell (region × product). Region may be a real code or "NATIONAL".
+// One direct-sales aggregate cell (region × area × product). Region may be a real code or "NATIONAL".
+//
+// `areaCode` is BLANK for every direct row booked before the Direct Orders module started stamping
+// geography (all of 2026-02 … 2026-06, and 2026-07's rows in the database). Those rows genuinely have
+// no area, so they keep the named "Direct orders (company)" row they have always had — spreading them
+// would be inventing geography. From 2026-08 the module writes the customer's real area and brick, and
+// a cell that HAS an area belongs in that area's row: `au.f_monthly_attribution` already credits the
+// area's rep for exactly this money (verified on 2026-08 prod), so leaving the matrix anonymous made
+// the closing contradict the company's own rep attribution.
 export type MonthlyClosingDirectCell = {
+  /** Real sales area, or "" when the row carries none. Never "DIRECT" — that is a display code. */
+  areaCode?: string;
   productCode: string;
   regionCode: string;
   salesUnits: number;
@@ -3537,13 +3547,22 @@ function resolveJulyDirectByArea(
 
 /**
  * Pure injector. Adds the Direct (company) channel on top of the distributor matrix:
- *  - direct sales in a REAL region become a synthetic "Direct" area row inside that region, so
+ *  - direct sales that name a REAL AREA fold into that area's own row, which is then flagged
+ *    `isDirect` so the export renders it statically;
+ *  - direct sales with only a region become a synthetic "Direct" area row inside that region, so
  *    the region subtotal (and hence the grand total) = its areas + Direct;
  *  - direct sales tagged "National" become a separate "Direct – National" row, and the
  *    companyTotal = grand total + Direct National.
+ *
+ * The area fold is what the Direct Orders module made possible: from 2026-08 it stamps the
+ * customer's real area and brick on every row it books, and `au.f_monthly_attribution` already
+ * credits that area's rep for the money. Before that the rows carry no area at all, so they take the
+ * second bullet and every month up to 2026-07 renders unchanged.
+ *
  * Direct value comes straight from the sheet (already aggregated by the direct RPC); no
- * factory-price recompute. Returns a new matrix; when there are no direct cells the matrix is
- * unchanged (directNational / companyTotal = null).
+ * factory-price recompute — that separation is what keeps the locked direct-order pricing rule
+ * intact, since the area grid values distributor sales at factory price. Returns a new matrix; when
+ * there are no direct cells the matrix is unchanged (directNational / companyTotal = null).
  */
 export function injectDirectIntoMatrix(
   matrix: MonthlyClosingMatrix,
@@ -3564,10 +3583,29 @@ export function injectDirectIntoMatrix(
     if (!arr) { arr = columns.map(() => emptyClosingCell()); byRegion.set(region, arr); }
     return arr;
   };
+  // Direct money that names its own AREA is kept apart from the region buckets, because it belongs in
+  // that area's own row rather than the anonymous Direct row. Adding a cell to BOTH would double the
+  // month, so every cell goes to exactly one of these two collections.
+  const rpcByAreaProduct = new Map<string, { salesUnits: number; salesValue: number }>();
+  const rpcRegionByArea = new Map<string, string>();
   directCells.forEach((cell) => {
     const region = normalizeCode(cell.regionCode);
-    const index = colIndex.get(normalizeCode(cell.productCode));
+    const productCode = normalizeCode(cell.productCode);
+    const index = colIndex.get(productCode);
     if (index === undefined) return; // product not part of this line's columns
+    // The period floor, not the presence of an area, decides this. 2026-01 and 2026-07 carry areas
+    // of manual provenance that older code never read and that published months depend on staying
+    // where they are — see DIRECT_AREA_STAMPED_FROM_PERIOD.
+    const areaCode = directRowsCarryOwnArea(matrix.period) ? normalizeCode(cell.areaCode ?? "") : "";
+    if (areaCode) {
+      const key = `${areaCode}|${productCode}`;
+      const entry = rpcByAreaProduct.get(key) ?? { salesUnits: 0, salesValue: 0 };
+      entry.salesUnits += cell.salesUnits;
+      entry.salesValue += cell.salesValue;
+      rpcByAreaProduct.set(key, entry);
+      if (!rpcRegionByArea.has(areaCode)) rpcRegionByArea.set(areaCode, region);
+      return;
+    }
     const target = cellsFor(region)[index];
     target.salesUnits += cell.salesUnits;
     target.salesValue += cell.salesValue;
@@ -3680,8 +3718,54 @@ export function injectDirectIntoMatrix(
       regions.push({ areas, regionCode, regionName, subtotal: subtotalOf(regionCode, regionName, areas) });
     });
   } else {
-    // Every other month: unchanged. Direct has no area to merge into, so it stays its own row.
+    // ── Direct that names its own area folds into that area's row ──────────────
+    // Same treatment July's hand-mapped orders get above, but driven by the area the Direct Orders
+    // module itself recorded rather than a checked-in table. Every month before 2026-08 has a blank
+    // area on every direct row, so `rpcByAreaProduct` is empty for them and this loop is a no-op —
+    // February through July render exactly as they did.
+    const consumed = new Set<string>();
     regions = matrix.regions.map((region) => {
+      let regionTouched = false;
+      const areas = region.areas.map((area) => {
+        // Per-AREA flag, for the same reason the July branch keeps one: a region-wide flag would mark
+        // untouched areas as direct-bearing and the export would render them static.
+        let areaTouched = false;
+        const areaCode = normalizeCode(area.areaCode);
+        const cells = area.cells.map((cell, index) => {
+          const key = `${areaCode}|${normalizeCode(columns[index].productCode)}`;
+          const direct = rpcByAreaProduct.get(key);
+          if (!direct) return cell;
+          areaTouched = true;
+          consumed.add(key);
+          const merged = { ...cell };
+          merged.salesUnits += direct.salesUnits;
+          merged.salesValue += direct.salesValue;
+          return roundedClosingCell(merged);
+        });
+        if (!areaTouched) return area;
+        regionTouched = true;
+        return { ...area, cells, isDirect: true, rowTotal: sumClosingRowTotal(cells) };
+      });
+      if (!regionTouched) return region;
+      return { ...region, areas, subtotal: subtotalOf(region.regionCode, region.regionName, areas) };
+    });
+
+    // LATENT-DROP GUARD, exactly as the July branch has: direct money naming an area this line's
+    // matrix does not carry must never vanish. It rejoins its own region's Direct row instead, which
+    // keeps the region subtotal and the grand total whole.
+    rpcByAreaProduct.forEach((direct, key) => {
+      if (consumed.has(key)) return;
+      const [areaCode, productCode] = key.split("|");
+      const index = colIndex.get(normalizeCode(productCode ?? ""));
+      if (index === undefined) return;
+      const regionCode = rpcRegionByArea.get(normalizeCode(areaCode ?? "")) ?? NATIONAL;
+      const target = cellsFor(regionCode)[index]!;
+      target.salesUnits += direct.salesUnits;
+      target.salesValue += direct.salesValue;
+    });
+
+    // Direct with no area of its own keeps the named "Direct orders (company)" row it has always had.
+    regions = regions.map((region) => {
       const direct = byRegion.get(region.regionCode);
       if (!direct) return region;
       const areas = [...region.areas, makeDirectArea(region.regionCode, direct)];
@@ -4347,7 +4431,7 @@ export async function loadMonthlyClosingParts(input?: {
     // RPC's second, identical scan. This read is load-bearing: a failure fails the whole closing (as
     // the matrix RPC did), which is correct — these are the sheet's headline numbers.
     rpcAll(supabase, "phx_closing_distributor_product", { p_line: selectedLine, p_period: selectedPeriod }, ["distributor_code", "region_code", "area_code", "product_code"]),
-    rpcAll(supabase, "phx_monthly_closing_direct", { p_line: selectedLine, p_period: selectedPeriod }, ["region_code", "product_code"]),
+    rpcAll(supabase, "phx_monthly_closing_direct", { p_line: selectedLine, p_period: selectedPeriod }, ["region_code", "area_code", "product_code"]),
     // A targets outage must not take the whole closing down with it — the sales numbers are the
     // headline and stand on their own. On failure the target columns degrade to "—".
     targetLineCode ? loadMonthlyTargets(selectedPeriod).catch(() => []) : Promise.resolve([]),
@@ -4383,7 +4467,13 @@ export async function loadMonthlyClosingParts(input?: {
   const cells: MonthlyClosingAggregateCell[] = matrixCellsFromDistributorRows(distributorRows);
   const officeData: MonthlyClosingAggregateCell[] = officeCellsFromDistributorRows(distributorRows);
 
+  // Belt and braces with the SQL floor: strip the area at the boundary for any month whose direct
+  // rows predate the Direct Orders module stamping one. Doing it HERE means every downstream
+  // consumer — the organogram allocator as well as the injector — sees exactly what it saw before,
+  // so no second copy of the rule can drift out of step with this one.
+  const directCarriesArea = directRowsCarryOwnArea(selectedPeriod);
   const directCells: MonthlyClosingDirectCell[] = (directData as Record<string, unknown>[]).map((row) => ({
+    areaCode: directCarriesArea ? String(row.area_code ?? "") : "",
     productCode: String(row.product_code ?? ""),
     regionCode: String(row.region_code ?? ""),
     salesUnits: Number(row.sales_units ?? 0),

@@ -228,6 +228,15 @@ export function allocateDirectToOperationalRegions(
 
   directCells.forEach((cell) => {
     const region = up(cell.regionCode);
+    // A row that names its own AREA needs no estimate at all: this whole function exists to guess
+    // which district manager earned money tagged only with a geographic region, and an exact area
+    // answers that outright — the area's own row decides which territory it lands in. Splitting it
+    // pro-rata would take known geography and blur it back into a guess, and would also strip the
+    // areaCode (`push` builds a fresh cell), silently returning the row to the anonymous Direct row.
+    if (up(cell.areaCode ?? "")) {
+      allocated.push(cell);
+      return;
+    }
     // Already an operational region for this line, or the National bucket — nothing to do.
     if (region === NATIONAL || map.regionCodes.has(region)) {
       allocated.push(cell);

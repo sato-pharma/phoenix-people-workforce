@@ -304,6 +304,7 @@ import { runMonthlyClosingExportScopeTests } from "./monthly-closing-export-scop
 import { runPortalClosingLineChoiceTests } from "./portal-closing-line-choice.test.ts";
 import { runClosingOrganogramRegionsTests } from "./closing-organogram-regions.test.ts";
 import { runDirectChannelTests } from "./direct-channel.test.ts";
+import { runDirectOrdersLandOnTheirOwnAreaTests } from "./direct-orders-land-on-their-own-area.test.ts";
 import { runSosResolveBrickPrecedenceTests } from "./sos-resolve-brick-precedence.test.ts";
 import { runSosBrickCoverageTests } from "./sos-brick-coverage.test.ts";
 import { runSosCrosswalkPaginationTests } from "./sos-crosswalk-pagination.test.ts";
@@ -1422,6 +1423,7 @@ await runTest("monthly closing export scope (filter reaches every sheet)", runMo
 await runTest("portal closing line choice (a requested line is honoured or refused, never swapped)", runPortalClosingLineChoiceTests);
 await runTest("closing organogram regions (areas follow the org chart, per line)", runClosingOrganogramRegionsTests);
 await runTest("direct channel", runDirectChannelTests);
+await runTest("direct orders land on their own area", runDirectOrdersLandOnTheirOwnAreaTests);
 await runTest("office pivot", runOfficePivotTests);
 await runTest("office allocation", runOfficeAllocationTests);
 await runTest("office golden rule LOCK (owner, 2026-08-11)", runOfficeGoldenRuleLockTests);

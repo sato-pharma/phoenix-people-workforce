@@ -28,6 +28,37 @@
 export const SYNTHETIC_DIRECT_AREA_CODE = "DIRECT";
 
 /**
+ * The first period whose direct rows carry an area the **Direct Orders module itself** wrote.
+ *
+ * A direct row having an `area_code` is NOT enough to trust it — three different things put one
+ * there, and only the third is the customer's own geography:
+ *
+ *   * **2026-02 … 2026-06** — nothing. 0 of 554 rows carry an area or a brick.
+ *   * **2026-01 (19 of 71 rows) and 2026-07 (35 of 51)** — areas of manual provenance, no bricks.
+ *     July's placement is the OWNER'S OWN finalized mapping, which lives in `july-2026-direct-orders.ts`
+ *     and must win: it covers Anti Infective and Pedia only, and July CNS is a locked closing.
+ *   * **2026-08 onward** — all 22 rows carry an area AND a brick, written by `direct_order_request`.
+ *     `au.f_monthly_attribution` reads that area and credits its rep, so the closing must agree.
+ *
+ * Reading an area off an older row would move published months: it would fold July CNS onto areas
+ * behind the owner's mapping, and it would shrink the `__DIRECT__` bucket that
+ * `applyJulyDirectAreasToBreakdown` reconciles against — failing that check and papering the
+ * published July sheet with a "they are not the same money" warning. Hence a floor, not a
+ * has-an-area test. The same floor is repeated in SQL so the two closing RPCs cannot hand an older
+ * month an area at all.
+ */
+export const DIRECT_AREA_STAMPED_FROM_PERIOD = "2026-08";
+
+/**
+ * True when this period's direct rows carry geography written by the Direct Orders module, and the
+ * closing should therefore place direct money on its own area. `YYYY-MM` sorts lexically, so a plain
+ * string compare is the whole rule.
+ */
+export function directRowsCarryOwnArea(period: string | null | undefined): boolean {
+  return String(period ?? "").trim() >= DIRECT_AREA_STAMPED_FROM_PERIOD;
+}
+
+/**
  * True only for the synthetic "Direct orders (company)" pseudo-area.
  *
  * Both conditions on purpose: the areaCode is what identifies the row, and `isDirect` keeps a real
