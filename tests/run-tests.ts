@@ -346,6 +346,7 @@ import { runOfficeAllocationTests } from "./office-allocation.test.ts";
 import { runOfficeGoldenRuleLockTests } from "./office-golden-rule-lock.test.ts";
 import { runClosingOfficeDifferentiationTests } from "./closing-office-differentiation.test.ts";
 import { runOfficeColumnIsCnsOnlyTests } from "./office-column-is-cns-only.test.ts";
+import { runSosEvenSplitEzTests } from "./sos-even-split-ez.test.ts";
 import { runClosingMatrixFoldTests } from "./closing-matrix-fold.test.ts";
 import { runMasterWorkbookKeysetTests } from "./master-workbook-keyset.test.ts";
 import { runSalesVsTargetCacheTests } from "./sales-vs-target-cache.test.ts";
@@ -1427,6 +1428,12 @@ await runTest(
   + "sheet appear on CNS and nowhere else; every other line's Closing Matrix is identical with and "
   + "without an Office grid, because the grid is a lens and never a source)",
   runOfficeColumnIsCnsOnlyTests,
+);
+await runTest(
+  "EZ even split (owner, 2026-08-26: EZ is credited evenly across the CNS reps active in Cairo and "
+  + "Giza that month; a settled month never re-splits when a rep later resigns, and every area gets "
+  + "its own landing brick so the locked Office rule cannot collapse them)",
+  runSosEvenSplitEzTests,
 );
 await runTest("closing matrix fold (matrix derived from distributor_product, matrix RPC dropped)", runClosingMatrixFoldTests);
 await runTest("master workbook keyset (single keyset pass, raw_row folded, no OFFSET rescan)", runMasterWorkbookKeysetTests);
