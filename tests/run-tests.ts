@@ -568,6 +568,7 @@ import { runEmailProductionReadinessTests } from "./email-production-readiness.t
 import { runEmailP0TestingTrapTests } from "./email-p0-testing-trap.test.ts";
 import { runEmailEngineHardeningTests } from "./email-engine-hardening.test.ts";
 import { runEmailSendHardeningTests } from "./email-send-hardening.test.ts";
+import { runAdminTelegramMirrorTests } from "./admin-telegram-mirror.test.ts";
 import { runEmailProviderFailoverTests } from "./email-provider-failover.test.ts";
 import { runBrevoWebhookEventsTests } from "./brevo-webhook-events.test.ts";
 import { runEmailActivityTests } from "./email-activity.test.ts";
@@ -1747,6 +1748,7 @@ await runTest("email production readiness", runEmailProductionReadinessTests);
 await runTest("email p0 testing trap", runEmailP0TestingTrapTests);
 await runTest("email engine hardening", runEmailEngineHardeningTests);
 await runTest("email send hardening", runEmailSendHardeningTests);
+await runTest("admin telegram mirror (every email fires a Telegram twin of the always-BCC; never throws)", runAdminTelegramMirrorTests);
 await runTest("email provider failover (Resend → Brevo, dedup-safe)", runEmailProviderFailoverTests);
 await runTest("brevo webhook events (auth + event mapping + dedup)", runBrevoWebhookEventsTests);
 await runTest("email activity (provider/recipient inference)", runEmailActivityTests);
