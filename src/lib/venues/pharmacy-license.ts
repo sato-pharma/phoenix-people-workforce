@@ -162,3 +162,23 @@ export function pharmacyLicensePrompt(input: {
     ? "No distributor code — check the trade name on the licence against the name on the shop sign."
     : "No distributor code in any distributor. Attach the pharmacy licence (رخصة الصيدلية) so the trade name can be checked against the shop sign.";
 }
+
+/**
+ * How a licence verdict is SAID, everywhere it is read back.
+ *
+ * Three-valued, and the third value is the reason this function exists. `null` means nobody was
+ * ever asked — no licence on file, or a venue last looked at before the check shipped — and it is
+ * printed out loud as "Not checked yet" rather than left blank, because a blank cell beside a green
+ * row reads as a pass. Anything that is not an explicit `false` is NOT a finding, and anything that
+ * is not an explicit `true` is NOT a clearance.
+ *
+ * Shared by the approver's desk (where the verdict is recorded, and which disappears once the
+ * request is decided) and the Customer Database register (where it has to still be readable a year
+ * later). Those two must not drift: the person reading the register today is often the person who
+ * recorded the verdict yesterday, and the same fact reworded reads as a different fact.
+ */
+export function pharmacyLicenseVerdictLabel(matchesSign: boolean | null | undefined): string {
+  if (matchesSign === true) return "Confirmed to match";
+  if (matchesSign === false) return "Does NOT match";
+  return "Not checked yet";
+}
