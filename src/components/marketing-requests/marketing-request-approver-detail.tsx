@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { AlertTriangle, Camera, MapPin, Phone, Store } from "lucide-react";
 
 import { LoadingSpinner } from "@/components/ui/loading-state";
+import { PharmacyLicenseEvidence } from "@/components/venues/pharmacy-license-evidence";
 import type { MarketingApproverRequestDetail } from "@/lib/marketing-requests/approver-detail";
 import { PHOENIX_BUSINESS_TIME_ZONE } from "@/lib/i18n/format";
 import { ZoomablePhoto } from "@/components/ui/zoomable-photo";
@@ -302,6 +303,21 @@ export function MarketingRequestApproverDetail({ requestId }: { requestId: strin
                     src={pharmacy.evidencePhotoUrl}
                   />
                 ) : null}
+                {/* The trade licence, when one was attached. Deliberately directly under the shop
+                    front: the whole point of holding both is to read the name on the sign in the
+                    photo and the name on the licence without leaving the row. */}
+                <PharmacyLicenseEvidence
+                  className="h-36"
+                  contentType={pharmacy.licenseContentType}
+                  label={pharmacy.pharmacyName}
+                  url={pharmacy.licenseUrl}
+                />
+                {/* No "and no licence either" warning is drawn here on purpose. It would have to be
+                    read off `distributorPharmacyCode`, which defaults to "-" for a code that exists
+                    but could not be RESOLVED (see `referenceLookup` in request-loaders.ts) — so the
+                    warning would fire on a lookup failure and tell the approver a pharmacy has no
+                    distributor account when it has one. The prompt is raised where the fact is
+                    known for certain: on the rep's form, and on the validation desk. */}
               </li>
             ))}
           </ul>

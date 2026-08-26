@@ -10,6 +10,7 @@ import type {
 } from "@/lib/marketing-requests/service";
 import { useDialogA11y } from "@/components/ui/use-dialog-a11y";
 import { ZoomablePhoto } from "@/components/ui/zoomable-photo";
+import { PharmacyLicenseEvidence } from "@/components/venues/pharmacy-license-evidence";
 
 /**
  * One labelled field. An absent value renders "Not captured" rather than an empty cell — a blank
@@ -330,6 +331,14 @@ export function MarketingRequestDecisionConfirmation({
                       src={pharmacy.evidencePhotoUrl}
                     />
                   ) : null}
+                  {/* And the trade licence, when one was attached — the same two documents the
+                      validation desk compares, in front of the person about to decide. */}
+                  <PharmacyLicenseEvidence
+                    className="h-40"
+                    contentType={pharmacy.licenseContentType}
+                    label={pharmacy.pharmacyName}
+                    url={pharmacy.licenseUrl}
+                  />
                   {pharmacy.notes ? (
                     <p className="mt-1 text-[11px] font-medium text-slate-600">{pharmacy.notes}</p>
                   ) : null}

@@ -13,7 +13,11 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-import { loadMarketingEvidencePhotosByEntityIds } from "@/lib/marketing-requests/evidence-photo-storage";
+import {
+  loadMarketingEvidencePhotosByEntityIds,
+  loadMarketingPharmacyLicensesByPharmacyIds,
+  type MarketingPharmacyLicenseFile,
+} from "@/lib/marketing-requests/evidence-photo-storage";
 import {
   describeOverlap,
   findRequestOverlaps,
@@ -34,6 +38,17 @@ export type MarketingDecisionPharmacy = {
    * not surfacing it would mean storing evidence nobody can ever look at.
    */
   evidencePhotoUrl: string | null;
+  /**
+   * The pharmacy trade licence (رخصة الصيدلية), when one was attached at validation.
+   *
+   * A DIFFERENT KIND OF PROOF from `evidencePhotoUrl`, and that is the whole point of showing both:
+   * the shop-front photo says WHERE the venue is, the licence says WHO it is. An approver comparing
+   * the trade name on the licence against the name on the sign in the photo is doing the identity
+   * check that a distributor code would otherwise have done for free. `contentType` travels with it
+   * because a licence is routinely a PDF, which must be offered as a link rather than an `<img>`.
+   */
+  licenseContentType: string | null;
+  licenseUrl: string | null;
   notes: string | null;
   /** The link row's own id, so a caller can join back to per-pharmacy detail. */
   pharmacyId: string | null;
@@ -136,11 +151,19 @@ export async function loadMarketingDecisionPharmacies(
   // One index read + one batch signing call for every target pharmacy, rather than a pair per row.
   // Same never-break-the-screen rule as everything else here: a failure yields an empty map, and
   // each pharmacy then renders as having no retained image.
-  const evidenceByPharmacyId = await loadMarketingEvidencePhotosByEntityIds({
-    entityIds: pharmacyIds,
-    entityType: "pharmacy",
-    supabase,
-  }).catch(() => new Map<string, { capturedAt: string | null; signedUrl: string }>());
+  const [evidenceByPharmacyId, licenseByPharmacyId] = await Promise.all([
+    loadMarketingEvidencePhotosByEntityIds({
+      entityIds: pharmacyIds,
+      entityType: "pharmacy",
+      supabase,
+    }).catch(() => new Map<string, { capturedAt: string | null; signedUrl: string }>()),
+    // Same posture again: a licence that will not resolve renders as "none attached" rather than
+    // taking the screen down. Both reads are independent, so they go out together.
+    loadMarketingPharmacyLicensesByPharmacyIds({
+      pharmacyIds,
+      supabase,
+    }).catch(() => new Map<string, MarketingPharmacyLicenseFile>()),
+  ]);
 
   return rows.map((row) => {
     const pharmacy = row.pharmacy_id ? pharmacyById.get(String(row.pharmacy_id)) : undefined;
@@ -154,6 +177,12 @@ export async function loadMarketingDecisionPharmacies(
       distributorPharmacyCode: cleanText(code?.distributor_pharmacy_code) ?? "-",
       evidencePhotoUrl: row.pharmacy_id
         ? evidenceByPharmacyId.get(String(row.pharmacy_id))?.signedUrl ?? null
+        : null,
+      licenseContentType: row.pharmacy_id
+        ? licenseByPharmacyId.get(String(row.pharmacy_id))?.contentType ?? null
+        : null,
+      licenseUrl: row.pharmacy_id
+        ? licenseByPharmacyId.get(String(row.pharmacy_id))?.signedUrl ?? null
         : null,
       notes: cleanText(row.notes),
       pharmacyCode: cleanText(pharmacy?.pharmacy_code) ?? "-",

@@ -7,6 +7,7 @@ import { PharmacyComboBox, type PharmacySearchHit } from "@/components/direct-or
 import { EvidenceReading } from "@/components/direct-orders/evidence-reading";
 import type { DirectOrderValidationRow } from "@/lib/direct-orders/pharmacy-validation";
 import { ZoomablePhoto } from "@/components/ui/zoomable-photo";
+import { PharmacyLicenseEvidence } from "@/components/venues/pharmacy-license-evidence";
 
 type Props = { rows: DirectOrderValidationRow[] };
 
@@ -35,6 +36,10 @@ export function ValidationDesk({ rows }: Props) {
   const [openId, setOpenId] = useState<string | null>(null);
   const [match, setMatch] = useState<Record<string, PharmacySearchHit | null>>({});
   const [notes, setNotes] = useState<Record<string, string>>({});
+  // Three-valued per row: undefined = the admin has not touched the control, so nothing is claimed
+  // about the licence. Never initialised to false — that would record "the names do not match" for
+  // every claim decided without looking, which is a statement nobody made.
+  const [licenseVerdict, setLicenseVerdict] = useState<Record<string, boolean | undefined>>({});
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [ok, setOk] = useState<string | null>(null);
@@ -57,6 +62,7 @@ export function ValidationDesk({ rows }: Props) {
           notes: notes[row.id]?.trim() || null,
           matchDistributorCode: decision === "match" ? picked?.distributorCode : null,
           matchCustomerCode: decision === "match" ? picked?.customerCode : null,
+          licenseNameMatchesSign: licenseVerdict[row.id] ?? null,
         }),
       });
       const data = (await res.json().catch(() => ({}))) as { success?: boolean; message?: string };
@@ -145,6 +151,51 @@ export function ValidationDesk({ rows }: Props) {
                     Open the pin on the map
                   </a>
                 ) : null}
+
+                {/* The pharmacy licence, directly under the storefront photo it is meant to be read
+                    against. The two sit together on purpose: the whole check is one name in two
+                    places, and putting the licence in a separate panel would mean scrolling between
+                    the two halves of a single comparison. */}
+                <div className="mt-2 border border-[#eef1f3] p-2">
+                  {row.licenseUrl ? (
+                    <>
+                      {/* Shared with the two approval screens, so the PDF-versus-image decision is
+                          made in exactly one place. A licence that renders as a broken image on one
+                          screen reads as "no licence" to whoever is looking at that screen. */}
+                      <PharmacyLicenseEvidence
+                        contentType={row.licenseContentType}
+                        label={row.claimedPharmacyName}
+                        url={row.licenseUrl}
+                      />
+                      {/* The other half of the comparison, spelled out beside the document rather
+                          than left for the reviewer to find further up the row. */}
+                      <p className="mt-1 text-[11px] font-semibold text-slate-600" dir="auto">
+                        Claimed name: {row.claimedPharmacyName}
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <p className="text-[11px] font-black uppercase tracking-wider text-slate-500">
+                        Pharmacy licence · رخصة الصيدلية
+                      </p>
+                      {/* What is missing depends on WHY. A pharmacy with a distributor code already
+                          has its identity vouched for by that distributor, so an absent licence is
+                          unremarkable. A codeless one has nothing else at all, and that is worth
+                          saying in colour. */}
+                      <p
+                        className={`mt-1 px-2 py-1.5 text-[12px] font-semibold ${
+                          row.hasDistributorCode
+                            ? "text-slate-500"
+                            : "border border-amber-200 bg-amber-50 text-amber-900"
+                        }`}
+                      >
+                        {row.hasDistributorCode
+                          ? "No licence attached. This pharmacy carries a distributor code, so its identity is already vouched for."
+                          : "No licence attached, and no distributor code in any distributor — nothing outside this claim confirms the pharmacy's trade name."}
+                      </p>
+                    </>
+                  )}
+                </div>
               </div>
 
               <div className="space-y-2 text-[12px]">
@@ -179,6 +230,52 @@ export function ValidationDesk({ rows }: Props) {
                         />
                       )}
                     </div>
+                    {/* Recorded, never required. Leaving it alone stores null — "nobody was asked"
+                        — rather than a verdict, and no decision is blocked either way (the system
+                        flags, it never rejects). Only offered when there IS a licence to judge. */}
+                    {row.licenseUrl ? (
+                      <div className="border border-[#eef1f3] px-2 py-1.5">
+                        <p className="text-[11px] font-black uppercase tracking-wider text-slate-500">
+                          Does the licence trade name match the shop sign?
+                        </p>
+                        <div className="mt-1 flex flex-wrap gap-2">
+                          {([
+                            { label: "Yes, it matches", tone: "emerald", value: true },
+                            { label: "No, it differs", tone: "rose", value: false },
+                          ] as const).map((choice) => {
+                            const active = licenseVerdict[row.id] === choice.value;
+                            return (
+                              <button
+                                key={choice.label}
+                                type="button"
+                                onClick={() =>
+                                  setLicenseVerdict((p) => ({
+                                    ...p,
+                                    // Clicking the active choice clears it back to "not answered",
+                                    // so a mis-click is undoable without reloading the desk.
+                                    [row.id]: active ? undefined : choice.value,
+                                  }))
+                                }
+                                className={
+                                  active
+                                    ? `border px-3 py-1 text-[12px] font-black ${
+                                        choice.tone === "emerald"
+                                          ? "border-emerald-400 bg-emerald-50 text-emerald-800"
+                                          : "border-rose-400 bg-rose-50 text-rose-800"
+                                      }`
+                                    : "border border-slate-300 px-3 py-1 text-[12px] font-bold text-slate-600 hover:bg-slate-50"
+                                }
+                              >
+                                {choice.label}
+                              </button>
+                            );
+                          })}
+                          <span className="self-center text-[11px] font-medium text-slate-400">
+                            {licenseVerdict[row.id] === undefined ? "Not answered — optional" : "Recorded with your decision"}
+                          </span>
+                        </div>
+                      </div>
+                    ) : null}
                     <textarea
                       className="w-full border border-slate-300 px-3 py-2 text-sm focus:border-orange-500 focus:outline-none"
                       rows={2}

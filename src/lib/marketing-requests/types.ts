@@ -590,6 +590,17 @@ export type MarketingValidationExistingPharmacyInput = {
   extractedAreaName?: string | null;
   extractedGovernorateName?: string | null;
   regionName?: string | null;
+  /**
+   * The pharmacy trade licence, on the reuse path too — see
+   * `MarketingValidationPharmacyInput.licenseFileDataUrl`.
+   *
+   * Here for exactly the reason the evidence fields above are: a venue captured before this existed
+   * has no licence, and if only the INSERT could write one, a codeless shop already on record could
+   * never acquire the one document that would settle its identity. Optional and additive: supplying
+   * it attaches a licence, omitting it changes nothing.
+   */
+  licenseFileDataUrl?: string | null;
+  licenseFileName?: string | null;
 };
 
 /** Either half of the pharmacy tabs: capture a new shop, or point at one already validated. */
@@ -624,6 +635,18 @@ export type MarketingValidationPharmacyInput = {
   }>;
   /** Defaults to `pharmacy` when absent, so an offline replay of an older draft still means what it did. */
   venueType?: VenueType;
+  /**
+   * The pharmacy trade licence (رخصة الصيدلية), as `data:image/jpeg|image/png|application/pdf;base64,…`.
+   *
+   * OPTIONAL ALWAYS, and unlike `evidencePhotoDataUrl` it may be a PDF and may come from a file
+   * picker: it is a document, not a claim about a place. It exists for the venue that has no
+   * distributor code in any distributor — nothing else then ties the name on the record to a real
+   * business, and the licence's trade name can be read against the shop sign in the storefront
+   * photo the same submission already carries. Owner's instruction, 2026-08-25; the full reasoning
+   * is in `src/lib/venues/pharmacy-license.ts`.
+   */
+  licenseFileDataUrl?: string | null;
+  licenseFileName?: string | null;
 };
 
 export type MarketingValidationLegacyPharmacyInput = {

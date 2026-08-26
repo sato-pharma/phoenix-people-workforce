@@ -35,10 +35,37 @@ export function runDirectOrdersPharmacyValidationTests() {
     /\/\^data:\(image\\\/jpeg\);base64/,
     "EVIDENCE GATE GONE: the photo must be parsed as a live JPEG data URL — a gallery upload arrives as another MIME type and must fail",
   );
-  assert.ok(
-    !/type="file"|input type=.file./i.test(captureSource),
-    "the capture component must offer NO file picker — the server rejects non-live JPEGs, so an upload button would only teach reps to try",
-  );
+  // NO FILE PICKER ON THE STOREFRONT PHOTO. This used to be a flat "no `type=\"file\"` anywhere in
+  // the component" ban, which held for a year and then stopped being expressible: on 2026-08-25 the
+  // owner asked for the pharmacy trade licence (رخصة الصيدلية) to be attachable from the camera OR
+  // the file picker, and to accept a PDF, because that is the form the document actually arrives in.
+  // A licence asserts nothing about place or time, so a picker costs it nothing — the storefront
+  // photo asserts exactly that, so a picker would destroy it.
+  //
+  // Rather than weaken the rule to "some pickers are fine", every file input in the component is
+  // enumerated and each one must prove it belongs to the licence: it carries the licence accept
+  // list, and its onChange runs the licence reader. A picker wired to the storefront capture matches
+  // neither, so it fails here — which is the guarantee the old blanket ban was really making.
+  {
+    // `[^>]*` cannot bound one element here: an `onChange={(e) => …}` arrow contains a `>`.
+    // Each JSX input in this component closes on its own `/>` line, so match from `<input` to that.
+    const fileInputs = (captureSource.match(/<input\s[\s\S]*?\n\s*\/>/g) ?? []).filter((element) =>
+      /type="file"/.test(element),
+    );
+    assert.ok(fileInputs.length > 0, "the licence attachment offers a camera AND a file picker — both are file inputs");
+    for (const input of fileInputs) {
+      assert.match(
+        input,
+        /accept=\{PHARMACY_LICENSE_ACCEPT_ATTRIBUTE\}/,
+        "FILE PICKER ON THE EVIDENCE PATH: every file input here must be the pharmacy licence — the storefront photo must stay a live capture, because the server rejects a non-live JPEG and an upload button would only teach reps to try",
+      );
+      assert.match(
+        input,
+        /readLicenseFile\(/,
+        "and it must feed the licence reader, not the storefront capture",
+      );
+    }
+  }
   assert.match(
     captureSource,
     /if \(capture\.latitude == null\) \{/,
