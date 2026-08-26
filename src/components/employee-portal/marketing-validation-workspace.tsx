@@ -9,6 +9,7 @@ import {
   Clock,
   History,
   MapPin,
+  Paperclip,
   Plus,
   RefreshCcw,
   Save,
@@ -73,6 +74,13 @@ import {
   venueTypeLabel,
   type VenueType,
 } from "@/lib/venues/venue-type";
+import {
+  PHARMACY_LICENSE_ACCEPT_ATTRIBUTE,
+  PHARMACY_LICENSE_MAX_BYTES,
+  isPharmacyLicenseContentType,
+  pharmacyLicenseFillsTheIdentityGap,
+  pharmacyLicensePrompt,
+} from "@/lib/venues/pharmacy-license";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { ZoomablePhoto } from "@/components/ui/zoomable-photo";
 
@@ -284,6 +292,13 @@ type VendorCodeLine = {
  */
 type PharmacySource = "new" | "existing";
 
+type PharmacyLicenseAttachment = {
+  /** `data:image/jpeg|image/png|application/pdf;base64,…` — revalidated on the server. */
+  dataUrl: string;
+  fileName: string;
+  isPdf: boolean;
+};
+
 type PharmacyLine = {
   capture: CaptureState;
   /** Set only while `source` is "existing" — the pharmacy chosen from My Pharmacies. */
@@ -294,6 +309,20 @@ type PharmacyLine = {
   area: string;
   source: PharmacySource;
   vendorCodes: VendorCodeLine[];
+  /**
+   * The pharmacy trade licence (رخصة الصيدلية), when the rep attached one.
+   *
+   * Optional on every venue and highlighted on the one it exists for: a pharmacy with no
+   * distributor code in any distributor. Nothing else then ties the name on the record to a real
+   * business, and the licence's trade name is read against the name on the shop sign in the
+   * storefront photo this same submission carries. Owner's instruction, 2026-08-25.
+   *
+   * NOT part of the capture state above, deliberately. A capture claims "taken at this place, at
+   * this time"; a licence is a document that may arrive as a PDF or a scan, and folding it into
+   * `CaptureState` would let it count toward evidence completeness — which would mean a shop
+   * nobody visited could reach `system_validated` on a forwarded file.
+   */
+  license: PharmacyLicenseAttachment | null;
   /**
    * What kind of venue this is. A nursery has no distributor account, so it carries no vendor codes
    * at all — which is why the codes block below disappears when this is set. Before this existed
@@ -420,6 +449,7 @@ function newPharmacyLine(distributorId = ""): PharmacyLine {
     // deliberately switches to the pharmacies he already has.
     source: "new",
     vendorCodes: [newVendorCodeLine(distributorId)],
+    license: null,
     venueType: "pharmacy",
   };
 }
@@ -974,6 +1004,164 @@ function UntrackedCodeBadge() {
     <span className="inline-flex items-center rounded-sm border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-700">
       Sales not trackable
     </span>
+  );
+}
+
+/**
+ * The pharmacy trade licence (رخصة الصيدلية) attach control.
+ *
+ * DELIBERATELY NOT A `CapturePanel`, and the difference is what each one claims. A capture asserts
+ * "taken at this place, at this time", which is why it refuses a file picker and burns GPS into the
+ * pixels. A licence asserts only "this is the document" — it is routinely a PDF or a scan the
+ * pharmacist sends ahead — so it offers the camera AND the picker, and it feeds nothing into
+ * `evidence_status`. A licence that could raise a status would be a way to validate a shop nobody
+ * visited (owner's call, 2026-08-25).
+ *
+ * Offered on every venue that could have one; highlighted only where it is the proof genuinely
+ * missing — a pharmacy with no distributor code in any distributor. Never required: the system
+ * flags, it never rejects.
+ */
+function PharmacyLicensePanel({
+  license,
+  onChange,
+  distributorCodeCount,
+  venueType,
+}: {
+  license: PharmacyLicenseAttachment | null;
+  onChange: (next: PharmacyLicenseAttachment | null) => void;
+  distributorCodeCount: number;
+  venueType: VenueType;
+}) {
+  const cameraRef = useRef<HTMLInputElement | null>(null);
+  const fileRef = useRef<HTMLInputElement | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  // A nursery has no distributor account by its nature and no pharmacy trade licence to produce,
+  // so the control is not shown for one at all rather than being shown and never used.
+  if (!venueRequiresDistributorCode(venueType)) return null;
+
+  const fillsTheGap = pharmacyLicenseFillsTheIdentityGap({ distributorCodeCount, venueType });
+  const note = pharmacyLicensePrompt({
+    distributorCodeCount,
+    hasLicenseOnFile: Boolean(license),
+    venueType,
+  });
+
+  function readFile(file: File | null | undefined) {
+    setError(null);
+    if (!file) return;
+    if (!isPharmacyLicenseContentType(file.type)) {
+      setError("The pharmacy licence must be a JPEG, a PNG, or a PDF.");
+      return;
+    }
+    if (file.size > PHARMACY_LICENSE_MAX_BYTES) {
+      setError("The pharmacy licence file is too large. Attach a file under 5 MB.");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onerror = () => setError("That file could not be read. Try attaching it again.");
+    reader.onload = () => {
+      const dataUrl = typeof reader.result === "string" ? reader.result : "";
+      if (!dataUrl) {
+        setError("That file could not be read. Try attaching it again.");
+        return;
+      }
+      onChange({
+        dataUrl,
+        fileName: file.name || "pharmacy-licence",
+        isPdf: file.type === "application/pdf",
+      });
+    };
+    reader.readAsDataURL(file);
+  }
+
+  function clear() {
+    onChange(null);
+    setError(null);
+    // Reset both inputs so re-choosing the SAME file fires `change` again — without this, removing
+    // a licence and picking it straight back leaves the control silently dead.
+    if (cameraRef.current) cameraRef.current.value = "";
+    if (fileRef.current) fileRef.current.value = "";
+  }
+
+  return (
+    <div
+      className={
+        fillsTheGap && !license
+          ? "rounded-sm border border-amber-200 bg-amber-50/60 p-3"
+          : "rounded-sm border border-slate-200 bg-slate-50 p-3"
+      }
+    >
+      <p className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-500">
+        Pharmacy Licence · رخصة الصيدلية {fillsTheGap ? "" : "(optional)"}
+      </p>
+      <p className={`mt-1 text-[11px] font-semibold ${fillsTheGap ? "text-amber-800" : "text-slate-500"}`} dir="auto">
+        {note ??
+          "Attach it if you have it — the reviewer checks the trade name on the licence against the name on the shop sign."}
+      </p>
+      <input
+        accept={PHARMACY_LICENSE_ACCEPT_ATTRIBUTE}
+        capture="environment"
+        className="hidden"
+        onChange={(event) => readFile(event.target.files?.[0])}
+        ref={cameraRef}
+        type="file"
+      />
+      <input
+        accept={PHARMACY_LICENSE_ACCEPT_ATTRIBUTE}
+        className="hidden"
+        onChange={(event) => readFile(event.target.files?.[0])}
+        ref={fileRef}
+        type="file"
+      />
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        <Button
+          className="h-8 gap-1.5 rounded-sm border border-slate-200 bg-white px-3 text-[12px] font-bold text-slate-700 hover:bg-slate-50"
+          onClick={() => cameraRef.current?.click()}
+          type="button"
+        >
+          <Camera className="h-3.5 w-3.5" />
+          Photograph
+        </Button>
+        <Button
+          className="h-8 gap-1.5 rounded-sm border border-slate-200 bg-white px-3 text-[12px] font-bold text-slate-700 hover:bg-slate-50"
+          onClick={() => fileRef.current?.click()}
+          type="button"
+        >
+          <Paperclip className="h-3.5 w-3.5" />
+          Choose file
+        </Button>
+        <span className="text-[11px] font-medium text-slate-400 whitespace-nowrap">JPEG, PNG or PDF · up to 5 MB</span>
+      </div>
+      {license ? (
+        <div className="mt-2 rounded-sm border border-emerald-200 bg-emerald-50 px-3 py-2">
+          <div className="flex items-center justify-between gap-2">
+            <span className="min-w-0 truncate text-[12px] font-bold text-emerald-900" dir="auto">
+              {license.fileName}
+            </span>
+            <button
+              className="shrink-0 text-[11px] font-bold text-orange-600"
+              onClick={clear}
+              type="button"
+            >
+              Remove
+            </button>
+          </div>
+          {/* A PDF shows its name only — an inline preview needs a viewer, and the reviewer opens it
+              on the desk anyway. An image is shown, so a rep who photographed the wrong page finds
+              out here rather than after the record is written. */}
+          {license.isPdf ? null : (
+            <ZoomablePhoto
+              alt="Pharmacy licence"
+              caption="Pharmacy licence · رخصة الصيدلية"
+              className="mt-2 max-h-64 w-full object-contain"
+              src={license.dataUrl}
+            />
+          )}
+        </div>
+      ) : null}
+      {error ? <p className="mt-1.5 text-[11px] font-bold text-rose-600">{error}</p> : null}
+    </div>
   );
 }
 
@@ -2244,6 +2432,15 @@ export function MarketingValidationWorkspace() {
                   regionName: [pharmacy.area, pharmacy.governorate].filter(Boolean).join(", "),
                 }
                 : {}),
+              // OUTSIDE the capture spread, and after it so the spread stays adjacent to the id —
+              // `tests/marketing-complete-existing-venue.test.ts` pins that adjacency to prove a
+              // half-finished capture is never sent, and this feature has no business loosening it.
+              //
+              // Sent whether or not a capture came with it. A licence is not a capture: it can be
+              // supplied for a shop whose storefront photo is already complete, and gating it on
+              // the capture would drop it silently for exactly that venue.
+              licenseFileDataUrl: pharmacy.license?.dataUrl ?? null,
+              licenseFileName: pharmacy.license?.fileName ?? null,
             }
             : {
               ...payloadCapture(pharmacy.capture),
@@ -2259,6 +2456,8 @@ export function MarketingValidationWorkspace() {
                   distributorPharmacyCode: line.distributorCode,
                 }))
                 : [],
+              licenseFileDataUrl: pharmacy.license?.dataUrl ?? null,
+              licenseFileName: pharmacy.license?.fileName ?? null,
               venueType: pharmacy.venueType,
             },
         ),
@@ -2894,6 +3093,27 @@ export function MarketingValidationWorkspace() {
                                 />
                               </div>
                             ) : null}
+                            {/* Also offered on the reuse path. A codeless shop already on record
+                                is exactly the venue with no identity proof at all, and until this
+                                existed nobody could supply one after the day it was created. The
+                                code count and venue type come from the STORED record, not from
+                                anything typed here — the reuse path never re-describes a shop. */}
+                            {(() => {
+                              const stored = workspace.reusablePharmacies.find(
+                                (option) => option.id === pharmacy.existingPharmacyId,
+                              );
+                              if (!stored) return null;
+                              return (
+                                <PharmacyLicensePanel
+                                  distributorCodeCount={stored.vendorCodes.length}
+                                  license={pharmacy.license}
+                                  onChange={(license) =>
+                                    updatePharmacy(customer.key, pharmacy.key, { license })
+                                  }
+                                  venueType={stored.venueType}
+                                />
+                              );
+                            })()}
                           </div>
                           ) : (
                           <div className="grid gap-3 lg:grid-cols-6">
@@ -3078,6 +3298,20 @@ export function MarketingValidationWorkspace() {
                                   </div>
                                   );
                                 })}
+                                {/* The licence sits directly under the codes it stands in for.
+                                    `vendorCodes` here are the rows ON SCREEN, so a rep who has not
+                                    typed a code yet sees the prompt — which is the moment it is
+                                    useful, not after the form is complete. */}
+                                <PharmacyLicensePanel
+                                  distributorCodeCount={
+                                    pharmacy.vendorCodes.filter((line) => line.distributorCode.trim()).length
+                                  }
+                                  license={pharmacy.license}
+                                  onChange={(license) =>
+                                    updatePharmacy(customer.key, pharmacy.key, { license })
+                                  }
+                                  venueType={pharmacy.venueType}
+                                />
                               </div>
                             </div>
                           </div>

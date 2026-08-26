@@ -532,6 +532,10 @@ function decisionPharmacy(overrides: Partial<MarketingDecisionPharmacy> = {}): M
     distributorName: "Ibnsina",
     distributorPharmacyCode: "12345",
     evidencePhotoUrl: null,
+    // The pharmacy trade licence, added 2026-08-25. Null here because these cases are about the
+    // reference-status verdict and nothing else — a licence never enters that decision.
+    licenseContentType: null,
+    licenseUrl: null,
     notes: null,
     pharmacyCode: "PH-1",
     pharmacyId: "p-1",

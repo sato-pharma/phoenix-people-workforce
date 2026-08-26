@@ -28,6 +28,7 @@ import {
   loadMarketingEvidencePhoto,
   parseMarketingEvidencePhotoDataUrl,
   storeMarketingEvidencePhoto,
+  storeMarketingPharmacyLicense,
 } from "@/lib/marketing-requests/evidence-photo-storage";
 import { marketingRequestNotificationUrl } from "@/lib/marketing-requests/notification-link";
 // Moved out of this file (it was 6,000 lines) so the Case File can share the exact same reads
@@ -110,6 +111,7 @@ import {
   venueTypeLabel,
   type VenueType,
 } from "@/lib/venues/venue-type";
+import { parsePharmacyLicenseDataUrl } from "@/lib/venues/pharmacy-license";
 import { getUserProductScopeOverride } from "@/lib/auth/scope-visibility";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { resolveMarketingPharmacyCodes } from "@/lib/marketing-requests/master-resolution";
@@ -847,6 +849,17 @@ type NormalizedMarketingValidationPharmacy = {
   evidencePhotoDataUrl: string | null;
   evidencePhotoName: string | null;
   evidenceStatus: MarketingEvidenceStatus;
+  /**
+   * Validated pharmacy-licence data URL, carried to the post-insert storage write on BOTH the new
+   * and the reuse paths. Never persisted as text.
+   *
+   * Deliberately absent from `evidenceStatusFromInput`: a licence proves IDENTITY, not presence, so
+   * attaching one must not move a venue's `evidence_status` toward `complete` and must not make a
+   * customer `system_validated`. Those still turn on the GPS-stamped shop-front capture alone —
+   * a licence that could raise a status would be a way to validate a shop nobody visited.
+   */
+  licenseFileDataUrl: string | null;
+  licenseFileName: string | null;
   extractedAreaName: string | null;
   extractedGovernorateName: string | null;
   normalizedName: string;
@@ -1647,6 +1660,30 @@ function normalizeEvidencePhotoDataUrl(value: unknown, label: string, photoName:
   return raw;
 }
 
+/**
+ * Validate a pharmacy licence at normalize time, so a file that cannot be stored is refused before
+ * anything is written — the same ordering, and the same reason, as `normalizeEvidencePhotoDataUrl`.
+ *
+ * Unlike the photo, an absent licence is never suspicious: it is optional on every venue, so a name
+ * without a file simply drops both. There is nothing here to mirror the "a photo name with no
+ * photo" refusal, because a licence name has never been persisted as a claim on its own.
+ */
+function normalizePharmacyLicenseDataUrl(value: unknown, label: string): string | null {
+  const raw = typeof value === "string" ? value.trim() : "";
+  if (!raw) return null;
+  try {
+    // Parsed, not pattern-matched, so an oversized file or a type nobody can open fails here rather
+    // than mid-submission with a rollback already in flight.
+    parsePharmacyLicenseDataUrl(raw);
+  } catch (error) {
+    throw validationError(
+      `${label}: ${error instanceof Error ? error.message : "The pharmacy licence file is not valid."}`,
+      "pharmacy_license_invalid",
+    );
+  }
+  return raw;
+}
+
 function systemStatusFromEvidence(status: MarketingEvidenceStatus): MarketingValidationStatus {
   return status === "complete" ? "system_validated" : "pending";
 }
@@ -1928,6 +1965,8 @@ function normalizeReusedValidationPharmacy(
     evidencePhotoDataUrl: normalizeEvidencePhotoDataUrl(inputEntry.evidencePhotoDataUrl, label, photoName),
     evidencePhotoName: photoName,
     extractedAreaName: cleanText(inputEntry.extractedAreaName),
+    licenseFileDataUrl: normalizePharmacyLicenseDataUrl(inputEntry.licenseFileDataUrl, label),
+    licenseFileName: cleanText(inputEntry.licenseFileName),
     extractedGovernorateName: cleanText(inputEntry.extractedGovernorateName),
     regionName: cleanText(inputEntry.regionName),
   };
@@ -1995,6 +2034,8 @@ function normalizeValidationPharmacy(
     evidencePhotoName: pharmacyPhotoName,
     extractedAreaName: cleanText(inputPharmacy.extractedAreaName),
     extractedGovernorateName: cleanText(inputPharmacy.extractedGovernorateName),
+    licenseFileDataUrl: normalizePharmacyLicenseDataUrl(inputPharmacy.licenseFileDataUrl, label),
+    licenseFileName: cleanText(inputPharmacy.licenseFileName),
     normalizedName: normalizeLookupKey(displayName),
     regionName: cleanText(inputPharmacy.regionName),
   };
@@ -6214,6 +6255,22 @@ export async function createMarketingValidationRecord(
           }
           return completedRow;
         })();
+
+        // The pharmacy licence, on the reuse path. OUTSIDE the evidence branch above on purpose:
+        // that branch runs only when a NEW capture completes a venue that was short of proof, and
+        // a licence is not a capture. A rep attaching the licence for a codeless shop that already
+        // has a perfectly good storefront photo would otherwise have it silently dropped — which is
+        // exactly the class of defect (`evidence_status` complete, so skip the write) that left
+        // three production venues uncompletable until 2026-08-23.
+        if (normalizedPharmacy.licenseFileDataUrl) {
+          evidencePhotoPaths.push(await storeMarketingPharmacyLicense({
+            fileDataUrl: normalizedPharmacy.licenseFileDataUrl,
+            originalFileName: normalizedPharmacy.licenseFileName,
+            pharmacyId: reusedRow.id,
+            supabase,
+            uploadedByHrId: actorHrId,
+          }));
+        }
         const pharmacy = mapMarketingPharmacy(reusedRow);
         // NOT pushed onto `pharmacyIds`: it predates this submission and must survive a rollback.
 
@@ -6392,6 +6449,19 @@ export async function createMarketingValidationRecord(
             uploadedByHrId: actorHrId,
           },
           supabase,
+        }));
+      }
+
+      // The pharmacy licence (رخصة الصيدلية). Pushed onto the SAME rollback list as the photos —
+      // it lives in its own bucket but the same index table, and `deleteMarketingEvidencePhotos`
+      // sweeps both buckets, so it unwinds without knowing it is a different kind of file.
+      if (normalizedPharmacy.licenseFileDataUrl) {
+        evidencePhotoPaths.push(await storeMarketingPharmacyLicense({
+          fileDataUrl: normalizedPharmacy.licenseFileDataUrl,
+          originalFileName: normalizedPharmacy.licenseFileName,
+          pharmacyId: pharmacy.id,
+          supabase,
+          uploadedByHrId: actorHrId,
         }));
       }
 

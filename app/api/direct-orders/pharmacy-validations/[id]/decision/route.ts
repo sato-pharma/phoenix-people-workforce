@@ -30,6 +30,11 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       notes: body.notes ? String(body.notes) : null,
       matchDistributorCode: body.matchDistributorCode ? String(body.matchDistributorCode) : null,
       matchCustomerCode: body.matchCustomerCode ? String(body.matchCustomerCode) : null,
+      // Three-valued, so an absent field stays "nobody was asked" rather than collapsing to false.
+      // `Boolean(body.x)` would turn every decision made without touching the control into a
+      // recorded "the licence did not match", which is a claim nobody made.
+      licenseNameMatchesSign:
+        typeof body.licenseNameMatchesSign === "boolean" ? body.licenseNameMatchesSign : null,
     });
     return NextResponse.json({ success: true });
   } catch (error) {

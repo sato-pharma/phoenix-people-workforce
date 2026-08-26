@@ -47,6 +47,7 @@ export async function POST(request: Request) {
       claimedDoctorName: body.claimedDoctorName ? String(body.claimedDoctorName) : null,
       claimedReason: String(body.claimedReason ?? ""),
       photoDataUrl: String(body.photoDataUrl ?? ""),
+      licenseDataUrl: body.licenseDataUrl ? String(body.licenseDataUrl) : null,
       capturedLatitude: body.capturedLatitude == null ? null : Number(body.capturedLatitude),
       capturedLongitude: body.capturedLongitude == null ? null : Number(body.capturedLongitude),
       capturedAccuracyMeters: body.capturedAccuracyMeters == null ? null : Number(body.capturedAccuracyMeters),

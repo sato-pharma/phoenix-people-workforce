@@ -1,6 +1,11 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import {
+  parsePharmacyLicenseDataUrl,
+  PHARMACY_LICENSE_BUCKET,
+  type PharmacyLicenseContentType,
+} from "@/lib/venues/pharmacy-license";
 
 /**
  * Where marketing customer/pharmacy live-capture photos are actually retained.
@@ -141,12 +146,182 @@ export async function storeMarketingEvidencePhoto(params: {
   return path;
 }
 
-/** Undo a partial multi-customer save. Best-effort: a failed cleanup must not mask the real error. */
+/**
+ * The `evidence_type` a pharmacy trade licence is filed under.
+ *
+ * A constant rather than a literal at each call site because THREE places must agree on it — the
+ * writer, the reader, and the migration's CHECK constraint — and a typo in any one of them stores a
+ * licence nothing can find again. Deliberately NOT `'other'`: every existing reader filters on
+ * `location_photo`, so a licence hiding under `other` would be invisible by luck rather than by
+ * rule, and the next reader that forgets the filter would render a licence where a shop front
+ * belongs.
+ */
+export const MARKETING_PHARMACY_LICENSE_EVIDENCE_TYPE = "pharmacy_license";
+
+export type MarketingPharmacyLicenseFile = {
+  contentType: PharmacyLicenseContentType;
+  signedUrl: string;
+  uploadedAt: string | null;
+};
+
+/**
+ * Store a pharmacy trade licence for one venue, and index it beside the shop-front photos.
+ *
+ * Reuses the index table and the signed-URL read path exactly as they stand — the only thing that
+ * distinguishes a licence from a location photo is `evidence_type` and the file extension.
+ * `upsert: true` for the same reason the photo path uses it: re-attaching a licence to the same
+ * venue should REPLACE it, not fail.
+ *
+ * THE BUCKET IS THE ONE THING NOT REUSED. `marketing-evidence` is provisioned JPEG-only with a 2MB
+ * ceiling, and that allow-list is a second wall behind the live-capture parser — a gallery upload
+ * cannot reach storage even if a caller got past the service. Widening it to admit a PDF would take
+ * that wall down for every shop-front photo too, so the licence goes to `pharmacy-licenses`
+ * instead. `storage_bucket` is a per-row column, so the index table carries the difference itself
+ * and every existing photo row is untouched.
+ *
+ * Note the path deliberately carries the extension of the file that was actually sent. A licence is
+ * routinely a PDF, and serving one from a `.jpg` path makes browsers download it instead of opening
+ * it, which is the difference between an approver reading the document and an approver giving up.
+ */
+export async function storeMarketingPharmacyLicense(params: {
+  fileDataUrl: string;
+  originalFileName: string | null;
+  pharmacyId: string;
+  supabase?: SupabaseClient;
+  uploadedByHrId: string | null;
+}): Promise<string> {
+  const parsed = parsePharmacyLicenseDataUrl(params.fileDataUrl);
+  const entityId = String(params.pharmacyId ?? "")
+    .trim()
+    .replace(/[^a-zA-Z0-9._-]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  if (!entityId) {
+    throw new Error("Cannot store a pharmacy licence without the venue it belongs to.");
+  }
+
+  const path = `pharmacy/${entityId}-license.${parsed.extension}`;
+  const supabase = params.supabase ?? getSupabaseAdmin();
+
+  const upload = await supabase.storage.from(PHARMACY_LICENSE_BUCKET).upload(path, parsed.bytes, {
+    cacheControl: "31536000",
+    contentType: parsed.contentType,
+    upsert: true,
+  });
+  if (upload.error) {
+    throw new Error(`Unable to store the pharmacy licence: ${upload.error.message}`);
+  }
+
+  // Every capture column stays null on purpose. A licence is a DOCUMENT, not a claim about where
+  // anyone stood — writing this submission's GPS onto it would manufacture a provenance the file
+  // does not have, and a later reader would have no way to tell it from a real capture.
+  const indexed = await supabase.from("marketing_evidence_files").insert({
+    content_type: parsed.contentType,
+    entity_id: params.pharmacyId,
+    entity_type: "pharmacy" satisfies MarketingEvidenceEntityType,
+    evidence_type: MARKETING_PHARMACY_LICENSE_EVIDENCE_TYPE,
+    has_timestamp: false,
+    original_file_name: params.originalFileName,
+    storage_bucket: PHARMACY_LICENSE_BUCKET,
+    storage_path: path,
+    uploaded_by_hr_id: params.uploadedByHrId,
+  });
+
+  if (indexed.error) {
+    await supabase.storage.from(PHARMACY_LICENSE_BUCKET).remove([path]);
+    throw new Error(`Unable to record the pharmacy licence: ${indexed.error.message}`);
+  }
+
+  return path;
+}
+
+/**
+ * Signed licence URLs for MANY venues at once, keyed by pharmacy id.
+ *
+ * Same shape and same failure posture as `loadMarketingEvidencePhotosByEntityIds`: one index read,
+ * one batch signing call, and an empty map on any failure — an approval screen must open whether or
+ * not the licences resolve.
+ */
+export async function loadMarketingPharmacyLicensesByPharmacyIds(params: {
+  pharmacyIds: string[];
+  supabase?: SupabaseClient;
+}): Promise<Map<string, MarketingPharmacyLicenseFile>> {
+  const found = new Map<string, MarketingPharmacyLicenseFile>();
+  const pharmacyIds = [...new Set(params.pharmacyIds.filter(Boolean))];
+  if (pharmacyIds.length === 0) return found;
+
+  const client = params.supabase ?? getSupabaseAdmin();
+  type Row = {
+    content_type?: string | null;
+    created_at?: string | null;
+    entity_id?: string | null;
+    storage_path?: string | null;
+  };
+  const newestByPharmacy = new Map<string, Row>();
+
+  // Chunked at 50. A PostgREST `.in()` carrying several hundred ids puts every one of them in the
+  // URL and comes back `{ data: [], error: null }` past some length — an empty set indistinguishable
+  // from "none of these venues has a licence", which would silently erase the evidence from a
+  // screen listing a large customer database.
+  for (let index = 0; index < pharmacyIds.length; index += 50) {
+    const { data, error } = await client
+      .from("marketing_evidence_files")
+      .select("entity_id, storage_path, content_type, created_at")
+      .eq("entity_type", "pharmacy")
+      .eq("evidence_type", MARKETING_PHARMACY_LICENSE_EVIDENCE_TYPE)
+      .in("entity_id", pharmacyIds.slice(index, index + 50))
+      .order("created_at", { ascending: false });
+    if (error || !data) return found;
+    // Newest-first, so the FIRST row seen per venue is the one to keep: re-attaching a licence
+    // writes a second index row rather than editing the first.
+    for (const row of data as Row[]) {
+      const entityId = row.entity_id ? String(row.entity_id) : "";
+      if (entityId && row.storage_path && !newestByPharmacy.has(entityId)) {
+        newestByPharmacy.set(entityId, row);
+      }
+    }
+  }
+  if (newestByPharmacy.size === 0) return found;
+
+  const entries = [...newestByPharmacy.entries()];
+  const signed = await client.storage
+    .from(PHARMACY_LICENSE_BUCKET)
+    .createSignedUrls(
+      entries.map(([, row]) => String(row.storage_path)),
+      MARKETING_EVIDENCE_SIGNED_URL_TTL_SECONDS,
+    );
+  if (signed.error || !signed.data) return found;
+
+  signed.data.forEach((result, index) => {
+    const entry = entries[index];
+    if (!entry || !result?.signedUrl || result.error) return;
+    found.set(entry[0], {
+      // Defaulted rather than left nullable: the column has never been null on a row this function
+      // wrote, and a caller deciding "render an image or offer a PDF link" needs an answer, not a
+      // third case. JPEG is the safe default — it renders, and a mislabelled PDF fails visibly.
+      contentType: (entry[1].content_type as PharmacyLicenseContentType | null) ?? "image/jpeg",
+      signedUrl: result.signedUrl,
+      uploadedAt: entry[1].created_at ?? null,
+    });
+  });
+
+  return found;
+}
+
+/**
+ * Undo a partial multi-customer save. Best-effort: a failed cleanup must not mask the real error.
+ *
+ * BOTH BUCKETS are swept, because one save can write a shop-front photo to `marketing-evidence` and
+ * a licence to `pharmacy-licenses`, and the caller collects the two into one list of paths. Asking
+ * each bucket to remove every path is not wasteful: a path that is not in a bucket is a no-op, and
+ * the alternative — threading a bucket alongside every path through the save — buys nothing but a
+ * second place to get it wrong. The index delete is keyed on `storage_path` and already covers both.
+ */
 export async function deleteMarketingEvidencePhotos(paths: string[], supabase?: SupabaseClient) {
   if (paths.length === 0) return;
 
   const client = supabase ?? getSupabaseAdmin();
   await client.storage.from(MARKETING_EVIDENCE_BUCKET).remove(paths).catch(() => undefined);
+  await client.storage.from(PHARMACY_LICENSE_BUCKET).remove(paths).catch(() => undefined);
   await client.from("marketing_evidence_files").delete().in("storage_path", paths);
 }
 
