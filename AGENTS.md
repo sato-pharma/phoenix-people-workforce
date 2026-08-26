@@ -143,6 +143,18 @@ file holding the full account, under
   and never get validated together. After merging, check the run on **`main`'s new head**
   (`gh run list --branch main --limit 5 --json headSha,name,status,conclusion`), not the branch's own
   check. `a-red-main-ships-and-looks-fine-build-ignores-type-errors`
+- **Runs NEVER CREATED (`check-runs: 0`, empty `gh run list --branch`) is an Actions OUTAGE, not
+  billing — billing creates the run and fails it in seconds; `startup_failure` is an outage
+  signature too.** Check `curl -s https://www.githubstatus.com/api/v2/components.json | grep -o
+  '"name":"Actions","status":"[a-z_]*"'` and `https://www.githubstatus.com/api/v2/incidents/unresolved.json`
+  BEFORE touching the spending limit. Events dropped during an outage are NEVER replayed — the PR
+  sits with no checks forever; fire a real `pull_request` event to recover it:
+  `gh pr close <n> && gh pr reopen <n>` (fires `reopened`, keeps the head SHA, no junk commit).
+  `gh workflow run ci.yml --ref <branch>` does NOT fix it: a `workflow_dispatch` run's check runs
+  land on the head SHA but never enter the PR's `statusCheckRollup`, so branch protection does not
+  count them. Verified 2026-08-26 — identical check-run names on two heads, only the
+  `pull_request`-sourced ones reached the rollup. (Cancelling such a dispatch run is harmless for
+  the same reason: its `cancelled` check runs are invisible to the rollup too.)
 
 **Migrations**
 
