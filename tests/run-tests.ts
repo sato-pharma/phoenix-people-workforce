@@ -321,6 +321,7 @@ import { runDistributorProfileStoreTests } from "./sales-distributor-profile-sto
 import { runWeeklyColumnProfileStoreTests } from "./weekly-column-profile-store.test.ts";
 import { runWeeklyDecumulationTests } from "./weekly-decumulation.test.ts";
 import { runWeeklyBatchScopeTests } from "./weekly-batch-scope.test.ts";
+import { runWeeklyBranchAreaSplitTests } from "./weekly-branch-area-split.test.ts";
 import { runWeeklyTrackedLinesScopeTests } from "./weekly-tracked-lines-scope.test.ts";
 import { runWeeklySummaryReportTests } from "./weekly-summary-report.test.ts";
 import { runWeeklyMonthTargetScopeTests } from "./weekly-month-target-scope.test.ts";
@@ -1471,6 +1472,7 @@ await runTest("weekly de-cumulation (cumulative → real per-week)", runWeeklyDe
 await runTest("weekly batch scope (cycle-month fetch narrowing)", runWeeklyBatchScopeTests);
 await runTest("weekly summarized report (manager attribution, YTD stock, low-sales)", runWeeklySummaryReportTests);
 await runTest("weekly tracked-line scope (golden rule: CNS / Anti Infective / Pedia)", runWeeklyTrackedLinesScopeTests);
+await runTest("weekly branch area split (owner rule: even across governorates then areas)", runWeeklyBranchAreaSplitTests);
 await runTest("weekly month vs target scoping (access bound, tab gate, region symmetry)", runWeeklyMonthTargetScopeTests);
 await runTest("sales raw template", runSalesRawTemplateTests);
 await runTest("sales mapping database paging", runSalesMappingDatabaseTests);
