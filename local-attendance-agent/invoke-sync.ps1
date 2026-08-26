@@ -39,7 +39,13 @@ function Get-AgentHealth {
   $result = @{ Body = $null; Responded = $false; Status = 0 }
   try {
     $req = [System.Net.HttpWebRequest]::Create("http://127.0.0.1:8787/health")
-    $req.Timeout = 5000
+    # 20s, not 5s. /health probes the fingerprint device and Phoenix before it answers, so it is
+    # slow BY DESIGN when the device is off the network - and a timeout here is not read as "slow",
+    # it is read as "nothing is listening", which makes this script launch a second agent on top of
+    # a healthy one. That is the duplicate that crashed at every boot. The probes now run
+    # concurrently agent-side (~0.3s when the device answers, ~3s when it does not); this budget is
+    # the second half of the same fix, so a loaded machine cannot turn slow into dead.
+    $req.Timeout = 20000
     $resp = $req.GetResponse()
   } catch [System.Net.WebException] {
     # A WebException with a Response means the agent ANSWERED (e.g. 503) — it is running.
