@@ -59,18 +59,24 @@ function shares(line: string, scope: WeeklyBranchScope): string[] {
     .map((s) => `${s.areaCode}:${(s.weight * 100).toFixed(2)}`);
 }
 
+/**
+ * Governorate tokens are the CANONICAL keys from governorates.ts ("assiut"), not the spelling that
+ * happens to appear in an area name ("Assuit 1"). The two differ, and the canonical one wins: the
+ * area -> governorate grouping is now an explicit code-keyed table, because deriving it from area
+ * names silently mis-reads "Gharbia 1 (Tanta)", "Alex East" and "Down town".
+ */
 const governorates = (...names: string[]): WeeklyBranchScope => ({ kind: "governorates", names });
 
 export async function runWeeklyBranchAreaSplitTests() {
   // 1) HEADLINE — the owner's worked example. "Minya and Assiut" is 50/50, then 25% per rep.
   {
     assert.deepEqual(
-      shares("Anti Infective", governorates("minia", "assuit")),
+      shares("Anti Infective", governorates("minya", "assiut")),
       ["UE1:25.00", "UE2:25.00", "UE3:25.00", "UE4:25.00"],
       "a Minya+Assiut branch splits 50% per governorate, then evenly inside each",
     );
     assert.deepEqual(
-      shares("Anti Infective", governorates("minia")),
+      shares("Anti Infective", governorates("minya")),
       ["UE1:50.00", "UE2:50.00"],
       "a Minya branch gives each of the two Minia reps half",
     );
@@ -79,7 +85,7 @@ export async function runWeeklyBranchAreaSplitTests() {
   // 2) Every split sums to exactly 1 — no value may be created or lost by mapping a branch.
   {
     const scopes: WeeklyBranchScope[] = [
-      governorates("minia"), governorates("minia", "assuit"), governorates("sohag", "qena"),
+      governorates("minya"), governorates("minya", "assiut"), governorates("sohag", "qena"),
       governorates("beni suef"), { kind: "region", regionCode: "UE" },
       { kind: "brick", brickId: "B214-M1", areaCode: "UE6" }, { kind: "area", areaCode: "UE2" },
     ];
@@ -144,7 +150,7 @@ export async function runWeeklyBranchAreaSplitTests() {
 
   // 7) Effective dating — a future seat and a retired seat are both invisible today.
   {
-    const minia = shares("Anti Infective", governorates("minia"));
+    const minia = shares("Anti Infective", governorates("minya"));
     assert.deepEqual(minia, ["UE1:50.00", "UE2:50.00"], "Minia 8 (retired) and Minia 9 (not started) must not dilute the split");
   }
 
@@ -160,14 +166,14 @@ export async function runWeeklyBranchAreaSplitTests() {
   // 9) Unknown scopes resolve to nothing rather than to a wrong manager.
   {
     assert.deepEqual(resolveBranchAreaShares(index, "Anti Infective", governorates("atlantis")), []);
-    assert.deepEqual(resolveBranchAreaShares(index, "Head Office", governorates("minia")), [],
+    assert.deepEqual(resolveBranchAreaShares(index, "Head Office", governorates("minya")), [],
       "Head Office is not on the organogram — it must not resolve to a sales area");
     assert.deepEqual(resolveBranchAreaShares(index, "Anti Infective", null), []);
   }
 
   // 10) The calculation the mapping sheet prints — the owner asked to SEE the arithmetic.
   {
-    const text = describeBranchAreaShares(index, resolveBranchAreaShares(index, "Anti Infective", governorates("minia")), 1155836);
+    const text = describeBranchAreaShares(index, resolveBranchAreaShares(index, "Anti Infective", governorates("minya")), 1155836);
     assert.ok(text.includes("UE1 Minia 1 50%"), `share label names the area, got: ${text}`);
     assert.ok(text.includes("577,918"), `share label shows the EGP, got: ${text}`);
   }

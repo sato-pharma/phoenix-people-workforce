@@ -35,6 +35,7 @@
 // including one parked in Others — that is a real destination and the organogram says so.
 
 import { resolveTargetLineCode } from "@/lib/sales/monthly-targets";
+import { AREAS_EXCLUDED_FROM_GOVERNORATES, GOVERNORATES_BY_AREA } from "@/lib/sales/weekly/governorates";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 /** What a branch's name resolves to. Stored per branch; interpreted per line at read time. */
@@ -46,7 +47,13 @@ export type WeeklyBranchScope =
   /** The name lists governorates. Even across them, then even inside each. */
   | { kind: "governorates"; names: string[] }
   /** The name is a whole region ("Upper Egypt"). Even across that line's areas in it. */
-  | { kind: "region"; regionCode: string };
+  | { kind: "region"; regionCode: string }
+  /**
+   * The name lists things of DIFFERENT kinds. Even across the parts, then each part splits by its
+   * own rule — which is what "الدقهلية2 ودمياط" needs: Dakahlia **2** is one area, Damietta is a
+   * governorate, and they are still 50/50 with each other.
+   */
+  | { kind: "mixed"; parts: WeeklyBranchScope[] };
 
 export type WeeklyAreaShare = {
   areaCode: string;
@@ -68,9 +75,11 @@ const splitKey = (line: string, token: string) => `${line}||${token}`;
 /**
  * "Minia 1" -> "minia", "Sohag1" -> "sohag", "Qena 2" -> "qena", "Beni Suef" -> "beni suef".
  *
- * The governorate is the area name with its trailing rep number removed. Phoenix names areas that
- * way throughout, which is why this needs no lookup table — and why a table would go stale the
- * first time an area is renamed or a third rep is added to a governorate.
+ * The FALLBACK only. Stripping a trailing rep number is right across Upper Egypt and wrong almost
+ * everywhere else — it reads "Gharbia 1 (Tanta)" as its own governorate (the number is not at the
+ * end), and "Alex East", "Down town" and "Giza - Giza Centers" as three more. Those are handled by
+ * the explicit code-keyed table in governorates.ts; this remains so that a NEW area following the
+ * usual convention ("Minia 3") lands correctly with no edit to that table.
  */
 export function governorateOfAreaName(areaName: string | null | undefined): string {
   return String(areaName ?? "")
@@ -78,6 +87,16 @@ export function governorateOfAreaName(areaName: string | null | undefined): stri
     .replace(/[\s\-_]*\d+$/, "")
     .trim()
     .toLowerCase();
+}
+
+/** The governorates an area covers: the explicit table first, the name heuristic only if absent. */
+export function governoratesOfArea(areaCode: string, areaName: string | null | undefined): string[] {
+  const code = String(areaCode ?? "").trim().toUpperCase();
+  if (AREAS_EXCLUDED_FROM_GOVERNORATES.has(code)) return [];
+  const mapped = GOVERNORATES_BY_AREA[code];
+  if (mapped && mapped.length > 0) return [...mapped];
+  const guessed = governorateOfAreaName(areaName);
+  return guessed ? [guessed] : [];
 }
 
 export type WeeklyAreaSplitMapRow = {
@@ -122,8 +141,10 @@ export function buildWeeklyAreaSplitIndex(
     if (!line || !area) continue;
 
     if (region) push(areasByLineRegion, splitKey(line, region), area);
-    const governorate = governorateOfAreaName(areaNames.get(area));
-    if (governorate) push(areasByLineGovernorate, splitKey(line, governorate), area);
+    // An area can serve two governorates (D26 "Port said - Domiat"), so this is a loop, not a value.
+    for (const governorate of governoratesOfArea(area, areaNames.get(area))) {
+      push(areasByLineGovernorate, splitKey(line, governorate), area);
+    }
   }
 
   // Deterministic order so a split's shares — and the sheet that prints them — never reshuffle.
@@ -198,6 +219,22 @@ export function resolveBranchAreaShares(
     const areas = areasForRegionScope(index, line, scope.regionCode);
     if (areas.length === 0) return [];
     return areas.map((areaCode) => ({ areaCode, weight: 1 / areas.length }));
+  }
+
+  if (scope.kind === "mixed") {
+    // Parts that resolve to nothing on this line drop out and the rest share the whole, exactly as
+    // an unresolvable governorate does below — a branch must never short-pay because one of the
+    // places it names has no seat on the line being measured.
+    const resolved = scope.parts
+      .map((part) => resolveBranchAreaShares(index, officialLine, part))
+      .filter((shares) => shares.length > 0);
+    if (resolved.length === 0) return [];
+    const perPart = 1 / resolved.length;
+    const merged = new Map<string, number>();
+    for (const shares of resolved) {
+      for (const share of shares) merged.set(share.areaCode, (merged.get(share.areaCode) ?? 0) + perPart * share.weight);
+    }
+    return [...merged.entries()].map(([areaCode, weight]) => ({ areaCode, weight }));
   }
 
   // Governorates: even across the governorates that resolve on THIS line, then even inside each.
