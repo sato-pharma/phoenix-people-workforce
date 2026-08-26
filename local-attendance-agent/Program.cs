@@ -6,11 +6,37 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Microsoft.AspNetCore.Connections;
 
 EnvLoader.Load();
 
 if (string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("ASPNETCORE_URLS"))) {
   Environment.SetEnvironmentVariable("ASPNETCORE_URLS", "http://127.0.0.1:8787");
+}
+
+var listenUrl = Environment.GetEnvironmentVariable("ASPNETCORE_URLS") ?? "http://127.0.0.1:8787";
+
+// A SECOND agent must exit quietly, not crash.
+//
+// This agent is started from two places by design: the "Phoenix Attendance Agent - Run At Logon"
+// scheduled task, and invoke-sync.ps1 whenever /health does not answer yet. On a cold boot the
+// first copy needs ~9 seconds to reach the bind, so the two launches overlap - on 2026-08-26 both
+// processes started inside the SAME SECOND (15:15:16.958 and 15:15:16). Kestrel's bind failure was
+// an UNHANDLED exception, so the loser died with a 0xE0434352 fault written to the Application
+// event log at EVERY boot (06:20:22, 11:13:53 and 15:15:21 on that one day). Nothing was ever
+// lost - the winner serves and the 2-hourly task syncs - but a healthy system logged a hard crash
+// every morning, and that is exactly the noise that hides a real fault later.
+//
+// The mutex settles the race before Kestrel is ever built. It is process-lifetime scoped, so a
+// killed or crashed owner releases it and the next launch wins cleanly - there is no stale lock
+// file anyone has to remember to clear.
+using var singleInstance = new Mutex(initiallyOwned: true, "Phoenix.Attendance.Agent.SingleInstance", out var isOnlyInstance);
+if (!isOnlyInstance) {
+  Log.Info("attendance_agent_already_running", new {
+    listenUrl,
+    reason = "another agent instance holds the single-instance mutex",
+  });
+  return 0;
 }
 
 var builder = WebApplication.CreateBuilder(args);
@@ -52,8 +78,19 @@ Log.Info("attendance_agent_starting", new {
   requiredTimes = config.AutoSyncRequiredTimes,
 });
 
-var startupChecks = await validator.CheckAsync(includeDeviceConnect: false);
-Log.Info("attendance_agent_startup_checks", startupChecks);
+// The startup checks must NOT delay the bind.
+//
+// They probe the fingerprint device (5s timeout) and Phoenix over the internet. Overnight the
+// device is off the network and both probes run long, so the agent could take well over 30
+// seconds to reach app.Run() - past the 30s invoke-sync.ps1 waits for /health before deciding
+// the agent is down and launching ANOTHER one (scheduled-sync.log, 2026-08-25 02:00 and
+// 2026-08-26 17:00). That duplicate is the same collision the single-instance mutex above had to
+// be written for. Binding first removes the cause rather than only surviving it: /health answers
+// in about a second, and the checks report into the log a moment later.
+_ = Task.Run(async () => {
+  var startupChecks = await validator.CheckAsync(includeDeviceConnect: false);
+  Log.Info("attendance_agent_startup_checks", startupChecks);
+});
 
 if (config.AutoSyncEnabled) {
   AutoSyncScheduler.Start(app.Services, config);
@@ -140,7 +177,30 @@ app.MapPost("/sync-now", async (HttpRequest request, AgentConfig cfg, Attendance
   }
 });
 
-app.Run();
+// The mutex above settles the race between our own launchers, but not a port held by something
+// that is NOT this agent - an older build with no mutex, or an unrelated process squatting on
+// 8787. A bind failure must still never be an unhandled crash, and the two cases need different
+// answers: another healthy agent is success (exit 0), a foreign squatter is a real fault the
+// operator has to see (exit 1) rather than a stack trace in the event log.
+try {
+  app.Run();
+} catch (IOException ex) when (ex.InnerException is AddressInUseException) {
+  if (await NetworkChecks.IsAttendanceAgentServingAsync(listenUrl)) {
+    Log.Info("attendance_agent_already_running", new {
+      listenUrl,
+      reason = "another agent instance already answers /health on this port",
+    });
+    return 0;
+  }
+
+  Log.Error("attendance_agent_port_unavailable", ex, new {
+    listenUrl,
+    reason = "a process that is not the Phoenix attendance agent is holding the listen port",
+  });
+  return 1;
+}
+
+return 0;
 
 sealed record AgentConfig(
   string PhoenixBaseUrl,
@@ -232,8 +292,19 @@ sealed class StartupValidator(AgentConfig config) {
     var errors = new List<string>();
     var tokenConfigured = !string.IsNullOrWhiteSpace(config.AttendanceAgentToken);
     var sdkRegistered = ZktecoDeviceClient.FindComType() is not null;
-    var deviceTcpReachable = await NetworkChecks.CanConnectTcpAsync(config.DeviceIp, config.DevicePort, TimeSpan.FromSeconds(3));
-    var phoenixReachable = await NetworkChecks.CanReachHttpAsync(config.PhoenixBaseUrl, TimeSpan.FromSeconds(5));
+    // These two probes are independent, so they run TOGETHER - awaiting them one after the other
+    // made /health cost their SUM. That mattered: /health is the liveness check invoke-sync.ps1
+    // uses to decide whether an agent is running, and it gives up after 5 seconds. With the
+    // fingerprint device off the network overnight the TCP probe alone burns its full 3s timeout,
+    // measured 3.4-3.7s end to end on 2026-08-26 - inside the budget, but only just. Any load
+    // (a boot, a big compression job, several sessions) pushed it past 5s, invoke-sync concluded
+    // "Agent not listening" about an agent that was serving perfectly, and launched a SECOND one.
+    // That duplicate is what lost the race for port 8787 and died 0xE0434352 at every boot.
+    var deviceTcpTask = NetworkChecks.CanConnectTcpAsync(config.DeviceIp, config.DevicePort, TimeSpan.FromSeconds(3));
+    var phoenixTask = NetworkChecks.CanReachHttpAsync(config.PhoenixBaseUrl, TimeSpan.FromSeconds(5));
+    await Task.WhenAll(deviceTcpTask, phoenixTask);
+    var deviceTcpReachable = await deviceTcpTask;
+    var phoenixReachable = await phoenixTask;
     var deviceConnects = false;
 
     if (!tokenConfigured) errors.Add("ATTENDANCE_AGENT_TOKEN is missing.");
@@ -817,6 +888,29 @@ static class NetworkChecks {
       using var client = new TcpClient();
       await client.ConnectAsync(host, port, cts.Token);
       return true;
+    } catch {
+      return false;
+    }
+  }
+
+  // Is the process already holding our listen port THIS agent, or an unrelated squatter?
+  //
+  // "Something answers on 8787" is not enough to conclude the attendance agent is up - anything
+  // can bind a loopback port. /health is matched on a field only this agent emits, so a foreign
+  // listener is reported as a fault instead of being mistaken for a healthy sibling. A degraded
+  // agent still counts: it answers 503 when the fingerprint device is off the network overnight,
+  // and that is a running agent, not a free port.
+  public static async Task<bool> IsAttendanceAgentServingAsync(string listenUrl) {
+    var timeout = TimeSpan.FromSeconds(5);
+    try {
+      var healthUrl = listenUrl.TrimEnd('/') + "/health";
+      using var cts = new CancellationTokenSource(timeout);
+      using var client = new HttpClient { Timeout = timeout };
+      using var response = await client.GetAsync(healthUrl, cts.Token);
+      var body = await response.Content.ReadAsStringAsync(cts.Token);
+      using var document = JsonDocument.Parse(body);
+      return document.RootElement.TryGetProperty("checks", out var checks)
+        && checks.TryGetProperty("tokenConfigured", out _);
     } catch {
       return false;
     }

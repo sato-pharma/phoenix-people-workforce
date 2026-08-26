@@ -29,9 +29,36 @@ if (-not $SkipPrereqInstall) {
 }
 
 if (Test-Path $PublishedExe) {
+  # KEEP THE AGENT'S OWN OUTPUT.
+  #
+  # The logon task runs this script with -WindowStyle Hidden, so everything the agent logged went
+  # to a console nobody could ever see. When the agent died between the 16:31 boot and 17:00 on
+  # 2026-08-26 there was no record at all of why - only the silence of a task that had exited 0.
+  # Its structured JSON log is the one thing that can answer that, so it goes to a file.
+  #
+  # Start-Process is used rather than a Tee-Object pipeline on purpose: this script runs under
+  # $ErrorActionPreference = "Stop", and merging a NATIVE command's stderr in Windows PowerShell
+  # wraps each line in a NativeCommandError that would abort the launch on the agent's first
+  # warning. Redirection files are truncated on open, so the previous run is rotated aside first -
+  # one boot back is exactly the window needed to explain a death at the next boot.
+  $LogRoot = Join-Path $AgentRoot "logs"
+  New-Item -ItemType Directory -Path $LogRoot -Force | Out-Null
+  $AgentLog = Join-Path $LogRoot "agent.log"
+  $AgentErrLog = Join-Path $LogRoot "agent.err.log"
+  foreach ($pair in @(@($AgentLog, "$AgentLog.prev"), @($AgentErrLog, "$AgentErrLog.prev"))) {
+    if (Test-Path $pair[0]) { Move-Item -LiteralPath $pair[0] -Destination $pair[1] -Force }
+  }
+
   Write-Host "[attendance-agent] Starting published executable $PublishedExe"
-  & $PublishedExe
-  exit $LASTEXITCODE
+  Write-Host "[attendance-agent] Agent log: $AgentLog"
+  $agent = Start-Process -FilePath $PublishedExe `
+    -WorkingDirectory $AgentRoot `
+    -NoNewWindow `
+    -PassThru `
+    -RedirectStandardOutput $AgentLog `
+    -RedirectStandardError $AgentErrLog
+  $agent.WaitForExit()
+  exit $agent.ExitCode
 }
 
 Write-Host "[attendance-agent] Starting with dotnet run"
