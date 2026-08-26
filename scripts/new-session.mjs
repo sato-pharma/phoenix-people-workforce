@@ -371,21 +371,51 @@ if (args.includes("--remove")) {
       return false;
     }
   })();
-  if (unpushed && !pushed) {
-    console.error("  REFUSED — commits here are on no remote branch:");
+
+  // delete_branch_on_merge is ON, so GitHub deletes a branch's remote ref the
+  // moment its PR merges — and `git fetch` never prunes, so a stale
+  // refs/remotes/origin/<branch> lingers and makes the branch look tracked.
+  // Pure reachability therefore reports every SUCCESSFULLY merged branch as
+  // "on no origin ref": backed up, not stranded. Asking about the merged PR is
+  // what separates the two, and a squash merge is never an ancestor of main, so
+  // `git branch --merged` can never answer this.
+  const mergedPr = (() => {
+    if (!entry.branch || entry.branch === "(detached)") return null;
+    try {
+      const out = execFileSync(
+        "gh",
+        ["pr", "list", "--head", entry.branch, "--state", "merged", "--json", "number", "--jq", ".[0].number"],
+        { encoding: "utf8" },
+      ).trim();
+      return out && out !== "null" ? out : null;
+    } catch {
+      return null; // gh missing or offline — fall through to the strict refusal
+    }
+  })();
+
+  if (unpushed && !pushed && !mergedPr) {
+    console.error("  REFUSED — commits here are on no remote branch and no merged PR:");
     for (const line of unpushed.split("\n").slice(0, 10)) console.error("    " + line);
     fail(
-      "push the branch, or keep the tip with `git branch rescue/" +
-        (entry.branch || "tip") +
+      "keep the tip with `git branch rescue/" +
+        String(entry.branch).replace(/^codex\//, "") +
         " " +
         entry.branch +
-        "` — that costs nothing and loses nothing.",
+        "` — that costs nothing and loses nothing. Never PUSH a possibly-merged " +
+        "branch to rescue it: that opens a conflicting PR, and a conflicted PR runs no CI at all.",
     );
   }
 
   console.log("  spreadsheets/PDFs   none untracked");
   console.log("  uncommitted work    none");
-  console.log("  unpushed commits    " + (unpushed ? "present, but the branch is on origin" : "none"));
+  console.log(
+    "  commits vs main     " +
+      (!unpushed
+        ? "none"
+        : mergedPr
+          ? "present, but PR #" + mergedPr + " merged them — squash residue, not stranded work"
+          : "present, and the branch is on origin"),
+  );
   console.log("  node_modules        " + dropModulesJunction(dir));
 
   git(["worktree", "remove", dir]);
