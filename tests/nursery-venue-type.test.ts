@@ -141,10 +141,12 @@ function testBothWriteLoopsGoThroughVenueCodeSlots() {
 function testCaptureRefusesBothWrongCombinations() {
   const service = code(SERVICE);
 
+  // Was pinned as the inline `venueType === "pharmacy"` until 2026-08-26, which pinned exactly the
+  // re-derivation venue-type.ts warns against. The refusal is the same; only who decides it moved.
   assert.match(
     service,
-    /venueType === "pharmacy" && vendorCodeInputs\.length === 0/,
-    "a pharmacy with no vendor code must still be refused at capture",
+    /venueRequiresDistributorCode\(venueType\) && vendorCodeInputs\.length === 0/,
+    "a pharmacy with no vendor code must still be refused at capture, via the one predicate",
   );
   assert.match(
     service,

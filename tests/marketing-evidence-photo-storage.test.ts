@@ -54,6 +54,9 @@ function capturedInput(overrides: {
             evidencePhotoCapturedAt: timestamp,
             evidencePhotoDataUrl: "pharmacyPhotoDataUrl" in overrides ? overrides.pharmacyPhotoDataUrl : jpegDataUrl,
             evidencePhotoName: "pharmacyPhotoName" in overrides ? overrides.pharmacyPhotoName : "pharmacy-live-2026-08-02T14:19:54.278Z.jpg",
+            // Stated since 2026-08-26 — an unanswered venue type is refused, and it is refused
+            // BEFORE the photo checks below, so leaving it out here would mask what this file tests.
+            venueType: "pharmacy",
             vendorCodes: [{ distributorId: 1, distributorPharmacyCode: "PH-001" }],
           },
         ],

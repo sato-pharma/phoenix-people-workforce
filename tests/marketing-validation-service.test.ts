@@ -273,6 +273,10 @@ const completeInput: MarketingValidationInput = {
       extractedAreaName: "Glim",
       extractedGovernorateName: "Alexandria",
       regionName: "Alexandria",
+      // Stated, not assumed. Absent used to mean "pharmacy"; since 2026-08-26 it means nobody
+      // answered, and capture refuses it — `pharmacyPayload` below spreads this row, so every
+      // fixture in the file inherits a venue type that was actually chosen.
+      venueType: "pharmacy",
       vendorCodes: [
         {
           distributorId: 1,
@@ -388,6 +392,26 @@ export function runMarketingValidationServiceTests() {
         },
       }),
     /customer name is required/i,
+  );
+
+  // A DELIBERATE contract change, 2026-08-26, not an oversight.
+  //
+  // A payload with no venue type used to normalize to `pharmacy` in silence. That silence is what
+  // filed `حضانه النيل` as a pharmacy five hours after the picker shipped, so capture now refuses
+  // it and says which two words it wants. The cost is real and bounded: a marketing draft saved
+  // BEFORE 2026-08-23 — older than the column itself — is refused on replay with this sentence
+  // instead of being filed as a pharmacy on the rep's behalf. Every draft saved since carries the
+  // literal "pharmacy" and replays unchanged.
+  //
+  // The shape guarantee above is untouched: the legacy single-customer payload still normalizes.
+  assert.throws(
+    () =>
+      normalizeMarketingValidationInput({
+        ...completeInput,
+        pharmacies: [{ ...completeInput.pharmacies![0], venueType: undefined }],
+      }),
+    /pharmacy or nursery/i,
+    "a venue nobody named must be refused, never filed as a pharmacy by default",
   );
 
   runMarketingMultiCustomerTests();

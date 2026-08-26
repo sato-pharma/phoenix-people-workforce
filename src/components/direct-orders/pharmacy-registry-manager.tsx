@@ -5,6 +5,15 @@ import { useRouter } from "next/navigation";
 
 import { DistributorCustomerPicker } from "@/components/direct-orders/distributor-customer-picker";
 import type { DirectOrderRegistryPharmacy } from "@/lib/direct-orders/service";
+import {
+  choiceRequiresDistributorCode,
+  VENUE_TYPE_UNANSWERED_MESSAGE,
+  VENUE_TYPES,
+  venueTypeChoiceLabel,
+  venueTypeIsAnswered,
+  venueTypeLabel,
+  type VenueTypeChoice,
+} from "@/lib/venues/venue-type";
 
 type AreaOption = { areaCode: string; areaName: string; regionCode: string; regionName: string };
 type BrickOption = {
@@ -54,6 +63,10 @@ export function PharmacyRegistryManager({
 
   // Add form
   const [adding, setAdding] = useState(false);
+  // This form never asked at all — it posted no venue type, so the server read every admin
+  // registration as a pharmacy. That is the silent default the picker on the rep's form was
+  // supposed to close, and it stayed open here.
+  const [newVenueType, setNewVenueType] = useState<VenueTypeChoice>(null);
   const [newName, setNewName] = useState("");
   const [newAreaCode, setNewAreaCode] = useState("");
   const [newBrickId, setNewBrickId] = useState("");
@@ -148,6 +161,9 @@ export function PharmacyRegistryManager({
   }
 
   async function register() {
+    // The button is disabled until this is answered; repeated here so the request cannot be sent
+    // without it, and so the value narrows below without an assertion.
+    if (!venueTypeIsAnswered(newVenueType)) throw new Error(VENUE_TYPE_UNANSWERED_MESSAGE);
     const brick = newBrickId ? brickById.get(newBrickId) : null;
     await post({
       action: "register",
@@ -157,9 +173,13 @@ export function PharmacyRegistryManager({
       regionCode: brick?.regionCode ?? null,
       doctorName: newDoctor,
       pharmacyAddress: newAddress,
-      distributorCodes: newCodes,
+      venueType: newVenueType,
+      // The server refuses a code on a venue that cannot hold one, so rows left behind by a type
+      // switch would 400 the whole registration instead of being quietly dropped.
+      distributorCodes: choiceRequiresDistributorCode(newVenueType) ? newCodes : [],
     });
     setAdding(false);
+    setNewVenueType(null);
     setNewName("");
     setNewAreaCode("");
     setNewBrickId("");
@@ -228,8 +248,46 @@ export function PharmacyRegistryManager({
             would otherwise wait for. An order placed on it later takes the ordinary route:
             SFE → managers → CEO, with no System Admin step.
           </p>
+          <div
+            className={
+              venueTypeIsAnswered(newVenueType)
+                ? "mb-2 border border-slate-200 bg-white p-2"
+                : "mb-2 border border-orange-300 bg-orange-50 p-2"
+            }
+          >
+            <p className="text-[11px] font-black uppercase tracking-wider text-slate-500">What is this? *</p>
+            <div className="mt-1 flex items-center gap-1.5">
+              {VENUE_TYPES.map((venueType) => (
+                <button
+                  className={
+                    newVenueType === venueType
+                      ? "border border-orange-300 bg-orange-50 px-2.5 py-1 text-[12px] font-black text-orange-700"
+                      : "border border-slate-200 bg-white px-2.5 py-1 text-[12px] font-bold text-slate-600 hover:bg-slate-50"
+                  }
+                  key={venueType}
+                  onClick={() => setNewVenueType(venueType)}
+                  type="button"
+                >
+                  {venueTypeLabel(venueType)}
+                </button>
+              ))}
+            </div>
+            {!venueTypeIsAnswered(newVenueType) ? (
+              <p className="mt-1 text-[11px] font-bold text-orange-700">{VENUE_TYPE_UNANSWERED_MESSAGE}</p>
+            ) : choiceRequiresDistributorCode(newVenueType) ? null : (
+              <p className="mt-1 text-[11px] font-semibold text-slate-500">
+                A {venueTypeLabel(newVenueType).toLowerCase()} has no distributor account, so it has no customer
+                code. Register it as one — never as a pharmacy with a made-up code.
+              </p>
+            )}
+          </div>
           <div className="grid gap-2 md:grid-cols-2">
-            <input className={inputClass} value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="Pharmacy name *" />
+            <input
+              className={inputClass}
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              placeholder={`${venueTypeChoiceLabel(newVenueType)} name *`}
+            />
             <input className={inputClass} value={newDoctor} onChange={(e) => setNewDoctor(e.target.value)} placeholder="Doctor name" />
             <select
               className={inputClass}
@@ -262,7 +320,9 @@ export function PharmacyRegistryManager({
             />
           </div>
 
-          <div className="mt-3 border border-slate-200 bg-white p-2">
+          {/* Hidden until the type is known, and for good once it is a nursery: a venue with no
+              distributor account has no code to give, and asking anyway is what produced `0000`. */}
+          <div className={choiceRequiresDistributorCode(newVenueType) ? "mt-3 border border-slate-200 bg-white p-2" : "hidden"}>
             <p className="text-[11px] font-black uppercase tracking-wider text-slate-500">Distributor customer codes</p>
             <p className="mb-2 text-[11px] font-semibold text-slate-500">
               This is the point of registering ahead of time — search the distributor&apos;s own customer
@@ -290,11 +350,11 @@ export function PharmacyRegistryManager({
 
           <button
             type="button"
-            disabled={busy || !newName.trim()}
+            disabled={busy || !newName.trim() || !venueTypeIsAnswered(newVenueType)}
             className="mt-3 bg-orange-500 px-4 py-2 text-[12px] font-black uppercase tracking-wider text-white hover:bg-orange-600 disabled:opacity-50"
             onClick={() => run(register, `Registered ${newName.trim()}.`)}
           >
-            {busy ? "Saving…" : "Register pharmacy"}
+            {busy ? "Saving…" : `Register ${venueTypeChoiceLabel(newVenueType).toLowerCase()}`}
           </button>
         </section>
       ) : null}

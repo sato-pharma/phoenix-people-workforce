@@ -73,6 +73,8 @@ function pharmacyPayload(name: string, code: string): MarketingValidationPharmac
     extractedAreaName: "Nasr City",
     extractedGovernorateName: "Cairo",
     regionName: "Cairo",
+    // Stated since 2026-08-26 — capture refuses a venue nobody named rather than defaulting it.
+    venueType: "pharmacy",
     vendorCodes: [{ distributorId: 1, distributorPharmacyCode: code }],
   };
 }

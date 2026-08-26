@@ -106,8 +106,11 @@ import { decodeVenueTarget, encodeVenueTarget } from "@/lib/marketing-requests/v
 import {
   DEFAULT_VENUE_TYPE,
   normalizeVenueType,
+  parseVenueTypeChoice,
+  VENUE_TYPE_UNANSWERED_MESSAGE,
   venueNonAttributableReason,
   venueRequiresDistributorCode,
+  venueTypeIsAnswered,
   venueTypeLabel,
   type VenueType,
 } from "@/lib/venues/venue-type";
@@ -1999,19 +2002,30 @@ function normalizeValidationPharmacy(
   const inputPharmacy = inputEntry as MarketingValidationPharmacyInput;
   const displayName = cleanText(inputPharmacy?.displayName);
   if (!displayName) throw validationError(`${label} name is required.`);
-  const venueType = normalizeVenueType(inputPharmacy.venueType);
+  // NOT `normalizeVenueType` — that reads absent as "pharmacy", which is right for a stored row
+  // written before the column existed and wrong for a venue being registered NOW. Registering is
+  // the one moment the answer is free, and defaulting here is how a nursery becomes a pharmacy.
+  const venueTypeChoice = parseVenueTypeChoice(inputPharmacy.venueType);
+  if (!venueTypeIsAnswered(venueTypeChoice)) {
+    throw validationError(`${label}: ${VENUE_TYPE_UNANSWERED_MESSAGE}`);
+  }
+  const venueType = venueTypeChoice;
   const vendorCodeInputs = Array.isArray(inputPharmacy.vendorCodes) ? inputPharmacy.vendorCodes : [];
   // A pharmacy still must name a code — a shop nobody can invoice attributes nothing, and that has
   // been refused since the module shipped. What changed on 2026-08-23 is that "must name a code" is
   // no longer the same statement as "is a venue": a nursery has no distributor account, and this
   // gate is what left inventing one as the only way through the form.
-  if (venueType === "pharmacy" && vendorCodeInputs.length === 0) {
+  //
+  // Asked through the predicate, never as `venueType === "pharmacy"`: that inline re-derivation is
+  // exactly what the venue-type module warns lets the next type be added in one place and missed in
+  // five.
+  if (venueRequiresDistributorCode(venueType) && vendorCodeInputs.length === 0) {
     throw validationError(`${label} needs at least one vendor code.`);
   }
   // The mirror image, and the reason this is a check and not just a relaxation: a code typed onto a
   // nursery is a code that will resolve against somebody else's shop. Refuse it at the door rather
   // than storing it and discovering later whose sales it stole.
-  if (venueType !== "pharmacy" && vendorCodeInputs.length > 0) {
+  if (!venueRequiresDistributorCode(venueType) && vendorCodeInputs.length > 0) {
     throw validationError(
       `${label} is a ${venueTypeLabel(venueType).toLowerCase()}, which has no distributor account, so it cannot carry a vendor code.`,
       "venue_cannot_have_vendor_code",
