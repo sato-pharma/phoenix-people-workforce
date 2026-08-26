@@ -1,6 +1,7 @@
 import type { Workbook, Worksheet } from "@node-projects/excelforge";
 
 import { systemIdentity } from "@/config/system-settings";
+import { WEEKLY_TRACKED_LINES_LABEL } from "@/lib/sales/weekly/tracked-lines";
 import type { WeeklyDashboard } from "@/lib/sales/weekly/types";
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -206,8 +207,13 @@ export function labelFilters(f: WeeklyDashboard["appliedFilters"]): string {
   if (f.distributorCodes?.length) parts.push(`Distributors: ${f.distributorCodes.join(", ")}`);
   if (f.regionCodes?.length) parts.push(`Regions: ${f.regionCodes.join(", ")}`);
   if (f.productCodes?.length) parts.push(`Products: ${f.productCodes.join(", ")}`);
-  if (f.lineCodes?.length) parts.push(`Lines: ${f.lineCodes.join(", ")}`);
-  return parts.length ? parts.join("   ·   ") : "All distributors · all weeks";
+  if (parts.length === 0) parts.push("All distributors · all weeks");
+  // The LINE scope is stated unconditionally, because "no line filter" is not "every line": with no
+  // line named the workbook covers the TRACKED lines only. The owner's rule is that an export matches
+  // the screen, and the screen now says the same thing — a sheet must never imply it holds everything
+  // while Head Office (78% of the weekly tables) sits outside it.
+  parts.push(f.lineCodes?.length ? `Lines: ${f.lineCodes.join(", ")}` : `Lines: ${WEEKLY_TRACKED_LINES_LABEL} (tracked weekly)`);
+  return parts.join("   ·   ");
 }
 
 // Re-export Workbook type for builders that need it without a second import.

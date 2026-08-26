@@ -344,6 +344,13 @@ export type WeeklyFactExportRow = {
 export type WeeklyDashboard = {
   weekStart: string | null;
   priorWeekStart: string | null;
+  /**
+   * Which lines these numbers cover. `active` is true whenever the tracked-line default scope is in
+   * force — CNS / Anti Infective / Pedia only, Head Office excluded (GOLDEN RULE, see
+   * tracked-lines.ts). It goes false when the viewer names a line themselves, which is the escape
+   * hatch. Travels with the data so the screen and the export cannot disagree about what was counted.
+   */
+  trackedScope: { active: boolean; note: string };
   availableWeeks: string[];
   /** Maps each canonical week date to all member dates in that group (for range labels in the UI). */
   weekGroupMembers: Record<string, string[]>;

@@ -562,6 +562,40 @@ export async function listWeeklyBranchRegionExamples(distributorCode?: string | 
   return examples;
 }
 
+/**
+ * Every branch already placed on an AREA, as raw-branch → area-code examples for the AI.
+ *
+ * Separate from listWeeklyBranchRegionExamples because the two speak different vocabularies: that
+ * one answers "which region", this one "which area", and feeding region examples to an area
+ * suggestion teaches the model the wrong answer shape.
+ *
+ * Excluded branches and branches with no area are skipped rather than sent as a sentinel — unlike
+ * the region case there is nothing to repeat, since "no area yet" is the state being fixed, not a
+ * decision worth learning.
+ */
+export async function listWeeklyBranchAreaExamples(distributorCode?: string | null, limit = 600): Promise<WeeklyBranchExample[]> {
+  const supabase = getSupabaseAdmin();
+  let query = supabase
+    .from("weekly_sales_branch_region_map")
+    .select("distributor_code, raw_branch, branch_header_raw, area_code, excluded")
+    .not("area_code", "is", null)
+    .order("updated_at", { ascending: false })
+    .limit(Math.max(1, limit));
+  if (distributorCode) query = query.eq("distributor_code", canonicalWeeklyDistributorCode(distributorCode));
+  const { data, error } = await query;
+  if (error) throw new SalesWorkflowError("load_failed", error.message, 500);
+
+  const examples: WeeklyBranchExample[] = [];
+  for (const row of data ?? []) {
+    if (row.excluded) continue;
+    const raw = String(row.raw_branch ?? "").trim() || String(row.branch_header_raw ?? "").trim();
+    const code = String(row.area_code ?? "").trim();
+    if (!raw || !code) continue;
+    examples.push({ raw, code, distributorCode: String(row.distributor_code ?? "").trim().toUpperCase() });
+  }
+  return examples;
+}
+
 /** Build the branch->region resolution index for the upload parser. */
 export async function loadBranchRegionIndex(distributorCode: string): Promise<WeeklyBranchRegionIndex> {
   const code = canonicalWeeklyDistributorCode(distributorCode);

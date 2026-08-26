@@ -1,24 +1,33 @@
 // Attribute a weekly sales fact row to the manager who owns it.
 //
-// WHY THIS IS NOT THE USUAL (line, area) LOOKUP
-// ─────────────────────────────────────────────
-// Phoenix's authoritative manager map is au_v_line_area_map: (line_code, area_code) -> dm_seat_id.
-// Weekly facts cannot use it. Weekly rows sit at DISTRIBUTOR-BRANCH grain and only branches the
-// owner explicitly mapped carry an area at all — measured in production 2026-08-11, 34,138 of 34,838
-// validated rows (98.0%) have no area_code, across exactly ONE distinct area. Keying on area would
-// put ~98% of the company's weekly sales in an "unmapped" bucket.
+// AREA FIRST, REGION AS THE FALLBACK
+// ──────────────────────────────────
+// Phoenix's authoritative manager map is au_v_line_area_map: (line_code, area_code) -> the DM
+// territory that owns that area ON THAT LINE. Weekly rows sit at DISTRIBUTOR-BRANCH grain, and a
+// branch only carries an area once the owner has mapped it — so the area is present on some rows
+// and absent on others. This resolver therefore uses BOTH keys, in strict precedence:
 //
-// So this resolves on (line_code, region_code) instead, which weekly rows DO carry: 9 regions, only
-// 32 blank rows (0.09%). au.seats holds exactly one DM seat per (region_code, line_code) — 22 seats,
-// zero collisions — so the resolution is deterministic.
+//   1. (line_code, area_code)   when the row carries an area. Authoritative, and needs no guessing.
+//   2. (line_code, region_code) otherwise. The historical behaviour, unchanged.
 //
-// THE COST, STATED PLAINLY: au_v_line_area_map.operational_region_code (who owns an area) and the
-// geographic region a sales row carries legitimately disagree for a handful of live areas — e.g.
-// Kafr El-Sheikh 1 (D16) sits in Delta (1) geographically but belongs to the Alex-BHR CNS manager.
-// Those branches are credited to their GEOGRAPHIC manager here. The owner accepted this trade-off
-// on 2026-08-11 rather than lose 98% of the rows; ATTRIBUTION_CAVEAT below is printed on every
-// manager sheet so the approximation is never invisible. If branch->area mapping is ever completed,
-// switch the key to (line, area) and this caveat goes away.
+// Why the precedence matters, measured in production 2026-08-26 on the three lines the owner
+// actually tracks weekly (CNS, Anti Infective, Pedia — see isWeeklyTrackedLine):
+//
+//   • Anti Infective is the ONLY line whose organogram splits Upper Egypt, into UE-1 and UE-2.
+//     The branch->region map assigns one plain "UE" per branch regardless of line, so every Anti
+//     Infective UE row matched no seat: EGP 10,289,490, 21.3% of the line. Of that, EGP 4,027,715
+//     sits on branches that DO carry an area, and rule 1 now resolves it exactly — UE1/UE2 -> UE-1,
+//     UE3..UE8 -> UE-2. The EGP 6,261,775 on branches with no area still falls to rule 2 and still
+//     buckets as unmapped, because "Upper Egypt" genuinely spans two DMs and guessing between them
+//     is worse than saying so. Mapping those branches to areas is what closes the remainder.
+//   • 15 line/area pairs where the geographic region and the organogram legitimately disagree —
+//     EGP 5,298,449, e.g. Kafr El-Sheikh 1 (D16) sits in Delta (1) geographically but belongs to
+//     the Alex-BHR manager on CNS and Pedia. Those were credited to the GEOGRAPHIC manager before;
+//     rule 1 now credits the manager who actually owns them.
+//
+// A row whose area is not on the map keeps its geographic region rather than vanishing — a missing
+// mapping must never cost the report a row of sales. Same principle as applyOperationalRegions in
+// closing-organogram-regions.ts, which is where Monthly Closing does the equivalent job.
 //
 // The DM -> RSM -> NSM chain is walked from parent_seat_id, never hard-coded: the Pedia line has a
 // real RSM seat (Alex-BHR, Delta (1), Delta (2)) sitting between DM and NSM, while Cairo, Giza, UE
@@ -29,8 +38,9 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 /** Printed on every manager-grouped sheet. See the header comment for why it exists. */
 export const ATTRIBUTION_CAVEAT =
-  "Managers are attributed by region + line (weekly rows carry no area code). Branches in areas " +
-  "re-assigned across regions may appear under their geographic manager.";
+  "Managers are attributed by line + area where the branch is mapped to one, and by line + region " +
+  "otherwise. An unmapped branch is credited to its geographic manager, and Anti Infective sales in " +
+  "Upper Egypt stay unmapped until the branch carries an area, because that line's UE is two districts.";
 
 /** How a bucket was resolved. Drives section ordering: real managers first, residue last. */
 export type WeeklyManagerKind = "dm" | "ceo" | "vacant" | "unmapped";
@@ -67,6 +77,12 @@ type SeatNode = {
 export type WeeklyManagerIndex = {
   /** `${lineCode}||${regionCode}` -> the DM/ACTING_DM seat that owns it. */
   dmByLineRegion: Map<string, SeatNode>;
+  /**
+   * `${lineCode}||${areaCode}` -> the operational region that owns that area ON THAT LINE.
+   * Rule 1 of the precedence described at the top of this file. Empty when au_v_line_area_map
+   * cannot be read, which simply leaves every row on the region fallback.
+   */
+  operationalRegionByLineArea: Map<string, string>;
   seatsById: Map<string, SeatNode>;
   /** hr_id -> display name. */
   nameByHrId: Map<string, string>;
@@ -95,17 +111,23 @@ export function managerKey(lineCode: string, regionCode: string): string {
 export async function loadWeeklyManagerIndex(): Promise<WeeklyManagerIndex> {
   const supabase = getSupabaseAdmin();
 
-  const [treeResult, regionsResult, employeesResult] = await Promise.all([
+  const [treeResult, regionsResult, employeesResult, areaMapResult] = await Promise.all([
     supabase
       .from("au_v_org_tree")
       .select("seat_id, seat_tier, line_code, region_code, seat_label, occupant_hr_id, is_vacant, parent_seat_id"),
     supabase.from("au_v_regions").select("region_code, region_name"),
     supabase.from("employees").select("hr_id, full_name, nickname"),
+    supabase
+      .from("au_v_line_area_map")
+      .select("line_code, area_code, operational_region_code, effective_from, effective_to"),
   ]);
 
   if (treeResult.error) throw treeResult.error;
   if (regionsResult.error) throw regionsResult.error;
   if (employeesResult.error) throw employeesResult.error;
+  // The area map fails SOFT on purpose: without it every row simply falls to the region fallback,
+  // which is exactly the behaviour that shipped before area precedence existed. Losing the whole
+  // export because one supporting view is unreadable would be a far worse trade.
 
   const nameByHrId = new Map<string, string>();
   for (const row of employeesResult.data ?? []) {
@@ -122,6 +144,23 @@ export async function loadWeeklyManagerIndex(): Promise<WeeklyManagerIndex> {
     const code = normUpper(String(record.region_code ?? ""));
     if (!code) continue;
     regionNameByCode.set(code, norm(String(record.region_name ?? "")) || code);
+  }
+
+  // (line, area) -> operational region. Effective-dated exactly as loadLineOperationalRegions does,
+  // so an area that has moved territory resolves to whoever owns it TODAY.
+  const today = new Date().toISOString().slice(0, 10);
+  const operationalRegionByLineArea = new Map<string, string>();
+  for (const row of areaMapResult.error ? [] : (areaMapResult.data ?? [])) {
+    const record = row as Record<string, unknown>;
+    const lineCode = norm(String(record.line_code ?? ""));
+    const areaCode = normUpper(String(record.area_code ?? ""));
+    const regionCode = normUpper(String(record.operational_region_code ?? ""));
+    if (!lineCode || !areaCode || !regionCode) continue;
+    const from = String(record.effective_from ?? "");
+    const to = String(record.effective_to ?? "");
+    if (from && from > today) continue;
+    if (to && to < today) continue;
+    operationalRegionByLineArea.set(managerKey(lineCode, areaCode), regionCode);
   }
 
   const seatsById = new Map<string, SeatNode>();
@@ -152,7 +191,7 @@ export async function loadWeeklyManagerIndex(): Promise<WeeklyManagerIndex> {
     }
   }
 
-  return { dmByLineRegion, seatsById, nameByHrId, regionNameByCode, ceoName };
+  return { dmByLineRegion, operationalRegionByLineArea, seatsById, nameByHrId, regionNameByCode, ceoName };
 }
 
 /** Climb parent_seat_id looking for a tier. Bounded so a cyclic parent chain can never hang an export. */
@@ -190,6 +229,7 @@ export function resolveWeeklyManager(
   index: WeeklyManagerIndex,
   officialLine: string | null | undefined,
   regionCode: string | null | undefined,
+  areaCode?: string | null | undefined,
 ): WeeklyManagerBucket {
   const lineLabel = norm(officialLine);
   const lineCode = resolveTargetLineCode(lineLabel);
@@ -212,13 +252,19 @@ export function resolveWeeklyManager(
     return UNMAPPED_BUCKET;
   }
 
-  const region = normUpper(regionCode);
+  // Rule 1: the branch is mapped to an area, so the organogram answers exactly who owns it on this
+  // line. Rule 2: it is not, so fall back to the geographic region the row carries. An area the map
+  // does not cover falls back too, rather than costing the report a row.
+  const area = normUpper(areaCode);
+  const operationalRegion = area ? index.operationalRegionByLineArea.get(managerKey(lineCode, area)) : undefined;
+  const region = operationalRegion ?? normUpper(regionCode);
   if (!region) return UNMAPPED_BUCKET;
 
   const seat = index.dmByLineRegion.get(managerKey(lineCode, region));
-  // No seat for this pair. Real today for Anti Infective in Upper Egypt: the org splits it into
-  // UE-1/UE-2 while weekly rows carry plain "UE", so nothing matches. Bucket it visibly rather than
-  // guessing between two managers.
+  // No seat for this pair. Still real today for Anti Infective in Upper Egypt on branches carrying
+  // NO area: that line's org splits UE into UE-1/UE-2 while the row carries plain "UE", so nothing
+  // matches. Bucket it visibly rather than guessing between two managers — mapping the branch to an
+  // area is what resolves it, via rule 1 above.
   if (!seat) return UNMAPPED_BUCKET;
 
   const regionName = index.regionNameByCode.get(region) ?? region;

@@ -147,7 +147,7 @@ export function groupRowsByManager(
 ): ManagerGroup[] {
   const groups = new Map<string, ManagerGroup>();
   for (const row of rows) {
-    const bucket = resolveWeeklyManager(index, row.line, row.regionCode);
+    const bucket = resolveWeeklyManager(index, row.line, row.regionCode, row.areaCode);
     const existing = groups.get(bucket.key);
     if (existing) existing.rows.push(row);
     else groups.set(bucket.key, { bucket, rows: [row] });
@@ -2102,7 +2102,7 @@ function buildLowSalesSheet(
     } & SummaryTotals
   >();
   for (const row of rows) {
-    const manager = resolveWeeklyManager(index, row.line, row.regionCode);
+    const manager = resolveWeeklyManager(index, row.line, row.regionCode, row.areaCode);
     const key = `${manager.key}||${row.distributorCode}||${row.branchCode || row.branchName}||${row.productCode}`;
     const areaCode = (row.areaCode ?? "").trim().toUpperCase();
     const existing =

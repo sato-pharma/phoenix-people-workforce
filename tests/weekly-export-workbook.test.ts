@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import JSZip from "jszip";
 
 import { buildWeeklyExportWorkbook } from "../src/lib/sales/weekly/export-workbook.ts";
+import { WEEKLY_TRACKED_SCOPE_NOTE } from "../src/lib/sales/weekly/tracked-lines.ts";
 import type { WeeklyDashboard, WeeklyFactExportRow } from "../src/lib/sales/weekly/types.ts";
 
 const GENERATED_AT = "2026-06-29 12:00 UTC";
@@ -77,6 +78,7 @@ function sampleDashboard(empty = false): WeeklyDashboard {
   ];
   return {
     weekStart: null, priorWeekStart: null, availableWeeks: [], weekGroupMembers: {},
+    trackedScope: { active: true, note: WEEKLY_TRACKED_SCOPE_NOTE },
     availableLines: ["Anti infective"], availableRegions: [], availableProducts: [], availableMonths: [], availableWeekNumbers: [],
     availableUploads: [],
     distributors: dists.map((d) => ({ code: d.code, name: d.name })),

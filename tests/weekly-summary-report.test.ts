@@ -76,6 +76,13 @@ function managerIndex(): WeeklyManagerIndex {
     seat("SEAT-PED-DM-AB", "DM", "pedia", "AB", "B-201", "SEAT-PED-RSM"),
     seat("SEAT-PED-DM-GZ", "DM", "pedia", "GZ", "B-202", "SEAT-PED-NSM"),
     seat("SEAT-CNS-OTHERS", "DM", "cns", "OT", null, "SEAT-CNS-NSM"),
+    // Anti Infective is the one line whose organogram splits Upper Egypt — mirrors production, where
+    // there is no plain "UE" seat on this line at all, only UE-1 and UE-2.
+    seat("SEAT-AI-NSM", "NSM", "anti_infective", null, "B-122", "SEAT-ROOT-CEO"),
+    seat("SEAT-AI-DM-UE1", "DM", "anti_infective", "UE-1", "B-203", "SEAT-AI-NSM"),
+    seat("SEAT-AI-DM-UE2", "DM", "anti_infective", "UE-2", "B-204", "SEAT-AI-NSM"),
+    seat("SEAT-CNS-DM-AB", "DM", "cns", "AB", "B-205", "SEAT-CNS-NSM"),
+    seat("SEAT-CNS-DM-D1", "DM", "cns", "D1", "B-206", "SEAT-CNS-NSM"),
   ];
 
   const seatsById = new Map(seats.map((s) => [s.seatId, s]));
@@ -85,8 +92,21 @@ function managerIndex(): WeeklyManagerIndex {
       .map((s) => [managerKey(s.lineCode as string, s.regionCode as string), s]),
   );
 
+  // (line, area) -> operational region, mirroring au_v_line_area_map. Two shapes matter here:
+  // Anti Infective splitting Upper Egypt across two DMs, and CNS's Kafr El-Sheikh 1 (D16) sitting in
+  // Delta (1) geographically while the organogram gives it to Alex-BHR.
+  const operationalRegionByLineArea = new Map([
+    [managerKey("anti_infective", "UE1"), "UE-1"],
+    [managerKey("anti_infective", "UE2"), "UE-1"],
+    [managerKey("anti_infective", "UE3"), "UE-2"],
+    [managerKey("anti_infective", "UE5"), "UE-2"],
+    [managerKey("cns", "D16"), "AB"],
+    [managerKey("cns", "CA1"), "CA"],
+  ]);
+
   return {
     dmByLineRegion,
+    operationalRegionByLineArea,
     seatsById,
     nameByHrId: new Map([
       ["AA", "Anwar Gaweesh"],
@@ -96,12 +116,19 @@ function managerIndex(): WeeklyManagerIndex {
       ["B-200", "Mina Rizkallah"],
       ["B-201", "Ahmed Abdallah"],
       ["B-202", "Taha AboElftouh"],
+      ["B-203", "Sherif Kamal"],
+      ["B-204", "Mostafa Zaki"],
+      ["B-205", "Nader Fouad"],
+      ["B-206", "Wael Ibrahim"],
     ]),
     regionNameByCode: new Map([
       ["CA", "Cairo"],
       ["AB", "Alex-BHR"],
       ["GZ", "Giza"],
       ["OT", "Others"],
+      ["D1", "Delta (1)"],
+      ["UE-1", "Upper Egypt 1"],
+      ["UE-2", "Upper Egypt 2"],
     ]),
     ceoName: "Anwar Gaweesh",
   };
@@ -213,9 +240,41 @@ export async function runWeeklySummaryReportTests() {
       );
     }
     assert.equal(resolveWeeklyManager(index, "CNS", "").kind, "unmapped", "a blank region is unmapped");
-    // Anti Infective in Upper Egypt is the live example: the org splits it UE-1/UE-2 while weekly
-    // rows carry plain "UE", so nothing matches and guessing between two managers is not allowed.
+    // Anti Infective in Upper Egypt, ON A BRANCH CARRYING NO AREA: the org splits it UE-1/UE-2 while
+    // the weekly row carries plain "UE", so nothing matches and guessing between two managers is not
+    // allowed. Block 5b below is the same line WITH an area, which does resolve.
     assert.equal(resolveWeeklyManager(index, "Anti Infective", "UE").kind, "unmapped");
+  }
+
+  // 5b) AREA BEATS REGION. Measured in production 2026-08-26: EGP 10,289,490 of Anti Infective (21.3%
+  //     of the line) reached no manager because every branch is tagged with one geographic "UE" while
+  //     that line's organogram has only UE-1 and UE-2 — and a further EGP 5,298,449 across 15 line/area
+  //     pairs was credited to the geographic manager instead of the one who owns it. Both are the same
+  //     defect: the row's own area was never consulted. Precedence is area first, region as fallback.
+  {
+    // The UE split, resolved exactly — no pro-rata, no guessing between the two DMs.
+    const ue1 = resolveWeeklyManager(index, "Anti Infective", "UE", "UE1");
+    assert.equal(ue1.kind, "dm", "an Anti Infective row with a mapped area must reach a real manager");
+    assert.equal(ue1.managerName, "Sherif Kamal", "UE1 belongs to the Upper Egypt 1 manager");
+    const ue2 = resolveWeeklyManager(index, "Anti Infective", "UE", "UE3");
+    assert.equal(ue2.managerName, "Mostafa Zaki", "UE3 belongs to the Upper Egypt 2 manager — a DIFFERENT DM");
+    assert.notEqual(ue1.key, ue2.key, "the two Upper Egypt districts must not collapse into one bucket");
+
+    // The organogram overrides a geographic region that disagrees with it: Kafr El-Sheikh 1 sits in
+    // Delta (1) on the map but belongs to the Alex-BHR manager on CNS.
+    const kafr = resolveWeeklyManager(index, "CNS", "D1", "D16");
+    assert.equal(kafr.managerName, "Nader Fouad", "D16 must follow the organogram to Alex-BHR, not geography to Delta (1)");
+    assert.ok(kafr.scopeLabel.includes("Alex-BHR"), `the section must name the owning region, got "${kafr.scopeLabel}"`);
+    assert.equal(
+      resolveWeeklyManager(index, "CNS", "D1").managerName,
+      "Wael Ibrahim",
+      "without an area the same row still falls back to its geographic Delta (1) manager",
+    );
+
+    // An area the map does not cover must fall back, never vanish — a missing mapping cannot cost the
+    // report a row of sales.
+    const unknownArea = resolveWeeklyManager(index, "CNS", "CA", "ZZ99");
+    assert.equal(unknownArea.managerName, "Mina Rizkallah", "an unmapped area falls back to the geographic region");
   }
 
   // 6) A vacant seat is a distinct state from "no seat". The seat exists and its scope is real, so it
@@ -435,7 +494,7 @@ export async function runWeeklySummaryReportTests() {
 
     const base = {
       weekly: dash(rows), mtd: dash(rows), ytd: dash(rows), trend: dash(rows),
-      managerIndex: { dmByLineRegion: new Map(), seatsById: new Map(), nameByHrId: new Map(), regionNameByCode: new Map(), ceoName: null },
+      managerIndex: { dmByLineRegion: new Map(), operationalRegionByLineArea: new Map(), seatsById: new Map(), nameByHrId: new Map(), regionNameByCode: new Map(), ceoName: null },
       ytdMonths: [JUL], periodLabel: "test", generatedAt: "2026-08-12 00:00 UTC", lineFilter: [],
       masterAreas: [
         { areaCode: "CA1", areaName: "Heliopolis", regionCode: "CA" },
