@@ -512,6 +512,9 @@ export async function runClosingChannelTabsTests() {
     period: "2026-06",
     reconciliation: {
       areaMismatches: emptyTotals,
+      // Zeroed like every other total in this deliberately minimal fixture: the workbook builder
+      // reads `includedInClosing` and the rows, never the headline.
+      closingHeadline: emptyTotals,
       excludedConfidential: emptyTotals,
       excludedDirect: emptyTotals,
       includedInClosing: emptyTotals,

@@ -41,6 +41,25 @@ import {
 // WHY THIS TEST EXISTS SEPARATELY from july-2026-direct-orders-tab.test.ts: that file pins the
 // owner's MAPPING (the hand-written area distribution). This one pins that the closing READS the
 // stored value rather than deriving one, which is a different failure with the same symptom.
+//
+// WIDENED TO EVERY MONTH — 2026-08-25. The July scoping was the cautious first step, not the rule.
+// Finance books a Direct Order into a sales month from the Direct Orders desk; for any month that
+// was not July 2026 the Details surface — the Finance Manager's ONLY closing door — recomputed it
+// at effectiveUnits x factoryPrice all over again. Measured on production for the twenty approved
+// orders Finance had just booked into 2026-08, a month carrying no distributor sell-out at all:
+//
+//                     stored (the deal)   effectiveUnits x factoryPrice
+//   Pedia          (15 rows)  258,858.67          274,488.75   <- OVER  by 15,630.08
+//   Anti Infective  (7 rows)   31,528.90           29,947.50   <- UNDER by  1,581.40
+//   both lines     (22 rows)  290,387.57          304,436.25   <- +14,048.68 published wrongly
+//
+// Opposite directions again, on a different month and different products — the same proof that a
+// deal has no derivable price. Factory price is BANNED from the Direct Orders module by a standing
+// owner rule, so deriving one was never allowed in ANY month; and under the owner's #1 rule (the
+// Monthly Closing is the one sales truth, no surface keeps its own maths) a month-scoped exception
+// could only ever be a bug waiting for its month. `invoicePeriod` is still on the signature for its
+// callers; nothing branches on it any more. The July figures below are unchanged by the widening —
+// that is the point of keeping them here.
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** The owner's figure. Measured at five independent layers in production on 2026-08-06. */
@@ -148,7 +167,8 @@ function runValueRuleTests() {
     + "effectiveUnits x factoryPrice, which is what phx_monthly_closing_matrix values sell-out at",
   );
 
-  // Every other month — the owner ruled ONE month, so nothing else may move.
+  // Every other month — WIDENED 2026-08-25, see the header. A deal has no derivable price in
+  // June or December either, so every month reads the value the deal was struck at.
   for (const period of ["2026-06", "2026-08", "2026-12"]) {
     assert.equal(
       Number(resolveClosingDetailSalesValue({
@@ -158,9 +178,25 @@ function runValueRuleTests() {
         isDirect: true,
         sheetValue: 5_428,
       }).toFixed(2)),
+      5_428,
+      `a direct order is a negotiated deal in ${period} exactly as it is in July 2026, so it is `
+      + "taken AS STORED there too. 6,075.00 is the factory-price recompute — a price nobody "
+      + "negotiated, from the one formula the owner BANNED from the Direct Orders module",
+    );
+
+    // ...and the distributor formula in that same month must be untouched by the widening.
+    assert.equal(
+      Number(resolveClosingDetailSalesValue({
+        effectiveUnits: 100,
+        factoryPrice: 60.75,
+        invoicePeriod: period,
+        isDirect: false,
+        sheetValue: 5_428,
+      }).toFixed(2)),
       6_075,
-      `the owner ruled JULY 2026 only, so ${period} keeps exactly the behaviour it has today. `
-      + "Widening this to every month is a separate ruling and must be asked for, not assumed",
+      `${period} sell-out is still valued at effectiveUnits x factoryPrice. The widening is for `
+      + "DIRECT rows only — phx_monthly_closing_matrix values a distributor invoice line this way "
+      + "and the Data sheet has to reproduce it",
     );
   }
 }

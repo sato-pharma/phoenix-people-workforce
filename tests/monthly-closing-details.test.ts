@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 
+import { countsInClosingHeadline } from "../src/lib/sales/closing-headline.ts";
+
 import ExcelJS from "exceljs";
 
 import {
@@ -179,6 +181,7 @@ function detailsStub(rows: ClosingDetailRow[]): ClosingDetailsResult {
     options: buildFilterOptions(rows),
     totals: summarize(rows, () => true),
     reconciliation: {
+      closingHeadline: summarize(rows, countsInClosingHeadline),
       includedInClosing: summarize(rows, (r) => r.includedInClosing),
       excludedDirect: summarize(rows, (r) => r.isDirect),
       missingClientCode: summarize(rows, (r) => r.missingClientCode),

@@ -6,6 +6,9 @@ import { useEffect, useMemo, useState } from "react";
 import { AdminCallout, AdminStatCard } from "@/components/admin/admin-design-system";
 import { PaginationControls } from "@/components/ui/pagination-controls";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+// Value import, so it must come from the leaf: monthly-closing-details.ts reaches getSupabaseAdmin
+// and this is a client component. See closing-headline.ts.
+import { countsInClosingHeadline } from "@/lib/sales/closing-headline";
 import type {
   ClosingDetailRow,
   ClosingDetailsResult,
@@ -252,18 +255,26 @@ export function ClosingDetailsPanel({ line, period, showConfidentialToggle = fal
       {/* ── Reconciliation summary — what is and is not inside the headline ── */}
       {recon ? (
         <div className="grid grid-cols-1 gap-3 px-4 sm:grid-cols-2 xl:grid-cols-4 md:px-5">
+          {/* The closing headline is BOTH channels added — distributor sell-out plus the direct
+              orders Finance booked into the month. Showing the distributor half alone here read
+              "In closing 0.00" for a month whose sales were all direct, while the Closing Matrix
+              beside it showed the money. See countsInClosingHeadline. */}
           <AdminStatCard
-            description={`${fmtUnits(recon.includedInClosing.rows)} rows feed the Closing Matrix`}
+            description={`${fmtUnits(recon.includedInClosing.rows)} distributor + ${fmtUnits(recon.excludedDirect.rows)} direct rows`}
             icon={<RefreshCw className="h-4 w-4" />}
             label="In closing"
             size="compact"
             tone="emerald"
-            value={fmtValue(recon.includedInClosing.salesValue)}
+            value={fmtValue(recon.closingHeadline.salesValue)}
           />
           <AdminStatCard
-            description={`${fmtUnits(recon.excludedDirect.rows)} Direct rows — reported separately`}
-            icon={<AlertTriangle className="h-4 w-4" />}
-            label="Direct (excluded)"
+            description={
+              recon.excludedDirect.rows > 0
+                ? `${fmtUnits(recon.excludedDirect.rows)} booked Direct Orders rows, at their deal value`
+                : "No direct orders booked into this month"
+            }
+            icon={<RefreshCw className="h-4 w-4" />}
+            label="of which Direct"
             size="compact"
             tone="blue"
             value={fmtValue(recon.excludedDirect.salesValue)}
@@ -465,7 +476,7 @@ function DetailTable({ rows, totals }: { rows: ClosingDetailRow[]; totals: Closi
         <tbody>
           {rows.map((row) => (
             <tr
-              className={`border-b border-slate-100 ${row.includedInClosing ? "" : "bg-amber-50/70"}`}
+              className={`border-b border-slate-100 ${countsInClosingHeadline(row) ? "" : "bg-amber-50/70"}`}
               key={row.id}
             >
               <td className="truncate px-3 py-2 font-semibold text-slate-700">{row.distributorCode}</td>
@@ -484,9 +495,15 @@ function DetailTable({ rows, totals }: { rows: ClosingDetailRow[]; totals: Closi
               <td className="px-3 py-2 text-right tabular-nums text-slate-700">{fmtUnits(row.qty)}</td>
               <td className="px-3 py-2 text-right tabular-nums text-slate-600">{fmtValue(row.effectiveUnits)}</td>
               <td className="px-3 py-2 text-right font-semibold tabular-nums text-slate-800">{fmtValue(row.salesValue)}</td>
+              {/* "In Closing" answers whether this row's money is in the headline. A direct row is
+                  in it — it reaches the grid from the Direct Orders module rather than as an
+                  invoice line, which is what the "direct" label says. Only a confidential product
+                  is genuinely out. */}
               <td className="px-3 py-2">
-                {row.includedInClosing ? (
-                  <span className="font-bold text-emerald-700">Yes</span>
+                {countsInClosingHeadline(row) ? (
+                  <span className="font-bold text-emerald-700">
+                    {row.isDirect ? "Yes · direct" : "Yes"}
+                  </span>
                 ) : (
                   <span className="font-semibold text-amber-700">{row.exclusions.join(", ")}</span>
                 )}
@@ -516,7 +533,7 @@ function DetailCards({ rows }: { rows: ClosingDetailRow[] }) {
     <div className="space-y-2 px-4 md:hidden">
       {rows.map((row) => (
         <div
-          className={`rounded-2xl border p-3 ${row.includedInClosing ? "border-slate-200 bg-white" : "border-amber-200 bg-amber-50/70"}`}
+          className={`rounded-2xl border p-3 ${countsInClosingHeadline(row) ? "border-slate-200 bg-white" : "border-amber-200 bg-amber-50/70"}`}
           key={row.id}
         >
           <div className="flex items-start justify-between gap-2">
@@ -541,7 +558,11 @@ function DetailCards({ rows }: { rows: ClosingDetailRow[] }) {
               <dd className="font-bold tabular-nums text-slate-800">{fmtValue(row.salesValue)}</dd>
             </div>
           </dl>
-          {row.includedInClosing ? null : (
+          {countsInClosingHeadline(row) ? (
+            row.isDirect ? (
+              <p className="mt-2 text-xs font-semibold text-blue-700">In closing · direct order</p>
+            ) : null
+          ) : (
             <p className="mt-2 text-xs font-semibold text-amber-700">
               Excluded: {row.exclusions.join(", ")}
             </p>
