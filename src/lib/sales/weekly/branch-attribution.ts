@@ -252,7 +252,11 @@ export function previewWeeklyBranchSplit(
   }
 
   const arithmetic = [...byFormula.values()];
-  const note = arithmetic.length === 0
+  // Only a branch that WAS read as a territory needs the extra sentence. A warehouse, a hospital or
+  // a tender has already said why it is not being split, and appending a second reason on top of the
+  // first reads as a contradiction on a screen where every word is being checked against a name.
+  const unexplained = arithmetic.length === 0 && reading.scope != null;
+  const note = unexplained
     ? `${reading.note} No line places it, so it stays with its region's manager.`
     : reading.note;
   return { branchClass: reading.branchClass, note, arithmetic };

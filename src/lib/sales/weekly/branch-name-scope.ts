@@ -29,6 +29,7 @@ import {
   placeMentions,
   type GovernorateKey,
 } from "@/lib/sales/weekly/governorates";
+import { regionName } from "@/lib/sales/monthly-targets";
 import type { WeeklyAreaSplitIndex, WeeklyBranchScope } from "@/lib/sales/weekly/branch-area-split";
 
 export type WeeklyBranchClass = "territory" | "warehouse" | "hospital" | "tender" | "unreadable";
@@ -95,6 +96,21 @@ export function classifyWeeklyBranch(branchName: string | null | undefined): Wee
  * should paper over generally — dropping alefs outright would collide names across 696 bricks.
  */
 const BRICK_SPELLING_BRIDGE: Array<[string, string]> = [["ملوى", "ملاوى"]];
+
+/**
+ * A governorate's canonical key as something a person reads.
+ *
+ * placeAliases is keyed on lowercase tokens — "matrouh", "kafr el-sheikh", "beni suef" — because it
+ * is a lookup table, not a display list. Printing that key straight onto the mapping sheet breaks the
+ * owner's standing rule that a screen shows names and never raw codes, so it is cased here. Only the
+ * label changes; the key itself is still what the map is looked up by.
+ */
+function governorateLabel(key: string): string {
+  return key
+    .split(" ")
+    .map((word) => word.split("-").map((part) => (part ? part[0].toUpperCase() + part.slice(1) : part)).join("-"))
+    .join(" ");
+}
 
 /** The one area of `governorate` whose NAME carries this standalone number, e.g. "Gharbia 2" -> D15. */
 function areaForOrdinal(
@@ -201,7 +217,7 @@ export function readWeeklyBranchName(
     }
     if (mention.region) {
       parts.push({ kind: "region", regionCode: mention.region });
-      labels.push(`the ${mention.region} region`);
+      labels.push(`the ${regionName(mention.region) || mention.region} region`);
       continue;
     }
     const key = mention.governorate as GovernorateKey;
@@ -209,7 +225,7 @@ export function readWeeklyBranchName(
     if (pinned) pushArea(pinned);
     else {
       parts.push({ kind: "governorates", names: [key] });
-      labels.push(key);
+      labels.push(governorateLabel(key));
     }
   }
 
