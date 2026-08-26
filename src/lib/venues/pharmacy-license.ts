@@ -133,17 +133,27 @@ export function parsePharmacyLicenseDataUrl(dataUrl: unknown): ParsedPharmacyLic
  * Is a licence the evidence this venue is actually short of?
  *
  * TRUE when the venue is one that normally carries a distributor account and this one names no
- * code — the case the owner asked for on 2026-08-25. FALSE for a nursery, which has no distributor
- * account by its nature: its codelessness is its type, not a gap, and prompting for a pharmacy
- * trade licence there would be asking for a document that does not exist.
+ * code — the case the owner asked for on 2026-08-25.
  *
- * A prompt, never a gate. Callers use it to decide what to SAY, not what to refuse.
+ * ALSO TRUE FOR A NURSERY SINCE 2026-08-26, which reverses what this function used to say. It
+ * returned FALSE for a nursery on the reasoning that a *pharmacy trade* licence is a document a
+ * nursery does not have, so asking for one was asking for nothing. That reasoning was about the
+ * document's name and it missed the consequence: a nursery has no distributor account, so no code of
+ * its can ever be in the master database, so the licence is the ONLY identity route it will ever
+ * have — and the one venue type that could never pass by code was the one type prompted for nothing
+ * at all. Three invented nursery codes were written by people who had no other way to register a
+ * venue, and two nurseries were approved on a photograph alone.
+ *
+ * STILL A PROMPT — callers use it to decide what to SAY. What refuses is
+ * `venueIdentityGapMessage` at the approval desk, and the two must agree: a gate that bites where
+ * nothing was ever asked is how a rep gets blocked for a document nobody mentioned.
  */
 export function pharmacyLicenseFillsTheIdentityGap(input: {
   distributorCodeCount: number;
   venueType: VenueType;
 }): boolean {
-  return venueRequiresDistributorCode(input.venueType) && input.distributorCodeCount === 0;
+  if (!venueRequiresDistributorCode(input.venueType)) return true;
+  return input.distributorCodeCount === 0;
 }
 
 /**
@@ -158,6 +168,17 @@ export function pharmacyLicensePrompt(input: {
   venueType: VenueType;
 }): string | null {
   if (!pharmacyLicenseFillsTheIdentityGap(input)) return null;
+
+  // A nursery is told the truth about itself rather than the pharmacy sentence. "No distributor code
+  // in any distributor" reads as a gap somebody could go and close, and for a nursery there is
+  // nothing to close — it never had one and never will, which is exactly why the licence is not
+  // optional for it.
+  if (!venueRequiresDistributorCode(input.venueType)) {
+    return input.hasLicenseOnFile
+      ? "A nursery has no distributor code, so the licence is the identity check — compare the name on it against the name on the sign."
+      : "A nursery has no distributor code, so the licence is the only thing that can say who this venue is. Attach it before sending.";
+  }
+
   return input.hasLicenseOnFile
     ? "No distributor code — check the trade name on the licence against the name on the shop sign."
     : "No distributor code in any distributor. Attach the pharmacy licence (رخصة الصيدلية) so the trade name can be checked against the shop sign.";

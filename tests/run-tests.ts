@@ -391,6 +391,7 @@ import { runMarketingRoiLiveStagesTests } from "./marketing-roi-live-stages.test
 import { runMarketingSubmissionCaptureGateTests } from "./marketing-submission-capture-gates.test.ts";
 import { runNurseryVenueTypeTests } from "./nursery-venue-type.test.ts";
 import { runVenueTypeMustBeAskedTests } from "./venue-type-must-be-asked.test.ts";
+import { runVenueValidationRuleTests } from "./venue-validation-rule.test.ts";
 import { runMarketingVenueMergeTests } from "./marketing-venue-merge.test.ts";
 import { runMarketingVenueMergeRouteTests } from "./marketing-venue-merge-route.test.ts";
 import { runMarketingRoiTrackerTests } from "./marketing-roi-tracker.test.ts";
@@ -1521,6 +1522,13 @@ await runTest(
   + "in the same sentence, none of them pre-selects an answer, all three server create sites refuse "
   + "an unanswered type, and normalizeVenueType survives only on the read path)",
   runVenueTypeMustBeAskedTests,
+);
+await runTest(
+  "venue validation rule (either route identifies a venue and the code wins when both exist, a "
+  + "nursery can only ever pass by licence because a resolving code on one was invented, the capture "
+  + "prompt asks for everything the desk will refuse, filing refuses a venue with no location, and "
+  + "approving a new venue refuses without an identity route while reject stays open)",
+  runVenueValidationRuleTests,
 );
 await runTest(
   "marketing venue merge (a colliding child is counted not thrown, one collision does not abort the rest, a real failure still surfaces, all four child tables move, the loser is deactivated, the mark is idempotent, the FK is SET NULL so deleting a survivor keeps its duplicates' record, and the backfill cannot fire on the wrong database)",

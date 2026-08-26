@@ -16,6 +16,11 @@ import {
   PHARMACY_LICENSE_BUCKET,
   type PharmacyLicenseContentType,
 } from "@/lib/venues/pharmacy-license";
+import { normalizeVenueType } from "@/lib/venues/venue-type";
+import {
+  VENUE_LOCATION_REQUIRED_MESSAGE,
+  venueIdentityGapMessage,
+} from "@/lib/venues/venue-validation-rule";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Pharmacy Validation (spec A2 — docs/specs/direct-orders-v2.md).
@@ -246,6 +251,30 @@ export async function requestDirectOrderPharmacyValidation(
   // the admin has to answer, and making the rep answer it first is most of the review.
   if (!reason) badRequest("Say why this pharmacy is not in the master database.");
 
+  // LEG 1 OF THE VENUE RULE — a location is a must (owner, 2026-08-26). See
+  // `src/lib/venues/venue-validation-rule.ts` for all three legs.
+  //
+  // Until now these two arrived `?? null` and a claim with no pin was filed exactly like one that
+  // had it. The pin is not decoration: it is the only input that ties the storefront photo to a
+  // PLACE, it is what `resolveAreaProximity` scores below, and `gps_inside_requester_area` reads
+  // `false` for a missing pin and for a pin 400km away alike — so a submission with none arrives on
+  // the desk looking like a submission that failed the proximity check.
+  //
+  // Safe to make a refusal: all 6 production validations carry coordinates, so this refuses nothing
+  // anyone has ever legitimately sent. `Number.isFinite` rather than a null check because a browser
+  // that lost its fix mid-capture sends NaN, which `?? null` passes straight through.
+  const capturedLatitude =
+    typeof input.capturedLatitude === "number" && Number.isFinite(input.capturedLatitude)
+      ? input.capturedLatitude
+      : null;
+  const capturedLongitude =
+    typeof input.capturedLongitude === "number" && Number.isFinite(input.capturedLongitude)
+      ? input.capturedLongitude
+      : null;
+  if (capturedLatitude === null || capturedLongitude === null) {
+    badRequest(VENUE_LOCATION_REQUIRED_MESSAGE);
+  }
+
   // The evidence must come from the person whose order is stuck. `direct_orders:create` alone is
   // not enough: it admits every rep in the company, so without this any of them could file a
   // storefront photo for a pharmacy in someone else's territory. The UI only offers the capture to
@@ -335,8 +364,8 @@ export async function requestDirectOrderPharmacyValidation(
   // one place a rep could otherwise assert their own compliance.
   const proximity = await resolveAreaProximity({
     areaCode,
-    latitude: input.capturedLatitude ?? null,
-    longitude: input.capturedLongitude ?? null,
+    latitude: capturedLatitude,
+    longitude: capturedLongitude,
   });
 
   // What Phoenix offered before this claim was accepted (spec B4). Resolved server-side at
@@ -357,8 +386,8 @@ export async function requestDirectOrderPharmacyValidation(
       claimed_address: input.claimedAddress?.trim() || null,
       claimed_doctor_name: input.claimedDoctorName?.trim() || null,
       claimed_reason: reason,
-      captured_latitude: input.capturedLatitude ?? null,
-      captured_longitude: input.capturedLongitude ?? null,
+      captured_latitude: capturedLatitude,
+      captured_longitude: capturedLongitude,
       captured_accuracy_meters: input.capturedAccuracyMeters ?? null,
       captured_at: input.capturedAt ?? null,
       captured_address: input.capturedAddress?.trim() || null,
@@ -767,6 +796,49 @@ export async function getDirectOrderPharmacyValidationForRequest(
 }
 
 /**
+ * How many of this venue's distributor codes the MASTER DATABASE actually agrees with.
+ *
+ * Deliberately not `count(*)` on the link table. A link row is something Phoenix wrote about itself;
+ * it is not the distributor's book agreeing. Three invented codes reached production exactly that
+ * way — `0000`, `0001000000`, `0001511111` — and two were later written into
+ * `source_of_sales_customer_map`, where a fabricated code resolves forever and looks trustworthy to
+ * every later reader. So each pair is re-checked against the map, which is the same lookup the
+ * `match` decision below makes before it will accept one.
+ *
+ * PAIRWISE, one round trip each, rather than one `.in()` over all the codes. Two reasons and both
+ * are real: an `.in()` on distributor codes crossed with an `.in()` on customer codes matches pairs
+ * nobody submitted (distributor A's code against distributor B's customer), and a PostgREST `.in()`
+ * carrying a long list silently returns zero rows with no error. A venue has at most a handful of
+ * codes — the largest in production has one — and this runs once, when a human clicks a decision.
+ */
+async function countVenueCodesInMasterDatabase(
+  supabase: ReturnType<typeof getSupabaseAdmin>,
+  pharmacyId: string,
+): Promise<number> {
+  const { data: links } = await supabase
+    .from("direct_order_pharmacy_distributor_codes")
+    .select("distributor_code, customer_code")
+    .eq("pharmacy_id", pharmacyId);
+
+  const pairs = (links ?? []) as Array<{ distributor_code?: string | null; customer_code?: string | null }>;
+  let found = 0;
+  for (const pair of pairs) {
+    const distributorCode = String(pair.distributor_code ?? "").trim();
+    const customerCode = String(pair.customer_code ?? "").trim();
+    if (!distributorCode || !customerCode) continue;
+    const { data: mapRow } = await supabase
+      .from("source_of_sales_customer_map")
+      .select("customer_code")
+      .eq("active", true)
+      .eq("distributor_code", distributorCode)
+      .eq("customer_code", customerCode)
+      .maybeSingle();
+    if (mapRow) found += 1;
+  }
+  return found;
+}
+
+/**
  * The Super Admin decides (spec A2).
  *
  * `match` is the outcome to reach for: the pharmacy existed all along under another spelling, so
@@ -866,6 +938,44 @@ export async function decideDirectOrderPharmacyValidation(
       summary: `Pharmacy validation rejected by ${access.hrId ?? "unknown"}${notes ? `: ${notes}` : "."}`,
     });
     return;
+  }
+
+  // LEG 3 OF THE VENUE RULE — either the code, and it is in our database, or the licence (owner,
+  // 2026-08-26). See `src/lib/venues/venue-validation-rule.ts`.
+  //
+  // ONLY ON `approve`, and the asymmetry is the whole design:
+  //
+  //   match   → the pair is verified against `source_of_sales_customer_map` a few lines below
+  //             before it is accepted, so the code route is satisfied by the act of matching. This
+  //             is the outcome we want most and nothing may make it harder.
+  //   reject  → returned above, ungated. Refusing to let someone say no is how evidence stops
+  //             being filed at all.
+  //   approve → mints a brand-new identity for a venue the master database does not know. That is
+  //             the one outcome where nothing outside the rep's own words says who this venue is,
+  //             and it is the outcome the rule exists for.
+  //
+  // Measured before shipping: all three `approved_new` rows in production carry no licence and no
+  // code the master database agrees with — including two nurseries, one of which was given an
+  // invented code instead. The single validation waiting for a decision today HAS a licence, so
+  // this blocks no live work.
+  //
+  // The existing codes are re-checked rather than assumed absent, because a pharmacy can already
+  // carry a real code and still arrive here — approving it is then legitimate and must not be
+  // refused for want of a document it does not need.
+  if (input.decision === "approve") {
+    const { data: venueRow } = await supabase
+      .from("direct_order_pharmacies")
+      .select("venue_type")
+      .eq("id", pharmacyId)
+      .maybeSingle();
+    const gap = venueIdentityGapMessage({
+      codesInOurDatabase: await countVenueCodesInMasterDatabase(supabase, pharmacyId),
+      hasLicenseOnFile: licenseOnFile,
+      // `normalizeVenueType`, not `parseVenueTypeChoice`: this reads a STORED column, and a row
+      // written before the column existed is a pharmacy, which is what it was.
+      venueType: normalizeVenueType((venueRow as { venue_type?: string | null } | null)?.venue_type),
+    });
+    if (gap) badRequest(gap);
   }
 
   if (input.decision === "match") {
