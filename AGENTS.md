@@ -298,8 +298,12 @@ file holding the full account, under
 **Machine ceiling** (the same exhaustion the two entries above are symptoms of)
 
 - **The ceiling is the Windows COMMIT limit, not RAM — and a freeze leaves NO dump.** Commit is
-  RAM + pagefile, so the pagefile is the half that was fixable: raised to a fixed 16 GB on
-  2026-08-25, taking the limit from ~19.79 GB to **31.79 GB**. A commit-limit hang produces no
+  RAM + pagefile, so the pagefile is the half that was fixable. It was raised to a fixed 16 GB on
+  2026-08-25 (limit ~19.79 GB -> 31.79 GB), then **re-pinned to 32768/65536 MB on 2026-08-26,
+  putting the limit at 47.79 GB — measured live 2026-08-26 20:5x Cairo.** **Read the limit, never
+  quote it from here**: it has been reset twice, and a reading near ~37.4 GB means it was reset
+  again. **A pagefile change does not fix a leak** — Windows was reinstalled 2026-08-26 06:19 and
+  the box still froze at 10:57 and 15:15 on the raised limit. A commit-limit hang produces no
   bugcheck and no minidump, so an empty `C:\Windows\Minidump` is the **expected** signature and never
   an all-clear — the tell is `dwm.exe` dying with `0xC00001AD` (`STATUS_COMMITMENT_LIMIT`) minutes
   before the freeze, with `System.OutOfMemoryException` in the Application log. **Never judge a
@@ -313,6 +317,19 @@ file holding the full account, under
   *"Resource temporarily unavailable"*, and a heredoc silently failing to create its script so the
   next command dies `MODULE_NOT_FOUND`. Check the shell with `echo alive` before blaming the task.
   `commit-limit-not-ram-is-the-freeze-ceiling-pagefile-now-16gb`
+- **Two decoys sit on top of that diagnosis.** `nvlddmkm` (the display driver) in the event log is a
+  **DECOY** — it is what dies when the desktop compositor is starved, not the cause. And the
+  `node.exe` gigabyte figures in **Event 2004** are the one memory number here that IS real, unlike
+  `VirtualSize`: do not dismiss them as reservation. **The single largest leak found so far is a
+  throwaway ExcelJS probe** — a `tests/_tmp-run-*.mjs` scratch script took commit 22 -> 41 GB in 40
+  seconds, reaching 99.7% of a 53.83 GB limit. ExcelJS holds workbook data **off-heap**, so
+  `--max-old-space-size` cannot cap it. Delete such probes when done; one sat untracked in the tree
+  for days. `commit-limit-not-ram-is-the-freeze-ceiling-pagefile-now-16gb`
+- **An interrupted session leaves the tree BROKEN ON PURPOSE.** Before acting on a bare "commit it"
+  from a resumed or compacted session, `git grep BREAK-` — a deliberate breakage marker means a
+  regression test is mid-proof, and the source-pinning test states the intended fix verbatim.
+  Committing over it ships the break and destroys the proof.
+  `an-interrupted-session-leaves-the-tree-deliberately-broken`
 
 ## 3. Stable Environment Facts
 
@@ -417,10 +434,14 @@ server at a time, ever. One typecheck/build at a time locally; parallel validati
 
 **The binding limit is the Windows COMMIT charge, not RAM — and it moved.** "Keep total local
 sessions at **4 or fewer**" was written against a ~19.79 GB commit limit (15.79 GB RAM + a 4 GB
-pagefile). The pagefile was raised to a fixed 16 GB on 2026-08-25, so the limit is now **31.79 GB**
-and that guidance is roughly 12 GB too conservative — measured the same day at 14 `claude.exe`,
-10.23 GB committed, **21.56 GB free**, surviving a pressure spike that had hung the machine five
-times earlier that day. Commit is still finite and the failure mode is a total freeze, so watch the
+pagefile). The pagefile went to a fixed 16 GB on 2026-08-25 (limit **31.79 GB**) and was re-pinned
+to 32768/65536 MB on 2026-08-26, so the limit is now **47.79 GB** — measured live that evening at
+9 sessions, 22.96 GB committed, **24.83 GB free**. That makes the old "4 or fewer" guidance roughly
+28 GB too conservative: **sessions were never the ceiling.** Separating the MAIN `claude.exe` from
+its renderer/gpu/utility children puts an idle session at **~0.5 GB**, while a dev server, build or
+cold typecheck is **~3.5 GB** — so the real limit is about 5 concurrent HEAVY jobs, not a session
+count. `node scripts/new-session.mjs --status` prints both live. Commit is still finite and the
+failure mode is a total freeze, so watch the
 **headroom** rather than a fixed session count: `Win32_OperatingSystem.TotalVirtualMemorySize` is the
 limit and `FreeVirtualMemory` the headroom, both in KB. **Read them live before quoting any session
 number.** Why such a freeze leaves no crash dump, and why `VirtualSize` misleads: §2.1.
