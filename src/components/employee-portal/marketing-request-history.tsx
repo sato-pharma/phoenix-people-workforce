@@ -152,7 +152,7 @@ function HistoryDecisionDetail({ row }: { row: MarketingApproverHistoryRow }) {
         </div>
       ) : null}
 
-      <ApprovalHistory rungs={row.approvalHistory} title="Full approval trail" />
+      <ApprovalHistory requestCode={row.requestCode} rungs={row.approvalHistory} title="Full approval trail" />
 
       <div className="grid gap-3 px-4 py-3 sm:grid-cols-4">
         <div className="flex flex-col">

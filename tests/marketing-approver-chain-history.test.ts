@@ -144,9 +144,15 @@ export function runMarketingApproverChainHistoryTests() {
     "the inbox row must be built from the shared chain builder, not a second inline copy",
   );
   const inboxSource = source("src/components/employee-portal/marketing-request-inbox.tsx");
+  // Prop-order tolerant on purpose. This pinned `rungs=` as the FIRST prop until 2026-08-26, when
+  // `requestCode` was added ahead of it alphabetically and turned a still-correct render into a red
+  // build. The invariant being protected is that the inbox passes `row.approvalHistory` to
+  // ApprovalHistory at all — carrying the chain to the client and not showing it is the bug — and
+  // that survives any number of sibling props. It still fails if the element goes away or is handed
+  // something other than the row's own chain.
   assert.match(
     inboxSource,
-    /<ApprovalHistory rungs=\{row\.approvalHistory\}/,
+    /<ApprovalHistory[^>]*\brungs=\{row\.approvalHistory\}/,
     "the inbox row must render the approval history — carrying it to the client and not showing it is the bug",
   );
   // The rung RENDERER moved to marketing-approval-chain.tsx on 2026-08-19, when the inbox grew a

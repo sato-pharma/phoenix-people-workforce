@@ -10,6 +10,10 @@ import type {
   MarketingCaseFileWarning,
   MarketingRequestCaseFile,
 } from "@/lib/marketing-requests/case-file-types";
+import {
+  isMarketingAdminOverrideNote,
+  MARKETING_ADMIN_OVERRIDE_NOTE_CLASSES,
+} from "@/lib/marketing-requests/admin-override-note";
 import { cairoDateTime, plainDate } from "@/lib/marketing-requests/request-report-columns";
 import type { MarketingRequestStatus } from "@/lib/marketing-requests/types";
 import { MarketingCaseFileGoDeeper } from "@/components/marketing-requests/marketing-case-file-go-deeper";
@@ -189,7 +193,16 @@ function rungClasses(rung: MarketingCaseFileChain["rungs"][number]) {
   return "bg-slate-100 text-slate-500";
 }
 
-function Chain({ chain, status }: { chain: MarketingCaseFileChain; status: MarketingRequestStatus }) {
+function Chain({
+  chain,
+  requestCode,
+  status,
+}: {
+  chain: MarketingCaseFileChain;
+  /** Only read to spot the one out-of-band SFE Validation note — see `admin-override-note.ts`. */
+  requestCode?: string | null;
+  status: MarketingRequestStatus;
+}) {
   // Nobody is holding a request that has already ended. `chain.currentStepName` is derived from the
   // step rows, so it named a rung on a refused request for as long as those rows stayed `pending`,
   // and rendering "now with Finance Execution" on a request Finance never saw is exactly the kind
@@ -272,7 +285,13 @@ function Chain({ chain, status }: { chain: MarketingCaseFileChain; status: Marke
                   {rung.decisionAt ? ` · ${cairoDateTime(rung.decisionAt) ?? ""}` : ""}
                 </p>
                 {rung.decisionNote ? (
-                  <p className="mt-1 break-words text-[12px] font-medium leading-5 text-slate-700">
+                  <p
+                    className={`mt-1 break-words text-[12px] font-medium leading-5 ${
+                      isMarketingAdminOverrideNote({ requestCode, stepName: rung.stepName })
+                        ? MARKETING_ADMIN_OVERRIDE_NOTE_CLASSES
+                        : "text-slate-700"
+                    }`}
+                  >
                     {rung.decisionNote}
                   </p>
                 ) : null}
@@ -652,7 +671,9 @@ export function MarketingRequestCaseFileView({ caseFile }: { caseFile: Marketing
           </Block>
 
           <SectionLabel>Approval chain</SectionLabel>
-          <Block block={chain}>{(value) => <Chain chain={value} status={header.status} />}</Block>
+          <Block block={chain}>
+            {(value) => <Chain chain={value} requestCode={header.requestCode} status={header.status} />}
+          </Block>
 
           {/* Directly under the chain: the chain says WHERE the request is, this says how it got
               there — and holds the comments the step rows overwrote. */}

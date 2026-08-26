@@ -958,6 +958,7 @@ import { runCvRereadAppliesWhatItReadsTests } from "./cv-reread-applies-what-it-
 import { runCandidateNameFromCvTests } from "./candidate-name-from-cv.test.ts";
 import { runCvLibraryTests } from "./cv-library.test.ts";
 import { runHiringEmployeeScopeTests } from "./hiring-employee-scope.test.ts";
+import { runMarketingAdminOverrideNoteTests } from "./marketing-admin-override-note.test.ts";
 import { runRecruitmentPoolFilterTests } from "./recruitment-pool-filters.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
@@ -2691,6 +2692,12 @@ await runTest(
   "hiring employee scope (Hiring Documents and Hiring Pack both mean current staff, and neither "
     + "owns a second employment-status list)",
   runHiringEmployeeScopeTests,
+);
+
+await runTest(
+  "marketing admin override note (the one out-of-band SFE validation is red on every surface that "
+    + "shows it, and stays exactly one request)",
+  runMarketingAdminOverrideNoteTests,
 );
 
 await runTest(

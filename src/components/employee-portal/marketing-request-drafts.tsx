@@ -2769,7 +2769,7 @@ function MarketingRequestDraftWorkspaceInner() {
                           </div>
                         ) : detail ? (
                           <>
-                            <MarketingApprovalTimeline steps={detail.steps} />
+                            <MarketingApprovalTimeline requestCode={request.requestCode} steps={detail.steps} />
                             {detail.viewerCanComment ? (
                               <div className="mt-3 rounded-sm border border-sky-200 bg-sky-50/40 px-3 py-3">
                                 <p className="mb-1.5 text-[11px] font-bold uppercase tracking-[0.12em] text-sky-700">

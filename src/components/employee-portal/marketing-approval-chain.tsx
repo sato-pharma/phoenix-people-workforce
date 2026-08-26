@@ -1,5 +1,9 @@
 "use client";
 
+import {
+  isMarketingAdminOverrideNote,
+  MARKETING_ADMIN_OVERRIDE_NOTE_CLASSES,
+} from "@/lib/marketing-requests/admin-override-note";
 import type { MarketingApproverChainRung } from "@/lib/marketing-requests/service";
 import { PHOENIX_BUSINESS_TIME_ZONE } from "@/lib/i18n/format";
 
@@ -75,9 +79,15 @@ export const RUNG_VERB: Record<MarketingApproverChainRung["status"], string> = {
  * approvals SO FAR, on a decided row it is the complete record.
  */
 export function ApprovalHistory({
+  requestCode,
   rungs,
   title = "Approval history",
 }: {
+  /**
+   * Optional, and only read to spot the one out-of-band SFE Validation note (see
+   * `admin-override-note.ts`). A caller that omits it gets the ordinary treatment on every note.
+   */
+  requestCode?: string | null;
   rungs: MarketingApproverChainRung[];
   title?: string;
 }) {
@@ -110,7 +120,15 @@ export function ApprovalHistory({
               </div>
               {/* Full note, never truncated — the reason for a decision is the whole point of showing it. */}
               {rung.decisionNote ? (
-                <p className="mt-1 text-[11px] font-medium leading-snug">&ldquo;{rung.decisionNote}&rdquo;</p>
+                <p
+                  className={`mt-1 text-[11px] leading-snug ${
+                    isMarketingAdminOverrideNote({ requestCode, stepName: rung.stepName })
+                      ? MARKETING_ADMIN_OVERRIDE_NOTE_CLASSES
+                      : "font-medium"
+                  }`}
+                >
+                  &ldquo;{rung.decisionNote}&rdquo;
+                </p>
               ) : rung.status === "approved" ? (
                 <p className="mt-1 text-[10px] font-medium italic opacity-70">No comment left</p>
               ) : null}
