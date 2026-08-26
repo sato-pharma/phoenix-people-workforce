@@ -2,6 +2,8 @@ import ExcelJS from "exceljs";
 
 import { SalesWorkflowError } from "@/lib/sales/contracts";
 import { canonicalWeeklyDistributorCode, weeklyDistributorByCode, weeklyDistributorOptions } from "@/lib/sales/weekly/distributors";
+import { describeSplitPreview, previewWeeklyBranchSplit, type WeeklyBranchSplitPreview } from "@/lib/sales/weekly/branch-attribution";
+import { loadWeeklyAreaSplitIndex, type WeeklyAreaSplitIndex } from "@/lib/sales/weekly/branch-area-split";
 import { normalizeCode, normalizeKey, normalizeSoft } from "@/lib/sales/weekly/mapping-normalize";
 import { loadSalesReferenceData } from "@/lib/sales/monthly-distributor-import";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -50,6 +52,14 @@ export type WeeklyBranchRegionRow = {
   areaName: string | null;
   excluded: boolean;
   updatedAt: string;
+  /**
+   * How this branch's NAME will be read, and the arithmetic that follows — the owner's instruction
+   * that the split "must show in the weekly mapping sheet, with calculation". Display only: nothing
+   * is stored, so the sheet can never disagree with what the export actually applies.
+   *
+   * Null only when the organogram could not be read at all.
+   */
+  split: WeeklyBranchSplitPreview | null;
 };
 
 export type WeeklyBranchRegionAdmin = {
@@ -149,7 +159,11 @@ export function resolveBranchArea(
   return { areaCode: match.areaCode, areaName: match.areaName };
 }
 
-function mapRow(row: Record<string, unknown>): WeeklyBranchRegionRow {
+function mapRow(row: Record<string, unknown>, splitIndex: WeeklyAreaSplitIndex | null): WeeklyBranchRegionRow {
+  const rawBranch = String(row.raw_branch ?? "");
+  const branchHeaderRaw = row.branch_header_raw == null ? null : String(row.branch_header_raw);
+  const areaCode = row.area_code == null || String(row.area_code).trim() === "" ? null : String(row.area_code);
+  const areaName = row.area_name == null || String(row.area_name).trim() === "" ? null : String(row.area_name);
   return {
     id: String(row.id),
     distributorCode: String(row.distributor_code ?? ""),
@@ -159,10 +173,22 @@ function mapRow(row: Record<string, unknown>): WeeklyBranchRegionRow {
     branchHeaderRaw: row.branch_header_raw == null ? null : String(row.branch_header_raw),
     regionCode: String(row.region_code ?? ""),
     regionName: String(row.region_name ?? ""),
-    areaCode: row.area_code == null || String(row.area_code).trim() === "" ? null : String(row.area_code),
-    areaName: row.area_name == null || String(row.area_name).trim() === "" ? null : String(row.area_name),
+    areaCode,
+    areaName,
     excluded: Boolean(row.excluded),
     updatedAt: String(row.updated_at ?? ""),
+    // Read the header the distributor actually writes on the sheet where there is one — that is the
+    // string the weekly rows carry, and reading the internal key instead would preview a split the
+    // export never performs.
+    split: splitIndex
+      ? previewWeeklyBranchSplit(splitIndex, {
+          branchName: branchHeaderRaw || rawBranch,
+          regionCode: String(row.region_code ?? ""),
+          areaCode,
+          areaName,
+          excluded: Boolean(row.excluded),
+        })
+      : null,
   };
 }
 
@@ -172,7 +198,11 @@ export async function loadWeeklyBranchRegionAdmin(
 ): Promise<WeeklyBranchRegionAdmin> {
   const code = canonicalWeeklyDistributorCode(distributorCode);
   const supabase = getSupabaseAdmin();
-  const [masterRegions, masterAreas] = await Promise.all([listMasterRegions(), listMasterAreas()]);
+  const [masterRegions, masterAreas, splitIndex] = await Promise.all([
+    listMasterRegions(),
+    listMasterAreas(),
+    loadWeeklyAreaSplitIndex().catch(() => null),
+  ]);
 
   let query = supabase
     .from("weekly_sales_branch_region_map")
@@ -190,7 +220,7 @@ export async function loadWeeklyBranchRegionAdmin(
     distributors: weeklyDistributorOptions(),
     masterRegions,
     masterAreas,
-    rows: (data ?? []).map(mapRow),
+    rows: (data ?? []).map((row) => mapRow(row, splitIndex)),
   };
 }
 
@@ -322,6 +352,12 @@ export async function buildBranchRegionTemplate(
     // Optional: leave blank to keep the branch region-only (the default).
     { header: "REFERENCE AREA ID", key: "areaCode", width: 22 },
     { header: "EXCLUDED", key: "excluded", width: 12 },
+    // The owner's instruction, 2026-08-27: "this concept you must show in the weekly mapping sheet
+    // that we are doing, with calculation like this". These two are INFORMATION — the importer
+    // matches columns by header name and never reads them, so editing or deleting them is harmless.
+    // Fill REFERENCE AREA ID to overrule what they say.
+    { header: "HOW IT IS READ (info only)", key: "splitNote", width: 78 },
+    { header: "SPLIT CALCULATION (info only)", key: "splitFormula", width: 120 },
   ];
   if (isStock) columns.splice(2, 0, { header: "COLUMN_INDEX", key: "columnIndex", width: 14 });
   sheet.columns = columns;
@@ -334,6 +370,8 @@ export async function buildBranchRegionTemplate(
       regionCode: row.regionCode,
       areaCode: row.areaCode ?? "",
       excluded: row.excluded ? "yes" : "",
+      splitNote: row.split?.note ?? "",
+      splitFormula: describeSplitPreview(row.split),
     });
   }
   if (rows.length === 0) {
@@ -342,6 +380,16 @@ export async function buildBranchRegionTemplate(
   sheet.getRow(1).font = { bold: true, color: { argb: "FFFFFFFF" } };
   sheet.getRow(1).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF97316" } };
   sheet.views = [{ state: "frozen", ySplit: 1 }];
+
+  // Owner rule: never truncate with an ellipsis and never wrap. The two information columns are
+  // therefore wide and explicitly un-wrapped, and greyed so they never read as fields to fill in.
+  const noteColumn = sheet.getColumn("splitNote");
+  const formulaColumn = sheet.getColumn("splitFormula");
+  for (const column of [noteColumn, formulaColumn]) {
+    column.alignment = { wrapText: false, vertical: "middle" };
+    column.font = { color: { argb: "FF64748B" }, italic: true };
+  }
+  sheet.getRow(1).font = { bold: true, color: { argb: "FFFFFFFF" } };
 
   const reference = workbook.addWorksheet("Official Regions");
   reference.columns = [
@@ -556,6 +604,40 @@ export async function listWeeklyBranchRegionExamples(distributorCode?: string | 
   for (const row of data ?? []) {
     const raw = String(row.raw_branch ?? "").trim() || String(row.branch_header_raw ?? "").trim();
     const code = row.excluded ? WEEKLY_BRANCH_EXCLUDE_CODE : String(row.region_code ?? "").trim();
+    if (!raw || !code) continue;
+    examples.push({ raw, code, distributorCode: String(row.distributor_code ?? "").trim().toUpperCase() });
+  }
+  return examples;
+}
+
+/**
+ * Every branch already placed on an AREA, as raw-branch → area-code examples for the AI.
+ *
+ * Separate from listWeeklyBranchRegionExamples because the two speak different vocabularies: that
+ * one answers "which region", this one "which area", and feeding region examples to an area
+ * suggestion teaches the model the wrong answer shape.
+ *
+ * Excluded branches and branches with no area are skipped rather than sent as a sentinel — unlike
+ * the region case there is nothing to repeat, since "no area yet" is the state being fixed, not a
+ * decision worth learning.
+ */
+export async function listWeeklyBranchAreaExamples(distributorCode?: string | null, limit = 600): Promise<WeeklyBranchExample[]> {
+  const supabase = getSupabaseAdmin();
+  let query = supabase
+    .from("weekly_sales_branch_region_map")
+    .select("distributor_code, raw_branch, branch_header_raw, area_code, excluded")
+    .not("area_code", "is", null)
+    .order("updated_at", { ascending: false })
+    .limit(Math.max(1, limit));
+  if (distributorCode) query = query.eq("distributor_code", canonicalWeeklyDistributorCode(distributorCode));
+  const { data, error } = await query;
+  if (error) throw new SalesWorkflowError("load_failed", error.message, 500);
+
+  const examples: WeeklyBranchExample[] = [];
+  for (const row of data ?? []) {
+    if (row.excluded) continue;
+    const raw = String(row.raw_branch ?? "").trim() || String(row.branch_header_raw ?? "").trim();
+    const code = String(row.area_code ?? "").trim();
     if (!raw || !code) continue;
     examples.push({ raw, code, distributorCode: String(row.distributor_code ?? "").trim().toUpperCase() });
   }

@@ -6,6 +6,7 @@ import { SalesWorkflowError } from "@/lib/sales/contracts";
 import { resolveWeeklyAccessScope } from "@/lib/sales/weekly/access";
 import { latestUploadedPeriod } from "@/lib/sales/weekly/batch-scope";
 import { listMasterAreas } from "@/lib/sales/weekly/branch-region-map";
+import { loadWeeklyAreaSplitIndex } from "@/lib/sales/weekly/branch-area-split";
 import { loadWeeklyManagerIndex } from "@/lib/sales/weekly/manager-attribution";
 import { REGION_NAMES, loadMonthlyTargets } from "@/lib/sales/monthly-targets";
 import {
@@ -128,7 +129,7 @@ export async function GET(request: Request) {
     // allWeeks is mandatory on the MTD/YTD loads: without it the batch query caps at 200 batches
     // (newest-first) and would silently truncate the year. Tabs 1-2 need it too when no period
     // filter is set, because a distributor's latest sheet can be months behind the newest.
-    const [weekly, mtd, ytd, managerIndex, masterAreas] = await Promise.all([
+    const [weekly, mtd, ytd, managerIndex, areaSplit, masterAreas] = await Promise.all([
       loadWeeklyDashboard({
         ...sharedFilters,
         // An explicit upload selection replaces the period filters entirely — the sheet IS the scope.
@@ -142,6 +143,10 @@ export async function GET(request: Request) {
       loadWeeklyDashboard({ ...sharedFilters, allWeeks: true, cycleMonths: [currentCairoCycleMonth()] }),
       loadWeeklyDashboard({ ...sharedFilters, allWeeks: true, cycleMonths: ytdMonths }),
       loadWeeklyManagerIndex(),
+      // The organogram's own line -> area map, so a depot serving several territories can be
+      // divided among them instead of stopping at the manager above them all. It fails soft: an
+      // unreadable map yields an empty index, which splits nothing and changes no tab.
+      loadWeeklyAreaSplitIndex(),
       // Tab 2's rows are AREAS, and the owner's standing rule is names, never codes. The fact rows
       // carry only area_code, so the vocabulary comes from the master alongside them.
       listMasterAreas(),
@@ -347,6 +352,7 @@ export async function GET(request: Request) {
       mtd,
       ytd,
       managerIndex,
+      areaSplit,
       ytdMonths,
       periodLabel,
       generatedAt,

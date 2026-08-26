@@ -3,6 +3,7 @@
 import { AlertTriangle, Download, Loader2, Plus, Trash2, Upload } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import type { WeeklyBranchSplitPreview } from "@/lib/sales/weekly/branch-attribution";
 import type {
   WeeklyBranchFileType,
   WeeklyBranchRegionAdmin,
@@ -196,6 +197,12 @@ export function WeeklyBranchMappingManager({
           Map each distributor branch / outlet to one official region. The weekly upload uses this to roll every
           distributor up into the same regions. Mark warehouses, platforms or tenders as excluded to keep them out of totals.
         </p>
+        <p className="mt-2 text-sm font-medium text-[#64748B]">
+          Under every branch is <span className="font-black text-[#9A3412]">how its name is read</span> and the exact split
+          that follows: a depot serving several territories pays each of them an equal share, then divides that share evenly
+          again inside each one. Set <span className="font-black text-[#0F172A]">Area</span> to overrule the reading — a
+          branch pinned to an area sends the whole of its value there and its name is no longer read.
+        </p>
       </header>
 
       {error && (
@@ -370,7 +377,7 @@ export function WeeklyBranchMappingManager({
                 </td>
               </tr>
             )}
-            {rows.map((row) => (
+            {rows.map((row) => [
               <tr className="border-t border-[#FFE8D6] align-middle" key={row.id}>
                 <td className="px-3 py-2 font-semibold text-[#0F172A]">{row.branchHeaderRaw || row.rawBranch}</td>
                 <td className="px-3 py-2 text-[#64748B]">{row.rawBranch}</td>
@@ -423,12 +430,52 @@ export function WeeklyBranchMappingManager({
                     <Trash2 className="h-3.5 w-3.5" /> Remove
                   </button>
                 </td>
-              </tr>
-            ))}
+              </tr>,
+              row.split ? <SplitBand columns={isStock ? 7 : 6} key={`${row.id}-split`} split={row.split} /> : null,
+            ])}
           </tbody>
         </table>
       </div>
     </div>
+  );
+}
+
+/**
+ * The owner's instruction, 2026-08-27: the split "must show in the weekly mapping sheet, with
+ * calculation like this". So the arithmetic sits under the branch it belongs to rather than in a
+ * separate report — the same screen the mapping is corrected on.
+ *
+ * It is a BAND rather than a column because the rule is that text never wraps and is never cut with
+ * an ellipsis: a nine-area split cannot live in a table cell without breaking one of those. Each
+ * area is its own chip, whole and on one line, and the band is free to use the table's full width.
+ */
+function SplitBand({ columns, split }: { columns: number; split: WeeklyBranchSplitPreview }) {
+  const showsLineLabels = split.arithmetic.length > 1;
+  return (
+    <tr className="bg-[#FFFBF7]">
+      <td className="px-3 pb-2.5 pt-0" colSpan={columns}>
+        <div className="flex flex-col gap-1.5">
+          <span className="whitespace-nowrap text-[11px] font-semibold text-[#94A3B8]">{split.note}</span>
+          {split.arithmetic.map((entry) => (
+            <div className="flex flex-wrap items-center gap-1.5" key={entry.lines.join("|")}>
+              {showsLineLabels && (
+                <span className="whitespace-nowrap text-[10px] font-black uppercase tracking-[0.12em] text-[#94A3B8]">
+                  {entry.lines.join(" + ")}
+                </span>
+              )}
+              {entry.shares.map((share) => (
+                <span
+                  className="whitespace-nowrap rounded-full border border-[#FFD8B4] bg-white px-2 py-0.5 text-[11px] font-bold text-[#9A3412]"
+                  key={share.areaCode}
+                >
+                  {share.areaName} <span className="text-[#C2410C]">{share.percentLabel}</span>
+                </span>
+              ))}
+            </div>
+          ))}
+        </div>
+      </td>
+    </tr>
   );
 }
 
