@@ -48,6 +48,12 @@ export type MarketingDecisionPharmacy = {
    * because a licence is routinely a PDF, which must be offered as a link rather than an `<img>`.
    */
   licenseContentType: string | null;
+  /**
+   * The approver's recorded answer to the comparison the licence exists for, or `null` when nobody
+   * has been asked yet. NEVER render a null as a pass — "not checked" and "checked and fine" are
+   * different facts, and a blank row reads as the second one.
+   */
+  licenseNameMatchesSign: boolean | null;
   licenseUrl: string | null;
   notes: string | null;
   /** The link row's own id, so a caller can join back to per-pharmacy detail. */
@@ -122,7 +128,12 @@ export async function loadMarketingDecisionPharmacies(
   const codeIds = [...new Set(rows.map((row) => row.distributor_code_id).filter((id): id is string => Boolean(id)))];
 
   const [pharmacyRows, codeRows] = await Promise.all([
-    fetchRowsByIds<{ display_name: string | null; id: string; pharmacy_code: string | null }>(
+    fetchRowsByIds<{
+      display_name: string | null;
+      id: string;
+      license_name_matches_sign: boolean | null;
+      pharmacy_code: string | null;
+    }>(
       supabase,
       "marketing_pharmacies",
       pharmacyIds,
@@ -181,6 +192,12 @@ export async function loadMarketingDecisionPharmacies(
       licenseContentType: row.pharmacy_id
         ? licenseByPharmacyId.get(String(row.pharmacy_id))?.contentType ?? null
         : null,
+      // Off the pharmacy row, not off the licence file: the file proves a licence EXISTS, the
+      // pharmacy row is where the human answer about it lives (and survives a resubmission, which
+      // deletes and re-inserts every request/pharmacy link row).
+      licenseNameMatchesSign: pharmacy?.license_name_matches_sign == null
+        ? null
+        : Boolean(pharmacy.license_name_matches_sign),
       licenseUrl: row.pharmacy_id
         ? licenseByPharmacyId.get(String(row.pharmacy_id))?.signedUrl ?? null
         : null,
