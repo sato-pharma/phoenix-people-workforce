@@ -463,6 +463,11 @@ export async function POST(request: Request) {
             ? " Targets are set per area & product company-wide and cannot be sliced this way, so"
               + " Target vs Achievement and the Direct channel rows are omitted."
             : "")
+          + (rowLevelActive && officeFiltered
+            ? " The \"of wh. Office\" figures are the WHOLE month's Office component and are NOT"
+              + " narrowed by this filter: Office rows carry no customer and no distributor, so"
+              + " there is nothing in them for a row-level filter to match."
+            : "")
           + (channelEligible
             ? ""
             : " The two Channel sheets are omitted too: they cover the WHOLE line, so they cannot be"
@@ -513,10 +518,15 @@ export async function POST(request: Request) {
         directPlaced,
         filterNote,
         includeTargetSheet: !rowLevelActive,
-        // Omitted under a row-level filter for the same reason as : that slice is rebuilt
-        // from filtered invoice rows and the Office grid has no equivalent narrowing, so pairing
-        // them would set a whole-month Office figure beside a filtered Units figure.
-        office: rowLevelActive ? null : officeFiltered,
+        // ALWAYS carried, so the workbook shows what the SCREEN shows. Owner's rule, 2026-08-26:
+        // "the export must be typical the front end — never different data". Office is 41% of the
+        // CNS closing, and this gate dropped it under any row-level filter while the on-screen
+        // Closing Matrix kept showing it — the one omission the filter note never announced.
+        //
+        // The Office grid genuinely cannot be narrowed by a row-level filter: loadMonthlyClosingParts
+        // builds it from an aggregate that carries no customer and no distributor. So rather than
+        // hide it, the note below states in words that these figures are the whole month's Office.
+        office: officeFiltered,
         // The whole month's rows drive the Store Split sheet, so a reader who filtered to one area
         // can still see WHERE the rest of that city's share went; `storeSplitScopeAreaCodes` marks
         // which of those areas this workbook actually covers.

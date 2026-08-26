@@ -1950,7 +1950,7 @@ await runTest("SoS Top Customers aggregates by distributor+client across selecte
 
 await runTest("CRM-fed portal ratios divide comparable populations (no >100% coverage) and multi-day calendar items span their full range", runCrmPortalCoveragePopulationsTests);
 
-await runTest("exports answer the same question as the screen that launched them (direct orders + company vacation report)", runExportFollowsScreenFiltersTests);
+await runTest("exports answer the same question as the screen that launched them (direct orders + company vacation report + monthly closing Office)", runExportFollowsScreenFiltersTests);
 
 await runTest("one human receives one notification (person-level recipient dedup), in_app is only claimed for categories the bell renders", runNotificationDeliveryIntegrityTests);
 
