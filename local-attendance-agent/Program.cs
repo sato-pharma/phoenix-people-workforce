@@ -6,11 +6,37 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Microsoft.AspNetCore.Connections;
 
 EnvLoader.Load();
 
 if (string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("ASPNETCORE_URLS"))) {
   Environment.SetEnvironmentVariable("ASPNETCORE_URLS", "http://127.0.0.1:8787");
+}
+
+var listenUrl = Environment.GetEnvironmentVariable("ASPNETCORE_URLS") ?? "http://127.0.0.1:8787";
+
+// A SECOND agent must exit quietly, not crash.
+//
+// This agent is started from two places by design: the "Phoenix Attendance Agent - Run At Logon"
+// scheduled task, and invoke-sync.ps1 whenever /health does not answer yet. On a cold boot the
+// first copy needs ~9 seconds to reach the bind, so the two launches overlap - on 2026-08-26 both
+// processes started inside the SAME SECOND (15:15:16.958 and 15:15:16). Kestrel's bind failure was
+// an UNHANDLED exception, so the loser died with a 0xE0434352 fault written to the Application
+// event log at EVERY boot (06:20:22, 11:13:53 and 15:15:21 on that one day). Nothing was ever
+// lost - the winner serves and the 2-hourly task syncs - but a healthy system logged a hard crash
+// every morning, and that is exactly the noise that hides a real fault later.
+//
+// The mutex settles the race before Kestrel is ever built. It is process-lifetime scoped, so a
+// killed or crashed owner releases it and the next launch wins cleanly - there is no stale lock
+// file anyone has to remember to clear.
+using var singleInstance = new Mutex(initiallyOwned: true, "Phoenix.Attendance.Agent.SingleInstance", out var isOnlyInstance);
+if (!isOnlyInstance) {
+  Log.Info("attendance_agent_already_running", new {
+    listenUrl,
+    reason = "another agent instance holds the single-instance mutex",
+  });
+  return 0;
 }
 
 var builder = WebApplication.CreateBuilder(args);
@@ -52,8 +78,19 @@ Log.Info("attendance_agent_starting", new {
   requiredTimes = config.AutoSyncRequiredTimes,
 });
 
-var startupChecks = await validator.CheckAsync(includeDeviceConnect: false);
-Log.Info("attendance_agent_startup_checks", startupChecks);
+// The startup checks must NOT delay the bind.
+//
+// They probe the fingerprint device (5s timeout) and Phoenix over the internet. Overnight the
+// device is off the network and both probes run long, so the agent could take well over 30
+// seconds to reach app.Run() - past the 30s invoke-sync.ps1 waits for /health before deciding
+// the agent is down and launching ANOTHER one (scheduled-sync.log, 2026-08-25 02:00 and
+// 2026-08-26 17:00). That duplicate is the same collision the single-instance mutex above had to
+// be written for. Binding first removes the cause rather than only surviving it: /health answers
+// in about a second, and the checks report into the log a moment later.
+_ = Task.Run(async () => {
+  var startupChecks = await validator.CheckAsync(includeDeviceConnect: false);
+  Log.Info("attendance_agent_startup_checks", startupChecks);
+});
 
 if (config.AutoSyncEnabled) {
   AutoSyncScheduler.Start(app.Services, config);
@@ -119,6 +156,67 @@ app.MapGet("/device-users", async (HttpRequest request, AgentConfig cfg, ZktecoD
   }
 });
 
+// Read-only: what each device user id ACTUALLY DID on the device, aggregated.
+//
+// /device-users above lists who is enrolled, but this device stores every user's name as an
+// empty string, so an enrolled id on its own identifies nobody. Meanwhile Phoenix stores only
+// punches it can attribute, and every sync reports the rest as "skipped" - 290 of them on
+// 2026-08-26, belonging to 9 device user ids with no employee mapping. Those punches exist on
+// the hardware and nowhere else: they are never inserted, so no query against Phoenix can
+// count them or say when they started.
+//
+// This turns that dead end into an answerable question. First punch dates a person's arrival,
+// the day and hour spread says whether they are still coming in and on what pattern, and both
+// together are what let a human match an anonymous id to a real employee. It reads exactly what
+// a sync already reads and writes nothing.
+app.MapGet("/device-punch-summary", async (HttpRequest request, AgentConfig cfg, ZktecoDeviceClient deviceClient) => {
+  if (!Auth.IsAuthorized(request, cfg.AttendanceAgentToken)) {
+    return Results.Unauthorized();
+  }
+
+  try {
+    var tcpReachable = await NetworkChecks.CanConnectTcpAsync(cfg.DeviceIp, cfg.DevicePort, TimeSpan.FromSeconds(5));
+    if (!tcpReachable) {
+      return Results.Json(new { ok = false, message = $"Device {cfg.DeviceIp}:{cfg.DevicePort} is not reachable." },
+        statusCode: StatusCodes.Status503ServiceUnavailable);
+    }
+
+    var punches = await deviceClient.ReadPunchesAsync();
+    var users = punches
+      .GroupBy(p => p.DeviceUserId)
+      .Select(group => {
+        var ordered = group.OrderBy(p => p.DeviceLocalTime).ToList();
+        var days = ordered.Select(p => p.DeviceLocalTime.Date).Distinct().OrderBy(d => d).ToList();
+        var earliest = ordered.Min(p => p.DeviceLocalTime.TimeOfDay);
+        var latest = ordered.Max(p => p.DeviceLocalTime.TimeOfDay);
+        return new {
+          deviceUserId = group.Key,
+          punchCount = ordered.Count,
+          distinctDays = days.Count,
+          firstPunchLocal = ordered[0].DeviceLocalTime.ToString("yyyy-MM-dd HH:mm:ss"),
+          lastPunchLocal = ordered[^1].DeviceLocalTime.ToString("yyyy-MM-dd HH:mm:ss"),
+          earliestTimeOfDay = $"{earliest.Hours:D2}:{earliest.Minutes:D2}",
+          latestTimeOfDay = $"{latest.Hours:D2}:{latest.Minutes:D2}",
+          recentDays = days.TakeLast(10).Select(d => d.ToString("yyyy-MM-dd")).ToArray(),
+        };
+      })
+      .OrderByDescending(u => u.lastPunchLocal)
+      .ToList();
+
+    Log.Info("device_punch_summary_read", new { deviceUsers = users.Count, totalPunches = punches.Count });
+    return Results.Json(new {
+      ok = true,
+      deviceId = cfg.DeviceId,
+      totalPunches = punches.Count,
+      deviceUsers = users.Count,
+      users,
+    });
+  } catch (Exception ex) {
+    Log.Error("device_punch_summary_failed", ex);
+    return Results.Json(new { ok = false, error = ex.Message }, statusCode: StatusCodes.Status500InternalServerError);
+  }
+});
+
 app.MapPost("/sync-now", async (HttpRequest request, AgentConfig cfg, AttendanceSyncRunner syncRunner) => {
   if (!Auth.IsAuthorized(request, cfg.AttendanceAgentToken)) {
     return Results.Unauthorized();
@@ -134,13 +232,38 @@ app.MapPost("/sync-now", async (HttpRequest request, AgentConfig cfg, Attendance
       inserted = 0,
       duplicate = 0,
       skipped = 0,
+      skippedUnknown = 0,
+      skippedIgnored = 0,
       failed = 1,
       errors = new[] { ex.Message },
     }, statusCode: StatusCodes.Status500InternalServerError);
   }
 });
 
-app.Run();
+// The mutex above settles the race between our own launchers, but not a port held by something
+// that is NOT this agent - an older build with no mutex, or an unrelated process squatting on
+// 8787. A bind failure must still never be an unhandled crash, and the two cases need different
+// answers: another healthy agent is success (exit 0), a foreign squatter is a real fault the
+// operator has to see (exit 1) rather than a stack trace in the event log.
+try {
+  app.Run();
+} catch (IOException ex) when (ex.InnerException is AddressInUseException) {
+  if (await NetworkChecks.IsAttendanceAgentServingAsync(listenUrl)) {
+    Log.Info("attendance_agent_already_running", new {
+      listenUrl,
+      reason = "another agent instance already answers /health on this port",
+    });
+    return 0;
+  }
+
+  Log.Error("attendance_agent_port_unavailable", ex, new {
+    listenUrl,
+    reason = "a process that is not the Phoenix attendance agent is holding the listen port",
+  });
+  return 1;
+}
+
+return 0;
 
 sealed record AgentConfig(
   string PhoenixBaseUrl,
@@ -232,8 +355,19 @@ sealed class StartupValidator(AgentConfig config) {
     var errors = new List<string>();
     var tokenConfigured = !string.IsNullOrWhiteSpace(config.AttendanceAgentToken);
     var sdkRegistered = ZktecoDeviceClient.FindComType() is not null;
-    var deviceTcpReachable = await NetworkChecks.CanConnectTcpAsync(config.DeviceIp, config.DevicePort, TimeSpan.FromSeconds(3));
-    var phoenixReachable = await NetworkChecks.CanReachHttpAsync(config.PhoenixBaseUrl, TimeSpan.FromSeconds(5));
+    // These two probes are independent, so they run TOGETHER - awaiting them one after the other
+    // made /health cost their SUM. That mattered: /health is the liveness check invoke-sync.ps1
+    // uses to decide whether an agent is running, and it gives up after 5 seconds. With the
+    // fingerprint device off the network overnight the TCP probe alone burns its full 3s timeout,
+    // measured 3.4-3.7s end to end on 2026-08-26 - inside the budget, but only just. Any load
+    // (a boot, a big compression job, several sessions) pushed it past 5s, invoke-sync concluded
+    // "Agent not listening" about an agent that was serving perfectly, and launched a SECOND one.
+    // That duplicate is what lost the race for port 8787 and died 0xE0434352 at every boot.
+    var deviceTcpTask = NetworkChecks.CanConnectTcpAsync(config.DeviceIp, config.DevicePort, TimeSpan.FromSeconds(3));
+    var phoenixTask = NetworkChecks.CanReachHttpAsync(config.PhoenixBaseUrl, TimeSpan.FromSeconds(5));
+    await Task.WhenAll(deviceTcpTask, phoenixTask);
+    var deviceTcpReachable = await deviceTcpTask;
+    var phoenixReachable = await phoenixTask;
     var deviceConnects = false;
 
     if (!tokenConfigured) errors.Add("ATTENDANCE_AGENT_TOKEN is missing.");
@@ -270,6 +404,8 @@ sealed class AttendanceSyncRunner(AgentConfig config, ZktecoDeviceClient deviceC
         inserted = 0,
         duplicate = 0,
         skipped = 0,
+        skippedUnknown = 0,
+        skippedIgnored = 0,
         failed = 0,
         errors = new[] { "Attendance sync is already running." },
       });
@@ -291,6 +427,8 @@ sealed class AttendanceSyncRunner(AgentConfig config, ZktecoDeviceClient deviceC
           inserted = 0,
           duplicate = 0,
           skipped = 0,
+          skippedUnknown = 0,
+          skippedIgnored = 0,
           failed = 1,
           errors = new[] { $"Device TCP port is not reachable at {config.DeviceIp}:{config.DevicePort}." },
         };
@@ -322,6 +460,12 @@ sealed class AttendanceSyncRunner(AgentConfig config, ZktecoDeviceClient deviceC
         response.Inserted,
         response.Duplicate,
         response.Skipped,
+        // The half of Skipped that is an open question, and the ids behind it. This is the
+        // number to watch: skippedIgnored never falls to zero, so a bare skipped total
+        // cannot tell a lost person from the driver.
+        skippedUnknown = response.SkippedUnknown,
+        skippedIgnored = response.SkippedIgnored,
+        unknownDeviceUsers = response.UnknownDeviceUsers ?? [],
         response.Failed,
         errors = response.Failures.Select(f => $"#{f.Index}: {f.Message}").ToArray(),
         elapsedMs = Math.Round(elapsedMs),
@@ -338,6 +482,8 @@ sealed class AttendanceSyncRunner(AgentConfig config, ZktecoDeviceClient deviceC
         inserted = 0,
         duplicate = 0,
         skipped = 0,
+        skippedUnknown = 0,
+        skippedIgnored = 0,
         failed = 1,
         errors = new[] { ex.Message },
       });
@@ -747,7 +893,15 @@ sealed record PhoenixIngestionResponse(
   int Duplicate,
   int Skipped,
   int Failed,
-  PunchFailure[] Failures
+  PunchFailure[] Failures,
+  // Skipped alone can never read as healthy: it counts the driver and every retired
+  // enrolment alongside a person whose attendance is genuinely going missing, and those
+  // keep punching forever. SkippedUnknown is the half that can reach zero.
+  // Optional on purpose - a Phoenix that predates the split omits all three, and the agent
+  // must keep working against it rather than fail to deserialize.
+  int SkippedUnknown = 0,
+  int SkippedIgnored = 0,
+  string[]? UnknownDeviceUsers = null
 ) {
   public PhoenixIngestionResponse Add(PhoenixIngestionResponse other) => new(
     Received + other.Received,
@@ -755,7 +909,12 @@ sealed record PhoenixIngestionResponse(
     Duplicate + other.Duplicate,
     Skipped + other.Skipped,
     Failed + other.Failed,
-    Failures.Concat(other.Failures).ToArray()
+    Failures.Concat(other.Failures).ToArray(),
+    SkippedUnknown + other.SkippedUnknown,
+    SkippedIgnored + other.SkippedIgnored,
+    // One device user shows up across many batches of the same sync, so the union is
+    // deduplicated - otherwise a busy finger is listed once per batch it appeared in.
+    (UnknownDeviceUsers ?? []).Concat(other.UnknownDeviceUsers ?? []).Distinct().OrderBy(id => id).ToArray()
   );
 }
 
@@ -817,6 +976,29 @@ static class NetworkChecks {
       using var client = new TcpClient();
       await client.ConnectAsync(host, port, cts.Token);
       return true;
+    } catch {
+      return false;
+    }
+  }
+
+  // Is the process already holding our listen port THIS agent, or an unrelated squatter?
+  //
+  // "Something answers on 8787" is not enough to conclude the attendance agent is up - anything
+  // can bind a loopback port. /health is matched on a field only this agent emits, so a foreign
+  // listener is reported as a fault instead of being mistaken for a healthy sibling. A degraded
+  // agent still counts: it answers 503 when the fingerprint device is off the network overnight,
+  // and that is a running agent, not a free port.
+  public static async Task<bool> IsAttendanceAgentServingAsync(string listenUrl) {
+    var timeout = TimeSpan.FromSeconds(5);
+    try {
+      var healthUrl = listenUrl.TrimEnd('/') + "/health";
+      using var cts = new CancellationTokenSource(timeout);
+      using var client = new HttpClient { Timeout = timeout };
+      using var response = await client.GetAsync(healthUrl, cts.Token);
+      var body = await response.Content.ReadAsStringAsync(cts.Token);
+      using var document = JsonDocument.Parse(body);
+      return document.RootElement.TryGetProperty("checks", out var checks)
+        && checks.TryGetProperty("tokenConfigured", out _);
     } catch {
       return false;
     }
