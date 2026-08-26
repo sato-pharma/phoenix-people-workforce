@@ -101,6 +101,28 @@ export function resolveDeviceMappingStatus(
   return row.isActive ? "active" : "inactive";
 }
 
+/**
+ * What ingestion should do with one punch, given the device user's mapping row.
+ *
+ * Ingestion used to answer this with a single boolean and report one `skipped` total, which
+ * mixed two opposite meanings: "a real person's attendance is being thrown away" and "we
+ * already decided to ignore this finger". The second kind never falls to zero — the driver
+ * and every retired enrolment keep punching — so the total could never read as healthy and
+ * was useless as an alarm. Only "skip_unknown" is an open question.
+ *
+ * A missing row is unknown, not ignored: nothing has been said about that finger at all.
+ */
+export type AttendancePunchRouting = "attribute" | "skip_ignored" | "skip_unknown";
+
+export function routeAttendancePunch(
+  row: Pick<AttendanceDeviceMappingMetricInput, "employeeHrId" | "isActive" | "nonEmployeeLabel"> | null | undefined,
+): AttendancePunchRouting {
+  if (!row) return "skip_unknown";
+  const status = resolveDeviceMappingStatus(row);
+  if (status === "active") return "attribute";
+  return status === "unmapped" ? "skip_unknown" : "skip_ignored";
+}
+
 export function summarizeDeviceUserMappings(rows: AttendanceDeviceMappingMetricInput[]) {
   const summary = {
     active: 0,

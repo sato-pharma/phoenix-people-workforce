@@ -186,6 +186,7 @@ import { runPayrollCycleWindowRoleAwareTests } from "./payroll-cycle-window-role
 import { runAttendanceReconcileDayTests } from "./attendance-reconcile-day.test.ts";
 import { runAttendanceEmployeeDayReportTests } from "./attendance-employee-day-report.test.ts";
 import { runAttendanceDeviceOutageFailsafeTests } from "./attendance-device-outage-failsafe.test.ts";
+import { runAttendanceSkippedPunchClassificationTests } from "./attendance-skipped-punch-classification.test.ts";
 import { runAttendanceHolidayOverridesTests } from "./attendance-holiday-overrides.test.ts";
 import { runDeductionsGovernanceFoundationTests } from "./deductions-governance-foundation.test.ts";
 import { runDeductionsGovernanceServiceTests } from "./deductions-governance-service.test.ts";
@@ -1247,6 +1248,7 @@ await runTest(
 await runTest("attendance reconcile-day gating", runAttendanceReconcileDayTests);
 await runTest("attendance employee day-by-day report (access/policy-range)", runAttendanceEmployeeDayReportTests);
 await runTest("attendance device-outage fail-safe", runAttendanceDeviceOutageFailsafeTests);
+await runTest("attendance skipped punches split unknown vs deliberately ignored", runAttendanceSkippedPunchClassificationTests);
 await runTest("attendance bulk holiday calendar", runAttendanceHolidayOverridesTests);
 await runTest("field workforce compliance", runFieldWorkforceComplianceTests);
 await runTest("field workforce compliance eligibility", runFieldWorkforceComplianceEligibilityTests);

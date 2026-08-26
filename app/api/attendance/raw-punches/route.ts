@@ -1,6 +1,7 @@
 import { timingSafeEqual } from "crypto";
 import { NextResponse } from "next/server";
 
+import { routeAttendancePunch } from "@/lib/attendance/metrics";
 import { ApiError, toApiError, unauthorizedError, validationError } from "@/lib/http/api-errors";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -120,33 +121,73 @@ function mapKey(input: Pick<ValidatedPunch, "device_id" | "device_user_id">) {
   return `${input.device_id}\u0000${input.device_user_id}`;
 }
 
-async function resolveMappedHrIds(punches: ValidatedPunch[]) {
+type DeviceUserRow = {
+  employeeHrId: string | null;
+  isActive: boolean;
+  nonEmployeeLabel: string | null;
+};
+
+// A PostgREST `.in()` puts its whole list in the URL, so past a few hundred ids the
+// request comes back `{ data: [], error: null }` — an empty set indistinguishable from a
+// true answer. One request carries up to maxPunchesPerRequest punches and every one of
+// them could name a different device user, so the list is chunked rather than trusted.
+const lookupChunkSize = 50;
+
+/**
+ * Every map row for the device users in this batch — not just the ones that attribute a
+ * punch. The wider read is what lets a skipped punch be told apart afterwards: a finger
+ * somebody has already classified (the driver, a retired enrolment) is a deliberate skip,
+ * while a finger nobody has ever named is the one worth alerting on.
+ */
+async function resolveDeviceUserRows(punches: ValidatedPunch[]) {
+  const rows = new Map<string, DeviceUserRow>();
   const unresolved = punches.filter((punch) => !punch.employee_hr_id);
   if (unresolved.length === 0) {
-    return new Map<string, string>();
+    return rows;
   }
 
   const deviceIds = Array.from(new Set(unresolved.map((punch) => punch.device_id)));
   const deviceUserIds = Array.from(new Set(unresolved.map((punch) => punch.device_user_id)));
   const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase
-    .from("attendance_device_user_map")
-    .select("device_id,device_user_id,employee_hr_id")
-    .eq("is_active", true)
-    .not("employee_hr_id", "is", null)
-    .in("device_id", deviceIds)
-    .in("device_user_id", deviceUserIds);
 
-  if (error) {
-    throw error;
+  for (let i = 0; i < deviceUserIds.length; i += lookupChunkSize) {
+    const chunk = deviceUserIds.slice(i, i + lookupChunkSize);
+    const { data, error } = await supabase
+      .from("attendance_device_user_map")
+      .select("device_id,device_user_id,employee_hr_id,is_active,non_employee_label")
+      .in("device_id", deviceIds)
+      .in("device_user_id", chunk);
+
+    if (error) {
+      throw error;
+    }
+
+    for (const row of (data ?? []) as Array<{
+      device_id: string;
+      device_user_id: string;
+      employee_hr_id: string | null;
+      is_active: boolean | null;
+      non_employee_label: string | null;
+    }>) {
+      rows.set(mapKey(row), {
+        employeeHrId: row.employee_hr_id,
+        isActive: row.is_active === true,
+        nonEmployeeLabel: compact(row.non_employee_label),
+      });
+    }
   }
 
-  return new Map(
-    ((data ?? []) as Array<{ device_id: string; device_user_id: string; employee_hr_id: string }>).map((row) => [
-      mapKey(row),
-      row.employee_hr_id,
-    ]),
-  );
+  return rows;
+}
+
+/**
+ * Only an ACTIVE row carrying an employee attributes a punch. That gate used to live in
+ * the SELECT itself (`.eq("is_active", true).not("employee_hr_id", "is", null)`); the query
+ * now has to return the unattributable rows too, so the gate moves here — onto the same
+ * domain helper the mapping dashboard already uses, rather than a second copy of the rule.
+ */
+function attributedHrId(row: DeviceUserRow | undefined) {
+  return routeAttendancePunch(row) === "attribute" ? row?.employeeHrId ?? null : null;
 }
 
 async function recordUnmappedDeviceUsers(
@@ -218,19 +259,27 @@ const insertConcurrency = 50;
 
 async function insertPunches(punches: ValidatedPunch[]) {
   const supabase = getSupabaseAdmin();
-  const mappedHrIds = await resolveMappedHrIds(punches);
+  const deviceUserRows = await resolveDeviceUserRows(punches);
   const failures: PunchFailure[] = [];
   let inserted = 0;
   let duplicate = 0;
-  let skipped = 0;
+  let skippedIgnored = 0;
+  let skippedUnknown = 0;
+  const unknownDeviceUsers = new Set<string>();
   const unmappedPunches: ValidatedPunch[] = [];
   const toInsert: Array<{ punch: ValidatedPunch; employeeHrId: string }> = [];
 
   for (const punch of punches) {
-    const employeeHrId = punch.employee_hr_id ?? mappedHrIds.get(mapKey(punch)) ?? null;
+    const row = deviceUserRows.get(mapKey(punch));
+    const employeeHrId = punch.employee_hr_id ?? attributedHrId(row);
     if (!employeeHrId) {
       unmappedPunches.push(punch);
-      skipped += 1;
+      if (routeAttendancePunch(row) === "skip_unknown") {
+        skippedUnknown += 1;
+        unknownDeviceUsers.add(punch.device_user_id);
+      } else {
+        skippedIgnored += 1;
+      }
       continue;
     }
     toInsert.push({ punch, employeeHrId });
@@ -287,7 +336,19 @@ async function insertPunches(punches: ValidatedPunch[]) {
     await recordUnmappedDeviceUsers(supabase, unmappedPunches);
   }
 
-  return { duplicate, failed: failures.length, failures, inserted, skipped };
+  return {
+    duplicate,
+    failed: failures.length,
+    failures,
+    inserted,
+    // `skipped` stays the total so existing readers keep working. The split beside it is
+    // what can actually go quiet: skippedIgnored never falls to zero (the driver and the
+    // retired enrolments punch forever), so a single total can never read as healthy.
+    skipped: skippedIgnored + skippedUnknown,
+    skippedIgnored,
+    skippedUnknown,
+    unknownDeviceUsers: Array.from(unknownDeviceUsers).sort(),
+  };
 }
 
 export async function POST(request: Request) {
@@ -318,7 +379,16 @@ export async function POST(request: Request) {
 
     const result = validated.length > 0
       ? await insertPunches(validated)
-      : { duplicate: 0, failed: 0, failures: [], inserted: 0, skipped: 0 };
+      : {
+        duplicate: 0,
+        failed: 0,
+        failures: [],
+        inserted: 0,
+        skipped: 0,
+        skippedIgnored: 0,
+        skippedUnknown: 0,
+        unknownDeviceUsers: [] as string[],
+      };
 
     const failures = [...validationFailures, ...result.failures];
     return NextResponse.json({
@@ -328,6 +398,9 @@ export async function POST(request: Request) {
       inserted: result.inserted,
       received: rawPunches.length,
       skipped: result.skipped,
+      skippedIgnored: result.skippedIgnored,
+      skippedUnknown: result.skippedUnknown,
+      unknownDeviceUsers: result.unknownDeviceUsers,
     });
   } catch (error) {
     const apiError = toApiError(error, "Attendance raw punch ingestion failed.");
