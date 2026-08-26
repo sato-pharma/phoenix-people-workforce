@@ -29,6 +29,9 @@ export function runCustomerPropagationTests() {
   assert.equal(hit.length, 1);
   assert.equal(hit[0].code, "BR200");
   assert.equal(hit[0].confidence, 90);
+  // Name matched but the address did not corroborate — one signal, so auto-apply must not
+  // take it on the textual path (auto-apply.ts).
+  assert.equal(hit[0].addressCorroborated, false);
   assert.equal(hit[0].source, "propagated");
   assert.equal(hit[0].matchedFrom.distributorCode, "PS");
   assert.equal(hit[0].matchedFrom.customerCode, "1502731");
@@ -43,6 +46,8 @@ export function runCustomerPropagationTests() {
   );
   assert.equal(boosted.length, 1);
   assert.equal(boosted[0].confidence, 93);
+  // Address overlap cleared 0.5 — the second independent textual signal.
+  assert.equal(boosted[0].addressCorroborated, true);
 
   // Ambiguity suppression: same name mapped to two DIFFERENT bricks → no suggestion.
   const index3 = buildPropagationIndex([

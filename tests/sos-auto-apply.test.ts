@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 
-import { autoAcceptMin, partitionAutoApply, shouldAutoAccept } from "../src/lib/sales/normalizer/auto-apply.ts";
+import { autoAcceptMin, autoAcceptTextMin, partitionAutoApply, shouldAutoAccept } from "../src/lib/sales/normalizer/auto-apply.ts";
 import type { GeoSignals } from "../src/lib/sales/normalizer/geo-validate.ts";
 
 function signals(overrides: Partial<GeoSignals>): GeoSignals {
@@ -57,4 +57,52 @@ export function runSosAutoApplyTests() {
   assert.deepEqual(accepted.map((c) => c.id), ["a", "c"]);
   assert.deepEqual(parked.map((c) => c.id), ["b", "d"]);
   assert.equal(accepted.length + parked.length, candidates.length);
+
+  // ---------------------------------------------------------------------------------------
+  // The TEXTUAL path (2026-08-27). Geography is unavailable for ~97% of customers, so a
+  // deterministic twin corroborated by address text auto-applies without a geocode.
+  // ---------------------------------------------------------------------------------------
+  const TEXT_MIN = 93;
+  const corroborated = { addressCorroborated: true };
+  const uncorroborated = { addressCorroborated: false };
+
+  // Env clamp for the textual floor: default 93, floor 90, ceiling 100, garbage → default.
+  assert.equal(autoAcceptTextMin(undefined), 93);
+  assert.equal(autoAcceptTextMin("95"), 95);
+  assert.equal(autoAcceptTextMin("80"), 90);
+  assert.equal(autoAcceptTextMin("150"), 100);
+  assert.equal(autoAcceptTextMin("abc"), 93);
+
+  // THE HEADLINE: propagated + address-corroborated + NO geocode → accepted at the textual floor.
+  // Before this path existed every one of these was parked, which is how 14,345 codes piled up.
+  assert.equal(shouldAutoAccept({ confidence: 93, propagation: corroborated, signals: signals({ geocoded: false }), source: "propagated" }, MIN, TEXT_MIN), true);
+  // Same, with no signals object at all (the no-Google-key branch of customer-suggest.ts).
+  assert.equal(shouldAutoAccept({ confidence: 93, propagation: corroborated, signals: undefined, source: "propagated" }, MIN, TEXT_MIN), true);
+
+  // ...and it is still TWO signals, not one. Name match alone (no address overlap) stays parked.
+  assert.equal(shouldAutoAccept({ confidence: 90, propagation: uncorroborated, signals: signals({ geocoded: false }), source: "propagated" }, MIN, TEXT_MIN), false);
+  assert.equal(shouldAutoAccept({ confidence: 93, propagation: uncorroborated, signals: signals({ geocoded: false }), source: "propagated" }, MIN, TEXT_MIN), false);
+  // Below the textual floor → parked even when corroborated.
+  assert.equal(shouldAutoAccept({ confidence: 92, propagation: corroborated, signals: signals({ geocoded: false }), source: "propagated" }, MIN, TEXT_MIN), false);
+  // The AI never gets the textual path — it has no deterministic twin behind it.
+  assert.equal(shouldAutoAccept({ confidence: 99, propagation: corroborated, signals: signals({ geocoded: false }), source: "ai" }, MIN, TEXT_MIN), false);
+  // Unknown source likewise.
+  assert.equal(shouldAutoAccept({ confidence: 99, propagation: corroborated, signals: signals({ geocoded: false }), source: undefined }, MIN, TEXT_MIN), false);
+
+  // CRITICAL: the textual path must never RESCUE a suggestion that geography contradicts.
+  // When a geocode exists, the geographic gate governs and the textual evidence is ignored.
+  assert.equal(shouldAutoAccept({ confidence: 96, propagation: corroborated, signals: signals({ distanceKm: 40 }), source: "propagated" }, MIN, TEXT_MIN), false);
+  // And a contradicting geocode is demoted to 45 upstream, which fails both floors.
+  assert.equal(shouldAutoAccept({ confidence: 45, propagation: corroborated, signals: signals({ distanceKm: 80 }), source: "propagated" }, MIN, TEXT_MIN), false);
+  // A corroborated twin that IS geocoded and near still passes the geographic path unchanged.
+  assert.equal(shouldAutoAccept({ confidence: 95, propagation: corroborated, signals: signals({ distanceKm: 2 }), source: "propagated" }, MIN, TEXT_MIN), true);
+
+  // The new evidence flows through the partition helper too.
+  const textCandidates = [
+    { confidence: 93, id: "t1", propagation: corroborated, signals: signals({ geocoded: false }), source: "propagated" as const },
+    { confidence: 93, id: "t2", propagation: uncorroborated, signals: signals({ geocoded: false }), source: "propagated" as const },
+  ];
+  const textPartition = partitionAutoApply(textCandidates, MIN);
+  assert.deepEqual(textPartition.accepted.map((c) => c.id), ["t1"]);
+  assert.deepEqual(textPartition.parked.map((c) => c.id), ["t2"]);
 }
