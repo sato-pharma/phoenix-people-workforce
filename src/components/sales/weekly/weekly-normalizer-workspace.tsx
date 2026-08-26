@@ -196,6 +196,7 @@ export function WeeklyNormalizerWorkspace({
     setBusy("ai"); setError(null); setNotice(null);
     try {
       let filled = 0;
+      let filledAreas = 0;
       let failed = false;
       const jobs = [
         { kind: "product" as const, unknowns: preview.unknownProducts.map((u) => ({ raw: u.key, rawName: u.itemName || u.itemCode })) },
@@ -212,7 +213,14 @@ export function WeeklyNormalizerWorkspace({
         });
         // Guard the parse: a timed-out function returns a non-JSON platform page, so a bare
         // res.json() would throw and hide the real status.
-        const json = await readJson<{ data?: { suggestions?: { raw: string; code: string; confidence?: number }[] }; error?: string; success?: boolean }>(res);
+        const json = await readJson<{
+          data?: {
+            suggestions?: { raw: string; code: string; confidence?: number }[];
+            areaSuggestions?: { raw: string; code: string; confidence?: number }[];
+          };
+          error?: string;
+          success?: boolean;
+        }>(res);
         if (!res.ok || !json?.success || !json.data) {
           failed = true;
           setError(json?.error ?? `AI suggest failed for ${job.kind}${res.status === 504 ? " — the analyzer timed out; try fewer rows at once" : ` (${res.status})`}.`);
@@ -225,14 +233,25 @@ export function WeeklyNormalizerWorkspace({
         for (const s of suggestions) if (typeof s.confidence === "number") confidence[s.raw] = s.confidence;
         if (job.kind === "product") setProductPicks((p) => { const n = { ...p }; suggestions.forEach((s) => { n[s.raw] = s.code; }); return n; });
         else {
+          // The server derives each branch's region FROM the area it suggested, so the pair is always
+          // valid. A branch it could not place to an area gets a region-only suggestion and its area
+          // is cleared — an area must sit inside its branch's region, and the save rejects a
+          // mismatched pair rather than silently fixing it.
+          const areaSuggestions = json.data.areaSuggestions ?? [];
+          const areaByRaw = new Map(areaSuggestions.map((s) => [s.raw, s.code]));
+          filledAreas += areaSuggestions.length;
           setRegionPicks((p) => { const n = { ...p }; suggestions.forEach((s) => { n[s.raw] = s.code; }); return n; });
-          // Drop any area already picked for a branch the AI just re-regioned — an area must sit
-          // inside its branch's region, and the server rejects the pair rather than silently fixing it.
-          setAreaPicks((p) => { const n = { ...p }; suggestions.forEach((s) => { n[s.raw] = ""; }); return n; });
+          setAreaPicks((p) => { const n = { ...p }; suggestions.forEach((s) => { n[s.raw] = areaByRaw.get(s.raw) ?? ""; }); return n; });
         }
         if (Object.keys(confidence).length) setAiConfidence((prev) => ({ ...prev, ...confidence }));
       }
-      if (filled) setNotice(`AI pre-filled ${filled} suggestion(s) — review the dropdowns, fix any wrong ones, then Save.`);
+      if (filled) {
+        // Areas are called out separately because they are the scarce half: a branch with a region
+        // but no area still cannot be cut by territory, and cannot resolve a line whose organogram
+        // splits that region across two managers.
+        const areaNote = filledAreas > 0 ? `, ${filledAreas} of them down to the area` : "";
+        setNotice(`AI pre-filled ${filled} suggestion(s)${areaNote} — review the dropdowns, fix any wrong ones, then Save.`);
+      }
       else if (!failed) setNotice("AI found no confident matches — map them by hand.");
     } catch (e) {
       setError(requestErrorMessage(e, "AI suggest failed."));

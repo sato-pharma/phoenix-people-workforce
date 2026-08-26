@@ -30,6 +30,8 @@ import {
   type WeeklyManagerBucket,
   type WeeklyManagerIndex,
 } from "@/lib/sales/weekly/manager-attribution";
+import { splitWeeklyRowsByBranch } from "@/lib/sales/weekly/branch-attribution";
+import type { WeeklyAreaSplitIndex } from "@/lib/sales/weekly/branch-area-split";
 import type { WeeklyDashboard, WeeklyFactExportRow } from "@/lib/sales/weekly/types";
 
 // ── Period helpers ────────────────────────────────────────────────────────────
@@ -140,14 +142,21 @@ export function isActionableLowSalesBucket(kind: WeeklyManagerBucket["kind"]): b
 
 type ManagerGroup = { bucket: WeeklyManagerBucket; rows: WeeklyFactExportRow[] };
 
-/** Bucket every fact row by its owning manager, in section order. */
+/**
+ * Bucket every fact row by its owning manager, in section order.
+ *
+ * Rows arriving here are expected to have been through splitWeeklyRowsByBranch already — that is
+ * where a depot serving several territories is divided among them. This function is deliberately
+ * left as the pure bucketing step so the two operations can be tested, and reasoned about,
+ * separately.
+ */
 export function groupRowsByManager(
   rows: WeeklyFactExportRow[],
   index: WeeklyManagerIndex,
 ): ManagerGroup[] {
   const groups = new Map<string, ManagerGroup>();
   for (const row of rows) {
-    const bucket = resolveWeeklyManager(index, row.line, row.regionCode);
+    const bucket = resolveWeeklyManager(index, row.line, row.regionCode, row.areaCode);
     const existing = groups.get(bucket.key);
     if (existing) existing.rows.push(row);
     else groups.set(bucket.key, { bucket, rows: [row] });
@@ -216,6 +225,15 @@ export type WeeklySummaryInput = {
   /** Every cycle month of the current year, all weeks — drives Tab 4. */
   ytd: WeeklyDashboard;
   managerIndex: WeeklyManagerIndex;
+  /**
+   * The organogram's line -> area map, plus the area and brick vocabulary, so a branch serving
+   * several territories can be divided among them. See branch-attribution.ts for the owner's rule.
+   *
+   * Null is a supported state, not an error: the split then does nothing at all and every tab is
+   * byte-identical to what it produced before the feature existed. That is what makes an unreadable
+   * organogram cost nothing rather than costing the export.
+   */
+  areaSplit: WeeklyAreaSplitIndex | null;
   /** Jan..current cycle months, so a month with no uploads can be reported as a real zero. */
   ytdMonths: string[];
   periodLabel: string;
@@ -324,6 +342,7 @@ export async function buildWeeklySummaryWorkbook(input: WeeklySummaryInput): Pro
     const soleLine = lineFilter.map(normalizeLine).filter(Boolean);
     buildTabSet(workbook, null, weeklyRows, mtdRows, ytdRows, ytd.factRows ?? [], {
       managerIndex,
+      areaSplit: input.areaSplit,
       ytdMonths,
       periodLabel,
       generatedAt,
@@ -339,6 +358,7 @@ export async function buildWeeklySummaryWorkbook(input: WeeklySummaryInput): Pro
       const forLine = (rows: WeeklyFactExportRow[]) => rows.filter((row) => sameLine(row.line, line));
       buildTabSet(workbook, line, forLine(weeklyRows), forLine(mtdRows), forLine(ytdRows), forLine(ytd.factRows ?? []), {
         managerIndex,
+        areaSplit: input.areaSplit,
         ytdMonths,
         periodLabel,
         generatedAt,
@@ -383,6 +403,8 @@ function buildTabSet(
   ytdRawRows: WeeklyFactExportRow[],
   ctx: {
     managerIndex: WeeklyManagerIndex;
+    /** See WeeklySummaryInput.areaSplit. Null means "split nothing". */
+    areaSplit: WeeklyAreaSplitIndex | null;
     ytdMonths: string[];
     periodLabel: string;
     generatedAt: string;
@@ -402,34 +424,52 @@ function buildTabSet(
   const label = line ?? ctx.scopeLabel ?? "All lines";
   const name = (suffix: string) => (line ? sheetName(line, suffix) : suffix);
 
+  // WHICH TABS SEE THE SPLIT, AND WHY THE OTHER TWO DO NOT.
+  //
+  // Every tab that answers "whose sales are these" gets the split rows, because a depot serving
+  // four territories belongs to four managers, not to the one above them all. Two tabs deliberately
+  // keep the raw rows:
+  //
+  //   Tab 1 "Weekly by Branch" is BRANCH grain and names no manager. Splitting a branch and then
+  //   grouping by branch would only put it back together, at the cost of a rounding pass.
+  //
+  //   Tab 5 "Low Sales With Stock" is an ACTION LIST about physical stock sitting in one depot, and
+  //   its 50-unit floor is what keeps it worth reading. Dividing 200 stuck units across four areas
+  //   would drop all four below the floor and the alert would vanish — the one place where an
+  //   attribution rule would destroy information rather than sharpen it. A depot is one journey for
+  //   one person, so it stays whole.
+  const split = (rows: WeeklyFactExportRow[]) => splitWeeklyRowsByBranch(rows, ctx.areaSplit).rows;
+  const weeklyByArea = split(weeklyRows);
+  const trendByArea = split(ctx.trendRows);
+
   buildBranchSheet(workbook, name("Weekly by Branch"), weeklyRows, label, periodLabel, generatedAt, ctx.trendRows);
   // The same numbers, cut two ways. AREA is what a manager owns and is measured on; BRANCH is where
   // he has to send someone. Both are built by one writer, so they cannot drift apart.
   buildManagerSheet(
     workbook,
     name("Weekly by Manager"),
-    weeklyRows,
+    weeklyByArea,
     managerIndex,
     label,
     periodLabel,
     generatedAt,
-    ctx.trendRows,
+    trendByArea,
     ctx.areaNames,
     "area",
   );
   buildManagerSheet(
     workbook,
     name("Manager by Branch"),
-    weeklyRows,
+    weeklyByArea,
     managerIndex,
     label,
     periodLabel,
     generatedAt,
-    ctx.trendRows,
+    trendByArea,
     ctx.areaNames,
     "branch",
   );
-  buildDistributorSheet(workbook, name("MTD by Distributor"), mtdRows, managerIndex, {
+  buildDistributorSheet(workbook, name("MTD by Distributor"), split(mtdRows), managerIndex, {
     title: `${label} — Month to Date by Distributor`,
     subtitle: `Cycle month ${currentCairoCycleMonth()} · all uploaded weeks · Generated ${generatedAt}`,
     unitsLabel: "MTD Units",
@@ -451,7 +491,7 @@ function buildTabSet(
       ctx.vsTarget.months.map((month) => ({
         period: month.period,
         sections: buildVsTargetModel(
-          month.monthRows,
+          split(month.monthRows),
           month.targets,
           ctx.areaIndex,
           month.targetedLines,
@@ -463,7 +503,7 @@ function buildTabSet(
       ctx.vsTarget.dataNote,
     );
   }
-  buildDistributorSheet(workbook, name("YTD by Distributor"), ytdRows, managerIndex, {
+  buildDistributorSheet(workbook, name("YTD by Distributor"), split(ytdRows), managerIndex, {
     title: `${label} — Year to Date by Distributor`,
     subtitle: `${ytdMonths[0] ?? "—"} to ${currentCairoCycleMonth()} · Generated ${generatedAt}`,
     unitsLabel: "YTD Units",
@@ -2102,7 +2142,7 @@ function buildLowSalesSheet(
     } & SummaryTotals
   >();
   for (const row of rows) {
-    const manager = resolveWeeklyManager(index, row.line, row.regionCode);
+    const manager = resolveWeeklyManager(index, row.line, row.regionCode, row.areaCode);
     const key = `${manager.key}||${row.distributorCode}||${row.branchCode || row.branchName}||${row.productCode}`;
     const areaCode = (row.areaCode ?? "").trim().toUpperCase();
     const existing =

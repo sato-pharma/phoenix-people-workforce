@@ -21,6 +21,7 @@ import { decumulateRows, suppressGapSpannedValue, weekHasDecumulationGap } from 
 import { resolveWeeklyContractWithSource } from "@/lib/sales/weekly/weekly-column-profile-store";
 import { loadProductAliasIndex } from "@/lib/sales/weekly/product-aliases";
 import { weeklyTemplateDistributorFallbackName } from "@/lib/sales/weekly/templates";
+import { applyWeeklyTrackedLineScope, WEEKLY_TRACKED_SCOPE_NOTE } from "@/lib/sales/weekly/tracked-lines";
 import type {
   WeeklyBatch,
   WeeklyBranchComparisonRow,
@@ -795,6 +796,10 @@ export async function loadWeeklyDashboard(filters?: {
   const region = resolveMultiFilter(filters?.regionCodes, filters?.regionCode, filters?.regionFilterMode, normalizeCode);
   const product = resolveMultiFilter(filters?.productCodes, filters?.productCode, filters?.productFilterMode, normalizeCode);
   const line = resolveMultiFilter(filters?.lineCodes, filters?.line, filters?.lineFilterMode, normalizeComparableLine);
+  // Did the viewer name a line themselves? That is the escape hatch out of the tracked-line default
+  // scope (GOLDEN RULE, see tracked-lines.ts). Include-mode only: "everything except CNS" is not a
+  // request for Head Office, and must not quietly pull 78% of the table back in.
+  const lineNamedExplicitly = line.has && line.mode === "include";
   const cycleMonthFilter = resolveMultiFilter(filters?.cycleMonths, null, filters?.cycleMonthMode, normalizeText);
   // Uploads are matched by exact id, so no include/exclude mode and no normalisation — a uuid is a uuid.
   const batchIdFilter = new Set((filters?.batchIds ?? []).map((value) => normalizeText(value)).filter(Boolean));
@@ -881,6 +886,7 @@ export async function loadWeeklyDashboard(filters?: {
   const empty = (): WeeklyDashboard => ({
     weekStart: selectedWeekAnchor,
     priorWeekStart: priorCanonical,
+    trackedScope: { active: !lineNamedExplicitly, note: WEEKLY_TRACKED_SCOPE_NOTE },
     availableWeeks,
     weekGroupMembers: weekGroupMembersObj,
     availableLines: [],
@@ -1117,7 +1123,13 @@ export async function loadWeeklyDashboard(filters?: {
   // wipes every row. Applied here so EVERY downstream aggregate (KPIs, trend, breakdowns, factRows)
   // excludes unmapped products — the exported workbook must never contain them.
   const dropUnmapped = filters?.excludeUnmapped === true && mappedCodes.size > 0;
-  const scopedRows = visibleRows.filter((row) => {
+  // GOLDEN RULE — see tracked-lines.ts. Weekly Sales is CNS / Anti Infective / Pedia; Head Office is
+  // not tracked weekly and is 78% of the table, so it is out of the default scope. The escape hatch
+  // is naming a line in the Line filter, which makes this a DEFAULT rather than a deletion — and
+  // note availableLines below is deliberately built from visibleRows, NOT from here, so Head Office
+  // stays selectable. Scoping the dropdown too would make the escape hatch unreachable.
+  const trackedRows = applyWeeklyTrackedLineScope(visibleRows, { includeUntracked: lineNamedExplicitly });
+  const scopedRows = trackedRows.filter((row) => {
     if (dropUnmapped && !mappedCodes.has(normalizeCode(row.productCode))) return false;
     if (!passesMultiFilter(distributor, normalizeCode(row.distributorCode))) return false;
     if (!passesMultiFilter(region, normalizeCode(row.regionCode))) return false;
@@ -1355,6 +1367,9 @@ export async function loadWeeklyDashboard(filters?: {
   return {
     weekStart: selectedWeekAnchor,
     priorWeekStart: priorCanonical,
+    // What the numbers below actually cover. The owner's rule is that an export must match the
+    // screen, so this travels with the data rather than being re-derived by each surface.
+    trackedScope: { active: !lineNamedExplicitly, note: WEEKLY_TRACKED_SCOPE_NOTE },
     availableWeeks,
     weekGroupMembers: weekGroupMembersObj,
     availableLines,

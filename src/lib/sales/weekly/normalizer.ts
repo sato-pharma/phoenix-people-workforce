@@ -4,6 +4,7 @@ import { SalesWorkflowError } from "@/lib/sales/contracts";
 import { loadSalesReferenceData } from "@/lib/sales/monthly-distributor-import";
 import { IGNORE_PRODUCT_CODE } from "@/lib/sales/normalizer/types";
 import {
+  listWeeklyBranchAreaExamples,
   listWeeklyBranchRegionExamples,
   loadBranchRegionIndex,
   upsertBranchRegionRow,
@@ -192,7 +193,7 @@ function isMappableRegionFailure(distributorCode: string, message: string): bool
  * Other distributors follow, because the same medicine is often spelled the same way across sheets.
  */
 export async function listWeeklyAiReferenceAliases(
-  kind: "product" | "branch",
+  kind: "product" | "branch" | "branch-area",
   distributorCode?: string | null,
 ): Promise<{ raw: string; code: string }[]> {
   let focus = "";
@@ -205,7 +206,11 @@ export async function listWeeklyAiReferenceAliases(
   // Two queries, not one capped list: a distributor with 30 mappings would be squeezed out entirely
   // by one that has thousands, and its own history is exactly the part that must survive the cap.
   const read: (code?: string | null, limit?: number) => Promise<{ raw: string; code: string; distributorCode: string }[]> =
-    kind === "branch" ? listWeeklyBranchRegionExamples : listWeeklyProductAliasExamples;
+    kind === "branch-area"
+      ? listWeeklyBranchAreaExamples
+      : kind === "branch"
+        ? listWeeklyBranchRegionExamples
+        : listWeeklyProductAliasExamples;
   const [mineRows, allRows] = await Promise.all([focus ? read(focus, 300) : Promise.resolve([]), read(null, 600)]);
 
   const out: { raw: string; code: string }[] = [];

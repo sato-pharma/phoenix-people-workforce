@@ -409,10 +409,20 @@ export function WeeklyDashboardView({ initial, initialError }: { initial: Weekly
             mode={filters.lineMode}
             onSelectedChange={(next) => setFilters((f) => ({ ...f, lineCodes: next }))}
             onModeChange={(next) => setFilters((f) => ({ ...f, lineMode: next }))}
-            allLabel="All lines"
+            // Not "All lines": with no line named the default scope is the TRACKED ones. Saying
+            // "all" while excluding 78% of the table is exactly the misreading this scope exists
+            // to end.
+            allLabel="Tracked lines"
           />
         </div>
       </div>
+
+      {/* What these numbers cover, said on the screen rather than assumed. Head Office is not tracked
+          weekly (the owner's golden rule) and is out of scope until a line is named — and it is far
+          too big a number to leave out silently. */}
+      {data.trackedScope?.active && (
+        <p className="text-xs font-semibold text-[#64748B]">{data.trackedScope.note}</p>
+      )}
 
       {error && (
         <div className="flex items-start gap-2 rounded-[6px] border border-rose-200 bg-rose-50 p-3 text-sm font-semibold text-rose-700 shadow-sm">
