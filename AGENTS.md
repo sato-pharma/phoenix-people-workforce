@@ -299,10 +299,14 @@ file holding the full account, under
 
 - **The ceiling is the Windows COMMIT limit, not RAM — and a freeze leaves NO dump.** Commit is
   RAM + pagefile, so the pagefile is the half that was fixable. It was raised to a fixed 16 GB on
-  2026-08-25 (limit ~19.79 GB -> 31.79 GB), then **re-pinned to 32768/65536 MB on 2026-08-26,
-  putting the limit at 47.79 GB — measured live 2026-08-26 20:5x Cairo.** **Read the limit, never
-  quote it from here**: it has been reset twice, and a reading near ~37.4 GB means it was reset
-  again. **A pagefile change does not fix a leak** — Windows was reinstalled 2026-08-26 06:19 and
+  2026-08-25 (limit ~19.79 GB -> 31.79 GB), then **re-pinned on 2026-08-26 to 32768/65536 MB — a
+  RANGE, not a size, so the limit is `RAM + the pagefile as currently ALLOCATED` and it FLOATS**:
+  15.79 + 32.00 = **47.79 GB at rest**, climbing toward **~79.79 GB** as Windows grows the file
+  under pressure. That growth, not a third reset, is the 53.83 GB limit in the next entry — a
+  pagefile grown to ~38 GB. **Read the limit, never quote it from here**: a HIGHER reading is
+  ordinary growth, but a reading BELOW 47.79 GB — ~37.4 GB, say — means the setting was reset
+  again, which has now happened twice. `Win32_PageFileUsage.AllocatedBaseSize` tells the two apart.
+  **A pagefile change does not fix a leak** — Windows was reinstalled 2026-08-26 06:19 and
   the box still froze at 10:57 and 15:15 on the raised limit. A commit-limit hang produces no
   bugcheck and no minidump, so an empty `C:\Windows\Minidump` is the **expected** signature and never
   an all-clear — the tell is `dwm.exe` dying with `0xC00001AD` (`STATUS_COMMITMENT_LIMIT`) minutes
@@ -432,12 +436,17 @@ Before editing, run `git status`, `git branch --show-current`, `git log -1 --one
 **Machine limits (RAM is soldered at 16 GB — it cannot be upgraded; the pagefile is not).** One dev
 server at a time, ever. One typecheck/build at a time locally; parallel validation belongs to CI.
 
-**The binding limit is the Windows COMMIT charge, not RAM — and it moved.** "Keep total local
-sessions at **4 or fewer**" was written against a ~19.79 GB commit limit (15.79 GB RAM + a 4 GB
-pagefile). The pagefile went to a fixed 16 GB on 2026-08-25 (limit **31.79 GB**) and was re-pinned
-to 32768/65536 MB on 2026-08-26, so the limit is now **47.79 GB** — measured live that evening at
-9 sessions, 22.96 GB committed, **24.83 GB free**. That makes the old "4 or fewer" guidance roughly
-28 GB too conservative: **sessions were never the ceiling.** Separating the MAIN `claude.exe` from
+**The binding limit is the Windows COMMIT charge, not RAM — and it is not a constant.** "Keep total
+local sessions at **4 or fewer**" was written against a ~19.79 GB commit limit (15.79 GB RAM + a
+4 GB pagefile). The pagefile went to a fixed 16 GB on 2026-08-25 (limit **31.79 GB**) and was
+re-pinned on 2026-08-26 to **32768/65536 MB — a range, not a size.** The limit is therefore
+`RAM + the pagefile as currently ALLOCATED`, verified 2026-08-26 at exactly 15.79 + 32.00 =
+**47.79 GB**, and it **floats up to ~79.79 GB** as Windows grows that file under pressure, with
+nothing having been changed. So **47.79 GB is the FLOOR, not the ceiling** — never treat a bigger
+number as a reset (§2.1), and never budget headroom against a limit you did not just read.
+Measured live that evening at 9 sessions, 22.96 GB committed, **24.83 GB free**. That makes the old
+"4 or fewer" guidance roughly 28 GB too conservative: **sessions were never the ceiling.**
+Separating the MAIN `claude.exe` from
 its renderer/gpu/utility children puts an idle session at **~0.5 GB**, while a dev server, build or
 cold typecheck is **~3.5 GB** — so the real limit is about 5 concurrent HEAVY jobs, not a session
 count. `node scripts/new-session.mjs --status` prints both live. Commit is still finite and the
