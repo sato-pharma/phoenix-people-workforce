@@ -67,6 +67,42 @@ export function isOfficeLine(row: OrganogramRow) {
   return line === "office" || line === "head office";
 }
 
+/**
+ * The options offered by a portal/admin line picker.
+ *
+ * Head Office is deliberately NOT a product line. It reaches the report by two
+ * very different routes and only one of them may be selectable:
+ *
+ *  - As reporting-chain CONTEXT — e.g. a multi-line Product Manager's report
+ *    carries his Marketing Manager and CEO ancestors so the tree has a root.
+ *    Those one or two rows are not a department the viewer may browse, and
+ *    offering "Head Office" there would open a branch the viewer cannot see.
+ *  - As a real BRANCH — the 13-person Head Office tree built by
+ *    organogram-head-office.ts, sent only to viewers who pass
+ *    canAccessHeadOffice (Super Admin, CEO, Finance Manager, Talent Acquisition).
+ *
+ * The caller decides which case it is via `includeHeadOffice`; the server sets
+ * it from the entitlement, never the client. Without it the picker silently
+ * dropped a branch the viewer was already cleared to see — Talent Acquisition
+ * was granted Head Office on 2026-08-25 and still saw only the four sales lines,
+ * because this filter ran after the permission gate had already said yes.
+ */
+export function buildLinePickerOptions(
+  rows: OrganogramRow[],
+  options: { includeHeadOffice?: boolean } = {},
+) {
+  const includeHeadOffice = options.includeHeadOffice ?? false;
+  const seen = new Set<string>();
+
+  for (const row of rows) {
+    if (isOfficeLine(row) && !includeHeadOffice) continue;
+    const line = row.lineName?.trim();
+    if (line) seen.add(line);
+  }
+
+  return Array.from(seen).sort((left, right) => left.localeCompare(right));
+}
+
 export function isSalesDepartment(row: OrganogramRow) {
   return row.departmentName?.trim().toLowerCase() === "sales";
 }
