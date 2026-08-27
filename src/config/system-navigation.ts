@@ -60,6 +60,7 @@ import {
   Target,
   TriangleAlert,
   Trash2,
+  Trophy,
   Undo2,
   Unlink,
   UserCog,
@@ -1528,6 +1529,16 @@ export const sourceOfSalesPageItems: readonly AdminToolsPageItem[] = [
     // Super Admin gets the full upload/publish workspace; SFE Manager reaches the same page but
     // view + download only, never publish (owner decision, 2026-08-05) -- see the page's own
     // canPublish gate. No excludedRoles here on purpose: both roles must see this card.
+    permissions: [{ action: "import", resource: "sales" }],
+  },
+  {
+    href: "/sales/monthly-closing/performance-review",
+    icon: Trophy,
+    label: "Performance Review",
+    description: "Rep ranking, families, and growth by product and by area, as a Sato workbook.",
+    // The presentation cut of the SAME closing -- it reads, ranks and exports, and publishes
+    // nothing. Its page gate is Monthly Closing's, SFE Manager carve-out included, so no
+    // excludedRoles here for the same reason: both roles must see this card.
     permissions: [{ action: "import", resource: "sales" }],
   },
   {

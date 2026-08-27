@@ -832,6 +832,7 @@ import { runStoreSplitMatrixTests } from "./store-split-matrix.test.ts";
 import { runStoreSplitDetailReportTests } from "./store-split-detail-report.test.ts";
 import { runMonthlyClosingExportSplitStaticTests } from "./monthly-closing-export-split-static.test.ts";
 import { runClosingExportMatchesScreenTests } from "./closing-export-matches-screen.test.ts";
+import { runClosingPerformanceReviewTests } from "./closing-performance-review.test.ts";
 import { runCeoMarketingApprovalInboxTests } from "./ceo-marketing-approval-inbox.test.ts";
 import { runMarketingApprovalInboxNavBadgeTests } from "./marketing-approval-inbox-nav-badge.test.ts";
 
@@ -2148,6 +2149,11 @@ await runTest(
 await runTest(
   "exported Closing Matrix equals the screen (no Calc-sheet formula survives anywhere on the grid, organogram region subtotals and merged direct export at their on-screen value, and the fixture still reproduces the SUMIFS-to-zero bug)",
   runClosingExportMatchesScreenTests,
+);
+
+await runTest(
+  "Performance Review never names a system state and never adds units across products (no \"Not mapped to an area\" / \"No district manager\" anywhere in the workbook, Main Store keeps its own name, the by-area growth tab is value-only, and a month never uploaded renders as a dash)",
+  runClosingPerformanceReviewTests,
 );
 
 await runTest(

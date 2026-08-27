@@ -1,0 +1,552 @@
+"use client";
+
+import { AlertTriangle, Download, Loader2, RefreshCw, Trophy } from "lucide-react";
+import { useMemo, useState } from "react";
+
+import {
+  AdminCallout,
+  AdminInsightChip,
+  AdminPageHero,
+  AdminTableShell,
+} from "@/components/admin/admin-design-system";
+import { Button } from "@/components/ui/button";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+import {
+  performanceReviewRegionStyle,
+  PERFORMANCE_REVIEW_FIRST_PERIOD,
+  type ClosingPerformanceReview,
+  type PerformanceReviewSeriesRow,
+} from "@/lib/sales/closing-performance-review";
+
+// The screen half of the Performance Review. Its sections are the workbook's tabs, in the same
+// order, from the same object — the owner's rule is that an export matches the screen, and the
+// cheapest way to keep that true is for both to render one payload.
+//
+// Units appear in exactly one section, "Units and growth by month", where every row IS one product
+// code. Everywhere else the measure is value, because units of different products are never added.
+
+type Props = {
+  initialError: string | null;
+  initialReview: ClosingPerformanceReview | null;
+};
+
+const EM = "—";
+const DOT = "·";
+
+const MONTHS_LONG = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December",
+];
+const MONTHS_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/** "2026-07" -> "July 2026". Falls back to the raw period rather than inventing one. */
+function longMonth(period: string | null | undefined): string {
+  const raw = String(period ?? "").trim();
+  const match = /^(\d{4})-(\d{2})$/.exec(raw);
+  if (!match) return raw || EM;
+  const name = MONTHS_LONG[Number(match[2]) - 1];
+  return name ? name + " " + match[1] : raw;
+}
+
+/** "2026-07" -> "Jul". The narrow heading of a by-month column. */
+function shortMonth(period: string): string {
+  const raw = period.trim();
+  const match = /^(\d{4})-(\d{2})$/.exec(raw);
+  if (!match) return raw;
+  return MONTHS_SHORT[Number(match[2]) - 1] ?? raw;
+}
+
+const numberFormat = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
+
+/** One figure. Nothing sold reads as a dot; never uploaded reads as a dash — they are not the same. */
+function Figure({ value }: { value: number | null }) {
+  if (value == null) return <span className="text-slate-300">{EM}</span>;
+  if (value === 0) return <span className="text-slate-300">{DOT}</span>;
+  return <span className="tabular-nums">{numberFormat.format(value)}</span>;
+}
+
+function achievementClass(ratio: number | null): string {
+  if (ratio == null) return "text-slate-400";
+  if (ratio >= 0.8) return "text-teal-700";
+  if (ratio >= 0.55) return "text-amber-700";
+  return "text-red-700";
+}
+
+/** No target is a fact about the area, not a failure — it never renders as 0%. */
+function Achievement({ ratio }: { ratio: number | null }) {
+  if (ratio == null) return <span className="text-xs italic text-slate-400">no target</span>;
+  return <span className={"font-black tabular-nums " + achievementClass(ratio)}>{(ratio * 100).toFixed(1)}%</span>;
+}
+
+function Growth({ ratio }: { ratio: number | null }) {
+  if (ratio == null) return <span className="text-xs italic text-slate-400">new</span>;
+  const sign = ratio >= 0 ? "+" : "−";
+  return (
+    <span className={"font-black tabular-nums " + (ratio >= 0 ? "text-teal-700" : "text-red-700")}>
+      {sign}{Math.abs(ratio * 100).toFixed(1)}%
+    </span>
+  );
+}
+
+/** The region swatch — the same colour the workbook paints that region on every tab. */
+function RegionDot({ regionCode }: { regionCode: string }) {
+  const style = performanceReviewRegionStyle(regionCode);
+  return (
+    <span
+      aria-hidden
+      className="inline-block h-2.5 w-2.5 shrink-0 rounded-full"
+      style={{ backgroundColor: "#" + style.chip.slice(2) }}
+    />
+  );
+}
+
+const headClassName =
+  "whitespace-nowrap px-3 py-2.5 text-left text-[10px] font-black uppercase tracking-[0.14em] text-slate-500";
+const cellClassName = "whitespace-nowrap px-3 py-2 text-sm text-slate-700";
+
+function SeriesTable({
+  months,
+  regionCodeOf,
+  rowHeading,
+  rows,
+  subHeading,
+}: {
+  months: string[];
+  /** Supplied only for the area series, whose sub-label is a region. */
+  regionCodeOf?: (row: PerformanceReviewSeriesRow) => string;
+  rowHeading: string;
+  rows: PerformanceReviewSeriesRow[];
+  subHeading: string;
+}) {
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full min-w-[52rem] border-collapse">
+        <thead className="border-b border-slate-200 bg-slate-50/80">
+          <tr>
+            <th className={headClassName}>{rowHeading}</th>
+            <th className={headClassName}>{subHeading}</th>
+            {months.map((month) => (
+              <th className={headClassName + " text-right"} key={month}>{shortMonth(month)}</th>
+            ))}
+            <th className={headClassName + " text-right"}>Growth</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row, index) => (
+            <tr className={index % 2 === 1 ? "bg-slate-50/50" : undefined} key={row.key}>
+              <td className={cellClassName + " font-semibold text-slate-900"}>{row.label}</td>
+              <td className={cellClassName}>
+                <span className="flex items-center gap-2">
+                  {regionCodeOf ? <RegionDot regionCode={regionCodeOf(row)} /> : null}
+                  <span className="text-slate-500">{row.subLabel}</span>
+                </span>
+              </td>
+              {row.perMonth.map((value, monthIndex) => (
+                <td className={cellClassName + " text-right"} key={months[monthIndex] ?? String(monthIndex)}>
+                  <Figure value={value} />
+                </td>
+              ))}
+              <td className={cellClassName + " text-right"}><Growth ratio={row.growth} /></td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+export function ClosingPerformanceReviewWorkspace({ initialError, initialReview }: Props) {
+  const [review, setReview] = useState<ClosingPerformanceReview | null>(initialReview);
+  const [error, setError] = useState<string | null>(initialError);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
+
+  const line = review?.line ?? "";
+  const period = review?.period ?? "";
+  const months = review?.months ?? [];
+
+  // The series starts at July 2026 and fills forward, so today it is one month wide. Saying so is
+  // the whole point: "1 months of history" reads as a bug, and an unexplained single column reads
+  // as a broken report. The workbook prints the same sentence, from the same rule.
+  const seriesSpan =
+    months.length === 0
+      ? "Series starts " + longMonth(PERFORMANCE_REVIEW_FIRST_PERIOD)
+      : months.length === 1
+        ? longMonth(months[0]) + " — the series starts here"
+        : months.length + " months — " + longMonth(months[0]) + " to " + longMonth(months[months.length - 1]);
+
+  // The area series carries a region NAME as its sub-label, and the palette is keyed by CODE, so the
+  // swatch needs this translation. Without it every area row would take the neutral fallback colour
+  // and the area tab would be the one place the region key does not hold.
+  const regionCodeByName = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const group of review?.regions ?? []) map.set(group.regionName, group.regionCode);
+    return map;
+  }, [review]);
+
+  async function reload(nextLine: string, nextPeriod: string) {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const query = new URLSearchParams();
+      if (nextLine) query.set("line", nextLine);
+      if (nextPeriod) query.set("period", nextPeriod);
+      const response = await fetch("/api/sales/monthly-closing/performance-review?" + query.toString(), {
+        cache: "no-store",
+      });
+      const payload = (await response.json()) as {
+        data?: ClosingPerformanceReview;
+        error?: string;
+        success: boolean;
+      };
+      if (payload.success && payload.data) setReview(payload.data);
+      else setError(payload.error ?? "Failed to load the Performance Review.");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Failed to load the Performance Review.");
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  async function handleExport() {
+    if (!review) return;
+    setIsExporting(true);
+    setError(null);
+    try {
+      const response = await fetch("/api/sales/monthly-closing/performance-review/export", {
+        body: JSON.stringify({ line: review.line, months: review.months.length, period: review.period }),
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      });
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(payload?.error ?? "Export failed.");
+      }
+      const blob = await response.blob();
+      const disposition = response.headers.get("Content-Disposition") ?? "";
+      const match = /filename="(.+?)"/.exec(disposition);
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = match?.[1] ?? "sato-performance-review.xlsx";
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(url);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Export failed.");
+    } finally {
+      setIsExporting(false);
+    }
+  }
+
+  if (!review) {
+    return (
+      <div className="min-h-[calc(100vh-7rem)] rounded-[32px] border border-[#E2E8F0] bg-[#F8FAFC] p-5 sm:p-6 xl:p-8">
+        <AdminCallout tone="danger">
+          <AlertTriangle className="h-4 w-4" />
+          <p>{error ?? "No closing has been uploaded yet, so there is nothing to review."}</p>
+        </AdminCallout>
+      </div>
+    );
+  }
+
+  const selectClassName =
+    "h-11 w-full rounded-2xl border border-[#D8E0EA] bg-[#F8FAFC] px-3.5 text-sm font-semibold text-[#0F172A] outline-none transition focus:border-[#FDBA74] focus:ring-4 focus:ring-[#F97316]/10 disabled:opacity-60";
+
+  return (
+    <div className="min-h-[calc(100vh-7rem)] space-y-7">
+      <AdminPageHero
+        badges={(
+          <>
+            <AdminInsightChip>Line: {line || "None"}</AdminInsightChip>
+            <AdminInsightChip>Month: {period ? longMonth(period) : "No validated data"}</AdminInsightChip>
+            <AdminInsightChip tone="slate">Areas: {review.areas.length}</AdminInsightChip>
+            <AdminInsightChip tone="slate">District managers: {review.managers.length}</AdminInsightChip>
+            <AdminInsightChip tone="orange">{seriesSpan}</AdminInsightChip>
+          </>
+        )}
+        description="Who sold what, ranked. Reps, district managers and regions against target, then the same line broken down by product and by area, month by month. The by-month views start at July 2026 and fill forward: earlier months were closed on a different area map and are not comparable. Export downloads exactly these views as a Sato-branded workbook."
+        eyebrow="Monthly Closing"
+        icon={<Trophy className="h-4 w-4" />}
+        title="Performance Review"
+      />
+
+      {error ? (
+        <AdminCallout tone="danger">
+          <AlertTriangle className="h-4 w-4" />
+          <p>{error}</p>
+        </AdminCallout>
+      ) : null}
+
+      <AdminTableShell
+        action={(
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+            <label className="flex flex-col gap-1 sm:w-44">
+              <span className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">Line</span>
+              <SearchableSelect
+                className={selectClassName}
+                disabled={isLoading || review.availableLines.length === 0}
+                onChange={(event) => void reload(event.target.value, period)}
+                value={line}
+              >
+                {review.availableLines.length === 0 ? (
+                  <option value="">No products</option>
+                ) : (
+                  review.availableLines.map((option) => (
+                    <option key={option} value={option}>{option}</option>
+                  ))
+                )}
+              </SearchableSelect>
+            </label>
+            <label className="flex flex-col gap-1 sm:w-44">
+              <span className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">Month</span>
+              <SearchableSelect
+                className={selectClassName}
+                disabled={isLoading || review.availablePeriods.length === 0}
+                onChange={(event) => void reload(line, event.target.value)}
+                value={period}
+              >
+                {review.availablePeriods.length === 0 ? (
+                  <option value="">No validated month</option>
+                ) : (
+                  review.availablePeriods.map((option) => (
+                    <option key={option} value={option}>{longMonth(option)}</option>
+                  ))
+                )}
+              </SearchableSelect>
+            </label>
+            <Button
+              className="gap-2"
+              disabled={isLoading}
+              onClick={() => void reload(line, period)}
+              variant="secondary"
+            >
+              {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+              Refresh
+            </Button>
+            <Button className="gap-2" disabled={isExporting || isLoading} onClick={() => void handleExport()}>
+              {isExporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+              Export workbook
+            </Button>
+          </div>
+        )}
+        description={"Every area on the line, ranked on achievement. An area with no target follows the ranked block, ordered by value " + DOT + " it is present, never dropped."}
+        title="Medical rep ranking"
+      >
+        {/* Desktop gets the full table; a phone gets cards — the admin shell never shows a wide table on mobile. */}
+        <div className="hidden overflow-x-auto lg:block">
+          <table className="w-full min-w-[64rem] border-collapse">
+            <thead className="border-b border-slate-200 bg-slate-50/80">
+              <tr>
+                <th className={headClassName}>Rank</th>
+                <th className={headClassName}>Region</th>
+                <th className={headClassName}>Medical rep</th>
+                <th className={headClassName}>Area</th>
+                <th className={headClassName}>District manager</th>
+                <th className={headClassName + " text-right"}>Sales value</th>
+                <th className={headClassName + " text-right"}>Target value</th>
+                <th className={headClassName + " text-right"}>Achievement</th>
+              </tr>
+            </thead>
+            <tbody>
+              {review.areas.map((area, index) => (
+                <tr className={index % 2 === 1 ? "bg-slate-50/50" : undefined} key={area.regionCode + "-" + area.areaCode}>
+                  <td className={cellClassName + " font-black text-slate-400"}>
+                    {area.achievement == null ? EM : index + 1}
+                  </td>
+                  <td className={cellClassName}>
+                    <span className="flex items-center gap-2">
+                      <RegionDot regionCode={area.regionCode} />
+                      <span className="font-semibold text-slate-600">{area.regionName}</span>
+                    </span>
+                  </td>
+                  <td className={cellClassName + " font-semibold text-slate-900"}>
+                    {area.repName ?? (
+                      <span className="italic text-slate-400">{area.repIsVacant ? "Vacant seat" : EM}</span>
+                    )}
+                  </td>
+                  <td className={cellClassName}>{area.areaName}</td>
+                  <td className={cellClassName}>
+                    {area.managerName ?? <span className="text-slate-300">{EM}</span>}
+                  </td>
+                  <td className={cellClassName + " text-right font-semibold text-slate-900"}>
+                    <Figure value={area.salesValue} />
+                  </td>
+                  <td className={cellClassName + " text-right"}><Figure value={area.targetValue} /></td>
+                  <td className={cellClassName + " text-right"}><Achievement ratio={area.achievement} /></td>
+                </tr>
+              ))}
+              <tr className="border-t-2 border-slate-300 bg-slate-100/80">
+                <td className={cellClassName + " font-black uppercase tracking-[0.12em] text-slate-700"} colSpan={5}>
+                  {line} {DOT} national total
+                </td>
+                <td className={cellClassName + " text-right font-black text-slate-900"}>
+                  <Figure value={review.totals.salesValue} />
+                </td>
+                <td className={cellClassName + " text-right font-black text-slate-900"}>
+                  <Figure value={review.totals.targetValue} />
+                </td>
+                <td className={cellClassName + " text-right"}><Achievement ratio={review.totals.achievement} /></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div className="space-y-3 p-4 lg:hidden">
+          {review.areas.map((area, index) => (
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm" key={area.regionCode + "-" + area.areaCode}>
+              <div className="flex items-center justify-between gap-3">
+                <span className="flex items-center gap-2">
+                  <RegionDot regionCode={area.regionCode} />
+                  <span className="text-[11px] font-black uppercase tracking-[0.12em] text-slate-500">
+                    {area.achievement == null ? area.regionName : "#" + (index + 1) + " " + DOT + " " + area.regionName}
+                  </span>
+                </span>
+                <Achievement ratio={area.achievement} />
+              </div>
+              <p className="mt-2 text-base font-black text-slate-900">
+                {area.repName ?? (area.repIsVacant ? "Vacant seat" : EM)}
+              </p>
+              <p className="text-sm text-slate-500">{area.areaName}</p>
+              {area.managerName ? <p className="text-xs text-slate-400">Reports to {area.managerName}</p> : null}
+              <p className="mt-2 text-sm font-semibold text-slate-700">
+                <Figure value={area.salesValue} />
+                <span className="text-slate-400"> of </span>
+                <Figure value={area.targetValue} />
+              </p>
+            </div>
+          ))}
+        </div>
+      </AdminTableShell>
+
+      <AdminTableShell
+        description="Each district manager against the areas he or she runs, and each region against its own areas. A manager total is by value: a manager covers several areas selling several products."
+        title="District managers and regions"
+      >
+        <div className="grid gap-0 lg:grid-cols-2">
+          <div className="overflow-x-auto border-b border-slate-200 lg:border-b-0 lg:border-r">
+            <table className="w-full min-w-[26rem] border-collapse">
+              <thead className="border-b border-slate-200 bg-slate-50/80">
+                <tr>
+                  <th className={headClassName}>District manager</th>
+                  <th className={headClassName}>Areas</th>
+                  <th className={headClassName + " text-right"}>Sales value</th>
+                  <th className={headClassName + " text-right"}>Achievement</th>
+                </tr>
+              </thead>
+              <tbody>
+                {review.managers.map((group, index) => (
+                  <tr className={index % 2 === 1 ? "bg-slate-50/50" : undefined} key={group.label}>
+                    <td className={cellClassName + " font-semibold text-slate-900"}>
+                      <span className="flex items-center gap-2">
+                        <RegionDot regionCode={group.regionCode} />
+                        {group.label}
+                      </span>
+                    </td>
+                    <td className={cellClassName}>{group.areaCount}</td>
+                    <td className={cellClassName + " text-right"}><Figure value={group.salesValue} /></td>
+                    <td className={cellClassName + " text-right"}><Achievement ratio={group.achievement} /></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[26rem] border-collapse">
+              <thead className="border-b border-slate-200 bg-slate-50/80">
+                <tr>
+                  <th className={headClassName}>Region</th>
+                  <th className={headClassName}>Areas</th>
+                  <th className={headClassName + " text-right"}>Sales value</th>
+                  <th className={headClassName + " text-right"}>Achievement</th>
+                </tr>
+              </thead>
+              <tbody>
+                {review.regions.map((group, index) => (
+                  <tr className={index % 2 === 1 ? "bg-slate-50/50" : undefined} key={group.regionCode}>
+                    <td className={cellClassName + " font-semibold text-slate-900"}>
+                      <span className="flex items-center gap-2">
+                        <RegionDot regionCode={group.regionCode} />
+                        {group.regionName}
+                      </span>
+                    </td>
+                    <td className={cellClassName}>{group.areaCount}</td>
+                    <td className={cellClassName + " text-right"}><Figure value={group.salesValue} /></td>
+                    <td className={cellClassName + " text-right"}><Achievement ratio={group.achievement} /></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </AdminTableShell>
+
+      <AdminTableShell
+        description="A family spans several concentrations, so it is measured by value. Units show only where the family happens to be a single product code."
+        title="Family performance"
+      >
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[40rem] border-collapse">
+            <thead className="border-b border-slate-200 bg-slate-50/80">
+              <tr>
+                <th className={headClassName}>Product family</th>
+                <th className={headClassName}>Products</th>
+                <th className={headClassName + " text-right"}>Units</th>
+                <th className={headClassName + " text-right"}>Sales value</th>
+                <th className={headClassName + " text-right"}>Target value</th>
+                <th className={headClassName + " text-right"}>Achievement</th>
+              </tr>
+            </thead>
+            <tbody>
+              {review.families.map((family, index) => (
+                <tr className={index % 2 === 1 ? "bg-slate-50/50" : undefined} key={family.family}>
+                  <td className={cellClassName + " font-semibold text-slate-900"}>{family.family}</td>
+                  <td className={cellClassName}>{family.productCount}</td>
+                  <td className={cellClassName + " text-right"}>
+                    {family.unitsAreAddable ? (
+                      <Figure value={family.salesUnits} />
+                    ) : (
+                      <span className="text-xs italic text-slate-400">several products</span>
+                    )}
+                  </td>
+                  <td className={cellClassName + " text-right font-semibold text-slate-900"}>
+                    <Figure value={family.salesValue} />
+                  </td>
+                  <td className={cellClassName + " text-right"}><Figure value={family.targetValue} /></td>
+                  <td className={cellClassName + " text-right"}><Achievement ratio={family.achievement} /></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </AdminTableShell>
+
+      <AdminTableShell
+        description="Every row here is one product code, so these units are a real quantity and may be compared month to month. A dash is a month that was never uploaded; a dot is a month that sold nothing."
+        title="Units and growth by month"
+      >
+        <SeriesTable months={months} rowHeading="Product" rows={review.productUnitsByMonth} subHeading="Family" />
+      </AdminTableShell>
+
+      <AdminTableShell
+        description="The same products in value, so concentrations can be compared side by side and added."
+        title="All products by month"
+      >
+        <SeriesTable months={months} rowHeading="Product" rows={review.productValueByMonth} subHeading="Family" />
+      </AdminTableShell>
+
+      <AdminTableShell
+        description="Each area's own trend. An area sells the whole line, so this is value: units of different products are never added."
+        title={"Growth by month " + DOT + " area"}
+      >
+        <SeriesTable
+          months={months}
+          regionCodeOf={(row) => regionCodeByName.get(row.subLabel) ?? ""}
+          rowHeading="Area"
+          rows={review.areaValueByMonth}
+          subHeading="Region"
+        />
+      </AdminTableShell>
+    </div>
+  );
+}
