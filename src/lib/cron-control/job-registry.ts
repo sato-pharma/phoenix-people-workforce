@@ -12,7 +12,8 @@ export type CronJobKey =
   | "phoenix-reconcile-visits"
   | "phoenix-ireports360-live-sync"
   | "phoenix-recruitment-email-intake"
-  | "phoenix-inbound-intake";
+  | "phoenix-inbound-intake"
+  | "phoenix-recruitment-cv-digest";
 
 export type CronJobRegistryEntry = {
   gcpJobName: CronJobKey;
@@ -71,6 +72,13 @@ export const cronJobRegistry: readonly CronJobRegistryEntry[] = [
     description:
       "Drains the inbound-CV intake queue every 2 minutes: downloads WhatsApp media / re-fetches emails, runs AI extraction + candidate creation, and retries or dead-letters failures. A clean no-op when the queue is empty.",
     route: "/api/cron/inbound-intake",
+  },
+  {
+    gcpJobName: "phoenix-recruitment-cv-digest",
+    label: "CV Intake 6-Hour Digest",
+    description:
+      "Emails each hiring manager who had candidates pushed to them in the past 6 hours a summary of how many CVs they received and from whom, with the recipient's own manager in CC (except NSM) and omar.anwar always in CC. Silent when no manager received any.",
+    route: "/api/cron/recruitment-cv-digest",
   },
 ] as const;
 

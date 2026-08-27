@@ -147,6 +147,7 @@ import { runRecruitmentSimplifyTests } from "./recruitment-simplify.test.ts";
 import { runRecruitmentRequisitionPositionCatalogueTests } from "./recruitment-requisition-position-catalogue.test.ts";
 import { runRecruitmentNonRecruitablePositionsTests } from "./recruitment-non-recruitable-positions.test.ts";
 import { runRecruitmentManagerInboxTests } from "./recruitment-manager-inbox.test.ts";
+import { runCvIntakeDigest6hTests } from "./cv-intake-digest-6h.test.ts";
 import { runRecruitmentCandidatePoolTableTests } from "./recruitment-candidate-pool-table.test.ts";
 import { runRecruitmentLabelTests } from "./recruitment-labels.test.ts";
 import { runHiringDocumentsLabelTests } from "./hiring-documents-labels.test.ts";
@@ -1186,6 +1187,10 @@ await runTest("recruitment non-recruitable positions (Ceo is excluded from the r
 await runTest(
   "recruitment manager inbox (a manager sees and answers what was pushed to them, the nationality flag, the pharma-experience filter, and one daily CV digest instead of 628 alerts)",
   runRecruitmentManagerInboxTests,
+);
+await runTest(
+  "CV intake 6-hour digest (sender grouping, CC chain by role, silent when empty, cron route and registry wiring)",
+  runCvIntakeDigest6hTests,
 );
 await runTest(
   "recruitment candidate pool table (the intake envelope becomes a name, the action strip is one line, and duplicates show on the desktop row)",
