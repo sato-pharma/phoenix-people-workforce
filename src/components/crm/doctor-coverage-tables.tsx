@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { ChevronDown, ChevronRight } from "lucide-react";
+import { Fragment, useMemo, useState } from "react";
 
 import {
   PortalDesktopTable,
@@ -14,6 +15,7 @@ import { SortableTh, TableSearchInput } from "@/components/ui/sortable-table";
 import { useSortableTable } from "@/components/ui/use-sortable-table";
 import type {
   DoctorCoverageDoctorRow,
+  DoctorCoverageManagerRow,
   DoctorCoverageRepRow,
   DoctorCoverageStatus,
 } from "@/lib/crm/sfe-doctor-coverage";
@@ -66,7 +68,16 @@ const REP_COLS = [
   { accessor: (r: DoctorCoverageRepRow) => r.green, key: "green", type: "number" as const },
   { accessor: (r: DoctorCoverageRepRow) => r.yellow, key: "yellow", type: "number" as const },
   { accessor: (r: DoctorCoverageRepRow) => r.red, key: "red", type: "number" as const },
-  { accessor: (r: DoctorCoverageRepRow) => r.coveragePct, key: "coveragePct", type: "number" as const },
+  {
+    // NULL, not 0, for a rep with no assigned list. `useSortableTable` sinks a missing value to the
+    // bottom in BOTH directions, which is the only way to honour the core's rule that "a rep with
+    // NO panel is not a 0% performer and must never head that ranking" — the core sorts them last,
+    // and this hook re-sorts the array the moment it mounts, so a plain `0` put every rep with no
+    // list straight back at the top of a worst-first table.
+    accessor: (r: DoctorCoverageRepRow) => (r.hasPanel ? r.coveragePct : null),
+    key: "coveragePct",
+    type: "number" as const,
+  },
   { accessor: (r: DoctorCoverageRepRow) => r.offListDoctors, key: "offListDoctors", type: "number" as const },
   { accessor: (r: DoctorCoverageRepRow) => r.campaignCalls, key: "campaignCalls", type: "number" as const },
   { accessor: (r: DoctorCoverageRepRow) => r.aDoctors, key: "aDoctors", type: "number" as const },
@@ -204,6 +215,293 @@ export function DoctorCoverageRepTable({ rows }: { rows: DoctorCoverageRepRow[] 
           </PortalDesktopTable>
         )}
       />
+    </div>
+  );
+}
+
+// ── Districts ────────────────────────────────────────────────────────────────────────────────
+//
+// OWNER'S RULING 2026-08-27: "the district manager doesn't have a list. The list of the district
+// manager is the list of his teams." So this table scores a manager on his team's combined list,
+// and every row opens to show the reps it is made of — which is the shape he asked for in the same
+// breath: one screen where you can open a district and see the reps inside it.
+//
+// Two groups, told apart STRUCTURALLY by `isDistrict` rather than by job title. The districts get
+// the full sortable table; the three National Sales Managers, the Regional Manager and the CEO get
+// a compact strip underneath, because expanding one of those would just redraw the rep table.
+
+const DISTRICT_COLS = [
+  {
+    accessor: (r: DoctorCoverageManagerRow) => r.managerName,
+    defaultDir: "asc" as const,
+    key: "managerName",
+    type: "string" as const,
+  },
+  { accessor: (r: DoctorCoverageManagerRow) => r.teamSize, key: "teamSize", type: "number" as const },
+  { accessor: (r: DoctorCoverageManagerRow) => r.panelSize, key: "panelSize", type: "number" as const },
+  { accessor: (r: DoctorCoverageManagerRow) => r.green, key: "green", type: "number" as const },
+  { accessor: (r: DoctorCoverageManagerRow) => r.yellow, key: "yellow", type: "number" as const },
+  { accessor: (r: DoctorCoverageManagerRow) => r.red, key: "red", type: "number" as const },
+  // Same null-for-no-panel rule as the rep table above, and for the same reason.
+  {
+    accessor: (r: DoctorCoverageManagerRow) => (r.hasPanel ? r.coveragePct : null),
+    key: "coveragePct",
+    type: "number" as const,
+  },
+  { accessor: (r: DoctorCoverageManagerRow) => r.offListDoctors, key: "offListDoctors", type: "number" as const },
+  { accessor: (r: DoctorCoverageManagerRow) => r.campaignCalls, key: "campaignCalls", type: "number" as const },
+];
+
+function CoverageMeter({ hasPanel, pct }: { hasPanel: boolean; pct: number }) {
+  if (!hasPanel) {
+    return (
+      <div className="flex items-center justify-end gap-2">
+        <span className="text-right text-[11px] font-semibold text-slate-400">No assigned list</span>
+        <span className="min-w-[34px] text-right font-black text-slate-400">{NO_PANEL_MARKER}</span>
+      </div>
+    );
+  }
+  return (
+    <div className="flex items-center justify-end gap-2">
+      <div className="h-1 w-16 bg-slate-100">
+        <div className={`h-full ${coverageBar(pct)}`} style={{ width: `${Math.max(2, pct)}%` }} />
+      </div>
+      <span className={`min-w-[34px] text-right font-black ${coverageText(pct)}`}>{pct}%</span>
+    </div>
+  );
+}
+
+export function DoctorCoverageDistrictTable({
+  managers,
+  reps,
+}: {
+  managers: DoctorCoverageManagerRow[];
+  reps: DoctorCoverageRepRow[];
+}) {
+  const districts = useMemo(() => managers.filter((row) => row.isDistrict), [managers]);
+  const regions = useMemo(() => managers.filter((row) => !row.isDistrict), [managers]);
+  const repByKey = useMemo(() => new Map(reps.map((rep) => [rep.repKey, rep])), [reps]);
+  const [openKeys, setOpenKeys] = useState<ReadonlySet<string>>(() => new Set<string>());
+  const toggleOpen = (managerKey: string) =>
+    setOpenKeys((current) => {
+      const next = new Set(current);
+      if (next.has(managerKey)) next.delete(managerKey);
+      else next.add(managerKey);
+      return next;
+    });
+
+  const table = useSortableTable(districts, {
+    columns: DISTRICT_COLS,
+    initialSort: { dir: "asc", key: "coveragePct" },
+    searchAccessors: [(r) => r.managerName, (r) => r.title ?? ""],
+  });
+
+  const teamOf = (row: DoctorCoverageManagerRow) =>
+    row.teamRepKeys.map((repKey) => repByKey.get(repKey)).filter((rep): rep is DoctorCoverageRepRow => Boolean(rep));
+
+  return (
+    <div className="space-y-3 p-5">
+      <TableSearchInput
+        onChange={table.setQuery}
+        onClear={table.clearQuery}
+        placeholder="Search district or manager…"
+        value={table.query}
+      />
+      <PortalResponsiveDataList
+        empty={<p className="px-3 py-6 text-center text-xs text-slate-400">No districts in this month.</p>}
+        getKey={(row) => row.managerKey}
+        items={table.rows}
+        renderCard={(row) => {
+          const isOpen = openKeys.has(row.managerKey);
+          const team = teamOf(row);
+          return (
+            <PortalRecordCard
+              accent={row.hasPanel ? coverageAccent(row.coveragePct) : "slate"}
+              actions={
+                <button
+                  aria-expanded={isOpen}
+                  className="flex items-center gap-1 border border-slate-200 px-2 py-1 text-[10px] font-black uppercase tracking-[0.1em] text-slate-600"
+                  onClick={() => toggleOpen(row.managerKey)}
+                  type="button"
+                >
+                  {isOpen ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+                  {row.teamSize} {row.teamSize === 1 ? "rep" : "reps"}
+                </button>
+              }
+              meta={
+                row.hasPanel
+                  ? `${row.panelSize} assigned ${row.panelSize === 1 ? "doctor" : "doctors"} across the team`
+                  : "No rep on this team holds an assigned list this month"
+              }
+              status={
+                row.hasPanel ? (
+                  <span className={`text-sm font-black ${coverageText(row.coveragePct)}`}>{row.coveragePct}%</span>
+                ) : (
+                  <span className="text-sm font-black text-slate-400">{NO_PANEL_MARKER}</span>
+                )
+              }
+              title={row.managerName}
+            >
+              <PortalRecordFields
+                fields={[
+                  { label: "Role", value: row.title ?? "Not recorded" },
+                  { label: "Covered", value: <span className="text-emerald-700">{row.green}</span> },
+                  {
+                    label: "Under-visited",
+                    value: <span className={row.yellow > 0 ? "text-amber-700" : "text-slate-400"}>{row.yellow}</span>,
+                  },
+                  {
+                    label: "Not visited",
+                    value: <span className={row.red > 0 ? "text-rose-700" : "text-slate-400"}>{row.red}</span>,
+                  },
+                  {
+                    label: "Off-list visits",
+                    value: (
+                      <span className={row.offListDoctors > 0 ? "text-sky-700" : "text-slate-400"}>
+                        {row.offListDoctors}
+                      </span>
+                    ),
+                  },
+                  {
+                    label: "Campaign calls",
+                    value: (
+                      <span className={row.campaignCalls > 0 ? "text-sky-700" : "text-slate-400"}>
+                        {row.campaignCalls}
+                      </span>
+                    ),
+                  },
+                ]}
+              />
+              {isOpen ? (
+                <div className="mt-3 divide-y divide-slate-100 border-t border-slate-100">
+                  {team.length === 0 ? (
+                    <p className="py-3 text-xs text-slate-400">No rep rows on this board for this district.</p>
+                  ) : (
+                    team.map((rep) => (
+                      <div className="flex items-center justify-between gap-3 py-2" key={rep.repKey}>
+                        <span className="min-w-0 text-xs font-semibold text-slate-700">{rep.repName}</span>
+                        <span className="shrink-0 text-[11px] font-bold text-slate-500">
+                          {rep.hasPanel ? `${rep.green} / ${rep.panelSize}` : "No assigned list"}
+                        </span>
+                        <span
+                          className={`shrink-0 text-xs font-black ${rep.hasPanel ? coverageText(rep.coveragePct) : "text-slate-400"}`}
+                        >
+                          {rep.hasPanel ? `${rep.coveragePct}%` : NO_PANEL_MARKER}
+                        </span>
+                      </div>
+                    ))
+                  )}
+                </div>
+              ) : null}
+            </PortalRecordCard>
+          );
+        }}
+        renderTable={() => (
+          <PortalDesktopTable className="text-xs" minWidth="980px">
+            <thead>
+              <tr className="bg-slate-900 text-left">
+                <SortableTh className={REP_THEAD} label="District" onSort={table.toggleSort} sort={table.sort} sortKey="managerName" />
+                <SortableTh align="right" className={`${REP_THEAD} text-right`} label="Reps" onSort={table.toggleSort} sort={table.sort} sortKey="teamSize" />
+                <SortableTh align="right" className={`${REP_THEAD} text-right`} label="Team panel" onSort={table.toggleSort} sort={table.sort} sortKey="panelSize" />
+                <SortableTh align="right" className={`${REP_THEAD} text-right text-emerald-300`} label="Covered" onSort={table.toggleSort} sort={table.sort} sortKey="green" />
+                <SortableTh align="right" className={`${REP_THEAD} text-right text-amber-300`} label="Under" onSort={table.toggleSort} sort={table.sort} sortKey="yellow" />
+                <SortableTh align="right" className={`${REP_THEAD} text-right text-rose-300`} label="Not seen" onSort={table.toggleSort} sort={table.sort} sortKey="red" />
+                <SortableTh align="right" className={`${REP_THEAD} text-right`} label="Coverage" onSort={table.toggleSort} sort={table.sort} sortKey="coveragePct" />
+                <SortableTh align="right" className={`${REP_THEAD} text-right text-sky-300`} label="Off-list" onSort={table.toggleSort} sort={table.sort} sortKey="offListDoctors" />
+                <SortableTh align="right" className={`${REP_THEAD} text-right text-sky-300`} label="Campaign" onSort={table.toggleSort} sort={table.sort} sortKey="campaignCalls" />
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {table.rows.map((row) => {
+                const isOpen = openKeys.has(row.managerKey);
+                return (
+                  <Fragment key={row.managerKey}>
+                    <tr className="bg-white hover:bg-slate-50">
+                      <td className="px-3 py-2">
+                        <button
+                          aria-expanded={isOpen}
+                          className="flex items-center gap-1.5 text-left font-semibold text-slate-900"
+                          onClick={() => toggleOpen(row.managerKey)}
+                          type="button"
+                        >
+                          {isOpen ? (
+                            <ChevronDown className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                          ) : (
+                            <ChevronRight className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                          )}
+                          <span>{row.managerName}</span>
+                          <span className="text-[10px] font-bold uppercase tracking-[0.1em] text-slate-400">
+                            {row.title ?? "Role not recorded"}
+                          </span>
+                        </button>
+                      </td>
+                      <td className="px-3 py-2 text-right font-semibold text-slate-600">{row.teamSize}</td>
+                      <td className="px-3 py-2 text-right font-semibold text-slate-900">{row.panelSize}</td>
+                      <td className="px-3 py-2 text-right font-bold text-emerald-700">{row.green}</td>
+                      <td className={`px-3 py-2 text-right font-bold ${row.yellow > 0 ? "text-amber-700" : "text-slate-400"}`}>{row.yellow}</td>
+                      <td className={`px-3 py-2 text-right font-bold ${row.red > 0 ? "text-rose-700" : "text-slate-400"}`}>{row.red}</td>
+                      <td className="px-3 py-2">
+                        <CoverageMeter hasPanel={row.hasPanel} pct={row.coveragePct} />
+                      </td>
+                      <td className={`px-3 py-2 text-right font-bold ${row.offListDoctors > 0 ? "text-sky-700" : "text-slate-400"}`}>{row.offListDoctors}</td>
+                      <td className={`px-3 py-2 text-right font-bold ${row.campaignCalls > 0 ? "text-sky-700" : "text-slate-400"}`}>{row.campaignCalls}</td>
+                    </tr>
+                    {isOpen
+                      ? teamOf(row).map((rep) => (
+                          <tr className="bg-slate-50/70" key={`${row.managerKey}:${rep.repKey}`}>
+                            <td className="py-1.5 pl-10 pr-3 text-slate-700">{rep.repName}</td>
+                            <td className="px-3 py-1.5" />
+                            <td className="px-3 py-1.5 text-right text-slate-700">{rep.panelSize}</td>
+                            <td className="px-3 py-1.5 text-right text-emerald-700">{rep.green}</td>
+                            <td className={`px-3 py-1.5 text-right ${rep.yellow > 0 ? "text-amber-700" : "text-slate-400"}`}>{rep.yellow}</td>
+                            <td className={`px-3 py-1.5 text-right ${rep.red > 0 ? "text-rose-700" : "text-slate-400"}`}>{rep.red}</td>
+                            <td className="px-3 py-1.5">
+                              <CoverageMeter hasPanel={rep.hasPanel} pct={rep.coveragePct} />
+                            </td>
+                            <td className={`px-3 py-1.5 text-right ${rep.offListDoctors > 0 ? "text-sky-700" : "text-slate-400"}`}>{rep.offListDoctors}</td>
+                            <td className={`px-3 py-1.5 text-right ${rep.campaignCalls > 0 ? "text-sky-700" : "text-slate-400"}`}>{rep.campaignCalls}</td>
+                          </tr>
+                        ))
+                      : null}
+                    {isOpen && row.teamRepKeys.length === 0 ? (
+                      <tr className="bg-slate-50/70">
+                        <td className="py-1.5 pl-10 pr-3 text-slate-400" colSpan={9}>
+                          No rep rows on this board for this district.
+                        </td>
+                      </tr>
+                    ) : null}
+                  </Fragment>
+                );
+              })}
+            </tbody>
+          </PortalDesktopTable>
+        )}
+      />
+
+      {regions.length > 0 ? (
+        <div className="border-t border-slate-200 pt-3">
+          <p className="mb-2 text-[10px] font-black uppercase tracking-[0.12em] text-slate-400">
+            Above the district line
+          </p>
+          <div className="divide-y divide-slate-100">
+            {regions.map((row) => (
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 py-2" key={row.managerKey}>
+                <span className="min-w-52 text-xs font-semibold text-slate-800">{row.managerName}</span>
+                <span className="min-w-44 text-[11px] font-bold uppercase tracking-[0.08em] text-slate-400">
+                  {row.title ?? "Role not recorded"}
+                </span>
+                <span className="min-w-20 text-[11px] font-bold text-slate-500">
+                  {row.teamSize} {row.teamSize === 1 ? "rep" : "reps"}
+                </span>
+                <span className="min-w-28 text-[11px] font-bold text-slate-500">{row.panelSize} assigned</span>
+                <span className="min-w-32 flex-1">
+                  <CoverageMeter hasPanel={row.hasPanel} pct={row.coveragePct} />
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

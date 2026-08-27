@@ -175,7 +175,8 @@ export type DoctorCoverageRepRow = {
   /** False when this rep has NO assigned list for the month and appears only because of visits he
    * made or campaign work he logged. The table must print a marker instead of a percentage for
    * them: with no list there is nothing for a percentage to be OF. Measured on the rendered board
-   * for August 2026: 18 reps with board activity had no list row at all, 15 of them campaign-only. */
+   * for August 2026: 18 rows had no list at all — but 14 of those were MANAGERS, who never have a
+   * personal list, and now hold a district row instead. Four reps remain, all campaign-only. */
   hasPanel: boolean;
   /**
    * Type-0 visits this rep made to doctors who are NOT on his assigned list. Real work, reported
@@ -191,6 +192,86 @@ export type DoctorCoverageRepRow = {
   red: number;
   repKey: string;
   repName: string;
+  yellow: number;
+};
+
+/**
+ * One row of the org tree, as this board needs it. Supplied by the caller from the employee
+ * directory; the pure core never reads a database.
+ *
+ * The board classifies a manager STRUCTURALLY — "does anyone report to me" — and never by title.
+ * That is deliberate: job titles in this directory are free text and are misspelt often enough that
+ * a title match already hides 9 of 27 District Managers from search. `title` is carried for DISPLAY
+ * only, so a district row can say what kind of manager it belongs to.
+ */
+export type DoctorCoverageOrgNode = {
+  /** Lower-cased hr id of this employee's manager, or null at the top of the tree. Lower-cased
+   * because it is compared against the hr id inside a `hr:` repKey, which is built that way. */
+  managerHrId: string | null;
+  /** Job title exactly as the directory spells it. Display only — never used to classify. */
+  title: string | null;
+};
+
+/**
+ * One manager's district — the row the OWNER asked for on 2026-08-27, in his own words:
+ *
+ *   "the concept of CRM that the district manager doesn't have a list. The list of the district
+ *    manager is the list of his teams. For example, I have four in my team and four everyone have
+ *    hundred, then I am district manager. My list is for hundred… as she isn't submitting visits
+ *    by her hand."
+ *
+ * So a manager is NOT scored against a personal list, because he does not have one. He is scored
+ * against the union of his team's assigned lists, and his coverage is what his team covered. Every
+ * number here is a plain sum of the rep rows beneath him, at any depth — there is no second scoring
+ * pass, which is what makes a district row reconcile with the reps inside it by construction.
+ *
+ * WHAT THIS FIXES. Before it, every District Sales Manager and the one acting DM appeared in the
+ * rep table with no list and no percentage, indistinguishable from a newly hired rep whose list had
+ * not loaded yet. Measured on production for August 2026 by building the same board twice, with the
+ * org tree and without it: 86 rep rows became 72, "reps with no list" fell from 18 to 4, and every
+ * company tile was identical to the digit — 6,416 assigned, 3,632 covered, 57%, 1,700 campaign
+ * calls, 593 off-list. Nothing moved except who the rows belong to.
+ */
+export type DoctorCoverageManagerRow = {
+  aDoctors: number;
+  bDoctors: number;
+  cDoctors: number;
+  /** Campaign calls across the district, including the manager's own. */
+  campaignCalls: number;
+  /** 0-100 of the team's combined list. Check {@link hasPanel} first — a district whose reps all
+   * lack a list is not a 0% district. */
+  coveragePct: number;
+  green: number;
+  /** False when not one rep beneath this manager holds an assigned list this month. */
+  hasPanel: boolean;
+  /** Lower-cased canonical hr id — the same spelling a `hr:` repKey carries. */
+  hrId: string;
+  /**
+   * True when no OTHER manager row sits beneath this one — i.e. this row's team is reps, not
+   * districts. Structural, so it stays correct if the org gains or loses a layer. The National
+   * Sales Managers, the Regional Manager and the CEO come back false and belong in a second,
+   * smaller group: their rows are real, but they are regions rather than districts.
+   */
+  isDistrict: boolean;
+  /** repKey-shaped (`hr:<id>`), so a district can travel in a URL exactly like a rep does. */
+  managerKey: string;
+  managerName: string;
+  offListDoctors: number;
+  /** The union of the team's assigned lists — the district's panel. */
+  panelSize: number;
+  red: number;
+  /** How many reps beneath him hold no assigned list this month. Counts the TEAM only: a manager
+   * having no list of his own is the normal case here, not a gap. */
+  repsWithNoList: number;
+  /** The rep rows rolled into this row, managers and the manager himself excluded — what the table
+   * expands to. A manager who holds a list of his own also keeps his rep row and is scored on it
+   * there; his numbers are still summed into this row, so `teamRepKeys` can be one short of what
+   * the sums cover. No District Manager was in that position in August 2026. */
+  teamRepKeys: string[];
+  /** `teamRepKeys.length`, carried so the UI never has to explain a length as a count. */
+  teamSize: number;
+  /** Job title from the directory, for display beside the name. */
+  title: string | null;
   yellow: number;
 };
 
@@ -288,6 +369,10 @@ export type SfeDoctorCoverageBoard = {
   /** Every rep in scope, for the rep filter dropdown — NOT narrowed by the current filters, so
    * picking one rep does not remove the others from the picker. */
   repOptions: Array<{ repKey: string; repName: string }>;
+  /** Districts and the levels above them — one row per manager with at least one rep beneath.
+   * A manager's panel is his team's combined list; see {@link DoctorCoverageManagerRow}. Empty
+   * when the caller supplies no org tree, which keeps every existing fixture behaving as before. */
+  managers: DoctorCoverageManagerRow[];
   pace: DoctorCoveragePace;
   reps: DoctorCoverageRepRow[];
   /** Human-readable description of whose data this is ("District Manager · own team"). Empty for
@@ -582,6 +667,11 @@ export function buildDoctorCoverageBoard(
     norms?: DoctorCoverageNorms;
     /** THE PANEL. Every assigned-list entry whose `plan_date` falls in the trend window. Pass `[]`
      * only to mean "there genuinely is no list", which the board then reports as such. */
+    /** Lower-cased hr id -> that employee's place in the org tree. Absent (or empty) means no
+     * district rollup at all: every agent stays a rep row, which is exactly how this board behaved
+     * before districts existed. Never inferred — an org tree guessed from visit patterns is how a
+     * board starts telling people who reports to whom on the strength of a coincidence. */
+    orgByHrId?: ReadonlyMap<string, DoctorCoverageOrgNode>;
     planRows: readonly DoctorCoveragePlanInput[];
     /** Canonical hr id (lower-cased, as it appears inside a `hr:` repKey) → the employee's display
      * name. Used only when the CRM itself has never carried a name for that rep — a rep who holds a
@@ -1012,7 +1102,6 @@ export function buildDoctorCoverageBoard(
     });
   }
 
-  let repsAllCampaign = 0;
   for (const [repKey, entry] of campaignByRep) {
     // Same identity gate as the off-list fold-in above, and for the same reason: a rep the viewer
     // filtered out must not walk back onto the board through a side channel. (This gate was absent
@@ -1027,7 +1116,6 @@ export function buildDoctorCoverageBoard(
     // No graded panel anywhere in the window — this rep exists on the board ONLY because of
     // campaign work. `latestRepName` is preferred when the graded pass happened to see the name,
     // for the same reason it exists there: one person must never appear under two labels.
-    repsAllCampaign += 1;
     repRows.set(repKey, {
       aDoctors: 0,
       agentHrId: repKey.startsWith("hr:") ? repKey.slice(3) : null,
@@ -1045,11 +1133,163 @@ export function buildDoctorCoverageBoard(
       yellow: 0,
     });
   }
+  // ── Districts: a manager is scored on his TEAM's list, because he has none of his own ─────────
+  //
+  // OWNER'S RULING 2026-08-27, in his own words: "the district manager doesn't have a list. The
+  // list of the district manager is the list of his teams." Every number on a district row is a
+  // plain sum of the rep rows beneath it, so a district always reconciles with the reps inside it.
+  //
+  // MEMBERSHIP IS STRUCTURAL, NEVER BY TITLE. "Does anyone report to me" is a fact in the employee
+  // directory; "District Sales Manager" is free text that is misspelt often enough to hide 9 of 27
+  // of them from a title search. It also settles the case that prompted this: the one medical rep
+  // ACTING as a district manager gets a district row from her two reports, with no title change and
+  // no special case — the owner's instruction was to move the reps, never her title.
+  //
+  // The walk runs from each REP upwards, so every ancestor collects every rep beneath it at any
+  // depth. That gives districts, and above them the regions and the company — all real rows, told
+  // apart by `isDistrict` rather than by a hard-coded level.
+  const orgByHrId = options.orgByHrId;
+  /** manager hr id -> the repKeys rolled into that manager, at any depth. */
+  const subtreeByManager = new Map<string, Set<string>>();
+  /** manager hr id -> the OTHER managers sitting beneath him. Empty = he is a district.
+   *
+   * Read from the reporting chain rather than from the bucket above, and that distinction is not
+   * academic: a bucket holds rep rows only, so a District Manager who logged nothing himself has no
+   * rep row and never appears in his own manager's bucket. Deciding "is this a district" from the
+   * bucket therefore promoted a National Sales Manager into the districts table the moment one of
+   * his District Managers had a quiet month. It read correct against production only because every
+   * real DM happened to log campaign work in August 2026. */
+  const managersBeneath = new Map<string, Set<string>>();
+  // A cycle in the directory (A reports to B reports to A) is a data fault, not a shape to support.
+  // Both guards are cheap and neither can hang the board while somebody fixes the record.
+  const MAX_ORG_DEPTH = 12;
+  if (orgByHrId && orgByHrId.size > 0) {
+    for (const rep of repRows.values()) {
+      // A CRM-only agent has no hr id and therefore no place in the tree. He stays a rep row rather
+      // than disappearing: 5 such agents were on the August 2026 board, and they look like real
+      // reps whose HR record simply lags their CRM account.
+      if (!rep.agentHrId) continue;
+      /** This rep's managers, closest first — the whole chain up to the top of the tree. */
+      const chain: string[] = [];
+      const seen = new Set<string>([rep.agentHrId]);
+      let cursor = orgByHrId.get(rep.agentHrId)?.managerHrId ?? null;
+      for (let depth = 0; cursor && depth < MAX_ORG_DEPTH; depth += 1) {
+        if (seen.has(cursor)) break;
+        seen.add(cursor);
+        chain.push(cursor);
+        cursor = orgByHrId.get(cursor)?.managerHrId ?? null;
+      }
+      for (let level = 0; level < chain.length; level += 1) {
+        const managerHrId = chain[level]!;
+        let bucket = subtreeByManager.get(managerHrId);
+        if (!bucket) {
+          bucket = new Set<string>();
+          subtreeByManager.set(managerHrId, bucket);
+        }
+        bucket.add(rep.repKey);
+        let beneath = managersBeneath.get(managerHrId);
+        if (!beneath) {
+          beneath = new Set<string>();
+          managersBeneath.set(managerHrId, beneath);
+        }
+        // Everything earlier in the chain is a manager sitting between this one and the rep.
+        for (let lower = 0; lower < level; lower += 1) beneath.add(chain[lower]!);
+      }
+    }
+  }
+  /** repKeys that are managers — removed from the rep table, because their row is their district. */
+  const managerKeys = new Set<string>();
+  for (const managerHrId of subtreeByManager.keys()) managerKeys.add(`hr:${managerHrId}`);
+  // A manager's OWN field work belongs to his district. The upward walk cannot add it (it starts
+  // above him), so it is folded in here — for the District Managers on this board that is campaign
+  // calls and off-list visits, which is all any of them logged.
+  for (const [managerHrId, bucket] of subtreeByManager) {
+    if (repRows.has(`hr:${managerHrId}`)) bucket.add(`hr:${managerHrId}`);
+  }
+
+  const managerRows: DoctorCoverageManagerRow[] = [];
+  for (const [managerHrId, bucket] of subtreeByManager) {
+    const managerKey = `hr:${managerHrId}`;
+    const row: DoctorCoverageManagerRow = {
+      aDoctors: 0,
+      bDoctors: 0,
+      cDoctors: 0,
+      campaignCalls: 0,
+      coveragePct: 0,
+      green: 0,
+      hasPanel: false,
+      hrId: managerHrId,
+      // A district is a manager with no other manager between him and his reps.
+      isDistrict: (managersBeneath.get(managerHrId)?.size ?? 0) === 0,
+      managerKey,
+      // THE DIRECTORY WINS HERE, which is the opposite of `repNameFor`'s waterfall — deliberately.
+      // A rep is named from the CRM because that is what the field system calls him today; a
+      // MANAGER is only on this board because the directory says people report to him, so the
+      // directory is his natural source. It also happens to be the readable one: the CRM carries
+      // login handles for this population ("Ahmed.Abdallah", "Sally.Saeed"), and a district headed
+      // by a login handle breaks the standing rule that a human-readable name is always shown.
+      managerName: options.repNameByHrId?.get(managerHrId)?.trim() || repNameFor(managerKey, latestRepName, options.repNameByHrId),
+      offListDoctors: 0,
+      panelSize: 0,
+      red: 0,
+      repsWithNoList: 0,
+      teamRepKeys: [],
+      teamSize: 0,
+      title: orgByHrId?.get(managerHrId)?.title ?? null,
+      yellow: 0,
+    };
+    const team: DoctorCoverageRepRow[] = [];
+    for (const repKey of bucket) {
+      const rep = repRows.get(repKey);
+      if (!rep) continue;
+      row.aDoctors += rep.aDoctors;
+      row.bDoctors += rep.bDoctors;
+      row.cDoctors += rep.cDoctors;
+      row.campaignCalls += rep.campaignCalls;
+      row.green += rep.green;
+      row.offListDoctors += rep.offListDoctors;
+      row.panelSize += rep.panelSize;
+      row.red += rep.red;
+      row.yellow += rep.yellow;
+      if (repKey === managerKey || managerKeys.has(repKey)) continue;
+      team.push(rep);
+      if (!rep.hasPanel) row.repsWithNoList += 1;
+    }
+    row.hasPanel = row.panelSize > 0;
+    row.coveragePct = row.panelSize > 0 ? Math.round((row.green / row.panelSize) * 100) : 0;
+    row.teamRepKeys = team.sort((a, b) => a.repName.localeCompare(b.repName)).map((rep) => rep.repKey);
+    row.teamSize = row.teamRepKeys.length;
+    managerRows.push(row);
+  }
+  managerRows.sort(
+    (a, b) =>
+      Number(b.isDistrict) - Number(a.isDistrict) ||
+      Number(b.hasPanel) - Number(a.hasPanel) ||
+      a.coveragePct - b.coveragePct ||
+      a.managerName.localeCompare(b.managerName),
+  );
+
+  // Both totals still read the FULL map, managers included: a District Manager's campaign call is
+  // real work done inside this scope, and a tile that dropped it the day districts arrived would be
+  // read as the work having stopped.
   const totalsCampaignCalls = Array.from(repRows.values()).reduce((sum, rep) => sum + rep.campaignCalls, 0);
   const totalsOffList = Array.from(repRows.values()).reduce((sum, rep) => sum + rep.offListDoctors, 0);
   // A rep who is ON this board and holds no assigned list for the selected month. Counted from the
   // rows that survived the filters, so it always reconciles with the table underneath it.
-  const repsWithNoList = Array.from(repRows.values()).filter((rep) => !repsHoldingAList.has(rep.repKey)).length;
+  // Managers are excluded on purpose: a District Manager holding no personal list is the RULE, not
+  // a loading gap, and counting him here is what made this tile read 18 in August 2026 when only 4
+  // of those people were reps waiting on a list.
+  const repsWithNoList = Array.from(repRows.values()).filter(
+    (rep) => !managerKeys.has(rep.repKey) && !repsHoldingAList.has(rep.repKey),
+  ).length;
+  // Campaign-only reps, counted the same manager-aware way and from the ROW's own shape rather than
+  // from a counter incremented while the rows were being built. The two are equivalent — a row with
+  // no panel and no off-list visit can only have been created by the campaign fold-in — but the
+  // counter ran before districts existed, so it still counted every District Manager whose month
+  // was campaign work. Measured on August 2026: 14 before, 4 after, so 10 of the 14 were managers.
+  const repsAllCampaign = Array.from(repRows.values()).filter(
+    (rep) => !managerKeys.has(rep.repKey) && !rep.hasPanel && rep.offListDoctors === 0 && rep.campaignCalls > 0,
+  ).length;
 
   const totalsGreen = doctors.filter((doctor) => doctor.status === "green").length;
   const totalsYellow = doctors.filter((doctor) => doctor.status === "yellow").length;
@@ -1135,7 +1375,9 @@ export function buildDoctorCoverageBoard(
   return {
     accountMix,
     appliedFilters,
-    repOptions,
+    // Same rule as the table above: a picker offering a name the table can no longer show would be
+    // a filter with no way back to anything.
+    repOptions: repOptions.filter((option) => !managerKeys.has(option.repKey) || repsHoldingAList.has(option.repKey)),
     callList: callListAll.slice(0, DOCTOR_COVERAGE_CALL_LIST_SIZE),
     callListTotal: callListAll.length,
     doctors: doctors.sort((a, b) => {
@@ -1154,12 +1396,18 @@ export function buildDoctorCoverageBoard(
     // Worst coverage first, but a rep with NO panel is not a 0% performer and must never head that
     // ranking — they sort to the end, the same treatment Rep Doctor Lists gives a rep with no
     // measurable plan.
-    reps: Array.from(repRows.values()).sort(
-      (a, b) =>
-        Number(b.hasPanel) - Number(a.hasPanel) ||
-        a.coveragePct - b.coveragePct ||
-        a.repName.localeCompare(b.repName),
-    ),
+    managers: managerRows,
+    reps: Array.from(repRows.values())
+      // A manager belongs to `managers`, where his row is his team's list. He stays in this table
+      // only if he holds an assigned list of his own — which no District Manager did in August
+      // 2026, and which the owner's rule says should stay unusual.
+      .filter((rep) => !managerKeys.has(rep.repKey) || repsHoldingAList.has(rep.repKey))
+      .sort(
+        (a, b) =>
+          Number(b.hasPanel) - Number(a.hasPanel) ||
+          a.coveragePct - b.coveragePct ||
+          a.repName.localeCompare(b.repName),
+      ),
     scopeLabel: options.scopeLabel ?? "",
     specialtyMix,
     totals: {
@@ -1291,17 +1539,28 @@ export async function getSfeDoctorCoverage(input: {
   const livePlanRows = excluded.size === 0 ? planRows : planRows.filter((row) => !excluded.has(row.agent_crm_id ?? -1));
 
   const repNameByHrId = new Map<string, string>();
+  // THE ORG TREE, for the district rollup. Built from the same directory read as the names above —
+  // no second query — and lower-cased on BOTH sides, because the only thing it is ever compared
+  // against is the hr id inside a `hr:` repKey, which is built lower-cased. A single upper-cased
+  // `manager_hr_id` would otherwise put a whole district's reps under a manager who does not exist,
+  // silently: the walk would simply find nothing and every rep would stay a rep.
+  const orgByHrId = new Map<string, DoctorCoverageOrgNode>();
   for (const employee of directory) {
     // Lower-cased: this map is read with the hr id taken out of a `hr:` repKey, which is built
     // lower-cased so one person cannot occupy two keys. Rep Doctor Lists keys the same map
     // UPPER-cased for its own reasons — the two are not interchangeable.
     repNameByHrId.set(employee.hrId.trim().toLowerCase(), employee.displayName || employee.fullName);
+    orgByHrId.set(employee.hrId.trim().toLowerCase(), {
+      managerHrId: employee.managerHrId?.trim().toLowerCase() || null,
+      title: employee.jobTitle?.trim() || null,
+    });
   }
 
   return buildDoctorCoverageBoard(collapsed, month, {
     campaignVisits: campaignRows,
     filters: input.filters,
     norms,
+    orgByHrId,
     planRows: livePlanRows,
     repNameByHrId,
     scopeLabel: input.scope.label,
