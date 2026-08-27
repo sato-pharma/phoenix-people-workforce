@@ -7,6 +7,7 @@ import {
   reapStaleProcessingOutboxRows,
 } from "@/lib/notifications/email";
 import { assessDrainHealth, readDrainQueueBacklog } from "@/lib/notifications/drain-health";
+import { notifyDrainStranded } from "@/lib/notifications/drain-health-alert";
 import { createStepBudget, runStep, summarizeTimings, type StepTiming } from "@/lib/notifications/step-runner";
 import { processDeferredDeliveryRetries, processPushDeliveryRetries, processTelegramDeliveryRetries } from "@/lib/notifications/system";
 import { processDueProbationReminderEvents } from "@/lib/probation/service";
@@ -148,6 +149,9 @@ export async function runScheduledNotificationProcessing(limit = 10) {
         labels: { cron: "notification-process", event: "drain_stranded" },
         context: { stranded: drainHealth.stranded },
       });
+      // Best-effort, never throws — see drain-health-alert.ts. In-app + Telegram + push, not email:
+      // the drain itself may be the thing not delivering.
+      await notifyDrainStranded(drainHealth);
     }
 
     const inactiveUsers = await runStep("inactive-users", () => getInactiveUsers(7), budget);

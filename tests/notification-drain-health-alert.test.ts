@@ -6,6 +6,7 @@ import {
   describeDrainHealth,
   type DrainQueueReading,
 } from "../src/lib/notifications/drain-health.ts";
+import { buildDrainStrandedMessage } from "../src/lib/notifications/drain-health-alert.ts";
 
 /**
  * The alert that would have caught the 13-day freeze - why this test exists.
@@ -199,6 +200,47 @@ export async function runNotificationDrainHealthAlertTests() {
       true,
       "a stranded drain must also write an ERROR log, so it reaches the Error Monitor and not only "
         + "the external dead-man's switch",
+    );
+    // The bare word alone would also match the import line — require the CALL, same discipline the
+    // withDeadMansSwitch check above uses for the opposite reason.
+    assert.equal(
+      source.includes("notifyDrainStranded(drainHealth)"),
+      true,
+      "a stranded drain must also page a human in-app + Telegram — the ERROR log and the Healthchecks "
+        + "ping both require someone to already be watching a dashboard or an inbox; this is the alert "
+        + "that reaches a phone",
+    );
+  }
+
+  // The Telegram/in-app message has to say what is wrong without anyone opening a database, same bar
+  // as describeDrainHealth's own text.
+  {
+    const message = buildDrainStrandedMessage(assessDrainHealth([reading("telegram", 0, 25)]));
+    assert.equal(message.includes("telegram"), true, "the alert names the stranded queue");
+    assert.equal(message.includes("25"), true, "the alert carries the stranded count");
+    assert.equal(
+      message.includes("not going out"),
+      true,
+      "the alert says plainly that queued work is not being delivered, not just that a check failed",
+    );
+  }
+
+  // A healthy verdict must never build an alert-worthy message from notifyDrainStranded's own
+  // caller — the healthy branch is guarded before buildDrainStrandedMessage is ever reached, so this
+  // pins the guard's existence rather than the message itself.
+  {
+    const source = readFileSync(
+      new URL("../src/lib/notifications/drain-health-alert.ts", import.meta.url),
+      "utf8",
+    );
+    const start = source.indexOf("export async function notifyDrainStranded");
+    assert.notEqual(start, -1, "notifyDrainStranded must still exist and be exported");
+    const body = source.slice(start);
+    assert.equal(
+      /if\s*\(\s*verdict\.healthy\s*\)\s*return/.test(body),
+      true,
+      "a healthy verdict must short-circuit before resolving recipients or sending anything — "
+        + "alerting on every healthy tick would page someone every 5 minutes forever",
     );
   }
 }
