@@ -492,6 +492,25 @@ production-ops guidance. They stay in the index.
   `guard-every-prod-write-when-another-session-shares-the-queue` ·
   `force-logout-everywhere-needs-three-writes`
 
+**Which environment the code thinks it is in** (relocated from `MEMORY.md`, 2026-08-27, to buy the
+index room for the third entry — it was an orphan with no pointer, so nothing recalled it)
+
+- **A LOCAL run writes PRODUCTION but silently skips every email**, and **the local Resend key CANNOT
+  send** — it is restricted, on an unverified domain. Send from production with `railway run`.
+  `local-run-against-prod-db-silently-skips-every-email` ·
+  `local-resend-key-is-restricted-use-railway-run-to-send-from-production`
+- **STAGING cannot rehearse a PRODUCTION shape** — the surgery that proved this was only ever made
+  against prod. `staging-cannot-rehearse-shapes-only-prod-surgery-made`
+- **`APP_ENV` was UNSET on Railway staging, so staging identified itself as PRODUCTION.**
+  `isProductionRuntime()` (`src/config/system-settings.ts`) and `currentEnvironmentLabel()`
+  (`src/lib/error-monitor/service.ts`) both read `APP_ENV || VERCEL_ENV || NODE_ENV`, and a Next.js
+  production build sets `NODE_ENV=production` **on staging too** — so the fallback chain can never
+  distinguish them and the email fail-safe was defeated there. Fixed 2026-08-27 by setting
+  `APP_ENV=staging` (43 staging variables, none of them `APP_ENV`, before that). **The lasting half
+  is the other finding: ~18 cron routes FALL OPEN when `CRON_SECRET` is absent** — an unset secret is
+  not a closed door. Never infer an environment from `NODE_ENV`, and never assume a missing secret
+  fails safe. `app-env-unset-on-staging-made-it-look-like-production`
+
 ## 3. Stable Environment Facts
 
 History and verification detail: [docs/agents-incident-history.md](docs/agents-incident-history.md).
