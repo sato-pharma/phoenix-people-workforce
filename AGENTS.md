@@ -492,8 +492,9 @@ production-ops guidance. They stay in the index.
   `guard-every-prod-write-when-another-session-shares-the-queue` ·
   `force-logout-everywhere-needs-three-writes`
 
-**Which environment the code thinks it is in** (relocated from `MEMORY.md`, 2026-08-27, to buy the
-index room for the third entry — it was an orphan with no pointer, so nothing recalled it)
+**Which environment the code thinks it is in** (the first two relocated from `MEMORY.md`,
+2026-08-27, to buy index room for the `APP_ENV` entry — which was itself an orphan with no pointer,
+so nothing recalled it)
 
 - **A LOCAL run writes PRODUCTION but silently skips every email**, and **the local Resend key CANNOT
   send** — it is restricted, on an unverified domain. Send from production with `railway run`.
@@ -501,15 +502,42 @@ index room for the third entry — it was an orphan with no pointer, so nothing 
   `local-resend-key-is-restricted-use-railway-run-to-send-from-production`
 - **STAGING cannot rehearse a PRODUCTION shape** — the surgery that proved this was only ever made
   against prod. `staging-cannot-rehearse-shapes-only-prod-surgery-made`
-- **`APP_ENV` was UNSET on Railway staging, so staging identified itself as PRODUCTION.**
-  `isProductionRuntime()` (`src/config/system-settings.ts`) and `currentEnvironmentLabel()`
-  (`src/lib/error-monitor/service.ts`) both read `APP_ENV || VERCEL_ENV || NODE_ENV`, and a Next.js
-  production build sets `NODE_ENV=production` **on staging too** — so the fallback chain can never
-  distinguish them and the email fail-safe was defeated there. Fixed 2026-08-27 by setting
-  `APP_ENV=staging` (43 staging variables, none of them `APP_ENV`, before that). **The lasting half
-  is the other finding: ~18 cron routes FALL OPEN when `CRON_SECRET` is absent** — an unset secret is
-  not a closed door. Never infer an environment from `NODE_ENV`, and never assume a missing secret
-  fails safe. `app-env-unset-on-staging-made-it-look-like-production`
+- **`APP_ENV` was UNSET on Railway `staging`, so staging identified itself as PRODUCTION** — and two
+  things quietly depended on that. `isProductionRuntime()`
+  (`src/config/system-settings.ts:61`) and `currentEnvironmentLabel()`
+  (`src/lib/error-monitor/service.ts:69`) both read `APP_ENV || VERCEL_ENV || NODE_ENV`, and a
+  Next.js production build sets `NODE_ENV=production` **on staging too**. Measured 2026-08-27: 43
+  staging variables, no `APP_ENV`; production had it. **Fixed** with
+  `railway variables --set "APP_ENV=staging" -e staging -s phoenix-people-workforce`, proven by
+  POSTing one synthetic error to staging's `/api/errors/client` and reading the row back
+  (`environment: production` → `staging`; both probe rows deleted after).
+  `app-env-unset-on-staging-made-it-look-like-production`
+- **The email fail-safe did NOT cover staging.** `isForceTestingDelivery()` returns
+  `!isProductionRuntime()` when `PHOENIX_EMAIL_FORCE_TESTING` is unset, and its own comment says
+  that default "keeps preview/dev from emailing real people" — but on staging it evaluated
+  **false**, inverted exactly where it was needed. Staging was safe only because
+  `PHOENIX_EMAIL_FORCE_TESTING=true` is set explicitly: **one variable, nothing behind it.**
+- **⚠ NEVER set `APP_ENV` to a non-production value without first confirming `CRON_SECRET` is
+  present on that environment.** **18** cron/notification routes still carry
+  `if (!secret) return !isProductionRuntime();` — including `/api/notifications/process`,
+  `/api/notifications/daily`, `/api/cron/background-jobs`, `/api/cron/recruitment-email-intake` and
+  `/api/sales/master-map/sheet`. Labelling an environment non-production **flips that branch from
+  closed to open**, so with `CRON_SECRET` absent one variable change exposes all 18 at once. Only
+  **4** routes use the hardened form `if (!secret) return process.env.NODE_ENV === "development";`
+  — the three `ireports360-visits-*` plus `reconciliation-check`, rewritten after precisely this
+  reasoning ("staging … a 1:1 clone of production … callable unauthenticated by anyone, driving
+  vendor syncs and mirror writes against production-grade data"). **That fix reached 4 of 22.**
+  The 2026-08-27 change was safe only because staging's `CRON_SECRET` is set — verified by probing
+  four of the routes for **401 both before and after** the redeploy, not by reading the code.
+  **Treat `!isProductionRuntime()` as an auth fallback with suspicion generally:** it reads as
+  "only in dev" and means "anywhere not labelled production", which includes any environment where
+  someone simply forgot the label.
+- **The `railway` CLI is linked to `production` here** (`railway status` → `Environment: production`),
+  so every variable command needs an explicit `-e staging`. Omitting it would set `APP_ENV=staging`
+  on PRODUCTION, flipping `isProductionRuntime()` false there and redirecting **real employee email**
+  into the test inboxes. Re-read both environments after any such change. Setting a variable **does**
+  trigger a redeploy (unless `--skip-deploys`), and the change is inert until that deploy reaches
+  `SUCCESS`.
 
 ## 3. Stable Environment Facts
 
