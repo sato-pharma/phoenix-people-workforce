@@ -251,9 +251,19 @@ export type Candidate = {
    * in the pool, because a push required inventing a position first.
    *
    * The manager's name is the one stored AT THE TIME of the send rather than joined on render, so
-   * the history keeps saying what the recruiter actually saw even after a rename or a leaver.
+   * the history keeps saying what the recruiter actually saw even after a rename or a leaver. The
+   * seat — job title, area, region — is frozen the same way and for the same reason, and exists so
+   * a recruiter's "sent to" list groups by the manager it actually went to instead of reading as
+   * one flat column of names. Null on the parts a send predating 2026-08-27 could not resolve.
    */
-  managerNotified: { hrId: string; name: string; sentAt: string } | null;
+  managerNotified: {
+    hrId: string;
+    name: string;
+    sentAt: string;
+    jobTitle: string | null;
+    areaName: string | null;
+    regionName: string | null;
+  } | null;
   createdBy: string | null;
   createdAt: string;
   updatedAt: string;

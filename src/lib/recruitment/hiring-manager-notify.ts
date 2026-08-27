@@ -20,6 +20,7 @@
 
 import { ACTIVE_EMPLOYMENT_STATUSES_IN_LIST } from "@/lib/auth/session-lifecycle";
 import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
+import { hrIdLookupKeys } from "@/lib/hr-id";
 import { createSystemNotification } from "@/lib/notifications/system";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { chunkIds } from "@/lib/recruitment/db-batch";
@@ -43,6 +44,24 @@ export type HiringManagerOption = {
   hrId: string;
   name: string;
   jobTitle: string;
+  /**
+   * Where this manager's seat is. Carried since 2026-08-27 because a name alone is not enough to
+   * pick correctly: the live dropdown holds 31 people across 11 distinct job titles, 17 of them
+   * District Sales Managers, so telling one from another meant recognising a person rather than
+   * reading a seat. Measured the same day, 28 of the 31 carry an area and all 31 carry a region.
+   *
+   * Null where the employee row has none — shown as nothing rather than as a guess.
+   */
+  areaName: string | null;
+  regionName: string | null;
+};
+
+/** The manager's seat as it was AT THE MOMENT OF A SEND, frozen onto the candidate row. */
+export type NotifiedManagerContext = {
+  name: string;
+  jobTitle: string | null;
+  areaName: string | null;
+  regionName: string | null;
 };
 
 /**
@@ -66,7 +85,7 @@ export type HiringManagerOption = {
 export async function listHiringManagerOptions(): Promise<HiringManagerOption[]> {
   const { data, error } = await getSupabaseAdmin()
     .from("employees")
-    .select("hr_id,full_name,nickname,job_title")
+    .select("hr_id,full_name,nickname,job_title,area_name,region_name")
     .filter("employment_status", "in", ACTIVE_EMPLOYMENT_STATUSES_IN_LIST)
     .or("job_title.ilike.*manager*,job_title.ilike.*director*,job_title.ilike.*head*,job_title.ilike.*chief*");
   if (error) throw error;
@@ -76,31 +95,72 @@ export async function listHiringManagerOptions(): Promise<HiringManagerOption[]>
     full_name?: string | null;
     nickname?: string | null;
     job_title?: string | null;
+    area_name?: string | null;
+    region_name?: string | null;
   }>;
 
   return rows
     .filter((row) => Boolean(row.hr_id) && Boolean(row.full_name))
     .map((row) => ({
+      areaName: String(row.area_name ?? "").trim() || null,
       hrId: String(row.hr_id),
       jobTitle: String(row.job_title ?? "").trim() || "Manager",
       name: resolveEmployeeDisplayName(String(row.full_name), row.nickname ?? null),
+      regionName: String(row.region_name ?? "").trim() || null,
     }))
-    .sort((left, right) => left.jobTitle.localeCompare(right.jobTitle) || left.name.localeCompare(right.name));
+    .sort(
+      (left, right) =>
+        left.jobTitle.localeCompare(right.jobTitle) ||
+        // Area before name, so the seventeen District Sales Managers arrive grouped by territory
+        // rather than alphabetically scattered across the country.
+        (left.areaName ?? "").localeCompare(right.areaName ?? "") ||
+        left.name.localeCompare(right.name),
+    );
+}
+
+/**
+ * The manager's name and seat, for stamping onto a candidate at send time.
+ *
+ * Looked up through hrIdLookupKeys rather than a bare `.eq("hr_id", …)`. The ids in this module
+ * cross two tables that disagree about case — `ats_candidates` holds lower-case ids while
+ * `employees` holds upper-case — and PostgREST `eq` is case-sensitive, so an exact match on the
+ * wrong casing returns no row and the send is silently attributed to a raw HR_ID with no title and
+ * no area. That is the same class of bug that once made a dropdown empty and every send fail.
+ *
+ * Falls back to the HR_ID as the name, and nulls elsewhere, exactly as the old name-only lookup
+ * did: an unresolvable manager must degrade to "we do not know their seat", never to a thrown
+ * request that loses the send.
+ */
+export async function notifiedManagerContext(hrId: string): Promise<NotifiedManagerContext> {
+  try {
+    const { data } = await getSupabaseAdmin()
+      .from("employees")
+      .select("full_name,nickname,job_title,area_name,region_name")
+      .in("hr_id", hrIdLookupKeys(hrId))
+      .limit(1)
+      .maybeSingle();
+    const row = data as {
+      full_name?: string;
+      nickname?: string | null;
+      job_title?: string | null;
+      area_name?: string | null;
+      region_name?: string | null;
+    } | null;
+    if (!row?.full_name) return { areaName: null, jobTitle: null, name: hrId, regionName: null };
+    return {
+      areaName: String(row.area_name ?? "").trim() || null,
+      jobTitle: String(row.job_title ?? "").trim() || null,
+      name: resolveEmployeeDisplayName(row.full_name, row.nickname),
+      regionName: String(row.region_name ?? "").trim() || null,
+    };
+  } catch {
+    return { areaName: null, jobTitle: null, name: hrId, regionName: null };
+  }
 }
 
 /** Human-readable name for an HR_ID, per the standing rule that no raw code reaches a person. */
 export async function hiringManagerName(hrId: string): Promise<string> {
-  try {
-    const { data } = await getSupabaseAdmin()
-      .from("employees")
-      .select("full_name,nickname")
-      .eq("hr_id", hrId)
-      .maybeSingle();
-    const row = data as { full_name?: string; nickname?: string | null } | null;
-    return row?.full_name ? resolveEmployeeDisplayName(row.full_name, row.nickname) : hrId;
-  } catch {
-    return hrId;
-  }
+  return (await notifiedManagerContext(hrId)).name;
 }
 
 /**
@@ -136,6 +196,22 @@ function joinNames(names: string[]): string {
 }
 
 /**
+ * True when the database has not learned the three seat columns yet.
+ *
+ * Two codes, because the two layers disagree about which one this is. PostgREST answers a write
+ * naming an unknown column with PGRST204 out of its own schema cache, while PostgreSQL itself
+ * raises 42703 (undefined_column) — which is what arrives when the cache is warm but the column
+ * genuinely is not there. Matching only one of them leaves the other as a thrown send.
+ *
+ * Deliberately narrow: it is checked ONLY around the seat-stamp update, so a real write failure on
+ * any other column still throws and is still visible.
+ */
+function isMissingSeatColumn(error: unknown): boolean {
+  const code = (error as { code?: string } | null)?.code;
+  return code === "PGRST204" || code === "42703";
+}
+
+/**
  * Push one OR MANY candidates to a manager in a single notification.
  *
  * The one-notification-per-candidate shape is what makes this worth having. Measured in production
@@ -155,7 +231,8 @@ export async function pushCandidatesToManager(input: {
   if (input.candidates.length === 0) {
     throw new Error("Choose at least one candidate to send.");
   }
-  const managerName = await hiringManagerName(input.managerHrId);
+  const manager = await notifiedManagerContext(input.managerHrId);
+  const managerName = manager.name;
   const names = input.candidates.map((candidate) => candidate.name);
   const many = input.candidates.length > 1;
 
@@ -187,23 +264,55 @@ export async function pushCandidatesToManager(input: {
 
   const sentAt = new Date().toISOString();
 
-  // One update per batch, all three columns together — so a stamp is never half-written and
+  // One update per batch, all the stamp columns together — so a stamp is never half-written and
   // mapCandidate never has to render a send attributed to nobody. Batched through chunkIds because
   // the id list comes from a multi-select and is therefore unbounded (see db-batch.ts).
+  //
+  // The seat travels WITH the send rather than being joined on render. A manager who moves from
+  // Giza to Cairo next month did not retroactively change where last week's CVs went, and an
+  // archived leaver must not turn eight recorded sends into blanks — the same reasoning that put
+  // manager_notified_name here in the first place, now applied to the title and the area the
+  // recruiter's grouping is built on.
+  // The three seat columns are NEWER THAN THIS CODE PATH. Code reaches production on a merge to
+  // `main` and ships immediately; the migration that adds them is a separate, announced step that
+  // happens around it. In the window between the two, PostgREST answers an update naming a column
+  // it has never heard of with PGRST204 / 42703 — and this update is the one that records the send,
+  // so a bare throw there would mean "Send to manager" is simply broken until somebody runs a
+  // migration. It degrades instead: stamp the seat when the columns exist, and record the send
+  // WITHOUT the seat when they do not. A send with no seat is what every send looked like
+  // yesterday; a send that fails is a regression.
+  const identity = {
+    manager_notified_at: sentAt,
+    manager_notified_hr_id: input.managerHrId,
+    manager_notified_name: managerName,
+  };
+  const seat = {
+    manager_notified_area: manager.areaName,
+    manager_notified_job_title: manager.jobTitle,
+    manager_notified_region: manager.regionName,
+  };
+
   const supabase = getSupabaseAdmin();
+  let seatColumnsExist = true;
   for (const batch of chunkIds(input.candidates.map((candidate) => candidate.id))) {
-    const { error } = await supabase
+    // One update per batch, identity and seat together — so a stamp is never half-written and
+    // mapCandidate never has to render a send attributed to nobody.
+    const attempt = await supabase
       .from("ats_candidates")
-      .update({
-        manager_notified_at: sentAt,
-        manager_notified_hr_id: input.managerHrId,
-        manager_notified_name: managerName,
-      })
+      .update(seatColumnsExist ? { ...identity, ...seat } : identity)
       .in("id", batch);
-    // Unlike the audit row elsewhere in this module, this one is NOT best-effort: it is the only
-    // place the send is recorded, so swallowing it would recreate exactly the invisibility this
-    // work exists to end.
-    if (error) throw error;
+    if (attempt.error && seatColumnsExist && isMissingSeatColumn(attempt.error)) {
+      // Once, then never again for this send: the answer is a property of the schema, not of the
+      // batch, so re-asking per batch would double every write on an un-migrated database.
+      seatColumnsExist = false;
+      const retry = await supabase.from("ats_candidates").update(identity).in("id", batch);
+      // Unlike the audit row elsewhere in this module, this is NOT best-effort: it is the only
+      // place the send is recorded, so swallowing it would recreate exactly the invisibility this
+      // work exists to end.
+      if (retry.error) throw retry.error;
+      continue;
+    }
+    if (attempt.error) throw attempt.error;
   }
 
   return { count: input.candidates.length, managerHrId: input.managerHrId, managerName, sentAt };

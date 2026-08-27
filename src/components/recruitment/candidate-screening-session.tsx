@@ -19,13 +19,14 @@
 // "screen every District Manager in Alex-BHR" is a session with a beginning and an end.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Check, ChevronLeft, ChevronRight, FileWarning, Loader2, SkipForward, X } from "lucide-react";
+import { Check, ChevronLeft, ChevronRight, Eye, FileWarning, Loader2, SkipForward, Sparkles, X } from "lucide-react";
 
 import { CandidateFactsSummary } from "@/components/recruitment/candidate-facts-summary";
 import { CvDocumentView } from "@/components/recruitment/cv-preview-modal";
 import { candidateDisplayName } from "@/lib/recruitment/candidate-display";
 import { candidateRowAppliedFor } from "@/lib/recruitment/applied-for";
 import { candidateScreeningFacts, candidateScreeningRoleFamily } from "@/lib/recruitment/candidate-screening-facts";
+import type { CandidateView, CandidateViewMap } from "@/lib/recruitment/candidate-views";
 import {
   countByBand,
   orderForScreening,
@@ -37,6 +38,7 @@ import {
 import {
   candidateStatusLabels,
   CANDIDATE_STATUS_NOTE_MAX_LENGTH,
+  normalizeCandidateStatus,
   type CandidateStatus,
 } from "@/lib/recruitment/candidate-status";
 import { primaryCvFile } from "@/lib/recruitment/cv-file-choice";
@@ -73,12 +75,55 @@ function describeForOrder(candidate: Candidate): ScreeningOrderInput {
   };
 }
 
+/**
+ * How long a CV must actually be on screen before it counts as read.
+ *
+ * Marking on render would count the candidates you fly past with the arrow key while looking for
+ * where you stopped, and "seen" would then mean "the queue advanced through this", which is worse
+ * than not tracking it at all — it would quietly hide people nobody has read. Two and a half
+ * seconds is long enough that the document has painted and a person has looked at it, short enough
+ * that a genuine skim still registers.
+ */
+const SEEN_DWELL_MS = 2500;
+
+/** "26 Aug, 05:07" — Cairo, per the standing rule that no raw UTC ever reaches a person. */
+const seenAtFormat = new Intl.DateTimeFormat("en-GB", {
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  month: "short",
+  timeZone: "Africa/Cairo",
+});
+
+function formatSeenAt(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const at = new Date(value);
+  if (Number.isNaN(at.getTime())) return null;
+  return seenAtFormat.format(at);
+}
+
 export function CandidateScreeningSession({
   candidates,
   onClose,
+  initialViews = {},
+  variant = "overlay",
 }: {
   candidates: Candidate[];
   onClose: (decidedCount: number) => void;
+  /**
+   * What this viewer has already read, loaded server-side. Defaults to "nothing", which is both
+   * the pre-migration state and the correct behaviour for a session with no HR_ID — the queue
+   * simply works the way it did before this existed rather than failing.
+   */
+  initialViews?: CandidateViewMap;
+  /**
+   * `overlay` keeps the original behaviour — a full-screen layer over the pool, opened and closed
+   * without leaving the page. `page` is the same queue rendered as a route of its own, so it has a
+   * link that can be bookmarked, reopened, and returned to. Both render identically; only the
+   * outermost positioning differs, because a fixed-inset layer inside a page shell would cover the
+   * shell's own navigation.
+   */
+  variant?: "overlay" | "page";
 }) {
   // Best worth meeting first. The TABLE stays newest-first — that is a record of what arrived —
   // but only ~53 of 381 undecided CVs are field-force shaped, so meeting them in arrival order
@@ -87,13 +132,33 @@ export function CandidateScreeningSession({
   const queue = useMemo(() => orderForScreening(candidates, describeForOrder), [candidates]);
   const bands = useMemo(() => countByBand(candidates, describeForOrder), [candidates]);
 
-  // Start where the work is. Re-entering the queue after a break should not make you click past
-  // everyone you already judged.
-  const firstUndecided = Math.max(
-    0,
-    queue.findIndex((candidate) => (candidate.status ?? "new") === "new"),
+  const [views, setViews] = useState<CandidateViewMap>(initialViews);
+
+  /** Nobody has judged this one AND this viewer has never opened it. */
+  const isFresh = useCallback(
+    (candidate: Candidate, seen: CandidateViewMap) =>
+      normalizeCandidateStatus(candidate.status) === "new" && !seen[candidate.id],
+    [],
   );
-  const [index, setIndex] = useState(firstUndecided);
+
+  // Start where the work is. Re-entering the queue after a break should not make you click past
+  // everyone you already judged — and, since 2026-08-27, nor past everyone you already READ.
+  //
+  // That second half is the whole complaint this fixes. Before views existed, the only thing that
+  // moved this index was a decision, so reading forty CVs and judging none of them left the queue
+  // convinced you had never started: 370 of 434 production candidates sat at status 'new' with no
+  // timestamp of any kind. Landing on the first genuinely untouched person is what makes the queue
+  // resumable instead of merely re-openable.
+  //
+  // Computed once, on mount, deliberately. Recomputing as decisions land would yank the queue
+  // forward under the reader's hands the moment they judged somebody.
+  const [index, setIndex] = useState(() => {
+    const firstFresh = queue.findIndex((candidate) => isFresh(candidate, initialViews));
+    if (firstFresh >= 0) return firstFresh;
+    // Everything has been read or judged. Falling back to the first undecided keeps the old
+    // behaviour for the one case it was right about; failing that, the start.
+    return Math.max(0, queue.findIndex((candidate) => normalizeCandidateStatus(candidate.status) === "new"));
+  });
   const [loaded, setLoaded] = useState<Record<string, LoadedCandidate>>({});
   const [failed, setFailed] = useState<Record<string, string>>({});
   const [decided, setDecided] = useState<Record<string, CandidateStatus>>({});
@@ -143,6 +208,46 @@ export function CandidateScreeningSession({
   const entry = current ? loaded[current.id] : undefined;
   const cvFile = useMemo(() => (entry ? primaryCvFile(entry.profile.files) : null), [entry]);
 
+  // "I have now read this one."
+  //
+  // Fired by the document actually being on screen, never by a button. The defect this whole mode
+  // exists to fix is that screening 434 CVs cost too many clicks; answering it with a 435th — a
+  // "mark as read" control the reader must remember to press — would have reproduced the problem
+  // in a new place, and a marker a tired person forgets to set is worse than none, because the
+  // queue then swears they never looked.
+  //
+  // Optimistic and best-effort in both directions: the badge updates locally the moment the dwell
+  // passes, and a failed POST is swallowed. Losing one mark costs re-reading one CV; a red error
+  // thrown across the queue at 4am costs the session.
+  const markedSeen = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    const candidateId = current?.id;
+    // `entry` is the gate that matters: it means the profile and CV have actually arrived, so the
+    // timer measures time in front of a document rather than time in front of a spinner.
+    if (!candidateId || !entry || markedSeen.current.has(candidateId)) return;
+
+    const timer = setTimeout(() => {
+      markedSeen.current.add(candidateId);
+      const seenAt = new Date().toISOString();
+      setViews((previous) => {
+        const existing = previous[candidateId];
+        return {
+          ...previous,
+          [candidateId]: {
+            firstSeenAt: existing?.firstSeenAt ?? seenAt,
+            lastSeenAt: seenAt,
+            viewCount: (existing?.viewCount ?? 0) + 1,
+          },
+        };
+      });
+      void fetch(`/api/recruitment/candidates/${candidateId}/seen`, { method: "POST" }).catch(() => {
+        // Deliberately silent. See above — this must never interrupt somebody mid-queue.
+      });
+    }, SEEN_DWELL_MS);
+
+    return () => clearTimeout(timer);
+  }, [current?.id, entry]);
+
   const goTo = useCallback(
     (next: number) => {
       setError(null);
@@ -151,6 +256,29 @@ export function CandidateScreeningSession({
     },
     [total],
   );
+
+  /**
+   * Jump to the next CV this viewer has never opened and nobody has judged.
+   *
+   * Searches FORWARD from where you are and then, only if there is nothing ahead, wraps to the
+   * start — so pressing it repeatedly walks the unread pile in order instead of bouncing back to
+   * the same person. Returns false when there is genuinely nothing left, which is what lets the
+   * button disable itself honestly rather than becoming a no-op that looks broken.
+   */
+  const jumpToNextFresh = useCallback(() => {
+    const from = index + 1;
+    const ahead = queue.findIndex((candidate, at) => at >= from && isFresh(candidate, views));
+    if (ahead >= 0) {
+      goTo(ahead);
+      return true;
+    }
+    const wrapped = queue.findIndex((candidate) => isFresh(candidate, views));
+    if (wrapped >= 0 && wrapped !== index) {
+      goTo(wrapped);
+      return true;
+    }
+    return false;
+  }, [goTo, index, isFresh, queue, views]);
 
   const decide = useCallback(
     async (status: CandidateStatus) => {
@@ -202,14 +330,29 @@ export function CandidateScreeningSession({
       else if (key === "arrowright" || key === " ") { event.preventDefault(); goTo(index + 1); }
       else if (key === "arrowleft") { event.preventDefault(); goTo(index - 1); }
       else if (key === "n") { event.preventDefault(); noteRef.current?.focus(); }
+      // U for unseen. The one key that makes a 434-long queue usable on the second visit.
+      else if (key === "u") { event.preventDefault(); jumpToNextFresh(); }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [decide, decidedCount, goTo, index, onClose]);
+  }, [decide, decidedCount, goTo, index, jumpToNextFresh, onClose]);
+
+  // A fixed layer for the overlay; a tall flex column that fills its parent for the page. The
+  // overlay's z-index and backdrop would fight the portal shell's own chrome if a page reused them.
+  const shellClass =
+    variant === "overlay"
+      ? "fixed inset-0 z-[190] flex flex-col bg-slate-900"
+      : "flex h-[calc(100vh-4rem)] min-h-[32rem] flex-col overflow-hidden rounded-lg bg-slate-900";
 
   if (!current) {
     return (
-      <div className="fixed inset-0 z-[190] flex items-center justify-center bg-slate-900/80 p-6">
+      <div
+        className={
+          variant === "overlay"
+            ? "fixed inset-0 z-[190] flex items-center justify-center bg-slate-900/80 p-6"
+            : "flex min-h-[24rem] items-center justify-center rounded-lg bg-slate-900/80 p-6"
+        }
+      >
         <div className="rounded-lg bg-white p-6 text-center">
           <p className="text-sm text-slate-700">There is nobody in this queue — clear a filter and try again.</p>
           <button
@@ -224,17 +367,38 @@ export function CandidateScreeningSession({
     );
   }
 
-  const shortlisted = Object.values(decided).filter((value) => value === "shortlisted").length;
-  const rejected = Object.values(decided).filter((value) => value === "rejected").length;
+  // Counted across the WHOLE QUEUE, from the status each candidate actually carries, not from what
+  // was decided in this sitting.
+  //
+  // This is the defect the owner reported as "the rejected and the shortlisted became zero and
+  // everything is lost". The work was never lost — 31 shortlisted, 12 rejected and 21 sent were
+  // all sitting safely in production while the header read 0 — but the counter was a session
+  // variable that started empty on every mount, so the screen swore nothing had been done. A
+  // scoreboard that resets is not a cosmetic problem: it is the screen telling a tired person at
+  // 4am that last night's four hours did not happen.
+  //
+  // `decided` still wins per candidate, because it holds the answer that is newer than the prop.
+  const statusOf = (candidate: Candidate) =>
+    decided[candidate.id] ?? normalizeCandidateStatus(candidate.status);
+  const shortlisted = queue.filter((candidate) => statusOf(candidate) === "shortlisted").length;
+  const rejected = queue.filter((candidate) => statusOf(candidate) === "rejected").length;
+  const seenCount = queue.filter((candidate) => Boolean(views[candidate.id])).length;
+  const freshRemaining = queue.filter((candidate) => isFresh(candidate, views)).length;
   const thisDecision = decided[current.id] ?? null;
+  const currentView: CandidateView | undefined = views[current.id];
+  const firstSeenLabel = formatSeenAt(currentView?.firstSeenAt);
   // The status the row already carried before this session — so a candidate somebody judged last
   // week is not silently presented as untouched.
-  const existingStatus = (current.status ?? "new") as CandidateStatus;
+  //
+  // Normalized rather than cast. A legacy free-text status (production carried 'Candidate Created'
+  // on 225 rows before the 2026-08-15 backfill) would index candidateStatusLabels to `undefined`
+  // and throw on .toLowerCase() below — a raw cast asserts a shape the column does not guarantee.
+  const existingStatus: CandidateStatus = normalizeCandidateStatus(current.status) ?? "new";
   const currentBand = screeningBand(describeForOrder(current));
   const loadError = failed[current.id];
 
   return (
-    <div className="fixed inset-0 z-[190] flex flex-col bg-slate-900">
+    <div className={shellClass}>
       {/* Where you are, what you have done, and the way out. Progress is not decoration here: the
           reason the pool felt endless is that it never said how much was left. */}
       <header className="flex shrink-0 flex-wrap items-center gap-x-5 gap-y-2 border-b border-slate-700 px-4 py-2.5 text-white">
@@ -259,10 +423,29 @@ export function CandidateScreeningSession({
         >
           {screeningBandLabels[currentBand]} · {bands[currentBand]}
         </span>
+        {/* The running totals, and they are the REAL ones — every shortlist and rejection this
+            queue carries, not just the ones made since this screen opened. */}
         <div className="flex items-center gap-3 text-xs tabular-nums">
           <span className="text-emerald-400">{shortlisted} shortlisted</span>
           <span className="text-rose-400">{rejected} rejected</span>
+          <span className="text-slate-400" title="CVs you have opened at least once">
+            {seenCount} read
+          </span>
         </div>
+        {/* The way back into the unread pile. Disabled rather than hidden when the pile is empty:
+            "0 left to read" is the single most useful thing this header can say at the end of a
+            session, and a button that vanishes reads as a bug. */}
+        <button
+          className="flex shrink-0 items-center gap-1.5 rounded-md bg-slate-700 px-2.5 py-1 text-xs font-bold text-white transition hover:bg-slate-600 disabled:cursor-default disabled:opacity-40"
+          disabled={freshRemaining === 0}
+          onClick={() => jumpToNextFresh()}
+          title="Jump to the next CV you have never opened — press U"
+          type="button"
+        >
+          <Sparkles className="h-3.5 w-3.5" />
+          {freshRemaining} never read
+          <kbd className="text-[10px] font-normal opacity-70">U</kbd>
+        </button>
         <button
           aria-label="Leave screening mode"
           className="rounded-md p-1.5 text-slate-300 transition hover:bg-slate-700 hover:text-white"
@@ -318,8 +501,34 @@ export function CandidateScreeningSession({
               <p className="mt-0.5 text-xs text-slate-500">
                 {[current.email, current.phone].filter(Boolean).join(" · ") || "No contact details"}
               </p>
+              {/* Have I read this one before?
+                  The question the owner actually asked for, answered in the one place he is
+                  already looking. "First time" is stated as loudly as the alternative on purpose:
+                  a badge that only ever appears when something is true trains a reader to see its
+                  absence as "the feature is broken" rather than as an answer. */}
+              {currentView ? (
+                <p
+                  className="mt-1.5 inline-flex items-center gap-1 rounded bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-700"
+                  title={
+                    currentView.viewCount > 1
+                      ? `Opened ${currentView.viewCount} times — first on ${firstSeenLabel ?? "an earlier session"}`
+                      : undefined
+                  }
+                >
+                  <Eye className="h-3 w-3" />
+                  {/* The FIRST time, not the last. "You have had this open before" is the useful
+                      sentence; the last view is usually thirty seconds ago because it is this one. */}
+                  Seen before{firstSeenLabel ? ` · ${firstSeenLabel}` : ""}
+                  {currentView.viewCount > 1 ? ` · ${currentView.viewCount}×` : ""}
+                </p>
+              ) : (
+                <p className="mt-1.5 inline-flex items-center gap-1 rounded bg-sky-50 px-2 py-0.5 text-[11px] font-semibold text-sky-700">
+                  <Sparkles className="h-3 w-3" />
+                  First time
+                </p>
+              )}
               {existingStatus !== "new" && !thisDecision ? (
-                <p className="mt-1.5 inline-flex rounded bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-600">
+                <p className="ml-1.5 mt-1.5 inline-flex rounded bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-600">
                   Already {candidateStatusLabels[existingStatus].toLowerCase()}
                 </p>
               ) : null}
@@ -375,14 +584,29 @@ export function CandidateScreeningSession({
               >
                 <ChevronLeft className="h-3.5 w-3.5" /> Back
               </button>
-              <button
-                className="flex items-center gap-1 rounded-md px-2 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-100 disabled:opacity-40"
-                disabled={index >= total - 1}
-                onClick={() => goTo(index + 1)}
-                type="button"
-              >
-                <SkipForward className="h-3.5 w-3.5" /> Skip <ChevronRight className="h-3.5 w-3.5" />
-              </button>
+              <div className="flex items-center gap-1">
+                {/* Skip past everything already read, in one press. The pair matters: plain Skip
+                    steps one forward through the queue as displayed, this one steps to the next
+                    person nobody has looked at. Reviewing the pile you already know is a real
+                    thing to want; being forced to is what made the queue feel endless. */}
+                <button
+                  className="flex items-center gap-1 rounded-md px-2 py-1.5 text-xs font-semibold text-sky-700 transition hover:bg-sky-50 disabled:opacity-40"
+                  disabled={freshRemaining === 0}
+                  onClick={() => jumpToNextFresh()}
+                  title="Next CV nobody has read yet — press U"
+                  type="button"
+                >
+                  <Sparkles className="h-3.5 w-3.5" /> Next unread
+                </button>
+                <button
+                  className="flex items-center gap-1 rounded-md px-2 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-100 disabled:opacity-40"
+                  disabled={index >= total - 1}
+                  onClick={() => goTo(index + 1)}
+                  type="button"
+                >
+                  <SkipForward className="h-3.5 w-3.5" /> Skip <ChevronRight className="h-3.5 w-3.5" />
+                </button>
+              </div>
             </div>
           </div>
         </aside>
