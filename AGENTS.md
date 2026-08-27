@@ -315,6 +315,40 @@ file holding the full account, under
   what was true then gets left alone — **never rewrite a dated record.**
   `staleness-sweeps-scoped-by-topic-miss-the-dangerous-ones`
 
+**Parallel sessions** (relocated from `MEMORY.md`, 2026-08-27 — these are agent-operating traps, not
+Phoenix business rules, and the index line at its cliff is the wrong place for them)
+
+- **A parallel session can collide with NO git trace at all.** Six instances now. The first few were
+  two sessions independently chasing one incident, and the prescribed checks caught those: `gh pr
+  list`, `git log origin/main --oneline -20`, `git worktree list`. **On 2026-08-27 all three returned
+  clean while another session was actively editing the same file** — it never opened a PR, never
+  committed, and worked **in the primary checkout** rather than a worktree. The only signal was the
+  SessionStart hook's working-tree line (`0 staged, 1 modified, 0 untracked / Changed: M AGENTS.md`).
+  **Read that line as a collision signal, not as noise**: a file modified in the shared primary that
+  you did not modify is someone else's live work. **And a stale lock proves the named PID is dead,
+  not that the folder is unattended** — a live session appeared in none of the startup signals that
+  same day; what surfaced it was a `.claude/worktrees/` branch that had not existed minutes earlier,
+  a sibling worktree's HEAD advancing across checks, and untracked `tests/_tmp-*` probes appearing in
+  the primary. Re-run `git for-each-ref refs/heads` and `git worktree list` at intervals through a
+  long session. Never delete another session's `_tmp-*` probes or its `.claude/worktrees/` tree.
+  **Resolve a collision by MERGING, never by discarding** their working copy. And note the fifth
+  instance was self-inflicted: **if you report a finding to another session, it is theirs — do not
+  also fix it**; reviewing and patching the same defect in parallel is a manufactured conflict, and a
+  conflicted PR runs no CI at all here. `feedback-parallel-session-pr-collision`
+- **ONE approval can reach SEVERAL sessions — N sessions holding the same "yes" is N executions.**
+  2026-08-27: the owner typed `merge 2480` and it landed in **3** live sessions (`CONTTINUE` reached
+  5); one of them merged and shipped to production while this session still read
+  `validate: IN_PROGRESS`. He then said "i didnt merge it", which was true from the window he was
+  sitting in. A second `gh pr merge` is harmless, but a bulk email, a destructive SQL statement or a
+  production migration run three times is not. **Before executing a protected action on a terse
+  approval** ("merge 2480", "yes", "go", "do it"), check how many sessions are live, say so in the
+  reply, and re-verify the target's live state immediately before acting — not merely before
+  reporting. **If it is already done, report who did it and never retry.** **`mergedBy` naming the
+  owner is NOT evidence of a human click** — every session authenticates as his account, so the API
+  cannot tell a UI merge from a session's command; grep the transcripts, which carry per-call
+  timestamps and the verbatim command. A peer session's own summary is an inference and has been
+  wrong. `one-approval-can-reach-more-than-one-session`
+
 **Worktrees** (see also §5)
 
 - **Another SESSION can remove a worktree under you.** `another-session-can-remove-a-worktree-under-you`
@@ -451,6 +485,23 @@ something real. The 2026-08-27 pass freed 320 bytes with all counts identical (1
 **Headroom under ~150 bytes is not a fix** - that is less than one hook line, so the next session's
 append re-breaks it the same silent way. When compression is exhausted, move guidance HERE rather
 than deleting a hook. That is what §2.1 did in August, and what this section is.
+
+**Trim BEFORE the cliff, and relocate rather than compress once the levers are gone.** Measured
+2026-08-27 evening at **23,937 bytes - 463 bytes of headroom**, so not yet over, but every
+punctuation lever the passes above used was already spent: **zero** trailing whitespace, **zero**
+double spaces, and **one** em-dash left of the original 102. What remained was 43 bold pairs (172
+bytes, and §2.2 says spend those last) against two index lines - the parallel-session collision trap
+and the one-approval-reaches-several-sessions trap, **482 bytes together** - that were already
+misfiled: the index's own last line says session and tooling traps belong in §2.1, and both of those
+are agent-operating facts rather than Phoenix business rules. Relocating them to §2.1 freed more
+than every remaining formatting lever combined and cost no fact anything.
+
+**A relocation spanning git and `~/.claude/` must finish BOTH halves or neither, in that order.**
+The destination must be **merged**, not merely written, before the index line is trimmed - between
+those two moments the fact exists in neither auto-loaded file. This is not hypothetical: a session
+on 2026-08-27 finished the `MEMORY.md` half and not the git half, orphaning two memories that no
+repo-level check could see, because one side of the move is not in the repo at all. Full account in
+§2.1 under Parallel sessions.
 
 ### 2.3 Production and approval hooks (relocated from `MEMORY.md`, 2026-08-27)
 
