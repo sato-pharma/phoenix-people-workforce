@@ -608,6 +608,22 @@ export async function extractCvFieldsFromBytes(input: {
   senderName?: string | null;
   senderEmail?: string | null;
   subject?: string | null;
+  // OPERATOR ESCAPE HATCH — bypasses shouldEscalateToAi, and nothing else.
+  //
+  // The gate below is a spend decision: when the rules have already answered everything worth
+  // asking, it returns their read without calling a model. That is correct for intake and it is
+  // why CV extraction is cheap. It is wrong for one narrow case — an operator deliberately
+  // re-reading a backlog, who wants the model's own reading of documents the rules were merely
+  // *adequate* on. Measured on production 2026-08-27: of the 59 candidates who have never had a
+  // model read, 39 are refused by the gate, 35 of them for "rules answered every field worth
+  // asking about". No number of re-runs will ever reach them, which is why the same candidates
+  // carry two, three and four identical free rows.
+  //
+  // Deliberately NOT a config value, an env var, or anything intake can reach: it is passed by
+  // hand, per run, from a script the owner invokes (--force-model). Default false everywhere.
+  // It does NOT widen what is asked for — narrowedTextKeys still applies, so a forced call still
+  // skips the fields the merge would discard. Forcing all 59 costs about $0.25 at the nano tier.
+  forceModel?: boolean;
 }): Promise<CvFieldExtraction> {
   const declaredSchema = getCvPositionSchema(input.positionKey ?? defaultCvPositionKey);
   if (!declaredSchema) {
@@ -676,7 +692,7 @@ export async function extractCvFieldsFromBytes(input: {
     positionKey: schema.positionKey,
   });
 
-  if (rule && rule.isCv) {
+  if (!input.forceModel && rule && rule.isCv) {
     const decision = shouldEscalateToAi(rule);
     // Gated on isCv as well as on the decision. shouldEscalateToAi also answers "false" for a
     // document it judges NOT to be a CV, and that answer must never short-circuit to a result: the
@@ -1009,7 +1025,10 @@ export async function extractCandidateFieldsFromCv(
   candidateId: string,
   access: AccessContext,
   positionKey: string = defaultCvPositionKey,
-  options?: { fileId?: string },
+  // forceModel is the operator escape hatch documented on extractCvFieldsFromBytes. This function is
+  // the RE-READ path — the per-candidate button and every bulk re-read — which is the only place it
+  // makes sense. Inbound intake goes through cv-intake-service.ts and never passes it.
+  options?: { fileId?: string; forceModel?: boolean },
 ): Promise<CvExtractionResult> {
   // The schema is validated up front. The API KEY IS DELIBERATELY NOT.
   //
@@ -1052,6 +1071,7 @@ export async function extractCandidateFieldsFromCv(
   const extraction = await extractCvFieldsFromBytes({
     bytes: downloaded.bytes,
     fileName: downloaded.fileName,
+    forceModel: options?.forceModel === true,
     mimeType: downloaded.mimeType,
     positionKey: schema.positionKey,
   });
