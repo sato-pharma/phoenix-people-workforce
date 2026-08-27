@@ -391,6 +391,43 @@ file holding the full account, under
   Committing over it ships the break and destroys the proof.
   `an-interrupted-session-leaves-the-tree-deliberately-broken`
 
+### 2.2 The memory index and its 24,400-byte cliff (relocated from `MEMORY.md`, 2026-08-27)
+
+**`MEMORY.md` is the ONLY memory file that auto-loads**, and the loader truncates it at **24,400
+bytes**. Past that the tail is dropped **silently** - no error, no marker; the last lines simply
+stop existing, so a hook can be present in the file and absent from every session that reads it.
+The rules below governed that file from inside it, which is the one place they can be truncated
+away. They live here because `CLAUDE.md` pulls this file in via `@AGENTS.md`, which has no cliff.
+
+- **Hooks only - the label is the cue, the FILE is the fact.** An index line exists to make a
+  memory findable, not to carry it. Detail belongs in the memory file it points at.
+- **Re-read immediately before rewriting.** Parallel sessions append to it, so a write built on a
+  copy read minutes ago silently drops whatever landed in between.
+- **Never drop a hook, and keep the markers.** Being under the limit is not worth being wrong, and
+  the red markers are how a tired session finds the dangerous line at 4am.
+- **The floor is structural.** See `memory-index-floor-is-13kb-dont-gut-it-chasing-17` - roughly
+  13KB of it is hooks that have to exist. Do not gut it chasing a smaller number.
+
+**When it goes over, take the bytes from formatting and filler, never from facts.** Measured
+2026-08-27, when it sat **202 bytes over** and had silently dropped two real hooks - the
+direct-order case-sensitivity trap (`.eq` hid 28% of reps' own orders) and the note that keeps
+tooling traps out of the index:
+
+- **An em-dash costs 3 bytes and a hyphen costs 1.** The index held 102 of them: **204 bytes** of
+  punctuation that changes nothing anyone reads, and both styles were already mixed in the file.
+- **Bold costs 4 bytes a pair**, 111 pairs = 444 bytes - available, but spend it last: bold is how
+  the critical clause is found at a glance.
+- Filler words gave another 116, with every number, rule, file name and link left intact.
+
+**Verify a trim by COUNTING, not by reading it back.** Before and after must match on link count,
+marker counts and line count, and no link may become dead - a trim that moves any of those removed
+something real. The 2026-08-27 pass freed 320 bytes with all counts identical (163 links, 102 red,
+4 lock, 121 lines) and left a `MEMORY.md.bak-before-trim-<date>` beside it.
+
+**Headroom under ~150 bytes is not a fix** - that is less than one hook line, so the next session's
+append re-breaks it the same silent way. When compression is exhausted, move guidance HERE rather
+than deleting a hook. That is what §2.1 did in August, and what this section is.
+
 ## 3. Stable Environment Facts
 
 History and verification detail: [docs/agents-incident-history.md](docs/agents-incident-history.md).
