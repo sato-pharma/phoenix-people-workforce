@@ -252,6 +252,16 @@ file holding the full account, under
 
 **Validation**
 
+- **A repo-wide pattern sweep must grep the TESTS for the old string too — a pinning test can pin
+  the ANTI-pattern.** `tests/contract-renewal-hardening.test.ts` asserted the exact source line
+  `if (!secret) return !isProductionRuntime();` across FOUR routes, so #2479 — whose entire purpose
+  was deleting that line from 18 routes — turned the required `validate` job red on its own head.
+  Two traps compound. First, the test enforces the very hole being closed, so "the suite went red"
+  reads as "your fix is wrong" rather than "the pin is stale." Second, `runTest` **rethrows**
+  (`tests/run-tests.ts:991-1002`), so a `for` loop over N routes reports only the FIRST: CI printed
+  `birthdaysRoute` and stopped, hiding three identical failures **and every test after it**, so a
+  green run was never demonstrated for anything downstream. Before any sweep, run
+  `git grep -l '<the exact old line>' -- tests`, and fix the pin in the same commit.
 - **A test name appended beside an existing one in `tests/run-tests.ts` becomes an ARGUMENT, not a
   registration** — `runTest(name, fn)` takes exactly two, so the third silently never runs; #2357
   escaped only because the surplus argument was also a `TS2554`. One `await runTest(name, fn)` per
