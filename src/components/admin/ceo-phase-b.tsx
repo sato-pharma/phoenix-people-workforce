@@ -601,7 +601,7 @@ function DoctorCoverageEmbed({ data }: { data: SfeDoctorCoverageBoard }) {
           { label: "Active panel", sub: "graded doctors", value: String(data.totals.activePanel) },
           { label: "Covered", sub: "met their target", value: String(data.totals.green) },
           { label: "Under-visited", sub: "short of target", value: String(data.totals.yellow) },
-          { label: "Lapsed", sub: "none this month", value: String(data.totals.red) },
+          { label: "Not visited", sub: "on the list, none this month", value: String(data.totals.red) },
           { label: "Ungraded seen", sub: "no vendor grade", value: String(data.totals.ungradedContacts) },
         ].map((tile) => (
           <div key={tile.label} className="border border-slate-200 px-3 py-2.5">

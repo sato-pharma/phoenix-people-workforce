@@ -364,33 +364,65 @@ export function frequencyStatusOf(input: {
   return "on_plan";
 }
 
+/** Chunk size for the `agent_crm_id` filter. A PostgREST `.in()` travels in the URL, so past a few
+ * hundred values the request comes back `{ data: [], error: null }` — an empty set indistinguishable
+ * from a true answer, and the exact fault that once reported "0 of 409 candidates have a file". 50
+ * is the house limit. */
+const PLAN_AGENT_CHUNK = 50;
+
 /** Reads every plan entry whose date falls inside the window. Returns [] before the migration
  * ships, so the page renders an honest empty state instead of a crash.
  *
  * Exported for the trend reader, which walks many months and must go through the SAME projection —
- * a second hand-written select is how the month board and the trend line start disagreeing. */
-export async function scanPlanEntries(from: string, to: string): Promise<PlanRow[]> {
+ * a second hand-written select is how the month board and the trend line start disagreeing.
+ *
+ * `agentCrmIds` narrows the read to one manager's reps. It filters on the CRM id and NOT on
+ * `agent_hr_id`, which looks like the obvious key and is a trap: the plan mirror leaves the hr id
+ * null on a large and *varying* share of rows — measured on production 2026-08-27, 791 of 18,645
+ * August rows but 5,795 of 20,778 May rows (27.9%), and 26 of 98 agents in a four-month window
+ * carry no hr id on a single plan row. An hr-id filter would silently drop a quarter of a month's
+ * lists. `agent_crm_id` is null on none of them. An EMPTY array means "no agents in scope" and
+ * returns no rows — never everything. */
+export async function scanPlanEntries(
+  from: string,
+  to: string,
+  options?: { agentCrmIds?: readonly number[] },
+): Promise<PlanRow[]> {
   const supabase = getSupabaseAdmin();
-  const rows: PlanRow[] = [];
-  let offset = 0;
-  for (;;) {
-    const { data, error } = await supabase
-      .from(CRM_PLAN_ENTRIES_TABLE)
-      .select(
-        "agent_crm_id, agent_hr_id, contact_crm_id, contact_grade, contact_name, crm_region_name, plan_date, plan_status, speciality, synced_at",
-      )
-      .gte("plan_date", from)
-      .lte("plan_date", to)
-      .order("crm_plan_entry_id", { ascending: true })
-      .range(offset, offset + PLAN_PAGE_SIZE - 1);
-    if (error) {
-      if (isPlanSchemaMissing(error)) return [];
-      throw new Error(error.message);
+  const agentChunks: (readonly number[] | null)[] = [];
+  if (options?.agentCrmIds) {
+    if (options.agentCrmIds.length === 0) return [];
+    for (let start = 0; start < options.agentCrmIds.length; start += PLAN_AGENT_CHUNK) {
+      agentChunks.push(options.agentCrmIds.slice(start, start + PLAN_AGENT_CHUNK));
     }
-    const page = (data ?? []) as unknown as PlanRow[];
-    rows.push(...page);
-    if (page.length < PLAN_PAGE_SIZE) break;
-    offset += PLAN_PAGE_SIZE;
+  } else {
+    agentChunks.push(null);
+  }
+
+  const rows: PlanRow[] = [];
+  for (const chunk of agentChunks) {
+    let offset = 0;
+    for (;;) {
+      let query = supabase
+        .from(CRM_PLAN_ENTRIES_TABLE)
+        .select(
+          "agent_crm_id, agent_hr_id, contact_crm_id, contact_grade, contact_name, crm_region_name, plan_date, plan_status, speciality, synced_at",
+        )
+        .gte("plan_date", from)
+        .lte("plan_date", to);
+      if (chunk) query = query.in("agent_crm_id", [...chunk]);
+      const { data, error } = await query
+        .order("crm_plan_entry_id", { ascending: true })
+        .range(offset, offset + PLAN_PAGE_SIZE - 1);
+      if (error) {
+        if (isPlanSchemaMissing(error)) return [];
+        throw new Error(error.message);
+      }
+      const page = (data ?? []) as unknown as PlanRow[];
+      rows.push(...page);
+      if (page.length < PLAN_PAGE_SIZE) break;
+      offset += PLAN_PAGE_SIZE;
+    }
   }
   return rows;
 }

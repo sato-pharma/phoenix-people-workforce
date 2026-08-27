@@ -9,6 +9,7 @@ import {
 } from "../src/lib/crm/doctor-coverage-config.ts";
 import {
   buildDoctorCoverageBoard,
+  type DoctorCoveragePlanInput,
   type DoctorCoverageVisitInput,
 } from "../src/lib/crm/sfe-doctor-coverage.ts";
 
@@ -27,6 +28,21 @@ function visit(over: Partial<DoctorCoverageVisitInput> = {}): DoctorCoverageVisi
     speciality: "Internal Medicine",
     visit_date: "2026-08-05",
     visit_type: 0,
+    ...over,
+  };
+}
+
+/** One assigned-list entry. The panel is built from these, so every board below needs one per
+ * doctor it expects to score — a doctor with visits but no assignment is off-list, not a panel row. */
+function plan(over: Partial<DoctorCoveragePlanInput> = {}): DoctorCoveragePlanInput {
+  return {
+    agent_crm_id: 1,
+    agent_hr_id: "B-1",
+    contact_crm_id: 100,
+    contact_grade: "A",
+    contact_name: "Contact 100",
+    plan_date: "2026-08-03",
+    speciality: "Internal Medicine",
     ...over,
   };
 }
@@ -84,12 +100,14 @@ export function runDoctorCoverageNormsTests() {
   // ── the norms actually drive the board ────────────────────────────────────────────────────────
   // One A-grade doctor with a single August visit. Under the default norm (A = 2) that is a MISS.
   const oneVisitToAnADoctor = [visit()];
-  const strict = buildDoctorCoverageBoard(oneVisitToAnADoctor, "2026-08");
+  const oneAssignedADoctor = [plan()];
+  const strict = buildDoctorCoverageBoard(oneVisitToAnADoctor, "2026-08", { planRows: oneAssignedADoctor });
   assert.equal(strict.totals.activePanel, 1);
   assert.equal(strict.totals.green, 0, "1 visit against the default A-norm of 2 is not covered");
 
   const relaxed = buildDoctorCoverageBoard(oneVisitToAnADoctor, "2026-08", {
     norms: { ...DEFAULT_DOCTOR_COVERAGE_NORMS, sp: { A: 1, B: 1, C: 1 } },
+    planRows: oneAssignedADoctor,
   });
   assert.equal(relaxed.totals.green, 1, "lowering the A-norm to 1 makes the same visit count as covered — the norms are live");
 
@@ -100,11 +118,16 @@ export function runDoctorCoverageNormsTests() {
     visit({ contact_crm_id: 100, contact_name: "Doctor", speciality: "Internal Medicine" }),
     visit({ contact_crm_id: 200, contact_name: "Pharmacy", crm_visit_id: 2, speciality: "Pharmacy" }),
   ];
-  const bothScored = buildDoctorCoverageBoard(doctorAndPharmacy, "2026-08");
+  const doctorAndPharmacyPlan = [
+    plan({ contact_crm_id: 100, contact_name: "Doctor", speciality: "Internal Medicine" }),
+    plan({ contact_crm_id: 200, contact_name: "Pharmacy", speciality: "Pharmacy" }),
+  ];
+  const bothScored = buildDoctorCoverageBoard(doctorAndPharmacy, "2026-08", { planRows: doctorAndPharmacyPlan });
   assert.equal(bothScored.totals.activePanel, 2, "by default both the doctor and the pharmacy are scored");
 
   const pharmacyUnscored = buildDoctorCoverageBoard(doctorAndPharmacy, "2026-08", {
     norms: { hcp: { A: 0, B: 0, C: 0 }, sp: { A: 2, B: 1, C: 1 } },
+    planRows: doctorAndPharmacyPlan,
   });
   assert.equal(
     pharmacyUnscored.totals.activePanel,
@@ -135,6 +158,7 @@ export function runDoctorCoverageNormsTests() {
   const withUnknown = buildDoctorCoverageBoard(
     [visit({ contact_crm_id: 300, contact_name: "New Kind", speciality: "Dermatology" })],
     "2026-08",
+    { planRows: [plan({ contact_crm_id: 300, contact_name: "New Kind", speciality: "Dermatology" })] },
   );
   assert.equal(withUnknown.totals.activePanel, 1, "an unknown speciality is still scored — dropping it would move the number silently");
   assert.ok(
@@ -165,7 +189,12 @@ export function runDoctorCoverageNormsTests() {
       visit_date: "2026-08-05",
     }),
   ];
-  const renamed = buildDoctorCoverageBoard(renamedRepVisits, "2026-08");
+  const renamed = buildDoctorCoverageBoard(renamedRepVisits, "2026-08", {
+    planRows: [
+      plan({ contact_crm_id: 400, contact_name: "Seen in June" }),
+      plan({ contact_crm_id: 401, contact_name: "Seen in August" }),
+    ],
+  });
   const namesOnRows = [...new Set(renamed.doctors.map((row) => row.repName))];
   assert.deepEqual(
     namesOnRows,

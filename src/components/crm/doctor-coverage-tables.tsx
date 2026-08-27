@@ -67,6 +67,7 @@ const REP_COLS = [
   { accessor: (r: DoctorCoverageRepRow) => r.yellow, key: "yellow", type: "number" as const },
   { accessor: (r: DoctorCoverageRepRow) => r.red, key: "red", type: "number" as const },
   { accessor: (r: DoctorCoverageRepRow) => r.coveragePct, key: "coveragePct", type: "number" as const },
+  { accessor: (r: DoctorCoverageRepRow) => r.offListDoctors, key: "offListDoctors", type: "number" as const },
   { accessor: (r: DoctorCoverageRepRow) => r.campaignCalls, key: "campaignCalls", type: "number" as const },
   { accessor: (r: DoctorCoverageRepRow) => r.aDoctors, key: "aDoctors", type: "number" as const },
 ];
@@ -87,7 +88,7 @@ export function DoctorCoverageRepTable({ rows }: { rows: DoctorCoverageRepRow[] 
         value={table.query}
       />
       <PortalResponsiveDataList
-        empty={<p className="px-3 py-6 text-center text-xs text-slate-400">No graded doctor visits in this month.</p>}
+        empty={<p className="px-3 py-6 text-center text-xs text-slate-400">No assigned doctor lists in this month.</p>}
         getKey={(row) => row.repKey}
         items={table.rows}
         renderCard={(row) => (
@@ -95,8 +96,8 @@ export function DoctorCoverageRepTable({ rows }: { rows: DoctorCoverageRepRow[] 
             accent={row.hasPanel ? coverageAccent(row.coveragePct) : "slate"}
             meta={
               row.hasPanel
-                ? `${row.panelSize} graded ${row.panelSize === 1 ? "doctor" : "doctors"} in panel`
-                : "No graded doctor this month — campaign work only"
+                ? `${row.panelSize} assigned ${row.panelSize === 1 ? "doctor" : "doctors"} on the list`
+                : "No assigned list this month — work counted beside coverage"
             }
             status={
               row.hasPanel ? (
@@ -115,10 +116,18 @@ export function DoctorCoverageRepTable({ rows }: { rows: DoctorCoverageRepRow[] 
                   value: <span className={row.yellow > 0 ? "text-amber-700" : "text-slate-400"}>{row.yellow}</span>,
                 },
                 {
-                  label: "Lapsed",
+                  label: "Not visited",
                   value: <span className={row.red > 0 ? "text-rose-700" : "text-slate-400"}>{row.red}</span>,
                 },
                 { label: "A / B / C", value: `${row.aDoctors} / ${row.bDoctors} / ${row.cDoctors}` },
+                {
+                  label: "Off-list visits",
+                  value: (
+                    <span className={row.offListDoctors > 0 ? "text-sky-700" : "text-slate-400"}>
+                      {row.offListDoctors}
+                    </span>
+                  ),
+                },
                 {
                   label: "Campaign calls",
                   value: (
@@ -130,15 +139,16 @@ export function DoctorCoverageRepTable({ rows }: { rows: DoctorCoverageRepRow[] 
           </PortalRecordCard>
         )}
         renderTable={() => (
-          <PortalDesktopTable className="text-xs" minWidth="840px">
+          <PortalDesktopTable className="text-xs" minWidth="940px">
             <thead>
               <tr className="bg-slate-900 text-left">
                 <SortableTh className={REP_THEAD} label="Rep" onSort={table.toggleSort} sort={table.sort} sortKey="repName" />
                 <SortableTh align="right" className={`${REP_THEAD} text-right`} label="Panel" onSort={table.toggleSort} sort={table.sort} sortKey="panelSize" />
                 <SortableTh align="right" className={`${REP_THEAD} text-right text-emerald-300`} label="Covered" onSort={table.toggleSort} sort={table.sort} sortKey="green" />
                 <SortableTh align="right" className={`${REP_THEAD} text-right text-amber-300`} label="Under" onSort={table.toggleSort} sort={table.sort} sortKey="yellow" />
-                <SortableTh align="right" className={`${REP_THEAD} text-right text-rose-300`} label="Lapsed" onSort={table.toggleSort} sort={table.sort} sortKey="red" />
+                <SortableTh align="right" className={`${REP_THEAD} text-right text-rose-300`} label="Not seen" onSort={table.toggleSort} sort={table.sort} sortKey="red" />
                 <SortableTh align="right" className={`${REP_THEAD} text-right`} label="Coverage" onSort={table.toggleSort} sort={table.sort} sortKey="coveragePct" />
+                <SortableTh align="right" className={`${REP_THEAD} text-right text-sky-300`} label="Off-list" onSort={table.toggleSort} sort={table.sort} sortKey="offListDoctors" />
                 <SortableTh align="right" className={`${REP_THEAD} text-right text-sky-300`} label="Campaign" onSort={table.toggleSort} sort={table.sort} sortKey="campaignCalls" />
                 <SortableTh align="right" className={`${REP_THEAD} text-right`} label="A / B / C" onSort={table.toggleSort} sort={table.sort} sortKey="aDoctors" />
               </tr>
@@ -170,10 +180,15 @@ export function DoctorCoverageRepTable({ rows }: { rows: DoctorCoverageRepRow[] 
                       </div>
                     ) : (
                       <div className="flex items-center justify-end gap-2">
-                        <span className="text-right text-[11px] font-semibold text-slate-400">No graded panel</span>
+                        <span className="text-right text-[11px] font-semibold text-slate-400">No assigned list</span>
                         <span className="min-w-[34px] text-right font-black text-slate-400">{NO_PANEL_MARKER}</span>
                       </div>
                     )}
+                  </td>
+                  <td
+                    className={`px-3 py-2 text-right font-bold ${row.offListDoctors > 0 ? "text-sky-700" : "text-slate-400"}`}
+                  >
+                    {row.offListDoctors}
                   </td>
                   <td
                     className={`px-3 py-2 text-right font-bold ${row.campaignCalls > 0 ? "text-sky-700" : "text-slate-400"}`}
@@ -193,9 +208,12 @@ export function DoctorCoverageRepTable({ rows }: { rows: DoctorCoverageRepRow[] 
   );
 }
 
+// "Not visited", not "Lapsed". The panel is the rep's assigned list now, so a red row means an
+// assigned doctor who was not seen this month — there is no recency test in front of him, and
+// "Lapsed" implied one that no longer exists.
 const STATUS_LABEL: Record<DoctorCoverageStatus, string> = {
   green: "Covered",
-  red: "Lapsed",
+  red: "Not visited",
   yellow: "Under-visited",
 };
 
@@ -315,14 +333,14 @@ export function DoctorCoverageDoctorTable({ month, rows }: { month: string; rows
         <div className="flex flex-wrap items-center gap-2">
           {chip("all", "All", rows.length)}
           {chip("yellow", "Under-visited", rows.filter((row) => row.status === "yellow").length)}
-          {chip("red", "Lapsed", rows.filter((row) => row.status === "red").length)}
+          {chip("red", "Not visited", rows.filter((row) => row.status === "red").length)}
           {chip("green", "Covered", rows.filter((row) => row.status === "green").length)}
           <ExportXlsxButton
             columns={[
               { key: "doctor", label: "Doctor" },
               { key: "grade", label: "Grade" },
               { key: "speciality", label: "Specialty" },
-              { key: "rep", label: "Primary Rep" },
+              { key: "rep", label: "Assigned Rep" },
               { key: "visits", label: "Visits", numeric: true },
               { key: "target", label: "Target", numeric: true },
               { key: "status", label: "Status" },
@@ -358,7 +376,7 @@ export function DoctorCoverageDoctorTable({ month, rows }: { month: string; rows
                     </>
                   ),
                 },
-                { label: "Primary Rep", value: row.repName },
+                { label: "Assigned Rep", value: row.repName },
                 { label: "Last Visit", value: row.lastVisitDate ?? "—" },
               ]}
             />
@@ -371,7 +389,7 @@ export function DoctorCoverageDoctorTable({ month, rows }: { month: string; rows
                 <SortableTh className={REP_THEAD} label="Doctor" onSort={table.toggleSort} sort={table.sort} sortKey="contactName" />
                 <SortableTh className={REP_THEAD} label="Grade" onSort={table.toggleSort} sort={table.sort} sortKey="gradeRaw" />
                 <SortableTh className={REP_THEAD} label="Specialty" onSort={table.toggleSort} sort={table.sort} sortKey="speciality" />
-                <SortableTh className={REP_THEAD} label="Primary Rep" onSort={table.toggleSort} sort={table.sort} sortKey="repName" />
+                <SortableTh className={REP_THEAD} label="Assigned Rep" onSort={table.toggleSort} sort={table.sort} sortKey="repName" />
                 <SortableTh align="right" className={`${REP_THEAD} text-right`} label="Visits" onSort={table.toggleSort} sort={table.sort} sortKey="visitsThisMonth" />
                 <SortableTh className={REP_THEAD} label="Status" onSort={table.toggleSort} sort={table.sort} sortKey="status" />
                 <SortableTh className={REP_THEAD} label="Last Visit" onSort={table.toggleSort} sort={table.sort} sortKey="lastVisitDate" />
