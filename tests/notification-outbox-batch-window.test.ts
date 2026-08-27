@@ -81,6 +81,20 @@ function makePager(queue: NotificationOutboxRow[]) {
   };
 }
 
+/** The structured second argument the loader passes to `console.log`. */
+type LoggedPayload = {
+  extra?: {
+    limit?: number;
+    pagesRead?: number;
+    returned?: number;
+    scanCappedAtPageLimit?: boolean;
+    scanWindow?: number;
+    skippedExhausted?: number;
+  };
+  level?: string;
+  tags?: Record<string, string>;
+};
+
 export async function runNotificationOutboxBatchWindowTests() {
   // The headline. This is the production incident, reproduced.
   {
@@ -209,6 +223,95 @@ export async function runNotificationOutboxBatchWindowTests() {
       false,
       "the due-page fetcher must NOT cap the SQL read: `.limit()` here re-creates the 2026-08-14 "
         + "freeze, because the eligibility test cannot run in SQL and therefore runs after the cap",
+    );
+  }
+
+  // ---------------------------------------------------------------------------------------------
+  // The SIGNAL. Paging past dead rows cures the freeze; it does not cure the blindness that let the
+  // freeze last thirteen days, and those are two different defects. Ported from the parallel fix in
+  // PR #2463, which found this and was superseded by #2462 before it could land.
+  // ---------------------------------------------------------------------------------------------
+
+  /** Run the loader with `console.log` captured, so the emitted signal can be asserted on. */
+  async function captureLogs(limit: number, queue: NotificationOutboxRow[]) {
+    const entries: Array<{ message: string; payload: LoggedPayload }> = [];
+    const realLog = console.log;
+    console.log = (...args: unknown[]) => {
+      entries.push({ message: String(args[0]), payload: args[1] as LoggedPayload });
+    };
+    try {
+      const due = await loadDueNotificationOutboxRows(limit, makePager(queue).fetchPage);
+      return { due, entries };
+    } finally {
+      // Restore in `finally`: a throw here would otherwise leave every later test in this process
+      // writing into the array above instead of to the terminal.
+      console.log = realLog;
+    }
+  }
+
+  const walkedPastMessage = "Outbox batch walked past exhausted rows";
+
+  // The headline for this half of the fix.
+  {
+    const survivor = retryableRow("behind-the-corpses");
+    const { entries } = await captureLogs(50, [...exhaustedRows(50), survivor]);
+    const entry = entries.find((item) => item.message === walkedPastMessage);
+
+    assert.notEqual(
+      entry,
+      undefined,
+      "walking past exhausted rows MUST emit a log line. The drain returned HTTP 200 and "
+        + "`attempted: 0` every five minutes for thirteen days and nothing anywhere said why - an "
+        + "empty queue and a starved queue are indistinguishable from the outside. Paging past the "
+        + "dead rows silently fixes the freeze and leaves that blindness exactly as it was, so the "
+        + "next occurrence is just as invisible as the one that cost thirteen days of retries.",
+    );
+    assert.equal(
+      entry?.payload?.extra?.skippedExhausted,
+      50,
+      "the count must be the number of dead rows actually walked past - that number climbing over "
+        + "days is the early warning, and a bare 'something was skipped' cannot show a trend",
+    );
+    assert.equal(entry?.payload?.extra?.returned, 1, "and it must say how many live rows the batch got");
+  }
+
+  // A healthy queue must stay quiet, or the signal is worthless.
+  {
+    const { entries } = await captureLogs(10, [retryableRow("live-1"), retryableRow("live-2")]);
+
+    assert.equal(
+      entries.some((item) => item.message === walkedPastMessage),
+      false,
+      "a queue with no exhausted rows must log NOTHING. A line on every healthy tick is noise, and "
+        + "noise on a 5-minute cron is how the real warning gets filtered out and ignored",
+    );
+  }
+
+  // Degraded (walked past some) and about-to-starve (ran out of scan) must not look the same.
+  {
+    const mild = await captureLogs(50, [...exhaustedRows(50), retryableRow("survivor")]);
+    const mildEntry = mild.entries.find((item) => item.message === walkedPastMessage);
+    assert.equal(
+      mildEntry?.payload?.level,
+      "warning",
+      "walking past dead rows but still filling the batch is a warning, not yet an incident",
+    );
+
+    // A full scan window of corpses, batch still unfilled: the freeze, back at a higher threshold.
+    const starved = await captureLogs(50, exhaustedRows(outboxScanPageSize * outboxMaxScanPages));
+    const starvedEntry = starved.entries.find((item) => item.message === walkedPastMessage);
+    assert.deepEqual(starved.due, [], "a fully exhausted scan window returns nothing - the 2026-08-14 shape");
+    assert.equal(
+      starvedEntry?.payload?.extra?.scanCappedAtPageLimit,
+      true,
+      "when the scan hits its ceiling with the batch still unfilled, THAT is the freeze returning "
+        + "at a higher threshold, and it must be distinguishable from an ordinary walk-past",
+    );
+    assert.equal(
+      starvedEntry?.payload?.level,
+      "error",
+      "and it must escalate past 'warning' - a degraded drain and a dead one cannot share a level, "
+        + "or the dead one is invisible again",
     );
   }
 }

@@ -2051,13 +2051,43 @@ export async function loadDueNotificationOutboxRows(
   fetchPage: DueOutboxPageFetcher = fetchDueNotificationOutboxPage,
 ) {
   const eligible: NotificationOutboxRow[] = [];
+  let skippedExhausted = 0;
+  let pagesRead = 0;
+  let scanCappedAtPageLimit = false;
 
   for (let page = 0; page < outboxMaxScanPages && eligible.length < limit; page += 1) {
     const from = page * outboxScanPageSize;
     const rows = await fetchPage(from, from + outboxScanPageSize - 1);
+    pagesRead += 1;
     if (rows.length === 0) break;
-    eligible.push(...rows.filter((row) => row.attempts < row.max_attempts));
+    const live = rows.filter((row) => row.attempts < row.max_attempts);
+    skippedExhausted += rows.length - live.length;
+    eligible.push(...live);
     if (rows.length < outboxScanPageSize) break;
+    // The loop ran out of pages while the queue kept going and the batch is still not full:
+    // exactly the shape that froze the drain, only now it costs a delay instead of a freeze.
+    if (page === outboxMaxScanPages - 1 && eligible.length < limit) scanCappedAtPageLimit = true;
+  }
+
+  // The original failure was silent for thirteen days: HTTP 200, `attempted: 0`, indistinguishable
+  // from an empty queue. Paging past the dead rows fixes the starvation but says nothing, so the
+  // early warning would still be missing. This line is that warning — if exhausted rows are being
+  // walked past on every tick, the count climbs here long before the batch is capped again.
+  if (skippedExhausted > 0) {
+    console.log("Outbox batch walked past exhausted rows", {
+      level: scanCappedAtPageLimit ? "error" : "warning",
+      tags: { component: "email", cron: "outbox-processing" },
+      extra: {
+        limit,
+        pagesRead,
+        returned: Math.min(eligible.length, limit),
+        // A true here means the scan hit its ceiling with the batch still unfilled — the drain is
+        // degraded now and starves outright once the dead rows outgrow the whole scan window.
+        scanCappedAtPageLimit,
+        scanWindow: outboxScanPageSize * outboxMaxScanPages,
+        skippedExhausted,
+      },
+    });
   }
 
   return eligible.slice(0, limit);
