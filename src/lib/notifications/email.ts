@@ -165,8 +165,8 @@ type NotificationOutboxProcessResult = {
 };
 
 const emailNotificationPolicyTable = "email_notification_policies";
-const notificationOutboxTable = "notification_outbox";
-const notificationOutboxMaxAttempts = 5;
+export const notificationOutboxTable = "notification_outbox";
+export const notificationOutboxMaxAttempts = 5;
 const notificationOutboxBatchSize = 10;
 
 export type EmailNotificationPolicy = {

@@ -174,7 +174,7 @@ const aggregateDigestEventTypes = new Set(["high_risk_digest"]);
  * hypothetical: it silently killed every email retry for 13 days (#2462), and on 2026-08-27 the
  * telegram window already held 25 such rows against a limit of 50, push 16.
  */
-const notificationDeliveryMaxAttempts = 5;
+export const notificationDeliveryMaxAttempts = 5;
 
 function cleanText(value: string | null | undefined) {
   return String(value ?? "").trim();
