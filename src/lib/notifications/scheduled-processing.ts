@@ -6,6 +6,7 @@ import {
   processNotificationOutbox,
   reapStaleProcessingOutboxRows,
 } from "@/lib/notifications/email";
+import { assessDrainHealth, readDrainQueueBacklog } from "@/lib/notifications/drain-health";
 import { createStepBudget, runStep, summarizeTimings, type StepTiming } from "@/lib/notifications/step-runner";
 import { processDeferredDeliveryRetries, processPushDeliveryRetries, processTelegramDeliveryRetries } from "@/lib/notifications/system";
 import { processDueProbationReminderEvents } from "@/lib/probation/service";
@@ -31,6 +32,9 @@ let inFlightStartedAt: number | null = null;
 
 export async function runScheduledNotificationProcessing(limit = 10) {
   const enteredAt = Date.now();
+  // Same instant as `enteredAt`, for the drain-health probe: "due before this run started" is
+  // measured against it, which is what keeps a row inserted mid-run from reading as stranded.
+  const runStartedAtIso = new Date(enteredAt).toISOString();
   if (inFlightStartedAt !== null && enteredAt - inFlightStartedAt < OVERLAP_LOCK_MS) {
     console.warn(
       `[cron:process] previous run still in flight (${enteredAt - inFlightStartedAt}ms ago) — skipping this invocation to avoid overlap`,
@@ -123,6 +127,29 @@ export async function runScheduledNotificationProcessing(limit = 10) {
       { fallback: { attempted: 0, failed: 0, sent: 0, error: "step timed out" } },
     );
     // Compute users inactive for 7+ days — logged for now; full alert notifications are a follow-up.
+    // Every drain has now run. A drain that does nothing and a drain with nothing to do report
+    // the identical `attempted: 0`, which is why the 2026-08-14 freeze stayed invisible for 13
+    // days behind a green cron. This is the one check that tells them apart - see drain-health.ts
+    // for why it asserts a black-box invariant rather than counting anything inside the loops.
+    const backlog = await runStep("drain-health", () => readDrainQueueBacklog(runStartedAtIso), budget, {
+      fallback: { deferred: null, outbox: null, push: null, telegram: null },
+    });
+    const drainHealth = assessDrainHealth([
+      { attempted: outbox?.attempted ?? 0, queue: "outbox", strandedBefore: backlog?.outbox ?? null },
+      { attempted: telegram?.attempted ?? 0, queue: "telegram", strandedBefore: backlog?.telegram ?? null },
+      { attempted: push?.attempted ?? 0, queue: "push", strandedBefore: backlog?.push ?? null },
+      { attempted: deferred?.attempted ?? 0, queue: "deferred", strandedBefore: backlog?.deferred ?? null },
+    ]);
+    if (!drainHealth.healthy) {
+      // ERROR, not warning: mail that a user is waiting on is not being delivered, and the last
+      // time this happened nothing said so for 13 days. The route turns this into a dead-man's
+      // switch failure too, so it reaches an external monitor and not only the log.
+      logError("Notification drain attempted nothing while work was already due - retries are not being delivered", {
+        labels: { cron: "notification-process", event: "drain_stranded" },
+        context: { stranded: drainHealth.stranded },
+      });
+    }
+
     const inactiveUsers = await runStep("inactive-users", () => getInactiveUsers(7), budget);
     if (inactiveUsers && inactiveUsers.length) {
       console.info(
@@ -138,6 +165,7 @@ export async function runScheduledNotificationProcessing(limit = 10) {
       skipped: false as const,
       attendanceAgent,
       deferred,
+      drainHealth,
       exitedDeductions,
       inactiveUsers: inactiveUsers?.length ?? 0,
       outbox,

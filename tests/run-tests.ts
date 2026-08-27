@@ -981,6 +981,7 @@ import { runCvLibraryTests } from "./cv-library.test.ts";
 import { runHiringEmployeeScopeTests } from "./hiring-employee-scope.test.ts";
 import { runMarketingAdminOverrideNoteTests } from "./marketing-admin-override-note.test.ts";
 import { runRecruitmentPoolFilterTests } from "./recruitment-pool-filters.test.ts";
+import { runNotificationDrainHealthAlertTests } from "./notification-drain-health-alert.test.ts";
 import { runNotificationOutboxBatchWindowTests } from "./notification-outbox-batch-window.test.ts";
 import { runNotificationDrainStarvationGuardTests } from "./notification-drain-starvation-guard.test.ts";
 
@@ -2833,6 +2834,12 @@ await runTest(
   "notification drain starvation guard (all three retry drains keep exhausted rows out of the due "
     + "window in SQL, and page/limit boundaries stay stable on a total order)",
   runNotificationDrainStarvationGuardTests,
+);
+
+await runTest(
+  "notification drain health alert (a drain that attempts nothing while work is due is reported "
+    + "unhealthy, while an idle, busy, or unprobeable drain stays silent)",
+  runNotificationDrainHealthAlertTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
