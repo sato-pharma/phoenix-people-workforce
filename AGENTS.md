@@ -510,6 +510,33 @@ index room for the third entry — it was an orphan with no pointer, so nothing 
   is the other finding: ~18 cron routes FALL OPEN when `CRON_SECRET` is absent** — an unset secret is
   not a closed door. Never infer an environment from `NODE_ENV`, and never assume a missing secret
   fails safe. `app-env-unset-on-staging-made-it-look-like-production`
+- **The email fail-safe had the identical gap.** `isForceTestingDelivery()`
+  (`src/config/system-settings.ts:77`) defaults to `!isProductionRuntime()` when
+  `PHOENIX_EMAIL_FORCE_TESTING` is unset — its own comment says that default "keeps preview/dev from
+  emailing real people," but on staging it evaluated **false**, inverted exactly where it was
+  needed. Staging was safe only because `PHOENIX_EMAIL_FORCE_TESTING=true` was set explicitly, as
+  its own separate variable with nothing behind it.
+- **⚠ Before setting `APP_ENV` to a non-production value, confirm `CRON_SECRET` is present on that
+  environment first.** Verified 2026-08-27: exactly **18** routes carry
+  `if (!secret) return !isProductionRuntime();` — `notifications/process`, `notifications/daily`,
+  `notifications/birthdays`, `notifications/contract-renewals`, `notifications/holiday-confirmation`,
+  `cron/background-jobs`, `cron/recruitment-email-intake`, `cron/recruitment-cv-digest`,
+  `cron/db-health-snapshot`, `cron/inbound-intake`, `cron/brevo-keepalive`,
+  `cron/run-synthetic-journeys`, `cron/marketing-assignment-backfill`, `cron/direct-orders-probation`,
+  `cron/direct-orders-expire-held`, `cron/direct-orders-rotate-sheet-token`,
+  `cron/marketing-requests-rotate-sheet-token`, `sales/master-map/sheet`. Labelling an environment
+  non-production flips that branch from closed to open, so with `CRON_SECRET` absent, one variable
+  change exposes all 18 at once. Only **4** routes use the hardened
+  `if (!secret) return process.env.NODE_ENV === "development";` — the three `ireports360-visits-*`
+  routes plus `reconciliation-check`. **Treat `!isProductionRuntime()` as an auth fallback with
+  suspicion generally** — it reads as "only in dev" but means "anywhere not labelled production,"
+  which includes any environment where someone simply forgot the label.
+- **The `railway` CLI here defaults to the `production` environment link**
+  (`railway status` reads `Environment: production`), so every variable command needs an explicit
+  `-e staging` — omitting it sets the variable on PRODUCTION instead, e.g. flipping
+  `isProductionRuntime()` false there and redirecting real employee email into test inboxes. Setting
+  a variable triggers a redeploy (unless `--skip-deploys`); the change is inert until that deploy
+  reaches `SUCCESS`, so re-read both environments after.
 
 ## 3. Stable Environment Facts
 
