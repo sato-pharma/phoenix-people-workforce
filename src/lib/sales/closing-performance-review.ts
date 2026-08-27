@@ -157,6 +157,59 @@ export type PerformanceReviewSeriesRow = {
   unitsAreAddable: boolean;
 };
 
+/**
+ * One column of a performance matrix — a family, or a single product code.
+ *
+ * `unitsAreAddable` is the whole reason this type exists rather than a bare string. A column that is
+ * ONE product code holds a real quantity and its units may be printed and summed down the column; a
+ * family column spans concentrations, so its units are meaningless and the cell carries value only.
+ */
+export type PerformanceMatrixColumn = {
+  key: string;
+  label: string;
+  productCount: number;
+  subLabel: string;
+  unitsAreAddable: boolean;
+};
+
+/**
+ * One row of a performance matrix: WHO is on the left, and what they sold across the top.
+ *
+ * `units` is parallel to `values` and to the matrix's columns. It is null at any position whose
+ * column is not a single product code — never 0, which would read as "sold nothing".
+ */
+export type PerformanceMatrixRow = {
+  achievement: number | null;
+  areaCode: string;
+  areaName: string;
+  kind: "area" | "regionSubtotal" | "grandTotal";
+  managerName: string | null;
+  regionCode: string;
+  regionName: string;
+  repIsVacant: boolean;
+  repName: string | null;
+  salesValue: number;
+  targetValue: number | null;
+  units: Array<number | null>;
+  values: Array<number | null>;
+};
+
+/**
+ * Reps and areas down the side, products or families across the top — the owner's shape.
+ *
+ * This is the closing's own grid re-cut so that a row names the PERSON who owns it, not just the
+ * territory code. The Monthly Closing matrix answers "what did area CA1 sell of TB001"; this answers
+ * "what did Mostafa Kamel sell of Tebofortin", which is the question a review is actually for.
+ *
+ * The row total is always VALUE, on both variants. Even on the by-product grid, where each single
+ * column's units are real, adding those units ACROSS the row would sum different products — the one
+ * thing that is never done here.
+ */
+export type PerformanceMatrix = {
+  columns: PerformanceMatrixColumn[];
+  rows: PerformanceMatrixRow[];
+};
+
 export type ClosingPerformanceReview = {
   areas: PerformanceReviewAreaRow[];
   /** By-month VALUE per area, plus its growth. Value, never units — see rule 1. */
@@ -167,6 +220,10 @@ export type ClosingPerformanceReview = {
   generatedAt: string;
   line: string | null;
   managers: PerformanceReviewGroupRow[];
+  /** Reps and areas down the side, FAMILIES across the top. Value — a family spans concentrations. */
+  matrixByFamily: PerformanceMatrix;
+  /** Reps and areas down the side, PRODUCT CODES across the top. Units per cell; the row total is value. */
+  matrixByProduct: PerformanceMatrix;
   /** The by-month series, oldest first, ending at the selected period. */
   months: string[];
   period: string | null;
@@ -328,6 +385,94 @@ function areaRowsOf(matrix: MonthlyClosingMatrix) {
 }
 
 /**
+ * Build one performance matrix: reps and areas down the side, the given columns across the top.
+ *
+ * `groups` maps each output column to the closing columns that feed it — one index for a product
+ * grid, several for a family grid. That single parameter is what makes the two variants one piece of
+ * code, and it is also where the units rule is decided: a group of one is a real quantity, a group of
+ * several is not, and the flag travels on the column so no renderer downstream has to work it out
+ * again.
+ *
+ * Region subtotals and the national total are rows here, exactly as they are on the Monthly Closing
+ * matrix this re-cuts — a grid whose columns do not add up to anything is not a grid a reader trusts.
+ */
+function buildPerformanceMatrix(input: {
+  areasWithSeats: PerformanceReviewAreaRow[];
+  groups: Array<{ column: PerformanceMatrixColumn; indexes: number[] }>;
+  matrix: MonthlyClosingMatrix;
+}): PerformanceMatrix {
+  const { areasWithSeats, groups, matrix } = input;
+  const columns = groups.map((group) => group.column);
+  const seatByArea = new Map(areasWithSeats.map((area) => [area.areaCode.trim().toUpperCase(), area]));
+
+  const cellsOf = (cells: MonthlyClosingCell[]) => {
+    const units: Array<number | null> = [];
+    const values: Array<number | null> = [];
+    for (const group of groups) {
+      const picked = group.indexes.map((index) => cells[index]).filter(Boolean);
+      const totals = sumCells(picked);
+      // Units only where the column IS one product code. Null, never 0 — a family's units are not a
+      // smaller number, they are not a number at all.
+      units.push(group.column.unitsAreAddable ? totals.salesUnits : null);
+      values.push(totals.salesValue);
+    }
+    return { units, values };
+  };
+
+  const rows: PerformanceMatrixRow[] = [];
+  for (const group of matrix.regions) {
+    for (const area of group.areas) {
+      const seat = seatByArea.get(area.areaCode.trim().toUpperCase());
+      rows.push({
+        achievement: achievementOf(area.rowTotal.salesValue, area.rowTotal.targetValue),
+        areaCode: area.areaCode,
+        areaName: area.areaName,
+        kind: "area",
+        managerName: seat?.managerName ?? null,
+        regionCode: group.regionCode,
+        regionName: group.regionName,
+        repIsVacant: seat?.repIsVacant ?? false,
+        repName: seat?.repName ?? null,
+        salesValue: area.rowTotal.salesValue,
+        targetValue: area.rowTotal.targetValue,
+        ...cellsOf(area.cells),
+      });
+    }
+    rows.push({
+      achievement: achievementOf(group.subtotal.rowTotal.salesValue, group.subtotal.rowTotal.targetValue),
+      areaCode: group.regionCode,
+      areaName: group.regionName,
+      kind: "regionSubtotal",
+      managerName: null,
+      regionCode: group.regionCode,
+      regionName: group.regionName,
+      repIsVacant: false,
+      repName: null,
+      salesValue: group.subtotal.rowTotal.salesValue,
+      targetValue: group.subtotal.rowTotal.targetValue,
+      ...cellsOf(group.subtotal.cells),
+    });
+  }
+
+  rows.push({
+    achievement: achievementOf(matrix.grandTotal.rowTotal.salesValue, matrix.grandTotal.rowTotal.targetValue),
+    areaCode: "",
+    areaName: "National total",
+    kind: "grandTotal",
+    managerName: null,
+    regionCode: "",
+    regionName: "",
+    repIsVacant: false,
+    repName: null,
+    salesValue: matrix.grandTotal.rowTotal.salesValue,
+    targetValue: matrix.grandTotal.rowTotal.targetValue,
+    ...cellsOf(matrix.grandTotal.cells),
+  });
+
+  return { columns, rows };
+}
+
+/**
  * Build every view of the review for one (line, period).
  *
  * `seriesMatrices` carries the earlier months. A month that was never uploaded is simply absent,
@@ -447,6 +592,49 @@ export function buildClosingPerformanceReview(input: {
     })
     .sort((a, b) => b.salesValue - a.salesValue);
 
+  // ── The two grids: reps and areas down the side, products or families across ─────────────────
+  //
+  // Families are ordered by value so the line's biggest sits nearest the names, and products are
+  // ordered inside their family so a family's concentrations stay together under one banner rather
+  // than scattering across the sheet.
+  const familyOrder = families.map((row) => row.family);
+  const matrixByFamily = buildPerformanceMatrix({
+    areasWithSeats: areas,
+    groups: familyOrder.map((family) => {
+      const indexes = familyIndex.get(family) ?? [];
+      return {
+        column: {
+          key: family,
+          label: family,
+          productCount: indexes.length,
+          subLabel: indexes.length === 1 ? matrix.columns[indexes[0]]?.productName ?? family : `${indexes.length} products`,
+          unitsAreAddable: indexes.length === 1,
+        },
+        indexes,
+      };
+    }),
+    matrix,
+  });
+
+  const matrixByProduct = buildPerformanceMatrix({
+    areasWithSeats: areas,
+    groups: familyOrder.flatMap((family) =>
+      (familyIndex.get(family) ?? []).map((index) => ({
+        column: {
+          key: matrix.columns[index]?.productCode ?? String(index),
+          label: matrix.columns[index]?.productName ?? String(index),
+          productCount: 1,
+          subLabel: family,
+          // ONE product code, so these units are a real quantity and may be read and summed DOWN
+          // the column. Across the row they still may not be — that is why every row total is value.
+          unitsAreAddable: true,
+        },
+        indexes: [index],
+      })),
+    ),
+    matrix,
+  });
+
   // ── The by-month series ──────────────────────────────────────────────────
   const months = seriesMatrices.map((entry) => entry.period);
 
@@ -531,6 +719,8 @@ export function buildClosingPerformanceReview(input: {
     generatedAt,
     line: matrix.line,
     managers,
+    matrixByFamily,
+    matrixByProduct,
     months,
     period: matrix.period,
     productUnitsByMonth,

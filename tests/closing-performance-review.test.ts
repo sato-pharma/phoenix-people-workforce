@@ -41,6 +41,8 @@ import type {
 const DOT = String.fromCharCode(0x00b7);
 const EM = String.fromCharCode(0x2014);
 const AREA_SHEET_NAME = "Growth by Month " + DOT + " Area";
+const FAMILY_GRID_SHEET_NAME = "Reps " + DOT + " Families";
+const PRODUCT_GRID_SHEET_NAME = "Reps " + DOT + " Products";
 
 const REJECTED_LABELS = ["Not mapped to an area", "No district manager"];
 
@@ -263,11 +265,98 @@ export async function runClosingPerformanceReviewTests() {
     "the builder must refuse a units sheet whose rows span more than one product code",
   );
 
-  // (7) The workbook is the screen: every tab the page renders, and the rep ranking first.
+  // (7) The workbook is the screen: every tab the page renders, and the two grids first.
   assert.deepEqual(
     sheetNames,
-    ["Rep Ranking", "Family Performance", "Units & Growth by Month", "All Products by Month", AREA_SHEET_NAME],
+    [
+      FAMILY_GRID_SHEET_NAME,
+      PRODUCT_GRID_SHEET_NAME,
+      "Rep Ranking",
+      "Family Performance",
+      "Units & Growth by Month",
+      "All Products by Month",
+      AREA_SHEET_NAME,
+    ],
     "the workbook's tabs, in the order the page shows them",
+  );
+
+  // (7b) THE OWNER'S SHAPE: reps and areas down the side, products or families across the top.
+  //
+  // A grid whose row does not name a PERSON is the closing matrix again, not a review — and a grid
+  // whose columns do not add up to the row total is one a reader cannot trust. Both are asserted.
+  const family = review.matrixByFamily;
+  const product = review.matrixByProduct;
+
+  assert.deepEqual(
+    family.columns.map((column) => column.label),
+    ["Tebofortin", "Satoslim"],
+    "the family grid's headers are the families, biggest first",
+  );
+  assert.deepEqual(
+    product.columns.map((column) => column.label),
+    ["Tebofortin 40mg", "Tebofortin 80mg", "Satoslim"],
+    "the product grid's headers are the product codes, kept together under their family",
+  );
+  assert.deepEqual(
+    product.columns.map((column) => column.subLabel),
+    ["Tebofortin", "Tebofortin", "Satoslim"],
+    "each product column carries its family, so the workbook can band them together",
+  );
+
+  const cairoFamily = family.rows.find((row) => row.areaCode === "CA1");
+  assert.ok(cairoFamily, "the grid carries an area row for Cairo 1");
+  assert.equal(cairoFamily.repName, "Mostafa Kamel", "the row names the rep, not just the territory");
+  assert.equal(cairoFamily.managerName, "Hany Adel", "the row names the district manager above that rep");
+  assert.equal(
+    cairoFamily.values.reduce<number>((total, value) => total + (value ?? 0), 0),
+    cairoFamily.salesValue,
+    "the cells across a row add up to that row's own total",
+  );
+
+  // A family column spans two concentrations, so its units are null — never a number, never a zero.
+  assert.deepEqual(
+    family.columns.map((column) => column.unitsAreAddable),
+    [false, true],
+    "Tebofortin spans two product codes and Satoslim is one",
+  );
+  assert.equal(cairoFamily.units[0], null, "a family spanning two concentrations reports no unit count at all");
+  assert.ok(product.columns.every((column) => column.unitsAreAddable), "every product column is a single product code");
+  assert.ok(
+    product.rows.every((row) => row.units.every((value) => value != null)),
+    "every cell of the product grid carries a real unit quantity",
+  );
+
+  // The area with no seat keeps its own name and shows no invented rep or manager.
+  const storeFamily = family.rows.find((row) => row.areaCode === "OTMS");
+  assert.ok(storeFamily, "the grid carries Main Store");
+  assert.equal(storeFamily.areaName, "Main Store", "Main Store keeps its own name on the grid too");
+  assert.equal(storeFamily.repName, null, "an area the organogram carries no seat for shows no rep");
+  assert.equal(storeFamily.managerName, null, "and no district manager");
+
+  // Region subtotals and the national total are rows on the grid, and the national one is the
+  // closing's own grand total — re-shaped, never re-derived.
+  const grand = family.rows[family.rows.length - 1];
+  assert.equal(grand.kind, "grandTotal", "the grid closes with the national total");
+  assert.equal(grand.salesValue, 19_800, "and it is the closing's own grand total");
+  assert.equal(
+    family.rows.filter((row) => row.kind === "regionSubtotal").length,
+    2,
+    "each region closes with its own subtotal row",
+  );
+
+  // (7c) The units refusal applies to the grid too, from the other direction: a units GRID whose
+  // columns span several products is the same error as a units SHEET whose rows do.
+  const doctoredGrid: ClosingPerformanceReview = {
+    ...review,
+    matrixByProduct: {
+      ...product,
+      columns: product.columns.map((column) => ({ ...column, unitsAreAddable: false })),
+    },
+  };
+  await assert.rejects(
+    () => buildClosingPerformanceReviewWorkbook(doctoredGrid),
+    /units of different products are never added/i,
+    "the builder must refuse a units grid whose columns span more than one product code",
   );
 
   // (8) The national total is the closing's own grand total — the review re-shapes it, never
