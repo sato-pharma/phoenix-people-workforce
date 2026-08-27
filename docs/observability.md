@@ -176,22 +176,29 @@ policy):
    real outage behind a healthy-looking heartbeat. `withDeadMansSwitch`/`pingDeadMansSwitch`
    no-op outside production anyway (see `tests/dead-mans-switch.test.ts`).
 4. Configure notification channels for the project (email is on by default; add Slack/Telegram/
-   SMS/etc. under **Integrations** if wanted) — this is what actually pages you.
+   SMS/etc. under **Integrations** if wanted) — this is what actually pages you. Every channel
+   configured here gets attached to every check by the sync script in step 6; there is no per-check
+   opt-out, because a check that alerts nobody is silently useless and this is a single-owner
+   project. Found 2026-08-27: `phoenix-db-health-snapshot` and `phoenix-direct-orders-probation`
+   had sat with zero channels since creation — neither had ever gone red, so nothing surfaced it
+   until someone checked by hand. `pnpm run healthchecks:sync --apply` now fixes and prevents this.
 5. Deploy. Each job's check auto-appears in the dashboard the first time it pings after step 3 —
    nothing to pre-create.
-6. **Tune each check's schedule — run the script, do not do this by hand:**
+6. **Tune each check's schedule and channels — run the script, do not do this by hand:**
 
    ```bash
    pnpm run healthchecks:sync            # dry run: print what would change
    pnpm run healthchecks:sync --apply    # push it
    ```
 
-   Auto-provisioned defaults (Simple: 1-day period, 1-hour grace) are wrong for most of these jobs,
-   so every check is born red and stays red until someone corrects it — and a dashboard that is
-   always red is one nobody reads. [`scripts/healthchecks-sync.mjs`](../scripts/healthchecks-sync.mjs)
-   reads the table below and makes Healthchecks match it: cron expression, `Africa/Cairo` timezone
-   (Healthchecks defaults to UTC), and grace. It is idempotent, it reads back after writing rather
-   than trusting the POST, and it changes nothing without `--apply`.
+   Auto-provisioned defaults (Simple: 1-day period, 1-hour grace, **zero channels**) are wrong for
+   every one of these jobs, so every check is born red-or-silent and stays that way until someone
+   corrects it — and a dashboard that is always red, or always silent, is one nobody reads.
+   [`scripts/healthchecks-sync.mjs`](../scripts/healthchecks-sync.mjs) reads the table below and
+   makes Healthchecks match it: cron expression, `Africa/Cairo` timezone (Healthchecks defaults to
+   UTC), grace, **and every channel configured in the project** (there is no per-check column for
+   this — it always means "all of them", see step 4). It is idempotent, it reads back after writing
+   rather than trusting the POST, and it changes nothing without `--apply`.
 
    It needs `HEALTHCHECKS_API_KEY` in `.env.local` — a Healthchecks **project API key**
    (Settings › API keys, full access), which is **not** `HEALTHCHECKS_PING_KEY`. A ping key can

@@ -130,6 +130,49 @@ export async function runHealthchecksScheduleSyncTests() {
   assert.equal(simpleBody.timeout, 300);
   assert.equal(simpleBody.schedule, undefined, "a period check must not carry a cron expression");
 
+  // Channels: every check must carry every channel the project has configured. Found 2026-08-27 —
+  // two checks had sat with zero channels since creation, silently, because nothing ever compared
+  // or wrote this field. Omitting the third argument must not silently mean "wipe the channels" —
+  // it must mean "don't touch them", or a caller with no channel data would strip every check bare.
+  assert.equal(
+    diffCheck(want, { schedule: "17 2 * * *", tz: "Africa/Cairo", grace: 7200, channels: "a,b" }).action,
+    "ok",
+    "omitting desiredChannels must not compare channels at all",
+  );
+  assert.equal(
+    diffCheck(want, { schedule: "17 2 * * *", tz: "Africa/Cairo", grace: 7200, channels: "" }, "a,b").action,
+    "update",
+    "a check with zero channels must be reported as drift when the project has channels to give it",
+  );
+  assert.equal(
+    diffCheck(want, { schedule: "17 2 * * *", tz: "Africa/Cairo", grace: 7200, channels: "b,a" }, "a,b").action,
+    "ok",
+    "channel order must not matter — the API returns them in whatever order it feels like",
+  );
+  assert.equal(
+    diffCheck(want, { schedule: "17 2 * * *", tz: "Africa/Cairo", grace: 7200, channels: "a" }, "a,b").action,
+    "update",
+    "a check missing one of the project's channels must be reported as drift",
+  );
+
+  const channelBody: Record<string, unknown> = payload(
+    { slug: "phoenix-z", kind: "cron", schedule: "0 4 * * *", tz: "Africa/Cairo", grace: 3600 },
+    "chan-1,chan-2",
+  );
+  assert.equal(channelBody.channels, "chan-1,chan-2", "channels must be sent on write when provided");
+  const bodyWithoutChannels: Record<string, unknown> = payload({
+    slug: "phoenix-z",
+    kind: "cron",
+    schedule: "0 4 * * *",
+    tz: "Africa/Cairo",
+    grace: 3600,
+  });
+  assert.equal(
+    "channels" in bodyWithoutChannels,
+    false,
+    "omitting desiredChannels must omit the field entirely, not send channels: undefined",
+  );
+
   // A slug listed twice would let one row silently win.
   assert.throws(
     () =>

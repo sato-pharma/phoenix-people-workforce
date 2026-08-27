@@ -24,6 +24,16 @@
  * TIMEZONE. Every schedule in that table is Africa/Cairo local, because cron-job.org - which fires
  * almost all of them - is configured in Africa/Cairo. Leaving a check on UTC puts its expected-ping
  * window two to three hours off the real one, and shifts it again at every Egyptian DST change.
+ *
+ * CHANNELS. Every check declared here is also made to carry every notification channel configured
+ * in the Healthchecks project (Settings > Integrations) - there is no per-check channel column in
+ * the doc table, and no reason for one: this is a single-owner project and a check that alerts
+ * nobody is the exact failure the rest of this script exists to prevent. Found 2026-08-27 - two
+ * checks (`phoenix-db-health-snapshot`, `phoenix-direct-orders-probation`) had sat with zero
+ * channels attached, silently, since whenever they were created; a broken job on either would have
+ * gone red on the dashboard forever with no alert reaching anyone. If the project ever has zero
+ * channels configured, channel enforcement is skipped entirely rather than writing an empty list -
+ * see readChannels below.
  */
 
 import { readFileSync, existsSync } from "node:fs";
@@ -112,8 +122,26 @@ async function api(path, key, init = {}) {
   return text ? JSON.parse(text) : {};
 }
 
-/** What differs between what the doc asks for and what Healthchecks currently holds. */
-export function diffCheck(desired, actual) {
+/**
+ * The API stores/returns `channels` as a comma-separated list of channel UUIDs in whatever order
+ * it feels like. Sort before comparing, or an identically-configured check reads as drift forever
+ * and every run re-POSTs it for no reason.
+ */
+function normalizeChannels(csv) {
+  return (csv || "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .sort()
+    .join(",");
+}
+
+/**
+ * What differs between what the doc (plus, for channels, the project's own channel list) asks for
+ * and what Healthchecks currently holds. `desiredChannels` is optional and omitted entirely from
+ * the diff when undefined - see readChannels' "zero channels configured" case in main().
+ */
+export function diffCheck(desired, actual, desiredChannels) {
   if (!actual) return { action: "create", changes: ["does not exist yet"] };
   const changes = [];
   if (desired.kind === "cron") {
@@ -125,19 +153,39 @@ export function diffCheck(desired, actual) {
     changes.push(`period ${actual.timeout}s -> ${desired.timeout}s`);
   }
   if (Number(actual.grace) !== desired.grace) changes.push(`grace ${actual.grace}s -> ${desired.grace}s`);
+  if (desiredChannels !== undefined) {
+    const want = normalizeChannels(desiredChannels);
+    const have = normalizeChannels(actual.channels);
+    if (want !== have) changes.push(`channels ${have || "(none)"} -> ${want || "(none)"}`);
+  }
   return { action: changes.length ? "update" : "ok", changes };
 }
 
-export function payload(desired) {
+export function payload(desired, desiredChannels) {
   // `slug` MUST be sent. A check created through this API is stored with an EMPTY slug unless it is
   // given one explicitly - and the app pings by slug (`hc-ping.com/<ping-key>/<slug>?create=1`), not
   // by name. A slugless check therefore never receives the ping it is watching for: it goes red on
   // its own schedule while the job runs perfectly, and the next real ping auto-provisions a SECOND
   // check beside it. Found on the first live run, by the read-back below.
   const base = { name: desired.slug, slug: desired.slug, grace: desired.grace, unique: ["name"] };
+  if (desiredChannels !== undefined) base.channels = desiredChannels;
   return desired.kind === "cron"
     ? { ...base, schedule: desired.schedule, tz: desired.tz }
     : { ...base, timeout: desired.timeout };
+}
+
+/**
+ * Every channel id configured in the project (Settings > Integrations), comma-joined and sorted -
+ * the set every declared check should carry. Returns "" if the project has none, which callers
+ * must treat as "skip channel enforcement", not "set channels to empty": a project that genuinely
+ * has no channels yet is mid-setup, not asking to have channels stripped from every check.
+ */
+async function readChannels(key) {
+  const resp = await api("/channels/", key);
+  return (resp.channels || [])
+    .map((c) => c.id)
+    .sort()
+    .join(",");
 }
 
 async function main() {
@@ -166,6 +214,12 @@ async function main() {
   const existing = await api("/checks/", key);
   const bySlug = new Map((existing.checks || []).map((c) => [c.slug, c]));
 
+  const channelsCsv = await readChannels(key);
+  const desiredChannels = channelsCsv || undefined;
+  if (!desiredChannels) {
+    console.log("(no notification channels configured in this Healthchecks project — channel enforcement skipped;\n add one under Settings > Integrations, then re-run)\n");
+  }
+
   let created = 0;
   let updated = 0;
   let ok = 0;
@@ -173,7 +227,7 @@ async function main() {
 
   for (const d of desired) {
     const actual = bySlug.get(d.slug);
-    const { action, changes } = diffCheck(d, actual);
+    const { action, changes } = diffCheck(d, actual, desiredChannels);
     if (action === "ok") {
       ok += 1;
       console.log(`  ok       ${d.slug}`);
@@ -184,7 +238,7 @@ async function main() {
     for (const c of changes) console.log(`             ${c}`);
     if (!APPLY) continue;
     try {
-      await api("/checks/", key, { method: "POST", body: JSON.stringify(payload(d)) });
+      await api("/checks/", key, { method: "POST", body: JSON.stringify(payload(d, desiredChannels)) });
       if (action === "create") created += 1;
       else updated += 1;
     } catch (err) {
@@ -208,7 +262,7 @@ async function main() {
   const afterBySlug = new Map((after.checks || []).map((c) => [c.slug, c]));
   let drift = 0;
   for (const d of desired) {
-    const { action } = diffCheck(d, afterBySlug.get(d.slug));
+    const { action } = diffCheck(d, afterBySlug.get(d.slug), desiredChannels);
     if (action !== "ok") {
       drift += 1;
       console.log(`  STILL WRONG after write: ${d.slug}`);
