@@ -40,6 +40,8 @@ export type GovernorateKey = string;
 export const GOVERNORATES_BY_AREA: Record<string, GovernorateKey[]> = {
   // Alexandria + Beheira. The Alex areas are compass points, so nothing about "Alexandria 1"
   // in a distributor's branch name corresponds to them — that number is the depot's, not ours.
+  // One depot IS pinned to AB3 in AREA_SYNONYMS below, and that is not an exception to this line:
+  // the owner placed it there by name. Its number matching AB3's is a coincidence, not a reading.
   AB1: ["alexandria"], AB2: ["alexandria"], AB3: ["alexandria"],
   AB4: ["beheira"], AB5: ["beheira"],
 
@@ -141,7 +143,7 @@ const WEEKLY_EXTRA_ALIASES: Array<[string, string[]]> = [
  * difference is money: "ك.عملاء امبابة" carries EGP 2,235,364 and Imbaba IS an area (GZ3) — reading
  * it as "somewhere in Giza" would spread five sixths of it onto reps the name never mentioned.
  *
- * A name earns a place here one of two ways, and never on the strength of a map of Egypt.
+ * A name earns a place here one of three ways, and never on the strength of a map of Egypt.
  *
  *   1. The district unambiguously IS a Phoenix area. A town that is merely inside a governorate
  *      does not qualify: Mansoura and Kafr El Zayat are not areas (Dakahlia and Gharbia are split
@@ -150,6 +152,10 @@ const WEEKLY_EXTRA_ALIASES: Array<[string, string[]]> = [
  *      company's own authority for which area a place belongs to — it outranks any geography we
  *      could reason out — so when it files a town under a single area, that is a fact about
  *      Phoenix, not a guess about Egypt. Every entry below marked `brick:` was read out of it.
+ *   3. THE OWNER RULED ON THAT DEPOT BY NAME. Some depot names are not a place at all — they are a
+ *      commercial round covering several, one of which no area may even cover. No table can answer
+ *      that; only he can. An entry marked `owner:` carries his words and the date, and it is NOT
+ *      to be "corrected" against the brick table later — the brick table was never its source.
  *
  * The brick path already resolves a branch whose name IS a brick verbatim (see brickScope). These
  * exist because a distributor never writes the brick verbatim: the depot is "Kalioub Branch", the
@@ -157,6 +163,19 @@ const WEEKLY_EXTRA_ALIASES: Array<[string, string[]]> = [
  * whole region — Aswan's depot was landing on fourteen areas.
  */
 const AREA_SYNONYMS: Array<[string, string[]]> = [
+  // owner: 2026-08-27, asked which area "ك.عملاء مطروح واسكن3" belongs to — "Matrouh and
+  // Alexandria 3 ALEX WEST". AB3 IS Alex West. The depot is one commercial round over Matrouh,
+  // which NO Phoenix area covers, plus the distributor's own "Alexandria 3" — so neither half
+  // could be looked up, and this is his call rather than a reading of any table.
+  //
+  // The WHOLE phrase is registered, never a bare "اسكن3" and never a bare "مطروح":
+  //   - مطروح alone is a governorate two tables down, and matching it first would drop the branch
+  //     onto no area at all, which is exactly the bug this fixes. The longest phrase wins, so
+  //     spelling it out in full is what keeps that from happening.
+  //   - Alexandria depots 1, 2 and 4 also exist and he has NOT ruled on them; they keep reading
+  //     the whole Alexandria governorate. A bare "اسكن3" risks a later depot 3 of somewhere else.
+  // Both spacings appear because a distributor's spacing is not a promise.
+  ["AB3", ["مطروح واسكن3", "مطروح و اسكن3"]],
   ["GZ2", ["الدقي", "dokki", "المهندسين", "mohandseen", "بولاق", "bolak"]],
   ["GZ3", ["امبابه", "imbaba"]],
   // فبصل is a typo for فيصل that is live in the data. brick: ترعة المريوطية -> GZ4.

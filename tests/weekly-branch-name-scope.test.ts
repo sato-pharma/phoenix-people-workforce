@@ -307,4 +307,31 @@ export async function runWeeklyBranchNameScopeTests() {
     const weights = resolveBranchAreaShares(index, "Anti Infective", readWeeklyBranchName(index, "Direct - Others", "OT").scope);
     assert.equal(weights.reduce((total, share) => total + share.weight, 0).toFixed(10), "1.0000000000");
   }
+
+  // 13) HEADLINE — a depot the OWNER placed by hand, because no table could place it.
+  //
+  //     "ك.عملاء مطروح واسكن3" was the last branch in the whole weekly feed that carried real
+  //     tracked money — EGP 109,737 across CNS, Pedia and Anti Infective — and reached NO area at
+  //     all. Both halves of the name failed, for different reasons: Matrouh is a real governorate
+  //     that NO Phoenix area covers, and "اسكن3" is too truncated to read as Alexandria. Neither
+  //     the brick table nor a map of Egypt can answer where its money belongs. He was asked, and
+  //     answered on 2026-08-27: "Matrouh and Alexandria 3 ALEX WEST" — which is AB3.
+  {
+    const depot = "ك.عملاء مطروح واسكن3";
+    assert.deepEqual(split(depot, "AB"), ["AB3:100.00"], "the owner put this depot on Alex West");
+    assert.deepEqual(split(`${depot}_ك`, "AB"), ["AB3:100.00"], "its PS mirror is the same depot");
+    assert.deepEqual(split("ك.عملاء مطروح و اسكن3", "AB"), ["AB3:100.00"], "a distributor's spacing is not a promise");
+
+    // GUARD — the ruling is about THIS depot, not about Alexandria's numbering. Depots 1, 2 and 4
+    // all exist in the live feed and he has ruled on none of them, so each must still read the
+    // whole Alexandria governorate. Reading "3" as an area code would be the block 3 mistake.
+    for (const other of ["ك.عملاء اسكندرية 1", "ك.عملاء اسكندرية2", "ك.عملاء اسكندرية 4"]) {
+      const reading = split(other, "AB");
+      assert.ok(reading.length > 1, `${other} must still spread across Alexandria, got ${reading}`);
+    }
+
+    // GUARD — a depot naming Matrouh ALONE is a different question, and one he has not been asked.
+    // It must not inherit Alex West on the strength of this entry.
+    assert.notDeepEqual(split("ك.عملاء مطروح", "AB"), ["AB3:100.00"], "bare Matrouh is not Alex West");
+  }
 }
