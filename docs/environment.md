@@ -29,7 +29,8 @@ All environment variables are listed in `.env.example` at the repository root. C
 | RESEND_API_KEY | Resend.com API key | Required for live email |
 | NOTIFICATION_EMAIL_FROM | Sender address | e.g. Phoenix HR <noreply@domain.com> |
 | NOTIFICATION_REPLY_TO | Reply-to address | |
-| JOB_OFFER_EMAIL_FROM | Offer email sender | Falls back to NOTIFICATION_EMAIL_FROM |
+| JOB_OFFER_EMAIL_FROM | Offer email sender | Speaks as Sato, never as Phoenix. Falls back to `hr@` on the sending domain — NOT to NOTIFICATION_EMAIL_FROM |
+| JOB_OFFER_REPLY_TO | Where a candidate's reply to an offer lands | Defaults to hr@satopharma.com. Must be a real, monitored mailbox |
 | INTERNAL_MESSAGE_EMAIL_FROM | Internal msg sender | Falls back to NOTIFICATION_EMAIL_FROM |
 | HR_NOTIFICATION_EMAILS | HR team emails for admin notifications | Comma-separated |
 | NOTIFICATION_TEST_MODE | Force test mode | "true" to prevent real sends |

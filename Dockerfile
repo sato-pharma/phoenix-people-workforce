@@ -107,13 +107,15 @@ COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 # node_modules for server-side offer-letter PDF generation. Chromium itself is the system
 # package installed above; PUPPETEER_SKIP_DOWNLOAD prevents a browser download. Installed in a
 # temp dir and merged in so the existing traced node_modules is not pruned. Keep the version in
-# sync with package.json.
+# sync with package.json — `tests/offer-pdf-runtime.test.ts` now enforces that, because it had
+# already drifted two majors (23.11.1 here against ^25.3.0 there) by the time anything actually
+# called puppeteer, so production would have run a driver nobody ever tested this code against.
 # DELIBERATELY still npm (repo package manager is pnpm): this is an isolated throwaway
 # install of ONE pinned package into /tmp with its own generated package.json — no repo
 # lockfile or workspace settings are involved, npm ships inside node:24-alpine anyway,
 # and pnpm here would need corepack + a store for zero benefit in this final image layer.
 RUN cd /tmp && npm init -y >/dev/null 2>&1 \
- && npm install --omit=dev puppeteer-core@23.11.1 >/dev/null 2>&1 \
+ && npm install --omit=dev puppeteer-core@25.3.0 >/dev/null 2>&1 \
  && cp -R /tmp/node_modules/. /app/node_modules/ \
  && rm -rf /tmp/node_modules /tmp/package.json /tmp/package-lock.json
 

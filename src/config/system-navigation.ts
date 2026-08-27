@@ -1121,6 +1121,7 @@ const employeePortalNavigationSectionSeeds = [
       { href: "/employee-portals/cv-database", icon: FileSpreadsheet, label: "CV Database", permissions: [{ resource: "vacancies", action: "read" }], roles: ["Talent Acquisition"] },
       { href: "/employee-portals/hiring-documents", icon: FileCheck2, label: "Hiring Documents", permissions: [{ resource: "employee_documents", action: "read" }], roles: ["Talent Acquisition"] },
       { href: "/employee-portals/hiring-pack", icon: FileSignature, label: "Contract & Form 1", permissions: [{ resource: "employee_documents", action: "read" }], roles: ["Talent Acquisition"] },
+      { href: "/employee-portals/offers", icon: MailCheck, label: "Job Offers", permissions: [{ resource: "offers", action: "read" }], roles: ["Talent Acquisition"] },
       { href: "/employee-portals/intake-health", icon: HeartPulse, label: "Inbound Intake Health", permissions: [{ resource: "recruitment", action: "read" }], roles: ["Talent Acquisition"] },
       { href: "/employee-portals/contact-review", icon: IdCard, label: "Missing Contact Details", permissions: [{ resource: "recruitment", action: "read" }], roles: ["Talent Acquisition"] },
       { href: "/employee-portals/vacation-control", icon: Settings2, label: "Vacation Control", permissions: [{ resource: "leave", action: "update" }], roles: ["Talent Acquisition"] },
@@ -2375,6 +2376,14 @@ export const recruitmentHiringPageItems: readonly AdminToolsPageItem[] = [
     label: "Contract & Form 1",
     description: "Fill, print and record the employment contract and social insurance Form 1.",
     permissions: [{ resource: "employee_documents" }],
+    roles: hrAuthorityNavigationRoles,
+  },
+  {
+    href: "/offers",
+    icon: MailCheck,
+    label: "Job Offers",
+    description: "Compose, design and send official offers of employment as Sato Pharmaceuticals.",
+    permissions: [{ resource: "offers" }],
     roles: hrAuthorityNavigationRoles,
   },
   // Removed 2026-08-15 on the owner's ruling: CV Review Queue, CV Extraction Accuracy and CV Field

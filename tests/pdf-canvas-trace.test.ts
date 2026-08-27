@@ -112,4 +112,17 @@ export async function runPdfCanvasTraceTests() {
     matched.some((file) => file.includes("node_modules/@napi-rs/canvas-") && file.endsWith(".node")),
     "the trace globs must also resolve the native Skia binary — the wrapper alone cannot render anything",
   );
+
+  // ── 4. The offer signatory's signature ─────────────────────────────────────
+  // Same failure mode, different file. It is deliberately NOT in `public/` — the offer email never
+  // fetches it (it points at the attached PDF instead), so keeping a real signature off the public
+  // site costs nothing. The price is that the Dockerfile copies `public/` wholesale and `assets/`
+  // not at all, so this file reaches production ONLY through the trace list. If the glob stops
+  // matching, every offer silently prints UNSIGNED: `satoSignatureDataUri()` returns null on a read
+  // failure and the letter renders with a bare rule — which nobody would catch before it reached a
+  // candidate.
+  assert.ok(
+    matched.some((file) => file.endsWith("assets/brand/signature-omar-anwar-gawish.png")),
+    "the trace globs must resolve the offer signature — without it every offer PDF prints unsigned in production",
+  );
 }

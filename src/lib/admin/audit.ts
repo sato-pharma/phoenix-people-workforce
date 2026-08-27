@@ -50,6 +50,12 @@ export type AuditEntityType =
   | "hiring_document_file"
   | "hiring_document_note"
   | "hiring_document_status"
+  // An offer of employment leaving the building. Written with `writeRequiredAuditLog`, and only
+  // once mail has actually gone: it is the one action in this app that commits the company to a
+  // salary in writing, to somebody who does not work here yet and so cannot be looked up in any
+  // employee table afterwards. audit_logs has no CHECK on entity_type (verified against production
+  // 2026-08-23, same as the note below), so this needs no migration of its own.
+  | "job_offer"
   | "marketing_customer"
   // A venue merge is neither a customer nor a request change: it retires one physical place in
   // favour of another and moves every link between them. audit_logs has no CHECK on entity_type

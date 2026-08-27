@@ -255,16 +255,17 @@ file holding the full account, under
   a passing suite says nothing about type errors — only the PR's `typecheck` job answers.
   `a-green-test-run-carries-no-type-signal-at-all`
 - **A test can NEVER hand a function a `process.env` literal — take the VALUE, not the bag.** Next
-  augments `NodeJS.ProcessEnv` with a required `NODE_ENV` (`next/types/global.d.ts`), so nothing in
-  this repo causes it and grepping `src/` for the reason finds nothing. Both spellings fail, and each
-  error only surfaces once you have fixed the other: `env: NodeJS.ProcessEnv = process.env` gives
-  **TS2345** at every call site passing a literal, and `env: { MY_VAR?: string } = process.env` gives
-  **TS2559** at the default (an all-optional weak type shares no property with `ProcessEnv`). An
-  existing `env: NodeJS.ProcessEnv` parameter that compiles today only does so because nothing passes
-  it a literal — that precedent does not transfer. Default the individual value at the signature
-  instead (`configuredPath: string = process.env.MY_VAR ?? ""`), or take a
-  `Record<string, string | undefined>` and use bracket access. Each attempt otherwise costs a full
-  red CI round, and the local suite cannot see it at all.
+  augments `NodeJS.ProcessEnv` with a required `NODE_ENV` (`node_modules/next/types/global.d.ts:21`),
+  so nothing in this repo causes it and grepping `src/` for the reason finds nothing. Both spellings
+  fail, and each error only surfaces once you have fixed the other: `env: NodeJS.ProcessEnv =
+  process.env` gives **TS2345** at every call site passing a literal, and `env: { MY_VAR?: string } =
+  process.env` gives **TS2559** at the default (an all-optional weak type shares no property with
+  `ProcessEnv`, whose only named member is `NODE_ENV`). An existing `env: NodeJS.ProcessEnv`
+  parameter that compiles today only does so because nothing passes it a literal — that precedent
+  does not transfer. Default the individual value at the signature instead
+  (`configuredPath: string = process.env.MY_VAR ?? ""` — `resolveChromiumPath`, #2432), or take a
+  `Record<string, string | undefined>` and use bracket access, as `src/lib/env.ts:6` does. Each
+  attempt otherwise costs a full red CI round, and the local suite cannot see it at all.
   `a-test-can-never-hand-a-function-a-process-env-literal`
 - **An exhaustive `Record` does NOT gate the build.** `next.config` sets
   `typescript: { ignoreBuildErrors: true }`, so a `Record<SomeUnion, X>` missing a key compiles,

@@ -601,6 +601,11 @@ import { runHiringDocumentsAuditTests } from "./hiring-documents-audit.test.ts";
 import { runHiringDocumentsDeadlineTests } from "./hiring-documents-deadline.test.ts";
 import { runHiringDocumentsStatusNotesTests } from "./hiring-documents-status-notes.test.ts";
 import { runHiringPackTests } from "./hiring-pack.test.ts";
+import { runOfferBuiltinTemplateTests } from "./offer-builtin-templates.test.ts";
+import { runOfferLetterPayAndRenderTests } from "./offer-letter-pay-and-render.test.ts";
+import { runOfferPdfRuntimeTests } from "./offer-pdf-runtime.test.ts";
+import { runOfferPlaceholderTests } from "./offer-placeholders.test.ts";
+import { runOfferTitleTemplateTests } from "./offer-title-template.test.ts";
 import { runSalesNullVsZeroTests } from "./sales-null-vs-zero.test.ts";
 import { runSosAnalyticsTests } from "./sos-analytics.test.ts";
 import { runSosBiWorkbookTests } from "./sos-bi-workbook.test.ts";
@@ -1793,6 +1798,37 @@ await runTest("hiring document capture (polish keeps colour, pages become one A4
 await runTest("hiring document deadlines (a blur that changed nothing must not write, in both renders)", runHiringDocumentsDeadlineTests);
 await runTest("hiring document status notes (an omitted notes key must not blank the cell)", runHiringDocumentsStatusNotesTests);
 await runTest("hiring pack (Form 1 coordinate map, blank back page, تفقيط agreement)", runHiringPackTests);
+
+await runTest(
+  "offer letter (the pay formula against three signed offers plus a one-pound sweep, and both "
+    + "renderers — print keeps raw HTML, email drops it and stays table-only for Outlook)",
+  runOfferLetterPayAndRenderTests,
+);
+await runTest(
+  "offer PDF runtime (the image's puppeteer pin matches package.json, and Chromium is found on "
+    + "disk rather than assumed at the pre-Alpine-3.19 path)",
+  runOfferPdfRuntimeTests,
+);
+await runTest(
+  "offer built-in designs (both shipped letters use only block types the sanitizer keeps, so "
+    + "neither loses a block on save; the executive skin is appended to one design and not the "
+    + "other; and the running page foot is inline-styled, because Chromium renders footerTemplate "
+    + "in a separate document where a var(--ink) prints nothing on every page)",
+  runOfferBuiltinTemplateTests,
+);
+await runTest(
+  "offer placeholders (the catalogue and the token builder list exactly the same set, so no token "
+    + "is undiscoverable and no picker entry prints as literal braces; and the unknown-placeholder "
+    + "walk reaches inside clause and benefit rows, where most of the letter's words live)",
+  runOfferPlaceholderTests,
+);
+await runTest(
+  "offer letter design per job title (the binding is matched the way the catalogue's unique index "
+    + "matches, an unbound title answers null rather than the default so it cannot overwrite a "
+    + "design somebody chose, and a binding to a deleted template resolves to null instead of a "
+    + "dead id that renders the picker blank)",
+  runOfferTitleTemplateTests,
+);
 await runTest("sales null-vs-zero dashboard", runSalesNullVsZeroTests);
 await runTest("sos analytics (MoM movers + pareto)", runSosAnalyticsTests);
 await runTest("sos BI workbook export", runSosBiWorkbookTests);

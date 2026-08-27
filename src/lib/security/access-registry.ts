@@ -379,6 +379,36 @@ export const accessRegistry = [
   // and not one blanket: a blanket would say `read` and quietly understate what a PUT can do.
   sessionApi({ methods: readOnly, pattern: "/api/hiring-pack/**", permission: { resource: "employee_documents", action: "read" } }),
   sessionApi({ methods: ["PUT", "POST"], pattern: "/api/hiring-pack/**", permission: { resource: "employee_documents", action: "update" }, csrfRequired: true }),
+  // ── Job Offers ─────────────────────────────────────────────────────────────────────────────
+  // Registered route by route rather than under one `/api/offers/**` blanket, for the reason the
+  // hiring pack above gives and one more: this module's three verbs are not variations of each
+  // other. Reading an offer shows a salary; editing the letter changes what every future offer
+  // says; SENDING puts a binding figure in a stranger's inbox under Sato Pharmaceuticals' name and
+  // cannot be recalled. A blanket would have flattened all three into whichever one was listed.
+  sessionApi({ methods: readOnly, pattern: "/api/offers", permission: { resource: "offers", action: "read" } }),
+  sessionApi({ methods: ["POST"], pattern: "/api/offers", permission: { resource: "offers", action: "create" }, csrfRequired: true }),
+  sessionApi({ methods: readOnly, pattern: "/api/offers/:id", permission: { resource: "offers", action: "read" } }),
+  sessionApi({ methods: ["PATCH"], pattern: "/api/offers/:id", permission: { resource: "offers", action: "update" }, csrfRequired: true }),
+  // The one irreversible route in the module, and the only one that audits. `create` rather than
+  // `update` because sending is what makes the offer exist to somebody outside the company.
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/offers/:id/send", permission: { resource: "offers", action: "create" }, csrfRequired: true }),
+  // The PDF of a single offer — one candidate's salary, to the person who could already read it on
+  // screen. Not an export in the registry's sense (no list, no bulk, nothing filtered), which is
+  // also why the export-audit guard's `template|export|download` match deliberately misses it.
+  sessionApi({ methods: readOnly, pattern: "/api/offers/:id/pdf", permission: { resource: "offers", action: "read" } }),
+  // POST, but a pure function: it renders unsaved blocks to HTML and writes nothing. `read` is the
+  // honest permission — a preview shows exactly what a GET of the saved letter would.
+  sessionApi({ methods: ["POST"], pattern: "/api/offers/preview", permission: { resource: "offers", action: "read" }, csrfRequired: true }),
+  sessionApi({ methods: readOnly, pattern: "/api/offers/templates", permission: { resource: "offers", action: "read" } }),
+  sessionApi({ methods: ["POST"], pattern: "/api/offers/templates", permission: { resource: "offers", action: "create" }, csrfRequired: true }),
+  sessionApi({ methods: readOnly, pattern: "/api/offers/templates/:id", permission: { resource: "offers", action: "read" } }),
+  sessionApi({ methods: ["PATCH"], pattern: "/api/offers/templates/:id", permission: { resource: "offers", action: "update" }, csrfRequired: true }),
+  sessionApi({ methods: ["DELETE"], pattern: "/api/offers/templates/:id", permission: { resource: "offers", action: "delete" }, csrfRequired: true }),
+  sessionApi({ methods: ["POST"], pattern: "/api/offers/templates/restore-default", permission: { resource: "offers", action: "update" }, csrfRequired: true }),
+  sessionApi({ methods: readOnly, pattern: "/api/offers/job-titles", permission: { resource: "offers", action: "read" } }),
+  sessionApi({ methods: ["POST"], pattern: "/api/offers/job-titles", permission: { resource: "offers", action: "create" }, csrfRequired: true }),
+  sessionApi({ methods: ["PATCH"], pattern: "/api/offers/job-titles/:id", permission: { resource: "offers", action: "update" }, csrfRequired: true }),
+  sessionApi({ methods: ["DELETE"], pattern: "/api/offers/job-titles/:id", permission: { resource: "offers", action: "delete" }, csrfRequired: true }),
   sessionApi({ methods: allMethods, pattern: "/api/imports/**", permission: { resource: "employees", action: "import" } }),
   sessionApi({ audit: { classification: "export", required: true }, methods: readOnly, pattern: "/api/admin/users/bulk", permission: { resource: "user_admin", action: "export" } }),
   sessionApi({ methods: ["GET"], pattern: "/api/marketing/roi-refresh", permission: { resource: "overview", action: "read" }, guard: "domain-helper" }),
