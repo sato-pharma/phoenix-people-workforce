@@ -6,6 +6,8 @@ import {
   offerBuiltinTemplate,
 } from "@/lib/offers/builtin-templates";
 import { OFFER_DEFAULT_FONT, OFFER_DEFAULT_FONT_SIZE_PT, OFFER_DEFAULT_THEME } from "@/lib/offers/default-template";
+import { parseLetterDate } from "@/lib/offers/dates";
+import { OFFER_REFERENCE_PREFIX, nextOfferReference, offerTitleCode } from "@/lib/offers/reference";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import type {
   OfferBlock,
@@ -633,6 +635,31 @@ function toRow(fields: Partial<OfferFields>): Record<string, unknown> {
   return patch;
 }
 
+/**
+ * The next free reference for a title in a year, read from what is already on file.
+ *
+ * Fetches only the references that could possibly matter — this title's code, this year — rather
+ * than the whole table. `listOffers` caps at 200 rows and orders by date, so counting from it
+ * would start skipping numbers the moment the 201st offer existed, and would do so silently.
+ *
+ * A read failure here returns the first number rather than throwing. The alternative is an offer
+ * that cannot be created because its reference could not be counted, and a reference is a filing
+ * convenience — it must never be the reason a candidate does not get their letter. The unique
+ * index is what actually guarantees the number is not already taken.
+ */
+export async function allocateOfferReference(title: string, year: number): Promise<string> {
+  const db = getSupabaseAdmin();
+  const prefix = `${OFFER_REFERENCE_PREFIX}-${offerTitleCode(title)}-${year}-`;
+
+  const { data, error } = await db.from("offers").select("reference").like("reference", `${prefix}%`);
+
+  if (error) return nextOfferReference(title, year, []);
+  return nextOfferReference(title, year, (data ?? []).map((row) => String((row as { reference: string | null }).reference ?? "")));
+}
+
+/** Postgres' unique-violation code. Two offers reached for the same number in the same instant. */
+const UNIQUE_VIOLATION = "23505";
+
 export async function createOffer(
   fields: OfferFields & { templateId?: string | null },
   createdBy: string | null,
@@ -646,14 +673,46 @@ export async function createOffer(
   // default", exactly as before.
   const templateId = toTemplateId(fields.templateId) ?? (await lookupOfferTemplateIdForTitle(fields.title));
 
-  const { data, error } = await db
-    .from("offers")
-    .insert({ ...toRow(fields), created_by: createdBy, status: "draft", template_id: templateId })
-    .select("*")
-    .single();
+  // Only when the caller left it blank. A reference typed by hand is a deliberate act — somebody
+  // continuing a run from a paper file, or reissuing under an agreed number — and overwriting it
+  // with a generated one would quietly discard that decision.
+  const generating = fields.reference.trim() === "";
+  // The year the LETTER is dated, not the year the row is written — an offer dated 31 December and
+  // saved after midnight belongs to the run its own date names. Falls back to now only when the
+  // letter carries no readable date at all.
+  const issued = parseLetterDate(fields.dateOfIssue);
+  const year = issued ? Number(issued.slice(0, 4)) : new Date().getUTCFullYear();
 
-  assertReadable(error, "offers");
-  return toOffer(data as OfferRow);
+  // Two attempts, not a loop. The second reads the highest number again, which now includes
+  // whatever the other writer just committed, so it can only collide again if a third offer landed
+  // in the same instant — and at that point a clear error beats spinning.
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const reference = generating ? await allocateOfferReference(fields.title, year) : fields.reference;
+
+    const { data, error } = await db
+      .from("offers")
+      .insert({
+        ...toRow({ ...fields, reference }),
+        created_by: createdBy,
+        status: "draft",
+        template_id: templateId,
+      })
+      .select("*")
+      .single();
+
+    if (error?.code === UNIQUE_VIOLATION) {
+      if (generating && attempt === 0) continue;
+      throw new Error(
+        `The reference ${reference} is already used by another offer. Clear the reference box to have a new one allocated.`,
+      );
+    }
+
+    assertReadable(error, "offers");
+    return toOffer(data as OfferRow);
+  }
+
+  // Unreachable: the loop either returns or throws. Present so the function has one exit type.
+  throw new Error("Could not allocate a reference for this offer. Try again.");
 }
 
 export async function updateOffer(

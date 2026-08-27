@@ -605,7 +605,10 @@ import { runHiringPackTests } from "./hiring-pack.test.ts";
 import { runOfferBuiltinTemplateTests } from "./offer-builtin-templates.test.ts";
 import { runOfferLetterPayAndRenderTests } from "./offer-letter-pay-and-render.test.ts";
 import { runOfferPdfRuntimeTests } from "./offer-pdf-runtime.test.ts";
+import { runOfferDatesTests } from "./offer-dates.test.ts";
+import { runOfferDraftCheckTests } from "./offer-draft-checks.test.ts";
 import { runOfferPlaceholderTests } from "./offer-placeholders.test.ts";
+import { runOfferReferenceTests } from "./offer-reference.test.ts";
 import { runOfferTitleTemplateTests } from "./offer-title-template.test.ts";
 import { runSalesNullVsZeroTests } from "./sales-null-vs-zero.test.ts";
 import { runSosAnalyticsTests } from "./sos-analytics.test.ts";
@@ -1834,6 +1837,24 @@ await runTest(
     + "design somebody chose, and a binding to a deleted template resolves to null instead of a "
     + "dead id that renders the picker blank)",
   runOfferTitleTemplateTests,
+);
+await runTest(
+  "offer letter dates (the picker's ISO and the letter's English survive a round trip on every "
+    + "boundary date, a bare calendar date is never dragged across midnight by a timezone, and "
+    + "'today' is answered in Cairo — where the company is — not in UTC)",
+  runOfferDatesTests,
+);
+await runTest(
+  "offer reference allocation (a generated reference never repeats one already on file, counts "
+    + "past the highest rather than filling a withdrawn offer's gap, keeps each title and year on "
+    + "its own run, and ignores anything typed in another shape)",
+  runOfferReferenceTests,
+);
+await runTest(
+  "offer draft warnings (a correctly filled offer raises nothing at all, each wrong pair of dates "
+    + "produces exactly one note rather than several about the same pair, and a real address is "
+    + "never rejected — being wrong that way costs a candidate their offer)",
+  runOfferDraftCheckTests,
 );
 await runTest("sales null-vs-zero dashboard", runSalesNullVsZeroTests);
 await runTest("sos analytics (MoM movers + pareto)", runSosAnalyticsTests);
