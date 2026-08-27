@@ -3,8 +3,12 @@
  * which are slipping, and which have we lost" per rep and company-wide.
  *
  * Scope rules (all deliberate, all surfaced on the card):
- *  - visit_type === 0 (Regular customer visits) ONLY — grade/speciality are NULL on every other
- *    type, and contact_crm_id on non-regular types is a shared vendor sentinel, not a real person.
+ *  - visit_type === 0 (Regular customer visits) ONLY for everything graded — grade/speciality are
+ *    NULL on every other type, and contact_crm_id on non-regular types is a shared vendor sentinel,
+ *    not a real person. CAMPAIGN work (type -8) is read too, but ONLY as its own per-rep column;
+ *    it can never enter the panel, the denominator or the coverage percentage. Owner's ruling
+ *    2026-08-27, "count it separately" — the same answer he gave Rep Doctor Lists on 2026-08-21.
+ *    What that ruling fixes here is an ABSENCE, not a wrong number: see the campaign fold-in.
  *  - contact_crm_id must be truthy (0 is the vendor's "unspecified contact" sentinel).
  *  - Duplicate submissions are collapsed via the canonical read-door collapse, so counts agree
  *    with DV Analytics / FWC.
@@ -26,6 +30,7 @@
  * never Date-object parsing or ISO re-serialization (either would shift the wall-clock).
  */
 
+import { CAMPAIGN_TYPE } from "@/lib/crm/visit-types";
 import { collapseDuplicateVisitSubmissions, queryVisits } from "@/lib/crm/reads";
 import { cairoTodayIso } from "@/lib/crm/dates";
 import { classifyCrmContactSpeciality, type CrmContactKind } from "@/lib/crm/contact-taxonomy";
@@ -94,9 +99,17 @@ export type DoctorCoverageRepRow = {
   agentHrId: string | null;
   bDoctors: number;
   cDoctors: number;
-  /** 0-100; 0 when the panel is empty. */
+  /** Campaign calls (visit type -8) logged in the SELECTED month. Counted beside coverage and never
+   * inside it: a campaign row proves the rep worked but names no doctor, so there is nothing to
+   * grade. Owner's ruling 2026-08-27. */
+  campaignCalls: number;
+  /** 0-100; 0 when the panel is empty. Check {@link hasPanel} before showing it as a score — a rep
+   * with no graded panel is not a 0% performer, and rendering one as 0% is the bug this replaced. */
   coveragePct: number;
   green: number;
+  /** False when this rep has no graded doctor at all this window and appears only because of
+   * campaign work. The table must print a marker instead of a percentage for them. */
+  hasPanel: boolean;
   panelSize: number;
   red: number;
   repKey: string;
@@ -209,6 +222,11 @@ export type SfeDoctorCoverageBoard = {
     coveragePct: number;
     green: number;
     red: number;
+    /** Campaign calls across every rep in scope, selected month. Never part of `coveragePct`. */
+    campaignCalls: number;
+    /** Reps whose ONLY logged field work this month is campaign — they have no graded panel at all.
+     * Before 2026-08-27 they had no row on this board whatsoever; 15 people in August 2026. */
+    repsAllCampaign: number;
     /** Contacts seen in the selected month whose grade is absent/unknown across the whole window —
      * outside the panel, surfaced so a vendor grading gap is visible instead of silent. */
     ungradedContacts: number;
@@ -386,7 +404,15 @@ export function buildDoctorCoverageBoard(
   selectedMonth: string,
   /** Optional so the existing fixture tests keep their two-argument calls. `norms` defaults to the
    * shipped doctor norms, so a fixture that does not care about config behaves exactly as before. */
-  options: { filters?: DoctorCoverageFilters; norms?: DoctorCoverageNorms; scopeLabel?: string } = {},
+  options: {
+    /** Campaign rows (visit type -8) for the SELECTED month. Deliberately a SEPARATE argument, not
+     * mixed into `visits`: the graded loop below then cannot see them even by accident, so "the
+     * coverage number did not move" is true by construction rather than by a `continue`. */
+    campaignVisits?: readonly DoctorCoverageVisitInput[];
+    filters?: DoctorCoverageFilters;
+    norms?: DoctorCoverageNorms;
+    scopeLabel?: string;
+  } = {},
 ): SfeDoctorCoverageBoard {
   const norms = options.norms ?? DEFAULT_DOCTOR_COVERAGE_NORMS;
   const windowMonths: string[] = [];
@@ -660,8 +686,11 @@ export function buildDoctorCoverageBoard(
         agentHrId: doctor.repKey.startsWith("hr:") ? doctor.repKey.slice(3) : null,
         bDoctors: 0,
         cDoctors: 0,
+        campaignCalls: 0,
         coveragePct: 0,
         green: 0,
+        // Reached only from a graded doctor, so this rep always has at least one.
+        hasPanel: true,
         panelSize: 0,
         red: 0,
         repKey: doctor.repKey,
@@ -681,6 +710,73 @@ export function buildDoctorCoverageBoard(
   for (const rep of repRows.values()) {
     rep.coveragePct = rep.panelSize > 0 ? Math.round((rep.green / rep.panelSize) * 100) : 0;
   }
+
+  // ── Campaign work: counted BESIDE coverage, never inside it ───────────────────────────────────
+  //
+  // OWNER'S RULING 2026-08-27, asked in plain words and answered "count it separately". It is the
+  // same answer he gave Rep Doctor Lists on 2026-08-21; that board implemented it and this one
+  // never did.
+  //
+  // WHAT IT FIXES HERE IS AN ABSENCE, NOT A WRONG NUMBER — and that is the whole point. `repRows`
+  // above is built by walking `doctors`, which exist only where a GRADED type-0 visit does. A rep
+  // whose entire month was campaign work therefore had no doctor, so no row, so no presence on
+  // this board at all: not a visible 0%, simply missing. Measured on production 2026-08-27 against
+  // `ireports360_visits_effective` — people with zero regular visits and non-zero campaign work:
+  // 15 in August 2026, 22 in July, 24 in June. The largest single case logged 160 field calls in
+  // August and appeared nowhere on this board.
+  //
+  // A campaign row can never be graded, and that is a property of the DATA, not a policy choice:
+  // every campaign row the vendor sends carries contact id 0 with a blank name and blank
+  // speciality. It says the rep worked; it never says which doctor they saw. So it cannot enter
+  // the panel, the denominator, or `coveragePct` — it gets its own column, and `hasPanel` tells
+  // the table to print a marker rather than a percentage for a rep who has no panel to score.
+  const campaignByRep = new Map<string, { calls: number; name: string }>();
+  for (const visit of options.campaignVisits ?? []) {
+    const visitDate = visit.visit_date ?? "";
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(visitDate)) continue;
+    // The caller reads only the selected month, but the core must not depend on that: a fixture or
+    // a future caller handing over a wider range must not inflate this month's column.
+    if (monthKeyOfVisitDate(visitDate) !== selectedMonth) continue;
+    const repKey = repKeyOf(visit);
+    const entry = campaignByRep.get(repKey);
+    if (entry) {
+      entry.calls += 1;
+      continue;
+    }
+    campaignByRep.set(repKey, {
+      calls: 1,
+      name: visit.agent_name?.trim() || (visit.agent_hr_id ? visit.agent_hr_id : "Unmapped agent"),
+    });
+  }
+
+  let repsAllCampaign = 0;
+  for (const [repKey, entry] of campaignByRep) {
+    const existing = repRows.get(repKey);
+    if (existing) {
+      existing.campaignCalls = entry.calls;
+      continue;
+    }
+    // No graded panel anywhere in the window — this rep exists on the board ONLY because of
+    // campaign work. `latestRepName` is preferred when the graded pass happened to see the name,
+    // for the same reason it exists there: one person must never appear under two labels.
+    repsAllCampaign += 1;
+    repRows.set(repKey, {
+      aDoctors: 0,
+      agentHrId: repKey.startsWith("hr:") ? repKey.slice(3) : null,
+      bDoctors: 0,
+      cDoctors: 0,
+      campaignCalls: entry.calls,
+      coveragePct: 0,
+      green: 0,
+      hasPanel: false,
+      panelSize: 0,
+      red: 0,
+      repKey,
+      repName: latestRepName.get(repKey)?.name ?? entry.name,
+      yellow: 0,
+    });
+  }
+  const totalsCampaignCalls = Array.from(repRows.values()).reduce((sum, rep) => sum + rep.campaignCalls, 0);
 
   const totalsGreen = doctors.filter((doctor) => doctor.status === "green").length;
   const totalsYellow = doctors.filter((doctor) => doctor.status === "yellow").length;
@@ -782,16 +878,24 @@ export function buildDoctorCoverageBoard(
     month: selectedMonth,
     monthLabel: monthLabelOf(selectedMonth),
     pace: resolveCoveragePace({ coveragePct, selectedMonth, todayIso: cairoTodayIso() }),
+    // Worst coverage first, but a rep with NO panel is not a 0% performer and must never head that
+    // ranking — they sort to the end, the same treatment Rep Doctor Lists gives a rep with no
+    // measurable plan.
     reps: Array.from(repRows.values()).sort(
-      (a, b) => a.coveragePct - b.coveragePct || a.repName.localeCompare(b.repName),
+      (a, b) =>
+        Number(b.hasPanel) - Number(a.hasPanel) ||
+        a.coveragePct - b.coveragePct ||
+        a.repName.localeCompare(b.repName),
     ),
     scopeLabel: options.scopeLabel ?? "",
     specialtyMix,
     totals: {
       activePanel,
+      campaignCalls: totalsCampaignCalls,
       coveragePct,
       green: totalsGreen,
       red: totalsRed,
+      repsAllCampaign,
       ungradedContacts,
       visitsCounted: visitsCountedSelectedMonth,
       yellow: totalsYellow,
@@ -814,9 +918,23 @@ export function buildDoctorCoverageBoard(
  *  - `agentHrIds` is the whole point — a District Manager's ~8 reps instead of all 205. Measured on
  *    production for a real DM seat (B-12, 5 reps): 3,071 rows over 4 keyset pages, against 95,324
  *    rows over 96 pages before, each page a separate Railway-sfo → Supabase-eu-central round trip.
- *  - `visitTypes: [0]` is free correctness: the pure core discards every other type on its first
- *    `continue`, and non-regular rows were 29.3% of a measured 6-month window (27,934 of 95,324
- *    rows) that crossed the Atlantic only to be thrown away.
+ *  - `visitTypes: [0]` on the graded read is free correctness: the pure core discards every other
+ *    type on its first `continue`, and non-regular rows were 29.3% of a measured 6-month window
+ *    (27,934 of 95,324 rows) that crossed the Atlantic only to be thrown away.
+ *
+ * CAMPAIGN IS A SECOND, NARROW READ — deliberately not a widening of the one above. The graded read
+ * spans six months because the lapse test needs that history; campaign is only ever reported for
+ * the SELECTED month, so widening `visitTypes` there would drag five months of rows across the
+ * Atlantic to discard them. Measured on production 2026-08-27 over a six-month window: 25,041
+ * campaign rows against 76,554 regular ones, a 32.7% increase for data needed in one month. The
+ * narrow read costs roughly a sixth of that. (Rep Doctor Lists reads both types in one call
+ * because its window IS one month — same rule, different arithmetic.)
+ *
+ * The campaign rows are NOT passed through `collapseDuplicateVisitSubmissions`. That is not an
+ * oversight and not a shortcut: `duplicateSubmissionGroupKey` returns null for any non-regular
+ * row, precisely because their contact id is a shared sentinel — so collapsing campaign rows on it
+ * would merge a whole day of genuine calls into one. Running it here would be an exact no-op; not
+ * running it says why.
  *
  * ONE CONSEQUENCE A SCOPED VIEWER SHOULD KNOW ABOUT. Because the scope filters VISITS, a doctor
  * seen by two reps in different districts is counted for each viewer only from their own reps'
@@ -845,11 +963,19 @@ export async function getSfeDoctorCoverage(input: {
     visitTypes: [0],
     ...(input.scope.kind === "agents" ? { agentHrIds: input.scope.agentHrIds } : {}),
   });
+  const campaignRows = await queryVisits<DoctorCoverageVisitInput>({
+    columns: VISIT_COLUMNS,
+    dateFrom: `${month}-01`,
+    dateTo,
+    visitTypes: [CAMPAIGN_TYPE],
+    ...(input.scope.kind === "agents" ? { agentHrIds: input.scope.agentHrIds } : {}),
+  });
   const collapsed = collapseDuplicateVisitSubmissions(rows);
   // Norms are admin-editable per kind and grade; getDoctorCoverageConfig never throws and falls
   // back to the shipped defaults, so a missing table or a transient read cannot break the board.
   const { norms } = await getDoctorCoverageConfig();
   return buildDoctorCoverageBoard(collapsed, month, {
+    campaignVisits: campaignRows,
     filters: input.filters,
     norms,
     scopeLabel: input.scope.label,

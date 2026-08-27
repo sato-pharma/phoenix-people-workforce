@@ -12,6 +12,7 @@ import {
   type DoctorCoverageVisitInput,
 } from "../src/lib/crm/sfe-doctor-coverage.ts";
 import { cairoTodayIso } from "../src/lib/crm/dates.ts";
+import { CAMPAIGN_TYPE } from "../src/lib/crm/visit-types.ts";
 
 let nextVisitId = 1;
 
@@ -242,4 +243,126 @@ export function runSfeDoctorCoverageTests() {
     /scope:\s*DoctorCoverageScope/,
     "getSfeDoctorCoverage must take a REQUIRED scope — an optional one is how the company-wide read survived",
   );
+
+  // ── Campaign work is counted SEPARATELY — owner ruling 2026-08-27 ────────────────────────────
+  // He was asked whether a campaign call (visit type -8) satisfies a planned doctor call and
+  // answered "count it separately". So campaign never enters coveragePct, and a rep whose only
+  // logged work is campaign gets a row of their own instead of vanishing.
+  //
+  // The ABSENCE is the defect being fixed, not a wrong number. repRows is built by walking the
+  // graded doctors, and a campaign row carries contact id 0 with a blank name and a null grade —
+  // so it can never produce a doctor, and before this change a campaign-only rep had NO ROW AT
+  // ALL on this board. Not a visible 0%: nothing. Measured on production 2026-08-27, that was 15
+  // people in August 2026, 22 in July and 24 in June; the busiest of them logged 160 campaign
+  // calls in a month and read as absent from the field.
+  {
+    const graded = [
+      // Rep One: one grade-A doctor, target 2, seen twice → green, 100%.
+      visit({ agent_hr_id: "M-1", agent_name: "Rep One", contact_crm_id: 500, visit_date: "2026-08-03" }),
+      visit({ agent_hr_id: "M-1", agent_name: "Rep One", contact_crm_id: 500, visit_date: "2026-08-17" }),
+      // Rep Two: one grade-A doctor seen once → short of target, 0%. The worst graded rep, so a
+      // worst-first ranking must open with them and not with a rep who has nothing to score.
+      visit({ agent_crm_id: 101, agent_hr_id: "M-2", agent_name: "Rep Two", contact_crm_id: 600, visit_date: "2026-08-04" }),
+    ];
+    const before = buildDoctorCoverageBoard(graded, MONTH);
+
+    const campaignRow = (overrides: Partial<DoctorCoverageVisitInput>) =>
+      visit({
+        contact_crm_id: 0,
+        contact_name: "",
+        crm_contact_grade: null,
+        speciality: null,
+        visit_type: CAMPAIGN_TYPE,
+        ...overrides,
+      });
+    const campaign = [
+      // A rep who has BOTH: the campaign count lands on their existing row, never a second one.
+      campaignRow({ agent_hr_id: "M-1", agent_name: "Rep One", visit_date: "2026-08-04" }),
+      // A rep with no graded panel at all — the row that did not exist before the ruling. Two of
+      // these share a date and a contact id; campaign rows are deliberately NOT run through the
+      // duplicate collapse, so a real day of campaign calls stays a real day of campaign calls.
+      campaignRow({ agent_crm_id: 200, agent_hr_id: "M-9", agent_name: "Campaign Only", visit_date: "2026-08-06" }),
+      campaignRow({ agent_crm_id: 200, agent_hr_id: "M-9", agent_name: "Campaign Only", visit_date: "2026-08-06" }),
+      campaignRow({ agent_crm_id: 200, agent_hr_id: "M-9", agent_name: "Campaign Only", visit_date: "2026-08-07" }),
+      // An agent the HR map never matched still gets counted, under their CRM id.
+      campaignRow({ agent_crm_id: 777, agent_hr_id: null, agent_name: "Unmapped Rep", visit_date: "2026-08-09" }),
+      // Outside the selected month — must not inflate a single counter.
+      campaignRow({ agent_crm_id: 200, agent_hr_id: "M-9", agent_name: "Campaign Only", visit_date: "2026-07-30" }),
+      // Not a date at all. Real CRM exports carry these; they must be skipped, not crash.
+      campaignRow({ agent_crm_id: 200, agent_hr_id: "M-9", agent_name: "Campaign Only", visit_date: "" }),
+    ];
+    const after = buildDoctorCoverageBoard(graded, MONTH, { campaignVisits: campaign });
+
+    // HEADLINE: the row exists at all.
+    const campaignOnly = after.reps.find((rep) => rep.repKey === "hr:m-9");
+    assert.ok(
+      campaignOnly,
+      "a rep whose ONLY field work is campaign must get a row — before 2026-08-27 they had none at all, so 15 working people read as absent",
+    );
+    assert.equal(campaignOnly.campaignCalls, 3, "three campaign calls inside the month; the July row and the blank date are ignored");
+    assert.equal(campaignOnly.hasPanel, false, "no graded panel — the board must say so rather than print a 0% that reads as a real score");
+    assert.equal(campaignOnly.panelSize, 0, "campaign builds no panel: contact id 0, blank name, null grade");
+    assert.equal(campaignOnly.repName, "Campaign Only", "a human-readable name, never the HR id");
+    assert.equal(campaignOnly.agentHrId, "m-9", "the HR id survives on the row so the drill-through link still resolves");
+
+    const unmapped = after.reps.find((rep) => rep.repKey === "crm:777");
+    assert.ok(unmapped, "an agent with no HR mapping is still a working rep — key them by CRM id, do not drop them");
+    assert.equal(unmapped.agentHrId, null, "nothing to link to, and the board must not invent an id");
+    assert.equal(unmapped.campaignCalls, 1);
+
+    // Coverage did not move. This is the whole meaning of "separately".
+    const panelledBefore = before.reps.find((rep) => rep.repKey === "hr:m-1");
+    const panelled = after.reps.find((rep) => rep.repKey === "hr:m-1");
+    assert.ok(panelledBefore && panelled, "the graded rep must survive the campaign fold-in");
+    assert.equal(panelled.coveragePct, panelledBefore.coveragePct, "campaign must not move a graded rep's coverage by one point");
+    assert.equal(panelled.panelSize, panelledBefore.panelSize, "campaign adds no doctor to a panel");
+    assert.deepEqual(
+      [panelled.green, panelled.yellow, panelled.red],
+      [panelledBefore.green, panelledBefore.yellow, panelledBefore.red],
+      "campaign changes no traffic light",
+    );
+    assert.equal(panelled.campaignCalls, 1, "a rep who did both carries one row, not two");
+    assert.equal(panelled.hasPanel, true);
+    assert.equal(after.totals.coveragePct, before.totals.coveragePct, "the headline percentage is untouched");
+    assert.equal(after.totals.activePanel, before.totals.activePanel, "the panel is untouched");
+    assert.equal(after.totals.visitsCounted, before.totals.visitsCounted, "a campaign call is not a counted visit");
+    assert.equal(after.totals.ungradedContacts, before.totals.ungradedContacts, "contact 0 is a sentinel, not an ungraded doctor to chase");
+
+    assert.equal(after.totals.campaignCalls, 5, "1 + 3 + 1 across the three reps, selected month only");
+    assert.equal(after.totals.repsAllCampaign, 2, "two of the four reps have no graded panel");
+    assert.equal(before.totals.campaignCalls, 0, "no campaign argument means an empty column, not a crash");
+    assert.equal(before.totals.repsAllCampaign, 0);
+
+    // Ranking. Worst-first is the point of this board, and 0% means "bad" only when there was
+    // something to score — so a rep with no panel sorts BELOW even a rep at 100%.
+    assert.deepEqual(
+      after.reps.map((rep) => rep.repKey),
+      ["hr:m-2", "hr:m-1", "hr:m-9", "crm:777"],
+      "graded reps worst-first, then the panel-less ones by name — a 0% with no panel must never head the list",
+    );
+  }
+
+  // ── Source contracts for the campaign leg ────────────────────────────────────────────────────
+  assert.match(
+    serviceSource,
+    /visitTypes:\s*\[CAMPAIGN_TYPE\]/,
+    "campaign must be a SECOND narrow read, not a widening of the first — [0, CAMPAIGN_TYPE] would drag campaign rows across the whole six-month scan window (25,041 extra rows against 76,554, measured on production 2026-08-27) purely to discard them in the graded loop",
+  );
+  assert.match(
+    serviceSource,
+    /dateFrom: `\$\{month\}-01`/,
+    "the campaign read covers the SELECTED month only — the graded read starts six months earlier because coverage needs a lapse window, and campaign has no such window",
+  );
+
+  const tablesSource = readFileSync("src/components/crm/doctor-coverage-tables.tsx", "utf8");
+  assert.match(
+    tablesSource,
+    /row\.hasPanel \?/,
+    "the table must branch on hasPanel — a rep with no graded panel gets a marker, never a 0% meter that reads as a real score",
+  );
+  assert.match(tablesSource, /campaignCalls/, "campaign needs its own column, sortable, beside coverage and never inside it");
+
+  const boardSource = readFileSync("src/components/crm/doctor-coverage-board.tsx", "utf8");
+  assert.match(boardSource, /label="Campaign calls"/, "the summary strip must carry campaign as its own tile");
+  assert.match(boardSource, /repsAllCampaign/, "the tile must name how many reps are campaign-only — that count is the thing the board used to hide");
 }
