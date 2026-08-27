@@ -220,10 +220,17 @@ export function runRecruitmentCvExtractionQualityTests() {
     /catch \{\s*\n\s*return primary;/,
     "a failed escalation must fall back to the first read, never propagate",
   );
+  // Narrowed 2026-08-27, and the narrowing is the point rather than an inconvenience. The original
+  // contract — "a CV whose first pass DIED gets the other rung before we accept losing the
+  // applicant" — held for every failure, including the ones that were never about the document. For
+  // a PDF the other rung is the vision route on the PREMIUM tier, so a timeout bought a 12x re-read
+  // of a file whose text layer was fine. The applicant-rescue half is unchanged and still pinned by
+  // the `return await runEscalation()` below it; what is new is the guard in front, which asks
+  // whether the failure said anything about the DOCUMENT. See shouldEscalateAfterFailure.
   assert.match(
     extractionSource,
-    /if \(!runEscalation\) throw error;\s*\n\s*return await runEscalation\(\);/,
-    "a CV whose first pass DIED gets the other rung before we accept losing the applicant",
+    /if \(!runEscalation \|\| !shouldEscalateAfterFailure\(error\)\) throw error;\s*\n\s*return await runEscalation\(\);/,
+    "a CV whose first pass died on the DOCUMENT still gets the other rung; one that died on the connection must not pay for it",
   );
   assert.match(extractionSource, /fields: mergeCvExtractions\(primary\.fields, retry\.fields\)/);
 

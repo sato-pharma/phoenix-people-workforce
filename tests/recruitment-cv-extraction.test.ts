@@ -15,8 +15,14 @@ import {
   cvModelForRoute,
   cvReasoningEffortForRoute,
   cvTextRetryModel,
+  CvExtractionError,
+  shouldEscalateAfterFailure,
 } from "../src/lib/recruitment/cv-extraction.ts";
-import { OPENAI_COPILOT_DEFAULT_MODEL, OPENAI_NANO_MODEL } from "../src/lib/ai/openai-client.ts";
+import {
+  OPENAI_COPILOT_DEFAULT_MODEL,
+  OPENAI_NANO_MODEL,
+  type PhoenixOpenAiErrorCode,
+} from "../src/lib/ai/openai-client.ts";
 import {
   CV_FIELD_SECTIONS,
   cvPositionSchemas,
@@ -832,6 +838,67 @@ export function runRecruitmentCvExtractionTests() {
     read("src/lib/recruitment/cv-extraction.ts"),
     /const runEscalation = escalation\s*\n\s*\? \(\) => runPass\(escalation\)\s*\n\s*: retryModel/,
     "the ladder must prefer a different ROUTE and fall back to a stronger MODEL, in that order",
+  );
+
+  // --- the ladder is climbed for a BAD READ, never for a bad connection ------
+  //
+  // The escalation is not like-for-like: for a PDF it is the vision route, which cvModelForRoute
+  // puts on the premium tier at 12x nano. So the catch deciding whether to climb is a spend
+  // decision, and it used to be untyped — a timeout took the identical branch to an unreadable
+  // document and bought that 12x read of a PDF nothing was wrong with. Measured on production
+  // 2026-08-27 the timeout rate was 1 in 50 and that one self-healed on the SDK's own retry, so
+  // this is cheap today. It is fixed anyway because timeouts CLUSTER: during a provider slowdown
+  // every CV in the queue fails both attempts together and every one escalates, making the bill a
+  // multiple of the batch rather than of one CV.
+  const openAiFailure = (code: PhoenixOpenAiErrorCode) =>
+    new CvExtractionError(code === "not_configured" ? "ai_not_configured" : "ai_failed", "x", code);
+
+  for (const code of ["timeout", "rate_limited", "quota_exceeded", "auth_failed", "not_configured"] as const) {
+    assert.equal(
+      shouldEscalateAfterFailure(openAiFailure(code)),
+      false,
+      `${code} says nothing about the document — the escalation uses the same key, account and socket, so it cannot do better`,
+    );
+  }
+  // The one that MUST still climb. "failed" is the code that can mean the model answered and the
+  // answer was unusable — a 400 on this document's content — which is exactly what a different
+  // route or a stronger model exists to fix. If this flips, the docx second-opinion rung and the
+  // vision escalation both stop firing on the case they were built for.
+  assert.equal(
+    shouldEscalateAfterFailure(openAiFailure("failed")),
+    true,
+    "a genuine API failure on this document must still buy the second read",
+  );
+  // A parse failure never becomes a CvExtractionError at all — it escapes parseAiJson below the
+  // API catch. The model answered; the answer was garbage. That is the most escalation-worthy
+  // failure there is, so the default for an unrecognised error must be to climb, not to give up.
+  assert.equal(
+    shouldEscalateAfterFailure(new Error("Unexpected token < in JSON")),
+    true,
+    "a parse failure means the model answered badly — that is precisely what the second read is for",
+  );
+  assert.equal(
+    shouldEscalateAfterFailure(new CvExtractionError("unsupported_file", "x")),
+    true,
+    "a file-level error carries no OpenAI cause; it must not be silently read as 'do not escalate'",
+  );
+  // The guard is worth nothing if the cause never arrives. Three different OpenAI codes collapse
+  // into the same user-facing "ai_failed", so the mapper has to pass error.code through on EVERY
+  // branch — miss one and that branch quietly becomes escalatable again.
+  const mapper = read("src/lib/recruitment/cv-extraction.ts");
+  const mapperBody = mapper.slice(
+    mapper.indexOf("function cvExtractionErrorFromOpenAi"),
+    mapper.indexOf("// Pure: picks which of a candidate's files"),
+  );
+  assert.equal(
+    (mapperBody.match(/error\.code,/g) ?? []).length,
+    6,
+    "all six PhoenixOpenAiError codes must carry their cause into CvExtractionError",
+  );
+  assert.match(
+    mapper,
+    /if \(!runEscalation \|\| !shouldEscalateAfterFailure\(error\)\) throw error;/,
+    "the escalation catch must consult the guard before spending a second, more expensive read",
   );
 
   // --- no key must not cancel the FREE engine -------------------------------

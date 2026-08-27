@@ -32,6 +32,7 @@ import {
   OPENAI_NANO_MODEL,
   OPENAI_ROUTE_BUDGET_MS,
   PhoenixOpenAiError,
+  type PhoenixOpenAiErrorCode,
 } from "@/lib/ai/openai-client";
 import { logError } from "@/lib/observability/log";
 import { getCandidate, updateCandidate } from "@/lib/recruitment/candidates";
@@ -66,11 +67,63 @@ import type { RecruitmentFile } from "@/lib/recruitment/types";
 
 export class CvExtractionError extends Error {
   code: "ai_failed" | "ai_not_configured" | "ai_rate_limited" | "unsupported_file" | "no_cv_file";
+  /**
+   * The OpenAI-level cause, when there was one.
+   *
+   * `code` cannot carry it and should not try: THREE different PhoenixOpenAiError codes — timeout,
+   * auth_failed, and a generic failure — all collapse into "ai_failed" in
+   * cvExtractionErrorFromOpenAi. That is the right answer for the sentence a human reads, and the
+   * wrong one for the spend decision in shouldEscalateAfterFailure, which needs to know whether the
+   * model actually answered. Keeping both means neither has to be compromised for the other.
+   *
+   * Undefined for "unsupported_file" and "no_cv_file", which are decided before OpenAI is involved.
+   */
+  openAiCode?: PhoenixOpenAiErrorCode;
 
-  constructor(code: CvExtractionError["code"], message: string) {
+  constructor(code: CvExtractionError["code"], message: string, openAiCode?: PhoenixOpenAiErrorCode) {
     super(message);
     this.name = "CvExtractionError";
     this.code = code;
+    this.openAiCode = openAiCode;
+  }
+}
+
+/**
+ * Is this failure worth spending a SECOND read on?
+ *
+ * Only when it says something about the DOCUMENT. A transport or account failure hits the
+ * escalation identically — same key, same account, same socket — so a second attempt cannot succeed
+ * where the first did not, and for a rate limit or an exhausted quota it actively makes things
+ * worse by firing another request into the wall that just stopped us.
+ *
+ * This matters more than a retry guard normally would, because the escalation is not like-for-like.
+ * For a PDF it is the VISION route, which cvModelForRoute puts on the premium tier at 12x nano. So
+ * before this existed, a slow socket bought a 12x read of a document nothing was wrong with.
+ *
+ * That was survivable at the timeout rate actually measured on production 2026-08-27 — 1 in 50,
+ * and that one self-healed on the SDK's own retry (OPENAI_MAX_RETRIES = 1) without ever reaching
+ * here. The reason to fix it anyway is that timeouts do not arrive independently: they cluster
+ * during a provider slowdown, when every CV in the queue fails both attempts at once and every one
+ * of them escalates together. The bill is then a multiple of the BATCH, not of one CV — the same
+ * shape as the reasoning-effort drain of #2162, which is what exhausted the credits in the first
+ * place. A per-call multiplier is invisible until it is correlated.
+ *
+ * "failed" stays escalatable on purpose. It is the one code that can mean the model answered and
+ * the answer was unusable — a 400 on this document's content, or a parse failure below — which is
+ * exactly the case a different route or a stronger model can fix.
+ */
+export function shouldEscalateAfterFailure(error: unknown): boolean {
+  const code = error instanceof CvExtractionError ? error.openAiCode : undefined;
+  if (!code) return true; // no OpenAI cause recorded: a parse failure, or a caller-side error
+  switch (code) {
+    case "timeout":
+    case "rate_limited":
+    case "quota_exceeded":
+    case "auth_failed":
+    case "not_configured":
+      return false;
+    case "failed":
+      return true;
   }
 }
 
@@ -537,30 +590,49 @@ export function candidateIdentityFromCvFields(
   };
 }
 
+// Every branch passes error.code through as the third argument. It is not decoration: three of
+// these codes produce the same user-facing "ai_failed", and shouldEscalateAfterFailure has to tell
+// them apart to decide whether a second, more expensive read is worth buying. Drop it from a branch
+// and that branch silently becomes escalatable again — which is the defect this whole change fixes.
 function cvExtractionErrorFromOpenAi(error: PhoenixOpenAiError): CvExtractionError {
   switch (error.code) {
     case "not_configured":
       return new CvExtractionError(
         "ai_not_configured",
         "This isn't configured yet. Add the OpenAI key as OPENAI_API_KEY.",
+        error.code,
       );
     case "quota_exceeded":
       return new CvExtractionError(
         "ai_rate_limited",
         "The OpenAI account is out of credit. Add billing/credit on platform.openai.com and try again.",
+        error.code,
       );
     case "rate_limited":
-      return new CvExtractionError("ai_rate_limited", "The OpenAI rate limit was reached for now. Wait a minute and try again.");
+      return new CvExtractionError(
+        "ai_rate_limited",
+        "The OpenAI rate limit was reached for now. Wait a minute and try again.",
+        error.code,
+      );
     case "auth_failed":
-      return new CvExtractionError("ai_failed", "OpenAI rejected the API key. Check OPENAI_API_KEY on the server.");
+      return new CvExtractionError(
+        "ai_failed",
+        "OpenAI rejected the API key. Check OPENAI_API_KEY on the server.",
+        error.code,
+      );
     case "timeout":
-      return new CvExtractionError("ai_failed", "Could not reach the extraction service: request timed out.");
+      return new CvExtractionError(
+        "ai_failed",
+        "Could not reach the extraction service: request timed out.",
+        error.code,
+      );
     case "failed":
       return new CvExtractionError(
         "ai_failed",
         error.status
           ? `The extraction service returned ${error.status}. Try again.`
           : `Could not reach the extraction service: ${error.message}`,
+        error.code,
       );
   }
 }
@@ -855,7 +927,12 @@ export async function extractCvFieldsFromBytes(input: {
       // open, so the applicant was created with a name and nothing else and nothing ever went back
       // for them — 49 of 226 production candidates are in exactly that state. A document gets one
       // more attempt down whichever rung it can reach before we accept losing it.
-      if (!runEscalation) throw error;
+      //
+      // But only when the failure was about the DOCUMENT. This catch used to be untyped, so a
+      // timeout took the identical branch to an unreadable file and bought a 12x premium vision
+      // read of a PDF that was never the problem — see shouldEscalateAfterFailure for why that is
+      // dangerous in aggregate rather than per CV.
+      if (!runEscalation || !shouldEscalateAfterFailure(error)) throw error;
       return await runEscalation();
     }
 
