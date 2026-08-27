@@ -982,6 +982,7 @@ import { runHiringEmployeeScopeTests } from "./hiring-employee-scope.test.ts";
 import { runMarketingAdminOverrideNoteTests } from "./marketing-admin-override-note.test.ts";
 import { runRecruitmentPoolFilterTests } from "./recruitment-pool-filters.test.ts";
 import { runNotificationOutboxBatchWindowTests } from "./notification-outbox-batch-window.test.ts";
+import { runNotificationDrainStarvationGuardTests } from "./notification-drain-starvation-guard.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -2826,6 +2827,12 @@ await runTest(
   "notification outbox batch window (a retryable row behind a full batch of permanently exhausted "
     + "rows is still drained, and the scan stays bounded)",
   runNotificationOutboxBatchWindowTests,
+);
+
+await runTest(
+  "notification drain starvation guard (all three retry drains keep exhausted rows out of the due "
+    + "window in SQL, and page/limit boundaries stay stable on a total order)",
+  runNotificationDrainStarvationGuardTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
