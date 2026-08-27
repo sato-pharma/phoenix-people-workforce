@@ -1,4 +1,8 @@
-import { DoctorCoverageDoctorTable, DoctorCoverageRepTable } from "@/components/crm/doctor-coverage-tables";
+import {
+  DoctorCoverageDistrictTable,
+  DoctorCoverageDoctorTable,
+  DoctorCoverageRepTable,
+} from "@/components/crm/doctor-coverage-tables";
 import { DoctorCoverageFilterBar } from "@/components/crm/doctor-coverage-filter-bar";
 import {
   PortalRecordCard,
@@ -334,7 +338,22 @@ export function DoctorCoverageBoard({
         </Section>
       ) : null}
 
-      <Section description="Sorted worst-first — the reps whose panels need attention." title="Coverage by rep">
+      {/* Districts come BEFORE reps, because this is the level a manager reads first and because
+          the rep table below no longer contains him. Hidden entirely when the caller supplied no
+          org tree — an empty districts section would read as "nobody manages anyone". */}
+      {board.managers.length > 0 ? (
+        <Section
+          description="A manager has no list of his own — his panel is his team's lists combined. Open a district to see the reps inside it."
+          title="Coverage by district"
+        >
+          <DoctorCoverageDistrictTable managers={board.managers} reps={board.reps} />
+        </Section>
+      ) : null}
+
+      <Section
+        description="Sorted worst-first — the reps whose panels need attention. Managers are in the district table above, scored on their team's list."
+        title="Coverage by rep"
+      >
         <DoctorCoverageRepTable rows={board.reps} />
       </Section>
 

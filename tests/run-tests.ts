@@ -778,6 +778,7 @@ import { runCrmRepDayCheckinAttributionTests } from "./crm-rep-day-checkin-attri
 
 import { runAuthWebauthnTests } from "./auth-webauthn.test.ts";
 import { runSfeDoctorCoverageTests } from "./sfe-doctor-coverage.test.ts";
+import { runDoctorCoverageDistrictTests } from "./doctor-coverage-districts.test.ts";
 // Registered beside its sibling rather than appended at the end of the file: every PR appends
 // there, so a branch parked on that anchor conflicts with each one that lands (this PR hit it
 // four times in one evening — #1910, #1918, #1919 and a re-run).
@@ -2014,6 +2015,7 @@ await runTest("crm rep-day check-in attribution (managers borrow the rep's check
 await runTest("biometric passkey login (terminal-employment gate, replay counter, single-use challenge, no credential enumeration)", runAuthWebauthnTests);
 
 await runTest("SFE doctor coverage (A=2/B=1 norms, the panel is the rep's ASSIGNED list, off-list reported never scored, identity reconciled across both mirrors, single-source door)", runSfeDoctorCoverageTests);
+await runTest("Doctor coverage districts (a manager's panel is his TEAM's lists combined, membership is structural and never by job title, a manager leaves the rep table, cycles terminate)", runDoctorCoverageDistrictTests);
 await runTest(
   "doctor coverage scope (full subtree, line boundary, fail-closed) and elapsed-month pace",
   runDoctorCoverageScopeTests,
