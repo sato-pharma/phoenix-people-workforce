@@ -167,7 +167,7 @@ export function DoctorCoverageRepTable({ rows }: { rows: DoctorCoverageRepRow[] 
             <tbody className="divide-y divide-slate-100">
               {table.rows.map((row) => (
                 <tr className="bg-white hover:bg-slate-50" key={row.repKey}>
-                  <td className="px-3 py-2 font-semibold text-slate-900">{row.repName}</td>
+                  <td className="whitespace-nowrap px-3 py-2 font-semibold text-slate-900">{row.repName}</td>
                   <td className="px-3 py-2 text-right font-semibold text-slate-900">{row.panelSize}</td>
                   <td className="px-3 py-2 text-right font-bold text-emerald-700">{row.green}</td>
                   <td className={`px-3 py-2 text-right font-bold ${row.yellow > 0 ? "text-amber-700" : "text-slate-400"}`}>{row.yellow}</td>
@@ -449,7 +449,7 @@ export function DoctorCoverageDistrictTable({
                     {isOpen
                       ? teamOf(row).map((rep) => (
                           <tr className="bg-slate-50/70" key={`${row.managerKey}:${rep.repKey}`}>
-                            <td className="py-1.5 pl-10 pr-3 text-slate-700">{rep.repName}</td>
+                            <td className="whitespace-nowrap py-1.5 pl-10 pr-3 text-slate-700">{rep.repName}</td>
                             <td className="px-3 py-1.5" />
                             <td className="px-3 py-1.5 text-right text-slate-700">{rep.panelSize}</td>
                             <td className="px-3 py-1.5 text-right text-emerald-700">{rep.green}</td>
@@ -701,7 +701,7 @@ export function DoctorCoverageDoctorTable({ month, rows }: { month: string; rows
                     <span className="border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[10px] font-bold text-slate-600">{row.gradeRaw}</span>
                   </td>
                   <td className="px-3 py-2 text-slate-600">{row.speciality ?? "—"}</td>
-                  <td className="px-3 py-2 text-slate-700">{row.repName}</td>
+                  <td className="whitespace-nowrap px-3 py-2 text-slate-700">{row.repName}</td>
                   <td className="px-3 py-2 text-right">
                     <span className="font-bold text-slate-900">{row.visitsThisMonth}</span>
                     <span className="text-slate-400"> / {row.targetVisits}</span>

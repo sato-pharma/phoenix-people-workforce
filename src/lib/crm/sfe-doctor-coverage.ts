@@ -599,32 +599,75 @@ function pairKeyOf(repKey: string, contactCrmId: number): string {
 }
 
 /**
+ * The territory the CRM appends to an agent's name, in trailing brackets:
+ * `"Aisha.Ehab ( Minia 2 / E )"` -> `"Minia 2 / E"`. Anchored at the END and refusing nested
+ * brackets, so a name that legitimately contains parentheses cannot be mistaken for one.
+ *
+ * The interior is trimmed at its edges only, never rewritten — production carries
+ * `"( Mahalla  / A )"` with a double space inside, and that is the vendor's text, not ours to
+ * normalise. What is dropped is the vendor's spacing OUTSIDE the brackets.
+ */
+const CRM_TERRITORY = /\(\s*([^()]+?)\s*\)\s*$/;
+
+function crmTerritoryFrom(crmName: string | undefined): string | null {
+  if (!crmName) return null;
+  const territory = CRM_TERRITORY.exec(crmName)?.[1]?.trim();
+  return territory ? territory : null;
+}
+
+/**
  * What a rep is CALLED, in one place, for every row this board emits.
  *
- * The waterfall is ordered by how current each source is:
- *  1. the CRM name on that rep's most recent visit — what the field system itself calls them today;
- *  2. the employee directory, keyed on hr id — the only source that exists for a rep who holds a
- *     list but has logged no visit in the whole read window. Under the old visit-derived panel that
- *     rep could not appear at all, so the gap never had to be filled; now they appear with a full
- *     red panel, which is precisely the case a manager most needs to see named.
+ * THE DIRECTORY NAMES THE PERSON; THE CRM NAMES THE TERRITORY (owner's instruction 2026-08-27,
+ * "show the real name and keep the territory"). The CRM's `agent_name` is a LOGIN HANDLE with a
+ * territory bolted on — `"Aisha.Ehab ( Minia 2 / E )"` — so using it whole broke the standing rule
+ * that a human-readable name is always shown, while dropping it whole would have thrown away the
+ * territory, which is the part a manager reads to tell two reps apart. So the two halves come from
+ * different places: the real name from the employee directory, the bracketed territory from the
+ * CRM.
+ *
+ * Measured on production 2026-08-27 across the four-month read window: of 102 agents with a CRM
+ * name, ALL 102 had a directory row — the swap is never blind — and 100 of them changed. Six rows
+ * were the pathological case this also fixes: an agent_name that is territory and NOTHING else,
+ * `"( Behira 2 / C )"`, which rendered a coverage row belonging to no visible person at all.
+ *
+ * The waterfall, in order:
+ *  1. the employee directory, keyed on hr id, plus the CRM's territory when it carries one;
+ *  2. the CRM name unchanged — for a `crm:` agent with no hr id, and for the hr-keyed agent whose
+ *     directory row is missing. Production currently has none of the latter, but a name is not the
+ *     place to start throwing;
  *  3. the hr id itself, which at least identifies a person, before the last-resort label.
  *
  * "Unmapped agent" is deliberately the end of the line, never a shortcut: the standing rule is that
  * a human-readable name is shown, never a raw code.
+ *
+ * COST OF THE SWAP, measured the same day: the longest rep label grew from 41 to 70 characters
+ * (`"Mohamed Mohamed ElMenshawy Abdelmatty Mohamed Ismail ( Sharkia 3 / C )"`). Every table that
+ * renders it therefore holds the name on ONE line and lets `PortalDesktopTable`'s own
+ * `overflow-x-auto` take the width — the owner's rule is no ellipsis and no wrap, and a table that
+ * scrolls inside its own box satisfies both without the page ever moving sideways.
  */
 function repNameFor(
   repKey: string,
   latestRepName: ReadonlyMap<string, { name: string }>,
   repNameByHrId: ReadonlyMap<string, string> | undefined,
+  /** A CRM name from outside the graded pass — the campaign fold-in's own, for a rep whose entire
+   *  month was campaign work and who therefore appears in `latestRepName` not at all. It supplies
+   *  the TERRITORY for such a rep exactly as a graded visit would. */
+  crmNameFallback?: string,
 ): string {
-  const fromVisits = latestRepName.get(repKey)?.name?.trim();
-  if (fromVisits) return fromVisits;
+  const fromVisits = latestRepName.get(repKey)?.name?.trim() || crmNameFallback?.trim();
   if (repKey.startsWith("hr:")) {
     const hrId = repKey.slice(3);
     const fromDirectory = repNameByHrId?.get(hrId)?.trim();
-    if (fromDirectory) return fromDirectory;
+    if (fromDirectory) {
+      const territory = crmTerritoryFrom(fromVisits);
+      return territory ? `${fromDirectory} ( ${territory} )` : fromDirectory;
+    }
+    if (fromVisits) return fromVisits;
     return hrId.toUpperCase();
   }
+  if (fromVisits) return fromVisits;
   return "Unmapped agent";
 }
 
@@ -1116,6 +1159,13 @@ export function buildDoctorCoverageBoard(
     // No graded panel anywhere in the window — this rep exists on the board ONLY because of
     // campaign work. `latestRepName` is preferred when the graded pass happened to see the name,
     // for the same reason it exists there: one person must never appear under two labels.
+    //
+    // THIS MUST GO THROUGH `repNameFor` LIKE EVERY OTHER ROW. It used to build the name itself —
+    // `latestRepName.get(repKey)?.name?.trim() || entry.name` — and that second rule is precisely
+    // how three campaign-only reps kept their login handle on 2026-08-27 after every other row had
+    // been switched to the real one: Adel.Srour, Ahmed.Sharaf and Omayma.Wael, each with a
+    // perfectly good directory row nobody was reading. The suite could not see it, because the
+    // fixture reps all had graded visits; the served page could.
     repRows.set(repKey, {
       aDoctors: 0,
       agentHrId: repKey.startsWith("hr:") ? repKey.slice(3) : null,
@@ -1129,7 +1179,7 @@ export function buildDoctorCoverageBoard(
       panelSize: 0,
       red: 0,
       repKey,
-      repName: latestRepName.get(repKey)?.name?.trim() || entry.name,
+      repName: repNameFor(repKey, latestRepName, options.repNameByHrId, entry.name),
       yellow: 0,
     });
   }
@@ -1222,12 +1272,12 @@ export function buildDoctorCoverageBoard(
       // A district is a manager with no other manager between him and his reps.
       isDistrict: (managersBeneath.get(managerHrId)?.size ?? 0) === 0,
       managerKey,
-      // THE DIRECTORY WINS HERE, which is the opposite of `repNameFor`'s waterfall — deliberately.
-      // A rep is named from the CRM because that is what the field system calls him today; a
-      // MANAGER is only on this board because the directory says people report to him, so the
-      // directory is his natural source. It also happens to be the readable one: the CRM carries
-      // login handles for this population ("Ahmed.Abdallah", "Sally.Saeed"), and a district headed
-      // by a login handle breaks the standing rule that a human-readable name is always shown.
+      // THE DIRECTORY NAME ALONE — deliberately WITHOUT the territory `repNameFor` now appends.
+      // Both take the real name from the directory; what differs is the bracket. A rep's territory
+      // identifies him. A manager's own territory would MISLEAD: Nosiba's CRM name says
+      // "( Minia 1 / E )", but the district under her spans Minia 1, Minia 2 and Bani Sweif, so
+      // stamping one of the three beside a 129-doctor panel would state something untrue about the
+      // other two. A district is named for the person, and its territories are the rows inside it.
       managerName: options.repNameByHrId?.get(managerHrId)?.trim() || repNameFor(managerKey, latestRepName, options.repNameByHrId),
       offListDoctors: 0,
       panelSize: 0,
