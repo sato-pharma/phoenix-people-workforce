@@ -17,6 +17,8 @@ import {
  * and fifty to Assiut, and Minia then divides by two. Four things must hold every time: the parts
  * add back to the original exactly, a branch he has mapped by hand is never touched, a warehouse is
  * never split down to reps, and a depot that states no place is left exactly where it is today.
+ *
+ * A private hospital WAS in that last group until he ruled otherwise on 2026-08-27 - see block 4b.
  */
 const AREA_ROWS = [
   ["CA1", "Heliopolis"], ["CA2", "Nasr City"], ["CA3", "Cairo East 1"],
@@ -113,19 +115,34 @@ export async function runWeeklyBranchAttributionTests() {
     assert.equal(out[0].salesValue, 1_000_000, "the whole value goes where he put it");
   }
 
-  // 4) The three classes that are not territories keep today's behaviour, and so does a depot whose
-  //    name states no place and carries no usable region. Both are left alone rather than guessed
-  //    at: EGP 1,786,103 and EGP 434,461 of production value respectively.
+  // 4) The classes that are not territories keep today's behaviour, and so does a depot whose name
+  //    states no place and carries no usable region. Both are left alone rather than guessed at.
   {
     const untouched = [
       row({ branchName: WAREHOUSE }),
-      row({ branchName: "Private Hospi Cairo", regionCode: "CA" }),
       row({ branchName: "Unallocated POS", regionCode: "" }),
     ];
     const { rows: out } = splitWeeklyRowsByBranch(untouched, index);
-    assert.equal(out.length, 3, "nothing is expanded");
+    assert.equal(out.length, 2, "nothing is expanded");
     assert.equal(out, untouched, "and the array itself is handed straight back");
     for (const item of out) assert.equal(item.areaCode, null, `${item.branchName} must keep no area`);
+  }
+
+  // 4b) A PRIVATE HOSPITAL IS NOW MONEY THAT MOVES. It sat in the block above until 2026-08-27,
+  //     when the owner ruled that a hospital's sales credit the area it physically sits in. It is
+  //     pinned here rather than only in weekly-branch-name-scope because that file proves the NAME
+  //     is read, and this one proves the VALUE arrives whole — EGP 1,091,946 of production value
+  //     that credited nobody now lands on real areas, so it has to add back to the penny.
+  {
+    const hospital = row({ branchName: "Private Hospi Cairo", regionCode: "CA" });
+    const { rows: out } = splitWeeklyRowsByBranch([hospital], index);
+    assert.deepEqual(out.map((item) => item.areaCode), ["CA1", "CA2", "CA3"], "Cairo's areas, in order");
+    assert.equal(
+      out.reduce((sum, item) => sum + item.salesValue, 0),
+      1_000_000,
+      "a third of a million does not divide evenly - the parts must still add back exactly",
+    );
+    assert.equal(out[0].line, "Anti Infective", "the split moves money, it does not rewrite the row");
   }
 
   // 5) A missing organogram is a supported state, not a crash. loadWeeklyAreaSplitIndex is allowed

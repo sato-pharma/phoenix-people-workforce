@@ -16,12 +16,15 @@
 // and two names at once split evenly between them first: "ك.ع.الدقهلية2 ودمياط" is Dakahlia **2**
 // and Damietta, so D22 50% + D26 50%, not all three Dakahlia areas beside Damietta.
 //
-// THREE CLASSES ARE NOT TERRITORIES AT ALL and are deliberately NOT split to reps: warehouses
-// (EGP 507,869), private hospitals (EGP 1,091,946) and tenders (EGP 76,550). A stock transfer into
-// a warehouse is not a sale in anyone's territory, a tender is institutional, and whether a private
-// hospital is the local rep's credit is a commercial decision. They keep today's region-level
-// behaviour and are labelled, pending the owner's answer. Changing that is a one-line edit to
-// NON_TERRITORY_CLASSES once he rules.
+// TWO CLASSES ARE NOT TERRITORIES AT ALL and are deliberately NOT split to reps: warehouses
+// (EGP 507,869) and tenders (EGP 76,550). A stock transfer into a warehouse is not a sale in
+// anyone's territory, and a tender is institutional. Both keep region-level behaviour, labelled.
+//
+// PRIVATE HOSPITALS WERE A THIRD SUCH CLASS UNTIL 2026-08-27. Whether a private hospital is the
+// local rep's credit was never a technical question, and this comment said exactly that while
+// EGP 1,091,946 sat crediting nobody. The owner was asked and ruled: YES, credit the area the
+// hospital sits in. So `hospital` still CLASSIFIES — that is what keeps a name like "Assiut 2
+// Warehouse" from being read as a governorate — but it no longer stops the split.
 
 import {
   GOVERNORATES_BY_AREA,
@@ -36,7 +39,7 @@ export type WeeklyBranchClass = "territory" | "warehouse" | "hospital" | "tender
 
 /** Classes that stop at the region instead of splitting down to reps. */
 export const NON_TERRITORY_CLASSES: ReadonlySet<WeeklyBranchClass> = new Set<WeeklyBranchClass>([
-  "warehouse", "hospital", "tender",
+  "warehouse", "tender",
 ]);
 
 export type WeeklyBranchReading = {
@@ -162,9 +165,13 @@ export function readWeeklyBranchName(
 ): WeeklyBranchReading {
   const branchClass = classifyWeeklyBranch(branchName);
   if (NON_TERRITORY_CLASSES.has(branchClass)) {
-    const reason = branchClass === "warehouse" ? "a stock location, not a territory"
-      : branchClass === "tender" ? "an institutional tender, not field-force sales"
-      : "a private hospital — a channel, not a territory";
+    // Every member of NON_TERRITORY_CLASSES needs a clause here. A missing one would read as a
+    // tender, which is why `weekly-branch-name-scope` iterates the set and asserts each note names
+    // its own class - an exhaustive Record would NOT gate the build (next.config ignores type
+    // errors), so the guard has to run at runtime.
+    const reason = branchClass === "warehouse"
+      ? "a stock location, not a territory"
+      : "an institutional tender, not field-force sales";
     return { branchClass, scope: null, note: `Not split: ${reason}. Stays at region level.` };
   }
 
