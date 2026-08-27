@@ -9,7 +9,11 @@ import {
   type CoverageFilterSelection,
   type CoverageFilterTree,
 } from "@/lib/crm/coverage-filters";
-import type { SfeDoctorCoverageBoard } from "@/lib/crm/sfe-doctor-coverage";
+import {
+  DOCTOR_COVERAGE_PLAN_FIRST_MONTH,
+  monthLabelOf,
+  type SfeDoctorCoverageBoard,
+} from "@/lib/crm/sfe-doctor-coverage";
 
 // Server half of the Doctor Coverage board — shared verbatim by the admin page (SFE Manager +
 // Super Admin) and the NSM portal twin; only `monthBasePath` differs. Styling copies the CEO/SFE
@@ -82,8 +86,12 @@ export function DoctorCoverageBoard({
   scope: CoverageFilterSelection;
   tree: CoverageFilterTree;
 }) {
-  const scopeLine = "Regular customer visits (type 0) only · duplicates collapsed · departed agents excluded";
+  const scopeLine =
+    "Panel = each rep's assigned list · regular customer visits (type 0) only · duplicates collapsed · departed agents excluded";
   const emptyPanel = board.totals.activePanel === 0;
+  // Labelled from the constant, not written out in prose: the first month the plan mirror holds is
+  // a fact about the data, and a sentence that restates it drifts the moment the mirror is backfilled.
+  const planFirstMonthLabel = monthLabelOf(DOCTOR_COVERAGE_PLAN_FIRST_MONTH);
   // Whose numbers these are, always on screen — the owner's standing rule. Empty only on the
   // fixture path, which has no viewer. The territory filter goes FIRST: when someone has narrowed
   // to one area, that is the single most important fact about every number underneath.
@@ -112,7 +120,10 @@ export function DoctorCoverageBoard({
         title={`Doctor Coverage & Frequency — ${board.monthLabel}`}
       >
         <div className="space-y-4 p-5">
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
+          {/* Four across, not six: the off-list tile is a seventh, and squeezing seven into one
+              desktop row narrows every label to where "Under-visited" wraps — which the standing
+              rule forbids outright. Two rows of four is wider per tile than six-across was. */}
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
             <Tile
               label="Coverage"
               // Pace-adjusted: on day 8 of 31 an on-track team has not covered 80% of its panel yet,
@@ -126,15 +137,33 @@ export function DoctorCoverageBoard({
               tone={board.pace.tone}
               value={`${board.totals.coveragePct}%`}
             />
-            <Tile label="Active panel" sub="graded doctors in play" value={String(board.totals.activePanel)} />
+            {/* "Assigned panel", not "Active panel". The old label was accurate about the old
+                number — a panel of whoever the rep happened to visit — and that is exactly what
+                made the board unreadable: neglect a doctor and he left the denominator. */}
+            <Tile
+              label="Assigned panel"
+              sub={
+                board.totals.repsWithNoList > 0
+                  ? `${board.totals.repsWithNoList} ${board.totals.repsWithNoList === 1 ? "rep has" : "reps have"} no list`
+                  : "graded doctors on the reps' lists"
+              }
+              value={String(board.totals.activePanel)}
+            />
             <Tile label="Covered" tone="emerald" value={String(board.totals.green)} />
             <Tile label="Under-visited" tone="amber" value={String(board.totals.yellow)} />
-            <Tile label="Lapsed" sub="seen recently, none this month" tone="rose" value={String(board.totals.red)} />
-            <Tile label="Ungraded seen" sub="visited, no vendor grade" value={String(board.totals.ungradedContacts)} />
-            {/* Campaign is reported BESIDE coverage and is never inside the percentage above — the
-                owner's ruling of 2026-08-27. The sub-line names the people this exists for: before
-                that ruling a rep whose whole month was campaign work had no row on this board at
-                all, because rows are built from graded doctors and they had none. */}
+            {/* "Not visited", not "Lapsed". A doctor on the list who was not seen this month is
+                simply not visited — there is no recency test in front of him any more, and the old
+                word implied one. */}
+            <Tile label="Not visited" sub="on the list, no visit this month" tone="rose" value={String(board.totals.red)} />
+            {/* Off-list and campaign are both work done OUTSIDE the assigned list, so both sit
+                beside the coverage percentage and never inside it. Off-list is the honest home of
+                the visits the old board used to promote into the panel. */}
+            <Tile
+              label="Off-list visits"
+              sub="visited, not on that rep's list"
+              tone="sky"
+              value={String(board.totals.offListDoctors)}
+            />
             <Tile
               label="Campaign calls"
               sub={
@@ -147,13 +176,35 @@ export function DoctorCoverageBoard({
             />
           </div>
 
-          {emptyPanel ? (
-            <p className="text-xs text-slate-400">
-              No graded doctor panel for this month. This reads as empty when the month genuinely has no graded
-              regular-visit activity in scope — not because grading is missing: iReports360 grades run back to
-              January 2026.
+          {board.totals.planMonthMissing ? (
+            <p className="text-xs text-amber-700">
+              No assigned lists have arrived for {board.monthLabel} yet, so there is nothing to score against. Every
+              rep reads 0% until iReports360 syncs the month&rsquo;s plans — this is a missing feed, not a coverage
+              failure. Assigned lists start at {planFirstMonthLabel}.
             </p>
-          ) : (
+          ) : null}
+
+          {emptyPanel && !board.totals.planMonthMissing ? (
+            <p className="text-xs text-slate-400">
+              No graded doctors on the assigned lists in scope for this month. Grading is not the reason: iReports360
+              grades run back to January 2026, and the lists carry a grade on effectively every row.
+            </p>
+          ) : null}
+
+          {/* Ungraded lost its tile when off-list gained one, because the assigned lists carry a
+              grade on effectively every row and a permanent zero tile is noise. It is not dropped:
+              if the vendor ever stops grading, this line appears and says how many doctors fell out
+              of the denominator because of it. */}
+          {board.totals.ungradedContacts > 0 ? (
+            <p className="text-xs text-slate-400">
+              {board.totals.ungradedContacts} assigned{" "}
+              {board.totals.ungradedContacts === 1 ? "doctor carries" : "doctors carry"} no vendor grade, so{" "}
+              {board.totals.ungradedContacts === 1 ? "it is" : "they are"} outside the panel and the percentage above
+              — there is no norm to hold {board.totals.ungradedContacts === 1 ? "it" : "them"} to.
+            </p>
+          ) : null}
+
+          {emptyPanel ? null : (
             <div className="grid gap-5 lg:grid-cols-2">
               <div>
                 <p className="mb-2 text-[9px] font-black uppercase tracking-[0.16em] text-slate-400">Grade split</p>
@@ -288,7 +339,7 @@ export function DoctorCoverageBoard({
       </Section>
 
       <Section
-        description="Every doctor in the panel with status and last visit — filter to Under-visited or Lapsed to build call lists."
+        description="Every doctor on the reps' assigned lists with status and last visit — filter to Under-visited or Not visited to build call lists."
         title="Doctor drill-down"
       >
         <DoctorCoverageDoctorTable month={board.month} rows={board.doctors} />

@@ -158,13 +158,22 @@ function testRepKeyMatchesTheBoardConvention() {
   assert.equal(coverageRepKey("AI-0009"), "hr:ai-0009", "prefixed and lowercased, like every CRM board");
   assert.equal(coverageRepKey("  b-143 "), "hr:b-143", "surrounding whitespace never reaches the key");
 
-  // Fingerprint the convention at its source. If `repKeyOf` in sfe-doctor-coverage.ts is ever
+  // Fingerprint the convention at its source. If the rep key in sfe-doctor-coverage.ts is ever
   // changed, the cascade's keys stop matching the board's and EVERY territory filter silently
   // returns nothing — so that edit has to come here and be made deliberately, in both places.
+  //
+  // The expression MOVED on 2026-08-27 (`repKeyOf(visit)` → `repKeyFor(hrId, crmId)`) when the
+  // panel became the rep's assigned list: the key now has to be resolvable from a PLAN row too,
+  // and a crm id seen with an hr id in either mirror pins that crm id's key. The convention itself
+  // — `hr:` plus the lower-cased hr id — is unchanged, which is the whole point of this check.
   const source = readFileSync("src/lib/crm/sfe-doctor-coverage.ts", "utf8");
   assert.ok(
-    source.includes("return `hr:${visit.agent_hr_id.toLowerCase()}`;"),
+    source.includes("return `hr:${hrId.toLowerCase()}`;"),
     "sfe-doctor-coverage still keys mapped agents as hr:<lowercased id> — update coverageRepKey together with it",
+  );
+  assert.ok(
+    source.includes("const key = `hr:${hrId.toLowerCase()}`;"),
+    "the identity reconciler must mint the SAME shape of key — a second spelling here is how one rep ends up under two keys and reads 0% on a full list",
   );
 
   const t = tree();
