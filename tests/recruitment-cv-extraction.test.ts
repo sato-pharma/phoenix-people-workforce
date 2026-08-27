@@ -12,8 +12,11 @@ import {
   readNumberField,
   readSchemaField,
   readStringField,
+  cvModelForRoute,
   cvReasoningEffortForRoute,
+  cvTextRetryModel,
 } from "../src/lib/recruitment/cv-extraction.ts";
+import { OPENAI_COPILOT_DEFAULT_MODEL, OPENAI_NANO_MODEL } from "../src/lib/ai/openai-client.ts";
 import {
   CV_FIELD_SECTIONS,
   cvPositionSchemas,
@@ -770,6 +773,65 @@ export function runRecruitmentCvExtractionTests() {
     read("src/lib/recruitment/cv-extraction.ts"),
     /reasoning: \{ effort: cvReasoningEffortForRoute\(forRoute\) \}/,
     "the call site must ASK per route — a hard-coded effort silently reinstates the flat bill",
+  );
+
+  // --- and so is the MODEL --------------------------------------------------
+  //
+  // Effort was only half the bill. Until 2026-08-27 every CV also read on gpt-5.4 — $2.50/$15.00
+  // per million input/output tokens against nano's $0.20/$1.25 — and that one call site accounted
+  // for all 514 billed OpenAI calls the account made between 24 July and 26 August. The text route
+  // is 94.8% of stored CV files (563 PDF + 40 Word of 636) and is the case where the rules engine
+  // has already won the deterministic fields, so it is nano work. Vision keeps the reasoning tier.
+  assert.equal(cvModelForRoute("text"), OPENAI_NANO_MODEL, "the common route must read on the cheap tier");
+  assert.equal(cvModelForRoute("vision_pdf"), OPENAI_COPILOT_DEFAULT_MODEL, "rendering a PDF earns the reasoning tier");
+  assert.equal(cvModelForRoute("vision_image"), OPENAI_COPILOT_DEFAULT_MODEL, "a photograph earns the reasoning tier");
+  // The saving IS the gap between the two tiers. Pointing one constant at the other's value would
+  // leave every assertion above green while restoring the whole bill, so assert they differ.
+  assert.notEqual(
+    OPENAI_NANO_MODEL,
+    OPENAI_COPILOT_DEFAULT_MODEL,
+    "the cheap and reasoning tiers must be different models, or the per-route split saves nothing",
+  );
+  assert.match(
+    read("src/lib/recruitment/cv-extraction.ts"),
+    /model: modelOverride \?\? cvModelForRoute\(forRoute\)/,
+    "the call site must ASK per route — a hard-coded model is what put every CV on the premium tier",
+  );
+
+  // --- the rung a .docx can reach -------------------------------------------
+  //
+  // Moving the text route to nano took something away from the 40 Word CVs (6.3% of 636 stored
+  // files, measured on production 2026-08-27). A PDF that reads thin escalates by ROUTE — render
+  // the pages and look again — but a .docx has no image form, so its thin read was simply accepted.
+  // That was tolerable while the accepted read came from gpt-5.4. It is not tolerable now that the
+  // accepted read is the cheap one, because is_cv follows the MODEL by deliberate design: a wrong
+  // "this isn't a CV" would bury a real applicant with nothing left to overturn it. So a route with
+  // nowhere better to GO escalates to a better MODEL instead — the same text, read by the tier that
+  // used to read it.
+  assert.equal(
+    cvTextRetryModel("text", false),
+    OPENAI_COPILOT_DEFAULT_MODEL,
+    "a text read with no route to escalate to must still get a second opinion from the stronger tier",
+  );
+  assert.equal(
+    cvTextRetryModel("text", true),
+    null,
+    "a PDF already has the better rung — a different ROUTE beats re-reading the text that just failed",
+  );
+  assert.equal(cvTextRetryModel("vision_pdf", false), null, "a vision route is already the top of the ladder");
+  assert.equal(cvTextRetryModel("vision_image", false), null, "a photograph is already the top of the ladder");
+  // Self-disabling on purpose, and this is the assertion that says so: the retry model must differ
+  // from the one that just read. Put the text route back on the premium tier and cvTextRetryModel
+  // returns null instead of paying a second time for the answer it already has.
+  assert.notEqual(
+    cvTextRetryModel("text", false),
+    cvModelForRoute("text"),
+    "the retry must be a DIFFERENT model from the one that just read — otherwise it is a paid no-op",
+  );
+  assert.match(
+    read("src/lib/recruitment/cv-extraction.ts"),
+    /const runEscalation = escalation\s*\n\s*\? \(\) => runPass\(escalation\)\s*\n\s*: retryModel/,
+    "the ladder must prefer a different ROUTE and fall back to a stronger MODEL, in that order",
   );
 
   // --- no key must not cancel the FREE engine -------------------------------

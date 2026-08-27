@@ -6,7 +6,12 @@ import { logError } from "@/lib/observability/log";
 type OpenAiEnv = Record<string, string | undefined>;
 type ResponseCreateInput = Parameters<OpenAI["responses"]["create"]>[0];
 
-export const OPENAI_EMAIL_DEFAULT_MODEL = "gpt-5.4-nano";
+// The cheap tier, named after the TIER rather than after one of its consumers. It stopped being
+// only the email default on 2026-08-27: CV extraction's text route reads on it too, and a constant
+// called "email" is not something recruitment should have to import to say "the cheap model".
+// $0.20/$1.25 per million input/output tokens, against gpt-5.4's $2.50/$15.00.
+export const OPENAI_NANO_MODEL = "gpt-5.4-nano";
+export const OPENAI_EMAIL_DEFAULT_MODEL = OPENAI_NANO_MODEL;
 export const OPENAI_EMAIL_TIMEOUT_MS = 25_000;
 export const OPENAI_MAX_RETRIES = 1;
 export const OPENAI_ROUTE_BUDGET_MS = 60_000;

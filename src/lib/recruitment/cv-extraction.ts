@@ -29,6 +29,7 @@ import {
   createOpenAiResponseText,
   hasOpenAiApiKey,
   OPENAI_COPILOT_DEFAULT_MODEL,
+  OPENAI_NANO_MODEL,
   OPENAI_ROUTE_BUDGET_MS,
   PhoenixOpenAiError,
 } from "@/lib/ai/openai-client";
@@ -133,6 +134,49 @@ const MAX_CV_EXTRACTION_OUTPUT_TOKENS = 8_000;
  */
 export function cvReasoningEffortForRoute(route: CvExtractionRoute): "low" | "medium" {
   return route === "text" ? "low" : "medium";
+}
+
+/**
+ * WHICH model reads the document, chosen per route for the same reason the effort above is.
+ *
+ * gpt-5.4 costs $2.50 / $15.00 per million input / output tokens; the nano tier costs $0.20 /
+ * $1.25 — 12.5x the input and 12x the output. Until 2026-08-27 every CV paid the premium tier,
+ * and that single call site was the entire OpenAI bill: 514 of the account's billed calls between
+ * 24 July and 26 August came from here, every other consumer in the codebase being nano or
+ * gpt-4o-mini. It is also the wrong tier for the common case, on this module's own evidence —
+ * the rules engine has ALREADY won the deterministic fields (email, phone, summary, governorate:
+ * 93-98%) before the model is asked anything, and what is left is gap-filling out of clean text.
+ *
+ * The vision routes keep gpt-5.4. Reading pixels, a two-column layout, or a photograph taken at an
+ * angle is the case the reasoning tier exists for, and it is rare: 24 of 555 candidates arrived as
+ * an image. So the ladder now runs cheap-then-premium — the expensive model is spent on the
+ * documents that actually defeated the cheap one rather than on all of them in advance, which is
+ * what the escalation in runAiExtraction was already shaped to do.
+ */
+export function cvModelForRoute(route: CvExtractionRoute): string {
+  return route === "text" ? OPENAI_NANO_MODEL : OPENAI_COPILOT_DEFAULT_MODEL;
+}
+
+/**
+ * The second chance for a text read that has no better ROUTE to escalate to.
+ *
+ * A PDF read from its text layer always has one — hand the file over and let the model render the
+ * pages. A .docx does not: there is no image form of it, so a thin read there was simply accepted.
+ * That was survivable while the text route ran on gpt-5.4. It stopped being survivable the moment
+ * that route moved to nano (see cvModelForRoute), because the read now accepted with no second
+ * opinion is the CHEAP one — and `is_cv` follows the MODEL, not the rules, by deliberate design
+ * further down. A wrong "this isn't a CV" therefore suppresses a real applicant with nothing left
+ * to overturn it. 40 of 636 stored CV files are Word, measured on production 2026-08-27.
+ *
+ * So when there is no better route, escalate to a better MODEL: the same text, read again by the
+ * reasoning tier. Null the moment that would be pointless — a route that already has a vision
+ * escalation, a route that already IS vision, and, deliberately, a text route that is itself
+ * already premium. That last clause makes this self-disabling: put the text route back on gpt-5.4
+ * and this stops firing on its own instead of quietly paying twice for the same answer.
+ */
+export function cvTextRetryModel(route: CvExtractionRoute, hasRouteEscalation: boolean): string | null {
+  if (hasRouteEscalation || route !== "text") return null;
+  return cvModelForRoute(route) === OPENAI_COPILOT_DEFAULT_MODEL ? null : OPENAI_COPILOT_DEFAULT_MODEL;
 }
 
 // What gets written to ats_candidate_cv_extractions.ai_model when no model was involved at all.
@@ -718,7 +762,7 @@ export async function extractCvFieldsFromBytes(input: {
     return input.coverMessage ? `CV text:\n\n${cleanedText}\n\n${input.coverMessage}` : `CV text:\n\n${cleanedText}`;
   };
 
-  const runPass = async (forRoute: CvExtractionRoute): Promise<CvFieldExtraction> => {
+  const runPass = async (forRoute: CvExtractionRoute, modelOverride?: string): Promise<CvFieldExtraction> => {
     const askKeys = forRoute === "text" ? narrowedTextKeys : null;
     const askedFields = askKeys ? schema.fields.filter((field) => askKeys.includes(field.key)) : schema.fields;
     let outputText: string;
@@ -728,7 +772,11 @@ export async function extractCvFieldsFromBytes(input: {
         input: buildInput(forRoute),
         instructions: CV_EXTRACTION_CLASSIFICATION_PREAMBLE + schema.instructions,
         maxOutputTokens: MAX_CV_EXTRACTION_OUTPUT_TOKENS,
-        model: OPENAI_COPILOT_DEFAULT_MODEL,
+        // Per route, like the effort below and for the same reason — see cvModelForRoute. The
+        // premium tier is 12x the nano tier per output token, and the text route is the ~95% case
+        // the rules engine has already read. The override is the escalation ladder's other rung
+        // (cvTextRetryModel): a route with nowhere better to GO is re-read by a stronger model.
+        model: modelOverride ?? cvModelForRoute(forRoute),
         purpose: "recruitment-cv-extraction",
         // Per route, not one setting for everything — see cvReasoningEffortForRoute. "medium" was
         // set flat on 2026-08-18 after "high" (#2162) exhausted the credits; keeping "medium" only
@@ -767,10 +815,21 @@ export async function extractCvFieldsFromBytes(input: {
   // back to one instead of losing the applicant.
   const runAiExtraction = async (): Promise<CvFieldExtraction> => {
     // A PDF read from its text layer always has a second, INDEPENDENT way to be read: hand the file
-    // to the model and let it render the pages. That is the only escalation available — a .docx has
-    // no image form, and a route that already IS vision has nothing better to fall back to.
+    // to the model and let it render the pages. That is the only ROUTE escalation available — a .docx
+    // has no image form, and a route that already IS vision has nothing better to fall back to.
     const escalation: CvExtractionRoute | null =
       route === "text" && fileKind === "pdf" && input.bytes.length <= MAX_PDF_VISION_BYTES ? "vision_pdf" : null;
+
+    // The ladder has two rungs, and a document takes whichever one it can reach. A different ROUTE
+    // is strictly better and comes first — the text layer is what failed, so re-reading it proves
+    // little. A stronger MODEL on the same route is the only rung a .docx can reach at all; see
+    // cvTextRetryModel for why that stopped being optional when the text route moved to nano.
+    const retryModel = cvTextRetryModel(route, escalation !== null);
+    const runEscalation = escalation
+      ? () => runPass(escalation)
+      : retryModel
+        ? () => runPass(route, retryModel)
+        : null;
 
     let primary: CvFieldExtraction;
     try {
@@ -778,13 +837,13 @@ export async function extractCvFieldsFromBytes(input: {
     } catch (error) {
       // The first pass DIED. Before this, that ended the CV: cv-intake-service.ts catches and fails
       // open, so the applicant was created with a name and nothing else and nothing ever went back
-      // for them — 49 of 226 production candidates are in exactly that state. A PDF gets one more
-      // attempt down a genuinely different path before we accept losing it.
-      if (!escalation) throw error;
-      return await runPass(escalation);
+      // for them — 49 of 226 production candidates are in exactly that state. A document gets one
+      // more attempt down whichever rung it can reach before we accept losing it.
+      if (!runEscalation) throw error;
+      return await runEscalation();
     }
 
-    if (!escalation) return primary;
+    if (!runEscalation) return primary;
 
     // A credible read stops here — the escalation costs a second call and must not fire on the
     // common path. It fires on the two shapes a FAILED text-layer read takes: a near-empty result,
@@ -806,7 +865,7 @@ export async function extractCvFieldsFromBytes(input: {
 
     let retry: CvFieldExtraction;
     try {
-      retry = await runPass(escalation);
+      retry = await runEscalation();
     } catch {
       return primary; // the escalation is a bonus attempt; its failure must never cost the first read
     }
