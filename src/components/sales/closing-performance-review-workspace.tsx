@@ -15,6 +15,7 @@ import {
   performanceReviewRegionStyle,
   PERFORMANCE_REVIEW_FIRST_PERIOD,
   type ClosingPerformanceReview,
+  type PerformanceMatrix,
   type PerformanceReviewSeriesRow,
 } from "@/lib/sales/closing-performance-review";
 
@@ -103,6 +104,97 @@ function RegionDot({ regionCode }: { regionCode: string }) {
 const headClassName =
   "whitespace-nowrap px-3 py-2.5 text-left text-[10px] font-black uppercase tracking-[0.14em] text-slate-500";
 const cellClassName = "whitespace-nowrap px-3 py-2 text-sm text-slate-700";
+
+/**
+ * The owner's shape: who on the left, what across the top.
+ *
+ * Four sticky columns name the row — rep, area, district manager, region — then one column per
+ * family or product code, then the row's own total, target and achievement. The cell is units on the
+ * by-product grid and value on the by-family grid; the row total is value on both, because adding a
+ * row's units across products is the one sum that is never done.
+ */
+function GridTable({ grid, measure }: { grid: PerformanceMatrix; measure: "units" | "value" }) {
+  const stickyHead = headClassName + " sticky left-0 z-20 bg-slate-50";
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full border-collapse">
+        <thead className="border-b border-slate-200 bg-slate-50/80">
+          <tr>
+            <th className={stickyHead}>Rep</th>
+            <th className={headClassName}>Area</th>
+            <th className={headClassName}>District manager</th>
+            <th className={headClassName}>Region</th>
+            {grid.columns.map((column) => (
+              <th className={headClassName + " text-right"} key={column.key} title={column.subLabel}>
+                {column.label}
+              </th>
+            ))}
+            <th className={headClassName + " text-right"}>{measure === "units" ? "Total value" : "Total"}</th>
+            <th className={headClassName + " text-right"}>Target</th>
+            <th className={headClassName + " text-right"}>Ach %</th>
+          </tr>
+        </thead>
+        <tbody>
+          {grid.rows.map((row, index) => {
+            const isTotal = row.kind !== "area";
+            const tone = row.kind === "grandTotal"
+              ? "bg-slate-900 text-white"
+              : row.kind === "regionSubtotal"
+                ? "bg-sky-50 font-semibold"
+                : index % 2 === 1
+                  ? "bg-slate-50/50"
+                  : "";
+            const stickyCell =
+              cellClassName +
+              " sticky left-0 z-10 font-semibold " +
+              (row.kind === "grandTotal"
+                ? "bg-slate-900 text-white"
+                : row.kind === "regionSubtotal"
+                  ? "bg-sky-50 text-slate-900"
+                  : index % 2 === 1
+                    ? "bg-slate-50 text-slate-900"
+                    : "bg-white text-slate-900");
+            return (
+              <tr className={tone} key={row.kind + ":" + row.areaCode + ":" + index}>
+                <td className={stickyCell}>
+                  {row.kind !== "area" ? (
+                    row.kind === "grandTotal" ? "National total" : row.regionName + " total"
+                  ) : row.repName ? (
+                    row.repName
+                  ) : row.repIsVacant ? (
+                    <span className="text-xs italic text-slate-400">Vacant seat</span>
+                  ) : (
+                    <span className="text-slate-300">{EM}</span>
+                  )}
+                </td>
+                <td className={cellClassName}>{isTotal ? "" : row.areaName}</td>
+                <td className={cellClassName}>
+                  {isTotal ? "" : (row.managerName ?? <span className="text-slate-300">{EM}</span>)}
+                </td>
+                <td className={cellClassName}>
+                  {isTotal ? "" : (
+                    <span className="flex items-center gap-2">
+                      <RegionDot regionCode={row.regionCode} />
+                      <span className="text-slate-500">{row.regionName}</span>
+                    </span>
+                  )}
+                </td>
+                {grid.columns.map((column, columnIndex) => (
+                  <td className={cellClassName + " text-right" + (isTotal ? " font-semibold" : "")} key={column.key}>
+                    <Figure value={(measure === "units" ? row.units : row.values)[columnIndex] ?? null} />
+                  </td>
+                ))}
+                <td className={cellClassName + " text-right font-semibold"}><Figure value={row.salesValue} /></td>
+                <td className={cellClassName + " text-right"}><Figure value={row.targetValue} /></td>
+                <td className={cellClassName + " text-right"}><Achievement ratio={row.achievement} /></td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
 
 function SeriesTable({
   months,
@@ -279,6 +371,8 @@ export function ClosingPerformanceReviewWorkspace({ initialError, initialReview 
         </AdminCallout>
       ) : null}
 
+      {/* The grids lead the page, as they lead the workbook: who is on the left, what they sold
+          across the top. Every other section below is a different cut of these same numbers. */}
       <AdminTableShell
         action={(
           <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
@@ -331,6 +425,20 @@ export function ClosingPerformanceReviewWorkspace({ initialError, initialReview 
             </Button>
           </div>
         )}
+        description={"Every rep and area down the side, every family across the top. A family cell is value: a family spans several concentrations, and units of different products are never added. Region totals and the national total close each block."}
+        title={"Reps and areas " + DOT + " families"}
+      >
+        <GridTable grid={review.matrixByFamily} measure="value" />
+      </AdminTableShell>
+
+      <AdminTableShell
+        description={"The same rows against every product code. Each column is one product, so these units are a real quantity and may be read down the column. The row total stays value, because a row spans products."}
+        title={"Reps and areas " + DOT + " products"}
+      >
+        <GridTable grid={review.matrixByProduct} measure="units" />
+      </AdminTableShell>
+
+      <AdminTableShell
         description={"Every area on the line, ranked on achievement. An area with no target follows the ranked block, ordered by value " + DOT + " it is present, never dropped."}
         title="Medical rep ranking"
       >

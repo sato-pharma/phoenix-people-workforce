@@ -5,6 +5,7 @@ import {
   PERFORMANCE_REVIEW_FIRST_PERIOD,
   PERFORMANCE_REVIEW_REGIONS,
   type ClosingPerformanceReview,
+  type PerformanceMatrix,
   type PerformanceReviewSeriesRow,
 } from "@/lib/sales/closing-performance-review";
 import { SATO_LOGO_ON_LIGHT_PNG_BASE64 } from "@/lib/sales/sato-logo-asset";
@@ -474,7 +475,175 @@ function buildFamilySheet(workbook: ExcelJS.Workbook, review: ClosingPerformance
   pct(sheet.getCell(row, 5), review.totals.achievement, { bold: true });
 }
 
-// ── Sheets 3, 4 and 5 — the by-month series ──────────────────────────────────
+// ── Sheets 1 and 2 — the grids: reps and areas down the side, products across ─
+
+/**
+ * The owner's shape: WHO on the left, WHAT across the top.
+ *
+ * Four fixed columns name the row — rep, area, district manager, region — then one column per family
+ * or per product code, then the row's own total, target and achievement. Frozen at the fourth column
+ * so the names stay on screen however far right the products run, which on a fifteen-product line is
+ * most of the page.
+ *
+ * The cell is UNITS on the by-product grid and VALUE on the by-family grid, and that is not a
+ * presentation choice: one product code is a real quantity, a family spanning five concentrations is
+ * not. The row total is VALUE on both — adding a row's units ACROSS products would be the same error
+ * from the other direction, which is why it is never offered.
+ */
+function buildGridSheet(
+  workbook: ExcelJS.Workbook,
+  review: ClosingPerformanceReview,
+  options: { grid: PerformanceMatrix; measure: "units" | "value"; name: string; note: string; subtitle: string; title: string },
+) {
+  const { grid } = options;
+  if (options.measure === "units" && grid.columns.some((column) => !column.unitsAreAddable)) {
+    throw new Error(
+      "Refusing to build a units grid whose columns span more than one product: units of different products are never added.",
+    );
+  }
+
+  const NAMES = 4;
+  const LAST = NAMES + grid.columns.length + 3;
+  const sheet = workbook.addWorksheet(options.name, {
+    pageSetup: PAGE,
+    views: [{ showGridLines: false, state: "frozen", xSplit: NAMES, ySplit: 10 }],
+  });
+  sheet.columns = [
+    { width: 34 }, { width: 26 }, { width: 30 }, { width: 15 },
+    ...grid.columns.map(() => ({ width: 15 })),
+    { width: 17 }, { width: 16 }, { width: 12 },
+  ];
+
+  masthead(workbook, sheet, {
+    legend: "regions",
+    lastCol: LAST,
+    note: options.note,
+    status: `source: Monthly Closing ${DOT} ${longMonthLabel(review.period)} ${DOT} ${grid.columns.length} columns ${DOT} ${grid.rows.filter((row) => row.kind === "area").length} areas`,
+    subtitle: options.subtitle,
+    title: options.title,
+  });
+
+  // Band row: on the by-product grid it merges each family across its own concentrations, so the
+  // five Tebofortin columns read as one block instead of five unrelated products.
+  let row = 9;
+  sheet.getRow(row).height = 18;
+  for (let column = 1; column <= LAST; column += 1) {
+    const cell = sheet.getCell(row, column);
+    fill(cell, BAND);
+    border(cell, { b: med, l: column === 1 ? medB : thin, r: column === LAST ? medB : thin, t: medB });
+  }
+  sheet.mergeCells(row, 1, row, NAMES);
+  align(font(sheet.getCell(row, 1), { bold: true, color: { argb: DEEP }, name: "Aptos", size: 8.5 }), {
+    horizontal: "left",
+    indent: 1,
+    vertical: "middle",
+  }).value = "WHO SOLD IT";
+  let runStart = NAMES + 1;
+  for (let index = 0; index <= grid.columns.length; index += 1) {
+    const previous = grid.columns[index - 1];
+    const current = grid.columns[index];
+    if (index > 0 && (!current || current.subLabel !== previous.subLabel)) {
+      const from = runStart;
+      const to = NAMES + index;
+      if (to > from) sheet.mergeCells(row, from, row, to);
+      align(font(sheet.getCell(row, from), { bold: true, color: { argb: DEEP }, name: "Aptos", size: 8.5 }), {
+        horizontal: "center",
+        vertical: "middle",
+      }).value = previous.subLabel;
+      runStart = to + 1;
+    }
+  }
+  sheet.mergeCells(row, LAST - 2, row, LAST);
+  align(font(sheet.getCell(row, LAST - 2), { bold: true, color: { argb: DEEP }, name: "Aptos", size: 8.5 }), {
+    horizontal: "center",
+    vertical: "middle",
+  }).value = "THE WHOLE LINE";
+  row += 1;
+
+  headerRow(
+    sheet,
+    row,
+    [
+      "REP",
+      "AREA",
+      "DISTRICT MANAGER",
+      "REGION",
+      ...grid.columns.map((column) => column.label),
+      options.measure === "units" ? "TOTAL VALUE" : "TOTAL",
+      "TARGET",
+      "ACH %",
+    ],
+    NAMES,
+  );
+  row += 1;
+
+  const firstBodyRow = row;
+  let zebra = false;
+  for (const entry of grid.rows) {
+    const isTotal = entry.kind !== "area";
+    const style = performanceReviewRegionStyle(entry.regionCode);
+    if (entry.kind === "area") zebra = !zebra;
+    sheet.getRow(row).height = isTotal ? 19 : 16;
+    const cells = bodyRow(sheet, row, LAST, {
+      tint: entry.kind === "grandTotal" ? DEEP : entry.kind === "regionSubtotal" ? BAND : style.tint,
+      tintUpTo: isTotal ? LAST : NAMES,
+      zebra,
+    });
+
+    const ink = entry.kind === "grandTotal" ? WHITE : INK;
+    const label = (cell: Cell, value: string, muted = false) => {
+      cell.value = value;
+      align(
+        font(cell, {
+          bold: isTotal,
+          color: { argb: entry.kind === "grandTotal" ? WHITE : muted ? MUTE : INK },
+          italic: muted,
+          name: "Aptos",
+          size: isTotal ? 9.5 : 9,
+        }),
+        { horizontal: "left", indent: 1 },
+      );
+    };
+
+    if (entry.kind === "area") {
+      // "Vacant seat" is a real fact about a real seat; a dash is an area the organogram carries no
+      // seat for at all. Neither is a system state, and neither may become one — see the test.
+      if (entry.repName) label(cells[0], entry.repName);
+      else if (entry.repIsVacant) label(cells[0], "Vacant seat", true);
+      else label(cells[0], EM, true);
+      label(cells[1], entry.areaName);
+      label(cells[2], entry.managerName ?? EM, entry.managerName == null);
+      cells[3].value = entry.regionName;
+      align(font(cells[3], { bold: true, color: { argb: style.chip }, name: "Aptos", size: 8.5 }), {
+        horizontal: "left",
+        indent: 1,
+      });
+    } else {
+      label(cells[0], entry.kind === "grandTotal" ? "NATIONAL TOTAL" : `${entry.regionName.toUpperCase()} TOTAL`);
+      for (const index of [1, 2, 3]) {
+        cells[index].value = "";
+        font(cells[index], { color: { argb: ink }, name: "Aptos", size: 9 });
+      }
+    }
+
+    grid.columns.forEach((column, index) => {
+      const cell = cells[NAMES + index];
+      const value = options.measure === "units" ? entry.units[index] : entry.values[index];
+      money(cell, value ?? null, { bold: isTotal, color: ink, na: value == null });
+    });
+
+    money(cells[LAST - 3], entry.salesValue, { bold: true, color: ink });
+    money(cells[LAST - 2], entry.targetValue, { bold: isTotal, color: ink, na: entry.targetValue == null });
+    pct(cells[LAST - 1], entry.achievement, { bold: isTotal });
+    row += 1;
+  }
+
+  if (grid.rows.length > 0) {
+    sheet.autoFilter = { from: { column: 1, row: 10 }, to: { column: LAST, row: firstBodyRow + grid.rows.length - 1 } };
+  }
+}
+
+// ── Sheets 4, 5, 6 and 7 — the by-month series ───────────────────────────────
 
 /**
  * How the series states its own span, so a reader never has to wonder what is missing.
@@ -616,6 +785,26 @@ export async function buildClosingPerformanceReviewWorkbook(review: ClosingPerfo
   const workbook = new ExcelJS.Workbook();
   workbook.creator = `Sato Pharma ${DOT} Phoenix Workforce`;
   workbook.created = new Date(review.generatedAt);
+
+  // The grids come first: this is the shape the owner reads the review in — who is on the left,
+  // what they sold across the top. Everything after them is a different cut of the same numbers.
+  buildGridSheet(workbook, review, {
+    grid: review.matrixByFamily,
+    measure: "value",
+    name: "Reps " + DOT + " Families",
+    note: "a family spans several concentrations, so a family cell is VALUE: units of different products are never added",
+    subtitle: `${review.line ?? EM} ${DOT} ${longMonthLabel(review.period)} ${DOT} value per family`,
+    title: "REPS AND AREAS " + DOT + " FAMILIES",
+  });
+
+  buildGridSheet(workbook, review, {
+    grid: review.matrixByProduct,
+    measure: "units",
+    name: "Reps " + DOT + " Products",
+    note: "every column here is ONE product code, so these units are a real quantity; the row total is VALUE, because a row spans products",
+    subtitle: `${review.line ?? EM} ${DOT} ${longMonthLabel(review.period)} ${DOT} units per product code`,
+    title: "REPS AND AREAS " + DOT + " PRODUCTS",
+  });
 
   buildRepRankingSheet(workbook, review);
   buildFamilySheet(workbook, review);
