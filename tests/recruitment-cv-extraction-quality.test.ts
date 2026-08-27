@@ -184,7 +184,26 @@ export function runRecruitmentCvExtractionQualityTests() {
   );
   assert.doesNotMatch(extractionSource, /effort:\s*"high"\s*\}/, "no high-effort extraction pass may remain (cost guard)");
 
-  // 3. The escalation ladder: a thin text-layer read on a PDF gets a second, different attempt.
+  // 2b. Model tier — the other half of the same bill, and the larger half. gpt-5.4 is 12x nano per
+  // output token, and until 2026-08-27 the call site named it directly, so every CV paid it: 514
+  // billed calls between 24 July and 26 August, against a text route that is 94.8% of stored CV
+  // files (563 PDF + 40 Word of 636) and whose deterministic fields the rules engine has already
+  // won. Vision still earns the reasoning tier and cvModelForRoute still hands it over. What must
+  // never come back is ONE model for every route.
+  assert.match(
+    extractionSource,
+    /model: modelOverride \?\? cvModelForRoute\(forRoute\)/,
+    "CV extraction must choose its model per route, not once for everything",
+  );
+  assert.doesNotMatch(
+    extractionSource,
+    /model:\s*OPENAI_COPILOT_DEFAULT_MODEL/,
+    "naming the premium model at the call site is what put every CV on the premium tier (cost guard)",
+  );
+
+  // 3. The escalation ladder: a thin text-layer read gets a second, different attempt. Two rungs,
+  // taken in order — a different ROUTE where one exists (a PDF can be re-read as rendered pages),
+  // and otherwise a stronger MODEL on the same text, which is the only rung a .docx can reach.
   assert.match(extractionSource, /const escalation: CvExtractionRoute \| null =/);
   assert.match(
     extractionSource,
@@ -203,10 +222,36 @@ export function runRecruitmentCvExtractionQualityTests() {
   );
   assert.match(
     extractionSource,
-    /if \(!escalation\) throw error;\s*\n\s*return await runPass\(escalation\);/,
-    "a PDF whose first pass DIED gets the other route before we accept losing the applicant",
+    /if \(!runEscalation\) throw error;\s*\n\s*return await runEscalation\(\);/,
+    "a CV whose first pass DIED gets the other rung before we accept losing the applicant",
   );
   assert.match(extractionSource, /fields: mergeCvExtractions\(primary\.fields, retry\.fields\)/);
+
+  // 3b. The second rung, and why it had to exist. A .docx has no image form, so before 2026-08-27 a
+  // thin Word read was simply accepted — survivable while that read came from gpt-5.4, and not
+  // survivable once the text route moved to nano, because is_cv follows the MODEL. 40 of 636 stored
+  // CV files are Word. The retry must be reachable from the failure path AND from the thin path,
+  // which is what routing both through one runEscalation closure buys.
+  assert.match(
+    extractionSource,
+    /const retryModel = cvTextRetryModel\(route, escalation !== null\)/,
+    "a route with nowhere better to GO must still be able to escalate to a better MODEL",
+  );
+  assert.match(
+    extractionSource,
+    /: retryModel\s*\n\s*\? \(\) => runPass\(route, retryModel\)\s*\n\s*: null;/,
+    "the model rung re-reads the SAME route — its whole point is that there is no other route",
+  );
+  assert.match(
+    extractionSource,
+    /retry = await runEscalation\(\);/,
+    "the thin-read path must take the same rung as the death path, or a .docx keeps its thin read",
+  );
+  assert.doesNotMatch(
+    extractionSource,
+    /await runPass\(escalation\)/,
+    "every escalation must go through runEscalation — a direct call skips the rung a .docx can reach",
+  );
 
   // --- The recorded intake failure --------------------------------------------------------------
   // Production had 226 candidates, 177 extractions and 0 intake errors: 49 CVs were never read and
