@@ -3,12 +3,58 @@ import { canonicalHrIdKey } from "@/lib/hr-id";
 import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import {
+  filterMonthlyClosingMatrix,
   listMonthlyClosingLines,
   listMonthlyClosingPeriods,
   type MonthlyClosingCell,
   type MonthlyClosingMatrix,
 } from "@/lib/sales/monthly-distributor-import";
 import { loadMonthlyClosingPartsWithStoreSplit } from "@/lib/sales/monthly-closing-with-store-split";
+import { loadMergedMonthlyClosingParts } from "@/lib/sales/monthly-closing-period-load";
+import {
+  monthlyClosingFilterOptions,
+  type MonthlyClosingFilterOptions,
+} from "@/lib/sales/monthly-closing-filter-options";
+
+/** The same four narrowings Monthly Closing offers. Empty everywhere means "the whole line". */
+export type ClosingPerformanceReviewFilter = {
+  areaCodes?: string[];
+  productCodes?: string[];
+  regionCodes?: string[];
+  search?: string;
+};
+
+/** True when a filter would actually narrow anything — an all-empty filter must not cost a rebuild. */
+export function reviewFilterIsActive(filter: ClosingPerformanceReviewFilter | null | undefined): boolean {
+  if (!filter) return false;
+  return (
+    (filter.regionCodes?.length ?? 0) > 0 ||
+    (filter.areaCodes?.length ?? 0) > 0 ||
+    (filter.productCodes?.length ?? 0) > 0 ||
+    String(filter.search ?? "").trim() !== ""
+  );
+}
+
+/**
+ * Narrow a closing matrix for the review.
+ *
+ * Delegates to filterMonthlyClosingMatrix — the SAME function the Monthly Closing screen and its
+ * export already use — so "filtered like Monthly Closing" is literally true rather than a second
+ * implementation that agrees with it today. It re-derives region subtotals and the national total
+ * from the surviving area rows, so a narrowed review's totals stay exact.
+ */
+function applyReviewFilter(
+  matrix: MonthlyClosingMatrix,
+  filter: ClosingPerformanceReviewFilter | null,
+): MonthlyClosingMatrix {
+  if (!reviewFilterIsActive(filter)) return matrix;
+  return filterMonthlyClosingMatrix(matrix, {
+    areaCodes: filter?.areaCodes ?? [],
+    productCodes: filter?.productCodes ?? [],
+    regionCodes: filter?.regionCodes ?? [],
+    search: filter?.search ?? "",
+  });
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Performance Review — the reading layer behind /sales/monthly-closing/performance-review.
@@ -217,6 +263,14 @@ export type ClosingPerformanceReview = {
   availableLines: string[];
   availablePeriods: string[];
   families: PerformanceReviewFamilyRow[];
+  /**
+   * What the Regions / Areas / Products pickers may offer, built from the UNFILTERED matrix.
+   *
+   * Derived on the server on purpose. The rows this payload carries are the ones that SURVIVED the
+   * filter, so a picker built from them would offer only what is already selected — filter to Delta
+   * and Upper Egypt disappears from the list that is supposed to let you switch to it.
+   */
+  filterOptions: MonthlyClosingFilterOptions;
   generatedAt: string;
   line: string | null;
   managers: PerformanceReviewGroupRow[];
@@ -232,6 +286,18 @@ export type ClosingPerformanceReview = {
   /** By-month UNITS per product code — one product code per row, so the sum is real. */
   productUnitsByMonth: PerformanceReviewSeriesRow[];
   regions: PerformanceReviewGroupRow[];
+  /**
+   * Every month folded into the headline figures, oldest first — one entry for a single-month read.
+   *
+   * Distinct from `months`, which is the by-month SERIES behind the growth tabs and is always
+   * several. This is what the totals, the rankings and both grids actually cover.
+   */
+  selectedPeriods: string[];
+  /**
+   * Requested but unreadable, so the screen can name the missing month rather than quietly
+   * totalling fewer months than the reader asked for.
+   */
+  skippedPeriods: string[];
   totals: { achievement: number | null; salesValue: number; targetValue: number | null };
 };
 
@@ -481,12 +547,30 @@ function buildPerformanceMatrix(input: {
 export function buildClosingPerformanceReview(input: {
   availableLines: string[];
   availablePeriods: string[];
+  /**
+   * The pickers' options, built from the UNFILTERED matrix. Omitted, they are derived from `matrix`
+   * itself — right for a caller that never filters (the tests, a direct single-matrix build) and
+   * wrong the moment one does, which is why the loader below always passes them explicitly.
+   */
+  filterOptions?: MonthlyClosingFilterOptions;
   generatedAt: string;
   matrix: MonthlyClosingMatrix;
   seatAssignments: Map<string, AreaSeatAssignment>;
+  selectedPeriods?: string[];
   seriesMatrices: Array<{ matrix: MonthlyClosingMatrix | null; period: string }>;
+  skippedPeriods?: string[];
 }): ClosingPerformanceReview {
   const { availableLines, availablePeriods, generatedAt, matrix, seatAssignments, seriesMatrices } = input;
+  // Falls back to the matrix's own months so a caller that builds directly from one matrix (the
+  // tests, and any future single-month caller) still gets a truthful list rather than an empty one.
+  const selectedPeriods =
+    input.selectedPeriods && input.selectedPeriods.length > 0
+      ? input.selectedPeriods
+      : matrix.periods && matrix.periods.length > 0
+        ? matrix.periods
+        : matrix.period
+          ? [matrix.period]
+          : [];
   const line = lineKey(matrix.line);
 
   // ── Areas, each with the rep and manager the seat model gives it ──────────
@@ -715,6 +799,7 @@ export function buildClosingPerformanceReview(input: {
     areaValueByMonth,
     availableLines,
     availablePeriods,
+    filterOptions: input.filterOptions ?? monthlyClosingFilterOptions(matrix),
     families,
     generatedAt,
     line: matrix.line,
@@ -726,6 +811,8 @@ export function buildClosingPerformanceReview(input: {
     productUnitsByMonth,
     productValueByMonth,
     regions,
+    selectedPeriods,
+    skippedPeriods: input.skippedPeriods ?? [],
     totals: {
       achievement: achievementOf(totalsCell.salesValue, totalsCell.targetValue),
       salesValue: totalsCell.salesValue,
@@ -743,18 +830,34 @@ export function buildClosingPerformanceReview(input: {
  * areas of one city, and this sheet ranks reps BY area.
  */
 export async function loadClosingPerformanceReview(input?: {
+  /**
+   * The same region / area / product / area-search narrowing Monthly Closing offers.
+   *
+   * Applied SERVER-SIDE, unlike the closing screen's own client-side filter, because the review is
+   * not the matrix — it is six views DERIVED from it (rankings, family shares, the two grids, the
+   * month series). Narrowing after the derivation would leave a rank of 3rd out of 50 sitting on a
+   * table that now shows four rows. Filtering the matrix first and re-deriving is the only way the
+   * headline numbers can stay true to what is on screen.
+   */
+  filter?: ClosingPerformanceReviewFilter | null;
   line?: string | null;
   months?: number;
   period?: string | null;
+  /** Multi-month form. `period` remains the single-month one; a selection of one is identical to it. */
+  periods?: string[] | null;
 }): Promise<ClosingPerformanceReview> {
-  const parts = await loadMonthlyClosingPartsWithStoreSplit({
+  const selection = Array.from(new Set((input?.periods ?? []).filter(Boolean))).sort();
+  const parts = await loadMergedMonthlyClosingParts({
     line: input?.line ?? null,
-    period: input?.period ?? null,
+    periods: selection.length > 0 ? selection : input?.period ? [input.period] : [],
   });
   const [availableLines, availablePeriods] = await Promise.all([
     listMonthlyClosingLines(),
     listMonthlyClosingPeriods(),
   ]);
+
+  const narrow = (matrix: MonthlyClosingMatrix) => applyReviewFilter(matrix, input?.filter ?? null);
+  const matrix = narrow(parts.combined);
 
   const periods = selectSeriesPeriods(
     availablePeriods.length > 0 ? availablePeriods : parts.combined.availablePeriods,
@@ -766,12 +869,15 @@ export async function loadClosingPerformanceReview(input?: {
     loadAreaSeatAssignments(),
     Promise.all(
       periods.map(async (period) => {
-        if (period === parts.combined.period) return { matrix: parts.combined, period };
         try {
           const loaded = await loadMonthlyClosingPartsWithStoreSplit({ line: parts.combined.line, period });
           // Guard against the loader falling back to its default month: a matrix for the wrong
           // period would silently duplicate a column of the series under the wrong heading.
-          return { matrix: loaded.combined.period === period ? loaded.combined : null, period };
+          //
+          // Read fresh for EVERY month rather than reusing `parts.combined` for the selected one:
+          // under a multi-month selection that object is several months folded together, and
+          // dropping it into the series would draw one bar carrying the sum of all of them.
+          return { matrix: loaded.combined.period === period ? narrow(loaded.combined) : null, period };
         } catch {
           // One unreadable month must not lose the other five — it renders as "not uploaded".
           return { matrix: null, period };
@@ -783,9 +889,14 @@ export async function loadClosingPerformanceReview(input?: {
   return buildClosingPerformanceReview({
     availableLines: availableLines.length > 0 ? availableLines : parts.combined.availableLines,
     availablePeriods: availablePeriods.length > 0 ? availablePeriods : parts.combined.availablePeriods,
+    // From `parts.combined`, NOT from `matrix` — the pickers must offer every region and area on
+    // the line, including the ones the current filter has just removed from the screen.
+    filterOptions: monthlyClosingFilterOptions(parts.combined),
     generatedAt: new Date().toISOString(),
-    matrix: parts.combined,
+    matrix,
     seatAssignments,
+    selectedPeriods: parts.periods,
     seriesMatrices,
+    skippedPeriods: parts.skipped,
   });
 }

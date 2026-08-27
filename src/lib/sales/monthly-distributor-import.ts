@@ -3251,6 +3251,12 @@ export type MonthlyClosingMatrix = {
   grandTotal: MonthlyClosingGrandTotalRow;
   line: string | null;
   period: string | null;
+  // Set ONLY by mergeMonthlyClosingMatrices (monthly-closing-period-merge.ts) — every month folded
+  // into this matrix, oldest first. Undefined on a matrix built for a single month, so its absence
+  // means "one month" and never "unknown". `period` above stays the LATEST of them, so a caller
+  // that needs one real month still reads one; a caller that must refuse a multi-month selection
+  // (publish, lock) asks this field instead of trying to parse `period`.
+  periods?: string[];
   regions: MonthlyClosingRegionGroup[];
 };
 

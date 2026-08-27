@@ -8,6 +8,7 @@ import {
   PERFORMANCE_REVIEW_MONTHS,
 } from "@/lib/sales/closing-performance-review";
 import { buildClosingPerformanceReviewWorkbook } from "@/lib/sales/closing-performance-review-export";
+import { parseCodeList, parsePeriodSelection } from "@/lib/sales/monthly-closing-period-merge";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -26,9 +27,13 @@ function slug(value: string | null | undefined): string {
 /**
  * The Performance Review workbook — the file behind the page's own Export button.
  *
- * It rebuilds the review from the SAME service the page rendered from, at the same (line, period),
- * so the file and the screen cannot show different numbers. Nothing about the sheet is passed in
- * from the browser except which month and line to read.
+ * It rebuilds the review from the SAME service the page rendered from, at the same line, the same
+ * month or months, and the same filter, so the file and the screen cannot show different numbers.
+ * Nothing about the sheet's CONTENT is passed in from the browser — only which selection to read.
+ *
+ * The selection travels because the owner's rule is that an export matches the screen. A workbook
+ * that quietly covered every region while the reader was looking at Delta, or one month while the
+ * screen totalled three, would be different data wearing the same title.
  */
 export async function POST(request: Request) {
   try {
@@ -41,19 +46,37 @@ export async function POST(request: Request) {
     });
 
     const body = (await request.json().catch(() => ({}))) as {
+      areas?: string[] | string | null;
       line?: string | null;
       months?: number;
       period?: string | null;
+      periods?: string[] | string | null;
+      products?: string[] | string | null;
+      regions?: string[] | string | null;
+      search?: string | null;
     };
 
     const review = await loadClosingPerformanceReview({
+      filter: {
+        areaCodes: parseCodeList(body.areas),
+        productCodes: parseCodeList(body.products),
+        regionCodes: parseCodeList(body.regions),
+        search: typeof body.search === "string" ? body.search : "",
+      },
       line: typeof body.line === "string" && body.line.trim() !== "" ? body.line : null,
       months: Number.isFinite(body.months) ? Number(body.months) : PERFORMANCE_REVIEW_MONTHS,
       period: typeof body.period === "string" && body.period.trim() !== "" ? body.period : null,
+      periods: parsePeriodSelection(body.periods),
     });
 
     const buffer = await buildClosingPerformanceReviewWorkbook(review);
-    const fileName = `sato-performance-review-${slug(review.period)}-${slug(review.line)}.xlsx`;
+    // A multi-month file is named for its span, not for one of the months inside it — a file called
+    // "…-2026-09" holding July, August and September is the sort of thing that gets emailed on.
+    const periodSlug =
+      review.selectedPeriods.length > 1
+        ? slug(review.selectedPeriods[0] + "-to-" + review.selectedPeriods[review.selectedPeriods.length - 1])
+        : slug(review.period);
+    const fileName = `sato-performance-review-${periodSlug}-${slug(review.line)}.xlsx`;
     return new Response(new Uint8Array(buffer), {
       headers: {
         "Cache-Control": "no-store",

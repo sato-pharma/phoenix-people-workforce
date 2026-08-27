@@ -833,6 +833,8 @@ import { runStoreSplitDetailReportTests } from "./store-split-detail-report.test
 import { runMonthlyClosingExportSplitStaticTests } from "./monthly-closing-export-split-static.test.ts";
 import { runClosingExportMatchesScreenTests } from "./closing-export-matches-screen.test.ts";
 import { runClosingPerformanceReviewTests } from "./closing-performance-review.test.ts";
+import { runMonthlyClosingPeriodMergeTests } from "./monthly-closing-period-merge.test.ts";
+import { runClosingReviewFilterTests } from "./closing-review-filters.test.ts";
 import { runCeoMarketingApprovalInboxTests } from "./ceo-marketing-approval-inbox.test.ts";
 import { runMarketingApprovalInboxNavBadgeTests } from "./marketing-approval-inbox-nav-badge.test.ts";
 
@@ -2154,6 +2156,16 @@ await runTest(
 await runTest(
   "Performance Review never names a system state and never adds units across products (no \"Not mapped to an area\" / \"No district manager\" anywhere in the workbook, Main Store keeps its own name, the by-area growth tab is value-only, and a month never uploaded renders as a dash)",
   runClosingPerformanceReviewTests,
+);
+
+await runTest(
+  "several closing months merge by PRODUCT CODE, never by column position (two months carrying the same products in different orders each keep their own units, a month with no target contributes nothing rather than a zero, achievement is summed value over summed target, and merging nothing throws instead of returning an all-zero closing)",
+  runMonthlyClosingPeriodMergeTests,
+);
+
+await runTest(
+  "a Performance Review filter narrows the rows but never the pickers, and a filtered or multi-month workbook says so (Delta stays offerable after filtering to Cairo, a real area carrying direct money stays in the area picker while the synthetic company row does not, three months are labelled as a span instead of as September, and an array body parses the same as a comma query)",
+  runClosingReviewFilterTests,
 );
 
 await runTest(
