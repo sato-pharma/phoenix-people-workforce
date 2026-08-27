@@ -15,6 +15,11 @@ import {
 } from "@/lib/recruitment/cv-extraction";
 import { type ExtractedCandidateFields, isEmptyExtractedField } from "@/lib/recruitment/cv-extraction-fields";
 import { describeCvRead } from "@/lib/recruitment/cv-extraction-quality";
+import {
+  selectNewestIsRulesCandidateIds,
+  selectReadCandidateIds,
+  selectRulesOnlyCandidateIds,
+} from "@/lib/recruitment/cv-reread-target-sets";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Re-read the CVs the AI never read.
@@ -284,16 +289,16 @@ async function main(): Promise<void> {
     if (rows.length < PAGE) break;
   }
 
-  const readIds = new Set(
-    extractionRows
-      .filter((row) => !RULES_ONLY_MODELS.has(String(row.ai_model ?? "")))
-      .map((row) => String(row.candidate_id)),
-  );
-  const rulesOnlyIds = new Set(
-    extractionRows
-      .filter((row) => RULES_ONLY_MODELS.has(String(row.ai_model ?? "")))
-      .map((row) => String(row.candidate_id)),
-  );
+  // All three sets live in @/lib/recruitment/cv-reread-target-sets so a test can actually EXERCISE
+  // them: this file calls main() at import time against production, so nothing here can be imported,
+  // and a source-shape pin cannot catch a set that answers the wrong question. One of them did.
+  const readIds = selectReadCandidateIds(extractionRows, RULES_ONLY_MODELS);
+
+  // Candidates whose history is free rules output and nothing else. Until 2026-08-27 this asked
+  // "has a rules row ANYWHERE in its history", so a candidate the model read today still counted
+  // for ever after: it read 174 on production when the truth was 0. See the library for why the
+  // printed number mattered even though the filter below was never wrong.
+  const rulesOnlyIds = selectRulesOnlyCandidateIds(extractionRows, RULES_ONLY_MODELS);
 
   // The candidates whose NEWEST row is a free rules row, whatever came before it.
   //
@@ -305,16 +310,9 @@ async function main(): Promise<void> {
   // and 25 of them still have no job title on the candidate record. --include-rules-only cannot
   // reach a single one of them: it only stops rules-only candidates being REMOVED from the
   // never-read set, and these were never in it.
-  const newestModelByCandidate = new Map<string, string>();
-  for (const row of extractionRows) {
-    // extractionRows is ordered oldest-first, so the last write per candidate is the newest row.
-    newestModelByCandidate.set(String(row.candidate_id), String(row.ai_model ?? ""));
-  }
-  const newestIsRulesIds = new Set(
-    [...newestModelByCandidate.entries()]
-      .filter(([, model]) => RULES_ONLY_MODELS.has(model))
-      .map(([candidateId]) => candidateId),
-  );
+  //
+  // extractionRows is ordered oldest-first, which is what makes "newest" meaningful.
+  const newestIsRulesIds = selectNewestIsRulesCandidateIds(extractionRows, RULES_ONLY_MODELS);
 
   const { data: allCandidates, error: candidateError } = await supabase
     .from("ats_candidates")
@@ -360,10 +358,10 @@ async function main(): Promise<void> {
     // a re-read. Releasing them stays an explicit, owner-approved instruction.
     const before = targets.length;
     if (includeRulesOnly) {
-      console.log(`Rules-only so far: ${rulesOnlyIds.size}  (RELEASED by --include-rules-only: ${targets.filter((row) => rulesOnlyIds.has(String(row.id))).length} re-read this run)`);
+      console.log(`Rules-only, never read by a model: ${rulesOnlyIds.size}  (RELEASED by --include-rules-only: ${targets.filter((row) => rulesOnlyIds.has(String(row.id))).length} re-read this run)`);
     } else {
       targets = targets.filter((row) => !rulesOnlyIds.has(String(row.id)));
-      console.log(`Rules-only so far: ${rulesOnlyIds.size}  (held back ${before - targets.length}; they need a real key — pass --include-rules-only to read them)`);
+      console.log(`Rules-only, never read by a model: ${rulesOnlyIds.size}  (held back ${before - targets.length}; they need a real key — pass --include-rules-only to read them)`);
     }
   }
 

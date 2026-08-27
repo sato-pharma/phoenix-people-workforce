@@ -967,6 +967,7 @@ import { runCrmDayMapVisitTypeStatusTests } from "./crm-day-map-visit-type-statu
 import { runCrmBrickCoverageTests } from "./crm-brick-coverage.test.ts";
 
 import { runRecruitmentCvReadHonestyTests } from "./recruitment-cv-read-honesty.test.ts";
+import { runRecruitmentCvRereadTargetSetsTests } from "./recruitment-cv-reread-target-sets.test.ts";
 import { runRecruitmentRereadModelConstantsTests } from "./recruitment-reread-model-constants.test.ts";
 import { runRecruitmentExtractionRecordsIsCvTests } from "./recruitment-extraction-records-is-cv.test.ts";
 import { runRecruitmentRereadNotACvSkipsTests } from "./recruitment-reread-not-a-cv-skips.test.ts";
@@ -2715,6 +2716,11 @@ await runTest(
   "CV re-read hold-back is built from the exported model constants (an OCR-only row must not count "
     + "as a real model read and freeze that candidate out of every future re-read)",
   runRecruitmentRereadModelConstantsTests,
+);
+await runTest(
+  "CV re-read target sets (a free rules row FOLLOWED by a model read is not 'rules-only' — counting "
+    + "it there reported a 174-CV backlog that was already read, and advised paying to redo it)",
+  runRecruitmentCvRereadTargetSetsTests,
 );
 
 await runTest(
