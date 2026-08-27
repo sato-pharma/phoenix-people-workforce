@@ -2016,7 +2016,7 @@ await runTest("crm rep-day check-in attribution (managers borrow the rep's check
 await runTest("biometric passkey login (terminal-employment gate, replay counter, single-use challenge, no credential enumeration)", runAuthWebauthnTests);
 
 await runTest("SFE doctor coverage (A=2/B=1 norms, the panel is the rep's ASSIGNED list, off-list reported never scored, identity reconciled across both mirrors, single-source door)", runSfeDoctorCoverageTests);
-await runTest("Doctor coverage districts (a manager's panel is his TEAM's lists combined, membership is structural and never by job title, a manager leaves the rep table, cycles terminate)", runDoctorCoverageDistrictTests);
+await runTest("Doctor coverage districts (a manager's panel is his TEAM's lists combined, MEMBERSHIP is structural and never by job title, a manager leaves the rep table, a manager whose only report produced no row is still a district, a Product Manager is exempt from the no-list tally but keeps his rep row, cycles terminate)", runDoctorCoverageDistrictTests);
 await runTest("Doctor coverage rep names (the employee directory names the person and the CRM keeps the territory, a territory-only CRM name still yields a person, a district carries no territory)", runDoctorCoverageRepNameTests);
 await runTest(
   "doctor coverage scope (full subtree, line boundary, fail-closed) and elapsed-month pace",

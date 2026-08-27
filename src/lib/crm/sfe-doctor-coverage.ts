@@ -208,7 +208,12 @@ export type DoctorCoverageOrgNode = {
   /** Lower-cased hr id of this employee's manager, or null at the top of the tree. Lower-cased
    * because it is compared against the hr id inside a `hr:` repKey, which is built that way. */
   managerHrId: string | null;
-  /** Job title exactly as the directory spells it. Display only — never used to classify. */
+  /** Job title exactly as the directory spells it. Display only, and never used to classify
+   * MANAGERSHIP — that stays structural (see the walk below) because free text hid 9 of 27 District
+   * Sales Managers from a title search before. It IS read once, narrowly, to spot a Product
+   * Manager: a staff/brand role that (like a manager) holds no personal doctor list by design, but
+   * has no reports to walk, so title is the only signal that exists at all. See
+   * `productManagerKeys` below. */
   title: string | null;
 };
 
@@ -1246,10 +1251,49 @@ export function buildDoctorCoverageBoard(
         for (let lower = 0; lower < level; lower += 1) beneath.add(chain[lower]!);
       }
     }
+
+    // A manager whose only directory-recorded report(s) produced no row at all this month never
+    // enters the walk above, so he falls through and reads as an ordinary rep with "no list" — even
+    // though "does anyone report to me" is still true in the directory. Ahmed Nagy (PD-0006),
+    // 2026-08: 56 campaign calls of his own, one direct report (Bahaa Gamal, PD-0007) who resigned
+    // and therefore never appears in `repRows`. Owner's ruling 2026-08-27: keep him as a district —
+    // of an empty roster right now — rather than flagging him personally as a rep with no list.
+    //
+    // Recognised only when he is ALREADY on the board through his own activity. A manager with zero
+    // activity of his own and no active reports has nothing to show either way, and manufacturing an
+    // all-zero row for him would be exactly the noise the `managersBeneath`-not-`bucket` rule above
+    // already guards against.
+    const hasDirectoryReport = new Set<string>();
+    for (const node of orgByHrId.values()) {
+      if (node.managerHrId) hasDirectoryReport.add(node.managerHrId);
+    }
+    for (const rep of repRows.values()) {
+      if (!rep.agentHrId || subtreeByManager.has(rep.agentHrId)) continue;
+      if (hasDirectoryReport.has(rep.agentHrId)) {
+        subtreeByManager.set(rep.agentHrId, new Set());
+        if (!managersBeneath.has(rep.agentHrId)) managersBeneath.set(rep.agentHrId, new Set());
+      }
+    }
   }
   /** repKeys that are managers — removed from the rep table, because their row is their district. */
   const managerKeys = new Set<string>();
   for (const managerHrId of subtreeByManager.keys()) managerKeys.add(`hr:${managerHrId}`);
+  // Product Managers hold no personal doctor list either — same as a District Manager, and for the
+  // same reason: he owns a brand, not a territory of reps. The reports-based walk above can never
+  // find him (a PM has no reports), so title is the only signal available. Owner's ruling
+  // 2026-08-27: exclude him from the "no list" alarm tallies below, but — UNLIKE a manager — never
+  // remove his row from `reps`, and never touch his access. His board is already scoped to his own
+  // product line (doctor-coverage-roles.ts LINE_ROLES) and built from this same `reps` table, so
+  // pulling him out here would take his own view away along with the false alarm. "Group Product
+  // Manager" is a different, more senior title and is deliberately NOT included — nobody holding it
+  // showed up in this tally in production as of 2026-08-27.
+  const productManagerKeys = new Set<string>();
+  for (const rep of repRows.values()) {
+    if (!rep.agentHrId) continue;
+    if (orgByHrId?.get(rep.agentHrId)?.title?.trim().toLowerCase() === "product manager") {
+      productManagerKeys.add(rep.repKey);
+    }
+  }
   // A manager's OWN field work belongs to his district. The upward walk cannot add it (it starts
   // above him), so it is folded in here — for the District Managers on this board that is campaign
   // calls and off-list visits, which is all any of them logged.
@@ -1303,7 +1347,7 @@ export function buildDoctorCoverageBoard(
       row.yellow += rep.yellow;
       if (repKey === managerKey || managerKeys.has(repKey)) continue;
       team.push(rep);
-      if (!rep.hasPanel) row.repsWithNoList += 1;
+      if (!rep.hasPanel && !productManagerKeys.has(repKey)) row.repsWithNoList += 1;
     }
     row.hasPanel = row.panelSize > 0;
     row.coveragePct = row.panelSize > 0 ? Math.round((row.green / row.panelSize) * 100) : 0;
@@ -1328,17 +1372,19 @@ export function buildDoctorCoverageBoard(
   // rows that survived the filters, so it always reconciles with the table underneath it.
   // Managers are excluded on purpose: a District Manager holding no personal list is the RULE, not
   // a loading gap, and counting him here is what made this tile read 18 in August 2026 when only 4
-  // of those people were reps waiting on a list.
+  // of those people were reps waiting on a list. A Product Manager is the same rule for a different
+  // reason (owner's ruling 2026-08-27) — see `productManagerKeys` above.
   const repsWithNoList = Array.from(repRows.values()).filter(
-    (rep) => !managerKeys.has(rep.repKey) && !repsHoldingAList.has(rep.repKey),
+    (rep) => !managerKeys.has(rep.repKey) && !productManagerKeys.has(rep.repKey) && !repsHoldingAList.has(rep.repKey),
   ).length;
   // Campaign-only reps, counted the same manager-aware way and from the ROW's own shape rather than
   // from a counter incremented while the rows were being built. The two are equivalent — a row with
   // no panel and no off-list visit can only have been created by the campaign fold-in — but the
   // counter ran before districts existed, so it still counted every District Manager whose month
-  // was campaign work. Measured on August 2026: 14 before, 4 after, so 10 of the 14 were managers.
+  // was campaign work. Measured on August 2026: 14 before, 4 after, so 10 of the 14 were managers —
+  // of the remaining 4, one is the Product Manager `productManagerKeys` now also excludes.
   const repsAllCampaign = Array.from(repRows.values()).filter(
-    (rep) => !managerKeys.has(rep.repKey) && !rep.hasPanel && rep.offListDoctors === 0 && rep.campaignCalls > 0,
+    (rep) => !managerKeys.has(rep.repKey) && !productManagerKeys.has(rep.repKey) && !rep.hasPanel && rep.offListDoctors === 0 && rep.campaignCalls > 0,
   ).length;
 
   const totalsGreen = doctors.filter((doctor) => doctor.status === "green").length;

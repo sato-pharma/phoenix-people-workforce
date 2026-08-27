@@ -317,6 +317,141 @@ export function runDoctorCoverageDistrictTests() {
   );
   assert.equal(managerWithOwnList.managers[0]?.teamSize, 1, "but he is not a member of his own team");
 
+  // ── A Product Manager holds no personal list either — but unlike a manager, he STAYS a rep row ──
+  //
+  // Owner's ruling 2026-08-27: exclude a Product Manager from the "no list" tallies, the same as a
+  // District Manager, because he owns a brand rather than a territory of reps — but never pull his
+  // row out of the rep table the way a manager is pulled. His own board access is scoped to his
+  // product line and built from this same table, so removing him here would take his own view away
+  // along with the false alarm. Production, 2026-08: Ahmed Sharaf (B-155), 17 campaign calls, no
+  // list since at least June.
+  const productManager = buildDoctorCoverageBoard([visit({ contact_crm_id: 501 })], MONTH, {
+    campaignVisits: [
+      visit({
+        agent_crm_id: 900,
+        agent_hr_id: "PM-1",
+        agent_name: "A.Sharaf ( PM / P )",
+        contact_crm_id: 0,
+        contact_name: "",
+        crm_contact_grade: null,
+        speciality: null,
+        visit_type: CAMPAIGN_TYPE,
+      }),
+    ],
+    orgByHrId: org({
+      "m-1": { managerHrId: null, title: "Medical Representative" },
+      "pm-1": { managerHrId: null, title: "Product Manager" },
+    }),
+    planRows: [plan({ contact_crm_id: 501 })],
+    repNameByHrId: new Map([
+      ["m-1", "Rep One"],
+      ["pm-1", "Ahmed Sharaf"],
+    ]),
+  });
+  assert.deepEqual(
+    productManager.reps.map((rep) => rep.repKey).sort(),
+    ["hr:m-1", "hr:pm-1"],
+    "a Product Manager is not a structural manager (no reports beneath him) and must stay a plain rep row — pulling him out would take his own product-line view away with it",
+  );
+  assert.equal(
+    productManager.reps.find((rep) => rep.repKey === "hr:pm-1")?.hasPanel,
+    false,
+    "his row still honestly reports no assigned list — only the company tally treats it as expected, not the row itself",
+  );
+  assert.equal(
+    productManager.totals.repsWithNoList,
+    0,
+    "THE HEADLINE RULE: a Product Manager holding no personal list must not inflate the 'reps waiting on a list' tile — same rule as a District Manager, different reason",
+  );
+  assert.equal(productManager.totals.repsAllCampaign, 0, "nor the campaign-only tile");
+
+  // Control: a different staff title doing the identical campaign-only work IS still counted — the
+  // exclusion is an exact title match, never a prefix or a "contains".
+  const groupProductManager = buildDoctorCoverageBoard([visit({ contact_crm_id: 501 })], MONTH, {
+    campaignVisits: [
+      visit({
+        agent_crm_id: 901,
+        agent_hr_id: "GPM-1",
+        agent_name: "G.Product ( HQ / P )",
+        contact_crm_id: 0,
+        contact_name: "",
+        crm_contact_grade: null,
+        speciality: null,
+        visit_type: CAMPAIGN_TYPE,
+      }),
+    ],
+    orgByHrId: org({
+      "m-1": { managerHrId: null, title: "Medical Representative" },
+      "gpm-1": { managerHrId: null, title: "Group Product Manager" },
+    }),
+    planRows: [plan({ contact_crm_id: 501 })],
+    repNameByHrId: new Map([
+      ["m-1", "Rep One"],
+      ["gpm-1", "Some GPM"],
+    ]),
+  });
+  assert.equal(
+    groupProductManager.totals.repsWithNoList,
+    1,
+    "a Group Product Manager is a different, more senior title and is deliberately NOT exempted — nobody holding it showed up in this tally in production, and the match must stay exact rather than widen on its own",
+  );
+
+  // ── A manager whose recorded report produced no row this month still gets his district ──────────
+  //
+  // Ahmed Nagy (PD-0006), production, 2026-08: one direct report on paper (Bahaa Gamal, PD-0007),
+  // resigned, and therefore absent from repRows entirely — resigned agents are filtered out
+  // upstream, the same door that keeps a leaver's visits off every other rep's board. The upward
+  // walk above only discovers a manager by climbing FROM a rep who has a row, so a manager whose
+  // only report has no row at all was invisible to it, and fell back to reading as an ordinary rep
+  // with no list despite being a manager. Owner's ruling 2026-08-27: keep him as a district — of an
+  // empty roster right now — instead.
+  const managerWithNoActiveReports = buildDoctorCoverageBoard([visit({ contact_crm_id: 501 })], MONTH, {
+    campaignVisits: [
+      visit({
+        agent_crm_id: 950,
+        agent_hr_id: "DM-EMPTY",
+        agent_name: "E.Manager ( Delta / C )",
+        contact_crm_id: 0,
+        contact_name: "",
+        crm_contact_grade: null,
+        speciality: null,
+        visit_type: CAMPAIGN_TYPE,
+      }),
+    ],
+    orgByHrId: org({
+      "m-1": { managerHrId: null, title: "Medical Representative" },
+      "dm-empty": { managerHrId: null, title: "District Sales Manager" },
+      // Recorded in the directory, but produces no visit, plan or campaign row anywhere in this
+      // fixture — exactly how a departed agent's data is excluded upstream.
+      "resigned-1": { managerHrId: "dm-empty", title: "Medical Representative" },
+    }),
+    planRows: [plan({ contact_crm_id: 501 })],
+    repNameByHrId: new Map([
+      ["m-1", "Rep One"],
+      ["dm-empty", "Empty Manager"],
+    ]),
+  });
+  assert.deepEqual(
+    managerWithNoActiveReports.reps.map((rep) => rep.repKey),
+    ["hr:m-1"],
+    "the manager must not read as an ordinary rep just because his one recorded report produced no row this month — only the unrelated control rep remains",
+  );
+  assert.equal(managerWithNoActiveReports.managers.length, 1, "he still gets exactly one district row");
+  const emptyDistrict = managerWithNoActiveReports.managers[0]!;
+  assert.equal(emptyDistrict.managerName, "Empty Manager");
+  assert.equal(emptyDistrict.isDistrict, true, "no other manager sits beneath him");
+  assert.equal(emptyDistrict.teamSize, 0, "his roster is genuinely empty of ACTIVE reports right now");
+  assert.equal(
+    emptyDistrict.campaignCalls,
+    1,
+    "but his own field work still belongs to his district, not to a rep row that no longer exists",
+  );
+  assert.equal(
+    managerWithNoActiveReports.totals.repsWithNoList,
+    0,
+    "and he must never be counted as a rep waiting on a list either",
+  );
+
   // ── Source contracts ─────────────────────────────────────────────────────────────────────────
   const serviceSource = readFileSync("src/lib/crm/sfe-doctor-coverage.ts", "utf8");
   assert.match(
