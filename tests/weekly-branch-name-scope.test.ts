@@ -34,7 +34,7 @@ const AREA_ROWS = [
   ["GZ1", "Giza - Giza Centers"], ["GZ2", "Dokki - Mohandseen - Bolak"],
   ["GZ3", "Imbaba - Imbaba Centers"], ["GZ4", "Haram - Faisal"],
   ["GZ5", "Helwan-Maadi"], ["GZ6", "Fayoum"], ["GZ7", "October -Zayed"],
-  ["OT3", "Aswan (Legacy)"], ["OT5", "Hurgada"], ["OT6", "Luxor"], ["OT7", "Aswan"],
+  ["OT2", "Suez"], ["OT3", "Aswan (Legacy)"], ["OT5", "Hurgada"], ["OT6", "Luxor"], ["OT7", "Aswan"],
   ["OT8", "Red Sea"], ["OTMS", "Main Store"],
   ["UE1", "Minia 1"], ["UE2", "Minia 2"], ["UE3", "Assuit 1"], ["UE4", "Assuit 2"],
   ["UE5", "Sohag1"], ["UE6", "Sohag2"], ["UE7", "Qena 1"], ["UE8", "Qena 2"], ["UE9", "Beni Suef"],
@@ -250,5 +250,61 @@ export async function runWeeklyBranchNameScopeTests() {
     assert.equal(split("فرع قنا الجديد", "UE").length, 2, "a brick must be the whole name, not a word inside it");
     // A brick name that exists in TWO areas answers nothing and must not be guessed at.
     assert.equal(readWeeklyBranchName(index, "بيلا", "D1").scope?.kind !== "brick", true, "an ambiguous brick name is not a brick reading");
+  }
+
+  // 12) HEADLINE — the ENGLISH spelling of a place must read the same as the Arabic one.
+  //
+  //     A distributor never writes the brick verbatim: the brick is قليوب, the depot is "Kalioub
+  //     Branch". Until these were added the English name stated no place at all, so the branch fell
+  //     back to its REGION and the money spread across every area in it — Aswan's depot was landing
+  //     on fourteen areas and Ibnsina's Suez depot on the whole of Others.
+  //
+  //     Each expectation below is the area `source_of_sales_bricks` itself assigns, read from
+  //     production 2026-08-27, never a judgement about Egyptian geography. That ordering is the
+  //     owner's rule: the brick table outranks any map we could reason from.
+  {
+    const one = (name: string, region: string, area: string, brick: string) =>
+      assert.deepEqual(split(name, region), [`${area}:100.00`], `${name} must read ${area} — brick ${brick}`);
+
+    one("Ain Shams Branch", "CA", "CA3", "عين شمس الشرقيه / الغربيه");
+    one("Kalioub Branch", "D1", "D11", "قليوب");
+    one("Shbein El Kom Branch", "D1", "D12", "شبين الكوم");
+    one("Fakous", "D2", "D25", "فاقوس");
+    one("Suiz Branch", "OT", "OT2", "السويس");
+    one("Bani Swif Regional", "GZ", "UE9", "مدينة بنى سويف");
+    one("Maryoutia Branch", "GZ", "GZ4", "ترعة المريوطية");
+
+    // The depot's OWN number must not be mistaken for one of ours — the same rule as block 3.
+    // "Maryoutia 3" is Ibnsina's third Maryoutia depot; there is no area "Maryoutia 3".
+    one("Maryoutia 3 Branch", "GZ", "GZ4", "ترعة المريوطية");
+
+    // The mirror and the retail variants of the same town are the same town.
+    one("Retail Fakous", "D2", "D25", "فاقوس");
+    one("Retail Fakous_ك", "D2", "D25", "فاقوس");
+
+    // GUARD — "shbein el kom" is registered as the WHOLE phrase precisely because شبين القناطر is a
+    // different town in a different governorate (D11, not D12). A bare "shbein" would collapse the
+    // two, which is the shortcut the Arabic alias table already takes and this one must not.
+    assert.deepEqual(split("شبين الكوم", "D1"), ["D12:100.00"], "the Arabic brick still reads Menoufia 1");
+    assert.notDeepEqual(
+      split("Shbein El Qanater", "D1"),
+      ["D12:100.00"],
+      "a different Shebin must not inherit Shebin El Kom's area",
+    );
+
+    // GUARD — adding a new area to the Others fixture must not change a region reading's arithmetic.
+    // OT2 exists now, so a branch naming the region spreads over one more seat, evenly and to 100%.
+    const others = split("Direct - Others", "OT");
+    assert.ok(others.some((entry) => entry.startsWith("OT2:")), `Suez must appear in an Others reading, got ${others}`);
+    assert.equal(
+      new Set(others.map((entry) => entry.split(":")[1])).size,
+      1,
+      `every seat takes an equal share, got ${others}`,
+    );
+    // Conservation is a property of the WEIGHTS, never of the printed percentages: seven equal
+    // seats print as 14.29% each and those strings add to 100.03. The sheet is rounded on purpose,
+    // so read the weights — this is the assertion that would catch a lost or duplicated seat.
+    const weights = resolveBranchAreaShares(index, "Anti Infective", readWeeklyBranchName(index, "Direct - Others", "OT").scope);
+    assert.equal(weights.reduce((total, share) => total + share.weight, 0).toFixed(10), "1.0000000000");
   }
 }
