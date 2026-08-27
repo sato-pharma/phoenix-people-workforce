@@ -2,6 +2,8 @@ import ExcelJS from "exceljs";
 
 import { systemDocuments, systemIdentity } from "@/config/system-settings";
 import type { CompanyVacationReportRow } from "@/lib/vacation/company-vacation-report";
+import { companyVacationLeaveTypeLabel } from "@/lib/vacation/company-vacation-report-filters";
+import { companyVacationSourceSystem } from "@/lib/vacation/company-vacation-report-source";
 
 const phoenixOrange = "FFC2410C";
 const phoenixSlate = "FF0F172A";
@@ -43,13 +45,18 @@ function rowValues(row: CompanyVacationReportRow) {
     row.employeeName,
     row.jobTitle ?? "",
     row.lineName ?? "",
+    companyVacationSourceSystem(row.source),
     row.source,
     row.startDate,
     row.endDate,
     row.workingDays,
     row.hasBalance === null ? "N/A" : row.hasBalance ? "Yes" : "No",
     row.balanceAfterDays ?? "",
-    row.detail,
+    // The SAME wording the screen shows. The stored value is a bare enum ("annual"), and the
+    // reader who filtered on "Annual Vacation" should not have to work out that the workbook's
+    // "annual" is the same thing. An unrecognised value (a CRM Signal's evidence sentence) comes
+    // back through untouched.
+    companyVacationLeaveTypeLabel(row.detail),
     row.requestId ?? "",
   ];
 }
@@ -79,6 +86,7 @@ export function generateCompanyVacationReportWorkbook(input: {
     "Employee",
     "Job Title",
     "Line",
+    "Source System",
     "Source",
     "Start Date",
     "End Date",
@@ -94,7 +102,7 @@ export function generateCompanyVacationReportWorkbook(input: {
   sheet.getCell(1, 1).value = `${systemIdentity.appName} - Company Vacation Report`;
 
   sheet.mergeCells(2, 1, 2, headers.length);
-  sheet.getCell(2, 1).value = "\"HR ...\" rows are official system records. \"CRM Signal\" rows are unverified estimates from CRM/attendance data and require HR review before any leave-balance action.";
+  sheet.getCell(2, 1).value = "Source System says where the day came from: \"Phoenix\" = a leave request the employee submitted on this system, \"CRM\" = a vacation the field CRM recorded on its own. \"HR ...\" rows are official system records. \"CRM Signal\" rows are unverified estimates from CRM/attendance data and require HR review before any leave-balance action.";
   sheet.getCell(2, 1).font = { bold: true, color: { argb: "FF9A3412" }, italic: true };
   sheet.getCell(2, 1).alignment = { horizontal: "center", wrapText: true };
 
@@ -135,6 +143,8 @@ export function generateCompanyVacationReportWorkbook(input: {
   notes.columns = [{ width: 36 }, { width: 110 }];
   notes.addRows([
     ["Source", "Meaning"],
+    ["Source System = Phoenix", "The employee submitted this leave through Phoenix and it lives in the HR system of record. The Source column beside it says where that request currently stands (Approved / Pending / Rejected / Cancelled)."],
+    ["Source System = CRM", "Nobody submitted this on Phoenix. It was read out of the field CRM (iReports360), where the day is marked as Annual Vacation. It is an unverified signal, not a request."],
     ["HR Approved / Pending / Rejected / Cancelled", "Official record from v2_vacation_requests, at its current status. This is the system of record."],
     ["CRM Signal — Vacation", "An Annual Vacation entry logged in the field CRM (iReports360), with no fingerprint or field-activity contradiction found. Not yet a formal HR request."],
     ["CRM Signal — Half-Day (Attendance Partial)", "A CRM vacation entry where the employee (fingerprint-mapped only) also had under 5 hours of fingerprint activity that day — likely a half-day, not a full vacation day."],

@@ -33,6 +33,10 @@ const vacationTableSource = readFileSync(
   new URL("../src/components/vacation/company-vacation-report-table.tsx", import.meta.url),
   "utf8",
 );
+const vacationPageSource = readFileSync(
+  new URL("../app/(admin)/admin/vacation-report/page.tsx", import.meta.url),
+  "utf8",
+);
 const closingExportRouteSource = readFileSync(
   new URL("../app/api/sales/monthly-closing/export/route.ts", import.meta.url),
   "utf8",
@@ -94,7 +98,10 @@ function vacationRow(overrides: Partial<CompanyVacationReportRow> & { hrId: stri
     balanceAfterDays: null,
     balanceBeforeDays: null,
     dayPart: null,
-    detail: "Annual leave",
+    // What company-vacation-report.ts really writes for an HR row is `row.vacation_type` — the
+    // raw stored value, not a sentence. The Leave Type filter compares against it, so a prettied
+    // fixture here would make that filter look broken (or, worse, look fine while matching nothing).
+    detail: "annual",
     employeeName: "Mona Adel",
     endDate: "2026-03-10",
     hasBalance: null,
@@ -245,18 +252,58 @@ export function runExportFollowsScreenFiltersTests() {
     "an untouched filter bar still exports the full requested range",
   );
 
-  // From/To narrow by overlap: a request straddling the boundary is partly inside the window
-  // the reader asked for, so it must survive rather than be hidden.
-  const straddling = vacationRow({ hrId: "HR-4", startDate: "2026-02-26", endDate: "2026-03-04" });
+  // The three the owner named on 2026-08-27 that the first build did not have: employee, job
+  // title, leave type. Each has to reach the workbook like the others, or the file contradicts the
+  // screen the moment he uses one.
+  const staffedRows = [
+    vacationRow({ hrId: "HR-1", jobTitle: "Medical Rep", detail: "annual" }),
+    vacationRow({ hrId: "HR-2", jobTitle: "District Manager", detail: "sick" }),
+    vacationRow({ hrId: "HR-3", jobTitle: "Medical Rep", detail: "Fingerprint shows under 5h worked", source: "CRM Signal — Vacation" }),
+  ];
   assert.deepEqual(
-    filterCompanyVacationReportRows([straddling], { ...NO_COMPANY_VACATION_REPORT_FILTERS, fromDate: "2026-03-01", toDate: "2026-03-31" }).map((row) => row.hrId),
-    ["HR-4"],
-    "a request that starts before the From date but runs into the window is real leave inside it and must not be dropped",
+    filterCompanyVacationReportRows(staffedRows, { ...NO_COMPANY_VACATION_REPORT_FILTERS, jobTitle: "District Manager" }).map((row) => row.hrId),
+    ["HR-2"],
+    "the Job Title filter narrows the file the same way it narrows the table",
+  );
+  assert.deepEqual(
+    filterCompanyVacationReportRows(staffedRows, { ...NO_COMPANY_VACATION_REPORT_FILTERS, leaveType: "sick" }).map((row) => row.hrId),
+    ["HR-2"],
+    "the Leave Type filter reads the stored vacation_type that the Detail column shows",
   );
   assert.equal(
-    filterCompanyVacationReportRows([straddling], { ...NO_COMPANY_VACATION_REPORT_FILTERS, fromDate: "2026-04-01" }).length,
+    filterCompanyVacationReportRows(staffedRows, { ...NO_COMPANY_VACATION_REPORT_FILTERS, leaveType: "annual" }).some((row) => row.source.startsWith("CRM")),
+    false,
+    "a leave type must never match a CRM Signal row — a CRM row's Detail is an evidence sentence, so picking a leave type narrows to Phoenix rows by construction rather than by a second rule",
+  );
+  // The two source tables spell the same HR ID in different cases (src/lib/hr-id.ts), so an
+  // employee filter comparing raw strings silently drops that person's rows — and a silently
+  // empty single-employee report reads as "she took no leave".
+  assert.deepEqual(
+    filterCompanyVacationReportRows(staffedRows, { ...NO_COMPANY_VACATION_REPORT_FILTERS, employeeHrId: "hr-1" }).map((row) => row.hrId),
+    ["HR-1"],
+    "the Employee filter must match through canonicalHrIdKey, so a lower-cased id still finds the employee",
+  );
+  assert.equal(
+    filterCompanyVacationReportRows(staffedRows, { ...NO_COMPANY_VACATION_REPORT_FILTERS, employeeHrId: "  " }).length,
     0,
-    "a request that ends before the From date is genuinely outside the window",
+    "an employee filter that resolves to no id matches nothing — falling through to 'All' would export the whole company under one person's name",
+  );
+
+  // The date range is no longer one of these filters — it is the query (the two date pickers write
+  // startDate/endDate and the page re-fetches), so there is nothing here to narrow by date and a
+  // date key must not creep back in. Two date concepts is how a screen shows less than its own
+  // header claims to cover.
+  assert.equal(
+    Object.keys(NO_COMPANY_VACATION_REPORT_FILTERS).some((key) => /date/i.test(key)),
+    false,
+    `the on-screen filter set must hold no date field — the range belongs to the query: ${Object.keys(NO_COMPANY_VACATION_REPORT_FILTERS).join(", ")}`,
+  );
+  // Overlap now lives in the range query itself, which is what lets a request straddling the
+  // boundary survive: it is partly inside the window the reader asked for.
+  const reportSource = readFileSync(new URL("../src/lib/vacation/company-vacation-report.ts", import.meta.url), "utf8");
+  assert.ok(
+    /\.lte\("start_date", endDate\)[\s\S]{0,80}\.gte\("end_date", startDate\)/.test(reportSource),
+    "the range query must bound by OVERLAP (start_date <= end, end_date >= start) — containment bounds would hide leave that straddles the picked window",
   );
 
   // An unrecognised value must narrow to nothing rather than fall back to the default, because
@@ -269,7 +316,16 @@ export function runExportFollowsScreenFiltersTests() {
 
   // The link is a GET, so the params it writes and the params the route reads must be one
   // round trip; a key spelled differently on either side re-creates the whole defect silently.
-  const roundTrip = { fromDate: "2026-03-01", hasBalance: "Yes", lineName: "Pedia", query: "mona", source: "HR Approved", toDate: "2026-03-31" };
+  const roundTrip = {
+    employeeHrId: "HR-1",
+    hasBalance: "Yes",
+    jobTitle: "Medical Rep",
+    leaveType: "annual",
+    lineName: "Pedia",
+    query: "mona",
+    source: "HR Approved",
+    sourceSystem: "CRM",
+  };
   assert.deepEqual(
     parseCompanyVacationReportFilters(companyVacationReportFilterParams(roundTrip)),
     roundTrip,
@@ -293,7 +349,7 @@ export function runExportFollowsScreenFiltersTests() {
   );
   assert.equal(
     describeCompanyVacationReportFilters({ ...NO_COMPANY_VACATION_REPORT_FILTERS, lineName: "Pedia", source: "HR Approved" }),
-    "Filtered export — this workbook covers only: Source: HR Approved · Line: Pedia.",
+    "Filtered export — this workbook covers only: Detail type: HR Approved · Line: Pedia.",
     "a filtered vacation workbook says which slice it is, since it gets forwarded without the screen it came from",
   );
 
@@ -337,10 +393,20 @@ export function runExportFollowsScreenFiltersTests() {
     /companyVacationReportFilterParams\(filters\)/,
     "the vacation Export Excel link must carry the active filters, not just the date range",
   );
+  // Filtering moved to the SERVER (owner instruction 2026-08-27: the page opens empty and runs
+  // only what the reader asks for), so the rows the screen shows are narrowed on the page, not in
+  // the browser. The pin has to move with it — left pointing at the table it would go green
+  // against a component that no longer filters anything, which is the exact drift it exists to
+  // catch.
   assert.match(
-    vacationTableSource,
-    /filterCompanyVacationReportRows\(rows, filters\)/,
-    "the vacation table must narrow through the shared filter the export route also uses",
+    vacationPageSource,
+    /filterCompanyVacationReportRows\(rangeRows, filters\)/,
+    "the vacation PAGE must narrow through the shared filter the export route also uses",
+  );
+  assert.match(
+    vacationPageSource,
+    /applied[\s\S]{0,200}getCompanyVacationReport\(/,
+    "the range read must be gated on the reader having pressed Apply — an ungated read is the whole-company page the owner rejected, and it carries the expensive CRM visit scan",
   );
 
   // -- Monthly Closing: the workbook must carry the Office columns the SCREEN carries -----------

@@ -46,6 +46,7 @@ import { queryVisits } from "@/lib/crm/reads";
 import { loadActiveDeviceMappedHrIds } from "@/lib/attendance/device-user-mapping";
 import { loadEmployeeDayPunchMinutes } from "@/lib/attendance/punch-minutes";
 import { getConfirmedNationalHolidays } from "@/lib/vacation/national-holidays";
+import type { CompanyVacationReportSource } from "@/lib/vacation/company-vacation-report-source";
 
 /** Same threshold as attendance-cross-check.ts's AV_HALF_DAY_MAX_WORKED_MINUTES —
  * owner-confirmed (2026-07): under 5 worked hours on a CRM-AV day reads as a half-day. Only
@@ -71,13 +72,14 @@ const HISTORICAL_REVALIDATE_SECONDS = 6 * 60 * 60;
 export const COMPANY_VACATION_REPORT_CACHE_TAG = "company-vacation-report";
 const CACHE_TAG = COMPANY_VACATION_REPORT_CACHE_TAG;
 
-export type CompanyVacationReportSource =
-  | "HR Approved"
-  | "HR Pending"
-  | "HR Rejected"
-  | "HR Cancelled"
-  | "CRM Signal — Vacation"
-  | "CRM Signal — Half-Day (Attendance Partial)";
+/**
+ * Re-exported as a TYPE ONLY, deliberately. The values that go with it (the source list, the
+ * Phoenix/CRM mapping) live in ./company-vacation-report-source because the report table is a
+ * client component and this module reaches node:crypto through @/lib/crm/reads — see that file's
+ * header. A type re-export is erased at compile time and costs the client bundle nothing; adding
+ * `export { COMPANY_VACATION_REPORT_SOURCES }` here would quietly undo the split.
+ */
+export type { CompanyVacationReportSource } from "@/lib/vacation/company-vacation-report-source";
 
 /** Which half of the day a 0.5-day entry covers. "full_day" for a 1-day entry. Threaded through
  * from the CRM's own ampm marking so the approve route (app/api/vacation/company-report/approve)

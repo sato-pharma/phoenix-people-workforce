@@ -265,6 +265,51 @@ export function assertSystemAdministratorWorkspaceAccess(
 }
 
 /**
+ * Who may READ the Company Vacation Report (/admin/vacation-report) — the org-wide register of
+ * leave that carries the Source column, i.e. whether a day came from a request the employee
+ * submitted through Phoenix or from the field CRM's own vacation marking.
+ *
+ * Owner request (2026-08-27): the SFE Manager must be able to see, and export, every employee's
+ * vacation alongside where each one came from. Deliberately its own named set rather than a
+ * widening of systemAdministratorRoles — the same reasoning as outstationApprovalReviewRoles
+ * above: reading an org-wide report and administering the system are different privileges and
+ * must be able to diverge later without one silently dragging the other along.
+ *
+ * READING is all this grants. The one write this report can perform — turning an unverified CRM
+ * Signal row into a real, balance-deducting vacation request — keeps its own gate below and
+ * stays Super Admin only, because the owner's instruction was explicit: he can read, he can
+ * export, he cannot add.
+ */
+export const companyVacationReportReaderRoles = ["Super Admin", "SFE Manager"] as const satisfies readonly PhoenixRole[];
+const companyVacationReportReaderRoleSet = new Set<PhoenixRole>(companyVacationReportReaderRoles);
+
+export function canReadCompanyVacationReport(context: Pick<AccessContext, "role" | "scope">): boolean {
+  return context.scope === "system" || companyVacationReportReaderRoleSet.has(context.role);
+}
+
+export function assertCompanyVacationReportReadAccess(
+  context: Pick<AccessContext, "role" | "scope">,
+  workspace = "the company vacation report",
+) {
+  if (!canReadCompanyVacationReport(context)) {
+    throw new Error(`Forbidden: ${context.role} cannot access ${workspace}.`);
+  }
+}
+
+/**
+ * Who may turn ONE unverified "CRM Signal" row into a real, approved, balance-deducting vacation
+ * request (app/api/vacation/company-report/approve).
+ *
+ * Deliberately unchanged and deliberately separate from the read helper above — the same split
+ * canDecideOutstationExpenseApprovals makes below. Hiding the button in the table is a courtesy;
+ * THIS is the boundary, and the approve POST route keeps asserting system-administrator access so
+ * an SFE Manager request is refused server-side regardless of what the client renders.
+ */
+export function canApproveCompanyVacationReportRow(context: Pick<AccessContext, "role" | "scope">): boolean {
+  return canAccessSystemAdministratorWorkspace(context);
+}
+
+/**
  * Who may READ the outstation expense approvals workspace, including its claim validation.
  *
  * Owner request (2026-08-08): the CEO must see whether a claim is corroborated by CRM evidence.

@@ -740,6 +740,29 @@ const adminNavigationSectionSeeds = [
     ],
     label: "Leave Management",
   },
+  // Owner request (2026-08-27): the SFE Manager gets his own vacation report — every employee's
+  // leave, org-wide, with the SOURCE of each day on the row: a request submitted through Phoenix,
+  // or a vacation the field CRM recorded on its own. It points at the existing
+  // /admin/vacation-report, which grew a read-only mode for him (no Review column, no "Approve as
+  // real leave"; the filters and the Excel export are untouched).
+  //
+  // Its OWN section rather than a row inside the Leave Management hub above, for the reason
+  // spelled out on the early-birds section further down — navigation-active-path.test.ts pins
+  // the exact ordered href list of several sections, so inserting into one breaks it. A section
+  // resolving to a single visible item renders headerless, which is exactly the "tab" this is
+  // meant to be for him.
+  //
+  // excludedRoles, not `roles` alone: Super Admin's sidebar bypasses role gating entirely (see
+  // getSections), and he already reaches this page as a card on the Admin Tools hub — without
+  // the exclusion he would be shown the same page twice, which is precisely the duplicate-href
+  // failure tests/sidebar-role-scoped-headings.test.ts asserts against.
+  {
+    id: "vacation-sources",
+    items: [
+      { href: "/admin/vacation-report", icon: FileSpreadsheet, label: "Vacation Sources", permissions: [{ resource: "leave", action: "read" }], roles: ["SFE Manager"], excludedRoles: ["Super Admin", "CEO"] },
+    ],
+    label: "Vacation Sources",
+  },
   // Collapsed to a single standalone sidebar button that opens the Payroll
   // Management hub (app/(admin)/admin/payroll-management/page.tsx, items in
   // payrollManagementPageItems below) — same pattern as the other consolidated
