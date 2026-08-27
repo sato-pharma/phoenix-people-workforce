@@ -18,6 +18,13 @@
  * idempotent backstops; the engine's capturedAt/synced_at guard already makes overlapping runs
  * safe.
  *
+ * Since 2026-08-27 the rep DOCTOR LISTS ride here too, hourly. Everything above concerns what a rep
+ * DID; the list is what he was ASSIGNED, and it had no schedule of any kind — the sole trigger was
+ * an admin pressing Refresh, so production's mirror was found 6.4 days stale, and a doctor removed
+ * from a list in the CRM was never removed here at all. It runs through runScheduledPlanSync, which
+ * cannot throw and raises none of the visits pipeline's alarms: that pipeline feeds payroll
+ * attendance and keeping it un-entangled is the point of the separation.
+ *
  * Deliberately NO success notifications (the 15-min morning live-sync set that precedent — at
  * this cadence they would be pure noise); failures notify Super Admins once per sustained outage
  * (see FAILURE_NOTIFY_AT_STREAK) and every tick pings the phoenix-ireports360-live-poll
@@ -41,6 +48,7 @@ import {
   reapStaleIReports360SyncRuns,
   syncIReports360Visits,
 } from "@/lib/crm/sync";
+import { latestPlanSyncAtMs, resolvePlanSyncWindow, syncIReports360WeeklyPlans } from "@/lib/crm/plan-sync";
 import { CRM_SYNC_RUNS_TABLE } from "@/lib/crm/tables";
 import { notifyIReports360SyncResult } from "@/lib/notifications/ireports360-sync-digest";
 import { pingDeadMansSwitch } from "@/lib/observability/dead-mans-switch";
@@ -217,15 +225,31 @@ export const RECONCILE_MIN_GAP_MS = 5.5 * 24 * 60 * 60 * 1000;
 export const ROLLING_SYNC_FAILURE_RETRY_GAP_MS = 15 * 60 * 1000;
 export const RECONCILE_FAILURE_RETRY_GAP_MS = 60 * 60 * 1000;
 
-export type ScheduledCrmWork = "rolling-sync" | "wide-reconcile" | null;
+/** Doctor-list sync: hourly through the Cairo working day. The plan is the rep's ASSIGNED doctor
+ * list, and until 2026-08-27 nothing pulled it on a schedule at all — the only trigger was an
+ * admin's Refresh button, and production's mirror was measured 6.4 days stale. Hourly rather than
+ * per-tick because an assignment list moves in edits per week, not events per minute, and one pull
+ * is a whole month of rows; hourly rather than daily because "he added a doctor this morning and
+ * Phoenix still doesn't know" is the complaint this exists to end. Overnight is skipped for the
+ * same reason the rolling sync skips it — nobody edits a list at 03:00. */
+export const PLAN_SYNC_MIN_GAP_MS = 60 * 60 * 1000;
+export const PLAN_SYNC_EARLIEST_CAIRO_MINUTES = 6 * 60;
+export const PLAN_SYNC_FAILURE_RETRY_GAP_MS = 30 * 60 * 1000;
+
+export type ScheduledCrmWork = "rolling-sync" | "wide-reconcile" | "plan-sync" | null;
 
 /** Which (if any) scheduled deep run is due at this tick — pure, so week/day/hour edges are
  * testable without a clock. Reconcile outranks rolling: it is rarer and includes a 30-day slice
- * the rolling window can't reach. At most ONE deep run per tick; the probe resumes next tick. */
+ * the rolling window can't reach. Both outrank the plan sync, which is the cheapest of the three
+ * and the only one that costs nothing by waiting a tick — it is the doctor LIST, not the day's
+ * work, and the other two feed payroll attendance. At most ONE deep run per tick; the probe
+ * resumes next tick. */
 export function resolveDueScheduledWork(input: {
   cairoDayOfWeek: number;
   minutesSinceMidnight: number;
   nowMs: number;
+  lastPlanSyncFailureMs: number | null;
+  lastPlanSyncSuccessMs: number | null;
   lastReconcileFailureMs: number | null;
   lastReconcileSuccessMs: number | null;
   lastRollingFailureMs: number | null;
@@ -242,13 +266,21 @@ export function resolveDueScheduledWork(input: {
     input.minutesSinceMidnight >= ROLLING_SYNC_EARLIEST_CAIRO_MINUTES &&
     (input.lastRollingSuccessMs === null || input.nowMs - input.lastRollingSuccessMs >= ROLLING_SYNC_MIN_GAP_MS) &&
     (input.lastRollingFailureMs === null || input.nowMs - input.lastRollingFailureMs >= ROLLING_SYNC_FAILURE_RETRY_GAP_MS);
-  return rollingDue ? "rolling-sync" : null;
+  if (rollingDue) return "rolling-sync";
+
+  const planSyncDue =
+    input.minutesSinceMidnight >= PLAN_SYNC_EARLIEST_CAIRO_MINUTES &&
+    (input.lastPlanSyncSuccessMs === null || input.nowMs - input.lastPlanSyncSuccessMs >= PLAN_SYNC_MIN_GAP_MS) &&
+    (input.lastPlanSyncFailureMs === null || input.nowMs - input.lastPlanSyncFailureMs >= PLAN_SYNC_FAILURE_RETRY_GAP_MS);
+  return planSyncDue ? "plan-sync" : null;
 }
 
 // ── Poller runtime (module-singleton) ────────────────────────────────────────────────────────────
 
 type PollerState = {
   consecutiveFailures: number;
+  lastPlanSyncFailureMs: number | null;
+  lastPlanSyncSuccessMs: number | null;
   lastReconcileFailureMs: number | null;
   lastReconcileSuccessMs: number | null;
   lastRollingFailureMs: number | null;
@@ -261,6 +293,8 @@ type PollerState = {
 
 const state: PollerState = {
   consecutiveFailures: 0,
+  lastPlanSyncFailureMs: null,
+  lastPlanSyncSuccessMs: null,
   lastReconcileFailureMs: null,
   lastReconcileSuccessMs: null,
   lastRollingFailureMs: null,
@@ -340,6 +374,54 @@ async function seedScheduledWorkMarkers(): Promise<void> {
       labels: { event: "crm_live_poll_seed_markers_failed", job: "crm-live-poll" },
     });
   }
+
+  // The plan sync keeps no run table, so its own mirror rows are the marker: the newest synced_at
+  // inside this month IS the last time the month's lists were refreshed. Seeded separately so a
+  // failure in the block above cannot cost this one its marker, and vice versa.
+  try {
+    state.lastPlanSyncSuccessMs = await latestPlanSyncAtMs(resolvePlanSyncWindow(cairoTodayIso()));
+  } catch (error) {
+    logError("CRM live poller could not seed the plan-sync marker; the doctor lists will refresh on the first due tick", {
+      error,
+      labels: { event: "crm_live_poll_seed_plan_marker_failed", job: "ireports360-plan-sync" },
+    });
+  }
+}
+
+/**
+ * Pulls the current Cairo month's doctor lists and removes the ones the CRM no longer holds.
+ *
+ * Firewalled deliberately, and this is the whole reason it is a separate function rather than a
+ * third branch of runScheduledWork: it never throws, never pings the visits sync's dead-man's
+ * switch, and never sends a digest. The visits pipeline feeds payroll attendance; a doctor-list
+ * refresh must not be able to raise its alarms or cost it a tick. A failure here is logged and the
+ * failure gap holds it off for half an hour — the list is simply as stale as it was before.
+ */
+async function runScheduledPlanSync(): Promise<void> {
+  const window = resolvePlanSyncWindow(cairoTodayIso());
+  try {
+    const result = await syncIReports360WeeklyPlans(window);
+    state.lastPlanSyncSuccessMs = Date.now();
+    console.log(
+      `[crm:live-poll] in-process plan-sync ${result.startDate}..${result.endDate} — ${result.vendorRows} entries from the CRM, ` +
+        `upserted ${result.upserted} across ${result.agents} reps / ${result.contacts} doctors, pruned ${result.pruned}` +
+        (result.skippedUndated > 0 ? `, skipped ${result.skippedUndated} undated` : "") +
+        (result.pruneRefusedReason ? ` — PRUNE REFUSED: ${result.pruneRefusedReason}` : ""),
+    );
+    // A refused prune is not a failure — the additions applied — but it means the mirror is
+    // knowingly holding doctors the CRM no longer lists, so it must not pass in silence.
+    if (result.pruneRefusedReason) {
+      logError(`CRM plan sync withheld a prune of ${result.startDate}..${result.endDate}: ${result.pruneRefusedReason}`, {
+        labels: { event: "crm_plan_sync_prune_refused", job: "ireports360-plan-sync" },
+      });
+    }
+  } catch (error) {
+    state.lastPlanSyncFailureMs = Date.now();
+    logError("CRM in-process plan-sync failed; the rep doctor lists are as stale as they were", {
+      error,
+      labels: { event: "crm_plan_sync_failed", job: "ireports360-plan-sync" },
+    });
+  }
 }
 
 /** Runs one due deep job (rolling sync or wide reconcile) in place of this tick's probe, with the
@@ -348,6 +430,10 @@ async function seedScheduledWorkMarkers(): Promise<void> {
  * cadence); rolling notifies only when degraded or failed, because at ~6 runs/day an
  * unconditional success ping would be noise the owner never asked for. */
 async function runScheduledWork(work: Exclude<ScheduledCrmWork, null>): Promise<void> {
+  if (work === "plan-sync") {
+    await runScheduledPlanSync();
+    return;
+  }
   const isReconcile = work === "wide-reconcile";
   const slug = isReconcile ? "phoenix-reconcile-visits" : "phoenix-ireports360-sync";
   const jobName = isReconcile ? "ireports360-visits-reconcile" : "ireports360-visits-sync";
@@ -432,6 +518,8 @@ async function tick(): Promise<void> {
   // serialized through this single loop, so the app never runs two engine pulls concurrently.
   const dueWork = resolveDueScheduledWork({
     cairoDayOfWeek: cairoDayOfWeek(),
+    lastPlanSyncFailureMs: state.lastPlanSyncFailureMs,
+    lastPlanSyncSuccessMs: state.lastPlanSyncSuccessMs,
     lastReconcileFailureMs: state.lastReconcileFailureMs,
     lastReconcileSuccessMs: state.lastReconcileSuccessMs,
     lastRollingFailureMs: state.lastRollingFailureMs,
@@ -566,7 +654,8 @@ export function startLiveCrmPoller(): LivePollerStartResult {
     `[crm:live-poll] started — ${FAST_TICK_SECONDS}s in the 08:00–12:30 Cairo compliance window, ` +
       `${DAY_TICK_SECONDS}s daytime, ${NIGHT_TICK_SECONDS}s overnight; wide (2-day) probe every ` +
       `${WIDE_PROBE_EVERY_N_TICKS} ticks and all night ticks; rolling 10-day sync every ` +
-      `${ROLLING_SYNC_MIN_GAP_MS / 3_600_000}h and the weekly wide reconcile now run in-process`,
+      `${ROLLING_SYNC_MIN_GAP_MS / 3_600_000}h, the rep doctor lists every ` +
+      `${PLAN_SYNC_MIN_GAP_MS / 3_600_000}h, and the weekly wide reconcile now run in-process`,
   );
   return { started: true };
 }

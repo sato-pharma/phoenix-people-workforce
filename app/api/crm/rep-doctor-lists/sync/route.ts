@@ -14,10 +14,12 @@ export const dynamic = "force-dynamic";
 
 // Pulls one month of the CRM's weekly plan into Phoenix's mirror — the rep doctor lists.
 //
-// On-demand only, by design. There is no cron for this: the plan is a slow-moving assignment list,
-// not a daily event stream, and the platform's one scheduled CRM job feeds payroll attendance —
-// adding a second failure mode inside it to refresh a report would be a bad trade. An admin
-// presses Refresh; the run is audited because it reaches an external system and rewrites a mirror.
+// No longer the only trigger. Since 2026-08-27 the live poller refreshes the CURRENT month hourly
+// in-process (src/lib/crm/live-poller.ts), which is what the owner asked for: a doctor added to or
+// removed from a rep's list in the CRM shows up here without anyone pressing anything. This route
+// stays for the two things a schedule cannot do — refreshing a month on demand, and reaching a
+// month the scheduled window deliberately never touches. Every run is audited because it reaches an
+// external system and rewrites a mirror; the audit row now also carries what was REMOVED.
 //
 // Gated twice: the Super-Admin-only role list (rep-doctor-lists-access.ts, the owner's
 // "admin account only for now") and the crm_visits:update permission, which is the real boundary.
@@ -53,7 +55,8 @@ export async function POST(request: Request) {
       newValues: result as unknown as Record<string, unknown>,
       summary:
         `Rep doctor lists refreshed for ${month} — ${result.upserted} planned calls across ` +
-        `${result.agents} reps and ${result.contacts} contacts`,
+        `${result.agents} reps and ${result.contacts} contacts, ${result.pruned} removed` +
+        (result.pruneRefusedReason ? ` (removal withheld: ${result.pruneRefusedReason})` : ""),
     });
 
     return NextResponse.json({ month, result }, { headers: { "Cache-Control": "no-store" } });
