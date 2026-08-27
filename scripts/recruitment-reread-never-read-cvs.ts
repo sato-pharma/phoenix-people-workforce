@@ -64,6 +64,10 @@ import { describeCvRead } from "@/lib/recruitment/cv-extraction-quality";
 //
 //   --dry-run          lists the target set and exits. No AI call, no write, no spend.
 //   --limit N          reads only the first N. Used to prove the path on one before firing all.
+//   --include-rules-only  releases the candidates held back because their only extraction row is a
+//                      free rules/OCR read. Owner-approved 2026-08-27, after credits were restored.
+//                      These are the WORST-read CVs in the pool (~11-15 fields against 38), so this
+//                      is the highest-value re-read available — and the only one that costs per CV.
 //   --unresolved-only  narrows the set to candidates whose "Applying for" column is EMPTY and who
 //                      actually have a stored file. Added 2026-08-21 at the owner's instruction
 //                      ("run the extraction on the 56"). Most never-read CVs belong to candidates
@@ -189,6 +193,7 @@ async function main(): Promise<void> {
   const args = process.argv.slice(2);
   const dryRun = args.includes("--dry-run");
   const unresolvedOnly = args.includes("--unresolved-only");
+  const includeRulesOnly = args.includes("--include-rules-only");
   const limitArg = args.find((a) => a.startsWith("--limit"));
   const limit = limitArg ? Number(limitArg.split("=")[1] ?? args[args.indexOf(limitArg) + 1]) : Number.NaN;
 
@@ -243,10 +248,24 @@ async function main(): Promise<void> {
   console.log(`Already read     : ${readIds.size} distinct candidates`);
   console.log(`Never read       : ${targets.length}`);
   if (rulesOnlyIds.size > 0) {
-    // Re-reading these while the key is still gone would only write the same free row again.
+    // Re-reading these while the key is still gone would only write the same free row again — so
+    // the default is to hold them back. --include-rules-only releases them, which is what you want
+    // once the key is spending again: these are precisely the CVs that were read WORST (a rules row
+    // carries ~11-15 fields where a model row carries 38), so they are the highest-value re-read in
+    // the whole set and the most expensive to leave alone.
+    //
+    // The hold-back has never been conditional on a key actually being absent, and cannot safely
+    // become so: hasOpenAiApiKey() answers on the key's PRESENCE, and a present key with an
+    // exhausted balance returns 200 from /v1/models while every completion 429s. A run that
+    // released these on "the key looks fine" would rewrite the same free rows at scale and call it
+    // a re-read. Releasing them stays an explicit, owner-approved instruction.
     const before = targets.length;
-    targets = targets.filter((row) => !rulesOnlyIds.has(String(row.id)));
-    console.log(`Rules-only so far: ${rulesOnlyIds.size}  (held back ${before - targets.length}; they need a real key)`);
+    if (includeRulesOnly) {
+      console.log(`Rules-only so far: ${rulesOnlyIds.size}  (RELEASED by --include-rules-only: ${targets.filter((row) => rulesOnlyIds.has(String(row.id))).length} re-read this run)`);
+    } else {
+      targets = targets.filter((row) => !rulesOnlyIds.has(String(row.id)));
+      console.log(`Rules-only so far: ${rulesOnlyIds.size}  (held back ${before - targets.length}; they need a real key — pass --include-rules-only to read them)`);
+    }
   }
 
   // Confirmed non-CVs. Report what was actually hit, not just the size of the list — a listed id
