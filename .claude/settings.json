@@ -97,7 +97,6 @@
       "mcp__ccd_session__mark_chapter",
       "mcp__supabase-staging",
       "mcp__supabase-production",
-      "mcp__45bb6356-8105-4482-9464-25bfd754baec",
       "Bash(supabase:*)",
       "Bash(npx supabase:*)",
       "Bash(pnpm supabase:*)",
