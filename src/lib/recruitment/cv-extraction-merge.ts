@@ -165,6 +165,36 @@ export const AI_WORTH_ASKING_FIELDS: readonly string[] = [
   "currentRoleResponsibilities",
 ];
 
+/**
+ * The two fields whose absence is worth a model call ON ITS OWN, without waiting for a count.
+ *
+ * Measured on production 2026-08-27, over the latest extraction of all 430 candidates. 97% of
+ * rules-only candidates (149 of 154) had two or fewer of AI_WORTH_ASKING_FIELDS missing, so the
+ * "3 or more" rule below never fired for them — the gate was working exactly as designed and the
+ * pool simply sat under its line. But of the candidates missing exactly ONE field, that field was:
+ *
+ *   currentJobTitle              30
+ *   currentEmployer              21
+ *   currentRoleResponsibilities   6
+ *   workHistory / yearsExperience / fullName   0
+ *
+ * So 57 candidates were one field short, and for 51 of them that field was the current title or
+ * employer — core screening data for a medical-rep pipeline, and precisely the reading-comprehension
+ * task the rules openly cannot do (both are in AI_PREFERRED_FIELDS, where a confident model answer
+ * beats a rule answer outright: telling a current title from an applied-for one).
+ *
+ * The count rule alone cannot express that, because it weighs every field the same — a CV missing
+ * only currentRoleResponsibilities and one missing only currentJobTitle were treated identically,
+ * and they are not remotely equal in value. Lowering the threshold to 1 instead would have bought
+ * the same 51 plus ~6 low-value calls; naming the fields buys only the 51.
+ *
+ * What it costs, on that same pool: 61 of the 154 rules-only candidates (40%) gain a model call —
+ * 37 missing the title, 30 missing the employer, 6 missing both. Rules still run first and still
+ * answer for free on the other 60%, so the ordering the owner set on 2026-08-19 is unchanged; this
+ * only moves where the paid pass starts.
+ */
+export const HIGH_VALUE_ESCALATION_FIELDS: readonly string[] = ["currentJobTitle", "currentEmployer"];
+
 export type EscalationDecision = {
   readonly escalate: boolean;
   readonly reason: string;
@@ -179,6 +209,17 @@ export type EscalationDecision = {
  * reviewable candidate record, and a human sees every low-confidence value in the review board
  * regardless. Escalation is for documents the rules genuinely could not read — a CV with no
  * parseable work history, or one where the text layer had to be repaired and may still be wrong.
+ *
+ * Two rules decide it, and the order matters:
+ *
+ *   VALUE  — any HIGH_VALUE_ESCALATION_FIELDS missing is worth a call by itself. Owner-approved
+ *            2026-08-27 on the measurement in that constant's comment: 57 candidates sat one field
+ *            short, and for 51 of them the field was the current title or employer.
+ *   VOLUME — otherwise, 3 or more of AI_WORTH_ASKING_FIELDS missing. The original cost lever,
+ *            unchanged.
+ *
+ * Value is checked first only for the clearer reason string; it cannot widen the gate, since
+ * anything with 3+ missing escalates either way.
  */
 export function shouldEscalateToAi(result: RuleExtractionResult): EscalationDecision {
   const missingFields = AI_WORTH_ASKING_FIELDS.filter((key) => isEmptyExtractedField(result.fields[key]));
@@ -197,6 +238,18 @@ export function shouldEscalateToAi(result: RuleExtractionResult): EscalationDeci
   }
   if (missingFields.length === 0) {
     return { escalate: false, missingFields, reason: "rules answered every field worth asking about" };
+  }
+  // Value before volume. Checked ahead of the count so that ONE missing high-value field is enough
+  // on its own — see HIGH_VALUE_ESCALATION_FIELDS for the production measurement behind it. This
+  // cannot loosen the gate below: a CV reaching here already has at least one field missing, and
+  // anything with 3+ missing escalates on the next line regardless.
+  const missingHighValue = missingFields.filter((key) => HIGH_VALUE_ESCALATION_FIELDS.includes(key));
+  if (missingHighValue.length > 0) {
+    return {
+      escalate: true,
+      missingFields,
+      reason: `${missingHighValue.join(" and ")} unanswered by rules — worth a call on its own`,
+    };
   }
   if (missingFields.length >= 3) {
     return { escalate: true, missingFields, reason: `${missingFields.length} judgement fields unanswered by rules` };
