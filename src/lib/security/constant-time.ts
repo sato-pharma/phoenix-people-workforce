@@ -22,10 +22,18 @@ export function secretMatches(received: string | null | undefined, expected: str
 /**
  * Constant-time check of an `Authorization: Bearer <secret>` header.
  *
- * The shape every cron and notification route needs. Callers keep their own decision about what
- * to do when the secret is UNSET — the established rule is
- * `if (!secret) return !isProductionRuntime()`, i.e. fail closed in production and stay usable
- * locally — because that is a policy question, not a comparison one.
+ * The shape every cron and notification route needs. Callers still own the decision about what to
+ * do when the secret is UNSET — that is a policy question, not a comparison one — but the answer
+ * is settled: `if (!secret) return process.env.NODE_ENV === "development"`. An unset secret may be
+ * bypassed on a developer machine and nowhere else.
+ *
+ * This comment used to prescribe `if (!secret) return !isProductionRuntime()`, described as "fail
+ * closed in production and stay usable locally". The second clause is the one that is not true.
+ * isProductionRuntime() reads APP_ENV || VERCEL_ENV || NODE_ENV, so its negation does not mean
+ * "locally" — it means any environment that fails to label itself production, including staging,
+ * which runs a 1:1 clone of production data. Anywhere the secret was unset, a route following this
+ * advice was callable unauthenticated by anyone. Clearing it took three passes (#1529, #1949,
+ * #2479) across 22 routes, and this sentence is why it was in all 22. Do not restore it.
  */
 export function bearerSecretMatches(authorizationHeader: string | null | undefined, expected: string): boolean {
   return secretMatches(authorizationHeader, `Bearer ${expected}`);
