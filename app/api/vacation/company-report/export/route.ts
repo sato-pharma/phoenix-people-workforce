@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { writeAuditLog } from "@/lib/admin/audit";
-import { assertSystemAdministratorWorkspaceAccess, resolveEmployeeIdentityId } from "@/lib/auth/permissions";
+import { assertCompanyVacationReportReadAccess, resolveEmployeeIdentityId } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { generateCompanyVacationReportWorkbook } from "@/lib/vacation/company-vacation-report-export";
 import {
@@ -10,14 +10,13 @@ import {
   parseCompanyVacationReportFilters,
 } from "@/lib/vacation/company-vacation-report-filters";
 import { getCompanyVacationReport } from "@/lib/vacation/company-vacation-report";
+import { resolveCompanyVacationReportRange } from "@/lib/vacation/company-vacation-report-range";
 import { clientSafeErrorMessage, toApiError } from "@/lib/http/api-errors";
 import { assertExportRateLimit } from "@/lib/http/assert-export-rate-limit";
 import { isApiRateLimitError } from "@/lib/security/api-rate-limit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-const DEFAULT_START_DATE = "2026-01-01";
 
 /** Row 4 of the sheet — the blank spacer the workbook leaves between its range banner (row 3)
  * and the header (row 6). */
@@ -57,12 +56,20 @@ function apiResponse(error: unknown, fallback: string) {
 export async function GET(request: Request) {
   try {
     const access = await resolveAccessContext(request);
-    assertSystemAdministratorWorkspaceAccess(access, "the company vacation report");
+    // The READ gate, not the workspace gate — this route only ever hands back a workbook of what
+    // the caller can already see on screen. Writing from this report (turning a CRM Signal into a
+    // real vacation request) lives in ../approve and still asserts system-administrator access.
+    assertCompanyVacationReportReadAccess(access, "the company vacation report");
     await assertExportRateLimit({ actor: access.loginId ?? access.hrId, request, scope: "export:admin:company-vacation-report" });
 
     const url = new URL(request.url);
-    const startDate = url.searchParams.get("startDate") ?? DEFAULT_START_DATE;
-    const endDate = url.searchParams.get("endDate") ?? new Date().toISOString().slice(0, 10);
+    // Same resolver the page uses, so the workbook's range is the screen's range and a malformed
+    // or hand-edited link falls back to the default report rather than reaching the database with
+    // a date the picker could never have produced.
+    const { endDate, startDate } = resolveCompanyVacationReportRange(
+      { endDate: url.searchParams.get("endDate"), startDate: url.searchParams.get("startDate") },
+      new Date().toISOString().slice(0, 10),
+    );
 
     // The link carries the reader's on-screen filters — their slice, never their permissions
     // (the workspace gate above already decided that). Narrowing here with the same
