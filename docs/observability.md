@@ -93,7 +93,9 @@ stable labels:
   user-agent string with a different IP — still warrants a look.
 - `event=webhook_signature_invalid` / `webhook_misconfigured` — Resend webhook rejections.
 - `event=cron_failed` / `background_job_failed` — job execution failures.
-- `event=config_drift` — a notification-critical env var (`EMAIL_NOTIFICATIONS_ENABLED`, `RESEND_API_KEY`, `NOTIFICATION_EMAIL_FROM`, `RESEND_WEBHOOK_SECRET`, `TELEGRAM_BOT_TOKEN`, `NOTIFICATION_WEBHOOK_SECRET`) is unset in production, emitted by `/api/readyz` (`src/lib/observability/config-drift.ts`). Non-fatal — readiness stays 200 — but alerted, see below.
+- `event=config_drift` — a notification-/cron-critical env var is unset where it must be present, emitted by `/api/readyz` (`src/lib/observability/config-drift.ts`). Non-fatal — readiness stays 200 — but alerted, see below. The gate differs per var, because the environment a var *must* exist in is a per-var question:
+  - **Production only** (legitimately unset in dev/preview/staging): `EMAIL_NOTIFICATIONS_ENABLED`, `RESEND_API_KEY`, `NOTIFICATION_EMAIL_FROM`, `RESEND_WEBHOOK_SECRET`, `TELEGRAM_BOT_TOKEN`, `NOTIFICATION_WEBHOOK_SECRET`, and `MASTER_MAP_SYNC_TOKEN` (the Master Map Apps Script only ever calls production, so the token is deliberately absent on staging — a production-only gate keeps that from reading as drift).
+  - **Every deployed environment** (production *and* staging, silent only in local `development`): `CRON_SECRET`. PR #2479 made the 18 cron/notification routes 401 on an unset `CRON_SECRET` on staging too — the drift alarm mirrors that route condition (`NODE_ENV !== "development"`) so it is not blind to a staging outage.
 
 Read them with the Railway CLI (there is no log query language and no log-based metrics any more —
 grep the stream):
