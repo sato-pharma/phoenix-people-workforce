@@ -7,7 +7,7 @@ import {
   shouldEscalateToAi,
 } from "../src/lib/recruitment/cv-extraction-merge.ts";
 import type { ExtractedCandidateFields } from "../src/lib/recruitment/cv-extraction-fields.ts";
-import { runRuleCvExtraction } from "../src/lib/recruitment/rule-extraction/index.ts";
+import { runRuleCvExtraction, type RuleExtractionResult } from "../src/lib/recruitment/rule-extraction/index.ts";
 import {
   looksLigatureCorrupted,
   looksShredded,
@@ -364,6 +364,74 @@ function runEscalationTests() {
   // Something that is not a CV is never escalated — there is nothing to buy.
   const notCv = runRuleCvExtraction("Invoice 4471\nTotal due 1,200 EGP\nThank you for your business.");
   assert.equal(shouldEscalateToAi(notCv).escalate, false);
+
+  // --- Value before volume -------------------------------------------------
+  //
+  // The count rule weighs every field the same, so a CV whose ONLY gap was the current job title
+  // or employer sat under the "3 or more" line and was never escalated. Measured on production
+  // 2026-08-27: 57 rules-only candidates were exactly one field short, and for 51 of them that one
+  // field was the title (30) or the employer (21) — the two facts a medical-rep screen is actually
+  // built on. Those two now carry the decision on their own; see HIGH_VALUE_ESCALATION_FIELDS.
+  const wellRead: ExtractedCandidateFields = {
+    fullName: high("Abdallah Gamal"),
+    email: high("aeltoukhy832@gmail.com"),
+    phone: high("+201010823473"),
+    professionalSummary: high("Six years in HR operations across retail and manufacturing."),
+    degree: high("BSc Commerce"),
+    university: high("Cairo University"),
+    currentJobTitle: high("HR Operations Specialist"),
+    currentEmployer: high("Kazyon"),
+    workHistory: high([{ employer: "Kazyon" }]),
+    yearsExperience: high(6),
+    currentRoleResponsibilities: high("Payroll, attendance and onboarding for 400 staff."),
+  };
+  const ruleRead = (fields: ExtractedCandidateFields): RuleExtractionResult => ({
+    fields,
+    isCv: true,
+    filled: Object.keys(fields).length,
+    highConfidence: Object.keys(fields).length,
+    repairedText: false,
+  });
+  // Every fixture below is a WELL-read CV minus specific fields, so nothing can escalate for one of
+  // the earlier reasons (thin read, repaired text) and quietly make these assertions meaningless.
+  const without = (...keys: readonly string[]): ExtractedCandidateFields =>
+    Object.fromEntries(Object.entries(wellRead).filter(([key]) => !keys.includes(key))) as ExtractedCandidateFields;
+
+  const titleOnly = shouldEscalateToAi(ruleRead(without("currentJobTitle")));
+  assert.equal(titleOnly.escalate, true, "a lone missing currentJobTitle must be worth a model call by itself");
+  assert.deepEqual(titleOnly.missingFields, ["currentJobTitle"]);
+  assert.match(titleOnly.reason, /currentJobTitle/);
+
+  const employerOnly = shouldEscalateToAi(ruleRead(without("currentEmployer")));
+  assert.equal(employerOnly.escalate, true, "a lone missing currentEmployer must be worth a model call by itself");
+  assert.match(employerOnly.reason, /currentEmployer/);
+
+  const bothMissing = shouldEscalateToAi(ruleRead(without("currentJobTitle", "currentEmployer")));
+  assert.equal(bothMissing.escalate, true);
+  assert.match(bothMissing.reason, /currentJobTitle and currentEmployer/);
+
+  // The gate was made TARGETED, not merely looser. Dropping the count threshold to 1 would have
+  // bought these calls too; naming the fields does not. This is the assertion that tells the two
+  // apart, so it is the one to read first if this ever goes red.
+  assert.equal(
+    shouldEscalateToAi(ruleRead(without("currentRoleResponsibilities"))).escalate,
+    false,
+    "a lone low-value gap must still not cost money",
+  );
+  assert.equal(
+    shouldEscalateToAi(ruleRead(without("currentRoleResponsibilities", "yearsExperience"))).escalate,
+    false,
+    "two low-value gaps must still not cost money",
+  );
+
+  // The two rules either side of the new one are untouched: nothing missing still costs nothing,
+  // and three low-value gaps still escalate on the count alone.
+  assert.equal(shouldEscalateToAi(ruleRead(wellRead)).escalate, false);
+  const threeLowValue = shouldEscalateToAi(
+    ruleRead(without("currentRoleResponsibilities", "yearsExperience", "workHistory")),
+  );
+  assert.equal(threeLowValue.escalate, true);
+  assert.match(threeLowValue.reason, /3 judgement fields unanswered/);
 }
 
 // ---------------------------------------------------------------------------
