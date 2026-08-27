@@ -974,6 +974,7 @@ import { runRepoDoctorUnpushedCommitsTests } from "./repo-doctor-unpushed-commit
 
 import { runCvRereadAppliesWhatItReadsTests } from "./cv-reread-applies-what-it-reads.test.ts";
 import { runCandidateNameFromCvTests } from "./candidate-name-from-cv.test.ts";
+import { runLegacyDocCvTests } from "./recruitment-legacy-doc-cv.test.ts";
 import { runCvLibraryTests } from "./cv-library.test.ts";
 import { runHiringEmployeeScopeTests } from "./hiring-employee-scope.test.ts";
 import { runMarketingAdminOverrideNoteTests } from "./marketing-admin-override-note.test.ts";
@@ -2778,6 +2779,13 @@ await runTest(
     + "candidate's name; the CV filename is preferred over the sender, and the NOT NULL column is "
     + "always filled)",
   runCandidateNameFromCvTests,
+);
+
+await runTest(
+  "legacy Word CVs (a Word 97-2003 .doc is recognised by its BYTES, not its MIME label, so it "
+    + "reaches word-extractor instead of dying in mammoth - and a mislabelled real .docx still "
+    + "reaches mammoth)",
+  runLegacyDocCvTests,
 );
 
 await runTest(
