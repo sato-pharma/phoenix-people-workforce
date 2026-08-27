@@ -75,9 +75,19 @@ async function ScreeningContent({
     );
   }
 
-  const queue = await loadScreeningQueue(access.hrId, filters);
+  // Sending a CV to a manager is a `recruitment: update` act — the same grant the send route
+  // enforces. A screener without it still gets the whole queue and can still shortlist and reject;
+  // they simply get no picker, rather than one that answers 403.
+  const queue = await loadScreeningQueue(access.hrId, filters, {
+    canSendToManagers: await canAccess(access, "recruitment", "update"),
+  });
 
   return (
-    <ScreeningPageClient candidates={queue.candidates} initialViews={queue.views} poolHref="/recruitment" />
+    <ScreeningPageClient
+      candidates={queue.candidates}
+      hiringManagers={queue.hiringManagers}
+      initialViews={queue.views}
+      poolHref="/recruitment"
+    />
   );
 }

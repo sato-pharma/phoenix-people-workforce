@@ -127,10 +127,21 @@ export async function runRecruitmentScreeningPageTests() {
       /canAccess\(access, "candidates", "read"\)/,
       `the ${name} screening page must require the candidate read grant before loading a CV`,
     );
+    // Re-cut 2026-08-27. This used to require the call to END after `filters`, which stopped being
+    // the shape when the loader grew a third argument for the manager list. The PROPERTY is
+    // unchanged and is the only thing that matters — the viewer id is the caller's, never a URL
+    // parameter — so the pin now asserts the first two arguments and stops counting the rest.
     assert.match(
       source,
-      /loadScreeningQueue\(access\.hrId, filters\)/,
+      /loadScreeningQueue\(access\.hrId, filters[,)]/,
       `the ${name} screening page must load the view history of the CALLER, not of a URL parameter`,
+    );
+    // Sending a CV is `recruitment: update` — the grant the send route itself enforces. Both pages
+    // must decide this, because the loader cannot: only a page holds the AccessContext.
+    assert.match(
+      source,
+      /canSendToManagers: await canAccess\(access, "recruitment", "update"\)/,
+      `the ${name} screening page must gate the manager picker on the same grant the send route requires`,
     );
   }
 
@@ -189,4 +200,99 @@ export async function runRecruitmentScreeningPageTests() {
     ["@/lib/recruitment/candidate-status"],
     "screening-link may import the status vocabulary and nothing else — every other import risks a database",
   );
+
+  // ── 6 · Send to a manager WITHOUT leaving the queue ───────────────────────
+  //
+  // The owner's words, the same day the page shipped: "I want to be able to send to a manager from
+  // this place, I don't have to shortlist and go to other table, make the two options available."
+  //
+  // He was describing a real dead end. Screening could record yes or no and nothing else, so the
+  // single most valuable outcome of reading a CV — putting it in front of the person who will
+  // actually interview — meant leaving the queue, finding that one row again in a 434-line table,
+  // and starting over. Shortlisting is a note to yourself; sending is what moves a hire forward.
+  const session = read("src/components/recruitment/candidate-screening-session.tsx");
+  assert.match(
+    session,
+    /\/api\/recruitment\/candidates\/\$\{current\.id\}\/notify-manager/,
+    "the queue must post to the candidate-level send route, the same one the pool uses",
+  );
+
+  // BOTH options, side by side. The one thing that must never be true is that sending is a
+  // consequence of shortlisting: a recruiter has to be able to send a CV to a District Manager
+  // without also recording a verdict they have not reached.
+  const sendBody = session.slice(session.indexOf("const sendToManager = useCallback"), session.indexOf("const decidedCount"));
+  assert.ok(sendBody.includes("notify-manager"), "the slice above must be the send callback");
+  for (const forbidden of ["setDecided", "setIndex", "/status"]) {
+    assert.ok(
+      !sendBody.includes(forbidden),
+      `sending must not ${forbidden === "/status" ? "write a status" : "advance or judge"} — it is not a decision`,
+    );
+  }
+
+  // A picker with nobody in it is worse than no picker, so the control is gated on the list
+  // actually having arrived — and the list itself is gated on the grant the send route enforces.
+  assert.match(
+    session,
+    /hiringManagers\.length > 0 \? \(/,
+    "the send control must not render when the caller was given no managers",
+  );
+  const client = read("src/components/recruitment/screening-page-client.tsx");
+  assert.match(client, /hiringManagers=\{hiringManagers\}/, "the page client must pass the managers through");
+  for (const [name, source] of [["admin", adminPage], ["portal", portalPage]] as const) {
+    assert.match(
+      source,
+      /hiringManagers=\{queue\.hiringManagers\}/,
+      `the ${name} screening page must hand the loaded managers to the queue`,
+    );
+  }
+
+  // The confirmation reads back by NAME and in Cairo time, and it survives a reload — because half
+  // of it comes from the stamp on the row, not from what this component just did.
+  assert.match(
+    session,
+    /const priorSend = current\.managerNotified;/,
+    "the queue must read the recorded send, or the confirmation dies with the page",
+  );
+  assert.match(session, /timeZone: "Africa\/Cairo"/, "a send time is shown in Cairo, never raw UTC");
+  assert.doesNotMatch(
+    session,
+    /Sent to \{sendManagerHrId\}/,
+    "an HR_ID must never be what the screen says a CV was sent to",
+  );
+
+  // ── 7 · The CV must FIT the column it is given ────────────────────────────
+  //
+  // The regression the owner reported as the CV "appearing as one text". Measured on a 1366×850
+  // laptop with the screening page open: the pane the document lands in is 652px and a Word page is
+  // a fixed 816px, so it overflowed by 164px and the reader got a sideways scrollbar and a squeezed
+  // wall of words. PDFs are worse — pdf.js rasterises at scale 1.5, so US Letter is a 918px canvas
+  // in that same 652px pane. The full-screen overlay never showed it, because it covers the ~292px
+  // sidebar and hands the document ~986px.
+  const viewer = read("src/components/recruitment/cv-preview-modal.tsx");
+  // `zoom`, not `transform: scale()`. transform does not affect layout, so the scaled document
+  // keeps its original box and the scroll container either clips the last page or leaves a screen
+  // of empty grey under it. zoom reflows, so the container is simply the right size.
+  assert.match(viewer, /style=\{\{ zoom \}\}/, "the fit must be applied with CSS zoom, which reflows");
+  assert.doesNotMatch(
+    viewer,
+    /transform: `?scale\(/,
+    "transform: scale does not reflow — it scales the picture and leaves the scroll box the wrong size",
+  );
+  // Fit only ever SHRINKS. A pane wider than the page would otherwise blow a PDF's raster up into a
+  // blurry one and silently change the modal, where the document already fitted.
+  assert.match(
+    viewer,
+    /Math\.min\(1, paneWidth \/ naturalWidth\)/,
+    "fitting must never enlarge a document on its own — that is what the + button is for",
+  );
+  // The PAGE element, not the container's scrollWidth. scrollWidth is the wrong number here and
+  // misleadingly close to the right one: measured live, an 816px page in a 637px pane reported 727.
+  assert.match(
+    viewer,
+    /querySelectorAll<HTMLElement>\("\.docx, canvas"\)/,
+    "the width must be measured from the rendered page, never inferred from the scroll box",
+  );
+
+  // And the cause, not only the symptom: the page can borrow the overlay's full width on demand.
+  assert.match(session, /const fullBleed = variant === "overlay" \|\| expanded;/, "the page must be able to go full-bleed");
 }

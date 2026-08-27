@@ -80,11 +80,15 @@ async function ScreeningContent({
     );
   }
 
-  const queue = await loadScreeningQueue(access.hrId, filters);
+  // Same gate as the admin twin: the picker appears only for a caller who may actually send.
+  const queue = await loadScreeningQueue(access.hrId, filters, {
+    canSendToManagers: await canAccess(access, "recruitment", "update"),
+  });
 
   return (
     <ScreeningPageClient
       candidates={queue.candidates}
+      hiringManagers={queue.hiringManagers}
       initialViews={queue.views}
       poolHref="/employee-portals/recruitment"
     />

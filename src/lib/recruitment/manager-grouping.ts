@@ -49,6 +49,27 @@ export function managerSeatLabel(seat: Pick<ManagerSeat, "jobTitle" | "areaName"
 }
 
 /**
+ * How one manager reads in a picker: "Ahmed Samir · District Sales Manager · Giza".
+ *
+ * Lives HERE, beside `managerSeatLabel`, rather than in a component, because as of 2026-08-27
+ * there are two pickers — the pool's row control and the screening queue's — and a recruiter who
+ * chose "Ahmed Samir · District Sales Manager · Giza" in one must not meet "Ahmed Samir" in the
+ * other. Two copies of a label drift; one cannot.
+ *
+ * Structurally typed on purpose. `HiringManagerOption` is declared in a module that reaches the
+ * service-role client, and this file is imported by client components — taking the three fields it
+ * actually reads keeps that dependency from existing at all.
+ */
+export function managerPickerLabel(manager: {
+  name: string;
+  jobTitle: string | null;
+  areaName: string | null;
+}): string {
+  const seat = managerSeatLabel({ areaName: manager.areaName, jobTitle: manager.jobTitle });
+  return seat ? `${manager.name} · ${seat}` : manager.name;
+}
+
+/**
  * Identity of a seat for grouping.
  *
  * Keyed on the HR_ID, lower-cased, and NOT on the label. Two managers can hold the same title in

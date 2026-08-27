@@ -18,14 +18,20 @@ import { useCallback } from "react";
 
 import { CandidateScreeningSession } from "@/components/recruitment/candidate-screening-session";
 import type { CandidateViewMap } from "@/lib/recruitment/candidate-views";
+// Type-only, and it has to stay that way: hiring-manager-notify reaches the service-role client, so
+// a value import would drag it into this "use client" bundle and fail the build outright.
+import type { HiringManagerOption } from "@/lib/recruitment/hiring-manager-notify";
 import type { Candidate } from "@/lib/recruitment/types";
 
 export function ScreeningPageClient({
   candidates,
+  hiringManagers,
   initialViews,
   poolHref,
 }: {
   candidates: Candidate[];
+  /** The managers a CV can be pushed to without leaving the queue. Loaded server-side by the page. */
+  hiringManagers: HiringManagerOption[];
   initialViews: CandidateViewMap;
   /**
    * Where "back to the pool" goes. Passed in rather than hard-coded because this page exists in
@@ -52,6 +58,7 @@ export function ScreeningPageClient({
     <ScreeningPageFrame>
       <CandidateScreeningSession
         candidates={candidates}
+        hiringManagers={hiringManagers}
         initialViews={initialViews}
         onClose={handleClose}
         variant="page"

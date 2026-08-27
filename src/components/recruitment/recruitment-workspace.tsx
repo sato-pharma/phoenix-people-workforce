@@ -46,6 +46,7 @@ import { APPLIED_FOR_SOURCE_LABEL, APPLIED_FOR_SOURCE_SHORT, candidateRowApplied
 import { candidateDisplayName, isShortenedCandidateName } from "@/lib/recruitment/candidate-display";
 import {
   groupCandidatesByNotifiedManager,
+  managerPickerLabel as hiringManagerOptionLabel,
   managerSeatLabel,
   type ManagerGroup,
 } from "@/lib/recruitment/manager-grouping";
@@ -405,21 +406,6 @@ async function deleteRequest(url: string): Promise<Record<string, unknown>> {
  * manager been told?" is answered on screen instead of guessed. It survives a reload because it
  * comes from the audit row, not from component state.
  */
-/**
- * How one manager reads in a picker: "Ahmed Samir · District Sales Manager · Giza".
- *
- * The area is the half that makes the list usable. Thirty-one managers sit in this dropdown and
- * seventeen of them are District Sales Managers, so until 2026-08-27 telling two of them apart
- * meant recognising a person by name rather than reading a seat — and picking the wrong one sends
- * somebody else's CVs to the wrong governorate. Where the employee row carries no area the label
- * simply stops after the title: omitted, never filled with a placeholder, because "District Sales
- * Manager · Unknown" reads as a fault to chase when nothing is actually wrong.
- */
-function hiringManagerOptionLabel(manager: HiringManagerOption): string {
-  const seat = managerSeatLabel({ areaName: manager.areaName, jobTitle: manager.jobTitle });
-  return seat ? `${manager.name} · ${seat}` : manager.name;
-}
-
 function SendToManagerCard({
   application,
   pending,
@@ -2572,13 +2558,20 @@ function managerGroupAnchorId(key: string, surface: "table" | "card"): string {
  *
  * getClientRects() is empty for anything inside a display:none subtree, which is exactly the test
  * needed here and is cheaper and more honest than re-deriving the breakpoint in JavaScript.
+ *
+ * `behavior: "auto"`, and NOT because instant is prettier. Measured on this exact page on
+ * 2026-08-21: Chrome abandons a programmatic SMOOTH scroll over a long distance, leaving the page
+ * where it was — so the jump reads as a dead button. This is the same 434-row page that defect was
+ * found on, and a manager's pile is exactly the thing that sits fifteen screens down, so the smooth
+ * version would fail here more often than anywhere else. `tests/recruitment-candidate-pool-table`
+ * pins the whole file against the word, which is how this one was caught.
  */
 function scrollToManagerGroup(key: string): void {
   if (typeof document === "undefined") return;
   for (const surface of ["table", "card"] as const) {
     const element = document.getElementById(managerGroupAnchorId(key, surface));
     if (element && element.getClientRects().length > 0) {
-      element.scrollIntoView({ behavior: "smooth", block: "start" });
+      element.scrollIntoView({ behavior: "auto", block: "start" });
       return;
     }
   }
@@ -4441,6 +4434,10 @@ function CandidatesTab({
           {screeningQueue ? (
             <CandidateScreeningSession
               candidates={screeningQueue}
+              // `canManage` is the pool's own `recruitment: update` gate, and it is the same grant
+              // the send route enforces — so a reader who cannot send simply gets no picker here,
+              // exactly as on the standalone page.
+              hiringManagers={canManage ? hiringManagers : []}
               onClose={(decidedCount) => {
                 setScreeningQueue(null);
                 // Only pay for a reload when something actually changed. Leaving the queue after

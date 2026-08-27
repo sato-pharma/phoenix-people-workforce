@@ -203,15 +203,30 @@ export async function runRecruitmentHiringManagerPushTests() {
     /\btry\b/,
     "nothing may catch the delivery — a failed send has to reach the recruiter who pressed the button",
   );
+  // Re-cut 2026-08-27, and the reason matters more than the edit. This pin used to require the
+  // literal `.update({ … manager_notified_at`, which stopped being the shape the moment the write
+  // learned to fall back: it is now `.update(seatColumnsExist ? { ...identity, ...seat } :
+  // identity)`, because the three seat columns are newer than this code path and an un-migrated
+  // database answers PGRST204. The PROPERTY being pinned is unchanged and is the only thing that
+  // matters — the stamp is written AFTER the manager has actually been told — so the pin asserts
+  // that ordering and stops dictating the spelling of the object literal in between.
   assert.match(
     pushBody,
-    /await createSystemNotification\([\s\S]*?const sentAt[\s\S]*?\.update\(\{[\s\S]*?manager_notified_at/,
+    /await createSystemNotification\([\s\S]*?const sentAt[\s\S]*?manager_notified_at/,
     "the stamp must be written AFTER the notification, or the row can claim a send that never happened",
+  );
+  // BOTH writes, listed separately on purpose: the fallback is not a best-effort retry, it is the
+  // same and only record of the send, made without three columns the database has not learned yet.
+  // Swallowing either would recreate exactly the invisibility this work exists to end.
+  assert.match(
+    pushBody,
+    /if \(attempt\.error\) throw attempt\.error;/,
+    "a failed stamp write must throw — it is the only record of the send",
   );
   assert.match(
     pushBody,
-    /if \(error\) throw error;/,
-    "a failed stamp write must throw — it is the only record of the send",
+    /if \(retry\.error\) throw retry\.error;/,
+    "the seat-less fallback write must throw too — it records the same send",
   );
 
   // Only real managers are offered, and only current employees.
