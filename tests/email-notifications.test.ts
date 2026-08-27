@@ -90,6 +90,11 @@ export function runEmailNotificationTests() {
     // Its body is built from the letter design HR edits in the module itself, not from a DB email
     // template. See src/lib/offers/send.ts.
     "src/lib/offers/send.ts",
+    // The 6-hourly CV intake digest emails each hiring manager who received candidate
+    // pushes, with the recipient's manager in CC (except NSM) and omar.anwar always in CC.
+    // Direct send for the same reason as closing-publish-notification.ts: a bespoke
+    // recipient list with role-dependent CC logic, not the DB template engine.
+    "src/lib/recruitment/inbound/cv-intake-digest-6h.ts",
     // A Monthly Closing publish notifies that line's leadership (District Managers + a fixed
     // Cc/Bcc roster) — a system-triggered domain announcement built directly against the shared
     // Phoenix layout, same reasoning as approved-email.ts/phantom-report.ts above: a bespoke
