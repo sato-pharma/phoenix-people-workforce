@@ -59,15 +59,37 @@ import { describeCvRead } from "@/lib/recruitment/cv-extraction-quality";
 //
 // Usage (from the worktree root):
 //   node --env-file-if-exists=.env.local --experimental-strip-types \
-//        --experimental-specifier-resolution=node --experimental-loader ./scripts/alias-loader.mjs \
+//        --experimental-specifier-resolution=node --experimental-loader ./tests/alias-loader.mjs \
 //        scripts/recruitment-reread-never-read-cvs.ts [--limit N] [--dry-run] [--unresolved-only]
+//
+//   The loader is ./tests/alias-loader.mjs, NOT the one beside this script. Both exist; only that
+//   one resolves `next/cache`, which arrives transitively through the extraction import chain. With
+//   ./scripts/alias-loader.mjs the run dies before its first line with ERR_MODULE_NOT_FOUND naming
+//   company-vacation-report.ts — a file this script has nothing to do with, which is why the error
+//   reads like a broken checkout rather than a wrong flag. Corrected here 2026-08-27 after it cost
+//   a cycle; the same wrong path was in this comment while every real run used the right one.
 //
 //   --dry-run          lists the target set and exits. No AI call, no write, no spend.
 //   --limit N          reads only the first N. Used to prove the path on one before firing all.
 //   --include-rules-only  releases the candidates held back because their only extraction row is a
 //                      free rules/OCR read. Owner-approved 2026-08-27, after credits were restored.
-//                      These are the WORST-read CVs in the pool (~11-15 fields against 38), so this
-//                      is the highest-value re-read available — and the only one that costs per CV.
+//                      Releasing them is necessary but NOT sufficient — see --force-model.
+//   --force-model      bypasses shouldEscalateToAi, so every target reaches the model.
+//
+//                      WITHOUT it, releasing a rules-only candidate mostly achieves nothing. The
+//                      gate is a spend decision taken BEFORE any model call: when the rules have
+//                      answered everything worth asking, it returns their read for free. Measured
+//                      on production 2026-08-27 over the 59 candidates who have never had a model
+//                      read: 20 escalate on their own (#2453 made a lone missing job title or
+//                      employer enough), and 39 are refused — 35 of them for "rules answered every
+//                      field worth asking about". No number of re-runs reaches those 39, which is
+//                      why the same candidates carry two, three and four identical free rows.
+//
+//                      This is the ONLY flag here that turns a free run into a paid one for
+//                      candidates the system had decided not to spend on, so it is deliberately
+//                      explicit, prints what it will cost, and is never set by anything but a
+//                      human typing it. Inbound intake cannot reach it. Measured price at the nano
+//                      tier (post-#2451): ~$0.0043 per CV, so all 59 ≈ $0.25.
 //   --unresolved-only  narrows the set to candidates whose "Applying for" column is EMPTY and who
 //                      actually have a stored file. Added 2026-08-21 at the owner's instruction
 //                      ("run the extraction on the 56"). Most never-read CVs belong to candidates
@@ -194,6 +216,7 @@ async function main(): Promise<void> {
   const dryRun = args.includes("--dry-run");
   const unresolvedOnly = args.includes("--unresolved-only");
   const includeRulesOnly = args.includes("--include-rules-only");
+  const forceModel = args.includes("--force-model");
   const limitArg = args.find((a) => a.startsWith("--limit"));
   const limit = limitArg ? Number(limitArg.split("=")[1] ?? args[args.indexOf(limitArg) + 1]) : Number.NaN;
 
@@ -324,6 +347,22 @@ async function main(): Promise<void> {
     console.log(`Limited to       : ${targets.length}`);
   }
 
+  // Say what this will cost BEFORE spending it. Neither --limit nor anything else in this script is
+  // a cost ceiling, and the two bulk bursts that dominate this account's OpenAI bill were both runs
+  // exactly like this one. The rate is measured, not guessed: 2026-08-27, real API usage over the
+  // universal 38-field schema, $0.0043/CV on the nano tier the text route now uses.
+  const NANO_COST_PER_CV = 0.0043;
+  if (forceModel) {
+    console.log(
+      `\n--force-model    : ON — the escalation gate is BYPASSED. All ${targets.length} targets reach the model.`,
+    );
+    console.log(
+      `Estimated spend  : ~$${(targets.length * NANO_COST_PER_CV).toFixed(2)} (${targets.length} x ~$${NANO_COST_PER_CV.toFixed(4)}), vision-route CVs cost ~12x more.`,
+    );
+  } else {
+    console.log(`\n--force-model    : off — the gate decides per CV; candidates it refuses cost nothing and change nothing.`);
+  }
+
   if (dryRun) {
     console.log("\n--dry-run: listing only, no AI call and no write.\n");
     for (const [index, row] of targets.entries()) {
@@ -347,7 +386,7 @@ async function main(): Promise<void> {
     const label = `${String(index + 1).padStart(3)}/${targets.length}  ${row.full_name ?? "(no name)"}`;
     const began = Date.now();
     try {
-      const result = await extractCandidateFieldsFromCv(String(row.id), access, defaultCvPositionKey);
+      const result = await extractCandidateFieldsFromCv(String(row.id), access, defaultCvPositionKey, { forceModel });
       const fields = result.fields ?? {};
       // describeCvRead counts with the shared emptiness rule and decides read-vs-empty from that
       // count. Do not re-count here — a second opinion about what "has a value" means is the exact

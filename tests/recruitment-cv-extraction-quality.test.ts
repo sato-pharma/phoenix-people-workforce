@@ -253,6 +253,48 @@ export function runRecruitmentCvExtractionQualityTests() {
     "every escalation must go through runEscalation — a direct call skips the rung a .docx can reach",
   );
 
+  // 3c. --force-model: the operator escape hatch, and the four things that keep it safe.
+  //
+  // The escalation gate is a SPEND decision taken before any model call, and it is why extraction is
+  // cheap. Measured on production 2026-08-27 over the 59 candidates who have never had a model read:
+  // 20 escalate on their own and 39 are refused, 35 of them for "rules answered every field worth
+  // asking about". No number of re-runs reaches those 39 — hence the same candidates carrying two,
+  // three and four identical free rows. --force-model is the only way past, so it must be reachable
+  // ONLY by hand, and must never widen anything else.
+  assert.match(
+    extractionSource,
+    /if \(!input\.forceModel && rule && rule\.isCv\) \{/,
+    "forceModel must bypass the escalation gate — that is the entire feature",
+  );
+  assert.match(
+    extractionSource,
+    /forceModel: options\?\.forceModel === true,/,
+    "the re-read path must pass forceModel EXPLICITLY as a boolean — a truthy option is how a flag leaks on",
+  );
+  // It must not widen the ASK. A forced call still skips the fields the merge would discard;
+  // dropping the narrowing as well would quietly multiply the output bill on the same run.
+  assert.match(
+    extractionSource,
+    /const askKeys = forRoute === "text" \? narrowedTextKeys : null;/,
+    "forcing the call must not also widen what is asked for — narrowing is a separate, still-active lever",
+  );
+  {
+    const rereadScript = readFileSync(
+      path.join(process.cwd(), "scripts/recruitment-reread-never-read-cvs.ts"),
+      "utf8",
+    );
+    assert.match(
+      rereadScript,
+      /const forceModel = args\.includes\("--force-model"\);/,
+      "the flag must come from an argument a human typed, never from config or an env var",
+    );
+    assert.match(
+      rereadScript,
+      /Estimated spend/,
+      "a run that turns a free pass into a paid one must say what it will cost before spending it",
+    );
+  }
+
   // --- The recorded intake failure --------------------------------------------------------------
   // Production had 226 candidates, 177 extractions and 0 intake errors: 49 CVs were never read and
   // every surface reported success. The catch stays fail-open — but it must no longer be silent.
@@ -270,6 +312,14 @@ export function runRecruitmentCvExtractionQualityTests() {
     intakeSource,
     /errorMessage: extractionError,/,
     "the reason must land on the intake event row Inbound Intake Health already renders",
+  );
+  // The --force-model cost guard (see 3c). Intake runs on EVERY inbound CV, so a forceModel reaching
+  // here would switch the escalation gate off for the whole inbox — the exact opposite of what the
+  // gate is for, and an unbounded bill rather than a one-off $0.25 run an operator chose to make.
+  assert.doesNotMatch(
+    intakeSource,
+    /forceModel/,
+    "inbound intake must NEVER force a model call — that bypasses the gate for every CV received (cost guard)",
   );
 
   // --- The prompt rules the measurements bought -------------------------------------------------
