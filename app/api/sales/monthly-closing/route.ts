@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
-import { loadMonthlyClosingPartsWithStoreSplit } from "@/lib/sales/monthly-closing-with-store-split";
+import { loadMergedMonthlyClosingParts } from "@/lib/sales/monthly-closing-period-load";
+import { parsePeriodSelection } from "@/lib/sales/monthly-closing-period-merge";
 import { loadMonthlySourceCoverage } from "@/lib/sales/source-coverage";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
@@ -32,16 +33,39 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const line = searchParams.get("line");
     const period = searchParams.get("period");
-    const parts = await loadMonthlyClosingPartsWithStoreSplit({ line, period });
+    // `periods` is the multi-month form; `period` stays the single-month one every existing caller
+    // already sends, and a selection of exactly one behaves identically to the way it always has.
+    const selection = parsePeriodSelection(searchParams.get("periods"));
+    const parts = await loadMergedMonthlyClosingParts({
+      line,
+      periods: selection.length > 0 ? selection : period ? [period] : [],
+    });
     const data = parts.combined;
     // Completeness ride-along: which of last month's sources are still absent from this month.
     // Degrades to null — the banner simply hides — rather than ever taking the closing down.
-    const coverage = await loadMonthlySourceCoverage(data.line, data.period).catch(() => null);
+    //
+    // Deliberately NOT read for a multi-month selection: the banner's whole sentence is "this month
+    // is missing sources that fed the month before it", which has no meaning across a span and would
+    // read as an authoritative claim about a month the reader never singled out.
+    const coverage =
+      (data.periods?.length ?? 0) > 1
+        ? null
+        : await loadMonthlySourceCoverage(data.line, data.period).catch(() => null);
 
     // `office` is the same grid holding only the Office channel's allocated units, so the workspace
     // can show "of which Office" beside every figure. Null (never an empty grid) when it could not
     // be read — the table then renders "—" and says so, rather than a misleading zero.
-    return NextResponse.json({ success: true, data, coverage, office: parts.office });
+    //
+    // `skipped` names any requested month the closing could not read, so the screen can say which
+    // one is missing instead of quietly totalling fewer months than the reader asked for.
+    return NextResponse.json({
+      success: true,
+      data,
+      coverage,
+      office: parts.office,
+      periods: parts.periods,
+      skipped: parts.skipped,
+    });
   } catch (error) {
     if (isForbiddenError(error)) {
       return NextResponse.json(

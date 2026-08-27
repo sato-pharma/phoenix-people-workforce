@@ -18,11 +18,13 @@ import {
 } from "@/components/sales/monthly-closing-filters";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { isSyntheticDirectArea } from "@/lib/sales/closing-direct-area";
+import { monthlyClosingFilterOptions } from "@/lib/sales/monthly-closing-filter-options";
 import {
   filterMonthlyClosingMatrix,
   type MonthlyClosingMatrix,
 } from "@/lib/sales/monthly-distributor-import";
+import { ClosingPeriodSelect } from "@/components/sales/closing-period-select";
+import { describePeriodSelection, periodLabel } from "@/lib/sales/monthly-closing-period-merge";
 import type { MonthlySourceCoverage } from "@/lib/sales/source-coverage";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 
@@ -41,6 +43,10 @@ type ClosingResponse = {
   data?: MonthlyClosingMatrix;
   error?: string;
   office?: MonthlyClosingMatrix | null;
+  /** Months actually read. */
+  periods?: string[];
+  /** Requested but unreadable — named on screen rather than silently missing from the totals. */
+  skipped?: string[];
   success: boolean;
 };
 
@@ -58,11 +64,24 @@ export function MonthlyClosingWorkspace({ canPublish = false, initialCoverage = 
   const [lockedAt, setLockedAt] = useState<string | null>(null);
   const [isLocking, setIsLocking] = useState(false);
   const [tab, setTab] = useState<"matrix" | "details">("matrix");
+  const [skippedPeriods, setSkippedPeriods] = useState<string[]>([]);
 
   const selectedLine = matrix?.line ?? "";
   const selectedPeriod = matrix?.period ?? "";
   const availableLines = matrix?.availableLines ?? [];
   const availablePeriods = matrix?.availablePeriods ?? [];
+
+  // The months behind what is on screen. A single-month matrix has no `periods` of its own, so it
+  // reads as the one month it is — the absence never means "unknown".
+  const selectedPeriods = useMemo(
+    () => (matrix?.periods && matrix.periods.length > 0 ? matrix.periods : matrix?.period ? [matrix.period] : []),
+    [matrix],
+  );
+  // Publishing and locking are single-month acts by definition: a lock freezes ONE month's numbers
+  // and publishing releases ONE month to the portal. Neither has a meaning over a span, so both are
+  // disabled while several months are folded together rather than silently acting on the latest.
+  const isMultiPeriod = selectedPeriods.length > 1;
+  const periodSpan = describePeriodSelection(selectedPeriods);
 
   const filteredMatrix = useMemo(
     () => (matrix ? filterMonthlyClosingMatrix(matrix, filter) : null),
@@ -107,22 +126,9 @@ export function MonthlyClosingWorkspace({ canPublish = false, initialCoverage = 
     return parts.join(" ");
   }, [coverage]);
 
-  const filterOptions = useMemo(() => {
-    if (!matrix) return { areas: [], products: [], regions: [] };
-    return {
-      regions: matrix.regions.map((region) => ({ code: region.regionCode, label: `${region.regionName} (${region.regionCode})` })),
-      // Exclude the synthetic per-region "Direct" rows — they share the code "DIRECT" across
-      // regions and are not a filterable area. Only those: `area.isDirect` is also true for a real
-      // area that absorbed July 2026's direct orders, and the raw flag hid every such area (Dakahlia
-      // 1, Behira 2, …) from this picker.
-      areas: matrix.regions.flatMap((region) =>
-        region.areas
-          .filter((area) => !isSyntheticDirectArea(area))
-          .map((area) => ({ code: area.areaCode, label: `${area.areaName} (${area.areaCode})`, regionCode: region.regionCode })),
-      ),
-      products: matrix.columns.map((column) => ({ code: column.productCode, label: `${column.productName} (${column.productCode})` })),
-    };
-  }, [matrix]);
+  // Built from the UNFILTERED matrix, and shared with the Performance Review so the two screens
+  // offer the same regions, areas and products — see monthly-closing-filter-options.ts.
+  const filterOptions = useMemo(() => monthlyClosingFilterOptions(matrix), [matrix]);
 
   useEffect(() => {
     if (!canPublish || !selectedLine || !selectedPeriod) return;
@@ -216,13 +222,17 @@ export function MonthlyClosingWorkspace({ canPublish = false, initialCoverage = 
     }
   }
 
-  async function reload(line: string, period: string) {
+  async function reload(line: string, periods: string[]) {
     setIsLoading(true);
     setError(null);
     try {
       const query = new URLSearchParams();
       if (line) query.set("line", line);
-      if (period) query.set("period", period);
+      // `period` stays the single-month parameter the route has always understood; `periods` is the
+      // multi-month one. Sending exactly one month uses the old path, so nothing changes for the
+      // reader who never opens the "Several months" side of the picker.
+      if (periods.length === 1) query.set("period", periods[0]);
+      else if (periods.length > 1) query.set("periods", periods.join(","));
       const response = await fetch(`/api/sales/monthly-closing?${query.toString()}`, { cache: "no-store" });
       const text = await response.text();
       const payload: ClosingResponse = text ? JSON.parse(text) : { success: response.ok };
@@ -230,6 +240,7 @@ export function MonthlyClosingWorkspace({ canPublish = false, initialCoverage = 
         setMatrix(payload.data);
         setOffice(payload.office ?? null);
         setCoverage(payload.coverage ?? null);
+        setSkippedPeriods(payload.skipped ?? []);
         setFilter(emptyMonthlyClosingFilter);
       } else {
         setError(payload.error ?? "Failed to load Monthly Closing.");
@@ -302,7 +313,7 @@ export function MonthlyClosingWorkspace({ canPublish = false, initialCoverage = 
         badges={(
           <>
             <AdminInsightChip>Line: {selectedLine || "None"}</AdminInsightChip>
-            <AdminInsightChip>Month: {selectedPeriod || "No validated data"}</AdminInsightChip>
+            <AdminInsightChip>{isMultiPeriod ? "Months" : "Month"}: {periodSpan || "No validated data"}</AdminInsightChip>
             <AdminInsightChip tone="slate">Products: {filteredMatrix?.columns.length ?? 0}</AdminInsightChip>
             {canPublish && locked ? (
               <AdminInsightChip tone="orange">Locked — numbers frozen</AdminInsightChip>
@@ -330,7 +341,7 @@ export function MonthlyClosingWorkspace({ canPublish = false, initialCoverage = 
               <SearchableSelect
                 className={selectClassName}
                 disabled={isLoading || availableLines.length === 0}
-                onChange={(event) => void reload(event.target.value, selectedPeriod)}
+                onChange={(event) => void reload(event.target.value, selectedPeriods)}
                 value={selectedLine}
               >
                 {availableLines.length === 0 ? (
@@ -342,27 +353,21 @@ export function MonthlyClosingWorkspace({ canPublish = false, initialCoverage = 
                 )}
               </SearchableSelect>
             </label>
-            <label className="flex flex-col gap-1 sm:w-44">
-              <span className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">Month</span>
-              <SearchableSelect
-                className={selectClassName}
+            <label className="flex flex-col gap-1">
+              <span className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">
+                {isMultiPeriod ? "Months" : "Month"}
+              </span>
+              <ClosingPeriodSelect
+                availablePeriods={availablePeriods}
                 disabled={isLoading || availablePeriods.length === 0}
-                onChange={(event) => void reload(selectedLine, event.target.value)}
-                value={selectedPeriod}
-              >
-                {availablePeriods.length === 0 ? (
-                  <option value="">No validated month</option>
-                ) : (
-                  availablePeriods.map((period) => (
-                    <option key={period} value={period}>{period}</option>
-                  ))
-                )}
-              </SearchableSelect>
+                onChange={(periods) => void reload(selectedLine, periods)}
+                value={selectedPeriods}
+              />
             </label>
             <Button
               className="gap-2"
               disabled={isLoading}
-              onClick={() => void reload(selectedLine, selectedPeriod)}
+              onClick={() => void reload(selectedLine, selectedPeriods)}
               variant="secondary"
             >
               {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
@@ -371,12 +376,14 @@ export function MonthlyClosingWorkspace({ canPublish = false, initialCoverage = 
             {canPublish ? (
               <Button
                 className="gap-2"
-                disabled={isLocking || !selectedLine || !selectedPeriod}
+                disabled={isLocking || isMultiPeriod || !selectedLine || !selectedPeriod}
                 onClick={() => void toggleLock()}
                 title={
-                  locked
-                    ? `Locked${lockedAt ? ` ${new Date(lockedAt).toLocaleString("en-GB", { timeZone: "Africa/Cairo" })}` : ""} — nothing can change this month's numbers, including imports and direct database work. Click to unlock.`
-                    : "Freeze this month so nothing can change its numbers afterwards — imports, migrations and direct database work included."
+                  isMultiPeriod
+                    ? `Locking freezes ONE month. Pick a single month to lock — ${periodSpan} is several.`
+                    : locked
+                      ? `Locked${lockedAt ? ` ${new Date(lockedAt).toLocaleString("en-GB", { timeZone: "Africa/Cairo" })}` : ""} — nothing can change this month's numbers, including imports and direct database work. Click to unlock.`
+                      : "Freeze this month so nothing can change its numbers afterwards — imports, migrations and direct database work included."
                 }
                 variant={locked ? "default" : "secondary"}
               >
@@ -393,8 +400,13 @@ export function MonthlyClosingWorkspace({ canPublish = false, initialCoverage = 
             {canPublish ? (
               <Button
                 className="gap-2"
-                disabled={isPublishing || !selectedLine || !selectedPeriod}
+                disabled={isPublishing || isMultiPeriod || !selectedLine || !selectedPeriod}
                 onClick={() => void togglePublish()}
+                title={
+                  isMultiPeriod
+                    ? `Publishing releases ONE month to the portal. Pick a single month — ${periodSpan} is several.`
+                    : undefined
+                }
                 variant={published ? "secondary" : "default"}
               >
                 {isPublishing ? (
@@ -440,6 +452,18 @@ export function MonthlyClosingWorkspace({ canPublish = false, initialCoverage = 
                 <p>{coverageWarning}</p>
               </div>
             ) : null}
+            {/* A requested month the closing could not read is NAMED, never dropped quietly — the
+                totals below would otherwise cover fewer months than the picker says they do. */}
+            {skippedPeriods.length > 0 ? (
+              <div className="flex items-start gap-2 border-b border-amber-200 bg-amber-50/70 px-4 py-2.5 text-xs font-semibold text-amber-800 md:px-5">
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                <p>
+                  {skippedPeriods.map((period) => periodLabel(period)).join(", ")}
+                  {skippedPeriods.length === 1 ? " has no closing data, so it is" : " have no closing data, so they are"}
+                  {" not in the figures below."}
+                </p>
+              </div>
+            ) : null}
             {/* Matrix = the published headline. Details = the invoice lines underneath it,
                 so the arithmetic can be checked without leaving the page. */}
             <div className="flex items-center gap-1 border-b border-slate-100 px-4 pt-3 md:px-5">
@@ -478,8 +502,13 @@ export function MonthlyClosingWorkspace({ canPublish = false, initialCoverage = 
                     className={cn(
                       "inline-flex h-10 shrink-0 items-center gap-2 border border-[#0B0B0B] bg-[#0B0B0B] px-4 text-sm font-bold text-white transition hover:bg-[#F97316] disabled:opacity-50",
                     )}
-                    disabled={isExporting || filteredMatrix.columns.length === 0}
+                    disabled={isExporting || isMultiPeriod || filteredMatrix.columns.length === 0}
                     onClick={() => void handleExport()}
+                    title={
+                      isMultiPeriod
+                        ? `This workbook carries the month's own invoice rows on its Data sheet, which is built one month at a time — so it cannot yet cover ${periodSpan}. Pick a single month to export, or use the Performance Review's export, which covers the whole selection.`
+                        : undefined
+                    }
                     type="button"
                   >
                     {isExporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}

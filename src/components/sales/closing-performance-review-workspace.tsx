@@ -1,7 +1,7 @@
 "use client";
 
 import { AlertTriangle, Download, Loader2, RefreshCw, Trophy } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 
 import {
   AdminCallout,
@@ -9,8 +9,16 @@ import {
   AdminPageHero,
   AdminTableShell,
 } from "@/components/admin/admin-design-system";
+import { ClosingPeriodSelect } from "@/components/sales/closing-period-select";
+import {
+  MonthlyClosingFilters,
+  emptyMonthlyClosingFilter,
+  type MonthlyClosingFilter,
+} from "@/components/sales/monthly-closing-filters";
 import { Button } from "@/components/ui/button";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { emptyMonthlyClosingFilterOptions } from "@/lib/sales/monthly-closing-filter-options";
+import { describePeriodSelection } from "@/lib/sales/monthly-closing-period-merge";
 import {
   performanceReviewRegionStyle,
   PERFORMANCE_REVIEW_FIRST_PERIOD,
@@ -252,10 +260,35 @@ export function ClosingPerformanceReviewWorkspace({ initialError, initialReview 
   const [error, setError] = useState<string | null>(initialError);
   const [isLoading, setIsLoading] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
+  const [filter, setFilter] = useState<MonthlyClosingFilter>(emptyMonthlyClosingFilter);
+  // The search box types a character at a time and every change here costs a server round trip, so
+  // changes are collected for a moment before one request goes out. A side benefit on the tick
+  // boxes: selecting five areas in a row sends one request, not five.
+  const filterDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const line = review?.line ?? "";
   const period = review?.period ?? "";
   const months = review?.months ?? [];
+
+  // The months the headline figures actually cover — one, or several folded together. Distinct from
+  // `months` above, which is the by-month SERIES behind the growth tabs and is always a run of them.
+  const selectedPeriods = review?.selectedPeriods?.length ? review.selectedPeriods : period ? [period] : [];
+  const periodSpan = describePeriodSelection(selectedPeriods);
+  const isMultiPeriod = selectedPeriods.length > 1;
+
+  // The pickers' options are built on the SERVER from the unfiltered matrix and ride along in the
+  // payload. Deriving them here from `review.areas` would offer only the rows that survived the
+  // current filter, so narrowing to one region would delete every other region from the control
+  // that is meant to let you switch between them.
+  const filterOptions = review?.filterOptions ?? emptyMonthlyClosingFilterOptions;
+
+  const filterIsActive =
+    filter.regionCodes.length > 0 ||
+    filter.areaCodes.length > 0 ||
+    filter.productCodes.length > 0 ||
+    filter.search.trim().length > 0;
+
+  const skippedPeriods = review?.skippedPeriods ?? [];
 
   // The series starts at July 2026 and fills forward, so today it is one month wide. Saying so is
   // the whole point: "1 months of history" reads as a bug, and an unexplained single column reads
@@ -276,13 +309,29 @@ export function ClosingPerformanceReviewWorkspace({ initialError, initialReview 
     return map;
   }, [review]);
 
-  async function reload(nextLine: string, nextPeriod: string) {
+  /**
+   * Re-read the review.
+   *
+   * The filter travels to the SERVER, unlike the Monthly Closing screen's own, because this page is
+   * six views derived from the matrix rather than the matrix itself. Narrowing them in the browser
+   * would leave a rank of "3rd of 50" printed above a table showing four rows, and a national total
+   * that still counted every area. Filtering the matrix first and re-deriving is the only way the
+   * headline numbers stay true to what is on the screen.
+   */
+  async function reload(nextLine: string, nextPeriods: string[], nextFilter: MonthlyClosingFilter) {
     setIsLoading(true);
     setError(null);
     try {
       const query = new URLSearchParams();
       if (nextLine) query.set("line", nextLine);
-      if (nextPeriod) query.set("period", nextPeriod);
+      // `period` is the single-month parameter the route has always understood; `periods` is the
+      // multi-month one. A selection of exactly one keeps the original path.
+      if (nextPeriods.length === 1) query.set("period", nextPeriods[0]);
+      else if (nextPeriods.length > 1) query.set("periods", nextPeriods.join(","));
+      if (nextFilter.regionCodes.length > 0) query.set("regions", nextFilter.regionCodes.join(","));
+      if (nextFilter.areaCodes.length > 0) query.set("areas", nextFilter.areaCodes.join(","));
+      if (nextFilter.productCodes.length > 0) query.set("products", nextFilter.productCodes.join(","));
+      if (nextFilter.search.trim() !== "") query.set("search", nextFilter.search.trim());
       const response = await fetch("/api/sales/monthly-closing/performance-review?" + query.toString(), {
         cache: "no-store",
       });
@@ -300,13 +349,33 @@ export function ClosingPerformanceReviewWorkspace({ initialError, initialReview 
     }
   }
 
+  /** Move the pickers now, ask the server in a moment. */
+  function applyFilter(next: MonthlyClosingFilter) {
+    setFilter(next);
+    if (filterDebounce.current) clearTimeout(filterDebounce.current);
+    filterDebounce.current = setTimeout(() => void reload(line, selectedPeriods, next), 350);
+  }
+
   async function handleExport() {
     if (!review) return;
     setIsExporting(true);
     setError(null);
     try {
+      // The workbook is sent the SAME selection and the SAME filter the screen is showing. The
+      // owner's rule is that an export matches the screen: a workbook covering three months, or
+      // every region, while the reader is looking at one month of Delta would be different data
+      // wearing the same title.
       const response = await fetch("/api/sales/monthly-closing/performance-review/export", {
-        body: JSON.stringify({ line: review.line, months: review.months.length, period: review.period }),
+        body: JSON.stringify({
+          areas: filter.areaCodes,
+          line: review.line,
+          months: review.months.length,
+          period: review.period,
+          periods: selectedPeriods,
+          products: filter.productCodes,
+          regions: filter.regionCodes,
+          search: filter.search,
+        }),
         headers: { "Content-Type": "application/json" },
         method: "POST",
       });
@@ -352,7 +421,9 @@ export function ClosingPerformanceReviewWorkspace({ initialError, initialReview 
         badges={(
           <>
             <AdminInsightChip>Line: {line || "None"}</AdminInsightChip>
-            <AdminInsightChip>Month: {period ? longMonth(period) : "No validated data"}</AdminInsightChip>
+            <AdminInsightChip>
+              {isMultiPeriod ? "Months" : "Month"}: {selectedPeriods.length > 0 ? periodSpan : "No validated data"}
+            </AdminInsightChip>
             <AdminInsightChip tone="slate">Areas: {review.areas.length}</AdminInsightChip>
             <AdminInsightChip tone="slate">District managers: {review.managers.length}</AdminInsightChip>
             <AdminInsightChip tone="orange">{seriesSpan}</AdminInsightChip>
@@ -371,6 +442,40 @@ export function ClosingPerformanceReviewWorkspace({ initialError, initialReview 
         </AdminCallout>
       ) : null}
 
+      {/* A requested month the closing could not read is NAMED. Silently totalling two months when
+          three were asked for is the failure this banner exists to make impossible. */}
+      {skippedPeriods.length > 0 ? (
+        <AdminCallout tone="warning">
+          <AlertTriangle className="h-4 w-4" />
+          <p>
+            No validated closing for {skippedPeriods.map((entry) => longMonth(entry)).join(", ")} — every figure
+            below covers {periodSpan} only.
+          </p>
+        </AdminCallout>
+      ) : null}
+
+      {/* The filter bar narrows every section at once, and it does so on the SERVER: the ranks,
+          the region subtotals and the national total are all re-derived from what survives, so a
+          rank of "3rd" always counts the rows the reader can actually see. */}
+      <div className="flex flex-col gap-3 rounded-[28px] border border-[#E2E8F0] bg-white p-4 shadow-[0_10px_30px_rgba(15,23,42,0.05)] sm:p-5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <span className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-500">Filter the review</span>
+          <span className="text-xs font-semibold text-slate-500">
+            {filterIsActive
+              ? "Showing " + review.areas.length + " " + (review.areas.length === 1 ? "area" : "areas") +
+                " " + DOT + " every total below is recalculated from these rows"
+              : "Every area on the line"}
+          </span>
+        </div>
+        <MonthlyClosingFilters
+          areas={filterOptions.areas}
+          onChange={applyFilter}
+          products={filterOptions.products}
+          regions={filterOptions.regions}
+          value={filter}
+        />
+      </div>
+
       {/* The grids lead the page, as they lead the workbook: who is on the left, what they sold
           across the top. Every other section below is a different cut of these same numbers. */}
       <AdminTableShell
@@ -381,7 +486,7 @@ export function ClosingPerformanceReviewWorkspace({ initialError, initialReview 
               <SearchableSelect
                 className={selectClassName}
                 disabled={isLoading || review.availableLines.length === 0}
-                onChange={(event) => void reload(event.target.value, period)}
+                onChange={(event) => void reload(event.target.value, selectedPeriods, filter)}
                 value={line}
               >
                 {review.availableLines.length === 0 ? (
@@ -393,27 +498,21 @@ export function ClosingPerformanceReviewWorkspace({ initialError, initialReview 
                 )}
               </SearchableSelect>
             </label>
-            <label className="flex flex-col gap-1 sm:w-44">
-              <span className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">Month</span>
-              <SearchableSelect
-                className={selectClassName}
+            <label className="flex flex-col gap-1">
+              <span className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">
+                {isMultiPeriod ? "Months" : "Month"}
+              </span>
+              <ClosingPeriodSelect
+                availablePeriods={review.availablePeriods}
                 disabled={isLoading || review.availablePeriods.length === 0}
-                onChange={(event) => void reload(line, event.target.value)}
-                value={period}
-              >
-                {review.availablePeriods.length === 0 ? (
-                  <option value="">No validated month</option>
-                ) : (
-                  review.availablePeriods.map((option) => (
-                    <option key={option} value={option}>{longMonth(option)}</option>
-                  ))
-                )}
-              </SearchableSelect>
+                onChange={(next) => void reload(line, next, filter)}
+                value={selectedPeriods}
+              />
             </label>
             <Button
               className="gap-2"
               disabled={isLoading}
-              onClick={() => void reload(line, period)}
+              onClick={() => void reload(line, selectedPeriods, filter)}
               variant="secondary"
             >
               {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}

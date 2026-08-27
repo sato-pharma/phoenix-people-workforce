@@ -155,6 +155,51 @@ export function longMonthLabel(period: string | null | undefined): string {
   return names[index] ? `${names[index]} ${match[1]}` : String(period);
 }
 
+/**
+ * What the headline sheets cover, in words.
+ *
+ * `review.period` is the LATEST month of the selection, so labelling a three-month total with it
+ * would print "September 2026" over figures that also hold July and August. Every headline sheet
+ * asks this instead of reading `period` directly.
+ *
+ * The by-MONTH sheets keep their own `seriesSpanLabel` — those columns really are one month each.
+ */
+export function headlinePeriodLabel(review: ClosingPerformanceReview): string {
+  const periods = review.selectedPeriods ?? [];
+  if (periods.length <= 1) return longMonthLabel(review.period);
+  const first = longMonthLabel(periods[0]);
+  const last = longMonthLabel(periods[periods.length - 1]);
+  return periods.length === 2 ? `${first} and ${last}` : `${periods.length} months ${DOT} ${first} to ${last}`;
+}
+
+/**
+ * How the sheet says it is showing less than the whole line.
+ *
+ * The owner's rule is that an export matches the screen and that what is left out is LABELLED, never
+ * silently dropped. Both counts are already in the payload — the surviving rows, and the pickers'
+ * full option lists — so this needs no new field and cannot drift from what was filtered.
+ *
+ * Empty string when nothing was narrowed, so an unfiltered workbook reads exactly as it always has.
+ */
+export function scopeLabel(review: ClosingPerformanceReview): string {
+  const allAreas = review.filterOptions?.areas.length ?? 0;
+  const allProducts = review.filterOptions?.products.length ?? 0;
+  const parts: string[] = [];
+  if (allAreas > 0 && review.areas.length < allAreas) {
+    parts.push(`${review.areas.length} of ${allAreas} areas`);
+  }
+  if (allProducts > 0 && review.matrixByProduct.columns.length < allProducts) {
+    parts.push(`${review.matrixByProduct.columns.length} of ${allProducts} products`);
+  }
+  return parts.length === 0 ? "" : `filtered ${DOT} ${parts.join(` ${DOT} `)}`;
+}
+
+/** A subtitle with the scope appended, when there is one. Keeps the unfiltered wording untouched. */
+function withScope(review: ClosingPerformanceReview, subtitle: string): string {
+  const scope = scopeLabel(review);
+  return scope === "" ? subtitle : `${subtitle} ${DOT} ${scope}`;
+}
+
 /** "2026-07" → "JUL". Used for the narrow month columns of the by-month sheets. */
 export function shortMonthLabel(period: string): string {
   const match = /^(\d{4})-(\d{2})$/.exec(period.trim());
@@ -309,7 +354,7 @@ function buildRepRankingSheet(workbook: ExcelJS.Workbook, review: ClosingPerform
     lastCol: LAST,
     note: `ranked on achievement ${DOT} a rep sells many products, so a rep total is by VALUE: units of different products are never added`,
     status: `source: Monthly Closing ${DOT} rep and manager from the Organogram seat model`,
-    subtitle: `${review.line ?? EM} ${DOT} National ${DOT} ${longMonthLabel(review.period)}`,
+    subtitle: withScope(review, `${review.line ?? EM} ${DOT} National ${DOT} ${headlinePeriodLabel(review)}`),
     title: "MEDICAL REP RANKING",
   });
 
@@ -435,8 +480,8 @@ function buildFamilySheet(workbook: ExcelJS.Workbook, review: ClosingPerformance
     legend: "none",
     lastCol: LAST,
     note: "a family spans several concentrations, so it is measured by VALUE; units show only where the family is a single product code",
-    status: `source: Monthly Closing ${DOT} ${longMonthLabel(review.period)}`,
-    subtitle: `${review.line ?? EM} ${DOT} by product family ${DOT} ${longMonthLabel(review.period)}`,
+    status: `source: Monthly Closing ${DOT} ${headlinePeriodLabel(review)}`,
+    subtitle: withScope(review, `${review.line ?? EM} ${DOT} by product family ${DOT} ${headlinePeriodLabel(review)}`),
     title: "FAMILY PERFORMANCE",
   });
 
@@ -518,7 +563,7 @@ function buildGridSheet(
     legend: "regions",
     lastCol: LAST,
     note: options.note,
-    status: `source: Monthly Closing ${DOT} ${longMonthLabel(review.period)} ${DOT} ${grid.columns.length} columns ${DOT} ${grid.rows.filter((row) => row.kind === "area").length} areas`,
+    status: `source: Monthly Closing ${DOT} ${headlinePeriodLabel(review)} ${DOT} ${grid.columns.length} columns ${DOT} ${grid.rows.filter((row) => row.kind === "area").length} areas`,
     subtitle: options.subtitle,
     title: options.title,
   });
@@ -793,7 +838,7 @@ export async function buildClosingPerformanceReviewWorkbook(review: ClosingPerfo
     measure: "value",
     name: "Reps " + DOT + " Families",
     note: "a family spans several concentrations, so a family cell is VALUE: units of different products are never added",
-    subtitle: `${review.line ?? EM} ${DOT} ${longMonthLabel(review.period)} ${DOT} value per family`,
+    subtitle: withScope(review, `${review.line ?? EM} ${DOT} ${headlinePeriodLabel(review)} ${DOT} value per family`),
     title: "REPS AND AREAS " + DOT + " FAMILIES",
   });
 
@@ -802,7 +847,7 @@ export async function buildClosingPerformanceReviewWorkbook(review: ClosingPerfo
     measure: "units",
     name: "Reps " + DOT + " Products",
     note: "every column here is ONE product code, so these units are a real quantity; the row total is VALUE, because a row spans products",
-    subtitle: `${review.line ?? EM} ${DOT} ${longMonthLabel(review.period)} ${DOT} units per product code`,
+    subtitle: withScope(review, `${review.line ?? EM} ${DOT} ${headlinePeriodLabel(review)} ${DOT} units per product code`),
     title: "REPS AND AREAS " + DOT + " PRODUCTS",
   });
 
@@ -816,7 +861,7 @@ export async function buildClosingPerformanceReviewWorkbook(review: ClosingPerfo
     rowHeading: "PRODUCT",
     rows: review.productUnitsByMonth,
     subHeading: "FAMILY",
-    subtitle: `${review.line ?? EM} ${DOT} units per product code ${DOT} ${seriesSpanLabel(review)}`,
+    subtitle: withScope(review, `${review.line ?? EM} ${DOT} units per product code ${DOT} ${seriesSpanLabel(review)}`),
     tintByRegion: false,
     title: "UNITS & GROWTH BY MONTH",
   });
@@ -828,7 +873,7 @@ export async function buildClosingPerformanceReviewWorkbook(review: ClosingPerfo
     rowHeading: "PRODUCT",
     rows: review.productValueByMonth,
     subHeading: "FAMILY",
-    subtitle: `${review.line ?? EM} ${DOT} value per product code ${DOT} ${seriesSpanLabel(review)}`,
+    subtitle: withScope(review, `${review.line ?? EM} ${DOT} value per product code ${DOT} ${seriesSpanLabel(review)}`),
     tintByRegion: false,
     title: "ALL PRODUCTS BY MONTH",
   });
@@ -840,7 +885,7 @@ export async function buildClosingPerformanceReviewWorkbook(review: ClosingPerfo
     rowHeading: "AREA",
     rows: review.areaValueByMonth,
     subHeading: "REGION",
-    subtitle: `${review.line ?? EM} ${DOT} value per area ${DOT} ${seriesSpanLabel(review)}`,
+    subtitle: withScope(review, `${review.line ?? EM} ${DOT} value per area ${DOT} ${seriesSpanLabel(review)}`),
     tintByRegion: true,
     title: "GROWTH BY MONTH " + DOT + " AREA",
   });
