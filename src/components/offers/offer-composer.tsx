@@ -12,12 +12,14 @@
 // second, client-side implementation of the layout would drift, and the day it did the preview
 // would start lying about a document somebody signs.
 
-import { Eye, FileDown, Loader2, Mail, Plus, Save, Send } from "lucide-react";
+import { Eye, FileDown, Loader2, Mail, Plus, RefreshCw, Save, Send, TriangleAlert } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { AdminTableShell } from "@/components/admin/admin-design-system";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { addDays, firstOfNextMonth, todayInCairo, toLetterDate } from "@/lib/offers/dates";
+import { offerDraftWarnings, offerWarningsFor, type OfferDraftWarning } from "@/lib/offers/draft-checks";
 import { deriveOfferPay } from "@/lib/offers/pay";
 import {
   offerHintClassName,
@@ -35,33 +37,43 @@ import {
 import { cn } from "@/lib/utils";
 import type { OfferFields, OfferJobTitle, OfferRecord, OfferStatus, OfferTemplate } from "@/lib/offers/types";
 
+/**
+ * The three date fields hold ISO `yyyy-mm-dd` here, not the English form the letter carries.
+ *
+ * That is the whole trick behind the date pickers: `<input type="date">` speaks only ISO, and the
+ * letter speaks only English, so the draft holds ISO and `fields` below converts on the way out.
+ * Nothing that is stored, rendered or sent changes shape — the conversion happens entirely inside
+ * this component, one line before the values leave it.
+ */
 type Draft = Omit<OfferFields, "costOfLiving" | "totalMonthly"> & {
   costOfLiving: string;
   templateId: string;
   totalMonthly: string;
 };
 
+/** How long an offer stays open by default. A week is what the letters have used. */
+const DEFAULT_VALIDITY_DAYS = 7;
+
 function blankDraft(templates: OfferTemplate[]): Draft {
-  const today = new Date();
-  const iso = (date: Date) =>
-    date.toLocaleDateString("en-GB", { day: "2-digit", month: "long", timeZone: "Africa/Cairo", year: "numeric" });
-  const validUntil = new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000);
+  const today = todayInCairo();
 
   return {
     candidateEmail: "",
     candidateName: "",
     contractTerm: "",
     costOfLiving: "",
-    dateOfIssue: iso(today),
+    dateOfIssue: today,
     reference: "",
     reportsTo: "",
     salutationName: "",
+    // Blank rather than a guess. A start date is a real negotiated fact, and a plausible default
+    // is the kind of value that gets sent without being read.
     startDate: "",
     templateId: defaultOfferTemplateId(templates),
     territory: "",
     title: "",
     totalMonthly: "",
-    validUntil: iso(validUntil),
+    validUntil: addDays(today, DEFAULT_VALIDITY_DAYS),
   };
 }
 
@@ -103,6 +115,30 @@ export function OfferComposer({
   const [previewHtml, setPreviewHtml] = useState<string>("");
   const previewTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  /**
+   * Whether the reference in the box was typed by a person.
+   *
+   * A generated reference is a convenience and may be replaced freely as the title changes. One
+   * somebody typed is a decision — continuing a run from a paper file, reissuing under an agreed
+   * number — and must survive every later edit to the form. This flag is the difference, and it is
+   * the reason correcting a typo in the job title cannot silently renumber a letter.
+   *
+   * HELD TWICE, and both are needed. The state is what the hint under the box reads: a ref read
+   * during render does not re-render when it changes, so the hint would go on saying "allocated
+   * automatically" after somebody had typed their own. The ref is what the fetch below re-checks
+   * AFTER its await — a state value captured in that closure is the value from before the request
+   * started, which is exactly the moment the person began typing.
+   */
+  const [referenceTyped, setReferenceTyped] = useState(false);
+  const referenceTypedRef = useRef(false);
+  const referenceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  /** Keeps the two in step. Nothing may set one without the other. */
+  const markReferenceTyped = useCallback((typed: boolean) => {
+    referenceTypedRef.current = typed;
+    setReferenceTyped(typed);
+  }, []);
+
   const total = Number(draft.totalMonthly || 0);
   const costOfLiving = Number(draft.costOfLiving || 0);
   const pay = useMemo(
@@ -116,17 +152,32 @@ export function OfferComposer({
       candidateName: draft.candidateName.trim(),
       contractTerm: draft.contractTerm.trim(),
       costOfLiving,
-      dateOfIssue: draft.dateOfIssue.trim(),
+      // ISO in the form, English on the letter. `toLetterDate` answers "" for anything it cannot
+      // read, which leaves the placeholder standing in braces rather than printing a wrong date.
+      dateOfIssue: toLetterDate(draft.dateOfIssue),
       reference: draft.reference.trim(),
       reportsTo: draft.reportsTo.trim(),
       salutationName: draft.salutationName.trim() || draft.candidateName.trim(),
-      startDate: draft.startDate.trim(),
+      startDate: toLetterDate(draft.startDate),
       territory: draft.territory.trim(),
       title: draft.title.trim(),
       totalMonthly: total,
-      validUntil: draft.validUntil.trim(),
+      validUntil: toLetterDate(draft.validUntil),
     }),
     [costOfLiving, draft, total],
+  );
+
+  const warnings: OfferDraftWarning[] = useMemo(
+    () =>
+      offerDraftWarnings({
+        candidateEmail: draft.candidateEmail,
+        dateOfIssue: draft.dateOfIssue,
+        // The offer being edited is not a duplicate of itself.
+        existingEmails: offers.filter((offer) => offer.id !== savedId).map((offer) => offer.candidateEmail),
+        startDate: draft.startDate,
+        validUntil: draft.validUntil,
+      }),
+    [draft.candidateEmail, draft.dateOfIssue, draft.startDate, draft.validUntil, offers, savedId],
   );
 
   const template = templates.find((t) => t.id === draft.templateId) ?? templates[0] ?? null;
@@ -162,6 +213,49 @@ export function OfferComposer({
       if (previewTimer.current) clearTimeout(previewTimer.current);
     };
   }, [refreshPreview]);
+
+  /**
+   * Ask the server what reference this title's next offer would carry, and show it.
+   *
+   * PROPOSED only — the real one is allocated again inside the insert, so two people composing at
+   * once cannot both take the same number. What this buys is that HR sees the reference, and the
+   * live preview shows it on the letter, instead of `{{reference}}` sitting in braces until save.
+   *
+   * Silent on failure. A reference that could not be proposed leaves the box empty, and an empty
+   * box is exactly what makes the server generate one — so the offer still gets its number. An
+   * error toast here would be reporting a problem that has already fixed itself.
+   */
+  const proposeReference = useCallback(
+    async (title: string, dateOfIssue: string) => {
+      if (!canManage || referenceTypedRef.current || !title.trim()) return;
+      const year = Number(dateOfIssue.slice(0, 4)) || new Date().getUTCFullYear();
+      try {
+        const response = await fetch(
+          `/api/offers/next-reference?title=${encodeURIComponent(title)}&year=${year}`,
+        );
+        const payload = (await response.json().catch(() => ({}))) as { reference?: string };
+        if (!response.ok || !payload.reference) return;
+        // Re-checked after the await: the person may have started typing their own while this was
+        // in flight, and overwriting it then is precisely what the flag exists to prevent. The REF
+        // and not the state, because the state captured in this closure predates the request.
+        if (referenceTypedRef.current) return;
+        setDraft((current) => ({ ...current, reference: payload.reference ?? "" }));
+      } catch {
+        // Left blank on purpose — see above.
+      }
+    },
+    [canManage],
+  );
+
+  // Debounced, because the title box is a free-text field with a datalist: typing "District Sales
+  // Manager" letter by letter would otherwise ask the server twenty-one times.
+  useEffect(() => {
+    if (referenceTimer.current) clearTimeout(referenceTimer.current);
+    referenceTimer.current = setTimeout(() => void proposeReference(draft.title, draft.dateOfIssue), 500);
+    return () => {
+      if (referenceTimer.current) clearTimeout(referenceTimer.current);
+    };
+  }, [draft.dateOfIssue, draft.title, proposeReference]);
 
   /**
    * Choosing a title fills its cost of living, its reporting line, its contract term and — where
@@ -223,8 +317,14 @@ export function OfferComposer({
         : await call("/api/offers", "POST", body);
       const offer = payload.offer as OfferRecord;
       setSavedId(offer.id);
+      // The stored reference wins over the proposed one. The server allocates again at insert, so
+      // if somebody else took the number in between, this is where the screen learns the real one
+      // rather than continuing to show a number that belongs to another letter.
+      if (offer.reference && offer.reference !== draft.reference) {
+        setDraft((current) => ({ ...current, reference: offer.reference }));
+      }
       onOffers([offer, ...offers.filter((existing) => existing.id !== offer.id)]);
-      onReport(`Draft saved for ${offer.candidateName}.`, "success");
+      onReport(`Draft saved for ${offer.candidateName}. Reference ${offer.reference || "not set"}.`, "success");
       return offer.id;
     } catch (error) {
       onReport(error instanceof Error ? error.message : "Could not save this offer.", "error");
@@ -268,6 +368,9 @@ export function OfferComposer({
       }
 
       setSavedId(null);
+      // A fresh form gets a fresh generated reference. Without this reset, a manually typed
+      // reference from the offer just sent would suppress generation for every offer after it.
+      markReferenceTyped(false);
       setDraft(blankDraft(templates));
       onReport(
         `Offer sent to ${payload.recipient} from ${payload.from}.` +
@@ -289,6 +392,19 @@ export function OfferComposer({
     </div>
   );
 
+  /** Amber, and never an ellipsis — a note about a letter has to be readable in full. */
+  const noteList = (messages: string[]) =>
+    messages.length === 0 ? null : (
+      <div className="mt-1.5 flex flex-col gap-1">
+        {messages.map((message) => (
+          <p className="flex items-start gap-1.5 text-[11px] font-semibold leading-4 text-[#B45309]" key={message}>
+            <TriangleAlert className="mt-px h-3 w-3 shrink-0" />
+            <span>{message}</span>
+          </p>
+        ))}
+      </div>
+    );
+
   const text = (key: keyof Draft, label: string, placeholder?: string, hint?: string) => (
     <div key={key}>
       <label className={offerLabelClassName} htmlFor={`offer-${key}`}>{label}</label>
@@ -301,8 +417,57 @@ export function OfferComposer({
         value={String(draft[key] ?? "")}
       />
       {hint ? <p className={offerHintClassName}>{hint}</p> : null}
+      {noteList(offerWarningsFor(warnings, key as OfferDraftWarning["field"]))}
     </div>
   );
+
+  /** A one-click date shortcut. Sets the field and nothing else. */
+  const chip = (key: "dateOfIssue" | "startDate" | "validUntil", label: string, value: string) => (
+    <button
+      className="rounded-lg border border-[#D8E0EA] bg-white px-2 py-1 text-[11px] font-bold whitespace-nowrap text-[#475569] shadow-sm transition hover:border-[#FDBA74] hover:text-[#B45309] disabled:cursor-not-allowed disabled:opacity-50"
+      disabled={!canManage || !value}
+      key={label}
+      onClick={() => setDraft((current) => ({ ...current, [key]: value }))}
+      type="button"
+    >
+      {label}
+    </button>
+  );
+
+  /**
+   * A date field: a real picker, the shortcuts that field actually needs, and — underneath — the
+   * exact words that will appear on the letter.
+   *
+   * That last line is the part worth keeping. The form holds `2026-09-01` and the letter says
+   * `01 September 2026`, and showing both means nobody has to trust that the conversion is right.
+   */
+  const dateField = (
+    key: "dateOfIssue" | "startDate" | "validUntil",
+    label: string,
+    chips: { label: string; value: string }[],
+  ) => {
+    const printed = toLetterDate(String(draft[key] ?? ""));
+    return (
+      <div key={key}>
+        <label className={offerLabelClassName} htmlFor={`offer-${key}`}>{label}</label>
+        <input
+          className={offerInputClassName}
+          disabled={!canManage}
+          id={`offer-${key}`}
+          onChange={(event) => setDraft((current) => ({ ...current, [key]: event.target.value }))}
+          type="date"
+          value={String(draft[key] ?? "")}
+        />
+        <div className="mt-1.5 flex flex-wrap gap-1.5">
+          {chips.map((entry) => chip(key, entry.label, entry.value))}
+        </div>
+        <p className={offerHintClassName}>
+          {printed ? `Prints on the letter as ${printed}` : "Not set — the letter will show this field empty."}
+        </p>
+        {noteList(offerWarningsFor(warnings, key as OfferDraftWarning["field"]))}
+      </div>
+    );
+  };
 
   return (
     <div className="flex flex-col gap-5">
@@ -324,7 +489,16 @@ export function OfferComposer({
       >
         <div className="grid gap-4 px-5 py-5 sm:px-6 md:grid-cols-2 xl:grid-cols-3">
           {text("candidateName", "Candidate name", "SAMAA SHALABY")}
-          {text("salutationName", "How the letter addresses them", "Dr SAMAA SHALABY", "Blank uses the candidate name.")}
+          {text(
+            "salutationName",
+            "How the letter addresses them",
+            "Dr SAMAA SHALABY",
+            // Shows the resolved value rather than the rule, so nobody has to work out what a blank
+            // box will produce. This is the salutation that reaches the candidate.
+            fields.salutationName
+              ? `The letter will open "Dear ${fields.salutationName},"`
+              : "Blank uses the candidate name.",
+          )}
           {text("candidateEmail", "Email address", "name@example.com", "The offer and its PDF go here.")}
 
           <div>
@@ -354,11 +528,60 @@ export function OfferComposer({
 
           {text("territory", "Territory", "Delta 3")}
           {text("reportsTo", "Reports to", "National Sales Manager")}
-          {text("startDate", "Start date", "1 September 2026")}
           {text("contractTerm", "Contract term", "One year, renewable")}
-          {text("reference", "Reference", "SP-HR-DSM-2026-019")}
-          {text("dateOfIssue", "Date of issue")}
-          {text("validUntil", "Offer valid until")}
+
+          <div>
+            <label className={offerLabelClassName} htmlFor="offer-reference">Reference</label>
+            <div className="flex gap-2">
+              <input
+                className={cn(offerInputClassName, "font-mono tabular-nums")}
+                disabled={!canManage}
+                id="offer-reference"
+                onChange={(event) => {
+                  markReferenceTyped(true);
+                  setDraft((current) => ({ ...current, reference: event.target.value }));
+                }}
+                placeholder="SP-HR-DSM-2026-019"
+                value={draft.reference}
+              />
+              <Button
+                aria-label="Generate a new reference"
+                disabled={!canManage || !draft.title.trim()}
+                onClick={() => {
+                  markReferenceTyped(false);
+                  setDraft((current) => ({ ...current, reference: "" }));
+                  void proposeReference(draft.title, draft.dateOfIssue);
+                }}
+                size="sm"
+                title="Generate a new reference from the job title and the year"
+                type="button"
+                variant="secondary"
+              >
+                <RefreshCw className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+            <p className={offerHintClassName}>
+              {referenceTyped
+                ? "Typed by hand — this exact number will be used and kept."
+                : draft.title.trim()
+                  ? "Allocated automatically from the job title and the year. Type over it to use your own."
+                  : "Choose a job title and a number is allocated automatically."}
+            </p>
+          </div>
+
+          {dateField("dateOfIssue", "Date of issue", [{ label: "Today", value: todayInCairo() }])}
+
+          {dateField("validUntil", "Offer valid until", [
+            { label: "7 days", value: addDays(draft.dateOfIssue, 7) },
+            { label: "14 days", value: addDays(draft.dateOfIssue, 14) },
+            { label: "30 days", value: addDays(draft.dateOfIssue, 30) },
+          ])}
+
+          {dateField("startDate", "Start date", [
+            { label: "1st of next month", value: firstOfNextMonth(draft.dateOfIssue) },
+            { label: "In 2 weeks", value: addDays(draft.dateOfIssue, 14) },
+            { label: "In 1 month", value: addDays(draft.dateOfIssue, 30) },
+          ])}
 
           <div>
             <label className={offerLabelClassName} htmlFor="offer-total">Total monthly package (EGP)</label>
