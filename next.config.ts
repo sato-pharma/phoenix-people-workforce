@@ -194,6 +194,11 @@ const nextConfig: NextConfig = {
     "/api/**/*": [
       "./node_modules/.pnpm/pdfjs-dist@*/node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs",
       "./assets/tessdata/*.traineddata.gz",
+      // The authorised signatory's signature, drawn onto every offer PDF. Deliberately NOT in
+      // `public/`: the email never carries it (it points at the attached PDF instead), so nothing
+      // needs to fetch it over HTTP, and a real signature on a guessable public URL is worth
+      // avoiding. Server-read only, which means it ships only if it is traced — hence this line.
+      "./assets/brand/*.png",
       "./node_modules/.pnpm/tesseract.js@*/node_modules/tesseract.js/src/worker-script/**",
       "./node_modules/.pnpm/tesseract.js-core@*/node_modules/tesseract.js-core/**",
       "./node_modules/@napi-rs/*/**",

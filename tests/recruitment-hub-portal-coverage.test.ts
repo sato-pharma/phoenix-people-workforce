@@ -50,6 +50,7 @@ const PORTAL_TWIN_BY_HUB_HREF: Readonly<Record<string, string>> = {
   "/cv-database": "/employee-portals/cv-database",
   "/hiring-documents": "/employee-portals/hiring-documents",
   "/hiring-pack": "/employee-portals/hiring-pack",
+  "/offers": "/employee-portals/offers",
   "/recruitment/intake-health": "/employee-portals/intake-health",
   "/recruitment/contact-review": "/employee-portals/contact-review",
 };
@@ -98,8 +99,8 @@ export function runRecruitmentHubPortalCoverageTests() {
   );
   assert.equal(
     hubItems.length,
-    6,
-    "the hub carries exactly six Talent-Acquisition tools (Recruitment, CV Database, Hiring Documents, Contract & Form 1, Inbound Intake Health, Missing Contact Details) — if that count moves, decide the portal twin in the same change",
+    7,
+    "the hub carries exactly seven Talent-Acquisition tools (Recruitment, CV Database, Hiring Documents, Contract & Form 1, Job Offers, Inbound Intake Health, Missing Contact Details) — if that count moves, decide the portal twin in the same change",
   );
 
   for (const item of hubItems) {

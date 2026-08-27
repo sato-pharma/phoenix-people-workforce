@@ -83,6 +83,13 @@ export function runEmailNotificationTests() {
     "src/lib/notifications/confidence-gate.ts",
     "src/lib/notifications/email.ts",
     "src/lib/notifications/telegram-onboarding.ts",
+    // An offer of employment goes to a candidate who has no Phoenix account, so there is no
+    // notification preference to resolve and nothing for the dispatcher to hold. It is also the
+    // one send in the system that must NOT carry Phoenix's identity — the owner's rule is that an
+    // official offer comes from Sato Pharmaceuticals — and it carries a rendered PDF attachment.
+    // Its body is built from the letter design HR edits in the module itself, not from a DB email
+    // template. See src/lib/offers/send.ts.
+    "src/lib/offers/send.ts",
     // A Monthly Closing publish notifies that line's leadership (District Managers + a fixed
     // Cc/Bcc roster) — a system-triggered domain announcement built directly against the shared
     // Phoenix layout, same reasoning as approved-email.ts/phantom-report.ts above: a bespoke
