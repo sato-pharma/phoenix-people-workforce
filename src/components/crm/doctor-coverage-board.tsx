@@ -46,9 +46,22 @@ function Section({
   );
 }
 
-function Tile({ label, sub, tone, value }: { label: string; sub?: string; tone?: "amber" | "emerald" | "rose"; value: string }) {
+function Tile({
+  label,
+  sub,
+  tone,
+  value,
+}: { label: string; sub?: string; tone?: "amber" | "emerald" | "rose" | "sky"; value: string }) {
   const valueClass =
-    tone === "emerald" ? "text-emerald-700" : tone === "amber" ? "text-amber-700" : tone === "rose" ? "text-rose-700" : "text-slate-900";
+    tone === "emerald"
+      ? "text-emerald-700"
+      : tone === "amber"
+        ? "text-amber-700"
+        : tone === "rose"
+          ? "text-rose-700"
+          : tone === "sky"
+            ? "text-sky-700"
+            : "text-slate-900";
   return (
     <div className="border border-slate-200 px-3 py-2.5">
       <p className="text-[9px] font-black uppercase tracking-[0.14em] text-slate-400">{label}</p>
@@ -118,6 +131,20 @@ export function DoctorCoverageBoard({
             <Tile label="Under-visited" tone="amber" value={String(board.totals.yellow)} />
             <Tile label="Lapsed" sub="seen recently, none this month" tone="rose" value={String(board.totals.red)} />
             <Tile label="Ungraded seen" sub="visited, no vendor grade" value={String(board.totals.ungradedContacts)} />
+            {/* Campaign is reported BESIDE coverage and is never inside the percentage above — the
+                owner's ruling of 2026-08-27. The sub-line names the people this exists for: before
+                that ruling a rep whose whole month was campaign work had no row on this board at
+                all, because rows are built from graded doctors and they had none. */}
+            <Tile
+              label="Campaign calls"
+              sub={
+                board.totals.repsAllCampaign > 0
+                  ? `${board.totals.repsAllCampaign} ${board.totals.repsAllCampaign === 1 ? "rep has" : "reps have"} campaign work only`
+                  : "not counted in coverage"
+              }
+              tone="sky"
+              value={String(board.totals.campaignCalls)}
+            />
           </div>
 
           {emptyPanel ? (

@@ -47,6 +47,11 @@ import type {
 const REP_THEAD = "px-3 py-2.5 text-[10px] font-black uppercase tracking-[0.12em] text-white";
 const DOCTOR_PAGE_SIZE = 25;
 
+/** What a rep with NO graded panel shows where a percentage would go. An em dash, never "0%" and
+ * never an empty cell: the owner's standing rule is that text is never truncated or elided, and a
+ * blank would read as a missing value rather than a deliberate "nothing to score here". */
+const NO_PANEL_MARKER = "—";
+
 // Coverage tone lives in one place so the mobile card and the desktop meter can never disagree
 // about where 50% and 80% sit.
 const coverageAccent = (pct: number): "amber" | "emerald" | "rose" =>
@@ -62,6 +67,7 @@ const REP_COLS = [
   { accessor: (r: DoctorCoverageRepRow) => r.yellow, key: "yellow", type: "number" as const },
   { accessor: (r: DoctorCoverageRepRow) => r.red, key: "red", type: "number" as const },
   { accessor: (r: DoctorCoverageRepRow) => r.coveragePct, key: "coveragePct", type: "number" as const },
+  { accessor: (r: DoctorCoverageRepRow) => r.campaignCalls, key: "campaignCalls", type: "number" as const },
   { accessor: (r: DoctorCoverageRepRow) => r.aDoctors, key: "aDoctors", type: "number" as const },
 ];
 
@@ -86,9 +92,19 @@ export function DoctorCoverageRepTable({ rows }: { rows: DoctorCoverageRepRow[] 
         items={table.rows}
         renderCard={(row) => (
           <PortalRecordCard
-            accent={coverageAccent(row.coveragePct)}
-            meta={`${row.panelSize} graded ${row.panelSize === 1 ? "doctor" : "doctors"} in panel`}
-            status={<span className={`text-sm font-black ${coverageText(row.coveragePct)}`}>{row.coveragePct}%</span>}
+            accent={row.hasPanel ? coverageAccent(row.coveragePct) : "slate"}
+            meta={
+              row.hasPanel
+                ? `${row.panelSize} graded ${row.panelSize === 1 ? "doctor" : "doctors"} in panel`
+                : "No graded doctor this month — campaign work only"
+            }
+            status={
+              row.hasPanel ? (
+                <span className={`text-sm font-black ${coverageText(row.coveragePct)}`}>{row.coveragePct}%</span>
+              ) : (
+                <span className="text-sm font-black text-slate-400">{NO_PANEL_MARKER}</span>
+              )
+            }
             title={row.repName}
           >
             <PortalRecordFields
@@ -103,12 +119,18 @@ export function DoctorCoverageRepTable({ rows }: { rows: DoctorCoverageRepRow[] 
                   value: <span className={row.red > 0 ? "text-rose-700" : "text-slate-400"}>{row.red}</span>,
                 },
                 { label: "A / B / C", value: `${row.aDoctors} / ${row.bDoctors} / ${row.cDoctors}` },
+                {
+                  label: "Campaign calls",
+                  value: (
+                    <span className={row.campaignCalls > 0 ? "text-sky-700" : "text-slate-400"}>{row.campaignCalls}</span>
+                  ),
+                },
               ]}
             />
           </PortalRecordCard>
         )}
         renderTable={() => (
-          <PortalDesktopTable className="text-xs" minWidth="720px">
+          <PortalDesktopTable className="text-xs" minWidth="840px">
             <thead>
               <tr className="bg-slate-900 text-left">
                 <SortableTh className={REP_THEAD} label="Rep" onSort={table.toggleSort} sort={table.sort} sortKey="repName" />
@@ -117,6 +139,7 @@ export function DoctorCoverageRepTable({ rows }: { rows: DoctorCoverageRepRow[] 
                 <SortableTh align="right" className={`${REP_THEAD} text-right text-amber-300`} label="Under" onSort={table.toggleSort} sort={table.sort} sortKey="yellow" />
                 <SortableTh align="right" className={`${REP_THEAD} text-right text-rose-300`} label="Lapsed" onSort={table.toggleSort} sort={table.sort} sortKey="red" />
                 <SortableTh align="right" className={`${REP_THEAD} text-right`} label="Coverage" onSort={table.toggleSort} sort={table.sort} sortKey="coveragePct" />
+                <SortableTh align="right" className={`${REP_THEAD} text-right text-sky-300`} label="Campaign" onSort={table.toggleSort} sort={table.sort} sortKey="campaignCalls" />
                 <SortableTh align="right" className={`${REP_THEAD} text-right`} label="A / B / C" onSort={table.toggleSort} sort={table.sort} sortKey="aDoctors" />
               </tr>
             </thead>
@@ -129,17 +152,33 @@ export function DoctorCoverageRepTable({ rows }: { rows: DoctorCoverageRepRow[] 
                   <td className={`px-3 py-2 text-right font-bold ${row.yellow > 0 ? "text-amber-700" : "text-slate-400"}`}>{row.yellow}</td>
                   <td className={`px-3 py-2 text-right font-bold ${row.red > 0 ? "text-rose-700" : "text-slate-400"}`}>{row.red}</td>
                   <td className="px-3 py-2">
-                    <div className="flex items-center justify-end gap-2">
-                      <div className="h-1 w-16 bg-slate-100">
-                        <div
-                          className={`h-full ${coverageBar(row.coveragePct)}`}
-                          style={{ width: `${Math.max(2, row.coveragePct)}%` }}
-                        />
+                    {/* A rep with no graded panel has nothing to score. Printing 0% here would say
+                        they covered none of their doctors, when the truth is they have none — and
+                        for a rep whose month was campaign work, that reads as idle. Marker, not a
+                        number. Same treatment Rep Doctor Lists gives a rep with no measurable plan. */}
+                    {row.hasPanel ? (
+                      <div className="flex items-center justify-end gap-2">
+                        <div className="h-1 w-16 bg-slate-100">
+                          <div
+                            className={`h-full ${coverageBar(row.coveragePct)}`}
+                            style={{ width: `${Math.max(2, row.coveragePct)}%` }}
+                          />
+                        </div>
+                        <span className={`min-w-[34px] text-right font-black ${coverageText(row.coveragePct)}`}>
+                          {row.coveragePct}%
+                        </span>
                       </div>
-                      <span className={`min-w-[34px] text-right font-black ${coverageText(row.coveragePct)}`}>
-                        {row.coveragePct}%
-                      </span>
-                    </div>
+                    ) : (
+                      <div className="flex items-center justify-end gap-2">
+                        <span className="text-right text-[11px] font-semibold text-slate-400">No graded panel</span>
+                        <span className="min-w-[34px] text-right font-black text-slate-400">{NO_PANEL_MARKER}</span>
+                      </div>
+                    )}
+                  </td>
+                  <td
+                    className={`px-3 py-2 text-right font-bold ${row.campaignCalls > 0 ? "text-sky-700" : "text-slate-400"}`}
+                  >
+                    {row.campaignCalls}
                   </td>
                   <td className="px-3 py-2 text-right text-slate-600">
                     {row.aDoctors} / {row.bDoctors} / {row.cDoctors}
