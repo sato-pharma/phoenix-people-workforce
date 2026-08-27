@@ -4,7 +4,12 @@ import { readFileSync } from "node:fs";
 import ExcelJS from "exceljs";
 
 import { buildManagerSummariesDetailed } from "../src/lib/double-visit-analytics/service.ts";
-import { buildDoctorCoverageBoard, DOCTOR_COVERAGE_SCAN_MONTHS_BACK, type DoctorCoverageVisitInput } from "../src/lib/crm/sfe-doctor-coverage.ts";
+import {
+  buildDoctorCoverageBoard,
+  DOCTOR_COVERAGE_SCAN_MONTHS_BACK,
+  type DoctorCoveragePlanInput,
+  type DoctorCoverageVisitInput,
+} from "../src/lib/crm/sfe-doctor-coverage.ts";
 import { summarizeCheckins, summarizeVisits, type CheckinRow, type Employee360Window, type VisitRow } from "../src/lib/employee-360/service.ts";
 import { buildPrivateCalendarWorkbook } from "../src/lib/private-calendar/export.ts";
 import type { PrivateCalendarItem, PrivateCalendarWorkspace } from "../src/lib/private-calendar/logic.ts";
@@ -77,6 +82,20 @@ function doctorVisit(overrides: Partial<DoctorCoverageVisitInput> = {}): DoctorC
     speciality: "Pediatrics",
     visit_date: "2026-07-10",
     visit_type: 0,
+    ...overrides,
+  };
+}
+
+/** One assigned-list entry, matching the doctorVisit defaults so the two mirrors join. */
+function plan(overrides: Partial<DoctorCoveragePlanInput> = {}): DoctorCoveragePlanInput {
+  return {
+    agent_crm_id: 100,
+    agent_hr_id: "M-1",
+    contact_crm_id: 500,
+    contact_grade: "A",
+    contact_name: "Dr. Pre Window",
+    plan_date: "2026-08-03",
+    speciality: "Pediatrics",
     ...overrides,
   };
 }
@@ -164,36 +183,33 @@ export async function runCrmPortalCoveragePopulationsTests() {
     );
   }
 
-  // ── (B) The oldest trend month gets the same lapse lookback as every other month ───────────────
+  // ── (B) Every trend point is scored against THAT month's own list ─────────────
+  //
+  // Re-using the selected month's list across the window would invent history. Assigned lists move
+  // every month — production ranges 8,749 to 9,376 distinct (rep, doctor) pairs a month over
+  // 2026-05..2026-08 — so a doctor added in August would read as neglected all summer, and one
+  // dropped in June would keep scoring his old rep forever.
+  //
+  // The widened scan (2 months past the oldest trend month) survives the change of denominator. It
+  // no longer decides MEMBERSHIP — the list does that — but it is still the only source of a
+  // doctor's grade, name and last-seen date when the trend window itself holds no visit for him,
+  // and the call list ranks on exactly that date.
   {
     assert.equal(
       DOCTOR_COVERAGE_SCAN_MONTHS_BACK,
       5,
-      "the scan must reach 2 months past the oldest trend month, or that month has no lapse history to test against",
+      "the visit scan must reach 2 months past the oldest trend month, or a doctor last seen before the chart starts has no last-visit date at all",
     );
 
-    // Selected month 2026-08 → trend 2026-05..2026-08, lapse history back to 2026-03.
+    // Selected month 2026-08 → trend 2026-05..2026-08; visits scanned back to 2026-03.
     const board = buildDoctorCoverageBoard(
       [
-        // Doctor 500: last real visit 2026-04 (BEFORE the chart starts), then seen again in July.
-        // In May he is lapsed — zero visits, but seen within the prior two months.
-        doctorVisit({
-          agent_crm_id: 999,
-          agent_hr_id: "M-9",
-          agent_name: "Rep Nine",
-          contact_name: "Dr. Pre Window",
-          crm_contact_grade: "A",
-          speciality: "Cardiology",
-          visit_date: "2026-04-10",
-        }),
+        // Doctor 500: last seen 2026-04, BEFORE the chart starts, then again in July.
+        doctorVisit({ contact_name: "Dr. Pre Window", visit_date: "2026-04-10" }),
         doctorVisit({ visit_date: "2026-07-10" }),
-        // Doctor 501: visited in May itself, and B-grade needs one visit — green that month.
+        // Doctor 501: visited in May itself. B-grade needs one visit, so May is green for him.
         doctorVisit({ contact_crm_id: 501, contact_name: "Dr. In May", visit_date: "2026-05-12" }),
-        // Doctor 502: seen in April and never again. In May he is lapsed exactly like doctor 500,
-        // but he has NO in-window visit at all, so his grade exists only on the pre-window row.
-        // Blocking that row from the grade tracker leaves him ungraded, and an ungraded contact is
-        // dropped before the trend is computed — which is how 1,317 of the 1,848 lapsed doctors
-        // stayed missing from the oldest month in production even after the scan was widened.
+        // Doctor 502: seen in April and never again. His grade exists ONLY on that pre-window row.
         doctorVisit({
           contact_crm_id: 502,
           contact_name: "Dr. Gone Since April",
@@ -202,6 +218,21 @@ export async function runCrmPortalCoveragePopulationsTests() {
         }),
       ],
       "2026-08",
+      {
+        planRows: [
+          // May's list: three doctors, one of whom (501) was visited that month.
+          plan({ contact_crm_id: 500, plan_date: "2026-05-04" }),
+          plan({ contact_crm_id: 501, contact_grade: "B", plan_date: "2026-05-04" }),
+          // 502 is on May's list but carries no grade on the list row, so the pre-window April
+          // visit is the only place his grade exists. Losing it drops him out of May's denominator
+          // — the same shape of error that once hid 1,317 of 1,848 doctors from the oldest month.
+          plan({ contact_crm_id: 502, contact_grade: null, plan_date: "2026-05-04" }),
+          // August's list is DIFFERENT: 502 has been taken off it, and he must not be scored in
+          // August because of a row that only ever described May.
+          plan({ contact_crm_id: 500, plan_date: "2026-08-03" }),
+          plan({ contact_crm_id: 501, contact_grade: "B", plan_date: "2026-08-03" }),
+        ],
+      },
     );
 
     const oldest = board.trend[0];
@@ -209,27 +240,46 @@ export async function runCrmPortalCoveragePopulationsTests() {
     assert.equal(
       oldest?.activePanel,
       3,
-      "both lapsed doctors belong in the oldest month's denominator — their last visits are only visible because the scan now reaches before the chart, and one of them is gradeable only from that pre-window visit",
+      "May is scored against MAY's list of three — including the doctor who is gradeable only from a visit made before the chart starts",
     );
     assert.equal(
       oldest?.coveragePct,
       33,
-      "1 of 3 panel doctors was covered in May; dropping the lapsed doctors would have shown 100% for a month with two lapses in it",
+      "1 of the 3 doctors assigned in May was visited in May",
+    );
+
+    const selected = board.trend[board.trend.length - 1];
+    assert.equal(selected?.month, "2026-08");
+    assert.equal(
+      selected?.activePanel,
+      2,
+      "August is scored against AUGUST's list — a doctor taken off the list is off the denominator, not a permanent red",
+    );
+    assert.equal(
+      selected?.activePanel,
+      board.totals.activePanel,
+      "the selected month's trend point and the headline tiles must be one number, computed once",
     );
     assert.equal(
       board.doctors.find((doctor) => doctor.contactCrmId === 502),
       undefined,
-      "a doctor with no visit in the window or the prior two months is inactive — he counts in the oldest trend month's denominator but must never appear on the selected month's board",
+      "a doctor on May's list but not August's counts in May's denominator and must never appear on August's board",
     );
 
-    // The pre-window months exist only to answer "was he seen before the chart starts". They must
-    // not decide his grade, his name, or which rep owns him, or the board silently reports on
-    // visits it never displays.
+    // The pre-window months exist to answer "when was he last seen" and to fill a grade or name the
+    // window itself never carried. They must not decide anything else, or the board silently
+    // reports on visits it never displays.
     const preWindowDoctor = board.doctors.find((doctor) => doctor.contactCrmId === 500);
     assert.ok(preWindowDoctor, "the doctor seen in July is still on the selected month's board");
-    assert.equal(preWindowDoctor!.gradeTier, "B", "the grade comes from the in-window visit, not the pre-window one");
-    assert.equal(preWindowDoctor!.contactName, "Dr. In Window", "the displayed name comes from the in-window visit");
-    assert.equal(preWindowDoctor!.repKey, "hr:m-1", "the primary rep is decided by in-window visits only");
+    assert.equal(preWindowDoctor!.gradeTier, "A", "the grade on the assignment wins over any grade seen on a visit");
+    assert.equal(preWindowDoctor!.contactName, "Dr. Pre Window", "the name on the assignment is what the row displays");
+    assert.equal(preWindowDoctor!.repKey, "hr:m-1", "the doctor belongs to the rep he was ASSIGNED to");
+    assert.equal(
+      preWindowDoctor!.lastVisitDate,
+      "2026-07-10",
+      "the last-seen date is the newest visit anywhere in the scan — it is what the call list ranks on",
+    );
+    assert.equal(preWindowDoctor!.status, "red", "assigned in August, not visited in August");
   }
 
   // ── (D) A multi-day item occupies every day it covers in the exported sheet ────────────────────

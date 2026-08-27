@@ -100,7 +100,7 @@ export function DoctorCoverageFilterBar({
             <option value="">All statuses</option>
             <option value="green">Covered</option>
             <option value="yellow">Under-visited</option>
-            <option value="red">Lapsed</option>
+            <option value="red">Not visited</option>
           </select>
         </label>
 

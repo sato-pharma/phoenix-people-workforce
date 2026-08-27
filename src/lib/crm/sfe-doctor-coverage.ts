@@ -20,10 +20,53 @@
  *    March–August 99.9–100% graded. The vendor backfilled. An empty panel now means a genuinely
  *    empty month in scope, not a missing feed, and the board says so.
  *
- * Coverage norms (owner-confirmed 2026-08-02): A-grade (A+ folds into A) doctors need 2 visits in
- * the month to count covered; B and C need 1. A doctor with zero visits this month who WAS seen in
- * the prior two months is "lapsed" (red). A doctor last seen 3+ months ago is inactive — out of the
- * panel and out of the denominator entirely.
+ * ── THE PANEL IS THE REP'S ASSIGNED LIST (changed 2026-08-27) ────────────────────────────────────
+ *
+ * The denominator is `ireports360_plan_entries` — the doctors the rep was actually GIVEN for the
+ * month — joined to his own visits. It is NOT derived from visit history any more.
+ *
+ * WHY. The owner states the business rule plainly: every medical rep carries 90 to 120 doctors.
+ * The old panel was inferred ("whoever this rep happened to touch in the last three months"), so
+ * the denominator was a by-product of the data rather than a fact about the rep. Measured on
+ * production for August 2026, under the live config: 95 reps, panel sizes from 1 to 265, median 98
+ * — only 45 of 95 landed inside 90-120, 15 sat below 50, and 14 above 120. Two consequences, both
+ * of which managers reported as "this board is showing wrong data":
+ *
+ *   - A doctor never visited did not exist. 1,347 of 9,163 assigned rep-doctor pairs (14.7%) had no
+ *     row anywhere, so neglecting a doctor REMOVED him from the denominator instead of scoring him
+ *     red. The metric could not see its own subject.
+ *   - "Primary rep" reassigned doctors between people. A doctor went to whoever visited most over a
+ *     4-month window, so covering for a colleague twice moved that doctor onto your panel and off
+ *     his: 1,670 of 7,295 scored pairs (22.9%) were doctors NOT on that rep's list.
+ *
+ * The score tracked the panel error rather than the rep's work — reps whose inferred panel happened
+ * to land in 90-120 averaged 52.6% coverage while every other band averaged 33.9-37.4%, and one rep
+ * on an inferred panel of ~24 printed a meaningless 100%.
+ *
+ * WHAT IS UNCHANGED. The grade norms, the three colours, the call list and its ordering, the pace
+ * bar, the mixes, the campaign column and the scope rules all behave exactly as before. Only the
+ * denominator moved.
+ *
+ * Coverage norms (owner-confirmed 2026-08-02, editable since 2026-08-09): A-grade (A+ folds into A)
+ * doctors need 2 visits in the month to count covered; B and C need 1. Against an assigned list the
+ * three statuses become simple and total: green = met the norm, yellow = visited but short, red =
+ * on the list and not visited at all this month. There is no "lapsed vs inactive" distinction any
+ * more — that pair only existed to guess whether an inferred doctor still belonged to the rep, and
+ * an assigned list answers that directly.
+ *
+ * VISITS ARE COUNTED PER (REP, DOCTOR) PAIR, not per doctor. If Hana is assigned Dr Samy and a
+ * colleague visits him, Hana has still not done her job, so that visit cannot turn her row green.
+ * This is the same rule Rep Doctor Lists uses and it is what removes the cross-rep bleed above.
+ *
+ * WORK OFF THE LIST IS REPORTED, NEVER SCORED, NEVER HIDDEN. A type-0 visit to somebody not on the
+ * rep's list is real work that the assigned-list denominator has no room for, so it gets its own
+ * count beside coverage — exactly the treatment campaign work gets. Silently dropping it would be
+ * its own defect.
+ *
+ * THE PLAN MIRROR STARTS 2026-01. Verified on production 2026-08-27: January-August 2026, every
+ * month present, 78-84 reps, and grade and speciality filled on 100% of rows — so the grade comes
+ * off the list itself. A month with no list rows is reported as exactly that (`planMonthMissing`)
+ * rather than rendered as an innocent empty board.
  *
  * DATE DISCIPLINE (same test-enforced rule as sfe-field-analytics.ts): CRM date strings are Cairo
  * wall-clock and `visit_date` is a plain YYYY-MM-DD — all month math here is string arithmetic,
@@ -31,7 +74,9 @@
  */
 
 import { CAMPAIGN_TYPE } from "@/lib/crm/visit-types";
-import { collapseDuplicateVisitSubmissions, queryVisits } from "@/lib/crm/reads";
+import { collapseDuplicateVisitSubmissions, getEffectiveExcludedAgentCrmIds, queryVisits } from "@/lib/crm/reads";
+import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
+import { scanPlanEntries } from "@/lib/crm/rep-doctor-lists";
 import { cairoTodayIso } from "@/lib/crm/dates";
 import { classifyCrmContactSpeciality, type CrmContactKind } from "@/lib/crm/contact-taxonomy";
 import {
@@ -50,16 +95,28 @@ import type { DoctorCoverageScope } from "@/lib/crm/doctor-coverage-scope";
  * board falls back to before the config row exists.
  */
 export const DOCTOR_COVERAGE_TARGETS: Record<DoctorCoverageGradeTier, number> = DEFAULT_DOCTOR_COVERAGE_NORMS.sp;
-/** Selected month plus this many prior months form the board and its trend line — 4 points. */
+/** Selected month plus this many prior months form the board and its trend line — 4 points. Each
+ * trend point is scored against THAT month's own assigned list, never the selected month's, because
+ * a list changes between months and re-using one would invent history. */
 export const DOCTOR_COVERAGE_MONTHS_BACK = 3;
-/** A doctor with zero visits in the selected month counts as lapsed only if seen within this many
- * prior months; older than that they are inactive and leave the panel. */
-export const DOCTOR_COVERAGE_LAPSE_LOOKBACK_MONTHS = 2;
-/** How far back the READ actually goes: every trend month — the oldest included — needs its own
- * prior-two-months lapse history, and history that was never scanned reads as "never visited".
- * Scanning only the trend window dropped every lapsed doctor out of the oldest month's denominator,
- * and since a lapsed doctor is never green, that month's bar was the only one biased upward. */
-export const DOCTOR_COVERAGE_SCAN_MONTHS_BACK = DOCTOR_COVERAGE_MONTHS_BACK + DOCTOR_COVERAGE_LAPSE_LOOKBACK_MONTHS;
+/**
+ * Extra months of VISIT history read behind the trend window.
+ *
+ * This no longer decides panel membership — the assigned list does that. It survives for one job:
+ * answering "when was this doctor last seen" on the call list. A doctor on the list who was last
+ * visited five months ago and one who has never been visited are different coaching problems, and
+ * history that was never scanned reads identically to never-visited.
+ */
+// Renamed from DOCTOR_COVERAGE_LAPSE_LOOKBACK_MONTHS on 2026-08-27. The number is unchanged; the
+// old name described a lapse test that no longer exists, and a constant whose name states a rule
+// the code stopped following is how a tired session re-derives the wrong model of the board.
+export const DOCTOR_COVERAGE_HISTORY_MONTHS_BACK = 2;
+/** Total depth of the visit read: the trend window plus the history above. */
+export const DOCTOR_COVERAGE_SCAN_MONTHS_BACK = DOCTOR_COVERAGE_MONTHS_BACK + DOCTOR_COVERAGE_HISTORY_MONTHS_BACK;
+/** First month the iReports360 plan mirror holds any assigned list. Verified on production
+ * 2026-08-27 — January 2026 is the earliest `plan_date` in the table. A selected month before this
+ * has no list to score, which the board reports rather than rendering as an empty panel. */
+export const DOCTOR_COVERAGE_PLAN_FIRST_MONTH = "2026-01";
 // SPECIALTY_MIX_TOP_N removed 2026-08-08. It capped the mix at 8 named values and folded the rest
 // into "Other" — a bucket defined by RANK, not by meaning, so it held different things for every
 // viewer and hid ~780 real physicians company-wide. Both mixes are complete now; see `mixFor`.
@@ -77,11 +134,19 @@ export type DoctorCoverageStatus = "green" | "yellow" | "red";
 
 export type DoctorCoverageDoctorRow = {
   contactCrmId: number;
-  /** Latest contact_name seen in the window — human names, never raw ids (owner rule). */
+  /** Human name, never a raw id (owner rule). Taken from the assigned list, which carries one on
+   * every row, and falling back to the latest visit only if the list row somehow has none. */
   contactName: string;
   gradeRaw: string;
   gradeTier: DoctorCoverageGradeTier;
-  /** Latest type-0 visit date ≤ the selected month's end, YYYY-MM-DD. */
+  /**
+   * Latest type-0 visit BY THIS REP to this doctor, on or before the month end, YYYY-MM-DD.
+   *
+   * This rep's own visit, not any rep's. A colleague's visit does not discharge this rep's
+   * assignment, so showing a colleague's date here would read as "recently handled" on a row that
+   * is in fact untouched — the same cross-rep bleed the assigned-list panel exists to remove.
+   * Null means this rep has not visited them within the read window at all.
+   */
   lastVisitDate: string | null;
   /** SP (a doctor), HCP (a pharmacy/hospital/contract/insurance account), or unclassified when the
    * vendor sent a value this build has never seen. See crm/contact-taxonomy.ts. */
@@ -104,12 +169,24 @@ export type DoctorCoverageRepRow = {
    * grade. Owner's ruling 2026-08-27. */
   campaignCalls: number;
   /** 0-100; 0 when the panel is empty. Check {@link hasPanel} before showing it as a score — a rep
-   * with no graded panel is not a 0% performer, and rendering one as 0% is the bug this replaced. */
+   * with no assigned list is not a 0% performer, and rendering one as 0% is the bug this replaced. */
   coveragePct: number;
   green: number;
-  /** False when this rep has no graded doctor at all this window and appears only because of
-   * campaign work. The table must print a marker instead of a percentage for them. */
+  /** False when this rep has NO assigned list for the month and appears only because of visits he
+   * made or campaign work he logged. The table must print a marker instead of a percentage for
+   * them: with no list there is nothing for a percentage to be OF. Measured on the rendered board
+   * for August 2026: 18 reps with board activity had no list row at all, 15 of them campaign-only. */
   hasPanel: boolean;
+  /**
+   * Type-0 visits this rep made to doctors who are NOT on his assigned list. Real work, reported
+   * beside coverage and never inside it — the same treatment campaign work gets, and for the same
+   * reason: the assigned-list denominator has no room for it, and dropping it silently would hide
+   * activity a manager needs to see. Measured on the rendered board for August 2026: 593 off-list
+   * pairs beside an assigned panel of 6,416 — under the old panel 1,670 of 7,295 scored pairs
+   * (22.9%) were doctors not on that rep's list, every one of them counted as coverage.
+   */
+  offListDoctors: number;
+  /** Doctors on the assigned list — 90 to 120 for a correctly loaded rep (the owner's rule). */
   panelSize: number;
   red: number;
   repKey: string;
@@ -224,12 +301,25 @@ export type SfeDoctorCoverageBoard = {
     red: number;
     /** Campaign calls across every rep in scope, selected month. Never part of `coveragePct`. */
     campaignCalls: number;
-    /** Reps whose ONLY logged field work this month is campaign — they have no graded panel at all.
-     * Before 2026-08-27 they had no row on this board whatsoever; 15 people in August 2026. */
+    /** Reps whose ONLY logged field work this month is campaign — they have no assigned list and no
+     * visits. Before 2026-08-27 they had no row on this board whatsoever; 15 people in August 2026. */
     repsAllCampaign: number;
-    /** Contacts seen in the selected month whose grade is absent/unknown across the whole window —
-     * outside the panel, surfaced so a vendor grading gap is visible instead of silent. */
+    /** Contacts on an assigned list whose grade is absent or unrecognised — outside the panel,
+     * surfaced so a vendor grading gap is visible instead of silently shrinking the denominator.
+     * Production carries a grade on 100% of plan rows for 2026-01..2026-08, so this should read 0;
+     * a non-zero value is a real signal about the feed, not noise. */
     ungradedContacts: number;
+    /** Type-0 visits in scope this month to doctors on nobody's assigned list, summed. Reported,
+     * never scored. */
+    offListDoctors: number;
+    /** Reps with activity this month but NO assigned list at all — a loading gap in the plan feed,
+     * not a performance result. They are shown with a marker, never as 0%. */
+    repsWithNoList: number;
+    /** True when the selected month has no assigned list rows whatsoever. The board must say the
+     * list is missing rather than render an empty panel, which reads as "nobody was assigned
+     * anything" — the exact silent-empty failure this module keeps having to design against.
+     * The plan mirror begins {@link DOCTOR_COVERAGE_PLAN_FIRST_MONTH}. */
+    planMonthMissing: boolean;
     visitsCounted: number;
     yellow: number;
   };
@@ -253,6 +343,24 @@ export type DoctorCoverageVisitInput = {
   speciality: string | null;
   visit_date: string | null;
   visit_type: number | null;
+};
+
+/**
+ * One row of a rep's ASSIGNED list, from the iReports360 plan mirror — the panel this board scores.
+ *
+ * Deliberately spelled with the plan table's own column names so this doubles as the fixture shape
+ * and a test cannot drift from the real projection. Note `contact_grade`, NOT `crm_contact_grade`:
+ * the two mirrors spell the grade column differently, and reading the visits spelling here would
+ * yield null on every row — an all-ungraded board, i.e. a silent empty one.
+ */
+export type DoctorCoveragePlanInput = {
+  agent_crm_id: number | null;
+  agent_hr_id: string | null;
+  contact_crm_id: number | null;
+  contact_grade: string | null;
+  contact_name: string | null;
+  plan_date: string | null;
+  speciality: string | null;
 };
 
 const VISIT_COLUMNS =
@@ -362,29 +470,86 @@ function gradeTierOf(grade: string | null | undefined): DoctorCoverageGradeTier 
   return null;
 }
 
-function monthLabelOf(monthKey: string): string {
+/** "2026-01" -> "January 2026". Exported so the board can label the plan mirror's first month from
+ * the constant itself rather than restating it in prose that then drifts. Pure string slicing, no
+ * Date parsing — CRM month keys are Cairo wall-clock and Date would shift them. */
+export function monthLabelOf(monthKey: string): string {
   const monthIndex = Number(monthKey.slice(5, 7)) - 1;
   return `${MONTH_NAMES[monthIndex] ?? monthKey} ${monthKey.slice(0, 4)}`;
 }
 
-/** Same agent-key convention as sfe-field-analytics.ts — hr id when mapped, crm id otherwise. */
-function repKeyOf(visit: DoctorCoverageVisitInput): string {
-  if (visit.agent_hr_id) return `hr:${visit.agent_hr_id.toLowerCase()}`;
-  return `crm:${visit.agent_crm_id ?? 0}`;
-}
-
+/**
+ * Contact-level facts, latest-visit-wins.
+ *
+ * The assigned list carries name, grade and speciality on 100% of production rows for
+ * 2026-01..2026-08, so for a doctor ON a list these are a fallback. They are the only source for an
+ * OFF-list doctor, who has no list row by definition.
+ */
 type ContactAccumulator = {
   contactCrmId: number;
   /** Latest-visit-wins fields, tracked with their visit date (tie → higher crm_visit_id). */
   latestGrade: { date: string; grade: string; visitId: number } | null;
   latestName: { date: string; name: string; visitId: number } | null;
   latestSpeciality: { date: string; speciality: string; visitId: number } | null;
+};
+
+/**
+ * One (rep, doctor) pair — the unit this board scores.
+ *
+ * Keyed by pair rather than by doctor because an assignment belongs to ONE rep: a colleague's visit
+ * to the same doctor lands in a different pair and therefore cannot turn this rep's row green. That
+ * is the whole cross-rep bleed fix; see the PANEL note at the top of the file.
+ */
+type PairAccumulator = {
   lastVisitDate: string | null;
-  /** Visit count per month key. Spans the trend window PLUS the lapse history before it, so the
-   * oldest trend month can be tested for lapse the same way every later month is. */
+  /** Whose pair this is. Carried on the row rather than sliced back out of the map key: a key is a
+   * lookup token, and reading identity out of one couples every consumer to its exact spelling. */
+  repKey: string;
   visitsByMonth: Map<string, number>;
-  /** Type-0 visit count per repKey in the whole window — drives the primary-rep assignment. */
-  visitsByRep: Map<string, { count: number; latestDate: string; latestVisitId: number; repName: string }>;
+};
+
+/** Stable key for a (rep, doctor) pair. */
+function pairKeyOf(repKey: string, contactCrmId: number): string {
+  return `${repKey}|${contactCrmId}`;
+}
+
+/**
+ * What a rep is CALLED, in one place, for every row this board emits.
+ *
+ * The waterfall is ordered by how current each source is:
+ *  1. the CRM name on that rep's most recent visit — what the field system itself calls them today;
+ *  2. the employee directory, keyed on hr id — the only source that exists for a rep who holds a
+ *     list but has logged no visit in the whole read window. Under the old visit-derived panel that
+ *     rep could not appear at all, so the gap never had to be filled; now they appear with a full
+ *     red panel, which is precisely the case a manager most needs to see named.
+ *  3. the hr id itself, which at least identifies a person, before the last-resort label.
+ *
+ * "Unmapped agent" is deliberately the end of the line, never a shortcut: the standing rule is that
+ * a human-readable name is shown, never a raw code.
+ */
+function repNameFor(
+  repKey: string,
+  latestRepName: ReadonlyMap<string, { name: string }>,
+  repNameByHrId: ReadonlyMap<string, string> | undefined,
+): string {
+  const fromVisits = latestRepName.get(repKey)?.name?.trim();
+  if (fromVisits) return fromVisits;
+  if (repKey.startsWith("hr:")) {
+    const hrId = repKey.slice(3);
+    const fromDirectory = repNameByHrId?.get(hrId)?.trim();
+    if (fromDirectory) return fromDirectory;
+    return hrId.toUpperCase();
+  }
+  return "Unmapped agent";
+}
+
+/** One entry of a rep's assigned list for one month, already normalised. */
+type AssignedDoctor = {
+  contactCrmId: number;
+  contactName: string | null;
+  gradeRaw: string;
+  repKey: string;
+  speciality: string | null;
 };
 
 function trackLatest<T extends { date: string; visitId: number }>(current: T | null, candidate: T): T {
@@ -398,38 +563,81 @@ function trackLatest<T extends { date: string; visitId: number }>(current: T | n
  * Pure aggregation core — no IO, fixture-testable. `visits` must already be duplicate-collapsed;
  * rows that are not regular customer visits (visit_type !== 0), carry the sentinel/absent contact,
  * or have no visit_date are ignored here so fixtures and the IO wrapper share one contract.
+ *
+ * `options.planRows` is REQUIRED and has no default. An absent list must produce an explicit "no
+ * list for this month", never a quiet fall back to inferring one from visit history. This module
+ * has already paid for the optional-argument version of this mistake once: `scope` was optional on
+ * the IO wrapper below, and that is exactly how every seat ended up reading all 205 agents
+ * company-wide. A required argument means a future caller cannot silently reopen the hole.
  */
 export function buildDoctorCoverageBoard(
   visits: readonly DoctorCoverageVisitInput[],
   selectedMonth: string,
-  /** Optional so the existing fixture tests keep their two-argument calls. `norms` defaults to the
-   * shipped doctor norms, so a fixture that does not care about config behaves exactly as before. */
   options: {
     /** Campaign rows (visit type -8) for the SELECTED month. Deliberately a SEPARATE argument, not
-     * mixed into `visits`: the graded loop below then cannot see them even by accident, so "the
+     * mixed into `visits`: the scoring loop below then cannot see them even by accident, so "the
      * coverage number did not move" is true by construction rather than by a `continue`. */
     campaignVisits?: readonly DoctorCoverageVisitInput[];
     filters?: DoctorCoverageFilters;
     norms?: DoctorCoverageNorms;
+    /** THE PANEL. Every assigned-list entry whose `plan_date` falls in the trend window. Pass `[]`
+     * only to mean "there genuinely is no list", which the board then reports as such. */
+    planRows: readonly DoctorCoveragePlanInput[];
+    /** Canonical hr id (lower-cased, as it appears inside a `hr:` repKey) → the employee's display
+     * name. Used only when the CRM itself has never carried a name for that rep — a rep who holds a
+     * list but has logged no visit in the whole read window has no CRM name anywhere, and under the
+     * old visit-derived panel he could not appear at all, so the gap never arose. */
+    repNameByHrId?: ReadonlyMap<string, string>;
     scopeLabel?: string;
-  } = {},
+  },
 ): SfeDoctorCoverageBoard {
   const norms = options.norms ?? DEFAULT_DOCTOR_COVERAGE_NORMS;
   const windowMonths: string[] = [];
   for (let back = DOCTOR_COVERAGE_MONTHS_BACK; back >= 0; back -= 1) {
     windowMonths.push(addMonthsToMonthKey(selectedMonth, -back));
   }
-  const lapseMonths = new Set(
-    Array.from({ length: DOCTOR_COVERAGE_LAPSE_LOOKBACK_MONTHS }, (_, index) =>
-      addMonthsToMonthKey(selectedMonth, -(index + 1)),
-    ),
-  );
-  const lapseHistoryFrom = addMonthsToMonthKey(selectedMonth, -DOCTOR_COVERAGE_SCAN_MONTHS_BACK);
+  const historyFrom = addMonthsToMonthKey(selectedMonth, -DOCTOR_COVERAGE_SCAN_MONTHS_BACK);
   const windowFrom = `${windowMonths[0]}-01`;
   const windowTo = lastDayOfMonthKeyIso(selectedMonth);
   const currentCairoMonth = monthKeyOfVisitDate(cairoTodayIso());
 
+  // ── One rep, one key — reconciled across BOTH mirrors before anything is keyed ─────────────────
+  //
+  // The visits mirror resolves an hr id through the identity waterfall; the plan mirror resolves it
+  // crm-id-only and leaves some rows without one — measured on production 2026-08-27, 791 of 18,645
+  // August plan rows, covering 8 of 78 agents. Keying each mirror on its own row therefore files the
+  // SAME person under `hr:b-124` from his visits and `crm:5512` from his list, so not one of his
+  // assignments joins to any of his visits and he reads 0% on a full list.
+  //
+  // This is not hypothetical. It is the exact artifact that appeared the first time this join was
+  // measured in SQL: eleven reps came back with a "real list" of 0 while plainly holding one. Any hr
+  // id seen for a crm id, in EITHER mirror, therefore becomes that crm id's canonical key.
+  const repKeyByCrmId = new Map<number, string>();
+  const learnRepIdentity = (agentHrId: string | null, agentCrmId: number | null) => {
+    const hrId = agentHrId?.trim();
+    if (!hrId || agentCrmId == null) return;
+    const key = `hr:${hrId.toLowerCase()}`;
+    const existing = repKeyByCrmId.get(agentCrmId);
+    // Two different hr ids on one crm id is a data fault, not a choice. Take the lowest-sorting one
+    // so the key is deterministic rather than row-order dependent — a key that moved between renders
+    // would present one fault as several.
+    if (!existing || key < existing) repKeyByCrmId.set(agentCrmId, key);
+  };
+  for (const visit of visits) learnRepIdentity(visit.agent_hr_id, visit.agent_crm_id);
+  for (const row of options.planRows) learnRepIdentity(row.agent_hr_id, row.agent_crm_id);
+  const repKeyFor = (agentHrId: string | null, agentCrmId: number | null): string => {
+    if (agentCrmId != null) {
+      const canonical = repKeyByCrmId.get(agentCrmId);
+      if (canonical) return canonical;
+    }
+    const hrId = agentHrId?.trim();
+    if (hrId) return `hr:${hrId.toLowerCase()}`;
+    return `crm:${agentCrmId ?? 0}`;
+  };
+
   const contacts = new Map<number, ContactAccumulator>();
+  /** Visits keyed by (rep, doctor) — see {@link PairAccumulator}. */
+  const pairs = new Map<string, PairAccumulator>();
   /**
    * The rep's CURRENT display name, keyed by repKey and resolved across the WHOLE window — not per
    * contact.
@@ -451,25 +659,20 @@ export function buildDoctorCoverageBoard(
     const visitDate = visit.visit_date ?? "";
     if (!/^\d{4}-\d{2}-\d{2}$/.test(visitDate)) continue;
     const monthKey = monthKeyOfVisitDate(visitDate);
-    if (monthKey < lapseHistoryFrom || monthKey > selectedMonth) continue;
-
-    let contact = contacts.get(visit.contact_crm_id);
-    if (!contact) {
-      contact = {
-        contactCrmId: visit.contact_crm_id,
-        lastVisitDate: null,
-        latestGrade: null,
-        latestName: null,
-        latestSpeciality: null,
-        visitsByMonth: new Map(),
-        visitsByRep: new Map(),
-      };
-      contacts.set(visit.contact_crm_id, contact);
-    }
-
-    contact.visitsByMonth.set(monthKey, (contact.visitsByMonth.get(monthKey) ?? 0) + 1);
+    if (monthKey < historyFrom || monthKey > selectedMonth) continue;
 
     const visitId = visit.crm_visit_id ?? 0;
+
+    // Contact-level facts. Months BEFORE the trend window are read for exactly this: they can fill
+    // a name, grade or speciality the window itself never supplied, and they carry the "last seen"
+    // date that separates a doctor neglected for five months from one never visited at all.
+    // trackLatest orders strictly by date then crm_visit_id, so a pre-window visit can only ever
+    // fill a value, never outrank an in-window one.
+    let contact = contacts.get(visit.contact_crm_id);
+    if (!contact) {
+      contact = { contactCrmId: visit.contact_crm_id, latestGrade: null, latestName: null, latestSpeciality: null };
+      contacts.set(visit.contact_crm_id, contact);
+    }
     if (visit.contact_name?.trim()) {
       contact.latestName = trackLatest(contact.latestName, { date: visitDate, name: visit.contact_name.trim(), visitId });
     }
@@ -484,27 +687,8 @@ export function buildDoctorCoverageBoard(
         visitId,
       });
     }
-    if (!contact.lastVisitDate || visitDate > contact.lastVisitDate) contact.lastVisitDate = visitDate;
 
-    // Months before the trend window exist to answer "was this doctor seen before the chart
-    // starts". The latest-wins trackers above are safe to feed from them: trackLatest orders
-    // strictly by date then crm_visit_id, so a pre-window visit can never outrank an in-window one
-    // — it can only FILL a value the window itself never supplied. That fill is load-bearing. A
-    // doctor last seen in the two months BEFORE the chart has no in-window visit at all, so
-    // leaving him ungraded meant `if (!tier) continue` below threw him straight back out of the
-    // oldest month's panel — exactly the lapsed doctors the widened scan was added to recover.
-    // Measured in production for selected month 2026-08: 1,317 of the 1,848 missing lapsed doctors
-    // (71%) were still being dropped that way, and every one of them carries a grade on the
-    // pre-window visit already in the scan. He cannot leak onto the selected-month board either:
-    // reaching doctors.push needs a visit this month or in the prior two, all inside the window.
-    //
-    // The primary-rep tally below is the one thing that must NOT see them — it is a COUNT, so a
-    // pre-window visit could flip which rep owns a doctor on the strength of a visit the board
-    // never displays.
-    if (monthKey < windowMonths[0]) continue;
-
-    const repKey = repKeyOf(visit);
-    const repEntry = contact.visitsByRep.get(repKey);
+    const repKey = repKeyFor(visit.agent_hr_id, visit.agent_crm_id);
     const repName = visit.agent_name?.trim() || (visit.agent_hr_id ? visit.agent_hr_id : "Unmapped agent");
     // Board-level latest-wins, ordered exactly like every other latest-wins tracker here (date,
     // then crm_visit_id). This is what the rows actually display.
@@ -516,116 +700,147 @@ export function buildDoctorCoverageBoard(
     ) {
       latestRepName.set(repKey, { date: visitDate, name: repName, visitId });
     }
-    if (!repEntry) {
-      contact.visitsByRep.set(repKey, { count: 1, latestDate: visitDate, latestVisitId: visitId, repName });
-    } else {
-      repEntry.count += 1;
-      if (visitDate > repEntry.latestDate || (visitDate === repEntry.latestDate && visitId > repEntry.latestVisitId)) {
-        repEntry.latestDate = visitDate;
-        repEntry.latestVisitId = visitId;
-        repEntry.repName = repName;
-      }
+
+    // The (rep, doctor) tally — this rep's own work on this doctor, and nobody else's.
+    const key = pairKeyOf(repKey, visit.contact_crm_id);
+    let pair = pairs.get(key);
+    if (!pair) {
+      pair = { lastVisitDate: null, repKey, visitsByMonth: new Map() };
+      pairs.set(key, pair);
     }
+    pair.visitsByMonth.set(monthKey, (pair.visitsByMonth.get(monthKey) ?? 0) + 1);
+    if (!pair.lastVisitDate || visitDate > pair.lastVisitDate) pair.lastVisitDate = visitDate;
     if (monthKey === selectedMonth) visitsCountedSelectedMonth += 1;
   }
 
-  // ── Classify every contact for the selected month ──────────────────────────────────────────────
+  // ── The assigned lists, one per month ─────────────────────────────────────────────────────────
+  //
+  // DISTINCT (rep, doctor) pairs, not plan ENTRIES. The vendor's weekly plan repeats a doctor across
+  // the weeks of a month — production August 2026 holds 18,645 entries against 9,152 distinct
+  // contacts — so counting entries would report each rep's call plan rather than his panel and
+  // roughly double every denominator. The owner's rule is about the doctor LIST: 90 to 120 people.
+  const listByMonth = new Map<string, Map<string, AssignedDoctor>>();
+  for (const month of windowMonths) listByMonth.set(month, new Map());
+  for (const row of options.planRows) {
+    if (!row.contact_crm_id) continue;
+    const planDate = row.plan_date ?? "";
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(planDate)) continue;
+    const list = listByMonth.get(monthKeyOfVisitDate(planDate));
+    if (!list) continue;
+    const repKey = repKeyFor(row.agent_hr_id, row.agent_crm_id);
+    const key = pairKeyOf(repKey, row.contact_crm_id);
+    if (list.has(key)) continue; // a repeat plan entry for the same doctor, not a second doctor
+    list.set(key, {
+      contactCrmId: row.contact_crm_id,
+      contactName: row.contact_name?.trim() || null,
+      gradeRaw: row.contact_grade?.trim().toUpperCase() ?? "",
+      repKey,
+      speciality: row.speciality?.trim() || null,
+    });
+  }
+
+  // ── Score each month's assigned list ──────────────────────────────────────────────────────────
+  //
+  // WHO owns a doctor is now read off the list, not inferred. There is no primary-rep election any
+  // more: the doctor belongs to the rep he was assigned to, and if two reps are both assigned him
+  // he is a row on each of their panels — which is the truth, and something the old single-owner
+  // election could not express at all.
+  //
+  // Each trend point is scored against THAT month's own list. Re-using the selected month's list
+  // across the window would invent history: lists change every month (production ranges 5,182 to
+  // 9,356 distinct contacts a month over Jan-Aug 2026), so a doctor added in August would appear to
+  // have been neglected all summer.
+  //
   // `let`, not `const`: the filter block below narrows this in place before every rollup reads it.
   let doctors: DoctorCoverageDoctorRow[] = [];
   let ungradedContacts = 0;
-  // Per-month green/panel counts for the trend, computed with the SAME latest-grade-in-window rule.
   const trendPanel = new Map<string, { green: number; panel: number }>();
   for (const month of windowMonths) trendPanel.set(month, { green: 0, panel: 0 });
 
-  for (const contact of contacts.values()) {
-    const gradeRaw = contact.latestGrade?.grade ?? null;
-    const tier = gradeTierOf(gradeRaw);
-    const visitsThisMonth = contact.visitsByMonth.get(selectedMonth) ?? 0;
+  for (const month of windowMonths) {
+    const bucket = trendPanel.get(month);
+    const list = listByMonth.get(month);
+    if (!bucket || !list) continue;
+    const isSelected = month === selectedMonth;
 
-    if (!tier) {
-      if (visitsThisMonth > 0) ungradedContacts += 1;
-      continue;
-    }
-
-    const kind = classifyCrmContactSpeciality(contact.latestSpeciality?.speciality);
-    // An `unclassified` contact is scored on the SP norms, which is exactly what happened to every
-    // contact before this split existed. Deliberate: a vendor value this build has not seen yet
-    // must not silently drop out of the coverage denominator and move the number — it stays scored
-    // as before and is surfaced in the mix list instead, so somebody classifies it.
-    const scoringKind = kind === "hcp" ? "hcp" : "sp";
-    const target = norms[scoringKind][tier];
-    // 0 = "this population is not held to a frequency" (owner-configurable). It cannot mean
-    // "needs zero visits": `visitsThisMonth >= 0` is always true, so that would paint every one of
-    // them green and inflate coverage. They leave the panel, the denominator, and the call list.
-    if (target <= 0) continue;
-
-    // Trend: every window month gets the same green-vs-target math (panel = visited that month
-    // OR lapsed relative to that month's own prior-2 window, which the widened scan supplies even
-    // for the oldest point).
-    for (const month of windowMonths) {
-      const monthVisits = contact.visitsByMonth.get(month) ?? 0;
-      let inPanel = monthVisits > 0;
-      if (!inPanel) {
-        for (let back = 1; back <= DOCTOR_COVERAGE_LAPSE_LOOKBACK_MONTHS; back += 1) {
-          const prior = addMonthsToMonthKey(month, -back);
-          if (prior < lapseHistoryFrom) break;
-          if ((contact.visitsByMonth.get(prior) ?? 0) > 0) {
-            inPanel = true;
-            break;
-          }
-        }
+    for (const [key, assigned] of list) {
+      const contact = contacts.get(assigned.contactCrmId);
+      // The list carries a grade on 100% of production rows, so the visit fallback is for a thin
+      // list row — never the other way round. The list is what the business assigned; a grade seen
+      // on a visit is only evidence about the same doctor.
+      const gradeRaw = gradeTierOf(assigned.gradeRaw) ? assigned.gradeRaw : (contact?.latestGrade?.grade ?? "");
+      const tier = gradeTierOf(gradeRaw);
+      if (!tier) {
+        // Ungraded on the list AND on every visit. Outside the panel, and counted so a vendor
+        // grading gap is visible instead of silently shrinking the denominator.
+        if (isSelected) ungradedContacts += 1;
+        continue;
       }
-      if (!inPanel) continue;
-      const bucket = trendPanel.get(month);
-      if (!bucket) continue;
+
+      const kind = classifyCrmContactSpeciality(assigned.speciality ?? contact?.latestSpeciality?.speciality);
+      // An `unclassified` contact is scored on the SP norms. Deliberate: a vendor value this build
+      // has not seen yet must not silently drop out of the coverage denominator and move the number
+      // — it stays scored and is surfaced in the mix list instead, so somebody classifies it.
+      const target = norms[kind === "hcp" ? "hcp" : "sp"][tier];
+      // 0 = "this population is not held to a frequency" (owner-configurable; production has HCP at
+      // 0 since 2026-08-19). It cannot mean "needs zero visits": `visitsThisMonth >= 0` is always
+      // true, so that would paint every one of them green and inflate coverage. They leave the
+      // panel, the denominator and the call list.
+      if (target <= 0) continue;
+
+      // This rep's own visits to this doctor — a colleague's visit lives under a different pair key
+      // and cannot discharge this assignment.
+      const pair = pairs.get(key);
+      const visitsThisMonth = pair?.visitsByMonth.get(month) ?? 0;
       bucket.panel += 1;
-      if (monthVisits >= target) bucket.green += 1;
-    }
+      if (visitsThisMonth >= target) bucket.green += 1;
+      if (!isSelected) continue;
 
-    let status: DoctorCoverageStatus;
-    if (visitsThisMonth >= target) status = "green";
-    else if (visitsThisMonth > 0) status = "yellow";
-    else {
-      const seenRecently = Array.from(lapseMonths).some((month) => (contact.visitsByMonth.get(month) ?? 0) > 0);
-      if (!seenRecently) continue; // inactive — out of panel and denominator
-      status = "red";
+      doctors.push({
+        contactCrmId: assigned.contactCrmId,
+        contactName: assigned.contactName ?? contact?.latestName?.name ?? `Contact #${assigned.contactCrmId}`,
+        gradeRaw,
+        gradeTier: tier,
+        lastVisitDate: pair?.lastVisitDate ?? null,
+        kind,
+        repKey: assigned.repKey,
+        repName: repNameFor(assigned.repKey, latestRepName, options.repNameByHrId),
+        speciality: assigned.speciality ?? contact?.latestSpeciality?.speciality ?? null,
+        // Against an assigned list the three statuses are simple and total: met the norm, visited
+        // but short, or not visited at all. Nobody drops out for being "inactive" — being on the
+        // list IS the answer to whether this rep still owns them.
+        status: visitsThisMonth >= target ? "green" : visitsThisMonth > 0 ? "yellow" : "red",
+        targetVisits: target,
+        visitsThisMonth,
+      });
     }
-
-    // Primary rep: most window visits; tie → latest visit, then higher crm_visit_id.
-    let primary: { count: number; latestDate: string; latestVisitId: number; repKey: string; repName: string } | null =
-      null;
-    for (const [repKey, entry] of contact.visitsByRep) {
-      if (
-        !primary ||
-        entry.count > primary.count ||
-        (entry.count === primary.count &&
-          (entry.latestDate > primary.latestDate ||
-            (entry.latestDate === primary.latestDate && entry.latestVisitId > primary.latestVisitId)))
-      ) {
-        primary = { ...entry, repKey };
-      }
-    }
-
-    doctors.push({
-      contactCrmId: contact.contactCrmId,
-      contactName: contact.latestName?.name ?? `Contact #${contact.contactCrmId}`,
-      gradeRaw: gradeRaw as string,
-      gradeTier: tier,
-      lastVisitDate: contact.lastVisitDate,
-      kind,
-      repKey: primary?.repKey ?? "crm:0",
-      // WHICH rep owns this doctor is decided per contact (above); what that rep is CALLED is a
-      // board-level fact, so it comes from latestRepName. Using the per-contact name here is what
-      // made one rep appear under two labels — see the note on latestRepName. Falls back to the
-      // per-contact name only if the key is somehow absent, which cannot happen for a rep that
-      // reached visitsByRep.
-      repName: (primary ? latestRepName.get(primary.repKey)?.name : null) ?? primary?.repName ?? "Unmapped agent",
-      speciality: contact.latestSpeciality?.speciality ?? null,
-      status,
-      targetVisits: target,
-      visitsThisMonth,
-    });
   }
+
+  // ── Off-list work: REPORTED, never scored ─────────────────────────────────────────────────────
+  //
+  // A doctor this rep visited this month who is not on this rep's list for this month. Measured on
+  // production 2026-08-27: 1,670 of the old panel's 7,295 scored pairs — 22.9% — were exactly
+  // this, and the old board silently promoted every one of them into the denominator through its
+  // "primary rep" election. That is half the reason a panel could reach 263.
+  //
+  // It cannot be scored, because there is no target to score it against: the norms are a promise
+  // about an ASSIGNED doctor. But it must not be hidden either — it is real field work, and a large
+  // number here is a genuine finding (a list that is out of date, or a rep working outside it). So
+  // it gets its own column, exactly like campaign work: beside the coverage number, never inside it.
+  const offListByRep = new Map<string, number>();
+  const selectedList = listByMonth.get(selectedMonth) ?? new Map<string, AssignedDoctor>();
+  for (const [key, pair] of pairs) {
+    if ((pair.visitsByMonth.get(selectedMonth) ?? 0) <= 0) continue;
+    if (selectedList.has(key)) continue;
+    offListByRep.set(pair.repKey, (offListByRep.get(pair.repKey) ?? 0) + 1);
+  }
+  /** Reps holding at least one assigned doctor this month — the answer to "does he have a list?". */
+  const repsHoldingAList = new Set<string>();
+  for (const assigned of selectedList.values()) repsHoldingAList.add(assigned.repKey);
+  // No list rows AT ALL for the selected month. Distinct from "this rep has no list": it means the
+  // mirror has not delivered yet (the plan mirror starts 2026-01, and the current month fills as the
+  // vendor syncs), and the board must say so rather than report every rep at 0%.
+  const planMonthMissing = selectedList.size === 0;
 
   // ── Filters ───────────────────────────────────────────────────────────────────────────────────
   // Applied here: AFTER scope and AFTER the panel rule, so a filter can only narrow what the viewer
@@ -635,10 +850,18 @@ export function buildDoctorCoverageBoard(
   //
   // `repOptions` is captured from the UNFILTERED rows first: narrowing the picker to the rep you
   // already picked would make the filter a one-way door with no way back.
-  const repOptions = Array.from(
-    new Map(doctors.map((doctor) => [doctor.repKey, doctor.repName])).entries(),
-    ([repKey, repName]) => ({ repKey, repName }),
-  ).sort((a, b) => a.repName.localeCompare(b.repName));
+  //
+  // Built from every rep the board can SHOW, not only from the ones holding a panel: a rep whose
+  // whole month was off-list or campaign work is now a visible row, and a picker that could not
+  // select him would leave a row on screen that no filter can isolate.
+  const repOptionByKey = new Map<string, string>();
+  for (const doctor of doctors) repOptionByKey.set(doctor.repKey, doctor.repName);
+  for (const repKey of offListByRep.keys()) {
+    if (!repOptionByKey.has(repKey)) repOptionByKey.set(repKey, repNameFor(repKey, latestRepName, options.repNameByHrId));
+  }
+  const repOptions = Array.from(repOptionByKey.entries(), ([repKey, repName]) => ({ repKey, repName })).sort((a, b) =>
+    a.repName.localeCompare(b.repName),
+  );
 
   const rawFilters = options.filters ?? {};
   const clean = (value: string | undefined) => value?.trim() || null;
@@ -689,8 +912,9 @@ export function buildDoctorCoverageBoard(
         campaignCalls: 0,
         coveragePct: 0,
         green: 0,
-        // Reached only from a graded doctor, so this rep always has at least one.
+        // Reached only from an assigned, graded doctor, so this rep always has at least one.
         hasPanel: true,
+        offListDoctors: 0,
         panelSize: 0,
         red: 0,
         repKey: doctor.repKey,
@@ -707,6 +931,45 @@ export function buildDoctorCoverageBoard(
     else if (doctor.gradeTier === "B") rep.bDoctors += 1;
     else rep.cDoctors += 1;
   }
+
+  // Off-list work folds in HERE, after the panel rollup, so it can never touch panelSize, green,
+  // yellow, red or coveragePct — the four numbers a manager reads as "did he cover his list".
+  //
+  // The rep and territory filters gate it; grade, kind, status and search deliberately do not. Those
+  // four narrow the PANEL, and an off-list doctor is by definition not in the panel — letting a
+  // status=red filter also filter a column that has no status would produce a number nobody could
+  // reconcile. The identity filters are different in kind: they answer "whose board is this", and a
+  // fold-in that re-added a rep the viewer filtered out would defeat the filter entirely.
+  for (const [repKey, offList] of offListByRep) {
+    if (repFilter && repKey !== repFilter) continue;
+    if (territoryKeys && !territoryKeys.has(repKey)) continue;
+    const existing = repRows.get(repKey);
+    if (existing) {
+      existing.offListDoctors = offList;
+      continue;
+    }
+    // Visited doctors this month, holds no assigned list for it. Under the old board this rep read
+    // as a healthy panel of exactly the people he happened to visit; the honest answer is that
+    // there is nothing to score him against, so `hasPanel` is false and the table prints a marker
+    // rather than a percentage.
+    repRows.set(repKey, {
+      aDoctors: 0,
+      agentHrId: repKey.startsWith("hr:") ? repKey.slice(3) : null,
+      bDoctors: 0,
+      cDoctors: 0,
+      campaignCalls: 0,
+      coveragePct: 0,
+      green: 0,
+      hasPanel: false,
+      offListDoctors: offList,
+      panelSize: 0,
+      red: 0,
+      repKey,
+      repName: repNameFor(repKey, latestRepName, options.repNameByHrId),
+      yellow: 0,
+    });
+  }
+
   for (const rep of repRows.values()) {
     rep.coveragePct = rep.panelSize > 0 ? Math.round((rep.green / rep.panelSize) * 100) : 0;
   }
@@ -737,7 +1000,7 @@ export function buildDoctorCoverageBoard(
     // The caller reads only the selected month, but the core must not depend on that: a fixture or
     // a future caller handing over a wider range must not inflate this month's column.
     if (monthKeyOfVisitDate(visitDate) !== selectedMonth) continue;
-    const repKey = repKeyOf(visit);
+    const repKey = repKeyFor(visit.agent_hr_id, visit.agent_crm_id);
     const entry = campaignByRep.get(repKey);
     if (entry) {
       entry.calls += 1;
@@ -751,6 +1014,11 @@ export function buildDoctorCoverageBoard(
 
   let repsAllCampaign = 0;
   for (const [repKey, entry] of campaignByRep) {
+    // Same identity gate as the off-list fold-in above, and for the same reason: a rep the viewer
+    // filtered out must not walk back onto the board through a side channel. (This gate was absent
+    // before the assigned-list change — with a rep filter active, campaign-only reps still appeared.)
+    if (repFilter && repKey !== repFilter) continue;
+    if (territoryKeys && !territoryKeys.has(repKey)) continue;
     const existing = repRows.get(repKey);
     if (existing) {
       existing.campaignCalls = entry.calls;
@@ -769,14 +1037,19 @@ export function buildDoctorCoverageBoard(
       coveragePct: 0,
       green: 0,
       hasPanel: false,
+      offListDoctors: 0,
       panelSize: 0,
       red: 0,
       repKey,
-      repName: latestRepName.get(repKey)?.name ?? entry.name,
+      repName: latestRepName.get(repKey)?.name?.trim() || entry.name,
       yellow: 0,
     });
   }
   const totalsCampaignCalls = Array.from(repRows.values()).reduce((sum, rep) => sum + rep.campaignCalls, 0);
+  const totalsOffList = Array.from(repRows.values()).reduce((sum, rep) => sum + rep.offListDoctors, 0);
+  // A rep who is ON this board and holds no assigned list for the selected month. Counted from the
+  // rows that survived the filters, so it always reconciles with the table underneath it.
+  const repsWithNoList = Array.from(repRows.values()).filter((rep) => !repsHoldingAList.has(rep.repKey)).length;
 
   const totalsGreen = doctors.filter((doctor) => doctor.status === "green").length;
   const totalsYellow = doctors.filter((doctor) => doctor.status === "yellow").length;
@@ -894,8 +1167,11 @@ export function buildDoctorCoverageBoard(
       campaignCalls: totalsCampaignCalls,
       coveragePct,
       green: totalsGreen,
+      offListDoctors: totalsOffList,
+      planMonthMissing,
       red: totalsRed,
       repsAllCampaign,
+      repsWithNoList,
       ungradedContacts,
       visitsCounted: visitsCountedSelectedMonth,
       yellow: totalsYellow,
@@ -971,13 +1247,63 @@ export async function getSfeDoctorCoverage(input: {
     ...(input.scope.kind === "agents" ? { agentHrIds: input.scope.agentHrIds } : {}),
   });
   const collapsed = collapseDuplicateVisitSubmissions(rows);
-  // Norms are admin-editable per kind and grade; getDoctorCoverageConfig never throws and falls
-  // back to the shipped defaults, so a missing table or a transient read cannot break the board.
-  const { norms } = await getDoctorCoverageConfig();
+
+  // ── The assigned lists ──────────────────────────────────────────────────────────────────────
+  //
+  // Read only for the TREND window (4 months), not the 6-month scan window: the extra two months
+  // exist so a doctor's last-seen date and grade can be found, and neither needs a list.
+  //
+  // SCOPING THE PLAN READ. The plan mirror has no usable hr id (see `scanPlanEntries`), so the
+  // viewer's scope is translated into CRM ids using the rows just read — which are already scoped,
+  // already departed-agent-filtered by the visits door, and therefore cannot widen what this viewer
+  // sees. The translation loses a rep only if he holds a list and logged not one visit in four
+  // months; measured on production 2026-08-27 that set is EMPTY (all 78 agents holding an August
+  // list had visits in the window), and such a rep is a leaver or a vacant seat rather than a
+  // coverage failure. A company-scoped viewer passes no filter and sees every list regardless.
+  const scopedAgentCrmIds =
+    input.scope.kind === "agents"
+      ? Array.from(
+          new Set(
+            [...collapsed, ...campaignRows]
+              .map((row) => row.agent_crm_id)
+              .filter((id): id is number => typeof id === "number" && id > 0),
+          ),
+        )
+      : undefined;
+  const [planRows, excludedAgentCrmIds, directory, { norms }] = await Promise.all([
+    scanPlanEntries(`${addMonthsToMonthKey(month, -DOCTOR_COVERAGE_MONTHS_BACK)}-01`, dateTo, {
+      ...(scopedAgentCrmIds ? { agentCrmIds: scopedAgentCrmIds } : {}),
+    }),
+    getEffectiveExcludedAgentCrmIds(),
+    // A rep who holds a list but has logged no visit has no name anywhere in the CRM mirror; the
+    // directory is the only place one exists. Inactive included on purpose — a rep who left
+    // mid-month still owns that month's list and must be named, not shown as a code.
+    getEmployeeDirectoryRows({ includeInactive: true }),
+    // Norms are admin-editable per kind and grade; getDoctorCoverageConfig never throws and falls
+    // back to the shipped defaults, so a missing table or a transient read cannot break the board.
+    getDoctorCoverageConfig(),
+  ]);
+
+  // Departed agents are excluded from the visits read by the door itself. The plan mirror has no
+  // such door, so the same exclusion is applied here — in Node rather than as a `not.in` filter,
+  // because that list travels in the URL and a long one silently returns nothing at all.
+  const excluded = new Set(excludedAgentCrmIds);
+  const livePlanRows = excluded.size === 0 ? planRows : planRows.filter((row) => !excluded.has(row.agent_crm_id ?? -1));
+
+  const repNameByHrId = new Map<string, string>();
+  for (const employee of directory) {
+    // Lower-cased: this map is read with the hr id taken out of a `hr:` repKey, which is built
+    // lower-cased so one person cannot occupy two keys. Rep Doctor Lists keys the same map
+    // UPPER-cased for its own reasons — the two are not interchangeable.
+    repNameByHrId.set(employee.hrId.trim().toLowerCase(), employee.displayName || employee.fullName);
+  }
+
   return buildDoctorCoverageBoard(collapsed, month, {
     campaignVisits: campaignRows,
     filters: input.filters,
     norms,
+    planRows: livePlanRows,
+    repNameByHrId,
     scopeLabel: input.scope.label,
   });
 }
