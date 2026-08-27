@@ -158,6 +158,24 @@ const employeeSubjectWorkflowModules = new Set([
 // them by event type so the module-level identity guard doesn't fail them.
 const aggregateDigestEventTypes = new Set(["high_risk_digest"]);
 
+/**
+ * Retry budget for a `notification_deliveries` row, and the value the retry drains filter on in
+ * SQL so exhausted rows never consume a batch slot.
+ *
+ * This mirrors the column: `max_attempts` is `NOT NULL DEFAULT 5` and nothing in this app writes
+ * it explicitly, so every row carries 5 (measured 2026-08-27: 5 on all 20,340 production rows).
+ * The per-row `Number(row.max_attempts ?? notificationDeliveryMaxAttempts)` checks in the drain loops stay as the authority —
+ * this constant only keeps dead rows out of the query window, it does not decide eligibility.
+ *
+ * Why it matters: a terminally-failed row keeps `status: "failed"` and `next_attempt_at: null`,
+ * both of which the drains' own filters match, so it never leaves the window. Once `limit` of
+ * them collect at the head of the queue, every run fetches the same corpses, discards them all in
+ * JS, and returns an empty batch — forever, with a green cron and no error anywhere. That is not
+ * hypothetical: it silently killed every email retry for 13 days (#2462), and on 2026-08-27 the
+ * telegram window already held 25 such rows against a limit of 50, push 16.
+ */
+const notificationDeliveryMaxAttempts = 5;
+
 function cleanText(value: string | null | undefined) {
   return String(value ?? "").trim();
 }
@@ -1108,7 +1126,16 @@ export async function processTelegramDeliveryRetries(limit = 10) {
     .eq("channel", "telegram")
     .in("status", ["failed", "pending", "retrying"])
     .or(`next_attempt_at.is.null,next_attempt_at.lte.${now}`)
+    // See notificationDeliveryMaxAttempts: a terminally-failed row keeps `status: "failed"` and
+    // `next_attempt_at: null`, both of which this query MATCHES, so it stays in the window forever
+    // and the `attempts >= maxAttempts` guard in the loop below discards it only AFTER the limit
+    // has already counted it. Without this filter one full batch of exhausted rows starves every
+    // retryable row behind it, silently and permanently - which is exactly what happened to the
+    // email outbox (#2462).
+    .lt("attempts", notificationDeliveryMaxAttempts)
     .order("created_at", { ascending: true })
+    // Total order, so the limit window is stable when `created_at` ties.
+    .order("id", { ascending: true })
     .limit(Math.max(1, Math.min(limit, 50)));
 
   if (error) {
@@ -1122,7 +1149,7 @@ export async function processTelegramDeliveryRetries(limit = 10) {
 
   for (const row of (data ?? []) as Array<{ attempts?: number | null; id: string; max_attempts?: number | null; metadata?: Record<string, unknown> | null; recipient_hr_id?: string | null; recipient_user_id?: string | null }>) {
     const attempts = Number(row.attempts ?? 0);
-    const maxAttempts = Number(row.max_attempts ?? 5);
+    const maxAttempts = Number(row.max_attempts ?? notificationDeliveryMaxAttempts);
     if (attempts >= maxAttempts) continue;
     const telegram = row.metadata?.telegram as Partial<TelegramRetryPayload> | undefined;
     if (!telegram?.chatId || !telegram?.title || !telegram?.message) continue;
@@ -1243,7 +1270,11 @@ export async function processPushDeliveryRetries(limit = 10) {
     .eq("channel", "push")
     .in("status", ["failed", "pending", "retrying"])
     .or(`next_attempt_at.is.null,next_attempt_at.lte.${now}`)
+    // Same head-of-line starvation as the telegram drain above - see notificationDeliveryMaxAttempts.
+    .lt("attempts", notificationDeliveryMaxAttempts)
     .order("created_at", { ascending: true })
+    // Total order, so the limit window is stable when `created_at` ties.
+    .order("id", { ascending: true })
     .limit(Math.max(1, Math.min(limit, 50)));
 
   if (error) {
@@ -1257,7 +1288,7 @@ export async function processPushDeliveryRetries(limit = 10) {
 
   for (const row of (data ?? []) as Array<{ attempts?: number | null; id: string; max_attempts?: number | null; metadata?: Record<string, unknown> | null; recipient_hr_id?: string | null; recipient_user_id?: string | null }>) {
     const attempts = Number(row.attempts ?? 0);
-    const maxAttempts = Number(row.max_attempts ?? 5);
+    const maxAttempts = Number(row.max_attempts ?? notificationDeliveryMaxAttempts);
     if (attempts >= maxAttempts) continue;
     const push = row.metadata?.push as Partial<PushRetryPayload> | undefined;
     if (!push?.externalId || !push?.title || !push?.message) continue;
@@ -1419,7 +1450,7 @@ export async function retryTelegramDeliveryById(id: string): Promise<SystemNotif
   }
 
   const attempts = Number(row.attempts ?? 0);
-  const maxAttempts = Number(row.max_attempts ?? 5);
+  const maxAttempts = Number(row.max_attempts ?? notificationDeliveryMaxAttempts);
   if (attempts >= maxAttempts) return { channel: "telegram", idempotencyKey, reason: "Maximum retry attempts reached.", status: "skipped" };
 
   try {

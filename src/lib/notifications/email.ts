@@ -2019,7 +2019,26 @@ async function fetchDueNotificationOutboxPage(from: number, to: number): Promise
     .select("*")
     .in("status", ["pending", "failed"])
     .or(`next_attempt_at.is.null,next_attempt_at.lte.${now}`)
+    // Keep the dead rows OUT of the window rather than only surviving them. The comment above is
+    // right that `attempts < max_attempts` is not expressible in PostgREST - but comparing the
+    // column to the CONSTANT is, and `max_attempts` is `NOT NULL DEFAULT 5` here and is written
+    // only from `notificationOutboxMaxAttempts` (the insert above), so for every row this app
+    // creates the two tests are the same test. Measured 2026-08-27: 5 on all 1,964 rows.
+    //
+    // This is what turns the paging above from a bigger fuse into a fix. Paging alone still has a
+    // ceiling - `outboxScanPageSize * outboxMaxScanPages` = 1,000 rows - and exhausted rows still
+    // accumulate forever, so the same freeze returns once 1,000 of them sit at the head. With this
+    // filter they never enter the scan at all and there is nothing to page past.
+    //
+    // The JS `attempts < max_attempts` check in the loader STAYS and remains the authority: if a
+    // row ever carries a different `max_attempts`, this filter is merely an imperfect prefilter and
+    // that check is what keeps the result correct.
+    .lt("attempts", notificationOutboxMaxAttempts)
     .order("created_at", { ascending: true })
+    // `created_at` ties (7 rows share one in production, in pairs) leave the order undefined
+    // BETWEEN the separate `.range()` calls above, which silently skips or double-returns a row at
+    // a page boundary. `id` is the primary key, so it makes the sort total and the paging stable.
+    .order("id", { ascending: true })
     .range(from, to);
 
   if (error) throw error;
