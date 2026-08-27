@@ -492,9 +492,10 @@ production-ops guidance. They stay in the index.
   `guard-every-prod-write-when-another-session-shares-the-queue` ·
   `force-logout-everywhere-needs-three-writes`
 
-**Which environment the code thinks it is in** (the first two relocated from `MEMORY.md`,
-2026-08-27, to buy index room for the `APP_ENV` entry — which was itself an orphan with no pointer,
-so nothing recalled it)
+**Which environment the code thinks it is in** (the first two relocated from `MEMORY.md`
+2026-08-27, and they live HERE now — their index lines are gone, so this block is the only thing
+that recalls them. The room that bought paid for the `APP_ENV` hook, which does have an index
+pointer: the index carries the hook, this block carries the detail.)
 
 - **A LOCAL run writes PRODUCTION but silently skips every email**, and **the local Resend key CANNOT
   send** — it is restricted, on an unverified domain. Send from production with `railway run`.
