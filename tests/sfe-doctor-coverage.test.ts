@@ -74,7 +74,7 @@ export function runSfeDoctorCoverageTests() {
 
   // ── Status classification, against the ASSIGNED LIST ───────────────────────
   // The panel is the list the rep was GIVEN, joined to his own visits. It is not inferred from who
-  // he happened to touch, which is what made a panel of 2 and a panel of 265 both possible against
+  // he happened to touch, which is what made a panel of 4 and a panel of 263 both possible against
   // a business rule of 90 to 120 doctors.
   const board = buildDoctorCoverageBoard(
     [
@@ -93,8 +93,8 @@ export function runSfeDoctorCoverageTests() {
       // Doctor 6 (B), assigned: 1 visit -> green at the B target.
       visit({ contact_crm_id: 6, contact_name: "Dr. BGreen", crm_contact_grade: "B", visit_date: "2026-08-14" }),
       // Doctor 10 (A): visited in August, NOT on this rep's list -> off-list. This is the case the
-      // old board promoted into the panel through its "primary rep" election: 2,536 of 10,352
-      // scored pairs on production, 24.5%.
+      // old board promoted into the panel through its "primary rep" election: 1,670 of the old
+      // panel's 7,295 scored pairs on production, 22.9%.
       visit({ contact_crm_id: 10, contact_name: "Dr. OffList", visit_date: "2026-08-12" }),
       // Sentinel and null contacts, and a campaign row - all ignored.
       visit({ contact_crm_id: 0, visit_date: "2026-08-04" }),

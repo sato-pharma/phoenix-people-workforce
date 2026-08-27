@@ -37,7 +37,7 @@
  *     red. The metric could not see its own subject.
  *   - "Primary rep" reassigned doctors between people. A doctor went to whoever visited most over a
  *     4-month window, so covering for a colleague twice moved that doctor onto your panel and off
- *     his: 2,536 of 10,352 scored pairs (24.5%) were doctors NOT on that rep's list.
+ *     his: 1,670 of 7,295 scored pairs (22.9%) were doctors NOT on that rep's list.
  *
  * The score tracked the panel error rather than the rep's work — reps whose inferred panel happened
  * to land in 90-120 averaged 52.6% coverage while every other band averaged 33.9-37.4%, and one rep
@@ -174,15 +174,16 @@ export type DoctorCoverageRepRow = {
   green: number;
   /** False when this rep has NO assigned list for the month and appears only because of visits he
    * made or campaign work he logged. The table must print a marker instead of a percentage for
-   * them: with no list there is nothing for a percentage to be OF. Measured on production for
-   * August 2026, 17 reps with board activity had no list row at all. */
+   * them: with no list there is nothing for a percentage to be OF. Measured on the rendered board
+   * for August 2026: 18 reps with board activity had no list row at all, 15 of them campaign-only. */
   hasPanel: boolean;
   /**
    * Type-0 visits this rep made to doctors who are NOT on his assigned list. Real work, reported
    * beside coverage and never inside it — the same treatment campaign work gets, and for the same
    * reason: the assigned-list denominator has no room for it, and dropping it silently would hide
-   * activity a manager needs to see. Measured on production for August 2026: 2,536 of 10,352
-   * scored pairs under the old panel were exactly this.
+   * activity a manager needs to see. Measured on the rendered board for August 2026: 593 off-list
+   * pairs beside an assigned panel of 6,416 — under the old panel 1,670 of 7,295 scored pairs
+   * (22.9%) were doctors not on that rep's list, every one of them counted as coverage.
    */
   offListDoctors: number;
   /** Doctors on the assigned list — 90 to 120 for a correctly loaded rep (the owner's rule). */
@@ -818,9 +819,9 @@ export function buildDoctorCoverageBoard(
   // ── Off-list work: REPORTED, never scored ─────────────────────────────────────────────────────
   //
   // A doctor this rep visited this month who is not on this rep's list for this month. Measured on
-  // production 2026-08-27: 2,536 of 10,352 scored pairs — 24.5% — were exactly this, and the old
-  // board silently promoted every one of them into the denominator through its "primary rep"
-  // election. That is half the reason a panel could reach 265.
+  // production 2026-08-27: 1,670 of the old panel's 7,295 scored pairs — 22.9% — were exactly
+  // this, and the old board silently promoted every one of them into the denominator through its
+  // "primary rep" election. That is half the reason a panel could reach 263.
   //
   // It cannot be scored, because there is no target to score it against: the norms are a promise
   // about an ASSIGNED doctor. But it must not be hidden either — it is real field work, and a large

@@ -2007,7 +2007,7 @@ await runTest("crm rep-day check-in attribution (managers borrow the rep's check
 
 await runTest("biometric passkey login (terminal-employment gate, replay counter, single-use challenge, no credential enumeration)", runAuthWebauthnTests);
 
-await runTest("SFE doctor coverage (A=2/B=1 norms, 2-month lapse window, month bucketing, primary-rep model, single-source door)", runSfeDoctorCoverageTests);
+await runTest("SFE doctor coverage (A=2/B=1 norms, the panel is the rep's ASSIGNED list, off-list reported never scored, identity reconciled across both mirrors, single-source door)", runSfeDoctorCoverageTests);
 await runTest(
   "doctor coverage scope (full subtree, line boundary, fail-closed) and elapsed-month pace",
   runDoctorCoverageScopeTests,
