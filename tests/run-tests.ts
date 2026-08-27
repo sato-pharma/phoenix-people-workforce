@@ -1364,7 +1364,12 @@ await runTest("crm visit time (GPS check-in → save time → none; never visit_
 await runTest("crm reads hr-id casing (door matches agent/double hr ids case-insensitively)", runCrmReadsHrIdCasingTests);
 await runTest("crm visits self-scope (My Visits portal module: exact agent/double hrId scoping, no searchParams override)", runCrmVisitsSelfScopeTests);
 await runTest("crm live-sync window (8:30 AM-12:01 PM Cairo boundary, inclusive both ends)", runCrmLiveSyncWindowTests);
-await runTest("crm live poller (stable fingerprint, delta vs memo, cadence tiers, upsert-filter seam, startup guards)", runCrmLivePollerTests);
+await runTest(
+  "crm live poller (stable fingerprint, delta vs memo, cadence tiers, upsert-filter seam, startup "
+  + "guards, and the hourly rep-doctor-list sync which is ranked BELOW both visit jobs and never "
+  + "runs overnight)",
+  runCrmLivePollerTests,
+);
 await runTest("crm duplicate visit collapse (contact-keyed: one rep+contact+day = one stop; comment text never groups)", runCrmDuplicateVisitCollapseTests);
 await runTest("crm master export streaming workbook (multi-page, uncapped, valid xlsx, error aborts)", runCrmMasterExportWorkbookTests);
 await runTest("crm degradation policy (a failed read never manufactures a classification; filters cannot lie)", runCrmDegradationPolicyTests);
@@ -1390,8 +1395,10 @@ await runTest(
 await runTest(
   "crm rep doctor lists (a doctor on a rep's plan who was never visited must show up as missed — "
   + "the population every visit-history board is blind to; adherence counts doctors only, departed "
-  + "agents leave both sides, an unknown specialty is named not folded, and the drill-down cap can "
-  + "never look like a complete list)",
+  + "agents leave both sides, an unknown specialty is named not folded, the drill-down cap can "
+  + "never look like a complete list, a doctor REMOVED from a list in the CRM is removed here too "
+  + "while an empty or truncated vendor answer never prunes, and the scheduled window can never "
+  + "reach a closed month)",
   runCrmRepDoctorListsTests,
 );
 await runTest(

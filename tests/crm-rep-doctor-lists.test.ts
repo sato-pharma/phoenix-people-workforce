@@ -18,8 +18,12 @@ import { canAccessRepDoctorLists, REP_DOCTOR_LISTS_ACCESS_ROLES } from "../src/l
 import {
   assertPlanSyncRange,
   daysBetweenIso,
+  decidePlanPrune,
   MAX_PLAN_SYNC_DAYS,
+  PLAN_PRUNE_MAX_SHARE,
+  PLAN_PRUNE_MIN_MIRROR_ROWS,
   PlanSyncRangeError,
+  resolvePlanSyncWindow,
   rowFromPlanEntry,
 } from "../src/lib/crm/plan-sync.ts";
 import type { IReports360PlanEntry } from "../src/lib/crm/client.ts";
@@ -473,6 +477,8 @@ export function runCrmRepDoctorListsTests() {
   runCapTests();
   runDateTests();
   runPlanSyncTests();
+  runPlanPruneTests();
+  runPlanSyncWindowTests();
   runAccessTests();
 }
 
@@ -723,6 +729,119 @@ function runPlanSyncTests() {
     999,
     "the vendor id is still stored, so the row is recoverable once identity resolves",
   );
+}
+
+// ── Removals: the half that did not exist until 2026-08-27 ─────────────────────────────────────
+//
+// Until this, the mirror only ever GREW. A doctor taken off a rep's list in the CRM kept his row
+// forever, so the rep's denominator stayed too big and his coverage read permanently too low — an
+// accusation, in the exact sense the header above warns about, and one nobody could clear.
+//
+// Deleting is the dangerous direction, so every guard below is pinned. The failure this is written
+// against is not "a prune ran when it should not have" in the abstract: it is one truncated vendor
+// answer silently emptying 78 reps' doctor lists on a Tuesday morning with nothing to compare
+// against afterwards.
+function runPlanPruneTests() {
+  const mirrorIds = Array.from({ length: 100 }, (_, index) => index + 1);
+  const allOfIt = new Set(mirrorIds);
+
+  // Nothing missing → nothing to decide, and no refusal reason to explain.
+  const unchanged = decidePlanPrune({ mirrorIds, vendorIds: allOfIt, vendorRowCount: mirrorIds.length });
+  assert.equal(unchanged.prune, false, "when the CRM still lists everything there is nothing to remove");
+  assert.deepEqual(unchanged.staleIds, [], "and nothing is reported stale");
+  assert.equal(unchanged.refusedReason, null, "an empty decision is not a refusal — it must not read as one in the log");
+
+  // The ordinary case this exists for: a handful of doctors genuinely taken off lists.
+  const smallEdit = new Set(mirrorIds.filter((id) => id > 3));
+  const pruned = decidePlanPrune({ mirrorIds, vendorIds: smallEdit, vendorRowCount: smallEdit.size });
+  assert.equal(pruned.prune, true, "a real list edit must actually be applied — otherwise this whole change does nothing");
+  assert.deepEqual(pruned.staleIds, [1, 2, 3], "exactly the ids the CRM stopped listing");
+  assert.equal(pruned.refusedReason, null);
+
+  // An EMPTY vendor answer is the shape that would wipe a month. It is never a legitimate "every
+  // rep's list was cleared" — a window with no plans also has no mirror rows to remove.
+  const emptied = decidePlanPrune({ mirrorIds, vendorIds: new Set<number>(), vendorRowCount: 0 });
+  assert.equal(emptied.prune, false, "an empty CRM answer NEVER prunes — it is an unwell vendor, not an emptied list");
+  assert.equal(emptied.staleIds.length, 100, "the ids are still reported, so the refusal is legible rather than silent");
+  assert.match(String(emptied.refusedReason), /no plan entries/, "and the reason names the empty answer");
+
+  // A well-formed but TRUNCATED answer is what the share ceiling is for: the vendor call is
+  // unpaginated and already throws on a broken shape, so this is the only remaining way to lose a
+  // large slice of a month in one run.
+  const overCeiling = Math.floor(mirrorIds.length * PLAN_PRUNE_MAX_SHARE) + 1;
+  const truncated = new Set(mirrorIds.slice(overCeiling));
+  const refused = decidePlanPrune({ mirrorIds, vendorIds: truncated, vendorRowCount: truncated.size });
+  assert.equal(refused.prune, false, `removing ${overCeiling} of 100 is over the ceiling and must be refused`);
+  assert.match(String(refused.refusedReason), /ceiling/, "the reason says which guard fired");
+  const atCeiling = new Set(mirrorIds.slice(Math.floor(mirrorIds.length * PLAN_PRUNE_MAX_SHARE)));
+  assert.equal(
+    decidePlanPrune({ mirrorIds, vendorIds: atCeiling, vendorRowCount: atCeiling.size }).prune,
+    true,
+    "exactly the ceiling is allowed — the guard is a ceiling, not an off-by-one",
+  );
+
+  // Below the floor the share is meaningless: a rep with 2 planned calls who drops 1 is at 50%,
+  // which is an ordinary edit, not a truncation.
+  const tiny = [1, 2];
+  assert.ok(tiny.length < PLAN_PRUNE_MIN_MIRROR_ROWS, "the fixture must actually sit under the floor");
+  assert.equal(
+    decidePlanPrune({ mirrorIds: tiny, vendorIds: new Set([2]), vendorRowCount: 1 }).prune,
+    true,
+    "a tiny window prunes freely — otherwise a rep with a short list could never lose a doctor",
+  );
+  assert.equal(
+    decidePlanPrune({ mirrorIds: tiny, vendorIds: new Set<number>(), vendorRowCount: 0 }).prune,
+    false,
+    "but even a tiny window refuses an empty answer — the floor relaxes the SHARE guard, never the vendor-health one",
+  );
+}
+
+// ── The window is what protects a closed month ─────────────────────────────────────────────────
+//
+// The owner's ruling (2026-08-27): a doctor removed from a list takes effect for the current month
+// onward and never rewrites a month that has already closed, so a coverage figure he read in July
+// still reads the same in December. That is enforced HERE, by never fetching a closed month, rather
+// than by a condition inside the prune — a guard the prune cannot be refactored past.
+function runPlanSyncWindowTests() {
+  assert.deepEqual(
+    resolvePlanSyncWindow("2026-08-27"),
+    { endDate: "2026-08-31", startDate: "2026-08-01" },
+    "the current Cairo month, first day to last",
+  );
+  assert.deepEqual(
+    resolvePlanSyncWindow("2026-08-01"),
+    { endDate: "2026-08-31", startDate: "2026-08-01" },
+    "the first of the month covers the whole month ahead, not just today",
+  );
+  assert.deepEqual(
+    resolvePlanSyncWindow("2026-12-15"),
+    { endDate: "2026-12-31", startDate: "2026-12-01" },
+    "December must not roll the year — month 12 + 1 is where a hand-rolled month walk breaks",
+  );
+  assert.deepEqual(
+    resolvePlanSyncWindow("2024-02-10"),
+    { endDate: "2024-02-29", startDate: "2024-02-01" },
+    "a leap February ends on the 29th",
+  );
+  assert.deepEqual(
+    resolvePlanSyncWindow("2026-02-10"),
+    { endDate: "2026-02-28", startDate: "2026-02-01" },
+    "and a common February on the 28th",
+  );
+  assert.deepEqual(
+    resolvePlanSyncWindow("2026-04-30"),
+    { endDate: "2026-04-30", startDate: "2026-04-01" },
+    "a 30-day month ends on the 30th",
+  );
+  for (const day of ["2026-08-27", "2026-12-15", "2024-02-10"]) {
+    const window = resolvePlanSyncWindow(day);
+    assert.equal(window.startDate.slice(0, 7), day.slice(0, 7), `${day}: the window never reaches an earlier month`);
+    assert.equal(window.endDate.slice(0, 7), day.slice(0, 7), `${day}: nor a later one`);
+    assert.doesNotThrow(
+      () => assertPlanSyncRange(window.startDate, window.endDate),
+      `${day}: the scheduled window must always be inside the range the syncer accepts`,
+    );
+  }
 }
 
 // ── Access: Super Admin only, on the owner's instruction ───────────────────────────────────────

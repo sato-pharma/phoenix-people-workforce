@@ -5,6 +5,8 @@ import {
   DAY_TICK_SECONDS,
   FAST_TICK_SECONDS,
   NIGHT_TICK_SECONDS,
+  PLAN_SYNC_FAILURE_RETRY_GAP_MS,
+  PLAN_SYNC_MIN_GAP_MS,
   RECONCILE_FAILURE_RETRY_GAP_MS,
   RECONCILE_MIN_GAP_MS,
   resolveDueScheduledWork,
@@ -173,20 +175,26 @@ export function runCrmLivePollerTests() {
   });
   assert.equal(pruned.nextVisitMemo.has(800), false);
 
-  // ── resolveDueScheduledWork: the in-process rolling sync + weekly reconcile schedule ─────────
+  // ── resolveDueScheduledWork: rolling sync + weekly reconcile + hourly doctor-list sync ───────
   const HOUR = 60 * 60 * 1000;
   const monday10amCairo = { cairoDayOfWeek: 1, minutesSinceMidnight: 10 * 60, nowMs: 100 * HOUR };
   const noHistory = {
+    lastPlanSyncFailureMs: null,
+    lastPlanSyncSuccessMs: null,
     lastReconcileFailureMs: null,
     lastReconcileSuccessMs: null,
     lastRollingFailureMs: null,
     lastRollingSuccessMs: null,
   };
+  // Spread into the assertions that are ABOUT the rolling sync, so "nothing due" keeps meaning
+  // nothing — otherwise the plan sync would legitimately claim the freed slot and the assertion
+  // would be testing the ranking rather than the gap it was written for.
+  const planJustRan = { lastPlanSyncSuccessMs: 100 * HOUR };
   // No history at all → the rolling sync fires on the first working-day tick (post-deploy catch-up).
   assert.equal(resolveDueScheduledWork({ ...monday10amCairo, ...noHistory }), "rolling-sync");
   // A recent rolling run parks it until the 3h gap has passed; the boundary itself fires.
   assert.equal(
-    resolveDueScheduledWork({ ...monday10amCairo, ...noHistory, lastRollingSuccessMs: 100 * HOUR - ROLLING_SYNC_MIN_GAP_MS + 1 }),
+    resolveDueScheduledWork({ ...monday10amCairo, ...noHistory, ...planJustRan, lastRollingSuccessMs: 100 * HOUR - ROLLING_SYNC_MIN_GAP_MS + 1 }),
     null,
     "inside the min gap → nothing due (a deploy restart must not immediately re-pull 10 days)",
   );
@@ -201,12 +209,62 @@ export function runCrmLivePollerTests() {
   );
   // A recent FAILURE backs off instead of hammering a sick vendor every 20s tick.
   assert.equal(
-    resolveDueScheduledWork({ ...monday10amCairo, ...noHistory, lastRollingFailureMs: 100 * HOUR - ROLLING_SYNC_FAILURE_RETRY_GAP_MS + 1 }),
+    resolveDueScheduledWork({ ...monday10amCairo, ...noHistory, ...planJustRan, lastRollingFailureMs: 100 * HOUR - ROLLING_SYNC_FAILURE_RETRY_GAP_MS + 1 }),
     null,
   );
   assert.equal(
     resolveDueScheduledWork({ ...monday10amCairo, ...noHistory, lastRollingFailureMs: 100 * HOUR - ROLLING_SYNC_FAILURE_RETRY_GAP_MS }),
     "rolling-sync",
+  );
+
+  // ── The hourly rep-doctor-list sync ──────────────────────────────────────────────────────────
+  // It is RANKED LAST on purpose: the other two feed payroll attendance, and a doctor list loses
+  // nothing by waiting one 20-second tick.
+  const rollingParked = { lastRollingSuccessMs: 100 * HOUR };
+  assert.equal(
+    resolveDueScheduledWork({ ...monday10amCairo, ...noHistory, ...rollingParked }),
+    "plan-sync",
+    "with the deep visit jobs parked, the doctor lists take the slot — the whole point of the job",
+  );
+  assert.equal(
+    resolveDueScheduledWork({ ...monday10amCairo, ...noHistory }),
+    "rolling-sync",
+    "both due → the visits sync wins; the doctor lists must never displace it",
+  );
+  assert.equal(
+    resolveDueScheduledWork({ ...noHistory, cairoDayOfWeek: 0, minutesSinceMidnight: 7 * 60, nowMs: 1000 * HOUR, ...rollingParked, lastRollingSuccessMs: 1000 * HOUR }),
+    "wide-reconcile",
+    "the weekly reconcile outranks the doctor lists too",
+  );
+  assert.equal(
+    resolveDueScheduledWork({ ...monday10amCairo, ...noHistory, ...rollingParked, lastPlanSyncSuccessMs: 100 * HOUR - PLAN_SYNC_MIN_GAP_MS + 1 }),
+    null,
+    "inside the hourly gap → nothing due, so a deploy restart cannot re-pull the whole month on boot",
+  );
+  assert.equal(
+    resolveDueScheduledWork({ ...monday10amCairo, ...noHistory, ...rollingParked, lastPlanSyncSuccessMs: 100 * HOUR - PLAN_SYNC_MIN_GAP_MS }),
+    "plan-sync",
+    "the hourly boundary itself fires",
+  );
+  assert.equal(
+    resolveDueScheduledWork({ ...noHistory, cairoDayOfWeek: 1, minutesSinceMidnight: 5 * 60 + 59, nowMs: 100 * HOUR, ...rollingParked }),
+    null,
+    "05:59 Cairo — nobody edits a doctor list overnight, so the list sync keeps the night quiet too",
+  );
+  assert.equal(
+    resolveDueScheduledWork({ ...noHistory, cairoDayOfWeek: 1, minutesSinceMidnight: 6 * 60, nowMs: 100 * HOUR, ...rollingParked }),
+    "plan-sync",
+    "06:00 Cairo is the first slot of the day",
+  );
+  assert.equal(
+    resolveDueScheduledWork({ ...monday10amCairo, ...noHistory, ...rollingParked, lastPlanSyncFailureMs: 100 * HOUR - PLAN_SYNC_FAILURE_RETRY_GAP_MS + 1 }),
+    null,
+    "a failed plan sync backs off half an hour rather than retrying every tick against a sick vendor",
+  );
+  assert.equal(
+    resolveDueScheduledWork({ ...monday10amCairo, ...noHistory, ...rollingParked, lastPlanSyncFailureMs: 100 * HOUR - PLAN_SYNC_FAILURE_RETRY_GAP_MS }),
+    "plan-sync",
+    "and recovers unattended once the back-off has passed",
   );
   // Sunday from 04:00 Cairo → the weekly reconcile, and it OUTRANKS a due rolling sync.
   const sunday5amCairo = { cairoDayOfWeek: 0, minutesSinceMidnight: 5 * 60, nowMs: 1000 * HOUR };
