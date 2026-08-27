@@ -428,6 +428,56 @@ something real. The 2026-08-27 pass freed 320 bytes with all counts identical (1
 append re-breaks it the same silent way. When compression is exhausted, move guidance HERE rather
 than deleting a hook. That is what §2.1 did in August, and what this section is.
 
+### 2.3 Production and approval hooks (relocated from `MEMORY.md`, 2026-08-27)
+
+**Compression ran out, exactly as §2.2 predicted it would.** Measured that afternoon, `MEMORY.md`
+sat at **24,234 bytes against the 24,400 ceiling - 166 bytes of headroom**, with **zero** trailing
+whitespace, **zero** double spaces, and **one** em-dash left (the August pass had already converted
+the other 102). The only remaining lever was all 41 bold pairs, worth 164 bytes - and 166 bytes is
+**less than one hook line**, so a trim could not have fitted even a single new pointer, let alone
+the four that were waiting. So this block moved here instead, per §2.2's own instruction. Each name
+is the memory file under
+`C:\Users\satoh\.claude\projects\F--Phoenix-Workforce-phoenix-workforce\memory\`.
+
+Two lines that sat under the same `MEMORY.md` heading did **not** come with it - the Egypt-centroid
+geocoding hook and the brick-mapping hook are data-quality facts filed under a Railway heading, not
+production-ops guidance. They stay in the index.
+
+**Railway deploys**
+
+- **A deploy applies NO migrations**, and **auto-deploy can silently SKIP a race.** A merge that
+  never shipped looks identical to one that did until you read `/api/healthz`.
+  `railway-deploy-applies-no-migrations` · `railway-auto-deploy-can-silently-skip-a-race`
+- **`railway variables --stdin` stores a BOM**, which then travels inside the value.
+  `railway-stdin-bom-trap`
+- **`railway ssh` JOINS argv and lands as ROOT** - the command you think you are quoting is not the
+  command that runs. `railway-ssh-joins-argv-and-lands-as-root`
+
+**Cron and secrets**
+
+- **A PARTIAL `CRON_SECRET` rotation leaves TWO fingerprints**, and Healthchecks reading `up` is
+  **not** proof of authentication - the grace window hides a 401. The 2026-08-23 401s are RESOLVED:
+  **rotate NOTHING.** Always print `len` (the fingerprint is `Bearer …`, 71).
+  `a-partial-cron-secret-rotation-leaves-two-fingerprints`
+- **`CRON_SECRET` lives in TWO stores**, so a half-rotation 401s; and **a nightly-failing cron
+  alerts NOBODY** or is ignored. The 4 OFF iReports360 jobs are DELIBERATE.
+  `github-actions-cron-secret-went-stale-after-a-railway-rotation` ·
+  `a-cron-that-fails-nightly-can-do-so-forever-unwatched`
+- **The cron-job.org REST API allows 100 requests per DAY** - 429 on EVERY endpoint with no
+  `Retry-After`, and a bulk edit costs ~34 and CANNOT be rolled back.
+  `cron-job-org-rest-api-is-100-requests-per-day`
+
+**Production data**
+
+- **NEVER rotate the Supabase DB password with `ALTER ROLE`** - Supavisor holds its own copy, so
+  use the dashboard only. `28P01` vs `XX000` tells a stale password from a wrong host; nothing off
+  the laptop uses it. `never-rotate-the-supabase-db-password-with-alter-role`
+- **`expense_claims` is the ONE live RLS read path in production.** Put a precondition in every
+  production `WHERE` when another session shares the queue, and remember **"Log out everywhere" is
+  THREE writes.** `expense-claims-rls-read-path-is-live-in-prod` ·
+  `guard-every-prod-write-when-another-session-shares-the-queue` ·
+  `force-logout-everywhere-needs-three-writes`
+
 ## 3. Stable Environment Facts
 
 History and verification detail: [docs/agents-incident-history.md](docs/agents-incident-history.md).
@@ -435,7 +485,8 @@ History and verification detail: [docs/agents-incident-history.md](docs/agents-i
 - Production application: `https://phoenix-hr.satopharma.com` — **served by Railway since 2026-08-01, no longer Cloud Run.** Railway service `phoenix-people-workforce`, project `Phoenix-HR-Workforce`, environment **`production`**, region **`europe-west4-drams3a` (Amsterdam, EU West)**, 1 replica. **The region is deliberately colocated with the Frankfurt Supabase project (`eu-central-1`) and near the Cairo users — if production is ever re-platformed, it must stay in Europe** (measured: ~204ms from `sfo` vs ~75ms from `europe-west4`). Also reachable at `https://phoenix-people-workforce-production.up.railway.app`; Cloudflare holds `CNAME phoenix-hr -> xok6ir4p.up.railway.app`, unproxied.
 - **The `production` Railway environment's service now tracks git branch `main` directly** (repointed 2026-08-13 via `railway service source connect --environment production --branch main`). Before that it was source-configured to track a git branch literally named `staging`, which had gone stale — so five already-merged, already-CI-green PRs (#2093, #2095, #2094, #2098, #2097) sat unshipped in production for hours while `main` moved on, with no error or signal anywhere. **Do not assume "merge to `main` ships to production" without first confirming the Railway `production` environment's service source branch** (`railway status --environment production --json`, check `.environments.edges[0].node.serviceInstances.edges[].node.latestDeployment.meta.branch`) — the source can drift from `main` again with zero warning, since GitHub shows the merge as normal either way.
 - **GCP is DEAD, not standby.** Billing closed 2026-08-01; every API in project `phoenix-workforce-498619` returns `BILLING_DISABLED`. Do not "verify production" against Cloud Run. `deploy-cloud-run.yml` / `deploy-cloud-run-staging.yml` are trigger-disabled but intact.
-- **The production scheduler is the third-party `cron-job.org`.** Automation is **running, not stalled**: daily notifications, the outbox drain, and iReports sync/reconcile all fire from that account. The 8 GCP Cloud Scheduler jobs still fire but **401 on every route** — a red herring, not proof anything is down. **Do not tell the owner notifications/outbox/iReports are stalled without checking `cron-job.org` first.** It caps request timeout at 30s, so a long route logs a false `Failed (timeout)` while the server still finishes the work. `src/lib/cron-control/*` is a dashboard over the dead GCP scheduler and remains inert.
+- **The production scheduler is the third-party `cron-job.org`.** Automation is **running, not stalled**: daily notifications and iReports sync/reconcile fire from that account. The 8 GCP Cloud Scheduler jobs still fire but **401 on every route** — a red herring, not proof anything is down. **Do not tell the owner notifications/iReports are stalled without checking `cron-job.org` first.** It caps request timeout at 30s, so a long route logs a false `Failed (timeout)` while the server still finishes the work. `src/lib/cron-control/*` is a dashboard over the dead GCP scheduler and remains inert.
+- **The one exception is the OUTBOX DRAIN — it is NOT draining, and the line above claimed it was until 2026-08-27.** `/api/notifications/process` has picked up nothing since **2026-08-14**; mail that arrives now sends **inline**, ~1–2s after insert, from the request that created the row. `notification_outbox` is therefore effectively a **write-only audit mirror**, and a fresh `sent` row is evidence of the inline path, **not** of a working drain. The proof it is dead: **49 rows sat armed for 13 days** (2026-08-14 → 2026-08-27) and were never sent — one authenticated drain cycle in that window would have emptied them. **Queueing a row and waiting delivers nothing.** Two consequences follow: rows accumulate **armed**, and reviving the drain fires the whole backlog at once — exactly the bulk retro-blast §4's never-fire-bulk-emails rule forbids. **Check for armed rows and clear them with the owner BEFORE ever restarting it** (armed = `status in ('pending','failed')` AND `next_attempt_at <= now()` AND `attempts < max_attempts` — `loadDueNotificationOutboxRows`, `src/lib/notifications/email.ts`). Never judge the drain from "no failures lately": an empty-looking queue here means nothing is *draining*, not that nothing is *stuck*. `outbox-drain-is-dead-and-can-hold-armed-rows`
 - **There IS a live Railway `staging` environment — verified 2026-08-13, and confirmed to keep.** Same project, service `phoenix-people-workforce`, reachable at `https://phoenix-people-workforce-staging.up.railway.app` (returns 200, `/api/healthz` responds). Its service source tracks git branch `main` (not the git branch named `staging`) — so confusingly, this Railway *environment* named "staging" was, until the production fix above, actually fresher than the Railway *environment* named "production". `railway variables --environment staging` confirms `NEXT_PUBLIC_SUPABASE_URL` points at the staging Supabase project (`cifwmndunmlxjhyjugxa`), not production — safe to use as a real verification target. Owner decision 2026-08-13: keep it.
 - Vercel: fully legacy/decommissioned (old project `phoenix-workforce`) — never deploy to or verify against it.
 - **Supabase project refs — the complete list `list_projects` returns, verified live 2026-08-23.** Two of these four belong to this app; the other two do not, and are listed precisely so an unfamiliar ref is identifiable instead of alarming.
