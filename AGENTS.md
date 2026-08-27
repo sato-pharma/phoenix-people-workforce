@@ -518,21 +518,26 @@ pointer: the index carries the hook, this block carries the detail.)
   that default "keeps preview/dev from emailing real people" — but on staging it evaluated
   **false**, inverted exactly where it was needed. Staging was safe only because
   `PHOENIX_EMAIL_FORCE_TESTING=true` is set explicitly: **one variable, nothing behind it.**
-- **⚠ NEVER set `APP_ENV` to a non-production value without first confirming `CRON_SECRET` is
-  present on that environment.** **18** cron/notification routes still carry
-  `if (!secret) return !isProductionRuntime();` — including `/api/notifications/process`,
-  `/api/notifications/daily`, `/api/cron/background-jobs`, `/api/cron/recruitment-email-intake` and
-  `/api/sales/master-map/sheet`. Labelling an environment non-production **flips that branch from
-  closed to open**, so with `CRON_SECRET` absent one variable change exposes all 18 at once. Only
-  **4** routes use the hardened form `if (!secret) return process.env.NODE_ENV === "development";`
-  — the three `ireports360-visits-*` plus `reconciliation-check`, rewritten after precisely this
-  reasoning ("staging … a 1:1 clone of production … callable unauthenticated by anyone, driving
-  vendor syncs and mirror writes against production-grade data"). **That fix reached 4 of 22.**
-  The 2026-08-27 change was safe only because staging's `CRON_SECRET` is set — verified by probing
-  four of the routes for **401 both before and after** the redeploy, not by reading the code.
-  **Treat `!isProductionRuntime()` as an auth fallback with suspicion generally:** it reads as
-  "only in dev" and means "anywhere not labelled production", which includes any environment where
-  someone simply forgot the label.
+- **FIXED 2026-08-27 (PR #2479) — the `APP_ENV`/cron-secret hole below is closed, all 22 of 22.**
+  Until this PR, **18** cron/notification routes carried `if (!secret) return
+  !isProductionRuntime();` — including `/api/notifications/process`, `/api/notifications/daily`,
+  `/api/cron/background-jobs`, `/api/cron/recruitment-email-intake` and
+  `/api/sales/master-map/sheet` — while only **4** (the three `ireports360-visits-*` plus
+  `reconciliation-check`) used the hardened form `if (!secret) return process.env.NODE_ENV ===
+  "development";`. Labelling an environment non-production used to flip that branch from closed to
+  open, so with `CRON_SECRET` absent one variable change exposed all 18 at once — proven live on
+  Railway staging: `MASTER_MAP_SYNC_TOKEN` was unset there, and `/api/sales/master-map/sheet`
+  served ~49.7k customer records unauthenticated until this PR shipped. PR #2479 moved the
+  remaining 18 onto the hardened form, so **`APP_ENV` no longer affects this fallback at all** —
+  `process.env.NODE_ENV` is inlined at `next build`, so every deployed build (Railway has no
+  `NODE_ENV` set on either environment) resolves the bypass closed regardless of `APP_ENV`. The
+  `⚠ NEVER set APP_ENV without confirming CRON_SECRET` warning that stood here is retired for this
+  specific risk — **`APP_ENV` still matters for the separate `isForceTestingDelivery()` email
+  fail-safe two bullets up, which this PR did not touch.**
+  **Treat `!isProductionRuntime()` as an auth fallback with suspicion generally, still:** it reads
+  as "only in dev" and means "anywhere not labelled production", which includes any environment
+  where someone simply forgot the label — the pattern regenerates itself if a future route copies
+  it from an old comment instead of the current hardened routes.
 - **The `railway` CLI is linked to `production` here** (`railway status` → `Environment: production`),
   so every variable command needs an explicit `-e staging`. Omitting it would set `APP_ENV=staging`
   on PRODUCTION, flipping `isProductionRuntime()` false there and redirecting **real employee email**

@@ -81,23 +81,54 @@ export function runContractRenewalHardeningTests() {
   assert.match(dailyRoute, /runBirthdayNotifications/);
   assert.match(dailyRoute, /runVacationSlaDaily/);
 
-  // Finding #41: an unset CRON_SECRET must fail closed on every Vercel environment
-  // (production, preview, `vercel dev`), not just when NODE_ENV happens to say
-  // "development" — Vercel always sets NODE_ENV=production, including on Preview, so
-  // that check alone is not a safe signal. Only a real local machine (no VERCEL env
-  // var at all) may still bypass an unset secret for `pnpm run dev` convenience.
+  // Finding #41, hardened further after the 2026-08-27 APP_ENV audit: an unset CRON_SECRET
+  // must fail closed everywhere except a real local dev machine. `!isProductionRuntime()`
+  // was the FORMER guard here — it reads as "only in dev" but actually means "anywhere not
+  // labelled production", which includes staging, a 1:1 clone of production data, the
+  // moment its APP_ENV/VERCEL_ENV/NODE_ENV label is anything other than "production". The
+  // hardened form checks NODE_ENV === "development" directly instead, matching the pattern
+  // already used by the ireports360-visits-* routes and reconciliation-check.
+  //
+  // All 18 routes #2479 hardened, not just the 4 this file already reads for other reasons —
+  // a guard over 4 of 18 lets the other 14 (including the master-map sheet, the one route that
+  // was actually exploitable on staging) regress silently on a green suite.
   const birthdaysRoute = readFileSync("app/api/notifications/birthdays/route.ts", "utf8");
-  const cronAuthRoutes = { birthdaysRoute, dailyRoute, processRoute, reminderRoute };
-  for (const [name, source] of Object.entries(cronAuthRoutes)) {
+  const cronAuthRouteFiles = [
+    "app/api/cron/background-jobs/route.ts",
+    "app/api/cron/brevo-keepalive/route.ts",
+    "app/api/cron/db-health-snapshot/route.ts",
+    "app/api/cron/direct-orders-expire-held/route.ts",
+    "app/api/cron/direct-orders-probation/route.ts",
+    "app/api/cron/direct-orders-rotate-sheet-token/route.ts",
+    "app/api/cron/inbound-intake/route.ts",
+    "app/api/cron/marketing-assignment-backfill/route.ts",
+    "app/api/cron/marketing-requests-rotate-sheet-token/route.ts",
+    "app/api/cron/recruitment-cv-digest/route.ts",
+    "app/api/cron/recruitment-email-intake/route.ts",
+    "app/api/cron/run-synthetic-journeys/route.ts",
+    "app/api/notifications/birthdays/route.ts",
+    "app/api/notifications/contract-renewals/route.ts",
+    "app/api/notifications/daily/route.ts",
+    "app/api/notifications/holiday-confirmation/route.ts",
+    "app/api/notifications/process/route.ts",
+    "app/api/sales/master-map/sheet/route.ts",
+  ];
+  for (const file of cronAuthRouteFiles) {
+    const source = readFileSync(file, "utf8");
     assert.match(
       source,
+      /if \(!secret\) return process\.env\.NODE_ENV === "development";/,
+      `${file} cron auth must fail closed everywhere except a real local dev machine`,
+    );
+    assert.doesNotMatch(
+      source,
       /if \(!secret\) return !isProductionRuntime\(\);/,
-      `${name} cron auth must fail closed in production runtime (platform-neutral)`,
+      `${file} cron auth must not fall back to the broader, staging-exposing !isProductionRuntime() guard`,
     );
     assert.doesNotMatch(
       source,
       /process\.env\.VERCEL\b/,
-      `${name} cron auth must not depend on Vercel-specific env vars`,
+      `${file} cron auth must not depend on Vercel-specific env vars`,
     );
   }
 

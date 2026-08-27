@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 
-import { isProductionRuntime } from "@/config/system-settings";
 import { logCronUnauthorized, logError } from "@/lib/observability/log";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 import { bearerSecretMatches } from "@/lib/security/constant-time";
@@ -33,8 +32,10 @@ export const maxDuration = 300;
  */
 function isAuthorized(request: Request): boolean {
   const secret = process.env.MASTER_MAP_SYNC_TOKEN;
-  // Unset in production means misconfigured, not open. Locally it stays usable without a token.
-  if (!secret) return !isProductionRuntime();
+  // Unset in production means misconfigured, not open. An unset MASTER_MAP_SYNC_TOKEN may ONLY
+  // be bypassed on a real developer machine — anything less would leave the customer master
+  // disclosable wherever the token is unset, including staging.
+  if (!secret) return process.env.NODE_ENV === "development";
   return bearerSecretMatches(request.headers.get("authorization"), secret);
 }
 

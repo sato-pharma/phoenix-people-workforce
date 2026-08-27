@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 
-import { isProductionRuntime } from "@/config/system-settings";
 import { backfillMissingMarketingAssignmentEmails } from "@/lib/marketing-requests/service";
 import { logCronUnauthorized, logError } from "@/lib/observability/log";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
@@ -12,7 +11,10 @@ export const maxDuration = 120;
 
 function isAuthorized(request: Request) {
   const secret = process.env.CRON_SECRET;
-  if (!secret) return !isProductionRuntime();
+  // An unset CRON_SECRET may ONLY be bypassed on a real developer machine. Anything less
+  // would leave this route callable unauthenticated wherever CRON_SECRET is unset —
+  // including staging, which is a 1:1 clone of production data.
+  if (!secret) return process.env.NODE_ENV === "development";
   return bearerSecretMatches(request.headers.get("authorization"), secret);
 }
 
