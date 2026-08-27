@@ -141,21 +141,44 @@ const WEEKLY_EXTRA_ALIASES: Array<[string, string[]]> = [
  * difference is money: "ك.عملاء امبابة" carries EGP 2,235,364 and Imbaba IS an area (GZ3) — reading
  * it as "somewhere in Giza" would spread five sixths of it onto reps the name never mentioned.
  *
- * Only districts that unambiguously ARE a Phoenix area appear here. A town that is merely inside a
- * governorate stays out: Mansoura and Kafr El Zayat are not areas (Dakahlia and Gharbia are split
- * by number, not by town), so those names correctly resolve to the whole governorate.
+ * A name earns a place here one of two ways, and never on the strength of a map of Egypt.
+ *
+ *   1. The district unambiguously IS a Phoenix area. A town that is merely inside a governorate
+ *      does not qualify: Mansoura and Kafr El Zayat are not areas (Dakahlia and Gharbia are split
+ *      by number, not by town), so those names correctly resolve to the whole governorate.
+ *   2. THE BRICK TABLE puts the place in exactly one area. `source_of_sales_bricks` is the
+ *      company's own authority for which area a place belongs to — it outranks any geography we
+ *      could reason out — so when it files a town under a single area, that is a fact about
+ *      Phoenix, not a guess about Egypt. Every entry below marked `brick:` was read out of it.
+ *
+ * The brick path already resolves a branch whose name IS a brick verbatim (see brickScope). These
+ * exist because a distributor never writes the brick verbatim: the depot is "Kalioub Branch", the
+ * brick is "قليوب". Without the alias the name states no place and the money spreads across the
+ * whole region — Aswan's depot was landing on fourteen areas.
  */
 const AREA_SYNONYMS: Array<[string, string[]]> = [
   ["GZ2", ["الدقي", "dokki", "المهندسين", "mohandseen", "بولاق", "bolak"]],
   ["GZ3", ["امبابه", "imbaba"]],
-  ["GZ4", ["الهرم", "haram", "فيصل", "فبصل", "faisal"]], // فبصل is a typo for فيصل that is live in the data
+  // فبصل is a typo for فيصل that is live in the data. brick: ترعة المريوطية -> GZ4.
+  ["GZ4", ["الهرم", "haram", "فيصل", "فبصل", "faisal", "maryoutia"]],
   ["GZ5", ["حلوان", "helwan", "المعادي", "maadi"]],
   ["GZ7", ["اكتوبر", "october", "زايد", "zayed"]],
   ["CA1", ["هليوبليس", "heliopolis", "مصر الجديده"]],
   ["CA2", ["مدينه نصر", "nasr city", "م نصر"]],
+  ["CA3", ["ain shams"]], // brick: عين شمس الشرقيه AND عين شمس الغربيه, both CA3 — no ambiguity
   ["CA5", ["وسط البلد", "downtown", "down town"]],
+  ["D11", ["kalioub"]], // brick: قليوب -> D11
+  // brick: شبين الكوم -> D12. The WHOLE phrase, never a bare "shbein": شبين القناطر is a DIFFERENT
+  // town and the brick table files it under D11 Qalubeya. The Arabic "شبين" alias two tables down
+  // already reads Menoufia for both, which is wrong for القناطر — do not copy that shortcut here.
+  ["D12", ["shbein el kom"]],
   ["D14", ["طنطا", "tanta"]],
   ["D15", ["المحله", "mahalla"]],
+  ["D25", ["fakous"]], // brick: فاقوس -> D25 (Sharkia 2), not the Sharkia governorate at large
+  // brick: السويس -> OT2. English only, deliberately: the Arabic bare سويس also sits inside
+  // "جسر السويس", which is a street in CAIRO and files under CA3.
+  ["OT2", ["suiz"]],
+  ["UE9", ["bani swif"]], // brick: مدينة بنى سويف -> UE9. "bani suwa" below is a different truncation
 ];
 
 /**
