@@ -140,7 +140,7 @@ type SendEmailResult =
   | { id?: string; skipped?: false }
   | { reason: string; skipped: true };
 
-type NotificationOutboxRow = {
+export type NotificationOutboxRow = {
   attempts: number;
   created_at: string;
   dedupe_key: string;
@@ -1992,7 +1992,26 @@ async function markNotificationOutboxSkipped(row: NotificationOutboxRow, reason:
   }
 }
 
-async function loadDueNotificationOutboxRows(limit: number) {
+// A row that has used up its attempts never leaves the ('pending','failed') window - nothing marks
+// it terminal - and the eligibility test cannot run in SQL, because PostgREST has no
+// column-to-column comparison for `attempts < max_attempts`. So a plain `.limit(limit)` caps the
+// batch BEFORE the dead rows are discarded rather than after, and one full batch of exhausted rows
+// starves every retryable row behind them, permanently.
+//
+// That is not hypothetical. On 2026-08-27 production held exactly 50 exhausted rows against this
+// job's limit of 50 (`/api/notifications/process?limit=50`): every run fetched those 50, filtered
+// all 50 away, and returned nothing. It had done so every 5 minutes since 2026-08-14 - the day the
+// exhausted count reached 50 - while 49 genuinely retryable rows waited behind them. The cron was
+// green, HTTP 200, `attempted: 0`, so nothing ever alerted and retries were silently dead for 13
+// days.
+//
+// Page past the dead rows instead of letting one batch of them cap the scan.
+const outboxScanPageSize = 100;
+const outboxMaxScanPages = 10;
+
+type DueOutboxPageFetcher = (from: number, to: number) => Promise<NotificationOutboxRow[]>;
+
+async function fetchDueNotificationOutboxPage(from: number, to: number): Promise<NotificationOutboxRow[]> {
   const supabase = getSupabaseAdmin();
   const now = new Date().toISOString();
   const { data, error } = await supabase
@@ -2001,10 +2020,28 @@ async function loadDueNotificationOutboxRows(limit: number) {
     .in("status", ["pending", "failed"])
     .or(`next_attempt_at.is.null,next_attempt_at.lte.${now}`)
     .order("created_at", { ascending: true })
-    .limit(limit);
+    .range(from, to);
 
   if (error) throw error;
-  return ((data ?? []) as NotificationOutboxRow[]).filter((row) => row.attempts < row.max_attempts);
+  return (data ?? []) as NotificationOutboxRow[];
+}
+
+// `fetchPage` is injectable so the starvation case can be tested without a database.
+export async function loadDueNotificationOutboxRows(
+  limit: number,
+  fetchPage: DueOutboxPageFetcher = fetchDueNotificationOutboxPage,
+) {
+  const eligible: NotificationOutboxRow[] = [];
+
+  for (let page = 0; page < outboxMaxScanPages && eligible.length < limit; page += 1) {
+    const from = page * outboxScanPageSize;
+    const rows = await fetchPage(from, from + outboxScanPageSize - 1);
+    if (rows.length === 0) break;
+    eligible.push(...rows.filter((row) => row.attempts < row.max_attempts));
+    if (rows.length < outboxScanPageSize) break;
+  }
+
+  return eligible.slice(0, limit);
 }
 
 const staleProcessingThresholdMinutes = 10;

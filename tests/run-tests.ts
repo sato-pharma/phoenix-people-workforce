@@ -981,6 +981,7 @@ import { runCvLibraryTests } from "./cv-library.test.ts";
 import { runHiringEmployeeScopeTests } from "./hiring-employee-scope.test.ts";
 import { runMarketingAdminOverrideNoteTests } from "./marketing-admin-override-note.test.ts";
 import { runRecruitmentPoolFilterTests } from "./recruitment-pool-filters.test.ts";
+import { runNotificationOutboxBatchWindowTests } from "./notification-outbox-batch-window.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -2819,6 +2820,12 @@ await runTest(
     + "the NULL-source one, the Received filter widens from now outwards, and the profile header is "
     + "not sticky)",
   runRecruitmentPoolFilterTests,
+);
+
+await runTest(
+  "notification outbox batch window (a retryable row behind a full batch of permanently exhausted "
+    + "rows is still drained, and the scan stays bounded)",
+  runNotificationOutboxBatchWindowTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
