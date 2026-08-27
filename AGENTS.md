@@ -128,10 +128,24 @@ file holding the full account, under
 - **`git push` to origin hangs — kill it at ~60s and retry immediately.** A push or fetch that dies with `fatal: Out of memory, malloc failed (tried to allocate 524288000 bytes)` was never a real memory fault or a network problem: `http.postBuffer` was set to 500MB in `.git/config` and git allocates the whole buffer up front, so it died before sending a byte whenever free RAM dipped under it. **Fixed 2026-08-23 — that key is now `8388608` (8MB), verified with an unoverridden fetch, ls-remote and push.** Do NOT restore 500MB; if a genuine large-push failure ever appears, raise to 50MB at most. `git-push-to-origin-hangs-retry-immediately` · `git-push-oom-is-a-500mb-postbuffer-in-repo-config`
 - **A merge to `main` mid-session silently orphans your next push.**
   `a-merge-mid-session-orphans-your-next-push-silently` · `two-sessions-fixed-one-bug-main-was-never-ci-validated`
-- **Deleted branch tips and stashes live under `refs/deleted-*` and are the ONLY copy — never pushed.**
-  `git for-each-ref 'refs/deleted-*'` reads **0** because `*` never crosses `/`; use the full prefix
-  `'refs/deleted-*/**'`. Verified 2026-08-23: **44** refs (34 branch tips, 10 stashes). Count it live
-  before believing any number. `deleted-branch-tips-live-in-refs-deleted-branches`
+- **`refs/deleted-*` is the ONLY copy of an archived branch tip or stash — never pushed — but it is
+  NOT automatic, and this entry implied it was until 2026-08-27.** The glob trap is real and
+  unchanged: `git for-each-ref 'refs/deleted-*'` reads **0** because `*` never crosses `/`, so use the
+  full prefix `'refs/deleted-*/**'`, and count it live before believing any number (**44** refs on
+  2026-08-23, **96** — 86 branches, 10 stashes — on 2026-08-27). What is wrong is the implied safety
+  net. **Nothing in this repository writes that namespace**: not `scripts/`, not `.claude/hooks/`
+  (`bash-guard`, `session-lock`, `worktree-exit-guard` only), and `.git/hooks` holds nothing live at
+  all — just `pre-push.bak-20260730`. A plain **`git branch -D` archives NOTHING.** Measured
+  2026-08-27: deleting 6 branches moved the count **96 → 96**, with the newest archived entry still
+  hours older than the deletions — the second such measurement, after **44 → 44** on 2026-08-23.
+  **So never delete a branch expecting this to catch it.** After a `-D` the tip survives only as an
+  **unreferenced object** — recoverable by SHA, so keep the SHA the delete prints, and only until
+  `git gc` prunes unreachable objects (default ~2 weeks). To archive a tip deliberately, write the
+  ref yourself *before* deleting: `git update-ref refs/deleted-branches/<name> <sha>`. **And
+  `refs/deleted-*` is not the only archive — `refs/backups/*` lives ON ORIGIN**, written by
+  `scripts/prune-stale-branches.ps1`, pushed, and therefore the only copy that survives losing this
+  laptop: `git ls-remote origin 'refs/backups/*'`. Check both before calling a tip lost.
+  `deleted-branch-tips-live-in-refs-deleted-branches`
 - **An empty `git log <branch> --not --remotes=origin` is NOT proof a branch is safe to delete.** A
   squash merge deletes the remote branch, but `git fetch` never prunes — so `refs/remotes/origin/<branch>`
   survives at the branch's OWN tip and the check compares the branch against itself, returning empty
