@@ -22,6 +22,7 @@ import "@/lib/recruitment/pdf-dommatrix-polyfill";
 
 import { PDFParse } from "pdf-parse";
 import * as mammoth from "mammoth";
+import WordExtractor from "word-extractor";
 
 import type { AccessContext } from "@/lib/auth/permissions";
 import {
@@ -48,7 +49,7 @@ import {
   type CvFieldType,
   type CvPositionSchema,
 } from "@/lib/recruitment/cv-field-schemas";
-import { detectCvFileKind } from "@/lib/recruitment/cv-file-kind";
+import { detectCvFileKind, isLegacyDocBytes } from "@/lib/recruitment/cv-file-kind";
 import { isThinCvRead, mergeCvExtractions, scoreCvExtraction } from "@/lib/recruitment/cv-extraction-quality";
 import {
   aiFieldsWorthAsking,
@@ -264,7 +265,8 @@ const CV_EXTRACTION_CLASSIFICATION_PREAMBLE =
   "fields as described below.\n\n";
 
 // ---------------------------------------------------------------------------
-// Raw text extraction (local — PDF via pdf-parse, DOCX via mammoth).
+// Raw text extraction (local — PDF via pdf-parse, modern .docx via mammoth, legacy .doc via
+// word-extractor; which of the two Word readers runs is decided by the bytes, not the label).
 // ---------------------------------------------------------------------------
 
 export async function extractRawTextFromFile(bytes: Buffer, mimeType: string, fileName: string): Promise<string> {
@@ -288,6 +290,15 @@ export async function extractRawTextFromFile(bytes: Buffer, mimeType: string, fi
     }
   }
   if (kind === "docx") {
+    // "docx" here means "a Word file", not "the modern format" — detectCvFileKind decides from a
+    // MIME type and a file name, and this corpus proves that label wrong in both directions (see
+    // isLegacyDocBytes). Trust the bytes: mammoth reads only the OOXML ZIP, so a Word 97-2003
+    // binary handed to it dies with "Could not find the body element: are you sure this is a docx
+    // file?" — which is what left four candidates permanently unreadable until 2026-08-27.
+    if (isLegacyDocBytes(bytes)) {
+      const document = await new WordExtractor().extract(bytes);
+      return document.getBody() ?? "";
+    }
     const result = await mammoth.extractRawText({ buffer: bytes });
     return result.value ?? "";
   }

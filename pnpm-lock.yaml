@@ -164,6 +164,9 @@ importers:
       tw-animate-css:
         specifier: ^1.4.0
         version: 1.4.0
+      word-extractor:
+        specifier: ^1.0.4
+        version: 1.0.4
       zod:
         specifier: ^4.4.3
         version: 4.4.3
@@ -5297,6 +5300,9 @@ packages:
     engines: {node: ^16.13.0 || >=18.0.0}
     hasBin: true
 
+  word-extractor@1.0.4:
+    resolution: {integrity: sha512-PyAGZQ2gjnVA5kcZAOAxoYciCMaAvu0dbVlw/zxHphhy+3be8cDeYKHJPO8iedIM3Sx0arA/ugKTJyXhZNgo6g==}
+
   word-wrap@1.2.5:
     resolution: {integrity: sha512-BN22B5eaMMI9UMtjrGd5g5eCYPpCPDUy0FJXbYsaT5zYxjFOckS53SQDE3pWkVoWpHXVb3BrYcEN4Twa55B5cA==}
     engines: {node: '>=0.10.0'}
@@ -8577,7 +8583,6 @@ snapshots:
   fd-slicer@1.1.0:
     dependencies:
       pend: 1.2.0
-    optional: true
 
   fdir@6.5.0(picomatch@4.0.5):
     optionalDependencies:
@@ -9831,8 +9836,7 @@ snapshots:
 
   peberminta@0.10.0: {}
 
-  pend@1.2.0:
-    optional: true
+  pend@1.2.0: {}
 
   picocolors@1.1.1: {}
 
@@ -10987,6 +10991,11 @@ snapshots:
     dependencies:
       isexe: 3.1.5
 
+  word-extractor@1.0.4:
+    dependencies:
+      saxes: 5.0.1
+      yauzl: 2.10.0
+
   word-wrap@1.2.5: {}
 
   wrap-ansi@7.0.0:
@@ -11049,7 +11058,6 @@ snapshots:
     dependencies:
       buffer-crc32: 0.2.13
       fd-slicer: 1.1.0
-    optional: true
 
   yocto-queue@0.1.0: {}
 
