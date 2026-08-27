@@ -17,7 +17,11 @@
 //   1. A row that already carries an area. The owner mapped that branch by hand, and a hand mapping
 //      outranks anything read out of a name. It is also how he OVERRIDES a reading he disagrees
 //      with: set the Area on the mapping sheet and the split stops touching that branch.
-//   2. A warehouse, a private hospital or a tender — see NON_TERRITORY_CLASSES. EGP 1,786,103.
+//   2. A warehouse or a tender — see NON_TERRITORY_CLASSES. EGP 442,297 across 24 branches,
+//      measured on production 2026-08-27 over the same three tracked lines. A PRIVATE HOSPITAL
+//      was a third such class until that date, when the owner ruled that its sales credit the
+//      area it sits in. The EGP 1,091,946 it held now splits like any other branch — pinned in
+//      tests/weekly-branch-attribution.test.ts block 4b, which proves it arrives whole.
 //   3. A name that states no place AND carries no usable region: "Direct – National" is booked to
 //      NATIONAL and "Unallocated POS" to nothing, and neither resolves to a single area. EGP
 //      434,461 stays exactly where it is today.

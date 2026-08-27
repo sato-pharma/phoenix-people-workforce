@@ -217,8 +217,8 @@ const AREA_SYNONYMS: Array<[string, string[]]> = [
  */
 const REGION_SYNONYMS: Array<[string, string[]]> = [
   ["D1", ["delta 1", "delta1"]],
-  ["D2", ["delta 2", "delta2"]],
-  ["UE", ["upper egypt", "صعيد"]],
+  ["D2", ["delta 2", "delta2", "del2"]],   // "del2" is the private-hospital depot's spelling
+  ["UE", ["upper egypt", "صعيد", "upper"]], // bare "upper" is that depot too; "upper egypt" is longer and still wins
   ["AB", ["alex-bhr", "alex bhr"]],
   ["OT", ["others"]],
 ];

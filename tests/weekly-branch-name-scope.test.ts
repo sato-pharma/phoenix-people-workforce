@@ -6,6 +6,7 @@ import {
   type WeeklyBranchScope,
 } from "../src/lib/sales/weekly/branch-area-split.ts";
 import {
+  NON_TERRITORY_CLASSES,
   classifyWeeklyBranch,
   readWeeklyBranchName,
 } from "../src/lib/sales/weekly/branch-name-scope.ts";
@@ -165,15 +166,23 @@ export async function runWeeklyBranchNameScopeTests() {
     }
   }
 
-  // 5) The three classes that are not territories keep region-level behaviour and are labelled.
+  // 5) The TWO classes that are not territories keep region-level behaviour and are labelled.
+  //    Hospitals were a third until the owner ruled on 2026-08-27 - see block 14. They still
+  //    CLASSIFY as "hospital" (that is what keeps "Assiut 2 Warehouse" honest), they just split.
   {
     for (const [name, expected] of [
       ["Almaza Storage", "warehouse"], [WAREHOUSE_AR, "warehouse"], ["Assiut 2 Warehouse", "warehouse"],
-      [TENDER, "tender"], ["Private Hospi Cairo", "hospital"],
+      [TENDER, "tender"],
     ] as const) {
       assert.equal(classifyWeeklyBranch(name), expected, `${name} should classify as ${expected}`);
       assert.equal(readWeeklyBranchName(index, name, "CA").scope, null, `${name} must not split to reps`);
     }
+    assert.equal(classifyWeeklyBranch("Private Hospi Cairo"), "hospital", "still labelled a hospital");
+    assert.notEqual(
+      readWeeklyBranchName(index, "Private Hospi Cairo", "CA").scope,
+      null,
+      "but a hospital DOES split now - owner ruling 2026-08-27",
+    );
     assert.equal(classifyWeeklyBranch(SOHAG), "territory");
   }
 
@@ -333,5 +342,59 @@ export async function runWeeklyBranchNameScopeTests() {
     // GUARD — a depot naming Matrouh ALONE is a different question, and one he has not been asked.
     // It must not inherit Alex West on the strength of this entry.
     assert.notDeepEqual(split("ك.عملاء مطروح", "AB"), ["AB3:100.00"], "bare Matrouh is not Alex West");
+  }
+
+  // 14) HEADLINE - a private hospital's sales credit the area it sits in. OWNER RULING 2026-08-27.
+  //
+  //     Until today `hospital` sat in NON_TERRITORY_CLASSES beside warehouses and tenders, and the
+  //     comment over that set said plainly that whether a private hospital is the local rep's
+  //     credit is a COMMERCIAL decision rather than a technical one - while EGP 1,091,946 credited
+  //     nobody. He was asked and answered YES. The class still CLASSIFIES, which is what stops a
+  //     name like "Assiut 2 Warehouse" being read as a governorate; it no longer blocks the split.
+  {
+    assert.equal(classifyWeeklyBranch("Private Hospi Giza"), "hospital", "still classified a hospital");
+    assert.ok(!NON_TERRITORY_CLASSES.has("hospital"), "a hospital is no longer blocked from splitting");
+
+    const areas = (name: string, region: string) => split(name, region).map((e) => e.split(":")[0]).sort();
+
+    assert.deepEqual(areas("Private Hospi Alex", "AB"), ["AB1", "AB2", "AB3"], "Alexandria's three areas, never Beheira");
+    assert.deepEqual(
+      areas("Private Hospi Giza", "GZ"),
+      ["GZ1", "GZ2", "GZ3", "GZ4", "GZ5", "GZ7"],
+      "Giza governorate - GZ6 is Fayoum, which is a different governorate and must not be paid",
+    );
+    assert.deepEqual(
+      areas("مركز تموين مستشفيات الخاصة اسيوط", "UE"),
+      ["UE3", "UE4"],
+      "the Assiut supply centre names ONE governorate, so it lands on two areas, not all of Upper Egypt",
+    );
+    assert.deepEqual(areas("Private Hospi Alex_ك", "AB"), ["AB1", "AB2", "AB3"], "the mirror is the same round");
+
+    // "Del2" and "Upper" are that depot's own spellings of a REGION, and appear in no other branch
+    // name of the 912 live rows. Without them the money still landed via the region fallback, but
+    // the sheet called the branch unreadable - a worse answer than the same one explained.
+    assert.ok(areas("Private Hospi Del2", "D2").every((a) => a.startsWith("D2")), "Delta 2 areas only");
+    assert.ok(areas("Private Hospi Upper", "UE").every((a) => a.startsWith("UE")), "Upper Egypt areas only");
+    // GUARD - "upper egypt" is the longer phrase and must still beat the bare "upper".
+    assert.ok(areas("Direct - Upper Egypt", "UE").every((a) => a.startsWith("UE")), "the region name still reads");
+
+    // GUARD - he ruled on hospitals ONLY. Warehouses and tenders are untouched.
+    for (const name of ["Cairo Main Warehouse", "مناقصات العبور"]) {
+      assert.equal(readWeeklyBranchName(index, name, "CA").scope, null, `${name} must still not split`);
+    }
+
+    // GUARD - every non-territory class must explain ITSELF. A class added to the set with no
+    // clause beside it would silently describe itself as a tender. An exhaustive Record cannot
+    // catch that here (next.config ignores type errors), so it is asserted at RUNTIME.
+    const EXPECTED: Record<string, { word: string; sample: string }> = {
+      warehouse: { word: "stock location", sample: "Cairo Main Warehouse" },
+      tender: { word: "tender", sample: "مناقصات العبور" },
+    };
+    for (const cls of NON_TERRITORY_CLASSES) {
+      const expected = EXPECTED[cls];
+      assert.ok(expected, `NON_TERRITORY_CLASSES gained "${cls}" with no wording expected here - add a clause`);
+      const note = readWeeklyBranchName(index, expected.sample, "CA").note;
+      assert.ok(note.includes(expected.word), `the ${cls} note must name a ${expected.word}, got: ${note}`);
+    }
   }
 }
