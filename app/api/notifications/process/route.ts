@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import { isProductionRuntime } from "@/config/system-settings";
 
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
@@ -15,9 +14,10 @@ export const maxDuration = 300;
 
 function isCronAuthorized(request: Request) {
   const secret = process.env.CRON_SECRET;
-  // Every Vercel environment (production, preview, `vercel dev`) sets VERCEL — only a
-  // real local machine without it may bypass an unset CRON_SECRET during development.
-  if (!secret) return !isProductionRuntime();
+  // An unset CRON_SECRET may ONLY be bypassed on a real developer machine. Anything less
+  // would leave this route callable unauthenticated wherever CRON_SECRET is unset —
+  // including staging, which is a 1:1 clone of production data.
+  if (!secret) return process.env.NODE_ENV === "development";
   return bearerSecretMatches(request.headers.get("authorization"), secret);
 }
 
