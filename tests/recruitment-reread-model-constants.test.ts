@@ -134,4 +134,53 @@ export function runRecruitmentRereadModelConstantsTests() {
     /model: OCR_EXTRACTION_MODEL/,
     "the OCR write path must stamp ai_model from the constant, not from a repeated string",
   );
+
+  // --- 7. The extraction fetch is PAGINATED --------------------------------------------------
+  // Added 2026-08-27. Everything above decides who counts as read from one select over
+  // ats_candidate_cv_extractions. PostgREST caps an unbounded select at 1000 rows, returns no
+  // error and sets no marker — the array just stops. Measured that day: 912 rows against 431
+  // candidates, i.e. 88 from the cap, and this very script adds a row per candidate it reads.
+  // Past the cap, whichever rows fall off take their candidates out of readIds, so a candidate the
+  // model HAS read is re-read as "never read" while another freezes out of the set — the same
+  // silent misclassification sections 2-4 exist to prevent, arriving through a row limit instead
+  // of a typo. The fix is an explicit ordered .range() loop; this asserts it stays one.
+  const extractionSelect = scriptSource.match(
+    /\.from\("ats_candidate_cv_extractions"\)[\s\S]{0,400}?;/,
+  );
+  assert.ok(
+    extractionSelect,
+    `could not find the ats_candidate_cv_extractions select in ${SCRIPT} — re-point this test at it rather than deleting it`,
+  );
+  assert.match(
+    extractionSelect[0],
+    /\.range\(/,
+    `the ats_candidate_cv_extractions select in ${SCRIPT} must page with .range() — an unbounded select silently stops at PostgREST's 1000-row cap, and the rows it drops decide who counts as already read`,
+  );
+  assert.match(
+    extractionSelect[0],
+    /\.order\("created_at"/,
+    `the paged select must impose an explicit .order("created_at") — without one the page boundaries are undefined, so a row can be returned twice or never, and the newest-row-per-candidate map below is built from that order`,
+  );
+
+  // --- 8. --newest-rules-only may only WIDEN the target set ------------------------------------
+  // It exists because readIds asks "has this candidate EVER had a model row", which permanently
+  // excludes anyone the model read once and badly — 38 candidates on production 2026-08-27, 25 of
+  // them with no job title on the record. The flag adds them back. If it ever gained the power to
+  // REMOVE, it would become a second, quieter version of the exclusion it was written to undo, so
+  // its block must not reassign targets to a filtered subset of itself.
+  const widenBlock = scriptSource.match(/if \(newestRulesOnly\) \{[\s\S]*?\n  \}/);
+  assert.ok(
+    widenBlock,
+    `could not find the --newest-rules-only block in ${SCRIPT} — the flag is the only way to reach candidates whose newest row is free rules output`,
+  );
+  assert.doesNotMatch(
+    widenBlock[0],
+    /targets = targets\.filter\(/,
+    "--newest-rules-only must only ADD to the target set; filtering targets inside its block would let a flag meant to widen the run silently shrink it instead",
+  );
+  assert.match(
+    widenBlock[0],
+    /targets = \[\.\.\.targets,/,
+    "--newest-rules-only must build the new target set by appending to the existing one, so a candidate already selected as never-read can never be dropped by passing it",
+  );
 }

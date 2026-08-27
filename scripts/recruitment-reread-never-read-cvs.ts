@@ -74,6 +74,20 @@ import { describeCvRead } from "@/lib/recruitment/cv-extraction-quality";
 //   --include-rules-only  releases the candidates held back because their only extraction row is a
 //                      free rules/OCR read. Owner-approved 2026-08-27, after credits were restored.
 //                      Releasing them is necessary but NOT sufficient — see --force-model.
+//   --newest-rules-only  widens the set to candidates whose NEWEST extraction row is a free rules
+//                      row, even though an older model row exists. Owner-approved 2026-08-27.
+//
+//                      These are unreachable by every other flag, --include-rules-only included.
+//                      The truth set asks "has this candidate EVER had a model row", so one bad
+//                      model read in the past excludes a candidate permanently — while the value
+//                      of re-reading is decided by the NEWEST row, which is this file's own stated
+//                      rule. Measured on production 2026-08-27: 38 candidates, all with a stored
+//                      CV, 25 of them with no job title on the candidate record.
+//
+//                      It ADDS to the set and never subtracts, so it cannot shrink a run.
+//                      Deliberately NOT paired with --force-model: post-#2453 the gate escalates a
+//                      missing currentJobTitle or currentEmployer on its own, so letting the gate
+//                      decide is both the cheaper run and the honest test of it.
 //   --force-model      bypasses shouldEscalateToAi, so every target reaches the model.
 //
 //                      WITHOUT it, releasing a rules-only candidate mostly achieves nothing. The
@@ -217,6 +231,7 @@ async function main(): Promise<void> {
   const unresolvedOnly = args.includes("--unresolved-only");
   const includeRulesOnly = args.includes("--include-rules-only");
   const forceModel = args.includes("--force-model");
+  const newestRulesOnly = args.includes("--newest-rules-only");
   const limitArg = args.find((a) => a.startsWith("--limit"));
   const limit = limitArg ? Number(limitArg.split("=")[1] ?? args[args.indexOf(limitArg) + 1]) : Number.NaN;
 
@@ -245,19 +260,60 @@ async function main(): Promise<void> {
   // Four production candidates were already frozen that way. Importing the constants makes the two
   // unable to drift again; tests/recruitment-reread-model-constants.test.ts holds the door shut.
   const RULES_ONLY_MODELS = new Set<string>([RULE_ONLY_EXTRACTION_MODEL, OCR_EXTRACTION_MODEL]);
-  const { data: alreadyRead, error: readError } = await supabase
-    .from("ats_candidate_cv_extractions")
-    .select("candidate_id, ai_model");
-  if (readError) throw readError;
+
+  // PAGINATED ON PURPOSE. PostgREST caps an unbounded select at 1000 rows and returns no error and
+  // no marker when it does — the array simply stops. Measured 2026-08-27 this table held 912 rows
+  // against 431 candidates, i.e. 88 rows from silently truncating, and every run of this script
+  // adds one row per candidate it reads. Past the cap the rows that fall off take their candidates
+  // out of readIds, so a candidate the model HAS read is re-read as "never read" while another
+  // freezes out of the set — the exact class of silent misclassification the comment above spends a
+  // paragraph on, arriving through a row limit instead of a typo. Ask for an explicit ordered range
+  // and keep asking until a short page proves the end.
+  type ExtractionRow = { candidate_id: string; ai_model: unknown; created_at: string };
+  const PAGE = 1000;
+  const extractionRows: ExtractionRow[] = [];
+  for (let from = 0; ; from += PAGE) {
+    const { data: page, error: readError } = await supabase
+      .from("ats_candidate_cv_extractions")
+      .select("candidate_id, ai_model, created_at")
+      .order("created_at", { ascending: true })
+      .range(from, from + PAGE - 1);
+    if (readError) throw readError;
+    const rows = (page ?? []) as ExtractionRow[];
+    extractionRows.push(...rows);
+    if (rows.length < PAGE) break;
+  }
+
   const readIds = new Set(
-    (alreadyRead ?? [])
-      .filter((row) => !RULES_ONLY_MODELS.has(String((row as { ai_model: unknown }).ai_model ?? "")))
+    extractionRows
+      .filter((row) => !RULES_ONLY_MODELS.has(String(row.ai_model ?? "")))
       .map((row) => String(row.candidate_id)),
   );
   const rulesOnlyIds = new Set(
-    (alreadyRead ?? [])
-      .filter((row) => RULES_ONLY_MODELS.has(String((row as { ai_model: unknown }).ai_model ?? "")))
+    extractionRows
+      .filter((row) => RULES_ONLY_MODELS.has(String(row.ai_model ?? "")))
       .map((row) => String(row.candidate_id)),
+  );
+
+  // The candidates whose NEWEST row is a free rules row, whatever came before it.
+  //
+  // readIds above asks "has this candidate EVER had a model row", which permanently excludes a
+  // candidate the model read once and badly. That contradicts this file's own rule — "the
+  // insert-vs-replace decision keeps the newest read as the one that counts" — because the target
+  // set was keyed on history while the value of a re-read is decided by the newest row alone.
+  // Measured on production 2026-08-27: 38 candidates sit exactly there, all 38 with a stored CV,
+  // and 25 of them still have no job title on the candidate record. --include-rules-only cannot
+  // reach a single one of them: it only stops rules-only candidates being REMOVED from the
+  // never-read set, and these were never in it.
+  const newestModelByCandidate = new Map<string, string>();
+  for (const row of extractionRows) {
+    // extractionRows is ordered oldest-first, so the last write per candidate is the newest row.
+    newestModelByCandidate.set(String(row.candidate_id), String(row.ai_model ?? ""));
+  }
+  const newestIsRulesIds = new Set(
+    [...newestModelByCandidate.entries()]
+      .filter(([, model]) => RULES_ONLY_MODELS.has(model))
+      .map(([candidateId]) => candidateId),
   );
 
   const { data: allCandidates, error: candidateError } = await supabase
@@ -270,6 +326,26 @@ async function main(): Promise<void> {
   console.log(`\nCandidates total : ${(allCandidates ?? []).length}`);
   console.log(`Already read     : ${readIds.size} distinct candidates`);
   console.log(`Never read       : ${targets.length}`);
+
+  // --newest-rules-only ADDS to the set; it never subtracts. A candidate already selected as never
+  // read stays selected, so the flag cannot shrink a run or quietly skip anybody.
+  if (newestRulesOnly) {
+    const before = targets.length;
+    const selected = new Set(targets.map((row) => String(row.id)));
+    const widened = ((allCandidates ?? []) as TargetRow[]).filter(
+      (row) => newestIsRulesIds.has(String(row.id)) && !selected.has(String(row.id)),
+    );
+    targets = [...targets, ...widened].sort(
+      (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
+    );
+    console.log(
+      `Newest row rules : ${newestIsRulesIds.size}  (--newest-rules-only ADDED ${targets.length - before} already-read candidates whose newest row is a free rules row)`,
+    );
+  } else if (newestIsRulesIds.size > 0) {
+    console.log(
+      `Newest row rules : ${newestIsRulesIds.size}  (not included — pass --newest-rules-only to re-read the ones whose newest row is free rules output)`,
+    );
+  }
   if (rulesOnlyIds.size > 0) {
     // Re-reading these while the key is still gone would only write the same free row again — so
     // the default is to hold them back. --include-rules-only releases them, which is what you want
