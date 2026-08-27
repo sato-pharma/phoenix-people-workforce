@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 
-import { isProductionRuntime } from "@/config/system-settings";
 import { logCronUnauthorized, logError, logInfo } from "@/lib/observability/log";
 import { withDeadMansSwitch } from "@/lib/observability/dead-mans-switch";
 import { drainInboundIntake } from "@/lib/recruitment/inbound/intake-worker";
@@ -17,7 +16,10 @@ export const maxDuration = 300;
 // minutes. A clean no-op when the queue is empty.
 function isAuthorized(request: Request) {
   const secret = process.env.CRON_SECRET;
-  if (!secret) return !isProductionRuntime();
+  // An unset CRON_SECRET may ONLY be bypassed on a real developer machine. Anything less
+  // would leave this route callable unauthenticated wherever CRON_SECRET is unset —
+  // including staging, which is a 1:1 clone of production data.
+  if (!secret) return process.env.NODE_ENV === "development";
   return bearerSecretMatches(request.headers.get("authorization"), secret);
 }
 
