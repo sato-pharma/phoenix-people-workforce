@@ -1317,6 +1317,16 @@ function buildReferenceMaps(references: SalesReferenceData) {
 
   return {
     areaByCode: new Map(areas.map((row) => [normalizeCode(row.areaCode), row])),
+    // Area codes that actually OWN a brick in the master. A sheet may type an area that owns none
+    // — "OTMS" (Main Store) is a distributor warehouse bucket, not a territory: it has no brick, no
+    // rep, no target, and no row in au.sos_area_crosswalk. Since no brick can sit inside such an
+    // area, the cross-area guard in the customer-map auto-fill has nothing to protect there; see
+    // the comment at that guard for why treating it as a real area sent 109 customers nowhere.
+    areaCodesWithBricks: new Set(
+      (references.bricks ?? [])
+        .map((row) => normalizeCode(row.areaCode))
+        .filter((code) => code !== ""),
+    ),
     blockByCode: new Map((references.blocks ?? []).map((row) => [normalizeCode(row.blockCode), row])),
     brickById: new Map((references.bricks ?? []).map((row) => [normalizeCode(row.brickId), row])),
     // (distributor code + customer code) -> brick id, for the customer-map brick fallback.
@@ -1447,11 +1457,28 @@ async function parseDistributorSalesWorkbookBuffer(input: {
         // is taken in full (this is the common raw/hybrid case).
         const sheetArea = normalizeCode(rawAreaCode);
         const mappedArea = normalizeCode(mappedBrick.areaCode);
-        const crossesArea = sheetArea !== "" && !isNotAvailable(rawAreaCode) && mappedArea !== sheetArea;
+        // ...but only when the sheet typed a REAL territory. An area that owns no brick at all is a
+        // warehouse bucket, not a place: "OTMS" (Main Store) is where a distributor parks a sale it
+        // has not routed yet. No brick can ever sit inside it, so there is no cross-area move to
+        // guard against — treat it exactly like a blank area and take the mapping in full. Without
+        // this the guard fired on every Main Store row: 109 customers whose brick was already known
+        // imported blank, and EGP 47,385 of 2026-07 CNS reached no rep at all.
+        const sheetAreaIsNonTerritory = sheetArea !== "" && !maps.areaCodesWithBricks.has(sheetArea);
+        const crossesArea = sheetArea !== ""
+          && !sheetAreaIsNonTerritory
+          && !isNotAvailable(rawAreaCode)
+          && mappedArea !== sheetArea;
         if (!crossesArea) {
           rawBrickId = mappedBrick.brickId;
-          if (normalizeCode(rawAreaCode) === "" || isNotAvailable(rawAreaCode)) rawAreaCode = mappedBrick.areaCode;
-          if (normalizeCode(rawRegionCode) === "" || isNotAvailable(rawRegionCode)) rawRegionCode = mappedBrick.regionCode;
+          // A non-territory area/region is overwritten as well as a blank one — leaving the row on
+          // "OTMS" while its brick sits in OT5 would be a hierarchy that contradicts itself. The
+          // blank-area case keeps its original rule: a typed region is respected.
+          if (sheetArea === "" || isNotAvailable(rawAreaCode) || sheetAreaIsNonTerritory) {
+            rawAreaCode = mappedBrick.areaCode;
+          }
+          if (normalizeCode(rawRegionCode) === "" || isNotAvailable(rawRegionCode) || sheetAreaIsNonTerritory) {
+            rawRegionCode = mappedBrick.regionCode;
+          }
         }
         // If it crosses the area, the brick stays blank and the row fails the brick checks below,
         // surfacing in "Rows To Fix" for a human to resolve — never silently re-homed.
