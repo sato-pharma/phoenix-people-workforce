@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
+import path from "node:path";
 
 import {
   composeHrRoleGrants,
@@ -11,10 +12,13 @@ import {
   type HrFunctionKey,
 } from "../src/lib/auth/hr-functions.ts";
 import {
+  canAccess,
   normalizeRole,
   permissionMatrix,
   phoenixCompanyJobTitles,
   phoenixRoles,
+  scopeForRole,
+  type AccessContext,
   type PhoenixRole,
 } from "../src/lib/auth/permissions.ts";
 
@@ -57,8 +61,51 @@ const GRANDFATHERED_NAME_COLLISIONS: readonly string[] = [
   "CEO",
 ];
 
+const REPO_ROOT = path.resolve(import.meta.dirname, "..");
+
 /** Retired as permission roles. Neither may return as one, under any spelling. */
 const RETIRED_HR_ROLE_NAMES: readonly string[] = ["HR Specialist", "Talent Acquisition"];
+
+/**
+ * Every file that names an HR seat as a string, reviewed on 2026-08-28. Each one is access decided
+ * OUTSIDE the permission matrix, so Rule 10 makes the list explicit rather than letting a by-name
+ * grant arrive unnoticed. Reviewed verdicts for the ones that grant rather than describe:
+ *
+ *   contracts/service.ts        company-wide contract READ. `contracts:delete` stays a boundary.
+ *   excuses/service.ts          company-wide excuse visibility — time & attendance is ops 3.
+ *   employees/access-provisioning.ts  routes HR Operations to the CREATE-only, rank-bounded
+ *                               provisioning path instead of the Super-Admin-only upsert. Narrower
+ *                               than the alternative, not wider — and both admin consoles stay shut
+ *                               (user_admin:read and permission_admin:read are boundaries).
+ *   employee-360/access.ts      NARROWS both seats to medical-rep records only.
+ *
+ * The rest are navigation, notification audiences, workflow definitions and UI copy.
+ */
+const FILES_NAMING_AN_HR_SEAT: readonly string[] = [
+  "app/(admin)/admin/recruitment-hiring/page.tsx",
+  "app/(admin)/attendance/page.tsx",
+  "app/employee-portals/account-activation/page.tsx",
+  "src/components/admin/access-control-manager.tsx",
+  "src/components/admin/workflow-registry-manager.tsx",
+  "src/config/system-navigation.ts",
+  "src/lib/admin/access-control.ts",
+  "src/lib/auth/hr-functions.ts",
+  "src/lib/auth/permissions.ts",
+  "src/lib/contracts/service.ts",
+  "src/lib/employee-360/access.ts",
+  "src/lib/employees/access-provisioning.ts",
+  "src/lib/excuses/service.ts",
+  "src/lib/hiring-documents/service.ts",
+  "src/lib/notifications/role-recipients.ts",
+  "src/lib/probation/feedback-service.ts",
+  "src/lib/probation/service.ts",
+  "src/lib/recruitment/access.ts",
+  "src/lib/recruitment/account-activation.ts",
+  "src/lib/reports/organogram.ts",
+  "src/lib/resignations/service.ts",
+  "src/lib/support-requests/service.ts",
+  "src/lib/workflow-control/definitions.ts",
+];
 
 /**
  * Indent for a multi-line assertion message. Built from a char code on purpose: this file is
@@ -68,7 +115,7 @@ const RETIRED_HR_ROLE_NAMES: readonly string[] = ["HR Specialist", "Talent Acqui
  */
 const BREACH_SEP = String.fromCharCode(10) + '  ';
 
-export function runHrFunctionGovernanceTests() {
+export async function runHrFunctionGovernanceTests() {
   const bundleNames = Object.keys(HR_ROLE_BUNDLES) as HrBundleName[];
 
   // --- Rule 1: a permission role is never a job title ------------------------------------------
@@ -289,4 +336,89 @@ export function runHrFunctionGovernanceTests() {
     const b = [...HR_ROLE_BUNDLES[other]].sort();
     assert.notDeepEqual(a, b, `"${first}" and "${other}" hold identical functions`);
   }
+
+  // --- Rule 9: every boundary is REFUSED BY THE GATE, not merely absent from a table -------------
+  // Rules 4 and 5 read the grants. This one asks canAccess — the function the route handlers and
+  // the page gates actually call — because a matrix entry is not the last word on access. canAccess
+  // short-circuits to true on `context.scope === "system"` before it consults any matrix, and it
+  // merges role_permission_overrides from the database on top of the composed one. Both seats
+  // resolve to scope "self" today, which is why the boundaries hold; that is a fact worth asserting
+  // rather than a note worth trusting, since scopeForRole falls through to a default and a future
+  // seat added to the wrong branch would open all 17 at once with no grant having changed.
+  const refusalFailures: string[] = [];
+  for (const name of bundleNames) {
+    const role = name as PhoenixRole;
+    const access = {
+      role,
+      scope: scopeForRole(role),
+      hrId: "HR-BOUNDARY-TEST",
+      source: "session",
+    } as AccessContext;
+
+    assert.notEqual(
+      access.scope,
+      "system",
+      `"${name}" resolves to scope "system", and canAccess returns true for that before it reads ` +
+        "any matrix — every job-description boundary below is open, whatever the grants say",
+    );
+
+    for (const boundary of HR_ROLE_BOUNDARIES) {
+      if (await canAccess(access, boundary.resource, boundary.action)) {
+        refusalFailures.push(
+          `${name}: canAccess allows ${boundary.resource}:${boundary.action} — ${boundary.why}`,
+        );
+      }
+    }
+
+    // The control. Without it a canAccess that returned false for everything — a broken import, a
+    // matrix that failed to load — would satisfy every assertion above by refusing the whole seat.
+    assert.ok(
+      await canAccess(access, "overview", "read"),
+      `"${name}" is refused overview:read, so canAccess is refusing everything and the boundary ` +
+        "checks above passed by accident rather than by boundary",
+    );
+  }
+  assert.deepEqual(
+    refusalFailures,
+    [],
+    `a job-description boundary is not actually refused at the gate:
+  ${refusalFailures.join(BREACH_SEP)}`,
+  );
+
+  // --- Rule 10: a grant written by NAME has to be acknowledged ----------------------------------
+  // Every rule above reasons about the permission matrix. Some access in this codebase does not go
+  // through it: `access.role === "HR Operations"` in a service, a role Set on a page. That kind of
+  // grant is invisible to Rules 4, 5 and 9 alike, and it is not hypothetical — the HR sidebar
+  // offered a Deductions row that app/(admin)/admin/deductions/page.tsx refused by name, because the
+  // page's gate was a role set and no permission test could see it.
+  //
+  // There is no way to check such a grant mechanically: it is ordinary code. So this pins the LIST.
+  // A new file naming either seat fails here, which forces the one question that matters — does this
+  // hand the seat something its job description does not — to be answered by a person, once, at the
+  // moment it is written. Adding the path after answering it is the correct fix; the list is
+  // expected to grow with each phase.
+  const namingSeat: string[] = [];
+  const skip = new Set(["node_modules", ".next", ".git", ".claude", "__snapshots__"]);
+  const walk = (dir: string) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      if (entry.name.startsWith("_wt-") || skip.has(entry.name)) continue;
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) walk(full);
+      else if (/\.(ts|tsx)$/.test(entry.name)) {
+        const source = readFileSync(full, "utf8");
+        if (bundleNames.some((name) => source.includes(`"${name}"`))) {
+          namingSeat.push(path.relative(REPO_ROOT, full).split(path.sep).join("/"));
+        }
+      }
+    }
+  };
+  for (const root of ["app", "src"]) walk(path.join(REPO_ROOT, root));
+
+  assert.deepEqual(
+    namingSeat.sort(),
+    [...FILES_NAMING_AN_HR_SEAT].sort(),
+    "a file names an HR seat by string, which is a grant or a gate the permission matrix cannot " +
+      "see and no boundary rule above can check. Confirm it does not hand the seat anything its job " +
+      "description withholds, then add or remove the path in FILES_NAMING_AN_HR_SEAT",
+  );
 }

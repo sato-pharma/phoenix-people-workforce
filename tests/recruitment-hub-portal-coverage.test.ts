@@ -8,7 +8,13 @@ import {
   recruitmentHiringPageItems,
   type NavigationSection,
 } from "../src/config/system-navigation.ts";
-import { getSections, type PermissionLookup } from "../src/lib/navigation/active-path.ts";
+import {
+  getSections,
+  permissionAllowed,
+  roleAllowed,
+  roleNotExcluded,
+  type PermissionLookup,
+} from "../src/lib/navigation/active-path.ts";
 import {
   createAccessContext,
   permissionActions,
@@ -97,16 +103,27 @@ function hrefsFor(role: PhoenixRole, mode: "admin" | "employee-portal"): Set<str
 }
 
 /** Exactly what the hub page itself renders for a role — same two gates, no replica. */
+/**
+ * The hub page's OWN filter, through the same three helpers it calls — never a reimplementation.
+ *
+ * This used to hand-write the rule, and it drifted from the page on the one detail that decides
+ * every actionless clause: `permissionAllowed` resolves `{ resource: X }` to **X:read**, while the
+ * copy here accepted ANY action on X. For every seat that holds a resource read-first the two agree,
+ * which is why it sat unnoticed — it took a seat granted `vacancies:create` and NOT `vacancies:read`
+ * (HR Operations, so she can record a resignation) to separate them, and then this file failed on a
+ * CV Database card that app/(admin)/admin/recruitment-hiring/page.tsx would never have rendered.
+ *
+ * A test that models a gate instead of calling it can only ever be as right as the day it was
+ * written. That page says the same thing about itself two comments up: "the pair is what drifted".
+ */
 function hubCardsFor(role: PhoenixRole) {
   const lookup = lookupForRole(role);
-  return recruitmentHiringPageItems.filter((item) => {
-    if (item.roles && !item.roles.some((r) => r === role)) return false;
-    return (item.permissions ?? []).every((p) =>
-      p.action
-        ? lookup[`${p.resource}:${p.action}`]
-        : permissionActions.some((a) => lookup[`${p.resource}:${a}`]),
-    );
-  });
+  return recruitmentHiringPageItems.filter(
+    (item) =>
+      permissionAllowed(lookup, item.permissions) &&
+      roleAllowed(role, item.roles) &&
+      roleNotExcluded(role, item.excludedRoles),
+  );
 }
 
 export function runRecruitmentHubPortalCoverageTests() {
