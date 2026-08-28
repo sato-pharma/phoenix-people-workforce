@@ -874,10 +874,14 @@ const adminNavigationSectionSeeds = [
       // moves for anyone else.
       { href: "/admin/rep-doctor-lists", icon: ClipboardList, label: "Rep Doctor Lists", roles: ["Super Admin"] },
       { href: "/admin/reps-plans", icon: Gauge, label: "Reps Plans", roles: ["Super Admin"] },
-      // Doctor List joins them for the same reason: it is a crmPageItems card gated to Super Admin
-      // alone, and Super Admin is excluded from the hub that renders the cards, so without this row
-      // the only role allowed to open it would have no route to it.
+      // Doctor List joins them for the same reason: Super Admin is excluded from the hub that
+      // renders the crmPageItems cards, so without this row the account would have no route to it.
+      // Every other role reaches both rows as cards on the hub, so nothing moves for anyone else.
+      //
+      // These two are the District Manager page's two tabs, and they are listed as two rows rather
+      // than one because they are two routes — each re-runs its own server-side gate on entry.
       { href: "/admin/doctor-list", icon: BookUser, label: "Doctor List", roles: ["Super Admin"] },
+      { href: "/admin/plan-verification", icon: ClipboardCheck, label: "Plan Verification", roles: ["Super Admin"] },
     ],
     label: "CRM",
   },
@@ -2949,13 +2953,12 @@ export const crmPageItems: readonly AdminToolsPageItem[] = [
     roles: ["Super Admin"],
   },
   {
-    // SUPER ADMIN ONLY for now, the same posture as Rep Doctor Lists directly above and for the
-    // same reason: it prints every doctor a named rep is responsible for, with their address and
-    // phone. It is destined for district managers as tab one of a DM page, but a DM must see HIS
-    // reps only and that scope does not exist yet — shipping it wide first is the fault the owner
-    // caught on Doctor Coverage on 2026-08-28, where a scoped board was fronted by an unscoped
-    // picker. The enforcing gate is canAccessDoctorList (src/lib/crm/doctor-list-access.ts) plus
-    // crm_visits:read, both asked by the page; this list is UX only.
+    // TAB ONE of the District Manager page. WIDENED 2026-08-28 from Super Admin alone, once the
+    // reps-per-manager scope landed: a district manager now sees his own reps and nobody else's,
+    // and the SAME scope filters the rep picker, which is the half that was missing when the owner
+    // caught the fault on Doctor Coverage that same day. The enforcing gate is canAccessDoctorList
+    // (src/lib/crm/doctor-list-access.ts) plus crm_visits:read, both asked by the page; this list
+    // is UX only and must be kept in step with that file.
     //
     // NOT a duplicate of Rep Doctor Lists above. That board is built from the CRM PLAN and scores
     // visits against it, so it can only show a doctor somebody planned. This one mirrors the CRM's
@@ -2965,7 +2968,27 @@ export const crmPageItems: readonly AdminToolsPageItem[] = [
     icon: BookUser,
     label: "Doctor List",
     description: "Every doctor on a rep's CRM list, with specialty, grade and address — the assignment itself, not the activity against it.",
-    roles: ["Super Admin"],
+    roles: ["Super Admin", "CEO", "National Sales Manager", "SFE Manager", "Regional Manager", "District Manager"],
+  },
+  {
+    // TAB TWO of the District Manager page — the plans a manager verifies.
+    //
+    // A SHORTER role list than Doctor List directly above, deliberately: this page carries the only
+    // button in Phoenix that writes into the customer's CRM, and the National Sales Manager and SFE
+    // Manager do not supervise a named rep. Reading a rep's list and signing his plan are not the
+    // same authority, which is why the two lists live in two files
+    // (src/lib/crm/plan-verification-access.ts) rather than being shared.
+    //
+    // The enforcing gate is canAccessPlanVerification plus `crm_plans` — READ to open the page,
+    // APPROVE to press Verify, which is how the CEO appears on this list and still cannot sign
+    // anything. `crm_plans` is its own resource rather than a reuse of `crm_visits` precisely
+    // because a district manager holds crm_visits:read only, and granting him update there would
+    // have handed him the company-wide Doctor Coverage visit-norms editor too. This list is UX only.
+    href: "/admin/plan-verification",
+    icon: ClipboardCheck,
+    label: "Plan Verification",
+    description: "Weekly and monthly plans as the reps filed them — verify one and the approval is written straight back into the CRM.",
+    roles: ["Super Admin", "CEO", "Regional Manager", "District Manager"],
   },
   {
     // SUPER ADMIN ONLY, same reasoning as Rep Doctor Lists directly above: it names every rep and

@@ -21,6 +21,7 @@
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { CRM_CONTACTS_TABLE } from "@/lib/crm/tables";
 import { LIST_TYPES, type CrmListType } from "@/lib/crm/contacts-web-client";
+import { scopeAllowsAgent, type CrmManagerScope } from "@/lib/crm/manager-scope";
 
 /** PostgREST caps a page at 1000 rows; the largest single list measured was 197. */
 const PAGE_SIZE = 1000;
@@ -180,6 +181,10 @@ export type DoctorListBoard = {
   selected: DoctorListRepSummary | null;
   reps: DoctorListRepSummary[];
   rows: DoctorListRow[];
+  /** What the viewer's reach is, in words — shown so a short picker is never read as a thin CRM. */
+  scopeLabel: string;
+  /** Set when the viewer resolves to nobody; the board then explains rather than showing an empty picker. */
+  scopeReason: string | null;
   syncedAt: string | null;
 };
 
@@ -190,9 +195,27 @@ export type DoctorListBoard = {
  * screen never shows a raw code — an agent id is exactly that. An agent the mirror holds but the
  * roster does not is labelled as such instead of being dropped, since a list belonging to nobody is
  * a finding, not a row to hide.
+ *
+ * SCOPE FILTERS THE PICKER, NOT JUST THE ROWS. `reps` is what the picker renders and `selected` is
+ * chosen from `reps`, so one filter here governs both and they cannot drift apart. That is the exact
+ * fault the owner caught on Doctor Coverage on 2026-08-28 — scoped data behind an unscoped picker —
+ * and the reason `selected` is deliberately never looked up outside this filtered list: a hand-typed
+ * `?rep=` id belonging to another district finds nothing and falls back to the viewer's own first
+ * rep, which is a readable board rather than a leak or a blank page.
  */
-export async function getDoctorListBoard(input: { agentCrmId?: number }): Promise<DoctorListBoard> {
-  const reps = await getDoctorListRepSummaries();
+export async function getDoctorListBoard(input: {
+  agentCrmId?: number;
+  scope: CrmManagerScope;
+}): Promise<DoctorListBoard> {
+  const scopeLabel = input.scope.kind === "none" ? "No reach" : input.scope.label;
+  if (input.scope.kind === "none") {
+    return { reps: [], rows: [], scopeLabel, scopeReason: input.scope.reason, selected: null, syncedAt: null };
+  }
+
+  const all = await getDoctorListRepSummaries();
+  // An agent the mirror could not tie to an employee is visible to a company-scoped viewer only —
+  // a manager cannot be shown a list that nobody can prove is his.
+  const reps = all.filter((rep) => scopeAllowsAgent(input.scope, rep.hrId));
 
   const hrIds = [...new Set(reps.map((rep) => rep.hrId).filter((id): id is string => Boolean(id)))];
   const nameByHrId = new Map<string, string>();
@@ -217,5 +240,5 @@ export async function getDoctorListBoard(input: { agentCrmId?: number }): Promis
     (latest, rep) => (rep.syncedAt && (!latest || rep.syncedAt > latest) ? rep.syncedAt : latest),
     null,
   );
-  return { reps, rows, selected, syncedAt };
+  return { reps, rows, scopeLabel, scopeReason: null, selected, syncedAt };
 }

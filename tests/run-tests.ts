@@ -275,6 +275,7 @@ import { runCrmAmpmNormalizationTests } from "./crm-ampm-normalization.test.ts";
 import { runCrmVisitTypeLabelTests } from "./crm-visit-type-labels.test.ts";
 import { runCrmRepDoctorListsTests } from "./crm-rep-doctor-lists.test.ts";
 import { runCrmContactListsTests } from "./crm-contact-lists.test.ts";
+import { runCrmPlanVerificationTests } from "./crm-plan-verification.test.ts";
 import { runCrmRepDoctorTrendTests } from "./crm-rep-doctor-trend.test.ts";
 import { runLocationIqGeocodeConfidenceTests } from "./locationiq-geocode-confidence.test.ts";
 import { runPrivateCalendarTests } from "./private-calendar.test.ts";
@@ -2577,6 +2578,18 @@ await runTest(
   + "parses to []; and an empty fetch against a non-empty mirror is REFUSED rather than applied, so "
   + "an expired session degrades to yesterday's list instead of \"this rep has no doctors\")",
   runCrmContactListsTests,
+);
+
+await runTest(
+  "crm plan verification (the ONLY thing Phoenix writes back into the customer's CRM — a district "
+  + "manager signs off one rep's weekly or monthly plan. The vendor does NOT range-check the status "
+  + "it is sent, proven live against a phantom plan id, so the refusal to lower an area manager's "
+  + "signature is ours alone; 11% of weekly plans straddle a month, so a plan belongs WHOLE to the "
+  + "month it starts in and must not appear in both; a seat with no reports resolves to a SENTENCE "
+  + "and never to an empty `.in()`, which renders identically to \"my reps filed nothing\"; and "
+  + "`crm_plans` is asserted present in the RUNTIME permissionResources array, where an unseen key "
+  + "makes the sidebar's lookup fail OPEN and offers a CRM-writing button to every role)",
+  runCrmPlanVerificationTests,
 );
 
 await runTest(

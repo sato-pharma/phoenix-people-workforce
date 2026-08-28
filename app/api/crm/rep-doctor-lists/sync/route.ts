@@ -7,6 +7,7 @@ import { writeAuditLog } from "@/lib/admin/audit";
 import { isIReports360Configured } from "@/lib/crm/config";
 import { monthBounds, resolveRepDoctorListMonth } from "@/lib/crm/rep-doctor-lists";
 import { assertRepDoctorListsAccess } from "@/lib/crm/rep-doctor-lists-access";
+import { announceNewPlansToManagers } from "@/lib/crm/plan-notifications";
 import { PlanSyncRangeError, syncIReports360WeeklyPlans } from "@/lib/crm/plan-sync";
 
 export const runtime = "nodejs";
@@ -48,6 +49,20 @@ export async function POST(request: Request) {
 
     const result = await syncIReports360WeeklyPlans({ endDate: to, startDate: from });
 
+    // A plan is "new" exactly once — the first run that mirrors it — so whichever trigger gets there
+    // first owes the manager the notification. Without this, an admin pressing Refresh on the
+    // current month would swallow the newness of every plan in it and the hourly poller, arriving
+    // later, would correctly find nothing new to announce. Nobody would be told, and nothing would
+    // look wrong.
+    //
+    // Restricted to the CURRENT Cairo month on purpose: this route is also how a HISTORICAL month is
+    // pulled, and announcing there would email a manager about a plan for January. The 25-plan
+    // ceiling inside `announceNewPlansToManagers` would stop a big backfill but not a small one.
+    const isCurrentMonth = month === resolveRepDoctorListMonth(undefined);
+    const announcement = isCurrentMonth
+      ? await announceNewPlansToManagers(result.newPlans).catch(() => null)
+      : null;
+
     await writeAuditLog({
       actorLoginId: access.loginId ?? access.hrId ?? null,
       entityType: "crm_plan_sync",
@@ -56,7 +71,17 @@ export async function POST(request: Request) {
       summary:
         `Rep doctor lists refreshed for ${month} — ${result.upserted} planned calls across ` +
         `${result.agents} reps and ${result.contacts} contacts, ${result.pruned} removed` +
-        (result.pruneRefusedReason ? ` (removal withheld: ${result.pruneRefusedReason})` : ""),
+        (result.pruneRefusedReason ? ` (removal withheld: ${result.pruneRefusedReason})` : "") +
+        (result.newPlans.length > 0
+          ? `, ${result.newPlans.length} plan(s) seen for the first time` +
+            (announcement
+              ? ` (${announcement.announced} manager notification(s) sent` +
+                (announcement.withheldReason ? `, withheld: ${announcement.withheldReason}` : "") +
+                `)`
+              : isCurrentMonth
+                ? " (managers could not be notified)"
+                : " (not announced — past month)")
+          : ""),
     });
 
     return NextResponse.json({ month, result }, { headers: { "Cache-Control": "no-store" } });
