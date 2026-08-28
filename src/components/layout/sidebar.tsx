@@ -364,7 +364,7 @@ export function NavBadge({ compact = false, src }: { compact?: boolean; src: str
     // spending 32px of it to show a 1-2 digit count. 18px still fits "99+" at 10px/900.
     <span
       aria-label={label}
-      className={cn("ml-auto min-w-[18px] rounded-full px-1 py-0.5 text-center text-[10px] font-black leading-none text-white", alarmClass)}
+      className={cn("ml-auto min-w-[18px] rounded-full px-1 py-0.5 text-center text-phx-2xs font-black leading-none text-white", alarmClass)}
       role="status"
     >
       {count > 99 ? "99+" : count}
@@ -459,7 +459,7 @@ function NavRow({
         aria-current={active ? "page" : undefined}
         aria-label={rail ? item.label : undefined}
         className={cn(
-          "relative flex w-full items-center text-[13px] font-semibold transition-colors duration-150",
+          "relative flex w-full items-center text-phx-md font-semibold transition-colors duration-150",
           "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-phx-accent/60 focus-visible:ring-offset-2",
           dark ? "focus-visible:ring-offset-slate-900" : "focus-visible:ring-offset-white",
           rail ? "justify-center px-0 py-2.5" : "gap-3 px-2.5 py-2.5",
@@ -763,7 +763,7 @@ function SortableSectionBlock({
             />
             <span
               className={cn(
-                "min-w-0 flex-1 truncate text-[13px] font-bold tracking-[-0.01em]",
+                "min-w-0 flex-1 truncate text-phx-md font-bold tracking-[-0.01em]",
                 isAdmin ? "text-white" : "text-phx-ink",
               )}
             >
@@ -1099,7 +1099,7 @@ function SidebarNav({
         </nav>
         {railTip && (
           <div
-            className="pointer-events-none fixed z-[70] -translate-y-1/2 whitespace-nowrap border border-white/10 bg-slate-900 px-2.5 py-1.5 text-[12px] font-semibold text-white shadow-[0_10px_28px_rgba(2,6,23,0.6)]"
+            className="pointer-events-none fixed z-[70] -translate-y-1/2 whitespace-nowrap border border-white/10 bg-slate-900 px-2.5 py-1.5 text-phx-sm font-semibold text-white shadow-[0_10px_28px_rgba(2,6,23,0.6)]"
             style={{ left: railTip.left, top: railTip.top }}
           >
             {railTip.label}
@@ -1119,7 +1119,7 @@ function SidebarNav({
             <input
               ref={searchInputRef}
               aria-label="Search modules"
-              className="h-9 w-full border border-white/10 bg-white/5 pl-9 pr-8 text-[13px] font-semibold text-slate-100 outline-none transition placeholder:text-slate-500 focus:border-phx-accent-line focus:bg-white/[0.08] focus:ring-2 focus:ring-phx-accent/25"
+              className="h-9 w-full border border-white/10 bg-white/5 pl-9 pr-8 text-phx-md font-semibold text-slate-100 outline-none transition placeholder:text-slate-500 focus:border-phx-accent-line focus:bg-white/[0.08] focus:ring-2 focus:ring-phx-accent/25"
               onChange={(event) => setSearchQuery(event.target.value)}
               onKeyDown={(event) => {
                 if (event.key === "Escape") {
@@ -1180,7 +1180,7 @@ function SidebarNav({
             <div className={cn("sticky top-0 z-20 -mx-3 px-3", isAdmin ? "bg-[#000000]" : "bg-white")}>
               <div className="flex w-full items-center gap-1.5 px-1.5 pb-1.5 pt-3">
                 <Star className={cn("h-3.5 w-3.5 shrink-0", isAdmin ? "fill-[#F8B56B] text-[#F8B56B]" : "fill-phx-accent text-phx-accent")} />
-                <span className={cn("min-w-0 flex-1 truncate text-[13px] font-bold tracking-[-0.01em]", isAdmin ? "text-white" : "text-phx-ink")}>
+                <span className={cn("min-w-0 flex-1 truncate text-phx-md font-bold tracking-[-0.01em]", isAdmin ? "text-white" : "text-phx-ink")}>
                   Favourites
                 </span>
               </div>
@@ -1243,8 +1243,8 @@ function SidebarNav({
               <Search className="h-5 w-5" />
             </span>
             <div>
-              <p className="text-[13px] font-semibold text-slate-100">No modules match</p>
-              <p className="mt-1 text-[11px] text-slate-500">Try a different search term.</p>
+              <p className="text-phx-md font-semibold text-slate-100">No modules match</p>
+              <p className="mt-1 text-phx-xs text-slate-500">Try a different search term.</p>
             </div>
           </div>
         )}
@@ -1253,7 +1253,7 @@ function SidebarNav({
         {isAdmin && !query && hasCustomOrder && (
           <div className="mt-4 px-1">
             <button
-              className="flex w-full items-center gap-2 px-1.5 py-1.5 text-[11px] font-semibold text-slate-600 transition hover:text-slate-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-phx-accent/60"
+              className="flex w-full items-center gap-2 px-1.5 py-1.5 text-phx-xs font-semibold text-slate-600 transition hover:text-slate-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-phx-accent/60"
               onClick={() => clearSidebarOrder(mode)}
               title="Reset sidebar to default order"
               type="button"
@@ -1357,11 +1357,11 @@ function SidebarBrand({
         />
       </span>
       <div className="min-w-0">
-        <p className={cn("whitespace-nowrap text-[15px] font-black tracking-[0.22em]", isAdmin ? "text-white" : "text-phx-ink")}>
+        <p className={cn("whitespace-nowrap text-phx-lg font-black tracking-[0.22em]", isAdmin ? "text-white" : "text-phx-ink")}>
           {systemIdentity.brandName.slice(0, -1).toUpperCase()}
           <span className="text-phx-accent">{systemIdentity.brandName.slice(-1).toUpperCase()}</span>
         </p>
-        <p className={cn("mt-0.5 whitespace-nowrap text-[10px] font-semibold uppercase tracking-[0.22em]", isAdmin ? "text-slate-400" : "text-phx-ink-soft")}>
+        <p className={cn("mt-0.5 whitespace-nowrap text-phx-2xs font-semibold uppercase tracking-[0.22em]", isAdmin ? "text-slate-400" : "text-phx-ink-soft")}>
           {subtitle}
         </p>
       </div>
@@ -1374,7 +1374,7 @@ function SidebarIntro({ mode = "admin" }: { mode?: NavigationMode }) {
   if (usesAdminChrome(mode)) return null;
   return (
     <div className="mx-3 mt-3 border border-phx-line bg-[linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)] p-4">
-      <p className="text-[10px] font-black uppercase tracking-[0.22em] text-phx-accent">{systemUiText.sidebar.employeePortalKicker}</p>
+      <p className="text-phx-2xs font-black uppercase tracking-[0.22em] text-phx-accent">{systemUiText.sidebar.employeePortalKicker}</p>
       <p className="mt-2 text-lg font-black tracking-[-0.03em] text-phx-ink">{systemUiText.sidebar.employeePortalTitle}</p>
       <p className="mt-2 text-sm leading-6 text-phx-ink-soft">{systemUiText.sidebar.employeePortalDescription}</p>
     </div>

@@ -43,7 +43,7 @@ export default async function ExpenseCommandPage({
           !
         </div>
         <div className="mx-auto mt-4 max-w-2xl space-y-2">
-          <p className="text-[10px] font-black uppercase tracking-[0.22em] text-rose-600">
+          <p className="text-phx-2xs font-black uppercase tracking-[0.22em] text-rose-600">
             Access blocked
           </p>
           <h2 className="text-2xl font-black tracking-tight text-slate-950">

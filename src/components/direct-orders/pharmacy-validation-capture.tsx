@@ -357,15 +357,15 @@ export function PharmacyValidationCapture({
   }
 
   const inputClass = "mt-1 w-full border border-slate-300 px-3 py-2 text-sm focus:border-orange-500 focus:outline-none";
-  const labelClass = "block text-[11px] font-black uppercase tracking-wider text-slate-500";
+  const labelClass = "block text-phx-xs font-black uppercase tracking-wider text-slate-500";
 
   return (
     <section className="border border-phx-line bg-white">
       <header className="border-b border-phx-line bg-slate-900 px-4 py-2.5">
-        <h3 className="text-[11px] font-black uppercase tracking-[0.14em] text-white">Validate this pharmacy</h3>
+        <h3 className="text-phx-xs font-black uppercase tracking-[0.14em] text-white">Validate this pharmacy</h3>
       </header>
       <div className="space-y-3 px-4 py-4">
-        <p className="border border-amber-300 bg-amber-50 px-3 py-2 text-[12px] font-semibold text-amber-900">
+        <p className="border border-amber-300 bg-amber-50 px-3 py-2 text-phx-sm font-semibold text-amber-900">
           This pharmacy is not in the master database. To move your order, capture your location and
           a live photo of the pharmacy sign. A System Admin reviews it.
         </p>
@@ -375,19 +375,19 @@ export function PharmacyValidationCapture({
           <input className={inputClass} value={name} onChange={(e) => setName(e.target.value)} dir="auto" />
           {suggestions.length > 0 ? (
             <div className="mt-2 border border-sky-300 bg-sky-50 px-3 py-2">
-              <p className="text-[12px] font-black text-sky-900">
+              <p className="text-phx-sm font-black text-sky-900">
                 Phoenix already knows {suggestions.length === 1 ? "a pharmacy" : "pharmacies"} with a similar name:
               </p>
               <ul className="mt-1 space-y-1">
                 {suggestions.map((s) => (
-                  <li key={`${s.distributorCode}:${s.customerCode}`} className="text-[12px] text-slate-700">
+                  <li key={`${s.distributorCode}:${s.customerCode}`} className="text-phx-sm text-slate-700">
                     <span className="font-bold" dir="auto">{s.customerName}</span>
                     <span className="text-slate-500"> — {s.distributorCode} · {s.customerCode}</span>
                     {s.areaCode ? <span className="text-slate-400"> · {s.areaCode}</span> : null}
                   </li>
                 ))}
               </ul>
-              <p className="mt-1.5 text-[11px] font-semibold text-sky-800">
+              <p className="mt-1.5 text-phx-xs font-semibold text-sky-800">
                 If one of these is your pharmacy, go back and pick it — your order goes through
                 immediately with no validation needed.
               </p>
@@ -418,18 +418,18 @@ export function PharmacyValidationCapture({
 
         <div className="border border-[#eef1f3] p-3">
           <div className="flex flex-wrap items-center gap-2">
-            <button type="button" onClick={captureLocation} className="border border-slate-300 px-3 py-1.5 text-[12px] font-bold text-slate-700 hover:bg-slate-50">
+            <button type="button" onClick={captureLocation} className="border border-slate-300 px-3 py-1.5 text-phx-sm font-bold text-slate-700 hover:bg-slate-50">
               1. Capture location
             </button>
-            <button type="button" onClick={startCamera} className="border border-slate-300 px-3 py-1.5 text-[12px] font-bold text-slate-700 hover:bg-slate-50">
+            <button type="button" onClick={startCamera} className="border border-slate-300 px-3 py-1.5 text-phx-sm font-bold text-slate-700 hover:bg-slate-50">
               2. Start camera
             </button>
-            <button type="button" onClick={takePhoto} disabled={!cameraReady} className="bg-slate-900 px-3 py-1.5 text-[12px] font-bold text-white disabled:bg-slate-400">
+            <button type="button" onClick={takePhoto} disabled={!cameraReady} className="bg-slate-900 px-3 py-1.5 text-phx-sm font-bold text-white disabled:bg-slate-400">
               3. Take photo
             </button>
           </div>
           {capture.latitude != null ? (
-            <div className="mt-2 space-y-0.5 text-[11px] font-semibold text-emerald-700">
+            <div className="mt-2 space-y-0.5 text-phx-xs font-semibold text-emerald-700">
               {(capture.location?.lines ?? []).map((line, index) => (
                 <p key={`${index}-${line}`}>{line}</p>
               ))}
@@ -452,13 +452,13 @@ export function PharmacyValidationCapture({
             code anywhere. A nursery is skipped entirely — it has no distributor account by its
             nature and no pharmacy trade licence to produce. */}
         <div className={`border p-3 ${licenseFillsTheGap && !license ? "border-amber-300 bg-amber-50" : "border-[#eef1f3]"}`}>
-          <p className="text-[11px] font-black uppercase tracking-wider text-slate-500">
+          <p className="text-phx-xs font-black uppercase tracking-wider text-slate-500">
             Pharmacy licence · رخصة الصيدلية {licenseFillsTheGap ? "" : "(optional)"}
           </p>
           {licenseNote ? (
-            <p className="mt-1 text-[12px] font-semibold text-amber-900" dir="auto">{licenseNote}</p>
+            <p className="mt-1 text-phx-sm font-semibold text-amber-900" dir="auto">{licenseNote}</p>
           ) : (
-            <p className="mt-1 text-[12px] font-medium text-slate-500">
+            <p className="mt-1 text-phx-sm font-medium text-slate-500">
               Attach it if you have it — the reviewer checks the trade name on the licence against the
               name on the shop sign.
             </p>
@@ -482,24 +482,24 @@ export function PharmacyValidationCapture({
             <button
               type="button"
               onClick={() => licenseCameraRef.current?.click()}
-              className="border border-slate-300 bg-white px-3 py-1.5 text-[12px] font-bold text-slate-700 hover:bg-slate-50"
+              className="border border-slate-300 bg-white px-3 py-1.5 text-phx-sm font-bold text-slate-700 hover:bg-slate-50"
             >
               Photograph licence
             </button>
             <button
               type="button"
               onClick={() => licenseFileRef.current?.click()}
-              className="border border-slate-300 bg-white px-3 py-1.5 text-[12px] font-bold text-slate-700 hover:bg-slate-50"
+              className="border border-slate-300 bg-white px-3 py-1.5 text-phx-sm font-bold text-slate-700 hover:bg-slate-50"
             >
               Choose file
             </button>
-            <span className="text-[11px] font-medium text-slate-400">JPEG, PNG or PDF · up to 5 MB</span>
+            <span className="text-phx-xs font-medium text-slate-400">JPEG, PNG or PDF · up to 5 MB</span>
           </div>
           {license ? (
             <div className="mt-2 border border-emerald-300 bg-emerald-50 px-3 py-2">
               <div className="flex items-center justify-between gap-2">
-                <span className="text-[12px] font-bold text-emerald-900" dir="auto">{license.fileName}</span>
-                <button type="button" onClick={clearLicense} className="text-[11px] font-bold text-orange-600">
+                <span className="text-phx-sm font-bold text-emerald-900" dir="auto">{license.fileName}</span>
+                <button type="button" onClick={clearLicense} className="text-phx-xs font-bold text-orange-600">
                   Remove
                 </button>
               </div>
@@ -518,14 +518,14 @@ export function PharmacyValidationCapture({
           ) : null}
         </div>
 
-        {message ? <p className="text-[12px] font-semibold text-slate-600">{message}</p> : null}
+        {message ? <p className="text-phx-sm font-semibold text-slate-600">{message}</p> : null}
         {error ? <p className="text-sm font-semibold text-rose-600">{error}</p> : null}
 
         <button
           type="button"
           onClick={submit}
           disabled={busy || !photo}
-          className="w-full bg-orange-500 px-4 py-2.5 text-[13px] font-black uppercase tracking-wider text-white hover:bg-orange-600 disabled:cursor-not-allowed disabled:bg-slate-300"
+          className="w-full bg-orange-500 px-4 py-2.5 text-phx-md font-black uppercase tracking-wider text-white hover:bg-orange-600 disabled:cursor-not-allowed disabled:bg-slate-300"
         >
           {busy ? "Sending…" : "Send for validation"}
         </button>

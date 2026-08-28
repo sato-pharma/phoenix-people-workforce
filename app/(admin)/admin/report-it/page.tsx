@@ -32,7 +32,7 @@ export default async function AdminReportItPage() {
   return (
     <main className="p-4 sm:p-6">
       <header className="mb-6">
-        <p className="text-[11px] font-black uppercase tracking-[0.2em] text-orange-600">Pharmacovigilance</p>
+        <p className="text-phx-xs font-black uppercase tracking-[0.2em] text-orange-600">Pharmacovigilance</p>
         <h1 className="text-xl font-black text-slate-900">Reports Dashboard</h1>
         <p className="mt-1 text-sm text-slate-600">
           Review and export adverse drug reaction reports submitted by employees.

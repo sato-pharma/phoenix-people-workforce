@@ -99,7 +99,7 @@ function RegionKeycards({ rmRegional }: { rmRegional: PortalHomeSnapshot["rmRegi
         title="Region Performance"
         right={
           rmRegional ? (
-            <span className="whitespace-nowrap text-[10px] font-bold uppercase tracking-widest text-slate-400">
+            <span className="whitespace-nowrap text-phx-2xs font-bold uppercase tracking-widest text-slate-400">
               {rmRegional.dsmCount} {rmRegional.dsmCount === 1 ? "district" : "districts"}
             </span>
           ) : undefined
@@ -146,7 +146,7 @@ function DistrictsAttention({ rmRegional }: { rmRegional: PortalHomeSnapshot["rm
     <div className="overflow-hidden border border-slate-200 bg-white">
       <SectionHead
         title="Districts Needing Attention"
-        right={<span className="whitespace-nowrap text-[10px] font-bold uppercase tracking-widest text-slate-400">below 90%</span>}
+        right={<span className="whitespace-nowrap text-phx-2xs font-bold uppercase tracking-widest text-slate-400">below 90%</span>}
       />
       {behind.length === 0 && unmeasured.length === 0 ? (
         <div className="flex items-center gap-2 bg-white px-4 py-5 sm:px-5">
@@ -163,13 +163,13 @@ function DistrictsAttention({ rmRegional }: { rmRegional: PortalHomeSnapshot["rm
               <div key={d.hrId || d.name} className="flex items-center justify-between gap-3 bg-white px-4 py-3 sm:px-5">
                 <div className="min-w-0">
                   <p className="text-sm font-semibold text-slate-800">{d.name}</p>
-                  <p className="mt-0.5 text-[11px] font-medium text-slate-500">
+                  <p className="mt-0.5 text-phx-xs font-medium text-slate-500">
                     {egpCompact(d.totalSales)} of {egpCompact(d.totalTarget)}
                   </p>
                 </div>
                 <div className="shrink-0 text-right">
                   <p className={`text-lg font-black tabular-nums ${tone}`}>{pct}%</p>
-                  <p className="mt-0.5 whitespace-nowrap text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                  <p className="mt-0.5 whitespace-nowrap text-phx-2xs font-semibold uppercase tracking-wide text-slate-400">
                     {egpCompact(gap)} to 90%
                   </p>
                 </div>
@@ -246,7 +246,7 @@ export function RmCommandCenter({ snapshot, access }: { snapshot: PortalHomeSnap
 
       <DashboardsGrid items={DASHBOARDS} />
 
-      <div className="flex items-center gap-1.5 border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-[11px] font-semibold text-amber-700">
+      <div className="flex items-center gap-1.5 border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-phx-xs font-semibold text-amber-700">
         <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
         Incentives shown below are not yet confirmed by HR.
       </div>

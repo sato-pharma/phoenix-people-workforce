@@ -230,12 +230,12 @@ export function InAppNotificationsBell({ isAdminMode }: { isAdminMode: boolean }
               </div>
             </div>
             {actionRequiredCount > 0 ? (
-              <span className="mt-2 inline-flex items-center gap-1 rounded-full bg-phx-accent-soft px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.12em] text-phx-accent-press">
+              <span className="mt-2 inline-flex items-center gap-1 rounded-full bg-phx-accent-soft px-2 py-0.5 text-phx-2xs font-black uppercase tracking-[0.12em] text-phx-accent-press">
                 {actionRequiredCount} action{actionRequiredCount === 1 ? "" : "s"} required
               </span>
             ) : null}
             {unreadCount > 0 ? (
-              <span className="ml-2 mt-2 inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.12em] text-slate-600">
+              <span className="ml-2 mt-2 inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-600">
                 {unreadCount} unread
               </span>
             ) : null}
@@ -323,7 +323,7 @@ export function InAppNotificationsBell({ isAdminMode }: { isAdminMode: boolean }
                             {notification.details.slice(0, 6).map((detail) => (
                               <div
                                 className={cn(
-                                  "flex items-center justify-between gap-3 rounded px-2 py-1 text-[11px]",
+                                  "flex items-center justify-between gap-3 rounded px-2 py-1 text-phx-xs",
                                   panelText.chip,
                                 )}
                                 key={`${notification.id}-${detail.label}`}
@@ -337,25 +337,25 @@ export function InAppNotificationsBell({ isAdminMode }: { isAdminMode: boolean }
                           </div>
                         ) : null}
                         <div className="mt-2 flex flex-wrap items-center gap-2">
-                          <span className="rounded bg-phx-accent-soft px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.12em] text-phx-accent-press">
+                          <span className="rounded bg-phx-accent-soft px-2 py-0.5 text-phx-2xs font-black uppercase tracking-[0.12em] text-phx-accent-press">
                             {notification.category.replace(/_/g, " ")}
                           </span>
                           {notification.priority ? (
-                            <span className={cn("rounded px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.12em]", panelText.chip)}>
+                            <span className={cn("rounded px-2 py-0.5 text-phx-2xs font-black uppercase tracking-[0.12em]", panelText.chip)}>
                               {notification.priority}
                             </span>
                           ) : null}
                           {notification.statusLabel ? (
-                            <span className={cn("rounded px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.12em]", panelText.chip)}>
+                            <span className={cn("rounded px-2 py-0.5 text-phx-2xs font-black uppercase tracking-[0.12em]", panelText.chip)}>
                               {notification.statusLabel}
                             </span>
                           ) : null}
                           {actionRequired ? (
-                            <span className="rounded bg-[#FEF2F2] px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.12em] text-[#B91C1C]">
+                            <span className="rounded bg-[#FEF2F2] px-2 py-0.5 text-phx-2xs font-black uppercase tracking-[0.12em] text-[#B91C1C]">
                               Action required
                             </span>
                           ) : null}
-                          <span className={cn("text-[11px]", panelText.muted)}>
+                          <span className={cn("text-phx-xs", panelText.muted)}>
                             {formatNotificationTime(notification.sentAt ?? notification.scheduledFor)}
                           </span>
                         </div>

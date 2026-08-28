@@ -324,7 +324,7 @@ export function ClosingDetailsPanel({ line, period, showConfidentialToggle = fal
           choices behind it (Area/Product/Distributor commonly still do). */}
       <div className="flex flex-wrap items-end gap-3 border-b border-slate-100 px-4 pb-4 md:px-5">
         <label className="flex w-full flex-col gap-1 sm:w-72">
-          <span className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">Search</span>
+          <span className="text-phx-2xs font-bold uppercase tracking-[0.16em] text-slate-500">Search</span>
           <div className="relative">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
             <input
@@ -337,7 +337,7 @@ export function ClosingDetailsPanel({ line, period, showConfidentialToggle = fal
         </label>
         {(data?.options.regions.length ?? 0) > 1 ? (
           <label className="flex w-full flex-col gap-1 sm:w-40">
-            <span className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">Region</span>
+            <span className="text-phx-2xs font-bold uppercase tracking-[0.16em] text-slate-500">Region</span>
             <SearchableSelect
               className={selectClassName}
               onChange={(event) => {
@@ -355,7 +355,7 @@ export function ClosingDetailsPanel({ line, period, showConfidentialToggle = fal
         ) : null}
         {areaOptions.length > 1 ? (
           <label className="flex w-full flex-col gap-1 sm:w-44">
-            <span className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">Area</span>
+            <span className="text-phx-2xs font-bold uppercase tracking-[0.16em] text-slate-500">Area</span>
             <SearchableSelect
               className={selectClassName}
               onChange={(event) => onFilter(setAreaCode)(event.target.value)}
@@ -370,7 +370,7 @@ export function ClosingDetailsPanel({ line, period, showConfidentialToggle = fal
         ) : null}
         {(data?.options.products.length ?? 0) > 1 ? (
           <label className="flex w-full flex-col gap-1 sm:w-44">
-            <span className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">Product</span>
+            <span className="text-phx-2xs font-bold uppercase tracking-[0.16em] text-slate-500">Product</span>
             <SearchableSelect
               className={selectClassName}
               onChange={(event) => onFilter(setProductCode)(event.target.value)}
@@ -385,7 +385,7 @@ export function ClosingDetailsPanel({ line, period, showConfidentialToggle = fal
         ) : null}
         {(data?.options.distributors.length ?? 0) > 1 ? (
           <label className="flex w-full flex-col gap-1 sm:w-40">
-            <span className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">Distributor</span>
+            <span className="text-phx-2xs font-bold uppercase tracking-[0.16em] text-slate-500">Distributor</span>
             <SearchableSelect
               className={selectClassName}
               onChange={(event) => onFilter(setDistributorCode)(event.target.value)}
@@ -399,7 +399,7 @@ export function ClosingDetailsPanel({ line, period, showConfidentialToggle = fal
           </label>
         ) : null}
         <label className="flex w-full flex-col gap-1 sm:w-40">
-          <span className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">Rows</span>
+          <span className="text-phx-2xs font-bold uppercase tracking-[0.16em] text-slate-500">Rows</span>
           <SearchableSelect
             className={selectClassName}
             onChange={(event) => onFilter(setInclusion)(event.target.value)}
@@ -546,15 +546,15 @@ function DetailCards({ rows }: { rows: ClosingDetailRow[] }) {
           <p className="mt-1 text-xs font-semibold text-slate-700">{row.productName}</p>
           <dl className="mt-2 grid grid-cols-3 gap-2 text-xs">
             <div>
-              <dt className="text-[10px] font-bold uppercase text-slate-400">Qty</dt>
+              <dt className="text-phx-2xs font-bold uppercase text-slate-400">Qty</dt>
               <dd className="font-bold tabular-nums text-slate-800">{fmtUnits(row.qty)}</dd>
             </div>
             <div>
-              <dt className="text-[10px] font-bold uppercase text-slate-400">Eff.</dt>
+              <dt className="text-phx-2xs font-bold uppercase text-slate-400">Eff.</dt>
               <dd className="font-bold tabular-nums text-slate-800">{fmtValue(row.effectiveUnits)}</dd>
             </div>
             <div>
-              <dt className="text-[10px] font-bold uppercase text-slate-400">Value</dt>
+              <dt className="text-phx-2xs font-bold uppercase text-slate-400">Value</dt>
               <dd className="font-bold tabular-nums text-slate-800">{fmtValue(row.salesValue)}</dd>
             </div>
           </dl>

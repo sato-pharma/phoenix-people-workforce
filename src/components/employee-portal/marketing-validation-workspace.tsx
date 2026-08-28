@@ -699,7 +699,7 @@ function Field({
 }) {
   return (
     <label className="block min-w-0">
-      <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">
+      <span className="mb-1.5 block text-phx-xs font-black uppercase tracking-[0.14em] text-slate-500">
         {label}
       </span>
       {children}
@@ -716,7 +716,7 @@ function ReadOnlyCaptureValue({
   placeholder: string;
   value: string;
 }) {
-  const captureClassName = "w-full rounded-sm border border-slate-200 bg-slate-50 px-3.5 text-[13px] font-semibold text-slate-700 outline-none";
+  const captureClassName = "w-full rounded-sm border border-slate-200 bg-slate-50 px-3.5 text-phx-md font-semibold text-slate-700 outline-none";
 
   if (multiline) {
     return (
@@ -733,7 +733,7 @@ function ReadOnlyCaptureValue({
   return (
     <Input
       aria-readonly="true"
-      className="h-10 cursor-default rounded-sm border-slate-200 bg-slate-50 text-[13px] font-semibold text-slate-700"
+      className="h-10 cursor-default rounded-sm border-slate-200 bg-slate-50 text-phx-md font-semibold text-slate-700"
       placeholder={placeholder}
       readOnly
       value={value}
@@ -754,7 +754,7 @@ function SelectField({
 }) {
   return (
     <SearchableSelect
-      className="h-10 w-full rounded-sm border border-slate-200 bg-white px-3 text-[13px] font-semibold text-slate-800 outline-none transition focus:border-orange-400 focus:ring-2 focus:ring-orange-100 disabled:cursor-not-allowed disabled:opacity-50"
+      className="h-10 w-full rounded-sm border border-slate-200 bg-white px-3 text-phx-md font-semibold text-slate-800 outline-none transition focus:border-orange-400 focus:ring-2 focus:ring-orange-100 disabled:cursor-not-allowed disabled:opacity-50"
       disabled={disabled}
       onChange={(event) => onChange(event.target.value)}
       value={value}
@@ -792,7 +792,7 @@ function MetricCard({
     <div className={`rounded-sm border border-slate-200 border-l-[3px] px-3.5 py-3 ${accentStyles[accent]}`}>
       <div className="flex items-center gap-2">
         <Icon className={`h-3.5 w-3.5 shrink-0 ${iconStyles[accent]}`} />
-        <p className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-500">
+        <p className="text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-500">
           {label}
         </p>
       </div>
@@ -822,7 +822,7 @@ function PharmacySourceTab({
 }) {
   return (
     <button
-      className={`min-h-9 overflow-hidden whitespace-nowrap rounded-sm px-3 text-[12px] font-bold transition ${
+      className={`min-h-9 overflow-hidden whitespace-nowrap rounded-sm px-3 text-phx-sm font-bold transition ${
         active
           ? "bg-orange-500 text-white shadow-[0_4px_12px_rgba(249,115,22,0.25)]"
           : disabled
@@ -861,7 +861,7 @@ function ReusablePharmacyPicker({
 
   if (options.length === 0) {
     return (
-      <div className="rounded-sm border border-slate-200 bg-white px-3.5 py-3 text-[12px] font-semibold text-slate-500">
+      <div className="rounded-sm border border-slate-200 bg-white px-3.5 py-3 text-phx-sm font-semibold text-slate-500">
         No validated pharmacies yet. Validate one on the other tab and it will be here next time —
         for you and for your colleagues in the same area.
       </div>
@@ -872,7 +872,7 @@ function ReusablePharmacyPicker({
     <div className="space-y-3">
       <Field label="Pharmacy Already Validated">
         <SearchableSelect
-          className="h-10 w-full rounded-sm border-slate-200 bg-white text-[13px]"
+          className="h-10 w-full rounded-sm border-slate-200 bg-white text-phx-md"
           onValueChange={onSelect}
           placeholder="Search by pharmacy name, code, or area"
           value={selectedId}
@@ -896,10 +896,10 @@ function ReusablePharmacyPicker({
       {selected ? (
         <div className="space-y-2.5 rounded-sm border border-orange-200 bg-orange-50/40 px-3.5 py-3">
           <div className="overflow-x-auto">
-            <p className="whitespace-nowrap text-[13px] font-black text-slate-900">
+            <p className="whitespace-nowrap text-phx-md font-black text-slate-900">
               {selected.displayName || selected.pharmacyCode}
             </p>
-            <p className="mt-0.5 whitespace-nowrap text-[11px] font-semibold text-slate-600">
+            <p className="mt-0.5 whitespace-nowrap text-phx-xs font-semibold text-slate-600">
               {[
                 selected.pharmacyCode,
                 [selected.areaName, selected.governorateName].filter(Boolean).join(", "),
@@ -912,7 +912,7 @@ function ReusablePharmacyPicker({
           </div>
 
           <div className="space-y-1.5">
-            <p className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-500">
+            <p className="text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-500">
               Vendor codes that will be attached
             </p>
             {/*
@@ -920,14 +920,14 @@ function ReusablePharmacyPicker({
               Said in words, because a heading with nothing under it reads as a loading failure.
             */}
             {selected.vendorCodes.length === 0 ? (
-              <p className="text-[12px] font-semibold text-slate-600">
+              <p className="text-phx-sm font-semibold text-slate-600">
                 None — a {venueTypeLabel(selected.venueType).toLowerCase()} has no distributor account, so sales
                 cannot be attributed to it.
               </p>
             ) : null}
             {selected.vendorCodes.map((code) => (
               <div className="overflow-x-auto" key={code.distributorCodeId}>
-                <p className="whitespace-nowrap text-[12px] font-semibold text-slate-700">
+                <p className="whitespace-nowrap text-phx-sm font-semibold text-slate-700">
                   {code.distributorName} — {code.distributorPharmacyCode}
                   {code.referenceStatus === "matched" ? null : (
                     <span className="ml-2 font-bold text-amber-700">Sales not trackable</span>
@@ -938,12 +938,12 @@ function ReusablePharmacyPicker({
           </div>
 
           {selected.evidenceStatus === "complete" ? (
-            <p className="flex items-center gap-1.5 text-[11px] font-bold text-emerald-700">
+            <p className="flex items-center gap-1.5 text-phx-xs font-bold text-emerald-700">
               <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
               Live photo and location already on file — no need to capture it again.
             </p>
           ) : (
-            <p className="flex items-start gap-1.5 text-[11px] font-bold text-amber-700">
+            <p className="flex items-start gap-1.5 text-phx-xs font-bold text-amber-700">
               <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
               This pharmacy has no complete live photo and location, so attaching it leaves the
               customer under Not Usable Yet until that is fixed.
@@ -966,7 +966,7 @@ function TabButton({
 }) {
   return (
     <button
-      className={`min-h-9 rounded-sm px-4 text-[13px] font-bold transition ${
+      className={`min-h-9 rounded-sm px-4 text-phx-md font-bold transition ${
         active
           ? "bg-orange-500 text-white shadow-[0_4px_12px_rgba(249,115,22,0.25)]"
           : "border border-slate-200 bg-white text-slate-600 hover:border-orange-200 hover:bg-orange-50 hover:text-orange-700"
@@ -989,7 +989,7 @@ function StatusBadge({ status }: { status: MarketingValidationStatus }) {
   };
 
   return (
-    <span className={`inline-flex items-center rounded-sm border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${styles[variant]}`}>
+    <span className={`inline-flex items-center rounded-sm border px-2 py-0.5 text-phx-2xs font-bold uppercase tracking-wide ${styles[variant]}`}>
       {status.replace(/_/g, " ")}
     </span>
   );
@@ -998,7 +998,7 @@ function StatusBadge({ status }: { status: MarketingValidationStatus }) {
 /** Marks a customer a Super Admin validated at the desk, so it is never mistaken for a field capture. */
 function AdminValidatedBadge() {
   return (
-    <span className="inline-flex items-center rounded-sm border border-sky-200 bg-sky-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-sky-700">
+    <span className="inline-flex items-center rounded-sm border border-sky-200 bg-sky-50 px-2 py-0.5 text-phx-2xs font-bold uppercase tracking-wide text-sky-700">
       Admin validated
     </span>
   );
@@ -1013,7 +1013,7 @@ function AdminValidatedBadge() {
  */
 function UntrackedCodeBadge() {
   return (
-    <span className="inline-flex items-center rounded-sm border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-700">
+    <span className="inline-flex items-center rounded-sm border border-amber-200 bg-amber-50 px-2 py-0.5 text-phx-2xs font-bold uppercase tracking-wide text-amber-700">
       Sales not trackable
     </span>
   );
@@ -1108,10 +1108,10 @@ function PharmacyLicensePanel({
           : "rounded-sm border border-slate-200 bg-slate-50 p-3"
       }
     >
-      <p className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-500">
+      <p className="text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-500">
         Pharmacy Licence · رخصة الصيدلية {fillsTheGap ? "" : "(optional)"}
       </p>
-      <p className={`mt-1 text-[11px] font-semibold ${fillsTheGap ? "text-amber-800" : "text-slate-500"}`} dir="auto">
+      <p className={`mt-1 text-phx-xs font-semibold ${fillsTheGap ? "text-amber-800" : "text-slate-500"}`} dir="auto">
         {note ??
           "Attach it if you have it — the reviewer checks the trade name on the licence against the name on the shop sign."}
       </p>
@@ -1132,7 +1132,7 @@ function PharmacyLicensePanel({
       />
       <div className="mt-2 flex flex-wrap items-center gap-2">
         <Button
-          className="h-8 gap-1.5 rounded-sm border border-slate-200 bg-white px-3 text-[12px] font-bold text-slate-700 hover:bg-slate-50"
+          className="h-8 gap-1.5 rounded-sm border border-slate-200 bg-white px-3 text-phx-sm font-bold text-slate-700 hover:bg-slate-50"
           onClick={() => cameraRef.current?.click()}
           type="button"
         >
@@ -1140,23 +1140,23 @@ function PharmacyLicensePanel({
           Photograph
         </Button>
         <Button
-          className="h-8 gap-1.5 rounded-sm border border-slate-200 bg-white px-3 text-[12px] font-bold text-slate-700 hover:bg-slate-50"
+          className="h-8 gap-1.5 rounded-sm border border-slate-200 bg-white px-3 text-phx-sm font-bold text-slate-700 hover:bg-slate-50"
           onClick={() => fileRef.current?.click()}
           type="button"
         >
           <Paperclip className="h-3.5 w-3.5" />
           Choose file
         </Button>
-        <span className="text-[11px] font-medium text-slate-400 whitespace-nowrap">JPEG, PNG or PDF · up to 5 MB</span>
+        <span className="text-phx-xs font-medium text-slate-400 whitespace-nowrap">JPEG, PNG or PDF · up to 5 MB</span>
       </div>
       {license ? (
         <div className="mt-2 rounded-sm border border-emerald-200 bg-emerald-50 px-3 py-2">
           <div className="flex items-center justify-between gap-2">
-            <span className="min-w-0 truncate text-[12px] font-bold text-emerald-900" dir="auto">
+            <span className="min-w-0 truncate text-phx-sm font-bold text-emerald-900" dir="auto">
               {license.fileName}
             </span>
             <button
-              className="shrink-0 text-[11px] font-bold text-orange-600"
+              className="shrink-0 text-phx-xs font-bold text-orange-600"
               onClick={clear}
               type="button"
             >
@@ -1176,7 +1176,7 @@ function PharmacyLicensePanel({
           )}
         </div>
       ) : null}
-      {error ? <p className="mt-1.5 text-[11px] font-bold text-rose-600">{error}</p> : null}
+      {error ? <p className="mt-1.5 text-phx-xs font-bold text-rose-600">{error}</p> : null}
     </div>
   );
 }
@@ -1201,24 +1201,24 @@ function CapturePanel({
     <div className="rounded-sm border border-slate-200 bg-slate-50 p-3">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0">
-          <p className="text-[13px] font-bold text-slate-800">{label}</p>
+          <p className="text-phx-md font-bold text-slate-800">{label}</p>
           {/* Address and territory, one per line. The coordinate pair stays on the photo and in
               the record — on screen it only ever answered a question nobody asked. */}
           {hasLocation && capture.locationLines.length > 0 ? (
-            <div className="mt-0.5 space-y-0.5 text-[12px] font-medium text-slate-500">
+            <div className="mt-0.5 space-y-0.5 text-phx-sm font-medium text-slate-500">
               {capture.locationLines.slice(0, 2).map((line, index) => (
                 <p key={`${index}-${line}`}>{line}</p>
               ))}
             </div>
           ) : (
-            <p className="mt-0.5 text-[12px] font-medium text-slate-500">
+            <p className="mt-0.5 text-phx-sm font-medium text-slate-500">
               {hasLocation ? "Resolving the address…" : "No GPS capture yet"}
             </p>
           )}
         </div>
         <div className="flex shrink-0 gap-2">
           <Button
-            className="h-8 gap-1.5 rounded-sm border border-orange-200 bg-white px-3 text-[12px] font-bold text-orange-700 hover:bg-orange-50"
+            className="h-8 gap-1.5 rounded-sm border border-orange-200 bg-white px-3 text-phx-sm font-bold text-orange-700 hover:bg-orange-50"
             disabled={isCapturing}
             onClick={onCaptureLocation}
             type="button"
@@ -1227,7 +1227,7 @@ function CapturePanel({
             GPS
           </Button>
           <Button
-            className="h-8 gap-1.5 rounded-sm border border-slate-200 bg-white px-3 text-[12px] font-bold text-slate-700 hover:bg-slate-50"
+            className="h-8 gap-1.5 rounded-sm border border-slate-200 bg-white px-3 text-phx-sm font-bold text-slate-700 hover:bg-slate-50"
             disabled={!hasLocation}
             onClick={onOpenCamera}
             type="button"
@@ -1238,10 +1238,10 @@ function CapturePanel({
         </div>
       </div>
       <div className="mt-2.5 flex flex-wrap gap-1.5">
-        <span className={`inline-flex items-center rounded-sm border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${hasLocation ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-amber-200 bg-amber-50 text-amber-700"}`}>
+        <span className={`inline-flex items-center rounded-sm border px-2 py-0.5 text-phx-2xs font-bold uppercase tracking-wide ${hasLocation ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-amber-200 bg-amber-50 text-amber-700"}`}>
           {hasLocation ? "Location captured" : "Location required"}
         </span>
-        <span className={`inline-flex items-center rounded-sm border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${hasPhoto ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-amber-200 bg-amber-50 text-amber-700"}`}>
+        <span className={`inline-flex items-center rounded-sm border px-2 py-0.5 text-phx-2xs font-bold uppercase tracking-wide ${hasPhoto ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-amber-200 bg-amber-50 text-amber-700"}`}>
           {hasPhoto ? "Live photo captured" : "Live photo required"}
         </span>
       </div>
@@ -1253,7 +1253,7 @@ function CapturePanel({
             className="h-36 w-full object-contain"
             src={capture.photoDataUrl}
           />
-          <p className="bg-white px-3 py-1.5 text-[11px] font-semibold text-slate-500">{capture.photoCapturedAt}</p>
+          <p className="bg-white px-3 py-1.5 text-phx-xs font-semibold text-slate-500">{capture.photoCapturedAt}</p>
         </div>
       ) : null}
     </div>
@@ -1373,16 +1373,16 @@ function PlaceSearchPanel({
     <div className="rounded-sm border border-sky-200 bg-sky-50/60 p-3">
       <div className="flex items-center gap-2">
         <MapPin className="h-3.5 w-3.5 shrink-0 text-sky-600" />
-        <p className="text-[13px] font-bold text-slate-800">{label}</p>
+        <p className="text-phx-md font-bold text-slate-800">{label}</p>
       </div>
       {hasLocation && capture.locationLines.length > 0 ? (
-        <div className="mt-0.5 space-y-0.5 text-[12px] font-medium text-slate-500">
+        <div className="mt-0.5 space-y-0.5 text-phx-sm font-medium text-slate-500">
           {capture.locationLines.slice(0, 2).map((line, index) => (
             <p key={`${index}-${line}`}>{line}</p>
           ))}
         </div>
       ) : (
-        <p className="mt-0.5 text-[12px] font-medium text-slate-500">
+        <p className="mt-0.5 text-phx-sm font-medium text-slate-500">
           {hasLocation
             ? capture.address || "Resolving the address…"
             : "Search the address or place name, then pick the nearest point."}
@@ -1391,7 +1391,7 @@ function PlaceSearchPanel({
 
       <div className="relative mt-2.5">
         <Input
-          className="h-10 rounded-sm border-slate-200 bg-white text-[13px]"
+          className="h-10 rounded-sm border-slate-200 bg-white text-phx-md"
           onChange={(event) => runSearch(event.target.value)}
           placeholder="Search address or place"
           value={query}
@@ -1406,9 +1406,9 @@ function PlaceSearchPanel({
                 onClick={() => void choosePlace(suggestion)}
                 type="button"
               >
-                <span className="text-[13px] font-bold text-slate-800">{suggestion.primaryText}</span>
+                <span className="text-phx-md font-bold text-slate-800">{suggestion.primaryText}</span>
                 {suggestion.secondaryText ? (
-                  <span className="text-[11px] font-medium text-slate-500">{suggestion.secondaryText}</span>
+                  <span className="text-phx-xs font-medium text-slate-500">{suggestion.secondaryText}</span>
                 ) : null}
               </button>
             ))}
@@ -1418,7 +1418,7 @@ function PlaceSearchPanel({
 
       <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
         <span
-          className={`inline-flex items-center rounded-sm border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${
+          className={`inline-flex items-center rounded-sm border px-2 py-0.5 text-phx-2xs font-bold uppercase tracking-wide ${
             hasLocation
               ? "border-emerald-200 bg-emerald-50 text-emerald-700"
               : "border-amber-200 bg-amber-50 text-amber-700"
@@ -1427,7 +1427,7 @@ function PlaceSearchPanel({
           {hasLocation ? "Location pinned from map" : "Location required"}
         </span>
         {isSearching || isResolving ? <LoadingSpinner /> : null}
-        {note ? <span className="text-[11px] font-semibold text-amber-700">{note}</span> : null}
+        {note ? <span className="text-phx-xs font-semibold text-amber-700">{note}</span> : null}
       </div>
     </div>
   );
@@ -1458,11 +1458,11 @@ function ValidatedPharmaciesModal({
       <div className="max-h-[88vh] w-full max-w-3xl overflow-hidden rounded-sm border border-slate-200 bg-white shadow-2xl" ref={focusTrapRef}>
         <div className="flex items-start justify-between gap-4 border-b border-slate-100 px-5 py-4">
           <div className="min-w-0">
-            <p className="text-[10px] font-black uppercase tracking-[0.14em] text-orange-600">Linked pharmacies</p>
+            <p className="text-phx-2xs font-black uppercase tracking-[0.14em] text-orange-600">Linked pharmacies</p>
             <h3 className="mt-1 text-lg font-black text-slate-900">{group.customerName}</h3>
           </div>
           <Button
-            className="h-8 rounded-sm border border-slate-200 bg-white px-3 text-[12px] font-bold text-slate-700 hover:bg-slate-50"
+            className="h-8 rounded-sm border border-slate-200 bg-white px-3 text-phx-sm font-bold text-slate-700 hover:bg-slate-50"
             onClick={onClose}
             type="button"
           >
@@ -1475,8 +1475,8 @@ function ValidatedPharmaciesModal({
             <div className="space-y-3">
               {pharmacies.map((pharmacy) => (
                 <div className="rounded-sm border border-slate-200 bg-white p-3" key={pharmacy.id}>
-                  <p className="text-[13px] font-bold text-slate-900">{pharmacy.name}</p>
-                  <div className="mt-2 space-y-1 text-[12px]">
+                  <p className="text-phx-md font-bold text-slate-900">{pharmacy.name}</p>
+                  <div className="mt-2 space-y-1 text-phx-sm">
                     <div className="flex justify-between">
                       <span className="font-medium text-slate-500">Area</span>
                       <span className="font-semibold text-slate-700">{pharmacy.area || "Not captured"}</span>
@@ -1489,7 +1489,7 @@ function ValidatedPharmaciesModal({
                   <div className="mt-2 flex flex-wrap gap-1.5">
                     {pharmacy.vendorCodes.map((line) => (
                       <span
-                        className="rounded-sm border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] font-semibold text-slate-700"
+                        className="rounded-sm border border-slate-200 bg-slate-50 px-2 py-1 text-phx-xs font-semibold text-slate-700"
                         key={line.id}
                       >
                         {line.distributorName}: <span className="font-mono">{line.code}</span>
@@ -1504,7 +1504,7 @@ function ValidatedPharmaciesModal({
           <div className="hidden md:block">
             <div className="overflow-hidden rounded-sm border border-slate-200">
               <table className="w-full border-collapse text-left">
-                <thead className="bg-slate-50 text-[10px] font-black uppercase tracking-[0.12em] text-slate-500">
+                <thead className="bg-slate-50 text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">
                   <tr>
                     <th className="border-r border-slate-100 px-3 py-2.5">Pharmacy</th>
                     <th className="border-r border-slate-100 px-3 py-2.5">Area</th>
@@ -1512,7 +1512,7 @@ function ValidatedPharmaciesModal({
                     <th className="px-3 py-2.5">Vendor Codes</th>
                   </tr>
                 </thead>
-                <tbody className="bg-white text-[13px]">
+                <tbody className="bg-white text-phx-md">
                   {pharmacies.map((pharmacy) => (
                     <tr className="border-t border-slate-100" key={pharmacy.id}>
                       <td className="border-r border-slate-100 px-3 py-2.5 font-bold text-slate-900">{pharmacy.name}</td>
@@ -1522,7 +1522,7 @@ function ValidatedPharmaciesModal({
                         <div className="flex flex-wrap gap-1.5">
                           {pharmacy.vendorCodes.map((line) => (
                             <span
-                              className="rounded-sm border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] font-semibold text-slate-600"
+                              className="rounded-sm border border-slate-200 bg-slate-50 px-2 py-1 text-phx-xs font-semibold text-slate-600"
                               key={line.id}
                             >
                               {line.distributorName}: <span className="font-mono">{line.code}</span>
@@ -1713,10 +1713,10 @@ function LiveCameraModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-label="Live timestamped photo capture">
       <div className="w-full max-w-xl overflow-hidden rounded-sm border border-slate-200 bg-white shadow-2xl" ref={focusTrapRef}>
         <div className="border-b border-slate-100 px-5 py-3">
-          <p className="text-[13px] font-bold text-slate-900">Live timestamped photo</p>
-          <p className="mt-0.5 text-[12px] font-medium text-slate-500">{message}</p>
+          <p className="text-phx-md font-bold text-slate-900">Live timestamped photo</p>
+          <p className="mt-0.5 text-phx-sm font-medium text-slate-500">{message}</p>
           {hasLocationStamp ? (
-            <p className="mt-1.5 text-[11px] font-semibold text-slate-600 whitespace-nowrap">{capture.address}</p>
+            <p className="mt-1.5 text-phx-xs font-semibold text-slate-600 whitespace-nowrap">{capture.address}</p>
           ) : null}
         </div>
         <div className="bg-slate-900">
@@ -1733,7 +1733,7 @@ function LiveCameraModal({
         </div>
         <div className="flex flex-wrap items-center justify-end gap-2 bg-slate-50 px-4 py-3">
           <Button
-            className="h-8 rounded-sm border border-slate-200 bg-white px-3 text-[12px] font-bold text-slate-700 hover:bg-slate-50"
+            className="h-8 rounded-sm border border-slate-200 bg-white px-3 text-phx-sm font-bold text-slate-700 hover:bg-slate-50"
             onClick={onClose}
             type="button"
           >
@@ -1742,7 +1742,7 @@ function LiveCameraModal({
           {pendingPhoto ? (
             <>
               <Button
-                className="h-8 gap-1.5 rounded-sm border border-orange-200 bg-white px-3 text-[12px] font-bold text-orange-700 hover:bg-orange-50"
+                className="h-8 gap-1.5 rounded-sm border border-orange-200 bg-white px-3 text-phx-sm font-bold text-orange-700 hover:bg-orange-50"
                 onClick={() => {
                   setPendingPhoto(null);
                   setMessage("Camera ready");
@@ -1752,7 +1752,7 @@ function LiveCameraModal({
                 Re-take
               </Button>
               <Button
-                className="h-8 gap-1.5 rounded-sm bg-orange-500 px-3 text-[12px] font-bold text-white hover:bg-orange-600"
+                className="h-8 gap-1.5 rounded-sm bg-orange-500 px-3 text-phx-sm font-bold text-white hover:bg-orange-600"
                 onClick={confirmPhoto}
                 type="button"
               >
@@ -1762,7 +1762,7 @@ function LiveCameraModal({
           ) : (
             <>
               <Button
-                className="h-8 gap-1.5 rounded-sm border border-orange-200 bg-white px-3 text-[12px] font-bold text-orange-700 hover:bg-orange-50"
+                className="h-8 gap-1.5 rounded-sm border border-orange-200 bg-white px-3 text-phx-sm font-bold text-orange-700 hover:bg-orange-50"
                 disabled={isStarting}
                 onClick={startCamera}
                 type="button"
@@ -1771,7 +1771,7 @@ function LiveCameraModal({
                 {cameraReady ? "Restart" : "Start Camera"}
               </Button>
               <Button
-                className="h-8 gap-1.5 rounded-sm bg-orange-500 px-3 text-[12px] font-bold text-white hover:bg-orange-600"
+                className="h-8 gap-1.5 rounded-sm bg-orange-500 px-3 text-phx-sm font-bold text-white hover:bg-orange-600"
                 disabled={!cameraReady || !hasLocationStamp}
                 onClick={captureFrame}
                 type="button"
@@ -2650,7 +2650,7 @@ export function MarketingValidationWorkspace() {
     <div className="space-y-4" dir="auto">
       {/* --------- Offline Indicator --------- */}
       {hasMounted && (!isOnline || queueLength > 0) && (
-        <div className="flex items-center gap-2 rounded-sm border border-amber-200 bg-amber-50 px-3.5 py-2 text-[12px] font-semibold text-amber-800">
+        <div className="flex items-center gap-2 rounded-sm border border-amber-200 bg-amber-50 px-3.5 py-2 text-phx-sm font-semibold text-amber-800">
           <WifiOff className="h-3.5 w-3.5 shrink-0" />
           {!isOnline
             ? "You are offline. Submissions will be queued and synced automatically."
@@ -2660,13 +2660,13 @@ export function MarketingValidationWorkspace() {
 
       {/* --------- Recovered Draft --------- */}
       {hasMounted && draftNotice ? (
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-sm border border-amber-200 bg-amber-50 px-3.5 py-2.5 text-[13px] font-semibold text-amber-800">
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-sm border border-amber-200 bg-amber-50 px-3.5 py-2.5 text-phx-md font-semibold text-amber-800">
           <span className="flex min-w-0 items-start gap-2">
             <History className="mt-0.5 h-3.5 w-3.5 shrink-0" />
             {draftNotice}
           </span>
           <button
-            className="shrink-0 rounded-sm border border-amber-300 bg-white px-2.5 py-1 text-[12px] font-semibold text-amber-800 hover:bg-amber-100"
+            className="shrink-0 rounded-sm border border-amber-300 bg-white px-2.5 py-1 text-phx-sm font-semibold text-amber-800 hover:bg-amber-100"
             onClick={discardRecoveredDraft}
             type="button"
           >
@@ -2677,13 +2677,13 @@ export function MarketingValidationWorkspace() {
 
       {/* --------- Offline Submissions That Aged Out --------- */}
       {hasMounted && expiredCount > 0 ? (
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-sm border border-red-200 bg-red-50 px-3.5 py-2.5 text-[13px] font-semibold text-red-800">
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-sm border border-red-200 bg-red-50 px-3.5 py-2.5 text-phx-md font-semibold text-red-800">
           <span className="flex min-w-0 items-start gap-2">
             <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
             {`${expiredCount} offline submission${expiredCount > 1 ? "s were" : " was"} waiting to sync but the live photo and location on ${expiredCount > 1 ? "them are" : "it is"} now too old to count as evidence of the visit. Capture ${expiredCount > 1 ? "them" : "it"} again.`}
           </span>
           <button
-            className="shrink-0 rounded-sm border border-red-300 bg-white px-2.5 py-1 text-[12px] font-semibold text-red-800 hover:bg-red-100"
+            className="shrink-0 rounded-sm border border-red-300 bg-white px-2.5 py-1 text-phx-sm font-semibold text-red-800 hover:bg-red-100"
             onClick={dismissExpired}
             type="button"
           >
@@ -2767,7 +2767,7 @@ export function MarketingValidationWorkspace() {
 
       {/* --------- Alert Messages --------- */}
       {message ? (
-        <div className={`rounded-sm border px-3.5 py-2.5 text-[13px] font-semibold ${messageState?.tone === "success" ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-amber-200 bg-amber-50 text-amber-800"}`}>
+        <div className={`rounded-sm border px-3.5 py-2.5 text-phx-md font-semibold ${messageState?.tone === "success" ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-amber-200 bg-amber-50 text-amber-800"}`}>
           {message}
         </div>
       ) : null}
@@ -2782,7 +2782,7 @@ export function MarketingValidationWorkspace() {
                   <ClipboardCheck className="h-4 w-4" />
                 </div>
                 <div>
-                  <p className="text-[10px] font-black uppercase tracking-[0.14em] text-orange-600">
+                  <p className="text-phx-2xs font-black uppercase tracking-[0.14em] text-orange-600">
                     Customer Validation
                   </p>
                   <h2 className="text-lg font-black tracking-tight text-slate-900">
@@ -2800,8 +2800,8 @@ export function MarketingValidationWorkspace() {
                     <ShieldCheck className="h-3.5 w-3.5" />
                   </div>
                   <div className="min-w-0">
-                    <p className="text-[10px] font-black uppercase tracking-[0.14em] text-sky-700">Super Admin</p>
-                    <p className="text-[13px] font-bold text-slate-800">Validate on behalf of an employee</p>
+                    <p className="text-phx-2xs font-black uppercase tracking-[0.14em] text-sky-700">Super Admin</p>
+                    <p className="text-phx-md font-bold text-slate-800">Validate on behalf of an employee</p>
                   </div>
                 </div>
                 <div className="mt-3 grid gap-3 lg:grid-cols-6">
@@ -2820,7 +2820,7 @@ export function MarketingValidationWorkspace() {
                   <div className="lg:col-span-3">
                     <Field label="What this does">
                       <div className="flex h-10 items-center overflow-hidden rounded-sm border border-slate-200 bg-white px-3.5">
-                        <p className="overflow-hidden text-ellipsis whitespace-nowrap text-[12px] font-semibold text-slate-600">
+                        <p className="overflow-hidden text-ellipsis whitespace-nowrap text-phx-sm font-semibold text-slate-600">
                           {onBehalfEmployee
                             ? `Customer is owned by ${onBehalfEmployee.name} and appears in their marketing request list.`
                             : "Pick an employee to search the location on a map instead of capturing GPS."}
@@ -2831,10 +2831,10 @@ export function MarketingValidationWorkspace() {
                 </div>
                 {isDeskMode ? (
                   <div className="mt-2.5 flex flex-wrap gap-1.5">
-                    <span className="inline-flex items-center rounded-sm border border-sky-200 bg-white px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-sky-700">
+                    <span className="inline-flex items-center rounded-sm border border-sky-200 bg-white px-2 py-0.5 text-phx-2xs font-bold uppercase tracking-wide text-sky-700">
                       Desk mode — map search, no live photo
                     </span>
-                    <span className="inline-flex items-center rounded-sm border border-slate-200 bg-white px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-600">
+                    <span className="inline-flex items-center rounded-sm border border-slate-200 bg-white px-2 py-0.5 text-phx-2xs font-bold uppercase tracking-wide text-slate-600">
                       Saved as admin validated
                     </span>
                   </div>
@@ -2853,7 +2853,7 @@ export function MarketingValidationWorkspace() {
                       <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-sm bg-white text-orange-600 ring-1 ring-orange-100">
                         <UserCheck className="h-3.5 w-3.5" />
                       </div>
-                      <p className="overflow-hidden text-ellipsis whitespace-nowrap text-[13px] font-bold text-slate-800">
+                      <p className="overflow-hidden text-ellipsis whitespace-nowrap text-phx-md font-bold text-slate-800">
                         Customer {customerIndex + 1}
                         {customer.name.trim() ? ` — ${customer.name.trim()}` : ""}
                       </p>
@@ -2880,7 +2880,7 @@ export function MarketingValidationWorkspace() {
                   {customer.existingCustomerId ? (
                     <div className="flex items-center gap-2 border-b border-amber-100 bg-amber-50 px-3 py-2 sm:px-4">
                       <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-amber-600" />
-                      <p className="overflow-hidden text-ellipsis whitespace-nowrap text-[12px] font-bold text-amber-800">
+                      <p className="overflow-hidden text-ellipsis whitespace-nowrap text-phx-sm font-bold text-amber-800">
                         Completing a customer already on record — name and type are locked
                       </p>
                     </div>
@@ -2905,7 +2905,7 @@ export function MarketingValidationWorkspace() {
                     <div className="lg:col-span-4">
                       <Field label="Customer Name">
                         <Input
-                          className="h-10 rounded-sm border-slate-200 bg-white text-[13px] disabled:cursor-not-allowed disabled:opacity-60"
+                          className="h-10 rounded-sm border-slate-200 bg-white text-phx-md disabled:cursor-not-allowed disabled:opacity-60"
                           disabled={Boolean(customer.existingCustomerId)}
                           onChange={(event) => updateCustomer(customer.key, { name: event.target.value })}
                           placeholder="Customer name"
@@ -2932,7 +2932,7 @@ export function MarketingValidationWorkspace() {
                       <div className="lg:col-span-2">
                         <Field label="Other Type">
                           <Input
-                            className="h-10 rounded-sm border-slate-200 bg-white text-[13px]"
+                            className="h-10 rounded-sm border-slate-200 bg-white text-phx-md"
                             onChange={(event) => updateCustomer(customer.key, { otherType: event.target.value })}
                             placeholder="Describe customer type"
                             value={customer.otherType}
@@ -2943,7 +2943,7 @@ export function MarketingValidationWorkspace() {
                     <div className={customer.type === "other" ? "lg:col-span-2" : "lg:col-span-3"}>
                       <Field label="Phone">
                         <Input
-                          className="h-10 rounded-sm border-slate-200 bg-white text-[13px]"
+                          className="h-10 rounded-sm border-slate-200 bg-white text-phx-md"
                           onChange={(event) => updateCustomer(customer.key, { mobile: event.target.value })}
                           placeholder="Mobile number"
                           type="tel"
@@ -2998,13 +2998,13 @@ export function MarketingValidationWorkspace() {
                     <div className="min-w-0 lg:col-span-6">
                       <div className="flex flex-col gap-3 border-t border-slate-100 pt-4 sm:flex-row sm:items-center sm:justify-between">
                         <div className="min-w-0 overflow-x-auto">
-                          <p className="whitespace-nowrap text-[10px] font-black uppercase tracking-[0.14em] text-orange-600">Pharmacy Validation</p>
-                          <p className="mt-0.5 whitespace-nowrap text-[12px] font-medium text-slate-500">
+                          <p className="whitespace-nowrap text-phx-2xs font-black uppercase tracking-[0.14em] text-orange-600">Pharmacy Validation</p>
+                          <p className="mt-0.5 whitespace-nowrap text-phx-sm font-medium text-slate-500">
                             Capture a new pharmacy, or attach one you already validated.
                           </p>
                         </div>
                         <Button
-                          className="h-8 shrink-0 gap-1.5 rounded-sm border border-slate-200 bg-white px-3 text-[12px] font-bold text-slate-700 hover:bg-slate-50"
+                          className="h-8 shrink-0 gap-1.5 rounded-sm border border-slate-200 bg-white px-3 text-phx-sm font-bold text-slate-700 hover:bg-slate-50"
                           onClick={() =>
                             updateCustomer(customer.key, {
                               pharmacies: [...customer.pharmacies, newPharmacyLine(defaultDistributorId)],
@@ -3033,7 +3033,7 @@ export function MarketingValidationWorkspace() {
                               <div className="flex h-7 w-7 items-center justify-center rounded-sm bg-white text-orange-600 ring-1 ring-orange-100">
                                 <Store className="h-3.5 w-3.5" />
                               </div>
-                              <p className="text-[13px] font-bold text-slate-800">Pharmacy {index + 1}</p>
+                              <p className="text-phx-md font-bold text-slate-800">Pharmacy {index + 1}</p>
                             </div>
                             <button
                               aria-label="Remove pharmacy"
@@ -3092,7 +3092,7 @@ export function MarketingValidationWorkspace() {
                               isDeskMode,
                             ) ? (
                               <div className="space-y-2 rounded-sm border border-amber-200 bg-amber-50/60 p-3">
-                                <p className="text-[11px] font-bold text-amber-800">
+                                <p className="text-phx-xs font-bold text-amber-800">
                                   This shop has no complete field proof on file. If you are standing in front of it,
                                   capture its GPS and live sign photo now and the record is completed for everyone.
                                   Optional — you can attach it without this.
@@ -3137,7 +3137,7 @@ export function MarketingValidationWorkspace() {
                             <div className="lg:col-span-2">
                               <Field label="Pharmacy Name">
                                 <Input
-                                  className="h-10 rounded-sm border-slate-200 bg-white text-[13px]"
+                                  className="h-10 rounded-sm border-slate-200 bg-white text-phx-md"
                                   onChange={(event) => updatePharmacy(customer.key, pharmacy.key, { name: event.target.value })}
                                   placeholder="Name"
                                   value={pharmacy.name}
@@ -3198,7 +3198,7 @@ export function MarketingValidationWorkspace() {
                                       : "rounded-sm border border-orange-300 bg-orange-50/60 p-2"
                                   }
                                 >
-                                  <p className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-500">
+                                  <p className="text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-500">
                                     What is this? *
                                   </p>
                                   <div className="mt-1.5 flex items-center gap-2">
@@ -3206,8 +3206,8 @@ export function MarketingValidationWorkspace() {
                                       <Button
                                         className={
                                           pharmacy.venueType === venueType
-                                            ? "h-7 rounded-sm border border-orange-300 bg-orange-50 px-2.5 text-[11px] font-bold text-orange-700"
-                                            : "h-7 rounded-sm border border-slate-200 bg-white px-2.5 text-[11px] font-bold text-slate-600 hover:bg-slate-50"
+                                            ? "h-7 rounded-sm border border-orange-300 bg-orange-50 px-2.5 text-phx-xs font-bold text-orange-700"
+                                            : "h-7 rounded-sm border border-slate-200 bg-white px-2.5 text-phx-xs font-bold text-slate-600 hover:bg-slate-50"
                                         }
                                         key={venueType}
                                         onClick={() => updatePharmacy(customer.key, pharmacy.key, { venueType })}
@@ -3219,11 +3219,11 @@ export function MarketingValidationWorkspace() {
                                   </div>
                                   {/* Three states, never two: unanswered says so, nursery explains itself, pharmacy is silent. */}
                                   {!venueTypeIsAnswered(pharmacy.venueType) ? (
-                                    <p className="mt-1.5 text-[11px] font-bold text-orange-700">
+                                    <p className="mt-1.5 text-phx-xs font-bold text-orange-700">
                                       {VENUE_TYPE_UNANSWERED_MESSAGE}
                                     </p>
                                   ) : venueRequiresDistributorCode(pharmacy.venueType) ? null : (
-                                    <p className="mt-1.5 text-[11px] text-slate-600">
+                                    <p className="mt-1.5 text-phx-xs text-slate-600">
                                       A {venueTypeLabel(pharmacy.venueType).toLowerCase()} has no distributor account, so it
                                       carries no code. Spend on it is allowed and can never be matched to a sale.
                                     </p>
@@ -3236,11 +3236,11 @@ export function MarketingValidationWorkspace() {
                                       : "hidden"
                                   }
                                 >
-                                  <p className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-500">
+                                  <p className="text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-500">
                                     Vendor Codes
                                   </p>
                                   <Button
-                                    className="h-7 gap-1.5 rounded-sm border border-slate-200 bg-white px-2.5 text-[11px] font-bold text-slate-600 hover:bg-slate-50"
+                                    className="h-7 gap-1.5 rounded-sm border border-slate-200 bg-white px-2.5 text-phx-xs font-bold text-slate-600 hover:bg-slate-50"
                                     onClick={() =>
                                       updatePharmacy(customer.key, pharmacy.key, {
                                         vendorCodes: [...pharmacy.vendorCodes, newVendorCodeLine(defaultDistributorId)],
@@ -3273,7 +3273,7 @@ export function MarketingValidationWorkspace() {
                                         ))}
                                       </SelectField>
                                       <Input
-                                        className="h-10 rounded-sm border-slate-200 bg-white text-[13px]"
+                                        className="h-10 rounded-sm border-slate-200 bg-white text-phx-md"
                                         onChange={(event) => {
                                           const nextCode = event.target.value;
                                           updateVendorCode(customer.key, pharmacy.key, line.key, { distributorCode: nextCode });
@@ -3300,7 +3300,7 @@ export function MarketingValidationWorkspace() {
                                     </div>
                                     {codeCheck ? (
                                       <p
-                                        className={`mt-1.5 flex items-center gap-1.5 text-[11px] font-bold ${
+                                        className={`mt-1.5 flex items-center gap-1.5 text-phx-xs font-bold ${
                                           codeCheck === "tracked"
                                             ? "text-emerald-700"
                                             : codeCheck === "untracked"
@@ -3360,7 +3360,7 @@ export function MarketingValidationWorkspace() {
               ))}
 
               <Button
-                className="h-10 w-full gap-2 rounded-sm border border-dashed border-orange-300 bg-orange-50/40 text-[13px] font-bold text-orange-700 hover:bg-orange-50"
+                className="h-10 w-full gap-2 rounded-sm border border-dashed border-orange-300 bg-orange-50/40 text-phx-md font-bold text-orange-700 hover:bg-orange-50"
                 onClick={() => setCustomers((current) => [...current, newCustomerLine(defaultDistributorId)])}
                 type="button"
               >
@@ -3369,14 +3369,14 @@ export function MarketingValidationWorkspace() {
               </Button>
 
               {duplicateCustomerName ? (
-                <div className="rounded-sm border border-amber-200 bg-amber-50 px-3.5 py-2.5 text-[12px] font-semibold text-amber-800">
+                <div className="rounded-sm border border-amber-200 bg-amber-50 px-3.5 py-2.5 text-phx-sm font-semibold text-amber-800">
                   “{duplicateCustomerName}” is entered twice. Each customer must appear once per submission.
                 </div>
               ) : null}
             </div>
 
             <div className="flex flex-col gap-3 border-t border-slate-100 bg-slate-50/50 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
-              <div className="flex items-center gap-2 text-[13px] font-bold text-slate-700">
+              <div className="flex items-center gap-2 text-phx-md font-bold text-slate-700">
                 <ShieldCheck className="h-4 w-4 shrink-0 text-orange-500" />
                 <span className="whitespace-nowrap">
                   {customers.length} customer{customers.length === 1 ? "" : "s"} · {totalPharmacyCount} pharmacy row{totalPharmacyCount === 1 ? "" : "s"} ready
@@ -3384,10 +3384,10 @@ export function MarketingValidationWorkspace() {
               </div>
               <div className="flex flex-col gap-1.5 sm:items-end">
                 {!duplicateCustomerName && missingRequirement ? (
-                  <p className="text-[12px] font-semibold text-amber-700">{missingRequirement}</p>
+                  <p className="text-phx-sm font-semibold text-amber-700">{missingRequirement}</p>
                 ) : null}
                 <Button
-                  className="h-10 min-w-[180px] gap-2 rounded-sm bg-orange-500 px-5 text-[13px] font-bold text-white shadow-sm hover:bg-orange-600"
+                  className="h-10 min-w-[180px] gap-2 rounded-sm bg-orange-500 px-5 text-phx-md font-bold text-white shadow-sm hover:bg-orange-600"
                   disabled={!canSave}
                   type="submit"
                 >
@@ -3403,17 +3403,17 @@ export function MarketingValidationWorkspace() {
         <Card className="rounded-sm border border-slate-200 bg-white p-4 shadow-sm">
           <div className="flex items-center justify-between gap-3">
             <div>
-              <p className="text-[10px] font-black uppercase tracking-[0.14em] text-amber-600">Not Usable Yet</p>
+              <p className="text-phx-2xs font-black uppercase tracking-[0.14em] text-amber-600">Not Usable Yet</p>
               <h2 className="mt-1 text-lg font-black tracking-tight text-slate-900">Captured but not in your request list</h2>
             </div>
-            <span className="inline-flex items-center rounded-sm border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-bold text-amber-700">
+            <span className="inline-flex items-center rounded-sm border border-amber-200 bg-amber-50 px-2.5 py-1 text-phx-xs font-bold text-amber-700">
               {pendingGroups.length} customers
             </span>
           </div>
 
           <div className="mt-3 flex items-start gap-2 rounded-sm border border-amber-200 bg-amber-50 px-3.5 py-2.5">
             <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600" />
-            <p className="text-[12px] font-semibold leading-relaxed text-amber-800">
+            <p className="text-phx-sm font-semibold leading-relaxed text-amber-800">
               These customers were saved, but they do not appear in the customer list when you create a marketing
               request. A customer only becomes usable once the live photo and location are complete on both the
               customer and the pharmacy. Capture the customer again with the missing photo, or ask a Super Admin or
@@ -3435,14 +3435,14 @@ export function MarketingValidationWorkspace() {
                       <div className="rounded-sm border border-amber-200 bg-white p-3" key={group.key}>
                         <div className="flex items-start justify-between gap-2">
                           <div className="min-w-0">
-                            <p className="text-[13px] font-bold text-slate-900">{group.customerName}</p>
+                            <p className="text-phx-md font-bold text-slate-900">{group.customerName}</p>
                             <div className="mt-1 flex flex-wrap items-center gap-2">
-                              <span className="text-[11px] font-medium capitalize text-slate-500">{group.customerType}</span>
+                              <span className="text-phx-xs font-medium capitalize text-slate-500">{group.customerType}</span>
                               <StatusBadge status={group.status} />
                             </div>
                           </div>
                           <button
-                            className="flex h-7 shrink-0 items-center gap-1 rounded-sm border border-orange-200 bg-orange-50 px-2 text-[11px] font-bold text-orange-700"
+                            className="flex h-7 shrink-0 items-center gap-1 rounded-sm border border-orange-200 bg-orange-50 px-2 text-phx-xs font-bold text-orange-700"
                             onClick={() => setSelectedValidatedCustomerKey(group.key)}
                             type="button"
                           >
@@ -3450,7 +3450,7 @@ export function MarketingValidationWorkspace() {
                             {pharmaciesForCustomer.length}
                           </button>
                         </div>
-                        <div className="mt-2 space-y-1 text-[12px]">
+                        <div className="mt-2 space-y-1 text-phx-sm">
                           <div className="flex justify-between gap-2">
                             <span className="font-medium text-slate-500">Blocked by</span>
                             <span className="font-semibold text-amber-700">{pendingBlockLabel(group.rows)}</span>
@@ -3462,7 +3462,7 @@ export function MarketingValidationWorkspace() {
                         </div>
                         {customer && customer.evidenceStatus !== "complete" ? (
                           <button
-                            className="mt-2.5 flex h-8 w-full items-center justify-center gap-1.5 whitespace-nowrap rounded-sm border border-orange-300 bg-orange-600 px-2 text-[12px] font-bold text-white transition hover:bg-orange-700"
+                            className="mt-2.5 flex h-8 w-full items-center justify-center gap-1.5 whitespace-nowrap rounded-sm border border-orange-300 bg-orange-600 px-2 text-phx-sm font-bold text-white transition hover:bg-orange-700"
                             onClick={() => startCompletingCustomer(group)}
                             type="button"
                           >
@@ -3480,7 +3480,7 @@ export function MarketingValidationWorkspace() {
               <div className="mt-4 hidden md:block">
                 <div className="overflow-hidden rounded-sm border border-slate-200">
                   <table className="w-full border-collapse text-left">
-                    <thead className="bg-slate-50 text-[10px] font-black uppercase tracking-[0.12em] text-slate-500">
+                    <thead className="bg-slate-50 text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">
                       <tr>
                         <th className="border-r border-slate-100 px-3 py-2.5">Customer</th>
                         <th className="border-r border-slate-100 px-3 py-2.5">Blocked By</th>
@@ -3489,7 +3489,7 @@ export function MarketingValidationWorkspace() {
                         <th className="px-3 py-2.5 text-center">Action</th>
                       </tr>
                     </thead>
-                    <tbody className="bg-white text-[13px]">
+                    <tbody className="bg-white text-phx-md">
                       {pendingGroups.map((group) => {
                         const customer = group.rows[0]?.customer;
                         const pharmaciesForCustomer = buildValidatedPharmacyDetails(group.rows);
@@ -3499,7 +3499,7 @@ export function MarketingValidationWorkspace() {
                               <div className="min-w-0">
                                 <p className="font-bold text-slate-900">{group.customerName}</p>
                                 <div className="mt-1 flex flex-wrap items-center gap-1.5">
-                                  <span className="text-[11px] font-medium capitalize text-slate-500">{group.customerType}</span>
+                                  <span className="text-phx-xs font-medium capitalize text-slate-500">{group.customerType}</span>
                                   <StatusBadge status={group.status} />
                                 </div>
                               </div>
@@ -3512,7 +3512,7 @@ export function MarketingValidationWorkspace() {
                             </td>
                             <td className="border-r border-slate-100 px-3 py-2.5 text-center">
                               <button
-                                className="inline-flex h-7 min-w-7 items-center justify-center gap-1 rounded-sm border border-orange-200 bg-orange-50 px-2 text-[12px] font-bold text-orange-700 transition hover:bg-orange-100"
+                                className="inline-flex h-7 min-w-7 items-center justify-center gap-1 rounded-sm border border-orange-200 bg-orange-50 px-2 text-phx-sm font-bold text-orange-700 transition hover:bg-orange-100"
                                 onClick={() => setSelectedValidatedCustomerKey(group.key)}
                                 type="button"
                               >
@@ -3525,7 +3525,7 @@ export function MarketingValidationWorkspace() {
                             <td className="px-3 py-2.5 text-center">
                               {customer && customer.evidenceStatus !== "complete" ? (
                                 <button
-                                  className="inline-flex h-7 items-center justify-center gap-1.5 whitespace-nowrap rounded-sm border border-orange-300 bg-orange-600 px-2.5 text-[12px] font-bold text-white transition hover:bg-orange-700"
+                                  className="inline-flex h-7 items-center justify-center gap-1.5 whitespace-nowrap rounded-sm border border-orange-300 bg-orange-600 px-2.5 text-phx-sm font-bold text-white transition hover:bg-orange-700"
                                   onClick={() => startCompletingCustomer(group)}
                                   type="button"
                                 >
@@ -3533,7 +3533,7 @@ export function MarketingValidationWorkspace() {
                                   Capture Evidence
                                 </button>
                               ) : (
-                                <span className="whitespace-nowrap text-[12px] font-medium text-slate-400">Pharmacy side</span>
+                                <span className="whitespace-nowrap text-phx-sm font-medium text-slate-400">Pharmacy side</span>
                               )}
                             </td>
                           </tr>
@@ -3551,10 +3551,10 @@ export function MarketingValidationWorkspace() {
         <Card className="rounded-sm border border-slate-200 bg-white p-4 shadow-sm">
           <div className="flex items-center justify-between gap-3">
             <div>
-              <p className="text-[10px] font-black uppercase tracking-[0.14em] text-orange-600">Validated Customers</p>
+              <p className="text-phx-2xs font-black uppercase tracking-[0.14em] text-orange-600">Validated Customers</p>
               <h2 className="mt-1 text-lg font-black tracking-tight text-slate-900">Ready customer list</h2>
             </div>
-            <span className="inline-flex items-center rounded-sm border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[11px] font-bold text-emerald-700">
+            <span className="inline-flex items-center rounded-sm border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-phx-xs font-bold text-emerald-700">
               {validatedGroups.length} customers
             </span>
           </div>
@@ -3566,7 +3566,7 @@ export function MarketingValidationWorkspace() {
               {/* Mobile card view < 480px */}
               <div className="mt-4 block md:hidden">
                 {validatedGroups.length === 0 ? (
-                  <p className="py-6 text-center text-[13px] font-medium text-slate-500">No validated customers yet.</p>
+                  <p className="py-6 text-center text-phx-md font-medium text-slate-500">No validated customers yet.</p>
                 ) : (
                   <div className="space-y-2">
                     {validatedGroups.map((group) => {
@@ -3576,9 +3576,9 @@ export function MarketingValidationWorkspace() {
                         <div className="rounded-sm border border-slate-200 bg-white p-3" key={group.key}>
                           <div className="flex items-start justify-between gap-2">
                             <div className="min-w-0">
-                              <p className="text-[13px] font-bold text-slate-900">{group.customerName}</p>
+                              <p className="text-phx-md font-bold text-slate-900">{group.customerName}</p>
                               <div className="mt-1 flex flex-wrap items-center gap-2">
-                                <span className="text-[11px] font-medium capitalize text-slate-500">{group.customerType}</span>
+                                <span className="text-phx-xs font-medium capitalize text-slate-500">{group.customerType}</span>
                                 <StatusBadge status={group.status} />
                                 {group.fieldEvidenceGap ? <NotFieldValidatedBadge reason={group.fieldEvidenceGap} /> : null}
                                 {group.isAdminValidated ? <AdminValidatedBadge /> : null}
@@ -3586,7 +3586,7 @@ export function MarketingValidationWorkspace() {
                               </div>
                             </div>
                             <button
-                              className="flex h-7 shrink-0 items-center gap-1 rounded-sm border border-orange-200 bg-orange-50 px-2 text-[11px] font-bold text-orange-700"
+                              className="flex h-7 shrink-0 items-center gap-1 rounded-sm border border-orange-200 bg-orange-50 px-2 text-phx-xs font-bold text-orange-700"
                               onClick={() => setSelectedValidatedCustomerKey(group.key)}
                               type="button"
                             >
@@ -3594,7 +3594,7 @@ export function MarketingValidationWorkspace() {
                               {pharmaciesForCustomer.length}
                             </button>
                           </div>
-                          <div className="mt-2 space-y-1 text-[12px]">
+                          <div className="mt-2 space-y-1 text-phx-sm">
                             <div className="flex justify-between">
                               <span className="font-medium text-slate-500">Area</span>
                               <span className="font-semibold text-slate-700">{customer?.extractedAreaName || customer?.regionName || "Not captured"}</span>
@@ -3615,7 +3615,7 @@ export function MarketingValidationWorkspace() {
               <div className="mt-4 hidden md:block">
                 <div className="overflow-hidden rounded-sm border border-slate-200">
                   <table className="w-full border-collapse text-left">
-                    <thead className="bg-slate-50 text-[10px] font-black uppercase tracking-[0.12em] text-slate-500">
+                    <thead className="bg-slate-50 text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">
                       <tr>
                         <th className="border-r border-slate-100 px-3 py-2.5">Customer</th>
                         <th className="border-r border-slate-100 px-3 py-2.5">Area</th>
@@ -3623,7 +3623,7 @@ export function MarketingValidationWorkspace() {
                         <th className="px-3 py-2.5 text-center">Pharmacies</th>
                       </tr>
                     </thead>
-                    <tbody className="bg-white text-[13px]">
+                    <tbody className="bg-white text-phx-md">
                       {validatedGroups.map((group) => {
                         const customer = group.rows[0]?.customer;
                         const pharmaciesForCustomer = buildValidatedPharmacyDetails(group.rows);
@@ -3633,7 +3633,7 @@ export function MarketingValidationWorkspace() {
                               <div className="min-w-0">
                                 <p className="font-bold text-slate-900">{group.customerName}</p>
                                 <div className="mt-1 flex flex-wrap items-center gap-1.5">
-                                  <span className="text-[11px] font-medium capitalize text-slate-500">{group.customerType}</span>
+                                  <span className="text-phx-xs font-medium capitalize text-slate-500">{group.customerType}</span>
                                   <StatusBadge status={group.status} />
                                   {group.fieldEvidenceGap ? <NotFieldValidatedBadge reason={group.fieldEvidenceGap} /> : null}
                                   {group.isAdminValidated ? <AdminValidatedBadge /> : null}
@@ -3649,7 +3649,7 @@ export function MarketingValidationWorkspace() {
                             </td>
                             <td className="px-3 py-2.5 text-center">
                               <button
-                                className="inline-flex h-7 min-w-7 items-center justify-center gap-1 rounded-sm border border-orange-200 bg-orange-50 px-2 text-[12px] font-bold text-orange-700 transition hover:bg-orange-100"
+                                className="inline-flex h-7 min-w-7 items-center justify-center gap-1 rounded-sm border border-orange-200 bg-orange-50 px-2 text-phx-sm font-bold text-orange-700 transition hover:bg-orange-100"
                                 onClick={() => setSelectedValidatedCustomerKey(group.key)}
                                 type="button"
                               >
@@ -3661,7 +3661,7 @@ export function MarketingValidationWorkspace() {
                       })}
                       {validatedGroups.length === 0 ? (
                         <tr>
-                          <td className="px-4 py-6 text-center text-[13px] font-medium text-slate-500" colSpan={4}>
+                          <td className="px-4 py-6 text-center text-phx-md font-medium text-slate-500" colSpan={4}>
                             No validated customers yet.
                           </td>
                         </tr>

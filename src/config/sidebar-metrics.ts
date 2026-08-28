@@ -189,7 +189,7 @@ const LABEL_FONT_FAMILY =
 export const LABEL_FONT_CSS = `font-size:13px;font-weight:600;letter-spacing:-0.01em;${LABEL_FONT_FAMILY}`;
 
 /**
- * Portal desktop label span: `text-[12px] font-bold`, no tracking class. Smaller AND heavier than
+ * Portal desktop label span: `text-phx-sm font-bold`, no tracking class. Smaller AND heavier than
  * the admin rail, so a label's width genuinely differs between the two shells — which is why the
  * snapshot stores a measurement per shell rather than one number per label.
  */

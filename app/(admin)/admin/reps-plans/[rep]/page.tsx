@@ -144,7 +144,7 @@ export default async function RepVisitsPage({ params, searchParams }: PageProps)
           <div>
             <h1 className="text-xl font-black text-slate-900">{row.repName}</h1>
             <p className="mt-1 flex flex-wrap items-center gap-2 text-xs font-semibold text-slate-500">
-              <span className="border border-slate-300 bg-slate-50 px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.1em] text-slate-600">
+              <span className="border border-slate-300 bg-slate-50 px-2 py-0.5 text-phx-2xs font-black uppercase tracking-[0.1em] text-slate-600">
                 {roleLabel}
               </span>
               {territory ? <span>{territory}</span> : null}
@@ -156,24 +156,24 @@ export default async function RepVisitsPage({ params, searchParams }: PageProps)
               board — the 2 AM / 10 PM target is a medical rep's. */}
           <div className="flex gap-5">
             <div className="text-right">
-              <p className="text-[9px] font-black uppercase tracking-[0.16em] text-slate-400">
+              <p className="text-phx-3xs font-black uppercase tracking-[0.16em] text-slate-400">
                 {row.scored ? `AM of ${row.am.target}` : "AM rate"}
               </p>
               <p className="text-lg font-black text-slate-900">{row.am.verifiedRate?.toFixed(1) ?? "—"}</p>
             </div>
             <div className="text-right">
-              <p className="text-[9px] font-black uppercase tracking-[0.16em] text-slate-400">
+              <p className="text-phx-3xs font-black uppercase tracking-[0.16em] text-slate-400">
                 {row.scored ? `PM of ${row.pm.target}` : "PM rate"}
               </p>
               <p className="text-lg font-black text-slate-900">{row.pm.verifiedRate?.toFixed(1) ?? "—"}</p>
             </div>
             <div className="text-right">
-              <p className="text-[9px] font-black uppercase tracking-[0.16em] text-slate-400">Working days</p>
+              <p className="text-phx-3xs font-black uppercase tracking-[0.16em] text-slate-400">Working days</p>
               <p className="text-lg font-black text-slate-900">{row.workingDays}</p>
             </div>
           </div>
         </div>
-        <p className="mt-3 text-[11px] text-slate-400">
+        <p className="mt-3 text-phx-xs text-slate-400">
           {windowLabel} · {row.workingDays} working {row.workingDays === 1 ? "day" : "days"} · every call below is
           classified by the same rule the rate uses, so these rows and that rate are the same number seen twice.
         </p>

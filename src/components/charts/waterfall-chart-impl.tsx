@@ -55,10 +55,10 @@ export function WaterfallChart({
               if (active && item) {
                 return (
                   <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-xl">
-                    <p className="text-[10px] font-black uppercase text-slate-400">{item.name ?? "-"}</p>
+                    <p className="text-phx-2xs font-black uppercase text-slate-400">{item.name ?? "-"}</p>
                     <p className="text-lg font-black text-slate-900">{compactEGP(Number(item.val ?? 0))}</p>
-                    <p className="mt-1 text-[9px] font-bold text-orange-500 uppercase tracking-tighter">Click to see impact</p>
-                    {item.breakdown && <p className="mt-1 text-[9px] font-medium text-slate-400 italic">{item.breakdown}</p>}
+                    <p className="mt-1 text-phx-3xs font-bold text-orange-500 uppercase tracking-tighter">Click to see impact</p>
+                    {item.breakdown && <p className="mt-1 text-phx-3xs font-medium text-slate-400 italic">{item.breakdown}</p>}
                   </div>
                 );
               }

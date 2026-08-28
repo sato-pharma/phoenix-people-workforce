@@ -165,7 +165,7 @@ export function PharmacyComboBox({ onSelect, inputClassName, distributorCode }: 
         autoComplete="off"
       />
       {busy ? (
-        <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[11px] font-semibold text-slate-400">
+        <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-phx-xs font-semibold text-slate-400">
           searching…
         </span>
       ) : null}
@@ -180,7 +180,7 @@ export function PharmacyComboBox({ onSelect, inputClassName, distributorCode }: 
           }`}
         >
           {hits.length === 0 && !busy ? (
-            <p className="px-3 py-3 text-[12px] font-semibold text-slate-500">
+            <p className="px-3 py-3 text-phx-sm font-semibold text-slate-500">
               No match in the master database. Check the customer code on the distributor invoice —
               or submit anyway and the request will wait for pharmacy validation.
             </p>
@@ -194,16 +194,16 @@ export function PharmacyComboBox({ onSelect, inputClassName, distributorCode }: 
                 className={`block w-full border-b border-slate-100 px-3 py-2 text-left ${index === highlight ? "bg-orange-50" : "bg-white"} hover:bg-orange-50`}
               >
                 <span className="flex items-center justify-between gap-2">
-                  <span className="text-[13px] font-bold text-slate-900" dir="auto">
+                  <span className="text-phx-md font-bold text-slate-900" dir="auto">
                     {nameOf(hit)}
                   </span>
                   {hit.source === "phoenix" ? (
-                    <span className="shrink-0 bg-slate-900 px-1.5 py-0.5 text-[10px] font-black uppercase tracking-wider text-white">
+                    <span className="shrink-0 bg-slate-900 px-1.5 py-0.5 text-phx-2xs font-black uppercase tracking-wider text-white">
                       {hit.phoenixPharmacyCode}
                     </span>
                   ) : null}
                 </span>
-                <span className="mt-0.5 flex flex-wrap items-center gap-x-2 text-[11px] text-slate-500">
+                <span className="mt-0.5 flex flex-wrap items-center gap-x-2 text-phx-xs text-slate-500">
                   {hit.distributorCode ? (
                     <span className="font-semibold text-slate-600">
                       {hit.distributorCode} · {hit.customerCode}
@@ -221,7 +221,7 @@ export function PharmacyComboBox({ onSelect, inputClassName, distributorCode }: 
                   ) : null}
                 </span>
                 {hit.address ? (
-                  <span className="mt-0.5 block text-[11px] text-slate-400" dir="auto">
+                  <span className="mt-0.5 block text-phx-xs text-slate-400" dir="auto">
                     {hit.address}
                   </span>
                 ) : null}

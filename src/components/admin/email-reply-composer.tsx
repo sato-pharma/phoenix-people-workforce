@@ -501,7 +501,7 @@ export function EmailReplyComposer() {
 
             <div className="flex items-center gap-3 border-b border-[#E8EDF3] px-5 py-1.5">
               <input
-                className="h-10 w-full border-0 bg-transparent text-[15px] font-black text-phx-ink outline-none placeholder:font-semibold placeholder:text-phx-ink-faint"
+                className="h-10 w-full border-0 bg-transparent text-phx-lg font-black text-phx-ink outline-none placeholder:font-semibold placeholder:text-phx-ink-faint"
                 onChange={(event) => updateField("subject", event.target.value)}
                 placeholder="Subject"
                 value={form.subject}

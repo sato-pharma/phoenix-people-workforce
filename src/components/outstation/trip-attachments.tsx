@@ -104,7 +104,7 @@ export function TripAttachments({ tripId }: { tripId: string }) {
           {item.isPdf ? (
             <div className="flex h-28 flex-col items-center justify-center gap-1 bg-slate-50 text-slate-500">
               <FileText className="h-7 w-7" />
-              <span className="text-[10px] font-bold uppercase tracking-wide">PDF</span>
+              <span className="text-phx-2xs font-bold uppercase tracking-wide">PDF</span>
             </div>
           ) : (
             // The tile crops the receipt to a 112px strip, so tapping the image opens the full
@@ -112,7 +112,7 @@ export function TripAttachments({ tripId }: { tripId: string }) {
             // this size. The label beneath still opens the file in a new tab.
             <ZoomablePhoto alt={item.label} caption={item.label} className="h-28 w-full object-cover" src={item.url} />
           )}
-          <p className="truncate px-2 py-1.5 text-[11px] font-semibold text-slate-700 group-hover:text-orange-700">
+          <p className="truncate px-2 py-1.5 text-phx-xs font-semibold text-slate-700 group-hover:text-orange-700">
             {item.label}
           </p>
         </a>

@@ -125,10 +125,10 @@ export function InvoiceCapture({ onApply, customerHint }: Props) {
   return (
     <section className={box}>
       <header className="border-b border-phx-line bg-slate-900 px-4 py-2.5">
-        <h3 className="text-[11px] font-black uppercase tracking-[0.14em] text-white">Fill from the invoice</h3>
+        <h3 className="text-phx-xs font-black uppercase tracking-[0.14em] text-white">Fill from the invoice</h3>
       </header>
       <div className="space-y-3 px-4 py-4">
-        <p className="text-[12px] text-slate-600">
+        <p className="text-phx-sm text-slate-600">
           Photograph the distributor invoice, or choose a photo you already have, and Phoenix fills
           in what it can. You confirm every line before it is used — nothing is entered on its own.
         </p>
@@ -166,7 +166,7 @@ export function InvoiceCapture({ onApply, customerHint }: Props) {
         <div className="flex flex-wrap gap-2">
           <button
             type="button"
-            className="bg-slate-900 px-4 py-2 text-[11px] font-black uppercase tracking-wider text-white disabled:cursor-not-allowed disabled:bg-slate-300"
+            className="bg-slate-900 px-4 py-2 text-phx-xs font-black uppercase tracking-wider text-white disabled:cursor-not-allowed disabled:bg-slate-300"
             disabled={busy}
             onClick={() => cameraRef.current?.click()}
           >
@@ -174,20 +174,20 @@ export function InvoiceCapture({ onApply, customerHint }: Props) {
           </button>
           <button
             type="button"
-            className="border border-slate-900 px-4 py-2 text-[11px] font-black uppercase tracking-wider text-slate-900 hover:bg-slate-900 hover:text-white disabled:cursor-not-allowed disabled:border-slate-300 disabled:text-slate-400 disabled:hover:bg-transparent disabled:hover:text-slate-400"
+            className="border border-slate-900 px-4 py-2 text-phx-xs font-black uppercase tracking-wider text-slate-900 hover:bg-slate-900 hover:text-white disabled:cursor-not-allowed disabled:border-slate-300 disabled:text-slate-400 disabled:hover:bg-transparent disabled:hover:text-slate-400"
             disabled={busy}
             onClick={() => uploadRef.current?.click()}
           >
             Choose a photo
           </button>
         </div>
-        <p className="text-[11px] text-slate-400">
+        <p className="text-phx-xs text-slate-400">
           Either way, Phoenix straightens and sharpens the picture before reading it — a photo taken
           in a dim shop, or one forwarded to you, both work.
         </p>
 
         {error ? (
-          <p className="border border-rose-300 bg-rose-50 px-3 py-2 text-[12px] font-semibold text-rose-800">{error}</p>
+          <p className="border border-rose-300 bg-rose-50 px-3 py-2 text-phx-sm font-semibold text-rose-800">{error}</p>
         ) : null}
 
         {result ? (
@@ -204,14 +204,14 @@ export function InvoiceCapture({ onApply, customerHint }: Props) {
                 which is the behaviour that created the false pharmacies in the first place. */}
             {!result.resolved.customer || result.resolved.lines.every((line) => !line.product) ? (
               <div className="border border-amber-300 bg-amber-50 px-3 py-2">
-                <p className="text-[12px] font-bold text-amber-900">
+                <p className="text-phx-sm font-bold text-amber-900">
                   Not much came off this photo. If the invoice is still in front of you, a second
                   shot usually fixes it — get closer, keep the page flat, and avoid the glare.
                 </p>
                 <div className="mt-2 flex flex-wrap gap-2">
                   <button
                     type="button"
-                    className="border border-amber-800 px-3 py-1.5 text-[11px] font-black uppercase tracking-wider text-amber-900 hover:bg-amber-800 hover:text-white"
+                    className="border border-amber-800 px-3 py-1.5 text-phx-xs font-black uppercase tracking-wider text-amber-900 hover:bg-amber-800 hover:text-white"
                     onClick={() => cameraRef.current?.click()}
                   >
                     Retake the photo
@@ -222,13 +222,13 @@ export function InvoiceCapture({ onApply, customerHint }: Props) {
                       cannot follow. */}
                   <button
                     type="button"
-                    className="border border-amber-800 px-3 py-1.5 text-[11px] font-black uppercase tracking-wider text-amber-900 hover:bg-amber-800 hover:text-white"
+                    className="border border-amber-800 px-3 py-1.5 text-phx-xs font-black uppercase tracking-wider text-amber-900 hover:bg-amber-800 hover:text-white"
                     onClick={() => uploadRef.current?.click()}
                   >
                     Choose another
                   </button>
                 </div>
-                <p className="mt-1.5 text-[11px] text-amber-800">
+                <p className="mt-1.5 text-phx-xs text-amber-800">
                   Or carry on and fill the rest in yourself — nothing here stops you submitting.
                 </p>
               </div>
@@ -236,20 +236,20 @@ export function InvoiceCapture({ onApply, customerHint }: Props) {
 
             {/* The pharmacy, and only if the master database confirmed it. */}
             <div className="border border-phx-line px-3 py-2">
-              <p className="text-[11px] font-black uppercase tracking-wider text-slate-500">Pharmacy on the invoice</p>
+              <p className="text-phx-xs font-black uppercase tracking-wider text-slate-500">Pharmacy on the invoice</p>
               {result.resolved.customer ? (
                 <>
                   <p className="text-sm font-bold text-slate-900" dir="auto">
                     {result.resolved.customer.customerName ?? result.resolved.customer.customerCode}
                   </p>
-                  <p className="text-[11px] text-slate-500">
+                  <p className="text-phx-xs text-slate-500">
                     {result.resolved.customer.customerCode}
                     {result.resolved.customer.areaName ? ` · ${result.resolved.customer.areaName}` : ""}
                   </p>
-                  {customerHint ? <p className="mt-1 text-[11px] text-slate-400">{customerHint}</p> : null}
+                  {customerHint ? <p className="mt-1 text-phx-xs text-slate-400">{customerHint}</p> : null}
                 </>
               ) : (
-                <p className="text-[12px] font-semibold text-amber-800">
+                <p className="text-phx-sm font-semibold text-amber-800">
                   {result.read.customerCode
                     ? `Code ${result.read.customerCode} is not in the master database — pick the pharmacy yourself.`
                     : "No customer code could be read — pick the pharmacy yourself."}
@@ -284,11 +284,11 @@ export function InvoiceCapture({ onApply, customerHint }: Props) {
                     <p className="text-sm font-bold text-slate-900" dir="auto">
                       {line.product?.productName ?? line.read.productName ?? line.read.productCode ?? "Unreadable line"}
                     </p>
-                    {line.problem ? <p className="text-[11px] font-semibold text-amber-800">{line.problem}</p> : null}
+                    {line.problem ? <p className="text-phx-xs font-semibold text-amber-800">{line.problem}</p> : null}
 
                     <div className="mt-2 flex flex-wrap items-end gap-3">
                       <label className="block">
-                        <span className="block text-[10px] font-black uppercase tracking-wider text-slate-400">
+                        <span className="block text-phx-2xs font-black uppercase tracking-wider text-slate-400">
                           Quantity
                         </span>
                         <input
@@ -302,7 +302,7 @@ export function InvoiceCapture({ onApply, customerHint }: Props) {
                         />
                       </label>
                       <label className="block">
-                        <span className="block text-[10px] font-black uppercase tracking-wider text-slate-400">
+                        <span className="block text-phx-2xs font-black uppercase tracking-wider text-slate-400">
                           Bonus
                         </span>
                         <input
@@ -318,7 +318,7 @@ export function InvoiceCapture({ onApply, customerHint }: Props) {
                         <button
                           type="button"
                           disabled={!usable}
-                          className="border border-slate-900 px-3 py-1.5 text-[11px] font-black uppercase tracking-wider text-slate-900 hover:bg-slate-900 hover:text-white disabled:cursor-not-allowed disabled:border-slate-300 disabled:text-slate-400 disabled:hover:bg-transparent disabled:hover:text-slate-400"
+                          className="border border-slate-900 px-3 py-1.5 text-phx-xs font-black uppercase tracking-wider text-slate-900 hover:bg-slate-900 hover:text-white disabled:cursor-not-allowed disabled:border-slate-300 disabled:text-slate-400 disabled:hover:bg-transparent disabled:hover:text-slate-400"
                           onClick={() => {
                             onApply({
                               bonus: bonus.trim(),
@@ -335,7 +335,7 @@ export function InvoiceCapture({ onApply, customerHint }: Props) {
                     </div>
 
                     {corrected ? (
-                      <p className="mt-1.5 text-[11px] text-slate-500">
+                      <p className="mt-1.5 text-phx-xs text-slate-500">
                         Changed from what the invoice printed — your number is the one that will be used.
                       </p>
                     ) : null}
@@ -346,10 +346,10 @@ export function InvoiceCapture({ onApply, customerHint }: Props) {
 
             {result.problems.length > 0 ? (
               <div className="border border-amber-300 bg-amber-50 px-3 py-2">
-                <p className="text-[11px] font-black uppercase tracking-wider text-amber-900">Finish these by hand</p>
+                <p className="text-phx-xs font-black uppercase tracking-wider text-amber-900">Finish these by hand</p>
                 <ul className="mt-1 space-y-0.5">
                   {result.problems.map((problem) => (
-                    <li key={problem} className="text-[12px] text-amber-900">
+                    <li key={problem} className="text-phx-sm text-amber-900">
                       {problem}
                     </li>
                   ))}

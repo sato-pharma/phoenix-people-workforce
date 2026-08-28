@@ -95,7 +95,7 @@ function Card({ card, readOnly, slaModule }: { card: PendingCard; readOnly?: boo
         {/* Overdue framing only applies to items actually awaiting this viewer's action —
             not "Coming to you" or "Your own requests" (readOnly sections). */}
         {!readOnly && typeof card.ageDays === "number" ? <SlaAgeChip ageDays={card.ageDays} module={slaModule} /> : null}
-        <span className="whitespace-nowrap border border-slate-300 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-600">
+        <span className="whitespace-nowrap border border-slate-300 px-2 py-0.5 text-phx-2xs font-bold uppercase tracking-wide text-slate-600">
           {readOnly ? "View" : card.statusLabel}
         </span>
       </div>
@@ -173,7 +173,7 @@ export function ApprovalsWorkspace({
             <Icon className="h-3.5 w-3.5" />
             {label}
             <span
-              className={`inline-flex min-w-[1.25rem] items-center justify-center rounded-full px-1.5 py-0.5 text-[10px] font-black leading-none ${
+              className={`inline-flex min-w-[1.25rem] items-center justify-center rounded-full px-1.5 py-0.5 text-phx-2xs font-black leading-none ${
                 tab === key ? "bg-orange-500 text-white" : "bg-slate-200/80 text-slate-500"
               }`}
             >
@@ -195,8 +195,8 @@ export function ApprovalsWorkspace({
               .map((section) => (
                 <section key={section.key} className="space-y-2">
                   <div className="flex items-baseline gap-2">
-                    <h3 className="text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">{section.title}</h3>
-                    <span className="text-[11px] font-bold text-slate-400">{section.cards.length}</span>
+                    <h3 className="text-phx-xs font-black uppercase tracking-[0.14em] text-slate-500">{section.title}</h3>
+                    <span className="text-phx-xs font-bold text-slate-400">{section.cards.length}</span>
                   </div>
                   {section.subtitle ? <p className="text-xs text-slate-500">{section.subtitle}</p> : null}
                   <div className="space-y-2">

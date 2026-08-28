@@ -209,7 +209,7 @@ export function FieldWorkforceRouteMap({ checkins, route }: { checkins: RouteChe
     return (
       <Card className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
         <p className="text-sm font-bold text-slate-800">Route map unavailable</p>
-        <p className="mt-1 text-[13px] text-slate-500">NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY is missing from the environment.</p>
+        <p className="mt-1 text-phx-md text-slate-500">NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY is missing from the environment.</p>
       </Card>
     );
   }
@@ -217,9 +217,9 @@ export function FieldWorkforceRouteMap({ checkins, route }: { checkins: RouteChe
   return (
     <Card className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
       <div className="mb-3">
-        <span className="rounded-md bg-orange-50 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-orange-600">Field route</span>
+        <span className="rounded-md bg-orange-50 px-2 py-1 text-phx-2xs font-bold uppercase tracking-wider text-orange-600">Field route</span>
         <h2 className="mt-2 text-base font-black text-slate-900 sm:text-lg">GPS check-in route for this day</h2>
-        <p className="mt-1 text-[13px] leading-relaxed text-slate-500">
+        <p className="mt-1 text-phx-md leading-relaxed text-slate-500">
           Each stop is numbered in the order the rep checked in, with its check-in time. Distance and drive time between stops come from the Google Maps driving route.
         </p>
         {hasRoute && (totalKm != null || totalMin != null) ? (
@@ -229,16 +229,16 @@ export function FieldWorkforceRouteMap({ checkins, route }: { checkins: RouteChe
         ) : null}
       </div>
       {points.length === 0 ? (
-        <div className="rounded-md border border-slate-100 bg-slate-50/60 px-3 py-3 text-[13px] text-slate-600">
+        <div className="rounded-md border border-slate-100 bg-slate-50/60 px-3 py-3 text-phx-md text-slate-600">
           No GPS check-ins with coordinates were recorded for this rep on this day.
         </div>
       ) : (
         <div className="space-y-3">
           <div className="h-[360px] rounded-md border border-slate-100 bg-slate-50 sm:h-[420px]" ref={mapRef} />
-          {!ready ? <p className="text-[13px] text-slate-500">Loading Google Maps&hellip;</p> : null}
-          {error ? <p className="text-[13px] text-amber-700">{error}</p> : null}
+          {!ready ? <p className="text-phx-md text-slate-500">Loading Google Maps&hellip;</p> : null}
+          {error ? <p className="text-phx-md text-amber-700">{error}</p> : null}
           {!hasRoute && points.length > 1 ? (
-            <p className="text-[13px] text-slate-500">
+            <p className="text-phx-md text-slate-500">
               Driving distance and time between stops will appear here once the Maps key is allowed to use the Routes API.
             </p>
           ) : null}

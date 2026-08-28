@@ -82,7 +82,7 @@ export function ExpenseCommandTabs({
             >
               <Icon className="h-4 w-4" />
               <span>{tab.label}</span>
-              <span className="hidden text-[11px] font-medium text-slate-400 sm:inline">{tab.description}</span>
+              <span className="hidden text-phx-xs font-medium text-slate-400 sm:inline">{tab.description}</span>
             </button>
           );
         })}

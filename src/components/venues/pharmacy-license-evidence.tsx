@@ -38,14 +38,14 @@ export function PharmacyLicenseEvidence({
 
   return (
     <div className="mt-2">
-      <p className="text-[11px] font-black uppercase tracking-wider text-slate-500">
+      <p className="text-phx-xs font-black uppercase tracking-wider text-slate-500">
         Pharmacy licence · رخصة الصيدلية
       </p>
       {contentType === "application/pdf" ? (
         // Opened in a new tab rather than embedded: the URL is a short-lived signed link into a
         // private bucket, and an <iframe> of one fails silently the moment it expires.
         <a
-          className="mt-1 inline-block border border-slate-300 px-3 py-1.5 text-[12px] font-bold text-slate-700 hover:bg-slate-50"
+          className="mt-1 inline-block border border-slate-300 px-3 py-1.5 text-phx-sm font-bold text-slate-700 hover:bg-slate-50"
           href={url}
           rel="noreferrer"
           target="_blank"

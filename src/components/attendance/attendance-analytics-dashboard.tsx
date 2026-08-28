@@ -98,7 +98,7 @@ export function AttendanceAnalyticsDashboard({ initialData, initialError }: Prop
         >
           <div className="max-h-[40vh] overflow-auto">
             <table className="w-full border-separate border-spacing-0 text-left">
-              <thead className="bg-slate-50 text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">
+              <thead className="bg-slate-50 text-phx-xs font-black uppercase tracking-[0.16em] text-slate-500">
                 <tr>
                   <th className="border-b border-r border-slate-200 px-4 py-3">Employee ID</th>
                   <th className="border-b border-r border-slate-200 px-4 py-3">Name</th>
@@ -125,7 +125,7 @@ export function AttendanceAnalyticsDashboard({ initialData, initialError }: Prop
       >
         <div className="max-h-[50vh] overflow-auto">
           <table className="w-full border-separate border-spacing-0 text-left">
-            <thead className="bg-slate-50 text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">
+            <thead className="bg-slate-50 text-phx-xs font-black uppercase tracking-[0.16em] text-slate-500">
               <tr>
                 <th className="border-b border-r border-slate-200 px-4 py-3">Employee ID</th>
                 <th className="border-b border-r border-slate-200 px-4 py-3">Name</th>
@@ -166,7 +166,7 @@ export function AttendanceAnalyticsDashboard({ initialData, initialError }: Prop
       >
         <div className="max-h-[50vh] overflow-auto">
           <table className="w-full border-separate border-spacing-0 text-left">
-            <thead className="bg-slate-50 text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">
+            <thead className="bg-slate-50 text-phx-xs font-black uppercase tracking-[0.16em] text-slate-500">
               <tr>
                 <th className="border-b border-r border-slate-200 px-4 py-3">Department</th>
                 <th className="border-b border-r border-slate-200 px-4 py-3">Headcount</th>
@@ -230,8 +230,8 @@ export function AttendanceAnalyticsDashboard({ initialData, initialError }: Prop
                         />
                       </div>
                     </div>
-                    <div className="text-[10px] font-black uppercase tracking-[0.12em] text-slate-500">{week.isoWeek.slice(5)}</div>
-                    <div className="text-[10px] tabular-nums text-slate-400">{week.weekStartIso.slice(5)}</div>
+                    <div className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">{week.isoWeek.slice(5)}</div>
+                    <div className="text-phx-2xs tabular-nums text-slate-400">{week.weekStartIso.slice(5)}</div>
                   </div>
                 );
               })}

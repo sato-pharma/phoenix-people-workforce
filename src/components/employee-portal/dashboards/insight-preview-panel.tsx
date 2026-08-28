@@ -13,7 +13,7 @@ export function InsightPreviewPanel({ note }: { note?: string }) {
           <Sparkles className="h-4 w-4 text-[#f47b20]" />
         </div>
         <div>
-          <p className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-500">Insights</p>
+          <p className="text-phx-2xs font-black uppercase tracking-[0.18em] text-slate-500">Insights</p>
           <p className="mt-1 text-sm text-slate-600">
             {note ?? "Personalized recommendations are coming to this space soon."}
           </p>

@@ -33,8 +33,8 @@ function StatCard({ label, value, sub }: { label: string; sub?: string; value: s
   return (
     <div className="rounded border border-slate-200 bg-white p-4 text-center shadow-[0_4px_14px_rgba(15,23,42,0.04)]">
       <div className="text-2xl font-black tabular-nums text-slate-900">{value}</div>
-      <div className="mt-1 text-[10px] font-black uppercase tracking-[0.14em] text-slate-500">{label}</div>
-      {sub && <div className="mt-0.5 text-[11px] font-semibold text-orange-600">{sub}</div>}
+      <div className="mt-1 text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-500">{label}</div>
+      {sub && <div className="mt-0.5 text-phx-xs font-semibold text-orange-600">{sub}</div>}
     </div>
   );
 }
@@ -163,15 +163,15 @@ export function AttendanceOverview({ hrId, initialData }: Props) {
                   </div>
                   <dl className="mt-2.5 grid grid-cols-3 gap-2 text-xs">
                     <div>
-                      <dt className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">In</dt>
+                      <dt className="text-phx-2xs font-medium uppercase tracking-wide text-muted-foreground">In</dt>
                       <dd className="mt-0.5 font-medium">{row.firstPunch || "—"}</dd>
                     </div>
                     <div>
-                      <dt className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Out</dt>
+                      <dt className="text-phx-2xs font-medium uppercase tracking-wide text-muted-foreground">Out</dt>
                       <dd className="mt-0.5 font-medium">{row.lastPunch || "—"}</dd>
                     </div>
                     <div>
-                      <dt className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Hours</dt>
+                      <dt className="text-phx-2xs font-medium uppercase tracking-wide text-muted-foreground">Hours</dt>
                       <dd className="mt-0.5 font-mono font-medium">{row.timeLong || "—"}</dd>
                     </div>
                   </dl>

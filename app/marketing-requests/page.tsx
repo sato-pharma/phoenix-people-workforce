@@ -41,7 +41,7 @@ function Shell({ children }: { children: React.ReactNode }) {
     <main className="mx-auto w-full max-w-3xl px-4 py-8">
       <div className="border border-slate-200 bg-white">
         <div className="bg-slate-950 px-6 py-5">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-orange-400">
+          <p className="text-phx-xs font-semibold uppercase tracking-[0.18em] text-orange-400">
             Marketing requests
           </p>
           <h1 className="mt-1 text-xl font-semibold text-white">Your work queue</h1>
@@ -54,7 +54,7 @@ function Shell({ children }: { children: React.ReactNode }) {
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
-    <p className="mt-5 text-[11px] font-semibold uppercase tracking-wider text-slate-400 first:mt-0">
+    <p className="mt-5 text-phx-xs font-semibold uppercase tracking-wider text-slate-400 first:mt-0">
       {children}
     </p>
   );
@@ -86,18 +86,18 @@ function RequestCard({
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div className="min-w-0">
           <Link
-            className="font-mono text-[13px] font-semibold text-slate-950 underline underline-offset-2 hover:text-orange-700"
+            className="font-mono text-phx-md font-semibold text-slate-950 underline underline-offset-2 hover:text-orange-700"
             href={`/marketing-requests/${row.id}`}
           >
             {row.requestCode}
           </Link>
-          <p className="mt-0.5 text-[11px] text-slate-500">
+          <p className="mt-0.5 text-phx-xs text-slate-500">
             {row.customerName} · raised by {row.requesterName}
           </p>
         </div>
-        <span className="shrink-0 text-[13px] font-medium text-slate-950">{egp(row.estimatedCost)}</span>
+        <span className="shrink-0 text-phx-md font-medium text-slate-950">{egp(row.estimatedCost)}</span>
       </div>
-      <p className="mt-1.5 text-[11px] font-medium text-slate-600">
+      <p className="mt-1.5 text-phx-xs font-medium text-slate-600">
         {row.requestType} · {row.currentStepName}
         {/* Cairo, never raw UTC — the owner's standing rule. */}
         {row.submittedAt ? ` · submitted ${cairoDateTime(row.submittedAt) ?? ""}` : ""}
@@ -109,7 +109,7 @@ function RequestCard({
 
 /** Nothing waiting — stated positively, and never used to describe a read that failed. */
 function NothingHere({ children }: { children: React.ReactNode }) {
-  return <p className="mt-2 text-[12px] font-medium text-slate-400">{children}</p>;
+  return <p className="mt-2 text-phx-sm font-medium text-slate-400">{children}</p>;
 }
 
 function Upcoming({ row }: { row: MarketingApproverUpcomingRow }) {
@@ -118,7 +118,7 @@ function Upcoming({ row }: { row: MarketingApproverUpcomingRow }) {
       emphasis={false}
       row={row}
       trailer={
-        <p className="mt-1 text-[11px] leading-5 text-slate-500">
+        <p className="mt-1 text-phx-xs leading-5 text-slate-500">
           Yours is step {row.myStepSequence} of {row.totalGatingSteps}. Currently with{" "}
           {row.awaitingStepName ?? "no open step"}
           {row.awaitingApproverName ? ` — ${row.awaitingApproverName}` : ""} ·{" "}
@@ -136,11 +136,11 @@ export default async function MarketingRequestsWorkQueuePage() {
   if (access.source === "guest" || (!access.loginId && !access.hrId)) {
     return (
       <Shell>
-        <p className="text-[13px] font-medium text-slate-600">
+        <p className="text-phx-md font-medium text-slate-600">
           Please log in to Phoenix to see your marketing work queue.
         </p>
         <Link
-          className="mt-4 inline-flex border border-slate-300 px-4 py-2 text-[13px] font-semibold text-slate-700"
+          className="mt-4 inline-flex border border-slate-300 px-4 py-2 text-phx-md font-semibold text-slate-700"
           href="/login"
         >
           Log in to Phoenix
@@ -156,7 +156,7 @@ export default async function MarketingRequestsWorkQueuePage() {
     // The whole point of the contract: this is NOT an empty queue.
     return (
       <Shell>
-        <p className="border border-rose-200 bg-rose-50 px-3 py-2 text-[12px] font-medium leading-5 text-rose-800">
+        <p className="border border-rose-200 bg-rose-50 px-3 py-2 text-phx-sm font-medium leading-5 text-rose-800">
           <span className="font-semibold">Your queue could not be read. </span>
           This is not the same as having nothing to do — do not treat it as an empty list. Please try
           again, and tell IT if it keeps failing.
@@ -171,7 +171,7 @@ export default async function MarketingRequestsWorkQueuePage() {
 
   return (
     <Shell>
-      <p className="text-[12px] font-medium text-slate-600">
+      <p className="text-phx-sm font-medium text-slate-600">
         {rows.length > 0
           ? `${rows.length} request${rows.length === 1 ? "" : "s"} need${rows.length === 1 ? "s" : ""} your decision`
           : "Nothing is waiting on your decision"}
@@ -214,7 +214,7 @@ export default async function MarketingRequestsWorkQueuePage() {
       )}
 
       {nothingAtAll ? (
-        <p className="mt-5 border border-slate-200 bg-slate-50 px-3 py-2 text-[12px] font-medium leading-5 text-slate-600">
+        <p className="mt-5 border border-slate-200 bg-slate-50 px-3 py-2 text-phx-sm font-medium leading-5 text-slate-600">
           Your queue is empty. This is a read that succeeded and found nothing — if a request should
           be here, it is assigned to somebody else rather than missing.
         </p>

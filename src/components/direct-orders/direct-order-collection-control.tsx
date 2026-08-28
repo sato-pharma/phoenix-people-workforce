@@ -102,7 +102,7 @@ export function DirectOrderCollectionControl({
           The fix is the WORDS, not the arithmetic. An earlier review called this a bug and
           proposed accumulating the input instead; that was withdrawn, and rightly — it would
           have stored 700 the moment Finance corrected a typo from 200 to 500. */}
-      <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">Total collected (Finance)</p>
+      <p className="text-phx-2xs font-black uppercase tracking-wider text-slate-400">Total collected (Finance)</p>
 
       {recorded ? (
         <div className="mt-1 flex flex-wrap items-baseline gap-x-5 gap-y-1">
@@ -114,7 +114,7 @@ export function DirectOrderCollectionControl({
           >
             {(remainingAmount ?? 0) > 0 ? `${money(remainingAmount)} outstanding` : "Paid in full"}
           </span>
-          {paymentDate ? <span className="text-[11px] text-slate-500">on {paymentDate}</span> : null}
+          {paymentDate ? <span className="text-phx-xs text-slate-500">on {paymentDate}</span> : null}
         </div>
       ) : (
         <p className="mt-0.5 text-sm font-semibold text-slate-900">
@@ -124,7 +124,7 @@ export function DirectOrderCollectionControl({
 
       {canEdit ? (
         !isApproved ? (
-          <p className="mt-1.5 text-[11px] text-slate-500">
+          <p className="mt-1.5 text-phx-xs text-slate-500">
             A collection can only be recorded once the order is approved.
           </p>
         ) : (
@@ -173,7 +173,7 @@ export function DirectOrderCollectionControl({
                 </button>
               ) : null}
             </div>
-            <p className="text-[11px] text-slate-500">
+            <p className="text-phx-xs text-slate-500">
               {preview !== null
                 ? `Order value ${money(salesValue)} — this leaves ${money(preview)} outstanding.`
                 : `Order value ${money(salesValue)}. This records the money only; it does not change the sales month.`}
@@ -181,7 +181,7 @@ export function DirectOrderCollectionControl({
             {/* Named explicitly, and only when there is something to overwrite. Telling someone the
                 field is a total is weaker than telling them which number they are about to replace. */}
             {recorded ? (
-              <p className="text-[11px] font-semibold text-amber-700">
+              <p className="text-phx-xs font-semibold text-amber-700">
                 This is the RUNNING TOTAL, not a new payment: saving replaces the {money(paidAmount)} already
                 recorded. For a second instalment, enter the two added together.
               </p>
@@ -190,8 +190,8 @@ export function DirectOrderCollectionControl({
         )
       ) : null}
 
-      {error ? <p className="mt-1.5 text-[12px] font-semibold text-rose-600">{error}</p> : null}
-      {ok ? <p className="mt-1.5 text-[12px] font-semibold text-emerald-600">{ok}</p> : null}
+      {error ? <p className="mt-1.5 text-phx-sm font-semibold text-rose-600">{error}</p> : null}
+      {ok ? <p className="mt-1.5 text-phx-sm font-semibold text-emerald-600">{ok}</p> : null}
     </div>
   );
 }

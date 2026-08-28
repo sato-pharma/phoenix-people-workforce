@@ -347,7 +347,7 @@ export function OutstationRequestForm({
 function Field({ children, label }: { children: React.ReactNode; label: string }) {
   return (
     <label className="block">
-      <span className="mb-1 block text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">
+      <span className="mb-1 block text-phx-xs font-black uppercase tracking-[0.16em] text-slate-500">
         {label}
       </span>
       {children}
@@ -368,7 +368,7 @@ function SelectField({
 }) {
   return (
     <label className="block">
-      <span className="mb-1 block text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">
+      <span className="mb-1 block text-phx-xs font-black uppercase tracking-[0.16em] text-slate-500">
         {label}
       </span>
       <SearchableSelect
@@ -389,7 +389,7 @@ function SelectField({
 function InfoCard({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div className="rounded-md border border-slate-200 bg-slate-50 p-4">
-      <p className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">{label}</p>
+      <p className="text-phx-xs font-black uppercase tracking-[0.16em] text-slate-500">{label}</p>
       <div className="mt-2 text-sm font-semibold text-slate-900">{value}</div>
     </div>
   );

@@ -453,7 +453,7 @@ export function ResignationsWorkspace({ initialData, initialError, surface = "ad
                   </RgTd>
                   <RgTd className="text-right">
                     {tab === "history" ? (
-                      <span className="text-[11px] text-slate-400">
+                      <span className="text-phx-xs text-slate-400">
                         {resignationActorLabel(record)}
                       </span>
                     ) : (

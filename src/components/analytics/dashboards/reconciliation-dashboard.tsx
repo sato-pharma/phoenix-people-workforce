@@ -197,7 +197,7 @@ export function ReconciliationDashboard({
       <div className="flex items-center gap-3 border-b border-border pb-5">
         <div className="w-1 h-12 bg-phx-accent shrink-0" />
         <div>
-          <p className="text-[10px] font-bold uppercase tracking-widest text-phx-accent mb-0.5">Recon</p>
+          <p className="text-phx-2xs font-bold uppercase tracking-widest text-phx-accent mb-0.5">Recon</p>
           <h1 className="text-2xl font-bold text-foreground leading-tight">Cross-Source Reconciliation</h1>
           <p className="text-xs text-muted-foreground mt-0.5">
             Align Source of Sales, Monthly Closing, and Weekly Sales on the same period × line grain.

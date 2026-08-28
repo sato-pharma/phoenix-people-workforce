@@ -21,7 +21,7 @@ export function PaginationControls({
 
   return (
     <div className="flex items-center justify-between border-t border-slate-100 px-4 py-2.5">
-      <p className="text-[11px] font-bold text-slate-500">
+      <p className="text-phx-xs font-bold text-slate-500">
         {from}–{to} of {total}
       </p>
       <div className="flex items-center gap-1">
@@ -34,7 +34,7 @@ export function PaginationControls({
         >
           <ChevronLeft className="h-3.5 w-3.5" />
         </button>
-        <span className="px-2 text-[11px] font-bold text-slate-700">
+        <span className="px-2 text-phx-xs font-bold text-slate-700">
           {page + 1} / {totalPages}
         </span>
         <button

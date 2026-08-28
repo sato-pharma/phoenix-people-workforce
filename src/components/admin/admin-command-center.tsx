@@ -190,7 +190,7 @@ function SectionLabel({
       <div className="flex items-start gap-3">
         <span aria-hidden="true" className="mt-1 h-9 w-1.5 shrink-0 bg-gradient-to-b from-orange-500 to-amber-400" />
         <div>
-          <p className="text-[11px] font-bold uppercase tracking-[0.22em] text-orange-600">
+          <p className="text-phx-xs font-bold uppercase tracking-[0.22em] text-orange-600">
             {eyebrow}
           </p>
           <h2 className="mt-1 text-xl font-bold tracking-[-0.025em] text-slate-950">
@@ -268,7 +268,7 @@ function KpiCard({
       <div className="relative flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex min-h-5 items-center gap-2">
-            <p className="truncate text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">
+            <p className="truncate text-phx-2xs font-bold uppercase tracking-[0.16em] text-slate-500">
               {label}
             </p>
             {TrendIcon ? <TrendIcon aria-hidden="true" className={`h-3.5 w-3.5 ${trendClassName}`} /> : null}
@@ -322,7 +322,7 @@ function ModuleCard({
         <div className="min-w-0 flex-1">
           <div className="flex items-start justify-between gap-2">
             <h3 className="text-sm font-bold tracking-[-0.01em] text-slate-950">{title}</h3>
-            <span className={`inline-flex shrink-0 items-center gap-1 border px-2 py-1 text-[10px] font-bold capitalize ${healthStyle}`}>
+            <span className={`inline-flex shrink-0 items-center gap-1 border px-2 py-1 text-phx-2xs font-bold capitalize ${healthStyle}`}>
               {health === "healthy" ? <CheckCircle2 aria-hidden="true" className="h-3 w-3" /> : null}
               {health === "attention" ? <AlertTriangle aria-hidden="true" className="h-3 w-3" /> : null}
               {health === "warning" ? <XCircle aria-hidden="true" className="h-3 w-3" /> : null}
@@ -330,7 +330,7 @@ function ModuleCard({
             </span>
           </div>
           <p className="mt-1.5 text-xs leading-5 text-slate-500">{description}</p>
-          {lastSync ? <p className="mt-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">Synced: {lastSync}</p> : null}
+          {lastSync ? <p className="mt-1 text-phx-2xs font-semibold uppercase tracking-[0.12em] text-slate-400">Synced: {lastSync}</p> : null}
         </div>
       </div>
 
@@ -341,7 +341,7 @@ function ModuleCard({
               className={`border border-slate-200 bg-gradient-to-b ${style.metric} px-2.5 py-2`}
               key={metric.label}
             >
-              <p className="truncate text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">
+              <p className="truncate text-phx-2xs font-bold uppercase tracking-[0.12em] text-slate-500">
                 {metric.label}
               </p>
               <p
@@ -455,7 +455,7 @@ function DataUnavailableBanner({ messages }: { messages: string[] }) {
         <p className="text-sm font-semibold text-amber-900">
           {messages.length} data source{messages.length !== 1 ? "s" : ""} temporarily unavailable
         </p>
-        <span className="ml-auto flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.1em] text-amber-700">
+        <span className="ml-auto flex items-center gap-1.5 text-phx-xs font-semibold uppercase tracking-[0.1em] text-amber-700">
           <span className="hidden sm:inline">Details</span>
           <ChevronDown aria-hidden="true" className="h-4 w-4 transition-transform duration-200 group-open:rotate-180" />
         </span>
@@ -627,7 +627,7 @@ export function AdminCommandCenter({
         <AdminHeroFrame>
           <div className="relative grid gap-6 p-5 sm:p-6 lg:grid-cols-[minmax(0,1fr)_320px] lg:p-8 xl:grid-cols-[minmax(0,1fr)_360px]">
             <div>
-              <div className="inline-flex items-center gap-2 rounded-full border border-orange-400/40 bg-orange-500/15 px-3.5 py-1.5 text-[10px] font-bold uppercase tracking-[0.2em] text-orange-100 shadow-[0_0_24px_rgba(249,115,22,0.25)]">
+              <div className="inline-flex items-center gap-2 rounded-full border border-orange-400/40 bg-orange-500/15 px-3.5 py-1.5 text-phx-2xs font-bold uppercase tracking-[0.2em] text-orange-100 shadow-[0_0_24px_rgba(249,115,22,0.25)]">
                 {welcomeProfile ? <Sparkles aria-hidden="true" className="h-3.5 w-3.5" /> : <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-orange-300" />}
                 {welcomeProfile ? "Your Phoenix day starts here" : "Phoenix Workforce"}
               </div>
@@ -641,15 +641,15 @@ export function AdminCommandCenter({
               {welcomeProfile ? (
                 <div className="mt-5 grid max-w-3xl grid-cols-1 gap-2 sm:grid-cols-3">
                   <div className="border border-white/10 bg-white/10 px-3.5 py-2.5 backdrop-blur transition duration-200 hover:border-orange-300/40 hover:bg-white/[0.14]">
-                    <p className="text-[10px] font-black uppercase tracking-[0.12em] text-slate-400">HR ID</p>
+                    <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400">HR ID</p>
                     <p className="mt-1 truncate text-sm font-black text-white">{welcomeHrId}</p>
                   </div>
                   <div className="border border-white/10 bg-white/10 px-3.5 py-2.5 backdrop-blur transition duration-200 hover:border-orange-300/40 hover:bg-white/[0.14]">
-                    <p className="text-[10px] font-black uppercase tracking-[0.12em] text-slate-400">Manager</p>
+                    <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400">Manager</p>
                     <p className="mt-1 truncate text-sm font-black text-white">{welcomeProfile.managerName ?? "Unassigned"}</p>
                   </div>
                   <div className="border border-white/10 bg-white/10 px-3.5 py-2.5 backdrop-blur transition duration-200 hover:border-orange-300/40 hover:bg-white/[0.14]">
-                    <p className="text-[10px] font-black uppercase tracking-[0.12em] text-slate-400">Title</p>
+                    <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400">Title</p>
                     <p className="mt-1 truncate text-sm font-black text-white">{welcomeProfile.titleLabel}</p>
                   </div>
                 </div>
@@ -688,7 +688,7 @@ export function AdminCommandCenter({
                     </div>
                   )}
                 </div>
-                <div className="absolute -bottom-3 left-4 right-4 flex items-center justify-center gap-2 border border-white/70 bg-white px-3 py-2 text-[11px] font-black uppercase tracking-normal text-emerald-700 shadow-[0_16px_34px_rgba(15,23,42,0.18)]">
+                <div className="absolute -bottom-3 left-4 right-4 flex items-center justify-center gap-2 border border-white/70 bg-white px-3 py-2 text-phx-xs font-black uppercase tracking-normal text-emerald-700 shadow-[0_16px_34px_rgba(15,23,42,0.18)]">
                   <ShieldCheck className="h-3.5 w-3.5" />
                   Phoenix Verified
                 </div>
@@ -697,7 +697,7 @@ export function AdminCommandCenter({
               <div className="border border-white/10 bg-black/20 p-4 backdrop-blur">
                 <div className="flex items-center justify-between gap-3">
                   <div>
-                    <p className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">
+                    <p className="text-phx-2xs font-black uppercase tracking-[0.18em] text-slate-400">
                       Operational status
                     </p>
                     <p className="mt-2 text-xl font-black text-white">Live data</p>
@@ -1094,12 +1094,12 @@ export function AdminCommandCenter({
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center justify-between gap-2">
                           <p className="truncate text-sm font-semibold text-slate-900">{event.module}</p>
-                          <span className={`inline-flex shrink-0 items-center border px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.06em] ${eventStatusTone(event.status)}`}>
+                          <span className={`inline-flex shrink-0 items-center border px-2 py-0.5 text-phx-2xs font-bold uppercase tracking-[0.06em] ${eventStatusTone(event.status)}`}>
                             {event.status}
                           </span>
                         </div>
                         <p className="mt-0.5 truncate text-xs text-slate-500">{event.description}</p>
-                        <p className="mt-1 truncate text-[11px] font-medium text-slate-400">
+                        <p className="mt-1 truncate text-phx-xs font-medium text-slate-400">
                           {event.userName} · {relativeTime(event.timestamp, now)}
                         </p>
                       </div>
@@ -1120,15 +1120,15 @@ export function AdminCommandCenter({
             </div>
             <aside className="grid grid-cols-2 gap-3 lg:grid-cols-1">
               <div className="border border-slate-200 bg-gradient-to-br from-white to-slate-50/60 px-4 py-3 shadow-[0_2px_8px_rgba(15,23,42,0.06)]">
-                <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500">Events · 24h</p>
+                <p className="text-phx-2xs font-bold uppercase tracking-[0.14em] text-slate-500">Events · 24h</p>
                 <p className="mt-1.5 text-2xl font-black tracking-[-0.03em] text-slate-900">{n(operations.totalEvents24h)}</p>
               </div>
               <div className={`border px-4 py-3 shadow-[0_2px_8px_rgba(15,23,42,0.06)] ${operations.failureCount24h > 0 ? "border-rose-200 bg-gradient-to-br from-rose-50 to-white" : "border-emerald-200 bg-gradient-to-br from-emerald-50 to-white"}`}>
-                <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500">Failures · 24h</p>
+                <p className="text-phx-2xs font-bold uppercase tracking-[0.14em] text-slate-500">Failures · 24h</p>
                 <p className={`mt-1.5 text-2xl font-black tracking-[-0.03em] ${operations.failureCount24h > 0 ? "text-rose-700" : "text-emerald-700"}`}>{n(operations.failureCount24h)}</p>
               </div>
               <div className="border border-slate-200 bg-gradient-to-br from-white to-slate-50/60 px-4 py-3 shadow-[0_2px_8px_rgba(15,23,42,0.06)]">
-                <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500">Last event</p>
+                <p className="text-phx-2xs font-bold uppercase tracking-[0.14em] text-slate-500">Last event</p>
                 <p className="mt-1.5 flex items-center gap-1.5 text-sm font-bold text-slate-900">
                   <Clock aria-hidden="true" className="h-3.5 w-3.5 text-slate-400" />
                   {relativeTime(operations.lastEventAt, now)}
@@ -1136,7 +1136,7 @@ export function AdminCommandCenter({
               </div>
               {operations.staleSources.length > 0 ? (
                 <div className="border border-amber-200 bg-gradient-to-br from-amber-50 to-white px-4 py-3 shadow-[0_2px_8px_rgba(15,23,42,0.06)]">
-                  <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500">Stale sources</p>
+                  <p className="text-phx-2xs font-bold uppercase tracking-[0.14em] text-slate-500">Stale sources</p>
                   <p className="mt-1.5 text-2xl font-black tracking-[-0.03em] text-amber-700">{n(operations.staleSources.length)}</p>
                 </div>
               ) : null}

@@ -128,14 +128,14 @@ export function ReportShareLinksPanel({ filters, productionUrl }: Props) {
   }
 
   const inputClass = "mt-1 w-full border border-slate-300 px-3 py-2 text-sm focus:border-orange-500 focus:outline-none";
-  const labelClass = "block text-[11px] font-black uppercase tracking-wider text-slate-500";
+  const labelClass = "block text-phx-xs font-black uppercase tracking-wider text-slate-500";
 
   if (!open) {
     return (
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="border border-slate-300 px-3 py-1.5 text-[12px] font-bold text-slate-700 hover:bg-slate-50"
+        className="border border-slate-300 px-3 py-1.5 text-phx-sm font-bold text-slate-700 hover:bg-slate-50"
       >
         Live link / Google Sheet
       </button>
@@ -145,8 +145,8 @@ export function ReportShareLinksPanel({ filters, productionUrl }: Props) {
   return (
     <section className="border border-phx-line bg-white">
       <header className="flex items-center justify-between border-b border-phx-line bg-slate-900 px-4 py-2.5">
-        <h3 className="text-[11px] font-black uppercase tracking-[0.14em] text-white">Live link / Google Sheet</h3>
-        <button type="button" className="text-[12px] font-bold text-slate-300 hover:text-white" onClick={() => setOpen(false)}>
+        <h3 className="text-phx-xs font-black uppercase tracking-[0.14em] text-white">Live link / Google Sheet</h3>
+        <button type="button" className="text-phx-sm font-bold text-slate-300 hover:text-white" onClick={() => setOpen(false)}>
           Close
         </button>
       </header>
@@ -156,7 +156,7 @@ export function ReportShareLinksPanel({ filters, productionUrl }: Props) {
           <button
             type="button"
             onClick={() => setSurface("feed")}
-            className={`flex-1 border px-3 py-2 text-left text-[12px] ${surface === "feed" ? "border-orange-500 bg-orange-50" : "border-slate-300 bg-white"}`}
+            className={`flex-1 border px-3 py-2 text-left text-phx-sm ${surface === "feed" ? "border-orange-500 bg-orange-50" : "border-slate-300 bg-white"}`}
           >
             <span className="block font-black text-slate-900">Google Sheets feed</span>
             <span className="block text-slate-500">A live sheet that refreshes itself. Share the SHEET, not the link.</span>
@@ -164,7 +164,7 @@ export function ReportShareLinksPanel({ filters, productionUrl }: Props) {
           <button
             type="button"
             onClick={() => setSurface("live")}
-            className={`flex-1 border px-3 py-2 text-left text-[12px] ${surface === "live" ? "border-orange-500 bg-orange-50" : "border-slate-300 bg-white"}`}
+            className={`flex-1 border px-3 py-2 text-left text-phx-sm ${surface === "live" ? "border-orange-500 bg-orange-50" : "border-slate-300 bg-white"}`}
           >
             <span className="block font-black text-slate-900">Live web link</span>
             <span className="block text-slate-500">For a person with no Phoenix account. Passcode required.</span>
@@ -188,7 +188,7 @@ export function ReportShareLinksPanel({ filters, productionUrl }: Props) {
           ) : null}
         </div>
 
-        <p className="border border-amber-300 bg-amber-50 px-3 py-2 text-[12px] font-semibold text-amber-900">
+        <p className="border border-amber-300 bg-amber-50 px-3 py-2 text-phx-sm font-semibold text-amber-900">
           This publishes requester names, pharmacies, quantities, prices and sales values to whoever
           holds the link. It shows only what YOU can see, expires on the date above, and you can
           revoke it at any time.
@@ -200,7 +200,7 @@ export function ReportShareLinksPanel({ filters, productionUrl }: Props) {
           type="button"
           onClick={create}
           disabled={busy}
-          className="bg-orange-500 px-4 py-2 text-[12px] font-black uppercase tracking-wider text-white hover:bg-orange-600 disabled:bg-slate-300"
+          className="bg-orange-500 px-4 py-2 text-phx-sm font-black uppercase tracking-wider text-white hover:bg-orange-600 disabled:bg-slate-300"
         >
           {busy ? "Creating…" : "Create link"}
         </button>
@@ -209,31 +209,31 @@ export function ReportShareLinksPanel({ filters, productionUrl }: Props) {
           <div className="space-y-2 border border-emerald-300 bg-emerald-50 px-3 py-3">
             {created.surface === "feed" ? (
               <>
-                <p className="text-[12px] font-black text-emerald-900">
+                <p className="text-phx-sm font-black text-emerald-900">
                   Paste this into cell A1 of a new Google Sheet:
                 </p>
-                <code className="block overflow-x-auto whitespace-nowrap border border-emerald-200 bg-white px-2 py-1.5 text-[11px]">
+                <code className="block overflow-x-auto whitespace-nowrap border border-emerald-200 bg-white px-2 py-1.5 text-phx-xs">
                   {formula(created.token)}
                 </code>
-                <button type="button" onClick={() => copy(formula(created.token), "formula")} className="bg-slate-900 px-3 py-1.5 text-[11px] font-bold text-white">
+                <button type="button" onClick={() => copy(formula(created.token), "formula")} className="bg-slate-900 px-3 py-1.5 text-phx-xs font-bold text-white">
                   {copied === "formula" ? "Copied" : "Copy formula"}
                 </button>
-                <ol className="mt-1 list-decimal space-y-0.5 pl-5 text-[11px] text-slate-700">
+                <ol className="mt-1 list-decimal space-y-0.5 pl-5 text-phx-xs text-slate-700">
                   <li>Open sheets.new</li>
                   <li>Click cell A1 and paste, then press Enter</li>
                   <li>File &rarr; Rename, then Share with whoever needs it</li>
                 </ol>
-                <p className="text-[11px] font-semibold text-emerald-800">
+                <p className="text-phx-xs font-semibold text-emerald-800">
                   Google refreshes it about once an hour. Share the SHEET — never this URL.
                 </p>
               </>
             ) : (
               <>
-                <p className="text-[12px] font-black text-emerald-900">Send this link, and the passcode separately:</p>
-                <code className="block overflow-x-auto whitespace-nowrap border border-emerald-200 bg-white px-2 py-1.5 text-[11px]">
+                <p className="text-phx-sm font-black text-emerald-900">Send this link, and the passcode separately:</p>
+                <code className="block overflow-x-auto whitespace-nowrap border border-emerald-200 bg-white px-2 py-1.5 text-phx-xs">
                   {liveUrl(created.token)}
                 </code>
-                <button type="button" onClick={() => copy(liveUrl(created.token), "link")} className="bg-slate-900 px-3 py-1.5 text-[11px] font-bold text-white">
+                <button type="button" onClick={() => copy(liveUrl(created.token), "link")} className="bg-slate-900 px-3 py-1.5 text-phx-xs font-bold text-white">
                   {copied === "link" ? "Copied" : "Copy link"}
                 </button>
               </>
@@ -243,9 +243,9 @@ export function ReportShareLinksPanel({ filters, productionUrl }: Props) {
 
         {links.length > 0 ? (
           <div className="overflow-x-auto border-t border-[#eef1f3] pt-3">
-            <table className="w-full text-left text-[12px]">
+            <table className="w-full text-left text-phx-sm">
               <thead>
-                <tr className="text-[11px] font-black uppercase tracking-wider text-slate-500">
+                <tr className="text-phx-xs font-black uppercase tracking-wider text-slate-500">
                   <th className="px-2 py-1">Label</th>
                   <th className="px-2 py-1">Type</th>
                   <th className="px-2 py-1">Expires</th>
@@ -264,13 +264,13 @@ export function ReportShareLinksPanel({ filters, productionUrl }: Props) {
                       <td className="px-2 py-1.5 text-slate-600">{cairo(link.expiresAt)}</td>
                       <td className="px-2 py-1.5 tabular-nums text-slate-700">{link.accessCount}</td>
                       <td className="px-2 py-1.5">
-                        <span className={`px-1.5 py-0.5 text-[11px] font-black ${dead ? "bg-slate-200 text-slate-600" : "bg-emerald-100 text-emerald-800"}`}>
+                        <span className={`px-1.5 py-0.5 text-phx-xs font-black ${dead ? "bg-slate-200 text-slate-600" : "bg-emerald-100 text-emerald-800"}`}>
                           {link.revokedAt ? "revoked" : dead ? "expired" : "active"}
                         </span>
                       </td>
                       <td className="px-2 py-1.5">
                         {!dead ? (
-                          <button type="button" onClick={() => revoke(link.id)} className="text-[11px] font-bold text-rose-600 hover:underline">
+                          <button type="button" onClick={() => revoke(link.id)} className="text-phx-xs font-bold text-rose-600 hover:underline">
                             Revoke
                           </button>
                         ) : null}

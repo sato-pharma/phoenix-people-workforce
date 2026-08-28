@@ -158,12 +158,12 @@ export function DistributorCustomerPicker({
 
           {picked ? (
             <div className="flex items-center justify-between gap-2 border border-emerald-200 bg-emerald-50 px-2 py-1.5">
-              <span className="text-[12px] font-bold text-emerald-900">
+              <span className="text-phx-sm font-bold text-emerald-900">
                 {row.customerName} <span className="text-emerald-700">({row.customerCode})</span>
               </span>
               <button
                 type="button"
-                className="text-[11px] font-bold text-slate-500 hover:text-slate-800"
+                className="text-phx-xs font-bold text-slate-500 hover:text-slate-800"
                 onClick={() => {
                   onChange({ customerCode: "", customerName: "" });
                   setQuery("");
@@ -181,10 +181,10 @@ export function DistributorCustomerPicker({
                 onFocus={() => setOpen(true)}
                 placeholder="Search the pharmacy by name…"
               />
-              {searching ? <p className="mt-0.5 text-[11px] text-slate-400">Searching…</p> : null}
-              {searchError ? <p className="mt-0.5 text-[11px] font-semibold text-rose-600">{searchError}</p> : null}
+              {searching ? <p className="mt-0.5 text-phx-xs text-slate-400">Searching…</p> : null}
+              {searchError ? <p className="mt-0.5 text-phx-xs font-semibold text-rose-600">{searchError}</p> : null}
               {!searching && !searchError && searchable && visibleResults.length === 0 ? (
-                <p className="mt-0.5 text-[11px] text-slate-500">
+                <p className="mt-0.5 text-phx-xs text-slate-500">
                   No pharmacy matches “{query.trim()}” for this distributor in your areas.
                 </p>
               ) : null}
@@ -194,7 +194,7 @@ export function DistributorCustomerPicker({
                     <li key={`${option.customerCode}-${option.areaCode ?? ""}`}>
                       <button
                         type="button"
-                        className="block w-full px-2 py-1.5 text-left text-[12px] hover:bg-orange-50"
+                        className="block w-full px-2 py-1.5 text-left text-phx-sm hover:bg-orange-50"
                         onClick={() => {
                           onChange({ customerCode: option.customerCode, customerName: option.customerName });
                           setOpen(false);
@@ -204,7 +204,7 @@ export function DistributorCustomerPicker({
                         {/* Names, never bare codes — but the code is shown so the submitter can
                             confirm against an invoice before committing. */}
                         <span className="ml-1 text-slate-500">({option.customerCode})</span>
-                        <span className="block text-[11px] text-slate-500">
+                        <span className="block text-phx-xs text-slate-500">
                           {[option.brickName, option.areaName, option.regionName].filter(Boolean).join(" · ") || "—"}
                         </span>
                       </button>
@@ -217,7 +217,7 @@ export function DistributorCustomerPicker({
 
           <button
             type="button"
-            className="text-[11px] font-bold text-orange-600 hover:text-orange-700"
+            className="text-phx-xs font-bold text-orange-600 hover:text-orange-700"
             onClick={() => {
               setManual(true);
               onChange({ customerCode: "", customerName: "" });
@@ -231,7 +231,7 @@ export function DistributorCustomerPicker({
       {/* Stated here, while they are still on the row, rather than as a rejection after they have
           filled the rest of the form. Both escape hatches are named so the row is never a dead end. */}
       {halfFilled ? (
-        <p className="text-[11px] font-bold text-amber-700">
+        <p className="text-phx-xs font-bold text-amber-700">
           You picked a distributor but no customer yet. Pick one from the search, enter the code
           manually, or remove this row with ✕ — a half-filled row cannot be saved.
         </p>
@@ -249,19 +249,19 @@ export function DistributorCustomerPicker({
               while typing rather than as a rejection after filling the whole form; the server
               check is the one that actually enforces it. */}
           {multiCodeAttempt ? (
-            <p className="text-[11px] font-bold text-rose-600">
+            <p className="text-phx-xs font-bold text-rose-600">
               That looks like more than one code. Enter ONE code here and add a second distributor
               row for the other — two codes in one box match nothing at all.
             </p>
           ) : null}
-          <p className="text-[11px] font-semibold text-amber-700">
+          <p className="text-phx-xs font-semibold text-amber-700">
             This code is not being matched against the distributor&apos;s list. The order still submits
             and SFE still reviews it, but it cannot receive FINAL approval until a System Admin
             acknowledges the pharmacy.
           </p>
           <button
             type="button"
-            className="text-[11px] font-bold text-orange-600 hover:text-orange-700"
+            className="text-phx-xs font-bold text-orange-600 hover:text-orange-700"
             onClick={() => {
               setManual(false);
               onChange({ customerCode: "", customerName: "" });

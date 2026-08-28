@@ -50,7 +50,7 @@ type ActiveTab = "documents" | "capture" | "control";
 
 const allValue = "__all__";
 const tableHeaderClassName =
-  "border-b border-phx-line bg-phx-accent-soft/80 px-3 py-3 text-left text-[10px] font-black uppercase tracking-[0.16em] text-phx-ink-soft";
+  "border-b border-phx-line bg-phx-accent-soft/80 px-3 py-3 text-left text-phx-2xs font-black uppercase tracking-[0.16em] text-phx-ink-soft";
 const tableCellClassName = "border-b border-phx-line px-3 py-4 align-top";
 const inputClassName =
   "h-10 rounded-xl border-phx-line bg-white/95 text-sm shadow-sm focus:border-phx-accent-line focus:ring-phx-accent/15";
@@ -522,7 +522,7 @@ export function HiringDocumentsManager({ canManage, initialData, initialError }:
                 </div>
                 <div className="grid gap-3 p-4 lg:grid-cols-3">
                   <label className="relative block">
-                    <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-soft">Search</span>
+                    <span className="mb-1.5 block text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">Search</span>
                     <Search className="pointer-events-none absolute left-3 top-10 h-4 w-4 text-phx-ink-soft" />
                     <Input
                     className={`${inputClassName} pl-9`}
@@ -532,14 +532,14 @@ export function HiringDocumentsManager({ canManage, initialData, initialError }:
                   />
                 </label>
                 <label className="block">
-                  <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-soft">Line</span>
+                  <span className="mb-1.5 block text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">Line</span>
                   <SearchableSelect className={selectClassName} onChange={(event) => setLineFilter(event.target.value)} value={lineFilter}>
                     <option value={allValue}>All lines</option>
                     {lineOptions.map((line) => <option key={line} value={line}>{line}</option>)}
                   </SearchableSelect>
                 </label>
                 <label className="block">
-                  <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-soft">Employee Status</span>
+                  <span className="mb-1.5 block text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">Employee Status</span>
                   <SearchableSelect className={selectClassName} onChange={(event) => setStatusFilter(event.target.value)} value={statusFilter}>
                     <option value={allValue}>All statuses</option>
                     {statusOptions.map((status) => <option key={status} value={status}>{employmentStatusLabel(status)}</option>)}
@@ -549,14 +549,14 @@ export function HiringDocumentsManager({ canManage, initialData, initialError }:
               {advancedOpen ? (
                 <div className="grid gap-3 border-t border-phx-line bg-white/80 p-4 lg:grid-cols-3">
                   <label className="block">
-                    <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-soft">Manager</span>
+                    <span className="mb-1.5 block text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">Manager</span>
                     <SearchableSelect className={selectClassName} onChange={(event) => setManagerFilter(event.target.value)} value={managerFilter}>
                       <option value={allValue}>All managers</option>
                       {managerOptions.map((manager) => <option key={manager} value={manager}>{manager}</option>)}
                     </SearchableSelect>
                   </label>
                   <label className="block">
-                    <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-soft">Job Title</span>
+                    <span className="mb-1.5 block text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">Job Title</span>
                     <SearchableSelect className={selectClassName} onChange={(event) => setJobTitleFilter(event.target.value)} value={jobTitleFilter}>
                       <option value={allValue}>All job titles</option>
                       {jobTitleOptions.map((title) => <option key={title} value={title}>{title}</option>)}
@@ -564,17 +564,17 @@ export function HiringDocumentsManager({ canManage, initialData, initialError }:
                   </label>
                   <label className="grid grid-cols-2 gap-2">
                     <div className="space-y-1.5">
-                      <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-soft">Hire Date From</span>
+                      <span className="mb-1.5 block text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">Hire Date From</span>
                       <Input className={inputClassName} onChange={(event) => setHireDateFrom(event.target.value)} type="date" value={hireDateFrom} />
                     </div>
                     <div className="space-y-1.5">
-                      <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-soft">Hire Date To</span>
+                      <span className="mb-1.5 block text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">Hire Date To</span>
                       <Input className={inputClassName} onChange={(event) => setHireDateTo(event.target.value)} type="date" value={hireDateTo} />
                     </div>
                   </label>
                   <label className="grid grid-cols-2 gap-2">
                     <div className="space-y-1.5">
-                      <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-soft">Completion Min %</span>
+                      <span className="mb-1.5 block text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">Completion Min %</span>
                       <Input
                         className={inputClassName}
                         onChange={(event) => setCompletionMin(event.target.value)}
@@ -585,7 +585,7 @@ export function HiringDocumentsManager({ canManage, initialData, initialError }:
                       />
                     </div>
                     <div className="space-y-1.5">
-                      <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-soft">Completion Max %</span>
+                      <span className="mb-1.5 block text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">Completion Max %</span>
                       <Input
                         className={inputClassName}
                         onChange={(event) => setCompletionMax(event.target.value)}
@@ -697,13 +697,13 @@ export function HiringDocumentsManager({ canManage, initialData, initialError }:
                                   {/* The combination worth seeing at a glance: somebody ticked this
                                       from memory and no scan ever arrived. */}
                                   {status === "submitted" && (entry?.fileCount ?? 0) === 0 ? (
-                                    <p className="whitespace-nowrap text-[11px] font-semibold text-[#B45309]">
+                                    <p className="whitespace-nowrap text-phx-xs font-semibold text-[#B45309]">
                                       Ticked, no scan on file
                                     </p>
                                   ) : null}
                                   {status === "missing" ? (
                                     <label className="block">
-                                      <span className="mb-1 block text-[10px] font-black uppercase tracking-[0.12em] text-phx-ink-soft">Deadline</span>
+                                      <span className="mb-1 block text-phx-2xs font-black uppercase tracking-[0.12em] text-phx-ink-soft">Deadline</span>
                                       <Input
                                         className="h-9 rounded-lg border-[#FCA5A5] text-xs"
                                         disabled={!canManage || busy}
@@ -800,19 +800,19 @@ export function HiringDocumentsManager({ canManage, initialData, initialError }:
 
                       <dl className="mt-3 grid grid-cols-2 gap-2">
                         <div className="rounded-lg border border-phx-line bg-phx-paper px-2.5 py-2">
-                          <dt className="text-[10px] font-black uppercase tracking-[0.12em] text-phx-ink-faint">Line</dt>
+                          <dt className="text-phx-2xs font-black uppercase tracking-[0.12em] text-phx-ink-faint">Line</dt>
                           <dd className="mt-0.5 truncate text-xs font-bold text-phx-ink">{employee.lineName ?? "-"}</dd>
                         </div>
                         <div className="rounded-lg border border-phx-line bg-phx-paper px-2.5 py-2">
-                          <dt className="text-[10px] font-black uppercase tracking-[0.12em] text-phx-ink-faint">Hiring Date</dt>
+                          <dt className="text-phx-2xs font-black uppercase tracking-[0.12em] text-phx-ink-faint">Hiring Date</dt>
                           <dd className="mt-0.5 truncate text-xs font-bold text-phx-ink">{formatDate(employee.hireDate)}</dd>
                         </div>
                         <div className="col-span-2 rounded-lg border border-phx-line bg-phx-paper px-2.5 py-2">
-                          <dt className="text-[10px] font-black uppercase tracking-[0.12em] text-phx-ink-faint">Manager</dt>
+                          <dt className="text-phx-2xs font-black uppercase tracking-[0.12em] text-phx-ink-faint">Manager</dt>
                           <dd className="mt-0.5 break-words text-xs font-bold text-phx-ink">
                             {employee.managerName ?? "-"}
                             {employee.managerHrId ? (
-                              <span className="ml-1.5 font-mono text-[10px] font-normal text-phx-ink-faint">
+                              <span className="ml-1.5 font-mono text-phx-2xs font-normal text-phx-ink-faint">
                                 {employee.managerHrId}
                               </span>
                             ) : null}
@@ -821,7 +821,7 @@ export function HiringDocumentsManager({ canManage, initialData, initialError }:
                       </dl>
 
                       <div className="mt-3">
-                        <p className="mb-1.5 text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-soft">
+                        <p className="mb-1.5 text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">
                           Documents ({submittedCount}/{documents.length} submitted)
                         </p>
                         <div className="divide-y divide-phx-line rounded-xl border border-phx-line">
@@ -873,13 +873,13 @@ export function HiringDocumentsManager({ canManage, initialData, initialError }:
                                     </Button>
                                   </div>
                                   {status === "submitted" && (entry?.fileCount ?? 0) === 0 ? (
-                                    <p className="mt-2 whitespace-nowrap text-[11px] font-semibold text-[#B45309]">
+                                    <p className="mt-2 whitespace-nowrap text-phx-xs font-semibold text-[#B45309]">
                                       Ticked, no scan on file
                                     </p>
                                   ) : null}
                                   {status === "missing" ? (
                                     <label className="mt-2 block">
-                                      <span className="mb-1 block text-[10px] font-black uppercase tracking-[0.12em] text-phx-ink-soft">Deadline</span>
+                                      <span className="mb-1 block text-phx-2xs font-black uppercase tracking-[0.12em] text-phx-ink-soft">Deadline</span>
                                       <Input
                                         className="h-9 rounded-lg border-[#FCA5A5] text-xs"
                                         disabled={!canManage || busy}
@@ -928,7 +928,7 @@ export function HiringDocumentsManager({ canManage, initialData, initialError }:
                       </div>
 
                       <div className="mt-3">
-                        <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-soft">Notes</span>
+                        <span className="mb-1.5 block text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">Notes</span>
                         <textarea
                           className="min-h-20 w-full resize-y rounded-xl border border-phx-line bg-white px-3 py-2 text-sm text-phx-ink shadow-sm outline-none focus:border-phx-accent-line focus:ring-2 focus:ring-phx-accent/15"
                           disabled={!canManage || busyKey === `${employee.hrId}:notes`}
@@ -954,7 +954,7 @@ export function HiringDocumentsManager({ canManage, initialData, initialError }:
           >
             <div className="grid gap-3 p-4 lg:grid-cols-[1fr_1fr_auto]">
               <label className="block">
-                <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-soft">Document Name</span>
+                <span className="mb-1.5 block text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">Document Name</span>
                 <Input
                   className={inputClassName}
                   disabled={!canManage}
@@ -964,7 +964,7 @@ export function HiringDocumentsManager({ canManage, initialData, initialError }:
                 />
               </label>
               <label className="block">
-                <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-soft">Description</span>
+                <span className="mb-1.5 block text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">Description</span>
                 <Input
                   className={inputClassName}
                   disabled={!canManage}

@@ -77,7 +77,7 @@ export function MarketingCaseFileGoDeeper({
         if (!section.available) {
           return (
             <p
-              className="border border-slate-200 bg-slate-50 px-3 py-2 text-[12px] font-medium text-slate-400"
+              className="border border-slate-200 bg-slate-50 px-3 py-2 text-phx-sm font-medium text-slate-400"
               key={section.key}
             >
               {section.label} — {section.reason}
@@ -90,7 +90,7 @@ export function MarketingCaseFileGoDeeper({
           <div key={section.key}>
             <button
               aria-expanded={isOpen}
-              className="flex w-full items-center justify-between whitespace-nowrap border border-slate-200 bg-white px-3 py-2 text-left text-[12px] font-medium text-slate-700 hover:bg-slate-50"
+              className="flex w-full items-center justify-between whitespace-nowrap border border-slate-200 bg-white px-3 py-2 text-left text-phx-sm font-medium text-slate-700 hover:bg-slate-50"
               onClick={() => setOpenKeys((prev) => ({ ...prev, [section.key]: !isOpen }))}
               type="button"
             >

@@ -82,7 +82,7 @@ const panelClassName =
 
 function FieldLabel({ children }: { children: React.ReactNode }) {
   return (
-    <span className="mb-1 block text-[11px] font-black uppercase tracking-[0.16em] text-phx-ink-soft">
+    <span className="mb-1 block text-phx-xs font-black uppercase tracking-[0.16em] text-phx-ink-soft">
       {children}
     </span>
   );
@@ -647,7 +647,7 @@ export function AdminManagerExpenseModal({
                     {destination.country ? ` · ${destination.country}` : ""}
                   </div>
                 ) : null}
-                <p className="text-[11px] text-phx-ink-faint">
+                <p className="text-phx-xs text-phx-ink-faint">
                   {destination.latitude.toFixed(5)}, {destination.longitude.toFixed(5)}
                 </p>
               </div>
@@ -697,7 +697,7 @@ export function AdminManagerExpenseModal({
                       <p className="text-2xl font-black text-phx-accent-hover">
                         {distanceResult.distanceKm.toFixed(1)} km
                       </p>
-                      <p className="text-[11px] font-black uppercase tracking-[0.12em] text-phx-accent-hover/70">
+                      <p className="text-phx-xs font-black uppercase tracking-[0.12em] text-phx-accent-hover/70">
                         Distance
                       </p>
                     </div>
@@ -706,7 +706,7 @@ export function AdminManagerExpenseModal({
                         <p className="text-2xl font-black text-[#047857]">
                           {Math.round(distanceResult.durationMinutes)} min
                         </p>
-                        <p className="text-[11px] font-black uppercase tracking-[0.12em] text-[#047857]/70">
+                        <p className="text-phx-xs font-black uppercase tracking-[0.12em] text-[#047857]/70">
                           Drive time
                         </p>
                       </div>
@@ -898,14 +898,14 @@ export function AdminManagerExpenseModal({
                   Calculation preview
                 </p>
                 {calcPreview.eligibilityStatus === "not_eligible" ? (
-                  <span className="rounded-full bg-[#FEF2F2] px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.1em] text-[#B91C1C]">
+                  <span className="rounded-full bg-[#FEF2F2] px-2 py-0.5 text-phx-2xs font-black uppercase tracking-[0.1em] text-[#B91C1C]">
                     Not eligible
                   </span>
                 ) : null}
               </div>
               <div className="grid gap-3 sm:grid-cols-2">
                 <div className="rounded-md bg-phx-paper px-3 py-2.5">
-                  <p className="text-[10px] font-black uppercase tracking-[0.12em] text-phx-ink-soft">
+                  <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-phx-ink-soft">
                     {isTicketBased ? "Ticket cost" : "Fuel (round trip)"}
                   </p>
                   <p className="mt-0.5 text-sm font-black text-phx-ink">
@@ -913,7 +913,7 @@ export function AdminManagerExpenseModal({
                   </p>
                 </div>
                 <div className="rounded-md bg-phx-paper px-3 py-2.5">
-                  <p className="text-[10px] font-black uppercase tracking-[0.12em] text-phx-ink-soft">
+                  <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-phx-ink-soft">
                     Allowance
                   </p>
                   <p className="mt-0.5 text-sm font-black text-phx-ink">
@@ -922,7 +922,7 @@ export function AdminManagerExpenseModal({
                 </div>
               </div>
               <div className="mt-3 flex items-center justify-between rounded-md bg-phx-accent-soft px-3 py-2.5">
-                <p className="text-[10px] font-black uppercase tracking-[0.12em] text-phx-accent-hover">
+                <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-phx-accent-hover">
                   {isTicketBased ? "Ticket + allowance" : "Fuel + allowance"} = total
                 </p>
                 <p className="text-sm font-black text-phx-accent-hover">

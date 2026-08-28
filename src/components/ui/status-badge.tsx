@@ -23,7 +23,7 @@ export function StatusBadge({ status, className }: StatusBadgeProps) {
 
   return (
     <span className={cn(
-      "inline-flex items-center rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-wider",
+      "inline-flex items-center rounded-full px-2 py-0.5 text-phx-3xs font-black uppercase tracking-wider",
       variantClass,
       className
     )}>

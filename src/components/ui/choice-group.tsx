@@ -38,7 +38,7 @@ export function ChoiceGroup<TValue extends string>({
           <button
             aria-checked={active}
             className={cn(
-              "min-h-10 rounded-sm px-2 py-1.5 text-[12px] font-bold transition focus:outline-none focus:ring-2 focus:ring-orange-200 disabled:cursor-not-allowed disabled:opacity-60 sm:text-[13px]",
+              "min-h-10 rounded-sm px-2 py-1.5 text-phx-sm font-bold transition focus:outline-none focus:ring-2 focus:ring-orange-200 disabled:cursor-not-allowed disabled:opacity-60 sm:text-phx-md",
               active ? "bg-white text-orange-600 shadow-sm" : "text-slate-500 hover:bg-white/70 hover:text-slate-700",
               optionClassName,
             )}

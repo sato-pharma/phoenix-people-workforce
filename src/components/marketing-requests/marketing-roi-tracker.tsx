@@ -363,7 +363,7 @@ function FacetSelect({
       <div className="absolute left-0 z-30 mt-1 flex max-h-72 w-64 flex-col gap-0.5 overflow-auto rounded-sm border border-slate-200 bg-white p-2 shadow-lg">
         {selected.length > 0 ? (
           <button
-            className="mb-1 self-start text-[11px] font-semibold text-slate-500 underline"
+            className="mb-1 self-start text-phx-xs font-semibold text-slate-500 underline"
             onClick={() => onChange([])}
             type="button"
           >
@@ -383,7 +383,7 @@ function FacetSelect({
 
 function Badge({ className, children }: { className?: string; children: React.ReactNode }) {
   return (
-    <span className={cn("inline-flex items-center rounded-sm border px-2 py-0.5 text-[10px] font-black uppercase tracking-wide", className)}>
+    <span className={cn("inline-flex items-center rounded-sm border px-2 py-0.5 text-phx-2xs font-black uppercase tracking-wide", className)}>
       {children}
     </span>
   );
@@ -466,10 +466,10 @@ function MoneyWaterfall({
           >
             <span className="flex items-center gap-1.5">
               <span className={cn("h-2 w-2 rounded-sm", BUCKET_META[b].bar)} />
-              <span className="text-[10px] font-black uppercase tracking-wide text-slate-500">{BUCKET_META[b].label}</span>
+              <span className="text-phx-2xs font-black uppercase tracking-wide text-slate-500">{BUCKET_META[b].label}</span>
             </span>
             <span className="text-sm font-bold tabular-nums text-slate-900">{money(totals[b].cost)}</span>
-            <span className="text-[11px] text-slate-500">
+            <span className="text-phx-xs text-slate-500">
               {totals[b].count} request(s) · {BUCKET_META[b].help}
             </span>
           </button>
@@ -517,7 +517,7 @@ function Maturation({ rows }: { rows: RoiTrackerRow[] }) {
                 />
               </div>
               <span className="w-10 shrink-0 text-right text-xs font-semibold tabular-nums text-slate-600">{percent(ratio)}</span>
-              <span className="w-14 shrink-0 text-right text-[11px] text-slate-400">{m.count} req</span>
+              <span className="w-14 shrink-0 text-right text-phx-xs text-slate-400">{m.count} req</span>
             </li>
           );
         })}
@@ -561,7 +561,7 @@ function ActionStrip({
           >
             <span className="flex flex-col">
               <span className="text-xs font-semibold text-slate-800">{ACTION_META[a].label}</span>
-              <span className="text-[11px] text-slate-500">{ACTION_META[a].help}</span>
+              <span className="text-phx-xs text-slate-500">{ACTION_META[a].help}</span>
             </span>
             <Badge className={ACTION_META[a].tone}>{counts[a]}</Badge>
           </button>
@@ -583,7 +583,7 @@ function Counter({ label, value, tone }: { label: string; value: number; tone?: 
       >
         {value}
       </span>
-      <span className="text-[10px] uppercase tracking-wide text-slate-500">{label}</span>
+      <span className="text-phx-2xs uppercase tracking-wide text-slate-500">{label}</span>
     </div>
   );
 }
@@ -680,11 +680,11 @@ function CaseFile({ row }: { row: RoiTrackerRow }) {
                     {money(group.valueIfMatched)} · {units(group.units)} units · {group.rows} line(s)
                   </span>
                 </div>
-                <span className="text-[11px] text-slate-500">{ROI_NEAR_MISS_ACTION[group.kind]}</span>
+                <span className="text-phx-xs text-slate-500">{ROI_NEAR_MISS_ACTION[group.kind]}</span>
                 {group.sample.length > 0 ? (
                   <ul className="mt-1 flex flex-col gap-0.5">
                     {group.sample.map((sample, index) => (
-                      <li className="flex flex-wrap gap-x-2 text-[11px] tabular-nums text-slate-500" key={`${group.kind}-${index}`}>
+                      <li className="flex flex-wrap gap-x-2 text-phx-xs tabular-nums text-slate-500" key={`${group.kind}-${index}`}>
                         <span className="font-mono">{sample.invoicePeriod}</span>
                         <span>{sample.productName}</span>
                         <span>· {sample.distributorCode}</span>
@@ -794,7 +794,7 @@ function CaseFile({ row }: { row: RoiTrackerRow }) {
           <div className="overflow-x-auto rounded-sm border border-slate-200 bg-white">
             <table className="w-full border-collapse text-xs">
               <thead>
-                <tr className="border-b border-slate-200 bg-slate-50 text-left text-[10px] font-black uppercase tracking-wide text-slate-500">
+                <tr className="border-b border-slate-200 bg-slate-50 text-left text-phx-2xs font-black uppercase tracking-wide text-slate-500">
                   <th className="px-2 py-1.5">Month</th>
                   <th className="px-2 py-1.5">Product</th>
                   <th className="px-2 py-1.5">Pharmacy</th>
@@ -1164,7 +1164,7 @@ export function MarketingRoiTracker({
 
                         {/* UNITS — how many we forecast vs how many actually sold */}
                         <div className="flex flex-col gap-1 rounded-sm border border-slate-100 bg-slate-50/50 p-2">
-                          <span className="text-[10px] font-black uppercase tracking-wide text-slate-500">Units</span>
+                          <span className="text-phx-2xs font-black uppercase tracking-wide text-slate-500">Units</span>
                           <div className="flex items-baseline gap-1.5">
                             <span className="text-lg font-bold tabular-nums text-slate-900">
                               {measured ? units(row.actualSalesUnits) : "—"}
@@ -1179,7 +1179,7 @@ export function MarketingRoiTracker({
                               />
                             ) : null}
                           </div>
-                          <span className="text-[11px] tabular-nums text-slate-500">
+                          <span className="text-phx-xs tabular-nums text-slate-500">
                             {!measured
                               ? "No validated sales cover this window yet"
                               : forecastUnits > 0
@@ -1190,7 +1190,7 @@ export function MarketingRoiTracker({
 
                         {/* VALUE — the money those units are worth */}
                         <div className="flex flex-col gap-1 rounded-sm border border-slate-100 bg-slate-50/50 p-2">
-                          <span className="text-[10px] font-black uppercase tracking-wide text-slate-500">Value</span>
+                          <span className="text-phx-2xs font-black uppercase tracking-wide text-slate-500">Value</span>
                           <div className="flex items-baseline gap-1.5">
                             <span className="text-lg font-bold tabular-nums text-slate-900">
                               {measured ? money(row.actualSalesValue) : "—"}
@@ -1208,7 +1208,7 @@ export function MarketingRoiTracker({
                               />
                             ) : null}
                           </div>
-                          <span className="text-[11px] tabular-nums text-slate-500">
+                          <span className="text-phx-xs tabular-nums text-slate-500">
                             {measured ? `${percent(row.actualCoverageRatio)} covered · ` : ""}spent {money(row.estimatedCost)}
                           </span>
                         </div>

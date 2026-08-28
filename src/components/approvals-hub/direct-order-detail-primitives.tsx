@@ -24,7 +24,7 @@ export function PanelSection({ children, title }: { children: ReactNode; title: 
     <div className="border border-slate-200">
       <div className="flex items-center gap-2 bg-slate-900 px-4 py-2.5">
         <span aria-hidden className="h-4 w-1 bg-orange-500" />
-        <span className="text-[11px] font-black uppercase tracking-wide text-white">{title}</span>
+        <span className="text-phx-xs font-black uppercase tracking-wide text-white">{title}</span>
       </div>
       <div className="p-4">{children}</div>
     </div>
@@ -44,7 +44,7 @@ export function PanelSection({ children, title }: { children: ReactNode; title: 
 export function Field({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div className="min-w-0">
-      <dt className="text-[10px] font-black uppercase tracking-wider text-slate-400">{label}</dt>
+      <dt className="text-phx-2xs font-black uppercase tracking-wider text-slate-400">{label}</dt>
       <dd className="-mx-0.5 mt-0.5 overflow-x-auto whitespace-nowrap px-0.5 text-sm font-semibold text-slate-900">
         {value}
       </dd>
@@ -69,7 +69,7 @@ export function HeroStat({
 }) {
   return (
     <div className={`border px-4 py-3 ${tone === "orange" ? "border-orange-200 bg-orange-50" : "border-slate-200 bg-slate-50"}`}>
-      <p className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-400">{label}</p>
+      <p className="text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-400">{label}</p>
       <p className={`mt-1 whitespace-nowrap text-xl font-black ${tone === "orange" ? "text-orange-700" : "text-slate-900"}`}>
         {value}
       </p>
@@ -86,7 +86,7 @@ export function HeroStat({
 export function FieldGroup({ children, title }: { children: ReactNode; title: string }) {
   return (
     <div>
-      <p className="mb-2 border-b border-slate-100 pb-1.5 text-[10px] font-black uppercase tracking-[0.16em] text-orange-600">
+      <p className="mb-2 border-b border-slate-100 pb-1.5 text-phx-2xs font-black uppercase tracking-[0.16em] text-orange-600">
         {title}
       </p>
       <div className="overflow-x-auto">
@@ -109,7 +109,7 @@ export function FieldTable({ rows, title }: { rows: Array<{ label: string; value
   return (
     <div className="border border-slate-200">
       <div className="border-b border-slate-200 bg-slate-50 px-3 py-1.5">
-        <p className="text-[10px] font-black uppercase tracking-[0.16em] text-orange-600">{title}</p>
+        <p className="text-phx-2xs font-black uppercase tracking-[0.16em] text-orange-600">{title}</p>
       </div>
       <table className="w-full border-collapse text-sm">
         <tbody>
@@ -117,7 +117,7 @@ export function FieldTable({ rows, title }: { rows: Array<{ label: string; value
             <tr key={row.label} className={index % 2 ? "bg-slate-50/60" : "bg-white"}>
               <th
                 scope="row"
-                className="w-[38%] whitespace-nowrap border-b border-slate-100 px-3 py-2 text-left align-top text-[10px] font-black uppercase tracking-wider text-slate-400 sm:w-[30%]"
+                className="w-[38%] whitespace-nowrap border-b border-slate-100 px-3 py-2 text-left align-top text-phx-2xs font-black uppercase tracking-wider text-slate-400 sm:w-[30%]"
               >
                 {row.label}
               </th>
@@ -153,7 +153,7 @@ export function ApprovalTracker({
   if (emptyNote || steps.length === 0) {
     return (
       <div className="border border-slate-200 bg-slate-50 px-3 py-2.5">
-        <p className="text-[12px] font-semibold text-slate-600">{emptyNote ?? "No approval steps recorded yet."}</p>
+        <p className="text-phx-sm font-semibold text-slate-600">{emptyNote ?? "No approval steps recorded yet."}</p>
       </div>
     );
   }
@@ -170,7 +170,7 @@ export function ApprovalTracker({
       {steps.map((step) => (
         <div key={step.order} className="min-w-0 flex-1">
           <div className={`h-1.5 w-full ${tone[step.state].bar}`} />
-          <p className={`mt-1.5 truncate text-[10px] uppercase tracking-wide ${tone[step.state].text}`} title={step.label}>
+          <p className={`mt-1.5 truncate text-phx-2xs uppercase tracking-wide ${tone[step.state].text}`} title={step.label}>
             {step.label}
           </p>
         </div>
@@ -229,7 +229,7 @@ export function PriceUsageField({
 export function PricingBreakdownFact({ breakdown }: { breakdown: DirectOrderPricingBreakdown }) {
   return (
     <div className="border-t border-slate-200 pt-3">
-      <p className="text-[10px] font-black uppercase tracking-[0.12em] text-slate-400">Pricing</p>
+      <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400">Pricing</p>
       <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 font-mono text-sm text-slate-700">
         <span>{units(breakdown.qty)} units</span>
         <span className="text-slate-400">×</span>
@@ -243,13 +243,13 @@ export function PricingBreakdownFact({ breakdown }: { breakdown: DirectOrderPric
         <span className="text-slate-400">=</span>
         <span className="font-bold text-slate-900">{money(breakdown.computedValue)}</span>
         {breakdown.basis === "bonus" && breakdown.bonusUnits ? (
-          <span className="text-[11px] font-semibold text-slate-500">
+          <span className="text-phx-xs font-semibold text-slate-500">
             (+{units(breakdown.bonusUnits)} bonus units, not counted in value)
           </span>
         ) : null}
       </p>
       {breakdown.computedValue == null ? (
-        <p className="mt-1 text-[11px] font-semibold text-amber-700">
+        <p className="mt-1 text-phx-xs font-semibold text-amber-700">
           Price not on file — the stored sales value is shown as entered, not re-derived.
         </p>
       ) : null}

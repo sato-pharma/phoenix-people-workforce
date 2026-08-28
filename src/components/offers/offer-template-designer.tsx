@@ -649,10 +649,10 @@ export function OfferTemplateDesigner({
                     ? "This letter uses a placeholder that no offer can fill in."
                     : `This letter uses ${unknownTokens.length} placeholders that no offer can fill in.`}
                 </p>
-                <p className="mt-1 font-mono text-[12px] font-bold text-amber-900">
+                <p className="mt-1 font-mono text-phx-sm font-bold text-amber-900">
                   {unknownTokens.map((key) => `{{${key}}}`).join("   ")}
                 </p>
-                <p className="mt-1 text-[12px] text-amber-800">
+                <p className="mt-1 text-phx-sm text-amber-800">
                   They print on the letter exactly as written, braces and all. Usually a misspelling
                   — check each one against the list below.
                 </p>
@@ -675,10 +675,10 @@ export function OfferTemplateDesigner({
                           title={placeholder.note}
                           type="button"
                         >
-                          <span className="block whitespace-nowrap font-mono text-[12px] font-bold text-[#B45309]">
+                          <span className="block whitespace-nowrap font-mono text-phx-sm font-bold text-[#B45309]">
                             {`{{${placeholder.key}}}`}
                           </span>
-                          <span className="block whitespace-nowrap text-[11px] text-phx-ink-faint">
+                          <span className="block whitespace-nowrap text-phx-xs text-phx-ink-faint">
                             {placeholder.label}
                             {SAMPLE_TOKENS[placeholder.key] ? ` · ${SAMPLE_TOKENS[placeholder.key]}` : ""}
                           </span>
@@ -713,7 +713,7 @@ export function OfferTemplateDesigner({
                     type="button"
                   >
                     <span className="block whitespace-nowrap text-sm font-bold text-slate-900">{def.label}</span>
-                    <span className="block whitespace-nowrap text-[11px] text-phx-ink-faint">
+                    <span className="block whitespace-nowrap text-phx-xs text-phx-ink-faint">
                       {index + 1} of {blocks.length}
                     </span>
                   </button>
@@ -807,7 +807,7 @@ export function OfferTemplateDesigner({
                       {rows.map((row, rowIndex) => (
                         <div className="rounded-xl border border-phx-line bg-slate-50/60 p-3" key={`${list.key}-${rowIndex}`}>
                           <div className="mb-2 flex items-center justify-between">
-                            <span className="text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-faint">
+                            <span className="text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-faint">
                               {list.itemLabel} {rowIndex + 1}
                             </span>
                             <div className="flex gap-1">

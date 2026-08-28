@@ -87,7 +87,7 @@ export function ValidationDesk({ rows }: Props) {
     return (
       <section className="border border-phx-line bg-white px-4 py-8 text-center">
         <p className="text-sm font-bold text-slate-600">No pharmacy validations waiting.</p>
-        <p className="mt-1 text-[12px] text-slate-400">Every submitted order is on a pharmacy the master database recognises.</p>
+        <p className="mt-1 text-phx-sm text-slate-400">Every submitted order is on a pharmacy the master database recognises.</p>
       </section>
     );
   }
@@ -113,13 +113,13 @@ export function ValidationDesk({ rows }: Props) {
               <div>
                 <p className="text-sm font-black text-slate-900" dir="auto">
                   {row.claimedPharmacyName}
-                  <span className="ml-2 text-[11px] font-normal text-slate-500">{row.phoenixPharmacyCode}</span>
+                  <span className="ml-2 text-phx-xs font-normal text-slate-500">{row.phoenixPharmacyCode}</span>
                 </p>
-                <p className="text-[11px] text-slate-500">
+                <p className="text-phx-xs text-slate-500">
                   {row.requestedByName} · {cairo(row.requestedAt)}
                 </p>
               </div>
-              <span className={`px-2 py-0.5 text-[11px] font-black ${proximity.tone}`}>{proximity.label}</span>
+              <span className={`px-2 py-0.5 text-phx-xs font-black ${proximity.tone}`}>{proximity.label}</span>
             </header>
 
             <div className="grid grid-cols-1 gap-4 px-4 py-3 md:grid-cols-[minmax(0,320px)_minmax(0,1fr)]">
@@ -132,7 +132,7 @@ export function ValidationDesk({ rows }: Props) {
                     src={row.photoUrl}
                   />
                 ) : (
-                  <p className="border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] font-semibold text-amber-800">
+                  <p className="border border-amber-200 bg-amber-50 px-3 py-2 text-phx-sm font-semibold text-amber-800">
                     No photo on file for this claim.
                   </p>
                 )}
@@ -143,7 +143,7 @@ export function ValidationDesk({ rows }: Props) {
                 <EvidenceReading check={row.evidenceCheck} claimedName={row.claimedPharmacyName} />
                 {row.capturedLatitude != null ? (
                   <a
-                    className="mt-1 block text-[11px] font-bold text-orange-600 underline"
+                    className="mt-1 block text-phx-xs font-bold text-orange-600 underline"
                     href={`https://www.google.com/maps?q=${row.capturedLatitude},${row.capturedLongitude}`}
                     target="_blank"
                     rel="noreferrer"
@@ -169,13 +169,13 @@ export function ValidationDesk({ rows }: Props) {
                       />
                       {/* The other half of the comparison, spelled out beside the document rather
                           than left for the reviewer to find further up the row. */}
-                      <p className="mt-1 text-[11px] font-semibold text-slate-600" dir="auto">
+                      <p className="mt-1 text-phx-xs font-semibold text-slate-600" dir="auto">
                         Claimed name: {row.claimedPharmacyName}
                       </p>
                     </>
                   ) : (
                     <>
-                      <p className="text-[11px] font-black uppercase tracking-wider text-slate-500">
+                      <p className="text-phx-xs font-black uppercase tracking-wider text-slate-500">
                         Pharmacy licence · رخصة الصيدلية
                       </p>
                       {/* What is missing depends on WHY. A pharmacy with a distributor code already
@@ -183,7 +183,7 @@ export function ValidationDesk({ rows }: Props) {
                           unremarkable. A codeless one has nothing else at all, and that is worth
                           saying in colour. */}
                       <p
-                        className={`mt-1 px-2 py-1.5 text-[12px] font-semibold ${
+                        className={`mt-1 px-2 py-1.5 text-phx-sm font-semibold ${
                           row.hasDistributorCode
                             ? "text-slate-500"
                             : "border border-amber-200 bg-amber-50 text-amber-900"
@@ -198,7 +198,7 @@ export function ValidationDesk({ rows }: Props) {
                 </div>
               </div>
 
-              <div className="space-y-2 text-[12px]">
+              <div className="space-y-2 text-phx-sm">
                 <p><span className="font-black uppercase tracking-wider text-slate-400">Reason: </span><span dir="auto">{row.claimedReason ?? "—"}</span></p>
                 <p><span className="font-black uppercase tracking-wider text-slate-400">Address: </span><span dir="auto">{row.claimedAddress ?? "—"}</span></p>
                 <p><span className="font-black uppercase tracking-wider text-slate-400">Doctor: </span><span dir="auto">{row.claimedDoctorName ?? "—"}</span></p>
@@ -208,18 +208,18 @@ export function ValidationDesk({ rows }: Props) {
                 {isOpen ? (
                   <div className="space-y-2 border-t border-[#eef1f3] pt-2">
                     <div>
-                      <label className="block text-[11px] font-black uppercase tracking-wider text-slate-500">
+                      <label className="block text-phx-xs font-black uppercase tracking-wider text-slate-500">
                         Is it already in the database? Search and pick it
                       </label>
                       {match[row.id] ? (
                         <div className="mt-1 flex items-center justify-between gap-2 border border-emerald-300 bg-emerald-50 px-2 py-1.5">
-                          <span className="text-[12px] font-bold text-slate-800" dir="auto">
+                          <span className="text-phx-sm font-bold text-slate-800" dir="auto">
                             {match[row.id]?.customerName ?? match[row.id]?.customerCode}
                             <span className="ml-1 font-normal text-slate-500">
                               {match[row.id]?.distributorCode} · {match[row.id]?.customerCode}
                             </span>
                           </span>
-                          <button type="button" className="text-[11px] font-bold text-orange-600" onClick={() => setMatch((p) => ({ ...p, [row.id]: null }))}>
+                          <button type="button" className="text-phx-xs font-bold text-orange-600" onClick={() => setMatch((p) => ({ ...p, [row.id]: null }))}>
                             Change
                           </button>
                         </div>
@@ -235,7 +235,7 @@ export function ValidationDesk({ rows }: Props) {
                         flags, it never rejects). Only offered when there IS a licence to judge. */}
                     {row.licenseUrl ? (
                       <div className="border border-[#eef1f3] px-2 py-1.5">
-                        <p className="text-[11px] font-black uppercase tracking-wider text-slate-500">
+                        <p className="text-phx-xs font-black uppercase tracking-wider text-slate-500">
                           Does the licence trade name match the shop sign?
                         </p>
                         <div className="mt-1 flex flex-wrap gap-2">
@@ -258,19 +258,19 @@ export function ValidationDesk({ rows }: Props) {
                                 }
                                 className={
                                   active
-                                    ? `border px-3 py-1 text-[12px] font-black ${
+                                    ? `border px-3 py-1 text-phx-sm font-black ${
                                         choice.tone === "emerald"
                                           ? "border-emerald-400 bg-emerald-50 text-emerald-800"
                                           : "border-rose-400 bg-rose-50 text-rose-800"
                                       }`
-                                    : "border border-slate-300 px-3 py-1 text-[12px] font-bold text-slate-600 hover:bg-slate-50"
+                                    : "border border-slate-300 px-3 py-1 text-phx-sm font-bold text-slate-600 hover:bg-slate-50"
                                 }
                               >
                                 {choice.label}
                               </button>
                             );
                           })}
-                          <span className="self-center text-[11px] font-medium text-slate-400">
+                          <span className="self-center text-phx-xs font-medium text-slate-400">
                             {licenseVerdict[row.id] === undefined ? "Not answered — optional" : "Recorded with your decision"}
                           </span>
                         </div>
@@ -285,19 +285,19 @@ export function ValidationDesk({ rows }: Props) {
                       dir="auto"
                     />
                     <div className="flex flex-wrap gap-2">
-                      <button type="button" disabled={busy === row.id} onClick={() => decide(row, "match")} className="bg-emerald-600 px-3 py-1.5 text-[12px] font-black uppercase tracking-wider text-white hover:bg-emerald-700 disabled:bg-slate-300">
+                      <button type="button" disabled={busy === row.id} onClick={() => decide(row, "match")} className="bg-emerald-600 px-3 py-1.5 text-phx-sm font-black uppercase tracking-wider text-white hover:bg-emerald-700 disabled:bg-slate-300">
                         Match to this customer
                       </button>
-                      <button type="button" disabled={busy === row.id} onClick={() => decide(row, "approve")} className="bg-slate-900 px-3 py-1.5 text-[12px] font-black uppercase tracking-wider text-white hover:bg-slate-800 disabled:bg-slate-300">
+                      <button type="button" disabled={busy === row.id} onClick={() => decide(row, "approve")} className="bg-slate-900 px-3 py-1.5 text-phx-sm font-black uppercase tracking-wider text-white hover:bg-slate-800 disabled:bg-slate-300">
                         Approve as new (90-day probation)
                       </button>
-                      <button type="button" disabled={busy === row.id} onClick={() => decide(row, "reject")} className="border border-rose-300 px-3 py-1.5 text-[12px] font-black uppercase tracking-wider text-rose-700 hover:bg-rose-50 disabled:opacity-50">
+                      <button type="button" disabled={busy === row.id} onClick={() => decide(row, "reject")} className="border border-rose-300 px-3 py-1.5 text-phx-sm font-black uppercase tracking-wider text-rose-700 hover:bg-rose-50 disabled:opacity-50">
                         Reject
                       </button>
                     </div>
                   </div>
                 ) : (
-                  <button type="button" className="mt-1 bg-orange-500 px-3 py-1.5 text-[12px] font-black uppercase tracking-wider text-white hover:bg-orange-600" onClick={() => setOpenId(row.id)}>
+                  <button type="button" className="mt-1 bg-orange-500 px-3 py-1.5 text-phx-sm font-black uppercase tracking-wider text-white hover:bg-orange-600" onClick={() => setOpenId(row.id)}>
                     Review
                   </button>
                 )}

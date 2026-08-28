@@ -31,7 +31,7 @@ export function VacationAttachmentLinks({
     <div className="flex flex-wrap gap-1.5">
       {attachments.map((attachment) => (
         <a
-          className="inline-flex items-center gap-1 rounded-sm border border-sky-200 bg-sky-50 px-2 py-1 text-[10px] font-bold text-sky-700 transition hover:border-sky-300 hover:bg-sky-100"
+          className="inline-flex items-center gap-1 rounded-sm border border-sky-200 bg-sky-50 px-2 py-1 text-phx-2xs font-bold text-sky-700 transition hover:border-sky-300 hover:bg-sky-100"
           href={attachment.href}
           key={attachment.href}
           rel="noreferrer"

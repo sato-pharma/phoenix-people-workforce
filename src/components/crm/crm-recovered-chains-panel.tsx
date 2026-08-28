@@ -31,15 +31,15 @@ function formatDate(value: string) {
 function ResolvedChain({ chain }: { chain: DoubleVisitRecoveredChain }) {
   return (
     <>
-      <div className="flex flex-wrap items-center gap-1.5 text-[11px] font-medium text-slate-600">
+      <div className="flex flex-wrap items-center gap-1.5 text-phx-xs font-medium text-slate-600">
         <span className="break-words text-slate-400 md:whitespace-nowrap">{chain.hingeManagerName ?? "hinge manager"}</span>
         <ArrowRight className="h-3 w-3 text-emerald-500" />
-        <span className="inline-flex items-center gap-1 break-words bg-emerald-50 px-2 py-0.5 text-[11px] font-bold text-emerald-700 md:whitespace-nowrap">
+        <span className="inline-flex items-center gap-1 break-words bg-emerald-50 px-2 py-0.5 text-phx-xs font-bold text-emerald-700 md:whitespace-nowrap">
           {chain.resolvedMrName ?? chain.resolvedMrHrId ?? "MR"}
         </span>
       </div>
       {chain.customerSample.length > 0 && (
-        <p className="mt-1 text-[10px] text-slate-400">{chain.customerSample.join(" · ")}</p>
+        <p className="mt-1 text-phx-2xs text-slate-400">{chain.customerSample.join(" · ")}</p>
       )}
     </>
   );
@@ -126,12 +126,12 @@ export function CrmRecoveredChainsPanel({ chains }: { chains: DoubleVisitRecover
             <PortalDesktopTable minWidth="960px">
               <thead className="bg-slate-900">
                 <tr>
-                  <th className="px-3 py-3 text-left text-[10px] font-black uppercase tracking-wider text-slate-300">Date</th>
-                  <th className="px-3 py-3 text-left text-[10px] font-black uppercase tracking-wider text-slate-300">Credited Manager</th>
-                  <th className="px-3 py-3 text-left text-[10px] font-black uppercase tracking-wider text-slate-300">Resolved Chain</th>
-                  <th className="px-3 py-3 text-left text-[10px] font-black uppercase tracking-wider text-slate-300">Area</th>
-                  <th className="px-3 py-3 text-left text-[10px] font-black uppercase tracking-wider text-slate-300">Line</th>
-                  <th className="px-3 py-3 text-right text-[10px] font-black uppercase tracking-wider text-slate-300">Visits</th>
+                  <th className="px-3 py-3 text-left text-phx-2xs font-black uppercase tracking-wider text-slate-300">Date</th>
+                  <th className="px-3 py-3 text-left text-phx-2xs font-black uppercase tracking-wider text-slate-300">Credited Manager</th>
+                  <th className="px-3 py-3 text-left text-phx-2xs font-black uppercase tracking-wider text-slate-300">Resolved Chain</th>
+                  <th className="px-3 py-3 text-left text-phx-2xs font-black uppercase tracking-wider text-slate-300">Area</th>
+                  <th className="px-3 py-3 text-left text-phx-2xs font-black uppercase tracking-wider text-slate-300">Line</th>
+                  <th className="px-3 py-3 text-right text-phx-2xs font-black uppercase tracking-wider text-slate-300">Visits</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-orange-100">
@@ -140,7 +140,7 @@ export function CrmRecoveredChainsPanel({ chains }: { chains: DoubleVisitRecover
                     <td className="whitespace-nowrap px-3 py-2.5">{formatDate(chain.activityDate)}</td>
                     <td className="px-3 py-2.5">
                       <p className="font-medium text-slate-900">{chain.higherManagerName ?? "—"}</p>
-                      <p className="text-[11px] text-slate-400">{chain.higherManagerHrId ?? "no HR ID"}</p>
+                      <p className="text-phx-xs text-slate-400">{chain.higherManagerHrId ?? "no HR ID"}</p>
                     </td>
                     <td className="px-3 py-2.5">
                       <ResolvedChain chain={chain} />

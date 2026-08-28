@@ -42,7 +42,7 @@ import {
 
 const panelClassName =
   "rounded-[28px] border border-phx-line bg-white/94 shadow-[0_18px_46px_rgba(15,23,42,0.08)] backdrop-blur";
-const adminTableHeaderClassName = "px-3 py-2 text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-soft";
+const adminTableHeaderClassName = "px-3 py-2 text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft";
 
 function ExpensesDashboardShell({ children }: { children: ReactNode }) {
   return (
@@ -191,7 +191,7 @@ function StatCard({
           <Icon className="h-5 w-5" />
         </span>
         <div className="min-w-0">
-          <p className="text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-soft">{label}</p>
+          <p className="text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">{label}</p>
           <p className="mt-1 truncate text-2xl font-black text-phx-ink">{value}</p>
           <p className="mt-1 text-xs font-medium text-phx-ink-soft">{sub}</p>
         </div>
@@ -213,7 +213,7 @@ function SelectFilter({
 }) {
   return (
     <label className="block">
-      <span className="mb-1 block text-[11px] font-bold uppercase tracking-[0.14em] text-phx-ink-soft">{label}</span>
+      <span className="mb-1 block text-phx-xs font-bold uppercase tracking-[0.14em] text-phx-ink-soft">{label}</span>
       <SearchableSelect
         className="h-11 w-full rounded-2xl border border-[#DDE6F1] bg-white/95 px-3 text-sm font-semibold text-phx-ink shadow-sm outline-none transition focus:border-phx-accent focus:ring-2 focus:ring-[#FED7AA]"
         onChange={(event) => onChange(event.target.value)}
@@ -245,7 +245,7 @@ function BarRows({ rows, title }: { rows: GroupRow[]; title: string }) {
             <div className="min-w-0">
               <div className="flex items-center justify-between gap-3">
                 <p className="truncate text-sm font-bold text-phx-ink">{row.key}</p>
-                <p className="shrink-0 text-[11px] font-semibold text-phx-ink-soft">{formatNumber(row.count)} rows</p>
+                <p className="shrink-0 text-phx-xs font-semibold text-phx-ink-soft">{formatNumber(row.count)} rows</p>
               </div>
               <div className="mt-1.5 h-2 rounded-full bg-phx-paper-2 shadow-inner">
                 <div className="h-full rounded-full bg-gradient-to-r from-phx-accent to-phx-accent-line" style={{ width: `${Math.min((row.total / max) * 100, 100)}%` }} />
@@ -297,7 +297,7 @@ function MonthlyComparison({ rows }: { rows: GroupRow[] }) {
           )}
           renderTable={() => (
             <PortalDesktopTable minWidth="760px">
-            <thead className="bg-phx-paper text-[11px] uppercase tracking-[0.12em] text-phx-ink-soft">
+            <thead className="bg-phx-paper text-phx-xs uppercase tracking-[0.12em] text-phx-ink-soft">
               <tr>
                 <th className={adminTableHeaderClassName}>Month</th>
                 <th className={adminTableHeaderClassName}>Trips</th>
@@ -368,7 +368,7 @@ function SpecialistComparison({ rows }: { rows: GroupRow[] }) {
           )}
           renderTable={() => (
             <PortalDesktopTable minWidth="860px">
-            <thead className="bg-phx-paper text-[11px] uppercase tracking-[0.12em] text-phx-ink-soft">
+            <thead className="bg-phx-paper text-phx-xs uppercase tracking-[0.12em] text-phx-ink-soft">
               <tr>
                 <th className={adminTableHeaderClassName}>Specialist</th>
                 <th className={adminTableHeaderClassName}>Trips</th>
@@ -435,13 +435,13 @@ function DestinationChart({ rows }: { rows: GroupRow[] }) {
                   </span>
                   <div className="min-w-0">
                     <p className="truncate text-sm font-black text-phx-ink">{row.key}</p>
-                    <p className="text-[11px] font-semibold text-phx-ink-soft">
+                    <p className="text-phx-xs font-semibold text-phx-ink-soft">
                       {formatNumber(row.count)} visits - {formatNumber(row.km)} KM
                     </p>
                   </div>
                   <div className="text-right">
                     <p className="text-sm font-black text-phx-accent-hover">{formatEGP(row.total)}</p>
-                    <p className="text-[11px] font-semibold text-phx-ink-soft">{formatEGP(costPerVisit)} / visit</p>
+                    <p className="text-phx-xs font-semibold text-phx-ink-soft">{formatEGP(costPerVisit)} / visit</p>
                   </div>
                 </div>
                 <div className="ml-10 h-2.5 rounded-full bg-phx-paper-2 shadow-inner">

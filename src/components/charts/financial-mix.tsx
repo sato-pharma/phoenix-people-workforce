@@ -53,7 +53,7 @@ export function FinancialMix({ data, loading = false }: FinancialMixProps) {
         <div className="relative mx-auto h-28 w-28 rounded-full sm:h-36 sm:w-36 md:h-40 md:w-40" style={{ background: `conic-gradient(${gradient})` }}>
           <div className="absolute inset-4 flex flex-col items-center justify-center rounded-full bg-white shadow-inner sm:inset-6">
             <p className="text-lg font-black text-phx-ink sm:text-xl">{compactEGP(total).replace("EGP ", "")}</p>
-            <p className="text-[10px] font-black uppercase tracking-[0.18em] text-phx-ink-soft">EGP</p>
+            <p className="text-phx-2xs font-black uppercase tracking-[0.18em] text-phx-ink-soft">EGP</p>
           </div>
         </div>
         <div className="space-y-3 self-center">
@@ -68,9 +68,9 @@ export function FinancialMix({ data, loading = false }: FinancialMixProps) {
                 content={
                   <div className="space-y-1">
                     <p className="text-xs font-bold text-phx-ink">{row.label}</p>
-                    <p className="text-[11px] text-phx-ink-soft">{compactEGP(row.value)}</p>
-                    <p className="text-[11px] font-bold text-phx-accent">{percent}% of total</p>
-                    <p className="text-[10px] text-phx-ink-soft">{context}</p>
+                    <p className="text-phx-xs text-phx-ink-soft">{compactEGP(row.value)}</p>
+                    <p className="text-phx-xs font-bold text-phx-accent">{percent}% of total</p>
+                    <p className="text-phx-2xs text-phx-ink-soft">{context}</p>
                   </div>
                 }
                 key={row.label}

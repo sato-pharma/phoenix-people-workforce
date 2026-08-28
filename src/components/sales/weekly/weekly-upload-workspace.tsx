@@ -26,7 +26,7 @@ import { WeeklyProductMappingManager } from "./weekly-product-mapping-manager";
 const num = (value: number) => value.toLocaleString(undefined, { maximumFractionDigits: 0 });
 
 const card = "rounded-[6px] border border-phx-line bg-white shadow-sm";
-const darkHead = "bg-[#020617] text-left text-[11px] font-black uppercase tracking-wide text-white";
+const darkHead = "bg-[#020617] text-left text-phx-xs font-black uppercase tracking-wide text-white";
 
 // Large workbooks (> ~4MB) can't be POSTed through the serverless function — Vercel caps the request
 // body at ~4.5MB (FUNCTION_PAYLOAD_TOO_LARGE), which large weekly POS matrices routinely exceed. Those
@@ -406,7 +406,7 @@ export function WeeklyUploadWorkspace({
       <header>
         <div className="flex items-center gap-2">
           <span className="h-2 w-2 rounded-full bg-phx-accent" aria-hidden />
-          <span className="text-[11px] font-black uppercase tracking-[0.16em] text-phx-accent">Weekly Sales</span>
+          <span className="text-phx-xs font-black uppercase tracking-[0.16em] text-phx-accent">Weekly Sales</span>
         </div>
         <h1 className="mt-1 text-xl font-black text-phx-ink">Upload &amp; Validate</h1>
         <p className="mt-1 text-sm font-medium text-phx-ink-soft">
@@ -438,10 +438,10 @@ export function WeeklyUploadWorkspace({
         {/* ── Step 1: Week of month ── */}
         <div className="mb-5">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-[#020617] text-[10px] font-black text-white">1</span>
-            <span className="text-[11px] font-black uppercase tracking-[0.16em] text-phx-ink">Week of month</span>
+            <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-[#020617] text-phx-2xs font-black text-white">1</span>
+            <span className="text-phx-xs font-black uppercase tracking-[0.16em] text-phx-ink">Week of month</span>
             {weekNumber && (
-              <span className="inline-flex items-center rounded bg-phx-accent-soft px-2 py-0.5 text-[11px] font-black text-[#9A3412]">Week {weekNumber}</span>
+              <span className="inline-flex items-center rounded bg-phx-accent-soft px-2 py-0.5 text-phx-xs font-black text-[#9A3412]">Week {weekNumber}</span>
             )}
           </div>
           <p className="mt-1 text-xs font-medium text-phx-ink-soft">
@@ -469,14 +469,14 @@ export function WeeklyUploadWorkspace({
 
         {/* ── Step 2: Distributor & file ── */}
         <div className="mb-2 flex items-center gap-2">
-          <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-[#020617] text-[10px] font-black text-white">2</span>
-          <span className="text-[11px] font-black uppercase tracking-[0.16em] text-phx-ink">Distributor &amp; file</span>
+          <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-[#020617] text-phx-2xs font-black text-white">2</span>
+          <span className="text-phx-xs font-black uppercase tracking-[0.16em] text-phx-ink">Distributor &amp; file</span>
         </div>
 
         {/* File selectors */}
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
           <label className="block">
-            <span className="mb-1 block text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-soft">Distributor</span>
+            <span className="mb-1 block text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">Distributor</span>
             <SearchableSelect
               className="h-10 w-full rounded-[6px] border border-phx-line bg-white px-3 text-sm font-bold text-phx-ink outline-none focus:border-phx-accent-line"
               disabled={busy}
@@ -499,17 +499,17 @@ export function WeeklyUploadWorkspace({
           {isPS ? (
             <>
               <label className="block">
-                <span className="mb-1 block text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-soft">POS sales matrix (.xlsx)</span>
+                <span className="mb-1 block text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">POS sales matrix (.xlsx)</span>
                 <input accept=".xlsx" className={fileInputClass} disabled={busy} onChange={(e) => { setSalesFile(e.target.files?.[0] ?? null); clearVerification(); clearValidation(); }} type="file" />
               </label>
               <label className="block">
-                <span className="mb-1 block text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-soft">POS stock matrix (.xlsx)</span>
+                <span className="mb-1 block text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">POS stock matrix (.xlsx)</span>
                 <input accept=".xlsx" className={fileInputClass} disabled={busy} onChange={(e) => { setStockFile(e.target.files?.[0] ?? null); clearVerification(); clearValidation(); }} type="file" />
               </label>
             </>
           ) : (
             <label className="block sm:col-span-2">
-              <span className="mb-1 block text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-soft">Weekly file (.xlsx)</span>
+              <span className="mb-1 block text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">Weekly file (.xlsx)</span>
               <input accept=".xlsx" className={fileInputClass} disabled={busy} onChange={(e) => { setFile(e.target.files?.[0] ?? null); clearVerification(); clearValidation(); }} type="file" />
             </label>
           )}
@@ -518,7 +518,7 @@ export function WeeklyUploadWorkspace({
         {needsPeriodDate && (
           <div className="mt-4 flex flex-wrap items-end gap-3">
             <label className="block">
-              <span className="mb-1 block text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-soft">Period date</span>
+              <span className="mb-1 block text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">Period date</span>
               <input
                 className="h-10 rounded-[6px] border border-phx-line bg-white px-3 text-sm font-bold text-phx-ink outline-none focus:border-phx-accent-line"
                 disabled={busy}
@@ -538,10 +538,10 @@ export function WeeklyUploadWorkspace({
         {/* ── Step 1: AI Verify ── */}
         <div className="mt-5 border-t border-dashed border-phx-line pt-4">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-[#020617] text-[10px] font-black text-white">3</span>
-            <span className="text-[11px] font-black uppercase tracking-[0.16em] text-phx-ink">Verify columns</span>
+            <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-[#020617] text-phx-2xs font-black text-white">3</span>
+            <span className="text-phx-xs font-black uppercase tracking-[0.16em] text-phx-ink">Verify columns</span>
             {verified && (
-              <span className="inline-flex items-center gap-1 rounded bg-emerald-50 px-2 py-0.5 text-[11px] font-black text-emerald-700">
+              <span className="inline-flex items-center gap-1 rounded bg-emerald-50 px-2 py-0.5 text-phx-xs font-black text-emerald-700">
                 <ShieldCheck className="h-3.5 w-3.5" /> Verified
               </span>
             )}
@@ -575,10 +575,10 @@ export function WeeklyUploadWorkspace({
         {/* ── Step 2: Validate (dry run) ── */}
         <div className="mt-5 border-t border-dashed border-phx-line pt-4">
           <div className="flex items-center gap-2">
-            <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-[#020617] text-[10px] font-black text-white">4</span>
-            <span className="text-[11px] font-black uppercase tracking-[0.16em] text-phx-ink">Validate</span>
+            <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-[#020617] text-phx-2xs font-black text-white">4</span>
+            <span className="text-phx-xs font-black uppercase tracking-[0.16em] text-phx-ink">Validate</span>
             {validateResult && !validateError && (
-              <span className={`inline-flex items-center rounded px-2 py-0.5 text-[11px] font-black ${validateResult.status === "validated" ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>
+              <span className={`inline-flex items-center rounded px-2 py-0.5 text-phx-xs font-black ${validateResult.status === "validated" ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>
                 {validateResult.status === "validated" ? "Ready to upload" : "Blocked"}
               </span>
             )}
@@ -661,7 +661,7 @@ export function WeeklyUploadWorkspace({
                 <X className="h-3.5 w-3.5" /> Clear
               </button>
             )}
-            <span className="text-[11px] font-bold tabular-nums text-phx-ink-faint">
+            <span className="text-phx-xs font-bold tabular-nums text-phx-ink-faint">
               {filteredBatches.length} of {batches.length}
             </span>
           </div>
@@ -671,7 +671,7 @@ export function WeeklyUploadWorkspace({
         {selectedIds.size > 0 && (
           <div className="mb-2 flex items-center gap-2">
             <button
-              className="inline-flex items-center gap-1.5 rounded-[4px] bg-[#020617] px-3 py-1.5 text-[11px] font-black uppercase tracking-wide text-white transition hover:bg-[#1E293B] disabled:opacity-60"
+              className="inline-flex items-center gap-1.5 rounded-[4px] bg-[#020617] px-3 py-1.5 text-phx-xs font-black uppercase tracking-wide text-white transition hover:bg-[#1E293B] disabled:opacity-60"
               disabled={downloadingMulti}
               onClick={handleMultiDownload}
               type="button"
@@ -680,7 +680,7 @@ export function WeeklyUploadWorkspace({
               Download {selectedIds.size} selected
             </button>
             <button
-              className="text-[11px] text-phx-ink-faint transition hover:text-phx-ink"
+              className="text-phx-xs text-phx-ink-faint transition hover:text-phx-ink"
               onClick={() => setSelectedIds(new Set())}
               type="button"
             >
@@ -757,14 +757,14 @@ export function WeeklyUploadWorkspace({
                         ))}
                       </select>
                     ) : (
-                      <span className="inline-flex items-center rounded bg-phx-accent-soft px-2 py-0.5 text-[11px] font-black text-[#9A3412]">
+                      <span className="inline-flex items-center rounded bg-phx-accent-soft px-2 py-0.5 text-phx-xs font-black text-[#9A3412]">
                         {batch.weekNumber ? `W${batch.weekNumber}` : "—"}
                       </span>
                     )}
                   </td>
                   <td className="px-3 py-2">{batch.distributorName}</td>
                   <td className="px-3 py-2">
-                    <span className={`inline-flex items-center rounded px-2 py-0.5 text-[11px] font-black ${batch.status === "validated" ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>
+                    <span className={`inline-flex items-center rounded px-2 py-0.5 text-phx-xs font-black ${batch.status === "validated" ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>
                       {batch.status}
                     </span>
                   </td>
@@ -1043,7 +1043,7 @@ function ValidRegionCodesInline({ distributorCode }: { distributorCode: string }
             <div className="mt-1 flex flex-wrap gap-1.5">
               {regions.map((region) => (
                 <span
-                  className="rounded-[4px] border border-phx-line bg-phx-paper px-2 py-0.5 text-[11px] font-bold text-phx-ink-2"
+                  className="rounded-[4px] border border-phx-line bg-phx-paper px-2 py-0.5 text-phx-xs font-bold text-phx-ink-2"
                   key={region.regionCode}
                 >
                   {region.regionName} ({region.regionCode})
@@ -1074,7 +1074,7 @@ function UnresolvedItemRow({
 
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-[6px] border border-rose-200 bg-white px-3 py-2">
-      <span className="rounded-[4px] bg-rose-100 px-1.5 py-0.5 text-[10px] font-black uppercase tracking-wide text-rose-700">
+      <span className="rounded-[4px] bg-rose-100 px-1.5 py-0.5 text-phx-2xs font-black uppercase tracking-wide text-rose-700">
         {FIELD_LABELS[group.field] ?? group.field}
       </span>
       <span className="text-sm font-semibold text-phx-ink-2">{group.message}</span>
@@ -1145,7 +1145,7 @@ function ExcludedItemsPanel({ items }: { items: WeeklyExcludedItem[] }) {
       </h3>
       <div className="mt-2 overflow-x-auto">
         <table className="w-full text-sm">
-          <thead className="text-left text-[11px] font-bold uppercase text-phx-ink-faint">
+          <thead className="text-left text-phx-xs font-bold uppercase text-phx-ink-faint">
             <tr>
               <th className="py-1 pr-4 whitespace-nowrap">Item code</th>
               <th className="py-1 pr-4 whitespace-nowrap">Item name</th>
@@ -1186,7 +1186,7 @@ function ExcludedBranchesPanel({ branches }: { branches: WeeklyExcludedBranch[] 
       </h3>
       <div className="mt-2 overflow-x-auto">
         <table className="w-full text-sm">
-          <thead className="text-left text-[11px] font-bold uppercase text-phx-ink-faint">
+          <thead className="text-left text-phx-xs font-bold uppercase text-phx-ink-faint">
             <tr>
               <th className="py-1 pr-4 whitespace-nowrap">Branch</th>
               <th className="py-1 pr-4 whitespace-nowrap">Branch name</th>
@@ -1279,7 +1279,7 @@ function ValidationResultPanel({
       {/* This week only — de-cumulated preview vs the previous cumulative sheet of this month-cycle */}
       {tw && (
         <div className="border-b border-phx-line bg-[#F0FDF4] px-4 py-3">
-          <div className="text-[11px] font-black uppercase tracking-wide text-emerald-700">
+          <div className="text-phx-xs font-black uppercase tracking-wide text-emerald-700">
             This week only{selectedWeek ? ` — Week ${selectedWeek}` : ""} (de-cumulated)
           </div>
           <div className="mt-1 flex flex-wrap items-baseline gap-x-6 gap-y-1 text-sm font-bold text-phx-ink">
@@ -1392,8 +1392,8 @@ function ValidationResultPanel({
       {/* Step 3 — Confirm Upload */}
       <div className="border-t border-phx-line px-4 py-4">
         <div className="flex items-center gap-2 mb-3">
-          <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-[#020617] text-[10px] font-black text-white">5</span>
-          <span className="text-[11px] font-black uppercase tracking-[0.16em] text-phx-ink">Confirm &amp; Upload</span>
+          <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-[#020617] text-phx-2xs font-black text-white">5</span>
+          <span className="text-phx-xs font-black uppercase tracking-[0.16em] text-phx-ink">Confirm &amp; Upload</span>
         </div>
 
         {uploadDone ? (
@@ -1446,7 +1446,7 @@ function StatusPill({ status, note }: { status: WeeklyVerifyColumnStatus; note: 
   };
   const pill = map[status] ?? map.uncertain;
   return (
-    <span className={`inline-flex items-center rounded px-2 py-0.5 text-[11px] font-black ${pill.cls}`} title={note || undefined}>
+    <span className={`inline-flex items-center rounded px-2 py-0.5 text-phx-xs font-black ${pill.cls}`} title={note || undefined}>
       {pill.label}
     </span>
   );
@@ -1459,7 +1459,7 @@ function VerifyPanel({ result, verified, onConfirm }: { result: WeeklyVerifyResu
       <div className={`flex flex-wrap items-center gap-2 border-b border-phx-line px-4 py-3 text-sm font-black ${drift ? "text-amber-700" : "text-emerald-700"}`}>
         {drift ? <AlertTriangle className="h-4 w-4" /> : <CheckCircle2 className="h-4 w-4" />}
         {drift ? "Possible column drift — review carefully" : "Columns look consistent"}
-        <span className={`ml-auto inline-flex items-center rounded px-2 py-0.5 text-[11px] font-bold ${result.aiUsed ? "bg-phx-accent-soft text-[#9A3412]" : "bg-slate-100 text-slate-600"}`}>
+        <span className={`ml-auto inline-flex items-center rounded px-2 py-0.5 text-phx-xs font-bold ${result.aiUsed ? "bg-phx-accent-soft text-[#9A3412]" : "bg-slate-100 text-slate-600"}`}>
           {result.aiUsed ? "AI checked" : "AI unavailable — manual review"}
         </span>
       </div>
@@ -1649,9 +1649,9 @@ function MonthCompletenessTracker({ batches }: { batches: WeeklyBatch[] }) {
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <div className="flex items-center gap-2">
-            <span className="text-[11px] font-black uppercase tracking-[0.16em] text-phx-ink">This month — {trackerMonthLabel(focusMonth)}</span>
+            <span className="text-phx-xs font-black uppercase tracking-[0.16em] text-phx-ink">This month — {trackerMonthLabel(focusMonth)}</span>
             {allIn && (
-              <span className="inline-flex items-center gap-1 rounded bg-emerald-50 px-2 py-0.5 text-[11px] font-black text-emerald-700">
+              <span className="inline-flex items-center gap-1 rounded bg-emerald-50 px-2 py-0.5 text-phx-xs font-black text-emerald-700">
                 <CheckCircle2 className="h-3.5 w-3.5" /> All sheets in
               </span>
             )}
@@ -1670,7 +1670,7 @@ function MonthCompletenessTracker({ batches }: { batches: WeeklyBatch[] }) {
       <div className="mt-4 overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
-            <tr className="text-left text-[10px] font-black uppercase tracking-wide text-phx-ink-faint">
+            <tr className="text-left text-phx-2xs font-black uppercase tracking-wide text-phx-ink-faint">
               <th className="px-2 py-1">Distributor</th>
               <th className="px-2 py-1 text-center">W1</th>
               <th className="px-2 py-1 text-center">W2</th>
@@ -1685,7 +1685,7 @@ function MonthCompletenessTracker({ batches }: { batches: WeeklyBatch[] }) {
                 {row.cells.map((cell) => (
                   <td className="px-2 py-1.5 text-center" key={cell.week}>
                     <span
-                      className={`inline-flex h-6 min-w-[2.2rem] items-center justify-center rounded-[4px] border text-[11px] font-black ${cellClass[cell.state]}`}
+                      className={`inline-flex h-6 min-w-[2.2rem] items-center justify-center rounded-[4px] border text-phx-xs font-black ${cellClass[cell.state]}`}
                       title={cell.date ? `Uploaded — ${cell.date}` : cell.state === "overdue" ? "Expected but not uploaded yet" : cell.state === "na" ? "Not expected for this distributor" : "Upcoming"}
                     >
                       {cell.state === "done" ? "✓" : cell.state === "overdue" ? "!" : cell.state === "na" ? "·" : "–"}
@@ -1698,7 +1698,7 @@ function MonthCompletenessTracker({ batches }: { batches: WeeklyBatch[] }) {
         </table>
       </div>
 
-      <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[10px] font-bold uppercase tracking-wide text-phx-ink-faint">
+      <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-phx-2xs font-bold uppercase tracking-wide text-phx-ink-faint">
         <span><span className="text-emerald-600">✓</span> uploaded</span>
         <span><span className="text-amber-600">!</span> overdue</span>
         <span><span className="text-phx-line-strong">–</span> upcoming</span>
@@ -1713,7 +1713,7 @@ function MonthCompletenessTracker({ batches }: { batches: WeeklyBatch[] }) {
 function Metric({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
   return (
     <div className="bg-white px-3 py-2.5">
-      <div className="text-[10px] font-black uppercase tracking-wide text-phx-ink-faint">{label}</div>
+      <div className="text-phx-2xs font-black uppercase tracking-wide text-phx-ink-faint">{label}</div>
       <div className={`mt-0.5 text-sm font-black tabular-nums ${accent ? "text-phx-accent" : "text-phx-ink"}`}>{value}</div>
     </div>
   );
@@ -1725,7 +1725,7 @@ function SummaryTable({ title, head, rows }: { title: string; head: string[]; ro
       <div className="bg-[#020617] px-3 py-2 text-xs font-black uppercase tracking-wide text-white">{title}</div>
       <div className="max-h-72 overflow-auto">
         <table className="w-full text-sm">
-          <thead className="text-left text-[11px] font-bold uppercase text-phx-ink-faint">
+          <thead className="text-left text-phx-xs font-bold uppercase text-phx-ink-faint">
             <tr>
               {head.map((cell, i) => (
                 <th className={`px-3 py-1.5 ${i === 0 ? "" : "text-right"}`} key={cell}>{cell}</th>

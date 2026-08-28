@@ -159,7 +159,7 @@ export function FinanceDownloadPanel({ initialMonth, initialYear }: { initialMon
                 <Building2 className="h-4 w-4 text-blue-600" />
                 Bank submission file
               </div>
-              <label className="flex flex-col gap-1 text-[11px] font-black uppercase tracking-wide text-slate-500">
+              <label className="flex flex-col gap-1 text-phx-xs font-black uppercase tracking-wide text-slate-500">
                 Value Date
                 <input
                   type="date"

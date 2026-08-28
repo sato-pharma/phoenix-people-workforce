@@ -57,7 +57,7 @@ export default async function AdminLogsPage({
             aside={
               data ? (
                 <div className="border border-white/10 bg-white/10 px-4 py-3 backdrop-blur">
-                  <p className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">Total events</p>
+                  <p className="text-phx-2xs font-black uppercase tracking-[0.18em] text-slate-400">Total events</p>
                   <p className="mt-1 text-2xl font-black text-white">{data.total.toLocaleString("en-US")}</p>
                 </div>
               ) : undefined

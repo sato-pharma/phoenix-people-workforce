@@ -34,7 +34,7 @@ export function CoachingStarsOfMonthCard({
   return (
     <div className="overflow-hidden border border-slate-200 bg-white" role="region" aria-label="Stars of the month">
       <div className="flex items-center justify-between bg-slate-900 px-5 py-3">
-        <h2 className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-slate-300">
+        <h2 className="flex items-center gap-1.5 text-phx-2xs font-bold uppercase tracking-widest text-slate-300">
           <Star className="h-3.5 w-3.5 text-orange-400" />
           Stars of the Month · {monthLabel}
         </h2>
@@ -60,7 +60,7 @@ export function CoachingStarsOfMonthCard({
             >
               {star.scorePercent.toFixed(1)}%
             </p>
-            <p className="whitespace-nowrap text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+            <p className="whitespace-nowrap text-phx-2xs font-semibold uppercase tracking-wider text-slate-400">
               {coachingZoneLabel(star.zone)}
             </p>
           </div>

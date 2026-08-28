@@ -30,8 +30,8 @@ export function ApprovalScopeList({ data, moduleLabel }: Props) {
       {data.groups.map((group) => (
         <section key={group.title} className="space-y-2">
           <div className="flex items-baseline gap-2">
-            <h3 className="text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">{group.title}</h3>
-            <span className="text-[11px] font-bold text-slate-400">{group.people.length}</span>
+            <h3 className="text-phx-xs font-black uppercase tracking-[0.14em] text-slate-500">{group.title}</h3>
+            <span className="text-phx-xs font-bold text-slate-400">{group.people.length}</span>
           </div>
           <div className="grid gap-2 sm:grid-cols-2">
             {group.people.map((person) => (

@@ -35,7 +35,7 @@ function Chip({ ok, children }: { ok: boolean; children: React.ReactNode }) {
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1 rounded-[5px] border px-2 py-0.5 text-[11px] font-bold",
+        "inline-flex items-center gap-1 rounded-[5px] border px-2 py-0.5 text-phx-xs font-bold",
         ok ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-rose-200 bg-rose-50 text-rose-700",
       )}
     >
@@ -48,9 +48,9 @@ function Chip({ ok, children }: { ok: boolean; children: React.ReactNode }) {
 function SummaryStat({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
     <div className="rounded-[6px] border border-phx-line bg-white px-3 py-2.5">
-      <p className="text-[10px] font-black uppercase tracking-[0.12em] text-phx-ink-faint">{label}</p>
+      <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-phx-ink-faint">{label}</p>
       <p className="mt-1 text-[16px] font-black leading-none text-phx-ink">{value}</p>
-      {hint ? <p className="mt-1 text-[11px] font-semibold text-phx-ink-faint">{hint}</p> : null}
+      {hint ? <p className="mt-1 text-phx-xs font-semibold text-phx-ink-faint">{hint}</p> : null}
     </div>
   );
 }
@@ -95,23 +95,23 @@ export function MarketingRoiExplainPanel({ requestId }: { requestId: string }) {
     <section className="overflow-hidden rounded-[6px] border border-phx-line bg-white shadow-sm">
       <div className="flex items-center gap-2 border-b border-phx-line px-4 py-3">
         <ListTree className="h-4 w-4 text-phx-accent" />
-        <h3 className="text-[13px] font-black uppercase tracking-[0.12em] text-phx-ink">Explain ROI · Attribution Details</h3>
+        <h3 className="text-phx-md font-black uppercase tracking-[0.12em] text-phx-ink">Explain ROI · Attribution Details</h3>
       </div>
 
       {loading && !data ? (
-        <div className="flex items-center gap-2 px-4 py-6 text-[13px] font-semibold text-phx-ink-soft">
+        <div className="flex items-center gap-2 px-4 py-6 text-phx-md font-semibold text-phx-ink-soft">
           <LoadingSpinner /> Explaining ROI for this request…
         </div>
       ) : error ? (
-        <div className="m-4 rounded-[6px] border border-amber-200 bg-amber-50 px-3.5 py-2.5 text-[13px] font-semibold text-amber-800">{error}</div>
+        <div className="m-4 rounded-[6px] border border-amber-200 bg-amber-50 px-3.5 py-2.5 text-phx-md font-semibold text-amber-800">{error}</div>
       ) : data ? (
         <div className="space-y-4 p-4">
           {/* Diagnostic reason — the "why" up top */}
           <div className={cn("flex items-start gap-2 rounded-[6px] border px-3.5 py-3", REASON_TONE[data.diagnostic.reason])}>
             {data.diagnostic.reason === "attributed" ? <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" /> : <Info className="mt-0.5 h-4 w-4 shrink-0" />}
             <div>
-              <p className="text-[13px] font-black">{ROI_EXPLAIN_REASON_LABEL[data.diagnostic.reason]}</p>
-              <p className="mt-0.5 text-[12px] font-semibold">
+              <p className="text-phx-md font-black">{ROI_EXPLAIN_REASON_LABEL[data.diagnostic.reason]}</p>
+              <p className="mt-0.5 text-phx-sm font-semibold">
                 {data.diagnostic.pharmaciesFound}/{data.diagnostic.pharmaciesTargeted} pharmacies found in SoS ·{" "}
                 {data.diagnostic.productsMatched}/{data.diagnostic.productsTargeted} products bridged ·{" "}
                 {data.diagnostic.monthsCovered}/{data.diagnostic.monthsInWindow} ROI months validated
@@ -122,7 +122,7 @@ export function MarketingRoiExplainPanel({ requestId }: { requestId: string }) {
 
           {/* 1) Request summary */}
           <div>
-            <p className="mb-1.5 text-[11px] font-black uppercase tracking-[0.12em] text-phx-ink-faint">Request summary</p>
+            <p className="mb-1.5 text-phx-xs font-black uppercase tracking-[0.12em] text-phx-ink-faint">Request summary</p>
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
               <SummaryStat label="Request" value={data.summary.requestCode} hint={data.summary.customerName} />
               <SummaryStat label="Pay date" value={data.summary.payDate ?? "—"} hint={data.summary.roiWindowLabel ?? "no window"} />
@@ -136,12 +136,12 @@ export function MarketingRoiExplainPanel({ requestId }: { requestId: string }) {
           {/* 2) Target setup */}
           <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
             <div className="rounded-[6px] border border-phx-line bg-phx-paper p-3">
-              <p className="mb-2 flex items-center gap-1.5 text-[11px] font-black uppercase tracking-[0.12em] text-phx-ink-faint">
+              <p className="mb-2 flex items-center gap-1.5 text-phx-xs font-black uppercase tracking-[0.12em] text-phx-ink-faint">
                 <Layers className="h-3.5 w-3.5" /> Target products ({data.diagnostic.productsMatched}/{data.diagnostic.productsTargeted} bridged)
               </p>
               <div className="flex flex-wrap gap-1.5">
                 {data.targetSetup.products.length === 0 ? (
-                  <span className="text-[12px] font-medium text-phx-ink-faint">No products.</span>
+                  <span className="text-phx-sm font-medium text-phx-ink-faint">No products.</span>
                 ) : (
                   data.targetSetup.products.map((product) => (
                     <Chip key={product.code} ok={product.matchedToSos}>
@@ -153,12 +153,12 @@ export function MarketingRoiExplainPanel({ requestId }: { requestId: string }) {
               </div>
             </div>
             <div className="rounded-[6px] border border-phx-line bg-phx-paper p-3">
-              <p className="mb-2 flex items-center gap-1.5 text-[11px] font-black uppercase tracking-[0.12em] text-phx-ink-faint">
+              <p className="mb-2 flex items-center gap-1.5 text-phx-xs font-black uppercase tracking-[0.12em] text-phx-ink-faint">
                 <HelpCircle className="h-3.5 w-3.5" /> Target pharmacy codes ({data.diagnostic.pharmaciesFound}/{data.diagnostic.pharmaciesTargeted} in SoS)
               </p>
               <div className="flex flex-wrap gap-1.5">
                 {data.targetSetup.pharmacies.length === 0 ? (
-                  <span className="text-[12px] font-medium text-phx-ink-faint">No pharmacy codes.</span>
+                  <span className="text-phx-sm font-medium text-phx-ink-faint">No pharmacy codes.</span>
                 ) : (
                   data.targetSetup.pharmacies.map((pharmacy) => (
                     <Chip key={pharmacy.code} ok={pharmacy.foundInSos}>
@@ -172,10 +172,10 @@ export function MarketingRoiExplainPanel({ requestId }: { requestId: string }) {
           </div>
 
           <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-            <div className="rounded-[6px] border border-phx-line bg-phx-paper p-3 text-[12px]">
-              <p className="mb-1.5 text-[11px] font-black uppercase tracking-[0.12em] text-phx-ink-faint">Distributor rollup / family used</p>
+            <div className="rounded-[6px] border border-phx-line bg-phx-paper p-3 text-phx-sm">
+              <p className="mb-1.5 text-phx-xs font-black uppercase tracking-[0.12em] text-phx-ink-faint">Distributor rollup / family used</p>
               {data.targetSetup.distributorFamilies.length === 0 ? (
-                <span className="text-[12px] font-medium text-phx-ink-faint">No mapped distributor (Office/Direct are not attributed).</span>
+                <span className="text-phx-sm font-medium text-phx-ink-faint">No mapped distributor (Office/Direct are not attributed).</span>
               ) : (
                 <ul className="space-y-1">
                   {data.targetSetup.distributorFamilies.map((family) => (
@@ -186,8 +186,8 @@ export function MarketingRoiExplainPanel({ requestId }: { requestId: string }) {
                 </ul>
               )}
             </div>
-            <div className="rounded-[6px] border border-phx-line bg-phx-paper p-3 text-[12px]">
-              <p className="mb-1.5 text-[11px] font-black uppercase tracking-[0.12em] text-phx-ink-faint">Validated SoS periods in window</p>
+            <div className="rounded-[6px] border border-phx-line bg-phx-paper p-3 text-phx-sm">
+              <p className="mb-1.5 text-phx-xs font-black uppercase tracking-[0.12em] text-phx-ink-faint">Validated SoS periods in window</p>
               <p className="font-semibold text-phx-ink-2">
                 Validated: <span className="text-emerald-700">{data.targetSetup.validatedPeriodsInWindow.join(", ") || "none"}</span>
               </p>
@@ -202,14 +202,14 @@ export function MarketingRoiExplainPanel({ requestId }: { requestId: string }) {
           {/* 3) Attributed sales ledger */}
           <div className="overflow-hidden rounded-[6px] border border-phx-line">
             <div className="flex items-center justify-between border-b border-phx-line bg-white px-3 py-2">
-              <p className="text-[11px] font-black uppercase tracking-[0.12em] text-phx-ink">Attributed sales ledger</p>
-              <span className="inline-flex items-center rounded-[5px] border border-phx-line bg-phx-paper px-2 py-0.5 text-[11px] font-bold text-phx-ink-soft">
+              <p className="text-phx-xs font-black uppercase tracking-[0.12em] text-phx-ink">Attributed sales ledger</p>
+              <span className="inline-flex items-center rounded-[5px] border border-phx-line bg-phx-paper px-2 py-0.5 text-phx-xs font-bold text-phx-ink-soft">
                 {data.ledger.length} row{data.ledger.length === 1 ? "" : "s"}
               </span>
             </div>
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[920px] border-collapse text-left text-[12px]">
-                <thead className="bg-phx-ink text-[10px] font-black uppercase tracking-[0.1em] text-white">
+              <table className="w-full min-w-[920px] border-collapse text-left text-phx-sm">
+                <thead className="bg-phx-ink text-phx-2xs font-black uppercase tracking-[0.1em] text-white">
                   <tr>
                     <th className="px-3 py-2">SoS row</th>
                     <th className="px-3 py-2">Period</th>
@@ -223,7 +223,7 @@ export function MarketingRoiExplainPanel({ requestId }: { requestId: string }) {
                 </thead>
                 <tbody className="bg-white">
                   {data.ledger.length === 0 ? (
-                    <tr><td className="px-4 py-5 text-center text-[12px] font-medium text-phx-ink-soft" colSpan={8}>No attributed sales rows.</td></tr>
+                    <tr><td className="px-4 py-5 text-center text-phx-sm font-medium text-phx-ink-soft" colSpan={8}>No attributed sales rows.</td></tr>
                   ) : (
                     data.ledger.map((row) => (
                       <tr key={row.ledgerKey} className="border-t border-[#FEE7D2]">
@@ -235,7 +235,7 @@ export function MarketingRoiExplainPanel({ requestId }: { requestId: string }) {
                         <td className="px-3 py-1.5 text-right font-semibold text-phx-ink-2">{units(row.qty)}</td>
                         <td className="px-3 py-1.5 text-right font-bold text-phx-ink">{money(row.valueCounted)}</td>
                         <td className="px-3 py-1.5">
-                          <span className="inline-flex items-center rounded-[4px] border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-700" title={row.matchReason}>
+                          <span className="inline-flex items-center rounded-[4px] border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-phx-2xs font-bold uppercase tracking-wide text-emerald-700" title={row.matchReason}>
                             {row.confidence}
                           </span>
                         </td>
@@ -246,7 +246,7 @@ export function MarketingRoiExplainPanel({ requestId }: { requestId: string }) {
               </table>
             </div>
           </div>
-          <p className="text-[10px] font-medium text-phx-ink-faint">
+          <p className="text-phx-2xs font-medium text-phx-ink-faint">
             Ledger reflects the current exact attribution (distributor + pharmacy code + product + period) and reconciles to the actual sales above. Read-only — nothing here changes attribution.
           </p>
         </div>

@@ -118,8 +118,8 @@ function DraggableRow({ href, label }: { href: string; label: string }) {
       <GripVertical className="h-3.5 w-3.5 shrink-0 cursor-grab text-slate-400" />
       {/* Owner rule: never truncate with an ellipsis and never let a label wrap. The row grows
           instead, and the column scrolls sideways if it must. */}
-      <span className="whitespace-nowrap text-[13px] font-medium text-slate-700">{label}</span>
-      <span className="ml-auto whitespace-nowrap pl-3 text-[11px] text-slate-400">{href}</span>
+      <span className="whitespace-nowrap text-phx-md font-medium text-slate-700">{label}</span>
+      <span className="ml-auto whitespace-nowrap pl-3 text-phx-xs text-slate-400">{href}</span>
     </div>
   );
 }
@@ -157,16 +157,16 @@ function DropColumn({
         {onRename ? (
           <input
             aria-label={`Rename ${title}`}
-            className="min-w-0 flex-1 whitespace-nowrap border-none bg-transparent text-[13px] font-bold text-slate-800 outline-none focus:bg-slate-50"
+            className="min-w-0 flex-1 whitespace-nowrap border-none bg-transparent text-phx-md font-bold text-slate-800 outline-none focus:bg-slate-50"
             onChange={(event) => onRename(event.target.value)}
             value={title}
           />
         ) : (
-          <span className="whitespace-nowrap text-[13px] font-bold text-slate-800">{title}</span>
+          <span className="whitespace-nowrap text-phx-md font-bold text-slate-800">{title}</span>
         )}
-        <span className="ml-auto whitespace-nowrap text-[11px] text-slate-400">{items.length}</span>
+        <span className="ml-auto whitespace-nowrap text-phx-xs text-slate-400">{items.length}</span>
       </div>
-      {hint ? <p className="whitespace-nowrap px-3 pt-2 text-[11px] text-slate-500">{hint}</p> : null}
+      {hint ? <p className="whitespace-nowrap px-3 pt-2 text-phx-xs text-slate-500">{hint}</p> : null}
       <div ref={setNodeRef} className="min-h-[64px] space-y-1.5 overflow-x-auto p-2">
         <SortableContext items={items} strategy={verticalListSortingStrategy}>
           {items.map((href) => (
@@ -174,7 +174,7 @@ function DropColumn({
           ))}
         </SortableContext>
         {items.length === 0 ? (
-          <p className="px-1 py-3 text-[11px] text-slate-400">Drop a page here.</p>
+          <p className="px-1 py-3 text-phx-xs text-slate-400">Drop a page here.</p>
         ) : null}
       </div>
     </div>
@@ -298,17 +298,17 @@ export function SidebarLayoutEditor({
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-3 border border-slate-200 bg-white px-4 py-3">
-        <span className="whitespace-nowrap text-[13px] text-slate-600">
+        <span className="whitespace-nowrap text-phx-md text-slate-600">
           {pageCount} pages you can reach, across {catalogue.length} modules.
         </span>
         {dirty ? (
-          <span className="whitespace-nowrap bg-[#FEF3C7] px-2 py-0.5 text-[11px] font-semibold text-[#92400E]">
+          <span className="whitespace-nowrap bg-[#FEF3C7] px-2 py-0.5 text-phx-xs font-semibold text-[#92400E]">
             Unsaved changes
           </span>
         ) : null}
         {status ? (
           <span
-            className={`whitespace-nowrap text-[12px] font-medium ${
+            className={`whitespace-nowrap text-phx-sm font-medium ${
               status.tone === "ok" ? "text-emerald-700" : "text-red-700"
             }`}
           >
@@ -317,7 +317,7 @@ export function SidebarLayoutEditor({
         ) : null}
         <div className="ml-auto flex items-center gap-2">
           <button
-            className="flex items-center gap-1.5 whitespace-nowrap border border-slate-300 px-3 py-1.5 text-[12px] font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+            className="flex items-center gap-1.5 whitespace-nowrap border border-slate-300 px-3 py-1.5 text-phx-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
             disabled={busy}
             onClick={reset}
             type="button"
@@ -326,7 +326,7 @@ export function SidebarLayoutEditor({
             Reset to standard
           </button>
           <button
-            className="flex items-center gap-1.5 whitespace-nowrap bg-phx-ink px-3.5 py-1.5 text-[12px] font-semibold text-white hover:bg-[#1E293B] disabled:opacity-50"
+            className="flex items-center gap-1.5 whitespace-nowrap bg-phx-ink px-3.5 py-1.5 text-phx-sm font-semibold text-white hover:bg-[#1E293B] disabled:opacity-50"
             disabled={busy || !dirty}
             onClick={save}
             type="button"
@@ -380,7 +380,7 @@ export function SidebarLayoutEditor({
           {dragging ? (
             <div className="flex items-center gap-2 border border-[#F8B56B] bg-white px-2.5 py-2 shadow-lg">
               <GripVertical className="h-3.5 w-3.5 text-slate-400" />
-              <span className="whitespace-nowrap text-[13px] font-medium text-slate-700">
+              <span className="whitespace-nowrap text-phx-md font-medium text-slate-700">
                 {labelOf.get(dragging) ?? dragging}
               </span>
             </div>

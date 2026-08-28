@@ -50,7 +50,7 @@ function StatusFilterPills({
       <div className="flex rounded-xl border border-phx-line bg-phx-paper p-1">
         {STATUS_FILTERS.map((option) => (
           <button
-            className={`rounded-lg px-3 py-1.5 text-[11px] font-black transition ${
+            className={`rounded-lg px-3 py-1.5 text-phx-xs font-black transition ${
               value === option.value
                 ? "bg-[#0B0B0B] text-white shadow-[0_6px_14px_rgba(15,23,42,0.18)]"
                 : "text-phx-ink-soft hover:text-orange-700"
@@ -115,14 +115,14 @@ function severityBadgeClasses(severity: string) {
 function StatusBadge({ status }: { status: IssueStatus }) {
   if (status === "resolved") {
     return (
-      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-bold text-emerald-700 ring-1 ring-emerald-100">
+      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-phx-xs font-bold text-emerald-700 ring-1 ring-emerald-100">
         <Check className="h-3 w-3" />
         Resolved
       </span>
     );
   }
   return (
-    <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-1 text-[11px] font-bold text-amber-700 ring-1 ring-amber-100">
+    <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-1 text-phx-xs font-bold text-amber-700 ring-1 ring-amber-100">
       <AlertTriangle className="h-3 w-3" />
       Active
     </span>
@@ -153,7 +153,7 @@ function DeployTimelinePanel({ state }: { state: TimelineState }) {
 
   return (
     <div className="rounded-2xl border border-phx-line bg-white/95 p-4 shadow-[0_10px_28px_rgba(15,23,42,0.06)]">
-      <p className="mb-2 text-[10px] font-black uppercase tracking-[0.18em] text-phx-ink-soft">
+      <p className="mb-2 text-phx-2xs font-black uppercase tracking-[0.18em] text-phx-ink-soft">
         Errors per day — last {t.windowDays} days · dashed lines = deploys
       </p>
       <svg className="h-20 w-full" preserveAspectRatio="none" viewBox="0 0 100 30">
@@ -169,14 +169,14 @@ function DeployTimelinePanel({ state }: { state: TimelineState }) {
         })}
         <line stroke="#E2E8F0" strokeWidth={0.4} x1={0} x2={100} y1={26} y2={26} />
       </svg>
-      <div className="mt-1 flex items-center justify-between text-[10px] font-mono text-slate-400">
+      <div className="mt-1 flex items-center justify-between text-phx-2xs font-mono text-slate-400">
         <span>{t.buckets[0]?.day}</span>
         <span>{t.buckets[t.buckets.length - 1]?.day}</span>
       </div>
       {t.markers.length > 0 && (
         <div className="mt-2 flex flex-wrap gap-1.5">
           {t.markers.slice(-8).map((m) => (
-            <span className="rounded-full bg-violet-50 px-2 py-0.5 font-mono text-[9px] font-bold text-violet-700 ring-1 ring-violet-100" key={m.release}>
+            <span className="rounded-full bg-violet-50 px-2 py-0.5 font-mono text-phx-3xs font-bold text-violet-700 ring-1 ring-violet-100" key={m.release}>
               {m.release}
             </span>
           ))}
@@ -184,7 +184,7 @@ function DeployTimelinePanel({ state }: { state: TimelineState }) {
       )}
       {t.regressions.length > 0 && (
         <div className="mt-3 rounded-xl border border-rose-200 bg-rose-50/60 p-3">
-          <p className="mb-1.5 flex items-center gap-1.5 text-[11px] font-black text-rose-700">
+          <p className="mb-1.5 flex items-center gap-1.5 text-phx-xs font-black text-rose-700">
             <AlertTriangle className="h-3.5 w-3.5" /> Regressions — came back after a deploy ({t.regressions.length})
           </p>
           <ul className="space-y-1">
@@ -192,9 +192,9 @@ function DeployTimelinePanel({ state }: { state: TimelineState }) {
               <li className="flex items-center justify-between gap-2 text-xs" key={`${r.moduleLabel}-${r.route}-${i}`}>
                 <span className="font-bold text-phx-ink">
                   {r.moduleLabel}
-                  {r.route && <span className="ml-1 font-mono text-[10px] font-normal text-phx-ink-soft">{r.route}</span>}
+                  {r.route && <span className="ml-1 font-mono text-phx-2xs font-normal text-phx-ink-soft">{r.route}</span>}
                 </span>
-                <span className="whitespace-nowrap font-mono text-[10px] text-rose-600">
+                <span className="whitespace-nowrap font-mono text-phx-2xs text-rose-600">
                   quiet {r.gapReleases} deploy{r.gapReleases > 1 ? "s" : ""}, back on {r.currentRelease}
                 </span>
               </li>
@@ -250,20 +250,20 @@ function SecurityLens({
 
   return (
     <div className="rounded-3xl border border-phx-line bg-white/95 p-5 shadow-[0_18px_42px_rgba(15,23,42,0.07)]">
-      <p className="mb-3 flex items-center gap-1.5 text-[10px] font-black uppercase tracking-[0.18em] text-phx-ink-soft">
+      <p className="mb-3 flex items-center gap-1.5 text-phx-2xs font-black uppercase tracking-[0.18em] text-phx-ink-soft">
         <ShieldAlert className="h-3.5 w-3.5 text-rose-500" /> Security lens — last {s.windowDays} days
       </p>
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
         {s.lockedAccounts.length > 0 && (
           <div className="rounded-2xl border border-rose-200 bg-rose-50/50 p-3">
-            <p className="mb-2 flex items-center gap-1.5 text-[11px] font-black text-rose-700">
+            <p className="mb-2 flex items-center gap-1.5 text-phx-xs font-black text-rose-700">
               <Lock className="h-3.5 w-3.5" /> Currently locked ({s.lockedAccounts.length})
             </p>
             <ul className="space-y-1">
               {s.lockedAccounts.map((a) => (
                 <li className="flex items-center justify-between gap-2 text-xs" key={a.hrId}>
                   <span className="font-bold text-phx-ink">{accountLabel(a.hrId, a.name)}</span>
-                  <span className="whitespace-nowrap font-mono text-[10px] text-rose-600">
+                  <span className="whitespace-nowrap font-mono text-phx-2xs text-rose-600">
                     {a.failedAttempts} fails · until {formatDate(a.lockedUntil)}
                   </span>
                 </li>
@@ -273,7 +273,7 @@ function SecurityLens({
         )}
         {s.hammeredAccounts.length > 0 && (
           <div className="rounded-2xl border border-amber-200 bg-amber-50/50 p-3">
-            <p className="mb-2 flex items-center gap-1.5 text-[11px] font-black text-amber-700">
+            <p className="mb-2 flex items-center gap-1.5 text-phx-xs font-black text-amber-700">
               <UsersRound className="h-3.5 w-3.5" /> Accounts under attack ({s.hammeredAccounts.length})
             </p>
             <ul className="space-y-1">
@@ -281,9 +281,9 @@ function SecurityLens({
                 <li className="flex items-center justify-between gap-2 text-xs" key={a.hrId}>
                   <span className="font-bold text-phx-ink">
                     {accountLabel(a.hrId, a.name)}
-                    {a.distributed && <span className="ml-1.5 rounded-full bg-rose-100 px-1.5 py-0.5 text-[9px] font-black text-rose-700">DISTRIBUTED</span>}
+                    {a.distributed && <span className="ml-1.5 rounded-full bg-rose-100 px-1.5 py-0.5 text-phx-3xs font-black text-rose-700">DISTRIBUTED</span>}
                   </span>
-                  <span className="whitespace-nowrap font-mono text-[10px] text-amber-700">{a.failCount} fails · {a.distinctIps} IPs</span>
+                  <span className="whitespace-nowrap font-mono text-phx-2xs text-amber-700">{a.failCount} fails · {a.distinctIps} IPs</span>
                 </li>
               ))}
             </ul>
@@ -291,7 +291,7 @@ function SecurityLens({
         )}
         {s.bruteForceIps.length > 0 && (
           <div className="rounded-2xl border border-amber-200 bg-amber-50/50 p-3">
-            <p className="mb-2 flex items-center gap-1.5 text-[11px] font-black text-amber-700">
+            <p className="mb-2 flex items-center gap-1.5 text-phx-xs font-black text-amber-700">
               <Globe className="h-3.5 w-3.5" /> Suspicious IPs ({s.bruteForceIps.length})
             </p>
             <ul className="space-y-1">
@@ -299,14 +299,14 @@ function SecurityLens({
                 <li className="flex items-center justify-between gap-2 text-xs" key={ip.ip}>
                   <span className="font-mono font-bold text-phx-ink">
                     {ip.ip}
-                    {ip.credentialStuffing && <span className="ml-1.5 rounded-full bg-rose-100 px-1.5 py-0.5 text-[9px] font-black text-rose-700">CRED-STUFFING</span>}
-                    {ip.blocked && <span className="ml-1.5 rounded-full bg-slate-200 px-1.5 py-0.5 text-[9px] font-black text-slate-600">BLOCKED</span>}
+                    {ip.credentialStuffing && <span className="ml-1.5 rounded-full bg-rose-100 px-1.5 py-0.5 text-phx-3xs font-black text-rose-700">CRED-STUFFING</span>}
+                    {ip.blocked && <span className="ml-1.5 rounded-full bg-slate-200 px-1.5 py-0.5 text-phx-3xs font-black text-slate-600">BLOCKED</span>}
                   </span>
                   <span className="flex items-center gap-2">
-                    <span className="whitespace-nowrap font-mono text-[10px] text-amber-700">{ip.failCount} fails · {ip.distinctAccounts} accts</span>
+                    <span className="whitespace-nowrap font-mono text-phx-2xs text-amber-700">{ip.failCount} fails · {ip.distinctAccounts} accts</span>
                     {canManage && !ip.blocked && (
                       <button
-                        className="rounded-md border border-rose-200 bg-white px-2 py-0.5 text-[9px] font-black text-rose-700 transition hover:bg-rose-50"
+                        className="rounded-md border border-rose-200 bg-white px-2 py-0.5 text-phx-3xs font-black text-rose-700 transition hover:bg-rose-50"
                         onClick={() => onManageIp(ip.ip, "block")}
                         type="button"
                       >
@@ -321,14 +321,14 @@ function SecurityLens({
         )}
         {s.newLocationLogins.length > 0 && (
           <div className="rounded-2xl border border-sky-200 bg-sky-50/50 p-3">
-            <p className="mb-2 flex items-center gap-1.5 text-[11px] font-black text-sky-700">
+            <p className="mb-2 flex items-center gap-1.5 text-phx-xs font-black text-sky-700">
               <Globe className="h-3.5 w-3.5" /> New-location logins ({s.newLocationLogins.length})
             </p>
             <ul className="space-y-1">
               {s.newLocationLogins.map((l, i) => (
                 <li className="flex items-center justify-between gap-2 text-xs" key={`${l.hrId}-${l.ip}-${i}`}>
                   <span className="font-bold text-phx-ink">{accountLabel(l.hrId, l.name)}</span>
-                  <span className="whitespace-nowrap font-mono text-[10px] text-sky-700">{l.ip} · {formatDate(l.at)}</span>
+                  <span className="whitespace-nowrap font-mono text-phx-2xs text-sky-700">{l.ip} · {formatDate(l.at)}</span>
                 </li>
               ))}
             </ul>
@@ -336,7 +336,7 @@ function SecurityLens({
         )}
         {s.blockedIps.length > 0 && (
           <div className="rounded-2xl border border-slate-300 bg-slate-50 p-3">
-            <p className="mb-2 flex items-center gap-1.5 text-[11px] font-black text-slate-700">
+            <p className="mb-2 flex items-center gap-1.5 text-phx-xs font-black text-slate-700">
               <Lock className="h-3.5 w-3.5" /> Blocked IPs ({s.blockedIps.length})
             </p>
             <ul className="space-y-1">
@@ -344,12 +344,12 @@ function SecurityLens({
                 <li className="flex items-center justify-between gap-2 text-xs" key={b.ip}>
                   <span className="font-mono font-bold text-phx-ink">{b.ip}</span>
                   <span className="flex items-center gap-2">
-                    <span className="whitespace-nowrap font-mono text-[10px] text-slate-500">
+                    <span className="whitespace-nowrap font-mono text-phx-2xs text-slate-500">
                       {b.expiresAt ? `until ${formatDate(b.expiresAt)}` : "permanent"}
                     </span>
                     {canManage && (
                       <button
-                        className="rounded-md border border-slate-300 bg-white px-2 py-0.5 text-[9px] font-black text-slate-600 transition hover:bg-slate-100"
+                        className="rounded-md border border-slate-300 bg-white px-2 py-0.5 text-phx-3xs font-black text-slate-600 transition hover:bg-slate-100"
                         onClick={() => onManageIp(b.ip, "unblock")}
                         type="button"
                       >
@@ -364,7 +364,7 @@ function SecurityLens({
         )}
       </div>
       {s.truncated && (
-        <p className="mt-3 text-[10px] text-slate-400">Attempt volume exceeded the scan cap — counts may be partial.</p>
+        <p className="mt-3 text-phx-2xs text-slate-400">Attempt volume exceeded the scan cap — counts may be partial.</p>
       )}
     </div>
   );
@@ -393,14 +393,14 @@ function TrailSection({ state }: { state: TrailState | undefined }) {
   }
   return (
     <div className="space-y-1.5">
-      <p className="text-[10px] font-black uppercase tracking-[0.16em] text-phx-ink-soft">Before the error, this user visited</p>
+      <p className="text-phx-2xs font-black uppercase tracking-[0.16em] text-phx-ink-soft">Before the error, this user visited</p>
       <ol className="space-y-1">
         {state.entries.map((entry, i) => (
           <li className="flex items-center gap-2 text-xs" key={`${entry.createdAt}-${i}`}>
-            <span className="w-4 text-right font-mono text-[10px] text-slate-400">{i + 1}</span>
+            <span className="w-4 text-right font-mono text-phx-2xs text-slate-400">{i + 1}</span>
             <span className="font-bold text-phx-ink">{entry.moduleLabel}</span>
-            <span className="truncate font-mono text-[11px] text-phx-ink-soft">{entry.path}</span>
-            <span className="ml-auto whitespace-nowrap font-mono text-[10px] text-slate-400">
+            <span className="truncate font-mono text-phx-xs text-phx-ink-soft">{entry.path}</span>
+            <span className="ml-auto whitespace-nowrap font-mono text-phx-2xs text-slate-400">
               {formatDate(entry.createdAt)} · {formatDwell(entry.durationMs)}
             </span>
           </li>
@@ -435,7 +435,7 @@ function DetailPanel({
         {aiEnabled &&
           (explainStarted ? null : (
             <button
-              className="flex h-8 items-center gap-1.5 rounded-lg border border-violet-200 bg-violet-50 px-3 text-[11px] font-black text-violet-700 transition hover:bg-violet-100"
+              className="flex h-8 items-center gap-1.5 rounded-lg border border-violet-200 bg-violet-50 px-3 text-phx-xs font-black text-violet-700 transition hover:bg-violet-100"
               onClick={onExplain}
               type="button"
             >
@@ -445,7 +445,7 @@ function DetailPanel({
           ))}
         {hasHrId && (
           <button
-            className="flex h-8 items-center gap-1.5 rounded-lg border border-sky-200 bg-sky-50 px-3 text-[11px] font-black text-sky-700 transition hover:bg-sky-100 disabled:opacity-50"
+            className="flex h-8 items-center gap-1.5 rounded-lg border border-sky-200 bg-sky-50 px-3 text-phx-xs font-black text-sky-700 transition hover:bg-sky-100 disabled:opacity-50"
             disabled={notifyState?.loading || notifyState?.done}
             onClick={onNotify}
             type="button"
@@ -486,10 +486,10 @@ function ExplainPanel({ state }: { state: ExplainState | undefined }) {
   return (
     <div className="space-y-2 rounded-xl border border-violet-200 bg-white/90 px-4 py-3 text-sm text-phx-ink">
       <div className="flex items-center gap-2">
-        <span className="flex items-center gap-1 text-[10px] font-black uppercase tracking-[0.16em] text-violet-500">
+        <span className="flex items-center gap-1 text-phx-2xs font-black uppercase tracking-[0.16em] text-violet-500">
           <Sparkles className="h-3 w-3" /> AI explanation
         </span>
-        <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold ring-1 ${confidenceClass}`}>
+        <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-phx-2xs font-bold ring-1 ${confidenceClass}`}>
           {confidence} confidence
         </span>
       </div>
@@ -504,7 +504,7 @@ function ExplainPanel({ state }: { state: ExplainState | undefined }) {
           <span className="font-black text-phx-ink">Suggested fix: </span>{suggestedFix}
         </p>
       )}
-      <p className="text-[10px] text-slate-400">AI-generated from redacted error data — verify before acting.</p>
+      <p className="text-phx-2xs text-slate-400">AI-generated from redacted error data — verify before acting.</p>
     </div>
   );
 }
@@ -535,7 +535,7 @@ function TabButton({
       {icon}
       {label}
       <span
-        className={`rounded-full px-2 py-0.5 text-[10px] ${active ? "bg-white/15 text-white" : "bg-phx-paper-2 text-phx-ink-soft"}`}
+        className={`rounded-full px-2 py-0.5 text-phx-2xs ${active ? "bg-white/15 text-white" : "bg-phx-paper-2 text-phx-ink-soft"}`}
       >
         {count.toLocaleString("en-US")}
       </span>
@@ -574,12 +574,12 @@ function HealthTile({
     tone === "good" ? "text-emerald-700" : tone === "bad" ? "text-rose-700" : "text-phx-ink";
   return (
     <div className="rounded-2xl border border-phx-line bg-white/95 p-4">
-      <p className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-[0.16em] text-phx-ink-soft">
+      <p className="flex items-center gap-1.5 text-phx-2xs font-black uppercase tracking-[0.16em] text-phx-ink-soft">
         {icon}
         {label}
       </p>
       <p className={`mt-1.5 text-2xl font-black ${valueClass}`}>{value}</p>
-      {sub && <p className="mt-0.5 text-[11px] font-semibold text-phx-ink-soft">{sub}</p>}
+      {sub && <p className="mt-0.5 text-phx-xs font-semibold text-phx-ink-soft">{sub}</p>}
     </div>
   );
 }
@@ -612,10 +612,10 @@ function ServiceHealthCard({ state }: { state: ServiceHealthResult }) {
   return (
     <div className="rounded-3xl border border-phx-line bg-white/95 p-5 shadow-[0_18px_42px_rgba(15,23,42,0.07)]">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <p className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-[0.18em] text-phx-ink-soft">
+        <p className="flex items-center gap-1.5 text-phx-2xs font-black uppercase tracking-[0.18em] text-phx-ink-soft">
           <Activity className="h-3.5 w-3.5 text-emerald-500" /> Service Health — live Cloud Run metrics
         </p>
-        <span className="text-[10px] font-semibold text-slate-400">
+        <span className="text-phx-2xs font-semibold text-slate-400">
           availability over {h.availabilityWindowHours}h · latency over {h.latencyWindowHours}h
         </span>
       </div>
@@ -650,7 +650,7 @@ function ServiceHealthCard({ state }: { state: ServiceHealthResult }) {
           sub="current container count"
         />
       </div>
-      <div className="mt-3 flex flex-wrap gap-4 text-[11px] font-semibold text-phx-ink-soft">
+      <div className="mt-3 flex flex-wrap gap-4 text-phx-xs font-semibold text-phx-ink-soft">
         <span className="flex items-center gap-1.5">
           <Timer className="h-3 w-3" /> p50 {formatMs(h.latencyMsP50)}
         </span>
@@ -1105,14 +1105,14 @@ export function SystemIssuesDashboard({
                 <p className="text-xs font-semibold text-rose-700">{summaryState.error}</p>
               ) : summaryState.data ? (
                 <div className="space-y-2">
-                  <p className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-[0.16em] text-violet-500">
+                  <p className="flex items-center gap-1.5 text-phx-2xs font-black uppercase tracking-[0.16em] text-violet-500">
                     <Sparkles className="h-3 w-3" /> AI summary
                   </p>
                   <p className="text-sm font-medium text-phx-ink">{summaryState.data.summary}</p>
                   {summaryState.data.themes.length > 0 && (
                     <ul className="flex flex-wrap gap-1.5">
                       {summaryState.data.themes.map((theme, i) => (
-                        <li className="rounded-full bg-violet-100 px-2.5 py-1 text-[11px] font-bold text-violet-700" key={i}>
+                        <li className="rounded-full bg-violet-100 px-2.5 py-1 text-phx-xs font-bold text-violet-700" key={i}>
                           {theme}
                         </li>
                       ))}
@@ -1124,7 +1124,7 @@ export function SystemIssuesDashboard({
                       {summaryState.data.recommendation}
                     </p>
                   )}
-                  <p className="text-[10px] text-slate-400">AI-generated from redacted error data — verify before acting.</p>
+                  <p className="text-phx-2xs text-slate-400">AI-generated from redacted error data — verify before acting.</p>
                 </div>
               ) : null}
             </div>
@@ -1136,7 +1136,7 @@ export function SystemIssuesDashboard({
                   <tr className="border-b border-phx-line bg-phx-paper">
                     {["Time", "Origin", "Severity", "Status", "HR ID", "Module", "Message", "Route"].map((h) => (
                       <th
-                        className="px-5 py-4 text-left text-[10px] font-black uppercase tracking-widest text-phx-ink-soft"
+                        className="px-5 py-4 text-left text-phx-2xs font-black uppercase tracking-widest text-phx-ink-soft"
                         key={h}
                       >
                         {h}
@@ -1166,7 +1166,7 @@ export function SystemIssuesDashboard({
                           </td>
                           <td className="px-5 py-4">
                             <span
-                              className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-bold ring-1 ${
+                              className={`inline-flex items-center rounded-full px-2.5 py-1 text-phx-xs font-bold ring-1 ${
                                 row.origin === "app"
                                   ? "bg-sky-50 text-sky-700 ring-sky-100"
                                   : "bg-violet-50 text-violet-700 ring-violet-100"
@@ -1177,7 +1177,7 @@ export function SystemIssuesDashboard({
                           </td>
                           <td className="px-5 py-4">
                             <span
-                              className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-bold ring-1 ${severityBadgeClasses(row.severity)}`}
+                              className={`inline-flex items-center rounded-full px-2.5 py-1 text-phx-xs font-bold ring-1 ${severityBadgeClasses(row.severity)}`}
                             >
                               {row.severity}
                             </span>
@@ -1190,7 +1190,7 @@ export function SystemIssuesDashboard({
                               row.employeeName ? (
                                 <div className="leading-tight">
                                   <div className="text-sm font-bold text-phx-ink">{row.employeeName}</div>
-                                  <div className="font-mono text-[10px] text-slate-400">{row.hrId}</div>
+                                  <div className="font-mono text-phx-2xs text-slate-400">{row.hrId}</div>
                                 </div>
                               ) : (
                                 <span className="text-sm font-bold text-phx-ink">{row.hrId}</span>
@@ -1204,7 +1204,7 @@ export function SystemIssuesDashboard({
                             <span className="line-clamp-2" title={row.message}>{row.displayMessage}</span>
                             {(row.hrId || aiEnabled) && (
                               <button
-                                className="mt-1 flex items-center gap-1 text-[11px] font-black text-phx-ink-soft transition hover:text-orange-700"
+                                className="mt-1 flex items-center gap-1 text-phx-xs font-black text-phx-ink-soft transition hover:text-orange-700"
                                 onClick={() => toggleDetails(row)}
                                 type="button"
                               >
@@ -1252,14 +1252,14 @@ export function SystemIssuesDashboard({
           )}
           <div className="flex flex-col gap-1.5 px-1">
             {attempts.windowFrom && (
-              <p className="text-[11px] font-bold uppercase tracking-wide text-phx-ink-soft">
+              <p className="text-phx-xs font-bold uppercase tracking-wide text-phx-ink-soft">
                 {attemptWindowDays === null
                   ? `Since ${attempts.windowFrom.slice(0, 10)}`
                   : `Showing last ${attemptWindowDays} days · since ${attempts.windowFrom.slice(0, 10)}`}
               </p>
             )}
             {attempts.unknownAttempts && attempts.unknownAttempts.attemptCount > 0 && (
-              <p className="text-[11px] font-semibold text-phx-ink-faint">
+              <p className="text-phx-xs font-semibold text-phx-ink-faint">
                 + {attempts.unknownAttempts.attemptCount} failed attempts against{" "}
                 {attempts.unknownAttempts.distinctCount} unknown/non-existent usernames — hidden from this
                 list (test/probe noise); see the Security Lens above for attack patterns.
@@ -1326,7 +1326,7 @@ export function SystemIssuesDashboard({
                     {["HR ID", "Type", "Status", "Module", "Route", "Attempts", "First Seen", "Last Seen", "Sample"].map(
                       (h) => (
                         <th
-                          className="px-5 py-4 text-left text-[10px] font-black uppercase tracking-widest text-phx-ink-soft"
+                          className="px-5 py-4 text-left text-phx-2xs font-black uppercase tracking-widest text-phx-ink-soft"
                           key={h}
                         >
                           {h}
@@ -1358,9 +1358,9 @@ export function SystemIssuesDashboard({
                               <div className="leading-tight">
                                 <div className="text-sm font-bold text-phx-ink">
                                   {row.employeeName}
-                                  {row.employeeRole && <span className="ml-1 text-[10px] font-semibold text-slate-400">· {row.employeeRole}</span>}
+                                  {row.employeeRole && <span className="ml-1 text-phx-2xs font-semibold text-slate-400">· {row.employeeRole}</span>}
                                 </div>
-                                <div className="font-mono text-[10px] text-slate-400">{row.hrId}</div>
+                                <div className="font-mono text-phx-2xs text-slate-400">{row.hrId}</div>
                               </div>
                             ) : (
                               <span className="text-sm font-bold text-phx-ink">{row.hrId}</span>
@@ -1368,7 +1368,7 @@ export function SystemIssuesDashboard({
                           </td>
                           <td className="px-5 py-4">
                             <span
-                              className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-bold ring-1 ${
+                              className={`inline-flex items-center rounded-full px-2.5 py-1 text-phx-xs font-bold ring-1 ${
                                 row.category === "app_error"
                                   ? "bg-sky-50 text-sky-700 ring-sky-100"
                                   : "bg-rose-50 text-rose-700 ring-rose-100"

@@ -26,13 +26,13 @@ export function LineTopAchieversCard({
   return (
     <div className="overflow-hidden border border-slate-200 bg-white" role="region" aria-label="Top medical rep achievers per line">
       <div className="flex items-center justify-between bg-slate-900 px-5 py-3">
-        <h2 className="text-[10px] font-bold uppercase tracking-widest text-slate-300">{title}</h2>
+        <h2 className="text-phx-2xs font-bold uppercase tracking-widest text-slate-300">{title}</h2>
         <div className="h-1.5 w-12 bg-orange-500" />
       </div>
       <div className="divide-y divide-slate-200">
         {groups.map((group) => (
           <div key={group.lineName} className="px-4 py-3 sm:px-5">
-            <p className="mb-2 whitespace-nowrap text-[11px] font-bold uppercase tracking-wider text-orange-600">
+            <p className="mb-2 whitespace-nowrap text-phx-xs font-bold uppercase tracking-wider text-orange-600">
               {group.lineName}
             </p>
             <ol className="divide-y divide-slate-100">
@@ -47,7 +47,7 @@ export function LineTopAchieversCard({
                   </span>
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-bold text-slate-900" title={achiever.name}>{achiever.name}</p>
-                    <p className="truncate text-[11px] text-slate-400">{achiever.areaName ?? "—"}</p>
+                    <p className="truncate text-phx-xs text-slate-400">{achiever.areaName ?? "—"}</p>
                   </div>
                   <span className={`whitespace-nowrap text-base font-black tabular-nums ${achievementColor(achiever.achievementPercent)}`}>
                     {achiever.achievementPercent.toFixed(1)}%

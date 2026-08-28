@@ -21,7 +21,7 @@ type Props = {
 
 const PAGE = 50;
 const panel = "rounded-2xl border border-phx-line bg-white/95 shadow-[0_8px_22px_rgba(15,23,42,0.06)]";
-const headRow = "sticky top-0 bg-[#020617] text-left text-[11px] font-black uppercase tracking-[0.12em] text-white";
+const headRow = "sticky top-0 bg-[#020617] text-left text-phx-xs font-black uppercase tracking-[0.12em] text-white";
 
 async function readJson<T>(res: Response): Promise<T> {
   const text = await res.text();
@@ -76,7 +76,7 @@ function MappingBulkBar({ templateHref, templateLabel, uploadUrl, uploadFields, 
 
   return (
     <div className="flex flex-wrap items-center gap-2 rounded-[6px] border border-dashed border-phx-line bg-[#FCFDFE] px-3 py-2">
-      <span className="text-[11px] font-black uppercase tracking-[0.12em] text-phx-ink-faint">Bulk XLSX</span>
+      <span className="text-phx-xs font-black uppercase tracking-[0.12em] text-phx-ink-faint">Bulk XLSX</span>
       <a className={bulkBtn} href={templateHref}><Download className="h-4 w-4" /> {templateLabel}</a>
       <button className={bulkBtn} disabled={busy} onClick={() => fileRef.current?.click()} type="button">
         {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />} Import filled .xlsx
@@ -157,7 +157,7 @@ function CustomersTab({ distributorCode, bricks }: { distributorCode: string; br
           {SOURCE_FILTERS.map((f) => (
             <button
               className={cn(
-                "h-7 rounded-full border px-2.5 text-[11px] font-bold transition",
+                "h-7 rounded-full border px-2.5 text-phx-xs font-bold transition",
                 sourceFilter === f.key ? "border-phx-accent bg-[#FFF3E8] text-phx-accent-press" : "border-phx-line bg-white text-phx-ink-soft hover:border-phx-accent-line",
               )}
               key={f.key || "all"}
@@ -207,7 +207,7 @@ function CustomersTab({ distributorCode, bricks }: { distributorCode: string; br
                     <span className="block font-semibold text-phx-ink">{r.customerName || r.customerCode}</span>
                     <span className="block font-mono text-xs text-phx-ink-soft">{r.customerCode}{r.address ? ` · ${r.address}` : ""}</span>
                     {r.source === "auto" ? (
-                      <span className="mt-0.5 inline-flex items-center gap-1 rounded-full border border-violet-200 bg-violet-50 px-1.5 py-0.5 text-[10px] font-bold text-violet-700">
+                      <span className="mt-0.5 inline-flex items-center gap-1 rounded-full border border-violet-200 bg-violet-50 px-1.5 py-0.5 text-phx-2xs font-bold text-violet-700">
                         AUTO{typeof r.confidence === "number" ? ` · ${r.confidence}%` : ""}
                       </span>
                     ) : null}
@@ -391,7 +391,7 @@ export function MappingDatabaseWorkspace({ distributors, products, bricks }: Pro
       <header>
         <div className="flex items-center gap-2">
           <span aria-hidden className="h-2 w-2 rounded-full bg-phx-accent" />
-          <span className="text-[11px] font-black uppercase tracking-[0.16em] text-phx-accent">Sales · One connected module</span>
+          <span className="text-phx-xs font-black uppercase tracking-[0.16em] text-phx-accent">Sales · One connected module</span>
         </div>
         <h1 className="mt-1 text-xl font-black text-phx-ink">Mapping Database</h1>
         <p className="mt-1 text-sm font-medium text-phx-ink-soft">

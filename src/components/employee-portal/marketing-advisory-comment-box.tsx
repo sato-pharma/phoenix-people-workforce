@@ -51,7 +51,7 @@ export function MarketingAdvisoryCommentBox({
 
   if (isPosted) {
     return (
-      <p className="flex items-center gap-1.5 text-[12px] font-bold text-emerald-700">
+      <p className="flex items-center gap-1.5 text-phx-sm font-bold text-emerald-700">
         <CheckCircle2 className="h-3.5 w-3.5" />
         Comment shared with the reviewer.
       </p>
@@ -60,19 +60,19 @@ export function MarketingAdvisoryCommentBox({
 
   return (
     <div className="space-y-2">
-      <p className="text-[11px] font-medium text-slate-500">
+      <p className="text-phx-xs font-medium text-slate-500">
         Your comment is shared with the reviewer and does not affect the approval — it cannot approve or reject the request.
       </p>
       <textarea
-        className="min-h-[72px] w-full rounded-sm border border-slate-200 bg-white px-3 py-2 text-[13px] text-slate-800 shadow-sm outline-none transition focus:border-sky-300 focus:ring-2 focus:ring-sky-100"
+        className="min-h-[72px] w-full rounded-sm border border-slate-200 bg-white px-3 py-2 text-phx-md text-slate-800 shadow-sm outline-none transition focus:border-sky-300 focus:ring-2 focus:ring-sky-100"
         dir="auto"
         onChange={(event) => setComment(event.target.value)}
         placeholder="Add a comment for the reviewer…"
         value={comment}
       />
-      {error ? <p className="text-[11px] font-semibold text-rose-600">{error}</p> : null}
+      {error ? <p className="text-phx-xs font-semibold text-rose-600">{error}</p> : null}
       <button
-        className="inline-flex min-h-9 items-center gap-1.5 rounded-sm bg-sky-600 px-4 text-[12px] font-bold text-white shadow-sm transition hover:bg-sky-700 disabled:cursor-not-allowed disabled:opacity-60"
+        className="inline-flex min-h-9 items-center gap-1.5 rounded-sm bg-sky-600 px-4 text-phx-sm font-bold text-white shadow-sm transition hover:bg-sky-700 disabled:cursor-not-allowed disabled:opacity-60"
         disabled={isSubmitting}
         onClick={() => void submit()}
         type="button"

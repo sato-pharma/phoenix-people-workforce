@@ -116,7 +116,7 @@ function BreakdownPanel({
     <Card className={`${panelClassName} p-5 transition-transform duration-200 hover:-translate-y-0.5`}>
       <div className="flex items-center justify-between gap-3">
         <div>
-          <p className="text-[11px] font-black uppercase tracking-[0.16em] text-phx-ink-soft">
+          <p className="text-phx-xs font-black uppercase tracking-[0.16em] text-phx-ink-soft">
             {title}
           </p>
           <p className="mt-1 text-sm text-phx-ink-soft">Top groups by visible vacancies.</p>
@@ -169,7 +169,7 @@ function SelectFilter({
 }) {
   return (
     <label className={cn("block", className)}>
-      <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.16em] text-phx-ink-soft">
+      <span className="mb-1.5 block text-phx-xs font-black uppercase tracking-[0.16em] text-phx-ink-soft">
         {label}
       </span>
       <SearchableSelect
@@ -586,7 +586,7 @@ export function VacanciesReport({
             />
             <div className="overflow-x-auto">
               <table className="min-w-full text-left text-sm">
-                <thead className="bg-phx-paper text-[10px] font-black uppercase tracking-[0.16em] text-phx-ink-soft">
+                <thead className="bg-phx-paper text-phx-2xs font-black uppercase tracking-[0.16em] text-phx-ink-soft">
                   <tr>
                     <th className="px-4 py-3">Vacancy</th>
                     <th className="px-4 py-3">Position</th>

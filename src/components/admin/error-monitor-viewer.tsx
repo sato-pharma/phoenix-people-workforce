@@ -171,7 +171,7 @@ export function ErrorMonitorViewer({
               <tr className="border-b border-phx-line bg-phx-paper">
                 {["Time", "HR ID", "Role", "Module", "Source", "Message", "Route"].map((h) => (
                   <th
-                    className="px-5 py-4 text-left text-[10px] font-black uppercase tracking-widest text-phx-ink-soft"
+                    className="px-5 py-4 text-left text-phx-2xs font-black uppercase tracking-widest text-phx-ink-soft"
                     key={h}
                   >
                     {h}
@@ -203,7 +203,7 @@ export function ErrorMonitorViewer({
                     </td>
                     <td className="px-5 py-4 text-sm text-phx-ink-soft">{event.role ?? "-"}</td>
                     <td className="px-5 py-4">
-                      <span className="inline-flex items-center rounded-full bg-orange-50 px-2.5 py-1 text-[11px] font-bold text-orange-600 ring-1 ring-orange-100">
+                      <span className="inline-flex items-center rounded-full bg-orange-50 px-2.5 py-1 text-phx-xs font-bold text-orange-600 ring-1 ring-orange-100">
                         {event.moduleLabel}
                       </span>
                     </td>

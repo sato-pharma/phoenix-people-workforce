@@ -110,7 +110,7 @@ function RegionDot({ regionCode }: { regionCode: string }) {
 }
 
 const headClassName =
-  "whitespace-nowrap px-3 py-2.5 text-left text-[10px] font-black uppercase tracking-[0.14em] text-slate-500";
+  "whitespace-nowrap px-3 py-2.5 text-left text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-500";
 const cellClassName = "whitespace-nowrap px-3 py-2 text-sm text-slate-700";
 
 /**
@@ -459,7 +459,7 @@ export function ClosingPerformanceReviewWorkspace({ initialError, initialReview 
           rank of "3rd" always counts the rows the reader can actually see. */}
       <div className="flex flex-col gap-3 rounded-[28px] border border-phx-line bg-white p-4 shadow-[0_10px_30px_rgba(15,23,42,0.05)] sm:p-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <span className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-500">Filter the review</span>
+          <span className="text-phx-2xs font-black uppercase tracking-[0.18em] text-slate-500">Filter the review</span>
           <span className="text-xs font-semibold text-slate-500">
             {filterIsActive
               ? "Showing " + review.areas.length + " " + (review.areas.length === 1 ? "area" : "areas") +
@@ -482,7 +482,7 @@ export function ClosingPerformanceReviewWorkspace({ initialError, initialReview 
         action={(
           <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
             <label className="flex flex-col gap-1 sm:w-44">
-              <span className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">Line</span>
+              <span className="text-phx-2xs font-bold uppercase tracking-[0.16em] text-slate-500">Line</span>
               <SearchableSelect
                 className={selectClassName}
                 disabled={isLoading || review.availableLines.length === 0}
@@ -499,7 +499,7 @@ export function ClosingPerformanceReviewWorkspace({ initialError, initialReview 
               </SearchableSelect>
             </label>
             <label className="flex flex-col gap-1">
-              <span className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">
+              <span className="text-phx-2xs font-bold uppercase tracking-[0.16em] text-slate-500">
                 {isMultiPeriod ? "Months" : "Month"}
               </span>
               <ClosingPeriodSelect
@@ -605,7 +605,7 @@ export function ClosingPerformanceReviewWorkspace({ initialError, initialReview 
               <div className="flex items-center justify-between gap-3">
                 <span className="flex items-center gap-2">
                   <RegionDot regionCode={area.regionCode} />
-                  <span className="text-[11px] font-black uppercase tracking-[0.12em] text-slate-500">
+                  <span className="text-phx-xs font-black uppercase tracking-[0.12em] text-slate-500">
                     {area.achievement == null ? area.regionName : "#" + (index + 1) + " " + DOT + " " + area.regionName}
                   </span>
                 </span>

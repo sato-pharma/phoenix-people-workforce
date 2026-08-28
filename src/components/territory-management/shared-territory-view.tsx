@@ -178,7 +178,7 @@ export function SharedTerritoryView({ browserKey, token }: Props) {
 
   const selectClass =
     "mt-1 w-full border border-slate-300 bg-white px-3 py-2 text-sm focus:border-orange-500 focus:outline-none";
-  const labelClass = "block text-[11px] font-black uppercase tracking-wider text-slate-500";
+  const labelClass = "block text-phx-xs font-black uppercase tracking-wider text-slate-500";
 
   const chooseRegion = useCallback((next: string) => {
     setRegionCode(next);
@@ -199,10 +199,10 @@ export function SharedTerritoryView({ browserKey, token }: Props) {
     return (
       <section className="mx-auto max-w-md border border-phx-line bg-white">
         <header className="border-b border-phx-line bg-slate-900 px-4 py-3">
-          <p className="text-[11px] font-black tracking-[0.14em] text-orange-400 uppercase">Phoenix</p>
+          <p className="text-phx-xs font-black tracking-[0.14em] text-orange-400 uppercase">Phoenix</p>
           <h1 className="text-base font-black text-white">Territory Preview</h1>
         </header>
-        <p className="px-4 py-5 text-[13px] font-semibold text-rose-600">{error}</p>
+        <p className="px-4 py-5 text-phx-md font-semibold text-rose-600">{error}</p>
       </section>
     );
   }
@@ -213,11 +213,11 @@ export function SharedTerritoryView({ browserKey, token }: Props) {
     <section className="border border-phx-line bg-white">
       <header className="flex flex-wrap items-center justify-between gap-2 border-b border-phx-line bg-slate-900 px-4 py-3">
         <div>
-          <p className="text-[11px] font-black tracking-[0.14em] text-orange-400 uppercase">Phoenix</p>
+          <p className="text-phx-xs font-black tracking-[0.14em] text-orange-400 uppercase">Phoenix</p>
           <h1 className="text-base font-black text-white">{label ?? "Territory Preview"}</h1>
         </div>
         {area ? (
-          <p className="text-[12px] font-bold whitespace-nowrap text-slate-300">
+          <p className="text-phx-sm font-bold whitespace-nowrap text-slate-300">
             {area.areaName} — {area.bricks.length} bricks on the map
           </p>
         ) : null}
@@ -267,20 +267,20 @@ export function SharedTerritoryView({ browserKey, token }: Props) {
           </div>
         </div>
 
-        {error ? <p className="text-[13px] font-semibold text-rose-600">{error}</p> : null}
+        {error ? <p className="text-phx-md font-semibold text-rose-600">{error}</p> : null}
 
         <div className="border border-phx-line">
           {browserKey ? (
             <div className="h-[420px] w-full sm:h-[520px]" ref={mapRef} />
           ) : (
-            <p className="px-4 py-6 text-[13px] text-slate-600">The map is not available right now.</p>
+            <p className="px-4 py-6 text-phx-md text-slate-600">The map is not available right now.</p>
           )}
         </div>
 
         {loadingArea ? (
-          <p className="text-[13px] text-slate-600">Loading the bricks…</p>
+          <p className="text-phx-md text-slate-600">Loading the bricks…</p>
         ) : !areaCode ? (
-          <p className="text-[13px] text-slate-600">
+          <p className="text-phx-md text-slate-600">
             Choose a region and then an area to see its bricks on the map.
           </p>
         ) : null}
@@ -288,12 +288,12 @@ export function SharedTerritoryView({ browserKey, token }: Props) {
         {area ? (
           <div className="space-y-3">
             <div>
-              <h2 className="text-[11px] font-black tracking-wider text-slate-500 uppercase">
+              <h2 className="text-phx-xs font-black tracking-wider text-slate-500 uppercase">
                 Bricks in {area.areaName}
               </h2>
               <ul className="mt-2 grid grid-cols-1 gap-x-6 gap-y-1 overflow-x-auto sm:grid-cols-2 lg:grid-cols-3">
                 {area.bricks.map((brick) => (
-                  <li className="text-[13px] whitespace-nowrap text-slate-700" key={brick.brickId}>
+                  <li className="text-phx-md whitespace-nowrap text-slate-700" key={brick.brickId}>
                     {brick.brickName}
                   </li>
                 ))}
@@ -304,12 +304,12 @@ export function SharedTerritoryView({ browserKey, token }: Props) {
                 nobody covers, which would invent gaps that are not real and hide ones that are. */}
             {area.unlocated.length > 0 ? (
               <div className="border-t border-[#eef1f3] pt-3">
-                <h2 className="text-[11px] font-black tracking-wider text-slate-500 uppercase">
+                <h2 className="text-phx-xs font-black tracking-wider text-slate-500 uppercase">
                   Also in this area, not yet placed on the map ({area.unlocated.length})
                 </h2>
                 <ul className="mt-2 grid grid-cols-1 gap-x-6 gap-y-1 overflow-x-auto sm:grid-cols-2 lg:grid-cols-3">
                   {area.unlocated.map((brick) => (
-                    <li className="text-[13px] whitespace-nowrap text-slate-500" key={brick.brickId}>
+                    <li className="text-phx-md whitespace-nowrap text-slate-500" key={brick.brickId}>
                       {brick.brickName}
                     </li>
                   ))}

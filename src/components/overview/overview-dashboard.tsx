@@ -153,10 +153,10 @@ export function OverviewDashboard({ data: initialData }: { data: OverviewDashboa
             title="Financial Intelligence (Revenue vs. Cost)"
             action={
               <div className="flex gap-4">
-                <div className="flex items-center gap-1.5 text-[10px] font-bold text-emerald-500">
+                <div className="flex items-center gap-1.5 text-phx-2xs font-bold text-emerald-500">
                   <div className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> Revenue
                 </div>
-                <div className="flex items-center gap-1.5 text-[10px] font-bold text-blue-500">
+                <div className="flex items-center gap-1.5 text-phx-2xs font-bold text-blue-500">
                   <div className="h-1.5 w-1.5 rounded-full bg-blue-500" /> People Cost
                 </div>
               </div>
@@ -189,11 +189,11 @@ export function OverviewDashboard({ data: initialData }: { data: OverviewDashboa
                       {a.type === "contract" ? <FileText className="h-5 w-5" /> : <Activity className="h-5 w-5" />}
                     </div>
                     <div>
-                      <p className="text-[11px] font-black text-slate-900 group-hover:text-orange-600 transition-colors">
+                      <p className="text-phx-xs font-black text-slate-900 group-hover:text-orange-600 transition-colors">
                         {a.type === "contract" ? "Contract Renewal" : "Probation Ending"}
                       </p>
-                      <p className="text-[10px] font-bold text-slate-500">{a.name}</p>
-                      <p className="mt-0.5 text-[9px] font-black text-rose-600 uppercase tracking-widest">
+                      <p className="text-phx-2xs font-bold text-slate-500">{a.name}</p>
+                      <p className="mt-0.5 text-phx-3xs font-black text-rose-600 uppercase tracking-widest">
                         {a.days} Days Remaining
                       </p>
                     </div>
@@ -203,7 +203,7 @@ export function OverviewDashboard({ data: initialData }: { data: OverviewDashboa
                 <div className="text-center py-8 text-slate-400 font-bold text-xs">No immediate risks detected</div>
               )}
             </div>
-            <button className="mt-6 flex w-full items-center justify-center text-[10px] font-black text-orange-600 uppercase tracking-widest hover:underline">
+            <button className="mt-6 flex w-full items-center justify-center text-phx-2xs font-black text-orange-600 uppercase tracking-widest hover:underline">
               View Risk Matrix <ArrowRight className="ml-1 h-3 w-3" />
             </button>
           </ChartCard>
@@ -235,20 +235,20 @@ export function OverviewDashboard({ data: initialData }: { data: OverviewDashboa
                 <table className="w-full text-left">
                   <thead>
                     <tr className="border-b border-slate-100">
-                      <th className="pb-3 text-[10px] font-black text-slate-400 uppercase tracking-widest">Activity</th>
-                      <th className="pb-3 text-[10px] font-black text-slate-400 uppercase tracking-widest">Module</th>
-                      <th className="pb-3 text-[10px] font-black text-slate-400 uppercase tracking-widest">User</th>
-                      <th className="pb-3 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Time</th>
-                      <th className="pb-3 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Status</th>
+                      <th className="pb-3 text-phx-2xs font-black text-slate-400 uppercase tracking-widest">Activity</th>
+                      <th className="pb-3 text-phx-2xs font-black text-slate-400 uppercase tracking-widest">Module</th>
+                      <th className="pb-3 text-phx-2xs font-black text-slate-400 uppercase tracking-widest">User</th>
+                      <th className="pb-3 text-phx-2xs font-black text-slate-400 uppercase tracking-widest text-right">Time</th>
+                      <th className="pb-3 text-phx-2xs font-black text-slate-400 uppercase tracking-widest text-right">Status</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-50">
                     {data.activity.recent.map((a, i) => (
                       <tr key={i} className="group hover:bg-slate-50/50 transition-colors cursor-pointer">
-                        <td className="py-4 text-[11px] font-bold text-slate-900 group-hover:text-orange-600 transition-colors">{a.description}</td>
-                        <td className="py-4 text-[11px] font-bold text-slate-400 uppercase tracking-tighter">{a.module}</td>
-                        <td className="py-4 text-[11px] font-bold text-slate-600">{a.userName}</td>
-                        <td className="py-4 text-[11px] font-black text-slate-300 text-right">{a.timestamp}</td>
+                        <td className="py-4 text-phx-xs font-bold text-slate-900 group-hover:text-orange-600 transition-colors">{a.description}</td>
+                        <td className="py-4 text-phx-xs font-bold text-slate-400 uppercase tracking-tighter">{a.module}</td>
+                        <td className="py-4 text-phx-xs font-bold text-slate-600">{a.userName}</td>
+                        <td className="py-4 text-phx-xs font-black text-slate-300 text-right">{a.timestamp}</td>
                         <td className="py-4 text-right">
                            <StatusBadge status={a.status} />
                         </td>
@@ -258,7 +258,7 @@ export function OverviewDashboard({ data: initialData }: { data: OverviewDashboa
                 </table>
               </div>
               
-              <button className="mt-6 flex w-full items-center justify-center text-[10px] font-black text-orange-600 uppercase tracking-widest hover:underline">
+              <button className="mt-6 flex w-full items-center justify-center text-phx-2xs font-black text-orange-600 uppercase tracking-widest hover:underline">
                 View Detailed Logs <ArrowRight className="ml-1 h-3 w-3" />
               </button>
            </ChartCard>

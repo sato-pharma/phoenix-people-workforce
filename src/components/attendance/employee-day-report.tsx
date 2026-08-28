@@ -233,7 +233,7 @@ export function EmployeeDayReport({
       <AdminTableShell description="Only employees on the flexible-hours model appear here." title="Filters">
         <div className="grid grid-cols-1 gap-3 p-4 sm:grid-cols-4">
           <label className="block space-y-1 sm:col-span-2">
-            <span className="text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">Employee</span>
+            <span className="text-phx-xs font-black uppercase tracking-[0.14em] text-slate-500">Employee</span>
             <SearchableSelect
               className="h-9 w-full rounded-lg border border-slate-200 px-2 text-sm font-semibold text-slate-900 outline-none focus:border-orange-300 focus:ring-2 focus:ring-orange-100"
               placeholder="Search employees..."
@@ -249,7 +249,7 @@ export function EmployeeDayReport({
             </SearchableSelect>
           </label>
           <label className="block space-y-1">
-            <span className="text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">From</span>
+            <span className="text-phx-xs font-black uppercase tracking-[0.14em] text-slate-500">From</span>
             <input
               className="h-9 w-full rounded-lg border border-slate-200 px-2 text-sm font-semibold text-slate-900 outline-none focus:border-orange-300 focus:ring-2 focus:ring-orange-100"
               type="date"
@@ -258,7 +258,7 @@ export function EmployeeDayReport({
             />
           </label>
           <label className="block space-y-1">
-            <span className="text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">To</span>
+            <span className="text-phx-xs font-black uppercase tracking-[0.14em] text-slate-500">To</span>
             <input
               className="h-9 w-full rounded-lg border border-slate-200 px-2 text-sm font-semibold text-slate-900 outline-none focus:border-orange-300 focus:ring-2 focus:ring-orange-100"
               type="date"
@@ -327,7 +327,7 @@ export function EmployeeDayReport({
             <div className="overflow-x-auto p-4 pt-2">
               <table className="w-full min-w-[520px] text-left text-sm">
                 <thead>
-                  <tr className="border-b border-slate-200 text-[11px] font-black uppercase tracking-[0.1em] text-slate-500">
+                  <tr className="border-b border-slate-200 text-phx-xs font-black uppercase tracking-[0.1em] text-slate-500">
                     <th className="px-3 py-2">Employee</th>
                     <th className="px-3 py-2">Days confirmed</th>
                     <th className="px-3 py-2">Total days</th>
@@ -339,7 +339,7 @@ export function EmployeeDayReport({
                     <tr key={row.employeeHrId}>
                       <td className="whitespace-nowrap px-3 py-2 font-semibold text-slate-900">
                         {row.employeeName}
-                        <div className="text-[11px] font-medium text-slate-400">{row.employeeHrId}</div>
+                        <div className="text-phx-xs font-medium text-slate-400">{row.employeeHrId}</div>
                       </td>
                       <td className="px-3 py-2 text-slate-700">{row.count}</td>
                       <td className="px-3 py-2 font-bold text-slate-900">{row.days.toFixed(2)}</td>
@@ -383,7 +383,7 @@ export function EmployeeDayReport({
                 <div className="overflow-x-auto">
                   <table className="w-full min-w-[1280px] text-left text-sm">
                     <thead>
-                      <tr className="border-b border-slate-200 text-[11px] font-black uppercase tracking-[0.1em] text-slate-500">
+                      <tr className="border-b border-slate-200 text-phx-xs font-black uppercase tracking-[0.1em] text-slate-500">
                         <th className="px-3 py-2">Date</th>
                         <th className="px-3 py-2">Outcome</th>
                         <th className="px-3 py-2">Check-in</th>
@@ -407,10 +407,10 @@ export function EmployeeDayReport({
                           <tr className="align-top" key={day.dateIso}>
                             <td className="whitespace-nowrap px-3 py-2 font-semibold text-slate-900">
                               {day.dateIso}
-                              <div className="text-[11px] font-medium text-slate-400">{day.weekday}</div>
+                              <div className="text-phx-xs font-medium text-slate-400">{day.weekday}</div>
                             </td>
                             <td className="whitespace-nowrap px-3 py-2">
-                              <span className={`inline-flex rounded-full border px-2 py-0.5 text-[11px] font-bold ${OUTCOME_TONE[day.outcome]}`}>
+                              <span className={`inline-flex rounded-full border px-2 py-0.5 text-phx-xs font-bold ${OUTCOME_TONE[day.outcome]}`}>
                                 {OUTCOME_LABEL[day.outcome]}
                               </span>
                             </td>
@@ -449,7 +449,7 @@ export function EmployeeDayReport({
                                 }}
                                 className="h-5 w-5 cursor-pointer accent-emerald-600 disabled:cursor-not-allowed disabled:opacity-50"
                               />
-                              {rejected ? <div className="text-[10px] font-semibold text-rose-600">Rejected</div> : null}
+                              {rejected ? <div className="text-phx-2xs font-semibold text-rose-600">Rejected</div> : null}
                             </td>
                             <td className="px-3 py-2 text-xs font-medium text-slate-500">{day.reason}</td>
                           </tr>
@@ -470,7 +470,7 @@ export function EmployeeDayReport({
                   <div className="overflow-x-auto">
                     <table className="w-full min-w-[640px] text-left text-sm">
                       <thead>
-                        <tr className="border-b border-slate-200 text-[11px] font-black uppercase tracking-[0.1em] text-slate-500">
+                        <tr className="border-b border-slate-200 text-phx-xs font-black uppercase tracking-[0.1em] text-slate-500">
                           <th className="px-3 py-2">Date</th>
                           <th className="px-3 py-2">Outcome</th>
                           <th className="px-3 py-2">Days</th>
@@ -483,10 +483,10 @@ export function EmployeeDayReport({
                           <tr key={day.dateIso}>
                             <td className="whitespace-nowrap px-3 py-2 font-semibold text-slate-900">
                               {day.dateIso}
-                              <div className="text-[11px] font-medium text-slate-400">{day.weekday}</div>
+                              <div className="text-phx-xs font-medium text-slate-400">{day.weekday}</div>
                             </td>
                             <td className="whitespace-nowrap px-3 py-2">
-                              <span className={`inline-flex rounded-full border px-2 py-0.5 text-[11px] font-bold ${OUTCOME_TONE[day.outcome]}`}>
+                              <span className={`inline-flex rounded-full border px-2 py-0.5 text-phx-xs font-bold ${OUTCOME_TONE[day.outcome]}`}>
                                 {OUTCOME_LABEL[day.outcome]}
                               </span>
                             </td>

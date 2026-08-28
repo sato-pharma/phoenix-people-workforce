@@ -27,10 +27,10 @@ import type { RepsPlansRepRow } from "@/lib/crm/reps-plans";
 // Desktop table / mobile cards via PortalResponsiveDataList — AGENTS.md §4. Nothing here wraps or
 // ellipsises: rows are `whitespace-nowrap` and the table scrolls inside its own container.
 
-const THEAD = "px-3 py-2.5 text-[10px] font-black uppercase tracking-[0.12em] text-white";
+const THEAD = "px-3 py-2.5 text-phx-2xs font-black uppercase tracking-[0.12em] text-white";
 const SELECT_CLASS =
   "h-9 w-full border border-slate-200 bg-white px-2 text-sm font-semibold text-slate-700 outline-none focus:border-orange-400";
-const LABEL_CLASS = "block text-[9px] font-black uppercase tracking-[0.16em] text-slate-400";
+const LABEL_CLASS = "block text-phx-3xs font-black uppercase tracking-[0.16em] text-slate-400";
 
 /** Attainment against the rep's own target. 100% is the standard, not a stretch. */
 function attainmentText(pct: number | null): string {
@@ -517,7 +517,7 @@ export function RepsPlansRepTable({
                   <span className={`text-sm font-black ${targetText(row, row.am.attainmentPct)}`}>
                     {rate(row.am.verifiedRate)}
                   </span>
-                  <span className="whitespace-nowrap text-[8px] font-black uppercase tracking-[0.12em] text-slate-400">
+                  <span className="whitespace-nowrap text-phx-4xs font-black uppercase tracking-[0.12em] text-slate-400">
                     {row.scored ? `AM of ${row.am.target}` : "AM rate"}
                   </span>
                 </span>
@@ -525,7 +525,7 @@ export function RepsPlansRepTable({
                   <span className={`text-sm font-black ${targetText(row, row.pm.attainmentPct)}`}>
                     {rate(row.pm.verifiedRate)}
                   </span>
-                  <span className="whitespace-nowrap text-[8px] font-black uppercase tracking-[0.12em] text-slate-400">
+                  <span className="whitespace-nowrap text-phx-4xs font-black uppercase tracking-[0.12em] text-slate-400">
                     {row.scored ? `PM of ${row.pm.target}` : "PM rate"}
                   </span>
                 </span>
@@ -553,8 +553,8 @@ export function RepsPlansRepTable({
                             <span
                               className={
                                 row.jobTitle
-                                  ? "border border-slate-300 bg-slate-50 px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.1em] text-slate-600"
-                                  : "border border-amber-300 bg-amber-50 px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.1em] text-amber-700"
+                                  ? "border border-slate-300 bg-slate-50 px-2 py-0.5 text-phx-2xs font-black uppercase tracking-[0.1em] text-slate-600"
+                                  : "border border-amber-300 bg-amber-50 px-2 py-0.5 text-phx-2xs font-black uppercase tracking-[0.1em] text-amber-700"
                               }
                             >
                               {row.jobTitle ?? NOT_PLACED}
@@ -762,8 +762,8 @@ export function RepsPlansRepTable({
                         <span
                           className={
                             row.jobTitle
-                              ? "border border-slate-300 bg-slate-50 px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.1em] text-slate-600"
-                              : "border border-amber-300 bg-amber-50 px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.1em] text-amber-700"
+                              ? "border border-slate-300 bg-slate-50 px-2 py-0.5 text-phx-2xs font-black uppercase tracking-[0.1em] text-slate-600"
+                              : "border border-amber-300 bg-amber-50 px-2 py-0.5 text-phx-2xs font-black uppercase tracking-[0.1em] text-amber-700"
                           }
                         >
                           {row.jobTitle ?? NOT_PLACED}
@@ -772,7 +772,7 @@ export function RepsPlansRepTable({
                         <span className="flex items-center gap-2">
                           <span className="font-semibold text-slate-500">{territoryText(row)}</span>
                           {row.scored ? null : (
-                            <span className="border border-slate-300 bg-slate-50 px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.1em] text-slate-600">
+                            <span className="border border-slate-300 bg-slate-50 px-2 py-0.5 text-phx-2xs font-black uppercase tracking-[0.1em] text-slate-600">
                               {roleText(row)}
                             </span>
                           )}

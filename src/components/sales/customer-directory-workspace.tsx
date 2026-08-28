@@ -273,7 +273,7 @@ export function CustomerDirectoryWorkspace({ initialError, initialResult, option
                         <td className="whitespace-nowrap px-3 py-2.5 text-right tabular-nums font-semibold text-slate-900">{formatNumber(row.totalUnits)}</td>
                         <td className="whitespace-nowrap px-3 py-2.5 text-right tabular-nums font-semibold text-slate-900">{formatCurrency(row.totalValue)}</td>
                         <td className="px-3 py-2.5">
-                          <Link className="inline-flex items-center gap-1 border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-bold text-slate-700 transition hover:border-phx-accent-line hover:text-phx-accent" href={customerHref(row)}>
+                          <Link className="inline-flex items-center gap-1 border border-slate-200 bg-white px-2.5 py-1.5 text-phx-xs font-bold text-slate-700 transition hover:border-phx-accent-line hover:text-phx-accent" href={customerHref(row)}>
                             View <ArrowUpRight className="h-3 w-3" />
                           </Link>
                         </td>

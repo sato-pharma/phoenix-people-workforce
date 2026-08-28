@@ -111,7 +111,7 @@ const COLUMNS: Col[] = [
 function KpiCard({ label, value, tone }: { label: string; value: string; tone?: string }) {
   return (
     <div className="rounded-lg border border-slate-200 bg-white px-4 py-3">
-      <div className="text-[11px] font-black uppercase tracking-wider text-slate-400">{label}</div>
+      <div className="text-phx-xs font-black uppercase tracking-wider text-slate-400">{label}</div>
       <div className={`text-xl font-black ${tone ?? "text-slate-900"}`}>{value}</div>
     </div>
   );
@@ -232,7 +232,7 @@ export function DirectOrderReportWorkspace({
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
+        <div className="text-phx-xs font-bold uppercase tracking-wider text-slate-400">
           Visibility: <span className="text-slate-600">{SCOPE_LABEL[scope]}</span>
         </div>
         <button
@@ -247,7 +247,7 @@ export function DirectOrderReportWorkspace({
 
       {unbooked.count > 0 ? (
         <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
-          <div className="text-[11px] font-black uppercase tracking-wider text-amber-700">
+          <div className="text-phx-xs font-black uppercase tracking-wider text-amber-700">
             Approved, not booked into a sales month
           </div>
           <div className="mt-0.5 text-sm font-semibold text-amber-900">
@@ -314,14 +314,14 @@ export function DirectOrderReportWorkspace({
         <table className="min-w-full border-collapse text-left text-sm">
           <thead className="bg-slate-900 text-white">
             <tr>
-              <th className="whitespace-nowrap px-3 py-2 text-left text-[11px] font-black uppercase tracking-wider">
+              <th className="whitespace-nowrap px-3 py-2 text-left text-phx-xs font-black uppercase tracking-wider">
                 Open
               </th>
               {COLUMNS.map((col) => (
                 <th
                   key={String(col.key)}
                   onClick={() => toggleSort(col.key)}
-                  className={`cursor-pointer whitespace-nowrap px-3 py-2 text-[11px] font-black uppercase tracking-wider ${
+                  className={`cursor-pointer whitespace-nowrap px-3 py-2 text-phx-xs font-black uppercase tracking-wider ${
                     col.numeric ? "text-right" : "text-left"
                   }`}
                 >

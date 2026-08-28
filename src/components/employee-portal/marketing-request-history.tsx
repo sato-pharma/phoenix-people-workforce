@@ -101,27 +101,27 @@ function HistoryDecisionDetail({ row }: { row: MarketingApproverHistoryRow }) {
           This is the answer the tab is opened for. It sits ABOVE the full chain because the last
           word is what anyone is looking for, and the chain below is the supporting record. */}
       <div className="px-4 py-3">
-        <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-slate-400">Final response</p>
+        <p className="text-phx-3xs font-bold uppercase tracking-[0.12em] text-slate-400">Final response</p>
         {row.finalStepName ? (
           <>
-            <p className="mt-1 text-[12px] font-bold text-slate-800">
+            <p className="mt-1 text-phx-sm font-bold text-slate-800">
               {row.outcomeLabel} at {row.finalStepName}
               {row.finalApproverName ? ` by ${row.finalApproverName}` : ""}
               {decidedAt ? ` · ${decidedAt}` : ""}
             </p>
             {/* Never truncated. A rejection reason that is cut off is a rejection nobody can act on. */}
             {row.finalDecisionNote ? (
-              <p className="mt-1.5 rounded-sm border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-[12px] font-medium leading-snug text-slate-700">
+              <p className="mt-1.5 rounded-sm border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-phx-sm font-medium leading-snug text-slate-700">
                 &ldquo;{row.finalDecisionNote}&rdquo;
               </p>
             ) : (
-              <p className="mt-1 text-[11px] font-medium italic text-slate-400">No comment left with the decision</p>
+              <p className="mt-1 text-phx-xs font-medium italic text-slate-400">No comment left with the decision</p>
             )}
           </>
         ) : (
           // Not an invented outcome: a request can carry a final status with no decided rung behind
           // it (a legacy import, or a status set outside the chain). Saying so beats guessing.
-          <p className="mt-1 text-[12px] font-bold text-slate-800">
+          <p className="mt-1 text-phx-sm font-bold text-slate-800">
             {row.outcomeLabel}
             {decidedAt ? ` · ${decidedAt}` : ""} — no decision was recorded on the approval chain.
           </p>
@@ -131,23 +131,23 @@ function HistoryDecisionDetail({ row }: { row: MarketingApproverHistoryRow }) {
       {/* ------ What THIS viewer did, when they were part of it ----------------------------------- */}
       {row.myDecision ? (
         <div className="bg-slate-900/[0.03] px-4 py-2.5">
-          <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-slate-400">Your decision</p>
-          <p className="mt-0.5 text-[12px] font-bold text-slate-800">
+          <p className="text-phx-3xs font-bold uppercase tracking-[0.12em] text-slate-400">Your decision</p>
+          <p className="mt-0.5 text-phx-sm font-bold text-slate-800">
             {row.myDecision.stepName}
             {myDecidedAt ? ` · ${myDecidedAt}` : ""}
           </p>
           {row.myDecision.note ? (
-            <p className="mt-1 text-[11px] font-medium leading-snug text-slate-600">
+            <p className="mt-1 text-phx-xs font-medium leading-snug text-slate-600">
               &ldquo;{row.myDecision.note}&rdquo;
             </p>
           ) : null}
         </div>
       ) : row.isMyRequest ? (
-        <div className="bg-sky-50/60 px-4 py-2 text-[11px] font-semibold text-sky-800">
+        <div className="bg-sky-50/60 px-4 py-2 text-phx-xs font-semibold text-sky-800">
           You raised this request — this is the answer it came back with.
         </div>
       ) : row.viaOversight ? (
-        <div className="px-4 py-2 text-[11px] font-medium text-slate-400">
+        <div className="px-4 py-2 text-phx-xs font-medium text-slate-400">
           You held no step on this request — shown because you can see the whole company queue.
         </div>
       ) : null}
@@ -156,29 +156,29 @@ function HistoryDecisionDetail({ row }: { row: MarketingApproverHistoryRow }) {
 
       <div className="grid gap-3 px-4 py-3 sm:grid-cols-4">
         <div className="flex flex-col">
-          <span className="text-[9px] font-bold uppercase tracking-[0.12em] text-slate-400">Estimated Cost</span>
-          <span className="text-[13px] font-black text-slate-950">{egp(row.estimatedCost)}</span>
+          <span className="text-phx-3xs font-bold uppercase tracking-[0.12em] text-slate-400">Estimated Cost</span>
+          <span className="text-phx-md font-black text-slate-950">{egp(row.estimatedCost)}</span>
         </div>
         <div className="flex flex-col">
-          <span className="text-[9px] font-bold uppercase tracking-[0.12em] text-slate-400">Pay Date</span>
-          <span className="flex items-center gap-1 text-[13px] font-bold text-slate-700">
+          <span className="text-phx-3xs font-bold uppercase tracking-[0.12em] text-slate-400">Pay Date</span>
+          <span className="flex items-center gap-1 text-phx-md font-bold text-slate-700">
             <CalendarDays className="h-3 w-3 text-slate-400" />
             {formatDate(row.payDate)}
           </span>
         </div>
         <div className="flex flex-col">
-          <span className="text-[9px] font-bold uppercase tracking-[0.12em] text-slate-400">Submitted</span>
-          <span className="text-[13px] font-bold text-slate-700">{formatDate(row.submittedAt)}</span>
+          <span className="text-phx-3xs font-bold uppercase tracking-[0.12em] text-slate-400">Submitted</span>
+          <span className="text-phx-md font-bold text-slate-700">{formatDate(row.submittedAt)}</span>
         </div>
         <div className="flex flex-col">
-          <span className="text-[9px] font-bold uppercase tracking-[0.12em] text-slate-400">Decided</span>
-          <span className="text-[13px] font-bold text-slate-700">{formatDate(row.decidedAt)}</span>
+          <span className="text-phx-3xs font-bold uppercase tracking-[0.12em] text-slate-400">Decided</span>
+          <span className="text-phx-md font-bold text-slate-700">{formatDate(row.decidedAt)}</span>
         </div>
       </div>
 
       <div className="flex flex-wrap items-center gap-2 bg-slate-50/50 px-4 py-3">
         <Link
-          className="inline-flex min-h-9 items-center gap-1.5 rounded-sm border border-slate-300 bg-white px-4 text-[12px] font-bold text-slate-700 shadow-sm transition hover:border-orange-200 hover:bg-orange-50 hover:text-orange-700"
+          className="inline-flex min-h-9 items-center gap-1.5 rounded-sm border border-slate-300 bg-white px-4 text-phx-sm font-bold text-slate-700 shadow-sm transition hover:border-orange-200 hover:bg-orange-50 hover:text-orange-700"
           href={`/marketing-requests/${row.id}`}
         >
           <Eye className="h-3.5 w-3.5" />
@@ -202,16 +202,16 @@ function HistoryMobileCard({ row }: { row: MarketingApproverHistoryRow }) {
         className={`flex flex-wrap items-start justify-between gap-2 border-b border-slate-100 bg-gradient-to-r px-4 py-3 ${OUTCOME_ACCENT[row.outcome]}`}
       >
         <div className="min-w-0">
-          <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500">{row.requestCode}</p>
+          <p className="text-phx-2xs font-bold uppercase tracking-[0.14em] text-slate-500">{row.requestCode}</p>
           {/* Owner rules: never truncate with an ellipsis, never wrap to a second line. On a 375px
               phone a long pharmacy name honours both by SCROLLING inside its own box — measured
               459px of text in a 317px box, so without this it painted 113px off the screen edge. */}
           <div className="overflow-x-auto">
-            <h3 className="mt-0.5 whitespace-nowrap text-[15px] font-black tracking-tight text-slate-950">
+            <h3 className="mt-0.5 whitespace-nowrap text-phx-lg font-black tracking-tight text-slate-950">
               {row.customerName}
             </h3>
           </div>
-          <p className="mt-0.5 text-[11px] font-medium text-slate-500">
+          <p className="mt-0.5 text-phx-xs font-medium text-slate-500">
             {row.requestType} · From {row.requesterName} ({row.requesterRole})
           </p>
         </div>
@@ -255,21 +255,21 @@ function HistoryTableRow({
         className="cursor-pointer border-b border-slate-100 transition hover:bg-orange-50/30"
         onClick={onToggle}
       >
-        <td className="whitespace-nowrap px-3 py-2.5 text-[12px] font-bold text-slate-500">{row.requestCode}</td>
-        <td className="whitespace-nowrap px-3 py-2.5 text-[13px] font-black text-slate-950">{row.customerName}</td>
+        <td className="whitespace-nowrap px-3 py-2.5 text-phx-sm font-bold text-slate-500">{row.requestCode}</td>
+        <td className="whitespace-nowrap px-3 py-2.5 text-phx-md font-black text-slate-950">{row.customerName}</td>
         <td className="whitespace-nowrap px-3 py-2.5">
           <Badge variant={OUTCOME_VARIANT[row.outcome]}>
             <Icon className="mr-1 h-3 w-3" />
             {row.outcomeLabel}
           </Badge>
         </td>
-        <td className="whitespace-nowrap px-3 py-2.5 text-[12px] font-bold text-slate-700">{finalResponse}</td>
-        <td className="whitespace-nowrap px-3 py-2.5 text-[13px] font-black text-slate-950">{egp(row.estimatedCost)}</td>
-        <td className="whitespace-nowrap px-3 py-2.5 text-[12px] font-bold text-slate-700">{formatDate(row.decidedAt)}</td>
+        <td className="whitespace-nowrap px-3 py-2.5 text-phx-sm font-bold text-slate-700">{finalResponse}</td>
+        <td className="whitespace-nowrap px-3 py-2.5 text-phx-md font-black text-slate-950">{egp(row.estimatedCost)}</td>
+        <td className="whitespace-nowrap px-3 py-2.5 text-phx-sm font-bold text-slate-700">{formatDate(row.decidedAt)}</td>
         <td className="whitespace-nowrap px-3 py-2.5 text-right">
           <button
             aria-expanded={isOpen}
-            className="inline-flex min-h-9 items-center gap-1.5 rounded-sm border border-slate-200 bg-white px-3 text-[12px] font-bold text-slate-600 shadow-sm transition hover:border-orange-200 hover:bg-orange-50 hover:text-orange-700"
+            className="inline-flex min-h-9 items-center gap-1.5 rounded-sm border border-slate-200 bg-white px-3 text-phx-sm font-bold text-slate-600 shadow-sm transition hover:border-orange-200 hover:bg-orange-50 hover:text-orange-700"
             onClick={(event) => {
               event.stopPropagation();
               onToggle();
@@ -427,10 +427,10 @@ export function MarketingRequestHistory() {
             <History className="h-3.5 w-3.5" />
           </div>
           <div>
-            <h2 className="text-[15px] font-black tracking-tight text-slate-950">
+            <h2 className="text-phx-lg font-black tracking-tight text-slate-950">
               {scope === "company" ? "Every request already decided" : "Requests you took part in"}
             </h2>
-            <p className="text-[11px] font-medium text-slate-400">
+            <p className="text-phx-xs font-medium text-slate-400">
               {isLoading
                 ? "Loading…"
                 : `${visibleRows.length} of ${rows.length} request${rows.length === 1 ? "" : "s"}`}
@@ -454,7 +454,7 @@ export function MarketingRequestHistory() {
 
       {/* ------ Error ---------------------------------------------------------------------------- */}
       {error ? (
-        <div className="flex items-center gap-2 rounded-sm border border-amber-200 bg-amber-50 px-3 py-2 text-[13px] font-semibold text-amber-900">
+        <div className="flex items-center gap-2 rounded-sm border border-amber-200 bg-amber-50 px-3 py-2 text-phx-md font-semibold text-amber-900">
           <span className="min-w-0 break-words">{error}</span>
         </div>
       ) : null}
@@ -517,7 +517,7 @@ export function MarketingRequestHistory() {
             <Search className="h-3.5 w-3.5 shrink-0 text-slate-400" />
             {/* 16px floor: anything smaller makes iOS Safari zoom the page on focus. */}
             <input
-              className="min-h-10 w-full min-w-0 border-0 bg-transparent text-[16px] font-medium text-slate-800 outline-none placeholder:text-slate-400 sm:text-[13px]"
+              className="min-h-10 w-full min-w-0 border-0 bg-transparent text-[16px] font-medium text-slate-800 outline-none placeholder:text-slate-400 sm:text-phx-md"
               onChange={(event) => {
                 setSearch(event.target.value);
                 setPage(0);
@@ -530,7 +530,7 @@ export function MarketingRequestHistory() {
           <div className="flex flex-wrap items-center gap-1.5">
             <button
               aria-pressed={outcomeFilter === "all"}
-              className={`min-h-9 rounded-sm border px-3 text-[12px] font-bold transition ${
+              className={`min-h-9 rounded-sm border px-3 text-phx-sm font-bold transition ${
                 outcomeFilter === "all"
                   ? "border-slate-900 bg-slate-900 text-white"
                   : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
@@ -546,7 +546,7 @@ export function MarketingRequestHistory() {
             {outcomeChips.map((chip) => (
               <button
                 aria-pressed={outcomeFilter === chip.outcome}
-                className={`min-h-9 rounded-sm border px-3 text-[12px] font-bold transition ${
+                className={`min-h-9 rounded-sm border px-3 text-phx-sm font-bold transition ${
                   outcomeFilter === chip.outcome
                     ? "border-slate-900 bg-slate-900 text-white"
                     : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
@@ -567,7 +567,7 @@ export function MarketingRequestHistory() {
 
       {/* ------ The cap, said out loud rather than hidden ------------------------------------------ */}
       {truncated ? (
-        <div className="rounded-sm border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] font-semibold text-amber-900">
+        <div className="rounded-sm border border-amber-200 bg-amber-50 px-3 py-2 text-phx-sm font-semibold text-amber-900">
           Showing the most recently decided requests only. Older ones are in the full marketing
           request register.
         </div>
@@ -584,8 +584,8 @@ export function MarketingRequestHistory() {
           <div className="flex h-10 w-10 items-center justify-center rounded-sm bg-slate-50 text-slate-400 ring-1 ring-slate-100">
             <History className="h-4 w-4" />
           </div>
-          <p className="text-[14px] font-black text-slate-800">Nothing has been decided yet</p>
-          <p className="max-w-sm text-[12px] font-medium text-slate-500">
+          <p className="text-phx-base font-black text-slate-800">Nothing has been decided yet</p>
+          <p className="max-w-sm text-phx-sm font-medium text-slate-500">
             {scope === "company"
               ? "No marketing request has been approved, rejected or returned so far."
               : "Once a request you raised — or one you are an approver on — is answered, it moves here with the full decision trail."}
@@ -593,13 +593,13 @@ export function MarketingRequestHistory() {
         </Card>
       ) : visibleRows.length === 0 ? (
         <Card className="rounded-sm border border-slate-200 bg-white px-4 py-8 text-center shadow-[0_8px_24px_rgba(15,23,42,0.05)]">
-          <p className="text-[13px] font-bold text-slate-700">No request matches this filter.</p>
+          <p className="text-phx-md font-bold text-slate-700">No request matches this filter.</p>
         </Card>
       ) : (
         <Card className="overflow-hidden rounded-sm border border-slate-200 bg-white p-0 shadow-[0_8px_24px_rgba(15,23,42,0.05)]">
           <PortalResponsiveDataList
             empty={
-              <p className="px-4 py-8 text-center text-[13px] font-bold text-slate-500">
+              <p className="px-4 py-8 text-center text-phx-md font-bold text-slate-500">
                 No request matches this filter.
               </p>
             }
@@ -613,7 +613,7 @@ export function MarketingRequestHistory() {
                     {["Request", "Customer", "Outcome", "Final response", "Value", "Decided", ""].map(
                       (heading, index) => (
                         <th
-                          className="whitespace-nowrap px-3 py-2.5 text-[10px] font-black uppercase tracking-[0.12em] text-slate-500"
+                          className="whitespace-nowrap px-3 py-2.5 text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500"
                           key={`${heading}-${index}`}
                           scope="col"
                         >
@@ -641,7 +641,7 @@ export function MarketingRequestHistory() {
               label={`Showing ${safePage * HISTORY_PAGE_SIZE + 1}–${safePage * HISTORY_PAGE_SIZE + pagedRows.length} of ${visibleRows.length}`}
             >
               <button
-                className="min-h-9 rounded-sm border border-slate-200 bg-white px-3 text-[12px] font-bold text-slate-600 transition hover:bg-slate-50 disabled:opacity-40"
+                className="min-h-9 rounded-sm border border-slate-200 bg-white px-3 text-phx-sm font-bold text-slate-600 transition hover:bg-slate-50 disabled:opacity-40"
                 disabled={safePage === 0}
                 onClick={() => setPage(Math.max(0, safePage - 1))}
                 type="button"
@@ -649,7 +649,7 @@ export function MarketingRequestHistory() {
                 Previous
               </button>
               <button
-                className="min-h-9 rounded-sm border border-slate-200 bg-white px-3 text-[12px] font-bold text-slate-600 transition hover:bg-slate-50 disabled:opacity-40"
+                className="min-h-9 rounded-sm border border-slate-200 bg-white px-3 text-phx-sm font-bold text-slate-600 transition hover:bg-slate-50 disabled:opacity-40"
                 disabled={safePage >= pageCount - 1}
                 onClick={() => setPage(Math.min(pageCount - 1, safePage + 1))}
                 type="button"

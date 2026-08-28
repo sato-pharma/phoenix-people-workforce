@@ -99,7 +99,7 @@ export function CoverageKpiCard({
       <div className={cn("pointer-events-none absolute -right-8 -top-10 h-32 w-32 rounded-none blur-3xl", toneClasses.bg)} />
       <div className="relative flex items-start justify-between gap-4">
         <div className="min-w-0 space-y-1.5">
-          <p className="text-[10px] font-black uppercase tracking-[0.15em] text-slate-400">{label}</p>
+          <p className="text-phx-2xs font-black uppercase tracking-[0.15em] text-slate-400">{label}</p>
           <div className="text-2xl font-black tracking-tight text-slate-900">{value}</div>
           {description ? <p className="text-xs font-semibold leading-5 text-slate-500">{description}</p> : null}
         </div>

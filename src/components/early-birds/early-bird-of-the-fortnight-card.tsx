@@ -26,16 +26,16 @@ function StarColumn({ star }: { star: EarlyBirdsWinnerRecord }) {
         </span>
       )}
       <div className="min-w-0">
-        <p className="whitespace-nowrap text-[10px] font-black uppercase tracking-widest text-orange-500" dir="auto">
+        <p className="whitespace-nowrap text-phx-2xs font-black uppercase tracking-widest text-orange-500" dir="auto">
           {star.lineName ?? "—"}
         </p>
         <p className="whitespace-nowrap text-base font-black text-slate-900" dir="auto">
           {star.employeeName}
         </p>
-        <p className="whitespace-nowrap text-[11px] font-semibold uppercase tracking-wider text-slate-400" dir="auto">
+        <p className="whitespace-nowrap text-phx-xs font-semibold uppercase tracking-wider text-slate-400" dir="auto">
           {star.areaName ?? "—"}
         </p>
-        <p className="mt-0.5 whitespace-nowrap text-[11px] font-semibold text-slate-500">
+        <p className="mt-0.5 whitespace-nowrap text-phx-xs font-semibold text-slate-500">
           Joined {formatHireDate(star.hireDate)}
         </p>
       </div>
@@ -55,12 +55,12 @@ export function EarlyBirdOfTheFortnightCard({
   return (
     <div className="overflow-hidden border border-slate-200 bg-white" role="region" aria-label="Early Birds of the fortnight">
       <div className="flex items-center justify-between bg-slate-900 px-4 py-2.5 sm:px-5">
-        <h2 className="flex items-center gap-1.5 whitespace-nowrap text-[10px] font-bold uppercase tracking-widest text-slate-300">
+        <h2 className="flex items-center gap-1.5 whitespace-nowrap text-phx-2xs font-bold uppercase tracking-widest text-slate-300">
           <Trophy className="h-3.5 w-3.5 text-amber-400" />
           {stars.length > 1 ? "Stars of the Fortnight" : "Early Bird"} · {stars[0].periodLabel}
         </h2>
         <Link
-          className="inline-flex items-center gap-1 whitespace-nowrap text-[10px] font-bold uppercase tracking-widest text-slate-400 hover:text-orange-400"
+          className="inline-flex items-center gap-1 whitespace-nowrap text-phx-2xs font-bold uppercase tracking-widest text-slate-400 hover:text-orange-400"
           href={href}
         >
           View board

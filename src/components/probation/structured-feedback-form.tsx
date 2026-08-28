@@ -163,7 +163,7 @@ export function StructuredFeedbackForm({
           ))}
         </div>
         {scoreErrors.length > 0 && (
-          <p className="mt-2 text-[11px] text-amber-600">
+          <p className="mt-2 text-phx-xs text-amber-600">
             Each skill needs a whole number {scale.min}–{scale.max}. Missing/invalid: {scoreErrors.join(", ")}.
           </p>
         )}

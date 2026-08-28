@@ -378,13 +378,13 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
         action={(
           <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
             <label className="flex flex-col gap-1 sm:w-44">
-              <span className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">Distributor</span>
+              <span className="text-phx-2xs font-bold uppercase tracking-[0.16em] text-slate-500">Distributor</span>
               <SearchableSelect className={selectClass} disabled={busy !== null} onChange={(e) => { setDistributorCode(e.target.value); setPreview(null); }} value={distributorCode}>
                 {distributors.map((d) => <option key={d.code} value={d.code}>{d.name} / {d.code}</option>)}
               </SearchableSelect>
             </label>
             <label className="flex flex-col gap-1 sm:w-60">
-              <span className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">Raw file</span>
+              <span className="text-phx-2xs font-bold uppercase tracking-[0.16em] text-slate-500">Raw file</span>
               <input accept=".xlsx,.xls" className="h-11 border border-slate-300 bg-white px-3 py-2 text-xs outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20" disabled={busy !== null} onChange={(e) => { setFile(e.target.files?.[0] ?? null); setPreview(null); }} type="file" />
             </label>
             <Button className="gap-2" disabled={busy !== null || !file} onClick={() => void analyze()}>
@@ -416,7 +416,7 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
                       <span aria-hidden="true" className={cn("absolute inset-x-0 top-0 h-1 bg-gradient-to-r", k.strong ? "from-orange-500 via-orange-400 to-amber-300" : "from-slate-400 via-slate-300 to-slate-200")} />
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0">
-                          <p className="truncate text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">{k.label}</p>
+                          <p className="truncate text-phx-2xs font-bold uppercase tracking-[0.16em] text-slate-500">{k.label}</p>
                           <p className={cn("mt-1 text-xl font-black tabular-nums", k.strong ? "text-orange-700" : "text-slate-900")}>{k.value}</p>
                         </div>
                         <Icon aria-hidden="true" className={cn("h-4 w-4 shrink-0 transition-colors", k.strong ? "text-orange-400" : "text-slate-300 group-hover:text-orange-400")} />
@@ -433,7 +433,7 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
 
               <div className="flex flex-wrap items-center gap-2">
                 <div className="flex items-center gap-2">
-                  <span className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">Detected month</span>
+                  <span className="text-phx-2xs font-bold uppercase tracking-[0.16em] text-slate-500">Detected month</span>
                   <span className="inline-flex items-center gap-1.5 border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-bold text-slate-900"><CalendarDays className="h-3.5 w-3.5 text-orange-500" />{preview.period ?? "—"}</span>
                 </div>
                 <div className="ml-auto flex flex-col items-end gap-1">
@@ -450,12 +450,12 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
                       {busy === "import" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />} Import (validated)
                     </button>
                   </div>
-                  <div className="flex items-center gap-2 text-[11px] text-slate-400">
+                  <div className="flex items-center gap-2 text-phx-xs text-slate-400">
                     <span>Download → upload on Source of Sales (it now passes validation), or import straight here.</span>
                     <button className="underline transition hover:text-orange-600" onClick={() => setAdvanced((v) => !v)} type="button">{advanced ? "Hide advanced" : "Advanced"}</button>
                   </div>
                   {advanced ? (
-                    <button className="inline-flex h-8 items-center gap-2 border border-amber-300 bg-amber-50 px-3 text-[11px] font-semibold text-amber-800 transition hover:bg-amber-100 disabled:opacity-50" disabled={busy !== null || s!.fullyCoded === 0} onClick={() => {
+                    <button className="inline-flex h-8 items-center gap-2 border border-amber-300 bg-amber-50 px-3 text-phx-xs font-semibold text-amber-800 transition hover:bg-amber-100 disabled:opacity-50" disabled={busy !== null || s!.fullyCoded === 0} onClick={() => {
                       // Writing unvalidated rows straight to Source of Sales is irreversible from here —
                       // require an explicit confirmation, not just the Advanced toggle.
                       if (!window.confirm("Direct import SKIPS Source of Sales validation and writes the coded rows straight to the database. This cannot be previewed or undone here. Proceed?")) return;
@@ -485,9 +485,9 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
                     <tbody>
                       {preview.sampleCoded.map((r, i) => (
                         <tr className={cn("transition-colors hover:bg-orange-50/50", i % 2 && "bg-slate-50/60")} key={i}>
-                          <td className="px-3 py-1.5 font-mono text-[13px] font-semibold text-slate-900">{r.productCode}</td>
+                          <td className="px-3 py-1.5 font-mono text-phx-md font-semibold text-slate-900">{r.productCode}</td>
                           <td className="px-3 py-1.5 text-slate-600">{r.productName}</td>
-                          <td className="px-3 py-1.5 font-mono text-[13px] font-semibold text-slate-700">{r.brickId}</td>
+                          <td className="px-3 py-1.5 font-mono text-phx-md font-semibold text-slate-700">{r.brickId}</td>
                           <td className="px-3 py-1.5 text-slate-600">{r.brickName}</td>
                           <td className="px-3 py-1.5 text-slate-600">{r.areaCode}</td>
                           <td className="px-3 py-1.5 text-slate-600">{r.regionCode}</td>
@@ -600,7 +600,7 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
                                 <span className="text-sm font-bold text-slate-900">{c.label}</span>
                                 <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-600">{c.members.length} pharmac{c.members.length === 1 ? "y" : "ies"}</span>
                                 {c.suggestedBricks.slice(0, 3).map((s) => (
-                                  <button className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-bold text-emerald-700 transition hover:bg-emerald-100" key={s.brickId} onClick={() => assignClusterBrick(c, s.brickId)} title={s.distanceKm != null ? `~${s.distanceKm} km from cluster center — click to assign to all` : "Click to assign to all"} type="button">
+                                  <button className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-phx-xs font-bold text-emerald-700 transition hover:bg-emerald-100" key={s.brickId} onClick={() => assignClusterBrick(c, s.brickId)} title={s.distanceKm != null ? `~${s.distanceKm} km from cluster center — click to assign to all` : "Click to assign to all"} type="button">
                                     {s.brickId}{s.distanceKm != null ? ` · ${s.distanceKm}km` : ""}
                                   </button>
                                 ))}
@@ -644,7 +644,7 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
                                     <ConfidenceBadge pct={aiConfidence[`c:${u.raw}`]} />
                                     {aiOrigin[`c:${u.raw}`]?.source === "propagated" ? (
                                       <span
-                                        className="inline-flex items-center gap-1 text-[10px] font-semibold text-violet-600"
+                                        className="inline-flex items-center gap-1 text-phx-2xs font-semibold text-violet-600"
                                         title={aiOrigin[`c:${u.raw}`]?.matchedFrom
                                           ? `Matched from ${aiOrigin[`c:${u.raw}`]!.matchedFrom!.distributorCode}/${aiOrigin[`c:${u.raw}`]!.matchedFrom!.customerCode} — ${aiOrigin[`c:${u.raw}`]!.matchedFrom!.customerName}`
                                           : "Matched from an existing mapping"}

@@ -35,7 +35,7 @@ export function PremiumHero({ kicker, title, subtitle, subtitleClassName, badge 
       />
       <div className="relative flex items-start gap-4">
         <div className="min-w-0 flex-1">
-          <p className="text-[11px] font-black uppercase tracking-[0.25em] text-orange-400">{kicker}</p>
+          <p className="text-phx-xs font-black uppercase tracking-[0.25em] text-orange-400">{kicker}</p>
           <h1 className="mt-1 text-2xl font-black leading-tight text-white sm:text-[1.9rem]">{title}</h1>
           {subtitle ? (
             <p className={cn("mt-2 max-w-2xl text-sm leading-6 text-slate-300", subtitleClassName)}>{subtitle}</p>

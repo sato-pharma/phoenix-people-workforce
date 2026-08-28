@@ -17,7 +17,7 @@ export default async function CustomerPharmacyMappingPage() {
       <div className="space-y-2">
         <p className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-700">Master Data</p>
         <h1 className="text-2xl font-bold tracking-tight text-slate-950">Customer Pharmacy Mapping</h1>
-        <p className="max-w-3xl text-[13px] font-medium leading-6 text-slate-600">
+        <p className="max-w-3xl text-phx-md font-medium leading-6 text-slate-600">
           Governance of the relationship between customers and their pharmacies. Review which customers
           are ready, which have links awaiting validation, and which have no pharmacy links yet. Approve
           or reject pending links directly — links are never deleted. Links inferred from historical

@@ -63,7 +63,7 @@ export function DirectOrdersDeskShell({
       <div className="flex flex-wrap items-center gap-3">
         <Link
           href={basePath}
-          className="inline-flex min-h-[40px] items-center gap-1.5 text-[12px] font-black uppercase tracking-wide text-slate-500 hover:text-orange-700"
+          className="inline-flex min-h-[40px] items-center gap-1.5 text-phx-sm font-black uppercase tracking-wide text-slate-500 hover:text-orange-700"
         >
           <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" />
           Direct Orders

@@ -103,7 +103,7 @@ export function ProbationScorecardLauncher({
           <div className="mt-2">
             {groupByLine(probationers).map((group) => (
               <div key={group.lineLabel}>
-                <div className="whitespace-nowrap border-y border-slate-100 bg-slate-50 px-4 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                <div className="whitespace-nowrap border-y border-slate-100 bg-slate-50 px-4 py-1.5 text-phx-xs font-semibold uppercase tracking-wide text-slate-500">
                   {group.lineLabel}
                 </div>
                 <ul className="divide-y divide-slate-100">
@@ -125,7 +125,7 @@ export function ProbationScorecardLauncher({
                         </div>
                         <span className="flex items-center gap-2">
                           {probationer.submittedCount > 0 && (
-                            <span className="whitespace-nowrap rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-700">
+                            <span className="whitespace-nowrap rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-phx-2xs font-medium text-emerald-700">
                               {probationer.submittedCount} of {Math.max(probationer.requiredCount, probationer.submittedCount)} submitted
                             </span>
                           )}

@@ -96,7 +96,7 @@ function TextSearchFilterField({
 
   return (
     <label className="flex h-[58px] w-full flex-col justify-center gap-1 border border-phx-line bg-white px-3 py-2 shadow-sm transition hover:border-phx-accent-line focus-within:border-phx-accent-line sm:w-auto sm:min-w-[180px]">
-      <span className="text-[10px] font-black uppercase tracking-[0.14em] text-phx-ink-faint">{label}</span>
+      <span className="text-phx-2xs font-black uppercase tracking-[0.14em] text-phx-ink-faint">{label}</span>
       <input
         type="text"
         value={localValue}
@@ -199,7 +199,7 @@ export function AnalyticsFilterBar({ descriptors, values, dimensions, basePath, 
               key={descriptor.key}
               className="flex h-[58px] w-full flex-col justify-center gap-1 border border-phx-line bg-white px-3 py-2 shadow-sm transition hover:border-phx-accent-line focus-within:border-phx-accent-line sm:w-auto sm:min-w-[160px]"
             >
-              <span className="text-[10px] font-black uppercase tracking-[0.14em] text-phx-ink-faint">{descriptor.label}</span>
+              <span className="text-phx-2xs font-black uppercase tracking-[0.14em] text-phx-ink-faint">{descriptor.label}</span>
               <select
                 value={current}
                 onChange={(event) => setValue(descriptor.key, event.target.value || null)}
@@ -235,7 +235,7 @@ export function AnalyticsFilterBar({ descriptors, values, dimensions, basePath, 
           type="button"
           onClick={toggleCompare}
           aria-pressed={comparing}
-          className={`flex h-[58px] w-full items-center justify-center gap-2 border px-4 text-[11px] font-black uppercase tracking-wide transition sm:ml-auto sm:w-auto sm:justify-start ${
+          className={`flex h-[58px] w-full items-center justify-center gap-2 border px-4 text-phx-xs font-black uppercase tracking-wide transition sm:ml-auto sm:w-auto sm:justify-start ${
             comparing
               ? "border-phx-accent bg-phx-accent text-white"
               : "border-phx-line bg-white text-phx-ink-soft hover:border-phx-accent-line"

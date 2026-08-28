@@ -152,7 +152,7 @@ export function MonthlyAttendanceSummary({ initialData, initialError, month }: P
       >
         <div className="phoenix-horizontal-scroll max-h-[70vh] overflow-auto">
           <table className="min-w-[1400px] border-separate border-spacing-0 text-left">
-            <thead className="bg-slate-50 text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">
+            <thead className="bg-slate-50 text-phx-xs font-black uppercase tracking-[0.16em] text-slate-500">
               <tr>
                 <th className="sticky left-0 z-30 border-b border-r border-slate-200 bg-slate-50 px-4 py-3">Employee ID</th>
                 <th className="sticky left-32 z-30 border-b border-r border-slate-200 bg-slate-50 px-4 py-3 shadow-[8px_0_12px_-12px_rgba(15,23,42,0.45)]">Name</th>

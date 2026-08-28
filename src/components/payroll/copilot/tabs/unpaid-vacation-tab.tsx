@@ -179,11 +179,11 @@ export function UnpaidVacationTab({ runId }: { runId: string }) {
                           Deduct from vacation balance
                         </button>
                         {row.balanceDaysAvailable === 0 ? (
-                          <p className="px-2 text-[11px] text-slate-500">
+                          <p className="px-2 text-phx-xs text-slate-500">
                             No vacation balance available for this employee.
                           </p>
                         ) : row.remainingSalaryDays > 0 ? (
-                          <p className="px-2 text-[11px] text-amber-700">
+                          <p className="px-2 text-phx-xs text-amber-700">
                             Partial: {row.balanceDaysToConsume} day(s) from balance +{" "}
                             {egp(row.remainingSalaryDeductionAmount)} ({row.remainingSalaryDays} day(s)) from salary.
                           </p>
@@ -203,7 +203,7 @@ export function UnpaidVacationTab({ runId }: { runId: string }) {
                             >
                               Defer to future balance
                             </button>
-                            <p className="px-2 text-[11px] text-amber-700">
+                            <p className="px-2 text-phx-xs text-amber-700">
                               {row.balanceDaysToConsume > 0 ? `${row.balanceDaysToConsume} day(s) now, ` : ""}
                               {row.unpaidDays - row.balanceDaysToConsume} day(s) will be deferred to future balance.
                             </p>

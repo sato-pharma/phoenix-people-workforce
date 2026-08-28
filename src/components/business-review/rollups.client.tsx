@@ -43,8 +43,8 @@ const egp = (n: number) =>
     Number.isFinite(n) ? n : 0,
   );
 
-const TH = "px-3 py-2 text-left text-[11px] font-bold uppercase tracking-wide text-muted-foreground";
-const THR = "px-3 py-2 text-right text-[11px] font-bold uppercase tracking-wide text-muted-foreground";
+const TH = "px-3 py-2 text-left text-phx-xs font-bold uppercase tracking-wide text-muted-foreground";
+const THR = "px-3 py-2 text-right text-phx-xs font-bold uppercase tracking-wide text-muted-foreground";
 const TD = "px-3 py-2 text-sm";
 const TDR = "px-3 py-2 text-sm text-right tabular-nums";
 
@@ -76,7 +76,7 @@ function PanelNote({ children }: { children: React.ReactNode }) {
 function Field({ label, value, tone }: { label: string; value: React.ReactNode; tone?: string }) {
   return (
     <div className="min-w-0 rounded border border-slate-100 bg-slate-50 px-2 py-1.5">
-      <dt className="text-[10px] font-black uppercase tracking-[0.12em] text-slate-400">{label}</dt>
+      <dt className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400">{label}</dt>
       <dd className={cn("mt-0.5 min-w-0 break-words text-xs font-bold tabular-nums text-slate-800", tone)}>
         {value}
       </dd>
@@ -98,7 +98,7 @@ function Delta({ value }: { value: number | null }) {
 
 function VacantChip() {
   return (
-    <span className="ml-2 rounded bg-bg-muted px-1.5 py-0.5 text-[10px] font-bold text-muted-foreground">
+    <span className="ml-2 rounded bg-bg-muted px-1.5 py-0.5 text-phx-2xs font-bold text-muted-foreground">
       VACANT
     </span>
   );
@@ -395,7 +395,7 @@ export function PeopleActivityTable({ people, limit = 40 }: { people: ReviewPers
                   <td className={cn(TD, "whitespace-nowrap font-semibold")}>
                     {p.name}
                     {p.employmentStatus !== "active" && (
-                      <span className="ml-2 rounded bg-bg-muted px-1.5 py-0.5 text-[10px] font-bold uppercase text-muted-foreground">
+                      <span className="ml-2 rounded bg-bg-muted px-1.5 py-0.5 text-phx-2xs font-bold uppercase text-muted-foreground">
                         {p.employmentStatus}
                       </span>
                     )}

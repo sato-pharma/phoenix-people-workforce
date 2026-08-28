@@ -92,7 +92,7 @@ const bonusCell = (row: DirectOrderApprovalListItem) =>
 // (spec C2).
 
 function labelClass() {
-  return "block text-[11px] font-black uppercase tracking-wider text-slate-500";
+  return "block text-phx-xs font-black uppercase tracking-wider text-slate-500";
 }
 function inputClass() {
   return "mt-1 w-full border border-slate-300 px-3 py-2 text-sm focus:border-orange-500 focus:outline-none";
@@ -583,7 +583,7 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
       {/* ── Form ── */}
       <section className="border border-phx-line bg-white">
         <header className="border-b border-phx-line bg-slate-900 px-4 py-2.5">
-          <h3 className="text-[11px] font-black uppercase tracking-[0.14em] text-white">New direct order</h3>
+          <h3 className="text-phx-xs font-black uppercase tracking-[0.14em] text-white">New direct order</h3>
         </header>
         <div className="space-y-4 px-4 py-4">
           {/* Invoice-photo prefill (spec B5). Above the fields because it fills them, and mounted
@@ -634,10 +634,10 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
               second line. */}
           {siblings.length > 0 ? (
             <div className="border border-orange-200 bg-orange-50/40 p-3">
-              <p className="text-[11px] font-black uppercase tracking-wider text-slate-600">
+              <p className="text-phx-xs font-black uppercase tracking-wider text-slate-600">
                 Add another {product?.familyCode ? familyKey(product.familyCode) : ""} concentration
               </p>
-              <p className="mt-0.5 text-[11px] leading-4 text-slate-500">
+              <p className="mt-0.5 text-phx-xs leading-4 text-slate-500">
                 These go on the SAME order. Only products from one family can share an order.
               </p>
               <div className="mt-2 space-y-2">
@@ -733,7 +733,7 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
               </div>
               {/* The cap is checked per PRODUCT server-side and flags rather than blocks, so no
                   number here is refused. Saying so stops a requester assuming a silent limit. */}
-              <p className="mt-2 text-[11px] text-slate-500">
+              <p className="mt-2 text-phx-xs text-slate-500">
                 Each line is priced and cap-checked on its own. Going over a cap flags the order for
                 your approvers; it never blocks it.
               </p>
@@ -764,13 +764,13 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
                     order was valued as a bonus deal instead of a 25% discount. Showing the resulting
                     percentage as they type makes that mistake visible before it is submitted. */}
                 {product && qtyNum > 0 ? (
-                  <p className={`mt-1 text-[11px] ${overCap ? "font-bold text-rose-600" : "text-slate-500"}`}>
+                  <p className={`mt-1 text-phx-xs ${overCap ? "font-bold text-rose-600" : "text-slate-500"}`}>
                     {bonusNum.toLocaleString("en-US")} free units = {((bonusNum / qtyNum) * 100).toFixed(1)}% of
                     {" "}{qtyNum.toLocaleString("en-US")}. Max {maxBonus} ({bonusCapPct}%)
                     {overCap ? " — over cap" : ""}
                   </p>
                 ) : product ? (
-                  <p className="mt-1 text-[11px] text-slate-500">
+                  <p className="mt-1 text-phx-xs text-slate-500">
                     Free UNITS, not a percentage. Enter a quantity to see what it works out as.
                   </p>
                 ) : null}
@@ -779,7 +779,7 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
               <div>
                 <label className={labelClass()}>Discount %</label>
                 <input className={inputClass()} inputMode="numeric" value={discount} onChange={(e) => setDiscount(e.target.value)} placeholder="0" />
-                <p className={`mt-1 text-[11px] ${overCap ? "font-bold text-rose-600" : "text-slate-500"}`}>
+                <p className={`mt-1 text-phx-xs ${overCap ? "font-bold text-rose-600" : "text-slate-500"}`}>
                   Cap: {discountCapPct}%{overCap ? " — over cap" : ""}
                 </p>
               </div>
@@ -787,7 +787,7 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
           </div>
 
           {dealType === "discount" && product && !hasPublicPrice ? (
-            <p className="border border-rose-200 bg-rose-50 px-3 py-2 text-[12px] font-semibold text-rose-700">
+            <p className="border border-rose-200 bg-rose-50 px-3 py-2 text-phx-sm font-semibold text-rose-700">
               No public price is set for {product.productName}. Ask an admin to set it, or use bonus mode.
             </p>
           ) : null}
@@ -796,7 +796,7 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
               factory-price fallback any more — a bonus deal is priced on the pharmacy price or it
               is refused, so the message now states the refusal rather than promising a basis. */}
           {missingBonusBasis ? (
-            <p className="border border-rose-200 bg-rose-50 px-3 py-2 text-[12px] font-semibold text-rose-700">
+            <p className="border border-rose-200 bg-rose-50 px-3 py-2 text-phx-sm font-semibold text-rose-700">
               No pharmacy price is set for {product?.productName}. A bonus deal is valued on the pharmacy
               price, so this order cannot be submitted until an admin sets it.
             </p>
@@ -804,7 +804,7 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
 
           {overCap ? (
             <div className="space-y-2 border border-amber-300 bg-amber-50 px-3 py-2.5">
-              <p className="text-[12px] font-bold text-amber-800">
+              <p className="text-phx-sm font-bold text-amber-800">
                 Over cap — this request still submits and goes through the normal approval chain. It is flagged for every approver, not blocked.
               </p>
               <div>
@@ -815,10 +815,10 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
           ) : null}
 
           <div className="border border-orange-200 bg-orange-50 px-3 py-2 text-sm">
-            <span className="font-black uppercase tracking-wider text-[11px] text-orange-700">Sales value ({dealType === "discount" ? "public × (1−disc%)" : "bonus excluded"})</span>
+            <span className="font-black uppercase tracking-wider text-phx-xs text-orange-700">Sales value ({dealType === "discount" ? "public × (1−disc%)" : "bonus excluded"})</span>
             <div className="text-lg font-black text-slate-900">{money(salesValue)}</div>
             {product ? (
-              <div className="text-[11px] text-slate-500">
+              <div className="text-phx-xs text-slate-500">
                 {dealType === "discount"
                   ? `${qtyNum.toLocaleString("en-US")} × ${money(product.publicPrice ?? 0)} × (1 − ${discountNum}%)`
                   : `${qtyNum.toLocaleString("en-US")} × ${money(bonusBasis)} pharmacy price`}
@@ -829,7 +829,7 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
           <div>
             <label className={labelClass()}>Money collection date *</label>
             <input type="date" className={inputClass()} value={collectionDate} onChange={(e) => setCollectionDate(e.target.value)} />
-            <p className="mt-1 text-[11px] text-slate-400">When you expect this direct order to be collected / paid (تاريخ التحصيل).</p>
+            <p className="mt-1 text-phx-xs text-slate-400">When you expect this direct order to be collected / paid (تاريخ التحصيل).</p>
           </div>
 
           {/* Pharmacy — combo box over the master database (spec B1/B2/B3), now behind three tabs. */}
@@ -853,7 +853,7 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
                   key={tab.mode}
                   type="button"
                   onClick={() => setPharmacyMode(tab.mode)}
-                  className={`shrink-0 whitespace-nowrap px-3 py-1.5 text-[11px] font-black uppercase tracking-wider ${
+                  className={`shrink-0 whitespace-nowrap px-3 py-1.5 text-phx-xs font-black uppercase tracking-wider ${
                     pharmacyMode === tab.mode ? "bg-orange-500 text-white" : "bg-white text-slate-500 hover:bg-slate-50"
                   }`}
                 >
@@ -865,17 +865,17 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
             {pharmacyMode === "mine" ? (
               <div className="mt-1.5">
                 {myPharmacies === null ? (
-                  <p className="text-[12px] font-semibold text-slate-500">Loading your pharmacies…</p>
+                  <p className="text-phx-sm font-semibold text-slate-500">Loading your pharmacies…</p>
                 ) : myPharmaciesError ? (
                   // An empty list and a failed load must never read the same. One says "you have
                   // none yet"; the other says "we do not know", and only the second is a reason to
                   // go and search rather than trust the emptiness.
-                  <p className="border border-amber-300 bg-amber-50 px-3 py-2 text-[12px] font-bold text-amber-800">
+                  <p className="border border-amber-300 bg-amber-50 px-3 py-2 text-phx-sm font-bold text-amber-800">
                     Your pharmacies could not be loaded. Use Search before adding a new pharmacy — do
                     not retype one you have ordered on before.
                   </p>
                 ) : myPharmacies.length === 0 ? (
-                  <p className="border border-[#eef1f3] px-3 py-2 text-[12px] font-semibold text-slate-500">
+                  <p className="border border-[#eef1f3] px-3 py-2 text-phx-sm font-semibold text-slate-500">
                     No approved pharmacies yet. A pharmacy lands here once one of your orders on it is
                     approved, and from then on it is one click.
                   </p>
@@ -895,14 +895,14 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
                             chosen ? "border-emerald-400 bg-emerald-50" : "border-[#eef1f3] bg-white hover:bg-slate-50"
                           }`}
                         >
-                          <span className="block whitespace-nowrap text-[13px] font-black text-slate-900" dir="auto">
+                          <span className="block whitespace-nowrap text-phx-md font-black text-slate-900" dir="auto">
                             {pharmacy.pharmacyName}
                           </span>
-                          <span className="block whitespace-nowrap text-[11px] font-semibold text-slate-600">
+                          <span className="block whitespace-nowrap text-phx-xs font-semibold text-slate-600">
                             {pharmacy.phoenixPharmacyCode}
                             {codeLine ? ` · ${codeLine}` : " · no distributor code"}
                           </span>
-                          <span className="block whitespace-nowrap text-[11px] text-slate-500" dir="auto">
+                          <span className="block whitespace-nowrap text-phx-xs text-slate-500" dir="auto">
                             {areas.find((area) => area.areaCode === pharmacy.areaCode)?.areaName ||
                               pharmacy.areaCode ||
                               "No area on file"}
@@ -918,24 +918,24 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
                 <div className="mt-1 border border-emerald-300 bg-emerald-50 px-3 py-2.5">
                   <div className="flex items-start justify-between gap-2">
                     <div>
-                      <p className="text-[13px] font-black text-slate-900" dir="auto">
+                      <p className="text-phx-md font-black text-slate-900" dir="auto">
                         {pickedHit.customerName ?? `${pickedHit.customerCode} — (no name on file)`}
                       </p>
-                      <p className="mt-0.5 text-[11px] font-semibold text-slate-600">
+                      <p className="mt-0.5 text-phx-xs font-semibold text-slate-600">
                         {pickedHit.phoenixPharmacyCode ? `${pickedHit.phoenixPharmacyCode} · ` : ""}
                         {pickedHit.distributorCode ? `${pickedHit.distributorCode} · ${pickedHit.customerCode}` : ""}
                       </p>
                       {pickedHit.address ? (
-                        <p className="mt-0.5 text-[11px] text-slate-500" dir="auto">{pickedHit.address}</p>
+                        <p className="mt-0.5 text-phx-xs text-slate-500" dir="auto">{pickedHit.address}</p>
                       ) : null}
                       {/* Geography comes WITH the customer and cannot be edited (spec B3). */}
-                      <p className="mt-1 text-[11px] font-bold text-emerald-700">
+                      <p className="mt-1 text-phx-xs font-bold text-emerald-700">
                         Area: {pickedHit.areaName || pickedHit.areaCode || "—"} · Region: {pickedHit.regionName || pickedHit.regionCode || "—"}
                       </p>
                     </div>
                     <button
                       type="button"
-                      className="shrink-0 text-[12px] font-bold text-orange-600 hover:text-orange-700"
+                      className="shrink-0 text-phx-sm font-bold text-orange-600 hover:text-orange-700"
                       onClick={() => setPickedHit(null)}
                     >
                       Change
@@ -947,7 +947,7 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
                   <PharmacyComboBox inputClassName={inputClass()} onSelect={(hit) => setPickedHit(hit)} />
                   <button
                     type="button"
-                    className="text-[12px] font-semibold text-slate-500 underline hover:text-slate-700"
+                    className="text-phx-sm font-semibold text-slate-500 underline hover:text-slate-700"
                     onClick={() => setPharmacyMode("new")}
                   >
                     My pharmacy is not in the database…
@@ -957,14 +957,14 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
             ) : (
               <div className="mt-1 space-y-2">
                 <div className="border border-amber-300 bg-amber-50 px-3 py-2">
-                  <p className="text-[12px] font-bold text-amber-800">
+                  <p className="text-phx-sm font-bold text-amber-800">
                     This pharmacy is not in the master database, so the request will NOT enter the
                     approval flow until the pharmacy is validated. Search first — most pharmacies
                     are already there under a slightly different spelling.
                   </p>
                   <button
                     type="button"
-                    className="mt-1 text-[12px] font-bold text-orange-600 hover:text-orange-700"
+                    className="mt-1 text-phx-sm font-bold text-orange-600 hover:text-orange-700"
                     onClick={() => setPharmacyMode("picked")}
                   >
                     ← Back to search
@@ -975,14 +975,14 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
                     unansweredVenueType ? "border border-orange-300 bg-orange-50/60 p-2" : "border border-[#eef1f3] p-2"
                   }
                 >
-                  <p className="text-[11px] font-black uppercase tracking-wider text-slate-500">What is this? *</p>
+                  <p className="text-phx-xs font-black uppercase tracking-wider text-slate-500">What is this? *</p>
                   <div className="mt-1 flex items-center gap-1.5">
                     {VENUE_TYPES.map((venueType) => (
                       <button
                         className={
                           newVenueType === venueType
-                            ? "border border-orange-300 bg-orange-50 px-2.5 py-1 text-[12px] font-black text-orange-700"
-                            : "border border-[#eef1f3] bg-white px-2.5 py-1 text-[12px] font-bold text-slate-600 hover:bg-slate-50"
+                            ? "border border-orange-300 bg-orange-50 px-2.5 py-1 text-phx-sm font-black text-orange-700"
+                            : "border border-[#eef1f3] bg-white px-2.5 py-1 text-phx-sm font-bold text-slate-600 hover:bg-slate-50"
                         }
                         key={venueType}
                         onClick={() => setNewVenueType(venueType)}
@@ -994,9 +994,9 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
                   </div>
                   {/* Three states, never two: unanswered says so, nursery explains itself, pharmacy is silent. */}
                   {!venueTypeIsAnswered(newVenueType) ? (
-                    <p className="mt-1 text-[11px] font-bold text-orange-700">{VENUE_TYPE_UNANSWERED_MESSAGE}</p>
+                    <p className="mt-1 text-phx-xs font-bold text-orange-700">{VENUE_TYPE_UNANSWERED_MESSAGE}</p>
                   ) : venueRequiresDistributorCode(newVenueType) ? null : (
-                    <p className="mt-1 text-[11px] font-semibold text-slate-500">
+                    <p className="mt-1 text-phx-xs font-semibold text-slate-500">
                       A {venueTypeLabel(newVenueType).toLowerCase()} has no distributor account, so it has no
                       customer code. Register it as one — never as a pharmacy with a made-up code.
                     </p>
@@ -1037,7 +1037,7 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
                   ))}
                 </select>
                 {selectedBrick ? (
-                  <p className="text-[11px] text-slate-500">
+                  <p className="text-phx-xs text-slate-500">
                     Area {selectedBrick.areaName || selectedBrick.areaCode} · Region {selectedBrick.regionName || selectedBrick.regionCode}
                   </p>
                 ) : null}
@@ -1049,7 +1049,7 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
                     that is precisely how two "حضانه زمزم" records ended up in D15. */}
                 {!nameMatchDismissed && preflight.nameMatches.length > 0 ? (
                   <div className="border border-sky-300 bg-sky-50 px-3 py-2">
-                    <p className="text-[12px] font-bold text-sky-800">
+                    <p className="text-phx-sm font-bold text-sky-800">
                       Did you mean one of these? A pharmacy with this name is already registered in
                       your region.
                     </p>
@@ -1060,23 +1060,23 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
                           className="flex items-start justify-between gap-2 border border-sky-200 bg-white px-2 py-1.5"
                         >
                           <div className="min-w-0 overflow-x-auto">
-                            <span className="block whitespace-nowrap text-[12px] font-bold text-slate-800" dir="auto">
+                            <span className="block whitespace-nowrap text-phx-sm font-bold text-slate-800" dir="auto">
                               {hit.pharmacyName}
                             </span>
-                            <span className="block whitespace-nowrap text-[11px] font-semibold text-slate-600">
+                            <span className="block whitespace-nowrap text-phx-xs font-semibold text-slate-600">
                               {hit.distributorCode
                                 ? `${hit.distributorName || hit.distributorCode} · code ${hit.customerCode}`
                                 : "No distributor code on file"}
                               {hit.phoenixPharmacyCode ? ` · ${hit.phoenixPharmacyCode}` : ""}
                             </span>
-                            <span className="block whitespace-nowrap text-[11px] text-slate-500" dir="auto">
+                            <span className="block whitespace-nowrap text-phx-xs text-slate-500" dir="auto">
                               {hit.areaName || hit.areaCode || "No area"} · {hit.regionName || hit.regionCode || "No region"}
                               {hit.pharmacyAddress ? ` · ${hit.pharmacyAddress}` : ""}
                             </span>
                           </div>
                           <button
                             type="button"
-                            className="shrink-0 whitespace-nowrap border border-sky-600 px-2 py-1 text-[12px] font-black text-sky-700 hover:bg-sky-100"
+                            className="shrink-0 whitespace-nowrap border border-sky-600 px-2 py-1 text-phx-sm font-black text-sky-700 hover:bg-sky-100"
                             onClick={() => applySuggestedPharmacy(hit)}
                           >
                             Yes, this one
@@ -1086,7 +1086,7 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
                     </div>
                     <button
                       type="button"
-                      className="mt-1 text-[12px] font-semibold text-slate-500 hover:text-slate-700"
+                      className="mt-1 text-phx-sm font-semibold text-slate-500 hover:text-slate-700"
                       onClick={() => setNameMatchDismissed(true)}
                     >
                       No, mine is a different pharmacy
@@ -1105,8 +1105,8 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
                 {/* Hidden until the type is known: asking a venue for a code before it has said it
                     is a pharmacy is exactly how the invented codes got made. */}
                 <div className={choiceRequiresDistributorCode(newVenueType) ? "border border-[#eef1f3] p-2" : "hidden"}>
-                  <p className="text-[11px] font-black uppercase tracking-wider text-slate-500">Distributor customer codes</p>
-                  <p className="mb-1 text-[11px] font-semibold text-slate-500">
+                  <p className="text-phx-xs font-black uppercase tracking-wider text-slate-500">Distributor customer codes</p>
+                  <p className="mb-1 text-phx-xs font-semibold text-slate-500">
                     Optional. Leave it empty if you do not know them — but the order cannot be
                     finalized until the pharmacy passes validation.
                   </p>
@@ -1125,7 +1125,7 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
                       }
                     />
                   ))}
-                  <button type="button" className="text-[12px] font-bold text-orange-600 hover:text-orange-700" onClick={() => setDistRows((prev) => [...prev, { distributorCode: "", customerCode: "" }])}>
+                  <button type="button" className="text-phx-sm font-bold text-orange-600 hover:text-orange-700" onClick={() => setDistRows((prev) => [...prev, { distributorCode: "", customerCode: "" }])}>
                     + Add distributor
                   </button>
                 </div>
@@ -1142,7 +1142,7 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
                     stuck. */}
                 {preflight.codeConflicts.length > 0 ? (
                   <div className="border-2 border-rose-400 bg-rose-50 px-3 py-2.5">
-                    <p className="text-[12px] font-black text-rose-800">
+                    <p className="text-phx-sm font-black text-rose-800">
                       This distributor code already belongs to a registered pharmacy. Did you mean this
                       one?
                     </p>
@@ -1153,14 +1153,14 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
                           className="border border-rose-200 bg-white px-2 py-1.5"
                         >
                           <div className="overflow-x-auto">
-                            <span className="block whitespace-nowrap text-[13px] font-black text-slate-900" dir="auto">
+                            <span className="block whitespace-nowrap text-phx-md font-black text-slate-900" dir="auto">
                               {conflict.heldBy.pharmacyName}
                             </span>
-                            <span className="block whitespace-nowrap text-[11px] font-semibold text-slate-600">
+                            <span className="block whitespace-nowrap text-phx-xs font-semibold text-slate-600">
                               {conflict.heldBy.phoenixPharmacyCode} · {conflict.distributorName || conflict.distributorCode} · code{" "}
                               {conflict.customerCode}
                             </span>
-                            <span className="block whitespace-nowrap text-[11px] text-slate-500" dir="auto">
+                            <span className="block whitespace-nowrap text-phx-xs text-slate-500" dir="auto">
                               {conflict.heldBy.areaName || conflict.heldBy.areaCode || "No area"} ·{" "}
                               {conflict.heldBy.regionName || conflict.heldBy.regionCode || "No region"}
                               {conflict.heldBy.pharmacyAddress ? ` · ${conflict.heldBy.pharmacyAddress}` : ""}
@@ -1168,7 +1168,7 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
                           </div>
                           <button
                             type="button"
-                            className="mt-1.5 w-full whitespace-nowrap bg-emerald-600 px-3 py-1.5 text-[12px] font-black uppercase tracking-wider text-white hover:bg-emerald-700"
+                            className="mt-1.5 w-full whitespace-nowrap bg-emerald-600 px-3 py-1.5 text-phx-sm font-black uppercase tracking-wider text-white hover:bg-emerald-700"
                             onClick={() =>
                               applySuggestedPharmacy({
                                 source: "phoenix",
@@ -1197,7 +1197,7 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
                         the contested code, and the claim is recorded on the record for a System Admin
                         to settle. She is not blocked, and nothing is silently overwritten. */}
                     {acknowledgedCodeConflict ? (
-                      <p className="mt-1.5 border border-amber-300 bg-amber-50 px-2 py-1.5 text-[11px] font-bold text-amber-800">
+                      <p className="mt-1.5 border border-amber-300 bg-amber-50 px-2 py-1.5 text-phx-xs font-bold text-amber-800">
                         Understood — your pharmacy will be registered WITHOUT this distributor code,
                         and the code dispute goes to a System Admin to settle. The order still submits
                         and still goes through the normal approval chain.
@@ -1205,7 +1205,7 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
                     ) : (
                       <button
                         type="button"
-                        className="mt-1.5 w-full whitespace-nowrap border border-slate-400 bg-white px-3 py-1.5 text-[12px] font-black uppercase tracking-wider text-slate-600 hover:bg-slate-50"
+                        className="mt-1.5 w-full whitespace-nowrap border border-slate-400 bg-white px-3 py-1.5 text-phx-sm font-black uppercase tracking-wider text-slate-600 hover:bg-slate-50"
                         onClick={() => setAcknowledgedCodeConflict(true)}
                       >
                         No — mine is a different pharmacy
@@ -1214,7 +1214,7 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
                   </div>
                 ) : null}
 
-                <p className="text-[11px] text-slate-400">Phoenix auto-generates a stable code for this pharmacy so you can reuse it next time.</p>
+                <p className="text-phx-xs text-slate-400">Phoenix auto-generates a stable code for this pharmacy so you can reuse it next time.</p>
               </div>
             )}
           </div>
@@ -1232,21 +1232,21 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
                 {ok.orderId ? (
                   <Link
                     href={`${basePath}/${encodeURIComponent(ok.orderId)}`}
-                    className="border border-emerald-600 px-3 py-1.5 text-[12px] font-black text-emerald-700 hover:bg-emerald-50"
+                    className="border border-emerald-600 px-3 py-1.5 text-phx-sm font-black text-emerald-700 hover:bg-emerald-50"
                   >
                     View this order
                   </Link>
                 ) : null}
                 <Link
                   href={basePath}
-                  className="border border-slate-300 px-3 py-1.5 text-[12px] font-black text-slate-600 hover:bg-slate-50"
+                  className="border border-slate-300 px-3 py-1.5 text-phx-sm font-black text-slate-600 hover:bg-slate-50"
                 >
                   Back to Direct Orders
                 </Link>
                 <button
                   type="button"
                   onClick={() => setOk(null)}
-                  className="border border-slate-300 px-3 py-1.5 text-[12px] font-black text-slate-600 hover:bg-slate-50"
+                  className="border border-slate-300 px-3 py-1.5 text-phx-sm font-black text-slate-600 hover:bg-slate-50"
                 >
                   Create another
                 </button>
@@ -1268,7 +1268,7 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
       {/* ── My requests ── */}
       <section className="border border-phx-line bg-white">
         <header className="border-b border-phx-line bg-slate-100 px-4 py-2.5">
-          <h3 className="text-[11px] font-black uppercase tracking-[0.14em] text-slate-600">My direct orders</h3>
+          <h3 className="text-phx-xs font-black uppercase tracking-[0.14em] text-slate-600">My direct orders</h3>
         </header>
         {myRequests.length === 0 ? (
           <p className="px-4 py-6 text-sm text-slate-500">You have not submitted any direct orders yet.</p>
@@ -1276,7 +1276,7 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
           <div className="overflow-x-auto">
             <table className="w-full min-w-[640px] border-collapse text-sm">
               <thead>
-                <tr className="border-b border-phx-line bg-slate-50 text-left text-[11px] font-black uppercase tracking-wider text-slate-500">
+                <tr className="border-b border-phx-line bg-slate-50 text-left text-phx-xs font-black uppercase tracking-wider text-slate-500">
                   <th className="px-3 py-2">Product</th>
                   <th className="px-3 py-2 text-right">Qty</th>
                   <th className="px-3 py-2 text-right">Bonus</th>
@@ -1292,13 +1292,13 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
                   <tr key={r.id} className="border-b border-[#eef1f3]">
                     <td className="px-3 py-2">
                       <div className="font-semibold text-slate-800">{r.productName}</div>
-                      <div className="text-[11px] text-slate-500">{r.line}</div>
+                      <div className="text-phx-xs text-slate-500">{r.line}</div>
                     </td>
                     <td className="px-3 py-2 text-right tabular-nums">{r.qty.toLocaleString("en-US")}</td>
                     <td className="px-3 py-2 text-right tabular-nums">
                       {bonusCell(r)}
                       {r.bonusOverCap ? (
-                        <span className="ml-1.5 inline-block rounded-full bg-rose-100 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wide text-rose-700">
+                        <span className="ml-1.5 inline-block rounded-full bg-rose-100 px-1.5 py-0.5 text-phx-3xs font-black uppercase tracking-wide text-rose-700">
                           over cap
                         </span>
                       ) : null}

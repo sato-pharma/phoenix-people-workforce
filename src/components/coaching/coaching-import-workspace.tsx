@@ -222,7 +222,7 @@ function PreviewTable({ rows, tab }: { rows: CoachingImportClassifiedRow[]; tab:
   return (
     <div className="overflow-x-auto rounded-[12px] border border-phx-line">
       <table className="min-w-[920px] w-full border-collapse text-left">
-        <thead className="bg-phx-ink text-[11px] font-black uppercase tracking-[0.12em] text-white">
+        <thead className="bg-phx-ink text-phx-xs font-black uppercase tracking-[0.12em] text-white">
           <tr>
             <th className="px-4 py-3">Row</th>
             <th className="px-4 py-3">Rep</th>
@@ -246,7 +246,7 @@ function PreviewTable({ rows, tab }: { rows: CoachingImportClassifiedRow[]; tab:
                 <td className="px-4 py-3 text-phx-ink-2">
                   {row.coachingDate ?? <span className="text-rose-600">{row.coachingDateRaw || "missing"}</span>}
                   {row.dateCorrected ? (
-                    <span className="ml-1.5 inline-flex items-center rounded-full bg-phx-accent-soft px-1.5 py-0.5 text-[10px] font-bold text-phx-accent-press" title={`Auto-adjusted from ${row.coachingDateRaw} (day/month swapped to day-first)`}>
+                    <span className="ml-1.5 inline-flex items-center rounded-full bg-phx-accent-soft px-1.5 py-0.5 text-phx-2xs font-bold text-phx-accent-press" title={`Auto-adjusted from ${row.coachingDateRaw} (day/month swapped to day-first)`}>
                       adjusted
                     </span>
                   ) : null}

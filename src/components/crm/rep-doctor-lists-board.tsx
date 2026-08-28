@@ -26,8 +26,8 @@ function Section({
     <div className="border-b border-slate-200 bg-white last:border-b-0">
       <div className="flex items-start justify-between gap-4 border-b border-slate-200 bg-slate-900 px-5 py-3.5">
         <div>
-          <h2 className="text-[11px] font-black uppercase tracking-[0.14em] text-white">{title}</h2>
-          {description ? <p className="mt-0.5 text-[10px] text-slate-400">{description}</p> : null}
+          <h2 className="text-phx-xs font-black uppercase tracking-[0.14em] text-white">{title}</h2>
+          {description ? <p className="mt-0.5 text-phx-2xs text-slate-400">{description}</p> : null}
         </div>
         {action}
       </div>
@@ -47,9 +47,9 @@ function Tile({ label, sub, tone, value }: { label: string; sub?: string; tone?:
           : "text-slate-900";
   return (
     <div className="border border-slate-200 px-3 py-2.5">
-      <p className="text-[9px] font-black uppercase tracking-[0.14em] text-slate-400">{label}</p>
+      <p className="text-phx-3xs font-black uppercase tracking-[0.14em] text-slate-400">{label}</p>
       <p className={`text-lg font-black ${valueClass}`}>{value}</p>
-      {sub ? <p className="text-[10px] text-slate-400">{sub}</p> : null}
+      {sub ? <p className="text-phx-2xs text-slate-400">{sub}</p> : null}
     </div>
   );
 }
@@ -142,32 +142,32 @@ export function RepDoctorListsBoardView({
           ) : (
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {board.repsAllCampaign > 0 ? (
-                <p className="border border-sky-200 bg-sky-50 px-3 py-2 text-[11px] font-semibold text-sky-800">
+                <p className="border border-sky-200 bg-sky-50 px-3 py-2 text-phx-xs font-semibold text-sky-800">
                   {board.repsAllCampaign} reps reached none of their list but logged campaign calls instead. A campaign
                   visit records that the rep worked and never which doctor they saw, so it cannot count toward coverage
                   or frequency — read their 0% as &ldquo;no regular visits&rdquo;, not as an idle month.
                 </p>
               ) : null}
               {board.totals.unverifiedCalls > 0 ? (
-                <p className="border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] font-semibold text-amber-800">
+                <p className="border border-amber-200 bg-amber-50 px-3 py-2 text-phx-xs font-semibold text-amber-800">
                   {board.totals.unverifiedCalls} planned calls are still at CRM status &ldquo;New&rdquo; — never verified by a
                   supervisor.
                 </p>
               ) : null}
               {board.repsWithoutPlan > 0 ? (
-                <p className="border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] font-semibold text-amber-800">
+                <p className="border border-amber-200 bg-amber-50 px-3 py-2 text-phx-xs font-semibold text-amber-800">
                   {board.repsWithoutPlan} reps recorded visits this month with no plan in the CRM at all, so they have no
                   doctor list to measure against.
                 </p>
               ) : null}
               {board.totals.plannedAccounts > 0 ? (
-                <p className="border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] font-semibold text-slate-600">
+                <p className="border border-slate-200 bg-slate-50 px-3 py-2 text-phx-xs font-semibold text-slate-600">
                   {board.totals.plannedAccounts} pharmacies, hospitals and contract accounts are also on these lists. They
                   are counted separately — a pharmacy is not a doctor, and both KPIs above measure doctors only.
                 </p>
               ) : null}
               {totals.notDueDoctors > 0 ? (
-                <p className="border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] font-semibold text-slate-600">
+                <p className="border border-slate-200 bg-slate-50 px-3 py-2 text-phx-xs font-semibold text-slate-600">
                   {totals.notDueDoctors} doctors are planned only for days that have not happened yet. They are held out
                   of the frequency percentage entirely — calling them missed would be an accusation about a call that is
                   not late.
@@ -176,7 +176,7 @@ export function RepDoctorListsBoardView({
               {/* The plan-quality signal. Reported BESIDE both KPIs and never inside either: a plan
                   that under-asks is a problem with the plan, not with the rep executing it. */}
               {totals.underPlannedVsGrade > 0 ? (
-                <p className="border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] font-semibold text-amber-800">
+                <p className="border border-amber-200 bg-amber-50 px-3 py-2 text-phx-xs font-semibold text-amber-800">
                   {totals.underPlannedVsGrade} doctors are planned for fewer calls than their grade norm asks for. That is
                   a signal about the plan, not the rep — frequency above still scores each rep against the plan he was
                   actually given. The norms are editable in{" "}
@@ -187,7 +187,7 @@ export function RepDoctorListsBoardView({
                 </p>
               ) : null}
               {board.unclassifiedSpecialities.length > 0 ? (
-                <p className="border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] font-semibold text-slate-600">
+                <p className="border border-slate-200 bg-slate-50 px-3 py-2 text-phx-xs font-semibold text-slate-600">
                   {board.unclassifiedSpecialities.length} specialty values are new to Phoenix and are counted as neither
                   doctor nor account until someone rules on them:{" "}
                   {board.unclassifiedSpecialities.map((entry) => `${entry.label} (${entry.contacts})`).join(", ")}.

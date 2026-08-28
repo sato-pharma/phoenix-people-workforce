@@ -46,7 +46,7 @@ export function WeeklyMappingWorkspace({ initialTab, initialProductsDistributor,
   return (
     <div className="space-y-4 p-4 sm:p-6">
       <header className="rounded-[6px] border border-phx-line bg-white px-4 py-3 shadow-sm">
-        <div className="mb-1 flex items-center gap-2 text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-faint">
+        <div className="mb-1 flex items-center gap-2 text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-faint">
           <span className="h-2 w-2 rounded-full bg-phx-accent" />
           Weekly Sales
         </div>

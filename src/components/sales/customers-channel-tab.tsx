@@ -182,7 +182,7 @@ export function CustomersChannelTab() {
               <div>
                 <p>{error}</p>
                 <button
-                  className="mt-2 inline-flex items-center gap-1 whitespace-nowrap border border-slate-300 bg-white px-2.5 py-1.5 text-[11px] font-bold text-slate-700 transition hover:border-phx-accent-line hover:text-phx-accent"
+                  className="mt-2 inline-flex items-center gap-1 whitespace-nowrap border border-slate-300 bg-white px-2.5 py-1.5 text-phx-xs font-bold text-slate-700 transition hover:border-phx-accent-line hover:text-phx-accent"
                   onClick={() => setRefreshKey((key) => key + 1)}
                   type="button"
                 >
@@ -355,7 +355,7 @@ function ChannelPanel({ channel, group }: { channel: CustomerChannel; group: Cus
                     </td>
                     {showsKeywords ? (
                       <td className="whitespace-nowrap px-3 py-2.5">
-                        <span className="border border-phx-accent-line bg-orange-50 px-2 py-0.5 text-[11px] font-bold text-[#9A3412]">
+                        <span className="border border-phx-accent-line bg-orange-50 px-2 py-0.5 text-phx-xs font-bold text-[#9A3412]">
                           {row.matchedKeywords.join(" + ") || "—"}
                         </span>
                       </td>
@@ -370,7 +370,7 @@ function ChannelPanel({ channel, group }: { channel: CustomerChannel; group: Cus
                     <td className="whitespace-nowrap px-3 py-2.5 text-right font-semibold tabular-nums text-slate-900">{formatCurrency(row.totalValue)}</td>
                     <td className="px-3 py-2.5">
                       <Link
-                        className="inline-flex items-center gap-1 whitespace-nowrap border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-bold text-slate-700 transition hover:border-phx-accent-line hover:text-phx-accent"
+                        className="inline-flex items-center gap-1 whitespace-nowrap border border-slate-200 bg-white px-2.5 py-1.5 text-phx-xs font-bold text-slate-700 transition hover:border-phx-accent-line hover:text-phx-accent"
                         href={customerHref(row)}
                       >
                         View
@@ -403,7 +403,7 @@ function ChannelPanel({ channel, group }: { channel: CustomerChannel; group: Cus
                 <span className="shrink-0 text-xs font-bold text-slate-500">{row.clientCode}</span>
               </div>
               {showsKeywords && row.matchedKeywords.length > 0 ? (
-                <span className="mt-1 inline-block border border-phx-accent-line bg-orange-50 px-2 py-0.5 text-[11px] font-bold text-[#9A3412]">
+                <span className="mt-1 inline-block border border-phx-accent-line bg-orange-50 px-2 py-0.5 text-phx-xs font-bold text-[#9A3412]">
                   {row.matchedKeywords.join(" + ")}
                 </span>
               ) : null}
@@ -413,11 +413,11 @@ function ChannelPanel({ channel, group }: { channel: CustomerChannel; group: Cus
               </p>
               <dl className="mt-2 grid grid-cols-2 gap-2 text-xs">
                 <div>
-                  <dt className="text-[10px] font-bold uppercase text-slate-400">Units</dt>
+                  <dt className="text-phx-2xs font-bold uppercase text-slate-400">Units</dt>
                   <dd className="font-bold tabular-nums text-slate-800">{formatNumber(row.totalUnits)}</dd>
                 </div>
                 <div>
-                  <dt className="text-[10px] font-bold uppercase text-slate-400">Value</dt>
+                  <dt className="text-phx-2xs font-bold uppercase text-slate-400">Value</dt>
                   <dd className="font-bold tabular-nums text-slate-800">{formatCurrency(row.totalValue)}</dd>
                 </div>
               </dl>

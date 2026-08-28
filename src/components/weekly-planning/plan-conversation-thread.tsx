@@ -74,7 +74,7 @@ export function PlanConversationThread({ planId }: Props) {
     <div className="border border-slate-200 bg-white">
       <div className="flex items-center gap-2 border-b border-slate-200 bg-slate-900 px-3 py-2">
         <MessageCircle className="h-3.5 w-3.5 text-orange-400" aria-hidden />
-        <h4 className="text-[11px] font-black uppercase tracking-[0.14em] text-white">Conversation</h4>
+        <h4 className="text-phx-xs font-black uppercase tracking-[0.14em] text-white">Conversation</h4>
       </div>
       <div className="max-h-72 space-y-2 overflow-y-auto p-3">
         {!loaded ? (
@@ -91,7 +91,7 @@ export function PlanConversationThread({ planId }: Props) {
                     <span className="ml-1 font-semibold text-slate-500">({comment.authorRole})</span>
                   ) : null}
                 </p>
-                <p className="shrink-0 whitespace-nowrap text-[10px] text-slate-400">
+                <p className="shrink-0 whitespace-nowrap text-phx-2xs text-slate-400">
                   {new Date(comment.createdAt).toLocaleString("en-GB", {
                     day: "2-digit",
                     hour: "2-digit",

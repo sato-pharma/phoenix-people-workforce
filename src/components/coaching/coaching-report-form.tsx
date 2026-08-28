@@ -172,7 +172,7 @@ function FieldLabel({
   required?: boolean;
 }) {
   return (
-    <span className="mb-2 block text-[11px] font-black uppercase tracking-[0.16em] text-phx-ink-soft">
+    <span className="mb-2 block text-phx-xs font-black uppercase tracking-[0.16em] text-phx-ink-soft">
       {children}
       {required ? <span className="ml-1 text-phx-accent">*</span> : null}
     </span>
@@ -182,7 +182,7 @@ function FieldLabel({
 function DetailPill({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div className={cn(adminInsetPanelClassName, "px-3 py-2.5")}>
-      <p className="text-[10px] font-black uppercase tracking-[0.15em] text-phx-ink-faint">{label}</p>
+      <p className="text-phx-2xs font-black uppercase tracking-[0.15em] text-phx-ink-faint">{label}</p>
       <p className="mt-1 truncate text-sm font-bold text-phx-ink">{value || "-"}</p>
     </div>
   );
@@ -376,7 +376,7 @@ export function CoachingReportForm({ coach, employees, initialDraft }: CoachingR
                   <UserRound className="h-5 w-5" />
                 </div>
                 <div>
-                  <p className="text-[11px] font-black uppercase tracking-[0.18em] text-phx-ink-soft">Coach</p>
+                  <p className="text-phx-xs font-black uppercase tracking-[0.18em] text-phx-ink-soft">Coach</p>
                   <h2 className="text-base font-black tracking-[-0.03em] text-phx-ink sm:text-lg">{coach.name}</h2>
                 </div>
               </div>
@@ -438,7 +438,7 @@ export function CoachingReportForm({ coach, employees, initialDraft }: CoachingR
               {ratingMeanings.map((meaning) => (
                 <div className="rounded-md border border-phx-line bg-white px-3 py-2" key={meaning.value}>
                   <p className="text-xs font-black text-phx-ink">{meaning.value}</p>
-                  <p className="mt-0.5 text-[11px] font-semibold leading-4 text-phx-ink-soft">{meaning.label}</p>
+                  <p className="mt-0.5 text-phx-xs font-semibold leading-4 text-phx-ink-soft">{meaning.label}</p>
                 </div>
               ))}
             </div>
@@ -448,7 +448,7 @@ export function CoachingReportForm({ coach, employees, initialDraft }: CoachingR
               <div className={`${adminSoftPanelClassName} overflow-hidden`} key={group.category}>
                 <div className="flex flex-col gap-2 border-b border-phx-line bg-white px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
                   <div>
-                    <p className="text-[10px] font-black uppercase tracking-[0.18em] text-phx-accent">
+                    <p className="text-phx-2xs font-black uppercase tracking-[0.18em] text-phx-accent">
                       {categoryLetters[group.category]}) Parameter
                     </p>
                     <h3 className="mt-1 text-base font-black tracking-[-0.02em] text-phx-ink">{group.label}</h3>
@@ -490,7 +490,7 @@ export function CoachingReportForm({ coach, employees, initialDraft }: CoachingR
                       </div>
                       <div className="grid gap-3 lg:grid-cols-2">
                         <label className="block">
-                          <span className="mb-1.5 block text-[10px] font-black uppercase tracking-[0.14em] text-phx-ink-soft">
+                          <span className="mb-1.5 block text-phx-2xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">
                             Area to be Improved
                           </span>
                           <textarea
@@ -501,7 +501,7 @@ export function CoachingReportForm({ coach, employees, initialDraft }: CoachingR
                           />
                         </label>
                         <label className="block">
-                          <span className="mb-1.5 block text-[10px] font-black uppercase tracking-[0.14em] text-phx-ink-soft">
+                          <span className="mb-1.5 block text-phx-2xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">
                             Strength Point
                           </span>
                           <textarea
@@ -553,7 +553,7 @@ export function CoachingReportForm({ coach, employees, initialDraft }: CoachingR
                 <Sparkles className="h-5 w-5" />
               </div>
               <div>
-                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-phx-accent">Live Score</p>
+                <p className="text-phx-2xs font-black uppercase tracking-[0.2em] text-phx-accent">Live Score</p>
                 <h2 className="text-xl font-black tracking-[-0.04em]">Field Excellence</h2>
               </div>
             </div>
@@ -567,7 +567,7 @@ export function CoachingReportForm({ coach, employees, initialDraft }: CoachingR
 
             <div className={`${adminSoftPanelClassName} p-4`}>
               <div className="mb-2 flex items-center justify-between gap-3">
-                <p className="text-[11px] font-black uppercase tracking-[0.16em] text-phx-ink-soft">Completion</p>
+                <p className="text-phx-xs font-black uppercase tracking-[0.16em] text-phx-ink-soft">Completion</p>
                 <p className="text-xs font-black text-phx-ink">{Math.round((completedScores / coachingScoreItems.length) * 100)}%</p>
               </div>
               <div className="h-2 overflow-hidden rounded-full bg-phx-line">
@@ -581,7 +581,7 @@ export function CoachingReportForm({ coach, employees, initialDraft }: CoachingR
             {liveScore ? (
               <>
                 <div className={`${adminSoftPanelClassName} p-4`}>
-                  <p className="text-[11px] font-black uppercase tracking-[0.16em] text-phx-ink-soft">Final Score</p>
+                  <p className="text-phx-xs font-black uppercase tracking-[0.16em] text-phx-ink-soft">Final Score</p>
                   <div className="mt-2 flex items-end justify-between gap-3">
                     <p className="text-3xl font-black tracking-[-0.05em] text-phx-ink sm:text-4xl">{liveScore.finalScorePercent}%</p>
                     <p className="pb-1 text-sm font-bold text-phx-ink-soft">{liveScore.actualScore} / {liveScore.maxScore}</p>
@@ -597,7 +597,7 @@ export function CoachingReportForm({ coach, employees, initialDraft }: CoachingR
                     <div className="flex items-start gap-3">
                       <Award className="mt-0.5 h-4 w-4 text-emerald-600" />
                       <div>
-                        <p className="text-[10px] font-black uppercase tracking-[0.14em] text-phx-ink-soft">Strongest Parameter</p>
+                        <p className="text-phx-2xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">Strongest Parameter</p>
                         <p className="mt-1 text-sm font-black text-phx-ink">{liveScore.strongestParameter.label}</p>
                       </div>
                     </div>
@@ -606,7 +606,7 @@ export function CoachingReportForm({ coach, employees, initialDraft }: CoachingR
                     <div className="flex items-start gap-3">
                       <Target className="mt-0.5 h-4 w-4 text-phx-accent" />
                       <div>
-                        <p className="text-[10px] font-black uppercase tracking-[0.14em] text-phx-ink-soft">Key Development Area</p>
+                        <p className="text-phx-2xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">Key Development Area</p>
                         <p className="mt-1 text-sm font-black text-phx-ink">{liveScore.keyDevelopmentArea.label}</p>
                       </div>
                     </div>
@@ -635,7 +635,7 @@ export function CoachingReportForm({ coach, employees, initialDraft }: CoachingR
 
             {result ? (
               <div className={`${adminInsetPanelClassName} p-4`}>
-                <p className="text-[10px] font-black uppercase tracking-[0.16em] text-phx-ink-soft">Latest Result</p>
+                <p className="text-phx-2xs font-black uppercase tracking-[0.16em] text-phx-ink-soft">Latest Result</p>
                 <p className="mt-1 text-sm font-black text-phx-ink">{result.report.report_number}</p>
                 <p className="mt-1 text-xs font-semibold uppercase tracking-[0.12em] text-phx-accent">{result.report.status.replace(/_/g, " ")}</p>
               </div>

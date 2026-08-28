@@ -157,7 +157,7 @@ export function ValidatedCustomerRegister() {
       <PortalFilterBar countLabel={`${filtered.length} of ${workspace.rows.length} shown`}>
         <div className="grid gap-3 sm:grid-cols-3">
           <label className="block">
-            <span className="mb-1 block text-[10px] font-black uppercase tracking-[0.14em] text-slate-500">
+            <span className="mb-1 block text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-500">
               Employee
             </span>
             <select
@@ -174,7 +174,7 @@ export function ValidatedCustomerRegister() {
             </select>
           </label>
           <label className="block">
-            <span className="mb-1 block text-[10px] font-black uppercase tracking-[0.14em] text-slate-500">
+            <span className="mb-1 block text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-500">
               Transfer state
             </span>
             <select
@@ -188,7 +188,7 @@ export function ValidatedCustomerRegister() {
             </select>
           </label>
           <label className="block">
-            <span className="mb-1 block text-[10px] font-black uppercase tracking-[0.14em] text-slate-500">
+            <span className="mb-1 block text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-500">
               Search
             </span>
             <input
@@ -260,7 +260,7 @@ export function ValidatedCustomerRegister() {
             renderTable={() => (
               <PortalDesktopTable minWidth="1120px">
                 <thead>
-                  <tr className="border-b border-slate-200 bg-slate-50 text-[11px] font-black uppercase tracking-[0.12em] text-slate-500">
+                  <tr className="border-b border-slate-200 bg-slate-50 text-phx-xs font-black uppercase tracking-[0.12em] text-slate-500">
                     <th className="whitespace-nowrap px-4 py-3">Customer</th>
                     <th className="whitespace-nowrap px-4 py-3">Validated by</th>
                     <th className="whitespace-nowrap px-4 py-3">Manager</th>
@@ -276,7 +276,7 @@ export function ValidatedCustomerRegister() {
                     <tr className="border-b border-slate-100 hover:bg-orange-50/40" key={row.id}>
                       <td className="whitespace-nowrap px-4 py-3">
                         <span className="font-black text-slate-900">{row.displayName || "Unnamed customer"}</span>
-                        <span className="ml-2 rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[11px] font-bold text-slate-600">
+                        <span className="ml-2 rounded bg-slate-100 px-1.5 py-0.5 font-mono text-phx-xs font-bold text-slate-600">
                           {row.customerCode || "-"}
                         </span>
                       </td>

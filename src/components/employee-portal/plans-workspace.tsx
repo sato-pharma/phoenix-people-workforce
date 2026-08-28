@@ -337,9 +337,9 @@ const LEGEND_ACTIVITIES: EmployeePlanItemInput["activityType"][] = [
 function PlanActivityLegend() {
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 border border-slate-200 bg-white px-3 py-2">
-      <span className="whitespace-nowrap text-[10px] font-black uppercase tracking-[0.12em] text-slate-400">Legend</span>
+      <span className="whitespace-nowrap text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400">Legend</span>
       {LEGEND_ACTIVITIES.map((type) => (
-        <span className="inline-flex items-center gap-1 whitespace-nowrap text-[11px] font-bold text-slate-600" key={type}>
+        <span className="inline-flex items-center gap-1 whitespace-nowrap text-phx-xs font-bold text-slate-600" key={type}>
           <span className={`inline-block h-2 w-2 rounded-full ${activityAccent(type).dot}`} aria-hidden="true" />
           {activityLabel(type)}
         </span>
@@ -347,13 +347,13 @@ function PlanActivityLegend() {
       {/* Coaching isn't a real activityType (it's "Other" + title "Coaching", see
           isCoachingActivity) so it can't live in the LEGEND_ACTIVITIES array above —
           mirrors how planningActivityOptions appends it after its own filtered map. */}
-      <span className="inline-flex items-center gap-1 whitespace-nowrap text-[11px] font-bold text-slate-600">
+      <span className="inline-flex items-center gap-1 whitespace-nowrap text-phx-xs font-bold text-slate-600">
         <span className={`inline-block h-2 w-2 rounded-full ${activityAccent("Other", "Coaching").dot}`} aria-hidden="true" />
         Coaching
       </span>
       <span className="inline-flex items-center gap-1 whitespace-nowrap">
-        <span className={`inline-flex items-center rounded-sm border px-1.5 py-0.5 text-[9px] font-black uppercase ${slotPillClass("am")}`}>AM</span>
-        <span className={`inline-flex items-center rounded-sm border px-1.5 py-0.5 text-[9px] font-black uppercase ${slotPillClass("pm")}`}>PM</span>
+        <span className={`inline-flex items-center rounded-sm border px-1.5 py-0.5 text-phx-3xs font-black uppercase ${slotPillClass("am")}`}>AM</span>
+        <span className={`inline-flex items-center rounded-sm border px-1.5 py-0.5 text-phx-3xs font-black uppercase ${slotPillClass("pm")}`}>PM</span>
       </span>
     </div>
   );
@@ -411,7 +411,7 @@ function PlanDecisionTimeline({ decisions }: { decisions: EmployeePlanDecision[]
   if (decisions.length === 0) return null;
   return (
     <div className="mt-3 space-y-2 border-t border-slate-100 pt-3">
-      <p className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-400">Decision History</p>
+      <p className="text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-400">Decision History</p>
       <ol className="space-y-2">
         {decisions.map((d) => (
           <li className="group flex items-start gap-2.5 rounded-sm transition-colors duration-150 hover:bg-orange-50/60" key={d.id}>
@@ -425,7 +425,7 @@ function PlanDecisionTimeline({ decisions }: { decisions: EmployeePlanDecision[]
                   </span>
                 ) : null}
               </p>
-              <p className="text-[10px] text-slate-500">
+              <p className="text-phx-2xs text-slate-500">
                 {statusLabels[d.fromStatus]} → {statusLabels[d.toStatus]}
                 {" · "}
                 {new Date(d.createdAt).toLocaleDateString("en-GB", {
@@ -435,7 +435,7 @@ function PlanDecisionTimeline({ decisions }: { decisions: EmployeePlanDecision[]
                   timeZone: PHOENIX_BUSINESS_TIME_ZONE,
                 })}
               </p>
-              {d.comment ? <p className="mt-0.5 text-[10px] italic text-slate-500">&quot;{d.comment}&quot;</p> : null}
+              {d.comment ? <p className="mt-0.5 text-phx-2xs italic text-slate-500">&quot;{d.comment}&quot;</p> : null}
             </div>
           </li>
         ))}
@@ -1758,12 +1758,12 @@ export function PlansWorkspace({
       <ShieldCheck className="h-4 w-4 shrink-0 text-sky-600" />
       <span className="whitespace-nowrap">Auto-synced into this plan:</span>
       {lockedSyncCount > 0 ? (
-        <span className="inline-flex items-center whitespace-nowrap rounded-full bg-violet-500 px-2 py-0.5 text-[10px] font-black uppercase text-white">
+        <span className="inline-flex items-center whitespace-nowrap rounded-full bg-violet-500 px-2 py-0.5 text-phx-2xs font-black uppercase text-white">
           {lockedSyncCount} approved leave
         </span>
       ) : null}
       {weeklySyncCount > 0 ? (
-        <span className="inline-flex items-center whitespace-nowrap rounded-full bg-sky-500 px-2 py-0.5 text-[10px] font-black uppercase text-white">
+        <span className="inline-flex items-center whitespace-nowrap rounded-full bg-sky-500 px-2 py-0.5 text-phx-2xs font-black uppercase text-white">
           {weeklySyncCount} from weekly plan
         </span>
       ) : null}
@@ -1807,15 +1807,15 @@ export function PlansWorkspace({
             </button>
           ) : null}
           {untouchedCount > 0 ? (
-            <span className="inline-flex items-center gap-1 whitespace-nowrap rounded-sm border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] font-bold text-slate-500">
+            <span className="inline-flex items-center gap-1 whitespace-nowrap rounded-sm border border-slate-200 bg-slate-50 px-2 py-1 text-phx-xs font-bold text-slate-500">
               {untouchedCount} day{untouchedCount === 1 ? "" : "s"} still empty
             </span>
           ) : null}
           {draftSavedAt && !selectedPlan ? (
             <>
-              <p className="text-[11px] text-slate-400">Draft saved {draftSavedAt}</p>
+              <p className="text-phx-xs text-slate-400">Draft saved {draftSavedAt}</p>
               <button
-                className="text-[11px] font-bold text-red-500 underline hover:text-red-700"
+                className="text-phx-xs font-bold text-red-500 underline hover:text-red-700"
                 onClick={discardDraft}
                 type="button"
               >
@@ -1833,7 +1833,7 @@ export function PlansWorkspace({
           </span>
           {nationalVacationWarnings.map((label) => (
             <span
-              className="inline-flex items-center whitespace-nowrap rounded-sm border border-amber-300 bg-white px-2 py-0.5 text-[11px] font-bold text-amber-800"
+              className="inline-flex items-center whitespace-nowrap rounded-sm border border-amber-300 bg-white px-2 py-0.5 text-phx-xs font-bold text-amber-800"
               key={label}
             >
               {label}
@@ -1880,7 +1880,7 @@ export function PlansWorkspace({
               </p>
             </div>
             <span
-              className={`shrink-0 rounded-full border px-2.5 py-1 text-[11px] font-black shadow-sm ${statusTone(plan?.status ?? "draft")}`}
+              className={`shrink-0 rounded-full border px-2.5 py-1 text-phx-xs font-black shadow-sm ${statusTone(plan?.status ?? "draft")}`}
             >
               {statusLabels[plan?.status ?? "draft"]}
             </span>
@@ -2206,7 +2206,7 @@ export function PlansWorkspace({
         <div className="overflow-hidden rounded-sm border border-slate-200/90 bg-white/95 shadow-[0_24px_62px_rgba(15,23,42,0.10)] ring-1 ring-white/80">
           <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-100 bg-[linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)] px-4 py-3">
             <div className="min-w-0">
-              <p className="text-[11px] font-black uppercase tracking-[0.18em] text-orange-500">{headerLabel}</p>
+              <p className="text-phx-xs font-black uppercase tracking-[0.18em] text-orange-500">{headerLabel}</p>
               <h2 className="mt-1 text-base font-black text-slate-800">
                 {onAdminSurface
                   ? activeKind === "weekly"
@@ -2308,7 +2308,7 @@ export function PlansWorkspace({
             <div className="employee-portal-command-grid border-b border-slate-800 bg-[#08111f] px-4 py-4 text-white sm:px-5">
               <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
                 <div className="min-w-0">
-                  <p className="text-[11px] font-black uppercase tracking-[0.2em] text-orange-400">Planning table</p>
+                  <p className="text-phx-xs font-black uppercase tracking-[0.2em] text-orange-400">Planning table</p>
                   <h3 className="mt-1 text-lg font-black leading-tight tracking-tight">
                     {activeKind === "weekly" ? "Weekly activities" : "Monthly activities"}
                   </h3>
@@ -2399,7 +2399,7 @@ export function PlansWorkspace({
             <div className="overflow-x-auto bg-white">
               <table className="w-full min-w-[1040px] table-fixed border-collapse" data-portal-desktop-table>
                 <thead className="sticky top-0 z-10 bg-slate-50">
-                  <tr className="border-b border-slate-200 text-left text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">
+                  <tr className="border-b border-slate-200 text-left text-phx-xs font-black uppercase tracking-[0.16em] text-slate-500">
                     <th className="w-[18%] px-4 py-3">Date</th>
                     <th className="w-[15%] px-3 py-3">Activity</th>
                     <th className="w-[18%] px-3 py-3">Region</th>
@@ -2448,18 +2448,18 @@ export function PlansWorkspace({
                                     title={group.activityDate}
                                   >
                                     <span className="flex h-16 w-20 shrink-0 flex-col items-center justify-center border border-orange-200 bg-gradient-to-b from-orange-50 to-white shadow-[0_6px_18px_rgba(249,115,22,0.08)]">
-                                      <span className="text-[10px] font-black uppercase tracking-wide text-orange-500">
+                                      <span className="text-phx-2xs font-black uppercase tracking-wide text-orange-500">
                                         {formatDayName(group.activityDate)}
                                       </span>
                                       <span className="mt-0.5 text-xl font-black leading-none text-slate-950">
                                         {formatDayNumber(group.activityDate)}
                                       </span>
-                                      <span className="mt-1 text-[10px] font-black uppercase tracking-wide text-slate-500">
+                                      <span className="mt-1 text-phx-2xs font-black uppercase tracking-wide text-slate-500">
                                         {formatMonthYear(group.activityDate)}
                                       </span>
                                     </span>
                                     <div className="min-w-0">
-                                      <p className="text-[11px] font-black uppercase tracking-[0.12em] text-slate-400">
+                                      <p className="text-phx-xs font-black uppercase tracking-[0.12em] text-slate-400">
                                         Plan day
                                       </p>
                                       <p className="mt-1 text-sm font-black text-slate-900">Day {groupIndex + 1}</p>
@@ -2468,7 +2468,7 @@ export function PlansWorkspace({
                                   <div className="mt-3 grid grid-cols-2 border border-slate-200 bg-slate-50 p-0.5">
                                     {(["full", "split"] as const).map((mode) => (
                                       <button
-                                        className={`h-8 px-2 text-[11px] font-black transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400/70 focus-visible:ring-offset-1 focus-visible:ring-offset-slate-50 disabled:cursor-not-allowed disabled:opacity-50 ${
+                                        className={`h-8 px-2 text-phx-xs font-black transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400/70 focus-visible:ring-offset-1 focus-visible:ring-offset-slate-50 disabled:cursor-not-allowed disabled:opacity-50 ${
                                           group.mode === mode
                                             ? "bg-slate-950 text-white shadow-[0_4px_10px_rgba(15,23,42,0.18)]"
                                             : "text-slate-600 hover:bg-white"
@@ -2488,13 +2488,13 @@ export function PlansWorkspace({
                                 <div className="mb-1 flex items-center gap-1.5">
                                   <span className={`inline-block h-2 w-2 shrink-0 rounded-full ${activityAccent(row.activityType, row.activityTitle).dot}`} aria-hidden="true" />
                                   <span
-                                    className={`inline-flex items-center whitespace-nowrap rounded-sm border px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wide ${slotPillClass(row.slot)}`}
+                                    className={`inline-flex items-center whitespace-nowrap rounded-sm border px-1.5 py-0.5 text-phx-3xs font-black uppercase tracking-wide ${slotPillClass(row.slot)}`}
                                   >
                                     {slotLabel(row)}
                                   </span>
                                   {row.sourceLabel ? (
                                     <span
-                                      className={`inline-flex items-center gap-1 whitespace-nowrap rounded-sm border px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wide ${
+                                      className={`inline-flex items-center gap-1 whitespace-nowrap rounded-sm border px-1.5 py-0.5 text-phx-3xs font-black uppercase tracking-wide ${
                                         locked
                                           ? "border-violet-300 bg-violet-50 text-violet-700"
                                           : "border-sky-300 bg-sky-50 text-sky-700"
@@ -2636,7 +2636,7 @@ export function PlansWorkspace({
                           <td className="px-4 pb-4 pt-0" colSpan={6}>
                             <div className="border border-orange-100 bg-orange-50/45 px-3 py-2">
                               <div className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-center gap-3">
-                                <span className="text-[11px] font-black uppercase tracking-[0.14em] text-orange-600">
+                                <span className="text-phx-xs font-black uppercase tracking-[0.14em] text-orange-600">
                                   Notes
                                 </span>
                                 <input
@@ -2853,7 +2853,7 @@ function WorkflowTimeline({ status }: { status: EmployeePlanStatus }) {
             <div className="flex shrink-0 items-center" key={step.label}>
               <div className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1 ${tone}`}>
                 <Icon className="h-3.5 w-3.5" />
-                <span className="text-[11px] font-black">{step.label}</span>
+                <span className="text-phx-xs font-black">{step.label}</span>
               </div>
               {index < TIMELINE_STEPS.length - 1 ? (
                 <ChevronRight className="h-3.5 w-3.5 shrink-0 text-slate-300" />
@@ -2875,7 +2875,7 @@ function WorkflowTimeline({ status }: { status: EmployeePlanStatus }) {
 function InfoChip({ label, value }: { label: string; value: string }) {
   return (
     <div className="min-w-0 rounded-sm border border-slate-200 bg-white px-3 py-2 shadow-[0_12px_28px_rgba(15,23,42,0.07)]">
-      <span className="block text-[10px] font-bold uppercase tracking-[0.1em] text-slate-400">{label}</span>
+      <span className="block text-phx-2xs font-bold uppercase tracking-[0.1em] text-slate-400">{label}</span>
       <span className="mt-0.5 block whitespace-nowrap text-xs font-black text-slate-700">{value}</span>
     </div>
   );
@@ -2920,7 +2920,7 @@ function MobileDayCard({
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <div className="flex h-11 w-12 flex-col items-center justify-center border border-slate-200 bg-slate-900">
-            <span className="text-[10px] font-black uppercase leading-none text-orange-400">
+            <span className="text-phx-2xs font-black uppercase leading-none text-orange-400">
               {formatDayName(row.activityDate)}
             </span>
             <span className="mt-0.5 text-sm font-black leading-none text-white">
@@ -2932,7 +2932,7 @@ function MobileDayCard({
               <span className={`inline-block h-2 w-2 shrink-0 rounded-full ${accent.dot}`} aria-hidden="true" />
               {rule.label}
               <span
-                className={`inline-flex items-center whitespace-nowrap rounded-sm border px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wide ${slotPillClass(row.slot)}`}
+                className={`inline-flex items-center whitespace-nowrap rounded-sm border px-1.5 py-0.5 text-phx-3xs font-black uppercase tracking-wide ${slotPillClass(row.slot)}`}
               >
                 {slotLabel(row)}
               </span>
@@ -2943,7 +2943,7 @@ function MobileDayCard({
         <div className="flex items-center gap-1.5">
           {row.sourceLabel ? (
             <span
-              className={`inline-flex items-center gap-1 whitespace-nowrap rounded-full px-1.5 py-0.5 text-[9px] font-black uppercase ${
+              className={`inline-flex items-center gap-1 whitespace-nowrap rounded-full px-1.5 py-0.5 text-phx-3xs font-black uppercase ${
                 locked ? "bg-violet-500 text-white" : "bg-sky-500 text-white"
               }`}
             >
@@ -2951,7 +2951,7 @@ function MobileDayCard({
             </span>
           ) : null}
           {hasReturnNotes ? (
-            <span className="rounded-full bg-amber-500 px-1.5 py-0.5 text-[9px] font-black uppercase text-white">
+            <span className="rounded-full bg-amber-500 px-1.5 py-0.5 text-phx-3xs font-black uppercase text-white">
               Feedback
             </span>
           ) : null}
@@ -3062,7 +3062,7 @@ function RowEditSheet({
       >
         <div className="sticky top-0 flex items-center justify-between border-b border-slate-100 bg-white px-4 py-3">
           <div>
-            <p className="text-[11px] font-black uppercase tracking-[0.08em] text-orange-500">
+            <p className="text-phx-xs font-black uppercase tracking-[0.08em] text-orange-500">
               {formatDayName(row.activityDate)}
             </p>
             <p className="text-sm font-black text-slate-900">Edit · {formatDate(row.activityDate)}</p>
@@ -3232,7 +3232,7 @@ function RowEditSheet({
 
           {row.returnNotes?.length ? (
             <div className="space-y-1 border border-amber-200 bg-amber-50 p-3">
-              <p className="text-[11px] font-black uppercase tracking-[0.08em] text-amber-700">
+              <p className="text-phx-xs font-black uppercase tracking-[0.08em] text-amber-700">
                 Reviewer feedback
               </p>
               {row.returnNotes.map((note) => (
@@ -3267,7 +3267,7 @@ function RowEditSheet({
 function Field({ children, label }: { children: React.ReactNode; label: string }) {
   return (
     <label className="block">
-      <span className="mb-1 block text-[11px] font-black uppercase tracking-[0.08em] text-slate-500">
+      <span className="mb-1 block text-phx-xs font-black uppercase tracking-[0.08em] text-slate-500">
         {label}
       </span>
       {children}
@@ -3335,7 +3335,7 @@ function Kpi({
   }[tone];
   return (
     <div className={`rounded-sm border p-3 shadow-[0_10px_26px_rgba(15,23,42,0.06)] transition duration-150 ${toneClass}`}>
-      <p className="text-[10px] font-bold uppercase tracking-[0.1em] opacity-70">{label}</p>
+      <p className="text-phx-2xs font-bold uppercase tracking-[0.1em] opacity-70">{label}</p>
       <p className="mt-1 text-xl font-black">
         <CountUpNumber durationSeconds={0.5} value={value} />
       </p>
@@ -3455,7 +3455,7 @@ function VisitDetailsModal({
         <div className="flex items-center justify-between bg-slate-900 px-4 py-3">
           <div>
             <h2 className="text-sm font-black uppercase tracking-wide text-white">Fill Visit Details</h2>
-            <p className="text-[11px] text-slate-400">{plan.planKind} {plan.periodKey} — required by your manager</p>
+            <p className="text-phx-xs text-slate-400">{plan.planKind} {plan.periodKey} — required by your manager</p>
           </div>
           <button aria-label="Close" onClick={onClose} className="text-slate-400 hover:text-white" type="button">
             <X className="h-5 w-5" />
@@ -3479,11 +3479,11 @@ function VisitDetailsModal({
                 {(entries[item.id] ?? []).map((entry, idx) => (
                   <div key={entry.key} className="border border-slate-200 bg-white p-3 space-y-2">
                     <div className="flex items-center justify-between">
-                      <p className="text-[11px] font-black uppercase tracking-wide text-slate-500">Visit {idx + 1}</p>
+                      <p className="text-phx-xs font-black uppercase tracking-wide text-slate-500">Visit {idx + 1}</p>
                       {(entries[item.id] ?? []).length > 1 && (
                         <button
                           onClick={() => removeEntry(item.id, entry.key)}
-                          className="text-[10px] font-bold text-red-500 hover:text-red-700"
+                          className="text-phx-2xs font-bold text-red-500 hover:text-red-700"
                           type="button"
                         >
                           Remove
@@ -3492,7 +3492,7 @@ function VisitDetailsModal({
                     </div>
                     <div className="grid grid-cols-2 gap-2">
                       <div className="col-span-2">
-                        <label className="block text-[10px] font-bold uppercase tracking-wide text-slate-600 mb-0.5">
+                        <label className="block text-phx-2xs font-bold uppercase tracking-wide text-slate-600 mb-0.5">
                           Dr. Name <span className="text-red-500">*</span>
                         </label>
                         <input
@@ -3503,7 +3503,7 @@ function VisitDetailsModal({
                         />
                       </div>
                       <div>
-                        <label className="block text-[10px] font-bold uppercase tracking-wide text-slate-600 mb-0.5">
+                        <label className="block text-phx-2xs font-bold uppercase tracking-wide text-slate-600 mb-0.5">
                           Speciality <span className="text-red-500">*</span>
                         </label>
                         <select
@@ -3518,7 +3518,7 @@ function VisitDetailsModal({
                         </select>
                       </div>
                       <div>
-                        <label className="block text-[10px] font-bold uppercase tracking-wide text-slate-600 mb-0.5">
+                        <label className="block text-phx-2xs font-bold uppercase tracking-wide text-slate-600 mb-0.5">
                           Address <span className="text-red-500">*</span>
                         </label>
                         <input
@@ -3529,7 +3529,7 @@ function VisitDetailsModal({
                         />
                       </div>
                       <div className="col-span-2">
-                        <label className="block text-[10px] font-bold uppercase tracking-wide text-slate-600 mb-0.5">
+                        <label className="block text-phx-2xs font-bold uppercase tracking-wide text-slate-600 mb-0.5">
                           Objective of Visit
                         </label>
                         <input
@@ -3544,7 +3544,7 @@ function VisitDetailsModal({
                 ))}
                 <button
                   onClick={() => addEntry(item.id)}
-                  className="flex w-full items-center justify-center gap-1.5 border border-dashed border-orange-300 py-2 text-[11px] font-bold text-orange-600 hover:border-orange-400 hover:bg-orange-50"
+                  className="flex w-full items-center justify-center gap-1.5 border border-dashed border-orange-300 py-2 text-phx-xs font-bold text-orange-600 hover:border-orange-400 hover:bg-orange-50"
                   type="button"
                 >
                   <Plus className="h-3.5 w-3.5" /> Add another visit
@@ -3616,7 +3616,7 @@ function QueueCard({
                   {p.planKind} {p.periodKey}
                 </p>
                 <span
-                  className={`rounded-full border px-2 py-1 text-[11px] font-black ${statusTone(p.status)}`}
+                  className={`rounded-full border px-2 py-1 text-phx-xs font-black ${statusTone(p.status)}`}
                 >
                   {statusLabels[p.status]}
                 </span>
@@ -3633,7 +3633,7 @@ function QueueCard({
             <PlanDecisionTimeline decisions={p.decisions} />
             {p.status === "details_requested" && (
               <button
-                className="mt-2 flex w-full items-center justify-center gap-1.5 border border-orange-300 bg-orange-50 py-1.5 text-[11px] font-bold text-orange-700 hover:border-orange-400 hover:bg-orange-100"
+                className="mt-2 flex w-full items-center justify-center gap-1.5 border border-orange-300 bg-orange-50 py-1.5 text-phx-xs font-bold text-orange-700 hover:border-orange-400 hover:bg-orange-100"
                 onClick={() => onFillDetails(p)}
                 type="button"
               >

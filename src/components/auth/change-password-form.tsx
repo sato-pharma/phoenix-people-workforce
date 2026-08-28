@@ -108,10 +108,10 @@ export function ChangePasswordForm() {
   return (
     <Card className="rounded border border-gray-200 bg-white p-5 shadow-[0_1px_3px_rgba(15,23,42,0.06)] sm:p-6">
       <div className="mb-4 flex items-center gap-2">
-        <span className="inline-flex rounded border border-orange-200 bg-orange-50 px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wider text-orange-600">
+        <span className="inline-flex rounded border border-orange-200 bg-orange-50 px-2.5 py-0.5 text-phx-xs font-semibold uppercase tracking-wider text-orange-600">
           Security
         </span>
-        <span className="text-[11px] font-medium text-slate-400">
+        <span className="text-phx-xs font-medium text-slate-400">
           Change your password
         </span>
       </div>
@@ -183,7 +183,7 @@ function PasswordField(props: {
 }) {
   return (
     <div>
-      <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-slate-400" htmlFor={props.id}>
+      <label className="mb-1.5 block text-phx-xs font-semibold uppercase tracking-wider text-slate-400" htmlFor={props.id}>
         {props.label}
       </label>
       <div className="relative">

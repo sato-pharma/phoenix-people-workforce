@@ -120,7 +120,7 @@ function RoleBadge({ role }: { role: DoubleVisitRoleCode | null }) {
         : role
           ? "bg-slate-100 text-slate-600"
           : "bg-slate-100 text-slate-400";
-  return <span className={`rounded px-2 py-0.5 text-[10px] font-black uppercase tracking-wide ${tone}`}>{role ?? "—"}</span>;
+  return <span className={`rounded px-2 py-0.5 text-phx-2xs font-black uppercase tracking-wide ${tone}`}>{role ?? "—"}</span>;
 }
 
 function AmPmBar({ am, pm }: { am: number; pm: number }) {
@@ -137,7 +137,7 @@ function AmPmBar({ am, pm }: { am: number; pm: number }) {
 function StatChip({ label, value, sub, span }: { label: string; span?: boolean; sub?: string; value: string }) {
   return (
     <div className={["rounded border border-slate-200 bg-slate-50 px-4 py-3", span ? "col-span-2 sm:col-span-1" : ""].join(" ")}>
-      <p className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-400">{label}</p>
+      <p className="text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-400">{label}</p>
       <p className="mt-1 text-xl font-black text-slate-950">{value}</p>
       {sub ? <p className="mt-0.5 text-xs font-semibold text-slate-500">{sub}</p> : null}
     </div>
@@ -149,7 +149,7 @@ function KpiCard({ icon: Icon, label, value, hint }: { hint: string; icon: Lucid
     <div className="rounded border border-slate-200 bg-white p-4 shadow-sm">
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">{label}</p>
+          <p className="text-phx-xs font-black uppercase tracking-[0.16em] text-slate-500">{label}</p>
           <p className="mt-2 text-2xl font-black text-slate-950">{value}</p>
         </div>
         <span className="grid h-10 w-10 shrink-0 place-items-center rounded bg-slate-100 text-slate-700">
@@ -171,7 +171,7 @@ function MiniStat({ value, label, tone }: { label: string; tone?: "orange" | "ro
   return (
     <span className={["inline-flex items-baseline gap-1.5 rounded border px-3 py-1.5", toneClass].join(" ")}>
       <span className="text-sm font-black">{value}</span>
-      <span className="text-[11px] font-semibold uppercase tracking-wide opacity-80">{label}</span>
+      <span className="text-phx-xs font-semibold uppercase tracking-wide opacity-80">{label}</span>
     </span>
   );
 }
@@ -519,7 +519,7 @@ function MrScoreCard({
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
                   {e.period !== "UNKNOWN" ? (
-                    <span className={`rounded px-1.5 py-0.5 text-[10px] font-black ${periodPillClass(e.period)}`}>{e.period}</span>
+                    <span className={`rounded px-1.5 py-0.5 text-phx-2xs font-black ${periodPillClass(e.period)}`}>{e.period}</span>
                   ) : null}
                   <span className="font-black tabular-nums text-slate-800">{e.visitCount}</span>
                 </div>
@@ -557,7 +557,7 @@ function RoleRollupCard({ rollup, active, onClick }: { active: boolean; onClick:
         )}
       </div>
       <div className="mt-3">
-        <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-wide text-slate-400">
+        <div className="flex items-center justify-between text-phx-2xs font-bold uppercase tracking-wide text-slate-400">
           <span>AM {rollup.amVisits}</span>
           <span>PM {rollup.pmVisits}</span>
         </div>
@@ -629,7 +629,7 @@ function LeaderboardCard({
           },
         ]}
       />
-      <div className="mt-1 flex items-center justify-between text-[10px] font-bold uppercase tracking-wide text-slate-400">
+      <div className="mt-1 flex items-center justify-between text-phx-2xs font-bold uppercase tracking-wide text-slate-400">
         <span>AM {row.amVisits}</span>
         <span>PM {row.pmVisits}</span>
       </div>
@@ -664,7 +664,7 @@ function MrBreakdownCard({
         </div>
         <span className="whitespace-nowrap text-sm font-black tabular-nums text-slate-950">{row.visits} visits</span>
         {overFocused ? (
-          <span className="rounded bg-orange-100 px-1.5 py-0.5 text-[10px] font-black uppercase text-orange-700">Over-focused</span>
+          <span className="rounded bg-orange-100 px-1.5 py-0.5 text-phx-2xs font-black uppercase text-orange-700">Over-focused</span>
         ) : null}
       </div>
       <PortalRecordFields
@@ -688,7 +688,7 @@ function VacantTerritoryCard({ row }: { row: MrVisitRow }) {
     <PortalRecordCard
       accent="slate"
       title={territoryLabel(row)}
-      meta={<span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-black uppercase text-slate-500">Resigned / vacant</span>}
+      meta={<span className="rounded bg-slate-100 px-1.5 py-0.5 text-phx-2xs font-black uppercase text-slate-500">Resigned / vacant</span>}
       status={<span className="whitespace-nowrap text-sm font-black tabular-nums text-slate-950">{row.visits} visits</span>}
     >
       <PortalRecordFields
@@ -711,7 +711,7 @@ function TrendCard({ week }: { week: DoubleVisitTrendPoint }) {
       status={<span className="whitespace-nowrap text-sm font-black tabular-nums text-slate-950">{fmt(week.totalDvs)} DVs</span>}
     >
       <PortalRecordFields fields={[{ label: "MRs covered", value: week.distinctMrs }]} />
-      <div className="mt-2 flex items-center justify-between text-[10px] font-bold uppercase tracking-wide text-slate-400">
+      <div className="mt-2 flex items-center justify-between text-phx-2xs font-bold uppercase tracking-wide text-slate-400">
         <span>AM {week.amVisits}</span>
         <span>PM {week.pmVisits}</span>
       </div>
@@ -947,11 +947,11 @@ export function DoubleVisitAnalyticsWorkspace({
           </p>
           <div className="flex flex-wrap items-end gap-2">
             <label className="block">
-              <span className="mb-1 block text-[10px] font-black uppercase tracking-wide text-slate-500">From</span>
+              <span className="mb-1 block text-phx-2xs font-black uppercase tracking-wide text-slate-500">From</span>
               <Input className="min-h-10" type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
             </label>
             <label className="block">
-              <span className="mb-1 block text-[10px] font-black uppercase tracking-wide text-slate-500">To</span>
+              <span className="mb-1 block text-phx-2xs font-black uppercase tracking-wide text-slate-500">To</span>
               <Input className="min-h-10" type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
             </label>
             <Button className="min-h-10 gap-2 rounded border border-slate-200 bg-white px-3 text-slate-700 hover:bg-slate-50" onClick={() => applyDateRange(dateFrom, dateTo)} type="button">
@@ -1258,7 +1258,7 @@ export function DoubleVisitAnalyticsWorkspace({
           <Card className="rounded border border-slate-200 bg-white p-0 shadow-sm self-start max-h-[calc(100vh-220px)] overflow-auto">
             <div className="border-b border-slate-100 px-4 py-3">
               <h2 className="text-sm font-black uppercase tracking-wide text-slate-500">Managers ({managerList.length})</h2>
-              <p className="text-[11px] font-semibold text-slate-400">Ranked by total DVs (all periods)</p>
+              <p className="text-phx-xs font-semibold text-slate-400">Ranked by total DVs (all periods)</p>
               {availableRoles.length > 0 && (
                 <div className="mt-2"><RoleFilterBar value={roleFilter} options={availableRoles} onChange={setRoleFilter} /></div>
               )}
@@ -1337,7 +1337,7 @@ export function DoubleVisitAnalyticsWorkspace({
                 {/* AM/PM + concentration / focus signal */}
                 <div className="flex flex-wrap items-center gap-3">
                   <div className="flex items-center gap-2">
-                    <span className="text-[11px] font-bold uppercase tracking-wide text-slate-400">AM {selectedSummary?.amVisits ?? managerProfile.amVisits} · PM {selectedSummary?.pmVisits ?? managerProfile.pmVisits}</span>
+                    <span className="text-phx-xs font-bold uppercase tracking-wide text-slate-400">AM {selectedSummary?.amVisits ?? managerProfile.amVisits} · PM {selectedSummary?.pmVisits ?? managerProfile.pmVisits}</span>
                     <div className="w-28"><AmPmBar am={selectedSummary?.amVisits ?? managerProfile.amVisits} pm={selectedSummary?.pmVisits ?? managerProfile.pmVisits} /></div>
                   </div>
                   {selectedSummary?.teamMrCount != null && (
@@ -1407,7 +1407,7 @@ export function DoubleVisitAnalyticsWorkspace({
                                     </div>
                                     <span className="text-sm font-black tabular-nums text-slate-950">{row.visits}</span>
                                     {managerProfile.overFocusedKeys.has(row.key) && (
-                                      <span className="rounded bg-orange-100 px-1.5 py-0.5 text-[10px] font-black uppercase text-orange-700">Over-focused</span>
+                                      <span className="rounded bg-orange-100 px-1.5 py-0.5 text-phx-2xs font-black uppercase text-orange-700">Over-focused</span>
                                     )}
                                   </div>
                                 </td>
@@ -1460,7 +1460,7 @@ export function DoubleVisitAnalyticsWorkspace({
                                 <tr key={row.key} className="border-t border-slate-100">
                                   <td className="px-3 py-2.5">
                                     <span className="text-sm font-semibold text-slate-800">{territoryLabel(row)}</span>
-                                    <span className="ml-2 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-black uppercase text-slate-500">Resigned / vacant</span>
+                                    <span className="ml-2 rounded bg-slate-100 px-1.5 py-0.5 text-phx-2xs font-black uppercase text-slate-500">Resigned / vacant</span>
                                   </td>
                                   <td className="px-3 py-2.5 text-right text-sm font-black tabular-nums text-slate-950">{row.visits}</td>
                                   <td className="px-3 py-2.5 text-right text-sm tabular-nums text-slate-700">{row.days}</td>

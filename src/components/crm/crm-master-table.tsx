@@ -36,7 +36,7 @@ function VisitTimeCell({ source, value }: { source: unknown; value: unknown }) {
     <span className="inline-flex items-center gap-1.5">
       <span title={formatVendorLocal(value)}>{formatVendorTimeOnly(value)}</span>
       <span
-        className={`rounded px-1 py-0.5 text-[9px] font-bold uppercase tracking-wide ${
+        className={`rounded px-1 py-0.5 text-phx-3xs font-bold uppercase tracking-wide ${
           isGps ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-500"
         }`}
         title={isGps ? "Real GPS check-in time (on site)" : "Logged/save time — not GPS-verified; may be logged later"}
@@ -63,7 +63,7 @@ function RecognitionBadge({ missing, score }: { missing: unknown; score: unknown
           : "bg-rose-100 text-rose-700";
   const title = typeof missing === "string" && missing ? `Missing: ${missing}` : "All checks resolved";
   return (
-    <span className={`inline-flex items-center rounded px-1.5 py-0.5 text-[11px] font-bold ${tone}`} title={title}>
+    <span className={`inline-flex items-center rounded px-1.5 py-0.5 text-phx-xs font-bold ${tone}`} title={title}>
       {label}
     </span>
   );
@@ -78,7 +78,7 @@ function masterCell(col: CrmMasterColumn, row: CrmMasterRow) {
   return renderCell(row[col.key], col.kind);
 }
 
-const FILTER_FIELD = "flex flex-col gap-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500";
+const FILTER_FIELD = "flex flex-col gap-1 text-phx-xs font-semibold uppercase tracking-wide text-slate-500";
 const FILTER_INPUT = "border border-slate-200 px-2 py-1.5 text-sm text-slate-800 focus:border-orange-400 focus:outline-none";
 
 export function CrmMasterTable({
@@ -367,7 +367,7 @@ export function CrmMasterTable({
               ))}
             </select>
           </label>
-          <label className="flex flex-col gap-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+          <label className="flex flex-col gap-1 text-phx-xs font-semibold uppercase tracking-wide text-slate-500">
             Hired from
             <input
               className="border border-slate-200 px-2 py-1.5 text-sm text-slate-800 focus:border-orange-400 focus:outline-none"
@@ -376,7 +376,7 @@ export function CrmMasterTable({
               value={hireFromText}
             />
           </label>
-          <label className="flex flex-col gap-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+          <label className="flex flex-col gap-1 text-phx-xs font-semibold uppercase tracking-wide text-slate-500">
             Hired to
             <input
               className="border border-slate-200 px-2 py-1.5 text-sm text-slate-800 focus:border-orange-400 focus:outline-none"
@@ -386,7 +386,7 @@ export function CrmMasterTable({
             />
           </label>
           {supports("ampm") ? (
-            <label className="flex flex-col gap-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+            <label className="flex flex-col gap-1 text-phx-xs font-semibold uppercase tracking-wide text-slate-500">
               AM/PM
               <select
                 className="border border-slate-200 px-2 py-1.5 text-sm text-slate-800 focus:border-orange-400 focus:outline-none"
@@ -400,7 +400,7 @@ export function CrmMasterTable({
             </label>
           ) : null}
           {supports("visitType") ? (
-            <label className="flex flex-col gap-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+            <label className="flex flex-col gap-1 text-phx-xs font-semibold uppercase tracking-wide text-slate-500">
               Visit Type
               <select
                 className="border border-slate-200 px-2 py-1.5 text-sm text-slate-800 focus:border-orange-400 focus:outline-none"
@@ -417,7 +417,7 @@ export function CrmMasterTable({
             </label>
           ) : null}
           {showMappingFilter && supports("mappingStatus") ? (
-            <label className="flex flex-col gap-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+            <label className="flex flex-col gap-1 text-phx-xs font-semibold uppercase tracking-wide text-slate-500">
               Mapping
               <select
                 className="border border-slate-200 px-2 py-1.5 text-sm text-slate-800 focus:border-orange-400 focus:outline-none"
@@ -432,7 +432,7 @@ export function CrmMasterTable({
           ) : null}
           {supports("minDuration") || supports("halfDaysOnly") ? (
             <>
-              <label className="flex flex-col gap-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+              <label className="flex flex-col gap-1 text-phx-xs font-semibold uppercase tracking-wide text-slate-500">
                 Min Duration (days)
                 <input
                   className="w-28 border border-slate-200 px-2 py-1.5 text-sm text-slate-800 focus:border-orange-400 focus:outline-none"
@@ -447,7 +447,7 @@ export function CrmMasterTable({
                   value={minDurationText}
                 />
               </label>
-              <label className="flex items-center gap-2 pb-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+              <label className="flex items-center gap-2 pb-1.5 text-phx-xs font-semibold uppercase tracking-wide text-slate-500">
                 <input
                   checked={halfDaysOnly}
                   className="h-4 w-4 accent-orange-600"
@@ -469,7 +469,7 @@ export function CrmMasterTable({
             ) : (
               activeChips.map((chip) => (
                 <button
-                  className="inline-flex items-center gap-1 rounded-full border border-orange-200 bg-orange-50 px-2.5 py-1 text-[11px] font-semibold text-orange-700 transition hover:border-orange-400 hover:bg-orange-100"
+                  className="inline-flex items-center gap-1 rounded-full border border-orange-200 bg-orange-50 px-2.5 py-1 text-phx-xs font-semibold text-orange-700 transition hover:border-orange-400 hover:bg-orange-100"
                   key={chip.id}
                   onClick={() => clearFilters(chip.keys)}
                   title="Remove this filter"
@@ -682,7 +682,7 @@ function RowGroup({
           <div className="inline-flex items-center gap-1">
             <button
               aria-expanded={isOpen}
-              className={`inline-flex items-center gap-1 border px-2 py-1 text-[11px] font-bold transition ${
+              className={`inline-flex items-center gap-1 border px-2 py-1 text-phx-xs font-bold transition ${
                 isOpen ? "border-orange-400 bg-orange-50 text-orange-700" : "border-slate-200 text-slate-500 hover:bg-slate-50"
               }`}
               onClick={onToggle}
@@ -697,7 +697,7 @@ function RowGroup({
       {isOpen ? (
         <tr className="border-b border-slate-100 bg-slate-950">
           <td className="p-0" colSpan={columns.length + 1}>
-            <pre className="max-h-96 overflow-auto px-4 py-3 text-[11px] leading-5 text-emerald-200">
+            <pre className="max-h-96 overflow-auto px-4 py-3 text-phx-xs leading-5 text-emerald-200">
               {JSON.stringify(row.raw_payload ?? {}, null, 2)}
             </pre>
           </td>
@@ -739,7 +739,7 @@ function RowCard({
       <div className="mt-3">
         <button
           aria-expanded={isOpen}
-          className={`inline-flex items-center gap-1 border px-2 py-1 text-[11px] font-bold transition ${
+          className={`inline-flex items-center gap-1 border px-2 py-1 text-phx-xs font-bold transition ${
             isOpen ? "border-orange-400 bg-orange-50 text-orange-700" : "border-slate-200 text-slate-500 hover:bg-slate-50"
           }`}
           onClick={onToggle}
@@ -750,7 +750,7 @@ function RowCard({
         </button>
       </div>
       {isOpen ? (
-        <pre className="mt-2 max-h-96 overflow-auto bg-slate-950 px-3 py-2 text-[11px] leading-5 text-emerald-200">
+        <pre className="mt-2 max-h-96 overflow-auto bg-slate-950 px-3 py-2 text-phx-xs leading-5 text-emerald-200">
           {JSON.stringify(row.raw_payload ?? {}, null, 2)}
         </pre>
       ) : null}

@@ -41,7 +41,7 @@ const STATUS_LABEL: Record<SourceCoverage["status"], string> = {
 
 export function CoverageStatusChip({ status }: { status: SourceCoverage["status"] }) {
   return (
-    <span className={cn("whitespace-nowrap rounded px-1.5 py-0.5 text-[10px] font-bold", STATUS_STYLE[status])}>
+    <span className={cn("whitespace-nowrap rounded px-1.5 py-0.5 text-phx-2xs font-bold", STATUS_STYLE[status])}>
       {STATUS_LABEL[status]}
     </span>
   );
@@ -147,8 +147,8 @@ export type CoverageProvenance = {
   coachingCoaches: number;
 };
 
-const TH = "px-3 py-2 text-left text-[11px] font-bold uppercase tracking-wide text-muted-foreground";
-const THR = "px-3 py-2 text-right text-[11px] font-bold uppercase tracking-wide text-muted-foreground";
+const TH = "px-3 py-2 text-left text-phx-xs font-bold uppercase tracking-wide text-muted-foreground";
+const THR = "px-3 py-2 text-right text-phx-xs font-bold uppercase tracking-wide text-muted-foreground";
 const TD = "px-3 py-2 align-top text-sm";
 const TDR = "px-3 py-2 align-top text-sm text-right tabular-nums";
 
@@ -355,7 +355,7 @@ export function CoverageTab({
 function Fact({ term, detail }: { term: string; detail: string }) {
   return (
     <div>
-      <dt className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">{term}</dt>
+      <dt className="text-phx-xs font-bold uppercase tracking-wide text-muted-foreground">{term}</dt>
       <dd className="mt-0.5 text-sm text-foreground">{detail}</dd>
     </div>
   );
