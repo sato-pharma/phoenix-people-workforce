@@ -57,6 +57,16 @@ const GRID_BY_COUNT: Record<number, string> = {
   4: "sm:grid-cols-2 lg:grid-cols-4",
   5: "sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5",
   6: "sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6",
+  // 7-10 exist because people_records now carries up to TEN tiles (records, resignations, four
+  // clearance tiles, contracts). Without them the `??` fallback below silently applies a 4-column
+  // grid, which leaves nine tiles as 4 + 4 + 1 - a ragged single tile that reads as a rendering
+  // fault. Every value here is a LITERAL class string because Tailwind cannot build a class name
+  // at runtime: `lg:grid-cols-${n}` is purged from the stylesheet and the grid silently collapses
+  // to one column.
+  7: "sm:grid-cols-2 lg:grid-cols-4",
+  8: "sm:grid-cols-2 lg:grid-cols-4",
+  9: "sm:grid-cols-3 lg:grid-cols-3",
+  10: "sm:grid-cols-2 lg:grid-cols-5",
 };
 
 function MetricTile({ tile }: { tile: HrCommandTile }) {

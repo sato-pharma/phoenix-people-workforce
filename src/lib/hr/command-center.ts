@@ -39,6 +39,7 @@ import {
   type HrFunctionKey,
 } from "@/lib/auth/hr-functions";
 import { getAttendanceExceptions } from "@/lib/attendance/exceptions";
+import { getClearanceDashboardData } from "@/lib/clearance/service";
 import { getContractRenewalDashboardData } from "@/lib/contracts/service";
 import { getCompanyMonthSummaryByCategory } from "@/lib/deductions/service";
 import {
@@ -51,6 +52,7 @@ import { listOffers } from "@/lib/offers/service";
 import { getProbationRows, isProbationDecisionOutstanding } from "@/lib/probation/service";
 import { getRecruitmentDashboard } from "@/lib/recruitment/dashboard";
 import { getResignationsDashboardData } from "@/lib/resignations/service";
+import { getRetentionDashboardData } from "@/lib/retention/service";
 import { listAllSupportRequests } from "@/lib/support-requests/service";
 
 /** Matches the tones the finance command centre's MetricTile accepts, deliberately. */
@@ -92,9 +94,11 @@ type SourceKey =
   | "deductions"
   | "directory"
   | "offers"
+  | "clearance"
   | "probation"
   | "recruitment"
   | "resignations"
+  | "retention"
   | "supportRequests";
 
 /**
@@ -103,7 +107,7 @@ type SourceKey =
  * both `people_records` and (via nothing) no second copy of it, and the fetch still happens once.
  */
 const SOURCES_BY_FUNCTION: Record<HrFunctionKey, readonly SourceKey[]> = {
-  engagement_retention: ["supportRequests"],
+  engagement_retention: ["supportRequests", "retention"],
   // NONE, deliberately. `hr_governance` grants employee_documents:read/export and overview:read
   // and nothing else — neither is a queue, and there is no figure in the product that counts
   // "governance". A tile here could only be invented, and an invented tile is the false promise
@@ -116,7 +120,10 @@ const SOURCES_BY_FUNCTION: Record<HrFunctionKey, readonly SourceKey[]> = {
   // renewal tiles there offered HR Advisory a figure linking to /hr/contracts, which she has no
   // grant to open. That is the Deductions defect (see system-navigation.ts, hr-payroll) rebuilt
   // one layer down, and tests/hr-command-center.test.ts now fails on it mechanically.
-  people_records: ["contracts", "directory", "resignations"],
+  // `clearance` belongs HERE for the same reason `contracts` does: people_records is the only
+  // function that grants it. Putting it under hr_governance - held by BOTH seats - would offer
+  // HR Advisory a figure linking to /hr/clearance, which she has no grant to open.
+  people_records: ["clearance", "contracts", "directory", "resignations"],
   performance_probation: ["probation"],
   recruiting: ["recruitment", "offers"],
   time_attendance: ["attendanceExceptions"],
@@ -144,6 +151,7 @@ export function sourcesFor(seat: HrBundleName): SourceKey[] {
  */
 export type HrCommandSources = Partial<{
   attendanceExceptions: Awaited<ReturnType<typeof getAttendanceExceptions>>;
+  clearance: Awaited<ReturnType<typeof getClearanceDashboardData>>;
   contracts: Awaited<ReturnType<typeof getContractRenewalDashboardData>>;
   deductions: Awaited<ReturnType<typeof getCompanyMonthSummaryByCategory>>;
   directory: Awaited<ReturnType<typeof getEmployeeDirectory>>;
@@ -151,6 +159,7 @@ export type HrCommandSources = Partial<{
   probation: Awaited<ReturnType<typeof getProbationRows>>;
   recruitment: Awaited<ReturnType<typeof getRecruitmentDashboard>>;
   resignations: Awaited<ReturnType<typeof getResignationsDashboardData>>;
+  retention: Awaited<ReturnType<typeof getRetentionDashboardData>>;
   supportRequests: Awaited<ReturnType<typeof listAllSupportRequests>>;
 }>;
 
@@ -225,11 +234,24 @@ const TILES_BY_FUNCTION: Record<
     const open = rows.filter((row) => row.status === "Pending" || row.status === "In Progress");
     const untouched = rows.filter((row) => row.status === "Pending");
     const oldest = untouched.reduce((max, row) => Math.max(max, daysSince(row.createdAt)), 0);
-    return [
+    const tiles = [
       tile("support-open", "Open Requests", open.length, "employees waiting", "/hr/admin/support-requests", queueTone(open.length, oldest)),
       tile("support-untouched", "Not Yet Started", untouched.length, "still unanswered", "/hr/admin/support-requests", queueTone(untouched.length, oldest)),
       tile("support-oldest", "Longest Wait", oldest, oldest === 1 ? "day" : "days", "/hr/admin/support-requests", oldest >= 5 ? "rose" : oldest > 0 ? "amber" : "emerald"),
     ];
+    if (loaded.retention) {
+      const stats = loaded.retention.stats;
+      tiles.push(
+        tile("retention-stay", "Stay Discussions", stats.stayCount, "last 12 months", "/hr/retention", stats.stayCount > 0 ? "emerald" : "amber"),
+        tile("retention-risk", "High Retention Risk", stats.highRisk, "flagged in a discussion", "/hr/retention", stats.highRisk > 0 ? "rose" : "emerald"),
+        // Follow-ups, not exit coverage. Coverage is a PERCENTAGE that is legitimately null when
+        // nobody has left, and a tile value is a number - rendering that null as 0 would say
+        // "0% of leavers interviewed" on a month with no leavers, which is the misleading zero
+        // AGENTS.md §7 forbids. The page shows coverage properly, with a dash for the null case.
+        tile("retention-followups", "Overdue Follow-ups", stats.overdueFollowUps, "promised, not done", "/hr/retention", stats.overdueFollowUps > 0 ? "rose" : "emerald"),
+      );
+    }
+    return tiles;
   },
 
   performance_probation: (loaded) => {
@@ -274,6 +296,23 @@ const TILES_BY_FUNCTION: Record<
       tiles.push(
         tile("resignations-open", "Resignations In Flight", summary.pending + summary.approved, "not yet completed", "/hr/resignations", summary.pending > 0 ? "amber" : "slate"),
       );
+    }
+    if (loaded.clearance) {
+      const stats = loaded.clearance.stats;
+      tiles.push(
+        tile("clearance-open", "Clearances Open", stats.open, "stations to chase", "/hr/clearance", stats.open > 0 ? "amber" : "emerald"),
+        tile("clearance-ready", "Ready To Release", stats.ready, "your step", "/hr/clearance", stats.ready > 0 ? "amber" : "emerald"),
+        tile("clearance-overdue", "Past Last Day", stats.overdue, "still unreleased", "/hr/clearance", stats.overdue > 0 ? "rose" : "emerald"),
+      );
+      // Without this tile the three above all read 0 on the day this shipped — "nothing waiting on
+      // you" — while 54 recorded departures had no checklist at all, because the auto-open trigger
+      // only fires on resignations recorded after it. A count of zero that means "not started" is
+      // the misleading-zero trap, and this is the landing page it would have appeared on.
+      if (loaded.clearance.awaiting.length > 0) {
+        tiles.push(
+          tile("clearance-awaiting", "No Clearance Opened", loaded.clearance.awaiting.length, "departures to start", "/hr/clearance", "rose"),
+        );
+      }
     }
     if (loaded.contracts) {
       const summary = loaded.contracts.summary;
@@ -352,6 +391,7 @@ async function safe<T>(
 /** Human wording for the unavailable notice. A source key means nothing to the person reading it. */
 const SOURCE_LABELS: Record<SourceKey, string> = {
   attendanceExceptions: "Attendance exceptions",
+  clearance: "Clearance checklists",
   contracts: "Contract renewals",
   deductions: "Deductions month",
   directory: "Employee directory",
@@ -359,6 +399,7 @@ const SOURCE_LABELS: Record<SourceKey, string> = {
   probation: "Probation cases",
   recruitment: "Recruitment pipeline",
   resignations: "Resignations",
+  retention: "Retention register",
   supportRequests: "HR support requests",
 };
 
@@ -413,6 +454,16 @@ export async function getHrCommandCenterData(
     needed.has("attendanceExceptions")
       ? safe("attendanceExceptions", () => getAttendanceExceptions({ status: "all" }), failures).then((value) => {
           loaded.attendanceExceptions = value;
+        })
+      : null,
+    needed.has("clearance")
+      ? safe("clearance", () => getClearanceDashboardData(access), failures).then((value) => {
+          loaded.clearance = value;
+        })
+      : null,
+    needed.has("retention")
+      ? safe("retention", () => getRetentionDashboardData(access), failures).then((value) => {
+          loaded.retention = value;
         })
       : null,
     needed.has("deductions")
