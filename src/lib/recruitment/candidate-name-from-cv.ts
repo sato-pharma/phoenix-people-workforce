@@ -54,11 +54,10 @@ const institutionWords = new Set([
  * True when a name names an organisation. Not a person, at any confidence.
  *
  * Matched word by word rather than with a regular expression built from a string. The first cut of
- * string. The first cut of this built the pattern inside a TEMPLATE LITERAL, where a lone
- * backslash-b is the BACKSPACE character rather than a word boundary — so the regex compiled,
- * ran, and matched nothing at all. Splitting on non-letters gives whole-word matching by
- * construction, with no escape sequence left to get wrong.
- * character and not a word boundary — so the pattern compiled, ran, and matched nothing at all.
+ * this built the pattern inside a TEMPLATE LITERAL, where a lone backslash-b is the BACKSPACE
+ * character rather than a word boundary — so the regex compiled, ran, and matched nothing at all.
+ * Splitting on non-letters gives whole-word matching by construction, with no escape sequence
+ * left to get wrong.
  */
 export function isInstitutionName(value: string | null | undefined): boolean {
   const words = String(value ?? "")
