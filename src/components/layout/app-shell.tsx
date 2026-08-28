@@ -17,6 +17,7 @@ import { formatHrIdForDisplay } from "@/lib/hr-id";
 import { loadPersonalLayout } from "@/lib/navigation/personal-layout-store";
 import { CommandPalette } from "@/components/layout/command-palette";
 import { DocumentTitleSync } from "@/components/layout/document-title-sync";
+import { HorizontalNavProvider, LowerNavRow, UpperNavRow } from "@/components/layout/horizontal-nav-rows";
 import { RouteTransitionProvider } from "@/components/layout/route-transition-provider";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Topbar } from "@/components/layout/topbar";
@@ -140,17 +141,35 @@ export async function AppShell({
                 viewer={viewer}
               />
             )}
-            <main className="min-w-0 flex-1 px-3 py-4 sm:px-4 sm:py-5 lg:px-6 lg:py-6 xl:px-8">
-              <div
-                className={`w-full ${
-                  contentWidth !== "full"
-                    ? "mx-auto max-w-[1760px]"
-                    : "max-w-none"
-                }`}
-              >
-                {children}
+            {/* The two horizontal navigation rows. Zone 2 sits here, above every page title, and
+                reaches all 243 pages from this one place. Zone 3 belongs BELOW the page title, so
+                the copy rendered here is the fallback for pages with no shared title surface — the
+                `.phx-navrow-scope:has(.phx-navrow--inpage)` rule in app/globals.css hides it the
+                moment a page places the row itself. Both render nothing until the viewer has put a
+                tab in them, which is every account until somebody arranges one. */}
+            <HorizontalNavProvider
+              currentRole={access.role}
+              isSystemAdministratorWorkspace={isSystemAdministratorWorkspace}
+              navigationMode={resolvedNavigationMode}
+              permissionLookup={permissionLookup}
+              personalLayout={personalLayout}
+            >
+              <div className="phx-navrow-scope flex min-w-0 flex-1 flex-col">
+                <UpperNavRow />
+                <LowerNavRow placement="fallback" />
+                <main className="min-w-0 flex-1 px-3 py-4 sm:px-4 sm:py-5 lg:px-6 lg:py-6 xl:px-8">
+                  <div
+                    className={`w-full ${
+                      contentWidth !== "full"
+                        ? "mx-auto max-w-[1760px]"
+                        : "max-w-none"
+                    }`}
+                  >
+                    {children}
+                  </div>
+                </main>
               </div>
-            </main>
+            </HorizontalNavProvider>
           </div>
         </div>
       </div>

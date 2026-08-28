@@ -57,10 +57,10 @@ export default async function SidebarLayoutPage() {
   return (
     <div className="space-y-6">
       <AdminPageHero
-        description="Drag any page into any module, or up into the top strip. This changes your own sidebar and nobody else's."
+        description="Put any page in the row above the page title, the row below it, the top strip, or any module — press Move to on the page, or drag it. This changes your own navigation and nobody else's."
         eyebrow="Personal"
         icon={<LayoutGrid className="h-3.5 w-3.5" />}
-        title="Sidebar Layout"
+        title="Navigation Layout"
       />
       <SidebarLayoutEditor
         catalogue={catalogue}
