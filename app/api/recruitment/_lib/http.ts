@@ -8,6 +8,7 @@ import {
   type PermissionResource,
 } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
+import type { SentForPositionInput } from "@/lib/recruitment/candidates";
 import { unauthorizedError, toApiError } from "@/lib/http/api-errors";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 
@@ -81,4 +82,24 @@ export function bool(value: unknown): boolean | null {
   if (value === null || value === undefined || value === "") return null;
   if (typeof value === "boolean") return value;
   return null;
+}
+
+/**
+ * The position a candidate is being sent FOR, as it arrives in a request body.
+ *
+ * Both notify-manager routes read it identically, so it is read in one place — the single-candidate
+ * and multi-candidate paths already share a service and must not start disagreeing at the boundary.
+ * Nothing is validated here beyond shape: resolveSentForPosition re-reads the vacancy server-side
+ * and discards the posted text, which is where the real check belongs.
+ *
+ * Returns null when the body carries no position at all — a send without one is legitimate, and was
+ * the only kind that existed before 2026-08-28.
+ */
+export function positionInput(body: Record<string, unknown>): SentForPositionInput | null {
+  const vacancyId = num(body.vacancyId);
+  const jobTitle = str(body.positionJobTitle);
+  const areaName = str(body.positionAreaName);
+  const lineName = str(body.positionLineName);
+  if (vacancyId === null && !jobTitle && !areaName && !lineName) return null;
+  return { areaName, jobTitle, lineName, vacancyId };
 }

@@ -3,8 +3,11 @@ import { NextResponse } from "next/server";
 import { sendCandidateToManager } from "@/lib/recruitment/candidates";
 import {
   assertSameOriginMutation,
+  positionInput,
+  readJsonObject,
   recruitmentApiError,
   requireRecruitmentAccess,
+  str,
 } from "@/app/api/recruitment/_lib/http";
 
 export const runtime = "nodejs";
@@ -28,12 +31,13 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     if (csrf) return csrf;
     const access = await requireRecruitmentAccess(request, "recruitment", "update");
     const { id } = await params;
-    const body = (await request.json().catch(() => ({}))) as { managerHrId?: unknown };
-    const managerHrId = typeof body.managerHrId === "string" ? body.managerHrId.trim() : "";
+    const body = await readJsonObject(request);
+    const managerHrId = str(body.managerHrId) ?? "";
     if (!managerHrId) {
       return NextResponse.json({ error: "Choose the manager to send this candidate to.", success: false }, { status: 400 });
     }
-    const result = await sendCandidateToManager(access, id, managerHrId);
+    // The position rides along optionally. A body that names none still sends — see positionInput.
+    const result = await sendCandidateToManager(access, id, managerHrId, positionInput(body));
     return NextResponse.json({ result, success: true });
   } catch (error) {
     return recruitmentApiError(error, "Failed to send the candidate to that manager.");

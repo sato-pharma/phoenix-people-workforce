@@ -25,6 +25,7 @@ import { createSystemNotification } from "@/lib/notifications/system";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { chunkIds } from "@/lib/recruitment/db-batch";
 import { writeApplicationEvent } from "@/lib/recruitment/db";
+import type { SentForPosition } from "@/lib/recruitment/types";
 
 /** The audit action written to ats_application_events when a manager is told about a candidate. */
 export const MANAGER_NOTIFIED_ACTION = "manager_notified";
@@ -180,11 +181,13 @@ export async function pushCandidateToManager(input: {
   candidateId: string;
   candidateName: string;
   managerHrId: string;
+  position?: SentForPosition | null;
 }): Promise<{ managerHrId: string; managerName: string; sentAt: string }> {
   const { count: _count, ...sent } = await pushCandidatesToManager({
     actorHrId: input.actorHrId,
     candidates: [{ id: input.candidateId, name: input.candidateName }],
     managerHrId: input.managerHrId,
+    position: input.position ?? null,
   });
   return sent;
 }
@@ -227,6 +230,12 @@ export async function pushCandidatesToManager(input: {
   actorHrId: string | null;
   candidates: Array<{ id: string; name: string }>;
   managerHrId: string;
+  /**
+   * The position they are being sent FOR — the folder the manager will find them in. Optional
+   * because a send without one is still a valid send: it is what every send looked like before
+   * 2026-08-28, and refusing one would break the flow rather than improve the filing.
+   */
+  position?: SentForPosition | null;
 }): Promise<{ count: number; managerHrId: string; managerName: string; sentAt: string }> {
   if (input.candidates.length === 0) {
     throw new Error("Choose at least one candidate to send.");
@@ -292,27 +301,53 @@ export async function pushCandidatesToManager(input: {
     manager_notified_region: manager.regionName,
   };
 
+  // The position the candidate was sent FOR, when the recruiter named one. Stamped beside the seat
+  // and frozen for the same reason: a vacancy that closes or is renamed next month must not re-file
+  // a send made today under a folder nobody chose. Empty when no position was given, which is a
+  // legitimate send — it was the only kind that existed before 2026-08-28.
+  const position = input.position
+    ? {
+        sent_for_area: input.position.areaName,
+        sent_for_job_title: input.position.jobTitle,
+        sent_for_line: input.position.lineName,
+        sent_for_region: input.position.regionName,
+        sent_for_vacancy_id: input.position.vacancyId,
+      }
+    : {};
+
+  // THREE tiers, not two, and they are ordered widest-first. The seat columns and the position
+  // columns arrive in SEPARATE migrations, so a database can genuinely have one and not the other —
+  // and folding them into a single optional bucket would mean a missing position column silently
+  // dropped the seat as well, undoing yesterday's work to fix today's. Each tier is tried once per
+  // send, never once per batch: whether a column exists is a property of the schema, so re-asking
+  // per batch would double every write on an un-migrated database.
+  const tiers = [
+    { ...identity, ...seat, ...position },
+    { ...identity, ...seat },
+    identity,
+  ];
+
   const supabase = getSupabaseAdmin();
-  let seatColumnsExist = true;
+  let tier = 0;
   for (const batch of chunkIds(input.candidates.map((candidate) => candidate.id))) {
-    // One update per batch, identity and seat together — so a stamp is never half-written and
-    // mapCandidate never has to render a send attributed to nobody.
-    const attempt = await supabase
-      .from("ats_candidates")
-      .update(seatColumnsExist ? { ...identity, ...seat } : identity)
-      .in("id", batch);
-    if (attempt.error && seatColumnsExist && isMissingSeatColumn(attempt.error)) {
-      // Once, then never again for this send: the answer is a property of the schema, not of the
-      // batch, so re-asking per batch would double every write on an un-migrated database.
-      seatColumnsExist = false;
-      const retry = await supabase.from("ats_candidates").update(identity).in("id", batch);
-      // Unlike the audit row elsewhere in this module, this is NOT best-effort: it is the only
-      // place the send is recorded, so swallowing it would recreate exactly the invisibility this
-      // work exists to end.
-      if (retry.error) throw retry.error;
-      continue;
+    // One update per batch, every column of the chosen tier together — so a stamp is never
+    // half-written and mapCandidate never has to render a send attributed to nobody.
+    let lastError: unknown = null;
+    let written = false;
+    while (tier < tiers.length) {
+      const attempt = await supabase.from("ats_candidates").update(tiers[tier]).in("id", batch);
+      if (!attempt.error) {
+        written = true;
+        break;
+      }
+      lastError = attempt.error;
+      // Only a missing column drops to a narrower tier. Any other failure is real and must surface:
+      // this is the ONLY place a send is recorded, so swallowing it would recreate exactly the
+      // invisibility this module exists to end.
+      if (!isMissingSeatColumn(attempt.error)) break;
+      tier += 1;
     }
-    if (attempt.error) throw attempt.error;
+    if (!written) throw lastError;
   }
 
   return { count: input.candidates.length, managerHrId: input.managerHrId, managerName, sentAt };

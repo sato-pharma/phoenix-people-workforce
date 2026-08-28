@@ -45,6 +45,8 @@ import {
   type RecruitmentFileDbRow,
 } from "@/lib/recruitment/db";
 import { logError } from "@/lib/observability/log";
+import { positionFolderLabel } from "@/lib/recruitment/position-folder";
+import { resolveSentForPosition } from "@/lib/recruitment/vacancy-options";
 import {
   CANDIDATE_STATUS_NOTE_MAX_LENGTH,
   normalizeCandidateStatus,
@@ -997,10 +999,25 @@ export async function sendCandidateToManager(
   access: AccessContext,
   candidateId: string,
   managerHrId: string,
+  position?: SentForPositionInput | null,
 ): Promise<{ candidateName: string; managerHrId: string; managerName: string; sentAt: string }> {
-  const sent = await sendCandidatesToManager(access, [candidateId], managerHrId);
+  const sent = await sendCandidatesToManager(access, [candidateId], managerHrId, position);
   return { ...sent, candidateName: sent.candidateNames[0] ?? "" };
 }
+
+/**
+ * The position as it arrives from a form — an id to look up, or words somebody typed.
+ *
+ * Deliberately NOT SentForPosition. What a route receives is a request, not a fact: the id may name
+ * a vacancy that has since been filled, and the text may say anything at all. It becomes a
+ * SentForPosition only after resolveSentForPosition has read the vacancy back or cleaned the words.
+ */
+export type SentForPositionInput = {
+  vacancyId?: number | string | null;
+  jobTitle?: string | null;
+  areaName?: string | null;
+  lineName?: string | null;
+};
 
 /**
  * Send SEVERAL candidates to one manager as a single message.
@@ -1013,6 +1030,7 @@ export async function sendCandidatesToManager(
   access: AccessContext,
   candidateIds: string[],
   managerHrId: string,
+  position?: SentForPositionInput | null,
 ): Promise<{ candidateNames: string[]; count: number; managerHrId: string; managerName: string; sentAt: string }> {
   const ids = Array.from(new Set(candidateIds.map((id) => String(id ?? "").trim()).filter(Boolean)));
   if (ids.length === 0) throw new Error("Choose at least one candidate to send.");
@@ -1029,10 +1047,16 @@ export async function sendCandidatesToManager(
   const manager = (await listHiringManagerOptions()).find((option) => hrIdsMatch(option.hrId, managerHrId));
   if (!manager) throw new Error("That person is not a manager who can be sent candidates.");
 
+  // Resolved BEFORE the notification goes out, not after. If the picked vacancy has been filled
+  // since the page loaded, this throws — and it must throw while the only cost is an error message,
+  // not once a manager has already been alerted about a position that no longer exists.
+  const sentForPosition = position ? await resolveSentForPosition(position) : null;
+
   const sent = await pushCandidatesToManager({
     actorHrId: access.hrId ?? null,
     candidates: candidates.map((candidate) => ({ id: candidate.id, name: candidate.fullName })),
     managerHrId: manager.hrId,
+    position: sentForPosition,
   });
 
   // Sending IS a decision, so it moves each candidate out of "nobody has looked at this yet" —
@@ -1043,9 +1067,14 @@ export async function sendCandidatesToManager(
   // `hired` is the one status a send does not overwrite. Sending a hired candidate's CV on to
   // another manager is a reference request, not a re-entry into the pipeline, and it must not take
   // the person back out of the hired count.
+  // The note names the position as well as the person when there is one, because "Sent to Ahmed
+  // Mohamed Nagy" is ambiguous where one manager holds five open seats — which is the ordinary case
+  // here, not the edge one.
+  const positionLabel = sentForPosition ? positionFolderLabel(sentForPosition) : "";
+  const note = positionLabel ? `Sent to ${manager.name} for ${positionLabel}.` : `Sent to ${manager.name}.`;
   for (const candidate of candidates) {
     if (normalizeCandidateStatus(candidate.status) === "hired") continue;
-    await updateCandidateStatus(access, candidate.id, "sent_to_manager", `Sent to ${manager.name}.`);
+    await updateCandidateStatus(access, candidate.id, "sent_to_manager", note);
   }
 
   return { ...sent, candidateNames: candidates.map((candidate) => candidate.fullName) };
