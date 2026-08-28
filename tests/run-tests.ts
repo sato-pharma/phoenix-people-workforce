@@ -278,6 +278,7 @@ import { runCrmRepDoctorTrendTests } from "./crm-rep-doctor-trend.test.ts";
 import { runLocationIqGeocodeConfidenceTests } from "./locationiq-geocode-confidence.test.ts";
 import { runPrivateCalendarTests } from "./private-calendar.test.ts";
 import { runWeeklyPlanApproverUiParityTests } from "./weekly-plan-approver-ui-parity.test.ts";
+import { runWeeklyPlanMovePeriodTests } from "./weekly-plan-move-period.test.ts";
 import { runTerminationTruthTests } from "./termination-truth.test.ts";
 import { runResignationCompletionVacancyTests } from "./resignation-completion-vacancy.test.ts";
 import { runCairoLeaveTodayTests } from "./cairo-leave-today.test.ts";
@@ -1526,6 +1527,7 @@ await runTest(
 await runTest("LocationIQ geocode confidence (reverse/forward scoring + LocationIQ-first/Google-fallback wiring)", runLocationIqGeocodeConfidenceTests);
 await runTest("private calendar", runPrivateCalendarTests);
 await runTest("weekly plan approver UI parity (no buttons the server rejects; comments gated on participation)", runWeeklyPlanApproverUiParityTests);
+await runTest("weekly plan move to another period (HR re-dates a plan the employee filed on the wrong week)", runWeeklyPlanMovePeriodTests);
 await runTest("termination truth (company exits are not announced as resignations; complete actually terminates)", runTerminationTruthTests);
 await runTest("resignation completion vacancy (completing a resignation leaves exactly one open vacancy for the seat — never zero, never two)", runResignationCompletionVacancyTests);
 await runTest("Cairo leave today (entitlements reference date + excuse month allowance)", runCairoLeaveTodayTests);

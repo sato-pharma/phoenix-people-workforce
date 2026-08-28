@@ -35,6 +35,7 @@ import { Button } from "@/components/ui/button";
 import { ChoiceGroup } from "@/components/ui/choice-group";
 import { CountUpNumber } from "@/components/ui/count-up";
 import { useDialogA11y } from "@/components/ui/use-dialog-a11y";
+import { MovePlanPeriod } from "@/components/employee-portal/move-plan-period";
 import { PlanConversationThread } from "@/components/weekly-planning/plan-conversation-thread";
 import type { AccessContext } from "@/lib/auth/permissions";
 import { hrIdsMatch } from "@/lib/hr-id";
@@ -2719,6 +2720,17 @@ export function PlansWorkspace({
                     <Pencil className="mr-2 h-4 w-4" />
                     Request to Edit
                   </Button>
+                ) : null}
+                {plan && workspace.canAcknowledgeHr ? (
+                  <MovePlanPeriod
+                    currentPeriodLabel={`${plan.periodKey} (${formatDate(plan.periodStartDate)} to ${formatDate(plan.periodEndDate)})`}
+                    onMoved={() => runAction(async () => {
+                      // The move already happened inside MovePlanPeriod; runAction is used purely
+                      // for its reload, so the workspace re-reads the plan on its new period.
+                    })}
+                    planId={plan.id}
+                    planKind={plan.planKind}
+                  />
                 ) : null}
                 <Button
                   disabled={isPending || !canEdit || noPlanRows}
