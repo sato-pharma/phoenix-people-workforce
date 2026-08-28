@@ -8,7 +8,13 @@ import {
   parseContactGrid,
   resolveCrmWebBaseUrl,
 } from "../src/lib/crm/contacts-web-client.ts";
-import { contactRowKey, decideContactReplacement } from "../src/lib/crm/contacts-sync.ts";
+import {
+  CONTACT_SYNC_SLICE_COUNT,
+  contactRowKey,
+  contactSyncSliceForDate,
+  decideContactReplacement,
+  selectContactSyncSlice,
+} from "../src/lib/crm/contacts-sync.ts";
 import {
   EXPECTED_PM_MAX,
   EXPECTED_PM_MIN,
@@ -243,6 +249,53 @@ export function runCrmContactListsTests() {
     contactRowKey({ agent_crm_id: 1391, contact_crm_id: 101, list_type: "PM" }),
     contactRowKey({ agent_crm_id: 1391, contact_crm_id: 101, list_type: "AM" }),
     "list_type is part of the key — one doctor can be on both the PM and the AM list of the same agent",
+  );
+
+  // ── 7b. The sweep is sliced, because the scheduler cuts every request at 30 seconds ───────────
+  // Measured 2026-08-28 on the real route: cron-job.org killed the connection at ms=30108 with the
+  // job's requestTimeout set to 300 (a platform cap, not a setting), and the database then showed
+  // 39 of 68 agents re-stamped — the server does NOT finish after the client hangs up. So the
+  // partition has to be complete and disjoint, or a rep silently stops being refreshed.
+  const roster = Array.from({ length: 82 }, (_value, index) => index);
+  const slices = Array.from({ length: CONTACT_SYNC_SLICE_COUNT }, (_value, slice) =>
+    selectContactSyncSlice(roster, slice, CONTACT_SYNC_SLICE_COUNT),
+  );
+  assert.deepEqual(
+    slices.flat().sort((left, right) => left - right),
+    roster,
+    "every agent must land in exactly one slice — a gap here is a rep whose list quietly stops refreshing",
+  );
+  // Round-robin, not `agentCrmId % of`: on the live roster of 82 the modulo put 11 agents in one
+  // slice, which is ~21s of vendor calls against a 30s cap. This bounds every slice at ceil(82/12).
+  assert.equal(
+    Math.max(...slices.map((entries) => entries.length)),
+    Math.ceil(roster.length / CONTACT_SYNC_SLICE_COUNT),
+    "no slice may be larger than an even share — an oversized slice is the timeout coming back",
+  );
+  assert.deepEqual(
+    selectContactSyncSlice(roster, 0, 1),
+    roster,
+    "?all=1 collapses to a single slice holding the whole roster, for the by-hand backfill",
+  );
+
+  // The slice comes from the Cairo minute ROUNDED to the nearest five, never floored. A scheduler
+  // that fires at 05:04:58 for the 05:05 tick would otherwise repeat slice 0 and skip slice 1 every
+  // day — eleven twelfths of the roster still swept, one twelfth never, and the job green throughout.
+  const at = (iso: string) => contactSyncSliceForDate(new Date(iso));
+  assert.equal(at("2026-08-29T03:00:02Z"), 0, "05:00:02 Cairo is the first slice");
+  assert.equal(at("2026-08-29T03:05:01Z"), 1, "05:05:01 Cairo is the second slice");
+  assert.equal(at("2026-08-29T03:04:58Z"), 1, "firing 2s EARLY must still be the second slice, not a repeat of the first");
+  assert.equal(at("2026-08-29T03:07:20Z"), 1, "firing 2m20s late is still the second slice");
+  assert.equal(at("2026-08-29T03:55:00Z"), 11, "05:55 Cairo is the twelfth and last slice");
+  assert.equal(at("2026-08-29T03:59:45Z"), 0, "a run at 05:59:45 rounds up to the next hour and wraps to 0, never to 12");
+  // No timezone conversion, on purpose: Cairo is a whole-hour offset from UTC in both standard and
+  // summer time, so the minute within the hour — the only thing that selects a slice — is the same
+  // number in either. This pins that reasoning: the same wall-clock minute in winter and in summer
+  // must select the same slice, or the window silently shifts when Egypt changes its clocks.
+  assert.equal(
+    at("2026-01-15T03:25:00Z"),
+    at("2026-07-15T03:25:00Z"),
+    "the same minute must select the same slice year-round — an hour-offset change must not move the window",
   );
 
   // ── 8. The owner's 90-120 rule ────────────────────────────────────────────────────────────────
