@@ -501,3 +501,65 @@ export function applyPersonalLayout<TItem extends LayoutItemLike>(
       .map((section) => ({ id: section.id, label: section.label, items: section.items })),
   };
 }
+
+/**
+ * Pin a page into the Upper nav row — the write behind the row's own "+" control.
+ *
+ * The owner's ask, 2026-08-28: a plus sign at the end of the row, which opens the list of modules,
+ * and whatever he picks is "embedded like the organogram" — meaning fixed in EVERY module, not just
+ * the one he happened to be standing in when he pressed it.
+ *
+ * That phrase is the whole reason this is not a one-line append, and it is why the rule lives here
+ * rather than in the button:
+ *
+ *  1. THE STRIP OUTRANKS THE ROW. `applyPersonalLayout` resolves the strip first and `take` marks
+ *     the href placed, so a page listed in both renders in the strip and the row comes back EMPTY —
+ *     a save that returns 200 and changes nothing on screen. Adding to a row must therefore release
+ *     the strip entry in the same write. This is the same contradiction the editor's guard exists to
+ *     stop; the "+" is a second door into the same document and needs the same lock.
+ *  2. A MODULE OVERRIDE REPLACES THE DEFAULTS — it does not merge with them. So appending only to
+ *     the default `upperRow` would put the page in every module EXCEPT the ones carrying their own
+ *     rows, which is precisely backwards: those are the modules the owner has already taken the
+ *     trouble to arrange. Every existing override therefore gets the href too.
+ *  3. A page cannot sit in both rows, so the lower row releases it as well.
+ *
+ * `sections` is deliberately left alone. A page in a row has already been taken by the time
+ * `applyPersonalLayout` reaches the sections, so its section entry is inert — and keeping it means
+ * removing the page from the row later returns it to where it came from rather than losing it.
+ */
+export function pinHrefToUpperRow(
+  layout: PersonalNavigationLayout | null,
+  href: string,
+): PersonalNavigationLayout {
+  const base: PersonalNavigationLayout = layout ?? {
+    version: PERSONAL_LAYOUT_VERSION,
+    strip: [],
+    upperRow: [],
+    lowerRow: [],
+    moduleRows: {},
+    sections: [],
+    hidden: [],
+  };
+
+  // Append-if-absent rather than a blind push: pressing "+" twice on the same page must not put two
+  // identical tabs in the row, and re-adding a page already there must not move it to the end.
+  const without = (list: readonly string[] | undefined): string[] =>
+    (list ?? []).filter((entry) => entry !== href);
+  const withHref = (list: readonly string[] | undefined): string[] =>
+    (list ?? []).includes(href) ? [...(list ?? [])] : [...(list ?? []), href];
+
+  const moduleRows: Record<string, PersonalLayoutRowSet> = {};
+  for (const [moduleId, set] of Object.entries(base.moduleRows ?? {})) {
+    moduleRows[moduleId] = { upperRow: withHref(set.upperRow), lowerRow: without(set.lowerRow) };
+  }
+
+  return {
+    ...base,
+    version: PERSONAL_LAYOUT_VERSION,
+    strip: without(base.strip),
+    upperRow: withHref(base.upperRow),
+    lowerRow: without(base.lowerRow),
+    moduleRows,
+    hidden: without(base.hidden),
+  };
+}
