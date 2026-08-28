@@ -600,7 +600,7 @@ export function VacanciesReport({
                   title="No vacancies"
                 />
               }
-              getKey={(row) => row.id}
+              getKey={(row) => String(row.id)}
               items={filteredRows}
               renderCard={(row) => (
                 <PortalRecordCard
