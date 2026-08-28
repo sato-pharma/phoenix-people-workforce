@@ -264,6 +264,21 @@ file holding the full account, under
   409" and "0 have a stored file"; chunked at 50 the truth was **10**. Chunk every `.in()` at ~50, and
   print the row count of the intermediate fetch — a pool of 409 candidates cannot return 0 extraction
   rows, which is what exposed it. `postgrest-in-with-hundreds-of-ids-silently-returns-nothing`
+- **Two more PostgREST filters that answer WRONG with no error** (relocated from `MEMORY.md`
+  2026-08-28 together with their index line). **A `neq` against a jsonb key that is ABSENT matches
+  ZERO rows** — `NULL <> 'true'` is NULL, not true — so an "exclude the flagged rows" filter
+  silently drops every row that never carried the flag. Measured live on production 2026-08-23: the
+  bare form returned **0 of 390** where the truth was **19 of 390**. Write the OR-form
+  (`.or("<path>.is.null,<path>.neq.<value>")`) and prove it with a `Prefer: count=exact` call whose
+  counts add up to the table total. And **an unbounded `.select()` stops at 1000 rows** — no error,
+  no marker, the array simply ends, so "these are all the rows" is indistinguishable from "these are
+  the first 1000". `scripts/recruitment-reread-never-read-cvs.ts` decided who counted as
+  already-read from one such select over a table holding **912 rows, 88 from the cap** — and that
+  script adds a row per candidate it reads, so it was walking itself into the cliff. Run
+  `select count(*)` before trusting any unbounded select, then page with an explicit `.order()` plus
+  `.range()`; without the order the page boundaries are undefined and a row can come back twice or
+  never. `postgrest-neq-on-an-absent-jsonb-key-matches-nothing` ·
+  `postgrest-unbounded-select-silently-stops-at-1000-rows`
 - **A Supabase client request that times out at 15s STILL COMMITS.** `getSupabaseAdmin()` aborts after
   15s (`src/lib/supabase/server.ts`; raise it with `getSupabaseAdmin({ requestTimeoutMs })`), and the
   JS client throws "Supabase request timed out" — but Postgres keeps running and commits the
@@ -562,6 +577,27 @@ misfiled: the index's own last line says session and tooling traps belong in §2
 are agent-operating facts rather than Phoenix business rules. Relocating them to §2.1 freed more
 than every remaining formatting lever combined and cost no fact anything.
 
+**The 2026-08-28 pass — and the second thing a trim is for.** Measured at **24,230 bytes, 170 bytes
+of headroom**, which §2.2 already says is not a fix: less than one hook line, so the next append
+re-breaks it the same silent way. Compression was again exhausted (**zero** trailing whitespace,
+**zero** double spaces, **one** em-dash, 46 bold pairs to spend last), so this was a relocation
+too — four hooks that were misfiled as Phoenix business rules when they are nothing of the kind:
+**two PostgREST filter traps** to §2.1 beside the `.in()` trap they are siblings of, the **Railway
+`service source connect`** trap to §2.3, and **production has no PITR** to §2.3. That freed **718
+bytes — headroom 170 → 888**, and every count moved by exactly the relocation and nothing else:
+links 157 → 153 (the four moved hooks), lines 118 → 116, 🔴 99 → 97, 🔒 4 → 4, and **no surviving
+link went dead**. The `ARCHIVE` pointer that shared a line with the PostgREST hooks was carried
+verbatim onto the WhatsApp coexistence line it actually belongs to rather than deleted.
+
+**Read every line you touch while you are in there — a trim is the one pass that reads the whole
+index.** This one found a **false present-tense claim**: the index asserted "**~18 cron routes FALL
+OPEN with no `CRON_SECRET`**", which #2479 closed on 2026-08-27. Verified on `origin/main` before
+removing it — **0** routes carry `if (!secret) return !isProductionRuntime();`, **22** carry the
+hardened `process.env.NODE_ENV === "development"` form — and the memory file behind the hook was
+corrected in place too, since the file is the fact. A stale hook is worse than a missing one: it
+spends a tired session's attention defending a hole that is already shut. Deleting it was safe only
+because the corrected account lives in §2.3, which auto-loads in full.
+
 **A relocation spanning git and `~/.claude/` must finish BOTH halves or neither, in that order.**
 The destination must be **merged**, not merely written, before the index line is trimmed - between
 those two moments the fact exists in neither auto-loaded file. This is not hypothetical: a session
@@ -593,6 +629,19 @@ production-ops guidance. They stay in the index.
   `railway-stdin-bom-trap`
 - **`railway ssh` JOINS argv and lands as ROOT** - the command you think you are quoting is not the
   command that runs. `railway-ssh-joins-argv-and-lands-as-root`
+- **`railway service source connect` is NOT environment-scoped — `--environment staging` REPOINTED
+  PRODUCTION** (relocated from `MEMORY.md` 2026-08-28 together with its index line). The flag reads
+  like `railway variables -e staging`, which genuinely is environment-scoped; this one is not. The
+  CLI's own help says so: `-e, --environment <ENVIRONMENT>  Environment to use for resolving the
+  service` — *resolving* the service, not choosing what to change. The git source is a
+  **service-level** setting shared by every environment of that service, so connecting a branch
+  repoints them all. Measured 2026-08-28 ~04:38 Cairo on this repo: one command meant as a
+  staging-only test of an unmerged PR put `codex/retire-modules-control` on BOTH environments, and
+  `https://phoenix-hr.satopharma.com/api/healthz` returned **`revision: 24f736bc`** — production
+  serving an unmerged feature branch at full traffic, with two already-merged commits rolled back.
+  The rule that follows is absolute: **a branch cannot be staged on Railway without shipping it**,
+  so never reach for this command to preview anything.
+  `railway-service-source-connect-is-not-environment-scoped`
 
 **Cron and secrets**
 
@@ -618,6 +667,16 @@ production-ops guidance. They stay in the index.
   THREE writes.** `expense-claims-rls-read-path-is-live-in-prod` ·
   `guard-every-prod-write-when-another-session-shares-the-queue` ·
   `force-logout-everywhere-needs-three-writes`
+- **Production has NO PITR — 7 daily physical backups are the whole recovery story** (relocated
+  from `MEMORY.md` 2026-08-28 together with its index line). Verified 2026-08-13 against the
+  Management API: `pitr_enabled: FALSE`, `walg_enabled: true`, 7 daily backups retained.
+  **Healthy WAL archiving is not PITR**, and concluding otherwise is the easy mistake —
+  `pg_stat_archiver` shows 11,309 segments archived with **0 failures ever**, pushing every ~120s,
+  and every Supabase project looks like that; restore-to-a-timestamp is a paid add-on this project
+  does not have. So on a database that pays real employees, **recovery granularity is one day and
+  the restore unit is the whole database** — say that plainly before any bulk or destructive
+  production change, and **never restore a daily backup in place**, which rolls back everything
+  since roughly 07:30 Cairo that day. `production-supabase-has-no-pitr-only-daily-backups`
 
 **Which environment the code thinks it is in** (the first two relocated from `MEMORY.md`
 2026-08-27, and they live HERE now — their index lines are gone, so this block is the only thing
