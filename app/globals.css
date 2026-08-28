@@ -81,10 +81,11 @@
   --color-warning: var(--warning);
   --color-danger: var(--danger);
   /* The three stacks now live in tokens.css beside everything else they belong
-     with. --font-sans is Inter, self-hosted and actually loaded (@font-face in
-     app/layout.tsx) — the first webfont this app has ever named. Before this the
-     stack led with "Aptos", which exists only on a Windows machine with Office
-     installed, so the product rendered in a different typeface desk to desk. */
+     with. None is webfont-backed: --font-sans leads with "Aptos", which exists only
+     on a Windows machine with Office installed, so the product still renders in a
+     different typeface desk to desk. #2541 closed that with a self-hosted Inter and
+     was reverted on 2026-08-28 — it rescaled the whole app optically. The reasoning,
+     and what a future attempt has to do differently, is in tokens.css. */
   --font-sans: var(--phx-font-ui);
   --font-mono: var(--phx-font-mono);
   --font-display: var(--phx-font-display);

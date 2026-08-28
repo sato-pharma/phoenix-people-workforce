@@ -19,6 +19,7 @@ import { runHrUrlNamespaceTests } from "./hr-url-namespace.test.ts";
 import { runNotificationLinksResolveTests } from "./notification-links-resolve.test.ts";
 import { runNavigationPersonalLayoutTests } from "./navigation-personal-layout.test.ts";
 import { runFinanceManagerSixModuleAccessTests } from "./finance-manager-six-module-access.test.ts";
+import { runSidebarLabelFontSyncTests } from "./sidebar-label-font-sync.test.ts";
 import { runSidebarLabelWidthTests } from "./sidebar-label-width.test.ts";
 import { runAutomatedPayrollPageWidthTests } from "./automated-payroll-page-width.test.ts";
 import { runWorkspaceSingleHeroTests } from "./workspace-single-hero.test.ts";
@@ -1072,6 +1073,7 @@ await runTest(
   runFinanceManagerSixModuleAccessTests,
 );
 await runTest("automated payroll pages render full width", runAutomatedPayrollPageWidthTests);
+await runTest("sidebar width guard measures the font the app actually renders", runSidebarLabelFontSyncTests);
 await runTest("sidebar labels never clip (no ellipsis, no wrap)", runSidebarLabelWidthTests);
 await runTest("workspace pages render exactly one hero", runWorkspaceSingleHeroTests);
 await runTest(
