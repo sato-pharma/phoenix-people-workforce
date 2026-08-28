@@ -647,6 +647,7 @@ import { runSosRollupSqlTruthTests } from "./sos-rollup-sql-truth.test.ts";
 import { runSosBackfillEmptyBrickSentinelTests } from "./sos-backfill-empty-brick-sentinel.test.ts";
 import { runSosSeatAttributionPeriodTests } from "./sos-seat-attribution-period.test.ts";
 import { runMonthlyClosingLockTests } from "./monthly-closing-lock.test.ts";
+import { runClosingPeriodGateTests } from "./closing-period-gate.test.ts";
 import { runSosMappingIntegrityTests } from "./sos-mapping-integrity.test.ts";
 import { runSosIngestionNoSilentZeroTests } from "./sos-ingestion-no-silent-zero.test.ts";
 import { runAnalyticsAreaScopeV2Tests } from "./analytics-area-scope-v2.test.ts";
@@ -1935,6 +1936,7 @@ await runTest("SoS rollup SQL truth (Direct priced as Direct, backfill refreshes
 await runTest("SoS backfill matches the empty-string brick sentinel, not just NULL", runSosBackfillEmptyBrickSentinelTests);
 await runTest("SoS seat attribution (today's wiring, departed reps keep their credit)", runSosSeatAttributionPeriodTests);
 await runTest('Monthly closing lock (database triggers, not a disabled button)', runMonthlyClosingLockTests);
+await runTest('CLOSING GOLDEN RULE (a month is never published during that month, Cairo boundary)', runClosingPeriodGateTests);
 await runTest('SoS mapping integrity (alias edit replaces, exact customer key detects conflicts)', runSosMappingIntegrityTests);
 await runTest('SoS ingestion (an unreadable cell is rejected, never silently zeroed)', runSosIngestionNoSilentZeroTests);
 await runTest('analytics area scope v2 (reconciliation refuses area-scoped viewers, one active alias target)', runAnalyticsAreaScopeV2Tests);
