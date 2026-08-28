@@ -10,6 +10,7 @@ import {
   repKeysMatching,
   repsMatching,
   resolveCoverageSelection,
+  restrictCoverageFilterTree,
   vacanciesMatching,
   type CoverageFilterMapRow,
   type CoverageFilterSeatRow,
@@ -251,6 +252,85 @@ function testPruningRepairsAStaleUrl() {
   assert.deepEqual(pruneCoverageSelection(t, intact), intact, "a valid selection passes through untouched");
 }
 
+/**
+ * BUG 5 — the picker was wider than the viewer.
+ *
+ * Owner, 2026-08-28: "Anyone can filter by any line… and can choose any region and anything."
+ *
+ * The tree is read company-wide and cached under ONE key for everybody, and both boards handed it
+ * straight to the filter bar. So a Medical Rep scoped to his own panel was offered every region,
+ * every line, every area and all ~73 rep NAMES in the company, and a District Manager scoped to his
+ * own team could pick any region in the country. The board's DATA was never wide — the access scope
+ * is applied inside the service and the territory filter is intersected after it — so picking
+ * somebody else's region returned an EMPTY board, which is precisely the "this team covered
+ * nothing" misreading the whole cell model at the top of this module exists to prevent.
+ */
+function testRestrictionNarrowsThePickerToTheViewersOwnReps() {
+  const t = tree();
+
+  assert.equal(restrictCoverageFilterTree(t, null), t, "a company-scoped viewer is not restricted at all");
+
+  // Omayma works Giza / Anti Infective / Dokki, and nothing else.
+  const hers = restrictCoverageFilterTree(t, ["AI-0009"]);
+  assert.deepEqual(hers.reps.map((rep) => rep.repName), ["Omayma Wael"], "THE HEADLINE: the rep picker names only the people in scope — not the whole roster");
+  assert.deepEqual(hers.regions.map((r) => r.code), ["giza"], "and only the region she actually works");
+  assert.deepEqual(hers.lines.map((l) => l.code), ["anti_infective"], "and only her line — no other line is offered at all");
+  assert.deepEqual(hers.areas.map((a) => a.code), ["dokki"], "and only her area");
+
+  // Casing and padding: hr ids arrive from a scope resolver in the session's own spelling.
+  assert.deepEqual(
+    restrictCoverageFilterTree(t, ["  ai-0009 "]).reps.map((rep) => rep.hrId),
+    ["AI-0009"],
+    "an hr id is matched case- and whitespace-insensitively, or a scoped viewer silently gets an empty picker",
+  );
+
+  // Whatever survives must still be reachable — a restricted tree that offers a dead end is the
+  // same defect as the one the cell model was built to remove, just in a smaller box.
+  for (const restricted of [hers, restrictCoverageFilterTree(t, ["CN-0006", "B-58"])]) {
+    for (const region of [undefined, ...restricted.regions.map((r) => r.code)]) {
+      for (const line of [undefined, ...narrowCoverageOptions(restricted, { region }).lines.map((l) => l.code)]) {
+        for (const area of [undefined, ...narrowCoverageOptions(restricted, { line, region }).areas.map((a) => a.code)]) {
+          assert.ok(
+            repKeysMatching(restricted, { area, line, region }).size > 0,
+            `a restricted picker must never offer a dead end: ${describeCoverageSelection(restricted, { area, line, region })}`,
+          );
+        }
+      }
+    }
+  }
+
+  // A gap is reported when it stands next to work the viewer owns, and hidden when it does not —
+  // the same region+line adjacency rule `vacanciesMatching` already applies to a selected rep.
+  assert.deepEqual(
+    restrictCoverageFilterTree(t, ["CN-0006"]).vacancies.map((v) => v.areaCode),
+    ["haram"],
+    "Mona works Giza/Pedia, so the vacant Giza/Pedia territory beside her is hers to see",
+  );
+  assert.deepEqual(hers.vacancies, [], "Omayma is on another line, so that same gap is not offered to her");
+
+  // A stale or hand-edited URL must not walk back out of the restriction.
+  assert.deepEqual(
+    pruneCoverageSelection(hers, { area: "beni", line: "pedia", region: "upper", rep: "hr:cn-0006" }),
+    { area: undefined, line: undefined, region: undefined, rep: undefined },
+    "a hand-typed URL pointing at somebody else's territory is pruned away, not honoured into an empty board",
+  );
+
+  // Both boards share this tree, so both pages must apply the restriction — and both must take the
+  // allow-list from the access SCOPE, never from anything the browser sent.
+  for (const page of [
+    "app/(admin)/admin/doctor-coverage/page.tsx",
+    "app/employee-portals/doctor-coverage/page.tsx",
+    "app/(admin)/admin/brick-coverage/page.tsx",
+  ]) {
+    const source = readFileSync(page, "utf8");
+    assert.match(
+      source,
+      /restrictCoverageFilterTree\(\s*await loadCoverageFilterTree\(\),\s*scope\.kind === "agents" \? scope\.agentHrIds : null,\s*\)/,
+      `${page} must narrow the cached company-wide tree to the viewer's own scope before it reaches the filter bar`,
+    );
+  }
+}
+
 function testSelectionResolutionTreatsBlanksAsAbsent() {
   assert.deepEqual(
     resolveCoverageSelection({ area: "", line: "   ", region: "giza", rep: undefined }),
@@ -272,5 +352,6 @@ export function runCrmCoverageFilterTests() {
   testRepsMatchingCarriesHrIdForTheOtherBoard();
   testVacanciesFollowWhatIsOnScreen();
   testPruningRepairsAStaleUrl();
+  testRestrictionNarrowsThePickerToTheViewersOwnReps();
   testSelectionResolutionTreatsBlanksAsAbsent();
 }

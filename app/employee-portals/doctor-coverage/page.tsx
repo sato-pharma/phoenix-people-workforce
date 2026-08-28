@@ -15,6 +15,7 @@ import {
   pruneCoverageSelection,
   repKeysMatching,
   resolveCoverageSelection,
+  restrictCoverageFilterTree,
 } from "@/lib/crm/coverage-filters";
 import { loadCoverageFilterTree } from "@/lib/crm/coverage-filters-data";
 import { getDoctorCoverageScope } from "@/lib/crm/doctor-coverage-scope";
@@ -71,7 +72,13 @@ export default async function PortalDoctorCoveragePage({ searchParams }: PagePro
   });
   let loadError: string | null = null;
   try {
-    tree = await loadCoverageFilterTree();
+    // Narrowed to THIS viewer, because the tree is read company-wide and cached under one key. This
+    // is the portal twin, so it is where the widest audience sat: a Medical Rep was being offered
+    // every region, line, area and rep NAME in the company in his own filter bar.
+    tree = restrictCoverageFilterTree(
+      await loadCoverageFilterTree(),
+      scope.kind === "agents" ? scope.agentHrIds : null,
+    );
     territory = pruneCoverageSelection(tree, territory);
 
     const filters = {
@@ -84,7 +91,7 @@ export default async function PortalDoctorCoveragePage({ searchParams }: PagePro
       // than someone else's numbers.
       ...(coverageSelectionIsActive(territory) ? { repKeys: [...repKeysMatching(tree, territory)] } : {}),
     };
-    board = await getSfeDoctorCoverage({ filters, month, scope });
+    board = await getSfeDoctorCoverage({ filters, month, scope, viewerHrId: access.hrId });
   } catch (error) {
     loadError = error instanceof Error ? error.message : "Doctor coverage data is unavailable.";
   }

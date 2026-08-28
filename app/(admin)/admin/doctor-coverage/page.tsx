@@ -17,6 +17,7 @@ import {
   pruneCoverageSelection,
   repKeysMatching,
   resolveCoverageSelection,
+  restrictCoverageFilterTree,
 } from "@/lib/crm/coverage-filters";
 import { loadCoverageFilterTree } from "@/lib/crm/coverage-filters-data";
 import { getDoctorCoverageScope } from "@/lib/crm/doctor-coverage-scope";
@@ -63,10 +64,19 @@ export default async function DoctorCoveragePage({ searchParams }: PageProps) {
   });
   let loadError: string | null = null;
   try {
-    tree = await loadCoverageFilterTree();
+    // The tree is read company-wide and cached under one key, so it is narrowed to THIS viewer here
+    // rather than at the read. Without that, the picker offered every region, line, area and rep
+    // name in the company to whoever opened the board, while the board itself stayed scoped — so
+    // choosing somebody else's region returned an empty board that reads as "they covered nobody".
+    tree = restrictCoverageFilterTree(
+      await loadCoverageFilterTree(),
+      scope.kind === "agents" ? scope.agentHrIds : null,
+    );
     // A URL can carry any pair of codes at all — bookmarked, shared, or hand-edited. Pruning against
     // the live org keeps whatever still makes sense and drops the rest, so a stale link degrades to
-    // a wider board rather than to a self-contradictory empty one.
+    // a wider board rather than to a self-contradictory empty one. It runs against the RESTRICTED
+    // tree, so a hand-edited `?region=` outside the viewer's territory is dropped rather than
+    // honoured into an empty board.
     territory = pruneCoverageSelection(tree, territory);
 
     const filters = {
@@ -78,7 +88,7 @@ export default async function DoctorCoveragePage({ searchParams }: PageProps) {
       // ever narrow what the viewer was already entitled to see — never widen it.
       ...(coverageSelectionIsActive(territory) ? { repKeys: [...repKeysMatching(tree, territory)] } : {}),
     };
-    board = await getSfeDoctorCoverage({ filters, month, scope });
+    board = await getSfeDoctorCoverage({ filters, month, scope, viewerHrId: access.hrId });
   } catch (error) {
     loadError = error instanceof Error ? error.message : "Doctor coverage data is unavailable.";
   }
