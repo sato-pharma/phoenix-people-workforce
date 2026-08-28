@@ -103,8 +103,10 @@ import {
   isClosedEmployeePlanStatus,
   isDistrictManagerPlanTitle,
   isWeeklyMonthlyPlanEligibleTitle,
+  planPeriodMove,
   planRequiredSlotsByDate,
   resolvePlanWorkweek,
+  shiftIsoDate,
   type EmployeePlanAction,
   type EmployeePlanActivityType,
   type EmployeePlanKind,
@@ -374,6 +376,7 @@ export type EmployeePlansSummary = {
 
 export type EmployeePlansWorkspace = {
   canAcknowledgeHr: boolean;
+  canMovePlanPeriod: boolean;
   canSubmitPlans: boolean;
   hasMorePlans: boolean;
   loadedPlanCount: number;
@@ -1828,6 +1831,9 @@ export async function getEmployeePlansWorkspace(access: AccessContext): Promise<
   const employee = directory.employees.find((item) => normalizeHrId(item.hrId) === viewerHrId) ?? null;
   const canSubmitPlans = Boolean(employee && canSubmitFromEmployee(employee, access.role) && await canAccess(access, "weekly_plans", "create"));
   const canAcknowledgeHr = isHrReviewer(access, employee);
+  // Mirrors moveWeeklyPlanToPeriod exactly: HR/Super-Admin AND the approve grant. A flag carrying
+  // only half the gate renders a button the server then rejects.
+  const canMovePlanPeriod = canAcknowledgeHr && (await canAccess(access, "weekly_plans", "approve"));
   // One read, two jobs: it names the owner's district outright (the Area picker's first
   // authority) and fills the blank area_name that hides five reps from the rep list.
   // Fails soft for the same reason the seat map below does.
@@ -1884,6 +1890,7 @@ export async function getEmployeePlansWorkspace(access: AccessContext): Promise<
     });
     return {
       canAcknowledgeHr,
+      canMovePlanPeriod,
       canSubmitPlans,
       currentEmployee: employee
         ? {
@@ -1915,6 +1922,7 @@ export async function getEmployeePlansWorkspace(access: AccessContext): Promise<
     if (!isSchemaMissing(error)) throw error;
     return {
       canAcknowledgeHr,
+      canMovePlanPeriod,
       canSubmitPlans,
       currentEmployee: employee
         ? {
@@ -3067,6 +3075,149 @@ export async function reassignWeeklyPlanManager(
     }),
   );
   return mapPlan(updated);
+}
+
+// Statuses whose plan is still a live record. A rejected or cancelled plan is a closed one:
+// re-dating it would resurrect it onto a week it was never meant for, and those statuses sit
+// OUTSIDE employee_plan_headers_active_period_uidx, so the index would not stop it landing on a
+// week that already has a real plan.
+const MOVABLE_PLAN_STATUSES: EmployeePlanStatus[] = [
+  "draft",
+  "submitted",
+  "edit_requested",
+  "details_requested",
+  "manager_approved",
+  "manager_returned",
+  "ceo_approved",
+  "ceo_returned",
+  "final_approved",
+  "hr_acknowledged",
+];
+
+/**
+ * HR / Super Admin re-dates a whole plan onto a different period, for the case this exists for:
+ * the employee picked the wrong week in the editor and submitted an otherwise correct plan
+ * against it. Before this, the only remedies were leaving the wrong week approved or rebuilding
+ * the plan by hand in the database.
+ *
+ * The header AND every item move by ONE whole-day delta, so weekday alignment survives — a Sunday
+ * visit stays on Sunday. Moving the header alone leaves a plan whose rows sit outside their own
+ * period, which reads as corruption in every downstream view.
+ *
+ * This re-dates; it never decides. Status, revision, approvals and the decision trail are all
+ * left exactly as they were.
+ */
+export async function moveWeeklyPlanToPeriod(
+  access: AccessContext,
+  input: { planId: string; targetAnchorDate: string },
+) {
+  // Same two-part gate as reassignWeeklyPlanManager: the standing weekly_plans approve grant AND
+  // HR/Super-Admin. Neither alone is sufficient.
+  await assertPermission(access, "weekly_plans", "approve");
+  if (!isHrReviewer(access, null)) {
+    throw new Error("Forbidden: only HR or Super Admin can move a plan to another period.");
+  }
+
+  const targetAnchorDate = cleanText(input.targetAnchorDate);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(targetAnchorDate)) {
+    throw new Error("A target date (YYYY-MM-DD) inside the destination period is required.");
+  }
+
+  const plan = await loadPlanRow(input.planId);
+  if (!MOVABLE_PLAN_STATUSES.includes(plan.status)) {
+    throw new Error(`A ${plan.status} plan cannot be moved. Only a live plan can be re-dated.`);
+  }
+
+  // Destination boundaries come from the OWNER'S workweek, never from the raw anchor: Field Force
+  // runs Saturday-Thursday and Head Office Sunday-Thursday, so one anchor date lands on different
+  // period edges for different people.
+  const directory = await getEmployeeDirectory();
+  const owner = directory.employees.find((emp) => hrIdsMatch(emp.hrId, plan.employee_hr_id)) ?? null;
+  const workweek = resolvePlanWorkweek({ jobTitle: owner?.jobTitle ?? plan.employee_job_title });
+  const { dayDelta, target } = planPeriodMove(
+    plan.plan_kind,
+    plan.period_start_date,
+    targetAnchorDate,
+    workweek,
+  );
+
+  if (target.periodStartDate === plan.period_start_date && target.periodEndDate === plan.period_end_date) {
+    throw new Error("The plan is already on that period.");
+  }
+  await assertNoActivePlanForSamePeriod(plan.employee_hr_id, plan.plan_kind, target);
+  const nowIso = new Date().toISOString();
+  const admin = getSupabaseAdmin();
+  const previous = {
+    periodEndDate: plan.period_end_date,
+    periodKey: plan.period_key,
+    periodStartDate: plan.period_start_date,
+  };
+
+  // Header first, items second, and the header is put back if the items fail. Two statements
+  // cannot be one transaction through the JS client, so the order is chosen so the half that may
+  // need undoing is the one a single-row write can undo.
+  const { error: headerError } = await admin
+    .from("employee_plan_headers")
+    .update({
+      period_end_date: target.periodEndDate,
+      period_key: target.periodKey,
+      period_start_date: target.periodStartDate,
+      updated_at: nowIso,
+    })
+    .eq("id", plan.id);
+  if (headerError) throw headerError;
+
+  try {
+    const { data: itemRows, error: itemsReadError } = await admin
+      .from("employee_plan_items")
+      .select("*")
+      .eq("plan_id", plan.id);
+    if (itemsReadError) throw itemsReadError;
+    const shifted = (itemRows ?? []).map((row) => {
+      const record = row as Record<string, unknown> & { activity_date: string };
+      return { ...record, activity_date: shiftIsoDate(record.activity_date, dayDelta), updated_at: nowIso };
+    });
+    if (shifted.length > 0) {
+      // WHOLE rows, upserted in ONE statement. A per-row update loop can half-apply and leave the
+      // plan's days split across two different weeks.
+      const { error: itemsWriteError } = await admin
+        .from("employee_plan_items")
+        .upsert(shifted, { onConflict: "id" });
+      if (itemsWriteError) throw itemsWriteError;
+    }
+  } catch (itemsError) {
+    const { error: revertError } = await admin
+      .from("employee_plan_headers")
+      .update({
+        period_end_date: previous.periodEndDate,
+        period_key: previous.periodKey,
+        period_start_date: previous.periodStartDate,
+        updated_at: nowIso,
+      })
+      .eq("id", plan.id);
+    if (revertError) {
+      logError("Weekly plan move failed AND the header revert failed", {
+        labels: { event: "weekly_plan_move_revert_failed", planId: plan.id },
+        error: revertError,
+      });
+    }
+    throw itemsError;
+  }
+
+  await writeAuditLog({
+    actorLoginId: access.loginId,
+    entityId: plan.id,
+    entityType: "weekly_plan",
+    newValues: {
+      periodEndDate: target.periodEndDate,
+      periodKey: target.periodKey,
+      periodStartDate: target.periodStartDate,
+    },
+    oldValues: previous,
+    summary: `${plan.plan_kind} plan for ${plan.employee_hr_id} moved from ${previous.periodKey} (${previous.periodStartDate}) to ${target.periodKey} (${target.periodStartDate})`,
+  });
+
+  return mapPlan(await loadPlanRow(plan.id));
 }
 
 export async function acknowledgeEmployeePlan(access: AccessContext, planId: string, comment?: string | null) {
