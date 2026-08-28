@@ -307,7 +307,15 @@ export async function runCandidatePositionSuggestionTests(): Promise<void> {
       "there is an explicit way to send with no position at all");
 
     // STANDING OWNER RULE: assistive inference is invisible to users. No screen may name it.
-    const visibleText = screen.match(/>[^<>{}]{4,}</g) ?? [];
+    //
+    // Reads the ATTRIBUTES too, not just the text between tags. On this screen the words a person
+    // actually reads are mostly in `label` and `title` — the optgroup heading over the suggested
+    // seats is an attribute, and a first version of this check scanned text nodes only, so
+    // `label="AI suggests"` passed it. Proven by breaking it: the text-node scan did not fire.
+    const visibleText = [
+      ...(screen.match(/>[^<>{}]{4,}</g) ?? []),
+      ...(screen.match(/(?:label|title|placeholder|aria-label)="[^"]{4,}"/g) ?? []),
+    ];
     for (const chunk of visibleText) {
       assert.doesNotMatch(chunk, /AI|artificial intelligence|machine learning|GPT|automatically detected|we think|our system (thinks|suggests)/i,
         `no visible label may name the machinery: ${chunk.trim()}`);
