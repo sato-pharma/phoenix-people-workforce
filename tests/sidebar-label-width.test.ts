@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import {
   adminNavigationSections,
   employeePortalNavigationSections,
+  hrNavigationSections,
   type NavigationSection,
 } from "../src/config/system-navigation.ts";
 import { getSections, type PermissionLookup } from "../src/lib/navigation/active-path.ts";
@@ -18,6 +19,7 @@ import {
   permissionActions,
   permissionMatrix,
   permissionResources,
+  type NavigationMode,
   type PhoenixRole,
 } from "../src/lib/auth/permissions.ts";
 
@@ -68,8 +70,11 @@ type Measured = { badge: boolean; hub: boolean; label: string; roles: string[]; 
  */
 function worstCaseRows(): Measured[] {
   const byKey = new Map<string, Measured>();
-  const shells: [SidebarShell, readonly NavigationSection[], "admin" | "employee-portal"][] = [
+  // The /hr namespace is charged the ADMIN budget because it renders in the same rail at the same
+  // type scale — a separate shell here would have invented a second allowance for one component.
+  const shells: [SidebarShell, readonly NavigationSection[], NavigationMode][] = [
     ["admin", adminNavigationSections, "admin"],
+    ["admin", hrNavigationSections, "hr"],
     ["portal", employeePortalNavigationSections, "employee-portal"],
   ];
   for (const [shell, sections, mode] of shells) {

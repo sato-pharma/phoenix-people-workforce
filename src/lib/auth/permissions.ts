@@ -182,7 +182,29 @@ export const permissionActions: PermissionAction[] = [
 
 export type AccessScope = "self" | "team" | "hierarchy" | "line" | "company" | "none" | "system";
 export type BusinessScope = "SELF" | "TEAM" | "HIERARCHY" | "LINE" | "COMPANY" | "NONE";
-export type NavigationMode = "admin" | "employee-portal";
+/**
+ * Which shell a viewer gets.
+ *
+ * `hr` is the third mode, added 2026-08-28 at the owner's instruction that the HR seats must not
+ * sit on the admin addresses. It renders the SAME chrome as `admin` — same components, same
+ * density, deliberately not a second design — but its own authored navigation, under the `/hr`
+ * URL prefix. See middleware.ts for how a request reaches it.
+ */
+export type NavigationMode = "admin" | "employee-portal" | "hr";
+
+/**
+ * The seats that live in the `/hr` namespace.
+ *
+ * Membership is by BUNDLE NAME rather than by "does this role hold HR grants", and that is
+ * deliberate: a derived test would silently pull in any future role that happened to gain an HR
+ * resource, which is the fail-OPEN direction. Adding a seat here is a decision someone makes on
+ * purpose.
+ */
+export const hrNamespaceRoles = new Set<PhoenixRole>(["HR Advisory", "HR Operations"]);
+
+export function usesHrNamespace(role: PhoenixRole): boolean {
+  return hrNamespaceRoles.has(role);
+}
 
 export type AccessContext = {
   hrId: string | null;
@@ -1245,6 +1267,17 @@ export function resolveEmployeeIdentityId(context: Partial<Pick<AccessContext, "
   return normalizeHrId(context.hrId) ?? normalizeHrId(context.loginId);
 }
 
+/**
+ * Which of the two SHELLS a viewer belongs to — admin or employee portal.
+ *
+ * This deliberately never returns `"hr"`, even for an HR-namespace role. The mode a shell renders
+ * in is a property of the ADDRESS, not of the person: `/hr/probation` renders HR navigation and
+ * `/probation` renders admin navigation, and the middleware header is what tells them apart (see
+ * `app/(admin)/layout.tsx`). Every existing caller here — the approvals badge-count audience, the
+ * hub pages' portal bounce, the dual-mode pages — is asking "portal or not", and returning a third
+ * value would silently change each of those answers. `usesHrNamespace` is the question about the
+ * person; this is the question about the shell.
+ */
 export function resolveNavigationMode(context: AccessContext): NavigationMode {
   if (context.source === "guest" || context.scope === "none") {
     return "employee-portal";

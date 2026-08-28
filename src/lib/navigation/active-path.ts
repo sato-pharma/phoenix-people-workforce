@@ -26,6 +26,45 @@ import type {
 export type PermissionLookup = Partial<Record<`${PermissionResource}:${PermissionAction}`, boolean>>;
 type PermissionLookupKey = keyof PermissionLookup;
 
+// ── Shell chrome and URL prefix, by mode ─────────────────────────────────────
+/**
+ * Does this mode render the ADMIN chrome — dark rail, section headings, hub buttons, the admin
+ * background, the collapsible sidebar?
+ *
+ * There are three modes and only two looks. `hr` (2026-08-28) is the admin shell served under its
+ * own URL prefix, NOT a third design: the owner's standing rule is that a new surface matches the
+ * design identity of its siblings rather than inventing a one-off look, and the HR seats are
+ * admin-shell accounts by his decision. Every `mode === "admin"` test that was really asking "is
+ * this the admin LOOK" now asks this instead; the one test that genuinely means "admin and not
+ * HR" — the personal-layout store, which is keyed per person, not per mode — still compares the
+ * mode directly.
+ */
+export function usesAdminChrome(mode: NavigationMode | undefined): boolean {
+  return mode === "admin" || mode === "hr";
+}
+
+/** The URL prefix every link in this mode is served under. Empty for admin and the portal. */
+export function navigationPathPrefix(mode: NavigationMode | undefined): string {
+  return mode === "hr" ? "/hr" : "";
+}
+
+/**
+ * Bring a browser pathname into the form this mode's hrefs are authored in.
+ *
+ * `hrNavigationSections` authors real, prefixed hrefs (`/hr/probation`) so a sidebar click needs
+ * no redirect. Active-row detection then has to compare against a prefixed pathname — and whether
+ * `usePathname()` reports the browser path or the rewritten one after a middleware rewrite is a
+ * Next.js implementation detail that has changed between releases. Normalising UP to the prefixed
+ * form is correct under BOTH behaviours, so the sidebar never depends on which one is in force.
+ */
+export function normalizePathnameForMode(pathname: string, mode: NavigationMode | undefined): string {
+  const prefix = navigationPathPrefix(mode);
+  if (!prefix) return pathname;
+  if (pathname === prefix || pathname.startsWith(`${prefix}/`)) return pathname;
+  if (!pathname.startsWith("/")) return prefix;
+  return pathname === "/" ? prefix : `${prefix}${pathname}`;
+}
+
 /**
  * Roles that keep the FLAT sidebar look built for the SFE Manager on 2026-08-02 (PR #1625):
  * no section headings, and hub buttons styled exactly like ordinary links.
