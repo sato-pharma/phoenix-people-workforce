@@ -65,8 +65,64 @@ export type CrmContactSyncResult = {
   contacts: number;
   deleted: number;
   outcomes: CrmContactAgentOutcome[];
+  /** Agents this run never reached, because the time budget ran out before their turn came. */
+  skipped: number;
   upserted: number;
 };
+
+/**
+ * THE WHOLE SWEEP DOES NOT FIT IN ONE REQUEST, AND THE SCHEDULER CUTS AT 30 SECONDS.
+ *
+ * Measured 2026-08-28 with a one-shot probe against the real route: cron-job.org killed the
+ * connection at 30.1s (`ms=30108`) with the job's own `requestTimeout` set to 300. The 30-second
+ * limit is a PLATFORM cap, not a per-job setting — raising the setting is accepted by their API and
+ * changes nothing. The dangerous half of that measurement is what the database showed afterwards:
+ * 39 of 68 agents re-stamped, the rest untouched. The server does NOT quietly finish the work after
+ * the client hangs up. A single nightly request would therefore report failure every night AND
+ * leave the mirror half refreshed — the two outcomes this module exists to avoid.
+ *
+ * The fix is to sweep a twelfth of the roster per request, twelve requests five minutes apart
+ * inside one hour. Each tick is about 7 agents, roughly 14 seconds of vendor calls.
+ */
+export const CONTACT_SYNC_SLICE_COUNT = 12;
+
+/**
+ * Which slice a run at this instant belongs to, derived from the clock rather than from the URL.
+ *
+ * Twelve five-minute slots inside an hour, so ONE cron entry covers the whole roster instead of
+ * twelve separate jobs. The minute is rounded to the NEAREST slot rather than floored, because a
+ * scheduler firing at 05:04:58 for the 05:05 tick would otherwise repeat slice 0 and skip slice 1
+ * every single day — a permanent hole in the roster that looks exactly like a healthy job.
+ * Rounding tolerates about two and a half minutes of skew in either direction.
+ *
+ * Deliberately NO timezone conversion, and that is not an oversight. Only the minute within the
+ * hour selects a slice, and Cairo is a whole-hour offset from UTC in both standard time and summer
+ * time — so the Cairo minute and the UTC minute are always the same number. Converting would add a
+ * dependency on a zone database to compute a value that cannot change. The schedule is still
+ * written in Cairo time; only which twelfth this reads is offset-proof.
+ */
+export function contactSyncSliceForDate(date: Date): number {
+  const withinHour = date.getUTCMinutes() * 60 + date.getUTCSeconds();
+  return Math.round(withinHour / 300) % CONTACT_SYNC_SLICE_COUNT;
+}
+
+/**
+ * Picks the agents belonging to one slice. Pure, so the partition is testable without a clock.
+ *
+ * Round-robin over the id-sorted roster, NOT `agentCrmId % of`: the vendor's ids are not evenly
+ * spread, and on the live roster of 82 that modulo put 11 agents in one slice against 4 in
+ * another — 11 agents is about 21 seconds, uncomfortably close to a 30-second cap. Round-robin
+ * guarantees ceil(n / of), which is 7 here.
+ *
+ * A hire landing mid-window shifts the tail by one position, so one agent can be swept twice that
+ * day and another can wait until tomorrow. Both are harmless: the sweep is idempotent, and a list
+ * one day old is what this job produces on its best night anyway.
+ */
+export function selectContactSyncSlice<T>(targets: T[], slice: number, of: number): T[] {
+  if (of <= 1) return [...targets];
+  const index = ((slice % of) + of) % of;
+  return targets.filter((_target, position) => position % of === index);
+}
 
 /**
  * The job titles whose CRM accounts hold a contact list worth mirroring.
@@ -291,8 +347,15 @@ async function syncOneAgent(
  * requests on one session completed without a single failure on 2026-08-28. Agents are processed
  * in sequence rather than in parallel: this is someone else's production web app, and a contact
  * list changes slowly enough that a few minutes of wall clock costs nothing.
+ *
+ * `deadlineAt` is the second guard behind the slicing above, and it is the one that cannot be
+ * knocked out by a roster change or a slow night at the vendor. An agent is only STARTED while
+ * there is budget left; one already running is always allowed to finish, so a run never stops
+ * between an agent's upserts and its deletes. Agents never reached are counted, not hidden — a
+ * `skipped` above zero is the signal that the window needs another tick or a wider spread.
  */
 export async function syncCrmContactLists(input: {
+  deadlineAt?: number;
   targets: CrmContactSyncTarget[];
 }): Promise<CrmContactSyncResult> {
   const maps = await loadCrmIdentityMaps();
@@ -300,7 +363,12 @@ export async function syncCrmContactLists(input: {
 
   const contacts = new Set<number>();
   const outcomes: CrmContactAgentOutcome[] = [];
+  let skipped = 0;
   for (const target of input.targets) {
+    if (input.deadlineAt != null && Date.now() >= input.deadlineAt) {
+      skipped += 1;
+      continue;
+    }
     outcomes.push(await syncOneAgent(session, target, maps, contacts));
   }
 
@@ -311,6 +379,7 @@ export async function syncCrmContactLists(input: {
     contacts: contacts.size,
     deleted: outcomes.reduce((sum, outcome) => sum + outcome.deleted, 0),
     outcomes,
+    skipped,
     upserted: outcomes.reduce((sum, outcome) => sum + outcome.upserted, 0),
   };
 }
