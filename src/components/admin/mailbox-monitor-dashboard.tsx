@@ -274,7 +274,7 @@ export function MailboxMonitorDashboard({ initialMonitors }: { initialMonitors: 
                 <span className="text-sm text-amber-900">three underscores — nothing else, no other label.</span>
               </div>
               <p className="text-sm text-amber-900/90">
-                Do this in the mailbox's own security settings under <span className="font-semibold">Manage app passwords</span>.
+                Do this in the mailbox&apos;s own security settings under <span className="font-semibold">Manage app passwords</span>.
                 The employee keeps signing in with their usual password; the app password is invisible to them in normal use.
               </p>
             </div>
