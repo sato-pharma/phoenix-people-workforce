@@ -388,13 +388,35 @@ Phoenix business rules, and the index line at its cliff is the wrong place for t
   `worktree-remove-permission-denied-still-deregisters`
 - **`--fix` / `--strip-idle` need exactly ONE live session**, and **`--fix` can NEVER clear a `_wt-*`
   husk** — `fs.rmSync` EPERMs on dangling pnpm junctions. Use `rmdir /s /q`, then re-check the folder:
-  an OLD `CreationTime` proves it never went. `repo-doctor-strip-idle-cannot-run-with-sessions-open` ·
+  an OLD `CreationTime` proves it never went. **Run that `rmdir` from PowerShell, not the Bash
+  tool** — `cmd /c rmdir /s /q "$folder"` with an MSYS-mangled backslash path prints the cmd banner
+  and does NOTHING, and that stale `CreationTime` is the only thing that reveals it (2026-08-28).
+  `repo-doctor-strip-idle-cannot-run-with-sessions-open` ·
   `repo-doctor-fix-cannot-delete-a-wt-husk-pnpm-junctions-eperm`
 - **repo-doctor's RETIRABLE verdict names the branch a folder HAD at scan time** — a parallel session
   can repoint the tree first, and the report prints a paste-ready `git worktree remove` beside it, so
   `--force` eats the new branch's work. Re-read `status -sb -uall` and `git log origin/main..HEAD` in
   the worktree at the moment of removal, never the report: on 2026-08-23 one listed retirable on merged
   #2362 sat on a NEW branch with 90 uncommitted lines and an unpushed migration, and opened #2364.
+- **Every retirement gate in this list can PASS on a worktree that is in active use.** The bullet
+  above catches a repointed BRANCH; nothing catches a live PROCESS. On 2026-08-28
+  `_wt-reps-plans-line-region` passed all four at 09:07:5x — branch matched on a live re-read,
+  `status --porcelain -uall` empty, `gh pr list --state merged` returned #2494, and the
+  cumulative-diff patch-id equalled the squash commit's exactly (`ec45aa3b…`) — while a Next build
+  was writing `.next/client-development-fallback/*.pack.gz_` into it at **09:08:05**, seconds later.
+  A session was mid-diagnosis on that very page (the `unstable_cache` Map entry below, same PR).
+  `git worktree remove` then died `Permission denied`, which **still deregistered the tree**: source
+  files deleted, `.git` entry gone, a husk left. Two cheap signals see what the gates cannot —
+  **the newest mtime under `.next/`** (`Get-ChildItem -Recurse -Force <wt>\.next | Sort-Object
+  LastWriteTime -Descending | Select-Object -First 1`), and **HEAD moving between the gate read and
+  the removal**. That tree's HEAD went `1325649a` -> `99349cf0` inside one minute, which also
+  silently poisoned the rescue ref: `git branch rescue/<name> $(git rev-parse HEAD)` taken at
+  removal time captured **`main`'s squash commit, not the tip**. Read the tip at the GATE and reuse
+  that SHA, then verify the ref points where you meant. Nothing was lost here only because the
+  content was already upstream. **Worktree->branch bindings churn far faster than they look**:
+  measured the same morning, **five of the nine** trees standing 30 minutes earlier had been
+  repointed — the PRIMARY among them, off detached HEAD onto a branch — two new trees had appeared,
+  and the session count reached 11. Treat any scan older than the current command as fiction.
 - **A squash-merged branch reads as "on NO origin ref" — that means BACKED UP, not stranded.**
   `delete_branch_on_merge` is ON, so GitHub deletes the branch's own remote ref at merge and pure
   reachability then calls every successfully merged worktree unbacked-up. repo-doctor did exactly
