@@ -274,6 +274,7 @@ import { runCrmCheckinCoordGuardTests } from "./crm-checkin-coord-guard.test.ts"
 import { runCrmAmpmNormalizationTests } from "./crm-ampm-normalization.test.ts";
 import { runCrmVisitTypeLabelTests } from "./crm-visit-type-labels.test.ts";
 import { runCrmRepDoctorListsTests } from "./crm-rep-doctor-lists.test.ts";
+import { runCrmContactListsTests } from "./crm-contact-lists.test.ts";
 import { runCrmRepDoctorTrendTests } from "./crm-rep-doctor-trend.test.ts";
 import { runLocationIqGeocodeConfidenceTests } from "./locationiq-geocode-confidence.test.ts";
 import { runPrivateCalendarTests } from "./private-calendar.test.ts";
@@ -2566,6 +2567,16 @@ await runTest(
   + "\"Forbidden: Talent Acquisition cannot read probation\" errors across 8 route variants on "
   + "2026-07-25/26 before 41c24ede added the missing line)",
   runEveryOfferedLinkOpensTests,
+);
+
+await runTest(
+  "crm contact lists (the rep's ASSIGNED doctor list, mirrored from the CRM web app the Reporting "
+  + "API has no endpoint for — the only place a doctor assigned and never touched appears at all. "
+  + "`t=Pharmacy` never `t=PH`, because an unknown list type returns HTTP 200 and a well-formed "
+  + "EMPTY grid; a drifted grid throws and names the missing columns while a genuinely empty one "
+  + "parses to []; and an empty fetch against a non-empty mirror is REFUSED rather than applied, so "
+  + "an expired session degrades to yesterday's list instead of \"this rep has no doctors\")",
+  runCrmContactListsTests,
 );
 
 await runTest(

@@ -28,6 +28,10 @@ export type AuditEntityType =
   // that hands back personal contact details in bulk, so who took the list is recorded.
   | "organogram_contact_export"
   | "crm_plan_sync"
+  // Daily refresh of each rep's assigned doctor list from the CRM web app. One row per run,
+  // keyed on the Cairo date, naming any agent refused or failed — the two outcomes that mean
+  // the mirror is older than the board claims.
+  | "crm_contact_list_sync"
   | "sos_raw_template_export"
   | "deduction_export"
   | "deduction_finalization"
