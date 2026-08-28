@@ -63,6 +63,12 @@ function pct(value: number | null): string {
   return value == null ? "—" : `${value}%`;
 }
 
+/** Grouped digits, same as every sibling CRM table. A rep's own counts stay small, but the card
+ *  meta line carries the period's reported total, which does not. */
+function count(value: number): string {
+  return value.toLocaleString();
+}
+
 export function RepsPlansControls({
   appliedRepKey,
   basePath,
@@ -247,7 +253,7 @@ export function RepsPlansRepTable({
           return (
           <PortalRecordCard
             accent={attainmentAccent(row.pm.attainmentPct)}
-            meta={`${cardTerritory ? `${cardTerritory} · ` : ""}${row.workingDays} working days · ${row.reportedCalls} calls reported, ${row.verifiedCalls} proved`}
+            meta={`${cardTerritory ? `${cardTerritory} · ` : ""}${count(row.workingDays)} working days · ${count(row.reportedCalls)} calls reported, ${count(row.verifiedCalls)} proved`}
             // Both rates sit in the badge, labelled. Neither answers the owner's question alone: AM
             // is the two accounts, PM is the ten clinics, and a rep can clear one and miss the other.
             status={
@@ -290,7 +296,7 @@ export function RepsPlansRepTable({
                   label: "Campaign",
                   value: (
                     <span className="whitespace-nowrap">
-                      <span className={row.campaignCalls > 0 ? "text-sky-700" : "text-slate-400"}>{row.campaignCalls}</span>
+                      <span className={row.campaignCalls > 0 ? "text-sky-700" : "text-slate-400"}>{count(row.campaignCalls)}</span>
                       <span className="text-slate-300"> · </span>
                       <span className="text-slate-500">{row.campaignSharePct}%</span>
                     </span>
@@ -298,13 +304,13 @@ export function RepsPlansRepTable({
                 },
                 {
                   label: `Days over ${campaignLimit}`,
-                  value: <span className={row.flaggedDays > 0 ? "text-rose-700" : "text-slate-400"}>{row.flaggedDays}</span>,
+                  value: <span className={row.flaggedDays > 0 ? "text-rose-700" : "text-slate-400"}>{count(row.flaggedDays)}</span>,
                 },
                 {
                   label: "Days with no proof",
                   value: (
                     <span className={row.campaignOnlyDays > 0 ? "text-amber-700" : "text-slate-400"}>
-                      {row.campaignOnlyDays}
+                      {count(row.campaignOnlyDays)}
                     </span>
                   ),
                 },
@@ -446,16 +452,16 @@ export function RepsPlansRepTable({
                     {pct(row.unprovenPct)}
                   </td>
                   <td className={`px-3 py-2 text-right font-bold ${row.campaignCalls > 0 ? "text-sky-700" : "text-slate-400"}`}>
-                    {row.campaignCalls}
+                    {count(row.campaignCalls)}
                   </td>
                   <td className={`px-3 py-2 text-right font-semibold ${row.campaignSharePct >= 50 ? "text-sky-700" : "text-slate-400"}`}>
                     {row.campaignSharePct}%
                   </td>
                   <td className={`px-3 py-2 text-right font-bold ${row.flaggedDays > 0 ? "text-rose-700" : "text-slate-400"}`}>
-                    {row.flaggedDays}
+                    {count(row.flaggedDays)}
                   </td>
                   <td className={`px-3 py-2 text-right font-bold ${row.campaignOnlyDays > 0 ? "text-amber-700" : "text-slate-400"}`}>
-                    {row.campaignOnlyDays}
+                    {count(row.campaignOnlyDays)}
                   </td>
                 </tr>
               ))}

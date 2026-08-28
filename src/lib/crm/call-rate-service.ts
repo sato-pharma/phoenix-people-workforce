@@ -10,6 +10,7 @@
 
 import { computeCallRate, type CallRateReport, type VisitForCallRate } from "@/lib/crm/call-rate";
 import { collapseDuplicateVisitSubmissions, queryCheckins, queryVisits } from "@/lib/crm/reads";
+import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
 
 const VISIT_COLUMNS =
   "agent_crm_id,agent_hr_id,agent_name,ampm,comment,contact_crm_id,crm_save_date,crm_visit_id,double_crm_id,visit_date,visit_type,visit_type_description";
@@ -50,4 +51,26 @@ export async function loadCallRateReport(input: CallRateInput): Promise<CallRate
     dateTo: input.dateTo,
     campaignLimit: input.campaignLimit,
   });
+}
+
+/**
+ * hr id (LOWER-cased) -> the person's real name, for a board that must never print a CRM login
+ * handle. The CRM's own `agent_name` is a handle with a territory bolted on, so the directory is
+ * the only place a real name exists; crm/reps-plans.ts does the joining.
+ *
+ * Inactive rows are included on purpose: a rep who left mid-month still has that month's visits on
+ * the board and has to be named, not shown as a handle.
+ *
+ * `getEmployeeDirectoryRows` caches, so calling this beside loadCallRateReport costs no extra
+ * round trip on a warm process.
+ */
+export async function loadRepNamesByHrId(): Promise<Map<string, string>> {
+  const directory = await getEmployeeDirectoryRows({ includeInactive: true });
+  const byHrId = new Map<string, string>();
+  for (const employee of directory) {
+    const hrId = employee.hrId.trim().toLowerCase();
+    if (!hrId) continue;
+    byHrId.set(hrId, employee.displayName || employee.fullName);
+  }
+  return byHrId;
 }
