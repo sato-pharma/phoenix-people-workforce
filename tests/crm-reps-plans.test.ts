@@ -10,9 +10,12 @@ import {
   type VisitForCallRate,
 } from "../src/lib/crm/call-rate.ts";
 import {
+  attainmentTone,
   buildRepsPlansBoard,
   repsPlansRange,
   resolveRepsPlansMonth,
+  riskTone,
+  shareTone,
   toRepsPlansRow,
 } from "../src/lib/crm/reps-plans.ts";
 
@@ -270,4 +273,114 @@ export function runCrmRepsPlansTests() {
   assert.equal(only.worstCampaignCalls, 12);
   assert.equal(liveBoard.totals.repsOnTarget, 0);
   assert.equal(liveBoard.campaignLimit, 3, "the owner's daily campaign limit reaches the screen");
+
+  // ── the rep's NAME: the directory names the person, the CRM names the territory ────────────
+  // Measured on the live August board before this fix: 84 of 87 rendered labels were CRM login
+  // handles — "Adel.Srour ( Down-town / C )" — which is the standing rule against raw codes broken
+  // on every row of the page. #2480 settled the rule on Doctor Coverage; these pin it here.
+  //
+  // The map is keyed LOWER-cased and the fixtures deliberately carry UPPER-cased hr ids, because
+  // the ids arrive from the CRM mirror in mixed case and a case-sensitive lookup silently names
+  // nobody while looking like it worked.
+  const directory = new Map([
+    ["hr-1", "Adel Mahmoud Srour"],
+    ["hr-3", "Mervat Fouad"],
+  ]);
+
+  assert.equal(
+    toRepsPlansRow(rep("Adel.Srour ( Down-town / C )", 20, {}, {}, { agentHrId: "HR-1", agentCrmId: 11 }), directory)
+      .repName,
+    "Adel Mahmoud Srour ( Down-town / C )",
+    "the person comes from the directory, the territory from the CRM — and the hr id matched across case",
+  );
+  assert.equal(
+    toRepsPlansRow(rep("Mervat.Fouad", 20, {}, {}, { agentHrId: "hr-3" }), directory).repName,
+    "Mervat Fouad",
+    "a CRM name with no trailing territory leaves just the real name — no empty brackets",
+  );
+  assert.equal(
+    toRepsPlansRow(rep("Sameh.Shaaban ( Tanta / B )", 20, {}, {}, { agentHrId: "HR-99" }), directory).repName,
+    "Sameh.Shaaban ( Tanta / B )",
+    "no directory row keeps the CRM name whole — a name is not the place to start throwing",
+  );
+  assert.equal(
+    toRepsPlansRow(rep("Mina.Farouk", 20, {}, {}, { agentCrmId: 44 }), directory).repName,
+    "Mina.Farouk",
+    "an agent with no hr id has nothing to look up",
+  );
+  assert.equal(
+    toRepsPlansRow(rep("( Behira 2 / C )", 20, {}, {}, { agentHrId: "HR-1" }), directory).repName,
+    "Adel Mahmoud Srour ( Behira 2 / C )",
+    "the pathological row — a CRM name that is a territory and NOTHING else — gets a person",
+  );
+  assert.equal(
+    toRepsPlansRow(rep("Ali (acting) Hassan", 20, {}, {}, { agentHrId: "HR-99" }), directory).repName,
+    "Ali (acting) Hassan",
+    "a bracket in the MIDDLE of a name is not a territory — the pattern is anchored at the end",
+  );
+  assert.equal(
+    toRepsPlansRow(rep("", 20, {}, {}, { agentHrId: "hr-5" })).repName,
+    "HR-5",
+    "an hr id identifies a person when nothing else does",
+  );
+  assert.equal(
+    toRepsPlansRow(rep("", 20, {}, {}, { agentCrmId: 77 })).repName,
+    "Unnamed rep 77",
+    "the last resort is still words, never a bare code",
+  );
+
+  // buildRepsPlansBoard must BIND the map rather than hand toRepsPlansRow the array index. `.map(fn)`
+  // passes (value, index, array), so a bare `.map(toRepsPlansRow)` sends 0, 1, 2 where the directory
+  // belongs — every row keeps its login handle and nothing anywhere reports a failure.
+  const namedBoard = buildRepsPlansBoard(
+    report(20, [
+      rep("Adel.Srour ( Down-town / C )", 20, {}, {}, { agentCrmId: 11, agentHrId: "HR-1" }),
+      rep("Mervat.Fouad", 20, {}, {}, { agentCrmId: 12, agentHrId: "hr-3" }),
+    ]),
+    { isCurrentMonth: false, month: "2026-08", repNameByHrId: directory },
+  );
+  assert.deepEqual(
+    namedBoard.reps.map((row) => row.repName),
+    ["Adel Mahmoud Srour ( Down-town / C )", "Mervat Fouad"],
+    "every row is named, not only the first",
+  );
+  assert.deepEqual(
+    namedBoard.repOptions.map((option) => option.repName),
+    ["Adel Mahmoud Srour ( Down-town / C )", "Mervat Fouad"],
+    "the rep picker carries the same real names",
+  );
+  assert.equal(
+    buildRepsPlansBoard(report(20, [rep("Adel.Srour ( Down-town / C )", 20, {}, {}, { agentHrId: "HR-1" })]), {
+      isCurrentMonth: false,
+      month: "2026-08",
+    }).reps[0]?.repName,
+    "Adel.Srour ( Down-town / C )",
+    "a failed directory read falls back to the CRM handle rather than taking the board down",
+  );
+
+  // ── tile tone: a colour is a CLAIM about the number under it ───────────────────────────────
+  // Both bugs this replaced were the same shape — a threshold that could only ever say "fine".
+  assert.equal(shareTone((5 / 87) * 100), "rose", "5 reps of 87 on target is not good news");
+  assert.equal(shareTone(0), "rose");
+  assert.equal(shareTone(29.9), "rose");
+  assert.equal(shareTone(30), "amber");
+  assert.equal(shareTone(69.9), "amber");
+  assert.equal(shareTone(70), "emerald");
+  assert.equal(shareTone(null), undefined, "no number, no claim");
+
+  assert.equal(riskTone(17), "amber", "17% unproven is the number that shipped green");
+  assert.notEqual(riskTone(17), "emerald", "and it must never be the same colour as proved work");
+  assert.equal(riskTone(9.9), "emerald");
+  assert.equal(riskTone(10), "amber");
+  assert.equal(riskTone(24.9), "amber");
+  assert.equal(riskTone(25), "rose");
+  assert.equal(riskTone(100), "rose");
+  assert.equal(riskTone(null), undefined);
+
+  // Attainment keeps its own scale: 100% is the standard here, not a stretch.
+  assert.equal(attainmentTone(100), "emerald");
+  assert.equal(attainmentTone(99.9), "amber");
+  assert.equal(attainmentTone(70), "amber");
+  assert.equal(attainmentTone(69.9), "rose");
+  assert.equal(attainmentTone(null), undefined);
 }

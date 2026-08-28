@@ -124,6 +124,49 @@ function toSession(slice: CallRateSlice): RepsPlansSession {
   };
 }
 
+/**
+ * Attainment against the target the rate is measured on, 0-100. 100% is the standard here, not a
+ * stretch: two AM accounts and ten PM clinics is the day, so anything under it is a miss.
+ */
+export function attainmentTone(value: number | null): RepsPlansTone {
+  if (value == null) return undefined;
+  if (value >= 100) return "emerald";
+  if (value >= 70) return "amber";
+  return "rose";
+}
+
+/**
+ * Tile tone: a colour is a claim about whether a number is good, so it belongs with the rules and
+ * not in the markup. Both are exported so a test can pin them — a tone that lies is invisible to
+ * every other kind of check.
+ *
+ * HIGHER is better: a share of something going right, 0-100. Bands are deliberately conservative,
+ * because green has to be earned. What matters is not the exact thresholds but that a tile is never
+ * green while the number under it is bad: `repsOnTarget > 0 ? "emerald" : "rose"` painted 5 reps out
+ * of 87 the same green as a finished job.
+ */
+export function shareTone(value: number | null): RepsPlansTone {
+  if (value == null) return undefined;
+  if (value >= 70) return "emerald";
+  if (value >= 30) return "amber";
+  return "rose";
+}
+
+/**
+ * LOWER is better: a share of something going wrong, 0-100. Inverted on purpose, and banded rather
+ * than binary — 17% of reported calls having nothing to confirm them is the entire subject of this
+ * page, and it rendered in the same green as "Proved" because the single threshold sat at 25.
+ */
+export function riskTone(value: number | null): RepsPlansTone {
+  if (value == null) return undefined;
+  if (value < 10) return "emerald";
+  if (value < 25) return "amber";
+  return "rose";
+}
+
+/** The tones a KPI tile can take. `undefined` is "no claim" — used when a number does not exist. */
+export type RepsPlansTone = "amber" | "emerald" | "rose" | undefined;
+
 export type RepsPlansRepRow = {
   repKey: string;
   repName: string;
@@ -162,7 +205,69 @@ function repKeyOf(rep: RepCallRate): string {
   return `name:${rep.agentName}`;
 }
 
-export function toRepsPlansRow(rep: RepCallRate): RepsPlansRepRow {
+/**
+ * The territory the CRM appends to an agent's name, in trailing brackets:
+ * `"Adel.Srour ( Down-town / C )"` -> `"Down-town / C"`. Anchored at the END and refusing nested
+ * brackets, so a name that legitimately contains parentheses cannot be mistaken for one.
+ *
+ * The interior is trimmed at its edges only, never rewritten — production carries `"( Mahalla  / A )"`
+ * with a double space inside, and that is the vendor's text, not ours to normalise.
+ *
+ * Deliberately identical to the copy in crm/sfe-doctor-coverage.ts, where this rule was settled
+ * (#2480). That module imports the Supabase reader chain and this one is pure, so the four lines
+ * are repeated rather than shared — the same reason monthBounds is repeated at the top of this file.
+ */
+const CRM_TERRITORY = /\(\s*([^()]+?)\s*\)\s*$/;
+
+function crmTerritoryFrom(crmName: string | undefined): string | null {
+  if (!crmName) return null;
+  const territory = CRM_TERRITORY.exec(crmName)?.[1]?.trim();
+  return territory ? territory : null;
+}
+
+/**
+ * What a rep is CALLED on this board.
+ *
+ * THE DIRECTORY NAMES THE PERSON; THE CRM NAMES THE TERRITORY — the owner's instruction of
+ * 2026-08-27, applied to Doctor Coverage in #2480 and to this board here. The CRM's `agent_name`
+ * is a LOGIN HANDLE with a territory bolted on ("Adel.Srour ( Down-town / C )"), so showing it
+ * whole breaks the standing rule that a human-readable name is always shown, while dropping it
+ * whole throws away the territory a manager reads to tell two reps apart.
+ *
+ * Measured on this board's own live August window before the fix: 84 of 87 rendered rep labels
+ * were login handles.
+ *
+ * The waterfall, in order:
+ *  1. the employee directory, keyed on hr id, plus the CRM's territory when it carries one;
+ *  2. the CRM name unchanged — for an agent with no hr id, and for the hr-keyed agent whose
+ *     directory row is missing. A name is not the place to start throwing;
+ *  3. the hr id itself, upper-cased, which at least identifies a person;
+ *  4. the crm id spelled out in words. Never a bare code (owner's standing rule).
+ *
+ * Keyed LOWER-cased on both sides. Hr ids reach this module in whatever case the CRM mirror
+ * carries, which is mixed (AGENTS.md §2.1), and one person occupying two keys is exactly how a rep
+ * silently becomes two rows. Rep Doctor Lists keys the same directory UPPER-cased for its own
+ * reasons — the two maps are not interchangeable.
+ */
+function repNameFor(rep: RepCallRate, repNameByHrId?: ReadonlyMap<string, string>): string {
+  const fromCrm = rep.agentName.trim();
+  const hrId = rep.agentHrId?.trim();
+  if (hrId) {
+    const fromDirectory = repNameByHrId?.get(hrId.toLowerCase())?.trim();
+    if (fromDirectory) {
+      const territory = crmTerritoryFrom(fromCrm);
+      return territory ? `${fromDirectory} ( ${territory} )` : fromDirectory;
+    }
+  }
+  if (fromCrm) return fromCrm;
+  if (hrId) return hrId.toUpperCase();
+  return `Unnamed rep ${rep.agentCrmId ?? ""}`.trim();
+}
+
+export function toRepsPlansRow(
+  rep: RepCallRate,
+  repNameByHrId?: ReadonlyMap<string, string>,
+): RepsPlansRepRow {
   const am = toSession(rep.am);
   const pm = toSession(rep.pm);
   const verifiedCalls = am.verified + pm.verified;
@@ -171,9 +276,7 @@ export function toRepsPlansRow(rep: RepCallRate): RepsPlansRepRow {
   const worst = rep.campaignOverLimitDays[0] ?? null;
   return {
     repKey: repKeyOf(rep),
-    // Never a raw code (owner's standing rule). A rep the mirror has no name for still has to be
-    // identifiable, so the id is spelled out in words rather than shown bare.
-    repName: rep.agentName.trim() || `Unnamed rep ${rep.agentCrmId ?? rep.agentHrId ?? ""}`.trim(),
+    repName: repNameFor(rep, repNameByHrId),
     agentHrId: rep.agentHrId,
     agentCrmId: rep.agentCrmId,
     workingDays: rep.workingDays,
@@ -309,9 +412,17 @@ export type RepsPlansBoard = {
  */
 export function buildRepsPlansBoard(
   report: CallRateReport,
-  options: { month: string; isCurrentMonth: boolean; repKey?: string | null },
+  options: {
+    month: string;
+    isCurrentMonth: boolean;
+    repKey?: string | null;
+    /** hr id (LOWER-cased) -> the person's real name, from the employee directory. The page always
+     *  supplies it; it is optional only so a test asserting something other than naming does not
+     *  have to build one. */
+    repNameByHrId?: ReadonlyMap<string, string>;
+  },
 ): RepsPlansBoard {
-  const allRows = report.reps.map(toRepsPlansRow);
+  const allRows = report.reps.map((rep) => toRepsPlansRow(rep, options.repNameByHrId));
   const totals = totalsOf(allRows, report.workingDays);
   const repOptions = allRows
     .map((row) => ({ repKey: row.repKey, repName: row.repName }))
