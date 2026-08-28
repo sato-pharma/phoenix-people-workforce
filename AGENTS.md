@@ -727,6 +727,31 @@ These are the owner's own decisions, stated across many sessions. They are not s
 **Product rules that must not be "fixed" back**
 
 - No payslip on any overview/landing page for any role — not the amount, not even the month label.
+- 🔒 **A CRM account label is `[Name ]( Area / Line )`, and `E`/`F` are RETIRED line codes.** Owner's
+  explanation, 2026-08-28, given after a session sent him a 19-row sheet asking who made the calls on
+  accounts he could have dismissed at a glance. The grammar is fixed: whatever sits between the
+  brackets is the **area**, the single letter after the final `/` or `-` is the **line**, and a
+  person's name — when present — sits **before** the bracket, styled `First.Last`
+  (`Mayar.Elmorsy ( Mahalla / E )`). Lines were renamed: **`E` was the antibacterial/anti-infective
+  line and is now `A`; `F` was Pedia and is now `P`.** `A`, `C` and `P` are the live codes. **An
+  account still ending in `/ E` or `/ F` is therefore an old-naming placeholder and must never be
+  treated as an open question** — nobody will ever be hired into a retired line code. Keep and
+  resolve `A`/`C`/`P`; drop `E`/`F`.
+  **The CRM admin never deletes an account.** When a rep resigns he **deactivates it, strips the
+  person's name, and keeps the area** — which is why so many of these labels are a bare territory —
+  then **clones** the account to a NEW one for the next hire into the same area, line and position.
+  So the old account holds the leaver's real history under a nameless label, and the identity is
+  **unrecoverable from the CRM**: the admin erased it. Verified in production 2026-08-28 — all **8**
+  old→new pairs succeed cleanly with **zero** overlap, the successor's first call landing 34 to 155
+  days after the predecessor's last while the seat sits vacant (e.g. `( Mahalla / E )` last call
+  2026-03-11 → `Ashraf.Maged ( Mahalla / A )` first call 2026-04-14). Name-stripping is measurably
+  concentrated on the dead codes: **39%** of `E` and **38%** of `F` accounts have no name, against
+  21–24% of `A`/`C`/`P`.
+  **Cloning is safe; RENAMING is what corrupts numbers.** A clone gives each holder their own
+  account. The 2026-08-28 slot-1391 incident was the other shape — one account handed over and
+  relabelled, so iReports360 rewrote 1,136 of the leaver's calls under the joiner's name. That is
+  what `resolveEmployeeAttribution`'s employment-scoped override tier exists for; see
+  `tests/crm-override-employment-scope.test.ts`.
 - Marketing Manager is hidden from the portal Incentive tab; GPM still sees it.
 - The Organogram / AU seat model is the source of truth for org-structure and vacancy data.
 - All SoS sales, historical and future, attribute to **today's** geography — never as-was.
