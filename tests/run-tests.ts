@@ -234,6 +234,7 @@ import { runWeeklyPlanVisibilityTests } from "./weekly-plan-visibility.test.ts";
 import { runWeeklyPlansDriftCheckTests } from "./weekly-plans-drift-check.test.ts";
 import { runWeeklyPlanManagerGapTests } from "./weekly-plan-manager-gap.test.ts";
 import { runWeeklyPlanRegionAreasTests } from "./weekly-plan-region-areas.test.ts";
+import { runPlanAdherenceTests } from "./plan-adherence.test.ts";
 import { runActionCenterWeeklyPlansTests } from "./action-center-weekly-plans.test.ts";
 import { runWeeklyPlansRound3FeaturesTests } from "./weekly-plans-round3-features.test.ts";
 import { runDoubleVisitAnalyticsTests } from "./double-visit-analytics.test.ts";
@@ -1413,6 +1414,10 @@ await runTest("weekly plan visibility (manager-chain + company-wide roles)", run
 await runTest("weekly plans drift check", runWeeklyPlansDriftCheckTests);
 await runTest("weekly plan manager gap listing (stuck-approval detection)", runWeeklyPlanManagerGapTests);
 await runTest("weekly plan region canonicalisation and area options", runWeeklyPlanRegionAreasTests);
+await runTest(
+  "plan adherence score (a week with nothing verifiable in it scores null, never 0)",
+  runPlanAdherenceTests,
+);
 await runTest("action center weekly plans (approver inbox)", runActionCenterWeeklyPlansTests);
 await runTest("weekly plans round-3 features (bulk approve, export, autosave, timeline, notifications, a11y, virtualization)", runWeeklyPlansRound3FeaturesTests);
 await runTest("double visit analytics", runDoubleVisitAnalyticsTests);

@@ -31,6 +31,8 @@ export function PlanApprovalsBody({ data }: { data: PlanWorkspaceData }) {
       secondaryCompanyRequestsTabLabel="District Manager Plans"
       secondaryCompanyRequestsExportTitle="District Manager Plans"
       secondaryCompanyRequestsEmptyLabel="No District Manager plans have been submitted yet."
+      scoreHistory={data.scoreHistory}
+      scoreHistoryPlanBaseHref={data.planDetailBaseHref}
     />
   );
 }

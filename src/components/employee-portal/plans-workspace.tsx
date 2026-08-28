@@ -46,6 +46,7 @@ import {
   type PlanningOwner,
 } from "@/lib/weekly-planning/regions";
 import { currentCairoDateOnlyIso, PHOENIX_BUSINESS_TIME_ZONE } from "@/lib/i18n/format";
+import { PlanAdherenceBadge } from "@/components/weekly-planning/plan-adherence-report";
 import { sameLineBookingWarning, type SameLinePlanBooking } from "@/lib/weekly-planning/calendar";
 import type { EmployeePlanKind, EmployeePlanStatus, PlanSlot, PlanWorkweek } from "@/lib/weekly-planning/plan-v1";
 import {
@@ -3620,7 +3621,13 @@ function QueueCard({
                   {statusLabels[p.status]}
                 </span>
               </div>
-              <p className="mt-1 text-xs font-semibold text-slate-500">Revision {p.revision}</p>
+              <div className="mt-1 flex flex-wrap items-center gap-2">
+                <p className="text-xs font-semibold text-slate-500">Revision {p.revision}</p>
+                {/* His own plans carry their score here, so he sees it on the plan itself rather
+                    than only after opening the approvals hub. Absent on other people's plans —
+                    see EmployeePlan.adherence. */}
+                {p.adherence ? <PlanAdherenceBadge score={p.adherence} /> : null}
+              </div>
             </button>
             {/* F5 — Decision history */}
             <PlanDecisionTimeline decisions={p.decisions} />
