@@ -145,7 +145,7 @@ export function runSalesBrickRelocateTests() {
   );
   assert.match(
     uiSource,
-    /\{isRelocatingEdit \? \(\s*<p className="max-w-\[220px\] text-\[10px\] font-semibold leading-tight text-\[#94A3B8\]">\s*Creates a new brick ID in the target block and deactivates this one\./,
+    /\{isRelocatingEdit \? \(\s*<p className="max-w-\[220px\] text-\[10px\] font-semibold leading-tight text-phx-ink-faint">\s*Creates a new brick ID in the target block and deactivates this one\./,
     "the relocate warning hint only shows for a real block move, not a pure brick_name rename",
   );
 }

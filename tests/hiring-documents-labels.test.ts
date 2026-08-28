@@ -78,14 +78,18 @@ export function runHiringDocumentsLabelTests() {
     !/>\{document\.id\}</.test(manager),
     "a document's UUID is being rendered as text again — it belongs in the closure, not on screen",
   );
+  // Deliberately colour-agnostic. This pinned `text-[#94A3B8]` until the hex-to-token sweep
+  // renamed that class, at which point the pattern could no longer match ANYTHING — so it went on
+  // passing while guarding nothing, which is worse than failing. Match the shape (a font-mono
+  // element rendering the id), never the palette, so a restyle cannot silently disarm it again.
   assert.ok(
-    !/font-mono text-xs text-\[#94A3B8\]">\{document\.id\}/.test(manager),
+    !/font-mono[^"]*">\{document\.id\}/.test(manager),
     "the UUID line under the document name came back",
   );
   // The name itself must still be there in both places — a fix that deleted the wrong line would
   // otherwise pass everything above.
   assert.equal(
-    (manager.match(/<p className="font-bold text-\[#0F172A\]">\{document\.name\}<\/p>/g) ?? []).length,
+    (manager.match(/<p className="font-bold text-phx-ink">\{document\.name\}<\/p>/g) ?? []).length,
     2,
     "the document name belongs on the desktop row and the mobile card — both, and unchanged",
   );
