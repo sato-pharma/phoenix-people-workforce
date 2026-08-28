@@ -63,6 +63,7 @@ import { systemAssets, systemIdentity, systemUiText } from "@/config/system-sett
 import { resolveLandingPathForRole } from "@/lib/auth/landing";
 import { type NavigationMode, type PhoenixRole } from "@/lib/auth/permissions";
 import { getActiveHref, getSections, usesFlatSidebar, type PermissionLookup } from "@/lib/navigation/active-path";
+import { applyPersonalLayout, type PersonalNavigationLayout } from "@/lib/navigation/personal-layout";
 import { subscribeNavBadge } from "@/lib/nav-badge-store";
 import { cn } from "@/lib/utils";
 
@@ -812,6 +813,7 @@ function SidebarNav({
   permissionLookup = EMPTY_PERMISSION_LOOKUP,
   isSystemAdministratorWorkspace = false,
   currentRole,
+  personalLayout = null,
   rail = false,
   scrollable = true,
 }: {
@@ -820,6 +822,8 @@ function SidebarNav({
   mode?: NavigationMode;
   onNavigate?: () => void;
   permissionLookup?: PermissionLookup;
+  /** This viewer's own saved arrangement, loaded server-side. Null = the code-defined sidebar. */
+  personalLayout?: PersonalNavigationLayout | null;
   rail?: boolean;
   scrollable?: boolean;
 }) {
@@ -833,17 +837,33 @@ function SidebarNav({
     setIsClientReady(true);
   }, []);
 
-  const sections = useMemo(
+  // The viewer's own arrangement is applied STRICTLY AFTER getSections, never instead of it.
+  // getSections is what does permission and role filtering; applyPersonalLayout only rearranges
+  // what came out of it and cannot introduce an href, so a saved layout can never widen access.
+  // With no layout saved this is a passthrough and the sidebar is exactly what the code defines.
+  //
+  // ADMIN MODE ONLY, deliberately. A layout is stored once per person, but this shell also renders
+  // in "employee-portal" mode — an employee opening /payslips or /overview resolves to that mode —
+  // so applying one document to both navs would let a portal render overwrite the admin
+  // arrangement. Nothing is lost by the restriction: the employee portal builds its own sidebar
+  // entirely (buildEmployeePortalSections), and system-navigation.ts does not drive it.
+  const applied = useMemo(
     () =>
-      getSections(
-        getNavigationSections(mode),
-        mode,
-        permissionLookup,
-        currentRole,
-        isSystemAdministratorWorkspace,
+      applyPersonalLayout(
+        getSections(
+          getNavigationSections(mode),
+          mode,
+          permissionLookup,
+          currentRole,
+          isSystemAdministratorWorkspace,
+        ),
+        mode === "admin" ? personalLayout : null,
       ),
-    [currentRole, isSystemAdministratorWorkspace, mode, permissionLookup],
+    [currentRole, isSystemAdministratorWorkspace, mode, permissionLookup, personalLayout],
   );
+  const sections = applied.sections;
+  // Layer 1 — the pages promoted out of the modules entirely. Rendered above Favourites.
+  const stripItems = applied.strip;
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const navInstanceId = useId();
@@ -949,6 +969,13 @@ function SidebarNav({
         .map((section) => ({ ...section, items: section.items.filter((item) => item.label.toLowerCase().includes(query)) }))
         .filter((section) => section.items.length > 0)
     : sections;
+
+  // A promoted page is no longer in `sections`, so the filter above cannot find it. Searching the
+  // strip by the same query is what keeps it reachable — without this, promoting a page to layer 1
+  // would quietly make it unsearchable, which is the sort of silent loss nobody reports as a bug.
+  const visibleStripItems = query
+    ? stripItems.filter((item) => item.label.toLowerCase().includes(query))
+    : stripItems;
 
   // Apply saved section order on top of the visible (permission-filtered) sections.
   // During search, order is bypassed so results are stable.
@@ -1116,6 +1143,27 @@ function SidebarNav({
         className={cn("flex-1 px-3 py-4", scrollable && "overflow-auto", scrollable && isAdmin && "phoenix-admin-sidebar-scroll")}
         onScroll={handleNavScroll}
       >
+        {/* Layer 1 — pages the viewer promoted out of the modules. Rendered before Favourites and
+            never draggable here: the arrangement is edited on its own page, not by dragging the
+            live sidebar. This block is what stops a promoted page vanishing — applyPersonalLayout
+            removes it from its section, so if nothing rendered `strip` it would be unreachable. */}
+        {visibleStripItems.length > 0 && (
+          <div className="mb-2 space-y-1 px-1 pt-1">
+            {visibleStripItems.map((item) => (
+              <NavRow
+                active={item.href === activeHref}
+                dark={isAdmin}
+                item={item}
+                key={`strip-${item.href}`}
+                onActivate={() => handleActivate(item)}
+                onTogglePin={() => togglePin(item.href)}
+                pinned={pinnedSet.has(item.href)}
+                rail={rail}
+              />
+            ))}
+          </div>
+        )}
+
         {/* Favourites section — fixed position, never draggable */}
         {!query && pinnedItems.length > 0 && (
           <Fragment>
@@ -1355,11 +1403,14 @@ export function Sidebar({
   permissionLookup = EMPTY_PERMISSION_LOOKUP,
   isSystemAdministratorWorkspace = false,
   currentRole,
+  personalLayout = null,
 }: {
   currentRole?: PhoenixRole;
   isSystemAdministratorWorkspace?: boolean;
   navigationMode?: NavigationMode;
   permissionLookup?: PermissionLookup;
+  /** This viewer's own saved arrangement, resolved server-side in AppShell. */
+  personalLayout?: PersonalNavigationLayout | null;
 }) {
   const isAdmin = navigationMode === "admin";
   const [rail, toggleRail] = useSidebarRail(navigationMode);
@@ -1404,6 +1455,7 @@ export function Sidebar({
           isSystemAdministratorWorkspace={isSystemAdministratorWorkspace}
           mode={navigationMode}
           permissionLookup={permissionLookup}
+          personalLayout={personalLayout}
           rail={railActive}
         />
         <SidebarFooter mode={navigationMode} />
@@ -1420,6 +1472,7 @@ export function MobileSidebar({
   permissionLookup = EMPTY_PERMISSION_LOOKUP,
   isSystemAdministratorWorkspace = false,
   currentRole,
+  personalLayout = null,
 }: {
   currentRole?: PhoenixRole;
   isSystemAdministratorWorkspace?: boolean;
@@ -1427,6 +1480,8 @@ export function MobileSidebar({
   open: boolean;
   navigationMode?: NavigationMode;
   permissionLookup?: PermissionLookup;
+  /** Same arrangement as the desktop sidebar — the two must not disagree about where a page is. */
+  personalLayout?: PersonalNavigationLayout | null;
 }) {
   const isAdmin = navigationMode === "admin";
 
@@ -1473,6 +1528,7 @@ export function MobileSidebar({
             mode={navigationMode}
             onNavigate={onClose}
             permissionLookup={permissionLookup}
+            personalLayout={personalLayout}
             rail={false}
           />
           <SidebarFooter mode={navigationMode} />

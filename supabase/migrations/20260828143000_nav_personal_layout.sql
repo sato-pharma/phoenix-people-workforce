@@ -17,6 +17,12 @@
 -- the security boundary in this app — assertPermission in the route handler is — and this does not
 -- make it one. A row here is cosmetic: worst case, a corrupted layout shows the wrong menu order.
 --
+-- SCOPE: the ADMIN sidebar only, one row per person. The shell also renders in "employee-portal"
+-- mode (an employee opening /payslips resolves to it), so a single document applied to both navs
+-- would let a portal render overwrite the admin arrangement. SidebarNav therefore ignores the
+-- layout outside admin mode. If a portal arrangement is ever wanted, add a mode to the key rather
+-- than widening what this one row means.
+--
 -- SAFE IN BOTH DIRECTIONS, so the deploy order does not matter. The reader treats a missing table
 -- exactly like a missing row (see loadPersonalLayout), and a missing row means "no layout saved",
 -- which renders the code-defined sidebar unchanged. Shipping the code before this migration
