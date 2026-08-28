@@ -224,6 +224,18 @@ export type RepsPlansRepRow = {
   /** "District Manager", "Medical Rep" — readable, never the raw code. Null when unplaced. */
   seatTierLabel: string | null;
   /**
+   * The HR directory's job title, consulted ONLY when the organogram has no seat for the person.
+   *
+   * `au_v_org_tree` is the SALES seat model, so head office is legitimately off it — all three of
+   * production's Product Managers are, by design. Naming such a person by his real job title is the
+   * whole difference between "Product Manager" and an amber badge reading "Not in organogram", which
+   * is the wording the owner objected to. Null when the directory has no title either, which is the
+   * only case where there is genuinely nothing to say about where someone sits.
+   *
+   * A LABEL, never a KPI input: {@link RepsPlansRepRow.scored} is decided by the seat tier alone.
+   */
+  jobTitle: string | null;
+  /**
    * Whether the 2 AM / 10 PM target applies to this person.
    *
    * OWNER'S RULE, 2026-08-28: the KPI is a MEDICAL REP'S. A manager is listed with his territory
@@ -279,10 +291,21 @@ function repNameFor(rep: RepCallRate, repNameByHrId?: ReadonlyMap<string, string
   return `Unnamed rep ${rep.agentCrmId ?? ""}`.trim();
 }
 
+/**
+ * The HR job title for a person the organogram has no seat for. Lower-cased on both sides, for the
+ * same mixed-case reason as {@link repNameFor} above.
+ */
+function jobTitleFor(rep: RepCallRate, jobTitleByHrId?: ReadonlyMap<string, string>): string | null {
+  const hrId = rep.agentHrId?.trim();
+  if (!hrId) return null;
+  return jobTitleByHrId?.get(hrId.toLowerCase())?.trim() || null;
+}
+
 export function toRepsPlansRow(
   rep: RepCallRate,
   placement?: OrgPlacement | null,
   repNameByHrId?: ReadonlyMap<string, string>,
+  jobTitleByHrId?: ReadonlyMap<string, string>,
 ): RepsPlansRepRow {
   const am = toSession(rep.am);
   const pm = toSession(rep.pm);
@@ -311,6 +334,9 @@ export function toRepsPlansRow(
     territories: placement?.cells ?? [],
     seatTier: placement?.tier ?? null,
     seatTierLabel: placement?.tierLabel ?? null,
+    // Only asked when the organogram had no answer. A seated person's title is his SEAT — reading
+    // the directory over it would let a stale HR job title contradict the chart the owner maintains.
+    jobTitle: placement ? null : jobTitleFor(rep, jobTitleByHrId),
     scored: placement?.scored ?? false,
   };
 }
@@ -494,6 +520,9 @@ export function buildRepsPlansBoard(
      *  supplies it; it is optional only so a test asserting something other than naming does not
      *  have to build one. */
     repNameByHrId?: ReadonlyMap<string, string>;
+    /** hr id (LOWER-cased) -> HR job title, read ONLY for someone the organogram has no seat for.
+     *  Same optionality, and for the same reason. */
+    jobTitleByHrId?: ReadonlyMap<string, string>;
   },
 ): RepsPlansBoard {
   const tree = options.tree ?? null;
@@ -509,7 +538,7 @@ export function buildRepsPlansBoard(
   // everyone scored, no geography column, no pickers.
   const orgAvailable = tree != null;
   const allRows = report.reps.map((rep) => {
-    const row = toRepsPlansRow(rep, placementOf(rep.agentHrId), options.repNameByHrId);
+    const row = toRepsPlansRow(rep, placementOf(rep.agentHrId), options.repNameByHrId, options.jobTitleByHrId);
     return orgAvailable ? row : { ...row, scored: true };
   });
 

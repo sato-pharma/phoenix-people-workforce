@@ -16,7 +16,7 @@ import { redirect } from "next/navigation";
 import { RepsPlansBoardView } from "@/components/crm/reps-plans-board";
 import { canAccess } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
-import { loadCallRateReport, loadRepNamesByHrId } from "@/lib/crm/call-rate-service";
+import { loadCallRateReport, loadJobTitlesByHrId, loadRepNamesByHrId } from "@/lib/crm/call-rate-service";
 import { loadOrgPlacementTree } from "@/lib/crm/org-placement-data";
 import { cairoTodayIso } from "@/lib/crm/dates";
 import { buildRepsPlansBoard, repsPlansRange, resolveRepsPlansMonth } from "@/lib/crm/reps-plans";
@@ -56,14 +56,20 @@ export default async function RepsPlansPage({ searchParams }: PageProps) {
   // which is what this page showed before, so the worst case is the old behaviour and not a blank
   // screen. Only the visits are load-bearing.
   let repNameByHrId: ReadonlyMap<string, string> | undefined;
+  // Same directory, same cache, same "must not take the board down" posture: it names the people the
+  // SALES organogram has no seat for — head office, where the Product Managers sit. Without it those
+  // rows fall back to the marker, which is the old behaviour and not a blank screen.
+  let jobTitleByHrId: ReadonlyMap<string, string> | undefined;
   let loadError: string | null = null;
   try {
-    const [loadedReport, loadedNames] = await Promise.all([
+    const [loadedReport, loadedNames, loadedTitles] = await Promise.all([
       loadCallRateReport({ dateFrom: range.dateFrom, dateTo: range.dateTo }),
       loadRepNamesByHrId().catch(() => undefined),
+      loadJobTitlesByHrId().catch(() => undefined),
     ]);
     report = loadedReport;
     repNameByHrId = loadedNames;
+    jobTitleByHrId = loadedTitles;
   } catch (error) {
     loadError = error instanceof Error ? error.message : "CRM visit data is unavailable.";
   }
@@ -93,6 +99,7 @@ export default async function RepsPlansPage({ searchParams }: PageProps) {
   const board = buildRepsPlansBoard(report, {
     geography: { line: params?.line ?? null, region: params?.region ?? null },
     isCurrentMonth: range.isCurrentMonth,
+    jobTitleByHrId,
     month,
     repKey: params?.rep ?? null,
     repNameByHrId,

@@ -345,8 +345,39 @@ export function runCrmRepsPlansTests() {
     rep("Emad", 10, { verified: 0, campaign: 30 }, { verified: 0, campaign: 30 }, { agentCrmId: 5 }),
   ]);
 
+  // ── THE TREE MUST NEVER GO THROUGH THE DATA CACHE ─────────────────────────────────────────────
+  // Found by loading the page a SECOND time, and by nothing else. `unstable_cache` serializes what
+  // it stores, and the index is a Map — so caching the built tree worked on exactly the one render
+  // that filled the cache and then threw `index.get is not a function` on every render after it,
+  // for five minutes at a stretch, forever. Every test in this file calls buildOrgPlacementTree
+  // directly, where a Map is a Map, so none of them could ever have seen it.
+  //
+  // Two assertions, because either alone is escapable: the first states the fact about Maps that
+  // makes the rule necessary, the second holds the data module to it.
+  const throughTheCache = JSON.parse(JSON.stringify(tree)) as { index: unknown };
+  assert.equal(
+    typeof (throughTheCache.index as { get?: unknown }).get,
+    "undefined",
+    "a Map does not survive serialization — this is why the built tree can never be what unstable_cache stores",
+  );
+  const orgPlacementData = readFileSync("src/lib/crm/org-placement-data.ts", "utf8");
+  assert.ok(
+    /export async function loadOrgPlacementTree/.test(orgPlacementData) &&
+      !/export const loadOrgPlacementTree = unstable_cache/.test(orgPlacementData),
+    "the cache must hold the ROWS and the tree be rebuilt from them per call — wrapping loadOrgPlacementTree in unstable_cache puts a Map through the serializer and breaks the page on its second load",
+  );
+
+  // The HR directory, for the people the SALES organogram has no seat for. Dalia has a title;
+  // Emad has no hr id at all, so nothing can name him and he is the one honest use of the marker.
+  const jobTitles = new Map([["ai-0009", "Product Manager"]]);
+
   // No geography picked: everyone is LISTED. Only the medical reps are counted.
-  const wide = buildRepsPlansBoard(geoReport, { month: "2026-08", isCurrentMonth: false, tree });
+  const wide = buildRepsPlansBoard(geoReport, {
+    isCurrentMonth: false,
+    jobTitleByHrId: jobTitles,
+    month: "2026-08",
+    tree,
+  });
   assert.equal(wide.reps.length, 8, "no geography filter lists every person");
   assert.equal(wide.totals.reps, 4, "the tiles are the four MEDICAL REPS — the target is theirs");
   assert.equal(wide.managersShown, 2, "and the board says how many managers are listed but unscored");
@@ -382,6 +413,32 @@ export function runCrmRepsPlansTests() {
     "someone the organogram has no seat for carries no territory",
   );
   assert.equal(wide.reps.find((r) => r.repName === "Dalia")?.scored, false, "and is not scored on a target either");
+
+  // ── HEAD OFFICE IS NOT A FAULT ────────────────────────────────────────────────────────────────
+  // `au_v_org_tree` is the SALES seat model. Production's three Product Managers hold no seat in it
+  // and never will, so the first build's amber "Not in organogram" said of a Product Manager exactly
+  // what the owner had already objected to being said of his District Managers. The directory
+  // answers when the chart is silent — a LABEL only: he is still scored against nothing, because a
+  // free-text job title has no business deciding a KPI denominator.
+  const dalia = wide.reps.find((r) => r.repName === "Dalia");
+  assert.equal(dalia?.jobTitle, "Product Manager", "someone off the sales chart is named by his real HR job title");
+  assert.equal(dalia?.seatTierLabel, null, "the organogram still says nothing about him — the title is the fallback");
+  assert.equal(dalia?.scored, false, "and a job title never buys him a target");
+  const emad = wide.reps.find((r) => r.repName === "Emad");
+  assert.equal(emad?.jobTitle, null, "with no hr id there is nothing to look up, and the marker is then the truth");
+  // The seat OUTRANKS the directory for anyone on the chart: a stale HR title must never contradict
+  // the org chart the owner maintains himself.
+  const seatedTitles = buildRepsPlansBoard(geoReport, {
+    isCurrentMonth: false,
+    jobTitleByHrId: new Map([["ai-0010", "Senior Medical Rep"]]),
+    month: "2026-08",
+    tree,
+  });
+  assert.equal(
+    seatedTitles.reps.find((r) => r.repName === "Nabil")?.jobTitle,
+    null,
+    "a seated manager is his SEAT, never a job title that disagrees with the chart",
+  );
 
   // THE TILES RECOMPUTE. This is the half that separates line/region from the rep filter above.
   const cns = buildRepsPlansBoard(geoReport, {
@@ -588,9 +645,18 @@ export function runCrmRepsPlansTests() {
   );
 
   const repsPlansBoard = readFileSync("src/components/crm/reps-plans-board.tsx", "utf8");
+  // This pin used to demand the note say "Not in organogram", because that was what every seatless
+  // row rendered. It is re-aimed rather than re-stated: the SALES organogram has no marketing
+  // branch, so a Product Manager is off it BY DESIGN and now reads as his HR job title. The
+  // contract the pin exists to hold is unchanged — the note must describe what the table actually
+  // shows — so it now checks the fallback the table actually uses.
   assert.ok(
-    repsPlansBoard.includes(">Not in organogram<"),
-    "the note above the tiles must name the marker the table actually renders — it tells the reader what to look for, and a note pointing at a label that no longer exists is worse than no note",
+    repsPlansBoard.includes("HR job title"),
+    "the note above the tiles must name what a seatless row actually renders — now the person's HR job title, since 'not in organogram' is an accusation to make of somebody head office employs on purpose",
+  );
+  assert.ok(
+    !repsPlansBoard.includes(">Not in organogram<"),
+    "and it must not still promise a marker the table only reaches when the directory cannot name the person either",
   );
 
   // The column exists only when the organogram was actually read, so the prop has to reach the

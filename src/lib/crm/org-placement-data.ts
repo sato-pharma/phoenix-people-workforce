@@ -32,9 +32,20 @@ const text = (value: unknown): string | null => {
  *
  * Cached 5 minutes under `sos-reference`, alongside the other geography reads: the org chart does
  * not move during a session, and the board calls this on every render.
+ *
+ * ── WHAT IS CACHED IS THE ROWS, NEVER THE TREE ──────────────────────────────────────────────────
+ * `unstable_cache` SERIALIZES what it stores. `buildOrgPlacementTree` returns an index that is a
+ * `Map`, and a Map does not survive that trip — it comes back `{}`. So caching the tree worked
+ * exactly once, on the render that filled the cache, and every render after it died with
+ * `TypeError: index.get is not a function` inside the page. Nothing in the unit tests could see it:
+ * they call `buildOrgPlacementTree` directly, where the Map is a Map. It took loading the page
+ * twice.
+ *
+ * The rows are plain strings and string arrays, so they round-trip intact. Rebuilding the tree from
+ * them is one pass over 133 rows on every render, which is nothing next to the read it replaces.
  */
-export const loadOrgPlacementTree = unstable_cache(
-  async (): Promise<OrgPlacementTree> => {
+const loadOrgTreeNodes = unstable_cache(
+  async (): Promise<OrgTreeNode[]> => {
     const supabase = getSupabaseAdmin();
     const { data, error } = await supabase
       .from("au_v_org_tree")
@@ -69,8 +80,16 @@ export const loadOrgPlacementTree = unstable_cache(
       ];
     });
 
-    return buildOrgPlacementTree(nodes);
+    return nodes;
   },
   ["crm-org-placement-tree"],
   { revalidate: 300, tags: ["sos-reference"] },
 );
+
+/**
+ * The organogram, ready to resolve. Built fresh from the cached rows on every call — see the note
+ * above for why the tree itself must never be the thing that goes into the cache.
+ */
+export async function loadOrgPlacementTree(): Promise<OrgPlacementTree> {
+  return buildOrgPlacementTree(await loadOrgTreeNodes());
+}

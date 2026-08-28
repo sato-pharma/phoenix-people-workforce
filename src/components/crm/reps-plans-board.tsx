@@ -136,8 +136,10 @@ export function RepsPlansBoardView({ basePath, board }: { basePath: string; boar
               OWNER'S RULE, 2026-08-28: the two rates are a MEDICAL REP'S KPI. A manager is listed
               with his own territory and his own activity and is measured against nothing, because a
               District Manager's field day is coaching and double visits rather than his own call
-              rate. And anyone the organogram has no seat for stays listed and marked rather than
-              filtered away — those rows are mostly the zero-proved ones this page exists to find. */}
+              rate. And anyone the SALES organogram has no seat for — head office, where every
+              Product Manager legitimately sits — stays listed under his HR job title rather than
+              filtered away, because those rows are mostly the zero-proved ones this page exists to
+              find. */}
           {board.managersShown + board.unplacedShown > 0 ? (
             <p className="border-l-[3px] border-l-slate-400 bg-slate-50 px-4 py-2.5 text-xs font-semibold text-slate-600">
               The rates above are the{" "}
@@ -164,10 +166,11 @@ export function RepsPlansBoardView({ basePath, board }: { basePath: string; boar
                 <>
                   {" "}
                   <span className="font-black text-slate-900">{board.unplacedShown}</span>{" "}
-                  {board.unplacedShown === 1 ? "person holds" : "people hold"} no seat in the
-                  organogram — mostly leavers and head-office roles — and{" "}
-                  {board.unplacedShown === 1 ? "is" : "are"} marked{" "}
-                  <span className="font-black text-slate-900">Not in organogram</span>.
+                  {board.unplacedShown === 1 ? "person sits" : "people sit"} outside the sales
+                  organogram — head office and leavers — and{" "}
+                  {board.unplacedShown === 1 ? "is" : "are"} listed by{" "}
+                  {board.unplacedShown === 1 ? "his" : "their"} HR job title, with no territory and
+                  no target.
                 </>
               ) : null}
             </p>

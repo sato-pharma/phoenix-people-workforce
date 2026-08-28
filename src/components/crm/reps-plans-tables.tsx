@@ -221,10 +221,21 @@ function territoryText(row: RepsPlansRepRow): string {
   return row.territories.map((t) => `${t.lineName} · ${t.regionName}`).join("  |  ");
 }
 
-/** "District Manager", or the honest answer when the organogram has no seat for him. */
+/**
+ * What this person IS: his seat if the organogram has one, else his HR job title.
+ *
+ * The order matters. The organogram is the owner's own chart and outranks a free-text HR title for
+ * anyone on it. But `au_v_org_tree` is the SALES seat model, so head office is off it by design —
+ * every Product Manager in production included — and calling a Product Manager "Not in organogram"
+ * is how the first build of this board managed to insult thirteen District Managers and a PM in one
+ * screen. The marker is the LAST answer, for someone neither chart nor directory can place.
+ */
 function roleText(row: RepsPlansRepRow): string {
-  return row.seatTierLabel ?? "Not in organogram";
+  return row.seatTierLabel ?? row.jobTitle ?? NOT_PLACED;
 }
+
+/** Said once, so the column, the search, the export and the card cannot drift apart on the wording. */
+const NOT_PLACED = "Not in organogram";
 
 /**
  * THE OWNER'S RULE, 2026-08-28: the 2 AM / 10 PM target is a MEDICAL REP'S.
@@ -248,10 +259,11 @@ const REP_COLS = [
   // territory would put the line on the row twice under two names. This column is the org model's
   // LINE and REGION, which is what the two pickers above filter on, and it says so.
   //
-  // Sorts the marked people together rather than scattering them: an empty cell sorts as the marker
-  // text, so "Not in organogram" lands in one block instead of at both ends of the alphabet.
+  // Sorts the people with no territory together rather than scattering them: an empty cell sorts as
+  // whatever the cell actually SHOWS — the job title, or the marker — so "Product Manager" lands
+  // beside the other head-office rows instead of at both ends of the alphabet.
   {
-    accessor: (r: RepsPlansRepRow) => territoryText(r) || "Not in organogram",
+    accessor: (r: RepsPlansRepRow) => territoryText(r) || roleText(r),
     defaultDir: "asc" as const,
     key: "territory",
     type: "string" as const,
@@ -295,10 +307,10 @@ export function RepsPlansRepTable({
     // of — a rep short there is short on the month whatever the AM column says.
     initialSort: { dir: "asc", key: "pmAttainmentPct" },
     // Line · Region is searchable so "CNS" or "Delta" narrows the table without touching the
-    // pickers — and so are the role and the marker, so "District Manager" lists the managers and
-    // "Not in organogram" lists exactly the people with no seat.
+    // pickers — and so is the role, so "District Manager" lists the managers and "Product Manager"
+    // lists head office.
     searchAccessors: geographyAvailable
-      ? [(r) => r.repName, (r) => r.agentHrId ?? "", (r) => territoryText(r) || "Not in organogram", (r) => roleText(r)]
+      ? [(r) => r.repName, (r) => r.agentHrId ?? "", (r) => territoryText(r) || roleText(r), (r) => roleText(r)]
       : [(r) => r.repName, (r) => r.agentHrId ?? ""],
   });
 
@@ -315,9 +327,9 @@ export function RepsPlansRepTable({
     pm_reported: row.pm.reportedRate,
     pm_pct: row.pm.attainmentPct,
     rep: row.repName,
-    // The export must match the screen (owner's standing rule), marker included — a file that
-    // silently dropped the territory column would read as though every rep had one.
-    territory: territoryText(row) || "Not in organogram",
+    // The export must match the screen (owner's standing rule) — a file that silently dropped the
+    // territory column would read as though every rep had one.
+    territory: territoryText(row) || roleText(row),
     // Exported so the file states WHY a manager row has no percentage — without it the reader of
     // the spreadsheet sees a blank and reads it as missing data rather than as "not his target".
     role: roleText(row),
@@ -423,8 +435,16 @@ export function RepsPlansRepTable({
                         label: "Line · Region",
                         value:
                           row.territories.length === 0 ? (
-                            <span className="border border-amber-300 bg-amber-50 px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.1em] text-amber-700">
-                              Not in organogram
+                            // Slate when the directory can say what he is — head office is not an
+                            // exception to chase — and amber only for someone nothing can place.
+                            <span
+                              className={
+                                row.jobTitle
+                                  ? "border border-slate-300 bg-slate-50 px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.1em] text-slate-600"
+                                  : "border border-amber-300 bg-amber-50 px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.1em] text-amber-700"
+                              }
+                            >
+                              {row.jobTitle ?? NOT_PLACED}
                             </span>
                           ) : (
                             <span className="text-slate-500">{territoryText(row)}</span>
@@ -432,9 +452,12 @@ export function RepsPlansRepTable({
                       },
                     ]
                   : []),
-                // Only for a NON-rep. On the 71 rep cards this row would say "Medical Rep" under a
-                // heading that already says reps, and the phone has the least room of anything here.
-                ...(row.scored
+                // Only for a NON-rep, and only when the field above is showing a TERRITORY rather
+                // than this same job title. On the 69 rep cards this row would say "Medical Rep"
+                // under a heading that already says reps; on a head-office card it would print
+                // "Product Manager" twice in two stacked rows, which is the phone's scarcest space
+                // spent saying nothing. A District Manager still gets both, because they differ.
+                ...(row.scored || (geographyAvailable && row.territories.length === 0)
                   ? []
                   : [
                       {
@@ -602,19 +625,28 @@ export function RepsPlansRepTable({
                 <tr className="whitespace-nowrap bg-white hover:bg-slate-50" key={row.repKey}>
                   <td className="px-3 py-2 font-semibold text-slate-900">{row.repName}</td>
                   {/* Line · Region from the ORGANOGRAM, every tier — a DM, an RSM and an NSM each
-                      resolve here exactly as a rep does. Someone the organogram has no seat for is
-                      kept on the board rather than filtered away (he is usually one of the
-                      zero-proved ones) and marked in amber: a gap to close, not his failure.
+                      resolve here exactly as a rep does. Someone with no seat is kept on the board
+                      rather than filtered away (he is usually one of the zero-proved ones) and named
+                      by his HR job title instead: `au_v_org_tree` is the SALES seat model, so a
+                      Product Manager is off it BY DESIGN and "not in organogram" would be an
+                      accusation dressed as a fact. Amber is kept for the one case that really is a
+                      gap — nobody, anywhere, can say what this person is.
 
                       The tier rides in the same cell rather than a column of its own. It is only
-                      ever shown for a NON-rep, so it costs nothing on the 71 rows where "Medical
+                      ever shown for a NON-rep, so it costs nothing on the 69 rows where "Medical
                       Rep" would just repeat what the page is already about — and it is what
                       explains the blank percentages two cells to the right. */}
                   {geographyAvailable ? (
                     <td className="px-3 py-2">
                       {row.territories.length === 0 ? (
-                        <span className="border border-amber-300 bg-amber-50 px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.1em] text-amber-700">
-                          Not in organogram
+                        <span
+                          className={
+                            row.jobTitle
+                              ? "border border-slate-300 bg-slate-50 px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.1em] text-slate-600"
+                              : "border border-amber-300 bg-amber-50 px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.1em] text-amber-700"
+                          }
+                        >
+                          {row.jobTitle ?? NOT_PLACED}
                         </span>
                       ) : (
                         <span className="flex items-center gap-2">
