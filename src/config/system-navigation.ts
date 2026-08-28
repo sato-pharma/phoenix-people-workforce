@@ -890,6 +890,14 @@ const adminNavigationSectionSeeds = [
       // read it — so the row is removed by name. /admin/crm above is Super-Admin-only, so the
       // whole "CRM" section leaves his sidebar.
       { href: "/admin/crm-tools", icon: Database, label: "CRM", permissions: [{ resource: "crm_visits" }, { resource: "double_visit_analytics" }, { resource: "hr_calendar" }], excludedRoles: ["Super Admin", "Finance Manager"] },
+      // Rep Doctor Lists and Reps Plans are cards in crmPageItems, which ONLY /admin/crm-tools
+      // renders — and the row above excludes Super Admin from that hub by name, while both cards are
+      // roles: ["Super Admin"]. So the only role allowed to open either page had no route to it:
+      // /admin/crm is the workspace, not a card hub, and Cmd+K was the sole way in. These two rows
+      // are that missing route. Every other role keeps reaching them as cards on the hub, so nothing
+      // moves for anyone else.
+      { href: "/admin/rep-doctor-lists", icon: ClipboardList, label: "Rep Doctor Lists", roles: ["Super Admin"] },
+      { href: "/admin/reps-plans", icon: Gauge, label: "Reps Plans", roles: ["Super Admin"] },
     ],
     label: "CRM",
   },
