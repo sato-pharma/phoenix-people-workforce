@@ -8,6 +8,7 @@ import {
   normalizeEmail,
   normalizeNationalId,
   normalizePhone,
+  phoneTailForMatch,
   type MatchableCandidate,
 } from "../src/lib/recruitment/candidate-matching.ts";
 
@@ -20,6 +21,37 @@ export function runRecruitmentCandidateMatchingTests() {
   assert.equal(normalizeEmail(""), null);
   assert.equal(normalizePhone("+20 100 123 4567"), "201001234567");
   assert.equal(normalizePhone("n/a"), null);
+
+  // ---- Egyptian mobiles canonicalize to the international form -------------------------------
+  // THE headline: the same handset written the two ways people actually write it must produce ONE
+  // key. A CV says 01202645759; WhatsApp stamps Meta's wa_id 201202645759. findMatchingCandidate
+  // compares by exact string equality, so before this fold those were two different people and the
+  // intake inserted a duplicate. Break normalizePhone and this line is what goes red.
+  assert.equal(
+    normalizePhone("01202645759"),
+    normalizePhone("201202645759"),
+    "local and international forms of one Egyptian mobile must share a key",
+  );
+  // All four stored forms of that one handset collapse onto the canonical international form.
+  assert.equal(normalizePhone("01202645759"), "201202645759"); // local            (253 rows)
+  assert.equal(normalizePhone("201202645759"), "201202645759"); // canonical        (61 rows)
+  assert.equal(normalizePhone("00201202645759"), "201202645759"); // 00 dialling     (7 rows)
+  assert.equal(normalizePhone("2001202645759"), "201202645759"); // doubled +20      (5 rows)
+  assert.equal(normalizePhone("+20 120 264 5759"), "201202645759"); // punctuation is stripped first
+
+  // Everything else is deliberately NOT folded, so canonicalizing can never merge two people.
+  assert.equal(normalizePhone("03034443506"), "03034443506"); // 11 digits but not 01x
+  assert.equal(normalizePhone("0223456789"), "0223456789"); // Cairo landline
+  assert.equal(normalizePhone("+44 7700 900123"), "447700900123"); // non-Egyptian
+  assert.equal(normalizePhone("0120264575"), "0120264575"); // one digit short of a mobile
+  assert.equal(normalizePhone("012026457591"), "012026457591"); // one digit too long
+  assert.equal(normalizePhone("1202645759"), "1202645759"); // bare: no 0, no 20, not assumed Egyptian
+  assert.equal(normalizePhone("001234567890"), "001234567890"); // 00 + non-Egyptian keeps its digits
+
+  // The soft-dedup tail must be unaffected: it already stripped leading zeros and took the last 9,
+  // so both forms fed it the same tail before this change and must still do so after.
+  assert.equal(phoneTailForMatch("01202645759"), "202645759");
+  assert.equal(phoneTailForMatch("201202645759"), "202645759");
 
   const keys = candidateMatchKeys({ nationalId: "123 456", email: "A@B.com", phone: "010-1" });
   assert.deepEqual(keys, { nationalIdNorm: "123456", emailNorm: "a@b.com", phoneNorm: "0101" });

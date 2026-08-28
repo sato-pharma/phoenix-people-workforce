@@ -4,6 +4,7 @@ import path from "node:path";
 import { createClient } from "@supabase/supabase-js";
 
 import type { AccessContext } from "@/lib/auth/permissions";
+import { normalizePhone } from "@/lib/recruitment/candidate-matching";
 import { createCandidate, getCandidate, updateCandidate } from "@/lib/recruitment/candidates";
 import { candidateIdentityFromCvFields } from "@/lib/recruitment/cv-extraction";
 import { defaultCvPositionKey } from "@/lib/recruitment/cv-field-schemas";
@@ -129,13 +130,6 @@ function requireEnv(name: string): string {
   return value;
 }
 
-// normalizePhone in candidate-matching.ts is digits-only. Mirrored here purely to decide whether
-// the holder's stored phone IS the applicant's — never to write a value.
-function digits(value: string | null | undefined): string | null {
-  if (!value) return null;
-  const stripped = String(value).replace(/[^0-9]/g, "");
-  return stripped.length > 0 ? stripped : null;
-}
 
 async function main(): Promise<void> {
   const dryRun = process.argv.includes("--dry-run");
@@ -225,7 +219,10 @@ async function main(): Promise<void> {
 
     // The applicant's phone sitting on the colleague's record. Clear it there FIRST or the
     // unique index rejects the create.
-    const stealsPhone = Boolean(identity.phone) && digits(holder.phone) === digits(identity.phone);
+    // normalizePhone, not a local copy: it folds an Egyptian mobile's local and international
+    // forms onto one key, so the holder's 01xxxxxxxxx and the applicant's 201xxxxxxxxx are
+    // correctly seen as the same handset. Used to compare only — this never writes a value.
+    const stealsPhone = Boolean(identity.phone) && normalizePhone(holder.phone) === normalizePhone(identity.phone);
     if (stealsPhone) {
       console.log(`  ACTION      : clear ${holder.phone} off ${holder.fullName} — it is the applicant's number`);
       if (!dryRun) await updateCandidate(split.holderId, { phone: null } as never);
