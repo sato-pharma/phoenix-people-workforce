@@ -85,7 +85,15 @@ export const HR_FUNCTIONS: readonly HrFunction[] = [
       // Deliberately no `delete`: removing an application or a requisition stays Super Admin.
       recruitment: ["read", "create", "update", "approve", "export", "import"],
       candidates: ["read", "create", "update", "delete", "export", "import"],
-      vacancies: MAINTAIN,
+      // READ + EXPORT ONLY — deliberately not MAINTAIN. Recruiting READS the vacancy board (the
+      // Vacancies Report and CV Database both gate on vacancies:read) and exports the CV template,
+      // and that is every vacancies action anything in this codebase actually asserts for her.
+      // `create` is asserted in exactly ONE place — POST /api/employees/[hrId]/resign — which she
+      // cannot reach and must not: recording a departure is ops 6, not recruiting. Holding a grant
+      // she can never spend is not harmless, it is the half-granted shape that
+      // tests/hr-seat-route-coherence.test.ts exists to catch. And opening a seat that no
+      // resignation emptied is the organogram, which is the Super Admin's intent alone.
+      vacancies: READ_EXPORT,
       // NO `approve` on offers, ever. Both job descriptions forbid approving an offer outside the
       // approved range; the offer chain's approval step belongs to the HR Section Head and above.
       offers: MAINTAIN,
@@ -189,6 +197,28 @@ export const HR_FUNCTIONS: readonly HrFunction[] = [
       employee_documents: MAINTAIN,
       contracts: ["read", "create", "update", "export"],
       resignations: ["read", "create", "update", "export"],
+      // `vacancies: create` and NOTHING else. POST /api/employees/[hrId]/resign asserts
+      // employees:update + resignations:create + vacancies:create together, because the one RPC it
+      // calls — phx_resign_employee_and_open_vacancy — records the departure AND opens the seat the
+      // departure just emptied. Without this third grant the seat that OWNS offboarding (ops 6)
+      // cannot record a single resignation. It is not `read`: the Vacancies Report and the CV
+      // Database gate on vacancies:read (a nav entry with no action resolves to `read`), and those
+      // are Advisory's recruiting pages, not this seat's. It is not organizational change either —
+      // organogram:update stays denied to both seats, and this path can only ever fire for a person
+      // who is actually leaving.
+      vacancies: ["create"],
+      // READ ONLY, and `update` was CONSIDERED and REFUSED on 2026-08-28 — do not add it as a
+      // convenience. hr_calendar:update gates exactly one action in this codebase: saving an HR
+      // decision on a Field Workforce Compliance recommendation. That looked like hers (Workforce
+      // Compliance is in her navigation, and it writes no payroll or leave action — the UI says so
+      // outright). But the PATCH accepts ANY recommendationKey, and the report carries payroll
+      // recommendations beside the leave ones; only the CLIENT hides the payroll half from a viewer
+      // without payroll standing. So the grant cannot be scoped to the half that is hers, and
+      // "may not approve salary changes" is a named boundary in both job descriptions.
+      // The refusal is already a clean one — the route returns "You do not have access to update
+      // Field Workforce Compliance decisions.", not a raw Forbidden string — so the page reads as a
+      // boundary rather than a fault. If the owner wants her deciding LEAVE recommendations, the
+      // fix is to split the decision path by recommendation kind first, then grant.
       hr_calendar: READ_ONLY,
       support_requests: MAINTAIN,
       // NO `delete` anywhere in this function. Removing an employee, a contract or a resignation
@@ -290,6 +320,25 @@ export type HrBundleName = keyof typeof HR_ROLE_BUNDLES;
  *
  * This is the half a permission matrix cannot express on its own: a matrix says what a role HAS,
  * and drift happens in what nobody noticed it GAINED.
+ *
+ * FOUR JD BOUNDARY WORDS HAVE NO RESOURCE OF THEIR OWN — they are not missing, they are carried
+ * by the resource that actually performs them. Checked against the PermissionResource union on
+ * 2026-08-28: there is no `headcount`, `penalties`, `settlement` or `policy` resource, and
+ * inventing one would add a permission nothing asserts.
+ *
+ *   "may not approve headcount"            -> organogram:update. Approving headcount IS creating a
+ *                                             seat; that is the skeleton, and it stays Super Admin.
+ *                                             (vacancies:create is NOT this — see people_records:
+ *                                             it can only open a seat a resignation just emptied.)
+ *   "may not approve disciplinary penalty" -> deductions:create/update/approve. A penalty in this
+ *                                             system is money off a salary; there is no other path.
+ *   "may not approve final settlement"     -> payroll:create/update/approve. A settlement is a
+ *                                             payroll run for a leaver.
+ *   "may not grant a policy exception"     -> NO SYSTEM ACTION EXISTS. This one is a judgement made
+ *                                             in conversation, not a button. It cannot be enforced
+ *                                             mechanically and is deliberately not faked here — do
+ *                                             not add a resource for it to make the list look
+ *                                             complete.
  */
 export const HR_ROLE_BOUNDARIES: readonly {
   resource: PermissionResource;
