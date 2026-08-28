@@ -48,6 +48,11 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
  * to reach someone while the candidate is still available.
  *
  * Exported so the message text and the tests read the same numbers this rule is written in.
+ *
+ * THREE DAYS IS THE OWNER'S OWN CALL, NOT A DEFAULT TO TUNE. He was asked directly on 2026-08-28 —
+ * before the first run fired, with the four managers it would reach named — and answered "no keep
+ * 3 days". Do not raise it because it looks aggressive for a manager in the field; that is the
+ * exact objection he was shown and overruled. Raising it needs him to say so.
  */
 export const STALE_SEND_NUDGE_AFTER_DAYS = 3;
 export const STALE_SEND_ESCALATE_AFTER_DAYS = 7;
