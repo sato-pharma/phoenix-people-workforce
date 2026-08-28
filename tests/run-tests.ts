@@ -15,6 +15,7 @@ import { runGcpMetricsTests } from "./gcp-metrics.test.ts";
 import { runWeeklySystemHealthDigestTests } from "./weekly-system-health-digest.test.ts";
 import { runMailboxComplianceMonitorTests } from "./mailbox-compliance-monitor.test.ts";
 import { runNavigationActivePathTests } from "./navigation-active-path.test.ts";
+import { runNavigationRuling11AnalyticsTests } from "./navigation-ruling-11-analytics.test.ts";
 import { runHrUrlNamespaceTests } from "./hr-url-namespace.test.ts";
 import { runNotificationLinksResolveTests } from "./notification-links-resolve.test.ts";
 import { runNavigationPersonalLayoutTests } from "./navigation-personal-layout.test.ts";
@@ -1065,6 +1066,7 @@ await runTest("error monitor per-user attempts (30d default window + real-accoun
 await runTest("gcp-metrics service health reader (availability/latency/instances + {available:false} guard)", runGcpMetricsTests);
 await runTest("weekly system health digest", runWeeklySystemHealthDigestTests);
 await runTest("navigation active path", runNavigationActivePathTests);
+await runTest("navigation ruling 11 (no analytics module in any role's rail, hub or command palette)", runNavigationRuling11AnalyticsTests);
 await runTest("HR /hr URL namespace (authored nav, unforgeable shell header, narrowing-only)", runHrUrlNamespaceTests);
 await runTest("every notification link points at a page that exists", runNotificationLinksResolveTests);
 await runTest(

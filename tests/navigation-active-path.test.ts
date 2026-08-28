@@ -376,6 +376,10 @@ export function runNavigationActivePathTests() {
       // his ONLY route to /admin/analytics/monthly-closing/details and its Monthly Closing Export
       // XLSX button; he now reaches it through his own dedicated row instead (see
       // finance-manager-monthly-closing-row.test.ts), so this shared hub stays excluded.
+      //
+      // Ruling 11 has since delisted /admin/analytics for EVERY role, so this line is now true of
+      // everyone rather than specific to him. Keeping it: it still holds, and it is the assertion
+      // that would catch the hub reappearing in exactly the sidebar it was first removed from.
       "/admin/analytics",
     ],
     "Finance Manager's sidebar must stay trimmed to his finance remit (owner, 2026-08-10)",
@@ -551,7 +555,17 @@ export function runNavigationActivePathTests() {
     ["/admin/finance-leave-management", "/admin/report-it/new"],
     "CEO must not pick up the Finance-Manager-only rows either",
   );
-  assertIncludesAll(superAdminAuthorityNav, ["/admin/analytics"], "Sales Analytics Hub must stay visible in sales navigation");
+  // INVERTED by ruling 11 — "no analytics module, no sales analytics", the owner's words, said
+  // three times. This assertion previously REQUIRED the Sales Analytics hub row in Super Admin's
+  // sidebar; it was the last thing that would have kept the module alive after the config change,
+  // and a test demanding the very row a ruling deletes reads as "your change is wrong" rather than
+  // "this pin is stale". Super Admin is the strongest case to assert: he held the only remaining
+  // rail row, so if it is gone for him it is gone for everyone.
+  assertExcludesAll(
+    superAdminAuthorityNav,
+    ["/admin/analytics"],
+    "Sales Analytics hub must NOT appear in any sidebar — ruling 11 delisted the analytics module",
+  );
   assertIncludesAll(
     superAdminAuthorityNav,
     ["/sales/source-of-sales-tools"],
