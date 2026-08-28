@@ -207,6 +207,18 @@ export const HR_FUNCTIONS: readonly HrFunction[] = [
       // organogram:update stays denied to both seats, and this path can only ever fire for a person
       // who is actually leaving.
       vacancies: ["create"],
+      // READ ONLY, and `update` was CONSIDERED and REFUSED on 2026-08-28 — do not add it as a
+      // convenience. hr_calendar:update gates exactly one action in this codebase: saving an HR
+      // decision on a Field Workforce Compliance recommendation. That looked like hers (Workforce
+      // Compliance is in her navigation, and it writes no payroll or leave action — the UI says so
+      // outright). But the PATCH accepts ANY recommendationKey, and the report carries payroll
+      // recommendations beside the leave ones; only the CLIENT hides the payroll half from a viewer
+      // without payroll standing. So the grant cannot be scoped to the half that is hers, and
+      // "may not approve salary changes" is a named boundary in both job descriptions.
+      // The refusal is already a clean one — the route returns "You do not have access to update
+      // Field Workforce Compliance decisions.", not a raw Forbidden string — so the page reads as a
+      // boundary rather than a fault. If the owner wants her deciding LEAVE recommendations, the
+      // fix is to split the decision path by recommendation kind first, then grant.
       hr_calendar: READ_ONLY,
       support_requests: MAINTAIN,
       // NO `delete` anywhere in this function. Removing an employee, a contract or a resignation
