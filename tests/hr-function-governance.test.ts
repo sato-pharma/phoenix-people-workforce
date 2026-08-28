@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
+import path from "node:path";
 
 import {
   composeHrRoleGrants,
@@ -60,8 +61,51 @@ const GRANDFATHERED_NAME_COLLISIONS: readonly string[] = [
   "CEO",
 ];
 
+const REPO_ROOT = path.resolve(import.meta.dirname, "..");
+
 /** Retired as permission roles. Neither may return as one, under any spelling. */
 const RETIRED_HR_ROLE_NAMES: readonly string[] = ["HR Specialist", "Talent Acquisition"];
+
+/**
+ * Every file that names an HR seat as a string, reviewed on 2026-08-28. Each one is access decided
+ * OUTSIDE the permission matrix, so Rule 10 makes the list explicit rather than letting a by-name
+ * grant arrive unnoticed. Reviewed verdicts for the ones that grant rather than describe:
+ *
+ *   contracts/service.ts        company-wide contract READ. `contracts:delete` stays a boundary.
+ *   excuses/service.ts          company-wide excuse visibility — time & attendance is ops 3.
+ *   employees/access-provisioning.ts  routes HR Operations to the CREATE-only, rank-bounded
+ *                               provisioning path instead of the Super-Admin-only upsert. Narrower
+ *                               than the alternative, not wider — and both admin consoles stay shut
+ *                               (user_admin:read and permission_admin:read are boundaries).
+ *   employee-360/access.ts      NARROWS both seats to medical-rep records only.
+ *
+ * The rest are navigation, notification audiences, workflow definitions and UI copy.
+ */
+const FILES_NAMING_AN_HR_SEAT: readonly string[] = [
+  "app/(admin)/admin/recruitment-hiring/page.tsx",
+  "app/(admin)/attendance/page.tsx",
+  "app/employee-portals/account-activation/page.tsx",
+  "src/components/admin/access-control-manager.tsx",
+  "src/components/admin/workflow-registry-manager.tsx",
+  "src/config/system-navigation.ts",
+  "src/lib/admin/access-control.ts",
+  "src/lib/auth/hr-functions.ts",
+  "src/lib/auth/permissions.ts",
+  "src/lib/contracts/service.ts",
+  "src/lib/employee-360/access.ts",
+  "src/lib/employees/access-provisioning.ts",
+  "src/lib/excuses/service.ts",
+  "src/lib/hiring-documents/service.ts",
+  "src/lib/notifications/role-recipients.ts",
+  "src/lib/probation/feedback-service.ts",
+  "src/lib/probation/service.ts",
+  "src/lib/recruitment/access.ts",
+  "src/lib/recruitment/account-activation.ts",
+  "src/lib/reports/organogram.ts",
+  "src/lib/resignations/service.ts",
+  "src/lib/support-requests/service.ts",
+  "src/lib/workflow-control/definitions.ts",
+];
 
 /**
  * Indent for a multi-line assertion message. Built from a char code on purpose: this file is
@@ -339,5 +383,42 @@ export async function runHrFunctionGovernanceTests() {
     [],
     `a job-description boundary is not actually refused at the gate:
   ${refusalFailures.join(BREACH_SEP)}`,
+  );
+
+  // --- Rule 10: a grant written by NAME has to be acknowledged ----------------------------------
+  // Every rule above reasons about the permission matrix. Some access in this codebase does not go
+  // through it: `access.role === "HR Operations"` in a service, a role Set on a page. That kind of
+  // grant is invisible to Rules 4, 5 and 9 alike, and it is not hypothetical — the HR sidebar
+  // offered a Deductions row that app/(admin)/admin/deductions/page.tsx refused by name, because the
+  // page's gate was a role set and no permission test could see it.
+  //
+  // There is no way to check such a grant mechanically: it is ordinary code. So this pins the LIST.
+  // A new file naming either seat fails here, which forces the one question that matters — does this
+  // hand the seat something its job description does not — to be answered by a person, once, at the
+  // moment it is written. Adding the path after answering it is the correct fix; the list is
+  // expected to grow with each phase.
+  const namingSeat: string[] = [];
+  const skip = new Set(["node_modules", ".next", ".git", ".claude", "__snapshots__"]);
+  const walk = (dir: string) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      if (entry.name.startsWith("_wt-") || skip.has(entry.name)) continue;
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) walk(full);
+      else if (/\.(ts|tsx)$/.test(entry.name)) {
+        const source = readFileSync(full, "utf8");
+        if (bundleNames.some((name) => source.includes(`"${name}"`))) {
+          namingSeat.push(path.relative(REPO_ROOT, full).split(path.sep).join("/"));
+        }
+      }
+    }
+  };
+  for (const root of ["app", "src"]) walk(path.join(REPO_ROOT, root));
+
+  assert.deepEqual(
+    namingSeat.sort(),
+    [...FILES_NAMING_AN_HR_SEAT].sort(),
+    "a file names an HR seat by string, which is a grant or a gate the permission matrix cannot " +
+      "see and no boundary rule above can check. Confirm it does not hand the seat anything its job " +
+      "description withholds, then add or remove the path in FILES_NAMING_AN_HR_SEAT",
   );
 }
