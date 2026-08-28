@@ -32,6 +32,12 @@ export const CRM_REGION_BRICK_RESOLUTIONS_TABLE = "ireports360_crm_region_brick_
  * rough locality, a customer mapping is the single most precise thing Phoenix can resolve. */
 export const CRM_CUSTOMER_BRICK_RESOLUTIONS_TABLE = "ireports360_crm_customer_brick_resolutions";
 
+/** Each agent's ASSIGNED contact list (PM / AM / Pharmacy), one row per (agent, contact, list).
+ * The only table here NOT built from activity: it is scraped from the CRM's web app, because the
+ * Reporting API has no contacts endpoint, and it is therefore the only place in Phoenix a doctor
+ * who has never been planned or visited exists. See src/lib/crm/contacts-web-client.ts. */
+export const CRM_CONTACTS_TABLE = "ireports360_contacts";
+
 /** Synced PLAN entries — the rep's assigned doctor list (one row per planned call, keyed on
  * `crm_plan_entry_id`). The counterpart to CRM_VISITS_TABLE: that table holds what a rep DID,
  * this one holds what they were assigned. Deliberately NOT named after Phoenix's own

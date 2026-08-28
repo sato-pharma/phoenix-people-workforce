@@ -2,6 +2,7 @@ import {
   Activity,
   Archive,
   BellRing,
+  BookUser,
   BriefcaseBusiness,
   Building2,
   CalendarCheck,
@@ -873,6 +874,10 @@ const adminNavigationSectionSeeds = [
       // moves for anyone else.
       { href: "/admin/rep-doctor-lists", icon: ClipboardList, label: "Rep Doctor Lists", roles: ["Super Admin"] },
       { href: "/admin/reps-plans", icon: Gauge, label: "Reps Plans", roles: ["Super Admin"] },
+      // Doctor List joins them for the same reason: it is a crmPageItems card gated to Super Admin
+      // alone, and Super Admin is excluded from the hub that renders the cards, so without this row
+      // the only role allowed to open it would have no route to it.
+      { href: "/admin/doctor-list", icon: BookUser, label: "Doctor List", roles: ["Super Admin"] },
     ],
     label: "CRM",
   },
@@ -2941,6 +2946,25 @@ export const crmPageItems: readonly AdminToolsPageItem[] = [
     icon: ClipboardList,
     label: "Rep Doctor Lists",
     description: "Each rep's assigned doctor list from the CRM plan, and which of those doctors they actually visited.",
+    roles: ["Super Admin"],
+  },
+  {
+    // SUPER ADMIN ONLY for now, the same posture as Rep Doctor Lists directly above and for the
+    // same reason: it prints every doctor a named rep is responsible for, with their address and
+    // phone. It is destined for district managers as tab one of a DM page, but a DM must see HIS
+    // reps only and that scope does not exist yet — shipping it wide first is the fault the owner
+    // caught on Doctor Coverage on 2026-08-28, where a scoped board was fronted by an unscoped
+    // picker. The enforcing gate is canAccessDoctorList (src/lib/crm/doctor-list-access.ts) plus
+    // crm_visits:read, both asked by the page; this list is UX only.
+    //
+    // NOT a duplicate of Rep Doctor Lists above. That board is built from the CRM PLAN and scores
+    // visits against it, so it can only show a doctor somebody planned. This one mirrors the CRM's
+    // own contact list, which is the only place a doctor assigned to a rep and never touched
+    // appears at all — 448 of them on the first sweep.
+    href: "/admin/doctor-list",
+    icon: BookUser,
+    label: "Doctor List",
+    description: "Every doctor on a rep's CRM list, with specialty, grade and address — the assignment itself, not the activity against it.",
     roles: ["Super Admin"],
   },
   {
