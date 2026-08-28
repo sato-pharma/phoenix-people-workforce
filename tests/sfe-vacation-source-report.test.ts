@@ -104,7 +104,7 @@ function lookupForRole(role: PhoenixRole): PermissionLookup {
 /** Mirrors app-shell.tsx: Super Admin / system scope bypasses role+permission gating but still
  * honours excludedRoles. */
 function sidebarHrefsFor(role: PhoenixRole): string[] {
-  return getSections(adminNavigationSections, "admin", lookupForRole(role), role, null, role === "Super Admin")
+  return getSections(adminNavigationSections, "admin", lookupForRole(role), role, role === "Super Admin")
     .flatMap((section) => section.items.map((item) => item.href));
 }
 

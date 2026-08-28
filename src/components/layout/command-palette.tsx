@@ -19,11 +19,9 @@ type PaletteItem = { href: string; icon: LucideIcon; label: string; section: str
 export function CommandPalette({
   navigationMode,
   permissionLookup,
-  effectiveModuleIds,
   currentRole,
   isSystemAdministratorWorkspace = false,
 }: {
-  effectiveModuleIds?: readonly string[] | null;
   navigationMode: NavigationMode;
   permissionLookup: PermissionLookup;
   isSystemAdministratorWorkspace?: boolean;
@@ -45,7 +43,6 @@ export function CommandPalette({
       navigationMode,
       permissionLookup,
       currentRole,
-      effectiveModuleIds,
       isSystemAdministratorWorkspace,
     ).flatMap((section) =>
       section.items.map((item) => ({ href: item.href, icon: item.icon, label: item.label, section: section.label })),
@@ -75,7 +72,7 @@ export function CommandPalette({
         : [];
 
     return [...sidebarItems, ...hubItems];
-  }, [currentRole, effectiveModuleIds, isSystemAdministratorWorkspace, navigationMode, permissionLookup]);
+  }, [currentRole, isSystemAdministratorWorkspace, navigationMode, permissionLookup]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();

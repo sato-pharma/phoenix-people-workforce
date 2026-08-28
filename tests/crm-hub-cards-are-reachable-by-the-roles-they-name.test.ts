@@ -66,7 +66,6 @@ function adminHrefsFor(role: PhoenixRole): Set<string> {
     "admin",
     permissionLookupFor(role),
     role,
-    null,
     isSystemAdministratorWorkspace,
   );
   return new Set(sections.flatMap((section) => section.items.map((item) => item.href)));

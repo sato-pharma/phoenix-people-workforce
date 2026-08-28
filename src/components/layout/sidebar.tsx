@@ -810,14 +810,12 @@ function SidebarNav({
   mode = "admin",
   onNavigate,
   permissionLookup = EMPTY_PERMISSION_LOOKUP,
-  effectiveModuleIds,
   isSystemAdministratorWorkspace = false,
   currentRole,
   rail = false,
   scrollable = true,
 }: {
   currentRole?: PhoenixRole;
-  effectiveModuleIds?: readonly string[] | null;
   isSystemAdministratorWorkspace?: boolean;
   mode?: NavigationMode;
   onNavigate?: () => void;
@@ -842,10 +840,9 @@ function SidebarNav({
         mode,
         permissionLookup,
         currentRole,
-        effectiveModuleIds,
         isSystemAdministratorWorkspace,
       ),
-    [currentRole, effectiveModuleIds, isSystemAdministratorWorkspace, mode, permissionLookup],
+    [currentRole, isSystemAdministratorWorkspace, mode, permissionLookup],
   );
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -1356,12 +1353,10 @@ function useSidebarRail(mode: NavigationMode) {
 export function Sidebar({
   navigationMode = "admin",
   permissionLookup = EMPTY_PERMISSION_LOOKUP,
-  effectiveModuleIds,
   isSystemAdministratorWorkspace = false,
   currentRole,
 }: {
   currentRole?: PhoenixRole;
-  effectiveModuleIds?: readonly string[] | null;
   isSystemAdministratorWorkspace?: boolean;
   navigationMode?: NavigationMode;
   permissionLookup?: PermissionLookup;
@@ -1407,7 +1402,6 @@ export function Sidebar({
         <SidebarNav
           currentRole={currentRole}
           isSystemAdministratorWorkspace={isSystemAdministratorWorkspace}
-          effectiveModuleIds={effectiveModuleIds}
           mode={navigationMode}
           permissionLookup={permissionLookup}
           rail={railActive}
@@ -1425,12 +1419,10 @@ export function MobileSidebar({
   navigationMode = "admin",
   permissionLookup = EMPTY_PERMISSION_LOOKUP,
   isSystemAdministratorWorkspace = false,
-  effectiveModuleIds,
   currentRole,
 }: {
   currentRole?: PhoenixRole;
   isSystemAdministratorWorkspace?: boolean;
-  effectiveModuleIds?: readonly string[] | null;
   onClose: () => void;
   open: boolean;
   navigationMode?: NavigationMode;
@@ -1478,7 +1470,6 @@ export function MobileSidebar({
           <SidebarNav
             currentRole={currentRole}
             isSystemAdministratorWorkspace={isSystemAdministratorWorkspace}
-            effectiveModuleIds={effectiveModuleIds}
             mode={navigationMode}
             onNavigate={onClose}
             permissionLookup={permissionLookup}

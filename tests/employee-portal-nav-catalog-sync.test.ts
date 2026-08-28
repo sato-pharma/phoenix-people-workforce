@@ -5,28 +5,28 @@ import { readFileSync } from "node:fs";
 //   1. the REAL nav — resolveEmployeePortalNavVisibility + buildEmployeePortalSections
 //      (src/components/employee-portal/employee-portal-layout.tsx), which is what an employee
 //      actually sees, driven by role-visibility booleans; and
-//   2. the Modules Control CATALOG — the "employee-portal" block of
-//      src/config/system-navigation.ts, which src/lib/employee-portal/module-curation.ts reads
-//      (post-#1005) to decide, by href, whether an admin-configured curation hides a destination.
+//   2. the nav CATALOG — the "employee-portal" block of src/config/system-navigation.ts, returned
+//      by getNavigationSections("employee-portal").
 //
-// Because curation matches by href against the catalog, a portal page in the REAL nav but ABSENT
-// from the catalog is silently UN-curatable — it stays always-visible no matter what an admin
-// configures. #1005 made this a documented, graceful degradation rather than a crash, but the two
-// lists can still drift with no signal.
+// The catalog no longer drives curation — Modules Control and src/lib/employee-portal/
+// module-curation.ts were retired — but it is NOT decorative, and two live consumers read it:
+//   · the command palette (src/components/layout/command-palette.tsx) builds Cmd/Ctrl+K from it,
+//     so a portal page absent from the catalog cannot be reached by search; and
+//   · DocumentTitleSync (src/components/layout/document-title-sync.tsx) takes the browser tab
+//     title from it, so an absent page shows the bare brand instead of its own label.
 //
-// This guard does NOT force the (risky) full consolidation of the two lists — some pages SHOULD be
-// permanently always-visible (an admin must not be able to hide an employee's own payslips), so they
-// are intentionally kept out of the catalog. Instead it PINS the current classification: every real-
-// nav portal href must be either present in the catalog (curatable) or explicitly listed below as
-// intentionally uncuratable. A NEW portal page added to the layout without a conscious decision then
-// fails CI, and a stale allowlist entry (no longer rendered) is also caught.
+// Both degrade silently, which is why the two lists drifting apart needs a test rather than a
+// bug report. This guard does NOT force the (risky) full consolidation of the two lists — some
+// pages have always been deliberately absent from the catalog. Instead it PINS the current
+// classification: every real-nav portal href must be either present in the catalog or explicitly
+// listed below. A NEW portal page added to the layout without a conscious decision then fails CI,
+// and a stale allowlist entry (no longer rendered) is also caught.
 
-// Portal destinations intentionally NOT curatable via Modules Control (absent from the catalog by
-// design). Two groups: (a) always-visible core pages an admin must never be able to hide, and
-// (b) role-specific tabs that predate the catalog and were never added to it. Adding a new portal
-// page? Either add it to the system-navigation.ts employee-portal catalog (to make it curatable) or
-// list it here (to keep it always-visible) — this test forces that choice.
-const KNOWN_UNCURATABLE = new Set<string>([
+// Portal destinations deliberately absent from the catalog. Two groups: (a) core employee pages,
+// and (b) role-specific tabs that predate the catalog and were never added to it. Adding a new
+// portal page? Either add it to the system-navigation.ts employee-portal catalog (so it is
+// searchable and titled) or list it here — this test forces that choice.
+const KNOWN_CATALOG_OMISSIONS = new Set<string>([
   // Always-visible core employee pages
   "/employee-portals/payslips",
   "/employee-portals/profile",
@@ -34,7 +34,7 @@ const KNOWN_UNCURATABLE = new Set<string>([
   "/employee-portals/vacation-request",
   "/employee-portals/vacation-report",
   "/employee-portals/incentive",
-  // Role-specific / performance tabs never added to the Modules Control catalog
+  // Role-specific / performance tabs never added to the nav catalog
   "/employee-portals/dsms-performance",
   "/employee-portals/med-reps-performance",
   "/employee-portals/team-performance",
@@ -64,29 +64,32 @@ export function runEmployeePortalNavCatalogSyncTests() {
   );
   const catalogHrefs = new Set(extractPortalHrefs(catalogBlock));
 
-  // (1) Every real-nav portal destination must be classified: curatable (in the catalog) OR
-  //     explicitly always-visible (in KNOWN_UNCURATABLE). A new page added without a decision fails.
-  const unclassified = realNavHrefs.filter((href) => !catalogHrefs.has(href) && !KNOWN_UNCURATABLE.has(href));
+  // (1) Every real-nav portal destination must be classified: present in the catalog OR explicitly
+  //     listed in KNOWN_CATALOG_OMISSIONS. A new page added without a decision fails.
+  const unclassified = realNavHrefs.filter((href) => !catalogHrefs.has(href) && !KNOWN_CATALOG_OMISSIONS.has(href));
   assert.deepEqual(
     unclassified,
     [],
-    `these portal pages are rendered by the real nav but are neither in the Modules Control catalog ` +
-      `nor listed as intentionally uncuratable — add each to system-navigation.ts's employee-portal ` +
-      `catalog to make it curatable, or to KNOWN_UNCURATABLE to keep it always-visible: ${unclassified.join(", ")}`,
+    `these portal pages are rendered by the real nav but are neither in the employee-portal nav ` +
+      `catalog nor listed as deliberate omissions — add each to system-navigation.ts's ` +
+      `employee-portal catalog so it is searchable and titled, or to KNOWN_CATALOG_OMISSIONS: ` +
+      `${unclassified.join(", ")}`,
   );
 
   // (2) The allowlist must not rot: every KNOWN_UNCURATABLE entry must still be a real rendered
   //     destination (or in the catalog — a page can graduate to curatable). Otherwise it's stale.
   const realNavSet = new Set(realNavHrefs);
-  const staleAllowlist = [...KNOWN_UNCURATABLE].filter((href) => !realNavSet.has(href) && !catalogHrefs.has(href));
+  const staleAllowlist = [...KNOWN_CATALOG_OMISSIONS].filter((href) => !realNavSet.has(href) && !catalogHrefs.has(href));
   assert.deepEqual(
     staleAllowlist,
     [],
-    `these KNOWN_UNCURATABLE entries are no longer rendered by the portal nav — remove them: ${staleAllowlist.join(", ")}`,
+    `these KNOWN_CATALOG_OMISSIONS entries are no longer rendered by the portal nav — remove them: ${staleAllowlist.join(", ")}`,
   );
 
-  // (3) module-curation.ts must still be the single consumer that matches curation by href against
-  //     this catalog (the mechanism this guard protects). If that wiring changes, revisit this test.
-  const curationSource = readFileSync("src/lib/employee-portal/module-curation.ts", "utf8");
-  assert.match(curationSource, /getNavigationSections\("employee-portal"\)/, "module-curation reads the employee-portal catalog");
+  // (3) The catalog must still reach a live consumer. Curation was retired, so this pins the two
+  //     that remain — lose both and the catalog is dead weight and this guard guards nothing.
+  const paletteSource = readFileSync("src/components/layout/command-palette.tsx", "utf8");
+  assert.match(paletteSource, /getNavigationSections\(/, "the command palette still builds from the nav catalog");
+  const titleSource = readFileSync("src/components/layout/document-title-sync.tsx", "utf8");
+  assert.match(titleSource, /getNavigationSections\(/, "DocumentTitleSync still builds from the nav catalog");
 }

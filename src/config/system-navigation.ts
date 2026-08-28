@@ -87,14 +87,13 @@ export type NavigationSectionItem = {
   href: `/${string}`;
   icon: LucideIcon;
   label: string;
-  moduleId: string;
   excludedRoles?: readonly PhoenixRole[];
   roles?: readonly PhoenixRole[];
   permissions?: readonly NavigationPermission[];
   /**
    * Per-role display-label override, resolved in `getSections` (active-path.ts). This item's
-   * `label` stays the canonical one — used for the derived `moduleId` (see the note above
-   * `defaultModuleId`), search, and every role that has no entry here. Add a role only when that
+   * `label` stays the canonical one — used for search and every role that has no entry
+   * here. Add a role only when that
    * role's own name for the module genuinely differs; do not use this to rename an item wholesale
    * — that is what editing `label` itself is for.
    *
@@ -129,51 +128,10 @@ export type NavigationSection = {
 // Section headings below are the REAL titles for every role. The SFE Manager's flat, headless
 // sidebar (PR #1625, 2026-08-02) is produced by subtracting them at render time — see
 // `flatSidebarRoles` / `usesFlatSidebar` in @/lib/navigation/active-path. They are not blanked
-// here because `label` is also the Modules Control catalog's `sectionLabel`, the sidebar search
-// key and the drag-handle aria text, none of which should read as an empty string.
+// here because `label` is also the sidebar search key and the drag-handle aria text, neither of
+// which should read as an empty string.
 
-type NavigationSectionItemSeed = Omit<NavigationSectionItem, "moduleId"> & {
-  moduleId?: string;
-};
-
-type NavigationSectionSeed = Omit<NavigationSection, "items"> & {
-  items: readonly NavigationSectionItemSeed[];
-};
-
-function moduleIdPart(value: string) {
-  return value
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "_")
-    .replace(/^_+|_+$/g, "")
-    .replace(/_{2,}/g, "_");
-}
-
-// NOTE: the derived id embeds the LABEL, so renaming an item's label changes its moduleId — and
-// moduleIds are persisted in sidebar_module_assignments. If that table ever holds rows for the item
-// being renamed, its saved curation stops matching and the item silently disappears for those
-// people; pin the OLD id via the item's explicit `moduleId` (see withModuleIds below) in that case.
-// Checked before the 2026-08-09 label renames: the table was empty, so nothing needed pinning.
-function defaultModuleId(mode: NavigationMode, section: NavigationSectionSeed, item: NavigationSectionItemSeed) {
-  const prefix = mode === "employee-portal" ? "portal" : "admin";
-  const labelPart = moduleIdPart(item.label);
-  const hrefPart = moduleIdPart(item.href);
-  const tabPart = item.activeTab ? `_${moduleIdPart(item.activeTab)}` : "";
-  return `${prefix}.${moduleIdPart(section.id)}.${labelPart}.${hrefPart}${tabPart}`;
-}
-
-function withModuleIds(
-  mode: NavigationMode,
-  sections: readonly NavigationSectionSeed[],
-): readonly NavigationSection[] {
-  return sections.map((section) => ({
-    ...section,
-    items: section.items.map((item) => ({
-      ...item,
-      moduleId: item.moduleId ?? defaultModuleId(mode, section, item),
-    })),
-  }));
-}
+type NavigationSectionSeed = NavigationSection;
 
 const hrAuthorityNavigationRoles = ["Super Admin", "Talent Acquisition"] as const satisfies readonly PhoenixRole[];
 // Single consumer: the "Payroll Report" (/payroll) card in payrollManagementPageItems. Finance
@@ -1418,8 +1376,8 @@ const employeePortalNavigationSectionSeeds = [
   },
 ] as const satisfies readonly NavigationSectionSeed[];
 
-export const adminNavigationSections = withModuleIds("admin", adminNavigationSectionSeeds);
-export const employeePortalNavigationSections = withModuleIds("employee-portal", employeePortalNavigationSectionSeeds);
+export const adminNavigationSections: readonly NavigationSection[] = adminNavigationSectionSeeds;
+export const employeePortalNavigationSections: readonly NavigationSection[] = employeePortalNavigationSectionSeeds;
 
 export function getNavigationSections(mode: NavigationMode): readonly NavigationSection[] {
   return mode === "employee-portal" ? employeePortalNavigationSections : adminNavigationSections;
@@ -1858,14 +1816,6 @@ export const adminToolsPageItems: readonly AdminToolsPageItem[] = [
     icon: Trash2,
     label: "System Cleanup",
     description: "Bulk cleanup utilities for stale or orphaned data.",
-    roles: ["Super Admin"],
-  },
-  {
-    href: "/admin/modules-control",
-    icon: Settings2,
-    label: "Modules Control",
-    description: "Curate sidebar modules per user, role, position, or line.",
-    permissions: [{ resource: "module_control", action: "read" }],
     roles: ["Super Admin"],
   },
   {

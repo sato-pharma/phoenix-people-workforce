@@ -38,7 +38,6 @@ import {
 } from "lucide-react";
 
 import type { EmployeePortalNavVisibility } from "@/lib/employee-portal/navigation";
-import { isEmployeePortalHrefCurated } from "@/lib/employee-portal/module-curation";
 
 export type PortalNavEntry = {
   /** Short label for the compact bottom-nav tab. */
@@ -177,21 +176,15 @@ export function isEntryVisible(entry: PortalNavEntry, visibility: EmployeePortal
 
 /**
  * Registry entries the signed-in role can see, de-duplicated by href.
- *
- * `effectiveModuleIds` mirrors the same Modules Control curation the sidebar
- * applies (see applyModuleCuration in employee-portal-layout.tsx) so the mobile
- * bottom nav and profile quick-navigation grid never surface a destination an
- * admin has restricted out of the desktop sidebar.
+
  */
 export function visiblePortalNavEntries(
   visibility: EmployeePortalNavVisibility,
-  effectiveModuleIds?: string[] | null,
 ): PortalNavEntry[] {
   const seen = new Set<string>();
   const result: PortalNavEntry[] = [];
   for (const entry of PORTAL_NAV_REGISTRY) {
     if (seen.has(entry.href) || !isEntryVisible(entry, visibility)) continue;
-    if (!isEmployeePortalHrefCurated(entry.href, effectiveModuleIds ?? null)) continue;
     seen.add(entry.href);
     result.push(entry);
   }
