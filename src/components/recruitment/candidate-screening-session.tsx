@@ -38,6 +38,9 @@ import { CandidateFactsSummary } from "@/components/recruitment/candidate-facts-
 import { CvDocumentView } from "@/components/recruitment/cv-preview-modal";
 import type { HiringManagerOption } from "@/lib/recruitment/hiring-manager-notify";
 import { managerPickerLabel, managerSeatLabel } from "@/lib/recruitment/manager-grouping";
+import { positionFolderLabel } from "@/lib/recruitment/position-folder";
+// Type-only: vacancy-options reads the service-role client and must never enter this bundle.
+import type { VacancyOption } from "@/lib/recruitment/vacancy-options";
 import { candidateDisplayName } from "@/lib/recruitment/candidate-display";
 import { candidateRowAppliedFor } from "@/lib/recruitment/applied-for";
 import { candidateScreeningFacts, candidateScreeningRoleFamily } from "@/lib/recruitment/candidate-screening-facts";
@@ -101,6 +104,26 @@ function describeForOrder(candidate: Candidate): ScreeningOrderInput {
  */
 const SEEN_DWELL_MS = 2500;
 
+/**
+ * The picker value meaning "not one of the open seats — I'll type it".
+ *
+ * A sentinel rather than an empty string, because empty already means something different and
+ * important: no position at all, which is a legitimate send. Prefixed so it can never collide with
+ * a vacancy id, which is always a number.
+ */
+const FREE_POSITION = "free:";
+
+/** "Nasr City · Medical Representative · Pedia" — a vacancy, as it reads in the picker. */
+function vacancyPickerLabel(vacancy: VacancyOption): string {
+  return positionFolderLabel({
+    areaName: vacancy.areaName,
+    jobTitle: vacancy.jobTitle,
+    lineName: vacancy.lineName,
+    regionName: vacancy.regionName,
+    vacancyId: vacancy.id,
+  });
+}
+
 /** "26 Aug, 05:07" — Cairo, per the standing rule that no raw UTC ever reaches a person. */
 const seenAtFormat = new Intl.DateTimeFormat("en-GB", {
   day: "2-digit",
@@ -122,6 +145,8 @@ export function CandidateScreeningSession({
   onClose,
   hiringManagers = [],
   initialViews = {},
+  openVacancies = [],
+  positionSuggestions = { areas: [], jobTitles: [] },
   variant = "overlay",
 }: {
   candidates: Candidate[];
@@ -146,6 +171,24 @@ export function CandidateScreeningSession({
    * simply works the way it did before this existed rather than failing.
    */
   initialViews?: CandidateViewMap;
+  /**
+   * The open seats a CV can be sent FOR, read live from the organogram.
+   *
+   * Added 2026-08-28, again in the owner's own words: "before sending the CV to the manager, I
+   * should be able to choose his area and his job title, so the same title, same area are
+   * consolidated ... he goes to a folder called Nasr City Medical Reps." The manager's inbox folds
+   * on what is chosen here, so this picker is the whole feature — everything downstream is filing.
+   *
+   * Empty by default and the picker is then not rendered: a caller that has not loaded the
+   * vacancies shows the send bar exactly as it was, which still works.
+   */
+  openVacancies?: VacancyOption[];
+  /**
+   * Titles and areas already used on a send, offered under the free-typed fields. The owner asked
+   * for free typing ALONGSIDE the vacancy list, knowing it can drift; these suggestions are what
+   * hold that drift down without refusing anybody the freedom he asked for.
+   */
+  positionSuggestions?: { jobTitles: string[]; areas: string[] };
   /**
    * `overlay` keeps the original behaviour — a full-screen layer over the pool, opened and closed
    * without leaving the page. `page` is the same queue rendered as a route of its own, so it has a
@@ -204,6 +247,16 @@ export function CandidateScreeningSession({
   // eleven CVs went to one manager in a single sitting on 2026-08-26 — so re-picking the same
   // person from a 31-name list eleven times is the paperwork this mode exists to delete.
   const [sendManagerHrId, setSendManagerHrId] = useState("");
+  /**
+   * The position being hired for — remembered across candidates for exactly the same reason as the
+   * manager, and more so: filling one vacancy means reading a run of CVs for that one vacancy.
+   *
+   * A vacancy id as a string, or FREE_POSITION when the recruiter is typing one that is not an open
+   * seat yet, or "" for no position at all.
+   */
+  const [positionChoice, setPositionChoice] = useState("");
+  const [freeAreaName, setFreeAreaName] = useState("");
+  const [freeJobTitle, setFreeJobTitle] = useState("");
   /** Who each candidate was sent to in THIS session, so the confirmation survives stepping back. */
   const [sentInSession, setSentInSession] = useState<Record<string, string>>({});
   /** A full-bleed reading mode for the page variant — see `shellClass` for why it is needed. */
@@ -363,23 +416,60 @@ export function CandidateScreeningSession({
    * and "it quietly did nothing" is precisely the defect that made this send visible in the first
    * place: three of five production sends failed silently inside a `catch {}` in August.
    */
+  /**
+   * Choose the position, and let it choose the manager.
+   *
+   * Picking a vacancy pre-selects the manager that vacancy reports to. That is the point of picking
+   * rather than typing: the organogram already knows who owns the seat, and choosing the wrong
+   * manager is how a CV lands where nobody is looking. It only ever FILLS the manager, never clears
+   * one — a recruiter who deliberately picked the National Sales Manager keeps them, and a vacancy
+   * whose own manager seat is vacant (a real row here) changes nothing.
+   */
+  const choosePosition = useCallback(
+    (value: string) => {
+      setPositionChoice(value);
+      if (value === FREE_POSITION || !value) return;
+      const vacancy = openVacancies.find((option) => String(option.id) === value);
+      const managerHrId = vacancy?.managerHrId;
+      if (!managerHrId) return;
+      if (!hiringManagers.some((manager) => manager.hrId === managerHrId)) return;
+      setSendManagerHrId(managerHrId);
+    },
+    [hiringManagers, openVacancies],
+  );
+
   const sendToManager = useCallback(async () => {
     if (!current || busy || !sendManagerHrId) return;
     setBusy(true);
     setError(null);
     try {
       const res = await fetch(`/api/recruitment/candidates/${current.id}/notify-manager`, {
-        body: JSON.stringify({ managerHrId: sendManagerHrId }),
+        // The position, when one is chosen. A picked vacancy sends only its ID — the server reads
+        // the seat back and stamps that, so the words on this screen can never disagree with the
+        // words in the folder. A typed one sends the words, and the server cleans them.
+        body: JSON.stringify({
+          managerHrId: sendManagerHrId,
+          ...(positionChoice === FREE_POSITION
+            ? { positionAreaName: freeAreaName, positionJobTitle: freeJobTitle }
+            : positionChoice
+              ? { vacancyId: Number(positionChoice) }
+              : {}),
+        }),
         headers: { "Content-Type": "application/json" },
         method: "POST",
       });
-      const data = (await res.json().catch(() => ({}))) as { managerName?: string; message?: string };
+      const data = (await res.json().catch(() => ({}))) as {
+        result?: { managerName?: string };
+        message?: string;
+      };
       if (!res.ok) throw new Error(data.message ?? "Could not send this CV to that manager.");
       // The NAME the server confirmed, not the one this component guessed from its own list — per
       // the standing rule that a raw HR_ID never reaches a person, and because the server is the
-      // thing that knows who was actually told.
+      // thing that knows who was actually told. Read from `result`, which is the envelope both
+      // notify-manager routes answer with; reading it off the top level silently missed every time
+      // and fell through to the local guess, which was right only because the list is the same one.
       const managerName =
-        data.managerName ??
+        data.result?.managerName ??
         hiringManagers.find((manager) => manager.hrId === sendManagerHrId)?.name ??
         sendManagerHrId;
       setSentInSession((previous) => ({ ...previous, [current.id]: managerName }));
@@ -388,7 +478,7 @@ export function CandidateScreeningSession({
     } finally {
       setBusy(false);
     }
-  }, [busy, current, hiringManagers, sendManagerHrId]);
+  }, [busy, current, freeAreaName, freeJobTitle, hiringManagers, positionChoice, sendManagerHrId]);
 
   const decidedCount = Object.keys(decided).length;
 
@@ -505,6 +595,9 @@ export function CandidateScreeningSession({
   const priorSend = current.managerNotified;
   const priorSendSeat = priorSend ? managerSeatLabel(priorSend) : "";
   const priorSendAt = formatSeenAt(priorSend?.sentAt);
+  // The POSITION the last send was filed under — a different thing from the manager's own seat
+  // above, and the one that answers "have I already sent this person for this vacancy?".
+  const priorSendPosition = current.sentFor ? positionFolderLabel(current.sentFor) : "";
   // The status the row already carried before this session — so a candidate somebody judged last
   // week is not silently presented as untouched.
   //
@@ -712,9 +805,74 @@ export function CandidateScreeningSession({
                     <span>
                       Sent to {priorSend.name}
                       {priorSendSeat ? ` · ${priorSendSeat}` : ""}
+                      {priorSendPosition ? ` for ${priorSendPosition}` : ""}
                       {priorSendAt ? ` on ${priorSendAt}` : ""}
                     </span>
                   </p>
+                ) : null}
+                {/* ── Which position is this CV FOR? ────────────────────────────────────────
+                    The owner, 2026-08-28: "before sending the CV to the manager, I should be able
+                    to choose his area and his job title, so the same title, same area are
+                    consolidated." This is that choice. It is what the manager's inbox folds on, so
+                    it is chosen BEFORE the send rather than sorted out afterwards.
+
+                    Optional, deliberately. A send with no position is what every send looked like
+                    until today, and refusing one would block the flow rather than improve the
+                    filing — the manager's screen keeps those under their own heading. */}
+                {openVacancies.length > 0 ? (
+                  <div className="space-y-1.5">
+                    <select
+                      aria-label="Which position is this CV for"
+                      className="h-8 w-full rounded-md border border-slate-300 bg-white px-2 text-xs text-slate-900 outline-none focus:border-orange-400"
+                      onChange={(event) => choosePosition(event.target.value)}
+                      title="The position this CV is for — the manager sees it filed under this"
+                      value={positionChoice}
+                    >
+                      <option value="">For which position? (optional)</option>
+                      <optgroup label="Open vacancies">
+                        {openVacancies.map((vacancy) => (
+                          <option key={vacancy.id} value={String(vacancy.id)}>
+                            {vacancyPickerLabel(vacancy)}
+                          </option>
+                        ))}
+                      </optgroup>
+                      <option value={FREE_POSITION}>Another position — type it</option>
+                    </select>
+                    {positionChoice === FREE_POSITION ? (
+                      <div className="grid grid-cols-2 gap-1.5">
+                        {/* Suggestions, not a closed list: the point of this option is that the
+                            position need not be an open seat yet. Offering what has already been
+                            typed is what stops a second "Marketing Exec." opening a folder that
+                            reads almost exactly like the first one. */}
+                        <input
+                          aria-label="Area"
+                          className="h-8 min-w-0 rounded-md border border-slate-300 px-2 text-xs outline-none focus:border-orange-400"
+                          list="screening-position-areas"
+                          onChange={(event) => setFreeAreaName(event.target.value)}
+                          placeholder="Area"
+                          value={freeAreaName}
+                        />
+                        <input
+                          aria-label="Job title"
+                          className="h-8 min-w-0 rounded-md border border-slate-300 px-2 text-xs outline-none focus:border-orange-400"
+                          list="screening-position-titles"
+                          onChange={(event) => setFreeJobTitle(event.target.value)}
+                          placeholder="Job title"
+                          value={freeJobTitle}
+                        />
+                        <datalist id="screening-position-areas">
+                          {positionSuggestions.areas.map((area) => (
+                            <option key={area} value={area} />
+                          ))}
+                        </datalist>
+                        <datalist id="screening-position-titles">
+                          {positionSuggestions.jobTitles.map((title) => (
+                            <option key={title} value={title} />
+                          ))}
+                        </datalist>
+                      </div>
+                    ) : null}
+                  </div>
                 ) : null}
                 <div className="flex items-center gap-1.5">
                   <select

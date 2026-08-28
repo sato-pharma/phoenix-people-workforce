@@ -15,6 +15,11 @@ import { listCandidateViews, type CandidateViewMap } from "@/lib/recruitment/can
 import { normalizeCandidateStatus, type CandidateStatus } from "@/lib/recruitment/candidate-status";
 import { listHiringManagerOptions, type HiringManagerOption } from "@/lib/recruitment/hiring-manager-notify";
 import { parseScreeningFilters, type ScreeningQueueFilters } from "@/lib/recruitment/screening-link";
+import {
+  listOpenVacancyOptions,
+  listUsedPositionText,
+  type VacancyOption,
+} from "@/lib/recruitment/vacancy-options";
 import type { Candidate } from "@/lib/recruitment/types";
 
 export type ScreeningQueue = {
@@ -26,6 +31,18 @@ export type ScreeningQueue = {
    * ever answer 403 would be a worse screen than offering none.
    */
   hiringManagers: HiringManagerOption[];
+  /**
+   * The open seats a CV can be sent FOR — the folder the manager will find it in. Loaded on the
+   * same gate as the managers, for the same reason: without `recruitment: update` there is nothing
+   * to send, so there is nothing to choose a position for either.
+   */
+  openVacancies: VacancyOption[];
+  /**
+   * Job titles and areas already used on a send, offered beside the free-typed fields. The owner
+   * chose free typing alongside the vacancy list, and this is what keeps a second "Marketing Exec."
+   * from opening a folder that reads almost exactly like the first one.
+   */
+  positionSuggestions: { jobTitles: string[]; areas: string[] };
   /** How many were dropped by the filters, so the page can say so instead of silently shrinking. */
   filteredOut: number;
   unseenOnly: boolean;
@@ -49,10 +66,14 @@ export async function loadScreeningQueue(
   filters: ScreeningQueueFilters = {},
   options: { canSendToManagers?: boolean } = {},
 ): Promise<ScreeningQueue> {
-  const [allCandidates, views, hiringManagers] = await Promise.all([
+  const [allCandidates, views, hiringManagers, openVacancies, positionSuggestions] = await Promise.all([
     listCandidates(),
     listCandidateViews(viewerHrId),
     options.canSendToManagers ? listHiringManagerOptions() : Promise.resolve<HiringManagerOption[]>([]),
+    options.canSendToManagers ? listOpenVacancyOptions() : Promise.resolve<VacancyOption[]>([]),
+    options.canSendToManagers
+      ? listUsedPositionText()
+      : Promise.resolve<{ jobTitles: string[]; areas: string[] }>({ areas: [], jobTitles: [] }),
   ]);
 
   const { status, unseenOnly } = parseScreeningFilters(filters);
@@ -69,6 +90,8 @@ export async function loadScreeningQueue(
     candidates,
     filteredOut: allCandidates.length - candidates.length,
     hiringManagers,
+    openVacancies,
+    positionSuggestions,
     status,
     unseenOnly,
     views,
