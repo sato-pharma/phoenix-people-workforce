@@ -317,6 +317,53 @@ file holding the full account, under
   one this depends on: every DB round trip from here crosses the Atlantic.
   `supabase-client-15s-timeout-commits-anyway-half-applies`
 
+**Database, grants and RLS** (relocated from `MEMORY.md`, 2026-08-28 — these are platform
+mechanics, not Phoenix business rules, so under §2.2's cap they were spending index bytes for reach
+this file already gives them)
+
+- **A write REVOKE does NOT make a table read-only.** An `ON DELETE CASCADE` and a `SECURITY
+  DEFINER` function both execute with the **table owner's** rights, not the caller's, so both ignore
+  it. Both were live back doors around the `sales_records` freeze — 11,267 H1 rows, the only record
+  of what H1 2026 was actually paid on: deleting an import batch cascaded through the front door,
+  and `phx_reassign_replacement_ownership` could rewrite 880 rows / EGP 6,436,342.01. Measured on
+  staging, not assumed — the identical update was `permission denied` directly and `SUCCEEDED,
+  rows=1` through a definer function. **`has_table_privilege` reports the revoke faithfully and
+  tells you nothing about either bypass**, so a grant listing cannot answer this. Run both sweeps
+  before trusting any freeze: FK actions (`con.confdeltype in ('c','n','d')`) pointing into the
+  protected table, and `pg_proc.prosecdef` functions whose body writes it. Fixed on prod 2026-08-14
+  — `ON DELETE RESTRICT` plus the definer function no longer writing it; **do not redo or undo.**
+  `a-write-revoke-does-not-stop-a-cascade-or-a-secdef-function`
+- **An append-only table needs a STATEMENT-level `BEFORE TRUNCATE` trigger.** Two independent
+  reasons, and fixing one does not fix the other: `TRUNCATE` fires **no ROW triggers**, so a
+  `FOR EACH ROW` guard never runs; and revoking `TRUNCATE` from `service_role` does nothing to the
+  table **OWNER**, which is what migrations run as. Supabase's default ACL also grants `service_role`
+  **ALL** on every new `public` table, so a bare `grant select, insert` restricts nothing — revoke
+  `update, delete, truncate` explicitly, and from the **named** roles, never from `PUBLIC`. Whenever
+  a table is called append-only, immutable, or an audit log, **prove all three verbs are refused
+  against a real database**: neither defect is visible from source review, and neither would have
+  failed a test written in advance. `append-only-tables-need-a-truncate-trigger`
+- **RLS on with no `authenticated` grant is the NORM here — 222 of 308 public tables — not a defect
+  class to sweep.** The posture is `service_role` only, stated outright in the default-privileges
+  migration. The `expense_claims` 42501 incident makes "policy exists but no grant" look like a bug
+  to hunt; that one was real for exactly one reason — `listExpenseClaims` reads with the **user's
+  own session**. `getSupabaseRlsClientIfAvailable()` has exactly **three** importers (outstation
+  claims-read, outstation expenses, payroll) and there is **no browser Supabase client anywhere in
+  the repo**, so if the table is not read by one of those three the missing grant is correct, and
+  granting is a pure widening that exposes real HR rows to every logged-in JWT to satisfy nothing.
+  Two decoys: inert `TO authenticated` policies that never had a grant behind them, and executable
+  `SECURITY INVOKER` functions with zero callers.
+  `rls-policy-without-an-authenticated-grant-is-usually-correct`
+- **ONE `auth.users` row with `banned_until = 'infinity'` 500s the ENTIRE GoTrue admin API.** GoTrue
+  scans it into a Go `time.Time`, which cannot hold a non-finite `timestamptz`, so any page whose
+  result set includes that row returns `500 "Database error finding users"` in ~90ms — it reads like
+  a code error, not a timeout. **The failure is page-shaped, so a small `per_page` probe passes and
+  it looks transient. It is deterministic.** While it existed, Studio's Auth users list, the orphan
+  check, and every account create/repair needing stale-link recovery hard-failed. Retire an auth
+  account with the app's own finite `876000h`, **never `'infinity'`**; the app never writes that
+  value, so finding one always means a direct DB/Studio write. One query finds it:
+  `select email, banned_until from auth.users where not isfinite(banned_until)`. Repaired on prod
+  2026-08-19. `banned-until-infinity-breaks-the-whole-auth-admin-api`
+
 **Validation**
 
 - **A repo-wide pattern sweep must grep the TESTS for the old string too — a pinning test can pin
