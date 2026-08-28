@@ -797,7 +797,7 @@ function SmartNavGrid({ access, variant }: { access: AccessContext; variant: "ce
 // partition that never arrives reads as a stuck load.
 const PHASE_B_SKELETON_TITLES = {
   ceo: ["Risk signals & payroll", "Company health", "Trends", "Double-Visit Intelligence", "Monthly Sales Intelligence", "Expense Snapshot", "ROI Signal", "Attendance & Leave"],
-  sfe: ["Company health", "Targets", "IMS contribution", "Weekly sales trend", "Trends", "Double-Visit Intelligence", "Monthly Sales Intelligence", "ROI Signal", "CRM field activity", "Doctor coverage & frequency"],
+  sfe: ["Company health", "Targets", "IMS contribution", "Weekly sales trend", "Trends", "Double-Visit Intelligence", "Monthly Sales Intelligence", "ROI Signal", "CRM field activity"],
 } as const;
 
 export function CeoPhaseBSkeleton({ variant = "ceo" }: { variant?: "ceo" | "sfe" }) {
@@ -1102,7 +1102,7 @@ export async function CeoPhaseBWidgets({
       {/* RETIRED 2026-08-28 (owner): a "Doctor coverage & frequency" section stood here for the
           SFE Manager, summarising /admin/doctor-coverage. Its own description gave the measure away
           — "A doctors need 2 visits, B/C need 1" — which is the grade norm, not the rep's planned
-          call count. Withdrawn with the board itself; do not restore it ahead of the replacement. */
+          call count. Withdrawn with the board itself; do not restore it ahead of the replacement. */}
 
       {/* ── Smart Navigation Grid ─────────────────────────────────────────── */}
       <Section title="Quick Navigation" description="Every module, one click away.">
