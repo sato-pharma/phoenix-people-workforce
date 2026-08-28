@@ -686,6 +686,20 @@ These are the owner's own decisions, stated across many sessions. They are not s
 - Marketing Manager is hidden from the portal Incentive tab; GPM still sees it.
 - The Organogram / AU seat model is the source of truth for org-structure and vacancy data.
 - All SoS sales, historical and future, attribute to **today's** geography — never as-was.
+- 🔒 **THE CLOSING GOLDEN RULE — a closing is never done or sent during the month it covers.**
+  Owner's rule, stated 2026-08-28, in his words: *"no closing is ever done or sent during the
+  month. Closing after the month closes."* The closing for `YYYY-MM` becomes publishable on the
+  **first day of the following month, Africa/Cairo time** — 1 September for August, not one day
+  earlier, and December's opens on 1 January of the next year. Preparing a running month is
+  fine and necessary (import, review, correct, preview); **releasing** it is what is forbidden,
+  because publishing notifies every sales and product manager, arms the CEO's Source-of-Sales BI
+  report, and a sent mail cannot be recalled by unpublishing. Enforced, not merely written down:
+  `src/lib/sales/closing-period-gate.ts` throws, `publishClosing` calls it before it writes, and
+  `tests/closing-period-gate.test.ts` — registered in `tests/run-tests.ts`, so it runs in the
+  required CI `validate` check — pins both the arithmetic and the fact that the publish path
+  still calls the gate. **`unpublishClosing` is deliberately NOT gated** — it is the recovery
+  path, and a recovery path that stops working when you need it is not one. Do not "fix" this
+  back, do not add an override flag, and do not offer to publish a running month "just to see".
 
 ## 5. Session, worktree, and parallel-work safety
 

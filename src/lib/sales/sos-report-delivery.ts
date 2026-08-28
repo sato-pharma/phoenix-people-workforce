@@ -16,6 +16,7 @@ import {
   renderPhoenixEmailText,
 } from "@/emails/phoenix-email-layout";
 import { sendPhoenixEmail } from "@/lib/email/send-phoenix-email";
+import { closingPeriodGateMessage, isClosingPeriodComplete } from "@/lib/sales/closing-period-gate";
 import { listAllPublishedClosings, normalizeClosingLine } from "@/lib/sales/monthly-closing-publication";
 import { listMonthlyClosingLines } from "@/lib/sales/monthly-distributor-import";
 import { periodProseLabel } from "@/lib/sales/periods";
@@ -78,6 +79,15 @@ export async function buildAndEmailSosBiReport(input: {
   recipientsOverride?: string[];
 }): Promise<SosReportDeliveryResult> {
   const { period } = input;
+
+  // THE CLOSING GOLDEN RULE — a closing is never SENT during the month it covers. The daily cron
+  // caller reaches here only once every line's closing is published, which is already gated; the
+  // manual route takes any period the caller types, so the rule is enforced here too rather than
+  // trusting the entry point. Returned as an unsent result, not thrown: "not sent, and here is
+  // why" is this function's existing contract and the route surfaces `reason` verbatim.
+  if (!isClosingPeriodComplete(period)) {
+    return { period, reason: closingPeriodGateMessage(period), sent: false };
+  }
 
   const data = await getSosDashboard({ periods: [period] }, systemAccessContext, {
     includeDetailRows: true,
