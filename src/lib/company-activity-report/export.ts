@@ -77,6 +77,23 @@ export const OUTCOME_FILL: Record<CompanyActivityDayOutcome, string> = {
   future: "FFFFFFFF",
 };
 
+// The x-700 font partner for each OUTCOME_FILL x-100/50 fill — same Tailwind shade-pairing
+// convention as severityFont/achFont elsewhere in these exports, so the Outcome cell in Daily
+// Detail reads as a real badge (colored fill + matching bold text), not a fill with plain text.
+export const OUTCOME_FONT: Record<CompanyActivityDayOutcome, string> = {
+  office_present: "FF047857",
+  crm_field_visit: "FF1D4ED8",
+  crm_leave: "FF0369A1",
+  leave_approved: "FF0369A1",
+  leave_pending: "FFA16207",
+  device_outage: MUTED,
+  no_signal: MUTED,
+  no_entry: "FFBE123C",
+  weekly_off: MUTED,
+  holiday: MUTED,
+  future: MUTED,
+};
+
 /** Overrides the outcome's own fill — a conflict needs to stand out regardless of which outcome
  * won the day. Deliberately violet, not a shade of red: red is already this workbook's "count of
  * a bad thing" color (no_entry, severity banding), and a conflict is a different KIND of signal —
@@ -191,7 +208,15 @@ function visitSummaryText(day: CompanyActivityDayRow): string {
 /**
  * One reusable sheet builder for a plain data sheet (Daily Detail) — title banner, description,
  * range/count stamp, a blank spacer row (row 4) the export route writes its filter note into,
- * blank row 5, frozen header row 6, per-row fill, autoWidth, autoFilter.
+ * blank row 5, frozen header row 6, zebra-striped rows with specific columns banded, autoWidth,
+ * autoFilter.
+ *
+ * Zebra is the ROW's base fill; `bandColumns` overrides specific cells on top of it — same split
+ * as business-review's bodyRow (zebra + achCols) and this file's own Executive Summary table
+ * (zebra + the three severity-banded columns). Painting the WHOLE row in a semantic color (the
+ * previous version of this function) buried every other column in solid color and had no zebra
+ * at all — a wall of color, not the "premium" look this workbook is meant to match (owner
+ * feedback, 2026-08-28).
  */
 function buildDataSheet<T>(input: {
   workbook: ExcelJS.Workbook;
@@ -202,8 +227,7 @@ function buildDataSheet<T>(input: {
   headers: string[];
   rows: T[];
   rowValues: (row: T) => Array<string | number>;
-  rowFill: (row: T) => string;
-  rowFont?: (row: T) => string | undefined;
+  bandColumns?: (row: T) => Array<{ col: number; fill: string; font: string }>;
 }): ExcelJS.Worksheet {
   const sheet = input.workbook.addWorksheet(input.sheetName, { properties: { tabColor: { argb: ORANGE } } });
 
@@ -215,16 +239,20 @@ function buildDataSheet<T>(input: {
 
   input.rows.forEach((row, i) => {
     const excelRow = sheet.getRow(headerRowIndex + 1 + i);
-    const fill = input.rowFill(row);
-    const font = input.rowFont?.(row);
+    const zebra = i % 2 === 1;
     input.rowValues(row).forEach((value, colIndex) => {
       const cell = excelRow.getCell(colIndex + 1);
       cell.value = value;
-      cell.font = { color: { argb: font ?? SLATE }, size: 10, bold: !!font };
+      cell.font = { color: { argb: SLATE }, size: 10 };
       cell.alignment = { vertical: "middle", wrapText: true };
       cell.border = { bottom: { style: "thin", color: { argb: HAIR } } };
-      if (fill) cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: fill } };
+      if (zebra) cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: ZEBRA } };
     });
+    for (const band of input.bandColumns?.(row) ?? []) {
+      const cell = excelRow.getCell(band.col);
+      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: band.fill } };
+      cell.font = { bold: true, color: { argb: band.font }, size: 10 };
+    }
     excelRow.height = 18;
   });
 
@@ -274,6 +302,10 @@ const DETAIL_HEADERS = [
   "Visit Count", "Campaign Visits", "Visit Details",
   "Office First Punch", "Office Last Punch", "Leave Status", "Leave Type", "Conflict",
 ];
+
+// 1-based column indexes into DETAIL_HEADERS that get banded — see buildDataSheet's bandColumns.
+const DETAIL_COL_OUTCOME = 6;
+const DETAIL_COL_CONFLICT = 15;
 
 function detailRowValues(input: {
   day: CompanyActivityDayRow;
@@ -512,8 +544,15 @@ export function generateCompanyActivityReportWorkbook(input: {
     headers: DETAIL_HEADERS,
     rows: input.report.days,
     rowValues: (day) => detailRowValues({ day, employeeNameByHrId: input.employeeNameByHrId }),
-    rowFill: (day) => (day.conflict ? CONFLICT_FILL : OUTCOME_FILL[day.outcome]),
-    rowFont: (day) => (day.conflict ? CONFLICT_FONT : undefined),
+    bandColumns: (day) => {
+      const bands = [{
+        col: DETAIL_COL_OUTCOME,
+        fill: day.conflict ? CONFLICT_FILL : OUTCOME_FILL[day.outcome],
+        font: day.conflict ? CONFLICT_FONT : OUTCOME_FONT[day.outcome],
+      }];
+      if (day.conflict) bands.push({ col: DETAIL_COL_CONFLICT, fill: CONFLICT_FILL, font: CONFLICT_FONT });
+      return bands;
+    },
   });
 
   // Last sheet on purpose — a reader who scrolls to the end finds the definitions, and a reader
