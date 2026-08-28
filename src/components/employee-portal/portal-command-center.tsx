@@ -32,6 +32,7 @@ import { DsmCommandCenter } from "@/components/employee-portal/dashboards/dsm-co
 import { NsmCommandCenter } from "@/components/employee-portal/dashboards/nsm-command-center";
 import { RmCommandCenter } from "@/components/employee-portal/dashboards/rm-command-center";
 import { MarketingManagerCommandCenter } from "@/components/employee-portal/dashboards/marketing-manager-command-center";
+import { PlanAdherenceDashboardCard } from "@/components/weekly-planning/plan-adherence-report";
 import type { AccessContext } from "@/lib/auth/permissions";
 import type { PortalHomeSnapshot } from "@/lib/employee-portal/home-snapshot";
 import type { EmployeePortalShellData } from "@/lib/employee-portal/service";
@@ -1160,7 +1161,31 @@ function StandardCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot }) {
   );
 }
 
+/**
+ * The role-specific dashboard, with the plan score above it.
+ *
+ * The card sits HERE rather than inside each command centre because the plan module's population
+ * does not line up with the role switch below: DSM, NSM, Product Manager, Group Product Manager and
+ * Training Manager all file plans, the last of those landing in StandardCommandCenter, and an
+ * acting DSM keeps the job title "Medical Representative". Adding the card to five branches would
+ * be five chances to miss one, and would still miss her. One placement, gated on whether the person
+ * actually has a scored plan, covers everybody and nobody else.
+ */
 export function PortalCommandCenter({ snapshot, access }: { snapshot: PortalHomeSnapshot; access?: AccessContext }) {
+  const roleCenter = <PortalRoleCommandCenter snapshot={snapshot} access={access} />;
+  if (!snapshot.planAdherence?.latest) return roleCenter;
+  return (
+    <div className="space-y-4">
+      <PlanAdherenceDashboardCard
+        adherence={snapshot.planAdherence}
+        planHref={(planId) => `/employee-portals/approvals/plan/${encodeURIComponent(planId)}`}
+      />
+      {roleCenter}
+    </div>
+  );
+}
+
+function PortalRoleCommandCenter({ snapshot, access }: { snapshot: PortalHomeSnapshot; access?: AccessContext }) {
   switch (snapshot.role) {
     case "Product Manager":
     case "Group Product Manager":
