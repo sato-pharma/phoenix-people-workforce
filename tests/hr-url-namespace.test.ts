@@ -25,6 +25,8 @@ import {
   HR_NAMESPACE_PREFIX,
   PATH_HEADER,
   SHELL_HEADER,
+  hrNamespaceRemainder,
+  isHrRewritablePath,
   isHrNamespacePath,
   toHrNamespacePath,
 } from "../src/lib/navigation/shell-headers.ts";
@@ -299,54 +301,106 @@ export function runHrUrlNamespaceTests() {
   );
   assert.equal(hrNamespaceRoles.size, 2);
 
-  // 11 ── The shell header cannot be forged. A client can set any header it likes, and downstream
-  // code TRUSTS this one to pick the navigation — so middleware must delete both of ours from every
-  // inbound request before writing its own, on the non-rewritten path too. Source-pinned because
-  // there is no way to exercise Next.js middleware from this harness.
-  const middlewareSource = readFileSync(new URL("../middleware.ts", import.meta.url), "utf8");
+  // 11 ── The shell header cannot be forged, and `/hr` cannot become a second spelling of the API.
+  //
+  // A client can set any header it likes, and the shell TRUSTS this one to pick the navigation —
+  // so proxy.ts must delete both of ours from every inbound request before writing its own, on the
+  // non-rewritten path too. Source-pinned because there is no way to exercise a Next.js proxy from
+  // this harness.
+  //
+  // This logic lives in proxy.ts, NOT a middleware.ts: Next 16 renamed the file, this repo already
+  // had a proxy.ts carrying the CSRF guard and the root 307, and shipping both files is a hard
+  // build error ("Both middleware file and proxy file are detected"). Pinning the filename here is
+  // what stops a future session recreating the collision.
+  const proxySource = readFileSync(new URL("../proxy.ts", import.meta.url), "utf8");
   for (const fragment of [
     `headers.delete(SHELL_HEADER);`,
     `headers.delete(PATH_HEADER);`,
     `headers.set(PATH_HEADER,`,
     `headers.set(SHELL_HEADER, "hr");`,
   ]) {
-    assert.ok(middlewareSource.includes(fragment), `middleware.ts must contain: ${fragment}`);
+    assert.ok(proxySource.includes(fragment), `proxy.ts must contain: ${fragment}`);
   }
-  // Both deletes must come BEFORE the early return, or a non-rewritten request forwards a forged
-  // header straight to the layout — which would let anyone put any account into HR chrome.
-  const earlyReturn = middlewareSource.indexOf("return NextResponse.next(");
-  assert.ok(earlyReturn > 0, "expected middleware's pass-through return");
-  assert.ok(
-    middlewareSource.indexOf("headers.delete(SHELL_HEADER);") < earlyReturn,
-    "the shell header must be stripped BEFORE middleware's pass-through return",
-  );
-  assert.ok(
-    middlewareSource.indexOf("headers.delete(PATH_HEADER);") < earlyReturn,
-    "the path header must be stripped BEFORE middleware's pass-through return",
-  );
+  // Both deletes must come BEFORE every return that forwards request headers, or a non-rewritten
+  // request hands a forged header straight to AppShell — which would let anyone put any account
+  // into HR chrome.
+  const shellDelete = proxySource.indexOf("headers.delete(SHELL_HEADER);");
+  const pathDelete = proxySource.indexOf("headers.delete(PATH_HEADER);");
+  for (const [label, marker] of [
+    ["the pass-through return", "return NextResponse.next({ request: { headers } });"],
+    ["the rewrite", "return NextResponse.rewrite(url, { request: { headers } });"],
+    ["the security-proxy call", "const intervention = isSecurityProxyPath(pathname)"],
+  ] as const) {
+    const at = proxySource.indexOf(marker);
+    assert.ok(at > 0, `expected proxy.ts to contain ${label}`);
+    assert.ok(shellDelete > 0 && shellDelete < at, `the shell header must be stripped before ${label}`);
+    assert.ok(pathDelete > 0 && pathDelete < at, `the path header must be stripped before ${label}`);
+  }
   // The two header names live in one module for both sides; a hand-typed literal in either place
-  // fails silently (the layout simply never sees the header and renders admin chrome).
-  assert.ok(middlewareSource.includes(`from "@/lib/navigation/shell-headers"`));
+  // fails silently (AppShell simply never sees the header and renders admin chrome).
+  assert.ok(proxySource.includes(`from "@/lib/navigation/shell-headers"`));
   assert.equal(SHELL_HEADER, "x-phoenix-shell");
   assert.equal(PATH_HEADER, "x-phoenix-path");
 
-  // 12 ── The redirect that catches every pre-existing link. Source-pinned for the same reason:
-  // a route-group layout cannot be rendered from this harness.
-  const layoutSource = readFileSync(new URL("../app/(admin)/layout.tsx", import.meta.url), "utf8");
+  // 11b ── `/hr/api/**` must NEVER rewrite. This one is a real security boundary rather than a
+  // tidiness rule, and unlike the pins above it is EXECUTED, not read.
+  //
+  // proxy.ts scopes its CSRF guard to paths starting `/api/`. Had the namespace rewritten
+  // `/hr/api/x` to `/api/x`, a cross-site POST could reach any API route on this platform through
+  // the `/hr` spelling with that guard never running. Refusing the rewrite makes `/hr/api/x`
+  // resolve to nothing at all, so the API has exactly one address.
+  assert.equal(isHrRewritablePath("/hr/api/payroll/run"), false, "/hr/api/** must never rewrite — it would bypass the CSRF guard");
+  assert.equal(isHrRewritablePath("/hr/api"), false, "/hr/api must never rewrite either");
+  assert.equal(isHrRewritablePath("/hr/apiary"), true, "the exclusion is the /api SEGMENT, not the prefix");
+  assert.equal(isHrRewritablePath("/hr/probation"), true);
+  assert.equal(isHrRewritablePath("/hr"), true);
+  assert.equal(isHrRewritablePath("/probation"), false);
+  assert.equal(isHrRewritablePath("/hr-calendar"), false, "a page whose name merely starts with hr is not the namespace");
+  assert.equal(hrNamespaceRemainder("/hr"), "/", "an empty pathname is invalid and throws inside NextURL");
+  assert.equal(hrNamespaceRemainder("/hr/probation"), "/probation");
+  // And widening the matcher must not have widened the CSRF rule onto every server action, which
+  // POSTs to a page URL. The guard's own scope is kept explicit in the source for exactly that.
   assert.ok(
-    layoutSource.includes(`requestHeaders.get(SHELL_HEADER) !== "hr" && usesHrNamespace(access.role)`),
-    "the (admin) layout must send an HR seat on a bare admin address into the namespace",
+    proxySource.includes("const intervention = isSecurityProxyPath(pathname) ? securityProxy(request) : null;"),
+    "the CSRF/preview/root guard must stay scoped to the paths it covered before the matcher widened",
   );
-  assert.ok(
-    layoutSource.includes(`redirect(toHrNamespacePath(requestedPath))`),
-    "the redirect target must be built with toHrNamespacePath, which is idempotent — a hand-built `/hr` + path is how a redirect loop starts",
-  );
-  // AppShell, not the layout, is where the header picks the chrome — so the dual-mode pages outside
-  // the (admin) group honour it too.
+  for (const fragment of [`pathname === "/"`, `pathname.startsWith("/api/")`, `(accept|reject)`]) {
+    assert.ok(proxySource.includes(fragment), `isSecurityProxyPath must still cover: ${fragment}`);
+  }
+
+  // 12 ── The redirect that catches every pre-existing link, and the header that picks the chrome.
+  //
+  // BOTH live in AppShell rather than in app/(admin)/layout.tsx, and that placement is the fix for
+  // a measured gap: production notification links point at pages OUTSIDE that route group —
+  // /payslips (123 rows), /marketing-requests/<id> — which mount their own shell. From the layout,
+  // an HR seat following one of those links would have landed on the right page wearing the ADMIN
+  // sidebar. Source-pinned because a server component cannot be rendered from this harness.
   const shellSource = readFileSync(new URL("../src/components/layout/app-shell.tsx", import.meta.url), "utf8");
   assert.ok(
-    shellSource.includes(`(await headers()).get(SHELL_HEADER) === "hr" ? "hr"`),
-    "AppShell must resolve the shell from the middleware header",
+    shellSource.includes(`requestHeaders.get(SHELL_HEADER) !== "hr" && usesHrNamespace(access.role)`),
+    "AppShell must send an HR seat on a bare address into the namespace",
+  );
+  assert.ok(
+    shellSource.includes(`redirect(toHrNamespacePath(requestedPath))`),
+    "the redirect target must be built with toHrNamespacePath, which is idempotent — a hand-built `/hr` + path is how a redirect loop starts",
+  );
+  assert.ok(
+    shellSource.includes(`requestHeaders.get(SHELL_HEADER) === "hr" ? "hr"`),
+    "AppShell must resolve the shell from the proxy header",
+  );
+  // The header check must beat the explicit `navigationMode="admin"` the (admin) layout passes in,
+  // or every page in that group would render admin chrome under an /hr address.
+  const headerCheck = shellSource.indexOf(`requestHeaders.get(SHELL_HEADER) === "hr" ? "hr"`);
+  assert.ok(
+    headerCheck > 0 && shellSource.indexOf("navigationMode ?? resolveNavigationMode(access)", headerCheck) > headerCheck,
+    "the shell header must take precedence over the navigationMode prop",
+  );
+  // The redirect must not ALSO be left in the route-group layout: two redirects on one request is
+  // how a loop gets built by accident.
+  const adminLayoutSource = readFileSync(new URL("../app/(admin)/layout.tsx", import.meta.url), "utf8");
+  assert.ok(
+    !adminLayoutSource.includes("toHrNamespacePath"),
+    "the /hr redirect belongs in AppShell only — leaving a copy in the (admin) layout duplicates it",
   );
 
   // 13 ── The iPhone 16px input floor reaches the HR shell on day one, and does so by CONSTRUCTION

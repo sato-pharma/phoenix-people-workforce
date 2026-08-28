@@ -36,3 +36,30 @@ export function toHrNamespacePath(pathname: string): string {
   if (!pathname.startsWith("/")) return HR_NAMESPACE_PREFIX;
   return pathname === "/" ? HR_NAMESPACE_PREFIX : `${HR_NAMESPACE_PREFIX}${pathname}`;
 }
+
+/**
+ * The part of an `/hr` address that names the real page. `/hr` itself resolves to `/`, which is
+ * never an empty string — an empty pathname is not valid and throws inside NextURL.
+ */
+export function hrNamespaceRemainder(pathname: string): string {
+  if (!isHrNamespacePath(pathname)) return pathname;
+  return pathname === HR_NAMESPACE_PREFIX ? "/" : pathname.slice(HR_NAMESPACE_PREFIX.length);
+}
+
+/**
+ * Whether `proxy.ts` may rewrite this address into the real page.
+ *
+ * `/hr/api/**` is deliberately EXCLUDED, and that exclusion is a security boundary rather than a
+ * tidiness rule. The CSRF guard in `proxy.ts` is scoped to paths that start `/api/`; if `/hr/api/x`
+ * were rewritten to `/api/x`, a cross-site POST could reach any API route through the `/hr` spelling
+ * with that guard never running. Refusing the rewrite makes `/hr/api/x` resolve to nothing (404),
+ * so there is no second spelling of the API surface at all.
+ *
+ * Nothing legitimate is lost: pages fetch their APIs with root-relative URLs (`/api/...`), which are
+ * unaffected by the address the page itself was served under.
+ */
+export function isHrRewritablePath(pathname: string): boolean {
+  if (!isHrNamespacePath(pathname)) return false;
+  const rest = hrNamespaceRemainder(pathname);
+  return rest !== "/api" && !rest.startsWith("/api/");
+}

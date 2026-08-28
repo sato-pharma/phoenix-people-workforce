@@ -58,6 +58,11 @@ import { canAccessCompanyOrganogram, isLineScopedOrganogramRole } from "../src/l
 const ORGANOGRAM_HREF: Record<NavigationMode, string> = {
   admin: "/organogram",
   "employee-portal": "/employee-portals/organogram",
+  // The `/hr` namespace serves the same admin page under a prefixed address. `resolveNavigationMode`
+  // never returns "hr" (the mode is a property of the ADDRESS, not the person), so this entry is
+  // never exercised by the sweep below — it exists so adding a shell cannot silently leave a mode
+  // with no organogram link. That is the same exhaustiveness this whole file exists to enforce.
+  hr: "/hr/organogram",
 };
 
 function permissionLookupFor(role: PhoenixRole): PermissionLookup {
