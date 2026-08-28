@@ -3,6 +3,12 @@
 import { Download } from "lucide-react";
 import { useEffect, useState } from "react";
 
+import {
+  PortalEmptyState,
+  PortalRecordCard,
+  PortalRecordFields,
+  PortalResponsiveDataList,
+} from "@/components/employee-portal/portal-primitives";
 import { cn } from "@/lib/utils";
 import { formatDateOnly } from "@/lib/date-only";
 import type {
@@ -37,6 +43,29 @@ function RecommendationChip({ recommendation }: { recommendation: FeedbackRecomm
       )}
     >
       {RECOMMENDATION_LABELS[recommendation]}
+    </span>
+  );
+}
+
+/**
+ * Extracted so the desktop row and the mobile card cannot drift apart — both halves render this
+ * one component rather than two copies of the same four-branch ternary.
+ */
+function DvStatusChip({ row }: { row: AggregateFeedbackRow }) {
+  return (
+    <span
+      className={cn(
+        "inline-block rounded border px-1.5 py-0.5 text-phx-2xs font-semibold",
+        row.dvTotalApplicable === 0
+          ? "border-slate-200 bg-slate-50 text-slate-400"
+          : row.dvDoneCount === row.dvTotalApplicable
+            ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+            : row.dvDoneCount > 0
+              ? "border-amber-200 bg-amber-50 text-amber-700"
+              : "border-slate-200 bg-slate-50 text-slate-500",
+      )}
+    >
+      {row.dvDoneCount}/{row.dvTotalApplicable} DV
     </span>
   );
 }
@@ -126,8 +155,48 @@ export function AggregateFeedbackReport() {
         </a>
       </div>
 
-      <div className="overflow-x-auto bg-white/80">
-        <table className="w-full min-w-[900px] text-left text-xs">
+      {/* Desktop keeps the ten-column table; a phone gets cards. The table is 900px wide at its
+          minimum, so before this it scrolled sideways inside a container that gave no hint it
+          was scrollable — and the five recommendation columns, which are the point of the
+          report, were the first thing off the right edge. */}
+      <PortalResponsiveDataList
+        empty={
+          <PortalEmptyState
+            message="No feedback data yet for the current scope."
+            title="Nothing to report"
+          />
+        }
+        getKey={(row) => row.employeeHrId}
+        items={filtered}
+        renderCard={(row) => (
+          <PortalRecordCard
+            meta={
+              <span className="font-mono">
+                {row.employeeHrId} · {row.lineName ?? "—"}
+              </span>
+            }
+            status={<DvStatusChip row={row} />}
+            title={row.employeeName}
+          >
+            <PortalRecordFields
+              fields={[
+                { label: "Hire Date", value: formatDate(row.hireDate) },
+                { label: "End Date", value: formatDate(row.probationEndDate) },
+                { label: "DM", value: <RoleCell role="dm" submissions={row.submissions} /> },
+                { label: "NSM", value: <RoleCell role="nsm" submissions={row.submissions} /> },
+                {
+                  label: "PM / GPM",
+                  value: <RoleCell role="pm_gpm" submissions={row.submissions} />,
+                },
+                { label: "TM", value: <RoleCell role="tm" submissions={row.submissions} /> },
+                { label: "TA", value: <RoleCell role="ta" submissions={row.submissions} /> },
+              ]}
+            />
+          </PortalRecordCard>
+        )}
+        renderTable={() => (
+          <div className="hidden overflow-x-auto bg-white/80 md:block">
+            <table className="w-full min-w-[900px] text-left text-xs">
           <thead className="bg-slate-50/90">
             <tr className="border-b border-slate-200 text-xs uppercase tracking-[0.12em] text-slate-500">
               {[
@@ -151,66 +220,46 @@ export function AggregateFeedbackReport() {
               ))}
             </tr>
           </thead>
-          <tbody className="divide-y divide-phx-line">
-            {filtered.length === 0 ? (
-              <tr>
-                <td
-                  className="px-3 py-8 text-center text-xs text-slate-400"
-                  colSpan={9}
-                >
-                  No feedback data yet for the current scope.
-                </td>
-              </tr>
-            ) : (
-              filtered.map((row) => (
-                <tr
-                  className="align-top transition-colors hover:bg-slate-50/65"
-                  key={row.employeeHrId}
-                >
-                  <td className="px-2.5 py-2">
-                    <p className="font-semibold text-slate-800">{row.employeeName}</p>
-                    <p className="font-mono text-phx-2xs text-slate-400">{row.employeeHrId}</p>
-                  </td>
-                  <td className="px-2.5 py-2 text-slate-600">{row.lineName ?? "—"}</td>
-                  <td className="px-2.5 py-2 text-slate-600">{formatDate(row.hireDate)}</td>
-                  <td className="px-2.5 py-2 text-slate-600">{formatDate(row.probationEndDate)}</td>
-                  <td className="px-2.5 py-2">
-                    <span
-                      className={cn(
-                        "inline-block rounded border px-1.5 py-0.5 text-phx-2xs font-semibold",
-                        row.dvTotalApplicable === 0
-                          ? "border-slate-200 bg-slate-50 text-slate-400"
-                          : row.dvDoneCount === row.dvTotalApplicable
-                            ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                            : row.dvDoneCount > 0
-                              ? "border-amber-200 bg-amber-50 text-amber-700"
-                              : "border-slate-200 bg-slate-50 text-slate-500",
-                      )}
-                    >
-                      {row.dvDoneCount}/{row.dvTotalApplicable} DV
-                    </span>
-                  </td>
-                  <td className="px-2.5 py-2">
-                    <RoleCell role="dm" submissions={row.submissions} />
-                  </td>
-                  <td className="px-2.5 py-2">
-                    <RoleCell role="nsm" submissions={row.submissions} />
-                  </td>
-                  <td className="px-2.5 py-2">
-                    <RoleCell role="pm_gpm" submissions={row.submissions} />
-                  </td>
-                  <td className="px-2.5 py-2">
-                    <RoleCell role="tm" submissions={row.submissions} />
-                  </td>
-                  <td className="px-2.5 py-2">
-                    <RoleCell role="ta" submissions={row.submissions} />
-                  </td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
+              <tbody className="divide-y divide-phx-line">
+                {filtered.map((row) => (
+                  <tr
+                    className="align-top transition-colors hover:bg-slate-50/65"
+                    key={row.employeeHrId}
+                  >
+                    <td className="px-2.5 py-2">
+                      <p className="font-semibold text-slate-800">{row.employeeName}</p>
+                      <p className="font-mono text-phx-2xs text-slate-400">{row.employeeHrId}</p>
+                    </td>
+                    <td className="px-2.5 py-2 text-slate-600">{row.lineName ?? "—"}</td>
+                    <td className="px-2.5 py-2 text-slate-600">{formatDate(row.hireDate)}</td>
+                    <td className="px-2.5 py-2 text-slate-600">
+                      {formatDate(row.probationEndDate)}
+                    </td>
+                    <td className="px-2.5 py-2">
+                      <DvStatusChip row={row} />
+                    </td>
+                    <td className="px-2.5 py-2">
+                      <RoleCell role="dm" submissions={row.submissions} />
+                    </td>
+                    <td className="px-2.5 py-2">
+                      <RoleCell role="nsm" submissions={row.submissions} />
+                    </td>
+                    <td className="px-2.5 py-2">
+                      <RoleCell role="pm_gpm" submissions={row.submissions} />
+                    </td>
+                    <td className="px-2.5 py-2">
+                      <RoleCell role="tm" submissions={row.submissions} />
+                    </td>
+                    <td className="px-2.5 py-2">
+                      <RoleCell role="ta" submissions={row.submissions} />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      />
     </div>
   );
 }

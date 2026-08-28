@@ -24,6 +24,12 @@ import {
   AdminSectionHeader,
   adminPanelClassName,
 } from "@/components/admin/admin-design-system";
+import {
+  PortalEmptyState,
+  PortalRecordCard,
+  PortalRecordFields,
+  PortalResponsiveDataList,
+} from "@/components/employee-portal/portal-primitives";
 import { AggregateFeedbackReport } from "@/components/probation/aggregate-feedback-report";
 import { DvCheckboxPanel } from "@/components/probation/dv-checkbox-panel";
 import { FeedbackFormPanel } from "@/components/probation/feedback-form-panel";
@@ -474,6 +480,105 @@ export function ProbationTracker({
     }
   }
 
+  /**
+   * The three cells below are rendered by BOTH the desktop row and the phone card, so they are
+   * extracted rather than copied. Plain functions, not nested components — a nested component
+   * would remount its subtree on every parent render (the DV panel holds its own state) and
+   * `react/no-unstable-nested-components` is an error in this repo.
+   */
+  function progressCell(traffic: TrafficStatus, progress: number) {
+    return (
+      <div className="space-y-1">
+        <div className="h-2 overflow-hidden rounded-full bg-slate-100">
+          <div
+            className={cn(
+              "h-full rounded-full transition-all",
+              traffic === "safe" ? "bg-success" : traffic === "warning" ? "bg-warning" : "bg-danger",
+            )}
+            style={{ width: `${progress}%` }}
+          />
+        </div>
+        <p className="text-phx-xs leading-tight text-text-secondary">{progress}% complete</p>
+      </div>
+    );
+  }
+
+  function dvCell(row: ProbationRow) {
+    if (!row.dv_state) {
+      return <span className="text-xs text-slate-400">—</span>;
+    }
+
+    return (
+      <DvCheckboxPanel
+        canManualOverride={canManageDvCheckboxes}
+        dvState={{
+          dmDvDone: row.dv_state.dm_dv_done,
+          dmDvDoneAt: row.dv_state.dm_dv_done_at,
+          dmDvDoneManually: row.dv_state.dm_dv_done_manually,
+          nsmDvDone: row.dv_state.nsm_dv_done,
+          nsmDvDoneAt: row.dv_state.nsm_dv_done_at,
+          nsmDvDoneManually: row.dv_state.nsm_dv_done_manually,
+          pmGpmDvDone: row.dv_state.pm_gpm_dv_done,
+          pmGpmDvDoneAt: row.dv_state.pm_gpm_dv_done_at,
+          pmGpmDvDoneManually: row.dv_state.pm_gpm_dv_done_manually,
+          tmDvDone: row.dv_state.tm_dv_done,
+          tmDvDoneAt: row.dv_state.tm_dv_done_at,
+          tmDvDoneManually: row.dv_state.tm_dv_done_manually,
+        }}
+        probationId={Number(row.probation_id ?? 0)}
+      />
+    );
+  }
+
+  function rowActions(row: ProbationRow) {
+    const isFeedbackOpen = feedbackEmployeeHrId === row.hr_id;
+
+    return (
+      <div className="flex flex-wrap gap-1.5">
+        {row.workflow ? (
+          <>
+            {(row.workflow.allowedActions ?? row.allowedActions ?? [])
+              .filter((action) => canSubmitManagerFeedback || action !== "manager_feedback")
+              .map((action) => (
+                <Button
+                  className={probationActionButtonClassName}
+                  disabled={Boolean(pendingAction)}
+                  key={action}
+                  onClick={() => openWorkflowAction(row, action)}
+                  variant={isDestructiveAction(action) ? "destructive" : "secondary"}
+                >
+                  {action === "manager_feedback" ? <UserCheck className="mr-1 h-3.5 w-3.5" /> : null}
+                  {action === "terminate" ? <XCircle className="mr-1 h-3.5 w-3.5" /> : null}
+                  {actionLabel(action)}
+                </Button>
+              ))}
+            {(row.workflow.allowedActions ?? row.allowedActions ?? []).length === 0 ? (
+              <span className="text-xs font-semibold text-phx-ink-soft">No available actions</span>
+            ) : null}
+          </>
+        ) : (
+          <Button
+            className={probationActionButtonClassName}
+            disabled={!canCreate || Boolean(pendingAction)}
+            onClick={() => createEvaluation(row)}
+            variant="secondary"
+          >
+            Start review
+          </Button>
+        )}
+        {canManageWorkflow ? (
+          <Button
+            className={cn(probationActionButtonClassName, isFeedbackOpen ? "border-orange-300 bg-orange-50 text-orange-700" : "")}
+            onClick={() => setFeedbackEmployeeHrId(isFeedbackOpen ? null : row.hr_id)}
+            variant="secondary"
+          >
+            {isFeedbackOpen ? "Close feedback" : "Feedback"}
+          </Button>
+        ) : null}
+      </div>
+    );
+  }
+
   return (
     <div className={isPremium ? premiumPageClassName : "space-y-4"}>
       <div className="relative space-y-4">
@@ -659,7 +764,61 @@ export function ProbationTracker({
             description="HR/Admin view of manager feedback status during the fixed 90-day probation period."
             title="Managers Feedback in Probation Period"
           />
-          <div className="overflow-x-auto bg-white/80">
+          {/* Twelve columns at a 1080px minimum — nearly three phone screens wide. The card
+              leads with the two things this panel exists to answer: who has not submitted, and
+              what they recommended. */}
+          <PortalResponsiveDataList
+            empty={
+              <PortalEmptyState
+                message="No probation feedback records match the current filters."
+                title="No feedback to review"
+              />
+            }
+            getKey={(row) => row.hr_id}
+            items={feedbackReportRows}
+            renderCard={(row) => (
+              <PortalRecordCard
+                accent={row.feedbackStatus === "Pending" ? "amber" : "emerald"}
+                meta={
+                  <span>
+                    <span className="font-mono">{row.hr_id}</span> · {row.line_name} / {row.area_name}
+                    {row.team_name ? ` / ${row.team_name}` : ""}
+                  </span>
+                }
+                status={
+                  <Badge variant={row.feedbackStatus === "Pending" ? "warning" : "success"}>
+                    {row.feedbackStatus}
+                  </Badge>
+                }
+                title={row.full_name}
+              >
+                <PortalRecordFields
+                  fields={[
+                    { label: "Hiring Date", value: formatDate(row.hire_date) },
+                    { label: "Probation Day / Status", value: row.probationDayStatus },
+                    { label: "Direct Manager", value: row.manager_name ?? row.manager_hr_id ?? "-" },
+                    {
+                      label: "Manager of Manager",
+                      value: row.manager_manager_name ?? row.manager_manager_hr_id ?? "-",
+                    },
+                    { label: "Feedback By", value: row.workflow?.managerReviewedBy ?? "-" },
+                    {
+                      label: "Feedback Date",
+                      value: row.workflow?.managerReviewedAt
+                        ? formatDate(row.workflow.managerReviewedAt)
+                        : "-",
+                    },
+                    {
+                      label: "Recommendation",
+                      value: row.workflow?.decision ?? row.workflow?.hrRecommendation ?? "-",
+                    },
+                    { label: "Feedback Text", value: row.workflow?.managerFeedback ?? "-" },
+                  ]}
+                />
+              </PortalRecordCard>
+            )}
+            renderTable={() => (
+              <div className="hidden overflow-x-auto bg-white/80 md:block">
             <table className="w-full min-w-[1080px] text-left text-xs">
               <thead className="bg-slate-50/90 text-xs uppercase tracking-[0.12em] text-text-secondary">
                 <tr className="border-b border-slate-200">
@@ -684,14 +843,7 @@ export function ProbationTracker({
                 </tr>
               </thead>
               <tbody className="divide-y divide-phx-line">
-                {feedbackReportRows.length === 0 ? (
-                  <tr>
-                    <td className="px-3 py-7 text-center text-xs text-text-secondary" colSpan={12}>
-                      No probation feedback records match the current filters.
-                    </td>
-                  </tr>
-                ) : (
-                  feedbackReportRows.map((row) => (
+                {feedbackReportRows.map((row) => (
                     <tr className="align-top transition-colors hover:bg-slate-50/65" key={`feedback:${row.hr_id}`}>
                       <td className={cn(probationTableCellClassName, "max-w-[78px] truncate font-mono text-text-secondary")}>{row.hr_id}</td>
                       <td className={cn(probationTableCellClassName, "font-semibold text-text")}>{row.full_name}</td>
@@ -712,11 +864,12 @@ export function ProbationTracker({
                         <p className="mt-1">{row.team_name ?? "-"}</p>
                       </td>
                     </tr>
-                  ))
-                )}
+                  ))}
               </tbody>
             </table>
-          </div>
+              </div>
+            )}
+          />
         </Card>
       ) : null}
 
@@ -731,7 +884,73 @@ export function ProbationTracker({
           description={`Showing ${filteredRows.length} of ${rows.length} employees in the active probation window.`}
           title="Current Probation Employees"
         />
-        <div className="overflow-x-auto bg-white/80">
+        {/* Desktop keeps the fourteen-column table; a phone gets one card per employee. The
+            table's minimum is 940px, so on a 375px screen everything from "Days" rightwards —
+            the progress, the review decision, the DV checkboxes and every action button — sat
+            off the right edge inside a container that gave no hint it scrolled. */}
+        <PortalResponsiveDataList
+          empty={
+            <PortalEmptyState
+              message="No probation records match the current filters."
+              title="Nothing in probation"
+            />
+          }
+          getKey={(row) => row.hr_id}
+          items={filteredRows}
+          renderCard={(row) => {
+            const traffic = getTrafficStatus(row.days_remaining);
+
+            return (
+              <PortalRecordCard
+                accent={traffic === "safe" ? "emerald" : traffic === "warning" ? "amber" : "rose"}
+                actions={rowActions(row)}
+                meta={
+                  <span>
+                    <span className="font-mono">{row.hr_id || "-"}</span> · {row.job_title}
+                  </span>
+                }
+                status={
+                  <Badge variant={traffic === "safe" ? "success" : traffic === "warning" ? "warning" : "danger"}>
+                    {statusLabel(traffic)}
+                  </Badge>
+                }
+                title={row.full_name}
+              >
+                <PortalRecordFields
+                  fields={[
+                    { label: "CRM ID", value: row.crm_id || "-" },
+                    { label: "Line", value: row.line_name },
+                    { label: "Area", value: row.area_name },
+                    { label: "Hire Date", value: formatDate(row.hire_date) },
+                    { label: "End Date", value: formatDate(row.probation_end_date) },
+                    { label: "Days Remaining", value: String(Math.max(0, row.days_remaining)) },
+                    {
+                      label: "Progress",
+                      value: progressCell(traffic, getProbationProgress(row.days_remaining)),
+                    },
+                    {
+                      label: "Probation Review",
+                      value: (
+                        <span className="space-y-1">
+                          <Badge variant={workflowBadgeVariant(row.workflow?.status)}>
+                            {workflowLabel(row.workflow?.status)}
+                          </Badge>
+                          {row.workflow?.decision ? (
+                            <span className="block text-xs font-semibold text-phx-ink">
+                              Decision: {row.workflow.decision}
+                            </span>
+                          ) : null}
+                        </span>
+                      ),
+                    },
+                    { label: "DV Status", value: dvCell(row) },
+                  ]}
+                />
+              </PortalRecordCard>
+            );
+          }}
+          renderTable={() => (
+            <div className="hidden overflow-x-auto bg-white/80 md:block">
             <table className="w-full min-w-[940px] text-left text-xs">
               <thead className="sticky top-0 bg-slate-50/90 backdrop-blur">
                 <tr className="border-b border-slate-200 text-xs uppercase tracking-[0.12em] text-text-secondary">
@@ -758,17 +977,9 @@ export function ProbationTracker({
               </tr>
             </thead>
             <tbody className="divide-y divide-phx-line">
-              {filteredRows.length === 0 ? (
-                <tr>
-                  <td className="px-3 py-7 text-center text-xs text-text-secondary" colSpan={14}>
-                    No probation records match the current filters.
-                  </td>
-                </tr>
-              ) : (
-                filteredRows.map((row) => {
+              {filteredRows.map((row) => {
                   const traffic = getTrafficStatus(row.days_remaining);
                   const progress = getProbationProgress(row.days_remaining);
-                  const isFeedbackOpen = feedbackEmployeeHrId === row.hr_id;
 
                   return (
                     <tr className="transition-colors hover:bg-slate-50/65" key={row.hr_id}>
@@ -782,22 +993,7 @@ export function ProbationTracker({
                       <td className={cn(probationTableCellClassName)}>{formatDate(row.probation_end_date)}</td>
                       <td className={cn(probationTableValueClassName, "font-semibold text-text")}>{Math.max(0, row.days_remaining)}</td>
                       <td className={cn("min-w-[125px]", probationTableCellClassName)}>
-                        <div className="space-y-1">
-                          <div className="h-2 overflow-hidden rounded-full bg-slate-100">
-                            <div
-                              className={cn(
-                                "h-full rounded-full transition-all",
-                                traffic === "safe"
-                                  ? "bg-success"
-                                  : traffic === "warning"
-                                    ? "bg-warning"
-                                    : "bg-danger",
-                              )}
-                              style={{ width: `${progress}%` }}
-                            />
-                          </div>
-                          <p className="text-phx-xs leading-tight text-text-secondary">{progress}% complete</p>
-                        </div>
+                        {progressCell(traffic, progress)}
                       </td>
                       <td className={cn(probationTableValueClassName)}>
                         <Badge variant={traffic === "safe" ? "success" : traffic === "warning" ? "warning" : "danger"}>
@@ -812,81 +1008,16 @@ export function ProbationTracker({
                           ) : null}
                         </div>
                       </td>
-                      <td className={cn(probationTableValueClassName, "min-w-[180px]")}>
-                        {row.dv_state ? (
-                          <DvCheckboxPanel
-                            canManualOverride={canManageDvCheckboxes}
-                            dvState={{
-                              dmDvDone: row.dv_state.dm_dv_done,
-                              dmDvDoneAt: row.dv_state.dm_dv_done_at,
-                              dmDvDoneManually: row.dv_state.dm_dv_done_manually,
-                              nsmDvDone: row.dv_state.nsm_dv_done,
-                              nsmDvDoneAt: row.dv_state.nsm_dv_done_at,
-                              nsmDvDoneManually: row.dv_state.nsm_dv_done_manually,
-                              pmGpmDvDone: row.dv_state.pm_gpm_dv_done,
-                              pmGpmDvDoneAt: row.dv_state.pm_gpm_dv_done_at,
-                              pmGpmDvDoneManually: row.dv_state.pm_gpm_dv_done_manually,
-                              tmDvDone: row.dv_state.tm_dv_done,
-                              tmDvDoneAt: row.dv_state.tm_dv_done_at,
-                              tmDvDoneManually: row.dv_state.tm_dv_done_manually,
-                            }}
-                            probationId={Number(row.probation_id ?? 0)}
-                          />
-                        ) : (
-                          <span className="text-xs text-slate-400">—</span>
-                        )}
-                      </td>
-                      <td className={cn(probationTableValueClassName, "align-top")}>
-                        <div className="flex flex-wrap gap-1.5">
-                          {row.workflow ? (
-                            <>
-                              {(row.workflow.allowedActions ?? row.allowedActions ?? [])
-                                .filter((action) => canSubmitManagerFeedback || action !== "manager_feedback")
-                                .map((action) => (
-                                  <Button
-                                    className={probationActionButtonClassName}
-                                    disabled={Boolean(pendingAction)}
-                                    key={action}
-                                    onClick={() => openWorkflowAction(row, action)}
-                                    variant={isDestructiveAction(action) ? "destructive" : "secondary"}
-                                  >
-                                    {action === "manager_feedback" ? <UserCheck className="mr-1 h-3.5 w-3.5" /> : null}
-                                    {action === "terminate" ? <XCircle className="mr-1 h-3.5 w-3.5" /> : null}
-                                    {actionLabel(action)}
-                                  </Button>
-                                ))}
-                              {(row.workflow.allowedActions ?? row.allowedActions ?? []).length === 0 ? (
-                                <span className="text-xs font-semibold text-phx-ink-soft">No available actions</span>
-                              ) : null}
-                            </>
-                          ) : (
-                            <Button
-                              className={probationActionButtonClassName}
-                              disabled={!canCreate || Boolean(pendingAction)}
-                              onClick={() => createEvaluation(row)}
-                              variant="secondary"
-                            >
-                              Start review
-                            </Button>
-                          )}
-                          {canManageWorkflow ? (
-                            <Button
-                              className={cn(probationActionButtonClassName, isFeedbackOpen ? "border-orange-300 bg-orange-50 text-orange-700" : "")}
-                              onClick={() => setFeedbackEmployeeHrId(isFeedbackOpen ? null : row.hr_id)}
-                              variant="secondary"
-                            >
-                              {isFeedbackOpen ? "Close feedback" : "Feedback"}
-                            </Button>
-                          ) : null}
-                        </div>
-                      </td>
+                      <td className={cn(probationTableValueClassName, "min-w-[180px]")}>{dvCell(row)}</td>
+                      <td className={cn(probationTableValueClassName, "align-top")}>{rowActions(row)}</td>
                     </tr>
                   );
-                })
-              )}
+                })}
             </tbody>
           </table>
-        </div>
+            </div>
+          )}
+        />
       </Card>
 
       {feedbackEmployeeHrId ? (
