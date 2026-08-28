@@ -184,6 +184,22 @@ file holding the full account, under
   verdict — name the later commit with `git log <squashSHA>..origin/main -- <files>` before calling
   anything stranded. `not-remotes-flips-when-remote-refs-are-pruned` ·
   `repo-doctor-no-origin-ref-is-usually-squash-residue`
+- **A UTC merge time read against a Cairo commit time INVERTS the merged/stranded verdict.** §4's
+  "report in Africa/Cairo, never raw UTC" is a REPORTING rule; this is the ANALYSIS failure it does
+  not cover, and it is what makes the two traps above dangerous. `gh pr view --json mergedAt` returns
+  **UTC** (`2026-08-28T09:51:22Z`) while `git log --format=%cI` returns **Cairo**
+  (`2026-08-28T12:44:26+03:00`). Side by side, 12:44 looks LATER than 09:51, so squash residue reads
+  as new post-merge work — but 09:51Z **is** 12:51 Cairo, and that commit predates its own merge by
+  seven minutes. Measured 2026-08-28 on a peer session's worktree audit: combined with `ls-remote` =
+  **0** (which is `delete_branch_on_merge` succeeding, not a missing backup) and `git cherry`'s
+  multi-commit-squash false positive, it produced a confident STOP telling two sessions to **push**
+  already-merged branches — the exact move that opens a conflicting PR, and a conflicted PR runs no
+  CI at all here. Each signal is ambiguous alone; the timestamp is what *appears* to resolve them,
+  and it resolves them backwards. **Compare instants, never wall clocks** — put both sides in one
+  zone (`TZ=UTC git log`) before subtracting. And a timestamp is never the verdict anyway: the answer
+  is CONTENT, per §5 — `git diff $(git merge-base origin/main <branch>) <branch> | git patch-id
+  --stable` against the squash commit's own patch-id. Identical means fully represented on `main`,
+  whatever the clocks appear to say.
 - **`git` "Authentication failed" can be the credential HELPER (GCM) going OOM, not a bad token.**
   Git Credential Manager dies at `internal/cpu.doinit` and git then retries ANONYMOUSLY, so the token
   is never presented — the failure is memory pressure, not auth. Look UP the output for a Go panic;
