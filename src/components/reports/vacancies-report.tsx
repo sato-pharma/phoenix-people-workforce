@@ -21,6 +21,12 @@ import {
   AdminStatCard,
   AdminTableShell,
 } from "@/components/admin/admin-design-system";
+import {
+  PortalEmptyState,
+  PortalRecordCard,
+  PortalRecordFields,
+  PortalResponsiveDataList,
+} from "@/components/employee-portal/portal-primitives";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -584,7 +590,50 @@ export function VacanciesReport({
               description={`Showing ${filteredRows.length} of ${report.summary.totalVacancies} vacancy records.`}
               title="Vacancy Records"
             />
-            <div className="overflow-x-auto">
+            {/* Nine columns at px-4 spend 288px on padding alone, so this never fitted a 375px
+                screen even with no declared minimum width — Region, Area, Manager, Source and
+                Status all sat past the right edge. Desktop keeps the table. */}
+            <PortalResponsiveDataList
+              empty={
+                <PortalEmptyState
+                  message="No vacancies match the current filters."
+                  title="No vacancies"
+                />
+              }
+              getKey={(row) => row.id}
+              items={filteredRows}
+              renderCard={(row) => (
+                <PortalRecordCard
+                  accent={row.status === "open" ? "amber" : "slate"}
+                  meta={
+                    <span className="font-mono">
+                      {vacancyLabel(row.vacancyCode)} · Source row {emptyText(row.sourceRowNumber)}
+                    </span>
+                  }
+                  status={
+                    <Badge variant={row.status === "open" ? "warning" : "neutral"}>{row.status}</Badge>
+                  }
+                  title={emptyText(row.positionTitle ?? row.jobTitle)}
+                >
+                  <PortalRecordFields
+                    fields={[
+                      { label: "Department", value: emptyText(row.departmentName) },
+                      { label: "Line", value: emptyText(row.lineName) },
+                      { label: "Region", value: emptyText(row.regionName) },
+                      { label: "Area", value: emptyText(row.areaName) },
+                      {
+                        label: "Manager",
+                        value: row.managerHrId
+                          ? `${emptyText(row.managerName)} (${row.managerHrId})`
+                          : emptyText(row.managerName),
+                      },
+                      { label: "Source", value: `Master data import · ${formatDate(row.createdAt)}` },
+                    ]}
+                  />
+                </PortalRecordCard>
+              )}
+              renderTable={() => (
+                <div className="hidden overflow-x-auto md:block">
               <table className="min-w-full text-left text-sm">
                 <thead className="bg-phx-paper text-phx-2xs font-black uppercase tracking-[0.16em] text-phx-ink-soft">
                   <tr>
@@ -600,17 +649,7 @@ export function VacanciesReport({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-phx-line">
-                  {filteredRows.length === 0 ? (
-                    <tr>
-                      <td
-                        className="px-4 py-10 text-center text-sm text-phx-ink-soft"
-                        colSpan={9}
-                      >
-                        No vacancies match the current filters.
-                      </td>
-                    </tr>
-                  ) : (
-                    filteredRows.map((row) => (
+                  {filteredRows.map((row) => (
                       <tr className="transition-colors hover:bg-phx-accent-soft/65" key={row.id}>
                         <td className="px-4 py-4">
                           <p className="font-mono text-xs font-bold text-phx-ink">
@@ -653,11 +692,12 @@ export function VacanciesReport({
                           </Badge>
                         </td>
                       </tr>
-                    ))
-                  )}
+                    ))}
                 </tbody>
               </table>
-            </div>
+                </div>
+              )}
+            />
           </Card>
         </>
       ) : (
