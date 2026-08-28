@@ -210,9 +210,29 @@ export function RepsPlansControls({
   );
 }
 
-/** "CNS · Delta (1)", or every pair when a rep is seated across more than one. */
+/** "CNS · Delta (1)", or every pair when a person covers more than one — an NSM covers seven. */
 function territoryText(row: RepsPlansRepRow): string {
   return row.territories.map((t) => `${t.lineName} · ${t.regionName}`).join("  |  ");
+}
+
+/** "District Manager", or the honest answer when the organogram has no seat for him. */
+function roleText(row: RepsPlansRepRow): string {
+  return row.seatTierLabel ?? "Not in organogram";
+}
+
+/**
+ * THE OWNER'S RULE, 2026-08-28: the 2 AM / 10 PM target is a MEDICAL REP'S.
+ *
+ * A manager keeps his real rates on the row — that is his account appearing, which is what was
+ * asked for — but his percentage OF TARGET is blank and uncoloured, because there is no target to
+ * be a percentage of. Printing a red 12% beside a District Manager measures him against a job that
+ * is not his.
+ */
+function targetPct(row: RepsPlansRepRow, value: number | null): string {
+  return row.scored ? pct(value) : "—";
+}
+function targetText(row: RepsPlansRepRow, value: number | null): string {
+  return row.scored ? attainmentText(value) : "text-slate-300";
 }
 
 const REP_COLS = [
@@ -222,10 +242,10 @@ const REP_COLS = [
   // territory would put the line on the row twice under two names. This column is the org model's
   // LINE and REGION, which is what the two pickers above filter on, and it says so.
   //
-  // Sorts the marked reps together rather than scattering them: an empty cell sorts as the marker
-  // text, so "No seat" lands in one block instead of at both ends of the alphabet.
+  // Sorts the marked people together rather than scattering them: an empty cell sorts as the marker
+  // text, so "Not in organogram" lands in one block instead of at both ends of the alphabet.
   {
-    accessor: (r: RepsPlansRepRow) => territoryText(r) || "No seat",
+    accessor: (r: RepsPlansRepRow) => territoryText(r) || "Not in organogram",
     defaultDir: "asc" as const,
     key: "territory",
     type: "string" as const,
@@ -245,11 +265,20 @@ const REP_COLS = [
 
 export function RepsPlansRepTable({
   campaignLimit,
+  geographyAvailable,
   monthLabel,
   rows,
   scoredThrough,
 }: {
   campaignLimit: number;
+  /**
+   * False when the organogram could not be read.
+   *
+   * The whole Line · Region column then goes away rather than rendering "Not in organogram" against
+   * every name on the page — that marker is a statement about a chart nobody managed to read, and
+   * on 87 rows it would read as though the company had lost its org structure overnight.
+   */
+  geographyAvailable: boolean;
   monthLabel: string;
   rows: RepsPlansRepRow[];
   scoredThrough: string;
@@ -260,12 +289,11 @@ export function RepsPlansRepTable({
     // of — a rep short there is short on the month whatever the AM column says.
     initialSort: { dir: "asc", key: "pmAttainmentPct" },
     // Line · Region is searchable so "CNS" or "Delta" narrows the table without touching the
-    // pickers, and so is the marker itself — typing "No seat" lists exactly the unseated reps.
-    searchAccessors: [
-      (r) => r.repName,
-      (r) => r.agentHrId ?? "",
-      (r) => territoryText(r) || "No seat",
-    ],
+    // pickers — and so are the role and the marker, so "District Manager" lists the managers and
+    // "Not in organogram" lists exactly the people with no seat.
+    searchAccessors: geographyAvailable
+      ? [(r) => r.repName, (r) => r.agentHrId ?? "", (r) => territoryText(r) || "Not in organogram", (r) => roleText(r)]
+      : [(r) => r.repName, (r) => r.agentHrId ?? ""],
   });
 
   const exportRows = table.rows.map((row) => ({
@@ -283,7 +311,10 @@ export function RepsPlansRepTable({
     rep: row.repName,
     // The export must match the screen (owner's standing rule), marker included — a file that
     // silently dropped the territory column would read as though every rep had one.
-    territory: territoryText(row) || "No seat",
+    territory: territoryText(row) || "Not in organogram",
+    // Exported so the file states WHY a manager row has no percentage — without it the reader of
+    // the spreadsheet sees a blank and reads it as missing data rather than as "not his target".
+    role: roleText(row),
     unproven: row.unprovenPct,
     unspecified: row.unspecified,
     working_days: row.workingDays,
@@ -299,7 +330,14 @@ export function RepsPlansRepTable({
         <ExportXlsxButton
           columns={[
             { key: "rep", label: "Rep" },
-            { key: "territory", label: "Line · Region" },
+            // The export must match the screen (owner's standing rule) — including when the
+            // organogram is unreadable and the screen has no such column.
+            ...(geographyAvailable
+              ? [
+                  { key: "territory", label: "Line · Region" },
+                  { key: "role", label: "Role" },
+                ]
+              : []),
             { key: "hr_id", label: "HR ID" },
             { key: "working_days", label: "Working Days", numeric: true },
             { key: "am_proved", label: "AM Proved Rate", numeric: true },
@@ -343,26 +381,28 @@ export function RepsPlansRepTable({
           const cardTerritory = name ? territory : null;
           return (
           <PortalRecordCard
-            accent={attainmentAccent(row.pm.attainmentPct)}
+            // Unscored rows carry no verdict colour — the accent is a judgement against the target,
+            // and a manager is measured against none.
+            accent={row.scored ? attainmentAccent(row.pm.attainmentPct) : "slate"}
             meta={`${cardTerritory ? `${cardTerritory} · ` : ""}${row.workingDays} working days · ${row.reportedCalls} calls reported, ${row.verifiedCalls} proved`}
             // Both rates sit in the badge, labelled. Neither answers the owner's question alone: AM
             // is the two accounts, PM is the ten clinics, and a rep can clear one and miss the other.
             status={
               <span className="flex items-start gap-3">
                 <span className="flex flex-col items-end leading-tight">
-                  <span className={`text-sm font-black ${attainmentText(row.am.attainmentPct)}`}>
+                  <span className={`text-sm font-black ${targetText(row, row.am.attainmentPct)}`}>
                     {rate(row.am.verifiedRate)}
                   </span>
                   <span className="whitespace-nowrap text-[8px] font-black uppercase tracking-[0.12em] text-slate-400">
-                    AM of {row.am.target}
+                    {row.scored ? `AM of ${row.am.target}` : "AM rate"}
                   </span>
                 </span>
                 <span className="flex flex-col items-end leading-tight">
-                  <span className={`text-sm font-black ${attainmentText(row.pm.attainmentPct)}`}>
+                  <span className={`text-sm font-black ${targetText(row, row.pm.attainmentPct)}`}>
                     {rate(row.pm.verifiedRate)}
                   </span>
                   <span className="whitespace-nowrap text-[8px] font-black uppercase tracking-[0.12em] text-slate-400">
-                    PM of {row.pm.target}
+                    {row.scored ? `PM of ${row.pm.target}` : "PM rate"}
                   </span>
                 </span>
               </span>
@@ -371,17 +411,31 @@ export function RepsPlansRepTable({
           >
             <PortalRecordFields
               fields={[
-                {
-                  label: "Line · Region",
-                  value:
-                    row.territories.length === 0 ? (
-                      <span className="border border-amber-300 bg-amber-50 px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.1em] text-amber-700">
-                        No seat
-                      </span>
-                    ) : (
-                      <span className="text-slate-500">{territoryText(row)}</span>
-                    ),
-                },
+                ...(geographyAvailable
+                  ? [
+                      {
+                        label: "Line · Region",
+                        value:
+                          row.territories.length === 0 ? (
+                            <span className="border border-amber-300 bg-amber-50 px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.1em] text-amber-700">
+                              Not in organogram
+                            </span>
+                          ) : (
+                            <span className="text-slate-500">{territoryText(row)}</span>
+                          ),
+                      },
+                    ]
+                  : []),
+                // Only for a NON-rep. On the 71 rep cards this row would say "Medical Rep" under a
+                // heading that already says reps, and the phone has the least room of anything here.
+                ...(row.scored
+                  ? []
+                  : [
+                      {
+                        label: "Role",
+                        value: <span className="font-semibold text-slate-600">{roleText(row)}</span>,
+                      },
+                    ]),
                 {
                   label: "AM reported",
                   value: <span className="whitespace-nowrap text-slate-500">{rate(row.am.reportedRate)}</span>,
@@ -431,9 +485,11 @@ export function RepsPlansRepTable({
                 <th className={THEAD} rowSpan={2} scope="col">
                   Rep
                 </th>
-                <th className={THEAD} rowSpan={2} scope="col">
-                  Line · Region
-                </th>
+                {geographyAvailable ? (
+                  <th className={THEAD} rowSpan={2} scope="col">
+                    Line · Region
+                  </th>
+                ) : null}
                 <th className={`${THEAD} border-l border-slate-700 text-center`} colSpan={3} scope="colgroup">
                   AM — target 2 / day
                 </th>
@@ -539,32 +595,48 @@ export function RepsPlansRepTable({
               {table.rows.map((row) => (
                 <tr className="whitespace-nowrap bg-white hover:bg-slate-50" key={row.repKey}>
                   <td className="px-3 py-2 font-semibold text-slate-900">{row.repName}</td>
-                  {/* THE MARKER. A rep with no seat is kept on the board rather than filtered away
-                      — he is usually one of the zero-proved ones — so the row has to say plainly
-                      that he sits outside the territory the tiles describe. Amber, not rose: this
-                      is an org-model gap to close, not the rep's failure. */}
-                  <td className="px-3 py-2">
-                    {row.territories.length === 0 ? (
-                      <span className="border border-amber-300 bg-amber-50 px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.1em] text-amber-700">
-                        No seat
-                      </span>
-                    ) : (
-                      <span className="font-semibold text-slate-500">{territoryText(row)}</span>
-                    )}
-                  </td>
-                  <td className={`border-l border-slate-100 px-3 py-2 text-right font-black ${attainmentText(row.am.attainmentPct)}`}>
+                  {/* Line · Region from the ORGANOGRAM, every tier — a DM, an RSM and an NSM each
+                      resolve here exactly as a rep does. Someone the organogram has no seat for is
+                      kept on the board rather than filtered away (he is usually one of the
+                      zero-proved ones) and marked in amber: a gap to close, not his failure.
+
+                      The tier rides in the same cell rather than a column of its own. It is only
+                      ever shown for a NON-rep, so it costs nothing on the 71 rows where "Medical
+                      Rep" would just repeat what the page is already about — and it is what
+                      explains the blank percentages two cells to the right. */}
+                  {geographyAvailable ? (
+                    <td className="px-3 py-2">
+                      {row.territories.length === 0 ? (
+                        <span className="border border-amber-300 bg-amber-50 px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.1em] text-amber-700">
+                          Not in organogram
+                        </span>
+                      ) : (
+                        <span className="flex items-center gap-2">
+                          <span className="font-semibold text-slate-500">{territoryText(row)}</span>
+                          {row.scored ? null : (
+                            <span className="border border-slate-300 bg-slate-50 px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.1em] text-slate-600">
+                              {roleText(row)}
+                            </span>
+                          )}
+                        </span>
+                      )}
+                    </td>
+                  ) : null}
+                  {/* A manager keeps his real rates — his account appears, exactly as asked — but
+                      is coloured and scored against nothing. */}
+                  <td className={`border-l border-slate-100 px-3 py-2 text-right font-black ${targetText(row, row.am.attainmentPct)}`}>
                     {rate(row.am.verifiedRate)}
                   </td>
                   <td className="px-3 py-2 text-right font-semibold text-slate-400">{rate(row.am.reportedRate)}</td>
-                  <td className={`px-3 py-2 text-right font-bold ${attainmentText(row.am.attainmentPct)}`}>
-                    {pct(row.am.attainmentPct)}
+                  <td className={`px-3 py-2 text-right font-bold ${targetText(row, row.am.attainmentPct)}`}>
+                    {targetPct(row, row.am.attainmentPct)}
                   </td>
-                  <td className={`border-l border-slate-100 px-3 py-2 text-right font-black ${attainmentText(row.pm.attainmentPct)}`}>
+                  <td className={`border-l border-slate-100 px-3 py-2 text-right font-black ${targetText(row, row.pm.attainmentPct)}`}>
                     {rate(row.pm.verifiedRate)}
                   </td>
                   <td className="px-3 py-2 text-right font-semibold text-slate-400">{rate(row.pm.reportedRate)}</td>
-                  <td className={`px-3 py-2 text-right font-bold ${attainmentText(row.pm.attainmentPct)}`}>
-                    {pct(row.pm.attainmentPct)}
+                  <td className={`px-3 py-2 text-right font-bold ${targetText(row, row.pm.attainmentPct)}`}>
+                    {targetPct(row, row.pm.attainmentPct)}
                   </td>
                   <td className={`border-l border-slate-100 px-3 py-2 text-right font-bold ${unprovenText(row.unprovenPct)}`}>
                     {pct(row.unprovenPct)}

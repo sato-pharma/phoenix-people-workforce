@@ -130,18 +130,44 @@ export function RepsPlansBoardView({ basePath, board }: { basePath: string; boar
             the {board.workingDays} calendar working days in the period, not by the days the rep chose to work.
           </p>
 
-          {/* Stated, never implied. A rep the org model has no seat for is still shown below — he is
-              usually one of the zero-proved ones, and this is the page that exists to surface him —
-              but he belongs to no territory, so folding him into a territory's rate would corrupt
-              it. Listed and marked above, counted nowhere here, and the count says so. */}
-          {board.unseatedShown > 0 ? (
+          {/* Stated, never implied — WHO the numbers above leave out, and why.
+              OWNER'S RULE, 2026-08-28: the two rates are a MEDICAL REP'S KPI. A manager is listed
+              with his own territory and his own activity and is measured against nothing, because a
+              District Manager's field day is coaching and double visits rather than his own call
+              rate. And anyone the organogram has no seat for stays listed and marked rather than
+              filtered away — those rows are mostly the zero-proved ones this page exists to find. */}
+          {board.managersShown + board.unplacedShown > 0 ? (
             <p className="border-l-[3px] border-l-slate-400 bg-slate-50 px-4 py-2.5 text-xs font-semibold text-slate-600">
-              The tiles below cover{" "}
-              <span className="font-black text-slate-900">{board.geographyLabel}</span> only.{" "}
-              <span className="font-black text-slate-900">{board.unseatedShown}</span>{" "}
-              {board.unseatedShown === 1 ? "rep holds" : "reps hold"} no seat in the organogram, so{" "}
-              {board.unseatedShown === 1 ? "he is" : "they are"} listed in the table marked{" "}
-              <span className="font-black text-slate-900">No seat</span> and counted in no rate on this page.
+              The rates above are the{" "}
+              <span className="font-black text-slate-900">medical rep</span> KPI
+              {board.geographyLabel ? (
+                <>
+                  {" "}
+                  for <span className="font-black text-slate-900">{board.geographyLabel}</span>
+                </>
+              ) : null}
+              , built from{" "}
+              <span className="font-black text-slate-900">{board.totals.reps}</span>{" "}
+              {board.totals.reps === 1 ? "rep" : "reps"}.
+              {board.managersShown > 0 ? (
+                <>
+                  {" "}
+                  <span className="font-black text-slate-900">{board.managersShown}</span>{" "}
+                  {board.managersShown === 1 ? "manager is" : "managers are"} listed below with{" "}
+                  {board.managersShown === 1 ? "his" : "their"} territory and activity, and scored
+                  against no target.
+                </>
+              ) : null}
+              {board.unplacedShown > 0 ? (
+                <>
+                  {" "}
+                  <span className="font-black text-slate-900">{board.unplacedShown}</span>{" "}
+                  {board.unplacedShown === 1 ? "person holds" : "people hold"} no seat in the
+                  organogram — mostly leavers and head-office roles — and{" "}
+                  {board.unplacedShown === 1 ? "is" : "are"} marked{" "}
+                  <span className="font-black text-slate-900">Not in organogram</span>.
+                </>
+              ) : null}
             </p>
           ) : null}
 
@@ -173,7 +199,7 @@ export function RepsPlansBoardView({ basePath, board }: { basePath: string; boar
             />
             <Tile
               label="Reps on both"
-              sub={`of ${totals.reps} with field work`}
+              sub={`of ${totals.reps} medical reps`}
               tone={totals.repsOnTarget > 0 ? "emerald" : "rose"}
               value={String(totals.repsOnTarget)}
             />
@@ -236,6 +262,7 @@ export function RepsPlansBoardView({ basePath, board }: { basePath: string; boar
       >
         <RepsPlansRepTable
           campaignLimit={board.campaignLimit}
+          geographyAvailable={board.geographyAvailable}
           monthLabel={board.monthLabel}
           rows={board.reps}
           scoredThrough={scoredThrough}

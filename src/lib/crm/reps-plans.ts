@@ -28,10 +28,15 @@ import {
   type RepCallRate,
 } from "@/lib/crm/call-rate";
 import {
-  repsMatching,
-  type CoverageFilterOption,
-  type CoverageFilterTree,
-} from "@/lib/crm/coverage-filters";
+  orgHrKey,
+  placementMatches,
+  type OrgCell,
+  type OrgPlacement,
+  type OrgPlacementTree,
+} from "@/lib/crm/org-placement";
+
+/** `{ code, name }` — the shape both pickers render. */
+export type RepsPlansOption = { code: string; name: string };
 
 export const REPS_PLANS_MONTH_PATTERN = /^\d{4}-(0[1-9]|1[0-2])$/;
 
@@ -130,78 +135,10 @@ function toSession(slice: CallRateSlice): RepsPlansSession {
 }
 
 /**
- * One (line, region) a rep actually holds a REP seat in.
- *
- * A rep can hold more than one, and the pair is kept TOGETHER rather than as two independent
- * fields, for the reason `coverage-filters.ts` spells out at length: Beni Suef sits in Giza on one
- * line and in another region on a different line, so "his line" and "his region" as separate facts
- * describe a territory that may not exist.
+ * One (line, region) a person covers, from the organogram. Re-exported under the board's own name
+ * so the components have one import; the resolution lives in `org-placement.ts`.
  */
-export type RepsPlansTerritory = {
-  lineCode: string;
-  lineName: string;
-  regionCode: string;
-  regionName: string;
-};
-
-/** Lowercased HR id -> every territory that rep holds a seat in. Absent means no REP seat at all. */
-export type RepsPlansTerritoryIndex = Map<string, RepsPlansTerritory[]>;
-
-/** The HR-id form this board matches territories on. Bare and lowercased — NOT a `hr:` board key. */
-const territoryKeyOf = (hrId: string | null | undefined): string | null => {
-  const trimmed = (hrId ?? "").trim().toLowerCase();
-  return trimmed.length > 0 ? trimmed : null;
-};
-
-/**
- * Fold the shared coverage cascade into "which line and region is each rep seated in".
- *
- * Derived from `tree.cells`, which is already restricted to target-carrying territories whose seat
- * is FILLED — so a rep reached here is genuinely seated, not merely named on a vacant territory.
- */
-export function indexRepsPlansTerritories(tree: CoverageFilterTree): RepsPlansTerritoryIndex {
-  const lineNames = new Map(tree.lines.map((option) => [option.code, option.name]));
-  const regionNames = new Map(tree.regions.map((option) => [option.code, option.name]));
-
-  const cellsBySeat = new Map<string, Array<{ lineCode: string; regionCode: string }>>();
-  for (const cell of tree.cells) {
-    const list = cellsBySeat.get(cell.seatId);
-    if (list) list.push(cell);
-    else cellsBySeat.set(cell.seatId, [cell]);
-  }
-
-  // A rep seated across several AREAS of one line and region is listed once, not once per area:
-  // this board filters on line and region only. Deduped FIELD BY FIELD rather than through a
-  // joined key, for the reason vacanciesMatching states next door — any separator character
-  // could in principle turn up inside a code, and a collision would show the wrong territory.
-  const index: RepsPlansTerritoryIndex = new Map();
-  for (const rep of tree.reps) {
-    const key = territoryKeyOf(rep.hrId);
-    if (!key) continue;
-    let held = index.get(key);
-    if (!held) {
-      held = [];
-      index.set(key, held);
-    }
-    for (const cell of cellsBySeat.get(rep.seatId) ?? []) {
-      if (held.some((t) => t.lineCode === cell.lineCode && t.regionCode === cell.regionCode)) continue;
-      held.push({
-        lineCode: cell.lineCode,
-        lineName: lineNames.get(cell.lineCode) ?? cell.lineCode,
-        regionCode: cell.regionCode,
-        regionName: regionNames.get(cell.regionCode) ?? cell.regionCode,
-      });
-    }
-  }
-
-  // A seat that resolved to no cell at all leaves no entry, so `has()` stays a true answer to
-  // "is this rep seated" rather than returning an empty array that reads as a territory.
-  for (const [key, held] of index) {
-    if (held.length === 0) index.delete(key);
-    else held.sort((a, b) => a.lineName.localeCompare(b.lineName) || a.regionName.localeCompare(b.regionName));
-  }
-  return index;
-}
+export type RepsPlansTerritory = OrgCell;
 
 export type RepsPlansRepRow = {
   repKey: string;
@@ -234,11 +171,23 @@ export type RepsPlansRepRow = {
   /** Days with campaign calls and not one verified visit. */
   campaignOnlyDays: number;
   /**
-   * Every (line, region) this rep holds a seat in. EMPTY means the org model has no REP seat for
-   * him at all — he is shown MARKED rather than dropped, and sits outside the tiles. See
-   * {@link buildRepsPlansBoard}.
+   * Every (line, region) this person covers, from the organogram. EMPTY means the organogram has no
+   * seat for him at all — he is shown MARKED rather than dropped. See {@link buildRepsPlansBoard}.
    */
   territories: RepsPlansTerritory[];
+  /** Raw organogram tier, or null when he holds no seat. */
+  seatTier: string | null;
+  /** "District Manager", "Medical Rep" — readable, never the raw code. Null when unplaced. */
+  seatTierLabel: string | null;
+  /**
+   * Whether the 2 AM / 10 PM target applies to this person.
+   *
+   * OWNER'S RULE, 2026-08-28: the KPI is a MEDICAL REP'S. A manager is listed with his territory
+   * and his real activity and is measured against nothing — his AM/PM percentages read "—", and he
+   * is in no tile on the page. Someone with no seat at all is likewise never scored: there is no
+   * evidence he is a rep, so inventing a target for him would be a guess printed as a fact.
+   */
+  scored: boolean;
 };
 
 function repKeyOf(rep: RepCallRate): string {
@@ -247,7 +196,7 @@ function repKeyOf(rep: RepCallRate): string {
   return `name:${rep.agentName}`;
 }
 
-export function toRepsPlansRow(rep: RepCallRate, territories: RepsPlansTerritory[] = []): RepsPlansRepRow {
+export function toRepsPlansRow(rep: RepCallRate, placement?: OrgPlacement | null): RepsPlansRepRow {
   const am = toSession(rep.am);
   const pm = toSession(rep.pm);
   const verifiedCalls = am.verified + pm.verified;
@@ -274,7 +223,10 @@ export function toRepsPlansRow(rep: RepCallRate, territories: RepsPlansTerritory
     worstCampaignDay: worst ? worst.day : null,
     worstCampaignCalls: worst ? worst.campaignCalls : 0,
     campaignOnlyDays: rep.campaignOnlyDays,
-    territories,
+    territories: placement?.cells ?? [],
+    seatTier: placement?.tier ?? null,
+    seatTierLabel: placement?.tierLabel ?? null,
+    scored: placement?.scored ?? false,
   };
 }
 
@@ -304,6 +256,12 @@ export type RepsPlansTotals = {
  * (working days x reps) — so it stays on the same scale as the two targets
  * printed beside it. Averaging the rep rates instead gives a different number
  * whenever reps differ, and this row is read directly against 2 and 10.
+ *
+ * `rows` MUST already be the SCORED rows only. The owner's rule of 2026-08-28 is that the target
+ * belongs to medical reps, so a manager's coaching and double visits have no business inside a
+ * number that is read against 2 and 10 — they would move the company's rate without ever being
+ * measured by it. `buildRepsPlansBoard` is the only caller and it filters first; the assertion is
+ * kept there rather than here so this stays a plain fold.
  */
 function totalsOf(rows: readonly RepsPlansRepRow[], workingDays: number): RepsPlansTotals {
   const denominator = workingDays * rows.length;
@@ -387,16 +345,21 @@ export type RepsPlansBoard = {
   repOptions: Array<{ repKey: string; repName: string }>;
   appliedRepKey: string | null;
   /** Every line, always — the top of the cascade is never narrowed from below. */
-  lineOptions: CoverageFilterOption[];
+  lineOptions: RepsPlansOption[];
   /** Regions that exist ON the chosen line. Unnarrowed when no line is chosen. */
-  regionOptions: CoverageFilterOption[];
+  regionOptions: RepsPlansOption[];
   appliedLine: string | null;
   appliedRegion: string | null;
   /** "CNS · Delta (1)" — names only, never codes. Null when nothing is picked. */
   geographyLabel: string | null;
-  /** Reps listed but NOT in the tiles because they hold no seat. 0 unless a geography is picked. */
-  unseatedShown: number;
-  /** False when the org model could not be read — the two pickers are then hidden, not empty. */
+  /**
+   * Listed but in NO tile because the target is not theirs: managers, and anyone the organogram has
+   * no seat for. Always counted, filtered or not — the rule is about who the KPI belongs to, not
+   * about which filter is on.
+   */
+  managersShown: number;
+  unplacedShown: number;
+  /** False when the organogram could not be read — the two pickers are then hidden, not empty. */
   geographyAvailable: boolean;
 };
 
@@ -412,18 +375,26 @@ export type RepsPlansBoard = {
  * "How is CNS doing in Delta" is the actual question, and it cannot be answered
  * by tiles that still describe the whole country.
  *
- * ── Reps with no seat are never dropped ─────────────────────────────────────
- * Owner's decision, same day, and the measurement behind it: of the 87 reps with
- * August 2026 field work, ~15 hold no REP seat in the org model — and every one
- * of them is in the ZERO-PROVED group. So a geography filter that quietly
- * excluded them would hide precisely the reps this page exists to expose, on the
- * one screen built to expose them. They stay listed and MARKED.
+ * ── The target belongs to MEDICAL REPS ──────────────────────────────────────
+ * Owner's rule, 2026-08-28, in his words: "the KPI is two AM, ten PM, for
+ * medical reps. Don't restrict the managers on AM and PM coverage. Make their
+ * account appear, but not restrict them on any of this."
  *
- * They are kept out of the TILES, though: a rep who belongs to no territory
- * cannot be part of a territory's rate without corrupting it. Listed, marked,
- * counted nowhere — and `unseatedShown` says how many, so the gap is stated
- * rather than implied. Same doctrine as `vacanciesMatching` next door: dropping
- * something from a picker is only honest if something else says it exists.
+ * So a District Manager, an Acting DM, an RSM or an NSM is LISTED — with his
+ * real line and region and his real activity — and scored on nothing. He is in
+ * no tile, and his own two percentages read "—" rather than a red number he was
+ * never meant to be measured by. A DM's field day is coaching and double visits,
+ * not his own call rate; folding it into the company rate moves a number he is
+ * not accountable for.
+ *
+ * This holds whether or not a filter is on. It is a rule about whose KPI it is.
+ *
+ * ── Nobody is ever dropped ──────────────────────────────────────────────────
+ * Owner's decision the same day. Someone the organogram has no seat for stays
+ * listed and MARKED rather than filtered away: those rows are mostly the
+ * ZERO-PROVED ones, so hiding them would hide precisely what this page exists to
+ * expose. `managersShown` and `unplacedShown` say how many are listed but
+ * uncounted, so the gap is stated rather than implied.
  */
 export function buildRepsPlansBoard(
   report: CallRateReport,
@@ -431,27 +402,35 @@ export function buildRepsPlansBoard(
     month: string;
     isCurrentMonth: boolean;
     repKey?: string | null;
-    /** The shared coverage cascade. Null when the org model could not be read. */
-    tree?: CoverageFilterTree | null;
+    /** The organogram. Null when it could not be read. */
+    tree?: OrgPlacementTree | null;
     geography?: RepsPlansGeography;
   },
 ): RepsPlansBoard {
   const tree = options.tree ?? null;
-  const index = tree ? indexRepsPlansTerritories(tree) : (new Map() as RepsPlansTerritoryIndex);
+  const index = tree?.index ?? new Map();
 
+  const placementOf = (hrId: string | null): OrgPlacement | null => {
+    const key = orgHrKey(hrId);
+    return (key ? index.get(key) : undefined) ?? null;
+  };
+  // The organogram could not be read at all — not "this person has no seat", but "nothing is known
+  // about anyone". Scoring nobody would then blank every tile on the page and turn a Supabase blip
+  // into a KPI outage, so the board falls back to exactly how it read before this feature existed:
+  // everyone scored, no geography column, no pickers.
+  const orgAvailable = tree != null;
   const allRows = report.reps.map((rep) => {
-    const key = territoryKeyOf(rep.agentHrId);
-    return toRepsPlansRow(rep, (key ? index.get(key) : undefined) ?? []);
+    const row = toRepsPlansRow(rep, placementOf(rep.agentHrId));
+    return orgAvailable ? row : { ...row, scored: true };
   });
 
   // ── The Line -> Region cascade ────────────────────────────────────────────
   // Deliberately the reverse of the shared coverage bar's Region -> Line. The owner asked for line
   // first and he is right: Beni Suef and Fayoum sit in DIFFERENT regions depending on the line, so
-  // region-first offers a pairing no rep satisfies. Narrowing is done here rather than by calling
-  // `narrowCoverageOptions`, which hard-codes the other order and is shared with two live boards.
+  // region-first offers a pairing no rep satisfies.
   const lineNames = new Map((tree?.lines ?? []).map((option) => [option.code, option.name]));
   const regionNames = new Map((tree?.regions ?? []).map((option) => [option.code, option.name]));
-  const optionsOf = (codes: Iterable<string>, names: Map<string, string>): CoverageFilterOption[] =>
+  const optionsOf = (codes: Iterable<string>, names: Map<string, string>): RepsPlansOption[] =>
     [...new Set(codes)]
       .map((code) => ({ code, name: names.get(code) ?? code }))
       .sort((a, b) => a.name.localeCompare(b.name));
@@ -480,30 +459,22 @@ export function buildRepsPlansBoard(
     : null;
 
   const geographyActive = Boolean(appliedLine || appliedRegion);
-  // Resolved through the SHARED matcher so this board can never disagree with Doctor Coverage about
-  // who is in a territory. It returns reps rather than keys precisely because the boards key people
-  // differently; `rep.hrId` is mapped into this board's own form here.
-  const matchedHrIds =
-    tree && geographyActive
-      ? new Set(
-          repsMatching(tree, { line: appliedLine ?? undefined, region: appliedRegion ?? undefined })
-            .map((rep) => territoryKeyOf(rep.hrId))
-            .filter((key): key is string => key !== null),
-        )
-      : null;
+  // Matched on the person's CELLS, so a manager is reached exactly as a rep is — that is the whole
+  // point of resolving every tier. Someone with no seat matches nothing and is added back below.
+  const matches = (row: RepsPlansRepRow): boolean =>
+    !geographyActive ||
+    placementMatches(placementOf(row.agentHrId) ?? undefined, { line: appliedLine, region: appliedRegion });
 
-  const inScope = matchedHrIds
-    ? allRows.filter((row) => {
-        const key = territoryKeyOf(row.agentHrId);
-        return key != null && matchedHrIds.has(key);
-      })
-    : allRows;
-  const unseated = matchedHrIds ? allRows.filter((row) => row.territories.length === 0) : [];
-  const visibleRows = matchedHrIds ? [...inScope, ...unseated] : allRows;
+  const inScope = allRows.filter(matches);
+  const unplacedOutOfScope = geographyActive ? allRows.filter((row) => row.territories.length === 0) : [];
+  const visibleRows = geographyActive ? [...inScope, ...unplacedOutOfScope] : allRows;
 
-  // The tiles describe the TERRITORY, so only seated matching reps are in them. With no geography
-  // picked this is every row, exactly as before.
-  const totals = totalsOf(inScope, report.workingDays);
+  // ONLY the scored rows. A manager in scope is visible above and absent here, by the owner's rule.
+  const totals = totalsOf(inScope.filter((row) => row.scored), report.workingDays);
+  // Both are 0 with no organogram: "37 people hold no seat" would be a claim about a chart nothing
+  // managed to read, and the note under the tiles states these as facts about the org.
+  const managersShown = orgAvailable ? visibleRows.filter((row) => !row.scored && row.territories.length > 0).length : 0;
+  const unplacedShown = orgAvailable ? visibleRows.filter((row) => row.territories.length === 0).length : 0;
 
   const repOptions = visibleRows
     .map((row) => ({ repKey: row.repKey, repName: row.repName }))
@@ -538,7 +509,8 @@ export function buildRepsPlansBoard(
     appliedLine,
     appliedRegion,
     geographyLabel,
-    unseatedShown: unseated.length,
+    managersShown,
+    unplacedShown,
     geographyAvailable: lineOptions.length > 0,
   };
 }

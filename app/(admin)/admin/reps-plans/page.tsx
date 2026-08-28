@@ -17,7 +17,7 @@ import { RepsPlansBoardView } from "@/components/crm/reps-plans-board";
 import { canAccess } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { loadCallRateReport } from "@/lib/crm/call-rate-service";
-import { loadCoverageFilterTree } from "@/lib/crm/coverage-filters-data";
+import { loadOrgPlacementTree } from "@/lib/crm/org-placement-data";
 import { cairoTodayIso } from "@/lib/crm/dates";
 import { buildRepsPlansBoard, repsPlansRange, resolveRepsPlansMonth } from "@/lib/crm/reps-plans";
 import { canAccessRepsPlans } from "@/lib/crm/reps-plans-access";
@@ -58,12 +58,15 @@ export default async function RepsPlansPage({ searchParams }: PageProps) {
     loadError = error instanceof Error ? error.message : "CRM visit data is unavailable.";
   }
 
-  // The org model is a SEPARATE failure. It powers the line/region pickers only, so losing it must
-  // not take the call rate down with it — the board falls back to month + rep and hides the two
-  // pickers rather than offering empty ones.
-  let tree: Awaited<ReturnType<typeof loadCoverageFilterTree>> | null = null;
+  // The ORGANOGRAM is a SEPARATE failure. It powers the line/region pickers and the tier each
+  // person is measured by, so losing it must not take the call rate down with it — the board falls
+  // back to month + rep and hides the two pickers rather than offering empty ones.
+  //
+  // au_v_org_tree, every tier. NOT a rep-only view: reading one is what once rendered 22 seated
+  // District Managers, NSMs and an RSM as holding no seat at all.
+  let tree: Awaited<ReturnType<typeof loadOrgPlacementTree>> | null = null;
   try {
-    tree = await loadCoverageFilterTree();
+    tree = await loadOrgPlacementTree();
   } catch {
     tree = null;
   }
