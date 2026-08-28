@@ -1,16 +1,19 @@
 // Recruitment / ATS — scheduled work. Composed into the single daily cron
 // (app/api/notifications/daily) — do NOT add a new Vercel cron (Hobby limit = 2).
 //
-// Remind interviewers of interviews scheduled for the next day.
+// Two jobs run here:
+//   - remind interviewers of interviews scheduled for the next day;
+//   - chase CVs that were sent to a hiring manager and never answered (`stale-send-check.ts`).
 
 import { currentCairoDateParts } from "@/lib/i18n/format";
 import { createSystemNotification } from "@/lib/notifications/system";
 import { interviewTypeLabel } from "@/lib/recruitment/interview-notifications";
 import { listInterviewsDueForReminder } from "@/lib/recruitment/interviews";
+import { runStaleSendCheck, type StaleSendRunResult } from "@/lib/recruitment/stale-send-check";
 
 export type RecruitmentDailyResult =
-  | { ok: true; interviewReminders: number }
-  | { ok: false; interviewReminders: 0; error: string };
+  | { ok: true; interviewReminders: number; staleSends: StaleSendRunResult }
+  | { ok: false; interviewReminders: 0; staleSends: StaleSendRunResult | null; error: string };
 
 async function sendInterviewReminders(): Promise<number> {
   const { year, month, day: cairoDay } = currentCairoDateParts();
@@ -47,13 +50,18 @@ async function sendInterviewReminders(): Promise<number> {
 }
 
 export async function runRecruitmentDailyNotifications(): Promise<RecruitmentDailyResult> {
+  // The stale-send check runs FIRST and independently of the reminders, because it swallows its own
+  // errors and returns a verdict. If it ran second and the reminder loop threw, the check would be
+  // skipped entirely on that day’s run — and the whole point of it is to notice silence.
+  const staleSends = await runStaleSendCheck();
   try {
     const interviewReminders = await sendInterviewReminders();
-    return { ok: true, interviewReminders };
+    return { ok: true, interviewReminders, staleSends };
   } catch (error) {
     return {
       ok: false,
       interviewReminders: 0,
+      staleSends,
       error: error instanceof Error ? error.message : "Recruitment daily processing failed.",
     };
   }
