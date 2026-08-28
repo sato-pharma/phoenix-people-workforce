@@ -11,7 +11,7 @@
  * became an error the employee had no way to satisfy.
  */
 
-/** The six regions an employee may plan against. Deliberately coarser than `employees.region_name`. */
+/** The seven regions an employee may plan against. Deliberately coarser than `employees.region_name`. */
 export const APPROVED_PLANNING_REGIONS = [
   "ALEX-BHR",
   "Cairo",
@@ -235,6 +235,19 @@ export function approvedRegionsForSeats(seats: readonly PlanningAreaSeat[]): App
   }
   if (present.size === 0) return [...APPROVED_PLANNING_REGIONS];
   return APPROVED_PLANNING_REGIONS.filter((region) => present.has(region));
+}
+
+/**
+ * Whether a seat row is in force on `asOfDate`. Both are YYYY-MM-DD, so a plain string compare
+ * is a date compare.
+ *
+ * A blank `effective_from` means "always in force" — most rows carry no start date at all, and
+ * reading a blank as a future date would empty the picker for every line at once.
+ */
+export function isSeatEffectiveOn(effectiveFrom: string | null | undefined, asOfDate: string): boolean {
+  const from = String(effectiveFrom ?? "").trim();
+  if (!from) return true;
+  return from <= asOfDate;
 }
 
 /**

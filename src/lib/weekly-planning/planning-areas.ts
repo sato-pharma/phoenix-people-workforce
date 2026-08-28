@@ -1,6 +1,7 @@
 import { normalizeHrIdForAccess } from "@/lib/hr-id";
+import { currentCairoDateOnlyIso } from "@/lib/i18n/format";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
-import { normalizeRegionCode, type PlanningAreaSeat } from "@/lib/weekly-planning/regions";
+import { isSeatEffectiveOn, normalizeRegionCode, type PlanningAreaSeat } from "@/lib/weekly-planning/regions";
 
 export type { PlanningAreaSeat };
 
@@ -19,11 +20,26 @@ export type { PlanningAreaSeat };
  */
 
 /**
- * Load the currently-effective seat map for one line. Vacant seats are included on purpose —
- * an area with no rep is still a place a plan may name (the Double Visit rep requirement is
- * enforced separately, see areaHasAssignableRep).
+ * Load the seat map in force for one line on `asOfDate` (Africa/Cairo today by default). Vacant
+ * seats are included on purpose — an area with no rep is still a place a plan may name (the
+ * Double Visit rep requirement is enforced separately, see areaHasAssignableRep).
+ *
+ * `effective_to is null` alone is NOT "currently effective": a row the organogram has accepted
+ * but dated FORWARD is open-ended too. The Anti Infective Delta (3) split was written with
+ * `effective_from = 2026-09-01` and immediately surfaced in the August picker — Ismailia,
+ * Qalubeya, Sharkia 1, Sharkia 2 and Suez offered as plannable areas four days early — and
+ * because `approvedRegionsForSeats` (regions.ts) derives the Region dropdown from these same
+ * rows, the one missing predicate leaked the split into BOTH dropdowns at once.
+ *
+ * NOTE this pins the picker to TODAY, not to the week being planned: the workspace loads one
+ * seat list and the client renders every selectable week from it. So a forward-dated area stays
+ * unavailable until the day it takes effect, even on a plan covering a later week. Making it
+ * period-aware means re-reading per week selection — a deliberately separate change.
  */
-export async function loadPlanningAreaSeats(lineId: number | null | undefined): Promise<PlanningAreaSeat[]> {
+export async function loadPlanningAreaSeats(
+  lineId: number | null | undefined,
+  asOfDate: string = currentCairoDateOnlyIso(),
+): Promise<PlanningAreaSeat[]> {
   if (typeof lineId !== "number") return [];
   const supabase = getSupabaseAdmin();
 
@@ -35,7 +51,7 @@ export async function loadPlanningAreaSeats(lineId: number | null | undefined): 
   const [areaResult, regionResult] = await Promise.all([
     supabase
       .from("au_v_line_area_map")
-      .select("area_name,operational_region_code,effective_to")
+      .select("area_name,operational_region_code,effective_from,effective_to")
       .eq("line_code", lineCode)
       .is("effective_to", null),
     supabase.from("au_v_regions").select("region_code,region_name"),
@@ -55,6 +71,7 @@ export async function loadPlanningAreaSeats(lineId: number | null | undefined): 
     const areaName = row.area_name?.trim();
     const regionCode = normalizeRegionCode(row.operational_region_code);
     if (!areaName || !regionCode) continue;
+    if (!isSeatEffectiveOn(row.effective_from, asOfDate)) continue;
     seats.push({ areaName, regionCode, regionName: regionNameByCode.get(regionCode) ?? null });
   }
   return seats;
