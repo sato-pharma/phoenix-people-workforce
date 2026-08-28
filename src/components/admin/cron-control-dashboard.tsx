@@ -193,7 +193,7 @@ function JobCard({
               {job.state}
             </span>
             {!job.isKnown ? (
-              <span className="rounded-full border border-sky-200 bg-sky-50 px-2.5 py-0.5 text-phx-2xs font-black uppercase tracking-wide text-sky-700">
+              <span className="rounded-full border border-phx-info-line bg-phx-info-bg px-2.5 py-0.5 text-phx-2xs font-black uppercase tracking-wide text-phx-info">
                 Not in local registry
               </span>
             ) : null}
@@ -346,7 +346,7 @@ function SchedulePanel({
         <span className="mr-1 text-phx-xs font-black uppercase tracking-wide text-phx-ink-faint">Quick pick:</span>
         {SCHEDULE_PRESETS.map((preset) => (
           <button
-            className="rounded-full border border-phx-line bg-white px-2.5 py-1 text-phx-xs font-bold text-phx-ink-2 transition hover:border-orange-300 hover:text-orange-700"
+            className="rounded-full border border-phx-line bg-white px-2.5 py-1 text-phx-xs font-bold text-phx-ink-2 transition hover:border-phx-warn-line hover:text-phx-warn"
             key={preset.label}
             onClick={() => setCronExpression(preset.cronExpression)}
             type="button"

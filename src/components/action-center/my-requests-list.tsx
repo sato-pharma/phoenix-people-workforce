@@ -80,7 +80,7 @@ export function MyRequestsList({ initialId, initialModule, items }: Props) {
         >
           <div className="min-w-0">
             <div className="mb-1.5 flex flex-wrap items-center gap-1.5">
-              <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-phx-2xs font-bold uppercase tracking-[0.08em] text-slate-500">
+              <span className="inline-flex items-center rounded-full border border-phx-line bg-phx-paper px-2 py-0.5 text-phx-2xs font-bold uppercase tracking-[0.08em] text-phx-ink-soft">
                 {MY_REQUEST_MODULE_LABELS[item.module]}
               </span>
               <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-phx-2xs font-bold ${TONE_CLASSES[item.statusTone]}`}>

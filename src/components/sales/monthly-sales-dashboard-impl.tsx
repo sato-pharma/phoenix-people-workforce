@@ -564,7 +564,7 @@ export function MonthlySalesDashboard({
             <Filter className="h-4 w-4 text-orange-500" />
             Filters
             {activeFilterCount > 0 ? (
-              <span className="rounded-full bg-orange-100 px-2 py-0.5 text-phx-xs font-black text-orange-700">
+              <span className="rounded-full bg-phx-warn-bg px-2 py-0.5 text-phx-xs font-black text-phx-warn">
                 {activeFilterCount} active
               </span>
             ) : null}

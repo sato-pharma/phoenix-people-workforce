@@ -82,7 +82,7 @@ export function ProbationScorecardLauncher({
       >
         <span className="flex items-center gap-2 text-sm font-semibold text-slate-800">
           Score a probationer
-          <span className="rounded-full bg-slate-800 px-2 py-0.5 text-xs font-medium text-white">
+          <span className="rounded-full bg-phx-ink px-2 py-0.5 text-xs font-medium text-white">
             {probationers.length} {probationers.length === 1 ? "rep" : "reps"}
           </span>
         </span>
@@ -125,7 +125,7 @@ export function ProbationScorecardLauncher({
                         </div>
                         <span className="flex items-center gap-2">
                           {probationer.submittedCount > 0 && (
-                            <span className="whitespace-nowrap rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-phx-2xs font-medium text-emerald-700">
+                            <span className="whitespace-nowrap rounded-full border border-phx-ok-line bg-phx-ok-bg px-2 py-0.5 text-phx-2xs font-medium text-phx-ok">
                               {probationer.submittedCount} of {Math.max(probationer.requiredCount, probationer.submittedCount)} submitted
                             </span>
                           )}

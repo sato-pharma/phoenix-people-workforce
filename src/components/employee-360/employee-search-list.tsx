@@ -353,7 +353,7 @@ export function EmployeeSearchList({
                 <h3 className="shrink-0 text-sm font-black uppercase tracking-wide text-slate-700">
                   {g.line || "Unassigned line"}
                 </h3>
-                <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-phx-2xs font-black text-slate-500">
+                <span className="shrink-0 rounded-full bg-phx-paper px-2 py-0.5 text-phx-2xs font-black text-phx-ink-soft">
                   {g.count}
                 </span>
                 <div className="h-px flex-1 bg-slate-200" />
@@ -413,7 +413,7 @@ function EmployeeCard({ e, basePath }: { e: Employee360ListItem; basePath: strin
         <div className="flex items-center gap-2">
           <span className="truncate text-sm font-bold text-slate-900">{e.displayName}</span>
           {e.employmentStatus && e.employmentStatus !== "active" ? (
-            <span className="shrink-0 rounded-full bg-amber-100 px-1.5 py-0.5 text-phx-3xs font-black uppercase tracking-wide text-amber-700">
+            <span className="shrink-0 rounded-full bg-phx-warn-bg px-1.5 py-0.5 text-phx-3xs font-black uppercase tracking-wide text-phx-warn">
               {e.employmentStatus.replace(/_/g, " ")}
             </span>
           ) : null}

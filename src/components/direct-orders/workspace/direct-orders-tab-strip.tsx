@@ -71,7 +71,7 @@ export function DirectOrdersTabStrip({
             >
               {TAB_LABEL[key]}
               {key === "needs-action" && needsActionCount > 0 ? (
-                <span className="ml-1.5 inline-flex min-w-[18px] justify-center rounded-full bg-orange-600 px-1 text-phx-2xs text-white">
+                <span className="ml-1.5 inline-flex min-w-[18px] justify-center rounded-full bg-phx-warn px-1 text-phx-2xs text-white">
                   {needsActionCount}
                 </span>
               ) : null}

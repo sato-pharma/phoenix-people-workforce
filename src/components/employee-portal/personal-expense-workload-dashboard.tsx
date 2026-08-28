@@ -1360,7 +1360,7 @@ export function PersonalExpenseWorkloadDashboard({
             </p>
           </div>
         </div>
-        <span className="hidden flex-none items-center gap-2 rounded-full bg-orange-600 px-4 py-2 text-phx-sm font-semibold text-white shadow-sm transition-colors group-hover:bg-orange-700 sm:inline-flex">
+        <span className="hidden flex-none items-center gap-2 rounded-full bg-phx-warn px-4 py-2 text-phx-sm font-semibold text-white shadow-sm transition-colors group-hover:bg-phx-warn sm:inline-flex">
           Start submission
           <ChevronRight className="h-4 w-4" />
         </span>
@@ -1386,7 +1386,7 @@ export function PersonalExpenseWorkloadDashboard({
         >
           Unresolved
           {unresolvedTrips.length > 0 && (
-            <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-phx-xs font-bold text-amber-700">
+            <span className="rounded-full bg-phx-warn-bg px-1.5 py-0.5 text-phx-xs font-bold text-phx-warn">
               {unresolvedTrips.length}
             </span>
           )}

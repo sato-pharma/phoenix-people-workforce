@@ -912,9 +912,9 @@ function UnknownTable({
                       value={codes[row.raw] ?? ""}
                     />
                     {codes[row.raw] ? (
-                      <span className="shrink-0 rounded-full bg-emerald-100 px-2 py-0.5 text-phx-2xs font-black text-emerald-700">✓</span>
+                      <span className="shrink-0 rounded-full bg-phx-ok-bg px-2 py-0.5 text-phx-2xs font-black text-phx-ok">✓</span>
                     ) : (
-                      <span className="shrink-0 rounded-full bg-rose-50 px-2 py-0.5 text-phx-2xs font-black text-rose-500">○</span>
+                      <span className="shrink-0 rounded-full bg-phx-danger-bg px-2 py-0.5 text-phx-2xs font-black text-phx-danger">○</span>
                     )}
                   </div>
                 </td>

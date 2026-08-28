@@ -436,7 +436,7 @@ export function PlanningCalendar({
                   Shared Planning Calendar
                 </span>
                 {summary.conflictCount > 0 ? (
-                  <span className="inline-flex items-center gap-1.5 rounded-full bg-red-500/20 px-3 py-1 text-phx-xs font-black uppercase tracking-[0.14em] text-red-200 ring-1 ring-red-400/30">
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-phx-danger/20 px-3 py-1 text-phx-xs font-black uppercase tracking-[0.14em] text-phx-danger-bg ring-1 ring-phx-danger-line/30">
                     <TriangleAlert className="h-3.5 w-3.5" />
                     {summary.conflictCount} warnings
                   </span>
@@ -684,7 +684,7 @@ export function PlanningCalendar({
                       {date ? Number(date.slice(8, 10)) : ""}
                     </span>
                     {dayConflicts.length > 0 ? (
-                      <span className="rounded-full bg-red-100 px-1.5 py-0.5 text-phx-2xs font-black text-red-600">
+                      <span className="rounded-full bg-phx-danger-bg px-1.5 py-0.5 text-phx-2xs font-black text-phx-danger">
                         {dayConflicts.length}
                       </span>
                     ) : null}
@@ -731,7 +731,7 @@ export function PlanningCalendar({
               <p className="text-phx-xs font-black uppercase tracking-[0.14em] text-slate-400">Selected day</p>
               <h3 className="mt-1 text-lg font-black text-slate-950">{dayLabel(selectedDate)}</h3>
             </div>
-            <span className="rounded-full bg-slate-100 px-4 py-1.5 text-xs font-black text-slate-600">
+            <span className="rounded-full bg-phx-paper px-4 py-1.5 text-xs font-black text-phx-ink-soft">
               {selectedDetailRows.length} visible row{selectedDetailRows.length === 1 ? "" : "s"}
             </span>
           </div>
@@ -807,7 +807,7 @@ function AgendaDayBlock({
                 <div className="flex items-center gap-2 px-4 py-3" key={item.id}>
                   <span className="inline-block h-2.5 w-2.5 shrink-0 rounded-full bg-emerald-500" />
                   <span className="whitespace-nowrap text-sm font-black text-slate-900">{item.title}</span>
-                  <span className="ml-auto inline-flex items-center whitespace-nowrap rounded-full bg-emerald-100 px-2 py-0.5 text-phx-2xs font-black uppercase tracking-wide text-emerald-800">
+                  <span className="ml-auto inline-flex items-center whitespace-nowrap rounded-full bg-phx-ok-bg px-2 py-0.5 text-phx-2xs font-black uppercase tracking-wide text-phx-ok">
                     National vacation
                   </span>
                 </div>
@@ -823,7 +823,7 @@ function AgendaDayBlock({
                     className={`inline-block h-2.5 w-2.5 shrink-0 rounded-full ${item.conflictWarning ? "bg-red-500" : employeeHueFor(dayHues, item.employeeHrId).dot}`}
                   />
                   <span className="whitespace-nowrap text-sm font-black text-slate-900">{item.title}</span>
-                  <span className="ml-auto inline-flex items-center whitespace-nowrap rounded-full bg-slate-100 px-2 py-0.5 text-phx-2xs font-black uppercase tracking-wide text-slate-600">
+                  <span className="ml-auto inline-flex items-center whitespace-nowrap rounded-full bg-phx-paper px-2 py-0.5 text-phx-2xs font-black uppercase tracking-wide text-phx-ink-soft">
                     {planStatusLabels[item.status] ?? item.status}
                   </span>
                 </div>

@@ -139,7 +139,7 @@ export function ExpenseCommandDashboard({
             <button
               type="button"
               onClick={() => setRefreshKey((key) => key + 1)}
-              className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/[0.06] px-4 py-2 text-xs font-bold uppercase tracking-[0.12em] text-slate-200 transition-colors hover:border-white/30"
+              className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/[0.06] px-4 py-2 text-xs font-bold uppercase tracking-[0.12em] text-phx-paper transition-colors hover:border-white/30"
             >
               <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} /> Refresh
             </button>

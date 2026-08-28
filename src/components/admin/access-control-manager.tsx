@@ -282,7 +282,7 @@ function RoleBadge({ role }: { role: PhoenixRole }) {
 function ScopeBadge({ label, scope }: { label: string; scope: BusinessScope }) {
   const classes = getScopeSemanticClasses(scope);
   return (
-    <span className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-2 py-0.5 text-phx-xs font-semibold text-slate-500">
+    <span className="inline-flex items-center gap-1 rounded-full border border-phx-line bg-white px-2 py-0.5 text-phx-xs font-semibold text-phx-ink-soft">
       {label}
       <span className={`rounded-full border ${classes.border} ${classes.bg} px-1.5 py-0.5 text-phx-2xs ${classes.text}`}>
         {scope}
@@ -856,7 +856,7 @@ export function AccessControlManager({
   function renderUserActions(user: AccessUserRow, layout: "compact" | "stacked" = "compact") {
     if (!canManageUsers) {
       return (
-        <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2 py-1 text-phx-2xs font-semibold uppercase tracking-wider text-slate-500" title="Your role can view governance state but cannot mutate users.">
+        <span className="inline-flex items-center rounded-full border border-phx-line bg-phx-paper px-2 py-1 text-phx-2xs font-semibold uppercase tracking-wider text-phx-ink-soft" title="Your role can view governance state but cannot mutate users.">
           Restricted
         </span>
       );

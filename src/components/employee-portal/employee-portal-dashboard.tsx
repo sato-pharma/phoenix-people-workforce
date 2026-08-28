@@ -1481,7 +1481,7 @@ function TeamRankComparisonWidget({ data }: { data: MedicalRepPortalData }) {
                   </span>
                   <span className="break-words text-sm font-bold text-slate-700">{row.name}</span>
                   {belowTarget ? (
-                    <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-rose-100 bg-rose-50/80 px-2 py-0.5 text-phx-2xs font-semibold text-rose-500">
+                    <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-phx-danger-line bg-phx-danger-bg/80 px-2 py-0.5 text-phx-2xs font-semibold text-phx-danger">
                       <AlertTriangle className="h-2.5 w-2.5" />
                       Below target
                     </span>

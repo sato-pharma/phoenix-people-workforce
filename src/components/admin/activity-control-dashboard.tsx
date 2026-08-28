@@ -121,7 +121,7 @@ function EngagementBadge({ band, score }: { band: EngagementBand; score: number 
 function NoDataChip() {
   return (
     <span
-      className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-phx-xs font-semibold text-slate-400"
+      className="inline-flex items-center rounded-full border border-phx-line bg-phx-paper px-2.5 py-1 text-phx-xs font-semibold text-phx-ink-soft"
       title="No page-view activity recorded yet. Tracking only captures navigation going forward."
     >
       No data yet
@@ -580,7 +580,7 @@ export function ActivityControlDashboard({
       <button
         type="button"
         onClick={() => changeRange(days)}
-        className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-2 text-sm font-semibold text-slate-100 backdrop-blur transition hover:bg-white/[0.16]"
+        className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-2 text-sm font-semibold text-phx-paper backdrop-blur transition hover:bg-white/[0.16]"
       >
         {isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
         Refresh
@@ -739,7 +739,7 @@ export function ActivityControlDashboard({
                               <button
                                 type="button"
                                 onClick={() => setForceLogoutTarget({ name: user.name, hrId: user.hrId! })}
-                                className="inline-flex items-center gap-1 rounded-full border border-rose-200 px-2.5 py-1 text-phx-xs font-semibold text-rose-600 transition hover:bg-rose-50"
+                                className="inline-flex items-center gap-1 rounded-full border border-phx-danger-line px-2.5 py-1 text-phx-xs font-semibold text-phx-danger transition hover:bg-phx-danger-bg"
                                 title="Force logout this user"
                               >
                                 <ShieldOff className="h-3 w-3" /> Logout
@@ -998,7 +998,7 @@ export function ActivityControlDashboard({
                   <button
                     type="button"
                     onClick={() => setForceLogoutTarget({ name: selectedUser.name, hrId: selectedUser.hrId! })}
-                    className="inline-flex items-center gap-1.5 rounded-full border border-rose-400/30 bg-rose-500/20 px-3 py-1.5 text-phx-xs font-bold text-rose-300 transition hover:bg-rose-500/30"
+                    className="inline-flex items-center gap-1.5 rounded-full border border-phx-danger-line/30 bg-phx-danger/20 px-3 py-1.5 text-phx-xs font-bold text-phx-danger-bg transition hover:bg-phx-danger/30"
                   >
                     <ShieldOff className="h-3.5 w-3.5" /> Force logout
                   </button>

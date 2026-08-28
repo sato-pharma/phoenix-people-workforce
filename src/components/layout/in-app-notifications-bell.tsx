@@ -235,7 +235,7 @@ export function InAppNotificationsBell({ isAdminMode }: { isAdminMode: boolean }
               </span>
             ) : null}
             {unreadCount > 0 ? (
-              <span className="ml-2 mt-2 inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-600">
+              <span className="ml-2 mt-2 inline-flex items-center gap-1 rounded-full bg-phx-paper px-2 py-0.5 text-phx-2xs font-black uppercase tracking-[0.12em] text-phx-ink-soft">
                 {unreadCount} unread
               </span>
             ) : null}
