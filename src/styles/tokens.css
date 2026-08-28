@@ -39,21 +39,33 @@
 
 :root {
   /* ---------------------------------------------------------------- LEGACY
-     Live today. Values unchanged. Phase 3 re-points these at --phx- values. */
+     RE-POINTED (Phase 3). These names stay — tailwind.config.ts and globals.css's
+     @theme inline read them, and renaming them would touch every page at once.
+     What changed is that each now FOLLOWS a --phx- token instead of holding its
+     own literal, so there is exactly one place a colour is decided.
 
-  --phoenix-primary: #f97316;
-  --phoenix-primary-hover: #ea580c;
+     Three of them move by design rather than by accident. The old --success,
+     --warning and --danger were the Tailwind 500 ramp (#22c55e, #f59e0b,
+     #ef4444), which is a ramp built to sit on a coloured chip, not to be read as
+     text on white — #f59e0b against white is 2.1:1, well under the 4.5:1 a
+     4-hour payroll screen needs. The --phx- semantics are the darker end of the
+     same hues, so a status word stays the colour it was but becomes legible.
+     The blue-grey greys (#f8fafc, #f1f5f9, #0f172a, #475569) move to the warm
+     neutrals for the same reason the surfaces did: one family, not two. */
 
-  --bg: #ffffff;
-  --bg-soft: #f8fafc;
-  --bg-muted: #f1f5f9;
+  --phoenix-primary: var(--phx-accent);
+  --phoenix-primary-hover: var(--phx-accent-hover);
 
-  --text: #0f172a;
-  --text-secondary: #475569;
+  --bg: var(--phx-surface);
+  --bg-soft: var(--phx-paper);
+  --bg-muted: var(--phx-paper-2);
 
-  --success: #22c55e;
-  --warning: #f59e0b;
-  --danger: #ef4444;
+  --text: var(--phx-ink);
+  --text-secondary: var(--phx-ink-2);
+
+  --success: var(--phx-ok);
+  --warning: var(--phx-warn);
+  --danger: var(--phx-danger);
 
   /* --border and --card are deliberately NOT defined here — app/globals.css
      owns both. See the header. A value added back here is silently dead. */
@@ -206,14 +218,22 @@
   --phx-max: 1680px;
 
   /* ===================================================================== FONT
-     These hold TODAY's stacks verbatim, so defining them changes nothing. None
-     is webfont-backed, which is why the typeface still varies by machine (Aptos
-     on Windows with Office, Segoe UI Variable without it, something else on
-     macOS). Choosing and shipping a real face is a visible change and belongs
-     with the Phase 3 wiring, where it gets checked in a browser. */
+     Inter, self-hosted, loaded by the @font-face block in app/layout.tsx.
+
+     The old stack led with "Aptos" and then "Segoe UI Variable" — neither is a
+     webfont, so the app rendered in whatever the machine happened to have: Aptos
+     on a Windows PC with Office, Segoe UI Variable on one without, something else
+     again on a Mac or a phone. Nobody was looking at the same product. The stack
+     behind Inter is kept as the fallback for the seconds before the file lands,
+     and for a browser that refuses webfonts outright.
+
+     Inter specifically: it was drawn for screen UI at small sizes, its digits are
+     even-width, and it has a proper tabular-figures feature — which matters here,
+     because most of this app is columns of money and headcount that have to line
+     up. A face without that makes every numeric table ripple. */
 
   --phx-font-ui:
-    "Aptos", "Segoe UI Variable Display", "Segoe UI Variable Text", "Segoe UI", "Inter",
+    "Inter", "Aptos", "Segoe UI Variable Display", "Segoe UI Variable Text", "Segoe UI",
     "Helvetica Neue", Arial, sans-serif;
   --phx-font-mono:
     "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
@@ -233,15 +253,21 @@
    ========================================================================== */
 
 .dark {
-  /* LEGACY — values unchanged. */
-  --bg: #020617;
-  --bg-soft: #0b1220;
-  --bg-muted: #111827;
+  /* LEGACY — deliberately NOT repeated here any more.
+     Each legacy name now reads a --phx- token in :root (--bg: var(--phx-surface),
+     --text: var(--phx-ink), and so on). A var() resolves against the element it is
+     used on, not where it was declared, so inside .dark those same declarations
+     already pick up the dark --phx- values redefined below. Repeating them here
+     would not add dark support — it would OVERRIDE the chain with a second set of
+     literals that then has to be kept in step by hand. That is the duplication
+     this whole file exists to remove, so the six lines that used to sit here
+     (--bg, --bg-soft, --bg-muted, --text, --text-secondary and the note about
+     --border/--card) are gone on purpose. Do not add them back.
 
-  --text: #e5e7eb;
-  --text-secondary: #9ca3af;
-
-  /* --border and --card: see the note in :root above. */
+     Side effect worth stating: the old dark literals were blue-black (#020617,
+     #0b1220), the --phx- dark ground is warm (#0e1014, #14161b). Dark mode
+     therefore changes shade as well as source — that is the intended landing, not
+     a regression. */
 
   /* SURFACES */
   --phx-paper: #0e1014;
