@@ -97,6 +97,7 @@ type EmployeeImportPreview = {
   validationErrors?: Array<{ message?: string; rowNumber?: number }>;
   validationWarnings?: Array<{ message?: string; rowNumber?: number }>;
   vacantPositionsToCreate?: unknown[];
+  warningRows?: number;
 };
 
 type EmployeeSalaryDetailFormRow = {
@@ -1593,6 +1594,12 @@ export function EmployeeManagement({
                       {(pendingImportPreview.failedRows ?? 0)} blocked
                     </span>
                   ) : null}
+                  {(pendingImportPreview.warningRows ?? 0) > 0 ? (
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-100 px-3 py-1 text-xs font-bold text-amber-700">
+                      <AlertCircle className="h-3 w-3" />
+                      {(pendingImportPreview.warningRows ?? 0)} need review
+                    </span>
+                  ) : null}
                 </div>
                 {(pendingImportPreview.validationErrors?.length ?? 0) > 0 ? (
                   <div className="mt-1 space-y-0.5 text-xs text-danger">
@@ -1606,6 +1613,23 @@ export function EmployeeManagement({
                         +{(pendingImportPreview.validationErrors?.length ?? 0) - 10} more blocked row(s).
                       </p>
                     ) : null}
+                  </div>
+                ) : null}
+                {(pendingImportPreview.validationWarnings?.length ?? 0) > 0 ? (
+                  <div className="mt-1 space-y-0.5 text-xs text-amber-700">
+                    {pendingImportPreview.validationWarnings?.slice(0, 10).map((issue, index) => (
+                      <p key={`${issue.rowNumber ?? "-"}-${index}`}>
+                        {`Row ${issue.rowNumber ?? "-"}: ${issue.message ?? "Needs review."}`}
+                      </p>
+                    ))}
+                    {(pendingImportPreview.validationWarnings?.length ?? 0) > 10 ? (
+                      <p className="font-semibold">
+                        +{(pendingImportPreview.validationWarnings?.length ?? 0) - 10} more row(s) to review.
+                      </p>
+                    ) : null}
+                    <p className="font-semibold">
+                      These rows still import — review them first if the missing value matters.
+                    </p>
                   </div>
                 ) : null}
                 {(pendingImportPreview.missingRequiredColumns?.length ?? 0) > 0 ? (

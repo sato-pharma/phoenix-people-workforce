@@ -162,16 +162,34 @@ function normalizeByRules(value: unknown, rules: Record<string, string>) {
   };
 }
 
-function classifyAreaAndTeam(areaValue: unknown, teamValue: unknown) {
+function classifyAreaAndTeam(rowNumber: number, areaValue: unknown, teamValue: unknown) {
   const sourceArea = preserveAreaValue(areaValue);
   const sourceTeam = preserveAreaValue(teamValue);
+  const team = sourceTeam.code ? sourceTeam : fromCode(null);
+
+  // An Area with a blank Team is how four people reached production carrying no team at all
+  // between 2026-08-17 and 2026-09-01, with nothing complaining: Team is not a required column,
+  // and making it one would be wrong anyway - Head Office staff (the CEO, the R&D Manager)
+  // legitimately sit in no sales team, and `requiredEmployeeImportFields` only asserts that a
+  // COLUMN exists, never that a row carries a value. So warn instead of blocking, and only when
+  // an Area is present: a row carrying neither is a Head Office row, not a mistake.
+  const warnings: OrgMappingWarning[] = [];
+  if (sourceArea.code && !team.code) {
+    warnings.push({
+      rowNumber,
+      field: "team",
+      code: "org_mapping_needs_review",
+      rawValue: sourceTeam.rawValue ?? "",
+      message: `Area "${sourceArea.displayName ?? sourceArea.rawValue ?? sourceArea.code}" has no Team. This employee will be saved with no team unless you fill it.`,
+    });
+  }
 
   return {
     area: sourceArea,
-    team: sourceTeam.code ? sourceTeam : fromCode(null),
+    team,
     sourceArea,
     sourceTeam,
-    warnings: [],
+    warnings,
   };
 }
 
@@ -192,7 +210,7 @@ export function classifyOrganizationRow({
 }): OrgClassification {
   const departmentValue = normalizeByRules(department, departmentRules);
   const lineValue = normalizeByRules(line, lineRules);
-  const areaResult = classifyAreaAndTeam(area, team);
+  const areaResult = classifyAreaAndTeam(rowNumber, area, team);
   const positionValue = normalizeByRules(position, positionRules);
 
   return {
