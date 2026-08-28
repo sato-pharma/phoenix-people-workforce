@@ -55,6 +55,7 @@ function candidate(overrides: Partial<Candidate> = {}): Candidate {
     placeOfBirth: null,
     positionSpecificFields: {},
     professionalSummary: null,
+    sentFor: null,
     source: "whatsapp",
     status: "Candidate Created",
     statusChangedAt: null,
