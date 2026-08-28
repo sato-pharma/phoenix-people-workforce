@@ -102,7 +102,8 @@ export type PermissionResource =
   | "crm_visits"
   | "early_birds"
   | "user_activity"
-  | "synthetic_journeys";
+  | "synthetic_journeys"
+  | "mailbox_monitor";
 
 export const permissionResources: PermissionResource[] = [
   "admin",
@@ -152,6 +153,10 @@ export const permissionResources: PermissionResource[] = [
   "early_birds",
   "user_activity",
   "synthetic_journeys",
+  // Mailbox compliance monitor — Super Admin only (hard boundary below). MUST be in this runtime
+  // array too: the sidebar permission lookup FAILS OPEN on an unseen key, so omitting it would leak
+  // the tab to every role.
+  "mailbox_monitor",
 ];
 
 export const permissionActions: PermissionAction[] = [
@@ -369,6 +374,10 @@ function hardBoundaryAllowedActions(role: PhoenixRole, resource: PermissionResou
     case "employees":
       return role === "Super Admin" || role === "Talent Acquisition" ? allActions : [];
     case "module_control":
+      return role === "Super Admin" ? allActions : [];
+    case "mailbox_monitor":
+      // Reading employees' company mailboxes for compliance — the most sensitive surface in the
+      // app. Super Admin (the owner) only; no other role, ever.
       return role === "Super Admin" ? allActions : [];
     case "employee_documents":
     case "recruitment":
