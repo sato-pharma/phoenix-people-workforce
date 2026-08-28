@@ -16,6 +16,7 @@ import { runWeeklySystemHealthDigestTests } from "./weekly-system-health-digest.
 import { runMailboxComplianceMonitorTests } from "./mailbox-compliance-monitor.test.ts";
 import { runNavigationActivePathTests } from "./navigation-active-path.test.ts";
 import { runHrUrlNamespaceTests } from "./hr-url-namespace.test.ts";
+import { runNotificationLinksResolveTests } from "./notification-links-resolve.test.ts";
 import { runNavigationPersonalLayoutTests } from "./navigation-personal-layout.test.ts";
 import { runFinanceManagerSixModuleAccessTests } from "./finance-manager-six-module-access.test.ts";
 import { runSidebarLabelWidthTests } from "./sidebar-label-width.test.ts";
@@ -1053,6 +1054,7 @@ await runTest("gcp-metrics service health reader (availability/latency/instances
 await runTest("weekly system health digest", runWeeklySystemHealthDigestTests);
 await runTest("navigation active path", runNavigationActivePathTests);
 await runTest("HR /hr URL namespace (authored nav, unforgeable shell header, narrowing-only)", runHrUrlNamespaceTests);
+await runTest("every notification link points at a page that exists", runNotificationLinksResolveTests);
 await runTest(
   "navigation personal layout (a layout rearranges the gated set and can never introduce an href)",
   runNavigationPersonalLayoutTests,

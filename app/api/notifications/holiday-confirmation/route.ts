@@ -44,7 +44,12 @@ async function notifyRecipientsOfPendingHoliday(
   recipients: Array<{ hrId: string | null; userId: string | null }>,
   runDate: string,
 ) {
-  const actionUrl = `/admin/attendance/holiday-calendar?confirm=${encodeURIComponent(holiday.officialDate)}`;
+  // The page is /attendance/holiday-calendar — NOT /admin/attendance/... . It reads `?confirm=`
+  // and even loads the year that date falls in, so the deep link works in full; only this prefix
+  // was stale, left behind when the page moved out of /admin. Three of these went out (most
+  // recently 2026-08-24) and every one 404'd. next.config.ts redirects the old spelling so the
+  // notifications already sitting in inboxes work too.
+  const actionUrl = `/attendance/holiday-calendar?confirm=${encodeURIComponent(holiday.officialDate)}`;
   const summary = `${holiday.name} is officially dated ${holiday.officialDate} (in ${holiday.daysUntil} days). Confirm whether the observed day off is the same date or postponed — ministry announcements sometimes move the real day off (e.g. June 30 Revolution Day observed July 2). Once confirmed, the date is published to every calendar, weekly/monthly plan, vacation, and attendance check.`;
 
   await Promise.all(recipients.map((recipient) => createSystemNotification({

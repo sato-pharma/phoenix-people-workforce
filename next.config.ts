@@ -249,6 +249,12 @@ const nextConfig: NextConfig = {
       // the pharmacy-validation capture and the cancel-held control), so this loses nothing.
       { source: "/admin/approvals/direct-orders/:id", destination: "/admin/direct-orders/:id", permanent: true },
       { source: "/employee-portals/approvals/direct-orders/:id", destination: "/employee-portals/direct-orders/:id", permanent: true },
+      // Notification links already sent to real people, pointing at pages that never existed at
+      // those addresses. Fixing the generator only helps the NEXT send; these repair the ones
+      // already in inboxes and on phones — 82 contract-renewal and 3 holiday-confirmation links
+      // measured in production 2026-08-28, every one of which 404'd when tapped.
+      { source: "/contracts/renewals", destination: "/contracts", permanent: true },
+      { source: "/admin/attendance/holiday-calendar", destination: "/attendance/holiday-calendar", permanent: true },
     ];
   },
 
