@@ -39,6 +39,10 @@ import {
   applyPersonalLayout,
   HORIZONTAL_ZONES,
   PERSONAL_LAYOUT_VERSION,
+  placementOf,
+  rowsWithout,
+  stripRowConflicts,
+  stripWithout,
   type PersonalLayoutRowSet,
   type PersonalNavigationLayout,
 } from "@/lib/navigation/personal-layout";
@@ -117,11 +121,26 @@ function buildInitialState(catalogue: CatalogueSection[], saved: PersonalNavigat
   for (const [moduleId, rows] of Object.entries(saved?.moduleRows ?? {})) {
     moduleRows[moduleId] = cloneRows(rows);
   }
+  const strip = applied.strip.map((item) => item.href);
+  // applyPersonalLayout was called with no active module, so these are the DEFAULT rows -- and they
+  // come back already free of strip conflicts, because `take` refused any href the strip had
+  // claimed. `moduleRows` is copied straight from the saved document and has had no such pass, so a
+  // stored contradiction survives there and nowhere else.
+  const rows: EditableRows = {
+    upperRow: applied.upperRow.map((i) => i.href),
+    lowerRow: applied.lowerRow.map((i) => i.href),
+  };
+  // Clear it HERE, before anything renders. Two reasons, and the second is not cosmetic: a row
+  // entry the strip has already claimed can never render, so dropping it changes the saved document
+  // and changes NOTHING about the navigation; and leaving it would put the same href in two columns
+  // on this screen, which is a duplicate dnd-kit id -- a broken board on top of a broken layout.
+  // The screen says what it cleared (see `storedConflicts` below) rather than doing it silently.
+  const placement = { strip, rows, moduleRows };
+  const resolved = rowsWithout(placement, stripRowConflicts(placement));
   return {
-    strip: applied.strip.map((item) => item.href),
-    // applyPersonalLayout was called with no active module, so these are the DEFAULT rows.
-    rows: { upperRow: applied.upperRow.map((i) => i.href), lowerRow: applied.lowerRow.map((i) => i.href) },
-    moduleRows,
+    strip,
+    rows: resolved.rows,
+    moduleRows: resolved.moduleRows,
     sections: applied.sections.map((section) => ({
       id: section.id,
       label: section.label,
@@ -156,11 +175,15 @@ function containerIdOf(state: EditorState, scope: Scope, available: string[], hr
   const rows = rowsForScope(state, scope);
   if (rows.upperRow.includes(href)) return UPPER;
   if (rows.lowerRow.includes(href)) return LOWER;
+  // The strip is global, so it is consulted in EVERY scope -- module scope shows it too, precisely
+  // so a page the strip has already claimed cannot be quietly added to a row from a view that
+  // pretends the strip is not there. Asked after the rows only because the two can no longer both
+  // hold one href; see the one-zone rule in personal-layout.ts.
+  if (state.strip.includes(href)) return STRIP;
   if (scope) {
     // In module scope the only other place a page can be is the pool of pages not yet placed.
     return available.includes(href) ? AVAILABLE : null;
   }
-  if (state.strip.includes(href)) return STRIP;
   if (state.hidden.includes(href)) return HIDDEN;
   const section = state.sections.find((entry) => entry.items.includes(href));
   return section ? `${SECTION_PREFIX}${section.id}` : null;
@@ -194,6 +217,38 @@ function writeContainer(state: EditorState, scope: Scope, containerId: string, i
       `${SECTION_PREFIX}${entry.id}` === containerId ? { ...entry, items } : entry,
     ),
   };
+}
+
+/**
+ * THE ONE-ZONE RULE, applied to the move that was just made.
+ *
+ * The strip is resolved before the rows and wins outright, so a page listed in both renders in the
+ * strip and the row shows nothing. Rather than refuse the move -- which would be a screen telling
+ * the owner to go and do something himself, in a view that does not even show the obstacle -- the
+ * move is honoured and the page is taken out of the zone it is leaving behind. Last placement wins,
+ * which is what a direct manipulation should mean.
+ *
+ * Pinning to the strip sweeps EVERY row set, not just the one on screen: the strip applies in every
+ * module, so a copy left in some other module's rows would be dead the moment it was written.
+ */
+function enforceOneZone(state: EditorState, destination: string, href: string): EditorState {
+  if (destination === UPPER || destination === LOWER) {
+    if (!state.strip.includes(href)) return state;
+    return { ...state, strip: stripWithout(state, [href]) };
+  }
+  if (destination === STRIP) {
+    const released = rowsWithout(state, [href]);
+    return { ...state, rows: released.rows, moduleRows: released.moduleRows };
+  }
+  return state;
+}
+
+/** Which zone that move takes the page OUT of, so the screen can say so instead of just doing it. */
+function releasedZoneFor(state: EditorState, destination: string, href: string): "strip" | "rows" | null {
+  if (destination === UPPER || destination === LOWER) return state.strip.includes(href) ? "strip" : null;
+  if (destination !== STRIP) return null;
+  const sets = [state.rows, ...Object.values(state.moduleRows)];
+  return sets.some((set) => set.upperRow.includes(href) || set.lowerRow.includes(href)) ? "rows" : null;
 }
 
 /**
@@ -393,6 +448,19 @@ export function SidebarLayoutEditor({
     [catalogue],
   );
 
+  /**
+   * Pages the SAVED layout put in the Top strip and in a nav row at the same time.
+   *
+   * `buildInitialState` has already cleared the dead row entries -- they could not render, so
+   * clearing them changed nothing on screen -- but clearing them silently would be its own version
+   * of this bug: he arranged those rows on purpose and would find them empty with no explanation.
+   * So the screen names them, and says the one move that gets what he was actually after.
+   */
+  const storedConflicts = useMemo(
+    () => (savedLayout ? stripRowConflicts(placementOf(savedLayout)) : []),
+    [savedLayout],
+  );
+
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
@@ -407,8 +475,10 @@ export function SidebarLayoutEditor({
   function poolFor(current: EditorState, moduleId: string): string[] {
     const rows = rowsForScope(current, moduleId);
     // Hidden pages are excluded: `applyPersonalLayout` refuses to place a hidden href anywhere, so
-    // offering one here would let him drag a tab into a row and watch nothing appear.
-    const unavailable = new Set([...rows.upperRow, ...rows.lowerRow, ...current.hidden]);
+    // offering one here would let him drag a tab into a row and watch nothing appear. Strip pages
+    // are excluded for the same reason and are the case that actually bit -- the strip is shown as
+    // its own column in this scope now, so they are reachable there rather than listed twice.
+    const unavailable = new Set([...rows.upperRow, ...rows.lowerRow, ...current.strip, ...current.hidden]);
     const own = catalogue.find((section) => section.id === moduleId)?.items.map((item) => item.href) ?? [];
     const ownSet = new Set(own);
     const rest = catalogue
@@ -466,14 +536,28 @@ export function SidebarLayoutEditor({
     const insertAt = overIndex === -1 ? target.length : overIndex;
     const nextTarget = [...target.slice(0, insertAt), activeId, ...target.slice(insertAt)];
 
+    // Read from the same `state` the reads above used, before any of this is written.
+    const released = releasedZoneFor(state, to, activeId);
+
     if (from === AVAILABLE) setAvailable(source);
     if (to === AVAILABLE) setAvailable(nextTarget);
     setState((current) => {
       let next = current;
       if (from !== AVAILABLE) next = writeContainer(next, scope, from, source);
       if (to !== AVAILABLE) next = writeContainer(next, scope, to, nextTarget);
-      return next;
+      return enforceOneZone(next, to, activeId);
     });
+
+    if (released) {
+      const label = labelOf.get(activeId) ?? activeId;
+      setStatus({
+        tone: "ok",
+        text:
+          released === "strip"
+            ? `${label} was in the Top strip. A page shows in one place only, so it has been taken out of the strip.`
+            : `${label} was in a nav row. A page shows in one place only, so it has been taken out of the rows.`,
+      });
+    }
   }
 
   /**
@@ -501,12 +585,15 @@ export function SidebarLayoutEditor({
   }
 
   /**
-   * Where a page can be sent. Scope decides the list: module scope edits only the two rows and the
-   * pool, so offering the strip or a sidebar module there would promise a move this screen does not
-   * make. Each row filters its own column out of this list before rendering it.
+   * Where a page can be sent. Scope decides the list: module scope edits the two rows, the pool and
+   * the strip -- the strip because it is what silently outranks a row, and a page cannot be freed
+   * from a zone that is not on screen. The sidebar modules stay out of it: they are not per-module,
+   * and offering one here would promise a move this view does not make. Each row filters its own
+   * column out of the list before rendering it.
    */
   const destinations: { id: string; label: string }[] = scope
     ? [
+        { id: STRIP, label: "Top strip" },
         { id: UPPER, label: "Upper nav row" },
         { id: LOWER, label: "Lower nav row" },
         { id: AVAILABLE, label: "Pages you can add" },
@@ -660,6 +747,27 @@ export function SidebarLayoutEditor({
         </div>
       </div>
 
+      {/* A contradiction the SAVED layout carried. Deliberately not a red error: nothing is broken
+          and nothing was lost -- the cleared entries were already invisible. It is here so the
+          rows he arranged are not simply found empty, and so the one move that gets what he meant
+          is on screen rather than left for him to work out. */}
+      {storedConflicts.length > 0 ? (
+        <div className="border border-[#F8B56B] bg-[#FFF7ED] px-4 py-3">
+          <div className="overflow-x-auto">
+            <p className="whitespace-nowrap text-phx-md font-bold text-[#92400E]">
+              {storedConflicts.map((href) => labelOf.get(href) ?? href).join(", ")}
+              {storedConflicts.length === 1 ? " was" : " were"} in the Top strip and in a nav row at the same time.
+            </p>
+            <p className="mt-1 whitespace-nowrap text-phx-sm text-[#92400E]">
+              A page shows in one place only, and the Top strip outranks both rows, so the row could never show it. The row entry has been cleared.
+            </p>
+            <p className="mt-1 whitespace-nowrap text-phx-sm text-[#92400E]">
+              To show it above the page title instead, find it in the Top strip column below, use Move to, pick Upper nav row, and save.
+            </p>
+          </div>
+        </div>
+      ) : null}
+
       {/* WHICH MODULE THE TWO ROWS ARE BEING ARRANGED FOR.
           The owner's ask: marketing tabs in the rows while inside Marketing & ROI, a different set
           inside Sales. A module with no arrangement of its own shows the default pair, so this
@@ -787,10 +895,25 @@ export function SidebarLayoutEditor({
             </div>
           </>
         ) : scopeHasOwnRows ? (
-          // Module scope edits only the two rows. The strip, Hidden and the sidebar modules are
-          // deliberately absent: they are not per-module, and showing them here would invite a drag
-          // that looks local and is not.
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          // Module scope edits the two rows -- plus the Top strip, which is global and shown here
+          // deliberately. It used to be hidden in this view, on the reasoning that a per-module
+          // screen should not offer a global control. That reasoning cost the owner an evening on
+          // 2026-08-28: the strip outranks both rows, so a page already pinned there could be added
+          // to a row from this view and simply never appear, with a successful save and no error.
+          // A zone that can silently beat the one you are editing has to be visible while you edit.
+          // Hidden and the sidebar modules stay out: neither is per-module, and neither outranks a
+          // row, so their absence here costs nothing.
+          <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-4">
+            <DropColumn
+              accent="zone"
+              containerId={STRIP}
+              controls={rowControls}
+              hint="Pinned above the sidebar modules, in every module. It outranks both rows, so a page pinned here shows here and nowhere else."
+              icon={ZONE_ICON[STRIP]}
+              items={state.strip}
+              labelOf={labelOf}
+              title="Top strip"
+            />
             <DropColumn
               accent="zone"
               containerId={UPPER}

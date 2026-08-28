@@ -9,7 +9,11 @@ import {
   layoutKeyFor,
   layoutOwnerKey,
   PERSONAL_LAYOUT_VERSION,
+  placementOf,
   resolveRowSet,
+  rowsWithout,
+  stripRowConflicts,
+  stripWithout,
   type PersonalNavigationLayout,
 } from "../src/lib/navigation/personal-layout.ts";
 
@@ -485,4 +489,169 @@ export function runNavigationPersonalLayoutTests() {
       "a !access.role guard never fires here — an unauthenticated caller has role Employee",
     );
   }
+
+  // ── THE ONE-ZONE RULE ───────────────────────────────────────────────────────────────────────
+  //
+  // The mechanism first, because every assertion below exists to stop it recurring. A document
+  // listing one page in BOTH the strip and a row is a contradiction, not a preference: the strip is
+  // resolved first, `take` marks the href placed, and the row renders empty with no error anywhere.
+  // Shipped 2026-08-28, and from the owner's seat it read as "I select the layout, then I save, and
+  // nothing happens" — a save that returned 200 and a row that read back from the database intact.
+  {
+    const conflicted = layout({
+      strip: ["/admin/organogram"],
+      moduleRows: { people: { upperRow: ["/admin/organogram"], lowerRow: [] } },
+    });
+    const applied = applyPersonalLayout(gated, conflicted, "people");
+    assert.deepEqual(
+      applied.strip.map((i) => i.href),
+      ["/admin/organogram"],
+      "the strip is resolved before the rows, so it keeps the page",
+    );
+    assert.deepEqual(
+      applied.upperRow.map((i) => i.href),
+      [],
+      "THE BUG: the row listing the same page renders empty, and nothing reports it",
+    );
+
+    // The same document with the strip entry released — one line different — renders the row.
+    const released = layout({
+      strip: stripWithout(placementOf(conflicted), ["/admin/organogram"]),
+      moduleRows: conflicted.moduleRows,
+    });
+    assert.deepEqual(
+      applyPersonalLayout(gated, released, "people").upperRow.map((i) => i.href),
+      ["/admin/organogram"],
+      "releasing it from the strip is what makes the row render",
+    );
+  }
+
+  // stripRowConflicts names exactly the pages whose row entry can never render.
+  {
+    assert.deepEqual(
+      stripRowConflicts(placementOf(layout({ strip: ["/admin/organogram"], upperRow: ["/admin/organogram"] }))),
+      ["/admin/organogram"],
+      "a conflict against the DEFAULT rows is found",
+    );
+    assert.deepEqual(
+      stripRowConflicts(
+        placementOf(
+          layout({
+            strip: ["/admin/organogram"],
+            moduleRows: { people: { upperRow: [], lowerRow: ["/admin/organogram"] } },
+          }),
+        ),
+      ),
+      ["/admin/organogram"],
+      "a conflict against a module override is found, in either row",
+    );
+    assert.deepEqual(
+      stripRowConflicts(
+        placementOf(layout({ strip: ["/admin/organogram", "/admin/organogram"], upperRow: ["/admin/organogram"] })),
+      ),
+      ["/admin/organogram"],
+      "a page is reported once however many times the strip lists it",
+    );
+  }
+
+  // ── What is NOT a conflict, and must never be "fixed" into one ──────────────────────────────
+  // The rule is narrower than "no href twice". Widening it would break arrangements that work: a
+  // module override REPLACES the defaults rather than adding to them, so two row sets that never
+  // resolve together cannot contradict each other, and a page in a row still belongs to its sidebar
+  // section everywhere outside that module.
+  {
+    assert.deepEqual(
+      stripRowConflicts(
+        placementOf(
+          layout({
+            strip: [],
+            upperRow: ["/admin/organogram"],
+            moduleRows: {
+              sales: { upperRow: ["/admin/organogram"], lowerRow: [] },
+              people: { upperRow: ["/admin/organogram"], lowerRow: [] },
+            },
+            sections: [{ id: "people", label: "People", items: ["/admin/organogram"] }],
+          }),
+        ),
+      ),
+      [],
+      "defaults, two module overrides and a sidebar section may all list one page: none of them collide",
+    );
+
+    // And prove it renders, rather than only that the checker stays quiet about it.
+    const shared = layout({
+      upperRow: ["/admin/organogram"],
+      moduleRows: { sales: { upperRow: ["/admin/targets"], lowerRow: [] } },
+      sections: [{ id: "people", label: "People", items: ["/admin/organogram", "/admin/employees"] }],
+    });
+    assert.deepEqual(
+      applyPersonalLayout(gated, shared, "sales").upperRow.map((i) => i.href),
+      ["/admin/targets"],
+      "inside a module with its own rows, the override replaces the defaults",
+    );
+    assert.deepEqual(
+      applyPersonalLayout(gated, shared, "people").upperRow.map((i) => i.href),
+      ["/admin/organogram"],
+      "in a module without its own rows, the defaults still apply",
+    );
+  }
+
+  // ── Releasing sweeps every row set, not just the one on screen ──────────────────────────────
+  // The strip applies in EVERY module, so pinning a page there has to clear it out of arrangements
+  // the editor is not currently showing. A copy left behind in some other module would be dead the
+  // moment it was written — the same silent-empty-row failure, one module over.
+  {
+    const placement = placementOf(
+      layout({
+        strip: [],
+        upperRow: ["/admin/organogram", "/admin/sales"],
+        moduleRows: {
+          sales: { upperRow: ["/admin/organogram"], lowerRow: ["/admin/targets"] },
+          people: { upperRow: [], lowerRow: ["/admin/organogram"] },
+        },
+      }),
+    );
+    const swept = rowsWithout(placement, ["/admin/organogram"]);
+    assert.deepEqual(swept.rows.upperRow, ["/admin/sales"], "the default rows lose it");
+    assert.deepEqual(swept.moduleRows.sales.upperRow, [], "an override the caller was not looking at loses it too");
+    assert.deepEqual(swept.moduleRows.sales.lowerRow, ["/admin/targets"], "and nothing else is touched");
+    assert.deepEqual(swept.moduleRows.people.lowerRow, [], "in whichever of the two rows it sat");
+
+    assert.deepEqual(
+      stripWithout(placementOf(layout({ strip: ["/admin/sales", "/admin/organogram"] })), ["/admin/organogram"]),
+      ["/admin/sales"],
+      "releasing from the strip keeps the order of everything that stays",
+    );
+  }
+
+  // placementOf must read a document saved before the rows existed. The one row in production is
+  // that shape, and a throw here would be a 500 on the screen whose only job is saving.
+  {
+    const placement = placementOf(legacyLayout({ strip: ["/admin/organogram"] }) as PersonalNavigationLayout);
+    assert.deepEqual(placement.rows, { upperRow: [], lowerRow: [] }, "a pre-rows document reads as two empty rows");
+    assert.deepEqual(placement.moduleRows, {}, "and no module overrides");
+    assert.deepEqual(stripRowConflicts(placement), [], "so it can hold no conflict");
+  }
+
+  // ── The editor must enforce what the renderer enforces ──────────────────────────────────────
+  // Pinned by source, not behaviour, and deliberately: sidebar-layout-editor.tsx is a client
+  // component with JSX, which the test runner's type stripping cannot import. That is exactly why
+  // the rule itself lives in personal-layout.ts, where the assertions above can reach it — these
+  // three only check that the editor still calls it.
+  {
+    const editor = readFileSync("src/components/admin/sidebar-layout-editor.tsx", "utf8");
+    assert.ok(
+      /return enforceOneZone\(next, to, activeId\);/.test(editor),
+      "every move must go through enforceOneZone, or the editor can save a layout that renders nothing",
+    );
+    assert.ok(
+      /const unavailable = new Set\(\[[^\]]*current\.strip[^\]]*\]\)/.test(editor),
+      "the pool must not offer a page the strip already holds",
+    );
+    assert.ok(
+      /containerId=\{STRIP\}/.test(editor),
+      "module scope must show the Top strip: a zone that silently outranks the one being edited has to be visible",
+    );
+  }
+
 }

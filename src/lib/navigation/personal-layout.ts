@@ -263,6 +263,105 @@ export function resolveRowSet(
 }
 
 /**
+ * -- THE ONE-ZONE RULE -----------------------------------------------------------------------
+ *
+ * A page renders in exactly ONE place, and `applyPersonalLayout` resolves the strip BEFORE the two
+ * rows: `take` marks an href placed, so whichever zone asks first keeps it and every later zone
+ * gets nothing. That order is deliberate and stays -- but it means a document listing one page in
+ * BOTH the strip and a row is not a preference, it is a contradiction, and the losing zone renders
+ * empty with no error anywhere.
+ *
+ * That contradiction shipped, and cost a real evening on 2026-08-28. The owner put Organogram in
+ * the Top strip, then opened a module's own rows -- a view that does not show the strip at all --
+ * and added Organogram there too. His layout saved perfectly (a 200, the row read back from the
+ * database), and the nav above the page title stayed empty on every page, because the strip had
+ * already claimed the only Organogram there is. From his seat: "I selected the layout, then I save,
+ * and nothing happens."
+ *
+ * So the editor has to enforce what the renderer enforces. These functions are that rule, kept here
+ * rather than in the editor for two reasons: `sidebar-layout-editor.tsx` is a client component with
+ * JSX, which the test runner's type stripping cannot import, so a rule written there cannot be
+ * tested at all; and the rule belongs beside the precedence it mirrors, where whoever changes one
+ * is already reading the other.
+ *
+ * SCOPE OF THE RULE -- it is narrower than "no href twice", and the difference is load-bearing:
+ *   - strip vs any row -- A CONFLICT. The strip is global and resolved first, so it always wins.
+ *   - the default rows vs a module override -- fine. An override REPLACES the defaults, so the two
+ *     never resolve together.
+ *   - one module's rows vs another's -- fine, for the same reason.
+ *   - a row vs a sidebar section -- fine, and deliberate: the row claims the page only inside that
+ *     module, and it stays in the sidebar everywhere else.
+ *   - upper vs lower inside one row set -- a conflict, but not one the editor can create: a move
+ *     always removes the page from the column it came from.
+ */
+
+/** The three horizontal zones, in the one shape the editor's state and a saved layout share. */
+export type ZonePlacement = {
+  strip: readonly string[];
+  /** The DEFAULT pair of rows. */
+  rows: PersonalLayoutRowSet;
+  /** Per-module overrides, keyed by section id. */
+  moduleRows: Readonly<Record<string, PersonalLayoutRowSet>>;
+};
+
+/** A row set the caller may write to -- what the release helpers below hand back. */
+export type MutableRowSet = { upperRow: string[]; lowerRow: string[] };
+
+/** Read a stored layout as a ZonePlacement, so the rule can be asked of it directly. */
+export function placementOf(layout: PersonalNavigationLayout): ZonePlacement {
+  return {
+    strip: layout.strip,
+    rows: { upperRow: layout.upperRow ?? [], lowerRow: layout.lowerRow ?? [] },
+    moduleRows: layout.moduleRows ?? {},
+  };
+}
+
+/**
+ * Every href the strip claims that a row also lists -- i.e. every page whose row entry can never
+ * render. Empty for a well-formed document, so a non-empty answer is always something to act on.
+ */
+export function stripRowConflicts(placement: ZonePlacement): string[] {
+  const inARow = new Set<string>();
+  for (const set of [placement.rows, ...Object.values(placement.moduleRows)]) {
+    for (const href of set.upperRow) inARow.add(href);
+    for (const href of set.lowerRow) inARow.add(href);
+  }
+  const seen = new Set<string>();
+  return placement.strip.filter((href) => {
+    if (!inARow.has(href) || seen.has(href)) return false;
+    seen.add(href);
+    return true;
+  });
+}
+
+/** The strip, minus `hrefs` -- for when a page has just been placed in a row. */
+export function stripWithout(placement: ZonePlacement, hrefs: readonly string[]): string[] {
+  const drop = new Set(hrefs);
+  return placement.strip.filter((href) => !drop.has(href));
+}
+
+/**
+ * The default rows and every module override, each minus `hrefs` -- for when a page has just been
+ * pinned to the strip, or when a stored contradiction is being cleared. EVERY row set is swept, not
+ * only the one on screen: the copy that renders empty is usually in a module you are not looking at.
+ */
+export function rowsWithout(
+  placement: ZonePlacement,
+  hrefs: readonly string[],
+): { rows: MutableRowSet; moduleRows: Record<string, MutableRowSet> } {
+  const drop = new Set(hrefs);
+  const clean = (set: PersonalLayoutRowSet): MutableRowSet => ({
+    upperRow: set.upperRow.filter((href) => !drop.has(href)),
+    lowerRow: set.lowerRow.filter((href) => !drop.has(href)),
+  });
+  const moduleRows: Record<string, MutableRowSet> = {};
+  for (const [moduleId, set] of Object.entries(placement.moduleRows)) {
+    moduleRows[moduleId] = clean(set);
+  }
+  return { rows: clean(placement.rows), moduleRows };
+}
+
+/**
  * Rearrange `gatedSections` according to `layout`.
  *
  * `gatedSections` MUST be the output of `getSections` — already permission- and role-filtered.
