@@ -202,4 +202,40 @@ export function runOutstationNsmNoHoldTests() {
     /const workflowStatus = "submitted";/,
     "the unconditional status is gone; leaving it behind would mean the branch above was never reached",
   );
+
+  // ── The SECOND filing route (owner instruction, 2026-08-28, same day) ────────────────────
+  // An admin can enter a trip on someone's behalf. That path was deliberately left waiting when
+  // the rule first shipped — the queue is where an amount somebody else typed gets confirmed —
+  // and the owner overruled it: a National Sales Manager is never held on either route. The
+  // asymmetry it replaced was the real defect: the same claim was instant or queued depending on
+  // who happened to type it in.
+  assert.match(
+    service,
+    /const noHoldRole = isOutstationNoHoldRole\(employeeRole\);/,
+    "the admin path resolves the rule from the role it is about to STORE, so the claim is judged against the role it is filed under",
+  );
+  assert.match(
+    service,
+    /const adminWorkflowStatus = noHoldRole \? "accepted_by_system" : "submitted";/,
+    "an admin-created claim is accepted on the spot for the exempt role and still queued for everyone else",
+  );
+  assert.match(
+    service,
+    /releaseOutstationRequestToPayrollIfReady\(created\.id, systemAccessContext\)/,
+    "and it is pushed into payroll as the SYSTEM, not as the admin who typed it — the rule accepted this claim, not a person",
+  );
+  assert.doesNotMatch(
+    service,
+    /approval_reason: "Manual outstation expense created by admin\. Requires manual review\.",/,
+    "the unconditional 'requires manual review' reason is gone — a row that is never reviewed must not claim it is waiting to be",
+  );
+
+  // Both routes must resolve the rule through the module. Two call sites, one allowlist: an
+  // inline role comparison on either side is how the two routes drift back apart.
+  const ruleCallSites = service.match(/isOutstationNoHoldRole\(/g) ?? [];
+  assert.equal(
+    ruleCallSites.length,
+    2,
+    "exactly two call sites — the employee's own submission and the admin's manual entry; a third means a path was added without being reviewed against this rule",
+  );
 }

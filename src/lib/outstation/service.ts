@@ -26,6 +26,7 @@ import {
   isOutstationTicketWaivedRole,
 } from "@/lib/outstation/evidence-waiver";
 import {
+  OUTSTATION_NO_HOLD_ADMIN_APPROVAL_REASON,
   OUTSTATION_NO_HOLD_APPROVAL_REASON,
   isOutstationNoHoldRole,
 } from "@/lib/outstation/nsm-no-hold";
@@ -3214,7 +3215,14 @@ export async function createManagerExpenseAsAdmin(
   }
 
   const residence = await getResidenceLocationForEmployee(employee.hrId);
-  const policy = await getActivePolicyForRole(resolveJobFunctionRole(employee.jobTitle ?? ""));
+  // Resolved once and reused: the row's employee_role, the policy lookup and the no-hold rule
+  // must all read the SAME role, or the claim is judged against a role it was not filed under.
+  const employeeRole = resolveJobFunctionRole(employee.jobTitle ?? "");
+  // Owner rule, 2026-08-28, extended to this path the same day: a National Sales Manager's
+  // outstation expense is never held, for any reason — including one an admin enters for him.
+  const noHoldRole = isOutstationNoHoldRole(employeeRole);
+  const adminWorkflowStatus = noHoldRole ? "accepted_by_system" : "submitted";
+  const policy = await getActivePolicyForRole(employeeRole);
   const residenceGovernorate = resolveFirstGovernorate(
     residence?.residenceCity,
     residence?.residenceArea,
@@ -3284,11 +3292,13 @@ export async function createManagerExpenseAsAdmin(
     .insert({
       allowance_amount: allowance.allowanceAmount,
       allowance_breakdown_json: JSON.stringify(allowance.breakdown),
-      approval_reason: "Manual outstation expense created by admin. Requires manual review.",
+      approval_reason: noHoldRole
+        ? OUTSTATION_NO_HOLD_ADMIN_APPROVAL_REASON
+        : "Manual outstation expense created by admin. Requires manual review.",
       approval_recommendation: "manager_review",
       area: employee.areaName ?? null,
       attachment_count: 0,
-      calculation_status: "submitted",
+      calculation_status: adminWorkflowStatus,
       captured_accuracy_meters: 0,
       captured_at: now,
       captured_latitude: input.destination.latitude,
@@ -3302,7 +3312,7 @@ export async function createManagerExpenseAsAdmin(
       eligibility_status: eligibilityStatus,
       employee_hr_id: employee.hrId,
       employee_name: employee.fullName ?? employee.hrId,
-      employee_role: resolveJobFunctionRole(employee.jobTitle ?? ""),
+      employee_role: employeeRole,
       // Set EXPLICITLY, and to 'grandfathered' rather than a pending state. This path has no
       // photo step at all — an admin types the trip in on behalf of an employee who never opened
       // the app — so the row can never satisfy the two-photo gate and there is no employee who
@@ -3344,7 +3354,7 @@ export async function createManagerExpenseAsAdmin(
       return_ticket_amount: 0,
       route_polyline: input.routePolyline ?? null,
       same_day_trip: allowance.sameDayTrip,
-      status: "submitted",
+      status: adminWorkflowStatus,
       submitted_at: now,
       territory_validation_reason: "Admin-created expense; territory check not applicable.",
       territory_validation_status: "not_available",
@@ -3382,7 +3392,7 @@ export async function createManagerExpenseAsAdmin(
       meetingAmount: reportMeetingAmount,
       otherAmount: reportOtherAmount,
       source: "admin_manual_outstation_expense",
-      status: "submitted",
+      status: adminWorkflowStatus,
       travelCost: reportTravelCost,
       tripEndDate: input.tripEndDate,
       tripStartDate: input.tripStartDate,
@@ -3394,7 +3404,31 @@ export async function createManagerExpenseAsAdmin(
   // claim on someone's behalf and approving it in the same call is one action wearing the clothes
   // of two — the queue is where the amount is confirmed, for this path as much as for a rep's own
   // submission.
-  await notifyOutstationSubmitted(created, { heldForReview: true });
+  //
+  // ONE exception, added 2026-08-28 on the owner's instruction after the rule had already
+  // shipped for the employee's own submissions: a National Sales Manager is never held here
+  // either. Leaving this path out would have meant his claim was instant when he filed it and
+  // queued when an admin filed it for him — the same money treated two ways for a reason that
+  // has nothing to do with him.
+  await notifyOutstationSubmitted(created, { heldForReview: !noHoldRole });
+
+  // Runs as the SYSTEM for the same reason the submit path does: the payroll write asserts a
+  // manual-approval permission, and it was the rule that accepted this claim rather than the
+  // admin who typed it. Never throws — a payroll hiccup must not fail a creation that already
+  // succeeded — so a failure is logged rather than swallowed.
+  if (noHoldRole) {
+    const release = await releaseOutstationRequestToPayrollIfReady(created.id, systemAccessContext);
+    if (!release.released) {
+      logError("Outstation no-hold admin expense accepted on creation but not released into payroll", {
+        labels: {
+          event: "outstation_no_hold_release_failed",
+          reason: release.reason,
+          requestId: String(created.id),
+        },
+      });
+    }
+  }
+
   return created;
 }
 
