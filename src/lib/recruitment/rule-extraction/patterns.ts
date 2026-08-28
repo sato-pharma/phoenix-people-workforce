@@ -23,9 +23,9 @@ const NON_CANDIDATE_EMAIL_DOMAINS: readonly string[] = [
  * The shortest local part ("the bit before the @") this will believe.
  *
  * Found by OCR, which is exactly the kind of defect worth refusing. Tesseract read a real address,
- * "martenaadly177@outlook.com", as "martenaadly 1 77@outlook.com" — it inserted two spaces into the
+ * "nermeenadel177@example.org", as "nermeenadel 1 77@example.org" — it inserted two spaces into the
  * name — and the address regex then matched the fragment after the last space and produced
- * "77@outlook.com". That is a VALID-LOOKING address for a different mailbox, so nothing downstream
+ * "77@example.org". That is a VALID-LOOKING address for a different mailbox, so nothing downstream
  * would ever have questioned it, and the candidate would simply never have been reachable.
  *
  * A wrong address is worse than no address: an empty field is visibly empty and someone fills it,

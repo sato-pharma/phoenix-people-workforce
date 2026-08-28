@@ -79,8 +79,8 @@ const LEADING_BOILERPLATE: RegExp[] = [
 const ENVELOPE_PREFIX: RegExp[] = [/^\s*(?:re|fw|fwd)\s*:\s*/i, /^\s*subject\s*:\s*/i, /^[\s"'“”«»:;,.\-–—|/\\]+/];
 
 /**
- * Openings that are followed by a PERSON as often as by a job — "Cv for Siyabulela Knockpaal",
- * "Fwd: Job Inquiry - Syed Mohamed Faizal" against "Cv for district manager job for upper Egypt".
+ * Openings that are followed by a PERSON as often as by a job — "Cv for Thabo Nkosi",
+ * "Fwd: Job Inquiry - Anil Kumar Bhat" against "Cv for district manager job for upper Egypt".
  *
  * The prefix itself proves the rest of the string is the subject of a sentence, so whatever follows
  * is either the role or the applicant's name and there is no third option. What follows therefore
@@ -91,7 +91,7 @@ const NAME_OR_JOB_PREFIX: RegExp[] = [
   /^\s*(?:my\s+)?(?:cv|c\.?v\.?|resume)\s+for\s+/i,
   /^\s*(?:job\s+)?(?:inquiry|enquiry)\s*[-–—:]?\s*/i,
   // A bare "CV <something>" — "Cv Accountant" is a role, "Michael'Cv National sales manager" is a
-  // role with a name stuck to it, and "Afroz cv" is only a name. Same test decides all three.
+  // role with a name stuck to it, and "Bassem cv" is only a name. Same test decides all three.
   /^\s*(?:cv|resume)\s+/i,
 ];
 
@@ -162,7 +162,7 @@ const LONGEST_PLAUSIBLE_TITLE = 70;
  * it was too long, or one whose trailing "cv" left a single bare word. The ordinary path never
  * consults it, so a real title absent from this list is not rejected; it is only the salvage
  * attempts that have to prove they found a job and not somebody's name. Without it,
- * "Amr cv" becomes "Amr" and ":: Bahaa Abd El Azim - CV :: …" becomes "Bahaa Abd El Azim" —
+ * "Amr cv" becomes "Amr" and ":: Nabil Abd El Rasoul - CV :: …" becomes "Nabil Abd El Rasoul" —
  * a person's name sitting in a column headed "Applying for", which is worse than an empty cell.
  *
  * English and Arabic, because 25 production rows state the role in Arabic.
@@ -204,9 +204,13 @@ const JOB_NOUN =
  * The words allowed to stand IN FRONT of that noun. Closed on purpose.
  *
  * A filename is mostly somebody's name, so an open-ended "take the two words before the noun" turns
- * `Sameh_Hamdy_Senior_Accountant.pdf` into "Hamdy Senior Accountant". Every word here is a word that
+ * `Wagih_Sorour_Senior_Accountant.pdf` into "Sorour Senior Accountant". Every word here is a word that
  * qualifies a job and is not a person's name, so what the pass can produce is bounded by
  * construction rather than by hoping the guess is right.
+ *
+ * Every applicant name in this file's examples is INVENTED. Each was a real person's until
+ * 2026-08-28 — the subject lines and filenames keep their exact SHAPE, which is the only thing
+ * these rules read.
  */
 const TITLE_QUALIFIER =
   "(?:senior|junior|assistant|deputy|chief|head|lead|first|second|third|regional|district|national|area|zone|field|product|brand|medical|scientific|clinical|veterinary|regulatory|sales|marketing|digital|export|import|hr|human|resources|talent|acquisition|recruitment|personnel|payroll|training|finance|financial|accounts?|accounting|treasury|tax|cost|audit|internal|legal|procurement|purchasing|logistics|supply|chain|warehouse|store|stores|plant|production|manufacturing|maintenance|quality|control|assurance|safety|health|environment|it|software|network|systems?|data|business|development|key|account|customer|service|client|project|program|office|administrative|admin|general|technical|operations?|line|unit)";
@@ -216,13 +220,13 @@ const SALVAGEABLE_TITLE = new RegExp(`\\b(?:${TITLE_QUALIFIER}[\\s]+){0,3}${JOB_
 /**
  * Last resort: pull a job title out of a string that is mostly not one.
  *
- * `Ramy_Asaad_District_Sales_Manager_CV.pdf` is a filename, so the ordinary path rejects the whole
+ * `Nader_Bahgat_District_Sales_Manager_CV.pdf` is a filename, so the ordinary path rejects the whole
  * value — and yet the answer is written across the middle of it. Same for
- * `Sameh_Hamdy_Senior_Accountant.pdf`, and for
- * `:: Bahaa Abd El Azim - CV :: HR-Recruitment Consultant / …`, where the role is buried between
+ * `Wagih_Sorour_Senior_Accountant.pdf`, and for
+ * `:: Nabil Abd El Rasoul - CV :: HR-Recruitment Consultant / …`, where the role is buried between
  * separators. This pass runs ONLY after the normal read has already returned null, so it can never
  * override a cleanly-read title; and it fires only on the closed vocabulary above, so on the rest of
- * the rejected rows — "Afroz cv", "Michael CV PDFF.pdf", "Re: Job offer from Sato Pharma" — it finds
+ * the rejected rows — "Bassem cv", "Bahgat CV PDFF.pdf", "Re: Job offer from Sato Pharma" — it finds
  * nothing and the cell stays honestly empty.
  *
  * Longest match wins: "District Sales Manager" beats "Sales Manager" beats "Manager".
@@ -243,8 +247,8 @@ function salvageTitlePhrase(value: string): string | null {
  * Noise that survives the leading/trailing strips because it sits in the MIDDLE of the subject.
  *
  * Measured on production 2026-08-21: 396 rows answered, and 24 distinct answers still read as a
- * sentence rather than a job — "Office Coordinator Position – Sabreen Mahmoud", "National sales
- * Manager- 15 yrs of exp in UAE in all the channels", "Osama mohammed cv District manager upper
+ * sentence rather than a job — "Office Coordinator Position – Amira Lotfy", "National sales
+ * Manager- 15 yrs of exp in UAE in all the channels", "Zaher halawa cv District manager upper
  * Egypt". The role is in every one of them; it is wearing the sender's name, their CV filename and
  * their years of experience.
  *
@@ -262,12 +266,12 @@ function salvageTitlePhrase(value: string): string | null {
 const MIDDLE_FILLER = /\s*\b(?:position|post|vacancy|job|role|application|applying|request)\b\s*[-–—:_,./]?\s*/gi;
 
 /**
- * A marker with a person in front of it — "Osama mohammed cv …", "Shashi Gupta _ Resume_…",
- * "RWAN-SAFAA-Application for …". Only ever applied when a job word is left standing behind it.
+ * A marker with a person in front of it — "Zaher halawa cv …", "Anil Bhandari _ Resume_…",
+ * "WAFAA-SARHAN-Application for …". Only ever applied when a job word is left standing behind it.
  *
  * The marker ends on `(?![A-Za-z])`, NOT on `\b`. An underscore is a word character in JS, so `\b`
  * does not exist between "Resume" and "_National" — with a `\b` here the whole rule silently missed
- * `Shashi Gupta _ Resume_National Sales Manager` and left the sender's name in the column. Same
+ * `Anil Bhandari _ Resume_National Sales Manager` and left the sender's name in the column. Same
  * root cause as the Arabic patterns in NOT_AN_APPLICATION above: `\b` is defined by [A-Za-z0-9_]
  * and nothing else, which is exactly the set a filename separator is drawn from.
  */
@@ -275,7 +279,7 @@ const NAME_BEFORE_MARKER =
   /^.*?\b(?:cv|c\.?v\.?|resume|application\s+for|apply\s+for)(?![A-Za-z])\s*(?:for\s+the\s+(?:post|position|role)\s+of|as|[_\-:/])?\s*/i;
 
 /**
- * A person's name at the end — "… – Sabreen Mahmoud", "… ,Heba Magdy", "… (Shokry Ammar)".
+ * A person's name at the end — "… – Amira Lotfy", "… ,Nourhan Fathy", "… (Tarek Zohny)".
  *
  * Two or three words, each capitalised and purely alphabetic, and reachable ONLY across an explicit
  * separator that has whitespace in front of it. That separator is the whole safety margin, and it
@@ -284,13 +288,13 @@ const NAME_BEFORE_MARKER =
  * middle of "Anti-Infective". Requiring the run to reach the end of the string is what protects
  * "National Sales Manager – Anti-Infective Line", whose tail is not a pure run.
  *
- * The cost of the caution is that "Finance Manager Mohamed Hamed" keeps its name. A surname with
+ * The cost of the caution is that "Finance Manager Adib Sanad" keeps its name. A surname with
  * nothing in front of it is genuinely indistinguishable from a town, and a kept name is a blemish
  * where a deleted territory is a wrong answer.
  */
 const TRAILING_PERSON_NAME = /(?:\s+[-–—|]|\s*,)\s*[A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,2}\s*$/;
 
-/** The same, bracketed — "National Sales Manager (Shokry Ammar)". "(Nigeria)" is one word, so it stays. */
+/** The same, bracketed — "National Sales Manager (Tarek Zohny)". "(Nigeria)" is one word, so it stays. */
 const BRACKETED_PERSON_NAME = /\s*\([A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,2}\)\s*$/;
 
 /** Boasts and biography: what the applicant is like, never what the job is. */
@@ -339,7 +343,7 @@ function tightenJobTitle(title: string): string {
   // A marker only proves a name is in front of it when a job is left standing behind it.
   current = keepIfStillAJob(current.replace(NAME_BEFORE_MARKER, "")) ?? current;
   for (const pattern of APPLICANT_BIOGRAPHY) current = keepIfStillAJob(current.replace(pattern, " ")) ?? current;
-  // Names before filler: "Office Coordinator Position – Sabreen Mahmoud" needs its separator intact
+  // Names before filler: "Office Coordinator Position – Amira Lotfy" needs its separator intact
   // to find the name, and only then is "Position" noise with nothing after it.
   dropIfNotAJob(BRACKETED_PERSON_NAME);
   dropIfNotAJob(TRAILING_PERSON_NAME);
@@ -387,7 +391,7 @@ function readJobTitle(start: string): string | null {
   title = stripRepeatedly(title, TRAILING_BOILERPLATE);
 
   // A trailing "cv" is only boilerplate when a job is still standing after it goes. "Sales cv"
-  // shortens to "Sales"; "Amr cv" and "Hassan Alabd Hassan C.V." shorten to a person, and the "cv"
+  // shortens to "Sales"; "Amr cv" and "Fawzy Elsaid Fawzy C.V." shorten to a person, and the "cv"
   // is the proof that is all they ever were — so those are rejected outright, not left whole.
   const withoutCv = stripRepeatedly(title, [/\s+(?:cv|c\.?v\.?|resume)\s*$/i, /[\s\-–—|.,]+$/]);
   if (withoutCv !== title) {

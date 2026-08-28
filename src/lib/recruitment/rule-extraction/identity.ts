@@ -78,14 +78,17 @@ function tidyName(raw: string): string {
     .join(" ");
 }
 
-/** The letters of a name, lowercased — for comparing "Hamdy Ahmed" against "hamdyahmedhamdy97". */
+/** The letters of a name, lowercased — for comparing "Sameh Fouad" against "samehfouadsameh97". */
 function nameFingerprint(value: string): string {
   return value.toLowerCase().replace(/[^a-z]/g, "");
 }
 
 /**
- * Does the email's local part corroborate this name? "hamdyahmedhamdy97@gmail.com" contains
- * "hamdy" and "ahmed", which is strong evidence the line above really was the name.
+ * Does the email's local part corroborate this name? "samehfouadsameh97@example.org" contains
+ * "sameh" and "fouad", which is strong evidence the line above really was the name.
+ *
+ * Names in these comments are INVENTED. They described real applicants until 2026-08-28; the
+ * mechanism is identical either way, and an example does not need to be somebody.
  */
 function emailSupportsName(name: string, emails: readonly string[]): boolean {
   const parts = name.toLowerCase().split(/\s+/).filter((word) => /^[a-z]{3,}$/.test(word));
@@ -94,7 +97,7 @@ function emailSupportsName(name: string, emails: readonly string[]): boolean {
     const local = nameFingerprint(email.slice(0, email.indexOf("@")));
     const matched = parts.filter((part) => local.includes(part)).length;
     // Two name parts inside the local part is conclusive. One is enough only when it is a long,
-    // distinctive word — "abanoub" in "abanoubemadeskander" proves the line above was the name,
+    // distinctive word — "bishoy" in "bishoysamirfouad" proves the line above was the name,
     // whereas "ali" inside "khalid.ali.mansour" would prove nothing about a line reading "Ali Hassan".
     if (matched >= 2) return true;
     return parts.some((part) => part.length >= 6 && local.includes(part));

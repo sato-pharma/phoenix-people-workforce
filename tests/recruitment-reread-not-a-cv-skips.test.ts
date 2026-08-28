@@ -4,8 +4,8 @@
 // which stands in for "was never read". That proxy INVERTS for a file that is not a CV: reading one
 // does not fail, it succeeds on the wrong document. Two signed job offers were read as
 //
-//     Abdelrahman Nour   fullName        = "Total Monthly Package"                   (a salary header)
-//     Khaled Abdelfatah  currentJobTitle = "Medical Sales Representative Job Offer"  (HIGH confidence)
+//     Fady Nashaat   fullName        = "Total Monthly Package"                   (a salary header)
+//     Hesham Abdelaziz  currentJobTitle = "Medical Sales Representative Job Offer"  (HIGH confidence)
 //
 // A job offer has a clean text layer, so the free rules engine parses it confidently into the wrong
 // fields — this is not a vision-model problem and no "did the model answer?" check catches it. Both

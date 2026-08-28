@@ -3005,7 +3005,7 @@ function CandidatesTab({
       //
       // Both read `candidateScreeningFacts` — the SAME resolution the row renders — rather than the
       // raw column, and that is the point rather than a tidy-up. While the filter read
-      // `c.currentJobTitle` alone it disagreed with the screen: Mohammed Alaa Eliwa sat in the pool
+      // `c.currentJobTitle` alone it disagreed with the screen: Mahmoud Refaat Selim sat in the pool
       // on 2026-08-24 showing "District Sales Manager, Alexandria" in his role cell with his title
       // column NULL, so the one filter built to find him could not. Filtering on a different fact
       // from the one displayed is not a narrower filter, it is a wrong one.
@@ -4038,7 +4038,7 @@ function CandidatesTab({
                           sender wrote first — a forwarded mail stores an entire message there,
                           reaching 1,546 characters — so no column width answers it, and no length
                           limit does either: only 38 of the 225 lines fit, and what fits is
-                          "Cv.pdf", "Afroz cv", "cv". So it is not drawn. The sender's words are
+                          "Cv.pdf", "Bassem cv", "cv". So it is not drawn. The sender's words are
                           this cell's hover title, they are on the mobile card under "Their words",
                           and they are still what the search box matches. */}
                       <td

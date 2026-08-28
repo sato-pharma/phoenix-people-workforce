@@ -18,7 +18,7 @@ function freshCandidate(overrides: Record<string, unknown> = {}) {
   return {
     email: "mazen@example.com",
     faculty: null,
-    fullName: "Mazen Mohmed",
+    fullName: "Ziad Kamel",
     governorate: null,
     hasMedicalRepExperience: null,
     hasPriorWorkExperience: null,

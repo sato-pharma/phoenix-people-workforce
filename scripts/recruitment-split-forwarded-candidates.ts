@@ -20,26 +20,26 @@ import { selectAutoApplyFields, type AutoApplyExtractedFields } from "@/lib/recr
 // forwarded matched the FIRST record made from that address and piled in behind it. The other
 // 14 files are not applications and must not become candidates:
 //
-//   Dr Hany Saad RM JO.pdf / Nada Alii Job offer (2).pdf  job offers PHOENIX SENT, never read
+//   Dr Hatem Sorour RM JO.pdf / Nagwa Bahgat Job offer (2).pdf  job offers PHOENIX SENT, never read
 //   page 1 ultrasound.jpeg                                a maternity-leave document
 //   Plan A.png x2                                         0 extracted fields
 //   IMG_20260603_150349.jpg                               no name, 2 fields
 //   ymail-tmp-5013425966746647615.jpg                     the forwarding colleague herself
-//   27.jpg x6, Mohamed Ibrahim.pdf x1                     byte-identical duplicate uploads
+//   27.jpg x6, Nabil Wassef.pdf x1                     byte-identical duplicate uploads
 //
 // They stay attached to the holder record, where they are visibly wrong rather than invisibly
 // wrong as five junk candidates.
 //
 // AND THE LIST ABOVE WAS WRONG ABOUT ONE OF ITS OWN FILES. It excludes `page 1 ultrasound.jpeg` as
 // "a maternity-leave document" — but IMG_20260525_072106.jpg, in SPLITS below, came out of that
-// SAME thread and is a DOCTOR'S PRESCRIPTION. It was split out as "Emad R. N. Morgan": the name,
+// SAME thread and is a DOCTOR'S PRESCRIPTION. It was split out as "Adib R. S. Kaldas": the name,
 // phone and Alexandria address on it are the CLINIC'S LETTERHEAD, not an applicant's. The owner
 // opened the file and confirmed it on 2026-08-21, and that candidate was deleted from production
 // the same day (its ats_files row went with it, so re-running this entry now fails loudly at the
 // file lookup — which is the correct outcome, and the entry is kept so the run's history stays
 // honest rather than quietly edited out).
 //
-// 27.jpg / "Muhammed Ahmed Tammam" IS STILL UNRESOLVED. It arrived under the subject "Certificate
+// 27.jpg / "Mostafa Hisham Zaki" IS STILL UNRESOLVED. It arrived under the subject "Certificate
 // of Attendance - Pharmacy Promotion & OTC Campaign" and its extraction holds a full name and
 // NOTHING ELSE — the signature of a letterhead, not a CV. But omar.anwar's own hand-written note
 // calls that file a CV photo, so a human who looked disagreed. Do not delete it on the fingerprint;
@@ -83,36 +83,44 @@ const OPS_MARKER = "ops:forwarded-split-20260816";
 // Hardcoded on purpose. These five file ids were resolved and eyeballed one by one against the
 // per-file extraction; an allowlist is what stops a re-run or a stray edit from splitting the
 // job offers or the ultrasound. Every one is re-asserted against its holder before anything moves.
+//
+// EVERY fileName AND expectName BELOW IS A PLACEHOLDER, substituted 2026-08-28. They were five real
+// applicants' names and CV filenames, committed here while their applications were open. The file
+// and holder ids are untouched, so the run stays traceable in production; the identities are gone
+// and are not to come back. The consequence is deliberate: expectName no longer matches what the
+// page says, so a re-run FAILS CLOSED at the guard and mutates nothing. That is the correct
+// behaviour for a one-shot split that finished on 2026-08-16 — the ids are its receipt, not an
+// invitation to run it again.
 const SPLITS: ReadonlyArray<{ fileId: string; holderId: string; fileName: string; expectName: string }> = [
   {
     fileId: "a4bae64f-3607-4378-b4f2-4641116727a5",
     holderId: "8ebf318f-d44d-447c-b55a-056577aaf278",
-    fileName: "Julia.pdf",
-    expectName: "JULIA NASHAT YOUSSEF",
+    fileName: "Mirette.pdf",
+    expectName: "MIRETTE WAGIH MORCOS",
   },
   {
     fileId: "3bd8af1e-75b7-4aee-a1cc-f01f54e65985",
     holderId: "d4bf194b-e62b-4ed6-bd99-be1121937070",
-    fileName: "CV aya.pdf",
-    expectName: "Aya Ahmed Abdelazeem",
+    fileName: "CV hala.pdf",
+    expectName: "Hala Sanad Roshdy",
   },
   {
     fileId: "39ec34ae-0eac-48ca-9077-1a1b7d310263",
     holderId: "8ebf318f-d44d-447c-b55a-056577aaf278",
-    fileName: "Mohamed Ibrahim.pdf",
-    expectName: "Mohamed Ibrahim Shabaan",
+    fileName: "Nabil Wassef.pdf",
+    expectName: "Nabil Wassef Gohar",
   },
   {
     fileId: "612337fc-46af-42ec-acb2-0411085f9d89",
     holderId: "797acd03-3183-4ec2-9d7e-f54cacc0ab2b",
     fileName: "IMG_20260525_072106.jpg",
-    expectName: "Emad R. N. Morgan",
+    expectName: "Adib R. S. Kaldas",
   },
   {
     fileId: "08ccbb9b-c33f-4b7c-96e4-bc5ac2df9114",
     holderId: "7d53cde8-666b-4dd6-8fbe-cbe8b08cfdf3",
     fileName: "27.jpg",
-    expectName: "Muhammed Ahmed Tammam",
+    expectName: "Mostafa Hisham Zaki",
   },
 ];
 

@@ -28,7 +28,7 @@ function cleanLine(value: string | null | undefined): string | null {
  * WhatsApp hands back the document's filename in the caption slot when the sender typed nothing,
  * so a silent send arrives looking exactly like a message. Measured in production 2026-08-15: 12 of
  * the 17 stored WhatsApp captions were filenames — "Default Resume.pdf", "Cv.pdf",
- * "Michael CV PDFF.pdf". Showing those as the sender's words is noise, and feeding them to the
+ * "Bahgat CV PDFF.pdf". Showing those as the sender's words is noise, and feeding them to the
  * extraction model as a covering message is worse: "Cv.pdf" is not a statement of intent, but it is
  * exactly the kind of string a model will try to read a job title out of.
  *

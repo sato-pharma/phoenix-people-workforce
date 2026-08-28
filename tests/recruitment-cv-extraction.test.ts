@@ -79,8 +79,8 @@ export function runRecruitmentCvExtractionTests() {
   );
 
   // --- A scan that arrived wrapped in a PDF (cv-text-layer.ts) --------------------------------
-  // The headline case is the real one. careers inbox, 2026-08-11, `Osama Mohamed-1.pdf`,
-  // 493,190 bytes, subject "Osama mohammed cv District manager upper Egypt". pdf-parse recovered
+  // The headline case is the real one. careers inbox, 2026-08-11, `Zaher Halawa-1.pdf`,
+  // 493,190 bytes, subject "Zaher halawa cv District manager upper Egypt". pdf-parse recovered
   // its ENTIRE text layer as the page marker below — sixteen characters — so the merged
   // classify+extract call answered is_cv:false and a District Manager applicant was discarded with
   // no dead letter and no retry. That input must now reach the model as a file.
@@ -141,14 +141,14 @@ export function runRecruitmentCvExtractionTests() {
 
   // --- buildPdfFileInput (scan-in-a-PDF -> OpenAI content-parts input) ------------------------
   const pdfBytes = Buffer.from("fake-pdf-bytes");
-  const pdfInput = buildPdfFileInput(pdfBytes, "Osama Mohamed-1.pdf");
+  const pdfInput = buildPdfFileInput(pdfBytes, "Zaher Halawa-1.pdf");
   assert.equal(pdfInput.length, 1);
   assert.equal(pdfInput[0].role, "user");
   assert.equal(pdfInput[0].content.length, 2);
   assert.equal(pdfInput[0].content[0].type, "input_text");
   assert.equal(pdfInput[0].content[1].type, "input_file");
   assert.equal(pdfInput[0].content[1].detail, "high");
-  assert.equal(pdfInput[0].content[1].filename, "Osama Mohamed-1.pdf");
+  assert.equal(pdfInput[0].content[1].filename, "Zaher Halawa-1.pdf");
   assert.equal(
     pdfInput[0].content[1].file_data,
     `data:application/pdf;base64,${pdfBytes.toString("base64")}`,

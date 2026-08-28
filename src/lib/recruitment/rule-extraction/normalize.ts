@@ -8,13 +8,18 @@
 //     glyphs to the wrong code points, so "Operations" extracts as "OperaBons", "Attendance" as
 //     "AUendance", "field" as "]eld" and "staff" as "sta`". Every keyword rule misses on such a CV,
 //     and so does a human reading the review board.
-//   • EMAIL SPLIT ACROSS A LINE BREAK (1%). "abanoubemadeskander@gmail.co\nm" — the local part and
-//     the TLD land on different lines, so an email regex matches ".co" or nothing at all.
+//   • EMAIL SPLIT ACROSS A LINE BREAK (1%). "bishoysamirfouad@example.or\ng" — the local part and
+//     the TLD land on different lines, so an email regex matches ".or" or nothing at all.
 //   • MARKDOWN LINKS (13%). cv-extraction.ts asks pdf-parse for parseHyperlinks, which rewrites an
 //     anchor as [visible text](real url). The visible text is routinely TRUNCATED
-//     ("[https://www.linkedin.com/in/aban](https://www.linkedin.com/in/abanoub-emad-...)"), so the
+//     ("[https://www.linkedin.com/in/bish](https://www.linkedin.com/in/bishoy-samir-...)"), so the
 //     value worth keeping is always the one in parentheses.
 //   • ARABIC-INDIC DIGITS (1%) — "٠١٢" must count as a phone number.
+//
+// EVERY NAME AND ADDRESS IN THIS FILE'S EXAMPLES IS INVENTED. Each was a real applicant's until
+// 2026-08-28 — including the shredded address below, which no email regex can see and which the
+// first scrub of this repository therefore walked straight past. The defect is what matters here,
+// and every one of them reproduces identically on a made-up name.
 //
 // Pure and dependency-free by design: this is imported by the rule engine, which must stay usable
 // from a test, a script, and a server route alike.
@@ -109,9 +114,9 @@ export function repairLigatures(text: string): string {
 /**
  * A PDF whose text layer is shredded into one- and two-character fragments.
  *
- * Real example from the careers inbox (`EMAD CV.pdf`): every word arrives tab-separated per
+ * Real example from the careers inbox (`WASSEF CV.pdf`): every word arrives tab-separated per
  * syllable — "Mi\tcr\tos\tof\tf\ti\tce." for "MicrosoftOffice.", and the email as
- * "emadabdot\thabet\t@gmai\tl\t.\tcom". No rule can read that, and neither can a human.
+ * "wassefnakh\tla\t@gmai\tl\t.\tcom". No rule can read that, and neither can a human.
  *
  * Removing the tabs restores it exactly. The danger is that a tab is normally LOAD-BEARING in a CV
  * — it is what separates "Job Title — Employer" from a right-aligned date — so this must never fire
@@ -138,7 +143,7 @@ export function repairShreddedText(text: string): string {
 export function repairWrappedContacts(text: string): string {
   return (
     text
-      // "zeinab samir75 @gmil.com" — spaces hugging the @ are a layout artifact, never part of an
+      // "wafaa borhan75 @gmil.com" — spaces hugging the @ are a layout artifact, never part of an
       // address. Closed up on the same line only, so this cannot join two unrelated lines.
       .replace(/[ \t]+@[ \t]*|@[ \t]+/g, "@")
       // "name@gmail.co\nm" → "name@gmail.com".
@@ -152,7 +157,7 @@ export function repairWrappedContacts(text: string): string {
         const joined = `${head}${tail}`;
         return /^[\w.+-]+@[\w-]+\.[A-Za-z]{2,}$/.test(joined) ? joined : match;
       })
-      // "linkedin.com/in/abanoub-\nemad" → joined, for a URL split at a hyphen or a slash.
+      // "linkedin.com/in/bishoy-\nsamir" → joined, for a URL split at a hyphen or a slash.
       .replace(/((?:https?:\/\/|www\.)\S*[/-])[ \t]*\n[ \t]*(\S+)/g, "$1$2")
   );
 }

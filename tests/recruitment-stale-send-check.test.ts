@@ -25,7 +25,7 @@ const NOW = new Date("2026-08-28T09:00:00Z");
 
 function sent(overrides: Partial<SentCandidate> & { id: string }): SentCandidate {
   return {
-    fullName: "Abdallah Sayed Ibrahim",
+    fullName: "Tarek Nabil Ibrahim",
     jobTitle: "Medical Representative",
     managerHrId: "A-12",
     managerName: "Ali Moh Ali",
@@ -186,7 +186,7 @@ export async function runRecruitmentStaleSendCheckTests(): Promise<void> {
     );
     const message = buildManagerNudgeMessage(plan.nudges[0]);
     assert.ok(message.includes("2 CVs waiting"), "the count is plural without a bracketed (s)");
-    assert.ok(message.includes("Abdallah Sayed Ibrahim"), "every candidate is named");
+    assert.ok(message.includes("Tarek Nabil Ibrahim"), "every candidate is named");
     assert.ok(message.includes("Mona Adel"), "including the second");
     assert.ok(!message.includes("…") && !message.includes("..."), "nothing is cut with an ellipsis");
     assert.ok(message.includes("19 August 2026"), "the send date is a real Cairo date");

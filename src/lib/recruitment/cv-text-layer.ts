@@ -5,8 +5,8 @@
 // text-extraction path — where there is no text to find. The vision path that CAN read it already
 // existed, but only a file whose extension said .jpg/.png ever reached it.
 //
-// The real one that cost an applicant (careers inbox, 2026-08-11, `Osama Mohamed-1.pdf`,
-// 493,190 bytes, subject "Osama mohammed cv District manager upper Egypt"): pdf-parse recovered
+// The real one that cost an applicant (careers inbox, 2026-08-11, `Zaher Halawa-1.pdf`,
+// 493,190 bytes, subject "Zaher halawa cv District manager upper Egypt"): pdf-parse recovered
 // exactly sixteen characters from it —
 //
 //     -- 1 of 1 --

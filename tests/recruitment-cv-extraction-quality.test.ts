@@ -69,7 +69,7 @@ export function runRecruitmentCvExtractionQualityTests() {
   // The exact shape of the failure this exists for: a name and nothing else. That is what the 49
   // unread production CVs look like once the sender's name is stamped on the candidate.
   assert.equal(
-    isThinCvRead(scoreCvExtraction({ fullName: high("Osama Mohamed") })),
+    isThinCvRead(scoreCvExtraction({ fullName: high("Zaher Halawa") })),
     true,
     "a name and nothing else is a failed read, not a candidate",
   );

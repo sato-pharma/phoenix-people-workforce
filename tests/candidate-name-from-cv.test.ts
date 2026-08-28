@@ -16,7 +16,7 @@ import {
  *   full_name          = "Suez Canal University Engineering Department"
  *   extracted fullName = { value: <same>, confidence: "low" }
  *   applied_fields     = null           <- every LATER write honoured the confidence gate
- *   cv file            = "Yosouf _Ali _CV (2).pdf"
+ *   cv file            = "Karim _Nabil _CV (2).pdf"
  *
  * The name was written at candidate CREATION, which took the extracted value unconditionally. The
  * fix reads the same `confidence` every other write reads, and falls back to the CV's own filename
@@ -30,10 +30,10 @@ export function runCandidateNameFromCvTests() {
     resolveCandidateFullNameFromCv({
       extractedConfidence: "low",
       extractedName: "Suez Canal University Engineering Department",
-      fileName: "Yosouf _Ali _CV (2).pdf",
+      fileName: "Karim _Nabil _CV (2).pdf",
       senderFullName: "Ahmed Forwarder",
     }),
-    "Yosouf Ali",
+    "Karim Nabil",
     "a low-confidence institution name must never become a candidate's name",
   );
 
@@ -68,7 +68,7 @@ export function runCandidateNameFromCvTests() {
   // ---------------------------------------------------------------------------
   // The filename fallback: conservative, and allowed to refuse.
   // ---------------------------------------------------------------------------
-  assert.equal(personNameFromFileName("Yosouf _Ali _CV (2).pdf"), "Yosouf Ali", "underscores, CV token, (2) marker");
+  assert.equal(personNameFromFileName("Karim _Nabil _CV (2).pdf"), "Karim Nabil", "underscores, CV token, (2) marker");
   assert.equal(personNameFromFileName("Ahmed_Hassan_CV.pdf"), "Ahmed Hassan");
   assert.equal(personNameFromFileName("mona-salah-resume.docx"), "mona salah");
   assert.equal(personNameFromFileName("Default Resume.pdf"), null, "one word left is not a name");

@@ -9,12 +9,15 @@
 // creased phone photo of one, and it reads only the language it was given. Measured over the six
 // scanned CVs in the inbox on 2026-08-19:
 //
-//   confidence 91  Martena Adly       name, e-mail, BOTH mobiles, city — complete
-//   confidence 91  Mina Ehab Ramzy    name, street address, both mobiles, e-mail, LinkedIn, degree
-//   confidence 78  Ahmed Ibrahim      readable through heavy decorative noise
-//   confidence 75  Mohamed Reda       readable, noisy
+//   confidence 91  Nermeen Adel       name, e-mail, BOTH mobiles, city — complete
+//   confidence 91  Peter Nashaat      name, street address, both mobiles, e-mail, LinkedIn, degree
+//   confidence 78  Sherif Fathy       readable through heavy decorative noise
+//   confidence 75  Ashraf Zaki        readable, noisy
 //   confidence 41  (Arabic document)  unreadable — the English model cannot read Arabic
 //   confidence 32  (Arabic document)  unreadable
+//
+// The four names are INVENTED — they were the real applicants' until 2026-08-28. The measurement
+// is the point of this table and is unchanged.
 //
 // So it solves four of the six and is worthless on the other two, and — this is the useful part —
 // Tesseract's own confidence separates the two groups cleanly, with nothing between 41 and 75. That
