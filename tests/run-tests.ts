@@ -1013,6 +1013,7 @@ import { runRecruitmentExtractionRecordsIsCvTests } from "./recruitment-extracti
 import { runRecruitmentRereadNotACvSkipsTests } from "./recruitment-reread-not-a-cv-skips.test.ts";
 import { runWorktreeExitGuardPreRemovalTests } from "./worktree-exit-guard-pre-removal.test.ts";
 import { runMemoryIndexBudgetTests } from "./memory-index-budget.test.ts";
+import { runSessionStartMemoryIndexGuardTests } from "./session-start-memory-index-guard.test.ts";
 import { runRepoDoctorUnpushedCommitsTests } from "./repo-doctor-unpushed-commits.test.ts";
 
 import { runCvRereadAppliesWhatItReadsTests } from "./cv-reread-applies-what-it-reads.test.ts";
@@ -2930,6 +2931,15 @@ await runTest(
   + "ceiling-only rule was silent 335 bytes from silent truncation, mustFree closes the gap exactly, "
   + "and an index it cannot measure reports unknown rather than healthy)",
   runMemoryIndexBudgetTests,
+);
+
+await runTest(
+  "The memory index budget reaches a session at SessionStart, not only when somebody runs "
+  + "repo-doctor (the guard is registered as its own hook entry so a live session lock cannot mute "
+  + "it, a worktree is graded against the PRIMARY checkout index rather than an empty one of its "
+  + "own, a healthy index reports its headroom without interrupting the human, and a file it cannot "
+  + "measure reports unknown rather than healthy)",
+  runSessionStartMemoryIndexGuardTests,
 );
 
 await runTest(
