@@ -156,6 +156,30 @@ function outranksForLabel(
 }
 
 /**
+ * Whether the manager's inbox should show group headings at all.
+ *
+ * A heading earns its place only when there is more than one group to tell apart — but the sends
+ * carrying NO position are one of those groups, not a footnote outside the count. That distinction
+ * is the whole function.
+ *
+ * Counting folders alone got it backwards in the one case guaranteed to happen first. Every send on
+ * record before 2026-08-28 predates the picker, so the first manager to receive a positioned CV has
+ * exactly one folder and one unfiled pile. With `folders.length > 1` the folder rendered bare while
+ * the pile below it was headed "No position given" — putting the screen's only heading on the group
+ * that has no position, and making the unlabelled CVs above it read as the deficient ones.
+ *
+ * Lives here rather than in the component so the rule is testable as behaviour instead of by
+ * grepping a JSX condition, and so both headings are driven by ONE answer — they disagreed exactly
+ * because they were two separate expressions.
+ */
+export function shouldShowGroupHeadings(
+  folders: readonly PositionFolder[],
+  unfiled: readonly Candidate[],
+): boolean {
+  return folders.length + (unfiled.length > 0 ? 1 : 0) > 1;
+}
+
+/**
  * Fold candidates into one folder per position.
  *
  * Candidates carrying no position come back SEPARATELY rather than in a folder of their own. They
