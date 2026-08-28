@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { Clock, Inbox, Building2, ClipboardList, Users, ListChecks, Eye } from "lucide-react";
+import { Clock, Inbox, Building2, ClipboardList, Users, ListChecks, Eye, Target } from "lucide-react";
 
 import type {
   ResponderHistoryItem,
@@ -16,6 +16,8 @@ import { SlaAgeChip, type ApprovalsSlaModule } from "@/components/approvals-hub/
 import { HistoryList } from "@/components/approvals-hub/history-list";
 import { ApprovalScopeList } from "@/components/approvals-hub/approval-scope-list";
 import { CompanyRequestsList } from "@/components/approvals-hub/company-requests-list";
+import { PlanAdherenceHistoryPanel } from "@/components/weekly-planning/plan-adherence-report";
+import type { PlanAdherenceHistory } from "@/lib/weekly-planning/plan-adherence";
 
 export type PendingCard = {
   id: string;
@@ -70,6 +72,13 @@ type Props = {
   secondaryCompanyRequestsTabLabel?: string;
   secondaryCompanyRequestsExportTitle?: string;
   secondaryCompanyRequestsEmptyLabel?: string;
+  // PLANS ONLY — the viewer's own week-by-week adherence score. Prop-gated because this workspace
+  // is shared with Vacation and Excuse, and neither has anything to score: an unconditional tab
+  // here would appear on all three pages and be empty on two of them.
+  scoreHistory?: PlanAdherenceHistory | null;
+  // A base path, not a `(planId) => href` builder: this is a client component, so a function prop
+  // handed in from the server page cannot be serialised and the page 500s at render.
+  scoreHistoryPlanBaseHref?: string | null;
 };
 
 function Card({ card, readOnly, slaModule }: { card: PendingCard; readOnly?: boolean; slaModule: ApprovalsSlaModule }) {
@@ -115,6 +124,8 @@ export function ApprovalsWorkspace({
   secondaryCompanyRequestsTabLabel,
   secondaryCompanyRequestsExportTitle,
   secondaryCompanyRequestsEmptyLabel,
+  scoreHistory,
+  scoreHistoryPlanBaseHref,
 }: Props) {
   type TabKey =
     | "pending"
@@ -123,9 +134,11 @@ export function ApprovalsWorkspace({
     | "approval-scope"
     | "company-requests"
     | "secondary-company-requests"
+    | "score-history"
     | "all-decisions";
   const [tab, setTab] = useState<TabKey>(initialTab);
   const showApprovalScopeTab = approvalScope != null;
+  const showScoreHistoryTab = scoreHistory != null;
   const showCompanyRequestsTab = Array.isArray(companyRequests);
   const showSecondaryCompanyRequestsTab = Array.isArray(secondaryCompanyRequests);
   const showCompanyWideTab = Array.isArray(companyWide);
@@ -134,6 +147,7 @@ export function ApprovalsWorkspace({
     { key: "pending", label: "Response", count: pendingCount, icon: Inbox },
     { key: "history", label: "Response history", count: history.length, icon: Clock },
     { key: "my-requests", label: "My Requests", count: myRequests.length, icon: ClipboardList },
+    ...(showScoreHistoryTab ? [{ key: "score-history" as const, label: "My Plan Score", count: scoreHistory.entries.length, icon: Target }] : []),
     ...(showApprovalScopeTab ? [{ key: "approval-scope" as const, label: "Who I Approve", count: approvalScope.totalPeople, icon: Users }] : []),
     ...(showCompanyRequestsTab ? [{ key: "company-requests" as const, label: companyRequestsTabLabel ?? "Company Requests", count: companyRequests.length, icon: ListChecks }] : []),
     ...(showSecondaryCompanyRequestsTab
@@ -203,6 +217,12 @@ export function ApprovalsWorkspace({
         />
       ) : tab === "my-requests" ? (
         <MyRequestsList items={myRequests} />
+      ) : tab === "score-history" ? (
+        <PlanAdherenceHistoryPanel
+          history={scoreHistory ?? { averagePct: null, entries: [], measuredPeriods: 0, totalCheckable: 0, totalKept: 0 }}
+          planBaseHref={scoreHistoryPlanBaseHref}
+          emptyLabel="None of your plans has been scored yet."
+        />
       ) : tab === "approval-scope" ? (
         <ApprovalScopeList
           data={approvalScope ?? { groups: [], totalPeople: 0 }}

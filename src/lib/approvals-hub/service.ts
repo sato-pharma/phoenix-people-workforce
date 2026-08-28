@@ -25,6 +25,8 @@ import { listWeeklyPlanManagerGapRecords, type WeeklyPlanManagerGapRecord } from
 import { listExcuseManagerGapRecords, type ExcuseManagerGapRecord } from "@/lib/excuses/drift-check";
 import { resolveJobFunctionRole } from "@/lib/employees/job-function";
 import { resolveApproverPlanStage } from "@/lib/weekly-planning/service";
+import type { PlanAdherenceHistory, PlanAdherenceScore } from "@/lib/weekly-planning/plan-adherence";
+import { loadPlanAdherence, loadPlanAdherenceHistory } from "@/lib/weekly-planning/plan-adherence-data";
 import type { EmployeePlanKind, EmployeePlanStatus } from "@/lib/weekly-planning/plan-v1";
 import { isDistrictManagerPlanTitle } from "@/lib/weekly-planning/plan-v1";
 import type {
@@ -1464,6 +1466,10 @@ export type PlanApprovalDetail = {
   slaAgeDays: number;
   readOnly: boolean;
   readOnlyReason: string | null;
+  // Did the week go the way it was planned — kept vs what the CRM can actually confirm, with the
+  // mismatches named. Null when the read failed: a scoring overlay must never take the plan page
+  // down, and no number at all is honest where a wrong one is not.
+  adherence: PlanAdherenceScore | null;
 };
 
 function emptyPlanDetail(id: string): PlanApprovalDetail {
@@ -1497,6 +1503,7 @@ function emptyPlanDetail(id: string): PlanApprovalDetail {
     slaAgeDays: 0,
     readOnly: true,
     readOnlyReason: null,
+    adherence: null,
   };
 }
 
@@ -1817,6 +1824,9 @@ export async function getPlanApprovalDetail(access: AccessContext, id: string): 
       : NO_ACTIONS;
 
   const items = mapPlanItemsToCalendar(rawItems);
+  // Scored here rather than in the component so the page stays a single server render. It reads the
+  // CRM, so it is awaited alongside nothing else that depends on it and returns null on any failure.
+  const adherence = await loadPlanAdherence(id);
   const reviewBase = resolveNavigationMode(access) === "employee-portal" ? "/employee-portals/plans" : "/admin/weekly-plans";
   const plannerHref = `${reviewBase}?plan=${encodeURIComponent(id)}`;
   const calendar: WeeklyPlanDetail = {
@@ -1867,6 +1877,7 @@ export async function getPlanApprovalDetail(access: AccessContext, id: string): 
       : actionable
         ? null
         : planReadOnlyReason(status),
+    adherence,
   };
 }
 
@@ -2005,6 +2016,15 @@ export type PlanWorkspaceData = {
   // never reach a CEO decision (manager approval cascades straight to final_approved), so this
   // is the CEO's only page-level visibility into them.
   districtManagerRequests: CompanyRequestItem[] | null;
+  // The viewer's OWN plan-score history, newest first — the extra tab. Null for someone who has
+  // never filed a plan, which is most of the company: the plan module is managers only (20 people
+  // on production, no medical rep has ever submitted one), and a tab reading "no history" for
+  // everybody else is noise on a page they came to for something else.
+  scoreHistory: PlanAdherenceHistory | null;
+  // Role-aware base for a plan's detail page, so a score-history row links straight to the plan it
+  // scored — the owner's "I want them to be linking". Resolved here because the base differs
+  // between the admin shell and the employee portal.
+  planDetailBaseHref: string;
 };
 
 function planStageStatusLabel(stage: PlanApprovalStage): string {
@@ -2017,14 +2037,17 @@ function planStageStatusLabel(stage: PlanApprovalStage): string {
 export async function getPlanWorkspaceData(access: AccessContext): Promise<PlanWorkspaceData> {
   const showCompanyWide = isPlanHrActor(access);
   const showCeoTabs = canSeeCeoApprovalTabs(access);
-  const [buckets, myRequests, history, companyWide, companyRequests, districtManagerRequests] = await Promise.all([
-    getPlanApprovalsForResponder(access),
-    getMyPlanRequestItems(access),
-    getResponderPlanHistory(access),
-    showCompanyWide ? getAllPlanDecisionsCompanyWide(access).catch(() => []) : Promise.resolve(null),
-    showCeoTabs ? getCompanyPlanRequests(access).catch(() => []) : Promise.resolve(null),
-    showCeoTabs ? getCompanyDistrictManagerPlanRequests(access).catch(() => []) : Promise.resolve(null),
-  ]);
+  const [buckets, myRequests, history, companyWide, companyRequests, districtManagerRequests, scoreHistory] =
+    await Promise.all([
+      getPlanApprovalsForResponder(access),
+      getMyPlanRequestItems(access),
+      getResponderPlanHistory(access),
+      showCompanyWide ? getAllPlanDecisionsCompanyWide(access).catch(() => []) : Promise.resolve(null),
+      showCeoTabs ? getCompanyPlanRequests(access).catch(() => []) : Promise.resolve(null),
+      showCeoTabs ? getCompanyDistrictManagerPlanRequests(access).catch(() => []) : Promise.resolve(null),
+      // Never throws — the score is an overlay, and a CRM read that fails must cost a tab, not the page.
+      loadPlanAdherenceHistory(access.hrId).catch(() => null),
+    ]);
   const toCard = (item: PlanBucketItem): ApprovalPendingCard => ({
     id: item.id,
     href: planApprovalHref(access, item.id),
@@ -2042,5 +2065,7 @@ export async function getPlanWorkspaceData(access: AccessContext): Promise<PlanW
     companyWide,
     companyRequests,
     districtManagerRequests,
+    scoreHistory: scoreHistory && scoreHistory.entries.length > 0 ? scoreHistory : null,
+    planDetailBaseHref: planApprovalsBasePath(access),
   };
 }

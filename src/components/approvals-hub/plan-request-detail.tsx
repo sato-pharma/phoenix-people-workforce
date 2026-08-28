@@ -8,6 +8,7 @@ import { PlanApproverContext } from "@/components/approvals-hub/plan-approver-co
 import { PlanCompositionSummary, PlanPeriodBadge } from "@/components/approvals-hub/plan-summary";
 import { WeeklyPlanCalendar } from "@/components/action-center/weekly-plan-calendar";
 import { PlanConversationThread } from "@/components/weekly-planning/plan-conversation-thread";
+import { PlanAdherenceBadge, PlanAdherenceReport } from "@/components/weekly-planning/plan-adherence-report";
 
 type Props = {
   detail: PlanApprovalDetail;
@@ -52,7 +53,8 @@ export function PlanRequestDetail({ detail, backHref }: Props) {
             {kindLabel} plan · {detail.periodKey}
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          {detail.adherence ? <PlanAdherenceBadge score={detail.adherence} /> : null}
           <PlanPeriodBadge status={detail.periodStatus} />
           <span className="whitespace-nowrap border border-slate-300 px-2.5 py-1 text-xs font-bold uppercase tracking-wide text-slate-700">
             {detail.statusLabel}
@@ -78,6 +80,10 @@ export function PlanRequestDetail({ detail, backHref }: Props) {
       ) : null}
 
       <PlanCompositionSummary composition={detail.composition} />
+
+      {/* What the plan said, then what the CRM says actually happened — and for each gap, one plain
+          instruction. The score is only worth showing next to the reason for it. */}
+      {detail.adherence ? <PlanAdherenceReport score={detail.adherence} /> : null}
 
       <div className="grid gap-4 lg:grid-cols-3">
         <div className="space-y-4">

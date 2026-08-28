@@ -24,6 +24,7 @@ import type { DoubleVisitPortalFocus } from "@/lib/double-visit-analytics/types"
 import { getNsmCrmCompliance, nsmCrmComplianceUnavailable, type NsmCrmComplianceData } from "@/lib/employee-portal/nsm-crm-compliance";
 import { getLatestLineEarlyBirds, type EarlyBirdsWinnerRecord } from "@/lib/early-birds/service";
 import { logPortalFailure } from "@/lib/observability/portal-logging";
+import { loadPortalPlanAdherence, type PortalPlanAdherence } from "@/lib/weekly-planning/plan-adherence-data";
 import { currentCairoDateParts } from "@/lib/i18n/format";
 import {
   SALES_HISTORY_FLOOR,
@@ -142,6 +143,15 @@ export type PortalHomeSnapshot = {
    * empty state — a failed source must never read as "nothing needs your attention").
    */
   pendingCountsAvailable: boolean;
+  /**
+   * How closely this person's own weekly plans matched what the CRM recorded — their latest scored
+   * period plus a running average, with a link through to where the mismatches are.
+   *
+   * Null for anyone who has never filed a plan, which is most of the company: the plan module is
+   * managers only (20 people on production; no medical rep has ever submitted one). A card reading
+   * "no score" on hundreds of dashboards would be noise, so there is no card at all.
+   */
+  planAdherence: PortalPlanAdherence | null;
   latestPayslip: { month: string; netSalary: number } | null;
   leaveEntitlementDays: number | null;
   mrSalesAchievement: { achievementPercent: number; salesValue: number; targetValue: number } | null;
@@ -784,13 +794,20 @@ export async function getPortalHomeSnapshot(access: AccessContext): Promise<Port
 
   // Pure calculation — no DB.
   const balance = getVacationBalancePeriod({ hireDate: shell.hrContract.hireDate, referenceDate: today });
-  const [roleExtras, dvFocus, earlyBirdStars] = await Promise.all([
+  const [roleExtras, dvFocus, earlyBirdStars, planAdherence] = await Promise.all([
     roleExtrasPromise,
     dvFocusPromise,
     // Computed OUTSIDE the role branches: it is the same three line-stars for every audience, so
     // resolving it per role would be the same query many times over. Degrades to [] like every
     // other snapshot field — a missing announcement must never fail a landing page.
     getLatestLineEarlyBirds().catch(() => []),
+    // Also outside the role branches, and for a stronger reason: the plan module's population does
+    // not follow the role map. It is DSM, NSM, Product Manager, Group Product Manager AND Training
+    // Manager today, and an acting DSM keeps the job title "Medical Representative" (her authority
+    // is her app role, not her title). Gating this on a role list would silently drop her. Whether
+    // a person has plans is the only honest test, so that is the test — the loader returns null for
+    // everyone who has none.
+    hrId ? loadPortalPlanAdherence(hrId).catch(() => null) : Promise.resolve(null),
   ]);
 
   return {
@@ -800,6 +817,7 @@ export async function getPortalHomeSnapshot(access: AccessContext): Promise<Port
     pendingVacationCount,
     pendingExcuseCount,
     pendingCountsAvailable,
+    planAdherence,
     latestPayslip,
     leaveEntitlementDays: balance?.entitlementDays ?? null,
     mrSalesAchievement,
