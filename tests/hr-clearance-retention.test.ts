@@ -362,6 +362,38 @@ export async function runHrClearanceRetentionTests() {
       "opens a second, unreviewed path to confidential rows.",
   );
 
+  // Every security definer function must be revoked FROM PUBLIC, not merely from anon and
+  // authenticated. A new function's default ACL grants EXECUTE to PUBLIC and both those roles
+  // inherit it through PUBLIC membership, so revoking the two named roles alone is a no-op. This
+  // shipped wrong: section 5 sealed the tables with RLS and left all five functions open, which is
+  // the worse half of the pair, because a security definer function bypasses RLS by design — any
+  // signed-in employee could have called phx_hr_clearance_release over PostgREST RPC and released
+  // their own settlement with the permission layer never consulted. CI's migration-check caught it;
+  // this keeps it caught if the block is ever trimmed.
+  const definerFunctions = [
+    "phx_hr_clearance_refresh_status",
+    "phx_hr_clearance_open",
+    "phx_hr_clearance_decide",
+    "phx_hr_clearance_release",
+    "phx_hr_clearance_on_resignation",
+  ];
+  for (const fn of definerFunctions) {
+    const revoke = sql
+      .split("\n")
+      .find((line) => line.startsWith(`revoke execute on function public.${fn}(`));
+    assert.ok(revoke, `${fn} is never revoked — its default ACL leaves EXECUTE with PUBLIC`);
+    assert.ok(
+      revoke?.includes("from public, anon, authenticated;"),
+      `${fn} is revoked from the wrong set. anon and authenticated inherit EXECUTE through PUBLIC ` +
+        "membership, so a revoke that omits public changes nothing at all",
+    );
+    assert.ok(
+      sql.includes(`grant execute on function public.${fn}(`),
+      `${fn} is revoked but never re-granted to service_role. Revoking PUBLIC on a default ACL ` +
+        "also strips service_role, so the route handlers would break",
+    );
+  }
+
   // ── 7. Every route action has a caller, or it is a promise the UI never keeps ──────────────────
   // Both modules shipped an endpoint nothing could reach. The clearance route accepted "open" —
   // the manual path the auto-open trigger's own comment promises ("HR can open one by hand") — and

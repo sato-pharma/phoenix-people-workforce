@@ -518,6 +518,41 @@ alter table public.hr_retention_themes enable row level security;
 alter table public.hr_retention_conversations enable row level security;
 alter table public.hr_retention_conversation_themes enable row level security;
 
+-- ---------------------------------------------------------------------------
+-- 6. EXECUTE grants
+--
+-- Section 5 sealed the TABLES and left the FUNCTIONS open, which is the worse half of the pair: a
+-- security definer function runs as its owner and bypasses RLS by design, so an unrevoked one is a
+-- hole straight through the posture above. A new function's default ACL grants EXECUTE to PUBLIC,
+-- and anon and authenticated inherit it through PUBLIC membership - revoking only those two is a
+-- no-op while PUBLIC still holds it. Without this block any signed-in employee could call
+-- phx_hr_clearance_release over PostgREST RPC and release their own settlement, with the whole
+-- permission layer never consulted.
+--
+-- Revoking PUBLIC on a default ACL also strips service_role, so each one is re-granted explicitly.
+-- That is the only role that should hold these: every legitimate caller arrives through the route
+-- handlers, which use the service-role client after assertPermission.
+--
+-- phx_hr_clearance_on_resignation is a trigger function and cannot be called as an ordinary
+-- function, but it is revoked with the rest rather than reasoned about - the exception is not worth
+-- the line of thinking it costs a reader at 4am.
+-- ---------------------------------------------------------------------------
+
+revoke execute on function public.phx_hr_clearance_refresh_status(p_checklist_id uuid) from public, anon, authenticated;
+grant execute on function public.phx_hr_clearance_refresh_status(p_checklist_id uuid) to service_role;
+
+revoke execute on function public.phx_hr_clearance_open(p_resignation_id uuid, p_actor text) from public, anon, authenticated;
+grant execute on function public.phx_hr_clearance_open(p_resignation_id uuid, p_actor text) to service_role;
+
+revoke execute on function public.phx_hr_clearance_decide(p_item_id uuid, p_status text, p_actor text, p_reason text, p_evidence_note text, p_amount_due numeric) from public, anon, authenticated;
+grant execute on function public.phx_hr_clearance_decide(p_item_id uuid, p_status text, p_actor text, p_reason text, p_evidence_note text, p_amount_due numeric) to service_role;
+
+revoke execute on function public.phx_hr_clearance_release(p_checklist_id uuid, p_actor text, p_note text) from public, anon, authenticated;
+grant execute on function public.phx_hr_clearance_release(p_checklist_id uuid, p_actor text, p_note text) to service_role;
+
+revoke execute on function public.phx_hr_clearance_on_resignation() from public, anon, authenticated;
+grant execute on function public.phx_hr_clearance_on_resignation() to service_role;
+
 notify pgrst, 'reload schema';
 
 commit;
