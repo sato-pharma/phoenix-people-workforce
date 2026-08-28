@@ -1,4 +1,6 @@
+import { systemEmail } from "@/config/system-settings";
 import type { AccessContext } from "@/lib/auth/permissions";
+import { ADMIN_STANDING_EMAIL } from "@/lib/email/admin-telegram-mirror";
 import { conflictError } from "@/lib/http/api-errors";
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
 import { logError, logInfo } from "@/lib/observability/log";
@@ -14,6 +16,33 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 // /admin/notification-confidence. A majority of passing checks never outvotes one failing
 // one: this class of incident (mass false-positive) is exactly what must never slip through
 // on points.
+//
+// RECALIBRATED 2026-08-28 after measuring five weeks of live behaviour: 679 held rows covering
+// 174 unique emails plus 505 duplicate retries — and ZERO ever discarded. The gate had never once
+// stopped a bad email, while blocking roughly half of all mail (66.8% held the week of
+// 2026-08-10), stranding 114 recruitment notices, 37 resignation notices, and 6 people locked out
+// of Phoenix behind undelivered password-reset and account-setup links for 27 days. Three
+// concrete defects, each fixed below:
+//
+//  1. IT FED ITSELF. checkFanoutAnomaly counted rows in notification_send_reviews over the last
+//     15 minutes — including rows written by RETRIES of already-held sends. A hold made the
+//     sender retry, each retry wrote another row, and the fan-out counter read its own echo as
+//     evidence of a bigger burst. 74% of the backlog was that echo: the same idempotency_key
+//     appearing 4 to 8 times.
+//  2. IT WAS THE WRONG DETECTOR. fanoutToBcc (send-phoenix-email.ts) collapses a genuine mass
+//     send into ONE email carrying many BCC recipients, so the 2026-07-23 incident shape arrives
+//     as a single send that checkFanoutAnomaly cannot see at all. What it flagged instead was
+//     ordinary business volume — 17 resignations legitimately means 17 emails. It caused 654 of
+//     679 holds (96%) and caught nothing. REMOVED. checkRecipientVolume is the check that
+//     actually targets that incident shape, and it stays.
+//  3. A HOLD LASTED FOREVER. The daily reminder fired correctly every day for 27 consecutive days
+//     and was simply absorbed. A hold nobody ever decides is not a review, it is an undisclosed
+//     deletion. expireStaleHeldNotifications() now closes every hold within HOLD_EXPIRY_HOURS and
+//     announces the outcome.
+//
+// And a single-recipient send is never held at all: one person cannot be a mass send by
+// definition, so transactional mail (password reset, account setup, one-employee workflow
+// notices) can no longer be collateral damage of a volume check.
 
 export type NotificationOrigin = {
   employeeHrId?: string | null;
@@ -34,6 +63,11 @@ export type ConfidenceCheck = {
 };
 
 export type ConfidenceGateInput = {
+  /**
+   * Real people this send reaches, computed by the caller BEFORE fanoutToBcc and the standing
+   * admin BCC rewrite the address arrays. Falls back to computeRealAudienceSize when absent.
+   */
+  audienceSize?: number;
   bcc?: string[];
   cc?: string[];
   html: string;
@@ -149,7 +183,8 @@ const UNRESOLVED_TOKEN_PATTERN = /\{\{\s*[a-zA-Z0-9_]+\s*\}\}/;
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 // Exported for direct unit coverage (tests/notification-confidence-gate.test.ts) — these are
-// pure, no I/O, unlike checkFanoutAnomaly which needs Supabase and evaluateAndRecordNotificationSend.
+// pure, no I/O, unlike checkRecipientVolume and evaluateAndRecordNotificationSend, which both
+// need Supabase.
 export function checkContentIntegrity(input: ConfidenceGateInput): ConfidenceCheck {
   const empty = !input.subject.trim() || !input.html.trim() || !input.text.trim();
   const brokenToken = UNRESOLVED_TOKEN_PATTERN.test(input.subject) || UNRESOLVED_TOKEN_PATTERN.test(input.html) || UNRESOLVED_TOKEN_PATTERN.test(input.text);
@@ -203,94 +238,73 @@ export function checkIdentityResolved(input: ConfidenceGateInput): ConfidenceChe
   return { detail: `Recipient identity status: ${status}.`, name: "identity_resolved", passed: status === "verified" };
 }
 
-// How far back "current burst" looks, and how many days of history make a (module, eventType)
-// pair "established" enough to trust a statistical baseline over the flat first-run ceiling.
-const FANOUT_WINDOW_MINUTES = 15;
-const BASELINE_MIN_HISTORY_DAYS = 5;
 const BASELINE_STDDEV_MULTIPLIER = 3;
 const FIRST_RUN_MAX_ABSOLUTE = 10;
 const FIRST_RUN_MAX_HEADCOUNT_FRACTION = 0.25;
 
 /**
- * The check that would have caught the 2026-07-23 incident. Two modes:
- *  - Established (module,eventType) pairs (≥5 distinct days of prior history): flag only a
- *    genuine statistical outlier vs that pair's own baseline — so a routinely-large batch
- *    (e.g. a payroll run touching 100+ employees) never trips this once it has a track record.
- *  - Brand-new/rare pairs (no track record yet — exactly the incident's shape: a newly
- *    deployed notification firing for the first time): fall back to a flat ceiling, capped at
- *    both an absolute number and a fraction of the current active headcount, so a first-ever
- *    run cannot silently flood most of the company before anyone notices.
- * Infra failures here fail OPEN (pass), matching this file's existing philosophy — a
- * transient DB hiccup must never become a second, self-inflicted email outage.
+ * A send reaching at most this many real people can never be a mass-send incident, so it is never
+ * held. "Real people" deliberately excludes the standing admin BCC and the neutral reply-to
+ * placeholder that fanoutToBcc leaves in To — send-phoenix-email.ts attaches both to EVERY
+ * message, which would otherwise make a one-person email look like a three-person one.
  */
-async function checkFanoutAnomaly(origin: NotificationOrigin | null | undefined): Promise<ConfidenceCheck> {
-  const moduleName = origin?.module ?? null;
-  const eventType = origin?.eventType ?? null;
-  if (!moduleName || !eventType) {
-    return { detail: "No module/eventType supplied by the caller.", name: "fanout_anomaly", passed: null };
-  }
-  try {
-    const supabase = getSupabaseAdmin();
-    const { count: recentCount, error: recentError } = await supabase
-      .from("notification_send_reviews")
-      .select("id", { count: "exact", head: true })
-      .eq("module", moduleName)
-      .eq("event_type", eventType)
-      .gte("created_at", new Date(Date.now() - FANOUT_WINDOW_MINUTES * 60_000).toISOString());
-    if (recentError) throw recentError;
-    const currentBurst = (recentCount ?? 0) + 1; // +1: this send itself hasn't been recorded yet
+const NEVER_HOLD_MAX_AUDIENCE = 1;
 
-    const { data: dailyRows, error: dailyError } = await supabase
-      .from("notification_send_reviews")
-      .select("created_at")
-      .eq("module", moduleName)
-      .eq("event_type", eventType)
-      .lt("created_at", new Date(Date.now() - 24 * 60 * 60_000).toISOString())
-      .gte("created_at", new Date(Date.now() - 30 * 24 * 60 * 60_000).toISOString())
-      .limit(5000);
-    if (dailyError) throw dailyError;
-
-    const byDay = new Map<string, number>();
-    for (const row of (dailyRows ?? []) as Array<{ created_at: string }>) {
-      const day = row.created_at.slice(0, 10);
-      byDay.set(day, (byDay.get(day) ?? 0) + 1);
-    }
-    const dailyCounts = Array.from(byDay.values());
-
-    if (dailyCounts.length >= BASELINE_MIN_HISTORY_DAYS) {
-      const mean = dailyCounts.reduce((sum, value) => sum + value, 0) / dailyCounts.length;
-      const variance = dailyCounts.reduce((sum, value) => sum + (value - mean) ** 2, 0) / dailyCounts.length;
-      const stddev = Math.sqrt(variance);
-      const ceiling = Math.max(mean + BASELINE_STDDEV_MULTIPLIER * stddev, mean * 2, 3);
-      const passed = currentBurst <= ceiling;
-      return {
-        detail: `${currentBurst} in the last ${FANOUT_WINDOW_MINUTES}m vs an established baseline of ~${mean.toFixed(1)}/day (±${stddev.toFixed(1)} stddev) over ${dailyCounts.length} prior days.`,
-        name: "fanout_anomaly",
-        passed,
-      };
-    }
-
-    const employees = await getEmployeeDirectoryRows().catch(() => []);
-    const headcount = employees.length || 1;
-    const ceiling = Math.max(3, Math.min(FIRST_RUN_MAX_ABSOLUTE, Math.round(headcount * FIRST_RUN_MAX_HEADCOUNT_FRACTION)));
-    const passed = currentBurst <= ceiling;
-    return {
-      detail: `${currentBurst} in the last ${FANOUT_WINDOW_MINUTES}m for "${moduleName}/${eventType}", which has no established history yet — capped at ${ceiling} while it's new.`,
-      name: "fanout_anomaly",
-      passed,
-    };
-  } catch (error) {
-    logError("Confidence gate fan-out check failed — defaulting to pass (fail-open on infra error)", {
-      error,
-      labels: { event: "confidence_gate_fanout_check_failed", eventType, module: moduleName },
-    });
-    return { detail: "Fan-out check could not run (infra error) — defaulted to pass.", name: "fanout_anomaly", passed: true };
-  }
+/** The audience the gate will judge: the caller's own count when supplied, else derived. */
+export function resolveAudienceSize(input: { audienceSize?: number; bcc?: string[] | null; cc?: string[] | null; to?: string[] | null }): number {
+  return input.audienceSize ?? computeRealAudienceSize(input);
 }
 
-// Minimum number of PRIOR SENDS (not days — a recipient-count distribution is a per-send metric,
-// unlike fanout's per-day event frequency) of this (module,eventType) pair needed to trust a
-// statistical baseline over the flat first-run ceiling.
+/**
+ * Whether this send is too small to be a mass-send incident, and so is never held on volume.
+ *
+ * Exported and pure specifically so the rule that protects transactional mail is proven by a unit
+ * test rather than inferred from the gate's Supabase-bound path — this is the clause standing
+ * between an employee and a password-reset link that never arrives, and it went 27 days unnoticed
+ * once already.
+ */
+export function isExemptFromVolumeChecks(input: { audienceSize?: number; bcc?: string[] | null; cc?: string[] | null; to?: string[] | null }): boolean {
+  return resolveAudienceSize(input) <= NEVER_HOLD_MAX_AUDIENCE;
+}
+
+/** Addresses the system attaches to every send, which are never part of the intended audience. */
+function systemAttachedAddresses(): Set<string> {
+  return new Set(
+    [ADMIN_STANDING_EMAIL, process.env.NOTIFICATION_REPLY_TO || systemEmail.defaultReplyTo]
+      .map((address) => String(address ?? "").trim().toLowerCase())
+      .filter(Boolean),
+  );
+}
+
+/**
+ * How many real people a send reaches. Pure and exported so the identical arithmetic applies to
+ * the live send and to every historical row it is compared against — deriving it from the stored
+ * to/cc/bcc arrays means no migration and no discontinuity in an established baseline.
+ *
+ * Correct on the POST-transform arrays the gate actually receives, which is why no change to
+ * send-phoenix-email.ts is needed: a fanned-out send arrives as to=[reply-to placeholder] with
+ * every real recipient in BCC, and the always-BCC block has added the standing admin — this strips
+ * both back out, so a one-person email counts 1 and a two-hundred-person one counts 200.
+ *
+ * Known, deliberate imprecision: a caller passing its own `replyTo` leaves a placeholder this
+ * function does not recognise, so such a fan-out counts one too many. Harmless — historical rows
+ * carry the same shape, so an established baseline shifts with it, and the error is toward holding
+ * rather than sending.
+ */
+export function computeRealAudienceSize(input: { bcc?: string[] | null; cc?: string[] | null; to?: string[] | null }): number {
+  const attached = systemAttachedAddresses();
+  const audience = new Set<string>();
+  for (const address of [...(input.to ?? []), ...(input.cc ?? []), ...(input.bcc ?? [])]) {
+    const normalized = String(address ?? "").trim().toLowerCase();
+    if (!normalized || attached.has(normalized)) continue;
+    audience.add(normalized);
+  }
+  return audience.size;
+}
+
+// Minimum number of PRIOR SENDS (not days — a recipient-count distribution is a per-send metric)
+// of this (module,eventType) pair needed to trust a statistical baseline over the flat first-run
+// ceiling.
 const RECIPIENT_VOLUME_MIN_HISTORY_SENDS = 5;
 
 /**
@@ -312,9 +326,8 @@ export const FIRST_RUN_CEILING_OVERRIDES: Record<string, number> = {
 };
 
 /**
- * Pure decision math for checkRecipientVolume, split out so it is unit-testable without Supabase
- * (checkFanoutAnomaly's equivalent logic is not, hence this file's docs noting that one needs I/O
- * — this function deliberately does not).
+ * Pure decision math for checkRecipientVolume, split out so it is unit-testable without Supabase:
+ * its caller has to query prior sends, this function deliberately does not.
  */
 export function computeRecipientVolumeCeiling(
   priorCounts: number[],
@@ -331,24 +344,25 @@ export function computeRecipientVolumeCeiling(
 }
 
 /**
- * Catches what checkFanoutAnomaly cannot: a SINGLE send with an unusually large recipient list.
- * fanoutToBcc (send-phoenix-email.ts) deliberately collapses many recipients into one email (all
- * but the primary go to BCC) so a burst of individually-small notifications reads as one send to
- * the fan-out check — but that same collapsing means a single mis-scoped notification policy
+ * THE mass-send check, and since the 2026-08-28 recalibration the only one. It judges a SINGLE
+ * send with an unusually large recipient list — exactly the shape a real incident takes here,
+ * because fanoutToBcc (send-phoenix-email.ts) deliberately collapses many recipients into one
+ * email (all but the primary go to BCC). That collapsing is precisely why the old per-15-minute
+ * fan-out counter could never see the thing this gate exists to stop: a single mis-scoped policy
  * (e.g. "general" recipientMode "selected_titles_all_lines" with targetTitles: ["Medical
  * Representative"], loadEmployeesByTitlesAndLines returning every matching employee unbounded)
- * can reach hundreds of people in ONE send. checkFanoutAnomaly's event-per-15-minute counter sees
- * that as a burst of exactly 1 and waves it through; checkRecipientValidity only inspects `to`
- * (length 1, since the rest are BCC'd), so it passes too. Before this check, that path was
- * "Company-wide email, no cap, no hold, no confirmation" — found auditing the gate, not from a
- * live incident, but it is the same shape as the 2026-07-23 incident this gate exists to catch.
+ * reaches hundreds of people in ONE send, which that counter read as a burst of exactly 1 and
+ * waved through. checkRecipientValidity only inspects `to` (length 1, since the rest are BCC'd),
+ * so it passes too. Before this check, that path was "Company-wide email, no cap, no hold, no
+ * confirmation" — found auditing the gate, not from a live incident, but it is the same shape as
+ * the 2026-07-23 incident this gate exists to catch.
  *
- * Same two-mode shape as checkFanoutAnomaly, over recipient COUNT PER SEND instead of send COUNT
- * PER WINDOW: an established (module,eventType) pair is judged against its own historical per-send
- * recipient-count baseline (so a routinely-large distribution list, e.g. a company-wide holiday
- * announcement, never trips this once it has a track record); a brand-new/rare pair gets the same
- * flat first-run ceiling as checkFanoutAnomaly. Fails OPEN on infra error, matching this file's
- * existing philosophy — a transient DB hiccup must never become a second, self-inflicted outage.
+ * Two modes, over recipient COUNT PER SEND: an established (module,eventType) pair is judged
+ * against its own historical per-send recipient-count baseline (so a routinely-large distribution
+ * list, e.g. a company-wide holiday announcement, never trips this once it has a track record); a
+ * brand-new or rare pair gets a flat first-run ceiling instead. Fails OPEN on infra error, matching
+ * this file's philosophy — a transient DB hiccup must never become a second, self-inflicted outage.
+ * A single-recipient send never reaches this check at all; see evaluateAndRecordNotificationSend.
  */
 async function checkRecipientVolume(input: ConfidenceGateInput): Promise<ConfidenceCheck> {
   const moduleName = input.origin?.module ?? null;
@@ -356,25 +370,36 @@ async function checkRecipientVolume(input: ConfidenceGateInput): Promise<Confide
   if (!moduleName || !eventType) {
     return { detail: "No module/eventType supplied by the caller.", name: "recipient_volume", passed: null };
   }
-  const currentRecipientCount =
-    input.to.filter(Boolean).length + (input.cc ?? []).filter(Boolean).length + (input.bcc ?? []).filter(Boolean).length;
+  const currentRecipientCount = input.audienceSize ?? computeRealAudienceSize(input);
   try {
     const supabase = getSupabaseAdmin();
+    // Only sends that ACTUALLY WENT OUT form the baseline, and each logical email counts once.
+    // Held rows are excluded deliberately: a hold makes the sender retry, every retry writes
+    // another review row, and counting those let the gate build a baseline out of its own echo
+    // (defect 1 in the file header — 505 of the 679 backlog rows were exactly that).
     const { data: priorRows, error: priorError } = await supabase
       .from("notification_send_reviews")
-      .select("to_addresses, cc_addresses, bcc_addresses")
+      .select("idempotency_key, to_addresses, cc_addresses, bcc_addresses")
       .eq("module", moduleName)
       .eq("event_type", eventType)
+      .in("status", ["auto_sent", "approved"])
       .lt("created_at", new Date(Date.now() - 24 * 60 * 60_000).toISOString())
       .gte("created_at", new Date(Date.now() - 30 * 24 * 60 * 60_000).toISOString())
       .limit(500);
     if (priorError) throw priorError;
 
-    const priorCounts = ((priorRows ?? []) as Array<{
+    const countByKey = new Map<string, number>();
+    for (const row of (priorRows ?? []) as Array<{
       bcc_addresses: string[] | null;
       cc_addresses: string[] | null;
+      idempotency_key: string | null;
       to_addresses: string[] | null;
-    }>).map((row) => (row.to_addresses?.length ?? 0) + (row.cc_addresses?.length ?? 0) + (row.bcc_addresses?.length ?? 0));
+    }>) {
+      const key = row.idempotency_key ?? `row-${countByKey.size}`;
+      if (countByKey.has(key)) continue;
+      countByKey.set(key, computeRealAudienceSize(row));
+    }
+    const priorCounts = Array.from(countByKey.values());
 
     const employees = await getEmployeeDirectoryRows().catch(() => []);
     const headcount = employees.length || 1;
@@ -413,12 +438,23 @@ export function computeDecision(checks: ConfidenceCheck[]): { confidencePercent:
 /** Called from send-phoenix-email.ts immediately before every real dispatch attempt. */
 export async function evaluateAndRecordNotificationSend(input: ConfidenceGateInput): Promise<ConfidenceGateResult> {
   const enabled = gateEnabled();
+  // One person is not a mass send. Every volume check exists to catch mail reaching far more
+  // people than intended; none of them can meaningfully judge an audience of one, and running
+  // them anyway is what stranded 6 employees behind undelivered password-reset and account-setup
+  // links for 27 days. Content and recipient-validity checks still apply in full.
+  const audienceSize = resolveAudienceSize(input);
+  const singleRecipient = isExemptFromVolumeChecks(input);
   const checks: ConfidenceCheck[] = [
     checkContentIntegrity(input),
     checkRecipientValidity(input),
     checkIdentityResolved(input),
-    await checkFanoutAnomaly(input.origin),
-    await checkRecipientVolume(input),
+    singleRecipient
+      ? {
+          detail: `Reaches ${audienceSize} real recipient — a single-recipient send cannot be a mass-send incident, so volume checks do not apply.`,
+          name: "recipient_volume",
+          passed: null,
+        }
+      : await checkRecipientVolume(input),
   ];
   const computed = computeDecision(checks);
   let decision = computed.decision;
@@ -608,4 +644,80 @@ export async function approveHeldNotification(access: AccessContext, reviewId: s
     })
     .eq("id", reviewId);
   if (updateError) throw updateError;
+}
+
+/**
+ * Hours a held notification may sit before it is closed automatically. A hold is only a safety
+ * mechanism if it reaches a decision: before this existed, the daily reminder fired correctly for
+ * 27 consecutive days while 174 real emails stayed undelivered and the oldest reached 35 days
+ * (defect 3 in the file header). An unreviewed hold is an undisclosed deletion — this makes the
+ * deletion explicit, recorded, and announced.
+ */
+export const HOLD_EXPIRY_HOURS = 24;
+
+/**
+ * Holds created before this instant are the pre-recalibration backlog (679 rows on 2026-08-28,
+ * 74% of them duplicate retries of 174 real emails). They are DELIBERATELY out of scope. Bulk
+ * auto-resolving them would either fire hundreds of duplicates — a third bulk-email incident,
+ * self-inflicted — or silently bury 174 real emails, including resignation notices sent that
+ * morning. That backlog gets a deduplicated, owner-approved decision of its own. This sweep only
+ * ever governs holds created under the recalibrated rules above, where a hold is rare and
+ * genuinely means "this send reaches an unusually large audience".
+ */
+export const HOLD_EXPIRY_EFFECTIVE_FROM = "2026-08-28T00:00:00.000Z";
+
+export type HoldExpiryResult = { expired: number; reason?: string; skipped: boolean };
+
+/**
+ * Closes every hold older than HOLD_EXPIRY_HOURS by DISCARDING it, and says so.
+ *
+ * Discard rather than send is the safe direction: after the recalibration above, the only thing
+ * that can still be held is a send whose audience is far larger than that notification's own
+ * history — precisely the shape nobody should release unreviewed. Best-effort by contract, never
+ * throws: a sweep failure must not become a second incident.
+ */
+export async function expireStaleHeldNotifications(): Promise<HoldExpiryResult> {
+  try {
+    const cutoff = new Date(Date.now() - HOLD_EXPIRY_HOURS * 60 * 60_000).toISOString();
+    const { data, error } = await getSupabaseAdmin()
+      .from("notification_send_reviews")
+      .update({
+        decided_at: new Date().toISOString(),
+        decided_by: "confidence-gate-expiry",
+        decision_note: `Auto-discarded: held longer than ${HOLD_EXPIRY_HOURS}h with no Super Admin decision.`,
+        status: "discarded",
+        updated_at: new Date().toISOString(),
+      })
+      .eq("status", "held")
+      .lt("created_at", cutoff)
+      .gte("created_at", HOLD_EXPIRY_EFFECTIVE_FROM)
+      .select("id, module, event_type, subject");
+    if (error) throw error;
+
+    const rows = (data ?? []) as Array<{ event_type: string | null; module: string | null; subject: string }>;
+    if (rows.length === 0) return { expired: 0, reason: "nothing to expire", skipped: true };
+
+    logInfo(`Confidence gate auto-discarded ${rows.length} notification(s) held beyond ${HOLD_EXPIRY_HOURS}h`, {
+      labels: { count: String(rows.length), event: "confidence_gate_holds_expired" },
+    });
+
+    // Announced, never silent — the entire point of the deadline is that its outcome is visible.
+    try {
+      const { notifyExpiredNotifications } = await import("@/lib/notifications/held-notification-alert");
+      await notifyExpiredNotifications({
+        expiredCount: rows.length,
+        sources: Array.from(new Set(rows.map((row) => `${row.module ?? "unknown"}/${row.event_type ?? "unknown"}`))).slice(0, 6),
+      });
+    } catch (alertError) {
+      logError("Hold-expiry alert could not be dispatched — the expiry itself still stands", {
+        error: alertError,
+        labels: { event: "confidence_gate_expiry_alert_failed" },
+      });
+    }
+
+    return { expired: rows.length, skipped: false };
+  } catch (error) {
+    logError("Confidence gate hold-expiry sweep failed", { error, labels: { event: "confidence_gate_expiry_failed" } });
+    return { expired: 0, reason: error instanceof Error ? error.message : "unknown error", skipped: true };
+  }
 }

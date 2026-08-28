@@ -12,6 +12,7 @@ import { runFieldWorkforceComplianceDeductionsAutoSync } from "@/lib/deductions-
 import { backfillMissingMarketingAssignmentEmails, runMarketingSlaDaily } from "@/lib/marketing-requests/service";
 import { runMarketingFieldCaptureNudge } from "@/lib/marketing-requests/field-capture-backlog";
 import { runRecruitmentDailyNotifications } from "@/lib/recruitment/notifications";
+import { expireStaleHeldNotifications } from "@/lib/notifications/confidence-gate";
 import { remindHeldNotifications } from "@/lib/notifications/held-notification-alert";
 import { runTelegramDailyHrDigest } from "@/lib/notifications/telegram-operations";
 import { runWeeklySystemHealthDigest } from "@/lib/notifications/weekly-system-health-digest";
@@ -230,6 +231,14 @@ async function runDailyNotifications(request: Request) {
     remindHeldNotifications().catch(
       onJobFailure("held-notification-reminder", (message) => ({ delivered: 0, skipped: true, reason: message })),
     ),
+    // Closes every hold that reached its deadline, and says so. The reminder above kept asking for
+    // 27 consecutive days while 174 real emails stayed undelivered and the oldest reached 35 days
+    // — asking is not a decision. This one decides: past HOLD_EXPIRY_HOURS a hold is discarded,
+    // never released, because an unreviewed hold means an audience nobody signed off on. It does
+    // NOT touch the pre-2026-08-28 backlog; see HOLD_EXPIRY_EFFECTIVE_FROM.
+    expireStaleHeldNotifications().catch(
+      onJobFailure("held-notification-expiry", (message) => ({ expired: 0, skipped: true, reason: message })),
+    ),
   ]);
   const [birthdays, contractRenewals, holidayConfirmation] = await Promise.all([
     birthdayResponse instanceof Response ? birthdayResponse.json() : birthdayResponse,
@@ -240,7 +249,9 @@ async function runDailyNotifications(request: Request) {
   // One structured line per run that states the real outcome. This — not the HTTP status, and not
   // the dead-man's-switch ping (which only proves the route executed) — is the signal to alert on:
   // `event="cron_run_summary" job="notifications/daily" failedCount>0`.
-  const totalJobs = 24;
+  // Hand-maintained: bump this whenever a sub-job is added above, or the run summary silently
+  // under-reports (25 since held-notification-expiry joined on 2026-08-28).
+  const totalJobs = 25;
   if (failures.length > 0) {
     logError(
       `Daily notification run completed with ${failures.length} of ${totalJobs} sub-job(s) FAILED: ${failures.map((f) => f.job).join(", ")}`,
