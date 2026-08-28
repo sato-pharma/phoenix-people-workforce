@@ -761,15 +761,26 @@ html:has(.admin-shell) {
   animation: ep-breathe-orange 1.2s ease-in-out infinite;
 }
 
-/* Approvals Hub sidebar badge (both shells) — pumps + glows while count > 0, so a
-   new/pending approval is visible on the tab itself, not just as a static number. */
+/* Approvals Hub sidebar badge (both shells).
+
+   This used to pump — scale(1.22) every second, forever, with a breathing glow, and
+   scale(1.32) every 0.7s in red once an item was SLA-overdue. The owner asked for it
+   stopped on 2026-08-28: a badge that never stops moving is not an alert, it is a
+   permanent distraction in the corner of every screen for the whole working day.
+
+   Urgency is NOT lost. It was never carried by the motion — sidebar.tsx picks
+   bg-red-600 for overdue against bg-orange-500 otherwise (see alarmClass), so the
+   two states stay distinguishable at a glance by colour, which is where the signal
+   actually lived. The count itself still shows.
+
+   The @keyframes above are deliberately left defined so this is a one-line revert if
+   he ever wants the motion back. Do NOT re-add the animation without asking him. */
 .nav-badge-alarm {
-  animation: nav-badge-alarm-pump 1s ease-in-out infinite, ep-breathe-orange 1s ease-in-out infinite;
+  animation: none;
 }
 
-/* Same badge once at least one awaiting item is SLA-overdue — faster, bigger, red. */
 .nav-badge-alarm-overdue {
-  animation: nav-badge-alarm-pump-urgent 0.7s ease-in-out infinite, ep-breathe-red 0.7s ease-in-out infinite;
+  animation: none;
 }
 
 .phoenix-route-transition-indicator {
