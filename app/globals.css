@@ -56,30 +56,23 @@
   --color-success: var(--success);
   --color-warning: var(--warning);
   --color-danger: var(--danger);
-  --font-sans: var(
-    --font-dm-sans,
-    "Aptos",
-    "Segoe UI Variable Display",
-    "Segoe UI Variable Text",
-    "Segoe UI",
-    "Inter",
-    "Helvetica Neue",
-    Arial,
-    sans-serif
-  );
-  --font-mono: var(
-    --font-jetbrains-mono,
-    "JetBrains Mono",
-    ui-monospace,
-    SFMono-Regular,
-    Menlo,
-    Monaco,
-    Consolas,
-    "Liberation Mono",
-    "Courier New",
-    monospace
-  );
-  --font-display: var(--font-dm-serif, "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif);
+  /* These three stacks carried a var(--font-dm-sans / --font-jetbrains-mono /
+     --font-dm-serif, <list>) wrapper. All three variables were scaffolded for
+     next/font and defined NOWHERE in the repo, so every var() resolved to
+     nothing and fell straight through to the list after it. The lists below
+     are therefore exactly what renders today — removing the wrappers changes
+     no pixel, it only stops the file claiming a font it never loaded.
+     Note none of these is webfont-backed, so the typeface still varies by
+     machine (Aptos on Windows with Office, Segoe UI Variable without it).
+     Shipping a real font is Phase 2 of the design-token work — when it lands,
+     define the variable and reintroduce the wrapper deliberately. */
+  --font-sans:
+    "Aptos", "Segoe UI Variable Display", "Segoe UI Variable Text", "Segoe UI", "Inter",
+    "Helvetica Neue", Arial, sans-serif;
+  --font-mono:
+    "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
+    "Courier New", monospace;
+  --font-display: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);

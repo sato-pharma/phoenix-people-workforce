@@ -11,8 +11,11 @@
   --text: #0f172a;
   --text-secondary: #475569;
 
-  --border: #e2e8f0;
-  --card: #ffffff;
+  /* --border and --card are deliberately NOT defined here.
+     app/globals.css imports this file FIRST and then redefines both in its own
+     :root and .dark blocks, so globals.css wins the cascade and anything set
+     here never renders. The live values are oklch, in app/globals.css.
+     Set them there, not here — a value added back here is silently dead. */
 
   /* SEMANTIC */
   --success: #22c55e;
@@ -28,6 +31,5 @@
   --text: #e5e7eb;
   --text-secondary: #9ca3af;
 
-  --border: #1f2937;
-  --card: #0b1220;
+  /* --border and --card: see the note in :root above. */
 }
