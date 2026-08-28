@@ -74,3 +74,30 @@ export async function loadRepNamesByHrId(): Promise<Map<string, string>> {
   }
   return byHrId;
 }
+
+/**
+ * hr id (LOWER-cased) -> the person's HR job title, for anyone the SALES organogram has no seat for.
+ *
+ * `au_v_org_tree` is the sales seat model. It has no marketing branch, so a Product Manager holds no
+ * seat in it and never will — B-155 (Product Manager), A-10 (Product Manager) and A-8 (Group Product
+ * Manager) are all off it by design, verified against production 2026-08-28. Saying "not in
+ * organogram" of such a person is technically true and reads as an accusation, which is exactly what
+ * the owner objected to when the first build of this board said it of his District Managers.
+ *
+ * So the directory answers when the organogram is silent. It supplies a LABEL only — the organogram
+ * still decides who carries the 2 AM / 10 PM target, because a job title is free text and a KPI
+ * denominator built on it would move the moment somebody fixed a spelling.
+ *
+ * Same cached `getEmployeeDirectoryRows` call as the names above, so this costs no extra round trip.
+ */
+export async function loadJobTitlesByHrId(): Promise<Map<string, string>> {
+  const directory = await getEmployeeDirectoryRows({ includeInactive: true });
+  const byHrId = new Map<string, string>();
+  for (const employee of directory) {
+    const hrId = employee.hrId.trim().toLowerCase();
+    const jobTitle = (employee.jobTitle ?? "").trim();
+    if (!hrId || !jobTitle) continue;
+    byHrId.set(hrId, jobTitle);
+  }
+  return byHrId;
+}

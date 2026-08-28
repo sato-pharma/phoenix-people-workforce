@@ -11,6 +11,7 @@ import {
   PortalResponsiveDataList,
 } from "@/components/employee-portal/portal-primitives";
 import type { CrmRegionResolutionAction, UnmappedCrmRegionRow } from "@/lib/crm/region-brick";
+import type { SuggestionConfidence } from "@/lib/crm/region-brick-suggest";
 
 type ImportSummary = {
   blockedRows: Array<{ reason: string; row: number }>;
@@ -90,6 +91,49 @@ function formatDate(value: string) {
   return new Date(value).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" });
 }
 
+const CONFIDENCE_CHIP: Record<SuggestionConfidence, string> = {
+  confirmed: "border-emerald-300 bg-emerald-50 text-emerald-700",
+  likely: "border-sky-300 bg-sky-50 text-sky-700",
+  unsure: "border-amber-300 bg-amber-50 text-amber-700",
+};
+
+const CONFIDENCE_LABEL: Record<SuggestionConfidence, string> = {
+  confirmed: "Name + area agree",
+  likely: "Likely",
+  unsure: "Needs a decision",
+};
+
+/**
+ * The brick this region probably is, shown before anyone types anything.
+ *
+ * Arabic first, because that IS the brick's name — the English gloss beside it is the CRM's spelling,
+ * and the whole reason these two halves never met is that nobody could see they were the same place.
+ */
+function SuggestionCell({ region }: { region: UnmappedCrmRegionRow }) {
+  const suggestion = region.suggestion;
+  if (!suggestion) {
+    return <span className="text-xs text-slate-400">No brick matches this name</span>;
+  }
+  const place = [suggestion.areaName, suggestion.regionName].filter(Boolean).join(" · ");
+  return (
+    <span className="flex flex-col gap-0.5 leading-tight">
+      <span className="flex flex-wrap items-center gap-1.5">
+        <span className="font-bold text-slate-900" dir="auto">
+          {suggestion.brickName}
+        </span>
+        <span className="text-[10px] font-semibold text-slate-400">{suggestion.brickId}</span>
+        <span
+          className={`border px-1.5 py-0.5 text-[9px] font-black uppercase tracking-[0.1em] ${CONFIDENCE_CHIP[suggestion.confidence]}`}
+        >
+          {CONFIDENCE_LABEL[suggestion.confidence]}
+        </span>
+      </span>
+      {place ? <span className="text-[11px] font-semibold text-slate-600">{place}</span> : null}
+      <span className="text-[11px] text-slate-500">{suggestion.reason}</span>
+    </span>
+  );
+}
+
 function ResolutionCell({
   region,
   onResolved,
@@ -97,8 +141,12 @@ function ResolutionCell({
   region: UnmappedCrmRegionRow;
   onResolved: (crmRegionId: number, message: string) => void;
 }) {
-  const [action, setAction] = useState<CrmRegionResolutionAction>("pending");
-  const [brickIdInput, setBrickIdInput] = useState("");
+  // Pre-loaded with the suggestion, so a region the two signals agree on is one click rather than a
+  // brick id copied by hand out of a spreadsheet. An "unsure" suggestion is deliberately NOT
+  // pre-loaded — it is a question, and pre-filling a question is how a guess becomes a record.
+  const proposed = region.suggestion && region.suggestion.confidence !== "unsure" ? region.suggestion : null;
+  const [action, setAction] = useState<CrmRegionResolutionAction>(proposed ? "mapped" : "pending");
+  const [brickIdInput, setBrickIdInput] = useState(proposed?.brickId ?? "");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -203,6 +251,15 @@ export function CrmRegionMappingPanel({
 
   const rows = regions.filter((region) => !removedIds.has(region.crmRegionId));
 
+  const counts = rows.reduce(
+    (acc, region) => {
+      if (!region.suggestion) acc.none += 1;
+      else acc[region.suggestion.confidence] += 1;
+      return acc;
+    },
+    { confirmed: 0, likely: 0, none: 0, unsure: 0 },
+  );
+
   function handleResolved(crmRegionId: number, message: string) {
     setRemovedIds((current) => new Set(current).add(crmRegionId));
     setToast(message);
@@ -246,6 +303,18 @@ export function CrmRegionMappingPanel({
           </ul>
         </div>
       )}
+
+      {/* What the matcher already worked out, before anyone reads a single row. The CRM writes these
+          places in English and every Phoenix brick is written in Arabic, so nothing ever matched on
+          text; the Arabic name key plus the visiting reps' own organogram area does most of it, and
+          says plainly how much is left for a human. */}
+      <div className="border-l-[3px] border-l-orange-500 bg-orange-50 px-4 py-2.5 text-xs font-semibold text-slate-700">
+        <span className="font-black text-emerald-700">{counts.confirmed}</span> of these are already matched by their
+        Arabic name AND confirmed by the area the visiting reps work in — those are pre-filled below and need one click.
+        Another <span className="font-black text-sky-700">{counts.likely}</span> match on one signal with nothing to
+        contradict them. <span className="font-black text-amber-700">{counts.unsure + counts.none}</span> genuinely need
+        your decision — a name that reaches several bricks, or none at all.
+      </div>
 
       <div className="flex flex-wrap items-center justify-between gap-3 border border-slate-200 bg-white px-4 py-3">
         <p className="text-sm font-medium text-slate-600">
@@ -305,6 +374,7 @@ export function CrmRegionMappingPanel({
             >
               <PortalRecordFields
                 fields={[
+                  { label: "Suggested brick", value: <SuggestionCell region={region} /> },
                   { label: "First seen", value: formatDate(region.firstSeen) },
                   { label: "Last seen", value: formatDate(region.lastSeen) },
                 ]}
@@ -312,7 +382,7 @@ export function CrmRegionMappingPanel({
             </PortalRecordCard>
           )}
           renderTable={() => (
-            <PortalDesktopTable minWidth="900px">
+            <PortalDesktopTable minWidth="1400px">
               <thead className="bg-slate-900">
                 <tr>
                   <th className="px-3 py-3 text-[10px] font-black uppercase tracking-wider text-slate-300">CRM Region ID</th>
@@ -320,6 +390,9 @@ export function CrmRegionMappingPanel({
                   <th className="px-3 py-3 text-[10px] font-black uppercase tracking-wider text-slate-300">Visits (all time)</th>
                   <th className="px-3 py-3 text-[10px] font-black uppercase tracking-wider text-slate-300">First Seen</th>
                   <th className="px-3 py-3 text-[10px] font-black uppercase tracking-wider text-slate-300">Last Seen</th>
+                  <th className="border-l border-slate-700 px-3 py-3 text-[10px] font-black uppercase tracking-wider text-slate-300">
+                    Suggested Brick
+                  </th>
                   <th className="px-3 py-3 text-[10px] font-black uppercase tracking-wider text-slate-300">Resolution</th>
                   <th className="px-3 py-3 text-[10px] font-black uppercase tracking-wider text-slate-300">Action</th>
                 </tr>
@@ -332,6 +405,9 @@ export function CrmRegionMappingPanel({
                     <td className="whitespace-nowrap px-3 py-2.5 font-semibold text-rose-500">{region.visitCount}</td>
                     <td className="whitespace-nowrap px-3 py-2.5">{formatDate(region.firstSeen)}</td>
                     <td className="whitespace-nowrap px-3 py-2.5">{formatDate(region.lastSeen)}</td>
+                    <td className="border-l border-slate-100 px-3 py-2.5">
+                      <SuggestionCell region={region} />
+                    </td>
                     <td className="px-3 py-2.5">
                       <ResolutionCell region={region} onResolved={handleResolved} />
                     </td>

@@ -94,10 +94,22 @@ function pct(value: number | null): string {
 export function RepsPlansBoardView({ basePath, board }: { basePath: string; board: RepsPlansBoard }) {
   const totals = board.totals;
   const scoredThrough = dayLabel(board.dateTo);
+  // WHICH WINDOW, in the header, whenever it is not the whole month. The rate is per working day and
+  // always was; what it divides by is what the reader could not see, and a week's numbers under a
+  // heading that says only "August" is the misreading the period picker was built to end.
+  const windowText = board.notStarted
+    ? `${board.periodLabel} has not started — nothing to score yet`
+    : board.isWholeMonth
+      ? board.isCurrentMonth
+        ? `month to date — scored through ${scoredThrough}`
+        : `full month to ${scoredThrough}`
+      : board.cappedAtToday
+        ? `${board.periodLabel} — scored through ${scoredThrough}, the days since have not happened yet`
+        : `${board.periodLabel} — ${dayLabel(board.dateFrom)} to ${scoredThrough}`;
   const description = [
     `${board.workingDays} working days (Sat–Wed) · Thursday worked but not counted, Friday off`,
     "duplicates collapsed · departed agents excluded · leave, meetings and training are not field work",
-    board.isCurrentMonth ? `month to date — scored through ${scoredThrough}` : `full month to ${scoredThrough}`,
+    windowText,
   ].join(" · ");
 
   return (
@@ -105,23 +117,89 @@ export function RepsPlansBoardView({ basePath, board }: { basePath: string; boar
       <Section
         action={
           <RepsPlansControls
+            appliedLine={board.appliedLine}
+            appliedRegion={board.appliedRegion}
             appliedRepKey={board.appliedRepKey}
             basePath={basePath}
+            geographyAvailable={board.geographyAvailable}
+            lineOptions={board.lineOptions}
             month={board.month}
+            periodKey={board.periodKey}
+            regionOptions={board.regionOptions}
             repOptions={board.repOptions}
+            weekOptions={board.weekOptions}
           />
         }
         description={description}
-        title={`Reps Plans — ${board.monthLabel}`}
+        title={
+          [
+            `Reps Plans — ${board.monthLabel}`,
+            // The window is part of the TITLE when it is not the whole month, so a screenshot of
+            // these tiles carries what they were measured over.
+            board.isWholeMonth ? null : board.periodLabel,
+            board.geographyLabel,
+          ]
+            .filter((part): part is string => Boolean(part))
+            .join(" · ")
+        }
       >
         <div className="space-y-4 p-5">
           {/* THE RULE, in one line, above the numbers it governs. The two rates are the owner's own
               standard and the page is unreadable without it. */}
           <p className="border-l-[3px] border-l-orange-500 bg-orange-50 px-4 py-2.5 text-xs font-semibold text-slate-700">
             A perfect day is <span className="font-black text-slate-900">{board.amTarget} AM accounts</span> and{" "}
-            <span className="font-black text-slate-900">{board.pmTarget} PM clinics</span>. Every rate below divides by
-            the {board.workingDays} calendar working days in the period, not by the days the rep chose to work.
+            <span className="font-black text-slate-900">{board.pmTarget} PM clinics</span>. The targets are PER DAY, so
+            every rate below divides by the{" "}
+            <span className="font-black text-slate-900">
+              {board.workingDays} calendar working {board.workingDays === 1 ? "day" : "days"}
+            </span>{" "}
+            in {board.isWholeMonth ? "this month" : board.periodLabel}, not by the days the rep chose to work and not by
+            a whole month when a shorter window is in view.
           </p>
+
+          {/* Stated, never implied — WHO the numbers above leave out, and why.
+              OWNER'S RULE, 2026-08-28: the two rates are a MEDICAL REP'S KPI. A manager is listed
+              with his own territory and his own activity and is measured against nothing, because a
+              District Manager's field day is coaching and double visits rather than his own call
+              rate. And anyone the SALES organogram has no seat for — head office, where every
+              Product Manager legitimately sits — stays listed under his HR job title rather than
+              filtered away, because those rows are mostly the zero-proved ones this page exists to
+              find. */}
+          {board.managersShown + board.unplacedShown > 0 ? (
+            <p className="border-l-[3px] border-l-slate-400 bg-slate-50 px-4 py-2.5 text-xs font-semibold text-slate-600">
+              The rates above are the{" "}
+              <span className="font-black text-slate-900">medical rep</span> KPI
+              {board.geographyLabel ? (
+                <>
+                  {" "}
+                  for <span className="font-black text-slate-900">{board.geographyLabel}</span>
+                </>
+              ) : null}
+              , built from{" "}
+              <span className="font-black text-slate-900">{board.totals.reps}</span>{" "}
+              {board.totals.reps === 1 ? "rep" : "reps"}.
+              {board.managersShown > 0 ? (
+                <>
+                  {" "}
+                  <span className="font-black text-slate-900">{board.managersShown}</span>{" "}
+                  {board.managersShown === 1 ? "manager is" : "managers are"} listed below with{" "}
+                  {board.managersShown === 1 ? "his" : "their"} territory and activity, and scored
+                  against no target.
+                </>
+              ) : null}
+              {board.unplacedShown > 0 ? (
+                <>
+                  {" "}
+                  <span className="font-black text-slate-900">{board.unplacedShown}</span>{" "}
+                  {board.unplacedShown === 1 ? "person sits" : "people sit"} outside the sales
+                  organogram — head office and leavers — and{" "}
+                  {board.unplacedShown === 1 ? "is" : "are"} listed by{" "}
+                  {board.unplacedShown === 1 ? "his" : "their"} HR job title, with no territory and
+                  no target.
+                </>
+              ) : null}
+            </p>
+          ) : null}
 
           {/* Row one: the KPI itself, AM then PM, each with the target it is measured against. */}
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
@@ -151,7 +229,9 @@ export function RepsPlansBoardView({ basePath, board }: { basePath: string; boar
             />
             <Tile
               label="Reps on both"
-              sub={`of ${count(totals.reps)} with field work`}
+              // "medical reps", not "with field work": the denominator is the SCORED rows only, so
+              // the managers listed below are deliberately not in it.
+              sub={`of ${count(totals.reps)} medical reps`}
               tone={shareTone(totals.reps > 0 ? (totals.repsOnTarget / totals.reps) * 100 : null)}
               value={count(totals.repsOnTarget)}
             />
@@ -213,8 +293,14 @@ export function RepsPlansBoardView({ basePath, board }: { basePath: string; boar
         title={board.appliedRepKey ? "Selected rep" : "By rep"}
       >
         <RepsPlansRepTable
+          appliedLine={board.appliedLine}
+          appliedRegion={board.appliedRegion}
+          basePath={basePath}
           campaignLimit={board.campaignLimit}
-          monthLabel={board.monthLabel}
+          geographyAvailable={board.geographyAvailable}
+          month={board.month}
+          monthLabel={board.isWholeMonth ? board.monthLabel : `${board.monthLabel} · ${board.periodLabel}`}
+          periodKey={board.periodKey}
           rows={board.reps}
           scoredThrough={scoredThrough}
         />
