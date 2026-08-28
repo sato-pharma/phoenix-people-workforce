@@ -1886,8 +1886,8 @@ export const adminToolsPageItems: readonly AdminToolsPageItem[] = [
   {
     href: "/admin/sidebar-layout",
     icon: LayoutGrid,
-    label: "Sidebar Layout",
-    description: "Drag any page into any module, or up into the top strip. Changes your own sidebar only.",
+    label: "Navigation Layout",
+    description: "Drag any page into the row above the page title, the row below it, the top strip, or any module. Changes your own navigation only.",
     roles: ["Super Admin"],
   },
   {

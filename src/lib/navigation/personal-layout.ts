@@ -55,11 +55,45 @@ export type PersonalNavigationLayout = {
   version: typeof PERSONAL_LAYOUT_VERSION;
   /** Layer 1 — the utility strip. Owner's ruling 2026-08-28: Approvals + Organogram only. */
   strip: readonly string[];
+  /**
+   * ZONE 2 — the horizontal nav bar ABOVE the page title.
+   *
+   * Added 2026-08-28 for the owner's three-row navigation (the shape in
+   * Phoenix_God_Mode_Context_OS_V9_Sovereign.html, where `nav.domainbar` sits at y=56 and the page
+   * title at y=173). His ask, verbatim: "I want to be freely able to exchange tabs that appeared
+   * either above or either down", and "in all modules — I want this to be the shape of the system".
+   *
+   * OPTIONAL ON PURPOSE, and this is the reason the version below is still 1. A saved layout
+   * already exists in production — the owner's own, the single row in `nav_personal_layout`. Bumping
+   * PERSONAL_LAYOUT_VERSION would make `isPersonalNavigationLayout` reject it, and the loader's
+   * fail-safe would then silently serve him the code-defined nav instead: his saved arrangement
+   * would appear to have been wiped, with no error anywhere. Widening the document with optional
+   * fields keeps every stored layout valid and simply gives it two empty rows.
+   */
+  upperRow?: readonly string[];
+  /**
+   * ZONE 3 — the horizontal nav row BELOW the page title (`nav.moduledeck` in the prototype, y=338).
+   * Same optionality rule as `upperRow` above.
+   */
+  lowerRow?: readonly string[];
   /** Layer 2 + 3 — modules and the pages inside them. */
   sections: readonly PersonalLayoutSection[];
   /** Hrefs the owner chose to hide. Hiding is cosmetic and personal; it revokes nothing. */
   hidden: readonly string[];
 };
+
+/**
+ * The three horizontal zones, in the order they appear down the page. Exported as data rather than
+ * written out at each call site so the editor, the shell and the tests iterate ONE list — adding a
+ * fourth zone later means adding it here, not hunting for the places that enumerate three.
+ */
+export const HORIZONTAL_ZONES = [
+  { key: "strip", label: "Top strip", hint: "Pinned above the sidebar modules." },
+  { key: "upperRow", label: "Upper nav row", hint: "Above the page title." },
+  { key: "lowerRow", label: "Lower nav row", hint: "Below the page title." },
+] as const;
+
+export type HorizontalZoneKey = (typeof HORIZONTAL_ZONES)[number]["key"];
 
 /**
  * The rearrangement below is generic over the item type, and deliberately so. The live sidebar
@@ -77,8 +111,12 @@ export type LayoutSectionLike<TItem extends LayoutItemLike> = {
 };
 
 export type AppliedNavigationOf<TItem extends LayoutItemLike> = {
-  /** Items promoted to the utility strip, in the owner's order. */
+  /** Zone 1 — items promoted to the utility strip, in the owner's order. */
   strip: readonly TItem[];
+  /** Zone 2 — the horizontal bar above the page title. */
+  upperRow: readonly TItem[];
+  /** Zone 3 — the horizontal row below the page title. */
+  lowerRow: readonly TItem[];
   /** The sidebar, after rearrangement. */
   sections: readonly LayoutSectionLike<TItem>[];
 };
@@ -92,6 +130,13 @@ export function isPersonalNavigationLayout(value: unknown): value is PersonalNav
   if (candidate.version !== PERSONAL_LAYOUT_VERSION) return false;
   if (!Array.isArray(candidate.strip) || !candidate.strip.every((h) => typeof h === "string")) return false;
   if (!Array.isArray(candidate.hidden) || !candidate.hidden.every((h) => typeof h === "string")) return false;
+  // ABSENT is valid — see the comment on `upperRow`. Every layout saved before the two horizontal
+  // rows existed omits these, and rejecting one would look to its owner like his arrangement had
+  // been wiped. PRESENT but malformed is not valid, and falls back like any other bad document.
+  const rowsAreValid = ([candidate.upperRow, candidate.lowerRow] as const).every(
+    (row) => row === undefined || (Array.isArray(row) && row.every((h) => typeof h === "string")),
+  );
+  if (!rowsAreValid) return false;
   if (!Array.isArray(candidate.sections)) return false;
   return candidate.sections.every(
     (section) =>
@@ -111,6 +156,8 @@ export function defaultLayoutFrom<TItem extends LayoutItemLike>(
   return {
     version: PERSONAL_LAYOUT_VERSION,
     strip: [],
+    upperRow: [],
+    lowerRow: [],
     sections: sections.map((section) => ({
       id: section.id,
       label: section.label,
@@ -132,7 +179,7 @@ export function applyPersonalLayout<TItem extends LayoutItemLike>(
   layout: PersonalNavigationLayout | null,
 ): AppliedNavigationOf<TItem> {
   if (!layout) {
-    return { strip: [], sections: gatedSections };
+    return { strip: [], upperRow: [], lowerRow: [], sections: gatedSections };
   }
 
   // Index the gated set by href. This map is the ONLY source of items below — which is what makes
@@ -161,7 +208,13 @@ export function applyPersonalLayout<TItem extends LayoutItemLike>(
     return item;
   };
 
+  // The three horizontal zones are resolved BEFORE the sidebar, and that order is load-bearing.
+  // `take` marks an href as placed, so a tab the owner moved up into a row is pulled OUT of whatever
+  // sidebar section defined it rather than rendering in both places. Resolving the sidebar first
+  // would claim every href and leave all three rows permanently empty.
   const strip = layout.strip.map(take).filter((item): item is TItem => item !== null);
+  const upperRow = (layout.upperRow ?? []).map(take).filter((item): item is TItem => item !== null);
+  const lowerRow = (layout.lowerRow ?? []).map(take).filter((item): item is TItem => item !== null);
 
   const laidOut = layout.sections.map((section) => ({
     id: section.id,
@@ -201,6 +254,8 @@ export function applyPersonalLayout<TItem extends LayoutItemLike>(
 
   return {
     strip,
+    upperRow,
+    lowerRow,
     sections: sections
       .filter((section) => section.items.length > 0)
       .map((section) => ({ id: section.id, label: section.label, items: section.items })),

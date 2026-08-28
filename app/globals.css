@@ -313,6 +313,38 @@ body {
   background-clip: padding-box;
 }
 
+/* ── The two horizontal navigation rows (zones 2 and 3) ──────────────────────
+   Zone 3 belongs BELOW the page title, and this app has no single page-title
+   component: 37 pages write their own <h1> and 206 render one from a client
+   component. So the row is emitted by the shared title surfaces that DO cover a
+   large share of them (AdminPageHero, the employee-pages shell), and AppShell
+   renders a fallback copy above <main> for everything else.
+
+   This rule is what stops the two ever both appearing. It is CSS rather than
+   React state on purpose: a page places its own copy DEEP inside <main>, long
+   after the shell has rendered, so telling the shell about it would mean a
+   setState during render (a lint error in this repo — see AGENTS.md §2.1) or an
+   effect that flashes a duplicate row on first paint. :has() resolves it with
+   neither, and is already relied on a few rules below for the admin scrollbar.
+   Where :has() is unsupported the failure is a second copy of a nav row, not a
+   broken page. */
+.phx-navrow-scope:has(.phx-navrow--inpage) .phx-navrow--fallback {
+  display: none;
+}
+
+/* A row never wraps and never truncates with an ellipsis (owner's standing
+   rule), so a long one scrolls sideways inside its own container and the page
+   body never scrolls with it. The scrollbar is hidden — the row is one line of
+   tabs, and a visible bar under it reads as a broken divider. */
+.phoenix-navrow-scroll {
+  scrollbar-width: none;
+}
+
+.phoenix-navrow-scroll::-webkit-scrollbar {
+  height: 0;
+  width: 0;
+}
+
 /* Page (document) scrollbar on admin pages — mirrors the sidebar scrollbar exactly
    (thin slate thumb, transparent track, orange on hover). Scoped with :has so the
    employee portal and login pages keep their default browser scrollbar. */

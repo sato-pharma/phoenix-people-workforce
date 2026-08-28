@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 import { resolveAccessContext } from "@/lib/auth/server";
 import { toApiError } from "@/lib/http/api-errors";
-import { isPersonalNavigationLayout } from "@/lib/navigation/personal-layout";
+import { isPersonalNavigationLayout, type PersonalNavigationLayout } from "@/lib/navigation/personal-layout";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import {
   clearPersonalLayout,
@@ -36,9 +36,14 @@ export const dynamic = "force-dynamic";
 /** A generous ceiling that still stops the jsonb column being used as free storage. */
 const MAX_HREFS = 2000;
 
-function countHrefs(layout: { strip: readonly string[]; sections: readonly { items: readonly string[] }[]; hidden: readonly string[] }): number {
+// Takes the whole layout type rather than a structural subset on purpose: a new zone added to
+// PersonalNavigationLayout that this function forgets is a hole in the cap, and a structural
+// parameter would keep compiling happily while the count silently ran low.
+function countHrefs(layout: PersonalNavigationLayout): number {
   return (
     layout.strip.length +
+    (layout.upperRow?.length ?? 0) +
+    (layout.lowerRow?.length ?? 0) +
     layout.hidden.length +
     layout.sections.reduce((total, section) => total + section.items.length, 0)
   );

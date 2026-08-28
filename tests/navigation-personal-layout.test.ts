@@ -31,6 +31,19 @@ const layout = (over: Partial<PersonalNavigationLayout> = {}): PersonalNavigatio
   ...over,
 });
 
+/**
+ * A layout in the shape saved BEFORE the two horizontal rows existed — no upperRow, no lowerRow.
+ * Written as its own literal rather than by deleting keys, so it stays a genuine old document even
+ * if the builder above gains defaults later. The saved row in production is this shape.
+ */
+const legacyLayout = (over: Record<string, unknown> = {}): unknown => ({
+  version: PERSONAL_LAYOUT_VERSION,
+  strip: [],
+  sections: [],
+  hidden: [],
+  ...over,
+});
+
 const hrefsOf = (sections: readonly NavigationSection[]) =>
   sections.map((s) => [s.id, s.items.map((i) => i.href)] as const);
 
@@ -135,6 +148,115 @@ export function runNavigationPersonalLayoutTests() {
     assert.equal(isPersonalNavigationLayout(null), false, "null is not a layout");
     assert.equal(isPersonalNavigationLayout({ version: 99, strip: [], sections: [], hidden: [] }), false, "a future version is rejected");
     assert.equal(isPersonalNavigationLayout({ version: PERSONAL_LAYOUT_VERSION, strip: [1], sections: [], hidden: [] }), false, "non-string hrefs are rejected");
+  }
+
+
+  // ── THE THREE HORIZONTAL ZONES ──────────────────────────────────────────────────────────────
+  // The owner's ask, 2026-08-28: a nav row above the page title and another below it, with any tab
+  // freely movable between them. A tab moved into a row must LEAVE the sidebar — rendering in both
+  // places is the failure mode that makes an arrangement look broken rather than moved.
+  {
+    const applied = applyPersonalLayout(
+      gated,
+      layout({
+        strip: ["/admin/organogram"],
+        upperRow: ["/admin/sales", "/admin/targets"],
+        lowerRow: ["/admin/employees"],
+      }),
+    );
+    assert.deepEqual(applied.upperRow.map((i) => i.href), ["/admin/sales", "/admin/targets"], "the upper row keeps the saved order");
+    assert.deepEqual(applied.lowerRow.map((i) => i.href), ["/admin/employees"], "the lower row resolves");
+    assert.deepEqual(applied.strip.map((i) => i.href), ["/admin/organogram"], "the strip still resolves alongside the rows");
+    assert.deepEqual(applied.sections, [], "every page was placed in a zone, so no sidebar section remains");
+  }
+
+  // A page may sit in exactly ONE zone. A stale layout naming it in two renders it in the first.
+  {
+    const applied = applyPersonalLayout(
+      gated,
+      layout({ upperRow: ["/admin/sales"], lowerRow: ["/admin/sales"] }),
+    );
+    assert.deepEqual(applied.upperRow.map((i) => i.href), ["/admin/sales"], "the first zone listed wins");
+    assert.deepEqual(applied.lowerRow, [], "the same page does not render twice across zones");
+  }
+
+  // The security invariant again, this time through the two new doors. A row is exactly as unable
+  // to introduce an href as the strip and the sections are.
+  {
+    const applied = applyPersonalLayout(
+      gated,
+      layout({ upperRow: ["/admin/payroll-secrets"], lowerRow: ["/admin/not-permitted"] }),
+    );
+    assert.deepEqual(applied.upperRow, [], "the upper row cannot conjure an ungated href");
+    assert.deepEqual(applied.lowerRow, [], "the lower row cannot conjure an ungated href");
+    const gatedHrefs = new Set(gated.flatMap((s) => s.items.map((i) => i.href)));
+    const emitted = [
+      ...applied.strip,
+      ...applied.upperRow,
+      ...applied.lowerRow,
+      ...applied.sections.flatMap((s) => s.items),
+    ].map((i) => i.href);
+    for (const href of emitted) {
+      assert.ok(gatedHrefs.has(href), "every emitted href must come from the gated input: " + href);
+    }
+  }
+
+  // Hiding still wins over a row — a hidden page is not resurrected by being listed in one.
+  {
+    const applied = applyPersonalLayout(
+      gated,
+      layout({ upperRow: ["/admin/sales"], hidden: ["/admin/sales"] }),
+    );
+    assert.deepEqual(applied.upperRow, [], "a hidden page stays hidden even when a row names it");
+  }
+
+  // ── BACKWARD COMPATIBILITY WITH THE LAYOUT ALREADY IN PRODUCTION ────────────────────────────
+  // This is why PERSONAL_LAYOUT_VERSION is still 1. A saved layout exists in nav_personal_layout,
+  // written before these two fields did. If validation rejected it, the loader's fail-safe would
+  // serve the code-defined nav instead and that arrangement would look WIPED, with no error
+  // anywhere. So: an old document must validate, and must simply come back with empty rows.
+  {
+    const old = legacyLayout({ strip: ["/admin/organogram"] });
+    assert.equal(isPersonalNavigationLayout(old), true, "a layout saved before the rows existed is still valid");
+    const applied = applyPersonalLayout(gated, old as PersonalNavigationLayout);
+    assert.deepEqual(applied.upperRow, [], "an old layout yields an empty upper row, not a crash");
+    assert.deepEqual(applied.lowerRow, [], "an old layout yields an empty lower row");
+    assert.deepEqual(applied.strip.map((i) => i.href), ["/admin/organogram"], "everything it DID say still applies");
+    const emitted = applied.sections.flatMap((s) => s.items.map((i) => i.href));
+    assert.ok(emitted.includes("/admin/sales") && emitted.includes("/admin/employees"), "unplaced pages still render");
+  }
+
+  // Present-but-malformed is a different case from absent, and must be rejected like any junk.
+  {
+    assert.equal(isPersonalNavigationLayout(legacyLayout({ upperRow: "sales" })), false, "a non-array upper row is rejected");
+    assert.equal(isPersonalNavigationLayout(legacyLayout({ lowerRow: [1, 2] })), false, "non-string hrefs in a row are rejected");
+    assert.equal(isPersonalNavigationLayout(legacyLayout({ upperRow: [], lowerRow: [] })), true, "explicitly empty rows are valid");
+  }
+
+  // ── THE ROWS ARE ACTUALLY RENDERED ──────────────────────────────────────────────────────────
+  // applyPersonalLayout returning the right items proves nothing on its own: the feature is
+  // invisible unless something renders them, and the "exactly one copy of the lower row" rule is
+  // CSS, which no unit test can execute. Source pins, by pattern rather than a byte window.
+  {
+    const shell = readFileSync("src/components/layout/app-shell.tsx", "utf8");
+    assert.ok(/<HorizontalNavProvider/.test(shell), "AppShell must mount the horizontal-nav provider");
+    assert.ok(/<UpperNavRow\s*\/>/.test(shell), "AppShell must render zone 2 — this is what reaches every page");
+    assert.ok(/<LowerNavRow placement="fallback"/.test(shell), "AppShell must render the zone-3 fallback");
+    assert.ok(/phx-navrow-scope/.test(shell), "the fallback must sit inside the scope the CSS rule keys on");
+
+    const hero = readFileSync("src/components/admin/admin-design-system.tsx", "utf8");
+    assert.ok(
+      /<LowerNavRow[\s\S]{0,200}placement="in-page"/.test(hero),
+      "AdminPageHero must render zone 3 in-page — it is the shared page title for the bulk of the admin surface",
+    );
+
+    // The dedup rule. Without it the fallback and the in-page copy both render on every page that
+    // uses the hero, which is the majority of the admin surface.
+    const css = readFileSync("app/globals.css", "utf8");
+    assert.ok(
+      /\.phx-navrow-scope:has\(\.phx-navrow--inpage\)\s+\.phx-navrow--fallback\s*\{\s*display:\s*none/.test(css),
+      "globals.css must hide the fallback row whenever a page placed the row itself",
+    );
   }
 
   // ── The storage key is always lowercased ────────────────────────────────────────────────────

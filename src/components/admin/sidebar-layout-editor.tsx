@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import {
   closestCorners,
@@ -23,27 +23,41 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { EyeOff, GripVertical, Pin, RotateCcw, Save } from "lucide-react";
+import { EyeOff, GripVertical, PanelBottom, PanelTop, Pin, RotateCcw, Save } from "lucide-react";
 
 import {
   applyPersonalLayout,
+  HORIZONTAL_ZONES,
   PERSONAL_LAYOUT_VERSION,
+  type HorizontalZoneKey,
   type PersonalNavigationLayout,
 } from "@/lib/navigation/personal-layout";
 
 type CataloguePage = { href: string; label: string };
 type CatalogueSection = { id: string; label: string; items: CataloguePage[] };
 
-/** Editable state. Every href in the catalogue lives in exactly one of these three places. */
+/**
+ * Editable state. Every href in the catalogue lives in exactly ONE of these places: one of the
+ * three horizontal zones, one sidebar section, or hidden.
+ *
+ * The zones are keyed by `HorizontalZoneKey` rather than written out as three fields so that the
+ * editor iterates the same HORIZONTAL_ZONES list the layout model exports — adding a fourth zone
+ * later means adding it there, not finding every place here that enumerates three.
+ */
 type EditorState = {
-  strip: string[];
+  zones: Record<HorizontalZoneKey, string[]>;
   sections: { id: string; label: string; items: string[] }[];
   hidden: string[];
 };
 
-const STRIP = "strip";
 const HIDDEN = "hidden";
 const SECTION_PREFIX = "section:";
+const ZONE_KEYS: readonly HorizontalZoneKey[] = HORIZONTAL_ZONES.map((zone) => zone.key);
+
+/** A zone's own key doubles as its drop-container id — they are already unique strings. */
+function isZoneId(containerId: string): containerId is HorizontalZoneKey {
+  return (ZONE_KEYS as readonly string[]).includes(containerId);
+}
 
 /**
  * Build the editable state from the catalogue and whatever was saved.
@@ -57,7 +71,11 @@ function buildInitialState(catalogue: CatalogueSection[], saved: PersonalNavigat
   const applied = applyPersonalLayout(catalogue, saved);
   const known = new Set(catalogue.flatMap((section) => section.items.map((item) => item.href)));
   return {
-    strip: applied.strip.map((item) => item.href),
+    zones: {
+      strip: applied.strip.map((item) => item.href),
+      upperRow: applied.upperRow.map((item) => item.href),
+      lowerRow: applied.lowerRow.map((item) => item.href),
+    },
     sections: applied.sections.map((section) => ({
       id: section.id,
       label: section.label,
@@ -73,27 +91,38 @@ function buildInitialState(catalogue: CatalogueSection[], saved: PersonalNavigat
 function toLayout(state: EditorState): PersonalNavigationLayout {
   return {
     version: PERSONAL_LAYOUT_VERSION,
-    strip: state.strip,
+    strip: state.zones.strip,
+    upperRow: state.zones.upperRow,
+    lowerRow: state.zones.lowerRow,
     sections: state.sections.map((section) => ({ id: section.id, label: section.label, items: section.items })),
     hidden: state.hidden,
   };
 }
 
 function containerIdOf(state: EditorState, href: string): string | null {
-  if (state.strip.includes(href)) return STRIP;
+  for (const key of ZONE_KEYS) {
+    if (state.zones[key].includes(href)) return key;
+  }
   if (state.hidden.includes(href)) return HIDDEN;
   const section = state.sections.find((entry) => entry.items.includes(href));
   return section ? `${SECTION_PREFIX}${section.id}` : null;
 }
 
 function readContainer(state: EditorState, containerId: string): string[] {
-  if (containerId === STRIP) return state.strip;
+  if (isZoneId(containerId)) return state.zones[containerId];
   if (containerId === HIDDEN) return state.hidden;
   return state.sections.find((entry) => `${SECTION_PREFIX}${entry.id}` === containerId)?.items ?? [];
 }
 
 function writeContainer(state: EditorState, containerId: string, items: string[]): EditorState {
-  if (containerId === STRIP) return { ...state, strip: items };
+  if (isZoneId(containerId)) {
+    // Written out rather than as `{ ...state.zones, [containerId]: items }`: a computed key whose
+    // type is a union widens the result to an index signature, which no longer satisfies
+    // Record<HorizontalZoneKey, string[]>.
+    const zones = { ...state.zones };
+    zones[containerId] = items;
+    return { ...state, zones };
+  }
   if (containerId === HIDDEN) return { ...state, hidden: items };
   return {
     ...state,
@@ -103,13 +132,20 @@ function writeContainer(state: EditorState, containerId: string, items: string[]
   };
 }
 
+/** One icon per horizontal zone, so the three columns are told apart at a glance rather than read. */
+const ZONE_ICON: Record<HorizontalZoneKey, ReactNode> = {
+  strip: <Pin className="h-3.5 w-3.5 shrink-0 text-[#F8B56B]" />,
+  upperRow: <PanelTop className="h-3.5 w-3.5 shrink-0 text-[#F8B56B]" />,
+  lowerRow: <PanelBottom className="h-3.5 w-3.5 shrink-0 text-[#F8B56B]" />,
+};
+
 function DraggableRow({ href, label }: { href: string; label: string }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: href });
   return (
     <div
       ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition }}
-      className={`flex items-center gap-2 border border-slate-200 bg-white px-2.5 py-2 ${
+      className={`flex w-max min-w-full items-center gap-2 border border-slate-200 bg-white px-2.5 py-2 ${
         isDragging ? "opacity-40" : "hover:border-slate-300"
       }`}
       {...attributes}
@@ -131,6 +167,7 @@ function DropColumn({
   items,
   labelOf,
   accent,
+  icon,
   onRename,
 }: {
   containerId: string;
@@ -138,12 +175,13 @@ function DropColumn({
   hint?: string;
   items: string[];
   labelOf: Map<string, string>;
-  accent?: "strip" | "hidden";
+  accent?: "zone" | "hidden";
+  icon?: ReactNode;
   onRename?: (label: string) => void;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: containerId });
   const border =
-    accent === "strip"
+    accent === "zone"
       ? "border-[#F8B56B]"
       : accent === "hidden"
         ? "border-slate-300 border-dashed"
@@ -152,8 +190,7 @@ function DropColumn({
   return (
     <div className={`flex min-w-0 flex-col border ${border} bg-[#FBFCFE] ${isOver ? "ring-2 ring-[#F8B56B]" : ""}`}>
       <div className="flex items-center gap-2 border-b border-slate-200 bg-white px-3 py-2">
-        {accent === "strip" && <Pin className="h-3.5 w-3.5 shrink-0 text-[#F8B56B]" />}
-        {accent === "hidden" && <EyeOff className="h-3.5 w-3.5 shrink-0 text-slate-400" />}
+        {icon}
         {onRename ? (
           <input
             aria-label={`Rename ${title}`}
@@ -210,7 +247,7 @@ export function SidebarLayoutEditor({
   // Which container is the drop target? `over.id` is either a container's own id (dropped on empty
   // space) or an href sitting inside one.
   function resolveContainer(id: string): string | null {
-    if (id === STRIP || id === HIDDEN || id.startsWith(SECTION_PREFIX)) return id;
+    if (isZoneId(id) || id === HIDDEN || id.startsWith(SECTION_PREFIX)) return id;
     return containerIdOf(state, id);
   }
 
@@ -344,19 +381,27 @@ export function SidebarLayoutEditor({
         onDragStart={(event: DragStartEvent) => setDragging(String(event.active.id))}
         sensors={sensors}
       >
-        <div className="grid gap-4 lg:grid-cols-2">
-          <DropColumn
-            accent="strip"
-            containerId={STRIP}
-            hint="Layer 1 — pages lifted out of the modules and pinned to the top of the sidebar."
-            items={state.strip}
-            labelOf={labelOf}
-            title="Top strip"
-          />
+        {/* The three horizontal zones, in the order they appear down the page, then Hidden. Drag a
+            page between any of them and the modules below — that free exchange between the row
+            above the page title and the row below it is the whole point of this screen. */}
+        <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-4">
+          {HORIZONTAL_ZONES.map((zone) => (
+            <DropColumn
+              accent="zone"
+              containerId={zone.key}
+              hint={zone.hint}
+              icon={ZONE_ICON[zone.key]}
+              items={state.zones[zone.key]}
+              key={zone.key}
+              labelOf={labelOf}
+              title={zone.label}
+            />
+          ))}
           <DropColumn
             accent="hidden"
             containerId={HIDDEN}
-            hint="Hidden from your sidebar. This only affects what you see — it removes no access."
+            hint="Hidden from your navigation. This only affects what you see — it removes no access."
+            icon={<EyeOff className="h-3.5 w-3.5 shrink-0 text-slate-400" />}
             items={state.hidden}
             labelOf={labelOf}
             title="Hidden"
