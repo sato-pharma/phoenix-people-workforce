@@ -20,6 +20,7 @@ import {
   blockReasonFor,
   buildCrmIdentityMaps,
   getCrmIdentityResolutions,
+  recordsNoWorkToAttribute,
   resolveEmployeeAttribution,
   resolveEmployeeHrId,
   type CrmAttribution,
@@ -270,6 +271,57 @@ export function selectIdentitiesToPreserve<TRow>(
     }
   }
   return keys;
+}
+
+/**
+ * The fields countBlockedAttributions reads — a structural subset of IReports360Visit, so a test can
+ * state a case as one literal instead of building a whole vendor record.
+ */
+export type BlockCountableVisit = {
+  agentID: number | null;
+  agentName: string | null;
+  visitDate: string | null;
+  visitType: number | null;
+};
+
+/** How many blocked attributions each end of the employment span produced on one sync run. */
+export type BlockedAttributionCounts = { postExit: number; preHire: number };
+
+/**
+ * Pure decision core of the block DETECTION pass — split out for the same reason as
+ * selectIdentitiesToPreserve above: the counting RULES are the part worth pinning, and pinning them
+ * should not require Supabase or a live CRM fetch.
+ *
+ * Both counters mean one specific thing: "these rows need an identity override recorded", and a
+ * non-zero count marks the sync degraded and pages a human. So a row only counts if an override
+ * could actually change something about it. Two shapes cannot, and are skipped:
+ *
+ *   1. A REFUSED OVERRIDE (blockedByOverride). The slot already HAS a human's decision; it was
+ *      refused only because this date falls outside that person's employment. Nothing is left to
+ *      record. Measured in production 2026-08-28: 9 rows across 7 retired slots, 0 real visits.
+ *   2. A row that records NO WORK — a public holiday or casual-leave marker. iReports360 sprays one
+ *      across every account on the day, deactivated ones included, so a block on one says only that
+ *      a dead slot still exists. See recordsNoWorkToAttribute for the measurement.
+ *
+ * Skipping is safe against the one case that would matter — a CRM slot genuinely reused for a new
+ * hire — because such a slot also produces real calls, and those still count.
+ */
+export function countBlockedAttributions(
+  visits: readonly BlockCountableVisit[],
+  maps: CrmIdentityMaps,
+): BlockedAttributionCounts {
+  let postExit = 0;
+  let preHire = 0;
+  for (const visit of visits) {
+    const visitDay = (visit.visitDate ?? "").slice(0, 10) || null;
+    const agent = resolveEmployeeAttribution(visit.agentID, visit.agentName, maps, visitDay);
+    if (!agent.blockedHrId) continue;
+    if (agent.blockedByOverride) continue;
+    if (recordsNoWorkToAttribute(visit.visitType)) continue;
+    if (blockReasonFor(agent.blockedHrId, visitDay, maps) === "pre_hire") preHire += 1;
+    else postExit += 1;
+  }
+  return { postExit, preHire };
 }
 
 /**
@@ -609,22 +661,9 @@ export async function syncIReports360Visits(input: {
     // going unattributed today and wants acting on now, while a pre-hire block is the previous
     // occupant's history detaching from a new joiner — a backfill to reconcile. One shared counter
     // would let a burst of old rows drown out a live problem.
-    let blockedPreHireAttributions = 0;
-    let blockedPostExitAttributions = 0;
-    for (const visit of visits) {
-      const visitDay = (visit.visitDate ?? "").slice(0, 10) || null;
-      const agent = resolveEmployeeAttribution(visit.agentID, visit.agentName, maps, visitDay);
-      if (!agent.blockedHrId) continue;
-      // A block from a REFUSED OVERRIDE is deliberately not counted here. Both counters mean "these
-      // rows need an identity override recorded", and drive the degraded digest below; a slot that
-      // already HAS one, refused only because this date falls outside that person's employment, has
-      // nothing left for anyone to do. Counting it would mark every sync degraded forever over rows
-      // no action can clear. Measured in production 2026-08-28: 9 such rows across 7 retired slots,
-      // every one a public-holiday or meeting marker on a name-stripped account, 0 real visits.
-      if (agent.blockedByOverride) continue;
-      if (blockReasonFor(agent.blockedHrId, visitDay, maps) === "pre_hire") blockedPreHireAttributions += 1;
-      else blockedPostExitAttributions += 1;
-    }
+    // Which blocks actually count, and why two shapes are skipped, is documented on the pure core.
+    const { postExit: blockedPostExitAttributions, preHire: blockedPreHireAttributions } =
+      countBlockedAttributions(visits, maps);
 
     // The upsert set may be narrowed to the live poller's changed-row delta; the deduped
     // full-fetch arrays above stay untouched because reconciliation below MUST see the whole

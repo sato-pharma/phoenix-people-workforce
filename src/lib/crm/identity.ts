@@ -16,6 +16,7 @@ import { getEmployeeDirectoryRows, type EmployeeDirectoryRow } from "@/lib/emplo
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { CRM_IDENTITY_RESOLUTIONS_TABLE } from "@/lib/crm/tables";
 import { isCrmSchemaMissingError } from "@/lib/crm/schema";
+import { CASUAL_LEAVE_TYPE, HOLIDAY_TYPE } from "@/lib/crm/visit-types";
 import type { CrmIdentityMaps, CrmManualOverride, CrmResolutionAction, CrmResolutionRow } from "@/lib/crm/types";
 
 export type { CrmIdentityMaps, CrmManualOverride, CrmResolutionAction, CrmResolutionRow } from "@/lib/crm/types";
@@ -245,6 +246,38 @@ export function blockReasonFor(
   const hireDate = maps.hireDateByHrId.get(hrId);
   if (visitDate && hireDate && visitDate.slice(0, 10) < hireDate) return "pre_hire";
   return "post_exit";
+}
+
+/**
+ * True when a row records the ABSENCE of work — a public holiday or a casual leave day — and so
+ * cannot be anybody's unattributed work no matter who the CRM slot resolves to.
+ *
+ * WHY THE BLOCK COUNTERS NEED THIS. Both counters mean "these rows need an identity override
+ * recorded", and a non-zero count marks the sync degraded. iReports360 sprays a holiday marker
+ * across EVERY account on a public holiday, deactivated ones included — measured on production
+ * 2026-08-27, a public holiday: 168 markers, one per slot, and zero real calls company-wide. Five
+ * of those landed on accounts whose holder had left, so the post-exit guard refused them and the
+ * sync reported "with warnings" on all 48 runs that day and every run since. Nothing could ever
+ * clear it: each of those five slots stopped producing real work on the exact day its holder left
+ * (`( Behira 2 / C )` last real call 2026-07-11, holder left 2026-07-11; `( Cairo West / C )`
+ * 2026-06-10 against 2026-06-11; `( Bani Sweif / E )` 2026-06-10 against 2026-06-10), and the CRM
+ * admin strips the name at resignation, so no override is even recordable.
+ *
+ * Whole-table scan, 126,410 rows on 2026-08-28: of 266 counted blocks this silences 91 — the 5
+ * post-exit ones and 86 of the 261 pre-hire ones — and leaves 175 standing, every one of them on a
+ * row that records real activity (155 campaign, 11 regular, 5 meeting, 3 training, 1 annual
+ * vacation). 31 dormant slots stop alarming; the 6 that carry real work keep alarming. A slot
+ * genuinely reused for a new hire cannot hide here: it produces real calls too, and those still
+ * count.
+ *
+ * NOT PAYROLL SEMANTICS, and never to be reused as such. Whether a code costs an employee money is
+ * decided by VISIT_TYPE_TO_STATUS in field-workforce-compliance/ireports360-source.ts, which is
+ * owner-confirmed and deliberately separate. This answers one narrower question: can an identity
+ * override change anything about this row? Only the two codes are listed — a meeting, a campaign or
+ * an admin-work row IS activity somebody performed, and a block on one still wants acting on.
+ */
+export function recordsNoWorkToAttribute(visitType: number | null | undefined): boolean {
+  return visitType === HOLIDAY_TYPE || visitType === CASUAL_LEAVE_TYPE;
 }
 
 /**
