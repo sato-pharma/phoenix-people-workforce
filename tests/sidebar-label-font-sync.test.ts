@@ -16,7 +16,7 @@ import { readFileSync } from "node:fs";
  * whole time, because a width guard that measures the wrong typeface cannot fail. It was reverted,
  * and this test is what makes the next attempt visible.
  *
- * Two independent ways they can drift apart, so two assertions:
+ * Three independent ways they can drift apart, so three assertions:
  *
  *   1. The family LIST must match. A change to --phx-font-ui that skips sidebar-metrics.ts is the
  *      exact shape of what shipped.
@@ -24,6 +24,13 @@ import { readFileSync } from "node:fs";
  *      subtler half: even with identical stacks, headless Chromium renders a self-hosted face only
  *      if something serves it the file. The harness injects no @font-face at all, so it would fall
  *      back to a system substitute and still measure the wrong thing.
+ *   3. The SIZE and WEIGHT must match what each rail's label span renders. The family is only one
+ *      of three inputs to a text advance, and this one had already drifted before #2541 ever
+ *      landed: sidebar-metrics.ts modelled the admin label at weight 600 from #1999 while
+ *      sidebar.tsx has rendered `font-bold` (700) since 2026-06-02 — every admin label measured
+ *      1-6px narrower than it ships, for three months, with the width guard green throughout. That
+ *      one hid in plain sight because the two numbers live in different files and nothing compared
+ *      them; unlike #2541 it never became visible, which is worse, not better.
  *
  * If you are shipping a UI webfont: size-match it to Aptos with `size-adjust` first, teach
  * scripts/measure-sidebar-labels.ts to load the file, re-run `pnpm run ui:measure-sidebar-labels`,
@@ -36,6 +43,30 @@ const TOKENS = "src/styles/tokens.css";
 const METRICS = "src/config/sidebar-metrics.ts";
 const LAYOUT = "app/layout.tsx";
 const HARNESS = "scripts/measure-sidebar-labels.ts";
+const ADMIN_RAIL = "src/components/layout/sidebar.tsx";
+const PORTAL_RAIL = "src/components/employee-portal/employee-portal-layout.tsx";
+
+/** Tailwind's named weights. `font-bold` is 700 — the one that was modelled as 600 for three months. */
+const WEIGHTS: Record<string, number> = {
+  thin: 100, extralight: 200, light: 300, normal: 400, medium: 500,
+  semibold: 600, bold: 700, extrabold: 800, black: 900,
+};
+
+/** Resolve a `text-phx-<step>` utility to its pixel value via --phx-fs-<step> in tokens.css. */
+function stepPx(tokens: string, step: string): number | null {
+  const m = tokens.match(new RegExp(`--phx-fs-${step}:\\s*(\\d+(?:\\.\\d+)?)px`));
+  return m ? Number(m[1]) : null;
+}
+
+/** The size and weight a class string renders at, resolved through the token ladder. */
+function renderedType(classes: string, tokens: string): { size: number | null; weight: number | null } {
+  const size = classes.match(/\btext-phx-([a-z0-9]+)\b/);
+  const weight = classes.match(/\bfont-(thin|extralight|light|normal|medium|semibold|bold|extrabold|black)\b/);
+  return {
+    size: size ? stepPx(tokens, size[1]) : null,
+    weight: weight ? WEIGHTS[weight[1]] : null,
+  };
+}
 
 /** Split a CSS font-family list into normalised family names, quotes and whitespace removed. */
 function families(list: string): string[] {
@@ -87,5 +118,73 @@ export function runSidebarLabelFontSyncTests() {
         `regression through a green suite. Teach the harness to inject the same @font-face, or ` +
         `drop the webfont.`,
     );
+  }
+
+  // ── 3. the modelled size and weight must match what each rail renders ────────
+  // The family is only half of it. sidebar-metrics.ts modelled the admin label at weight 600 from
+  // #1999 while sidebar.tsx rendered `font-bold` (700) from 2026-06-02 — every admin label measured
+  // 1-6px narrower than it ships, for three months, with the width guard green throughout. Pinned by
+  // PATTERN rather than a byte window: a fixed slice false-fails the moment the file shifts.
+  const rails = [
+    {
+      shell: "admin",
+      file: ADMIN_RAIL,
+      // EVERY label <span>, not just the first. sidebar.tsx renders two — the flat NavRow and the
+      // nested one — carrying byte-identical classes today. Matching only the first would let them
+      // drift apart silently, which is the same shape of gap this whole test exists to close.
+      find: (src: string) =>
+        src.split("\n").filter((l) => l.includes("min-w-0 flex-1 truncate text-phx-")),
+      modelled: metrics.match(/LABEL_FONT_CSS\s*=\s*`font-size:(\d+)px;font-weight:(\d+)/),
+    },
+    {
+      shell: "portal",
+      file: PORTAL_RAIL,
+      // Desktop label span; the line is `isMobile ? "<mobile>" : "<desktop>"`, so take the branch
+      // after the colon — the collapsed icon rail renders no labels and the mobile sheet is not
+      // what PORTAL_LABEL_FONT_CSS models.
+      find: (src: string) =>
+        src
+          .split("\n")
+          .filter((l) => l.includes("isMobile ?") && l.includes("text-phx-"))
+          .map((l) => l.slice(l.lastIndexOf(":"))),
+      modelled: metrics.match(/PORTAL_LABEL_FONT_CSS\s*=\s*`font-size:(\d+)px;font-weight:(\d+)/),
+    },
+  ];
+
+  for (const rail of rails) {
+    const src = readFileSync(rail.file, "utf8");
+    const spans = rail.find(src);
+    assert.ok(
+      spans.length > 0,
+      `Could not find the ${rail.shell} rail's label span in ${rail.file}. This test pins it by the ` +
+        `class pattern, so a re-styled span needs the matcher re-pointed here — do not delete the ` +
+        `assertion, or the width guard goes back to measuring whatever it likes.`,
+    );
+    assert.ok(rail.modelled, `${METRICS} must declare a font-size and font-weight for the ${rail.shell} label`);
+
+    const modelledSize = Number(rail.modelled[1]);
+    const modelledWeight = Number(rail.modelled[2]);
+
+    for (const classes of spans) {
+      const actual = renderedType(classes, tokens);
+
+      assert.equal(
+        actual.size,
+        modelledSize,
+        `The ${rail.shell} rail renders its label at ${actual.size}px but ${METRICS} measures it at ` +
+          `${modelledSize}px.\n  rendered: ${classes.trim().slice(0, 120)}\nEvery width in ` +
+          `tests/fixtures/sidebar-label-widths.json is wrong by that difference. Fix the model, then ` +
+          `re-run \`pnpm run ui:measure-sidebar-labels\`.`,
+      );
+      assert.equal(
+        actual.weight,
+        modelledWeight,
+        `The ${rail.shell} rail renders its label at weight ${actual.weight} but ${METRICS} measures ` +
+          `it at ${modelledWeight}.\n  rendered: ${classes.trim().slice(0, 120)}\nA heavier face is ` +
+          `wider, so the budget check is generous by exactly the amount nobody measured — this is the ` +
+          `600-vs-700 bug that hid for three months. Fix the model, then re-run ` +
+          `\`pnpm run ui:measure-sidebar-labels\`.`,
+      );
+    }
   }
 }
