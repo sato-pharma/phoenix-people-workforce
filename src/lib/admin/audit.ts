@@ -62,7 +62,6 @@ export type AuditEntityType =
   // (verified against production 2026-08-23), so this needs no migration of its own.
   | "marketing_pharmacy"
   | "marketing_request"
-  | "module_control_assignment"
   | "notification"
   | "outstation_expense_access"
   | "outstation_request"

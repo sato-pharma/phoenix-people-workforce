@@ -19,13 +19,11 @@ import { useDismissOnOutsideInteraction } from "@/hooks/use-dismiss-on-outside-i
 export function Topbar({
   navigationMode = "admin",
   permissionLookup = {},
-  effectiveModuleIds,
   viewer,
   currentRole,
   scope,
 }: {
   currentRole?: PhoenixRole;
-  effectiveModuleIds?: readonly string[] | null;
   navigationMode?: NavigationMode;
   permissionLookup?: PermissionLookup;
   scope?: AccessContext["scope"];
@@ -57,7 +55,6 @@ export function Topbar({
         navigationMode={navigationMode}
         currentRole={currentRole}
         isSystemAdministratorWorkspace={scope === "system" || currentRole === "Super Admin"}
-        effectiveModuleIds={effectiveModuleIds}
         onClose={() => setMenuOpen(false)}
         open={menuOpen}
         permissionLookup={permissionLookup}
