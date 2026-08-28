@@ -134,11 +134,15 @@ export function runCrmPostExitAttributionTests() {
     "a different person's label does not resolve to the departed employee at all",
   );
 
-  // ── (F) An explicit admin override WINS, including for post-exit dates ───────────────────
+  // ── (F) An explicit admin override wins WITHIN the mapped person's own employment ────────
   //
   // Tier 1 is a human's hand-verified decision about who owns a CRM slot, and it is the intended way
-  // to record "this slot belongs to someone the roster doesn't link". Guarding it would let a stale
-  // roster date veto a human decision, inverting the waterfall's authority order.
+  // to record "this slot belongs to someone the roster doesn't link". What it cannot do is credit a
+  // day that person was not employed: a mapping names a PERSON, never a period. The owner's rule,
+  // given 2026-08-28 — "If matches, then credit him. If not matches, leave him."
+  //
+  // B-164 has no last working date recorded, so there is no span to fall outside and the override
+  // resolves the slot outright, exactly as it always did.
   const resolutions: CrmResolutionRow[] = [{ crmId: 1536, mappedHrId: "B-164", status: "mapped" }];
   const overriddenMaps = buildCrmIdentityMaps([leaver, replacement], resolutions);
   assert.equal(
@@ -151,15 +155,23 @@ export function runCrmPostExitAttributionTests() {
     null,
     "an override is not a blocked attribution — nothing needs alerting",
   );
-  // And the override is not itself vetoed when it points at someone with a last working date.
+  // But an override pointing at someone who HAD left by that date is refused, even though nothing
+  // else can answer the slot either — 9999 is on no employee's crm_id and the record carries no
+  // label. Until 2026-08-28 this read "PD-0003"; the hourly sync used exactly that path to re-credit
+  // 40 rows to people who had already left, hours after they were cleared by hand. See
+  // crm-override-employment-scope for the full account and the production measurement.
   const overrideToLeaver = buildCrmIdentityMaps([leaver, replacement], [
     { crmId: 9999, mappedHrId: "PD-0003", status: "mapped" },
   ]);
+  const refused = resolveEmployeeAttribution(9999, null, overrideToLeaver, "2026-07-15");
+  assert.equal(refused.hrId, null, "a mapping cannot credit a date after the mapped person left");
   assert.equal(
-    resolveEmployeeHrId(9999, null, overrideToLeaver, "2026-07-15"),
+    refused.blockedHrId,
     "PD-0003",
-    "the guard must not override an admin's explicit decision",
+    "and the refusal is REPORTED rather than discarded — a silent null would let " +
+      "preserveResolvedIdentities restore the very attribution this refusal is withholding",
   );
+  assert.equal(refused.blockedByOverride, true, "flagged settled, so it is not counted as needing an override");
 
   // ── (G) No date supplied → previous behaviour, so no caller silently starts failing ───────
   assert.equal(

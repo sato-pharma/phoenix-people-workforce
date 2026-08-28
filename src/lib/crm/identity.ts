@@ -204,7 +204,19 @@ export function isAttributableOn(
 /** The outcome of one attribution attempt. `blockedHrId` is set when a tier DID match but the
  * employment-span guard rejected it — the caller can count and report those instead of seeing a bare
  * null that looks identical to "this agent is simply unknown". */
-export type CrmAttribution = { blockedHrId: string | null; hrId: string | null };
+export type CrmAttribution = {
+  blockedHrId: string | null;
+  hrId: string | null;
+  /** True when the block came from a refused MANUAL OVERRIDE rather than an automatic tier.
+   *
+   * Both kinds of block mean the same thing to the sync's writer — do not credit, and do not treat
+   * the null as an absence of information — but they mean opposite things to a human. An automatic
+   * block is ACTIONABLE: a CRM slot was handed over and somebody needs to record who owns it. An
+   * override block is SETTLED: somebody already recorded it, and the answer is that this particular
+   * date is not theirs. Reporting the settled kind through the "needs an identity override" counters
+   * would raise a warning on every sync that no action could ever clear. See sync.ts's counting loop. */
+  blockedByOverride?: boolean;
+};
 
 /** Which end of the employment span refused an attribution. */
 export type CrmBlockReason = "pre_hire" | "post_exit";
@@ -241,11 +253,15 @@ export function blockReasonFor(
  * (which IS the crm_username, e.g. "Rasha.Sabry ( P.M / F )" — confirmed from real captured
  * iReports360 data) against a unique crm_username on the roster.
  *
- * `visitDate` (the record's own date, YYYY-MM-DD) enables the post-exit guard on the two AUTOMATIC
- * tiers. The manual override is deliberately EXEMPT: it is an admin's explicit, hand-verified
- * decision about who owns a CRM slot, and it is the intended way to record "this slot belongs to
- * someone the roster doesn't link" — including for historical rows. Guarding it would let a stale
- * roster date silently veto a human decision, which inverts the waterfall's whole authority order.
+ * `visitDate` (the record's own date, YYYY-MM-DD) enables the employment guard on ALL THREE tiers,
+ * the manual override included. The owner's rule, given 2026-08-28: "you will see when he is hired
+ * and when he is resigned, and his area and his line. If matches, then credit him. If not matches,
+ * leave him." A mapping therefore says WHO a CRM slot belongs to; it never says that person was
+ * employed on the day a given row is dated, and it cannot credit them outside their own tenure.
+ *
+ * An override refused that way is still REPORTED (as a block, see overrideRefusal) rather than
+ * discarded, which is what keeps the authority order intact — the admin's decision does not vanish,
+ * it surfaces as a row nobody eligible owns.
  */
 export function resolveEmployeeAttribution(
   crmId: number | string | null | undefined,
@@ -254,10 +270,9 @@ export function resolveEmployeeAttribution(
   visitDate?: string | null,
 ): CrmAttribution {
   // Set when tier 1 matched a slot but the mapped person's own employment does not cover this date.
-  // Carried to the end as a FALLBACK: the automatic tiers get first refusal, and if none of them can
-  // answer, the admin's decision still stands. See the tier 1 comment below for why it is a fallback
-  // and not a block.
-  let overrideFallbackHrId: string | null = null;
+  // Carried to the end so the refusal can be REPORTED if no automatic tier answers either — the row
+  // is never credited to them. See the tier 1 comment below and overrideRefusal.
+  let overrideRefusedHrId: string | null = null;
 
   if (crmId != null) {
     // Tier 1 — explicit admin decision. LABEL-SCOPED when the resolution stored the CRM label it
@@ -280,24 +295,29 @@ export function resolveEmployeeAttribution(
     // So when the record's date falls outside the mapped person's own employment, the override
     // stands ASIDE and lets the automatic tiers try. If one of them resolves — meaning somebody
     // whose crm_id or own label matches AND whose employment covers the date — that answer wins,
-    // and slot 1391's two halves land on their two owners from a single mapping. If none of them
-    // resolves, the override applies after all (see the fallback at the end of this function).
+    // and slot 1391's two halves land on their two owners from a single mapping.
     //
-    // THAT LAST CLAUSE IS NOT A SOFTENING, IT IS THE POINT. An override is a human's hand-verified
-    // decision and it is the intended way to record "this slot belongs to someone the roster does
-    // not link". If a date outside the roster's span could veto it outright, an admin answering
-    // this guard's own alert could save a mapping that silently did nothing — the decision would
-    // vanish with no error, and the rows would stay unattributed with no way to fix them. A
-    // mapping that cannot be defeated by a roster date, only SUPERSEDED by better evidence, keeps
-    // both properties: crm-post-exit-attribution (F) and crm-pre-hire-attribution (J) still pin
-    // that authority, and the handover case is still fixed.
+    // AND IF NONE OF THEM RESOLVES, THE ROW IS STILL NOT CREDITED TO THE MAPPED PERSON. It is
+    // reported as a block instead. This shipped the other way that morning — the override applied
+    // after all, on the reasoning that a human decision must never be vetoed into nothing by a
+    // roster date. That reasoning was answering a real risk with the wrong instrument, and the data
+    // said so within hours: at 09:34:57 Cairo on 2026-08-28 the hourly sync re-credited 40 rows to
+    // people who had already left, the largest group being 27 August public-holiday markers landing
+    // on four leavers whose accounts no automatic tier could resolve. Each one had been cleared by
+    // hand an hour earlier and came straight back.
     //
-    // Measured across every mapped override in production on 2026-08-28 — all visits, agent and
-    // double side, mirroring isAttributableOn exactly: exactly ONE row sits outside its mapped
-    // person's employment span today. Slot 1536 -> B-164, one visit dated 2026-08-27, ten days
-    // after that employee's 2026-08-17 last working day, and neither automatic tier resolves it,
-    // so it keeps the override and its attribution is unchanged. Nothing in the current data moves
-    // at all; this path exists for slot 1391 and the handovers after it.
+    // The owner's rule settles it: "If matches, then credit him. If not matches, leave him." A
+    // mapping identifies a PERSON, never a period, so it cannot answer for a day they were not
+    // employed — no matter that nothing else can answer either.
+    //
+    // The risk the old fallback was protecting against is real and is still covered, in the two
+    // places that actually address it. A mapping that would credit pre-hire rows is REFUSED at save
+    // time, loudly, before anything is written (setUnmappedCrmIdentityResolution) — so an admin
+    // cannot save one that does nothing without being told. And a refusal here is a block rather
+    // than a silent null, so the row stays honestly unattributed instead of quietly reverting to
+    // whatever stale hr id it carried before, which is what "silently did nothing" would really
+    // have looked like. (The block is flagged blockedByOverride and deliberately kept OUT of the
+    // sync's two "needs an identity override" counters — it is settled, not actionable.)
     const overridden = maps.hrIdByManualOverride.get(String(crmId));
     if (overridden) {
       const recordLabel = normalizeCrmName(name);
@@ -305,7 +325,7 @@ export function resolveEmployeeAttribution(
         if (isAttributableOn(overridden.hrId, visitDate, maps, name)) {
           return { blockedHrId: null, hrId: overridden.hrId };
         }
-        overrideFallbackHrId = overridden.hrId;
+        overrideRefusedHrId = overridden.hrId;
       }
     }
     // Tier 2 — employees.crm_id. This is the tier that misattributes a reused CRM slot.
@@ -318,7 +338,7 @@ export function resolveEmployeeAttribution(
     }
   }
   const key = normalizeCrmName(name);
-  if (!key) return overrideFallback(overrideFallbackHrId);
+  if (!key) return overrideRefusal(overrideRefusedHrId);
   // Tier 3 — unique crm_username. The POST-EXIT half can only ever allow here: this tier resolved
   // BECAUSE the record's label is that employee's own label, which is exactly the condition the
   // post-exit check tests. That is the right answer rather than a loophole — a label matching a
@@ -332,22 +352,30 @@ export function resolveEmployeeAttribution(
   // largest being 931 real doctor calls dated up to 207 days before that employee joined. Only the
   // date can refuse them.
   const byName = maps.hrIdByCrmUsername.get(key);
-  if (!byName) return overrideFallback(overrideFallbackHrId);
-  // A tier that matched and was REFUSED ends the waterfall on its own block, and the override
-  // fallback deliberately does not rescue it. The two are different statements: "no automatic tier
-  // knows this slot" leaves the human decision as the only evidence there is, whereas "a tier knows
-  // exactly who this is and that person was not employed that day" is positive evidence that nobody
-  // eligible owns the row. Slot 1391's 06-03..06-19 gap is the case — the leaver had gone and the
-  // joiner had not started — and crediting it to either of them would invent work nobody did.
+  if (!byName) return overrideRefusal(overrideRefusedHrId);
+  // A tier that matched and was REFUSED ends the waterfall on its OWN block, which is the more
+  // specific answer: this tier names the person the record's own crm_id or label points at, where an
+  // override refusal names whoever the slot was mapped to. Neither credits the row. Slot 1391's
+  // 06-03..06-19 gap is the case — the leaver had gone and the joiner had not started — and
+  // crediting it to either of them would invent work nobody did.
   if (!isAttributableOn(byName, visitDate, maps, name)) return { blockedHrId: byName, hrId: null };
   return { blockedHrId: null, hrId: byName };
 }
 
-/** No automatic tier answered. An employment-refused override is still the best evidence available,
- * so it applies here rather than being silently discarded — and it is NOT reported as a block: a
- * block means "somebody must decide this", and somebody already has. */
-function overrideFallback(overrideFallbackHrId: string | null): CrmAttribution {
-  return { blockedHrId: null, hrId: overrideFallbackHrId };
+/** No automatic tier answered. If tier 1 matched a slot but the mapped person's employment does not
+ * cover this date, the row is refused and REPORTED — never credited to them.
+ *
+ * Reported rather than silent, because those are two different absences. A silent attribution means
+ * "no information", and preserveResolvedIdentities restores whatever hr id the row already carried —
+ * which would quietly reinstate the stale attribution the mapping exists to correct. A block says a
+ * specific person was considered and was not employed that day, so the row stays honestly
+ * unattributed. It carries blockedByOverride so the sync can tell this settled refusal apart from an
+ * automatic block, which is a live handover somebody still has to answer.
+ *
+ * With no override in play at all, null/null is still right: nothing was considered. */
+function overrideRefusal(overrideRefusedHrId: string | null): CrmAttribution {
+  if (!overrideRefusedHrId) return { blockedHrId: null, hrId: null };
+  return { blockedByOverride: true, blockedHrId: overrideRefusedHrId, hrId: null };
 }
 
 /** The waterfall's hr-id answer alone — the shape every existing caller expects. */
