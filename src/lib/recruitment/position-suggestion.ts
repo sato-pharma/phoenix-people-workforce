@@ -468,6 +468,44 @@ export const TIER_RANK: Record<PlaceTier, number> = { area: 3, neighbourhood: 2,
 const MAX_SHORTLIST = 5;
 
 /**
+ * A TIE-BREAK, NOT A GATE. Used only to choose between seats that are already tied, and it can
+ * never be the reason a candidate is told nothing.
+ *
+ * Two candidates on file land on a shortlist purely because one Arabic name is two places on the
+ * map: "Dayrout, Asyut" reaches Dayrout in Assiut and the other one in Beheira, and "Matarya"
+ * reaches Cairo and Dakahlia both, which is the behaviour the owner asked for. In each case the CV
+ * had already said which — "Asyut" is in the address itself, and the governorate column reads
+ * Dakahlia — so offering the second seat is offering something the candidate has contradicted.
+ *
+ * WHY THIS IS SAFE WHERE A GATE WAS NOT. An earlier version refused any neighbourhood match whose
+ * governorate disagreed, and measuring it showed that deleted 52 candidates' answers: plenty of CVs
+ * name a neighbourhood and leave the governorate blank, and plenty more state it wrongly — one
+ * address on file reads "Zagazig, sharkia" beside a governorate column saying Cairo. So the rule
+ * here narrows ONLY when some seats agree and others do not. If none agree the list is returned
+ * untouched, which is what keeps Bahteem — a Qalyubia address that this company serves from Cairo
+ * West, deliberately — pointing at the seat that actually covers it.
+ *
+ * It is also inert at the governorate tier by construction: every seat there matched BECAUSE its
+ * governorate is the stated one, so they all agree and nothing is dropped.
+ */
+function settleByGovernorate<T extends { vacancy: VacancyOption }>(
+  input: SuggestionInput,
+  survivors: readonly T[],
+): readonly T[] {
+  if (survivors.length < 2) return survivors;
+  // Address first, for the same reason placeMatchFor reads it first: it is the longer and more
+  // specific string, and it is where a candidate writes the truth when the column is wrong.
+  const stated = governorateOf(input.address) ?? governorateOf(input.governorate);
+  if (!stated) return survivors;
+  const agreeing = survivors.filter((entry) => areaGovernorate(entry.vacancy.areaName) === stated);
+  // NOTHING AGREES is the load-bearing half: without it a disagreeing governorate would empty the
+  // list, which is the gate this deliberately is not. EVERYTHING AGREES returns the same set either
+  // way and is here to say so plainly rather than to change an outcome.
+  if (agreeing.length === 0 || agreeing.length === survivors.length) return survivors;
+  return agreeing;
+}
+
+/**
  * Suggest which open seat a CV was sent for.
  *
  * TITLE FILTERS, PLACE RANKS — in that order, and the order is what keeps the answer honest. Take
@@ -549,10 +587,13 @@ export function suggestPositions(
         left.vacancy.jobTitle.localeCompare(right.vacancy.jobTitle),
     );
 
-  if (survivors.length > MAX_SHORTLIST) return { confident: null, shortlist: [] };
+  // Last, and only among seats that are otherwise equal: the governorate the CV itself states.
+  const settled = settleByGovernorate(input, survivors);
+
+  if (settled.length > MAX_SHORTLIST) return { confident: null, shortlist: [] };
 
   return {
-    confident: survivors.length === 1 ? survivors[0] : null,
-    shortlist: survivors,
+    confident: settled.length === 1 ? settled[0] : null,
+    shortlist: [...settled],
   };
 }
