@@ -6,9 +6,10 @@ import { readFileSync } from "node:fs";
 // blue box that she already had an approved plan for that week, read it as a confirmation,
 // and reported the page as "bouncing with no error". Nothing on the page said failure.
 //
-// These pins keep the two tones apart. They are source pins because the banner is a client
-// component with no test-time renderer here; the assertions target the exact strings the fix
-// introduced, so removing the fix removes the string.
+// These are source pins: the banner is a client component with no test-time renderer here.
+// The style assertions are made against a SLICE of the messageBanner block, not the whole
+// file — the same red class is used by other banners in this component, so a whole-file
+// includes() passes even with the fix removed. (It did, on the first draft of this test.)
 export function runWeeklyPlanErrorBannerToneTests() {
   const src = readFileSync("src/components/employee-portal/plans-workspace.tsx", "utf8");
 
@@ -28,16 +29,26 @@ export function runWeeklyPlanErrorBannerToneTests() {
     "showInfo must set tone 'info'",
   );
 
-  // ── The banner must actually RENDER the difference ─────────────────────────
-  // Without this the state carries a tone nothing paints, which is the original bug one
+  // ── Slice the banner, then assert the difference is actually RENDERED ───────
+  // Without this the state carries a tone that nothing paints, which is the original bug one
   // indirection further down.
-  assert.ok(src.includes('message.tone === "error"'), "the message banner must branch on the message tone");
+  const bannerStart = src.indexOf("const messageBanner = message ? (");
+  assert.ok(bannerStart >= 0, "the messageBanner block must exist — this test slices it by marker");
+  const bannerEnd = src.indexOf(") : null;", bannerStart);
+  assert.ok(bannerEnd > bannerStart, "the messageBanner block must terminate — this test slices it by marker");
+  const banner = src.slice(bannerStart, bannerEnd);
+
+  assert.ok(banner.includes('message.tone === "error"'), "the message banner must branch on the message tone");
   assert.ok(
-    src.includes("border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-800"),
+    banner.includes("border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-800"),
     "an error message must render in the repo's red error style, not the sky-blue info style",
   );
   assert.ok(
-    src.includes('role={message.tone === "error" ? "alert" : "status"}'),
+    banner.includes("border border-sky-200 bg-sky-50 p-3 text-sm font-semibold text-sky-800"),
+    "a non-error message must keep the sky-blue info style",
+  );
+  assert.ok(
+    banner.includes('role={message.tone === "error" ? "alert" : "status"}'),
     "an error banner must be announced as an alert, not left as a silent colour change",
   );
 
@@ -46,7 +57,7 @@ export function runWeeklyPlanErrorBannerToneTests() {
   assert.equal(errorCalls, 1, "showError must be called exactly once — only from runAction's catch");
 
   // ── No route back to a bare string ─────────────────────────────────────────
-  // setMessage(null) is still legitimate; setMessage("some text") is how tone and text drift
+  // setMessage(null) stays legitimate; setMessage("some text") is how tone and text drift
   // apart again.
   assert.ok(
     !src.includes('setMessage("'),
