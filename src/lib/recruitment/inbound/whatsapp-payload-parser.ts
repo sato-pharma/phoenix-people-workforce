@@ -31,6 +31,11 @@ export type ParsedWhatsAppMessage = {
   // For a plain "text" message, its body — buffered per sender so the first few messages can be
   // shown next to the candidate once their CV document arrives. Null for non-text messages.
   text: string | null;
+  // The row id echoed back when the sender TAPS an option on an interactive message we sent
+  // (`type: "interactive"`). This is how the three-question self-classification flow receives its
+  // answers: WhatsApp returns only the id we set, never the applicant's own words, so a tapped
+  // answer is unambiguous by construction. Null for every other message type.
+  interactiveReplyId: string | null;
   // Meta sets context.forwarded on a forwarded message. Captured for the audit trail only —
   // import routing keys off the configured sender allowlist below, which does not depend on
   // Meta populating this field.
@@ -91,6 +96,14 @@ function parseMessageNode(raw: unknown, ctx: MessageContext): ParsedWhatsAppMess
       }
     : null;
 
+  // An interactive reply carries the id of the row the sender tapped, nested one level under the
+  // reply kind. Both kinds are read: a list_reply for the menus this app sends today, a
+  // button_reply so a future three-option prompt needs no parser change.
+  const interactive = messageType === "interactive" ? asRecord(message?.interactive) : null;
+  const interactiveReplyId = interactive
+    ? (asString(asRecord(interactive.list_reply)?.id) ?? asString(asRecord(interactive.button_reply)?.id))
+    : null;
+
   return {
     contactName: ctx.contactNameByWaId.get(from) ?? null,
     deliveredToDisplayNumber: ctx.deliveredToDisplayNumber,
@@ -99,6 +112,7 @@ function parseMessageNode(raw: unknown, ctx: MessageContext): ParsedWhatsAppMess
     forwarded: asRecord(message?.context)?.forwarded === true,
     from,
     historical: ctx.historical,
+    interactiveReplyId,
     messageType,
     text: messageType === "text" ? asString(asRecord(message?.text)?.body) : null,
     wamid,
