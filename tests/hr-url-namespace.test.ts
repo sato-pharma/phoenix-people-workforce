@@ -214,6 +214,14 @@ export function runHrUrlNamespaceTests() {
     // closure — it is the shell's own landing page, reached by the logo. Exempt by name, not by a
     // pattern that could quietly exempt something else.
     if (target === "/workspace") continue;
+    // The HR command centre, same shape and a stronger reason. It has no ADMIN nav row by design —
+    // it is the HR shell's own landing page and exists only for the two seats — so no closure
+    // derived from admin navigation can contain it. It cannot be a widening even in principle:
+    // this rule catches a row reaching a page the MATRIX would refuse, and that page's gate is not
+    // a permission at all but `hrBundleForRole`, which admits the two seats and nobody else.
+    // Narrower than any grant, so there is nothing here to widen. The gate itself is verified in
+    // tests/hr-seat-route-coherence.test.ts, which lists it among the gates it cannot parse.
+    if (target === "/admin/hr-command-center") continue;
     if (![...closureByRole.values()].some((closure) => closure.has(target))) {
       widened.push(`${item.href} -> ${target}`);
     }
