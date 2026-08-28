@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { CalendarCheck, CalendarClock, CircleSlash, Target, UserMinus, UserX } from "lucide-react";
+import { CalendarCheck, CalendarClock, CircleSlash, Target, UserCheck, UserMinus, UserX } from "lucide-react";
 
 import {
   planAdherenceTone,
@@ -23,7 +23,9 @@ const VERDICT_ICON: Record<PlanAdherenceVerdict, typeof CalendarCheck> = {
   not_checkable: CircleSlash,
   not_yet_due: CalendarClock,
   partner_alone: UserMinus,
-  wrong_partner: UserX,
+  // UserCheck, not UserX: a swap counts as kept, and an X beside a day that earned full credit
+  // reads as a reprimand.
+  wrong_partner: UserCheck,
 };
 
 const VERDICT_TONE: Record<PlanAdherenceVerdict, string> = {
@@ -32,11 +34,18 @@ const VERDICT_TONE: Record<PlanAdherenceVerdict, string> = {
   not_checkable: "border-slate-200 bg-slate-50 text-slate-600",
   not_yet_due: "border-sky-200 bg-sky-50 text-sky-700",
   partner_alone: "border-orange-200 bg-orange-50 text-orange-800",
-  wrong_partner: "border-amber-200 bg-amber-50 text-amber-800",
+  // Teal, not amber: distinguishable from a plain `kept` day at a glance, but on the credited side
+  // of the palette rather than the warning side.
+  wrong_partner: "border-teal-200 bg-teal-50 text-teal-800",
 };
 
-/** The order the misses are worth reading in — most fixable first. */
-const MISS_ORDER: readonly PlanAdherenceVerdict[] = ["wrong_partner", "partner_alone", "no_trace"];
+/**
+ * The order the misses are worth reading in — most fixable first.
+ *
+ * `wrong_partner` is NOT here. It counts as kept (owner's rule, 2026-08-28), so listing it among
+ * the things to fix would contradict the number directly above it.
+ */
+const MISS_ORDER: readonly PlanAdherenceVerdict[] = ["partner_alone", "no_trace"];
 
 function dayLabel(dateIso: string | null): string {
   if (!dateIso) return "No date";
@@ -201,6 +210,8 @@ function ItemRow({ item }: { item: PlanAdherenceItem }) {
 export function PlanAdherenceReport({ score }: { score: PlanAdherenceScore }) {
   const misses = MISS_ORDER.flatMap((verdict) => score.items.filter((item) => item.verdict === verdict));
   const upcoming = score.items.filter((item) => item.verdict === "not_yet_due");
+  // Shown, but never under "to fix" — these earned their credit.
+  const swaps = score.items.filter((item) => item.verdict === "wrong_partner");
 
   return (
     <section className="border border-[#e4e9ec] bg-white">
@@ -226,6 +237,12 @@ export function PlanAdherenceReport({ score }: { score: PlanAdherenceScore }) {
             <span className="inline-flex items-center gap-1.5 whitespace-nowrap border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-bold text-emerald-800">
               <CalendarCheck className="h-3.5 w-3.5" />
               {score.kept} kept
+            </span>
+          ) : null}
+          {swaps.length > 0 ? (
+            <span className="inline-flex items-center gap-1.5 whitespace-nowrap border border-teal-200 bg-teal-50 px-2.5 py-1 text-xs font-bold text-teal-800">
+              <UserCheck className="h-3.5 w-3.5" />
+              {swaps.length} partner {swaps.length === 1 ? "swap" : "swaps"}, counted as kept
             </span>
           ) : null}
           {misses.length > 0 ? (
@@ -254,8 +271,16 @@ export function PlanAdherenceReport({ score }: { score: PlanAdherenceScore }) {
       <p className="border-b border-slate-100 bg-slate-50 px-4 py-2.5 text-xs leading-relaxed text-slate-600">
         {score.measurable
           ? misses.length === 0
-            ? `Every field day and double visit in this plan is confirmed by the CRM. Keep planning the rep you actually go out with, and revise the plan on the day it changes.`
-            : `The score counts field days and double visits only, because those are the ones the CRM can confirm. ${misses.length} of ${score.checkable} did not match — each one below says what happened and what to do about it.`
+            ? `Every field day and double visit in this plan is confirmed by the CRM.${
+                swaps.length > 0
+                  ? ` ${swaps.length === 1 ? "One day" : `${swaps.length} days`} went ahead with a different colleague, which counts as kept — you were out on the day you committed to.`
+                  : ""
+              }`
+            : `The score counts field days and double visits only, because those are the ones the CRM can confirm. ${misses.length} of ${score.checkable} did not happen — each one below says what happened and what to do about it.${
+                swaps.length > 0
+                  ? ` A further ${swaps.length === 1 ? "day went" : `${swaps.length} days went`} ahead with a different colleague; those count as kept and are listed for the record only.`
+                  : ""
+              }`
           : `Nothing in this plan can be checked against the CRM — office days, meetings, training and vacation leave no visit record. That is not a low score, it is no score, and it counts neither for nor against anyone.`}
       </p>
 
@@ -265,6 +290,21 @@ export function PlanAdherenceReport({ score }: { score: PlanAdherenceScore }) {
             <ItemRow key={item.id} item={item} />
           ))}
         </ul>
+      ) : null}
+
+      {/* Separately headed, below the misses. A swap is information, not a task — putting it in the
+          same list would make a manager read it as something he owes an answer for. */}
+      {swaps.length > 0 ? (
+        <>
+          <p className="border-y border-slate-100 bg-white px-4 py-2 text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">
+            Went ahead with someone else — counted as kept
+          </p>
+          <ul>
+            {swaps.map((item) => (
+              <ItemRow key={item.id} item={item} />
+            ))}
+          </ul>
+        </>
       ) : null}
 
       {upcoming.length > 0 ? (

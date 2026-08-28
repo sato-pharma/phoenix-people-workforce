@@ -3,7 +3,9 @@ import { readFileSync } from "node:fs";
 
 import {
   buildPlanAdherenceHistory,
+  countsAsKept,
   isCheckableActivity,
+  isScoredVerdict,
   planAdherenceTone,
   planAdherenceVerdictLabel,
   scorePlanAdherence,
@@ -62,14 +64,19 @@ export function runPlanAdherenceTests(): void {
   }
 
   {
-    // He WAS in the field — with somebody else. The plan went stale; the day did not.
+    // He WAS in the field — with somebody else.
+    //
+    // OWNER RULE, 2026-08-28: this COUNTS AS KEPT. He was asked in plain words whether a partner
+    // swap agreed on the day should score as kept and answered yes. The day was worked; which
+    // colleague ended up beside him is a detail the CRM cannot tell apart from a verbal agreement.
+    // The verdict stays distinct so the swap is still visible — it is simply not deducted.
     const score = scorePlanAdherence([item()], evidence({
       ownerActiveDates: new Set(["2026-08-24"]),
       ownerPartnersByDate: new Map([["2026-08-24", new Set([REP_B])]]),
     }), { today: TODAY });
 
     const row = score.items[0];
-    assert.equal(row?.verdict, "wrong_partner");
+    assert.equal(row?.verdict, "wrong_partner", "the swap is still reported as its own verdict, not folded into kept");
     assert.deepEqual(
       row?.actualPartnerNames,
       ["Mona Fouad"],
@@ -77,7 +84,54 @@ export function runPlanAdherenceTests(): void {
     );
     assert.ok(row?.advice?.includes("Mona Fouad"), "the advice names the person, so it can be acted on");
     assert.ok(row?.advice?.includes("Ahmed Samir"), "and names who was planned, so the gap is visible");
-    assert.equal(score.scorePct, 0);
+
+    assert.equal(score.scorePct, 100, "a partner swap SCORES AS KEPT — owner's rule, 2026-08-28");
+    assert.equal(score.kept, 1, "and it lands in the numerator, not merely outside the denominator");
+    assert.equal(score.checkable, 1, "the day is still a day the CRM answered for");
+    assert.ok(countsAsKept("wrong_partner"), "the rule lives in KEPT_VERDICTS, where one place decides it");
+    assert.ok(isScoredVerdict("wrong_partner"), "and it is still measured — credited is not the same as ignored");
+
+    // The wording has to agree with the arithmetic. A row labelled like a fault beside a score that
+    // does not deduct for it is how a manager stops believing the number.
+    assert.match(
+      row?.advice ?? "",
+      /[Cc]ounted as kept/,
+      "the advice says it counted, rather than telling him to fix a day he is not marked down for",
+    );
+    assert.match(
+      planAdherenceVerdictLabel("wrong_partner"),
+      /^Kept/,
+      "and the label leads with Kept, so the screen never contradicts the score",
+    );
+  }
+
+  {
+    // A swap and a real miss in the same week, so the two sides of the fraction are proven apart
+    // rather than each on its own. Before the owner's 2026-08-28 rule this week scored 33%.
+    const score = scorePlanAdherence(
+      [
+        item({ activityDate: "2026-08-24", id: "kept-as-planned" }),
+        item({ activityDate: "2026-08-25", id: "swapped" }),
+        item({ activityDate: "2026-08-26", id: "never-happened" }),
+      ],
+      evidence({
+        ownerActiveDates: new Set(["2026-08-24", "2026-08-25"]),
+        ownerPartnersByDate: new Map([
+          ["2026-08-24", new Set([REP_A])],
+          ["2026-08-25", new Set([REP_B])],
+        ]),
+      }),
+      { today: TODAY },
+    );
+
+    assert.deepEqual(
+      score.items.map((i) => i.verdict),
+      ["kept", "wrong_partner", "no_trace"],
+      "the three days are still told apart",
+    );
+    assert.equal(score.kept, 2, "the swap is credited alongside the day that went exactly to plan");
+    assert.equal(score.checkable, 3);
+    assert.equal(score.scorePct, 67, "2 of 3 — a swap credits, a day nobody worked still does not");
   }
 
   {
@@ -316,6 +370,18 @@ export function runPlanAdherenceTests(): void {
     !/planHref/.test(report),
     "no adherence surface takes a link-building FUNCTION — a function prop cannot cross into a client component",
   );
+
+  // 6. The screen agrees with the arithmetic about a partner swap.
+  //
+  // The score credits it, so nothing on the page may present it as outstanding work. This is a
+  // separate failure from getting the number wrong: a correct 100% sitting above a list headed
+  // "to fix" is the version a manager escalates.
+  assert.match(
+    report,
+    /const MISS_ORDER: readonly PlanAdherenceVerdict\[\] = \["partner_alone", "no_trace"\];/,
+    "a swap is not one of the misses — the fix list holds only days that did not happen",
+  );
+  assert.match(report, /counted as kept/, "and the swap chip says so in words, not only in the total");
   for (const [label, source] of [
     ["the portal dashboard", commandCenter],
     ["the approvals hub", planBody],
