@@ -28,8 +28,8 @@ const EGYPT_MOBILE = /^(?:00)?(?:(?:20)?0|20)(1\d{9})$/;
 export function normalizePhone(value: string | null | undefined): string | null {
   // Keep digits only, then fold the ONE ambiguity that actually splits this pool: an Egyptian mobile
   // written locally and internationally is the same handset, and findMatchingCandidate compares by
-  // exact string equality — so without this fold a CV carrying "01202645759" never matches the
-  // WhatsApp record stamped "201202645759" from Meta's wa_id, and the same person is inserted twice.
+  // exact string equality — so without this fold a CV carrying "01234567890" never matches the
+  // WhatsApp record stamped "201234567890" from Meta's wa_id, and the same person is inserted twice.
   // Canonical form is the international one, because that is the form Meta sends and cannot be
   // asked to change. Every other shape is left exactly as-is on purpose: over-normalizing risks
   // false-merging distinct people, which is far worse than a duplicate a human can merge.

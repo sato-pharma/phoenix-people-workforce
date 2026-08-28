@@ -35,7 +35,7 @@ const low = (value: unknown) => ({ confidence: "low" as const, value: value as n
 // governorate, and several labels packed onto one line.
 const SAMPLE_CV = `ABDALLAH GAMAL
 Human Resources Operations Specialist
-Nasr City, Cairo | +20 10 1082 3473 | aeltoukhy832@gmail.com
+Nasr City, Cairo | +20 12 3456 7890 | aeltoukhy832@gmail.com
 https://www.linkedin.com/in/abdallah-gamal-1234
 
 PROFESSIONAL SUMMARY
@@ -106,22 +106,22 @@ function runPatternTests() {
   // separator class it ran on into whatever followed, and the contact block of a CV is followed by
   // an education line far more often than by anything else.
   //
-  // This input is chosen to be SHARP. The obvious case ("01044971766\n3 El Salam, Giza") does not
+  // This input is chosen to be SHARP. The obvious case ("01234567890\n3 El Salam, Giza") does not
   // test anything: only one stray digit gets absorbed, and the rescue scan — which tolerates two
   // leftover digits so it can strip a country code — puts the number back, so the assertion passes
   // whether the scanner stops at the newline or not. A following year range leaves eight leftover
   // digits, which the rescue correctly refuses, and the number is lost outright.
-  assert.deepEqual(findEgyptianMobiles("Mobile: 01044971766\n2015 - 2019  Faculty of Pharmacy"), ["01044971766"]);
+  assert.deepEqual(findEgyptianMobiles("Mobile: 01234567890\n2015 - 2019  Faculty of Pharmacy"), ["01234567890"]);
   // The same CV read the naive way, kept as documentation of why the two mechanisms are separate:
   // one stray digit IS still rescued, so this case survives either way.
-  assert.deepEqual(findEgyptianMobiles("01044971766\n3 El Salam, Giza"), ["01044971766"]);
+  assert.deepEqual(findEgyptianMobiles("01234567890\n3 El Salam, Giza"), ["01234567890"]);
 
   // Every country-code spelling in the corpus normalizes to one canonical form.
   for (const written of ["01012345678", "+201012345678", "00201012345678", "+20 10 1234 5678", "(+02)01012345678"]) {
     assert.equal(normalizeEgyptianMobile(written.replace(/[^\d+]/g, "")), "01012345678", `failed on ${written}`);
   }
   // Two numbers printed back to back are both recovered.
-  assert.deepEqual(findEgyptianMobiles("Phone: 01276131496-01014407346."), ["01276131496", "01014407346"]);
+  assert.deepEqual(findEgyptianMobiles("Phone: 01234567890-01098765432."), ["01234567890", "01098765432"]);
   // A landline and a random long number are not mobiles.
   assert.deepEqual(findEgyptianMobiles("Tel: 0223456789 ref 123456789012345"), []);
 
@@ -227,7 +227,7 @@ function runEndToEndTests() {
   // Contact details — the fields the rule engine owns outright.
   assert.equal(result.fields.email?.value, "aeltoukhy832@gmail.com");
   assert.equal(result.fields.email?.confidence, "high");
-  assert.equal(result.fields.phone?.value, "01010823473");
+  assert.equal(result.fields.phone?.value, "01234567890");
   assert.equal(result.fields.phone?.confidence, "high");
   assert.equal(result.fields.linkedinUrl?.value, "https://www.linkedin.com/in/abdallah-gamal-1234");
   assert.equal(result.fields.fullName?.value, "Abdallah Gamal");
@@ -375,7 +375,7 @@ function runEscalationTests() {
   const wellRead: ExtractedCandidateFields = {
     fullName: high("Abdallah Gamal"),
     email: high("aeltoukhy832@gmail.com"),
-    phone: high("+201010823473"),
+    phone: high("+201234567890"),
     professionalSummary: high("Six years in HR operations across retail and manufacturing."),
     degree: high("BSc Commerce"),
     university: high("Cairo University"),

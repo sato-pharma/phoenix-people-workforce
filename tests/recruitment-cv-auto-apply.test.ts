@@ -25,7 +25,7 @@ function freshCandidate(overrides: Record<string, unknown> = {}) {
     medicalRepEmployer: null,
     medicalRepExperienceFrom: null,
     medicalRepExperienceTo: null,
-    phone: "01016585527",
+    phone: "01234567890",
     positionSpecificFields: {},
     university: null,
     ...overrides,
@@ -156,7 +156,7 @@ export function runRecruitmentCvAutoApplyTests() {
   );
   assert.deepEqual(
     selectAutoApplyFields({
-      candidate: freshCandidate({ phone: "01016585527" }),
+      candidate: freshCandidate({ phone: "01234567890" }),
       candidateWasCreatedByThisIntake: true,
       extractedFields: { phone: high("01000000000") },
       positionKey: "medical_rep",
@@ -167,31 +167,33 @@ export function runRecruitmentCvAutoApplyTests() {
 
   // --- Gate 5: a phone column takes ONE diallable number -----------------------------------------
   // The confidence gate cannot catch this class. A CV whose contact line reads
-  // "01060464699 & 01112872565" yields a HIGH-confidence extraction — the AI is not wrong, it read
+  // "01234567890 & 01098765432" yields a HIGH-confidence extraction — the AI is not wrong, it read
   // the page correctly. What comes back is still a 22-digit string that nobody can ring, and
   // phone_norm's partial UNIQUE index would then carry it, so a later genuine application from
-  // either real number fails to match. Every rejected string below is verbatim from production
-  // 2026-08-16, where 8 of 42 high-confidence phones were two or three numbers run together.
-  assert.equal(isSingleDiallablePhone("01097000634"), true, "an 11-digit Egyptian mobile");
-  assert.equal(isSingleDiallablePhone("+20 100 163 9245"), true, "12 digits with a country code");
-  assert.equal(isSingleDiallablePhone("0201095986162"), true, "13 digits");
-  assert.equal(isSingleDiallablePhone("00201023232472"), true, "14 digits is legitimate in 0020 form");
-  assert.equal(isSingleDiallablePhone("(002) 01149858428"), true, "punctuation and spaces are not digits");
-  assert.equal(isSingleDiallablePhone("01060464699 & 01112872565"), false, "two numbers run together");
-  assert.equal(isSingleDiallablePhone("01221983536 - 01553620677"), false, "a dash does not make it one number");
-  assert.equal(isSingleDiallablePhone("+201115551864 / +201211717808"), false, "two international numbers");
-  assert.equal(isSingleDiallablePhone("+91-7002466900/9085277771/7002031980"), false, "three numbers, 32 digits");
+  // either real number fails to match. Each rejected string below reproduces the SHAPE of a real
+  // production failure from 2026-08-16 — where 8 of 42 high-confidence phones were two or three
+  // numbers run together — on INVENTED digits. The digit counts are what the gate keys on and are
+  // preserved exactly; the applicants' own numbers are not committed to this repository.
+  assert.equal(isSingleDiallablePhone("01234567890"), true, "an 11-digit Egyptian mobile");
+  assert.equal(isSingleDiallablePhone("+20 123 456 7890"), true, "12 digits with a country code");
+  assert.equal(isSingleDiallablePhone("0201234567890"), true, "13 digits");
+  assert.equal(isSingleDiallablePhone("00201234567890"), true, "14 digits is legitimate in 0020 form");
+  assert.equal(isSingleDiallablePhone("(002) 01234567890"), true, "punctuation and spaces are not digits");
+  assert.equal(isSingleDiallablePhone("01234567890 & 01098765432"), false, "two numbers run together");
+  assert.equal(isSingleDiallablePhone("01234567890 - 01098765432"), false, "a dash does not make it one number");
+  assert.equal(isSingleDiallablePhone("+201234567890 / +201098765432"), false, "two international numbers");
+  assert.equal(isSingleDiallablePhone("+91-7000000001/7000000002/7000000003"), false, "three numbers, 32 digits");
   assert.equal(isSingleDiallablePhone("12345678901234"), false, "14 digits that are NOT the 0020 form");
   assert.equal(isSingleDiallablePhone("0123456"), false, "too short to be a phone number");
   assert.equal(isSingleDiallablePhone(""), false);
   assert.equal(isSingleDiallablePhone(null), false);
-  assert.equal(isSingleDiallablePhone(1016585527), false, "a number is not a phone string");
+  assert.equal(isSingleDiallablePhone(1234567890), false, "a number is not a phone string");
 
   assert.deepEqual(
     selectAutoApplyFields({
       candidate: freshCandidate({ phone: null }),
       candidateWasCreatedByThisIntake: true,
-      extractedFields: { phone: high("01060464699 & 01112872565") },
+      extractedFields: { phone: high("01234567890 & 01098765432") },
       positionKey: "medical_rep",
     }),
     {},
@@ -217,10 +219,10 @@ export function runRecruitmentCvAutoApplyTests() {
     selectAutoApplyFields({
       candidate: freshCandidate({ phone: null }),
       candidateWasCreatedByThisIntake: true,
-      extractedFields: { phone: high("00201023232472") },
+      extractedFields: { phone: high("00201234567890") },
       positionKey: "medical_rep",
     }),
-    { phone: "00201023232472" },
+    { phone: "00201234567890" },
     "a single number in 0020 form is still written — the gate rejects junk, not foreign formats",
   );
 
