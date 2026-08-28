@@ -74,6 +74,51 @@ export type ReconcileDecision =
   | { action: "flag"; reason: string; flagType: "office_no_show" | "field_punch_anomaly" }
   | { action: "judge" };
 
+/** The classification facts behind a "skip" decision — the same booleans ReconcileInput already
+ * carries, minus the tier/plan fields that only decide whether to skip at all, not what the skip
+ * MEANS. */
+export type ReconcileSkipFacts = {
+  isWeeklyOff: boolean;
+  isHoliday: boolean;
+  hasApprovedLeave: boolean;
+  hasApprovedExcuse: boolean;
+  hasCrmLeave: boolean;
+  hasCrmFieldVisit: boolean;
+  hasOutage: boolean;
+};
+
+export type ReconcileSkipOutcome =
+  | "weekly_off"
+  | "holiday"
+  | "approved_leave"
+  | "approved_excuse"
+  | "crm_leave"
+  | "crm_field_visit"
+  | "device_outage"
+  | "no_plan_field_day";
+
+/**
+ * What a "skip" decision means, in the same precedence reconcileDay itself applies. Isolated as
+ * its own pure function so a caller never has to re-derive this from `decision.reason` (display
+ * text, not a branching key) — the per-employee day report and the company activity report both
+ * call this, so the two can never quietly disagree about what a given skip means.
+ *
+ * The final `no_plan_field_day` catch-all covers the two remaining office_days_only skip branches
+ * (field-per-plan / no-plan-designated) — reconcileDay is the only caller that can actually reach
+ * this function with none of the other facts true, since every other tier/universal-cancel skip
+ * sets one of them.
+ */
+export function describeReconcileSkip(facts: ReconcileSkipFacts): ReconcileSkipOutcome {
+  if (facts.isWeeklyOff) return "weekly_off";
+  if (facts.isHoliday) return "holiday";
+  if (facts.hasApprovedLeave) return "approved_leave";
+  if (facts.hasApprovedExcuse) return "approved_excuse";
+  if (facts.hasCrmLeave) return "crm_leave";
+  if (facts.hasCrmFieldVisit) return "crm_field_visit";
+  if (facts.hasOutage) return "device_outage";
+  return "no_plan_field_day";
+}
+
 export function reconcileDay(input: ReconcileInput): ReconcileDecision {
   // Universal cancels — apply to both tiers, before any tier logic.
   if (!input.isWorkingDay) return { action: "skip", reason: "Weekly off — not a working day." };

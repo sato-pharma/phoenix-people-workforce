@@ -25,7 +25,7 @@ import { getAttendanceExceptionMap } from "@/lib/attendance/exceptions";
 import { getCompanyWideOutageDates } from "@/lib/attendance/ingestion-health";
 import { getPlanOfficeDayMap } from "@/lib/attendance/plan-office-days";
 import { loadEmployeeDayPunchMinutes } from "@/lib/attendance/punch-minutes";
-import { reconcileDay, type AttendanceJudgmentMode } from "@/lib/attendance/digest-reconcile";
+import { describeReconcileSkip, reconcileDay, type AttendanceJudgmentMode } from "@/lib/attendance/digest-reconcile";
 import {
   bracketsForEventType,
   evaluateFlexibleHoursDay,
@@ -326,21 +326,15 @@ export async function getEmployeeDayByDayReport(input: {
       // Same precedence reconcileDay itself uses (see digest-reconcile.ts), re-derived from
       // the same booleans just passed in — never parsed from decision.reason, which is
       // display text, not a branching key.
-      const outcome: EmployeeDayOutcome = classification.isWeeklyOff
-        ? "weekly_off"
-        : classification.isHoliday
-          ? "holiday"
-          : hasApprovedLeaveToday
-            ? "approved_leave"
-            : hasExcuseToday
-              ? "approved_excuse"
-              : hasCrmLeaveToday
-                ? "crm_leave"
-                : hasCrmFieldVisitToday
-                  ? "crm_field_visit"
-                  : hasOutageToday
-                    ? "device_outage"
-                    : "no_plan_field_day"; // remaining office_days_only skip branches (field-per-plan / no-plan-designated)
+      const outcome: EmployeeDayOutcome = describeReconcileSkip({
+        hasApprovedExcuse: hasExcuseToday,
+        hasApprovedLeave: hasApprovedLeaveToday,
+        hasCrmFieldVisit: hasCrmFieldVisitToday,
+        hasCrmLeave: hasCrmLeaveToday,
+        hasOutage: hasOutageToday,
+        isHoliday: classification.isHoliday,
+        isWeeklyOff: classification.isWeeklyOff,
+      });
       // For a CRM-covered day, surface WHAT was logged (visit type + comment/customer) rather than
       // just the generic gating text — otherwise "CRM field visit" reads as an opaque boolean and
       // an admin reviewing the day has no way to see the actual meeting/visit that covered it.

@@ -102,6 +102,10 @@ export type AuditEntityType =
   | "system_cleanup"
   | "user"
   | "user_activity_access"
+  // The Company Activity Report export (day-by-day CRM/attendance/leave, not payroll). Named with
+  // the "company_" prefix on purpose — "activity_report" alone would sit too close to
+  // user_activity_access above, a different and unrelated concept.
+  | "company_activity_report_export"
   | "vacation_report_export"
   | "vacation_request"
   | "vacation_retention_purge"

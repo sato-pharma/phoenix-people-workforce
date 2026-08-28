@@ -721,6 +721,23 @@ const adminNavigationSectionSeeds = [
     ],
     label: "Vacation Sources",
   },
+  // Owner request (2026-08-28): the SFE Manager also gets the Company Activity Report — a
+  // day-by-day account of what every employee actually did (CRM visits, office attendance, leave,
+  // gaps) over a freely chosen date range. Deliberately its OWN section, not merged into
+  // vacation-sources above — the owner was explicit this is a separate module from anything
+  // vacation- or Private-Calendar-related, and a section resolving to a single visible item
+  // renders headerless, matching how vacation-sources itself renders for him.
+  //
+  // excludedRoles, not `roles` alone — same reasoning as vacation-sources: Super Admin's sidebar
+  // bypasses role gating entirely and already reaches this page as a card on the Admin Tools hub;
+  // without the exclusion he would see the same page twice.
+  {
+    id: "company-activity-report",
+    items: [
+      { href: "/admin/company-activity-report", icon: Activity, label: "Activity Report", permissions: [{ resource: "leave", action: "read" }], roles: ["SFE Manager"], excludedRoles: ["Super Admin", "CEO"] },
+    ],
+    label: "Company Activity Report",
+  },
   // Collapsed to a single standalone sidebar button that opens the Payroll
   // Management hub (app/(admin)/admin/payroll-management/page.tsx, items in
   // payrollManagementPageItems below) — same pattern as the other consolidated
@@ -2649,6 +2666,14 @@ export const peopleManagementPageItems: readonly AdminToolsPageItem[] = [
     icon: FileSpreadsheet,
     label: "Company Vacation Report",
     description: "Every HR-approved leave request alongside unverified CRM/attendance leave signals, org-wide.",
+    permissions: [{ resource: "leave" }],
+    roles: ["Super Admin"],
+  },
+  {
+    href: "/admin/company-activity-report",
+    icon: Activity,
+    label: "Company Activity Report",
+    description: "Day-by-day CRM visits, office attendance, and leave for any employee slice and date range — not a payroll report.",
     permissions: [{ resource: "leave" }],
     roles: ["Super Admin"],
   },
