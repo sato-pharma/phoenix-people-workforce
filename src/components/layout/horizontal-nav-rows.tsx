@@ -27,6 +27,14 @@
 // which is every account today — this ships invisible until somebody arranges a
 // tab into a row on /admin/sidebar-layout.
 //
+// ── The "+" ─────────────────────────────────────────────────────────────────
+// Zone 2 ends in a "+" (2026-08-28, owner: "it have a plus sign at the end. I
+// press at the plus sign. The list of modules appear to me. I choose. It is
+// embedded like the organogram"). It is a shortcut into the same stored layout
+// the editor writes, for the case the editor is clumsy for — pinning one page
+// without leaving the page you are on. It appears only on a row that already
+// has a tab, so the invisibility promise above still holds.
+//
 // Like the sidebar, this is UX and never the security boundary: the items come
 // from `getSections` (already permission- and role-filtered) and are only
 // REARRANGED by `applyPersonalLayout`, which cannot introduce an href.
@@ -36,8 +44,13 @@ import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { createContext, useContext, useMemo, type ReactNode } from "react";
 
+import { NavRowAddButton } from "@/components/layout/nav-row-add-button";
 import { useDarkSurface } from "@/components/ui/surface-context";
-import { getNavigationSections, type NavigationSectionItem } from "@/config/system-navigation";
+import {
+  getNavigationSections,
+  type NavigationSection,
+  type NavigationSectionItem,
+} from "@/config/system-navigation";
 import { type NavigationMode, type PhoenixRole } from "@/lib/auth/permissions";
 import {
   getActiveHref,
@@ -55,9 +68,20 @@ type ResolvedRows = {
   lowerRow: readonly NavigationSectionItem[];
   activeHref: string | null;
   dark: boolean;
+  /** Everything the viewer may reach that is NOT already on the upper row — what the "+" offers. */
+  addable: readonly NavigationSection[];
+  /** Whether to render the "+" at all. Admin chrome only, same restriction as the layout itself. */
+  canAdd: boolean;
 };
 
-const EMPTY_ROWS: ResolvedRows = { upperRow: [], lowerRow: [], activeHref: null, dark: true };
+const EMPTY_ROWS: ResolvedRows = {
+  upperRow: [],
+  lowerRow: [],
+  activeHref: null,
+  dark: true,
+  addable: [],
+  canAdd: false,
+};
 
 /**
  * Carries the resolved rows down to whatever renders zone 3 in-page.
@@ -113,9 +137,23 @@ export function HorizontalNavProvider({
       navigationMode === "admin" ? personalLayout : null,
       activeModuleId,
     );
+    // What the "+" offers: the gated sections with anything already on the row taken out, so the
+    // list never proposes a page that is sitting two centimetres to its left. Built from `gated`
+    // for the same reason `activeModuleId` is — it is the permission-filtered set, so the picker
+    // inherits the gate rather than re-deciding it, and can no more introduce an href than
+    // `applyPersonalLayout` can.
+    const pinned = new Set(applied.upperRow.map((entry) => entry.href));
+    const addable = gated
+      .map((section) => ({
+        ...section,
+        items: section.items.filter((entry) => !pinned.has(entry.href)),
+      }))
+      .filter((section) => section.items.length > 0);
     return {
       upperRow: applied.upperRow,
       lowerRow: applied.lowerRow,
+      addable,
+      canAdd: navigationMode === "admin",
       // Resolved against the FULL gated set, not just the rows, so a tab stays lit on its child
       // routes and the deepest match still wins over a shallower one sitting in another zone.
       activeHref: active,
@@ -146,42 +184,57 @@ function NavRowStrip({
   dark,
   items,
   activeHref,
+  trailing,
 }: {
   activeHref: string | null;
   ariaLabel: string;
   className?: string;
   dark: boolean;
   items: readonly NavigationSectionItem[];
+  /** Rendered after the last tab. Used by zone 2 for the "+" that adds a page to the row. */
+  trailing?: ReactNode;
 }) {
+  // An EMPTY row still renders nothing — including its "+". That keeps the promise made at the top
+  // of this file: the bar stays invisible for every account that has not arranged anything, rather
+  // than a lone "+" appearing on all 243 pages for everyone. /admin/sidebar-layout is the way in
+  // for a row that is empty; the "+" is the shortcut once a row exists.
   if (items.length === 0) return null;
 
   return (
     <nav aria-label={ariaLabel} className={className}>
-      <div className="flex items-center gap-1 overflow-x-auto phoenix-navrow-scroll">
-        {items.map((item) => {
-          const active = item.href === activeHref;
-          const Icon = item.icon;
-          return (
-            <Link
-              aria-current={active ? "page" : undefined}
-              className={cn(
-                "inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-phx-sm font-semibold tracking-[-0.01em] transition-colors",
-                dark
-                  ? active
-                    ? "bg-[#1a1a1a] text-[#F8B56B]"
-                    : "text-[#D4DDE8] hover:bg-[#141414] hover:text-[#F8B56B]"
-                  : active
-                    ? "bg-phx-accent-soft text-phx-accent"
-                    : "text-phx-ink-soft hover:bg-phx-paper hover:text-phx-ink",
-              )}
-              href={item.href}
-              key={item.href}
-            >
-              <Icon aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
-              <span>{item.label}</span>
-            </Link>
-          );
-        })}
+      {/* Two nested flex rows, not one. The tabs scroll sideways when they outgrow the viewport,
+          but `trailing` has to sit OUTSIDE that scroller: a container with `overflow-x: auto`
+          resolves its `overflow-y` to `auto` as well, so the "+" panel would be clipped by the
+          row it hangs from. `min-w-0` lets the scroller shrink to its content, which keeps the
+          "+" immediately after the last tab on a short row rather than parked at the far right. */}
+      <div className="flex items-center gap-1">
+        <div className="flex min-w-0 items-center gap-1 overflow-x-auto phoenix-navrow-scroll">
+          {items.map((item) => {
+            const active = item.href === activeHref;
+            const Icon = item.icon;
+            return (
+              <Link
+                aria-current={active ? "page" : undefined}
+                className={cn(
+                  "inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-phx-sm font-semibold tracking-[-0.01em] transition-colors",
+                  dark
+                    ? active
+                      ? "bg-[#1a1a1a] text-[#F8B56B]"
+                      : "text-[#D4DDE8] hover:bg-[#141414] hover:text-[#F8B56B]"
+                    : active
+                      ? "bg-phx-accent-soft text-phx-accent"
+                      : "text-phx-ink-soft hover:bg-phx-paper hover:text-phx-ink",
+                )}
+                href={item.href}
+                key={item.href}
+              >
+                <Icon aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
+                <span>{item.label}</span>
+              </Link>
+            );
+          })}
+        </div>
+        {trailing}
       </div>
     </nav>
   );
@@ -189,7 +242,7 @@ function NavRowStrip({
 
 /** ZONE 2 — the horizontal bar above the page title. Rendered once, by AppShell. */
 export function UpperNavRow() {
-  const { upperRow, activeHref, dark } = useContext(HorizontalNavContext);
+  const { upperRow, activeHref, addable, canAdd, dark } = useContext(HorizontalNavContext);
   return (
     <NavRowStrip
       activeHref={activeHref}
@@ -204,6 +257,7 @@ export function UpperNavRow() {
       )}
       dark={dark}
       items={upperRow}
+      trailing={canAdd ? <NavRowAddButton dark={dark} sections={addable} /> : null}
     />
   );
 }
