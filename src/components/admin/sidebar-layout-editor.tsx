@@ -40,6 +40,7 @@ import {
   HORIZONTAL_ZONES,
   PERSONAL_LAYOUT_VERSION,
   placementOf,
+  resolveStripConflicts,
   rowsWithout,
   stripRowConflicts,
   stripWithout,
@@ -130,13 +131,10 @@ function buildInitialState(catalogue: CatalogueSection[], saved: PersonalNavigat
     upperRow: applied.upperRow.map((i) => i.href),
     lowerRow: applied.lowerRow.map((i) => i.href),
   };
-  // Clear it HERE, before anything renders. Two reasons, and the second is not cosmetic: a row
-  // entry the strip has already claimed can never render, so dropping it changes the saved document
-  // and changes NOTHING about the navigation; and leaving it would put the same href in two columns
-  // on this screen, which is a duplicate dnd-kit id -- a broken board on top of a broken layout.
-  // The screen says what it cleared (see `storedConflicts` below) rather than doing it silently.
-  const placement = { strip, rows, moduleRows };
-  const resolved = rowsWithout(placement, stripRowConflicts(placement));
+  // Clear it HERE, before anything renders -- see resolveStripConflicts for what that entails and
+  // why it is render-neutral. The screen says what it cleared (see `storedConflicts` below) rather
+  // than doing it silently.
+  const resolved = resolveStripConflicts({ strip, rows, moduleRows });
   return {
     strip,
     rows: resolved.rows,

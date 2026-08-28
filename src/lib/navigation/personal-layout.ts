@@ -362,6 +362,42 @@ export function rowsWithout(
 }
 
 /**
+ * Clear a stored contradiction: every row entry the strip has already claimed, gone.
+ *
+ * Render-neutral by construction -- those entries could never appear, so removing them changes the
+ * document and changes nothing on screen. What it is NOT is cosmetic: leaving them would put one
+ * href in two columns of the editor, which is a duplicate dnd-kit id, i.e. a broken board on top of
+ * a broken layout.
+ *
+ * AND IT DROPS AN OVERRIDE THE CLEARING EMPTIED, which is the part that is easy to miss and was.
+ * A module override REPLACES the defaults, so a module left holding two empty rows shows no rows at
+ * all -- and the obvious next move, sending the page from the strip to the default Upper nav row,
+ * would then work everywhere EXCEPT the modules he had been trying to arrange. The override existed
+ * only to hold entries that could never render, so dropping it puts the module back exactly where
+ * it would be had the override never been created.
+ *
+ * An override that was ALREADY empty is kept: that one is a deliberate "no rows in this module",
+ * and nothing about it is a contradiction.
+ */
+export function resolveStripConflicts(placement: ZonePlacement): {
+  conflicts: string[];
+  rows: MutableRowSet;
+  moduleRows: Record<string, MutableRowSet>;
+} {
+  const conflicts = stripRowConflicts(placement);
+  const cleared = rowsWithout(placement, conflicts);
+  const moduleRows: Record<string, MutableRowSet> = {};
+  for (const [moduleId, set] of Object.entries(cleared.moduleRows)) {
+    const before = placement.moduleRows[moduleId];
+    const wasEmpty = before.upperRow.length === 0 && before.lowerRow.length === 0;
+    const isEmpty = set.upperRow.length === 0 && set.lowerRow.length === 0;
+    if (isEmpty && !wasEmpty) continue;
+    moduleRows[moduleId] = set;
+  }
+  return { conflicts, rows: cleared.rows, moduleRows };
+}
+
+/**
  * Rearrange `gatedSections` according to `layout`.
  *
  * `gatedSections` MUST be the output of `getSections` — already permission- and role-filtered.

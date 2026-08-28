@@ -11,6 +11,7 @@ import {
   PERSONAL_LAYOUT_VERSION,
   placementOf,
   resolveRowSet,
+  resolveStripConflicts,
   rowsWithout,
   stripRowConflicts,
   stripWithout,
@@ -631,6 +632,77 @@ export function runNavigationPersonalLayoutTests() {
     assert.deepEqual(placement.rows, { upperRow: [], lowerRow: [] }, "a pre-rows document reads as two empty rows");
     assert.deepEqual(placement.moduleRows, {}, "and no module overrides");
     assert.deepEqual(stripRowConflicts(placement), [], "so it can hold no conflict");
+  }
+
+
+  // ── Repairing a stored contradiction, and the trap inside the repair ────────────────────────
+  //
+  // Clearing the dead row entries is render-neutral: they could not appear, so removing them
+  // changes nothing on screen. But a module override REPLACES the defaults, so an override left
+  // holding two empty rows shows NO rows in that module — and the obvious next move, sending the
+  // page from the strip down to the default Upper nav row, would then work everywhere except the
+  // modules he had been trying to arrange. This is the owner's own saved layout, verbatim.
+  {
+    const his = layout({
+      strip: ["/admin/organogram"],
+      upperRow: [],
+      moduleRows: {
+        sales: { upperRow: ["/admin/organogram"], lowerRow: [] },
+        people: { upperRow: ["/admin/organogram"], lowerRow: [] },
+      },
+    });
+    const repaired = resolveStripConflicts(placementOf(his));
+    assert.deepEqual(repaired.conflicts, ["/admin/organogram"], "the contradiction is named, not swallowed");
+    assert.deepEqual(
+      repaired.moduleRows,
+      {},
+      "an override the clearing emptied is dropped, so the module falls back to the defaults",
+    );
+
+    // The whole point of dropping it: the follow-up move now reaches those modules.
+    const afterHisNextMove = layout({ strip: [], upperRow: ["/admin/organogram"], moduleRows: repaired.moduleRows });
+    for (const moduleId of ["sales", "people"]) {
+      assert.deepEqual(
+        applyPersonalLayout(gated, afterHisNextMove, moduleId).upperRow.map((i) => i.href),
+        ["/admin/organogram"],
+        `moving it out of the strip must reach ${moduleId} — the module he was arranging`,
+      );
+    }
+  }
+
+  // A deliberately empty override is NOT the same thing and must survive: "no rows in this module"
+  // is a real choice, and nothing about it contradicts the strip.
+  {
+    const repaired = resolveStripConflicts(
+      placementOf(
+        layout({
+          strip: ["/admin/organogram"],
+          moduleRows: {
+            sales: { upperRow: [], lowerRow: [] },
+            people: { upperRow: ["/admin/organogram", "/admin/employees"], lowerRow: [] },
+          },
+        }),
+      ),
+    );
+    assert.deepEqual(repaired.moduleRows.sales, { upperRow: [], lowerRow: [] }, "an already-empty override is kept");
+    assert.deepEqual(
+      repaired.moduleRows.people,
+      { upperRow: ["/admin/employees"], lowerRow: [] },
+      "an override that still holds something keeps it, minus the entry that could never render",
+    );
+  }
+
+  // A clean document must come back untouched — the repair may never be a silent rewrite.
+  {
+    const clean = layout({
+      strip: ["/admin/sales"],
+      upperRow: ["/admin/organogram"],
+      moduleRows: { people: { upperRow: ["/admin/employees"], lowerRow: [] } },
+    });
+    const repaired = resolveStripConflicts(placementOf(clean));
+    assert.deepEqual(repaired.conflicts, [], "nothing to report");
+    assert.deepEqual(repaired.rows, { upperRow: ["/admin/organogram"], lowerRow: [] }, "the rows are unchanged");
+    assert.deepEqual(repaired.moduleRows, { people: { upperRow: ["/admin/employees"], lowerRow: [] } }, "so are the overrides");
   }
 
   // ── The editor must enforce what the renderer enforces ──────────────────────────────────────
