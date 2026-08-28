@@ -39,6 +39,7 @@ import { CvDocumentView } from "@/components/recruitment/cv-preview-modal";
 import type { HiringManagerOption } from "@/lib/recruitment/hiring-manager-notify";
 import { managerPickerLabel, managerSeatLabel } from "@/lib/recruitment/manager-grouping";
 import { positionFolderLabel } from "@/lib/recruitment/position-folder";
+import { suggestPositions } from "@/lib/recruitment/position-suggestion";
 // Type-only: vacancy-options reads the service-role client and must never enter this bundle.
 import type { VacancyOption } from "@/lib/recruitment/vacancy-options";
 import { candidateDisplayName } from "@/lib/recruitment/candidate-display";
@@ -112,6 +113,15 @@ const SEEN_DWELL_MS = 2500;
  * a vacancy id, which is always a number.
  */
 const FREE_POSITION = "free:";
+/**
+ * "Send without a position", chosen deliberately.
+ *
+ * Needed only because a suggestion fills the picker when nothing has been chosen: with "" meaning
+ * both "untouched" and "none", a recruiter who disagreed with the suggestion had no way to say so —
+ * selecting the blank option handed them the suggestion straight back. This value says no, and
+ * means it.
+ */
+const NO_POSITION = "none:";
 
 /** "Nasr City · Medical Representative · Pedia" — a vacancy, as it reads in the picker. */
 function vacancyPickerLabel(vacancy: VacancyOption): string {
@@ -438,8 +448,50 @@ export function CandidateScreeningSession({
     [hiringManagers, openVacancies],
   );
 
+  // ── What this CV looks like it is FOR ──────────────────────────────────────
+  //
+  // The owner, 2026-08-28: "why don't we use the help of the AI to recommend? And that's your
+  // confirm. The HR confirm." So the picker opens on an answer and a person keeps or changes it.
+  //
+  // DERIVED, NEVER STORED. Writing the suggestion into state on each candidate would need an effect
+  // that sets state, which is a lint error in this repository, and would also fight the deliberate
+  // stickiness of `positionChoice` — the position is remembered across candidates because filling
+  // one vacancy means reading a run of CVs for that one vacancy. Deriving it means a recruiter's own
+  // choice always wins and the suggestion only ever speaks into an empty picker.
+  const suggestion = useMemo(
+    () => (current ? suggestPositions(current, openVacancies) : { confident: null, shortlist: [] }),
+    [current, openVacancies],
+  );
+
+  /**
+   * The position that will actually be sent.
+   *
+   * `positionChoice` is what the recruiter chose, and it wins whenever they have chosen anything at
+   * all — including NO_POSITION, which is how they say no to a suggestion.
+   */
+  const effectivePosition =
+    positionChoice === NO_POSITION
+      ? ""
+      : positionChoice || (suggestion.confident ? String(suggestion.confident.vacancy.id) : "");
+
+  /**
+   * The manager who will actually be sent to.
+   *
+   * A suggested position carries its own manager, the same way picking a vacancy by hand does — the
+   * organogram already knows who owns the seat. Only ever fills an empty picker, and only with
+   * somebody who is actually in the list: a seat whose own manager post is vacant is a real row
+   * here, and it must leave the send disabled rather than address a CV to nobody.
+   */
+  const suggestedManagerHrId =
+    positionChoice === "" && suggestion.confident?.vacancy.managerHrId
+      ? suggestion.confident.vacancy.managerHrId
+      : "";
+  const effectiveManagerHrId =
+    sendManagerHrId ||
+    (hiringManagers.some((manager) => manager.hrId === suggestedManagerHrId) ? suggestedManagerHrId : "");
+
   const sendToManager = useCallback(async () => {
-    if (!current || busy || !sendManagerHrId) return;
+    if (!current || busy || !effectiveManagerHrId) return;
     setBusy(true);
     setError(null);
     try {
@@ -448,11 +500,11 @@ export function CandidateScreeningSession({
         // the seat back and stamps that, so the words on this screen can never disagree with the
         // words in the folder. A typed one sends the words, and the server cleans them.
         body: JSON.stringify({
-          managerHrId: sendManagerHrId,
+          managerHrId: effectiveManagerHrId,
           ...(positionChoice === FREE_POSITION
             ? { positionAreaName: freeAreaName, positionJobTitle: freeJobTitle }
-            : positionChoice
-              ? { vacancyId: Number(positionChoice) }
+            : effectivePosition
+              ? { vacancyId: Number(effectivePosition) }
               : {}),
         }),
         headers: { "Content-Type": "application/json" },
@@ -470,15 +522,15 @@ export function CandidateScreeningSession({
       // and fell through to the local guess, which was right only because the list is the same one.
       const managerName =
         data.result?.managerName ??
-        hiringManagers.find((manager) => manager.hrId === sendManagerHrId)?.name ??
-        sendManagerHrId;
+        hiringManagers.find((manager) => manager.hrId === effectiveManagerHrId)?.name ??
+        effectiveManagerHrId;
       setSentInSession((previous) => ({ ...previous, [current.id]: managerName }));
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not send this CV to that manager.");
     } finally {
       setBusy(false);
     }
-  }, [busy, current, freeAreaName, freeJobTitle, hiringManagers, positionChoice, sendManagerHrId]);
+  }, [busy, current, effectiveManagerHrId, effectivePosition, freeAreaName, freeJobTitle, hiringManagers, positionChoice]);
 
   const decidedCount = Object.keys(decided).length;
 
@@ -826,9 +878,25 @@ export function CandidateScreeningSession({
                       className="h-8 w-full rounded-md border border-slate-300 bg-white px-2 text-xs text-slate-900 outline-none focus:border-orange-400"
                       onChange={(event) => choosePosition(event.target.value)}
                       title="The position this CV is for — the manager sees it filed under this"
-                      value={positionChoice}
+                      value={positionChoice === NO_POSITION ? NO_POSITION : effectivePosition}
                     >
                       <option value="">For which position? (optional)</option>
+                      {/* The seats this CV looks like it is for, offered first and pre-selected when
+                          there is only one of them. Never labelled as a machine's opinion — the
+                          standing rule is that assistive inference is invisible to users — and never
+                          the whole answer: every open vacancy is still listed below, in full. */}
+                      {suggestion.shortlist.length > 0 ? (
+                        <optgroup label={suggestion.confident ? "Looks like this one" : "Looks like one of these"}>
+                          {suggestion.shortlist.map((entry) => (
+                            <option key={`suggested-${entry.vacancy.id}`} value={String(entry.vacancy.id)}>
+                              {vacancyPickerLabel(entry.vacancy)}
+                            </option>
+                          ))}
+                        </optgroup>
+                      ) : null}
+                      {suggestion.confident ? (
+                        <option value={NO_POSITION}>No position — send without one</option>
+                      ) : null}
                       <optgroup label="Open vacancies">
                         {openVacancies.map((vacancy) => (
                           <option key={vacancy.id} value={String(vacancy.id)}>
@@ -838,6 +906,16 @@ export function CandidateScreeningSession({
                       </optgroup>
                       <option value={FREE_POSITION}>Another position — type it</option>
                     </select>
+                    {/* WHY it looks like that, in facts off this CV — where they live, what they do
+                        now — so a recruiter can check it against the page in front of them instead
+                        of trusting it. No score and no percentage: a number invites believing the
+                        number, which is the one thing this must not encourage. Shown only while the
+                        suggestion is what the picker is actually holding. */}
+                    {suggestion.confident && positionChoice === "" && suggestion.confident.reasons.length > 0 ? (
+                      <p className="text-[11px] leading-tight text-slate-600">
+                        {suggestion.confident.reasons.join(" · ")}
+                      </p>
+                    ) : null}
                     {positionChoice === FREE_POSITION ? (
                       <div className="grid grid-cols-2 gap-1.5">
                         {/* Suggestions, not a closed list: the point of this option is that the
@@ -881,7 +959,7 @@ export function CandidateScreeningSession({
                     onChange={(event) => setSendManagerHrId(event.target.value)}
                     ref={managerRef}
                     title="Choose a manager — press M"
-                    value={sendManagerHrId}
+                    value={effectiveManagerHrId}
                   >
                     <option value="">Send to a manager…</option>
                     {hiringManagers.map((manager) => (
@@ -892,7 +970,7 @@ export function CandidateScreeningSession({
                   </select>
                   <button
                     className="flex h-8 shrink-0 items-center gap-1.5 rounded-md bg-orange-600 px-3 text-xs font-bold text-white transition hover:bg-orange-700 disabled:opacity-40"
-                    disabled={busy || !sendManagerHrId}
+                    disabled={busy || !effectiveManagerHrId}
                     onClick={() => void sendToManager()}
                     type="button"
                   >
