@@ -16,6 +16,11 @@ export const CRM_CHECKINS_TABLE = "ireports360_checkins";
 /** One row per sync attempt (cron / manual backfill), success or failure. */
 export const CRM_SYNC_RUNS_TABLE = "ireports360_visits_sync_runs";
 
+/** One row per 30-day history window, holding the LATEST parity verification of that window against
+ * the CRM (see `src/lib/crm/parity.ts`). Keyed on the window's start date, so it is a running state
+ * table rather than a log — what each check actually did is recorded in CRM_SYNC_RUNS_TABLE. */
+export const CRM_PARITY_WINDOWS_TABLE = "ireports360_parity_windows";
+
 /** Manual crm_id -> hr_id identity resolutions (override tier of the identity waterfall). */
 export const CRM_IDENTITY_RESOLUTIONS_TABLE = "ireports360_crm_identity_resolutions";
 
