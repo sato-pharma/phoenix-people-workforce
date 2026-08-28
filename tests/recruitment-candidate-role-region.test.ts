@@ -49,17 +49,16 @@ export function runCandidateRoleRegionTests() {
   // --- bare abbreviation is deliberately unmatched — nobody in this pool uses it.
   assert.equal(candidateRoleFamily("District Sales Manager"), "district_manager");
   assert.equal(candidateRoleFamily("Regional Manager"), "area_regional_manager");
-  assert.equal(candidateRoleFamily("Area Manager"), "area_regional_manager");
+  // "Area Manager" moved here 2026-08-28 — see the dedicated block below, where the owner's
+  // correction and its production measurement are documented.
+  assert.equal(candidateRoleFamily("Area Manager"), "district_manager");
   assert.equal(
     candidateRoleFamily("NSM"),
     "other",
     "a bare NSM is ambiguous and unused here — same reasoning as the excluded bare MR and KAM",
   );
-  // Recorded, not endorsed: "Regional Sales Manager" lands in `sales`, because the area/regional
-  // branch anchors on "regional" immediately followed by manager/supervisor/head and this title
-  // separates them. Pre-existing behaviour, unchanged by the national family — asserted here so a
-  // future fix is a deliberate decision with a visible diff, not an accident.
-  assert.equal(candidateRoleFamily("Regional Sales Manager"), "sales");
+  // "Regional Sales Manager" now resolves to area_regional_manager, not sales — see the dedicated
+  // block below, where the area/regional branch's fix and its production measurement are documented.
 
   // --- Compound titles name two jobs. The more senior, more specific one wins.
   assert.equal(
@@ -93,7 +92,46 @@ export function runCandidateRoleRegionTests() {
   );
 
   assert.equal(candidateRoleFamily("Regional Manager \u2013 Upper Egypt"), "area_regional_manager");
-  assert.equal(candidateRoleFamily("Area Supervisor"), "area_regional_manager");
+  assert.equal(candidateRoleFamily("Assistant General Manager Of Operations(Zonal Head)"), "area_regional_manager");
+
+  // --- "Sales" wedged between the region word and the seniority word must not push these into the
+  // --- sales catch-all: "Regional Sales Manager" is this pool's own name for the RSM field-force
+  // --- role. Measured against production 2026-08-28: these 5, plus the two asserted just above,
+  // --- are the complete set of 7 "Regional/Zonal" titles this pool holds.
+  for (const title of [
+    "Regional Sales Manager",
+    "7-Regional Sales Manager",
+    "Regional Sales Manager (Alex & Delta)",
+    "Regional Sales Manager | Healthcare & Pharmaceuticals",
+    "Regional sales manager for great cairo",
+  ]) {
+    assert.equal(candidateRoleFamily(title), "area_regional_manager", `"${title}" is a Regional Manager`);
+  }
+  // --- But not ANY word between the two \u2014 "Regional Collection Manager" carries both "regional"
+  // --- and "manager" and is still not a field role, so it must stay unclaimed.
+  assert.equal(
+    candidateRoleFamily("Regional Collection Manager"),
+    "other",
+    "a Regional Collection Manager is not the Area / Regional field-force role",
+  );
+
+  // --- "Area (Sales) Manager/Supervisor" reads like a synonym for the block above, but the owner
+  // --- corrected this 2026-08-28: in this industry it names the SAME first-line seat Phoenix calls
+  // --- District Manager, not the tier above. Measured against production: these 6, plus "Area
+  // --- Manager" asserted above, are the complete set of 7 "Area"-titled candidates that were
+  // --- sitting in area_regional_manager (an 8th, "Pharmaceutical Area / District Sales Manager",
+  // --- already resolved to district_manager via the plain \bdistrict\b rule and never moved).
+  for (const title of [
+    "Area Sales Manager",
+    "area sales manager",
+    "Area sales manager",
+    "Area Sales Manager GCC Region",
+    "Area Supervisor",
+    "AREA MANGER", // the same misspelling normalizeJobTitle repairs for "district manger"
+  ]) {
+    assert.equal(candidateRoleFamily(title), "district_manager", `"${title}" is a District Manager, not Area / Regional`);
+  }
+
   assert.equal(candidateRoleFamily("Product Manager (Respiratory & Anti-Infective)"), "product_manager");
   assert.equal(candidateRoleFamily("Senior HR Generalist"), "human_resources");
   assert.equal(candidateRoleFamily("Sr. Payroll & Personnel Specialist"), "human_resources",
@@ -121,8 +159,33 @@ export function runCandidateRoleRegionTests() {
   assert.equal(candidateRegionForGovernorate("Aswan"), "OT", "Aswan is Others, not Upper Egypt");
   assert.equal(candidateRegionForGovernorate("Luxor"), "OT");
 
+  // --- Delta (3): the Anti Infective district opened 2026-08-28 — Qalubeya, Sharkia, Suez, Ismailia.
+  // Before this the four sat in three different regions and there was no way to search the pool for
+  // the new district at all. These four assertions ARE the feature; they are not incidental.
+  for (const gov of ["Qalyubia", "Al-Qalyubia", "Qalubeya", "Banha"]) {
+    assert.equal(candidateRegionForGovernorate(gov), "D3", `${gov} is Delta (3), moved out of Delta (1)`);
+  }
+  for (const gov of ["Sharkia", "Sharqia", "El-Sharqia", "Zagazig"]) {
+    assert.equal(candidateRegionForGovernorate(gov), "D3", `${gov} is Delta (3), moved out of Delta (2)`);
+  }
+  assert.equal(candidateRegionForGovernorate("Suez"), "D3", "Suez is Delta (3), moved out of Others");
+  for (const gov of ["Ismailia", "Ismailiya"]) {
+    assert.equal(candidateRegionForGovernorate(gov), "D3", `${gov} is Delta (3), moved out of Others`);
+  }
+  assert.equal(candidateRegionLabels.D3, "Delta (3)", "the label is the company's own region name");
+
+  // The regions Delta (3) was carved OUT of must keep everything else — a carve-out that empties a
+  // neighbour is a mistake, not a move.
+  assert.equal(candidateRegionForGovernorate("Gharbia"), "D1", "Delta (1) keeps Gharbia");
+  assert.equal(candidateRegionForGovernorate("Menoufia"), "D1", "Delta (1) keeps Menoufia");
+  assert.equal(candidateRegionForGovernorate("Kafr El Sheikh"), "D1", "Delta (1) keeps Kafr El-Sheikh");
+  assert.equal(candidateRegionForGovernorate("Dakahlia"), "D2", "Delta (2) keeps Dakahlia");
+  assert.equal(candidateRegionForGovernorate("Port Said"), "D2", "Delta (2) keeps Port Said");
+  assert.equal(candidateRegionForGovernorate("Damietta"), "D2", "Delta (2) keeps Damietta");
+  assert.equal(candidateRegionForGovernorate("Hurghada"), "OT", "Others keeps Hurghada");
+  assert.equal(candidateRegionForGovernorate("North Sinai"), "OT", "Others keeps North Sinai");
+
   // --- Both spellings in production must land on one region, or each hides the other's people.
-  assert.equal(candidateRegionForGovernorate("Qalyubia"), "D1");
   assert.equal(
     candidateRegionForGovernorate("Al-Qalyubia"),
     candidateRegionForGovernorate("Qalyubia"),

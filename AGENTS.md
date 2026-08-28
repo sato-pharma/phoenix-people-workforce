@@ -686,6 +686,36 @@ These are the owner's own decisions, stated across many sessions. They are not s
 - Marketing Manager is hidden from the portal Incentive tab; GPM still sees it.
 - The Organogram / AU seat model is the source of truth for org-structure and vacancy data.
 - All SoS sales, historical and future, attribute to **today's** geography — never as-was.
+- 🔒 **The August 2026 closing is NOT affected by the Anti Infective Delta (3) split.** Owner's
+  words, said at least ten times and still being misread: *"This employee will be hired on one
+  September. So the monthly closing of August will not be distributed on him. It will be normally
+  before the change we made. Starting from September, everything will be changed and divided."*
+  August is computed on the **pre-split** geography — D11, D24, D25, OT2 and OT9 stay under
+  `SEAT-AIF-OTHERS` / `SEAT-AIF-DM-D2` exactly as they are today, and Samaa Shalaby (`AI-0014`,
+  hired 2026-09-01) gets no share of it. The split is applied **after** August is published, and
+  it governs September onward. Verified in production 2026-08-28: `au.line_area_map` has **0** rows
+  carrying `operational_region_code = 'D3'`, so the move is not merely deferred — it does not
+  exist yet, and no closing run can pick it up.
+- **Nobody knows WHEN the August closing happens, and it is not 1 September.** It waits on the
+  distributor companies sending their sales data, which arrives on their schedule, not ours. The
+  closing golden rule above sets the EARLIEST date a month may be released; it never sets the
+  actual date. Do not put a date on a closing, do not tell the owner one is "due", and do not
+  treat the 1st of the month as a deadline he has missed. Retire this bullet and the one above it
+  once the Delta (3) move has been applied.
+- 🔒 **THE CLOSING GOLDEN RULE — a closing is never done or sent during the month it covers.**
+  Owner's rule, stated 2026-08-28, in his words: *"no closing is ever done or sent during the
+  month. Closing after the month closes."* The closing for `YYYY-MM` becomes publishable on the
+  **first day of the following month, Africa/Cairo time** — 1 September for August, not one day
+  earlier, and December's opens on 1 January of the next year. Preparing a running month is
+  fine and necessary (import, review, correct, preview); **releasing** it is what is forbidden,
+  because publishing notifies every sales and product manager, arms the CEO's Source-of-Sales BI
+  report, and a sent mail cannot be recalled by unpublishing. Enforced, not merely written down:
+  `src/lib/sales/closing-period-gate.ts` throws, `publishClosing` calls it before it writes, and
+  `tests/closing-period-gate.test.ts` — registered in `tests/run-tests.ts`, so it runs in the
+  required CI `validate` check — pins both the arithmetic and the fact that the publish path
+  still calls the gate. **`unpublishClosing` is deliberately NOT gated** — it is the recovery
+  path, and a recovery path that stops working when you need it is not one. Do not "fix" this
+  back, do not add an override flag, and do not offer to publish a running month "just to see".
 
 ## 5. Session, worktree, and parallel-work safety
 

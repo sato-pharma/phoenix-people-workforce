@@ -31,6 +31,10 @@ export type CrmIdentityMaps = {
   hrIdByCrmId: Map<string, string>;
   hrIdByCrmUsername: Map<string, string>;
   hrIdByManualOverride: Map<string, CrmManualOverride>;
+  /** `hr_id` -> `hire_date` (YYYY-MM-DD) for everyone who has one. Feeds the PRE-HIRE attribution
+   * guard: work dated before someone joined cannot be theirs. Only employees WITH a hire date
+   * appear, so somebody whose start was never recorded is simply absent and is never blocked. */
+  hireDateByHrId: Map<string, string>;
   /** `hr_id` -> `last_working_date` (YYYY-MM-DD) for everyone who has one. Feeds the post-exit
    * attribution guard: work dated after someone left cannot be theirs. Only employees WITH a last
    * working date appear, so an active employee is simply absent. */

@@ -24,6 +24,7 @@ import {
   type MonthlyClosingMatrix,
 } from "@/lib/sales/monthly-distributor-import";
 import { ClosingPeriodSelect } from "@/components/sales/closing-period-select";
+import { closingPeriodGateMessage, closingPeriodOpensOn, isClosingPeriodComplete } from "@/lib/sales/closing-period-gate";
 import { describePeriodSelection, periodLabel } from "@/lib/sales/monthly-closing-period-merge";
 import type { MonthlySourceCoverage } from "@/lib/sales/source-coverage";
 import { SearchableSelect } from "@/components/ui/searchable-select";
@@ -82,6 +83,15 @@ export function MonthlyClosingWorkspace({ canPublish = false, initialCoverage = 
   // disabled while several months are folded together rather than silently acting on the latest.
   const isMultiPeriod = selectedPeriods.length > 1;
   const periodSpan = describePeriodSelection(selectedPeriods);
+  // THE CLOSING GOLDEN RULE — a month is never published during that month (owner, 2026-08-28).
+  // The server refuses it regardless (publishClosing calls the same gate); this just shows the
+  // reason on the button instead of letting the press come back as an error. Unpublish is never
+  // blocked, so this only applies when the button would PUBLISH.
+  const periodNotClosedYet = !published && !isMultiPeriod && Boolean(selectedPeriod)
+    && !isClosingPeriodComplete(selectedPeriod);
+  // A disabled button with only a tooltip explains nothing on a touch screen, so the reason is
+  // stated on the page as well.
+  const closingOpensOn = periodNotClosedYet ? closingPeriodOpensOn(selectedPeriod) : null;
 
   const filteredMatrix = useMemo(
     () => (matrix ? filterMonthlyClosingMatrix(matrix, filter) : null),
@@ -318,6 +328,11 @@ export function MonthlyClosingWorkspace({ canPublish = false, initialCoverage = 
             {canPublish && locked ? (
               <AdminInsightChip tone="orange">Locked — numbers frozen</AdminInsightChip>
             ) : null}
+            {canPublish && closingOpensOn ? (
+              <AdminInsightChip tone="orange">
+                {periodLabel(selectedPeriod)} is still running — closing opens {closingOpensOn}
+              </AdminInsightChip>
+            ) : null}
             {canPublish && published !== null ? (
               <AdminInsightChip tone={published ? "orange" : "slate"}>
                 {published ? "Published to portal" : "Not published"}
@@ -400,12 +415,14 @@ export function MonthlyClosingWorkspace({ canPublish = false, initialCoverage = 
             {canPublish ? (
               <Button
                 className="gap-2"
-                disabled={isPublishing || isMultiPeriod || !selectedLine || !selectedPeriod}
+                disabled={isPublishing || isMultiPeriod || periodNotClosedYet || !selectedLine || !selectedPeriod}
                 onClick={() => void togglePublish()}
                 title={
                   isMultiPeriod
                     ? `Publishing releases ONE month to the portal. Pick a single month — ${periodSpan} is several.`
-                    : undefined
+                    : periodNotClosedYet
+                      ? closingPeriodGateMessage(selectedPeriod)
+                      : undefined
                 }
                 variant={published ? "secondary" : "default"}
               >

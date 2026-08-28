@@ -100,6 +100,8 @@ import { runProbationCaseProvisioningTests } from "./probation-case-provisioning
 import { runProbationDomainMigrationReadinessTests } from "./probation-domain-migration-readiness.test.ts";
 import { runCrmIdentityTests } from "./crm-identity.test.ts";
 import { runCrmPostExitAttributionTests } from "./crm-post-exit-attribution.test.ts";
+import { runCrmPreHireAttributionTests } from "./crm-pre-hire-attribution.test.ts";
+import { runCrmParitySweepTests } from "./crm-parity-sweep.test.ts";
 import { runCrmSyncRunColumnsTests } from "./crm-sync-run-columns.test.ts";
 import { runProbationDvSourceTests } from "./probation-dv-source.test.ts";
 import { runProbationDvDetectionTests } from "./probation-dv-detection.test.ts";
@@ -647,6 +649,7 @@ import { runSosRollupSqlTruthTests } from "./sos-rollup-sql-truth.test.ts";
 import { runSosBackfillEmptyBrickSentinelTests } from "./sos-backfill-empty-brick-sentinel.test.ts";
 import { runSosSeatAttributionPeriodTests } from "./sos-seat-attribution-period.test.ts";
 import { runMonthlyClosingLockTests } from "./monthly-closing-lock.test.ts";
+import { runClosingPeriodGateTests } from "./closing-period-gate.test.ts";
 import { runSosMappingIntegrityTests } from "./sos-mapping-integrity.test.ts";
 import { runSosIngestionNoSilentZeroTests } from "./sos-ingestion-no-silent-zero.test.ts";
 import { runAnalyticsAreaScopeV2Tests } from "./analytics-area-scope-v2.test.ts";
@@ -1146,6 +1149,8 @@ await runTest("probation case provisioning (idempotent ensureCase + hire trigger
 await runTest("probation domain migration readiness (Phase 1 schema + Phase 2 trigger)", runProbationDomainMigrationReadinessTests);
 await runTest("crm identity waterfall (override>crm_id>unique username, no-guess) + double-visit predicate", runCrmIdentityTests);
 await runTest("crm post-exit attribution guard (work after an exit date is never filed under the leaver)", runCrmPostExitAttributionTests);
+await runTest("crm pre-hire attribution guard (nobody is credited with work dated before they joined)", runCrmPreHireAttributionTests);
+await runTest("crm full-history parity sweep (windows, staleness, and the refuse-to-delete guard)", runCrmParitySweepTests);
 await runTest("crm sync-run columns (every persisted column exists in the schema)", runCrmSyncRunColumnsTests);
 await runTest("probation DV source definition (P3-T01 predicate + attribution + dedup key)", runProbationDvSourceTests);
 await runTest("probation DV-Day detection (P3-T02 grouping + visit_count + unresolved surfacing)", runProbationDvDetectionTests);
@@ -1935,6 +1940,7 @@ await runTest("SoS rollup SQL truth (Direct priced as Direct, backfill refreshes
 await runTest("SoS backfill matches the empty-string brick sentinel, not just NULL", runSosBackfillEmptyBrickSentinelTests);
 await runTest("SoS seat attribution (today's wiring, departed reps keep their credit)", runSosSeatAttributionPeriodTests);
 await runTest('Monthly closing lock (database triggers, not a disabled button)', runMonthlyClosingLockTests);
+await runTest('CLOSING GOLDEN RULE (a month is never published during that month, Cairo boundary)', runClosingPeriodGateTests);
 await runTest('SoS mapping integrity (alias edit replaces, exact customer key detects conflicts)', runSosMappingIntegrityTests);
 await runTest('SoS ingestion (an unreadable cell is rejected, never silently zeroed)', runSosIngestionNoSilentZeroTests);
 await runTest('analytics area scope v2 (reconciliation refuses area-scoped viewers, one active alias target)', runAnalyticsAreaScopeV2Tests);

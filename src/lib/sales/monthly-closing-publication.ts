@@ -1,4 +1,5 @@
 import { invalidateClosingStoreSplitCache } from "@/lib/dashboard/invalidation";
+import { assertClosingPeriodComplete } from "@/lib/sales/closing-period-gate";
 import { notifyClosingPublished } from "@/lib/sales/closing-publish-notification";
 import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -115,6 +116,11 @@ export async function publishClosing(input: {
   if (!normalizedLine || !period) {
     throw new Error("A line and a period are required to publish a closing.");
   }
+
+  // THE CLOSING GOLDEN RULE — a month's closing is never released during that month.
+  // Publishing notifies every sales/product manager and arms the CEO's SoS report, and a sent
+  // mail cannot be recalled by unpublishing. See src/lib/sales/closing-period-gate.ts.
+  assertClosingPeriodComplete(period);
 
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase

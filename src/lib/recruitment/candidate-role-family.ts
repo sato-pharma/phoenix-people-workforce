@@ -92,6 +92,17 @@ export function candidateRoleFamily(raw: string | null | undefined): CandidateRo
   if (/\bdistrict\b/.test(t) && /\bmanager|supervisor\b/.test(t)) return "district_manager";
   if (/\bdsm\b/.test(t)) return "district_manager";
 
+  // "Area (Sales) Manager/Supervisor/Head" is this industry's own name for the same first-line
+  // field-manager seat Phoenix calls District Manager — not the tier above it. Owner correction,
+  // 2026-08-28, reversing the area_regional_manager placement shipped hours earlier (#2502): an
+  // "Area Sales Manager" candidate is a district-manager fit, and only "Regional/Zone(al)" earns
+  // the seat above (see the area_regional_manager branch further down). Measured against
+  // production 2026-08-28: 10 of 11 titled candidates carrying the word "area" (7 distinct
+  // spellings — Area Manager, Area Sales Manager, Area Supervisor, and case/typo variants) were
+  // sitting in area_regional_manager and move here; the 11th, "Pharmaceutical Area / District
+  // Sales Manager", already matched the \bdistrict\b rule above and is unaffected.
+  if (/\barea\s+(?:sales\s+)?(manager|supervisor|head)\b/.test(t)) return "district_manager";
+
   // Medical rep before area/regional, because this pool's own data equates the two names:
   // "Medical representative ( territory manager )" is one person writing both on one line.
   if (/\bmedical\s+(sales\s+)?(rep|reps|representative|representatives)\b/.test(t)) return "medical_rep";
@@ -101,7 +112,18 @@ export function candidateRoleFamily(raw: string | null | undefined): CandidateRo
   if (/\bproduct\s+specialist\b/.test(t)) return "medical_rep";
   if (/\bterritory\s+manager\b/.test(t)) return "medical_rep";
 
-  if (/\b(regional|area|zone|zonal)\s+(manager|supervisor|head)\b/.test(t)) return "area_regional_manager";
+  // "Sales" is allowed to sit between the region word and the seniority word, and nothing else is:
+  // "Regional Sales Manager" is this pool's own name for the RSM field-force role (see
+  // screening-order.ts's field_force band), so requiring the two words to be adjacent was missing
+  // it — measured against production 2026-08-28, 7 of 345 titled candidates (all "Regional"/"Zonal"
+  // shapes) resolve here. "Area" is deliberately NOT in this alternation: see the district_manager
+  // branch above, where the owner corrected that placement the same day — an "Area (Sales) Manager"
+  // is a district-manager fit here, not a regional one, despite reading like a synonym at first
+  // glance. Widening this to any word between the region word and the seniority word (mirroring the
+  // district branch's two-independent-tests shape) would go too far the other way: "Regional
+  // Collection Manager" also carries "regional" and "manager" but is a collections role, not a
+  // field one, and stays "other" precisely because nothing here forces it.
+  if (/\b(regional|zone|zonal)\s+(?:sales\s+)?(manager|supervisor|head)\b/.test(t)) return "area_regional_manager";
   if (/\bline\s+(manager|supervisor)\b/.test(t)) return "area_regional_manager";
   if (/\bsupervisor\s+for\s+\w+\s+line\b/.test(t)) return "area_regional_manager";
 

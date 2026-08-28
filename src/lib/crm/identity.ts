@@ -66,9 +66,12 @@ export function buildCrmIdentityMaps(
     }
   }
 
+  const hireDateByHrId = new Map<string, string>();
   const lastWorkingDateByHrId = new Map<string, string>();
   const crmUsernameByHrId = new Map<string, string>();
   for (const employee of employees) {
+    const hireDate = employee.hireDate?.slice(0, 10);
+    if (hireDate) hireDateByHrId.set(employee.hrId, hireDate);
     const lastWorkingDate = employee.lastWorkingDate?.slice(0, 10);
     if (lastWorkingDate) lastWorkingDateByHrId.set(employee.hrId, lastWorkingDate);
     // NOT filtered for ambiguity the way hrIdByCrmUsername is: that map answers "which single
@@ -78,10 +81,51 @@ export function buildCrmIdentityMaps(
     if (ownLabel) crmUsernameByHrId.set(employee.hrId, ownLabel);
   }
 
-  return { hrIdByCrmId, hrIdByCrmUsername, hrIdByManualOverride, lastWorkingDateByHrId, crmUsernameByHrId };
+  return {
+    hrIdByCrmId,
+    hrIdByCrmUsername,
+    hrIdByManualOverride,
+    hireDateByHrId,
+    lastWorkingDateByHrId,
+    crmUsernameByHrId,
+  };
 }
 
 /**
+ * EMPLOYMENT-SPAN ATTRIBUTION GUARD. Work dated outside someone's employment cannot be theirs —
+ * not after their last working day, and not before their hire date either.
+ *
+ * The two ends are the SAME bug seen from opposite sides, because the cause is the same: whoever
+ * administers iReports360 hands one person's CRM account to the next person to hold that territory
+ * instead of creating a new account. Looking forward from the leaver you see the replacement's work
+ * filed under someone who had gone; looking backward from the replacement you see the leaver's whole
+ * history filed under someone who had not yet joined.
+ *
+ * THE TWO ENDS NEED DIFFERENT TESTS, AND THIS IS THE IMPORTANT PART. Post-exit is decided by the
+ * CRM LABEL (see below) because the date alone cannot tell a handed-over slot from someone's own
+ * final days logged late. Pre-hire CANNOT use that test, because the CRM REWRITES the label on
+ * historic rows when an account changes hands — the old occupant's visits come back carrying the new
+ * occupant's name. Measured on production 2026-08-28 across all 1,619 pre-hire rows:
+ *
+ *   1,248 of 1,619 (77%) carried the CURRENT holder's own label      -> a label test would ALLOW them
+ *       0 of 1,619 carried no label at all                            -> not a missing-data artifact
+ *
+ * So the label is actively misleading here rather than merely unavailable, and the pre-hire half is
+ * DATE-ONLY. A grace window was measured and rejected for the same reason it was at the other end —
+ * the gap distribution has no safe cut:
+ *
+ *   1-3 days before hire     13 rows,   0 real calls   (admin broadcasts to the whole roster)
+ *   4-7 days before hire     36 rows,   0 real calls   (same)
+ *   8-30 days before hire    91 rows,  46 real calls
+ *   31-90 days before hire  725 rows, 604 real calls
+ *   91+ days before hire    754 rows, 464 real calls   (worst: 207 days, one rep, 931 real calls)
+ *
+ * Zero real calls anywhere in the first week is what makes a hard date rule safe: nobody in this
+ * data legitimately logged a doctor call before their recorded start, so there is no true positive
+ * for a window to protect. The 49 rows in that first week are all admin broadcasts (a public holiday
+ * published to the entire CRM roster, which already includes next week's joiner) — those carry no
+ * activity credit, and refusing to file them under someone who had not started is correct too.
+ *
  * POST-EXIT ATTRIBUTION GUARD. Work dated after someone's last working day cannot be theirs.
  *
  * This is the recurrence prevention for a whole bug class. Whoever administers iReports360 reuses a
@@ -134,9 +178,18 @@ export function isAttributableOn(
   // No date to judge against (ad-hoc callers): fall back to the previous behaviour rather than
   // blocking on a value we don't have.
   if (!visitDate) return true;
+  const visitDay = visitDate.slice(0, 10);
+
+  // PRE-HIRE. Date-only and with no grace window — see the doc comment for why the label test that
+  // makes the post-exit half safe cannot be used here, and why the measured gap distribution leaves
+  // nothing for a window to protect. An employee with no recorded hire date is never blocked: an
+  // unknown start is not evidence of anything, and blocking on it would unmap real work.
+  const hireDate = maps.hireDateByHrId.get(hrId);
+  if (hireDate && visitDay < hireDate) return false;
+
   const lastWorkingDate = maps.lastWorkingDateByHrId.get(hrId);
   if (!lastWorkingDate) return true;
-  if (visitDate.slice(0, 10) <= lastWorkingDate) return true;
+  if (visitDay <= lastWorkingDate) return true;
 
   // Post-exit. Attribute it only if the record still carries THIS employee's own CRM label.
   const ownLabel = maps.crmUsernameByHrId.get(hrId);
@@ -149,9 +202,38 @@ export function isAttributableOn(
 }
 
 /** The outcome of one attribution attempt. `blockedHrId` is set when a tier DID match but the
- * post-exit guard rejected it — the caller can count and report those instead of seeing a bare null
- * that looks identical to "this agent is simply unknown". */
+ * employment-span guard rejected it — the caller can count and report those instead of seeing a bare
+ * null that looks identical to "this agent is simply unknown". */
 export type CrmAttribution = { blockedHrId: string | null; hrId: string | null };
+
+/** Which end of the employment span refused an attribution. */
+export type CrmBlockReason = "pre_hire" | "post_exit";
+
+/**
+ * Why `isAttributableOn` refused — for a caller that already has a `blockedHrId` and needs to report
+ * the two causes separately.
+ *
+ * They are NOT interchangeable operationally, which is the whole reason they are counted apart. A
+ * post-exit block means a CRM account has just been handed to a replacement and somebody's CURRENT
+ * work is going unattributed today — act now. A pre-hire block is the same handover seen from the
+ * other side: it is the PREVIOUS occupant's history detaching from the new joiner, which is a
+ * backfill to reconcile, not an emergency. Folding them into one counter would let a burst of old
+ * rows drown out a live problem, and vice versa.
+ *
+ * Pre-hire is tested first because it is the unambiguous one: a date before the hire date cannot be
+ * that person's work under any reading. A rehire whose `hire_date` moved forward past their own
+ * earlier service is the one shape that reads pre-hire without being a handover — it is still
+ * correctly refused (the roster says they had not started), and it still wants a human decision.
+ */
+export function blockReasonFor(
+  hrId: string,
+  visitDate: string | null | undefined,
+  maps: CrmIdentityMaps,
+): CrmBlockReason {
+  const hireDate = maps.hireDateByHrId.get(hrId);
+  if (visitDate && hireDate && visitDate.slice(0, 10) < hireDate) return "pre_hire";
+  return "post_exit";
+}
 
 /**
  * Manual override first (an admin's explicit "map to this HR ID" decision from the Unmapped
@@ -200,11 +282,18 @@ export function resolveEmployeeAttribution(
   }
   const key = normalizeCrmName(name);
   if (!key) return { blockedHrId: null, hrId: null };
-  // Tier 3 — unique crm_username. Guarded for symmetry, though it can only ever allow: this tier
-  // resolved BECAUSE the record's label is that employee's own label, which is exactly the condition
-  // the post-exit check tests. That is the right answer rather than a loophole — a label matching a
+  // Tier 3 — unique crm_username. The POST-EXIT half can only ever allow here: this tier resolved
+  // BECAUSE the record's label is that employee's own label, which is exactly the condition the
+  // post-exit check tests. That is the right answer rather than a loophole — a label matching a
   // departed person means their own trailing work, and a handed-over slot carries the REPLACEMENT's
   // label, so it never resolves to the leaver here in the first place.
+  //
+  // The PRE-HIRE half is the opposite, and this tier is where it does its most important work. When
+  // an account changes hands the CRM rewrites the label on the previous occupant's historic rows to
+  // the NEW occupant's name, so those old rows resolve here — correctly by label, wrongly by person.
+  // 1,248 of the 1,619 pre-hire rows found in production on 2026-08-28 have exactly this shape, the
+  // largest being 931 real doctor calls dated up to 207 days before that employee joined. Only the
+  // date can refuse them.
   const byName = maps.hrIdByCrmUsername.get(key);
   if (!byName) return { blockedHrId: null, hrId: null };
   if (!isAttributableOn(byName, visitDate, maps, name)) return { blockedHrId: byName, hrId: null };
