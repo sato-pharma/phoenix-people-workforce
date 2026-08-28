@@ -376,6 +376,7 @@ export type EmployeePlansSummary = {
 
 export type EmployeePlansWorkspace = {
   canAcknowledgeHr: boolean;
+  canMovePlanPeriod: boolean;
   canSubmitPlans: boolean;
   hasMorePlans: boolean;
   loadedPlanCount: number;
@@ -1830,6 +1831,9 @@ export async function getEmployeePlansWorkspace(access: AccessContext): Promise<
   const employee = directory.employees.find((item) => normalizeHrId(item.hrId) === viewerHrId) ?? null;
   const canSubmitPlans = Boolean(employee && canSubmitFromEmployee(employee, access.role) && await canAccess(access, "weekly_plans", "create"));
   const canAcknowledgeHr = isHrReviewer(access, employee);
+  // Mirrors moveWeeklyPlanToPeriod exactly: HR/Super-Admin AND the approve grant. A flag carrying
+  // only half the gate renders a button the server then rejects.
+  const canMovePlanPeriod = canAcknowledgeHr && (await canAccess(access, "weekly_plans", "approve"));
   // One read, two jobs: it names the owner's district outright (the Area picker's first
   // authority) and fills the blank area_name that hides five reps from the rep list.
   // Fails soft for the same reason the seat map below does.
@@ -1886,6 +1890,7 @@ export async function getEmployeePlansWorkspace(access: AccessContext): Promise<
     });
     return {
       canAcknowledgeHr,
+      canMovePlanPeriod,
       canSubmitPlans,
       currentEmployee: employee
         ? {
@@ -1917,6 +1922,7 @@ export async function getEmployeePlansWorkspace(access: AccessContext): Promise<
     if (!isSchemaMissing(error)) throw error;
     return {
       canAcknowledgeHr,
+      canMovePlanPeriod,
       canSubmitPlans,
       currentEmployee: employee
         ? {

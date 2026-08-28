@@ -174,4 +174,20 @@ export function runWeeklyPlanMovePeriodTests() {
     !route.includes("assertPermission"),
     "the route must not re-implement the gate - authorization is the service's job, and two copies drift",
   );
+
+  // ---- No button the server rejects -----------------------------------------------------------
+  // The workspace flag must carry BOTH halves of the server gate. canAcknowledgeHr alone is only
+  // the HR half, so an HR reviewer without the approve grant would be shown the control and then
+  // get a 403 from it.
+  assert.ok(
+    service.includes(
+      'const canMovePlanPeriod = canAcknowledgeHr && (await canAccess(access, "weekly_plans", "approve"));',
+    ),
+    "canMovePlanPeriod must be HR/Super-Admin AND the approve grant - the same two halves the service asserts",
+  );
+  const workspaceUi = readFileSync("src/components/employee-portal/plans-workspace.tsx", "utf8");
+  assert.ok(
+    workspaceUi.includes("{plan && workspace.canMovePlanPeriod ? ("),
+    "the move control must render on canMovePlanPeriod, not on a flag that is only half the gate",
+  );
 }

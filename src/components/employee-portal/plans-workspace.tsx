@@ -2721,7 +2721,7 @@ export function PlansWorkspace({
                     Request to Edit
                   </Button>
                 ) : null}
-                {plan && workspace.canAcknowledgeHr ? (
+                {plan && workspace.canMovePlanPeriod ? (
                   <MovePlanPeriod
                     currentPeriodLabel={`${plan.periodKey} (${formatDate(plan.periodStartDate)} to ${formatDate(plan.periodEndDate)})`}
                     onMoved={() => runAction(async () => {
