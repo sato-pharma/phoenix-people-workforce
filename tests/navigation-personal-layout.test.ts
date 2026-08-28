@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import type { NavigationSection, NavigationSectionItem } from "../src/config/system-navigation.ts";
 import {
   applyPersonalLayout,
   defaultLayoutFrom,
   isPersonalNavigationLayout,
+  layoutKeyFor,
   PERSONAL_LAYOUT_VERSION,
   type PersonalNavigationLayout,
 } from "../src/lib/navigation/personal-layout.ts";
@@ -133,5 +135,55 @@ export function runNavigationPersonalLayoutTests() {
     assert.equal(isPersonalNavigationLayout(null), false, "null is not a layout");
     assert.equal(isPersonalNavigationLayout({ version: 99, strip: [], sections: [], hidden: [] }), false, "a future version is rejected");
     assert.equal(isPersonalNavigationLayout({ version: PERSONAL_LAYOUT_VERSION, strip: [1], sections: [], hidden: [] }), false, "non-string hrefs are rejected");
+  }
+
+  // ── The storage key is always lowercased ────────────────────────────────────────────────────
+  // hr_id casing is inconsistent in this database — a raw .eq() once hid 28% of reps' own orders.
+  {
+    assert.equal(layoutKeyFor("SA-0001"), "sa-0001", "an upper-case hr_id normalises");
+    assert.equal(layoutKeyFor("  sa-0001  "), "sa-0001", "surrounding whitespace is trimmed");
+    assert.equal(layoutKeyFor("sa-0001"), "sa-0001", "an already-lowercase hr_id is unchanged");
+    assert.equal(layoutKeyFor(null), null, "a null identity has no key");
+    assert.equal(layoutKeyFor(undefined), null, "an absent identity has no key");
+    assert.equal(layoutKeyFor("   "), null, "a blank identity has no key");
+  }
+
+  // ── THE IDENTITY RULE ───────────────────────────────────────────────────────────────────────
+  // The whole point of retiring Modules Control was that it targeted OTHER people. If the route
+  // ever accepts an hr_id from the caller, this feature silently becomes that same targeting
+  // matrix. Pinned by pattern rather than a byte window — a fixed source slice false-fails the
+  // moment anything above it shifts.
+  {
+    // Strip comments before matching. The route's own header comment explains the rule in prose
+    // ("there is no ?hrId=..."), and a pin that reads prose fails on a file that is documenting the
+    // very thing it is being checked for — which is exactly what happened when this was written.
+    const route = readFileSync("app/api/navigation/personal-layout/route.ts", "utf8")
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/(^|[^:])\/\/.*$/gm, "$1");
+
+    assert.ok(
+      !/searchParams|nextUrl\.search|\?hrId=/.test(route),
+      "the layout route must not read a query string — that is how a caller would name someone else",
+    );
+    assert.ok(
+      !/\bhrId\b\s*[:=]\s*(body|payload|json|request)/i.test(route),
+      "the layout route must never take hr_id from the request body",
+    );
+    // Every store call must be keyed on the resolved session, and on nothing else.
+    const storeCalls = [...route.matchAll(/(?:loadPersonalLayout|savePersonalLayout|clearPersonalLayout)\(([^,)]*)/g)];
+    assert.equal(storeCalls.length, 3, "GET, PUT and DELETE each call the store exactly once");
+    for (const call of storeCalls) {
+      assert.equal(call[1].trim(), "access.hrId", `store calls must key on access.hrId, found: ${call[1].trim()}`);
+    }
+    // An unauthenticated caller resolves to role "Employee", not null, so a !access.role check is
+    // dead code. The guest test has to be on `source`.
+    assert.ok(
+      /access\.source === "guest"/.test(route),
+      "the route must reject guests by access.source, not by a role check that can never fire",
+    );
+    assert.ok(
+      !/if\s*\(\s*!\s*access\.role\s*\)/.test(route),
+      "a !access.role guard never fires here — an unauthenticated caller has role Employee",
+    );
   }
 }

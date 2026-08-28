@@ -27,6 +27,21 @@ import type { NavigationSection, NavigationSectionItem } from "@/config/system-n
 
 export const PERSONAL_LAYOUT_VERSION = 1 as const;
 
+/**
+ * The storage key for a person's layout: their hr_id, lowercased and trimmed. Null when there is no
+ * usable identity to key on.
+ *
+ * Lives in this dependency-free module rather than beside the database calls so it can be tested
+ * without loading a Supabase client. It exists at all because hr_id casing is genuinely
+ * inconsistent here — `activity_events.hr_id` is mixed case, the direct-order tables carry both
+ * spellings, and a plain `.eq()` on the raw value once hid 28% of reps' own orders. The table
+ * CHECKs that stored keys are lowercase; this is the other half of that guarantee.
+ */
+export function layoutKeyFor(hrId: string | null | undefined): string | null {
+  const key = String(hrId ?? "").trim().toLowerCase();
+  return key.length > 0 ? key : null;
+}
+
 /** A section in a saved layout. `label` is the owner's own name for it; `id` ties back to the
  *  code-defined section so a renamed section still matches its default when the layout is reset. */
 export type PersonalLayoutSection = {
