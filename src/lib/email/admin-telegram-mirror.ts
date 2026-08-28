@@ -68,7 +68,13 @@ export function buildAdminMirrorMessage(email: AdminMirrorEmail): { title: strin
 
 let adminChatCache: { at: number; chatIds: string[] } | null = null;
 
-async function resolveAdminChatIds(): Promise<string[]> {
+/**
+ * The standing admin's connected Telegram chats. Exported so every channel that mirrors to him
+ * resolves the SAME person: this module's whole reason for declaring ADMIN_STANDING_EMAIL once is
+ * that two channels must never drift to two different recipients, and the WhatsApp conversation
+ * mirror is now a second such channel.
+ */
+export async function resolveAdminTelegramChatIds(): Promise<string[]> {
   const now = Date.now();
   if (adminChatCache && now - adminChatCache.at < ADMIN_CHAT_TTL_MS) return adminChatCache.chatIds;
 
@@ -114,7 +120,7 @@ async function resolveAdminChatIds(): Promise<string[]> {
  */
 export async function mirrorEmailToAdminTelegram(email: AdminMirrorEmail): Promise<void> {
   try {
-    const chatIds = await resolveAdminChatIds();
+    const chatIds = await resolveAdminTelegramChatIds();
     if (chatIds.length === 0) return;
     const { message, title } = buildAdminMirrorMessage(email);
     for (const chatId of chatIds) {

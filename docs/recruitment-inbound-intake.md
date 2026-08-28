@@ -46,6 +46,32 @@ There are **two** numbers, and only one of them is on the Cloud API:
 | `01159888247` | The **advertised** HR handset — a normal WhatsApp Business app phone, **not** on the Cloud API |
 | `+20 10 98500699` | The Cloud API line (`WHATSAPP_PHONE_NUMBER_ID`) that this webhook actually receives on |
 
+
+### Which number the adverts point at, and why the owner can still see the conversation
+
+`RECRUITMENT_APPLY_WHATSAPP_NUMBER` is the single control point: every generated advert and every
+tracked `PX-` apply link is built from it (`src/lib/recruitment/outreach/apply-destinations.ts`).
+It is a **forward-only** switch — posts already pasted into Facebook groups keep the number they
+were written with, and keep working exactly as before.
+
+Pointing it at the Cloud API line is what removes the human forward from the loop: the CV arrives
+by itself, and the applicant is asked the three classification questions while they are still in
+the chat. The one thing it costs is that a Cloud API number **cannot be opened on a phone** — there
+is no handset for the owner to read those chats on, and there never can be.
+
+`whatsapp-conversation-mirror.ts` pays that back. Two moments reach his Telegram, which he already
+carries:
+
+| When | What he gets |
+| --- | --- |
+| A new direct applicant's CV is ingested (`intake-worker.ts`) | Their name, their dialable number, the file name, and their own message if they wrote one |
+| They finish the three taps (`finishSession`) | Name, number, and the role / region / area **they chose themselves** |
+
+Both are best-effort and can never throw: a Telegram outage must not touch a CV that has already
+been captured. Both are gated to a **genuinely new direct applicant** — never an import sender
+(that is a forwarder, not the applicant), never a re-match, and never a coexistence history replay,
+which would otherwise mirror months of past CVs in a single burst the moment the handset is linked.
+
 So an applicant's CV lands on the handset and enters the ATS **only when a human forwards a batch**
 to the Cloud API line. This was a deliberate decision on 2026-07-27, when Meta Coexistence was not
 offered in the dashboard. **Under that design a WhatsApp intake event measures HR's forwarding

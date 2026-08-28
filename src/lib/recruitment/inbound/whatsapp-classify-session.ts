@@ -27,6 +27,10 @@ import {
   regionMenu,
   type ClassifyMenu,
 } from "@/lib/recruitment/inbound/whatsapp-classify-menus";
+import {
+  candidateDisplayName,
+  mirrorWhatsAppEventToOwner,
+} from "@/lib/recruitment/inbound/whatsapp-conversation-mirror";
 import { sendClassifyMenu, sendWhatsAppText } from "@/lib/recruitment/inbound/whatsapp-interactive";
 
 const SESSIONS_TABLE = "ats_whatsapp_classification_sessions";
@@ -326,6 +330,27 @@ async function finishSession(session: SessionRow, fallbackPhoneNumberId: string 
       toWaId: session.wa_id,
     });
   }
+
+  // Resolve the person the same way applyClassificationToCandidate just did. Reading only
+  // applied_candidate_id would leave the mirror nameless for every applicant whose session was
+  // opened before their CV finished processing — which is the common case, because the three taps
+  // take seconds and the intake worker runs on a cron tick.
+  const mirroredCandidateId =
+    session.applied_candidate_id ?? (await findCandidateForSender(session.wa_id).catch(() => null));
+
+  // Tell the owner, on the phone he actually carries. This is the whole point of the feature from
+  // his side: not that the answers are stored, but that he learns a named person applied for a
+  // named role in a named area without reading a CV or forwarding anything. Mirrored even when an
+  // answer is missing — a partly-filed applicant is still worth knowing about, and the message says
+  // which part they did not reach.
+  await mirrorWhatsAppEventToOwner({
+    areaName: session.area_name,
+    candidateName: await candidateDisplayName(mirroredCandidateId),
+    kind: "classified",
+    regionLabel,
+    roleLabel,
+    waId: session.wa_id,
+  });
 }
 
 /**
