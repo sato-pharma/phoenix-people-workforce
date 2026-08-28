@@ -62,7 +62,14 @@ import {
 import { systemAssets, systemIdentity, systemUiText } from "@/config/system-settings";
 import { resolveLandingPathForRole } from "@/lib/auth/landing";
 import { type NavigationMode, type PhoenixRole } from "@/lib/auth/permissions";
-import { getActiveHref, getSections, usesFlatSidebar, type PermissionLookup } from "@/lib/navigation/active-path";
+import {
+  getActiveHref,
+  getSections,
+  normalizePathnameForMode,
+  usesAdminChrome,
+  usesFlatSidebar,
+  type PermissionLookup,
+} from "@/lib/navigation/active-path";
 import { applyPersonalLayout, type PersonalNavigationLayout } from "@/lib/navigation/personal-layout";
 import { subscribeNavBadge } from "@/lib/nav-badge-store";
 import { cn } from "@/lib/utils";
@@ -827,7 +834,7 @@ function SidebarNav({
   rail?: boolean;
   scrollable?: boolean;
 }) {
-  const isAdmin = mode === "admin";
+  const isAdmin = usesAdminChrome(mode);
   // The SFE Manager keeps the flat sidebar built for him on 2026-08-02 — no section headings and
   // no hub-button styling. Every other role had both restored on 2026-08-08 (owner instruction).
   const flatSidebar = usesFlatSidebar(currentRole);
@@ -864,7 +871,10 @@ function SidebarNav({
   const sections = applied.sections;
   // Layer 1 — the pages promoted out of the modules entirely. Rendered above Favourites.
   const stripItems = applied.strip;
-  const pathname = usePathname();
+  // Normalised to the shell's own URL form: in `hr` mode the nav hrefs are authored under /hr, and
+  // whether usePathname() reports the browser path or the middleware-rewritten one is a Next.js
+  // detail that has changed between releases. See normalizePathnameForMode.
+  const pathname = normalizePathnameForMode(usePathname(), mode);
   const searchParams = useSearchParams();
   const navInstanceId = useId();
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -1282,7 +1292,7 @@ function SidebarBrand({
   const homePath = commandCenterHomeRoles.has(currentRole as PhoenixRole)
     ? resolveLandingPathForRole(currentRole)
     : navigationHomePathByMode[mode];
-  const isAdmin = mode === "admin";
+  const isAdmin = usesAdminChrome(mode);
   const subtitle = isAdmin ? `${systemIdentity.productName} · Admin` : systemUiText.sidebar.employeeLogoSubtitle;
 
   if (rail) {
@@ -1361,7 +1371,7 @@ function SidebarBrand({
 
 // ── Employee-portal-only intro + footer ──────────────────────────────────────
 function SidebarIntro({ mode = "admin" }: { mode?: NavigationMode }) {
-  if (mode === "admin") return null;
+  if (usesAdminChrome(mode)) return null;
   return (
     <div className="mx-3 mt-3 border border-[#E2E8F0] bg-[linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)] p-4">
       <p className="text-[10px] font-black uppercase tracking-[0.22em] text-[#F97316]">{systemUiText.sidebar.employeePortalKicker}</p>
@@ -1372,7 +1382,7 @@ function SidebarIntro({ mode = "admin" }: { mode?: NavigationMode }) {
 }
 
 function SidebarFooter({ mode = "admin" }: { mode?: NavigationMode }) {
-  if (mode === "admin") return null;
+  if (usesAdminChrome(mode)) return null;
   return (
     <div className="p-3">
       <div className="overflow-hidden border border-[#E2E8F0] bg-[linear-gradient(180deg,#fff7ed_0%,#ffffff_100%)] p-3">
@@ -1412,7 +1422,7 @@ export function Sidebar({
   /** This viewer's own saved arrangement, resolved server-side in AppShell. */
   personalLayout?: PersonalNavigationLayout | null;
 }) {
-  const isAdmin = navigationMode === "admin";
+  const isAdmin = usesAdminChrome(navigationMode);
   const [rail, toggleRail] = useSidebarRail(navigationMode);
   const railActive = isAdmin && rail;
   const [transitionsReady, setTransitionsReady] = useState(false);
@@ -1483,7 +1493,7 @@ export function MobileSidebar({
   /** Same arrangement as the desktop sidebar — the two must not disagree about where a page is. */
   personalLayout?: PersonalNavigationLayout | null;
 }) {
-  const isAdmin = navigationMode === "admin";
+  const isAdmin = usesAdminChrome(navigationMode);
 
   return (
     <div

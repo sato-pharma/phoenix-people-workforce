@@ -189,9 +189,22 @@ const planApproverPortalNavigationRoles = [
   "Manager",
 ] as const satisfies readonly PhoenixRole[];
 
+/**
+ * Where the sidebar logo takes each shell.
+ *
+ * An exhaustive `Record` over a union does NOT gate the build here (`next.config` sets
+ * `typescript: { ignoreBuildErrors: true }`), so a missing key compiles, ships, and hands the
+ * sidebar `undefined` as an href. `tests/hr-url-namespace.test.ts` asserts at RUNTIME that every
+ * `NavigationMode` resolves to a real path.
+ */
 export const navigationHomePathByMode: Record<NavigationMode, `/${string}`> = {
   admin: "/admin/access",
   "employee-portal": "/employee-portals",
+  // Not /hr: that bare address resolves through the viewer's own landing rule, which costs an
+  // extra hop. The HR seats' landing page today is the personal admin-shell workspace (see
+  // resolveLandingPathForRole); Phase 4 replaces it with the per-seat dashboard and this line is
+  // the one place that changes.
+  hr: "/hr/workspace",
 };
 
 const adminNavigationSectionSeeds = [
@@ -1346,11 +1359,126 @@ const employeePortalNavigationSectionSeeds = [
   },
 ] as const satisfies readonly NavigationSectionSeed[];
 
+// ── The /hr namespace (HR Advisory + HR Operations) ──────────────────────────
+//
+// Owner instruction, 2026-08-28: the two HR seats must not sit on the admin addresses — "due to
+// security reasons and due to not see things they are not should be able to see". This list is
+// that namespace's navigation, and it is AUTHORED rather than derived, which is the whole point.
+//
+// Deriving it (filter adminNavigationSections by the HR permission matrix) was measured first and
+// rejected. It admits three rows neither seat has any business seeing, because the sidebar's
+// permission check FAILS OPEN on a resource the item never names:
+//   • /admin/pharmacovigilance — no permission gate at all, only `excludedRoles: ["Finance
+//     Manager"]`, so every other role on earth passes it;
+//   • /admin/field-coaching — a sales-management hub reached on a coaching grant that exists for
+//     one JD line about performance follow-up;
+//   • /admin/crm-tools (HR Operations only) — a CRM hub whose single reachable card is Workforce
+//     Compliance, which she already has as a row of her own.
+// Those are presentation leaks, not permission leaks: every page behind them re-asserts its own
+// grant server-side. But the owner asked for a surface with nothing on it they should not see, and
+// an authored list is the only kind that stays that way as modules are added. A new admin module
+// appears in the HR sidebar only when someone writes it here on purpose.
+//
+// FLAT, NOT HUBBED — deliberately different from the admin shell. The admin sidebar collapses a
+// module into one hub button and makes you open a card grid to reach the page you wanted. With ~30
+// pages across 8 sections and collapsible headings, every HR page is ONE click from anywhere. The
+// hub pages themselves still exist and still work under /hr/… if a link lands on one; they are just
+// not the way through.
+//
+// Every row still carries its real `permissions`, so this list can only ever NARROW what the
+// matrix allows — it can never widen it. A row whose grant a seat lacks simply does not render.
+const hrNavigationSectionSeeds = [
+  {
+    id: "hr-overview",
+    items: [
+      { href: "/hr/workspace", icon: LayoutDashboard, label: "My Workspace" },
+    ],
+    label: "Overview",
+  },
+  {
+    id: "hr-people",
+    items: [
+      { href: "/hr/employee-360", icon: IdCard, label: "Employee 360", permissions: [{ resource: "employee_profile", action: "read" }] },
+      { href: "/hr/organogram", icon: Network, label: "Organogram", permissions: [{ resource: "organogram" }] },
+      { href: "/hr/probation", icon: Hourglass, label: "Probation", permissions: [{ resource: "probation" }] },
+      { href: "/hr/contracts", icon: CalendarClock, label: "Contract Renewal", permissions: [{ resource: "contracts" }] },
+      { href: "/hr/resignations", icon: FileSpreadsheet, label: "Resignations", permissions: [{ resource: "resignations" }] },
+      { href: "/hr/reports/vacancies", icon: BriefcaseBusiness, label: "Vacancies Report", permissions: [{ resource: "vacancies" }] },
+      { href: "/hr/admin/support-requests", icon: LifeBuoy, label: "HR Support Requests", permissions: [{ resource: "support_requests" }] },
+    ],
+    label: "People",
+  },
+  {
+    id: "hr-recruitment",
+    items: [
+      { href: "/hr/recruitment", icon: BriefcaseBusiness, label: "Recruitment", permissions: [{ resource: "recruitment" }] },
+      { href: "/hr/cv-database", icon: FileSpreadsheet, label: "CV Database", permissions: [{ resource: "vacancies" }] },
+      { href: "/hr/offers", icon: MailCheck, label: "Job Offers", permissions: [{ resource: "offers" }] },
+      { href: "/hr/hiring-documents", icon: FileCheck2, label: "Hiring Documents", permissions: [{ resource: "employee_documents" }] },
+      { href: "/hr/hiring-pack", icon: FileSignature, label: "Contract & Form 1", permissions: [{ resource: "employee_documents" }] },
+      { href: "/hr/recruitment/contact-review", icon: IdCard, label: "Missing Contact Details", permissions: [{ resource: "recruitment" }] },
+      { href: "/hr/recruitment/intake-health", icon: HeartPulse, label: "Inbound Intake Health", permissions: [{ resource: "recruitment" }] },
+    ],
+    label: "Recruitment",
+  },
+  {
+    id: "hr-attendance",
+    items: [
+      { href: "/hr/attendance", icon: Fingerprint, label: "Attendance", permissions: [{ resource: "attendance", action: "read" }] },
+      { href: "/hr/attendance/device-user-mapping", icon: Fingerprint, label: "Device User Mapping", permissions: [{ resource: "employees", action: "update" }] },
+      { href: "/hr/attendance/policies", icon: CalendarClock, label: "Attendance Policies", permissions: [{ resource: "employees", action: "update" }] },
+      { href: "/hr/hr-calendar", icon: CalendarDays, label: "Company Calendar", permissions: [{ resource: "hr_calendar" }] },
+    ],
+    label: "Attendance",
+  },
+  {
+    id: "hr-leave",
+    items: [
+      { href: "/hr/leave-management", icon: CalendarDays, label: "Leave Management", permissions: [{ resource: "leave", action: "read" }] },
+      { href: "/hr/leave-management/vacation-control", icon: Settings2, label: "Vacation Control", permissions: [{ resource: "leave", action: "update" }] },
+      { href: "/hr/admin/approvals-hub", icon: Inbox, label: "Other Approvals", permissions: [{ resource: "leave", action: "read" }], navBadge: "approvals-hub-pending" },
+    ],
+    label: "Leave Management",
+  },
+  {
+    id: "hr-payroll",
+    items: [
+      { href: "/hr/admin/payroll-management", icon: FileSpreadsheet, label: "Payroll Management", permissions: [{ resource: "payroll" }, { resource: "payslips" }, { resource: "deductions", action: "read" }] },
+      { href: "/hr/admin/deductions", icon: ReceiptText, label: "Deductions", permissions: [{ resource: "deductions", action: "read" }] },
+      { href: "/hr/admin/deductions-governance", icon: ShieldCheck, label: "Deductions Governance", permissions: [{ resource: "deductions", action: "read" }] },
+    ],
+    label: "Payroll",
+  },
+  {
+    id: "hr-performance",
+    items: [
+      { href: "/hr/admin/field-workforce-compliance", icon: ClipboardCheck, label: "Workforce Compliance", permissions: [{ resource: "hr_calendar" }] },
+      // The coaching grant is real and JD-traced (performance follow-up), so the page is listed
+      // rather than left reachable-but-hidden. The Field Coaching HUB and Coaching Analytics are
+      // deliberately not here: those are the SFE Manager's sales-management surfaces.
+      { href: "/hr/coaching", icon: ClipboardCheck, label: "Field Coaching", permissions: [{ resource: "coaching" }] },
+    ],
+    label: "Performance",
+  },
+  {
+    id: "hr-self",
+    items: [
+      { href: "/hr/workspace/leave-management/vacation-request", icon: CalendarCheck, label: "Request Vacation", permissions: [{ resource: "leave", action: "create" }] },
+      { href: "/hr/workspace/excuses", icon: CalendarClock, label: "Submit Excuse" },
+      { href: "/hr/admin/report-it/new", icon: ShieldAlert, label: "Report It" },
+    ],
+    label: "My Requests",
+  },
+] as const satisfies readonly NavigationSectionSeed[];
+
 export const adminNavigationSections: readonly NavigationSection[] = adminNavigationSectionSeeds;
 export const employeePortalNavigationSections: readonly NavigationSection[] = employeePortalNavigationSectionSeeds;
+export const hrNavigationSections: readonly NavigationSection[] = hrNavigationSectionSeeds;
 
 export function getNavigationSections(mode: NavigationMode): readonly NavigationSection[] {
-  return mode === "employee-portal" ? employeePortalNavigationSections : adminNavigationSections;
+  if (mode === "employee-portal") return employeePortalNavigationSections;
+  if (mode === "hr") return hrNavigationSections;
+  return adminNavigationSections;
 }
 
 // ── Admin Tools hub (app/(admin)/admin/admin-tools/page.tsx) ────────────────────

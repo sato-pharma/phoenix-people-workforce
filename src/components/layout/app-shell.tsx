@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { redirect } from "next/navigation";
+import { headers } from "next/headers";
 
 import { adminShellBackgroundClassName } from "@/components/admin/admin-design-tokens";
 import {
@@ -7,6 +8,7 @@ import {
   permissionActions,
   permissionResources,
   resolveNavigationMode,
+  usesHrNamespace,
   type AccessContext,
   type NavigationMode,
 } from "@/lib/auth/permissions";
@@ -21,6 +23,8 @@ import { Topbar } from "@/components/layout/topbar";
 import { SessionSecurityGuard } from "@/components/auth/session-security-guard";
 import { OneSignalProvider } from "@/components/notifications/onesignal-provider";
 import type { PermissionLookup } from "@/components/layout/sidebar";
+import { usesAdminChrome } from "@/lib/navigation/active-path";
+import { PATH_HEADER, SHELL_HEADER, toHrNamespacePath } from "@/lib/navigation/shell-headers";
 
 export async function AppShell({
   accessContext,
@@ -43,6 +47,33 @@ export async function AppShell({
     redirect("/login");
   }
 
+  const requestHeaders = await headers();
+
+  // ── The /hr namespace ──────────────────────────────────────────────────────────────────────
+  // An HR seat that arrives on a BARE address is sent to the same page under /hr. This lives in
+  // AppShell rather than in app/(admin)/layout.tsx so that it also covers the pages that sit
+  // OUTSIDE that route group and mount their own shell — /payslips, /leave-management,
+  // /marketing-requests/[id]. That is not a hypothetical gap: production notification links point
+  // at those addresses (123 rows for /payslips alone), and from the route-group layout an HR seat
+  // following one would have landed on the right page wearing the ADMIN sidebar.
+  //
+  // It also catches every notification link already sitting on a phone, every bookmark, and every
+  // in-page `<Link href="/admin/…">` written before the namespace existed, so no href anywhere in
+  // the app has to learn about the prefix.
+  //
+  // The reverse is deliberately NOT enforced: a non-HR role opening an /hr address gets the HR
+  // chrome rather than a bounce, so the owner can inspect exactly what these seats see. That is
+  // safe because the shell is chrome — every page behind it re-asserts its own grant server-side.
+  if (requestHeaders.get(SHELL_HEADER) !== "hr" && usesHrNamespace(access.role)) {
+    // Written by proxy.ts on every matched request. Absent only if the proxy did not run, in which
+    // case there is no path to redirect TO — fall through to the admin shell rather than guess,
+    // because a guessed target here is how a redirect loop starts.
+    const requestedPath = requestHeaders.get(PATH_HEADER);
+    if (requestedPath) {
+      redirect(toHrNamespacePath(requestedPath));
+    }
+  }
+
   // This viewer's own sidebar arrangement. Never throws and returns null on any problem — a
   // missing table (before the migration is applied), an unreadable row, a layout written by a
   // future version — and null means the sidebar renders exactly as the code defines it. A cosmetic
@@ -56,7 +87,14 @@ export async function AppShell({
         initials: "US",
         roleLabel: access.role,
       };
-  const resolvedNavigationMode = navigationMode ?? resolveNavigationMode(access);
+  // The `/hr` namespace decides the shell, and it decides it HERE rather than in the route-group
+  // layout so that EVERY AppShell render honours it — including the handful of dual-mode pages
+  // (/payslips, /leave-management, /marketing-requests/[id]) that sit outside the (admin) group and
+  // mount their own shell. The header is written by middleware, which strips any inbound copy
+  // first, so it cannot be forged. It selects CHROME only: every page behind it still asserts its
+  // own permission server-side, so being wrong here shows the right page under the wrong nav.
+  const resolvedNavigationMode: NavigationMode =
+    requestHeaders.get(SHELL_HEADER) === "hr" ? "hr" : navigationMode ?? resolveNavigationMode(access);
   const isSystemAdministratorWorkspace = access.scope === "system" || access.role === "Super Admin";
 
   const permissionLookup: PermissionLookup = {};
@@ -68,7 +106,7 @@ export async function AppShell({
     }
   }
 
-  const isAdminMode = resolvedNavigationMode === "admin";
+  const isAdminMode = usesAdminChrome(resolvedNavigationMode);
 
   return (
     <RouteTransitionProvider>

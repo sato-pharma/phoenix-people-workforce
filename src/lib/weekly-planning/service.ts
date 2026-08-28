@@ -76,6 +76,7 @@ import {
   normalizeHrIdForAccess,
   resolveNavigationMode,
   type AccessContext,
+  type NavigationMode,
   type PhoenixRole,
 } from "@/lib/auth/permissions";
 import { resolveViewerAllowedLines } from "@/lib/auth/scope-visibility";
@@ -1376,7 +1377,7 @@ async function authRoleForHrId(hrId: string | null | undefined): Promise<Phoenix
  * when the role can't be resolved (portal managers always have a login row).
  */
 async function planReviewActionUrl(hrId: string | null | undefined, planId: string): Promise<string> {
-  let mode: "admin" | "employee-portal" = "admin";
+  let mode: NavigationMode = "admin";
   try {
     const role = await authRoleForHrId(hrId);
     if (role) {

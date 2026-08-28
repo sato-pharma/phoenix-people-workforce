@@ -6,6 +6,7 @@ import {
   resolveEmployeeIdentityId,
   resolveNavigationMode,
   type AccessContext,
+  type NavigationMode,
   type PhoenixRole,
 } from "@/lib/auth/permissions";
 import { resolveJobFunctionRole } from "@/lib/employees/job-function";
@@ -1354,7 +1355,7 @@ async function authRoleForHrId(hrId: string | null | undefined): Promise<Phoenix
  * existing admin queue, unchanged. Defaults to the admin queue when the role can't be resolved.
  */
 async function outstationSubmitActionUrl(hrId: string | null | undefined, requestId: number): Promise<string> {
-  let mode: "admin" | "employee-portal" = "admin";
+  let mode: NavigationMode = "admin";
   try {
     const role = await authRoleForHrId(hrId);
     if (role) {

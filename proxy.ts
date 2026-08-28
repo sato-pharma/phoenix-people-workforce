@@ -10,6 +10,12 @@ import {
   isAllowedPhoenixOrigin,
   normalizeOrigin,
 } from "@/lib/security/origins";
+import {
+  PATH_HEADER,
+  SHELL_HEADER,
+  hrNamespaceRemainder,
+  isHrRewritablePath,
+} from "@/lib/navigation/shell-headers";
 
 const builderPreviewOrigin = "https://builder.io";
 
@@ -107,7 +113,20 @@ function rootRedirectResponse(request: NextRequest) {
   }
 }
 
-export function proxy(request: NextRequest) {
+/**
+ * Everything this file did before the `/hr` namespace existed: the root 307, the preview
+ * read-only wall, and CSRF protection.
+ *
+ * Returns a response ONLY when it must intervene; `null` means "carry on", which is what the
+ * pass-through `NextResponse.next()` calls used to mean. Splitting it out this way is what lets
+ * `proxy()` below widen its matcher to the whole app — needed to strip the forgeable shell
+ * headers everywhere they could be believed — WITHOUT widening the CSRF rule, which is scoped by
+ * its caller to exactly the paths the old matcher covered. `requiresCsrfProtection` keys on the
+ * METHOD alone, so running this on every path would newly subject every server action (a POST to
+ * a page URL) to the same-origin test. That is a live-behaviour change on a payroll system that
+ * nobody asked for, so it does not happen.
+ */
+function securityProxy(request: NextRequest): NextResponse | null {
   const rootRedirect = rootRedirectResponse(request);
   if (rootRedirect) return rootRedirect;
 
@@ -122,7 +141,7 @@ export function proxy(request: NextRequest) {
   }
 
   if (isPreviewBuilderLoginRequest(request)) {
-    return NextResponse.next();
+    return null;
   }
 
   if (
@@ -145,11 +164,11 @@ export function proxy(request: NextRequest) {
       request.nextUrl.pathname.startsWith("/api/email/unsubscribe/")
     )
   ) {
-    return NextResponse.next();
+    return null;
   }
 
   if (!requiresCsrfProtection(request)) {
-    return NextResponse.next();
+    return null;
   }
 
   if (!isSameOriginMutationRequest(request)) {
@@ -159,15 +178,55 @@ export function proxy(request: NextRequest) {
     );
   }
 
-  return NextResponse.next();
+  return null;
+}
+
+/**
+ * The paths `securityProxy` covered before the `/hr` namespace widened the matcher. Kept as an
+ * explicit list rather than inherited from `config.matcher`, because the two now differ on
+ * purpose and the difference is the whole point: the matcher decides where headers are stripped,
+ * this decides where the CSRF rule applies. `/hr/api/**` is absent because it never resolves to
+ * an API route — see `isHrRewritablePath`.
+ */
+function isSecurityProxyPath(pathname: string): boolean {
+  return (
+    pathname === "/" ||
+    pathname === "/api" ||
+    pathname.startsWith("/api/") ||
+    /^\/offers\/[^/]+\/(accept|reject)$/.test(pathname)
+  );
+}
+
+export function proxy(request: NextRequest) {
+  const { pathname, search } = request.nextUrl;
+
+  // A client can set any header it likes. These two are ours, and the shell trusts them to decide
+  // which navigation to render — so delete whatever arrived and write our own. Done for EVERY
+  // matched request, including ones that are not rewritten, so there is no path through this file
+  // that forwards an attacker-supplied value.
+  const headers = new Headers(request.headers);
+  headers.delete(SHELL_HEADER);
+  headers.delete(PATH_HEADER);
+  headers.set(PATH_HEADER, `${pathname}${search}`);
+
+  const intervention = isSecurityProxyPath(pathname) ? securityProxy(request) : null;
+  if (intervention) return intervention;
+
+  if (isHrRewritablePath(pathname)) {
+    const url = request.nextUrl.clone();
+    url.pathname = hrNamespaceRemainder(pathname);
+    headers.set(SHELL_HEADER, "hr");
+    return NextResponse.rewrite(url, { request: { headers } });
+  }
+
+  return NextResponse.next({ request: { headers } });
 }
 
 export const config = {
-  matcher: [
-    // "/" is matched so the entry point can be answered with a true 307 before any rendering.
-    "/",
-    "/api/:path*",
-    "/offers/:token/accept",
-    "/offers/:token/reject",
-  ],
+  // Matched broadly so the forgeable shell headers are stripped everywhere a layout could believe
+  // them, and so `/hr/...` can be rewritten. Widening this does NOT widen the CSRF rule — see
+  // `isSecurityProxyPath`. Static assets, images and the favicon are excluded: they render no
+  // navigation, so there is nothing there to spoof, and matching them is pure latency on every
+  // page load.
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|icon.png|apple-icon.png).*)"],
 };
