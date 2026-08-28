@@ -3,6 +3,7 @@
   lineRules,
   positionRules,
 } from "@/lib/imports/org-rules";
+import { toOrgTitleCase } from "@/lib/imports/org-title-case";
 
 export type OrgValue = {
   rawValue: string | null;
@@ -61,19 +62,6 @@ function normalizeTextValue(value: unknown) {
   return normalized;
 }
 
-function toTitleCase(value: string) {
-  return value
-    .split(" ")
-    .map((word) => {
-      if (!/[a-z]/i.test(word)) {
-        return word;
-      }
-
-      return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
-    })
-    .join(" ");
-}
-
 export function createOrgCode(value: string | null) {
   if (!value) {
     return null;
@@ -107,7 +95,7 @@ function fromCode(code: string | null, displayName?: string | null): OrgValue {
   return {
     rawValue: displayName ?? code.replace(/_/g, " "),
     normalizedName: code,
-    displayName: displayName ?? toTitleCase(code.replace(/_/g, " ")),
+    displayName: displayName ?? toOrgTitleCase(code.replace(/_/g, " ")),
     code,
   };
 }
@@ -124,7 +112,7 @@ function normalizeOrgValue(value: unknown): OrgValue {
   return {
     rawValue,
     normalizedName: code,
-    displayName: code ? toTitleCase(code.replace(/_/g, " ")) : null,
+    displayName: code ? toOrgTitleCase(code.replace(/_/g, " ")) : null,
     code,
   };
 }

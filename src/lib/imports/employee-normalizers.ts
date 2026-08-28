@@ -1,4 +1,6 @@
-﻿const EMPTY_VALUES = new Set(["", "-", "n/a", "na", "null", "undefined"]);
+﻿import { toOrgTitleCase } from "@/lib/imports/org-title-case";
+
+const EMPTY_VALUES = new Set(["", "-", "n/a", "na", "null", "undefined"]);
 const ORGANIZATION_ALIASES: Record<string, string> = {
   alex: "alexandria",
   alex_bhr: "alexandria",
@@ -88,19 +90,6 @@ export function normalizeTextValue(value: unknown) {
   return normalized;
 }
 
-function toTitleCase(value: string) {
-  return value
-    .split(" ")
-    .map((word) => {
-      if (!/[a-z]/i.test(word)) {
-        return word;
-      }
-
-      return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
-    })
-    .join(" ");
-}
-
 export function normalizeOrganizationName(value: unknown) {
   const rawValue = normalizeTextValue(value);
 
@@ -131,7 +120,7 @@ export function normalizeOrganizationName(value: unknown) {
   return {
     rawValue,
     normalizedName: canonicalCode,
-    displayName: canonicalText ? toTitleCase(canonicalText) : null,
+    displayName: canonicalText ? toOrgTitleCase(canonicalText) : null,
     code: canonicalCode,
   };
 }
@@ -152,7 +141,7 @@ function organizationNameFromCode(code: string | null) {
   return {
     rawValue: canonicalText,
     normalizedName: canonicalCode,
-    displayName: toTitleCase(canonicalText),
+    displayName: toOrgTitleCase(canonicalText),
     code: canonicalCode,
   };
 }

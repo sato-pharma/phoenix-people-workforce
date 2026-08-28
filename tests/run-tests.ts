@@ -370,6 +370,7 @@ import { runSosNormalizerPersistShapeTests } from "./sos-normalizer-persist-shap
 import { runSosImportTemplateTests } from "./sos-import-template.test.ts";
 import { runImportPreviewTests } from "./import-preview.test.ts";
 import { runEmployeeImportTeamResurrectionGuardTests } from "./employee-import-team-resurrection-guard.test.ts";
+import { runOrgTitleCaseAcronymTests } from "./org-title-case-acronyms.test.ts";
 import { runImportsLineCanonicalizationTests } from "./imports-line-canonicalization.test.ts";
 import { runImportTeamBlankWarningTests } from "./import-team-blank-warning.test.ts";
 import { runDetectDistributorTests } from "./detect-distributor.test.ts";
@@ -1629,6 +1630,7 @@ await runTest("sos normalizer persist shape", runSosNormalizerPersistShapeTests)
 await runTest("sos import template", runSosImportTemplateTests);
 await runTest("import preview diff", runImportPreviewTests);
 await runTest("employee import never resurrects a deactivated team (insert-only org entities)", runEmployeeImportTeamResurrectionGuardTests);
+await runTest("org title casing keeps acronyms (HR/QPPV/CEO/SFE/R&D) and round-trips to the same code", runOrgTitleCaseAcronymTests);
 await runTest("imports line canonicalization (Anti Inf → Anti infective; no duplicate lines rows)", runImportsLineCanonicalizationTests);
 await runTest("employee import warns when an Area carries no Team (warn, never block)", runImportTeamBlankWarningTests);
 await runTest("detect distributor", runDetectDistributorTests);
