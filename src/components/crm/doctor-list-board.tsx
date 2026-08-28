@@ -22,8 +22,12 @@ function Section({
 }) {
   return (
     <div className="border-b border-slate-200 bg-white last:border-b-0">
-      <div className="flex items-start justify-between gap-4 border-b border-slate-200 bg-slate-900 px-5 py-3.5">
-        <div>
+      <div className="flex flex-wrap items-start justify-between gap-4 border-b border-slate-200 bg-slate-900 px-5 py-3.5">
+        {/* flex-1 with a zero basis, NOT auto width: the description is a long sentence, so an
+            auto-width title block measures wider than the row and pushes the rep picker onto a
+            second line at every desktop size. Measured at 1280px — picker back beside the title
+            at x=971..1259, page scroll width unchanged. */}
+        <div className="min-w-0 flex-1">
           <h2 className="text-phx-xs font-black uppercase tracking-[0.14em] text-white">{title}</h2>
           {description ? <p className="mt-0.5 text-phx-2xs text-slate-400">{description}</p> : null}
         </div>

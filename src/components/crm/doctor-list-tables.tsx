@@ -57,7 +57,11 @@ export function DoctorListRepPicker({
   const [pending, setPending] = useState(false);
 
   return (
-    <label className="block w-full min-w-[16rem] space-y-1 sm:w-72">
+    {/* w-full below `sm`, so the picker takes its own line under the title on a phone rather
+        than sharing the row. A 16rem minimum was measured at 375px overflowing the page by 9px
+        — a sideways-scrolling phone page, which is the one thing the card layout exists to
+        prevent. */}
+    <label className="block w-full space-y-1 sm:w-72">
       <span className={LABEL_CLASS}>Medical rep</span>
       <select
         className={SELECT_CLASS}
