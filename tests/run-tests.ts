@@ -1004,6 +1004,7 @@ import { runRecruitmentRereadModelConstantsTests } from "./recruitment-reread-mo
 import { runRecruitmentExtractionRecordsIsCvTests } from "./recruitment-extraction-records-is-cv.test.ts";
 import { runRecruitmentRereadNotACvSkipsTests } from "./recruitment-reread-not-a-cv-skips.test.ts";
 import { runWorktreeExitGuardPreRemovalTests } from "./worktree-exit-guard-pre-removal.test.ts";
+import { runMemoryIndexBudgetTests } from "./memory-index-budget.test.ts";
 import { runRepoDoctorUnpushedCommitsTests } from "./repo-doctor-unpushed-commits.test.ts";
 
 import { runCvRereadAppliesWhatItReadsTests } from "./cv-reread-applies-what-it-reads.test.ts";
@@ -2902,6 +2903,13 @@ await runTest(
   + "remote ref GitHub already deleted is backed up and must not be flagged, work that exists "
   + "nowhere upstream still is, and a target it cannot read reports unknown rather than clean)",
   runRepoDoctorUnpushedCommitsTests,
+);
+
+await runTest(
+  "The memory index is capped by a BUDGET below the loader cliff, not by the cliff itself (the old "
+  + "ceiling-only rule was silent 335 bytes from silent truncation, mustFree closes the gap exactly, "
+  + "and an index it cannot measure reports unknown rather than healthy)",
+  runMemoryIndexBudgetTests,
 );
 
 await runTest(

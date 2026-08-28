@@ -644,6 +644,66 @@ corrected in place too, since the file is the fact. A stale hook is worse than a
 spends a tired session's attention defending a hole that is already shut. Deleting it was safe only
 because the corrected account lives in §2.3, which auto-loads in full.
 
+**THE INDEX IS CAPPED AT 22,000 BYTES, AND THE CAP IS HELD BY DISPLACEMENT — not by periodic
+rescue.** Trimming stopped working on 2026-08-28: a verified 718-byte relocation bought **fifty
+minutes**. Two parallel sessions appended **567 bytes** (lines of 330 and 235) before the same
+session had finished sweeping — each new line on its own **larger than the headroom the trim had
+just created**. The file is append-only in practice: every session adds a hook, almost none retires
+one. So any fix framed as "trim it when it gets big" loses to the append rate by construction, and
+the three passes in this section that each freed a few hundred bytes were all treating a symptom.
+**The file is never quiet long enough to reason about from a stale reading**: it measured 24,065
+bytes that morning and 23,837 three hours later, edited by a session that was not the one holding
+the number. Re-measure before acting; never quote a size from this file.
+
+**The budget is 22,000 bytes; the loader cliff stays 24,400.** The 2,400-byte gap is about ten
+hooks at the file's own average, which has held at **~230 bytes across 101 hook lines** on every
+measurement so far — enough slack that several parallel sessions can append before anyone must act.
+That is the difference between a budget and a fire alarm. It also stays clear of the ~13,000-byte
+structural floor, so the cap constrains growth without asking anyone to gut the index chasing a
+smaller number. `node scripts/repo-doctor.mjs` now prints the verdict and **the exact bytes to
+free**; `scripts/memory-index-budget.mjs` holds the arithmetic and `tests/memory-index-budget.test.ts`
+pins it — including a pin that the OLD ceiling-only rule stayed **silent at 335 bytes from the
+cliff**, which is what proves the test discriminates rather than passing for free.
+
+**THE DISPLACEMENT RULE: you may not add an index line without freeing at least as many bytes in
+the same edit.** Retire a resolved hook, or relocate one to §2.1/§2.3. This is the only part that
+changes the outcome — it turns an append-only file into a fixed-size one, and it puts the cost on
+the session that benefits rather than on whoever next notices the file is full. **There is always
+fuel.** Of roughly 15 hooks checked by claim on 2026-08-28, **three were stale**: one said 18 cron
+routes fell open (closed by #2479), one advertised an unfixed data-loss defect (closed by #2329
+with three defences), one said two active reps had no hire date (fixed 2026-08-23 — the file's own
+body already said so while its description and the hook both said the opposite).
+
+**What earns a line — all three, not two of three:**
+
+1. **A session would act WRONGLY without it**, in work it is plausibly about to do. Not "this was
+   hard to find", not "this cost me an hour", not "this is interesting".
+2. **It is durable** — a rule or a trap, never a count, a status, or a date. Status rots, and rots
+   invisibly: "325 pharmacies" is now 326, "2 ACTIVE reps" is 0, "1 still open" is 0. **A hook whose
+   whole content is a number is a hook that will one day be wrong**, and a wrong hook costs more
+   than a missing one because it is defended rather than looked up.
+3. **It is not derivable in one step.** If a `git grep` or a single query answers it, the answer is
+   cheaper than the line.
+
+**What never earns a line, however true:** anything agent-operating — shell, git, CI, PRs,
+worktrees, tooling, production-ops, session mechanics. Those belong in §2.1 or §2.3, which auto-load
+in full and have no cliff. **Reach is identical; only scannability differs** — so the index's scarce
+bytes must hold what a session has to see *before it knows it needs it*. This rule already existed
+and is already broken repeatedly: four such hooks were relocated out on 2026-08-28 alone.
+
+**What must come out — the fuel the displacement rule spends:** any hook whose claim is now false;
+any "still open" or "not fixed" hook whose item has shipped; any hook that is only a count or a
+status; any hook naming retired infrastructure. **Correct the FILE before the hook.** Two of the
+three stale hooks found that day sat above files that were already right, with the frontmatter
+`description` still asserting the opposite — and the description is what gets read when deciding
+whether a memory is relevant at all, so fixing only the hook leaves the error where it does the most
+damage.
+
+**The honest limit: no required check can gate any of this.** `MEMORY.md` lives under `~/.claude/`,
+not in the repository, so CI never sees it — the doctor is a local report and the displacement rule
+is behavioural. That is precisely why the cap is written *here*, in the file that auto-loads in
+full, instead of only in a script nobody is obliged to run.
+
 **A relocation spanning git and `~/.claude/` must finish BOTH halves or neither, in that order.**
 The destination must be **merged**, not merely written, before the index line is trimmed - between
 those two moments the fact exists in neither auto-loaded file. This is not hypothetical: a session

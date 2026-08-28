@@ -86,6 +86,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
+import { assessMemoryIndexSize, memoryIndexBudgetLines } from "./memory-index-budget.mjs";
 import { countUnpushedCommits } from "./repo-doctor-unpushed.mjs";
 
 const args = process.argv.slice(2);
@@ -727,32 +728,21 @@ function memoryDirFor(projectRoot) {
       .filter((t) => !INDEX_FILES.includes(t) && !fs.existsSync(path.join(memoryDir, t)))
       .sort();
 
-    // The read ceiling is what makes index size a correctness issue rather than a tidiness one:
-    // past it, the file cannot be read in one go and a session silently starts from a partial index.
-    const READ_CEILING = 24_400;
+    // Index SIZE is a correctness issue, not a tidiness one: past the loader's cliff the file stops
+    // being read in one go and every session silently starts from a partial index. The alarm sits
+    // at a BUDGET below that cliff rather than on the cliff itself, because an alarm that only
+    // fires once hooks are already being dropped cannot prevent anything. Arithmetic and wording
+    // both live in memory-index-budget.mjs so the figure and the sentence cannot drift apart.
     let indexBytes = 0;
     try {
       indexBytes = fs.statSync(path.join(memoryDir, "MEMORY.md")).size;
     } catch {
-      /* reported as 0 below */
+      // Left at 0, which the assessment reports as UNKNOWN rather than as healthy.
     }
-    const kb = (n) => (n / 1024).toFixed(1) + "KB";
 
     console.log("  memory: " + memoryDir);
-    console.log(
-      "  " +
-        num(memoryFiles.length) +
-        " memory files, " +
-        num(linked.size) +
-        " index pointers, MEMORY.md " +
-        kb(indexBytes) +
-        " of the " +
-        kb(READ_CEILING) +
-        " read ceiling",
-    );
-    if (indexBytes > READ_CEILING) {
-      console.log("  OVER CEILING — MEMORY.md no longer fits one read; a session will load it partially.");
-    }
+    console.log("  " + num(memoryFiles.length) + " memory files, " + num(linked.size) + " index pointers");
+    for (const line of memoryIndexBudgetLines(assessMemoryIndexSize(indexBytes))) console.log(line);
 
     // No silent caps: when the list is long the count that was not printed is stated out loud, and
     // so is the flag that prints the rest. A truncated list that does not say it was truncated
