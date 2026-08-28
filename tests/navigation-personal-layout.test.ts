@@ -8,6 +8,7 @@ import {
   isPersonalNavigationLayout,
   layoutKeyFor,
   PERSONAL_LAYOUT_VERSION,
+  resolveRowSet,
   type PersonalNavigationLayout,
 } from "../src/lib/navigation/personal-layout.ts";
 
@@ -231,6 +232,136 @@ export function runNavigationPersonalLayoutTests() {
     assert.equal(isPersonalNavigationLayout(legacyLayout({ upperRow: "sales" })), false, "a non-array upper row is rejected");
     assert.equal(isPersonalNavigationLayout(legacyLayout({ lowerRow: [1, 2] })), false, "non-string hrefs in a row are rejected");
     assert.equal(isPersonalNavigationLayout(legacyLayout({ upperRow: [], lowerRow: [] })), true, "explicitly empty rows are valid");
+  }
+
+  // ── PER-MODULE ROWS ─────────────────────────────────────────────────────────────────────────
+  // The owner's follow-up, 2026-08-28: "in the marketing and ROI, I want to have [tabs] related in
+  // the horizontal like this. But in sales, I want to have another." So the two rows carry one set
+  // inside one module and a different set inside another, keyed on the MODULE.
+  {
+    const l = layout({
+      upperRow: ["/admin/sales"],
+      moduleRows: { people: { upperRow: ["/admin/organogram"], lowerRow: ["/admin/employees"] } },
+    });
+
+    assert.deepEqual(
+      resolveRowSet(l, "people"),
+      { upperRow: ["/admin/organogram"], lowerRow: ["/admin/employees"] },
+      "a module with its own rows gets them",
+    );
+    assert.deepEqual(
+      resolveRowSet(l, "sales"),
+      { upperRow: ["/admin/sales"], lowerRow: [] },
+      "a module with no arrangement of its own falls back to the default rows",
+    );
+    assert.deepEqual(resolveRowSet(l, null), { upperRow: ["/admin/sales"], lowerRow: [] }, "no module means the defaults");
+    assert.deepEqual(resolveRowSet(null, "people"), { upperRow: [], lowerRow: [] }, "no layout means no rows at all");
+  }
+
+  // An override REPLACES the default rows. "In sales I want another" means another set, not the
+  // default set plus a few — a merge would leave marketing tabs sitting in the sales rows forever.
+  {
+    const l = layout({
+      upperRow: ["/admin/sales"],
+      moduleRows: { people: { upperRow: ["/admin/organogram"], lowerRow: [] } },
+    });
+    const inPeople = applyPersonalLayout(gated, l, "people");
+    assert.deepEqual(
+      inPeople.upperRow.map((i) => i.href),
+      ["/admin/organogram"],
+      "the module's own row replaces the default one rather than being appended to it",
+    );
+  }
+
+  // THE PROPERTY THAT MAKES THIS SAFE TO USE: a page listed in one module's rows is pulled out of
+  // the sidebar only WHILE YOU ARE IN THAT MODULE. Anywhere else it is back where it belongs. Without
+  // this, arranging one module would quietly strip pages out of the sidebar across the whole app.
+  {
+    const l = layout({ moduleRows: { sales: { upperRow: ["/admin/organogram"], lowerRow: [] } } });
+
+    const inSales = applyPersonalLayout(gated, l, "sales");
+    assert.deepEqual(inSales.upperRow.map((i) => i.href), ["/admin/organogram"], "inside Sales the tab is in the row");
+    assert.ok(
+      !inSales.sections.flatMap((s) => s.items.map((i) => i.href)).includes("/admin/organogram"),
+      "and it has LEFT the sidebar there — rendering in both places is what makes a move look broken",
+    );
+
+    const inPeople = applyPersonalLayout(gated, l, "people");
+    assert.deepEqual(inPeople.upperRow, [], "outside Sales that row does not apply");
+    assert.ok(
+      inPeople.sections.flatMap((s) => s.items.map((i) => i.href)).includes("/admin/organogram"),
+      "and the page is back in the sidebar — a per-module row must not remove it everywhere",
+    );
+  }
+
+  // An override that is present but EMPTY means "no rows in this module", not "use the defaults".
+  // The distinction is the whole reason an override is a document rather than two optional arrays.
+  {
+    const l = layout({ upperRow: ["/admin/sales"], moduleRows: { people: { upperRow: [], lowerRow: [] } } });
+    assert.deepEqual(applyPersonalLayout(gated, l, "people").upperRow, [], "an empty override means no rows here");
+    assert.deepEqual(
+      applyPersonalLayout(gated, l, "sales").upperRow.map((i) => i.href),
+      ["/admin/sales"],
+      "while a module without one still shows the defaults",
+    );
+  }
+
+  // The security invariant once more, through the newest door. A per-module row is exactly as unable
+  // to introduce an href as the default rows, the strip and the sections are.
+  {
+    const applied = applyPersonalLayout(
+      gated,
+      layout({ moduleRows: { sales: { upperRow: ["/admin/payroll"], lowerRow: ["/admin/secret"] } } }),
+      "sales",
+    );
+    assert.deepEqual(applied.upperRow, [], "a module row cannot introduce an href the viewer was not gated into");
+    assert.deepEqual(applied.lowerRow, [], "nor can the lower one");
+  }
+
+  // Absent is valid (an already-saved layout has no such key); present-but-malformed is not.
+  {
+    assert.equal(isPersonalNavigationLayout(legacyLayout({})), true, "a layout with no moduleRows key is valid");
+    assert.equal(isPersonalNavigationLayout(legacyLayout({ moduleRows: {} })), true, "an empty override map is valid");
+    assert.equal(
+      isPersonalNavigationLayout(legacyLayout({ moduleRows: { sales: { upperRow: [], lowerRow: [] } } })),
+      true,
+      "a well-formed override is valid",
+    );
+    assert.equal(isPersonalNavigationLayout(legacyLayout({ moduleRows: [] })), false, "an array is not an override map");
+    assert.equal(isPersonalNavigationLayout(legacyLayout({ moduleRows: { sales: null } })), false, "a null entry is rejected");
+    assert.equal(
+      isPersonalNavigationLayout(legacyLayout({ moduleRows: { sales: { upperRow: [] } } })),
+      false,
+      "a half-written entry is junk, not a partial override — 'which row did he mean' has no safe answer",
+    );
+    assert.equal(
+      isPersonalNavigationLayout(legacyLayout({ moduleRows: { sales: { upperRow: [1], lowerRow: [] } } })),
+      false,
+      "non-string hrefs in an override are rejected",
+    );
+  }
+
+  // The size cap has to see the overrides too: they are the one part of the document that grows with
+  // the number of MODULES, so a cap that ignored them would not be a cap.
+  {
+    const route = readFileSync("app/api/navigation/personal-layout/route.ts", "utf8");
+    assert.ok(
+      /countHrefs[\s\S]{0,600}moduleRows/.test(route),
+      "the route's size cap must count the per-module rows",
+    );
+  }
+
+  // And something has to CHOOSE the module at render time, or every override is dead data.
+  {
+    const rows = readFileSync("src/components/layout/horizontal-nav-rows.tsx", "utf8");
+    assert.ok(/activeModuleId/.test(rows), "the provider must resolve which module the page is in");
+    assert.ok(
+      /applyPersonalLayout\([\s\S]{0,200}activeModuleId/.test(rows),
+      "and must pass it to applyPersonalLayout — without this the override never applies",
+    );
+
+    const editor = readFileSync("src/components/admin/sidebar-layout-editor.tsx", "utf8");
+    assert.ok(/moduleRows/.test(editor), "the editor must be able to write a per-module arrangement");
   }
 
   // ── THE ROWS ARE ACTUALLY RENDERED ──────────────────────────────────────────────────────────

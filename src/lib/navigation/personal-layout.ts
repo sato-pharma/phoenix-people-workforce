@@ -51,6 +51,12 @@ export type PersonalLayoutSection = {
   items: readonly string[];
 };
 
+/** The two horizontal rows as one unit — what a module override stores, and what resolving one returns. */
+export type PersonalLayoutRowSet = {
+  upperRow: readonly string[];
+  lowerRow: readonly string[];
+};
+
 export type PersonalNavigationLayout = {
   version: typeof PERSONAL_LAYOUT_VERSION;
   /** Layer 1 — the utility strip. Owner's ruling 2026-08-28: Approvals + Organogram only. */
@@ -76,6 +82,21 @@ export type PersonalNavigationLayout = {
    * Same optionality rule as `upperRow` above.
    */
   lowerRow?: readonly string[];
+  /**
+   * PER-MODULE ROW OVERRIDES, keyed by the code-defined section id.
+   *
+   * The owner's follow-up, 2026-08-28: "in the marketing and ROI, I want to have [tabs] related in
+   * the horizontal like this. But in sales, I want to have another." So the two rows are not one
+   * fixed set — inside a module they can carry that module's own tabs.
+   *
+   * Keyed on the MODULE, not the page. That is the unit he named, and a per-page arrangement would
+   * mean maintaining 243 of them. A module with an entry here REPLACES the default rows above while
+   * you are inside it; a module with no entry uses the defaults. The strip is deliberately not
+   * scoped — it belongs to the sidebar, which does not change as you move between modules.
+   *
+   * Optional for the same reason `upperRow` is: an already-saved layout must stay valid.
+   */
+  moduleRows?: Readonly<Record<string, PersonalLayoutRowSet>>;
   /** Layer 2 + 3 — modules and the pages inside them. */
   sections: readonly PersonalLayoutSection[];
   /** Hrefs the owner chose to hide. Hiding is cosmetic and personal; it revokes nothing. */
@@ -137,6 +158,28 @@ export function isPersonalNavigationLayout(value: unknown): value is PersonalNav
     (row) => row === undefined || (Array.isArray(row) && row.every((h) => typeof h === "string")),
   );
   if (!rowsAreValid) return false;
+  // Same absent-is-valid rule for the per-module overrides. A present value must be a plain object
+  // whose every entry carries both rows as string arrays — a half-written entry is junk, not a
+  // partial override, because "which row did he mean" has no safe answer.
+  if (candidate.moduleRows !== undefined) {
+    if (
+      typeof candidate.moduleRows !== "object" ||
+      candidate.moduleRows === null ||
+      Array.isArray(candidate.moduleRows)
+    ) {
+      return false;
+    }
+    const entriesAreValid = Object.values(candidate.moduleRows).every(
+      (set) =>
+        set !== null &&
+        typeof set === "object" &&
+        Array.isArray((set as PersonalLayoutRowSet).upperRow) &&
+        (set as PersonalLayoutRowSet).upperRow.every((h) => typeof h === "string") &&
+        Array.isArray((set as PersonalLayoutRowSet).lowerRow) &&
+        (set as PersonalLayoutRowSet).lowerRow.every((h) => typeof h === "string"),
+    );
+    if (!entriesAreValid) return false;
+  }
   if (!Array.isArray(candidate.sections)) return false;
   return candidate.sections.every(
     (section) =>
@@ -158,6 +201,7 @@ export function defaultLayoutFrom<TItem extends LayoutItemLike>(
     strip: [],
     upperRow: [],
     lowerRow: [],
+    moduleRows: {},
     sections: sections.map((section) => ({
       id: section.id,
       label: section.label,
@@ -168,19 +212,45 @@ export function defaultLayoutFrom<TItem extends LayoutItemLike>(
 }
 
 /**
+ * Which two rows apply while you are inside `moduleId`.
+ *
+ * A module with an override REPLACES the default rows rather than adding to them — "in sales I want
+ * another" means another set, not the default plus a few. A module with no entry, or no module at
+ * all (a page belonging to no section), gets the defaults.
+ *
+ * Exported because the editor resolves the same question when you pick a module to arrange, and two
+ * copies of this rule would drift into an editor that lies about what will render.
+ */
+export function resolveRowSet(
+  layout: PersonalNavigationLayout | null,
+  moduleId: string | null | undefined,
+): PersonalLayoutRowSet {
+  const override = moduleId ? layout?.moduleRows?.[moduleId] : undefined;
+  if (override) return { upperRow: override.upperRow, lowerRow: override.lowerRow };
+  return { upperRow: layout?.upperRow ?? [], lowerRow: layout?.lowerRow ?? [] };
+}
+
+/**
  * Rearrange `gatedSections` according to `layout`.
  *
  * `gatedSections` MUST be the output of `getSections` — already permission- and role-filtered.
  * Passing raw config here would still not grant anything (every emitted href comes from the
  * input), but the result would show pages the viewer cannot open.
+ *
+ * `activeModuleId` is the code-defined section id of the page being rendered, and selects which of
+ * the per-module row overrides applies. It is resolved from the GATED sections, never from the
+ * rearranged ones: a page moved into a row has left its section, so asking the rearranged tree
+ * which module you are in would answer differently once you arranged anything.
  */
 export function applyPersonalLayout<TItem extends LayoutItemLike>(
   gatedSections: readonly LayoutSectionLike<TItem>[],
   layout: PersonalNavigationLayout | null,
+  activeModuleId?: string | null,
 ): AppliedNavigationOf<TItem> {
   if (!layout) {
     return { strip: [], upperRow: [], lowerRow: [], sections: gatedSections };
   }
+  const rows = resolveRowSet(layout, activeModuleId);
 
   // Index the gated set by href. This map is the ONLY source of items below — which is what makes
   // it impossible for a layout to conjure a page the viewer was not already allowed to see.
@@ -212,9 +282,12 @@ export function applyPersonalLayout<TItem extends LayoutItemLike>(
   // `take` marks an href as placed, so a tab the owner moved up into a row is pulled OUT of whatever
   // sidebar section defined it rather than rendering in both places. Resolving the sidebar first
   // would claim every href and leave all three rows permanently empty.
+  //
+  // The two rows come from `rows`, which is the module override where one exists — so a page listed
+  // in Sales' rows is claimed only while you are in Sales, and stays in the sidebar everywhere else.
   const strip = layout.strip.map(take).filter((item): item is TItem => item !== null);
-  const upperRow = (layout.upperRow ?? []).map(take).filter((item): item is TItem => item !== null);
-  const lowerRow = (layout.lowerRow ?? []).map(take).filter((item): item is TItem => item !== null);
+  const upperRow = rows.upperRow.map(take).filter((item): item is TItem => item !== null);
+  const lowerRow = rows.lowerRow.map(take).filter((item): item is TItem => item !== null);
 
   const laidOut = layout.sections.map((section) => ({
     id: section.id,

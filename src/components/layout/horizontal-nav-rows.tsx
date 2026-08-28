@@ -97,16 +97,28 @@ export function HorizontalNavProvider({
       currentRole,
       isSystemAdministratorWorkspace,
     );
+    // Which module is this page in? Resolved from the GATED sections — the code-defined ones —
+    // rather than from the rearranged result, because a page the viewer moved into a row has left
+    // its section, and asking the rearranged tree would answer differently once anything was
+    // arranged. This is what selects a per-module row override: his ask was for the rows to carry
+    // marketing tabs inside Marketing & ROI and a different set inside Sales.
+    const active = getActiveHref(pathname, gated, activeTab);
+    const activeModuleId =
+      gated.find((section) => section.items.some((entry) => entry.href === active))?.id ?? null;
     // ADMIN MODE ONLY — the same restriction the sidebar applies, and for the same reason: one
     // layout document is stored per person, and the employee portal builds its own navigation
     // entirely, so applying this to both surfaces would let a portal render fight the admin one.
-    const applied = applyPersonalLayout(gated, navigationMode === "admin" ? personalLayout : null);
+    const applied = applyPersonalLayout(
+      gated,
+      navigationMode === "admin" ? personalLayout : null,
+      activeModuleId,
+    );
     return {
       upperRow: applied.upperRow,
       lowerRow: applied.lowerRow,
       // Resolved against the FULL gated set, not just the rows, so a tab stays lit on its child
       // routes and the deepest match still wins over a shallower one sitting in another zone.
-      activeHref: getActiveHref(pathname, gated, activeTab),
+      activeHref: active,
       dark: usesAdminChrome(navigationMode),
     };
   }, [

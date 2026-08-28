@@ -40,10 +40,18 @@ const MAX_HREFS = 2000;
 // PersonalNavigationLayout that this function forgets is a hole in the cap, and a structural
 // parameter would keep compiling happily while the count silently ran low.
 function countHrefs(layout: PersonalNavigationLayout): number {
+  // Every per-module override carries its own pair of rows, so this is the one part of the document
+  // that grows with the number of modules rather than being bounded by the number of pages. It is
+  // exactly why the cap counts it: 40 modules × two full rows is what the ceiling is protecting.
+  const moduleRowHrefs = Object.values(layout.moduleRows ?? {}).reduce(
+    (total, rows) => total + rows.upperRow.length + rows.lowerRow.length,
+    0,
+  );
   return (
     layout.strip.length +
     (layout.upperRow?.length ?? 0) +
     (layout.lowerRow?.length ?? 0) +
+    moduleRowHrefs +
     layout.hidden.length +
     layout.sections.reduce((total, section) => total + section.items.length, 0)
   );
