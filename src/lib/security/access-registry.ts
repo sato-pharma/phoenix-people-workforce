@@ -714,6 +714,20 @@ export const accessRegistry = [
   sessionApi({ audit: { classification: "export", required: true }, methods: readOnly, pattern: "/api/reports/organogram/contact-numbers", permission: { resource: "organogram", action: "read" } }),
   sessionApi({ methods: readOnly, pattern: "/api/reports/**", permission: { resource: "organogram", action: "read" } }),
   sessionApi({ methods: allMethods, pattern: "/api/resignations/**", permission: { resource: "resignations", action: "read" }, csrfRequired: true }),
+  // Clearance & offboarding (Phase 6). Split GET from POST because the audit answer differs: the
+  // read writes nothing, while every mutation writes a REQUIRED audit row. The POST is one endpoint
+  // carrying three actions and the handler asserts each separately — "open" as create, "decide" and
+  // "release" as update — so the baseline declared here is the weaker of the two, update. Release is
+  // deliberately NOT gated on "approve": approving the settlement is a payroll decision HR
+  // Operations may not make, and this route only records that clearance is complete.
+  sessionApi({ methods: readOnly, pattern: "/api/clearance", permission: { resource: "clearance", action: "read" } }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/clearance", permission: { resource: "clearance", action: "update" }, csrfRequired: true }),
+  // Retention register (Phase 6). The GET returns stay and exit conversations, which hold what an
+  // employee said in confidence about their manager and their pay — the permission is the whole
+  // protection, since RLS is disabled-by-default here like every other table in this app.
+  sessionApi({ methods: readOnly, pattern: "/api/retention", permission: { resource: "retention", action: "read" } }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/retention", permission: { resource: "retention", action: "create" }, csrfRequired: true }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["PATCH"], pattern: "/api/retention", permission: { resource: "retention", action: "update" }, csrfRequired: true }),
   sessionApi({ audit: { classification: "access-read", required: true }, methods: ["GET"], pattern: "/api/weekly-plans", permission: { resource: "weekly_plans", action: "read" }, guard: "domain-helper" }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/weekly-plans", permission: { resource: "weekly_plans", action: "create" }, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ audit: { classification: "export", required: true }, methods: ["GET"], pattern: "/api/weekly-plans/export", permission: { resource: "weekly_plans", action: "read" }, guard: "domain-helper" }),

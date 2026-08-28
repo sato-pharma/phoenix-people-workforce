@@ -129,10 +129,14 @@ export const HR_FUNCTIONS: readonly HrFunction[] = [
       // designed route is the per-person `report_it_dashboard_access` table, not a role grant.
       // Both seats still keep read+create through the self-service floor: anyone may file one.
       //
-      // The structured stay/exit interview register this section requires does not exist in
-      // Phoenix yet — it is Phase 6 of the 2026-08-28 plan. When it lands, its resource is added
-      // HERE and every bundle holding this function inherits it with no other edit. That is the
-      // whole point of the indirection.
+      // The structured stay/exit interview register hrbp 3 requires. Added 2026-08-28 (Phase 6),
+      // exactly where the placeholder comment said it would go, and with no other edit anywhere -
+      // which is the indirection paying for itself: HR Advisory holds engagement_retention, so she
+      // gained the whole module from this one line.
+      //
+      // No `delete`. A retention conversation is the evidence behind a turnover theme, and
+      // removing one silently changes a company-wide number the CEO reads.
+      retention: MAINTAIN,
     },
   },
   {
@@ -221,6 +225,16 @@ export const HR_FUNCTIONS: readonly HrFunction[] = [
       // fix is to split the decision path by recommendation kind first, then grant.
       hr_calendar: READ_ONLY,
       support_requests: MAINTAIN,
+      // ops 6 - Resignation, Clearance & Offboarding. Added 2026-08-28 (Phase 6). This is the
+      // half of ops 6 that had nowhere to live: `resignations` records that someone left, and
+      // until now nothing recorded the clearance behind it.
+      //
+      // MAINTAIN, not allActions, and it does NOT reach payroll. Recording that a settlement was
+      // released is gated on every station being decided - phx_hr_clearance_release refuses
+      // otherwise, in the database, not in a page - but it writes no money. "May not approve
+      // final settlement" is a named boundary in this same job description and stays enforced by
+      // the payroll entries in HR_ROLE_BOUNDARIES.
+      clearance: MAINTAIN,
       // NO `delete` anywhere in this function. Removing an employee, a contract or a resignation
       // destroys a personnel record, and both job descriptions require records that "can support
       // internal review, external inspection or audit". Deletion stays Super Admin.
@@ -355,6 +369,8 @@ export const HR_ROLE_BOUNDARIES: readonly {
   { resource: "employees", action: "delete", why: "may not terminate or destroy a record (hrbp + ops)" },
   { resource: "contracts", action: "delete", why: "may not destroy a contract record (ops)" },
   { resource: "resignations", action: "delete", why: "may not destroy an exit record (ops)" },
+  { resource: "clearance", action: "delete", why: "may not destroy the evidence a settlement was released against (ops)" },
+  { resource: "retention", action: "delete", why: "may not destroy an exit interview - it is the evidence behind a turnover theme (hrbp)" },
   { resource: "organogram", action: "update", why: "may not make organizational changes (hrbp + ops)" },
   { resource: "user_admin", action: "read", why: "role, scope and permission admin stays Super Admin" },
   { resource: "permission_admin", action: "read", why: "may not grant permissions (hrbp + ops)" },

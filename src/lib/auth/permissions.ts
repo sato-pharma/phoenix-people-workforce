@@ -115,7 +115,9 @@ export type PermissionResource =
   | "early_birds"
   | "user_activity"
   | "synthetic_journeys"
-  | "mailbox_monitor";
+  | "mailbox_monitor"
+  | "clearance"
+  | "retention";
 
 export const permissionResources: PermissionResource[] = [
   "admin",
@@ -168,6 +170,13 @@ export const permissionResources: PermissionResource[] = [
   // array too: the sidebar permission lookup FAILS OPEN on an unseen key, so omitting it would leak
   // the tab to every role.
   "mailbox_monitor",
+  // Phase 6 (2026-08-28). Both MUST be listed here as well as in the union above, for the
+  // fail-open reason spelled out on early_birds: an unseen key makes the sidebar's permission
+  // lookup succeed, so a missing entry would offer Clearance and the Retention Register to every
+  // role in the company - including the leaver's own colleagues, and Retention holds what people
+  // said in confidence about their manager and their pay.
+  "clearance",
+  "retention",
 ];
 
 export const permissionActions: PermissionAction[] = [
@@ -419,6 +428,26 @@ function hardBoundaryAllowedActions(role: PhoenixRole, resource: PermissionResou
       if (role === "HR Operations") return ["read", "create", "update", "export", "import"];
       if (role === "HR Advisory") return ["read", "export"];
       return [];
+    case "clearance":
+      // ops 6 - Resignation, Clearance & Offboarding. HR Operations runs it; the CEO observes.
+      // No delete for anyone but Super Admin: a clearance trail is the evidence a settlement was
+      // released against, and both job descriptions require records that survive an audit.
+      if (role === "Super Admin") return allActions;
+      if (role === "HR Operations") return ["read", "create", "update", "export"];
+      if (role === "CEO") return ["read", "export"];
+      return [];
+    case "retention":
+      // hrbp 3 - Retention & Employee Experience. HR Advisory only, and deliberately NOT HR
+      // Operations: a stay discussion is someone telling HR what they think of their manager and
+      // their pay, and an exit interview is the same in the past tense. Spreading it across the
+      // HR department by default would be the quiet kind of privacy widening that
+      // HR_ROLE_BOUNDARIES exists to catch - the same shape as the report_it:export entry.
+      // The CEO reads it because company-wide turnover themes are exactly his question, and he
+      // already reads every resignation and every payslip.
+      if (role === "Super Admin") return allActions;
+      if (role === "HR Advisory") return ["read", "create", "update", "export"];
+      if (role === "CEO") return ["read", "export"];
+      return [];
     case "mailbox_monitor":
       // Reading employees' company mailboxes for compliance — the most sensitive surface in the
       // app. Super Admin (the owner) only; no other role, ever.
@@ -597,6 +626,8 @@ const defaultPermissionMatrix: PermissionMap = {
     resignations: allActions,
     permission_admin: allActions,
     mailbox_monitor: allActions,
+    clearance: allActions,
+    retention: allActions,
     workflow_registry: allActions,
     sales: allActions,
     direct_orders: allActions,
@@ -669,6 +700,10 @@ const defaultPermissionMatrix: PermissionMap = {
     // hard-boundary-capped (see hiring-manager-view.ts) so this grant actually takes effect.
     hiring_interviews: ["read", "update"],
     report_it: ["read", "create", "export"],
+    // SoD: read/export only, matching `resignations` above - the CEO observes an exit, he does
+    // not clear a station or record that a final settlement was released.
+    clearance: ["read", "export"],
+    retention: ["read", "export"],
   },
   // ── The two HR seats, composed from functions ─────────────────────────────────────────────
   // These entries are NOT hand-maintained. Each is the union of the grants carried by the
