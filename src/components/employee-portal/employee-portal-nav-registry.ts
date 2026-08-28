@@ -27,7 +27,6 @@ import {
   Send,
   Settings2,
   ShieldCheck,
-  Stethoscope,
   Target,
   Trophy,
   User,
@@ -86,7 +85,6 @@ export const PORTAL_NAV_REGISTRY: PortalNavEntry[] = [
   { label: "Closing", fullLabel: "Monthly Closing", href: "/employee-portals/monthly-closing", icon: CalendarRange, flags: ["showMonthlyClosingTab"] },
   { label: "Sales", fullLabel: "Sales Analytics", href: "/employee-portals/sales-analytics", icon: Activity, flags: ["showSalesAnalyticsTab"] },
   { label: "Review", fullLabel: "Business Review", href: "/employee-portals/business-review", icon: ChartColumnBig, flags: ["showBusinessReviewTab"] },
-  { label: "Coverage", fullLabel: "Doctor Coverage", href: "/employee-portals/doctor-coverage", icon: Stethoscope, flags: ["showDoctorCoverageTab"] },
   // Two DIFFERENT modules whose full names both start with "Territory" — the short `label` is all
   // the bottom nav shows, so they must not both read "Territory" there. Drilldown is the
   // geography-rooted sales tree; Management is the brick-allocation / rep-residence map.

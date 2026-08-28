@@ -1,49 +1,27 @@
-// Doctor Coverage Settings — employee-portal twin of /admin/doctor-coverage-settings.
+// RETIRED 2026-08-28, by the owner, in the conversation.
 //
-// Product Manager, Group Product Manager and Marketing Manager hold crm_visits:update (owner,
-// 2026-08-09) but are PORTAL-MODE roles: app/(admin)/layout.tsx redirects them to /employee-portals
-// before an admin page's gate could run, so the admin route is unreachable for them. This is the
-// same admin/portal twin split the board itself uses.
+// The visit-norms editor for Doctor Coverage, portal twin — it configures the retired board and nothing else.
 //
-// The gate is the identical permission the API route asserts. The route is the real boundary — a
-// page gate alone protects nothing, since the editor writes through the API.
-import { DoctorCoverageNormsEditor } from "@/components/crm/doctor-coverage-norms-editor";
-import { EmployeePortalEmptyState, EmployeePortalPageShell } from "@/components/employee-portal/enterprise-shell";
-import { resolveAuthenticatedPageAccess } from "@/lib/auth/page-access";
-import { canAccess } from "@/lib/auth/permissions";
-import { getDoctorCoverageConfig } from "@/lib/crm/doctor-coverage-config";
-import { getDoctorCoverageOverrideOptions } from "@/lib/crm/doctor-coverage-scope";
+// Both this board and Rep Doctor Lists read the same iReports360 plan mirror and answered the same
+// question with two different, disagreeing measures. This one scored each doctor against the GRADE
+// norm (A=2/B=1/C=1) instead of the number of calls the rep's own plan asked for. Measured on
+// production for August 2026 that is the wrong target on 6,307 of 8,635 graded doctors — 73%. It
+// flattered (a grade-B doctor turned green after one visit while the plan asked for more than one
+// on 77% of them) and it punished (on 1,496 grade-A doctors the plan asked for a single visit and
+// the board demanded two), and it passed over-visiting as green, which the owner has ruled is a
+// deviation rather than a win.
+//
+// The owner's instruction was to retire both modules and rebuild from the beginning. Every
+// navigation entry is withdrawn (src/config/system-navigation.ts) and the CEO Command Center embed
+// is gone; this stub closes the last door — a bookmark or a browser-history hit. The library code
+// under src/lib/crm/ is deliberately left in place for the rebuild to draw on, and is deleted with
+// the replacement.
+//
+// DO NOT restore this page, and do not repair the scoring in place. The rebuild is the fix.
+import { redirect } from "next/navigation";
 
-export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export default async function PortalDoctorCoverageSettingsPage() {
-  const access = await resolveAuthenticatedPageAccess();
-
-  const shell = (children: React.ReactNode) => (
-    <EmployeePortalPageShell
-      badge="CRM Intelligence"
-      description="Visits required per month, by grade — set separately for doctors and for pharmacies, hospitals and contract accounts."
-      title="Doctor Coverage Settings"
-    >
-      {children}
-    </EmployeePortalPageShell>
-  );
-
-  if (!(await canAccess(access, "crm_visits", "update"))) {
-    return shell(
-      <EmployeePortalEmptyState
-        message="Changing the coverage norms is limited to Super Admin, SFE Manager, and the Product, Group Product and Marketing Managers."
-        title="Not available for your role"
-      />,
-    );
-  }
-
-  // Options for the line-exception editor: who it can apply to, and the real line names.
-  const [config, options] = await Promise.all([getDoctorCoverageConfig(), getDoctorCoverageOverrideOptions()]);
-  return shell(
-    <div className="p-5">
-      <DoctorCoverageNormsEditor candidates={options.candidates} initial={config} lines={options.lines} />
-    </div>,
-  );
+  redirect("/employee-portals");
 }

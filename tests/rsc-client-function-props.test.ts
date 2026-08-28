@@ -476,9 +476,15 @@ export function runRscClientFunctionPropTests() {
     serverRendered.size > 100,
     `expected the server graph to reach plenty of modules, reached ${serverRendered.size} — import resolution is probably broken`,
   );
+  // The anchor was src/components/crm/doctor-coverage-board.tsx — the file whose RSC violation took
+  // /admin/doctor-coverage down on 2026-08-21 — until the owner retired that board on 2026-08-28
+  // and its pages became redirect stubs. The board file still exists but nothing server-rendered
+  // imports it, so it can no longer prove the graph walker works. Moved to its surviving twin,
+  // exactly as the old message instructed: brick-coverage-board.tsx is a server component built
+  // from the same tables and still reached by /admin/brick-coverage.
   assert.ok(
-    serverRendered.has("src/components/crm/doctor-coverage-board.tsx"),
-    'the server graph must still reach src/components/crm/doctor-coverage-board.tsx — it is the file whose RSC violation took /admin/doctor-coverage down on 2026-08-21, and this test only means something while it is reachable. If the board was deliberately made a client component, move this anchor to another server component rather than deleting it.',
+    serverRendered.has("src/components/crm/brick-coverage-board.tsx"),
+    'the server graph must still reach src/components/crm/brick-coverage-board.tsx — this test only means something while a real CRM board is reachable. If that board is deliberately made a client component, move this anchor to another server component rather than deleting it.',
   );
   assert.ok(
     !serverRendered.has("src/components/payroll/dashboard/payroll-history.tsx"),

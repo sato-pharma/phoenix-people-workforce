@@ -1,41 +1,27 @@
+// RETIRED 2026-08-28, by the owner, in the conversation.
+//
+// The visit-norms editor for Doctor Coverage — it configures the retired board and nothing else.
+//
+// Both this board and Rep Doctor Lists read the same iReports360 plan mirror and answered the same
+// question with two different, disagreeing measures. This one scored each doctor against the GRADE
+// norm (A=2/B=1/C=1) instead of the number of calls the rep's own plan asked for. Measured on
+// production for August 2026 that is the wrong target on 6,307 of 8,635 graded doctors — 73%. It
+// flattered (a grade-B doctor turned green after one visit while the plan asked for more than one
+// on 77% of them) and it punished (on 1,496 grade-A doctors the plan asked for a single visit and
+// the board demanded two), and it passed over-visiting as green, which the owner has ruled is a
+// deviation rather than a win.
+//
+// The owner's instruction was to retire both modules and rebuild from the beginning. Every
+// navigation entry is withdrawn (src/config/system-navigation.ts) and the CEO Command Center embed
+// is gone; this stub closes the last door — a bookmark or a browser-history hit. The library code
+// under src/lib/crm/ is deliberately left in place for the rebuild to draw on, and is deleted with
+// the replacement.
+//
+// DO NOT restore this page, and do not repair the scoring in place. The rebuild is the fix.
 import { redirect } from "next/navigation";
-
-import { DoctorCoverageNormsEditor } from "@/components/crm/doctor-coverage-norms-editor";
-import { resolveAccessContextFromPage } from "@/lib/auth/server";
-import { canAccess, resolveNavigationMode } from "@/lib/auth/permissions";
-import { getDoctorCoverageConfig } from "@/lib/crm/doctor-coverage-config";
-import { getDoctorCoverageOverrideOptions } from "@/lib/crm/doctor-coverage-scope";
 
 export const dynamic = "force-dynamic";
 
-// Admin editor for the Doctor Coverage visit norms — how many visits a month each grade needs,
-// separately for doctors (SP) and for pharmacies/hospitals/contracts/insurance (HCP).
-//
-// Gated at crm_visits:update, held only by Super Admin and SFE Manager. The page gate mirrors the
-// API route's gate exactly so the link, the page and the write all agree; the route is the real
-// boundary, since a page gate alone protects nothing.
 export default async function DoctorCoverageSettingsPage() {
-  const access = await resolveAccessContextFromPage();
-  if (resolveNavigationMode(access) === "employee-portal") {
-    redirect("/employee-portals");
-  }
-  if (!(await canAccess(access, "crm_visits", "update"))) {
-    redirect("/admin");
-  }
-
-  // Options for the line-exception editor: who it can apply to, and the real line names.
-  const [config, options] = await Promise.all([getDoctorCoverageConfig(), getDoctorCoverageOverrideOptions()]);
-
-  return (
-    <div className="mx-auto max-w-3xl p-4 sm:p-6">
-      <div className="mb-4">
-        <h1 className="text-lg font-semibold text-slate-900">Doctor Coverage Settings</h1>
-        <p className="text-sm text-slate-500">
-          Visits required per month, by grade — set separately for doctors and for pharmacies, hospitals and
-          contract/insurance accounts.
-        </p>
-      </div>
-      <DoctorCoverageNormsEditor candidates={options.candidates} initial={config} lines={options.lines} />
-    </div>
-  );
+  redirect("/admin/crm-tools");
 }
