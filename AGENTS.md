@@ -200,6 +200,7 @@ file holding the full account, under
   is CONTENT, per §5 — `git diff $(git merge-base origin/main <branch>) <branch> | git patch-id
   --stable` against the squash commit's own patch-id. Identical means fully represented on `main`,
   whatever the clocks appear to say.
+  `a-utc-timestamp-compared-against-cairo-manufactures-a-false-signal`
 - **`git` "Authentication failed" can be the credential HELPER (GCM) going OOM, not a bad token.**
   Git Credential Manager dies at `internal/cpu.doinit` and git then retries ANONYMOUSLY, so the token
   is never presented — the failure is memory pressure, not auth. Look UP the output for a Go panic;
