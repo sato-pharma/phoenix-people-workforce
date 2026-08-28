@@ -116,7 +116,7 @@ export function runRecruitmentEmailIntakeTests() {
   });
   // The shape of the insurance circular and the attendance certificate: something that reads as a
   // name on the letterhead, and nothing else a CV would carry.
-  const notACvScore = scoreCvExtraction({ fullName: field("Muhammed Ahmed Tammam") });
+  const notACvScore = scoreCvExtraction({ fullName: field("Mostafa Hisham Zaki") });
   const namelessScore = scoreCvExtraction({ professionalSummary: field("Benefits summary 2025/2026") });
 
   assert.equal(strictGateHoldsBack("strict", notACvScore), true, "hr@ holds back a file that does not read like a CV");

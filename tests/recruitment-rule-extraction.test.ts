@@ -33,20 +33,30 @@ const low = (value: unknown) => ({ confidence: "low" as const, value: value as n
 // A realistic Egyptian HR CV, carrying the exact defects the real careers inbox produces:
 // a Wingdings bullet (U+F0B7) in front of the personal block, a district rather than a
 // governorate, and several labels packed onto one line.
-const SAMPLE_CV = `ABDALLAH GAMAL
+//
+// THE PERSON IS INVENTED. This fixture was a real applicant's CV until 2026-08-28 — his name,
+// mobile, email, LinkedIn, employers and date of birth, committed and pushed while his application
+// was still open. Keep every defect above; never restore a real one. A CV reaches this repository
+// only as shapes, and the assertions below key on shapes alone.
+//
+// The address is @example.org, NOT @example.com, on purpose: example.com sits in
+// NON_CANDIDATE_EMAIL_DOMAINS (patterns.ts), so findEmails would discard it and the end-to-end
+// email assertion would pass for the wrong reason. Both are RFC 2606 reserved and can never
+// belong to anyone.
+const SAMPLE_CV = `TAREK NABIL
 Human Resources Operations Specialist
-Nasr City, Cairo | +20 12 3456 7890 | aeltoukhy832@gmail.com
-https://www.linkedin.com/in/abdallah-gamal-1234
+Nasr City, Cairo | +20 12 3456 7890 | tareknabil88@example.org
+https://www.linkedin.com/in/tarek-nabil-1234
 
 PROFESSIONAL SUMMARY
 HR Operations professional with 5 years of experience across recruitment, employee relations and
 the full employee lifecycle in retail and manufacturing environments.
 
 EXPERIENCE
-Senior HR Operations Specialist — Kazyon Egypt   Jan 2023 - Present
+Senior HR Operations Specialist — Marfaa Egypt   Jan 2023 - Present
 • Manage the full recruitment cycle in coordination with hiring managers.
 • Administer medical insurance enrollment and claims for employees.
-HR Specialist — Delta Lighting Egypt   Mar 2020 - Dec 2022
+HR Specialist — Nile Lighting Egypt   Mar 2020 - Dec 2022
 • Prepared employment contracts and maintained personnel records.
 
 EDUCATION
@@ -61,7 +71,7 @@ Arabic: Native
 English: Very Good
 
 PERSONAL INFORMATION
-\u{f0b7} Date of Birth: 23/8/1997 | Marital Status: Single | Military Status: Exempted
+\u{f0b7} Date of Birth: 17/3/1994 | Marital Status: Single | Military Status: Exempted
 \u{f0b7} Nationality: Egyptian
 `;
 
@@ -85,17 +95,17 @@ function runNormalizationTests() {
   const shredded = Array.from({ length: 30 }, (_, index) => (index % 2 === 0 ? "ab" : "cd")).join("\t");
   assert.equal(looksShredded(shredded), true);
   assert.equal(repairShreddedText(shredded).includes("\t"), false);
-  const tabbedCv = "Senior HR Specialist — Kazyon Egypt\tJan 2023 - Present\nHR Specialist — Delta\tMar 2020 - Dec 2022";
+  const tabbedCv = "Senior HR Specialist — Marfaa Egypt\tJan 2023 - Present\nHR Specialist — Nile\tMar 2020 - Dec 2022";
   assert.equal(looksShredded(tabbedCv), false);
   assert.equal(repairShreddedText(tabbedCv), tabbedCv);
 
   // An email split across a line break is rejoined; unrelated lines are not.
-  const wrapped = normalizeCvText("abanoubemadeskander@gmail.co\nm\nCairo");
-  assert.match(wrapped.text, /abanoubemadeskander@gmail\.com/);
+  const wrapped = normalizeCvText("bishoysamirfouad@example.or\ng\nCairo");
+  assert.match(wrapped.text, /bishoysamirfouad@example\.org/);
 
   // A markdown hyperlink keeps the URL, which is the half that is not truncated.
-  const linked = normalizeCvText("[https://www.linkedin.com/in/aban](https://www.linkedin.com/in/abanoub-emad-eskander-362434244)");
-  assert.match(linked.text, /abanoub-emad-eskander-362434244/);
+  const linked = normalizeCvText("[https://www.linkedin.com/in/bish](https://www.linkedin.com/in/bishoy-samir-fouad-362434244)");
+  assert.match(linked.text, /bishoy-samir-fouad-362434244/);
 
   // Arabic-Indic digits become ASCII so a phone rule can read them.
   assert.match(normalizeCvText("\u{664}\u{665}").text, /45/);
@@ -131,22 +141,25 @@ function runPatternTests() {
 
   // LinkedIn prefers the longest match — the truncated label sits beside the real URL.
   assert.equal(
-    findLinkedInUrl("linkedin.com/in/aban https://www.linkedin.com/in/abanoub-emad-eskander-362434244"),
-    "https://www.linkedin.com/in/abanoub-emad-eskander-362434244",
+    findLinkedInUrl("linkedin.com/in/bish https://www.linkedin.com/in/bishoy-samir-fouad-362434244"),
+    "https://www.linkedin.com/in/bishoy-samir-fouad-362434244",
   );
 
   // National ID decodes birth date, sex and birth governorate; junk is rejected.
-  const decoded = decodeEgyptianNationalId("29708231301234");
+  // The ID and the CV's date of birth move TOGETHER — an Egyptian national ID encodes the birth
+  // date in digits 2-7, so leaving one behind would put the real date back in the repository via
+  // the other. Both are invented here, and the serial is a placeholder run.
+  const decoded = decodeEgyptianNationalId("29403171301234");
   assert.ok(decoded, "a valid national ID should decode");
-  assert.equal(decoded.dateOfBirth, "1997-08-23");
+  assert.equal(decoded.dateOfBirth, "1994-03-17");
   assert.equal(decoded.birthGovernorate, "Sharqia");
   assert.equal(decoded.gender, "Male");
   assert.equal(decodeEgyptianNationalId("12345678901234"), null);
   // A real-looking ID whose date is impossible must not decode.
-  assert.equal(decodeEgyptianNationalId("29713451301234"), null);
+  assert.equal(decodeEgyptianNationalId("29413451301234"), null);
 
   // Date ranges, in the styles the corpus actually uses.
-  const current = parseDateRange("Senior HR Specialist — Kazyon  Jan 2023 - Present");
+  const current = parseDateRange("Senior HR Specialist — Marfaa  Jan 2023 - Present");
   assert.ok(current);
   assert.equal(current.isCurrent, true);
   assert.equal(current.from.year, 2023);
@@ -178,22 +191,22 @@ function runSectionTests() {
 
 function runPersonalTests() {
   // The bug this pins: several labels packed onto one line must not swallow each other.
-  const packed = ["Date of Birth: August 23, 1997 | Marital Status: Single | Military Status: Exempted"];
+  const packed = ["Date of Birth: March 17, 1994 | Marital Status: Single | Military Status: Exempted"];
   assert.equal(readLabelledValue(packed, ["marital status"]), "Single");
   assert.equal(readLabelledValue(packed, ["military status"]), "Exempted");
-  assert.equal(readLabelledValue(packed, ["date of birth"]), "August 23, 1997");
+  assert.equal(readLabelledValue(packed, ["date of birth"]), "March 17, 1994");
   // A label alone on its line takes the following line as its value.
   assert.equal(readLabelledValue(["Marital Status", "Married"], ["marital status"]), "Married");
   // A bare word without a separator is not a labelled value.
   assert.equal(readLabelledValue(["He completed his military service in 2019"], ["military"]), null);
 
   // Day-first for Egypt; unambiguous when the day exceeds 12.
-  assert.equal(parseFullDate("23/8/1997")?.iso, "1997-08-23");
-  assert.equal(parseFullDate("23/8/1997")?.ambiguous, false);
+  assert.equal(parseFullDate("17/3/1994")?.iso, "1994-03-17");
+  assert.equal(parseFullDate("17/3/1994")?.ambiguous, false);
   assert.equal(parseFullDate("5/6/1996")?.ambiguous, true);
-  assert.equal(parseFullDate("August 23, 1997")?.iso, "1997-08-23");
+  assert.equal(parseFullDate("March 17, 1994")?.iso, "1994-03-17");
   // A birth date nobody could have is rejected.
-  assert.equal(parseFullDate("23/8/1890"), null);
+  assert.equal(parseFullDate("17/3/1890"), null);
 
   // District-first resolution — the three that are routinely got wrong.
   assert.equal(resolveGovernorate("Nasr City, Cairo")?.governorate, "Cairo");
@@ -205,37 +218,37 @@ function runPersonalTests() {
 
 function runWorkTests() {
   // Which half is the title is decided by vocabulary, not by position.
-  assert.deepEqual(splitTitleAndEmployer("Senior HR Specialist — Kazyon Egypt"), {
-    employer: "Kazyon Egypt",
+  assert.deepEqual(splitTitleAndEmployer("Senior HR Specialist — Marfaa Egypt"), {
+    employer: "Marfaa Egypt",
     jobTitle: "Senior HR Specialist",
   });
-  assert.deepEqual(splitTitleAndEmployer("Kazyon Egypt / HR Specialist"), {
-    employer: "Kazyon Egypt",
+  assert.deepEqual(splitTitleAndEmployer("Marfaa Egypt / HR Specialist"), {
+    employer: "Marfaa Egypt",
     jobTitle: "HR Specialist",
   });
 }
 
 function runEndToEndTests() {
   const result = runRuleCvExtraction(SAMPLE_CV, {
-    senderEmail: "aeltoukhy832@gmail.com",
-    senderName: "Abdallah Gamal",
+    senderEmail: "tareknabil88@example.org",
+    senderName: "Tarek Nabil",
     subject: "Application for Personnel & Recruitment Specialist",
   });
 
   assert.equal(result.isCv, true);
 
   // Contact details — the fields the rule engine owns outright.
-  assert.equal(result.fields.email?.value, "aeltoukhy832@gmail.com");
+  assert.equal(result.fields.email?.value, "tareknabil88@example.org");
   assert.equal(result.fields.email?.confidence, "high");
   assert.equal(result.fields.phone?.value, "01234567890");
   assert.equal(result.fields.phone?.confidence, "high");
-  assert.equal(result.fields.linkedinUrl?.value, "https://www.linkedin.com/in/abdallah-gamal-1234");
-  assert.equal(result.fields.fullName?.value, "Abdallah Gamal");
+  assert.equal(result.fields.linkedinUrl?.value, "https://www.linkedin.com/in/tarek-nabil-1234");
+  assert.equal(result.fields.fullName?.value, "Tarek Nabil");
   // Corroborated by the sender name, so it is not a guess.
   assert.equal(result.fields.fullName?.confidence, "high");
 
   // Personal block behind a Wingdings bullet — the glyph that used to hide these three.
-  assert.equal(result.fields.dateOfBirth?.value, "1997-08-23");
+  assert.equal(result.fields.dateOfBirth?.value, "1994-03-17");
   assert.equal(result.fields.maritalStatus?.value, "Single");
   assert.equal(result.fields.militaryStatus?.value, "Exempted");
   assert.equal(result.fields.nationality?.value, "Egyptian");
@@ -256,12 +269,12 @@ function runEndToEndTests() {
   const work = result.fields.workHistory?.value as Array<Record<string, unknown>> | undefined;
   assert.ok(Array.isArray(work), "work history should be an array");
   assert.equal(work.length, 2);
-  assert.equal(work[0]?.employer, "Kazyon Egypt");
+  assert.equal(work[0]?.employer, "Marfaa Egypt");
   assert.equal(work[0]?.jobTitle, "Senior HR Operations Specialist");
   assert.equal(work[0]?.isCurrent, true);
   assert.equal(work[0]?.from, "2023-01-01");
-  assert.equal(work[1]?.employer, "Delta Lighting Egypt");
-  assert.equal(result.fields.currentEmployer?.value, "Kazyon Egypt");
+  assert.equal(work[1]?.employer, "Nile Lighting Egypt");
+  assert.equal(result.fields.currentEmployer?.value, "Marfaa Egypt");
   assert.equal(result.fields.hasPriorWorkExperience?.value, true);
 
   // The CV states "5 years of experience", so the candidate's own figure wins over date arithmetic
@@ -307,7 +320,7 @@ function runMergeTests() {
     email: high("real@candidate.com"),
     phone: high("01012345678"),
     professionalSummary: high("The candidate's own words, verbatim."),
-    workHistory: low([{ employer: "Kazyon" }]),
+    workHistory: low([{ employer: "Marfaa" }]),
   };
   const ai: ExtractedCandidateFields = {
     currentJobTitle: high("Senior HR Operations Specialist"),
@@ -315,7 +328,7 @@ function runMergeTests() {
     phone: high("01099999999"),
     professionalSummary: high("A paraphrased summary written by a model."),
     university: high("Cairo University"),
-    workHistory: high([{ employer: "Kazyon Egypt" }, { employer: "Delta Lighting" }]),
+    workHistory: high([{ employer: "Marfaa Egypt" }, { employer: "Nile Lighting" }]),
   };
 
   const merged = mergeRuleAndAiExtractions(rule, ai);
@@ -341,14 +354,14 @@ function runMergeTests() {
   assert.deepEqual(Object.keys(ruleOnly.fields).sort(), Object.keys(rule).sort());
 
   // A low-confidence model answer must not displace a value a rule read off the page.
-  const timid = mergeRuleAndAiExtractions({ currentEmployer: high("Kazyon Egypt") }, { currentEmployer: low("Kazyon") });
-  assert.equal(timid.fields.currentEmployer?.value, "Kazyon Egypt");
+  const timid = mergeRuleAndAiExtractions({ currentEmployer: high("Marfaa Egypt") }, { currentEmployer: low("Marfaa") });
+  assert.equal(timid.fields.currentEmployer?.value, "Marfaa Egypt");
   assert.equal(timid.sources.currentEmployer, "rule");
 }
 
 function runEscalationTests() {
   // A CV the rules read well costs nothing.
-  const good = runRuleCvExtraction(SAMPLE_CV, { senderName: "Abdallah Gamal", subject: "HR Specialist" });
+  const good = runRuleCvExtraction(SAMPLE_CV, { senderName: "Tarek Nabil", subject: "HR Specialist" });
   const goodDecision = shouldEscalateToAi(good);
   assert.equal(goodDecision.escalate, false);
   assert.match(goodDecision.reason, /answered every field|not worth a model call/);
@@ -373,15 +386,15 @@ function runEscalationTests() {
   // field was the title (30) or the employer (21) — the two facts a medical-rep screen is actually
   // built on. Those two now carry the decision on their own; see HIGH_VALUE_ESCALATION_FIELDS.
   const wellRead: ExtractedCandidateFields = {
-    fullName: high("Abdallah Gamal"),
-    email: high("aeltoukhy832@gmail.com"),
+    fullName: high("Tarek Nabil"),
+    email: high("tareknabil88@example.org"),
     phone: high("+201234567890"),
     professionalSummary: high("Six years in HR operations across retail and manufacturing."),
     degree: high("BSc Commerce"),
     university: high("Cairo University"),
     currentJobTitle: high("HR Operations Specialist"),
-    currentEmployer: high("Kazyon"),
-    workHistory: high([{ employer: "Kazyon" }]),
+    currentEmployer: high("Marfaa"),
+    workHistory: high([{ employer: "Marfaa" }]),
     yearsExperience: high(6),
     currentRoleResponsibilities: high("Payroll, attendance and onboarding for 400 staff."),
   };
@@ -455,7 +468,7 @@ function runNarrowingTests() {
     phone: high("01012345678"), // rule-authoritative              -> drop
     professionalSummary: high("The candidate's own words."), // verbatim   -> drop
     university: high("Cairo University"), // unlisted, rule confident      -> drop
-    workHistory: low([{ employer: "Kazyon" }]), // judgement field         -> ask
+    workHistory: low([{ employer: "Marfaa" }]), // judgement field         -> ask
   };
   // Three keys the rules did not answer at all, to prove they survive the narrowing.
   const schemaKeys = [...Object.keys(ruleFields), "currentEmployer", "yearsExperience", "nationalId"];
@@ -577,12 +590,12 @@ function runWiringTests() {
 
 function runOcrTests() {
   // The defect OCR found in the email rule, and the reason it is worth having found. Tesseract read
-  // "martenaadly177@outlook.com" as "martenaadly 1 77@outlook.com", and the address regex then
+  // "nermeenadel177@example.org" as "nermeenadel 1 77@example.org", and the address regex then
   // matched the tail — a perfectly valid-looking address for somebody else's mailbox, which nothing
   // downstream would ever have questioned.
-  assert.deepEqual(findEmails("martenaadly 1 77@outlook.com"), []);
+  assert.deepEqual(findEmails("nermeenadel 1 77@example.org"), []);
   // A real address on the same line is still read, so the guard costs nothing.
-  assert.deepEqual(findEmails("martenaadly177@outlook.com"), ["martenaadly177@outlook.com"]);
+  assert.deepEqual(findEmails("nermeenadel177@example.org"), ["nermeenadel177@example.org"]);
   assert.deepEqual(findEmails("ali@example-co.com"), ["ali@example-co.com"]);
 
   const ocr = readFileSync(new URL("../src/lib/recruitment/cv-ocr.ts", import.meta.url), "utf8");

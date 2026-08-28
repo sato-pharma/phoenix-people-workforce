@@ -169,7 +169,7 @@ export function runRecruitmentCandidateSourceContextTests() {
   // Meta puts the document's filename in the caption slot when the sender typed nothing, so a
   // silent send arrives looking exactly like a covering note. Measured in production 2026-08-15:
   // 12 of the 17 stored captions were filenames.
-  for (const filename of ["Default Resume.pdf", "Cv.pdf", "Michael CV PDFF.pdf", "ahmed-cv (1).docx", "IMG_2231.jpeg"]) {
+  for (const filename of ["Default Resume.pdf", "Cv.pdf", "Bahgat CV PDFF.pdf", "ahmed-cv (1).docx", "IMG_2231.jpeg"]) {
     assert.equal(isJustAFileName(filename), true, `"${filename}" is a filename, not something the sender wrote`);
   }
   // Conservative on purpose — a filename with ANY words around it is a real message.

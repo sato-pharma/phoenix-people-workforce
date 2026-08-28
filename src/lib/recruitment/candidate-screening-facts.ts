@@ -150,7 +150,7 @@ export function candidateScreeningFacts(candidate: ScreeningFactsCandidateRow): 
  * This exists because the two disagreed, and the disagreement was invisible. The Role filter read
  * `currentJobTitle` alone while the row's "Applying for" cell read a six-rung evidence ladder, so a
  * candidate could sit on screen reading "District Sales Manager, Alexandria" and still be missing
- * from the District Manager filter — which is precisely what happened to Mohammed Alaa Eliwa in
+ * from the District Manager filter — which is precisely what happened to Mahmoud Refaat Selim in
  * production on 2026-08-24: title on the row NULL, the cell showing the role off his email subject,
  * and the one filter built to find him blind to him.
  *

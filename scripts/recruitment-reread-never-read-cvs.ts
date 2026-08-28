@@ -142,9 +142,9 @@ type TargetRow = {
 // layer, so the rules engine parses it confidently into the wrong fields. Measured on production
 // 2026-08-21, from the 08:49 run:
 //
-//     Abdelrahman Nour   fullName       = "Total Monthly Package"                    <- a salary
+//     Fady Nashaat   fullName       = "Total Monthly Package"                    <- a salary
 //                                                                                      table HEADER
-//     Khaled Abdelfatah  currentJobTitle = "Medical Sales Representative Job Offer"  (HIGH conf.)
+//     Hesham Abdelaziz  currentJobTitle = "Medical Sales Representative Job Offer"  (HIGH conf.)
 //
 // Both rows were deleted the same day. An empty read announces itself in the Empty count; a
 // confidently wrong one does not, which is what makes this class worth a hard list.
@@ -159,21 +159,21 @@ type TargetRow = {
 // somebody has OPENED the file.
 const NOT_A_CV_CANDIDATES: ReadonlyArray<{ id: string; name: string; file: string; why: string }> = [
   {
-    file: "Abdelrahman Nour JO ٍSigned.pdf",
+    file: "Fady Nashaat JO ٍSigned.pdf",
     id: "254a228f-5458-40ab-b79d-62c29686c930",
-    name: "Abdelrahman Nour",
+    name: "Fady Nashaat",
     why: "His own signed job offer — outbound, Phoenix sent it. Read 2026-08-21 as fullName='Total Monthly Package'.",
   },
   {
     file: "MRs JO.pdf",
     id: "cfd39f22-3cb3-4b5e-9d65-9dc868a6ea6e",
-    name: "Khaled Abdelfatah",
+    name: "Hesham Abdelaziz",
     why: "Signed job offer. Read 2026-08-21 as currentJobTitle='Medical Sales Representative Job Offer' at HIGH confidence.",
   },
   {
-    file: "Dr Hany Saad RM JO.pdf",
+    file: "Dr Hatem Sorour RM JO.pdf",
     id: "7b7141fb-496b-4183-ac76-7e1b8f6208b3",
-    name: "dr.hany saad",
+    name: "dr.hatem sorour",
     why: "Signed job offer, same class and same state as the two above — 0 extractions, so the next run would read it and write the same nonsense.",
   },
 ];

@@ -32,25 +32,25 @@ export async function runRecruitmentCandidatePoolTableTests() {
   // display.
   assert.equal(
     candidateDisplayName(
-      "Diwakar Mogarala Resume From(Diwakar Mogarala (diwakarmogarala7@gmail com)) Subject(Experienced Health Information Specialist)",
+      "Rajesh Kandala Resume From(Rajesh Kandala (rajeshkandala4@gmail com)) Subject(Experienced Health Information Specialist)",
     ),
-    "Diwakar Mogarala",
+    "Rajesh Kandala",
     "the sender inside From( … ) is the person",
   );
   assert.equal(
-    candidateDisplayName("file 754C9140 8AD3 404A 8339 AFC0892A9BFF From(Islam Mostafa (islam most3011@gmail com)) Subject(Apply for Hr)"),
-    "Islam Mostafa",
+    candidateDisplayName("file 754C9140 8AD3 404A 8339 AFC0892A9BFF From(Ayman Sabry (ayman sabry4207@gmail com)) Subject(Apply for Hr)"),
+    "Ayman Sabry",
     "a meaningless attachment filename must not become somebody's name",
   );
   assert.equal(
-    candidateDisplayName("Mohamed Dawood Recruitment CV 2026 5 From(Dawood Dawood (mohameddawood831@gmail com)) Subject(CV)"),
-    "Dawood Dawood",
+    candidateDisplayName("Sameh Wahba Recruitment CV 2026 5 From(Wahba Wahba (samehwahba506@gmail com)) Subject(CV)"),
+    "Wahba Wahba",
     "the sender wins even when the filename disagrees — a human reconciles it, we do not guess",
   );
 
   // ── 2 · A real name is left exactly alone ───────────────────────────────────
-  assert.equal(candidateDisplayName("Rwan Safaa"), "Rwan Safaa", "335 of the 555 rows must pass through untouched");
-  assert.equal(candidateDisplayName("  Rwan Safaa  "), "Rwan Safaa", "only whitespace is trimmed");
+  assert.equal(candidateDisplayName("Malak Refaat"), "Malak Refaat", "335 of the 555 rows must pass through untouched");
+  assert.equal(candidateDisplayName("  Malak Refaat  "), "Malak Refaat", "only whitespace is trimmed");
   assert.equal(candidateDisplayName(null), "", "a missing name is empty, never the string 'null'");
   assert.equal(candidateDisplayName(undefined), "");
   assert.equal(candidateDisplayName(""), "");
@@ -72,7 +72,7 @@ export async function runRecruitmentCandidatePoolTableTests() {
   assert.equal(candidateDisplayName("From(No Closing Paren"), "From(No Closing Paren", "an unterminated envelope is left as-is");
 
   // ── 4 · The caller can tell when it shortened something ─────────────────────
-  assert.equal(isShortenedCandidateName("Rwan Safaa"), false, "no hover text is needed when nothing was hidden");
+  assert.equal(isShortenedCandidateName("Malak Refaat"), false, "no hover text is needed when nothing was hidden");
   assert.equal(
     isShortenedCandidateName("X Resume From(Real Person (a@b com)) Subject(y)"),
     true,
@@ -312,7 +312,7 @@ export async function runRecruitmentCandidatePoolTableTests() {
   // cells on this tab — `shortLabel` is whatever the sender wrote first, reaching 1,546 characters,
   // with a single cell overflowing by 7,094px. Measured in the real font on 2026-08-24, only 38 of
   // the 225 lines fit the 80px of content box this column has, and what fits is "Cv.pdf" and
-  // "Afroz cv". A length threshold was tried first and is the wrong shape: it admits the filenames
+  // "Bassem cv". A length threshold was tried first and is the wrong shape: it admits the filenames
   // and wraps the other 187, and wrapping breaks the same rule the ellipsis did.
   const sourceCellStart = workspace.indexOf('title={candidate.sourceContext?.detailLines.join("\\n") || undefined}');
   assert.ok(

@@ -13,7 +13,7 @@
 // "supported the manager".
 //
 // What this module does NOT claim to do: it will not reliably tell a promotion from a job change at
-// the same employer, and it will not always pick the right half of "Senior HR Specialist — Kazyon"
+// the same employer, and it will not always pick the right half of "Senior HR Specialist — Marfaa"
 // when a CV uses an unusual separator. Those are exactly the judgements the AI enhancement pass is
 // for. The rule layer's job is to be RIGHT about what it does emit and to mark the rest low.
 
@@ -54,10 +54,10 @@ const TITLE_EMPLOYER_SEPARATORS: readonly RegExp[] = [
 ];
 
 /**
- * Splits "Senior HR Specialist — Kazyon Egypt" into its two halves.
+ * Splits "Senior HR Specialist — Marfaa Egypt" into its two halves.
  *
  * Which half is which is decided by job-title vocabulary, not by position: both "Title - Employer"
- * and "Employer - Title" occur, and a CV that writes "Kazyon Egypt / HR Specialist" would otherwise
+ * and "Employer - Title" occur, and a CV that writes "Marfaa Egypt / HR Specialist" would otherwise
  * be recorded with the company as the person's job.
  */
 export function splitTitleAndEmployer(raw: string): { readonly jobTitle: string | null; readonly employer: string | null } {

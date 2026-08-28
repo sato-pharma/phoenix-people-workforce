@@ -5,7 +5,7 @@ import { nameFromAttachmentFilename } from "@/lib/recruitment/inbound/cv-import-
 /**
  * A CV forwarded out of a mail archive arrives with the whole envelope baked into its filename:
  *
- *   "Nayera S Mahmoud HR Resume From(Nayera Samy Mahmoud (nsmahmoud@outlook com)) Subject(…) Date(…)"
+ *   "Dalia S Mansour HR Resume From(Dalia Sameh Mansour (dsmansour@outlook com)) Subject(…) Date(…)"
  *
  * The 2026-08-18 WhatsApp bulk forward stored 220 production candidates under that raw stem —
  * "From(", "Subject(" and the date all sitting in ats_candidates.full_name — because the only
@@ -15,20 +15,20 @@ import { nameFromAttachmentFilename } from "@/lib/recruitment/inbound/cv-import-
 export function runRecruitmentAttachmentFilenameNameTests() {
   // ── The regression: an archived-email filename never becomes the person's name ─────────────
   const archived =
-    "Nayera S Mahmoud HR Resume From(Nayera Samy Mahmoud (nsmahmoud@outlook com)) " +
+    "Dalia S Mansour HR Resume From(Dalia Sameh Mansour (dsmansour@outlook com)) " +
     "Subject(Personnel & Recruitment Specialist HR Generalist) Date(Fri, 7 Aug 2026 11 00 08 +0000).pdf";
   const parsed = nameFromAttachmentFilename(archived);
   assert.equal(
     parsed,
-    "Nayera Samy Mahmoud",
+    "Dalia Sameh Mansour",
     "an archived-email filename must yield the sender's display name, not the envelope",
   );
 
   // The three envelope markers must never survive into a stored name, whatever the shape.
   for (const filename of [
     archived,
-    "file 754C9140 8AD3 404A 8339 AFC0892A9BFF From(Islam Mostafa (islam most3011@gmail com)) Subject(Apply for Hr personal) Date(Fri, 14 Aug 2026 19 19 02 +0300).pdf",
-    "From(Menna Mahmoud (menna@example com)) Subject(CV) Date(Tue, 5 Aug 2026).docx",
+    "file 754C9140 8AD3 404A 8339 AFC0892A9BFF From(Ayman Sabry (ayman sabry4207@gmail com)) Subject(Apply for Hr personal) Date(Fri, 14 Aug 2026 19 19 02 +0300).pdf",
+    "From(Yara Mounir (yara@example com)) Subject(CV) Date(Tue, 5 Aug 2026).docx",
     "Some CV Subject(no sender here) Date(Tue, 5 Aug 2026).pdf",
   ]) {
     const name = nameFromAttachmentFilename(filename);
@@ -44,8 +44,8 @@ export function runRecruitmentAttachmentFilenameNameTests() {
 
   // A filename that starts with the envelope still yields the sender.
   assert.equal(
-    nameFromAttachmentFilename("From(Menna Mahmoud (menna@example com)) Subject(CV) Date(Tue, 5 Aug 2026).docx"),
-    "Menna Mahmoud",
+    nameFromAttachmentFilename("From(Yara Mounir (yara@example com)) Subject(CV) Date(Tue, 5 Aug 2026).docx"),
+    "Yara Mounir",
     "an envelope at the very start of the filename must still yield the sender",
   );
 
@@ -58,7 +58,7 @@ export function runRecruitmentAttachmentFilenameNameTests() {
 
   // ── A shared mailbox forwards other people's CVs, so it is not the applicant ───────────────
   assert.equal(
-    nameFromAttachmentFilename("Walid CV From(Personnel Admin (personnel.a@yahoo.com)) Subject(CV).pdf"),
+    nameFromAttachmentFilename("Kareem CV From(Personnel Admin (personnel.desk@example.org)) Subject(CV).pdf"),
     null,
     "a shared-mailbox display name must not become a candidate name",
   );
@@ -72,8 +72,8 @@ export function runRecruitmentAttachmentFilenameNameTests() {
 
   // ── Ordinary filenames keep working ────────────────────────────────────────────────────────
   assert.equal(
-    nameFromAttachmentFilename("Ahmed_Karam_Mohamed.pdf"),
-    "Ahmed Karam Mohamed",
+    nameFromAttachmentFilename("Hassan_Fathy_Mostafa.pdf"),
+    "Hassan Fathy Mostafa",
     "a plain person-named attachment must still yield that name",
   );
   assert.equal(

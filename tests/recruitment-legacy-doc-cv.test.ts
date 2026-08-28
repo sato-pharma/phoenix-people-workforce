@@ -8,8 +8,8 @@ import { detectCvFileKind, isLegacyDocBytes } from "../src/lib/recruitment/cv-fi
  * Found 2026-08-27 re-running the CV extraction for the unresolved candidates. Both targets
  * failed identically:
  *
- *   sabry hussein   ->  Could not find the body element: are you sure this is a docx file?
- *   Manar Mamdouh   ->  Could not find the body element: are you sure this is a docx file?
+ *   hatem marzouk   ->  Could not find the body element: are you sure this is a docx file?
+ *   Salma Ragab     ->  Could not find the body element: are you sure this is a docx file?
  *
  * detectCvFileKind answers "docx" for anything labelled application/msword, and the extractor
  * handed every "docx" to mammoth, which reads ONLY the modern OOXML ZIP. A Word 97-2003 binary
@@ -20,15 +20,19 @@ import { detectCvFileKind, isLegacyDocBytes } from "../src/lib/recruitment/cv-fi
  * this corpus, so it cannot be the discriminator. Measured against production storage
  * (project ozucdzovmcqvepbozvqf), all five stored CVs labelled application/msword:
  *
- *   mariam khalil    d0cf11e0a1b11ae1   legacy OLE2  .doc    0 extraction rows
- *   Ibrahim Eltayeb  d0cf11e0a1b11ae1   legacy OLE2  .doc    0 extraction rows
- *   sabry hussein    d0cf11e0a1b11ae1   legacy OLE2  .doc    0 extraction rows
- *   Manar Mamdouh    d0cf11e0a1b11ae1   legacy OLE2  .doc    0 extraction rows
- *   Mina Hamdy       504b03040a000000   real OOXML  .docx    2 rows, read fine by mammoth
+ *   nagwa fanous     d0cf11e0a1b11ae1   legacy OLE2  .doc    0 extraction rows
+ *   Mostafa Elgendy  d0cf11e0a1b11ae1   legacy OLE2  .doc    0 extraction rows
+ *   hatem marzouk    d0cf11e0a1b11ae1   legacy OLE2  .doc    0 extraction rows
+ *   Salma Ragab      d0cf11e0a1b11ae1   legacy OLE2  .doc    0 extraction rows
+ *   Peter Nagy       504b03040a000000   real OOXML  .docx    2 rows, read fine by mammoth
  *
- * So routing on `mimeType === "application/msword"` would have BROKEN Mina Hamdy's file, which
+ * So routing on `mimeType === "application/msword"` would have BROKEN Peter Nagy's file, which
  * works today. Only the first bytes are true. That is what isLegacyDocBytes tests, and why the
  * check lives at the byte level rather than in detectCvFileKind (which never sees the bytes).
+ *
+ * THE FIVE NAMES ARE INVENTED. They were the real applicants' until 2026-08-28. The magic bytes,
+ * the MIME label and the row counts are the measurement and are untouched — the identities were
+ * never what this test is about.
  */
 export function runLegacyDocCvTests() {
   const OLE2 = [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1];
@@ -42,7 +46,7 @@ export function runLegacyDocCvTests() {
   );
 
   // The other half of the same bug: a real .docx must NOT be diverted to word-extractor, even
-  // though this corpus labels one of them application/msword. Mina Hamdy's CV is exactly this.
+  // though this corpus labels one of them application/msword. Peter Nagy's CV is exactly this.
   assert.equal(
     isLegacyDocBytes(Buffer.from([...OOXML_ZIP, 0x00])),
     false,
@@ -71,7 +75,7 @@ export function runLegacyDocCvTests() {
   // and by cv-file-choice/cv-intake-service, and a new member silently changes what those treat
   // as a usable CV. The format split belongs in the bytes, not in the kind.
   assert.equal(detectCvFileKind("application/msword", "Ibrahim El-tayeb CV.doc"), "docx", "a legacy .doc is still a Word file to the router");
-  assert.equal(detectCvFileKind("application/msword", "Mina Hamdy CV.docx"), "docx", "a mislabelled .docx is still a Word file to the router");
+  assert.equal(detectCvFileKind("application/msword", "Peter Nagy CV.docx"), "docx", "a mislabelled .docx is still a Word file to the router");
   assert.equal(detectCvFileKind("application/msword", "DOC-20250121-WA0002."), "docx", "an extensionless msword attachment is still a Word file");
   assert.equal(
     detectCvFileKind("application/vnd.openxmlformats-officedocument.wordprocessingml.document", "cv.docx"),

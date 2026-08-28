@@ -102,15 +102,15 @@ export async function runRecruitmentAppliedForTests() {
     "Cv",
     "...",
     "Job applications",
-    "Afroz cv",
+    "Bassem cv",
     "Amr cv",
-    "Hassan Alabd Hassan C.V.",
-    "Cv for Siyabulela Knockpaal",
-    "Fwd: Job Inquiry - Syed Mohamed Faizal",
-    "Michael CV PDFF.pdf",
+    "Fawzy Elsaid Fawzy C.V.",
+    "Cv for Thabo Nkosi",
+    "Fwd: Job Inquiry - Anil Kumar Bhat",
+    "Bahgat CV PDFF.pdf",
     "Default Resume.pdf",
     "blue professional modern CV resume (1).pdf",
-    "Khaled_Gamal_Basuoniy_ATS_CV (1).pdf",
+    "Wagdy_Sorour_Zaghloul_ATS_CV (1).pdf",
     "DOC-20260725-WA0080..pdf",
     "Re: Job offer from Sato Pharma",
     "Inquiry for Salesforce opportunities",
@@ -167,7 +167,7 @@ export async function runRecruitmentAppliedForTests() {
     ["Apply to HR", "HR"],
     // Too long to be a title, but that shape is "<the role> – <the person>": take the first segment,
     // and only when it actually names a job.
-    ["Application for Veterinary Product Manager – Dr. Alaa Hamdy Ibrahim | DVM | KSA Licensed", "Veterinary Product Manager"],
+    ["Application for Veterinary Product Manager – Dr. Wael Sami Ibrahim | DVM | KSA Licensed", "Veterinary Product Manager"],
     // The trailing strip must stop at the role. It once ate its way to "…Seeking". The biography
     // around the role is now cut by the tightening pass in section 9 — but the ROLE is what has to
     // survive, and that is what this line has always been checking.
@@ -181,15 +181,15 @@ export async function runRecruitmentAppliedForTests() {
   // A filename is rejected outright by the ordinary path — and yet three production rows have the
   // answer written across the middle of one. The salvage runs ONLY after the normal read returned
   // null, and only on a closed vocabulary, so it cannot promote somebody's name into the column.
-  assert.equal(cleanJobTitle("Ramy_Asaad_District_Sales_Manager_CV.pdf"), "District Sales Manager");
-  assert.equal(cleanJobTitle("Sameh_Hamdy_Senior_Accountant.pdf"), "Senior Accountant");
+  assert.equal(cleanJobTitle("Nader_Bahgat_District_Sales_Manager_CV.pdf"), "District Sales Manager");
+  assert.equal(cleanJobTitle("Wagih_Sorour_Senior_Accountant.pdf"), "Senior Accountant");
   assert.equal(
-    cleanJobTitle(":: Bahaa Abd El Azim - CV :: HR-Recruitment Consultant / Talent Acquisition Consultant ::"),
+    cleanJobTitle(":: Nabil Abd El Rasoul - CV :: HR-Recruitment Consultant / Talent Acquisition Consultant ::"),
     "Talent Acquisition Consultant",
   );
   // "Hamdy" is not in the qualifier vocabulary, which is the whole reason the row above reads
   // "Senior Accountant" and not "Hamdy Senior Accountant".
-  assert.doesNotMatch(cleanJobTitle("Sameh_Hamdy_Senior_Accountant.pdf") ?? "", /Hamdy/);
+  assert.doesNotMatch(cleanJobTitle("Wagih_Sorour_Senior_Accountant.pdf") ?? "", /Sorour/);
   // And the salvage never overrides a clean read.
   assert.equal(cleanJobTitle("National Sales Manager"), "National Sales Manager");
 
@@ -199,7 +199,7 @@ export async function runRecruitmentAppliedForTests() {
   // (getCandidate, the manager's push list) has only the free evidence. Both must answer.
   const envelopeRow = {
     appliedForJobTitle: null,
-    fullName: "file 754C From(Islam Mostafa (a@b com)) Subject(Apply for Hr)",
+    fullName: "file 754C From(Ayman Sabry (a@b com)) Subject(Apply for Hr)",
   };
   assert.deepEqual(
     candidateRowAppliedFor(envelopeRow),
@@ -320,32 +320,32 @@ export async function runRecruitmentAppliedForTests() {
   // through the cleaner before and after the pass, and nothing outside this list moved.
   const tightened: Array<[string, string]> = [
     ["Application NSM sales", "NSM sales"],
-    ["Application for Accounting Position – Mostafa El Hogoraty", "Accounting"],
-    ["Application for Office Coordinator Position – Sabreen Mahmoud", "Office Coordinator"],
-    ["Application for Office Coordinator – Hana Essam Abdelbary", "Office Coordinator"],
+    ["Application for Accounting Position – Fouad El Kaldas", "Accounting"],
+    ["Application for Office Coordinator Position – Amira Lotfy", "Office Coordinator"],
+    ["Application for Office Coordinator – Nada Sherif Kamel", "Office Coordinator"],
     ["District Manager for Upper Egypt 2", "District Manager for Upper Egypt"],
     // An underscore is a word character, so there is no \b between "Resume" and "_National" and the
     // marker rule missed this row entirely on the first production run — the sender's name stayed in
     // the column. The marker now ends on (?![A-Za-z]).
-    ["Fwd: Shashi Gupta _ Resume_National Sales Manager", "National Sales Manager"],
+    ["Fwd: Anil Bhandari _ Resume_National Sales Manager", "National Sales Manager"],
     ["District manager application Alex & Beheira", "District manager Alex & Beheira"],
     ["District manger upper Egypt resident Assuit", "District manger upper Egypt"],
     ["Experienced Health Information Specialist Seeking Opportunities", "Health Information Specialist"],
-    ["M Aamir khan Resume for the post of National sales Manager", "National sales Manager"],
+    ["M Fouad waly Resume for the post of National sales Manager", "National sales Manager"],
     ["Medical Representative - Mahalla - fresh graduate", "Medical Representative - Mahalla"],
     ["Medical representative vacancy.( Beni suef)", "Medical representative (Beni suef)"],
     ["Michael'Cv National sales manager", "National sales manager"],
     ["My c.v / District manager upperegypt", "District manager upperegypt"],
-    ["National Sales Manager (Shokry Ammar)", "National Sales Manager"],
-    ["National sales Manager -  Tamer Abdallah CV", "National sales Manager"],
+    ["National Sales Manager (Tarek Zohny)", "National Sales Manager"],
+    ["National sales Manager -  Tamer Farid CV", "National sales Manager"],
     ["National sales Manager- 15 yrs of exp in UAE in all the channels.", "National sales Manager"],
-    ["Osama mohammed cv District manager upper Egypt", "District manager upper Egypt"],
-    ["Product manager vacancy ,Heba Magdy", "Product manager"],
-    ["RWAN-SAFAA-Application for medical representative position-Minya", "medical representative Minya"],
+    ["Zaher halawa cv District manager upper Egypt", "District manager upper Egypt"],
+    ["Product manager vacancy ,Nourhan Fathy", "Product manager"],
+    ["WAFAA-SARHAN-Application for medical representative position-Minya", "medical representative Minya"],
     ["Re: R&D Internship Request (August–October 2026) – Sato Pharma", "R&D Internship"],
     ["Senior medical rep menofia 1", "Senior medical rep menofia"],
-    ["Shaimaa mostafa cv as district manager upper Egypt 2", "district manager upper Egypt"],
-    ["Summer internship application - Lydia Magdy Fahmy", "Summer internship"],
+    ["Nagwa saqr cv as district manager upper Egypt 2", "district manager upper Egypt"],
+    ["Summer internship application - Mariam Wagdy Fahim", "Summer internship"],
   ];
   for (const [raw, expected] of tightened) {
     assert.equal(cleanJobTitle(raw), expected, `"${raw}" should tighten to "${expected}"`);
@@ -369,7 +369,7 @@ export async function runRecruitmentAppliedForTests() {
     ["Recruitment&Personnel Specialist", "Recruitment&Personnel Specialist"],
     ["Business Development & Sales Manager", "Business Development & Sales Manager"],
     ["Interest in Medical Coding Specialist Opportunities", "Medical Coding Specialist Opportunities"],
-    ["Finance Manager Mohamed Hamed", "Finance Manager Mohamed Hamed"],
+    ["Finance Manager Adib Sanad", "Finance Manager Adib Sanad"],
     [
       "Request for the post of Procurement executive/Store logistic supervisor Supply chain executive,",
       "Procurement executive/Store logistic supervisor Supply chain executive",

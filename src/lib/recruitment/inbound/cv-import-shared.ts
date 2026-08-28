@@ -19,7 +19,7 @@ export function parseImportSenderList(raw: string | null | undefined): string[] 
 const GENERIC_ATTACHMENT_NAME = /^(cv|resume|document|doc|file|image|img|scan|photo|whatsapp|attachment)([\s\d]|image|document)*$/i;
 
 // A CV forwarded out of a mail archive carries the whole envelope in its filename:
-//   "Nayera S Mahmoud HR Resume From(Nayera Samy Mahmoud (nsmahmoud@outlook com)) Subject(…) Date(…)"
+//   "Dalia S Mansour HR Resume From(Dalia Sameh Mansour (dsmansour@outlook com)) Subject(…) Date(…)"
 // The display name inside From(…) is the only part of that string that names a person; the rest
 // describes the message. The 2026-08-18 bulk forward stored 220 candidates under the raw stem —
 // full envelope and all — because the guard below only rejected short generic stems.

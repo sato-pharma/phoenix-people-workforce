@@ -4,7 +4,7 @@
  * The WhatsApp/email forwarder writes the whole envelope into `full_name`, so 220 of the 555
  * production rows read like:
  *
- *   "Diwakar Mogarala Resume From(Diwakar Mogarala (diwakar@gmail com)) Subject(Experienced …)"
+ *   "Rajesh Kandala Resume From(Rajesh Kandala (rajesh@gmail com)) Subject(Experienced …)"
  *
  * Measured 2026-08-20: those 220 average 100+ characters and reach 185, against a p95 of 28 for
  * the 335 rows that carry a real name. A single row like that is what forced the candidate pool
@@ -13,7 +13,7 @@
  * This is a DISPLAY derivation only. Nothing here writes to the database: the stored value is
  * still the envelope, `fullName` is still what search and the profile show, and the full string
  * stays available as hover text. The sender name is what the forwarder had — it is not always
- * spelled the same as the CV (the CV may say "Mohamed Dawood" where WhatsApp says "Dawood
+ * spelled the same as the CV (the CV may say "Sameh Wahba" where WhatsApp says "Dawood
  * Dawood"), which is why the original is never thrown away.
  */
 

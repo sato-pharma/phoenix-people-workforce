@@ -796,7 +796,7 @@ export async function extractCvFieldsFromBytes(input: {
   //
   // Free OCR is not accurate enough to REPLACE the model on this material. On the six real scans it
   // read four (it refuses the two Arabic ones on confidence, correctly), but among those four it
-  // turned "martenaadly177@outlook.com" into "77@outlook.com" and read a man's name as "in Egypt.".
+  // turned "nermeenadel177@example.org" into "77@example.org" and read a man's name as "in Egypt.".
   // A plausible-looking wrong e-mail is worse than an empty one: nobody ever questions it and the
   // candidate is simply never reachable. So OCR does not get to short-circuit a working model, and
   // it does not get to overrule one. What it does get to do is stop an applicant being lost entirely

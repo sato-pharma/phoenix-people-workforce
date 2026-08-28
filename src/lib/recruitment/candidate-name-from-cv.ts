@@ -11,18 +11,21 @@
 //   full_name          = "Suez Canal University Engineering Department"
 //   extracted fullName = { value: "Suez Canal University Engineering Department", confidence: "low" }
 //   applied_fields     = null            <- the confidence gate DID hold for every later write
-//   cv file            = "Yosouf _Ali _CV (2).pdf"
-//   email              = yosoufali3@gmail.com
+//   cv file            = "Karim _Nabil _CV (2).pdf"
+//   email              = karimnabil3@example.org
+//
+// (The applicant's real name, filename and address stood here until 2026-08-28. The candidate id
+// is kept so the incident stays traceable; the identity is not, and must not come back.)
 //
 // The model was unsure and said so, and it had handed back the letterhead rather than the author —
 // a CV names the university the applicant attended, and a header-heavy first page gives a reader
 // with no world knowledge two equally plausible "names" to choose between.
 //
 // The fallback is the CV's own FILE NAME, deliberately in preference to the sender. For a bulk
-// forward the sender is the FORWARDER, which is the exact error fixed on 2026-08-15 — "Ahmed
-// Mohamed" forwarding his cousin's CV became a candidate called Ahmed Mohamed. The file travels
+// forward the sender is the FORWARDER, which is the exact error fixed on 2026-08-15 — "Sherif
+// Adel" forwarding his cousin's CV became a candidate called Sherif Adel. The file travels
 // with the document, so it still describes the applicant when the page defeats the model, which is
-// precisely the case above: the filename and the email local part independently say Yosouf Ali.
+// precisely the case above: the filename and the email local part independently say Karim Nabil.
 //
 // Pure (no DB, no AI imports) for the same reason cv-auto-apply.ts and contact-review.ts are — the
 // rules are the thing worth testing, and they must be testable without the extraction stack.
@@ -101,7 +104,7 @@ const documentWords = new Set([
  *
  * Conservative on purpose. It strips the extension, the "(2)" a second download adds, and the
  * document words above, then requires what is left to look like a name: at least two words, all
- * of them letters. "Yosouf _Ali _CV (2).pdf" gives "Yosouf Ali"; "Default Resume.pdf" collapses to
+ * of them letters. "Karim _Nabil _CV (2).pdf" gives "Karim Nabil"; "Default Resume.pdf" collapses to
  * one word and is refused; "Cv.pdf" empties out entirely. Refusing is safe — the caller falls back
  * to the sender, which is where it stood before this existed.
  */
