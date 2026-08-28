@@ -1191,6 +1191,55 @@ These are the owner's own decisions, stated across many sessions. They are not s
   path, and a recovery path that stops working when you need it is not one. Do not "fix" this
   back, do not add an override flag, and do not offer to publish a running month "just to see".
 
+**More of the same relocation, the same day and for the same reason — §4.1 below carries the cliff
+mechanics in full.** These seven index lines went the way the eight marketing hooks did: `MEMORY.md`
+had crossed 24,400 bytes again, and compression was spent (zero em-dashes, zero trailing whitespace
+and zero double spaces left; two prose passes freed 888 bytes against a 2,400-byte shortfall). Every
+rule below is an owner **decision** rather than a measurement — decisions do not rot the way counts
+do — so each belongs in a file that auto-loads in full. Each names the memory file holding the full
+account, under `C:\Users\satoh\.claude\projects\F--Phoenix-Workforce-phoenix-workforce\memory\`.
+
+- **Every weekly report and export MUST set `excludeUnmapped`** — an unmapped SKU double-counts
+  against the real product it belongs to. **An export must MATCH the screen**: a sheet or a column
+  may never be dropped silently because it cannot be filtered — label it instead (owner rule
+  2026-08-26). And the Weekly **Summarized Report's layout and scope are LOCKED**, learned over many
+  rejected iterations — do not restyle it.
+  `unmapped-products-must-never-reach-a-report` ·
+  `an-export-must-match-the-screen-never-different-data` · `weekly-summarized-report-owner-rules`
+- **The system FLAGS an expense; it NEVER auto-rejects one.** Owner rule 2026-08-09: every failed
+  check flags the claim for the Super Admin, who decides. **Never auto-publish a deductions month**
+  either, and never approve a batch on your own initiative — CRM-derived detections run around 80%
+  accurate, so the order is always recommend, the owner confirms, only then publish. And **a
+  same-day check against the CRM reads zero because visits are entered through and after the
+  working day** — never report that as a measured zero.
+  `system-flags-expenses-never-rejects` · `never-auto-publish-deductions-owner-confirms-first` ·
+  `dv-evidence-window-same-day-submits`
+- **CRM visit types `-5` (Public Holiday) and `-6` (Casual Leave) are WORKING days, never absence.**
+  Owner rule 2026-08-21, independently re-verified the same day including which map is actually
+  load-bearing. `-4` is the only real leave type, and only **FWC** reaches salary.
+  `public-holiday-and-casual-leave-are-working-days`
+- **The Ready-sheet >25th full-pay waiver is for genuine RESIGNATIONS only** — terminated and
+  inactive leavers stay prorated with zero allowances. **A regional employee travelling TO Cairo
+  earns no outstation per-diem** (live in production, #2160 — do not undo). **DSM and Medical Rep
+  titles auto-provision their real role**, and the title-governance guard was DELIBERATELY relaxed
+  for exactly those two — do not restore the blanket-`Employee` assertion.
+  `resignation-full-pay-rule-is-resignation-only` ·
+  `cairo-trip-no-per-diem-allowance-live-prod-2026-08-15` ·
+  `field-force-provisioning-live-and-guard-relaxed-2026-08-14`
+- **Social-insurance Form 1 prints exactly as the Authority issues it** — page 2 carries nothing
+  Phoenix wrote, and the whole form is duplex. `government-form1-prints-exactly-as-issued`
+- **The organogram XLSX carries a Mobile column**, by the owner's explicit override of §4's
+  work-fields-only export rule on 2026-08-23. It is fetched at export time: do not remove it, and
+  do not "simplify" it onto the row. `organogram-export-carries-the-mobile-by-owner-override`
+- **The public Territory Management preview link must NEVER display or offer the line** — it is
+  pinned to Pedia server-side (owner rule 2026-08-14). **The organogram CHART and the employee
+  detail popup read two different sources**, so adding a per-person field to the chart means editing
+  the seat report's select, not the directory. And **the one-press WhatsApp button STAYS on the CEO
+  and NSM rows** — the owner was asked directly on 2026-08-23 and said keep it; do not add
+  rank-based suppression. `territory-preview-link-must-never-show-the-line` ·
+  `organogram-chart-source-is-au-seat-model-not-directory` ·
+  `whatsapp-button-on-leadership-rows-is-an-owner-decision`
+
 ### 4.1 Marketing customer, venue and licence validation (relocated from `MEMORY.md`, 2026-08-28)
 
 **Relocated because the index crossed its cliff — three times in one morning.** `MEMORY.md` is the
