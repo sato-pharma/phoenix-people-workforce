@@ -28,6 +28,11 @@ const ALERT_THROTTLE_MINUTES = 60;
 // Guard against the pathological case of the alert path itself being held and re-alerting.
 const HELD_ALERT_EVENT_TYPE = "notification_held_for_review";
 
+// Separate event type from HELD_ALERT_EVENT_TYPE on purpose: "held" and "discarded at deadline"
+// are opposite outcomes, and collapsing them into one stream would let the second hide inside the
+// noise of the first — which is the exact way the original hold alert stopped being read.
+const EXPIRED_ALERT_EVENT_TYPE = "notification_holds_expired";
+
 type NotifyRecipient = { hrId: string; userId: string | null };
 
 export type HeldNotificationAlertInput = {
@@ -198,6 +203,74 @@ export async function remindHeldNotifications(): Promise<HeldNotificationAlertRe
       error,
       labels: { event: "held_notification_reminder_failed" },
     });
+    return { delivered: 0, reason: error instanceof Error ? error.message : "unknown error", skipped: true };
+  }
+}
+
+/**
+ * Announces that holds were auto-discarded on reaching their deadline (expireStaleHeldNotifications
+ * in confidence-gate.ts).
+ *
+ * A deadline that passes quietly is strictly worse than no deadline: the email is gone AND nobody
+ * knows. Prior to the 2026-08-28 recalibration the failure mode was the mirror image — 174 real
+ * emails preserved forever in a queue nobody emptied, the oldest 35 days old. Neither silence is
+ * acceptable, so every automatic discard is stated out loud on the same in-app + Telegram + push
+ * channels as the hold alert itself, and never by email (the gate lives inside sendPhoenixEmail,
+ * so an emailed alert about email would re-enter the thing it is reporting on).
+ *
+ * Best-effort by contract: never throws. The expiry stands regardless of whether this lands.
+ */
+export async function notifyExpiredNotifications(input: {
+  expiredCount: number;
+  sources: string[];
+}): Promise<HeldNotificationAlertResult> {
+  try {
+    if (input.expiredCount <= 0) return { delivered: 0, reason: "nothing expired", skipped: true };
+
+    const { recipients } = await resolveNotifyRecipients();
+    if (recipients.length === 0) return { delivered: 0, reason: "no recipients", skipped: true };
+
+    const plural = input.expiredCount === 1 ? "" : "s";
+    const message = [
+      `🗑️ ${input.expiredCount} held email${plural} reached the review deadline and ${input.expiredCount === 1 ? "was" : "were"} DISCARDED.`,
+      "",
+      `Source${input.sources.length === 1 ? "" : "s"}: ${input.sources.join(", ")}`,
+      "",
+      `Nothing was sent. A hold is discarded rather than released when no decision is taken, because`,
+      `an unreviewed hold means an unusually large audience nobody signed off on.`,
+      "Review → /admin/notification-confidence",
+    ].join("\n");
+
+    const today = new Date().toLocaleDateString("en-CA", { timeZone: "Africa/Cairo" });
+
+    let delivered = 0;
+    await Promise.all(
+      recipients.map(async (recipient) => {
+        await createSystemNotification({
+          actionUrl: "/admin/notification-confidence",
+          actorId: "confidence-gate",
+          channels: ["in_app", "telegram", "push"],
+          eventType: EXPIRED_ALERT_EVENT_TYPE,
+          message,
+          metadata: {
+            expiredCount: input.expiredCount,
+            idempotencyKey: `notification-holds-expired:${today}:${recipient.hrId}`,
+            sources: input.sources,
+          },
+          module: "system",
+          priority: "high",
+          recipientHrId: recipient.hrId,
+          recipientUserId: recipient.userId,
+          telegram: { ctaLabel: "Review held notifications", ctaUrl: "/admin/notification-confidence" },
+          title: `${input.expiredCount} held email${plural} discarded at deadline`,
+        });
+        delivered += 1;
+      }),
+    );
+
+    return { delivered, skipped: false };
+  } catch (error) {
+    logError("Hold-expiry alert failed", { error, labels: { event: "held_notification_expiry_alert_failed" } });
     return { delivered: 0, reason: error instanceof Error ? error.message : "unknown error", skipped: true };
   }
 }
