@@ -243,7 +243,7 @@ export const telegramTemplateDefinitions: TelegramTemplateDefinition[] = [
     recommendedPlaceholders: ["title", "message", "actionUrl"],
     sampleVariables: {
       ...baseSampleVariables,
-      actionUrl: "/contracts/renewals",
+      actionUrl: "/contracts",
       message: "Module: Contract renewal\nContract renewal for Mariam Nabil is due in 14 days. Pending manager recommendation.",
       title: "Contract renewal reminder",
     },
@@ -414,7 +414,7 @@ export const telegramTemplateDefinitions: TelegramTemplateDefinition[] = [
     recommendedPlaceholders: ["title", "message", "actionUrl"],
     sampleVariables: {
       ...baseSampleVariables,
-      actionUrl: "/admin/attendance/holiday-calendar",
+      actionUrl: "/attendance/holiday-calendar",
       message: "Module: Holiday confirmation\nJune 30 Revolution Day is officially dated 2026-06-30 (in 5 days). Confirm the observed day off.",
       title: "National holiday needs confirmation",
     },
