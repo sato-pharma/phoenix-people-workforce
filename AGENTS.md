@@ -134,6 +134,20 @@ file holding the full account, under
   the DEVICE, not the code (`192.168.100.52:4370` is reachable roughly 11:00–18:00 Cairo). **Never
   disable the 2-hourly task, and never launch a second agent — it can fire a PRODUCTION sync.**
   `attendance-agent-crashes-at-logon-but-loses-no-attendance`
+- **ExcelJS emits two schema-invalid OOXML fragments, so Excel silently REPAIRS the workbook**
+  (relocated from `MEMORY.md` 2026-08-28 together with its index line). The symptom is the "We found
+  a problem with some content" dialog, logging *"Replaced Part: /xl/worksheets/sheetN.xml"* and
+  *"Repaired Records: Drawing"*. **1 —** `CT_SheetPr` fixes the child order `tabColor`, `outlinePr`,
+  `pageSetUpPr`; setting `outlineProperties` together with `pageSetup.fitToPage` makes ExcelJS write
+  `<pageSetUpPr/>` **before** `<outlinePr/>`, and Excel then discards the ENTIRE sheet part — only
+  the sheets carrying an outline group fail, which is the tell. **2 —** `CT_OneCellAnchor` declares
+  no attributes at all, yet ExcelJS writes `editAs="oneCell"` on `<xdr:oneCellAnchor>` **whether or
+  not you pass it**, so dropping the option from `ws.addImage` does NOT fix it. Both need the `.xlsx`
+  zip post-processed. Four diagnosis traps cost real time: a clean `zipfile.testzip()` proves nothing
+  (the container was always fine — parse the part XML), a non-greedy `<sheetPr\b.*?(?:/>|</sheetPr>)`
+  regex stops at the first `/>` and makes a correct file look broken, openpyxl reports `images: 0` on
+  every sheet because it cannot read ExcelJS DrawingML (check `xl/media/*` instead), and openpyxl
+  under-reports grouped columns. `exceljs-writes-two-schema-invalid-ooxml-fragments`
 
 **Git**
 
@@ -279,6 +293,18 @@ file holding the full account, under
   `.range()`; without the order the page boundaries are undefined and a row can come back twice or
   never. `postgrest-neq-on-an-absent-jsonb-key-matches-nothing` ·
   `postgrest-unbounded-select-silently-stops-at-1000-rows`
+- **`n_live_tup` is STALE in this production project — it reports LIVE tables as empty** (relocated
+  from `MEMORY.md` 2026-08-28 together with its index line). Same family as the `list_migrations`
+  rule above: query reality, never a ledger or a statistic. Measured 2026-08-13, with
+  `pg_stat_database.stats_reset` NULL, so these are simply stale planner stats rather than a reset:
+  `sales_records` read **0** against a real **11,267**, `field_workforce_compliance_days` **0**
+  against **4,030**, `email_templates` **0** against **22**, `salary_records` 105 against **796**,
+  `attendance_raw_punches` 292 against **4,039**. An audit trusting it would have declared
+  `sales_records` and the whole Field Workforce Compliance module dead; both are live. The write
+  counters (`n_tup_ins/upd/del`) are equally untrustworthy — they cover only activity since the last
+  stats reset, and a PG major-version upgrade wipes them. Sweep all 309 tables with a real count in
+  seconds via `query_to_xml(format('select count(*) as cnt from public.%I', table_name), …)`.
+  `n-live-tup-is-stale-use-real-count`
 - **A Supabase client request that times out at 15s STILL COMMITS.** `getSupabaseAdmin()` aborts after
   15s (`src/lib/supabase/server.ts`; raise it with `getSupabaseAdmin({ requestTimeoutMs })`), and the
   JS client throws "Supabase request timed out" — but Postgres keeps running and commits the
@@ -795,6 +821,24 @@ These are the owner's own decisions, stated across many sessions. They are not s
   and a free-text Note column. Never guess an item to avoid asking, and never hand back a list of
   items for him to answer in chat.
 - Take ownership. Automate the work rather than returning a checklist he has to execute.
+- **"continue verifying" means RESUME the paused Source of Sales audit — never restart it**
+  (relocated from `MEMORY.md` 2026-08-28 together with its index line; the checkpoint hook itself
+  stays in the index as `sos-deep-audit-paused-checkpoint`). The phrase — also "continue the
+  verification" / "continue the audit" — is a standing instruction. **Why it matters:** 20 finder
+  agents completed on 2026-08-09 and produced **247 findings** across 101+ files plus live production
+  forensics. That phase is the expensive, irreplaceable half, and **he stopped the run specifically
+  to save usage**, so silently re-running the finders repeats the exact cost he was avoiding. Read
+  `…\.claude\projects\F--Phoenix-Workforce-phoenix-workforce\sos-audit-2026-08-09\CHECKPOINT.md`
+  first, load the scope file (default `scope-mapping-normalization-ai.json`, 58 findings; wider is
+  `scope-mapping-normalization-calc.json`, 159; the other 88 are parked in `deferred-findings.json`,
+  **not dropped**), then run `resume-verify.js` via `Workflow({ scriptPath })`. **Never
+  `resumeFromRunId`** — it is same-session only and run `wf_2a126511-113` is gone. Write survivors
+  back as a NEW file and update `CHECKPOINT.md`; never overwrite the inputs. Treat every finding as a
+  lead rather than a fact — early verification killed ~14% (10 of the first 71). The folder is
+  read-only, carries a `DO-NOT-DELETE.md`, and is mirrored at
+  `F:\Phoenix Workforce\_audit-vault-sos-2026-08-09`; both sit OUTSIDE the work tree so `git clean`
+  and `repo:doctor --fix` cannot reach them — never move them inside the repo.
+  `continue-verifying-resumes-sos-audit`
 
 **How to build**
 
