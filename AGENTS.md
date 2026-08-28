@@ -380,9 +380,16 @@ this file already gives them)
   error to production** to check that it works.
   `app-error-events-is-user-triggered-zero-is-not-broken`
 - **The Error Monitor HIDES rows whose `environment` is NULL**, so the screen reads clean while the
-  table holds the incident. And **ad-hoc `zz_backup_…` tables are ANON-READABLE** — a backup taken
-  mid-investigation publishes whatever it copied. `error-monitor-hides-null-environment-rows` ·
-  `ad-hoc-backup-tables-are-anon-readable`
+  table holds the incident. And a `create table zz_backup_… as select` copies rows but never the
+  source table's RLS or its policies — so **measure the new table's ACL; never assume it either
+  way.** Six such tables did publish 529 rows to `anon` on 2026-08-09, which is where the flat
+  "they are anon-readable" reading came from; but re-measured **2026-08-28** this project's
+  defaults no longer grant `anon`/`authenticated` at all, and all **8** surviving `zz_backup_*`
+  tables in production carry an owner+`service_role`-only ACL with **0** granting `anon` and **0**
+  granting `authenticated`. Both stale readings cost something: "still exposed" is a false alarm,
+  "safe by default" is a leak. So measure — `select relacl, relrowsecurity from pg_class` on the
+  table you just created, then `get_advisors(type: "security")` after any bulk repair.
+  `error-monitor-hides-null-environment-rows` · `ad-hoc-backup-tables-are-anon-readable`
 - **`updated_by_hr_id` LIES about who wrote a row.** Never attribute a production write from it.
   `how-to-attribute-a-production-write`
 - **HR ids are MIXED CASE in the database, so a plain `.eq` silently under-returns.**
