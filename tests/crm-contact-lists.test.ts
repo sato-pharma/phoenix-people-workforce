@@ -21,7 +21,11 @@ import {
   isInExpectedBand,
   toDoctorListRow,
 } from "../src/lib/crm/contact-lists.ts";
-import { canAccessDoctorList, DOCTOR_LIST_ACCESS_ROLES } from "../src/lib/crm/doctor-list-access.ts";
+import {
+  canAccessDoctorList,
+  doctorListBasisForRole,
+  DOCTOR_LIST_ACCESS_ROLES,
+} from "../src/lib/crm/doctor-list-access.ts";
 
 /**
  * The rep's assigned doctor list, mirrored from the CRM WEB app.
@@ -351,26 +355,41 @@ export function runCrmContactListsTests() {
   });
   assert.equal(oddType.listType, "PM");
 
-  // ── 10. The access gate starts narrow, on purpose ─────────────────────────────────────────────
-  // This board names every doctor a named rep is responsible for, with address and phone. It is
-  // destined for district managers, but a DM must see HIS reps only and that scope does not exist
-  // yet. Shipping it wide first is the exact fault the owner caught on Doctor Coverage on
-  // 2026-08-28 — scoped data behind an unscoped picker. This assertion is what makes widening it a
-  // deliberate act rather than a passing edit.
+  // ── 10. The access gate, widened once its precondition existed ────────────────────────────────
+  // This board names every doctor a named rep is responsible for, with address and phone. It
+  // shipped Super-Admin-only because a district manager must see HIS reps only and that scope did
+  // not exist yet — shipping it wide first is the exact fault the owner caught on Doctor Coverage
+  // on 2026-08-28: scoped data behind an unscoped picker.
+  //
+  // The scope now exists (`getDoctorListScope` -> `manager-scope.ts`, applied in
+  // `getDoctorListBoard` to the REPS as well as the rows), so the list is the District Manager
+  // page's real audience. The assertion did its job: widening it took a deliberate edit here, in
+  // the same commit as the loader.
   assert.deepEqual(
     [...DOCTOR_LIST_ACCESS_ROLES],
-    ["Super Admin"],
-    "widening this list requires the reps-per-manager scope in the loader FIRST — a picker is never wider than its viewer",
+    ["Super Admin", "CEO", "National Sales Manager", "SFE Manager", "Regional Manager", "District Manager"],
+    "every widening of this list must be a deliberate edit — the picker is never wider than the viewer",
   );
   assert.equal(canAccessDoctorList({ role: "Super Admin", scope: "company" }), true);
+  assert.equal(canAccessDoctorList({ role: "District Manager", scope: "company" }), true);
   // The `system` scope shortcut is the same one every other canAccess* helper in permissions.ts
   // carries; it admits the system-administrator workspace regardless of the role label it wears.
   assert.equal(canAccessDoctorList({ role: "Employee", scope: "system" }), true);
-  for (const role of ["District Manager", "Medical Rep", "CEO", "SFE Manager", "Employee"] as const) {
+  for (const role of ["Medical Rep", "Employee", "HR Operations"] as const) {
     assert.equal(
       canAccessDoctorList({ role, scope: "company" }),
       false,
-      `${role} must not reach the doctor list until the per-manager scope exists`,
+      `${role} must not reach a board that names every doctor with address and phone`,
+    );
+  }
+  // The invariant that makes the widening safe, and the one worth pinning: admission IMPLIES a
+  // scope. A role admitted with a null basis would reach the board with nothing to filter by, and
+  // an unfiltered picker is the original fault all over again.
+  for (const role of DOCTOR_LIST_ACCESS_ROLES) {
+    const basis = doctorListBasisForRole(role);
+    assert.ok(
+      basis === "company" || basis === "team",
+      `${role} is admitted to the doctor list but resolves to no scope — it would see every rep in the company`,
     );
   }
 

@@ -69,7 +69,25 @@ function cairoStamp(iso: string): string {
 }
 
 export function DoctorListBoardView({ basePath, board }: { basePath: string; board: DoctorListBoard }) {
-  const { reps, rows, selected, syncedAt } = board;
+  const { reps, rows, scopeLabel, scopeReason, selected, syncedAt } = board;
+
+  // A viewer who reaches nobody is told so in words. An empty picker would read as "the CRM holds
+  // no lists", which is a completely different statement and the one a manager would act on.
+  if (scopeReason) {
+    return (
+      <div className="border border-slate-200">
+        <Section description="No reps are in your reach." title="Doctor List">
+          <div className="px-5 py-6">
+            <p className="text-sm font-semibold text-slate-700">{scopeReason}</p>
+            <p className="mt-1 text-phx-xs text-slate-500">
+              This board shows the doctor lists of the reps who report to you. Until the organogram places
+              reps under your seat there is nothing here — which is not the same as the CRM holding no lists.
+            </p>
+          </div>
+        </Section>
+      </div>
+    );
+  }
 
   // An empty mirror is not the same statement as "this rep has no doctors", and the difference
   // matters enough to say in words: the first means the sync has not run, the second is a finding.
@@ -108,6 +126,7 @@ export function DoctorListBoardView({ basePath, board }: { basePath: string; boa
   const description = [
     "The rep's own CRM contact list — name, specialty, grade and address, exactly as the CRM holds them",
     "live contacts only; a doctor removed from the list stops being returned",
+    `your reach: ${scopeLabel}`,
     syncedAt ? `last refreshed ${cairoStamp(syncedAt)} Cairo` : "never refreshed",
   ].join(" · ");
 

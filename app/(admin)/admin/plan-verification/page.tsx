@@ -1,0 +1,106 @@
+// TAB TWO of the District Manager page — the plans a manager verifies.
+//
+// The owner's specification: weekly and monthly plans the DM can verify or leave pending, with the
+// verification written back into the CRM. Reject and return-for-edit were explicitly dropped, and
+// "leave pending" is the absence of an action rather than an action of its own — so this board has
+// exactly one button and no way to lower a status.
+//
+// The role list and the scope live in src/lib/crm/plan-verification-access.ts. A district manager
+// sees his own reps' plans and nobody else's, and the SAME scope object is re-resolved inside the
+// verify route: a board that hides a plan while the route still accepts a POST for it is not
+// scoped, it is merely tidy.
+//
+// Period and plan ride in the URL, so every change re-runs the gate server-side.
+import { redirect } from "next/navigation";
+
+import { DistrictManagerTabs } from "@/components/crm/district-manager-tabs";
+import { PlanVerificationBoardView } from "@/components/crm/plan-verification-board";
+import { canAccess } from "@/lib/auth/permissions";
+import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { getPlanVerificationBoard } from "@/lib/crm/plan-board";
+import { canAccessPlanVerification, getPlanVerificationScope } from "@/lib/crm/plan-verification-access";
+import type { PlanKind } from "@/lib/crm/plan-verification";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+type PageProps = {
+  searchParams?: Promise<{ kind?: string; month?: string; plan?: string; year?: string }>;
+};
+
+/** The Cairo month, which is the month a manager means when he says "this month". */
+function cairoToday(): { month: number; year: number } {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    month: "2-digit",
+    timeZone: "Africa/Cairo",
+    year: "numeric",
+  }).formatToParts(new Date());
+  const month = Number(parts.find((part) => part.type === "month")?.value ?? "1");
+  const year = Number(parts.find((part) => part.type === "year")?.value ?? "1970");
+  return { month, year };
+}
+
+export default async function PlanVerificationPage({ searchParams }: PageProps) {
+  const access = await resolveAccessContextFromPage();
+  // Two gates, both server-side: the explicit role list, then the permission matrix that is the
+  // real security boundary. No access redirects rather than explaining — inside the admin shell an
+  // unreachable page should behave as if it does not exist for that role.
+  if (!canAccessPlanVerification(access)) redirect("/admin");
+  if (!(await canAccess(access, "crm_plans", "read"))) redirect("/admin");
+  // Verifying is a SEPARATE grant, asked separately and asked again by the route. The CEO account
+  // holds read and not approve, so it reads every plan and is shown no button — the same
+  // segregation of duties that keeps it observational on the rest of the irreversible workflows.
+  const canVerify = await canAccess(access, "crm_plans", "approve");
+
+  const params = await searchParams;
+  const today = cairoToday();
+  // Every parameter falls back rather than erroring. A hand-typed month of 99 lands on the current
+  // month, which is a readable board; a hand-typed plan id outside the viewer's reach resolves to
+  // nothing, exactly as if it did not exist.
+  const kind: PlanKind = params?.kind === "monthly" ? "monthly" : "weekly";
+  const parsedMonth = Number.parseInt(params?.month ?? "", 10);
+  const month = parsedMonth >= 1 && parsedMonth <= 12 ? parsedMonth : today.month;
+  const parsedYear = Number.parseInt(params?.year ?? "", 10);
+  const year = parsedYear >= 2020 && parsedYear <= today.year + 1 ? parsedYear : today.year;
+  const parsedPlan = Number.parseInt(params?.plan ?? "", 10);
+  const selectedPlanId = Number.isFinite(parsedPlan) && parsedPlan > 0 ? parsedPlan : undefined;
+
+  // The CRM mirror starts in January of the previous year; offering more years than exist would
+  // invite a manager to conclude a period is empty when it was never mirrored.
+  const years = [today.year - 1, today.year];
+
+  // Data fetch and JSX stay separated (JSX must not be constructed inside try/catch). A data
+  // failure renders a plain explanation, never a crash page.
+  let board: Awaited<ReturnType<typeof getPlanVerificationBoard>> | null = null;
+  let loadError: string | null = null;
+  try {
+    const scope = await getPlanVerificationScope(access);
+    board = await getPlanVerificationBoard({ kind, month, scope, selectedPlanId, year });
+  } catch (error) {
+    loadError = error instanceof Error ? error.message : "Plan data is unavailable.";
+  }
+
+  if (!board) {
+    return (
+      <div className="space-y-0">
+        <DistrictManagerTabs active="plan-verification" />
+        <div className="border border-rose-200 bg-rose-50 px-5 py-4">
+          <p className="text-sm font-bold text-rose-800">Plans could not load.</p>
+          <p className="mt-1 text-xs text-rose-700">{loadError}</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-0">
+      <DistrictManagerTabs active="plan-verification" />
+      <PlanVerificationBoardView
+        basePath="/admin/plan-verification"
+        board={board}
+        canVerify={canVerify}
+        years={years}
+      />
+    </div>
+  );
+}

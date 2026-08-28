@@ -470,6 +470,17 @@ export const accessRegistry = [
   // `crm_visits:update` (Super Admin + SFE Manager) and then narrowed again to Super Admin alone by
   // assertRepDoctorListsAccess, per the owner's "admin account only for now" (2026-08-21).
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/crm/rep-doctor-lists/sync", permission: { resource: "crm_visits", action: "update" }, guard: "assert-permission", csrfRequired: true }),
+  // Plan Verification. The ONLY route in Phoenix that writes into the customer's CRM: a manager
+  // signs off one rep's weekly or monthly plan and the vendor's own status moves. Audited as a
+  // mutation because it leaves our system and cannot be undone from here — there is no unverify.
+  //
+  // `crm_plans:approve` and NOT `crm_visits:update`: the latter is the Doctor Coverage visit-norms
+  // gate held only by Super Admin and SFE Manager, and reusing it would either lock out the district
+  // managers this feature is for, or hand them company-wide visit norms. The permission is then
+  // narrowed AGAIN inside the route by the viewer's org scope against the plan's own rep — a
+  // district manager holding `approve` is still only entitled to HIS reps' plans, and that is the
+  // gate a role check cannot perform.
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/crm/plan-verification/verify", permission: { resource: "crm_plans", action: "approve" }, guard: "assert-permission", csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/approvals/early-bird/:id/decision", permission: { resource: "early_birds", action: "approve" }, guard: "domain-helper", csrfRequired: true }),
   // `create` matches the other requester-side mutations, but it is NOT the real gate: cancelling is
   // restricted to the requester of that specific held order (or a Super Admin) by

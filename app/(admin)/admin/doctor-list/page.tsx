@@ -8,19 +8,21 @@
 // touched. Every other CRM board is built from visit or plan history and is blind to those — 448 of
 // them company-wide on the first sweep, 2026-08-28.
 //
-// SUPER ADMIN ONLY for now. The role list is NOT maintained here — it lives in
-// src/lib/crm/doctor-list-access.ts, which explains why it starts narrow and what has to land
-// before it widens to district managers.
+// TAB ONE of the District Manager page. The role list is NOT maintained here — it lives in
+// src/lib/crm/doctor-list-access.ts, together with the scope that decides WHOSE reps a viewer sees.
+// A district manager sees his own reps and nobody else's; the same scope filters the rows and the
+// picker, from one call, so the two cannot drift apart.
 //
 // The rep rides in the URL, so every change re-runs the gate server-side (same posture as the two
 // boards beside it).
 import { redirect } from "next/navigation";
 
+import { DistrictManagerTabs } from "@/components/crm/district-manager-tabs";
 import { DoctorListBoardView } from "@/components/crm/doctor-list-board";
 import { canAccess } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { getDoctorListBoard } from "@/lib/crm/contact-lists";
-import { canAccessDoctorList } from "@/lib/crm/doctor-list-access";
+import { canAccessDoctorList, getDoctorListScope } from "@/lib/crm/doctor-list-access";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -48,22 +50,29 @@ export default async function DoctorListPage({ searchParams }: PageProps) {
   let board: Awaited<ReturnType<typeof getDoctorListBoard>> | null = null;
   let loadError: string | null = null;
   try {
-    board = await getDoctorListBoard({ agentCrmId });
+    // The scope comes from the live AccessContext, never from the query string — a role read off a
+    // URL would let any viewer name himself Super Admin and take the company branch.
+    const scope = await getDoctorListScope(access);
+    board = await getDoctorListBoard({ agentCrmId, scope });
   } catch (error) {
     loadError = error instanceof Error ? error.message : "Doctor list data is unavailable.";
   }
 
   if (!board) {
     return (
-      <div className="border border-rose-200 bg-rose-50 px-5 py-4">
-        <p className="text-sm font-bold text-rose-800">Doctor lists could not load.</p>
-        <p className="mt-1 text-xs text-rose-700">{loadError}</p>
+      <div className="space-y-0">
+        <DistrictManagerTabs active="doctor-list" />
+        <div className="border border-rose-200 bg-rose-50 px-5 py-4">
+          <p className="text-sm font-bold text-rose-800">Doctor lists could not load.</p>
+          <p className="mt-1 text-xs text-rose-700">{loadError}</p>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-0">
+      <DistrictManagerTabs active="doctor-list" />
       <DoctorListBoardView basePath="/admin/doctor-list" board={board} />
     </div>
   );
