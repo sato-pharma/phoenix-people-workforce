@@ -15,6 +15,7 @@ import { logoutOneSignal } from "@/lib/notifications/onesignal-client";
 import { type AccessContext, type NavigationMode, type PhoenixRole } from "@/lib/auth/permissions";
 import type { PermissionLookup } from "@/components/layout/sidebar";
 import type { ViewerIdentity } from "@/lib/auth/server";
+import { usesAdminChrome } from "@/lib/navigation/active-path";
 import { useDismissOnOutsideInteraction } from "@/hooks/use-dismiss-on-outside-interaction";
 
 export function Topbar({
@@ -39,7 +40,7 @@ export function Topbar({
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const userMenuRef = useRef<HTMLDivElement>(null);
   useDismissOnOutsideInteraction(userMenuRef, userMenuOpen, setUserMenuOpen);
-  const isAdminMode = navigationMode === "admin";
+  const isAdminMode = usesAdminChrome(navigationMode);
   const profileHref = isAdminMode ? "/admin/profile" : "/employee-portals/profile";
   const handleLogout = async () => {
     // Unbind this browser from the signed-out user's OneSignal identity first — best

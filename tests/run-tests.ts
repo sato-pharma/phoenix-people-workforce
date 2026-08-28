@@ -15,6 +15,7 @@ import { runGcpMetricsTests } from "./gcp-metrics.test.ts";
 import { runWeeklySystemHealthDigestTests } from "./weekly-system-health-digest.test.ts";
 import { runMailboxComplianceMonitorTests } from "./mailbox-compliance-monitor.test.ts";
 import { runNavigationActivePathTests } from "./navigation-active-path.test.ts";
+import { runHrUrlNamespaceTests } from "./hr-url-namespace.test.ts";
 import { runNavigationPersonalLayoutTests } from "./navigation-personal-layout.test.ts";
 import { runFinanceManagerSixModuleAccessTests } from "./finance-manager-six-module-access.test.ts";
 import { runSidebarLabelWidthTests } from "./sidebar-label-width.test.ts";
@@ -1048,6 +1049,7 @@ await runTest("error monitor per-user attempts (30d default window + real-accoun
 await runTest("gcp-metrics service health reader (availability/latency/instances + {available:false} guard)", runGcpMetricsTests);
 await runTest("weekly system health digest", runWeeklySystemHealthDigestTests);
 await runTest("navigation active path", runNavigationActivePathTests);
+await runTest("HR /hr URL namespace (authored nav, unforgeable shell header, narrowing-only)", runHrUrlNamespaceTests);
 await runTest(
   "navigation personal layout (a layout rearranges the gated set and can never introduce an href)",
   runNavigationPersonalLayoutTests,

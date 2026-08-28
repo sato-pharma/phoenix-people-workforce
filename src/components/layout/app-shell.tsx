@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { redirect } from "next/navigation";
+import { headers } from "next/headers";
 
 import { adminShellBackgroundClassName } from "@/components/admin/admin-design-tokens";
 import {
@@ -21,6 +22,8 @@ import { Topbar } from "@/components/layout/topbar";
 import { SessionSecurityGuard } from "@/components/auth/session-security-guard";
 import { OneSignalProvider } from "@/components/notifications/onesignal-provider";
 import type { PermissionLookup } from "@/components/layout/sidebar";
+import { usesAdminChrome } from "@/lib/navigation/active-path";
+import { SHELL_HEADER } from "@/lib/navigation/shell-headers";
 
 export async function AppShell({
   accessContext,
@@ -56,7 +59,14 @@ export async function AppShell({
         initials: "US",
         roleLabel: access.role,
       };
-  const resolvedNavigationMode = navigationMode ?? resolveNavigationMode(access);
+  // The `/hr` namespace decides the shell, and it decides it HERE rather than in the route-group
+  // layout so that EVERY AppShell render honours it — including the handful of dual-mode pages
+  // (/payslips, /leave-management, /marketing-requests/[id]) that sit outside the (admin) group and
+  // mount their own shell. The header is written by middleware, which strips any inbound copy
+  // first, so it cannot be forged. It selects CHROME only: every page behind it still asserts its
+  // own permission server-side, so being wrong here shows the right page under the wrong nav.
+  const resolvedNavigationMode: NavigationMode =
+    (await headers()).get(SHELL_HEADER) === "hr" ? "hr" : navigationMode ?? resolveNavigationMode(access);
   const isSystemAdministratorWorkspace = access.scope === "system" || access.role === "Super Admin";
 
   const permissionLookup: PermissionLookup = {};
@@ -68,7 +78,7 @@ export async function AppShell({
     }
   }
 
-  const isAdminMode = resolvedNavigationMode === "admin";
+  const isAdminMode = usesAdminChrome(resolvedNavigationMode);
 
   return (
     <RouteTransitionProvider>

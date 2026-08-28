@@ -22,6 +22,7 @@ import { labelFontCss, SIDEBAR_LABEL_SNAPSHOT_PATH, type SidebarShell } from "@/
 import {
   adminNavigationSections,
   employeePortalNavigationSections,
+  hrNavigationSections,
   type NavigationSection,
 } from "@/config/system-navigation";
 
@@ -38,8 +39,11 @@ function labelsOf(sections: readonly NavigationSection[]): string[] {
   ].sort();
 }
 
+// The /hr namespace renders in the SAME rail component at the same type scale (usesAdminChrome
+// is true for it), so its labels are measured as "admin" rather than in a shell of their own — one
+// snapshot map, because they are genuinely the same pixels.
 const shells: { labels: string[]; shell: SidebarShell }[] = [
-  { labels: labelsOf(adminNavigationSections), shell: "admin" },
+  { labels: labelsOf([...adminNavigationSections, ...hrNavigationSections]), shell: "admin" },
   { labels: labelsOf(employeePortalNavigationSections), shell: "portal" },
 ];
 
