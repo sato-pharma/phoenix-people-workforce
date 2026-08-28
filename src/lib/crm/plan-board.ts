@@ -77,8 +77,7 @@ export type PlanEntryRow = {
    * vendor's plan payload has none, and the Reporting API has no contacts endpoint at all, so this
    * is Phoenix's own mirror of the CRM web app's contact grid.
    *
-   * Null on two different facts that must not be conflated in the UI: the doctor is not on the
-   * rep's current list, or he is and the CRM never recorded an address for him.
+   * Null on two different facts, which `onRepList` separates — see below.
    */
   address: string | null;
   ampm: string | null;
@@ -87,6 +86,20 @@ export type PlanEntryRow = {
   /** Monthly only — planned calls on this doctor for the month. */
   frequency: number | null;
   grade: string | null;
+  /**
+   * Whether this doctor is on the rep's CURRENT assigned list.
+   *
+   * Exists so a blank address can say WHICH blank it is. Measured in production 2026-08-28 across
+   * August's weekly plans: of 9,769 doctor-plan pairs, 7,687 (78.7%) carry an address, 286 are on
+   * the rep's list with no address recorded, and 1,796 are planned against a doctor who is not on
+   * his current list at all. Those are different facts — the second is a CRM data gap, the first is
+   * a rep planning outside his own assignment — and rendering both as a dash would hide the more
+   * interesting one, which is precisely the sort of thing a manager is verifying the plan FOR.
+   *
+   * False also when the contact mirror could not be read; the board then shows no address anywhere,
+   * which reads as the mirror being unavailable rather than as every rep planning off-list.
+   */
+  onRepList: boolean;
   planDate: string | null;
   region: string | null;
   speciality: string | null;
@@ -269,24 +282,30 @@ async function fetchSummaryRows(input: {
  * Never throws. An address is context beside the doctor's name, not the record itself — failing the
  * whole plan because the contact mirror was unreachable would hide the plan a manager came to sign.
  */
-async function addressesForAgent(agentCrmId: number | null): Promise<Map<number, string>> {
+async function addressesForAgent(
+  agentCrmId: number | null,
+): Promise<{ byContactId: Map<number, string>; onList: Set<number> }> {
   const byContactId = new Map<number, string>();
-  if (agentCrmId == null) return byContactId;
+  const onList = new Set<number>();
+  if (agentCrmId == null) return { byContactId, onList };
   try {
     for (const contact of await getAgentContactList(agentCrmId)) {
+      onList.add(contact.contactCrmId);
       const address = contact.address?.trim();
       if (address) byContactId.set(contact.contactCrmId, address);
     }
   } catch {
-    return new Map();
+    // Both cleared together, deliberately. A half-read list would report doctors as "not on his
+    // list" on the strength of a failed query, which is an accusation, not a gap.
+    return { byContactId: new Map(), onList: new Set() };
   }
-  return byContactId;
+  return { byContactId, onList };
 }
 
 /** The doctors on ONE plan, with the contact detail the summary query deliberately skips. */
 export async function getPlanEntries(crmPlanId: number, agentCrmId?: number | null): Promise<PlanEntryRow[]> {
   const supabase = getSupabaseAdmin();
-  const addresses = await addressesForAgent(agentCrmId ?? null);
+  const { byContactId: addresses, onList } = await addressesForAgent(agentCrmId ?? null);
   const rows: PlanEntryRow[] = [];
   let offset = 0;
   for (;;) {
@@ -321,6 +340,7 @@ export async function getPlanEntries(crmPlanId: number, agentCrmId?: number | nu
         contactName: row.contact_name?.trim() || `Contact ${row.contact_crm_id ?? "unknown"}`,
         frequency: row.plan_frequency,
         grade: row.contact_grade,
+        onRepList: row.contact_crm_id != null && onList.has(row.contact_crm_id),
         planDate: row.plan_date,
         region: row.crm_region_name,
         speciality: row.speciality,

@@ -408,6 +408,23 @@ export function PlanListTable({
   );
 }
 
+/**
+ * What the Address cell says, including when there is no address.
+ *
+ * THREE outcomes, not two, because the two empty cases are different facts and the owner's standing
+ * rule is that a screen never shows nothing where a value is missing. Measured in production
+ * 2026-08-28 across August's weekly plans: of 9,769 doctor-plan pairs, 78.7% carry an address, 2.9%
+ * are on the rep's list with none recorded, and 18.4% are planned against a doctor who is NOT on his
+ * current list — the last being exactly the sort of thing a manager verifying the plan wants to see,
+ * and it would have been a dash indistinguishable from a CRM data gap.
+ *
+ * One function so the table, the mobile card and the exported sheet can never word it differently.
+ */
+function addressText(row: PlanEntryRow): string {
+  if (row.address) return row.address;
+  return row.onRepList ? "No address recorded" : "Not on his list";
+}
+
 const ENTRY_COLS = [
   { accessor: (r: PlanEntryRow) => r.contactName, defaultDir: "asc" as const, key: "contactName", type: "string" as const },
   { accessor: (r: PlanEntryRow) => r.planDate ?? "", key: "planDate", type: "string" as const },
@@ -415,7 +432,7 @@ const ENTRY_COLS = [
   { accessor: (r: PlanEntryRow) => r.speciality, key: "speciality", type: "string" as const },
   { accessor: (r: PlanEntryRow) => r.region, key: "region", type: "string" as const },
   // Sorting by address groups a day's calls by street, which is how a manager reads a route.
-  { accessor: (r: PlanEntryRow) => r.address, key: "address", type: "string" as const },
+  { accessor: (r: PlanEntryRow) => addressText(r), key: "address", type: "string" as const },
   { accessor: (r: PlanEntryRow) => r.frequency ?? 0, key: "frequency", type: "number" as const },
 ];
 
@@ -429,12 +446,12 @@ export function PlanDoctorsTable({ kind, plan, rows }: { kind: PlanKind; plan: P
       (r) => r.region ?? "",
       // Searchable because a manager checking a day's route asks it geographically — "is he really
       // crossing the city twice on Tuesday" — and that question is asked of the address.
-      (r) => r.address ?? "",
+      (r) => addressText(r),
     ],
   });
 
   const exportRows = table.rows.map((row) => ({
-    address: row.address ?? "",
+    address: addressText(row),
     ampm: row.ampm ?? "",
     day: row.planDate ?? "",
     doctor: row.contactName,
@@ -501,11 +518,11 @@ export function PlanDoctorsTable({ kind, plan, rows }: { kind: PlanKind; plan: P
                   ? [
                       { label: "Day", value: row.planDate ?? "—" },
                       { label: "AM/PM", value: row.ampm ?? "—" },
-                      { label: "Address", value: row.address ?? "Not recorded" },
+                      { label: "Address", value: addressText(row) },
                     ]
                   : [
                       { label: "Planned calls", value: row.frequency == null ? "—" : String(row.frequency) },
-                      { label: "Address", value: row.address ?? "Not recorded" },
+                      { label: "Address", value: addressText(row) },
                     ]
               }
             />
@@ -557,7 +574,9 @@ export function PlanDoctorsTable({ kind, plan, rows }: { kind: PlanKind; plan: P
                   {/* Same treatment as tab one: the address is long, genuinely needed, and never
                       truncated or wrapped (owner's standing rule) — the table side-scrolls, which
                       is what minWidth is for. */}
-                  <td className="px-3 py-2 text-slate-600">{row.address ?? "—"}</td>
+                  <td className={`px-3 py-2 ${row.address ? "text-slate-600" : "text-slate-400"}`}>
+                    {addressText(row)}
+                  </td>
                 </tr>
               ))}
             </tbody>

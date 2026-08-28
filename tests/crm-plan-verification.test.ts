@@ -1,4 +1,4 @@
-﻿import assert from "node:assert/strict";
+import assert from "node:assert/strict";
 
 import {
   PLAN_STATUS_AREA_MANAGER_VERIFIED,
@@ -21,13 +21,13 @@ import { NEW_PLAN_ANNOUNCE_LIMIT, planPeriodLabel } from "../src/lib/crm/plan-no
 import { permissionResources } from "../src/lib/auth/permissions.ts";
 
 /**
- * Plan Verification â€” tab two of the District Manager page, and the ONLY thing Phoenix writes back
+ * Plan Verification — tab two of the District Manager page, and the ONLY thing Phoenix writes back
  * into the customer's CRM.
  *
  * ## What each block here is actually defending
  *
- * 1. NO DOWNGRADE. The vendor has three statuses â€” 0 New, 1 Supervisor Verified, 2 Area Manager
- *    Verified â€” and the vendor does NOT range-check the value it is sent (proven live against a
+ * 1. NO DOWNGRADE. The vendor has three statuses — 0 New, 1 Supervisor Verified, 2 Area Manager
+ *    Verified — and the vendor does NOT range-check the value it is sent (proven live against a
  *    phantom plan id, 2026-08-28). So the only thing standing between a district manager's click and
  *    an area manager's signature being erased is `decidePlanVerification`. It is pure for exactly
  *    that reason.
@@ -38,18 +38,18 @@ import { permissionResources } from "../src/lib/auth/permissions.ts";
  *    the month its FIRST day falls in, whole.
  *
  * 3. AN EMPTY SCOPE IS NOT AN EMPTY BOARD. PostgREST reads `.in("agent_hr_id", [])` as "no rows", and
- *    an empty plans board is indistinguishable from "my reps have filed nothing" â€” a sentence a
+ *    an empty plans board is indistinguishable from "my reps have filed nothing" — a sentence a
  *    manager would believe and act on. A seat with no reports must resolve to `none` carrying a
  *    reason, and it must not be constructible any other way.
  *
  * 4. THE PERMISSION IS REAL AT RUNTIME. `crm_plans` is a NEW resource. Two failure modes are checked
  *    here rather than trusted to the compiler: a resource missing from the runtime
  *    `permissionResources` array makes the sidebar's lookup FAIL OPEN (the documented trap on
- *    `early_birds`), and a role map is a partial Record, so a missing grant is not a type error â€” it
+ *    `early_birds`), and a role map is a partial Record, so a missing grant is not a type error — it
  *    is a district manager who cannot use the feature built for him, discovered in production.
  */
 
-// â”€â”€ Fixtures â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Fixtures ─────────────────────────────────────────────────────────────────────────────────────
 
 type RawRow = Parameters<typeof summarisePlans>[0][number];
 
@@ -74,7 +74,7 @@ function employee(hrId: string, managerHrId: string | null, employmentStatus = "
 }
 
 export function runCrmPlanVerificationTests() {
-  // â”€â”€ 1. The status vocabulary, and the refusal to lower one â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── 1. The status vocabulary, and the refusal to lower one ────────────────────────────────────
   assert.equal(planStatusLabel(PLAN_STATUS_NEW), "Pending");
   assert.equal(planStatusLabel(PLAN_STATUS_SUPERVISOR_VERIFIED), "Verified");
   assert.equal(planStatusLabel(PLAN_STATUS_AREA_MANAGER_VERIFIED), "Verified by area manager");
@@ -87,7 +87,7 @@ export function runCrmPlanVerificationTests() {
   assert.equal(
     pending.allowed && pending.nextStatus,
     PLAN_STATUS_SUPERVISOR_VERIFIED,
-    "verifying moves a plan from New to Supervisor Verified â€” never straight to Area Manager Verified",
+    "verifying moves a plan from New to Supervisor Verified — never straight to Area Manager Verified",
   );
 
   // THE ONE THAT MATTERS. The vendor accepts any integer, so this refusal is the whole guard: a
@@ -108,7 +108,7 @@ export function runCrmPlanVerificationTests() {
   assert.equal(unknown.allowed, false);
   assert.match(unknown.allowed ? "" : unknown.reason, /7/, "the refusal names the status it did not recognise");
 
-  // â”€â”€ 2. Grouping entries into plans, and the month-straddle rule â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── 2. Grouping entries into plans, and the month-straddle rule ────────────────────────────────
   const bounds = monthBounds(8, 2026);
   assert.deepEqual(bounds, { end: "2026-08-31", start: "2026-08-01" });
   assert.deepEqual(monthBounds(2, 2026), { end: "2026-02-28", start: "2026-02-01" }, "February must not overrun");
@@ -117,7 +117,7 @@ export function runCrmPlanVerificationTests() {
   const grouped = summarisePlans(
     [
       row({ contact_crm_id: 11, crm_plan_id: 900, plan_date: "2026-08-10" }),
-      // Same doctor, second day of the same plan â€” one CONTACT, two ENTRIES.
+      // Same doctor, second day of the same plan — one CONTACT, two ENTRIES.
       row({ contact_crm_id: 11, crm_plan_id: 900, plan_date: "2026-08-11" }),
       row({ contact_crm_id: 12, crm_plan_id: 900, plan_date: "2026-08-12" }),
       // No plan id: belongs to no plan, so there is nothing a manager could verify.
@@ -127,12 +127,12 @@ export function runCrmPlanVerificationTests() {
   );
   assert.equal(grouped.length, 1, "a row carrying no crm_plan_id must be dropped, not given a synthetic group");
   assert.equal(grouped[0].entries, 3, "entries counts planned CALLS");
-  assert.equal(grouped[0].contacts, 2, "contacts counts DISTINCT doctors â€” a doctor planned twice is one doctor");
+  assert.equal(grouped[0].contacts, 2, "contacts counts DISTINCT doctors — a doctor planned twice is one doctor");
   assert.equal(grouped[0].firstDate, "2026-08-10");
   assert.equal(grouped[0].lastDate, "2026-08-12");
 
-  // The straddle rule, both directions. A week running 30 Aug â†’ 5 Sep is AUGUST's, whole, and must
-  // NOT also appear in September â€” the shape that showed a manager half a plan, twice.
+  // The straddle rule, both directions. A week running 30 Aug → 5 Sep is AUGUST's, whole, and must
+  // NOT also appear in September — the shape that showed a manager half a plan, twice.
   const straddleRows = [
     row({ contact_crm_id: 21, crm_plan_id: 901, plan_date: "2026-08-30" }),
     row({ contact_crm_id: 22, crm_plan_id: 901, plan_date: "2026-09-02" }),
@@ -140,7 +140,7 @@ export function runCrmPlanVerificationTests() {
   ];
   const august = summarisePlans(straddleRows, { kind: "weekly", keepMonth: { month: 8, year: 2026 } });
   assert.equal(august.length, 1, "a week that STARTS in August belongs to August");
-  assert.equal(august[0].contacts, 3, "and it is shown WHOLE â€” all three doctors, including September's two");
+  assert.equal(august[0].contacts, 3, "and it is shown WHOLE — all three doctors, including September's two");
   assert.equal(august[0].lastDate, "2026-09-05", "the plan keeps its real span; it is not clipped to the month");
 
   const september = summarisePlans(straddleRows, { kind: "weekly", keepMonth: { month: 9, year: 2026 } });
@@ -152,7 +152,7 @@ export function runCrmPlanVerificationTests() {
     "no weekly plan in production spans more than 7 days; a margin below that clips a plan silently",
   );
 
-  // Pending sorts first â€” the board exists to clear a backlog.
+  // Pending sorts first — the board exists to clear a backlog.
   const sorted = summarisePlans(
     [
       row({ crm_plan_id: 910, plan_date: "2026-08-20", plan_status: PLAN_STATUS_SUPERVISOR_VERIFIED }),
@@ -180,7 +180,7 @@ export function runCrmPlanVerificationTests() {
   assert.equal(monthly[0].month, 8);
   assert.equal(monthly[0].year, 2026);
 
-  // â”€â”€ 3. Scope: an empty reach is a sentence, never an empty board â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── 3. Scope: an empty reach is a sentence, never an empty board ───────────────────────────────
   const directory = [
     employee("DM-0001", "RM-0001"),
     employee("REP-0001", "DM-0001"),
@@ -192,18 +192,18 @@ export function runCrmPlanVerificationTests() {
     employee("REP-0004", "DM-0002"),
   ];
 
-  const dmScope = resolveTeamScope({ employees: directory, label: "District Manager Â· own team", viewerHrId: "DM-0001" });
+  const dmScope = resolveTeamScope({ employees: directory, label: "District Manager · own team", viewerHrId: "DM-0001" });
   assert.equal(dmScope.kind, "agents");
   const dmAgents = dmScope.kind === "agents" ? [...dmScope.agentHrIds].sort() : [];
   assert.ok(dmAgents.includes("REP-0001") && dmAgents.includes("REP-0002"), "his own reps resolve");
   assert.ok(!dmAgents.includes("REP-0003"), "a resigned rep is filtered out of the RESULT");
   assert.ok(
     !dmAgents.includes("REP-0004"),
-    "another district's rep must never resolve â€” this is the fault the owner caught on Doctor Coverage",
+    "another district's rep must never resolve — this is the fault the owner caught on Doctor Coverage",
   );
 
   // A seat with nobody under it. THE case an empty `.in()` would render as a quiet CRM.
-  const barren = resolveTeamScope({ employees: directory, label: "District Manager Â· own team", viewerHrId: "REP-0001" });
+  const barren = resolveTeamScope({ employees: directory, label: "District Manager · own team", viewerHrId: "REP-0001" });
   assert.equal(barren.kind, "none", "a seat with no reports must resolve to `none`, never to an empty allow-list");
   assert.match(barren.kind === "none" ? barren.reason : "", /org tree/i, "and it must say WHY in words");
 
@@ -221,11 +221,11 @@ export function runCrmPlanVerificationTests() {
   assert.equal(
     scopeAllowsAgent({ kind: "company", label: "all" }, null),
     true,
-    "but a company-scoped viewer DOES see it â€” an unattributed plan is a finding, not a row to hide",
+    "but a company-scoped viewer DOES see it — an unattributed plan is a finding, not a row to hide",
   );
   assert.equal(scopeAllowsAgent({ kind: "none", reason: "x" }, "REP-0001"), false);
 
-  // â”€â”€ 4. Role policy: the write list is SHORTER than the read list â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── 4. Role policy: the write list is SHORTER than the read list ───────────────────────────────
   assert.equal(planVerificationBasisForRole("District Manager"), "team", "the seat this feature was built for");
   assert.equal(planVerificationBasisForRole("Regional Manager"), "team");
   assert.equal(planVerificationBasisForRole("Super Admin"), "company");
@@ -237,7 +237,7 @@ export function runCrmPlanVerificationTests() {
   assert.equal(
     planVerificationBasisForRole("SFE Manager"),
     null,
-    "SFE reads coverage company-wide but supervises no named rep â€” reading a rep's numbers and signing " +
+    "SFE reads coverage company-wide but supervises no named rep — reading a rep's numbers and signing " +
       "his plan into the CRM are not the same authority",
   );
   assert.ok(PLAN_VERIFICATION_ROLES.includes("District Manager"));
@@ -252,20 +252,20 @@ export function runCrmPlanVerificationTests() {
   assert.equal(
     planVerificationBasisForRole("National Sales Manager"),
     null,
-    "NSM reaches a product LINE, not a management subtree â€” a line is not supervision over a named rep",
+    "NSM reaches a product LINE, not a management subtree — a line is not supervision over a named rep",
   );
   assert.equal(doctorListBasisForRole("National Sales Manager"), "company");
 
-  // â”€â”€ 5. `crm_plans` is real at RUNTIME, not merely in the type union â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── 5. `crm_plans` is real at RUNTIME, not merely in the type union ────────────────────────────
   // The documented fail-open trap: the sidebar's permission lookup SUCCEEDS on a key it has never
   // seen, so a resource missing from this runtime array offers the page to every role in the company.
   assert.ok(
     permissionResources.includes("crm_plans"),
-    "crm_plans MUST be in the runtime permissionResources array â€” the sidebar lookup fails OPEN on an " +
+    "crm_plans MUST be in the runtime permissionResources array — the sidebar lookup fails OPEN on an " +
       "unseen key, which would offer a CRM-writing button to every role",
   );
 
-  // â”€â”€ 6. Monthly plans are a different shape, and the guard that keeps them one â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── 6. Monthly plans are a different shape, and the guard that keeps them one ──────────────────
   assert.doesNotThrow(() => assertPlanMonth(8, 2026));
   assert.throws(() => assertPlanMonth(0, 2026), /month/i, "month 0 is not a month");
   assert.throws(() => assertPlanMonth(13, 2026), /month/i);
@@ -297,21 +297,21 @@ export function runCrmPlanVerificationTests() {
   assert.equal(monthlyRow.plan_kind, "monthly");
   assert.equal(monthlyRow.plan_frequency, 4, "a monthly plan carries a frequency instead of repeating the row");
   // EXPLICIT nulls, not omitted keys. A plan that changes kind must not keep a stale date on the
-  // mirrored row â€” an omitted column in an upsert leaves the old value in place.
+  // mirrored row — an omitted column in an upsert leaves the old value in place.
   assert.equal(monthlyRow.plan_date, null, "a monthly plan has no date, and the column must be actively cleared");
   assert.equal(monthlyRow.start_am, null);
   assert.equal(monthlyRow.start_pm, null);
 
-  // â”€â”€ 7. The bulk-email guard â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── 7. The bulk-email guard ───────────────────────────────────────────────────────────────────
   // Production holds 204 pending weekly plans going back to January. A naive "announce everything
-  // pending" first run would have emailed all of them at once â€” a bulk-mail incident, against the
+  // pending" first run would have emailed all of them at once — a bulk-mail incident, against the
   // owner's standing rule that bulk or test email is never fired.
   assert.ok(
     NEW_PLAN_ANNOUNCE_LIMIT > 0 && NEW_PLAN_ANNOUNCE_LIMIT <= 50,
     "the announce limit exists to stop a first sync emailing a historical backlog; it must be a real ceiling",
   );
 
-  // A period a human can read â€” never a bare plan id, which is what the rep would otherwise be
+  // A period a human can read — never a bare plan id, which is what the rep would otherwise be
   // emailed about. A straddling week names BOTH months, which is the whole point of the label.
   assert.equal(
     planPeriodLabel({ firstDate: "2026-08-30", kind: "weekly", lastDate: "2026-09-05" }),
