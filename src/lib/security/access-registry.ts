@@ -269,6 +269,9 @@ export const accessRegistry = [
   // Super-Admin-only, same direct-role-check pattern as the export route above. Individual,
   // human-reviewed decisions only; never a bulk write.
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/vacation/company-report/approve", permission: null, guard: "domain-helper", csrfRequired: true }),
+  // Super Admin + SFE Manager only, via assertCompanyActivityReportReadAccess (direct role
+  // check) — same pattern as the vacation company-report export above, not the permission matrix.
+  sessionApi({ audit: { classification: "export", required: true }, methods: readOnly, pattern: "/api/company-activity-report/export", permission: null, guard: "domain-helper" }),
   sessionApi({ audit: { classification: "export", required: true }, methods: readOnly, pattern: "/api/admin/monitoring/events-csv", permission: { resource: "admin", action: "export" } }),
   sessionApi({ audit: { classification: "export", required: true }, methods: ["GET", "POST"], pattern: "/api/admin/data-backup", permission: null, guard: "domain-helper" }),
   sessionApi({ methods: ["GET"], pattern: "/api/admin/data-backup/status/:jobId", permission: null, guard: "domain-helper" }),

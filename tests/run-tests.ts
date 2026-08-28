@@ -291,6 +291,7 @@ import { runFieldWorkforceComplianceLiveSnapshotsTests } from "./field-workforce
 import { runFieldWorkforceComplianceScorecardsTests } from "./field-workforce-compliance-scorecards.test.ts";
 import { runCompanyVacationReportTests } from "./company-vacation-report.test.ts";
 import { runSfeVacationSourceReportTests } from "./sfe-vacation-source-report.test.ts";
+import { runCompanyActivityReportTests } from "./company-activity-report.test.ts";
 import { runNsmTeamCalendarTests } from "./nsm-team-calendar.test.ts";
 import { runCompanyHolidaysTests } from "./company-holidays.test.ts";
 import { runLeaveSourceOfTruthTests } from "./leave-source-of-truth.test.ts";
@@ -1388,6 +1389,7 @@ await runTest("field workforce compliance live snapshots", runFieldWorkforceComp
 await runTest("field workforce compliance scorecards", runFieldWorkforceComplianceScorecardsTests);
 await runTest("company vacation report (CRM signal classification)", runCompanyVacationReportTests);
 await runTest("sfe manager vacation source report (read-only + Phoenix vs CRM)", runSfeVacationSourceReportTests);
+await runTest("company activity report (reconciliation, summary, filters, range, role gate)", runCompanyActivityReportTests);
 await runTest("nsm team calendar (manager grouping)", runNsmTeamCalendarTests);
 await runTest("company holidays", runCompanyHolidaysTests);
 await runTest("deductions governance foundation", runDeductionsGovernanceFoundationTests);
