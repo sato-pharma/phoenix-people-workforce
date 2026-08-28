@@ -651,6 +651,7 @@ import { runSosBackfillEmptyBrickSentinelTests } from "./sos-backfill-empty-bric
 import { runSosSeatAttributionPeriodTests } from "./sos-seat-attribution-period.test.ts";
 import { runMonthlyClosingLockTests } from "./monthly-closing-lock.test.ts";
 import { runClosingPeriodGateTests } from "./closing-period-gate.test.ts";
+import { runEmployeeTemplateTeamDropdownTests } from "./employee-template-team-dropdown.test.ts";
 import { runSosMappingIntegrityTests } from "./sos-mapping-integrity.test.ts";
 import { runSosIngestionNoSilentZeroTests } from "./sos-ingestion-no-silent-zero.test.ts";
 import { runAnalyticsAreaScopeV2Tests } from "./analytics-area-scope-v2.test.ts";
@@ -1509,6 +1510,7 @@ await runTest("monthly closing comparison", runMonthlyClosingComparisonTests);
 await runTest("monthly closing export scope (filter reaches every sheet)", runMonthlyClosingExportScopeTests);
 await runTest("portal closing line choice (a requested line is honoured or refused, never swapped)", runPortalClosingLineChoiceTests);
 await runTest("closing organogram regions (areas follow the org chart, per line)", runClosingOrganogramRegionsTests);
+await runTest("employee template Area->Team dropdown (builder and Excel resolve the same range)", runEmployeeTemplateTeamDropdownTests);
 await runTest("direct channel", runDirectChannelTests);
 await runTest("direct orders land on their own area", runDirectOrdersLandOnTheirOwnAreaTests);
 await runTest("office pivot", runOfficePivotTests);
