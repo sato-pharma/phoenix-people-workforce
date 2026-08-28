@@ -151,6 +151,80 @@ been surfaced). The owner still sees every completed conversation on Telegram th
 `whatsapp-conversation-mirror.ts`, so the answers are not invisible — but anyone looking for them in
 the ATS will not find them. Surfacing them is a separate change.
 
+### The bracket under each region and area row (owner's instruction, 2026-08-28)
+
+"Delta (1)" is an **internal sales name**. Nobody outside the company knows which governorates it
+covers, and an applicant who guesses wrong is filed against a district that will never call them.
+The owner asked for a bracket under each row naming the places inside: *"just add a bracket ... so
+the one who is applying, he knows, and don't choose something wrong."* Arabic is expected — *"even
+if in Arabic"* — because that is how bricks are named in this database and how an applicant
+recognises their own town.
+
+**The bracket is a hint, never a choice.** The row the applicant taps is still the region or the
+area, and `preferred_region_code` / `preferred_area_name` still store exactly what they tapped. The
+bracket rides on the WhatsApp row's *description* line, which is display-only. He was explicit about
+this: *"you will not change the menu ... you will just add a bracket ... but you will choose the
+area, not the brick."*
+
+```
+Delta (3)      (القليوبية · الشرقية · الإسماعيلية · السويس)
+Behira 2       (كفر الدوار · أبو حمص · المحموديه)
+```
+
+Data lives in `src/lib/recruitment/inbound/whatsapp-classify-place-hints.ts`; the parentheses are
+added by `rowFor` in `whatsapp-classify-menus.ts`, so the data file stays a clean list of names and
+one place decides presentation. Three is a **cap, not a quota** — an area with two bricks prints two,
+and Delta (3) prints all four of its governorates because four is everything it has and they fit.
+A hint that omits a real governorate is worse than no hint: it actively pushes that governorate's
+applicants onto the wrong row.
+
+**A region hint follows the RECRUITMENT map, not the sales map.** The two disagree on purpose since
+[#2509](https://github.com/Gawish-1997/phoenix-people-workforce/pull/2509), which moved Qalyubia,
+Sharqia, Suez and Ismailia onto Delta (3) in `governorateRegions` while deliberately leaving
+`au_v_canonical_areas` alone until the August closing is published. The hints follow
+`governorateRegions` because that is the vocabulary the Region filter on the CV database and the
+recruitment pool search on — it decides whether a candidate is ever found. A registered assertion
+pins all eight moves, so the next such change cannot land in only one of the two files.
+
+**Residue this leaves, worth knowing before it surprises someone.** Until the sales half lands, the
+AREA list behind Delta (1) still offers *Qalubeya*, and Delta (2) still offers *Sharkia 1/2* — so an
+applicant who ignores the bracket and taps Delta (1) can still file themselves as Qalyubia-under-D1.
+The bracket is what steers them to Delta (3), where the typed-area escape takes their answer. This
+resolves itself when `au.line_area_map` / `au.canonical_areas` move; nothing needs doing here first.
+One disagreement is left standing deliberately: **Matrouh** is Others in the recruitment map, but its
+bricks sit inside AREA *Alex West*, so Alex-BHR is the only row whose area list can reach that job —
+AB therefore keeps مطروح.
+
+**Regenerating both sets.** Measured against production 2026-08-28: Source of Sales carries a brick
+on 316,406 of 317,801 rows (99.6%, 615 distinct bricks). Everything attributes to **today's**
+geography — the brick's current area, never the `area_code` frozen on the import row.
+
+```sql
+-- AREA hints — the 3 highest-value BRICKS in each area.
+select b.area_code, b.brick_name, sum(r.value) as total_value
+from source_of_sales_import_rows r
+join source_of_sales_bricks b on b.brick_id = r.brick_id
+group by b.area_code, b.brick_name
+order by b.area_code, total_value desc;
+
+-- REGION hints — the areas of each region by value, named as the GOVERNORATE a person would say.
+-- Rank AREAS, never bricks: ranked by brick, Alex-BHR's top three come out Damanhour / Marsa
+-- Matrouh / Kafr El-Dawwar with ALEXANDRIA ABSENT, because the city is split across many small
+-- bricks and each loses to a single undivided brick elsewhere.
+select v.code_region_code, v.area_code, v.area_name, sum(r.value) as total_value
+from source_of_sales_import_rows r
+join source_of_sales_bricks b on b.brick_id = r.brick_id
+join au_v_canonical_areas v on v.area_code = b.area_code
+where v.is_active
+group by v.code_region_code, v.area_code, v.area_name
+order by v.code_region_code, total_value desc;
+```
+
+Then map each region's top areas onto governorate names by hand — that step is judgement, not SQL,
+because several areas are districts of one governorate (Cairo East 1/2 are both شرق القاهرة) and two
+areas can share one (Sharkia 1 + Sharkia 2 are both الشرقية, and their values must be added before
+ranking).
+
 ### Coexistence — what changes when the handset is linked (2026-08-23)
 
 The owner completed the Meta **Coexistence** QR scan for `01159888247`, which puts the advertised
