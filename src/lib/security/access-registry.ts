@@ -569,6 +569,17 @@ export const accessRegistry = [
   // (assertPharmacyMasterAccess); Super Admin + CEO only.
   sessionApi({ audit: { classification: "access-read", required: false }, methods: ["GET"], pattern: "/api/pharmacy-master/candidates", permission: null, guard: "domain-helper" }),
   sessionApi({ methods: allMethods, pattern: "/api/messages/**", permission: { resource: "communication", action: "read" }, guard: "domain-helper", csrfRequired: true }),
+  // Personal sidebar arrangement. `permission: null` is the honest declaration rather than a gap:
+  // there is no resource to gate on, because the route can only ever read or write the CALLER'S
+  // OWN row. The hr_id comes from the resolved session and is never accepted from the request, so
+  // there is no input by which one person could reach another's layout. Being signed in is the
+  // whole requirement, which is why the guard rejects on access.source rather than a role.
+  //
+  // Nothing stored here grants access to anything: a layout only reorders links the viewer was
+  // already permitted to see (applyPersonalLayout cannot emit an href absent from its gated input),
+  // so the worst a bad write can do is give that one person an inconvenient menu.
+  sessionApi({ methods: ["GET"], pattern: "/api/navigation/personal-layout", permission: null, guard: "domain-helper" }),
+  sessionApi({ audit: { classification: "mutation", required: false }, methods: ["PUT", "DELETE"], pattern: "/api/navigation/personal-layout", permission: null, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ methods: allMethods, pattern: "/api/notifications/in-app", permission: { resource: "employee_profile", action: "read" }, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ methods: ["GET"], pattern: "/api/notifications/settings", permission: { resource: "employee_profile", action: "read" } }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["PATCH"], pattern: "/api/notifications/settings", permission: { resource: "employee_profile", action: "update" } }),

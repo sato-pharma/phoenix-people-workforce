@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { resolveAccessContext } from "@/lib/auth/server";
 import { toApiError } from "@/lib/http/api-errors";
 import { isPersonalNavigationLayout } from "@/lib/navigation/personal-layout";
+import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import {
   clearPersonalLayout,
   loadPersonalLayout,
@@ -59,6 +60,8 @@ export async function GET(request: Request) {
 
 export async function PUT(request: Request) {
   try {
+    const csrf = assertSameOriginMutation(request);
+    if (csrf) return csrf;
     const access = await resolveAccessContext(request);
     if (access.source === "guest") {
       return NextResponse.json({ error: "unauthorized", message: "Sign in first.", success: false }, { status: 401 });
@@ -90,6 +93,8 @@ export async function PUT(request: Request) {
 
 export async function DELETE(request: Request) {
   try {
+    const csrf = assertSameOriginMutation(request);
+    if (csrf) return csrf;
     const access = await resolveAccessContext(request);
     if (access.source === "guest") {
       return NextResponse.json({ error: "unauthorized", message: "Sign in first.", success: false }, { status: 401 });

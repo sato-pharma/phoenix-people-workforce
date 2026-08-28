@@ -1,4 +1,4 @@
-import type { NavigationSection, NavigationSectionItem } from "@/config/system-navigation";
+import type { NavigationSectionItem } from "@/config/system-navigation";
 
 /**
  * Personal navigation layout — the owner rearranging HIS OWN sidebar.
@@ -61,12 +61,30 @@ export type PersonalNavigationLayout = {
   hidden: readonly string[];
 };
 
-export type AppliedNavigation = {
-  /** Items promoted to the utility strip, in the owner's order. */
-  strip: readonly NavigationSectionItem[];
-  /** The sidebar, after rearrangement. */
-  sections: readonly NavigationSection[];
+/**
+ * The rearrangement below is generic over the item type, and deliberately so. The live sidebar
+ * applies it to NavigationSectionItem (icons and all); the editor applies it to a plain
+ * {href, label} shape, because a React icon component cannot cross from a server component to a
+ * client one. Sharing ONE implementation is what stops the editor's preview and the real sidebar
+ * disagreeing about where a page ends up — two copies of this reconciliation would drift, and the
+ * symptom would be an editor that lies about the result.
+ */
+export type LayoutItemLike = { href: string };
+export type LayoutSectionLike<TItem extends LayoutItemLike> = {
+  id: string;
+  label: string;
+  items: readonly TItem[];
 };
+
+export type AppliedNavigationOf<TItem extends LayoutItemLike> = {
+  /** Items promoted to the utility strip, in the owner's order. */
+  strip: readonly TItem[];
+  /** The sidebar, after rearrangement. */
+  sections: readonly LayoutSectionLike<TItem>[];
+};
+
+/** The live-sidebar case: the same result, over real navigation items. */
+export type AppliedNavigation = AppliedNavigationOf<NavigationSectionItem>;
 
 export function isPersonalNavigationLayout(value: unknown): value is PersonalNavigationLayout {
   if (!value || typeof value !== "object") return false;
@@ -87,7 +105,9 @@ export function isPersonalNavigationLayout(value: unknown): value is PersonalNav
 }
 
 /** The layout the owner sees before he has saved one — i.e. exactly what the code defines today. */
-export function defaultLayoutFrom(sections: readonly NavigationSection[]): PersonalNavigationLayout {
+export function defaultLayoutFrom<TItem extends LayoutItemLike>(
+  sections: readonly LayoutSectionLike<TItem>[],
+): PersonalNavigationLayout {
   return {
     version: PERSONAL_LAYOUT_VERSION,
     strip: [],
@@ -107,17 +127,17 @@ export function defaultLayoutFrom(sections: readonly NavigationSection[]): Perso
  * Passing raw config here would still not grant anything (every emitted href comes from the
  * input), but the result would show pages the viewer cannot open.
  */
-export function applyPersonalLayout(
-  gatedSections: readonly NavigationSection[],
+export function applyPersonalLayout<TItem extends LayoutItemLike>(
+  gatedSections: readonly LayoutSectionLike<TItem>[],
   layout: PersonalNavigationLayout | null,
-): AppliedNavigation {
+): AppliedNavigationOf<TItem> {
   if (!layout) {
     return { strip: [], sections: gatedSections };
   }
 
   // Index the gated set by href. This map is the ONLY source of items below — which is what makes
   // it impossible for a layout to conjure a page the viewer was not already allowed to see.
-  const byHref = new Map<string, NavigationSectionItem>();
+  const byHref = new Map<string, TItem>();
   const sectionOfHref = new Map<string, string>();
   for (const section of gatedSections) {
     for (const item of section.items) {
@@ -133,7 +153,7 @@ export function applyPersonalLayout(
   // names the same page in two sections.
   const placed = new Set<string>();
 
-  const take = (href: string): NavigationSectionItem | null => {
+  const take = (href: string): TItem | null => {
     if (placed.has(href) || hidden.has(href)) return null;
     const item = byHref.get(href);
     if (!item) return null; // gone from the nav, or not permitted for this viewer
@@ -141,18 +161,18 @@ export function applyPersonalLayout(
     return item;
   };
 
-  const strip = layout.strip.map(take).filter((item): item is NavigationSectionItem => item !== null);
+  const strip = layout.strip.map(take).filter((item): item is TItem => item !== null);
 
   const laidOut = layout.sections.map((section) => ({
     id: section.id,
     label: section.label,
-    items: section.items.map(take).filter((item): item is NavigationSectionItem => item !== null),
+    items: section.items.map(take).filter((item): item is TItem => item !== null),
   }));
 
   // Anything gated-in that the layout never mentioned: append to its original section, or to a
   // section carrying its original id if the layout dropped that section entirely. See the header
   // comment — a new page must never be silently invisible.
-  const unplaced: NavigationSectionItem[] = [];
+  const unplaced: TItem[] = [];
   for (const section of gatedSections) {
     for (const item of section.items) {
       if (placed.has(item.href) || hidden.has(item.href)) continue;
