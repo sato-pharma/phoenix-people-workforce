@@ -148,21 +148,33 @@ export function runOutstationNotificationsTests() {
   // for a human, so each of these must raise the alert ITSELF — the notification used to ride along
   // inside approveOutstationRequestForPayroll, and dropping the auto-approval without moving the
   // mail would have silently stopped every submission email in the system.
-  const waitingSubmitHooks = [
-    "async function submitMedicalRepSimpleExpenseRequest",
-    "async function createManagerExpenseAsAdmin",
-  ];
-  for (const hook of waitingSubmitHooks) {
-    const slice = functionSlice(service, hook);
+  //
+  // NARROWED 2026-08-28: createManagerExpenseAsAdmin moved out of the unconditional list when
+  // the owner extended the National Sales Manager no-hold rule to the admin's manual-entry
+  // form. It still alerts, and still alerts as WAITING for every other role — the flag is now
+  // computed rather than hard-coded, which is exactly what the assertion below checks.
+  const waitingSubmitHooks = ["async function submitMedicalRepSimpleExpenseRequest"];
+  const conditionalSubmitHooks = ["async function createManagerExpenseAsAdmin"];
+  for (const hook of [...waitingSubmitHooks, ...conditionalSubmitHooks]) {
     assert.doesNotMatch(
-      slice,
+      functionSlice(service, hook),
       /approveOutstationRequestForPayroll\(/,
       `${hook} must NOT approve its own submission — an approval belongs to a person, in the queue`,
     );
+  }
+  for (const hook of waitingSubmitHooks) {
     assert.match(
-      slice,
+      functionSlice(service, hook),
       /notifyOutstationSubmitted\([\s\S]{0,120}heldForReview:\s*true/,
       `${hook} must raise the awaiting-approval alert itself, now that no approval fires it`,
+    );
+  }
+  for (const hook of conditionalSubmitHooks) {
+    assert.match(
+      functionSlice(service, hook),
+      /notifyOutstationSubmitted\([\s\S]{0,120}heldForReview:\s*!noHoldRole/,
+      `${hook} must still alert, and must tell the truth about whether the claim is waiting — ` +
+        "the exempt role is accepted on the spot, everyone else is queued",
     );
   }
 
