@@ -42,6 +42,38 @@ export function layoutKeyFor(hrId: string | null | undefined): string | null {
   return key.length > 0 ? key : null;
 }
 
+/**
+ * The identity a layout is stored under: hr_id when there is one, otherwise the login id.
+ *
+ * WHY THE FALLBACK EXISTS — it is not a nicety. Production has exactly one account with a NULL
+ * hr_id, and it is an ACTIVE SUPER ADMIN: `admin-HR`. `app_auth_users.hr_id` carries a foreign key
+ * to `employees`, production has no employees row for that login, and the column is deliberately
+ * left NULL because satisfying the FK would mean injecting a synthetic person into a live payroll
+ * platform. `resolveAccessContext` passes that column straight through (`hrId: row.hr_id`) with no
+ * fallback -- unlike `mapAuthUserRow`, which does `row.hr_id?.trim() || row.login_id.trim()`. So
+ * before this function existed, that account's every save died on
+ * "Cannot save a navigation layout without an hr_id": a 500 on the one screen whose entire purpose
+ * is saving, from the one account most likely to be arranging the nav.
+ *
+ * WHY IT IS SAFE HERE AND NOWHERE ELSE. This key names a row in `nav_personal_layout` and nothing
+ * else. That table has no foreign key to `employees` (checked: primary key on hr_id, a lowercase
+ * CHECK, two jsonb shape CHECKs -- nothing referential), and a layout grants no access to anything,
+ * so the worst a wrong key can do is show one person the default menu. Do NOT reuse this for
+ * payroll, attribution, permissions, or anything that identifies a PERSON -- there, hr_id is the
+ * only correct key and a login-id fallback would silently attribute work to a row that is not an
+ * employee.
+ *
+ * Read and write must derive the key identically, or a layout saves under one key and renders from
+ * another -- which looks exactly like "saving does nothing". Every call site therefore goes through
+ * this one function.
+ */
+export function layoutOwnerKey(access: {
+  hrId?: string | null;
+  loginId?: string | null;
+}): string | null {
+  return layoutKeyFor(access.hrId) ?? layoutKeyFor(access.loginId);
+}
+
 /** A section in a saved layout. `label` is the owner's own name for it; `id` ties back to the
  *  code-defined section so a renamed section still matches its default when the layout is reset. */
 export type PersonalLayoutSection = {

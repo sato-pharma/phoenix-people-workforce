@@ -7,6 +7,7 @@ import {
   defaultLayoutFrom,
   isPersonalNavigationLayout,
   layoutKeyFor,
+  layoutOwnerKey,
   PERSONAL_LAYOUT_VERSION,
   resolveRowSet,
   type PersonalNavigationLayout,
@@ -399,6 +400,23 @@ export function runNavigationPersonalLayoutTests() {
     assert.equal(layoutKeyFor(null), null, "a null identity has no key");
     assert.equal(layoutKeyFor(undefined), null, "an absent identity has no key");
     assert.equal(layoutKeyFor("   "), null, "a blank identity has no key");
+
+    // ── THE REGRESSION ────────────────────────────────────────────────────────────────────────
+    // Production has exactly ONE account with a NULL hr_id, and it is an ACTIVE SUPER ADMIN:
+    // `admin-HR`. app_auth_users.hr_id carries an FK to employees, production has no employees row
+    // for that login, and the column is deliberately NULL because satisfying the FK would mean
+    // inventing a person on a live payroll platform. resolveAccessContext passes the column through
+    // raw (`hrId: row.hr_id`), so keying storage on access.hrId alone made every save from that
+    // account return 500 "Cannot save a navigation layout without an hr_id" -- measured against
+    // production 2026-08-28, a hard failure on the one screen whose entire purpose is saving.
+    assert.equal(layoutOwnerKey({ hrId: "SA-0001", loginId: "someone-else" }), "sa-0001", "hr_id wins whenever there is one");
+    assert.equal(
+      layoutOwnerKey({ hrId: null, loginId: "admin-HR" }),
+      "admin-hr",
+      "an account with NO hr_id still gets a key - it falls back to the login id, lowercased",
+    );
+    assert.equal(layoutOwnerKey({ hrId: "   ", loginId: "admin-HR" }), "admin-hr", "a blank hr_id falls back too, not only a null one");
+    assert.equal(layoutOwnerKey({ hrId: null, loginId: null }), null, "with neither identity there is still no key");
   }
 
   // ── THE IDENTITY RULE ───────────────────────────────────────────────────────────────────────
@@ -423,10 +441,38 @@ export function runNavigationPersonalLayoutTests() {
       "the layout route must never take hr_id from the request body",
     );
     // Every store call must be keyed on the resolved session, and on nothing else.
-    const storeCalls = [...route.matchAll(/(?:loadPersonalLayout|savePersonalLayout|clearPersonalLayout)\(([^,)]*)/g)];
+    const storeCalls = [
+      ...route.matchAll(
+        /(?:loadPersonalLayout|savePersonalLayout|clearPersonalLayout)\(\s*([A-Za-z0-9_.]+\([^()]*\)|[A-Za-z0-9_.]+)/g,
+      ),
+    ];
     assert.equal(storeCalls.length, 3, "GET, PUT and DELETE each call the store exactly once");
     for (const call of storeCalls) {
-      assert.equal(call[1].trim(), "access.hrId", `store calls must key on access.hrId, found: ${call[1].trim()}`);
+      assert.equal(
+        call[1].trim(),
+        "layoutOwnerKey(access)",
+        `store calls must key on layoutOwnerKey(access), found: ${call[1].trim()}`,
+      );
+    }
+    // The identity rule this pin exists for is unchanged: the key is derived from the RESOLVED
+    // SESSION, never from anything the caller sent. The moment a request can name whose layout to
+    // read or write, this stops being "my own account".
+    assert.ok(
+      !/(?:load|save|clear)PersonalLayout\([^)]*\b(?:request|body|searchParams|params|url)\b/.test(route),
+      "the storage key must come from the resolved session, never from the request",
+    );
+    // Read and write must derive the key the SAME way. A layout saved under one key and rendered
+    // from another is indistinguishable from "saving does nothing" - which is exactly how this bug
+    // presented.
+    for (const [path, what] of [
+      ["src/components/layout/app-shell.tsx", "the shell that renders the sidebar"],
+      ["app/(admin)/admin/sidebar-layout/page.tsx", "the editor that loads the saved arrangement"],
+    ] as const) {
+      const source = readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
+      assert.ok(
+        /loadPersonalLayout\(layoutOwnerKey\(access\)\)/.test(source),
+        `${what} must read under layoutOwnerKey(access), or it renders a layout the route never wrote`,
+      );
     }
     // An unauthenticated caller resolves to role "Employee", not null, so a !access.role check is
     // dead code. The guest test has to be on `source`.

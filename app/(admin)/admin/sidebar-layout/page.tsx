@@ -7,6 +7,7 @@ import { getNavigationSections } from "@/config/system-navigation";
 import { getPermissionMatrix, permissionActions, permissionResources } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { getSections, type PermissionLookup } from "@/lib/navigation/active-path";
+import { layoutOwnerKey } from "@/lib/navigation/personal-layout";
 import { loadPersonalLayout } from "@/lib/navigation/personal-layout-store";
 
 export const dynamic = "force-dynamic";
@@ -51,7 +52,7 @@ export default async function SidebarLayoutPage() {
     items: section.items.map((item) => ({ href: item.href, label: item.label })),
   }));
 
-  const savedLayout = await loadPersonalLayout(access.hrId);
+  const savedLayout = await loadPersonalLayout(layoutOwnerKey(access));
   const pageCount = catalogue.reduce((total, section) => total + section.items.length, 0);
 
   return (
