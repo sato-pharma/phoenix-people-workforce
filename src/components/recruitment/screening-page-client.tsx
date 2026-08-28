@@ -22,17 +22,25 @@ import type { CandidateViewMap } from "@/lib/recruitment/candidate-views";
 // a value import would drag it into this "use client" bundle and fail the build outright.
 import type { HiringManagerOption } from "@/lib/recruitment/hiring-manager-notify";
 import type { Candidate } from "@/lib/recruitment/types";
+// Type-only for the same reason: vacancy-options reads the service-role client.
+import type { VacancyOption } from "@/lib/recruitment/vacancy-options";
 
 export function ScreeningPageClient({
   candidates,
   hiringManagers,
   initialViews,
+  openVacancies,
   poolHref,
+  positionSuggestions,
 }: {
   candidates: Candidate[];
   /** The managers a CV can be pushed to without leaving the queue. Loaded server-side by the page. */
   hiringManagers: HiringManagerOption[];
   initialViews: CandidateViewMap;
+  /** The open seats a CV can be sent FOR. Same server load, same gate as the managers. */
+  openVacancies: VacancyOption[];
+  /** Titles and areas already used on a send, offered beside the free-typed fields. */
+  positionSuggestions: { jobTitles: string[]; areas: string[] };
   /**
    * Where "back to the pool" goes. Passed in rather than hard-coded because this page exists in
    * both shells — the admin one at /recruitment and the Talent Acquisition portal twin at
@@ -61,6 +69,8 @@ export function ScreeningPageClient({
         hiringManagers={hiringManagers}
         initialViews={initialViews}
         onClose={handleClose}
+        openVacancies={openVacancies}
+        positionSuggestions={positionSuggestions}
         variant="page"
       />
     </ScreeningPageFrame>

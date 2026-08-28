@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -15,6 +15,7 @@ import {
   type HiringManagerDecision,
 } from "@/lib/recruitment/candidate-status";
 import { detectCvFileKind } from "@/lib/recruitment/cv-file-kind";
+import { groupCandidatesByPosition } from "@/lib/recruitment/position-folder";
 import type { Candidate, Interview } from "@/lib/recruitment/types";
 
 type Props = {
@@ -505,6 +506,13 @@ function SentCandidateCard({ candidate: initial }: { candidate: Candidate }) {
 export function RecruitmentCandidatesPortal({ initialApplications, initialSentToMe: sentToMe }: Props) {
   const [applications, setApplications] = useState(initialApplications);
 
+  // Folded on the SAME function the recruiter's screen and the tests use, so a folder cannot mean
+  // one thing where it is created and another where it is read.
+  const { folders: positionFolders, unfiled: unfiledSends } = useMemo(
+    () => groupCandidatesByPosition(sentToMe),
+    [sentToMe],
+  );
+
   const reload = async () => {
     try {
       const data = await getJson("/api/recruitment/hiring-manager/applications");
@@ -537,9 +545,50 @@ export function RecruitmentCandidatesPortal({ initialApplications, initialSentTo
             <h2 className="text-sm font-semibold text-slate-900">Sent to you</h2>
             <p className="text-xs text-slate-500">CVs Talent Acquisition asked you to look at.</p>
           </div>
-          {sentToMe.map((candidate) => (
-            <SentCandidateCard candidate={candidate} key={candidate.id} />
-          ))}
+          {/* ── One folder per position ───────────────────────────────────────────────────────
+              The owner, 2026-08-28: "he goes to a folder called Nasr City Medical Reps ... he can
+              look at the same page when he wants a certain position." A manager filling a seat
+              reads the CVs for that seat together, and a flat newest-first list interleaves five
+              vacancies, so comparing two candidates for one job means scrolling past three for
+              other ones.
+
+              A single folder is a list with a heading on it, so the headings only appear once
+              there is genuinely something to separate. */}
+          {positionFolders.length > 1
+            ? positionFolders.map((folder) => (
+                <div className="space-y-3" key={folder.key}>
+                  <div className="flex items-baseline justify-between gap-3 border-b border-slate-200 pb-1">
+                    <h3 className="text-sm font-bold text-slate-800">{folder.label}</h3>
+                    <span className="shrink-0 text-xs font-semibold text-slate-500">
+                      {folder.candidates.length === 1 ? "1 CV" : `${folder.candidates.length} CVs`}
+                    </span>
+                  </div>
+                  {folder.candidates.map((candidate) => (
+                    <SentCandidateCard candidate={candidate} key={candidate.id} />
+                  ))}
+                </div>
+              ))
+            : positionFolders.flatMap((folder) =>
+                folder.candidates.map((candidate) => <SentCandidateCard candidate={candidate} key={candidate.id} />),
+              )}
+          {/* Sent before a position could be chosen, or sent without one. Never hidden — each is a
+              real person somebody was asked to review — but kept apart from the folders rather than
+              filed under an invented heading that would read like a vacancy of its own. */}
+          {unfiledSends.length > 0 ? (
+            <div className="space-y-3">
+              {positionFolders.length > 0 ? (
+                <div className="flex items-baseline justify-between gap-3 border-b border-slate-200 pb-1">
+                  <h3 className="text-sm font-bold text-slate-800">No position given</h3>
+                  <span className="shrink-0 text-xs font-semibold text-slate-500">
+                    {unfiledSends.length === 1 ? "1 CV" : `${unfiledSends.length} CVs`}
+                  </span>
+                </div>
+              ) : null}
+              {unfiledSends.map((candidate) => (
+                <SentCandidateCard candidate={candidate} key={candidate.id} />
+              ))}
+            </div>
+          ) : null}
         </section>
       ) : null}
 

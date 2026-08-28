@@ -87,7 +87,9 @@ async function ScreeningContent({
       candidates={queue.candidates}
       hiringManagers={queue.hiringManagers}
       initialViews={queue.views}
+      openVacancies={queue.openVacancies}
       poolHref="/recruitment"
+      positionSuggestions={queue.positionSuggestions}
     />
   );
 }

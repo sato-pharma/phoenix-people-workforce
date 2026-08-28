@@ -16,7 +16,7 @@ import { redirect } from "next/navigation";
 import { RepsPlansBoardView } from "@/components/crm/reps-plans-board";
 import { canAccess } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
-import { loadCallRateReport } from "@/lib/crm/call-rate-service";
+import { loadCallRateReport, loadRepNamesByHrId } from "@/lib/crm/call-rate-service";
 import { loadOrgPlacementTree } from "@/lib/crm/org-placement-data";
 import { cairoTodayIso } from "@/lib/crm/dates";
 import { buildRepsPlansBoard, repsPlansRange, resolveRepsPlansMonth } from "@/lib/crm/reps-plans";
@@ -51,9 +51,19 @@ export default async function RepsPlansPage({ searchParams }: PageProps) {
   // inside try/catch). A data failure renders a plain explanation, never a crash page — and never a
   // zero, which on this board would read as "every rep did nothing".
   let report: Awaited<ReturnType<typeof loadCallRateReport>> | null = null;
+  // The directory names the person; the CRM only names the territory (owner, 2026-08-27). A failed
+  // directory read must not take the board down with it — the names fall back to the CRM handle,
+  // which is what this page showed before, so the worst case is the old behaviour and not a blank
+  // screen. Only the visits are load-bearing.
+  let repNameByHrId: ReadonlyMap<string, string> | undefined;
   let loadError: string | null = null;
   try {
-    report = await loadCallRateReport({ dateFrom: range.dateFrom, dateTo: range.dateTo });
+    const [loadedReport, loadedNames] = await Promise.all([
+      loadCallRateReport({ dateFrom: range.dateFrom, dateTo: range.dateTo }),
+      loadRepNamesByHrId().catch(() => undefined),
+    ]);
+    report = loadedReport;
+    repNameByHrId = loadedNames;
   } catch (error) {
     loadError = error instanceof Error ? error.message : "CRM visit data is unavailable.";
   }
@@ -85,6 +95,7 @@ export default async function RepsPlansPage({ searchParams }: PageProps) {
     isCurrentMonth: range.isCurrentMonth,
     month,
     repKey: params?.rep ?? null,
+    repNameByHrId,
     tree,
   });
 
