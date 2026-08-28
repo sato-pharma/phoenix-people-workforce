@@ -1,6 +1,9 @@
 import { normalizeLineName } from "@/lib/auth/permissions";
 import { canonicalHrIdKey } from "@/lib/hr-id";
-import { buildHeadOfficeOrganogramRows } from "@/lib/reports/organogram-head-office";
+import {
+  buildHeadOfficeOrganogramRows,
+  HEAD_OFFICE_LINE_ID,
+} from "@/lib/reports/organogram-head-office";
 import { hasWhatsAppNumber } from "@/lib/reports/organogram-whatsapp";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import type {
@@ -288,9 +291,32 @@ export async function buildOrganogramSeatReport(): Promise<VacancyReportData> {
     const key = canonicalHrIdKey(s.occupant_hr_id);
     if (key) occupiedHrIds.add(key);
   }
+  // Open HEAD OFFICE seats, so the chart shows a department's unfilled roles the way it
+  // already shows an unfilled sales seat. Filtered in SQL to line 4 + open — a sales vacancy
+  // arrives from its own unfilled `au.seats` row and must not be drawn a second time from
+  // here. Five columns only: a vacancy row also carries a `note` naming the person who
+  // resigned and a public `vacancy_code`, and neither belongs on a chart node.
+  //
+  // This is a second round trip to Frankfurt, which the select above goes out of its way to
+  // avoid. It is accepted rather than folded in because there is nothing to fold it into:
+  // `position_vacancies` is a different table, the filter returns a handful of rows, and the
+  // alternative is a department that renders as a manager with nobody under him. A failure
+  // here degrades to "no open seats drawn" rather than taking the whole chart down with it.
+  const { data: vacancyData, error: vacancyError } = await supabase
+    .from("position_vacancies")
+    .select("id, job_title, line_id, manager_hr_id, status")
+    .eq("line_id", HEAD_OFFICE_LINE_ID)
+    .eq("status", "open");
+  if (vacancyError) {
+    console.warn(
+      `organogram: open Head Office seats could not be read (${vacancyError.message}); the chart is drawn without them`,
+    );
+  }
+
   const headOfficeRows = buildHeadOfficeOrganogramRows((empData ?? []) as EmployeeWorkRow[], {
     ceoNodeKey: ceoSeat ? (nodeKeyBySeat.get(ceoSeat.seat_id) ?? null) : null,
     occupiedHrIds,
+    vacancies: vacancyData ?? [],
   });
 
   return { organogramRows: [...rows, ...headOfficeRows], rows: [], summary: { ...emptySummary } };
