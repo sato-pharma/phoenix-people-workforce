@@ -136,7 +136,7 @@ function JourneyDetailDrawer({ result, onClose }: { result: SyntheticJourneyResu
           </div>
           <button
             aria-label="Close"
-            className="shrink-0 rounded-full border border-slate-200 px-3 py-1 text-xs font-bold text-slate-600 hover:bg-slate-50"
+            className="shrink-0 rounded-full border border-phx-line px-3 py-1 text-xs font-bold text-phx-ink-soft hover:bg-phx-paper"
             onClick={onClose}
             type="button"
           >

@@ -15,7 +15,7 @@ export function SlaAgeChip({ ageDays, module }: { ageDays: number; module: Appro
 
   if (tone === "overdue") {
     return (
-      <span className="inline-flex items-center gap-1 whitespace-nowrap rounded-full border border-rose-200/80 bg-rose-50 px-1.5 py-0.5 text-phx-2xs font-bold text-rose-700">
+      <span className="inline-flex items-center gap-1 whitespace-nowrap rounded-full border border-phx-danger-line/80 bg-phx-danger-bg px-1.5 py-0.5 text-phx-2xs font-bold text-phx-danger">
         <span className="h-1 w-1 rounded-full bg-rose-500" />
         Overdue {ageDays}d
       </span>
@@ -23,7 +23,7 @@ export function SlaAgeChip({ ageDays, module }: { ageDays: number; module: Appro
   }
   if (tone === "due") {
     return (
-      <span className="whitespace-nowrap rounded-full border border-amber-200/80 bg-amber-50 px-1.5 py-0.5 text-phx-2xs font-bold text-amber-800">
+      <span className="whitespace-nowrap rounded-full border border-phx-warn-line/80 bg-phx-warn-bg px-1.5 py-0.5 text-phx-2xs font-bold text-phx-warn">
         {daysLeft === 0 ? "Due today" : "1d left"}
       </span>
     );

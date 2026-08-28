@@ -80,7 +80,7 @@ export function ExpenseFilterBar({
             {loading ? "Updating…" : "Ready"}
           </span>
           {activeCount > 0 ? (
-            <span className="inline-flex items-center rounded-full bg-orange-100 px-2 py-0.5 text-phx-xs font-black text-orange-700">
+            <span className="inline-flex items-center rounded-full bg-phx-warn-bg px-2 py-0.5 text-phx-xs font-black text-phx-warn">
               {activeCount} active
             </span>
           ) : null}
@@ -89,7 +89,7 @@ export function ExpenseFilterBar({
           <button
             type="button"
             onClick={onClear}
-            className="inline-flex items-center gap-1 rounded-full border border-slate-200 px-3 py-1 text-xs font-bold text-slate-600 hover:border-orange-300 hover:text-orange-600"
+            className="inline-flex items-center gap-1 rounded-full border border-phx-line px-3 py-1 text-xs font-bold text-phx-ink-soft hover:border-phx-warn-line hover:text-phx-warn"
           >
             <X className="h-3 w-3" /> Clear all
           </button>

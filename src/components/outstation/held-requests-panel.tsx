@@ -174,7 +174,7 @@ export function HeldRequestsPanel() {
                   {formatDateValue(request.tripEndDate)}
                 </p>
               </div>
-              <span className="inline-flex shrink-0 items-center rounded-full bg-rose-50 px-2 py-0.5 text-phx-2xs font-bold uppercase tracking-wider text-rose-700 ring-1 ring-rose-200">
+              <span className="inline-flex shrink-0 items-center rounded-full bg-phx-danger-bg px-2 py-0.5 text-phx-2xs font-bold uppercase tracking-wider text-phx-danger ring-1 ring-phx-danger-line">
                 {BLOCKER_LABEL[request.blocker] ?? request.blocker}
               </span>
             </div>

@@ -51,7 +51,7 @@ type BadgeProps = HTMLAttributes<HTMLSpanElement> & {
 };
 
 const TONE: Record<BadgeTone, string> = {
-  neutral: "bg-phx-surface text-phx-ink-soft ring-phx-line",
+  neutral: "bg-phx-paper text-phx-ink-soft ring-phx-line",
   ok: "bg-phx-ok-bg text-phx-ok ring-phx-ok-line",
   warn: "bg-phx-warn-bg text-phx-warn ring-phx-warn-line",
   danger: "bg-phx-danger-bg text-phx-danger ring-phx-danger-line",

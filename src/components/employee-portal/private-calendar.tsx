@@ -586,7 +586,7 @@ export function PrivateCalendar({
                   Private Calendar
                 </span>
                 {workspace.access.isGlobalViewer ? (
-                  <span className="inline-flex items-center gap-1.5 rounded-full bg-blue-500/20 px-3 py-1 text-phx-xs font-black uppercase tracking-[0.14em] text-blue-200 ring-1 ring-blue-400/30">
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-phx-info/20 px-3 py-1 text-phx-xs font-black uppercase tracking-[0.14em] text-phx-info-bg ring-1 ring-phx-info-line/30">
                     Global view
                   </span>
                 ) : null}
@@ -990,12 +990,12 @@ export function PrivateCalendar({
                     </span>
                     <span className="flex items-center gap-1">
                       {dayExceptions.length > 0 ? (
-                        <span className="rounded-full bg-red-100 px-1.5 py-0.5 text-phx-2xs font-black text-red-600">
+                        <span className="rounded-full bg-phx-danger-bg px-1.5 py-0.5 text-phx-2xs font-black text-phx-danger">
                           {dayExceptions.length}
                         </span>
                       ) : null}
                       {dayItems.length > 0 ? (
-                        <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-phx-2xs font-black text-slate-500">
+                        <span className="rounded-full bg-phx-paper px-1.5 py-0.5 text-phx-2xs font-black text-phx-ink-soft">
                           {dayItems.length}
                         </span>
                       ) : null}
@@ -1048,7 +1048,7 @@ export function PrivateCalendar({
               <h3 className="mt-1.5 text-xl font-black text-slate-950">{dayLabel(selectedDate)}</h3>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <span className="rounded-full bg-slate-100 px-4 py-1.5 text-xs font-black text-slate-600">
+              <span className="rounded-full bg-phx-paper px-4 py-1.5 text-xs font-black text-phx-ink-soft">
                 {timelineItems.length} item{timelineItems.length === 1 ? "" : "s"} · {selectedExceptions.length} exception{selectedExceptions.length === 1 ? "" : "s"}
               </span>
               {canActOnOwnDay ? (
@@ -1219,7 +1219,7 @@ function PrivateCalendarAgenda({
                       {privateCalendarSourceLabels[item.source]}
                     </span>
                     {item.status ? (
-                      <span className="ml-auto inline-flex items-center whitespace-nowrap rounded-full bg-slate-100 px-2 py-0.5 text-phx-2xs font-black uppercase tracking-[0.1em] text-slate-600">
+                      <span className="ml-auto inline-flex items-center whitespace-nowrap rounded-full bg-phx-paper px-2 py-0.5 text-phx-2xs font-black uppercase tracking-[0.1em] text-phx-ink-soft">
                         {item.status}
                       </span>
                     ) : null}
@@ -1239,7 +1239,7 @@ function PrivateCalendarAgenda({
                   {item.exceptionFlags.length > 0 ? (
                     <div className="mt-1.5 flex flex-wrap gap-1.5 pl-[18px]">
                       {item.exceptionFlags.map((flag) => (
-                        <span className="inline-flex items-center whitespace-nowrap rounded-full bg-red-100 px-2 py-0.5 text-phx-2xs font-black uppercase tracking-[0.1em] text-red-700" key={flag}>
+                        <span className="inline-flex items-center whitespace-nowrap rounded-full bg-phx-danger-bg px-2 py-0.5 text-phx-2xs font-black uppercase tracking-[0.1em] text-phx-danger" key={flag}>
                           {flag}
                         </span>
                       ))}
@@ -1420,7 +1420,7 @@ function TimelineItem({ item, viewMode }: { item: PrivateCalendarItem; viewMode:
             ) : null}
           </div>
           {item.status ? (
-            <span className="shrink-0 rounded-full bg-slate-100 px-2.5 py-0.5 text-phx-2xs font-black uppercase tracking-[0.1em] text-slate-600">
+            <span className="shrink-0 rounded-full bg-phx-paper px-2.5 py-0.5 text-phx-2xs font-black uppercase tracking-[0.1em] text-phx-ink-soft">
               {item.status}
             </span>
           ) : null}
@@ -1429,7 +1429,7 @@ function TimelineItem({ item, viewMode }: { item: PrivateCalendarItem; viewMode:
         {item.exceptionFlags.length > 0 ? (
           <div className="mt-3 flex flex-wrap gap-1.5">
             {item.exceptionFlags.map((flag) => (
-              <span key={flag} className="rounded-full bg-red-100 px-2.5 py-0.5 text-phx-2xs font-black uppercase tracking-[0.1em] text-red-700">
+              <span key={flag} className="rounded-full bg-phx-danger-bg px-2.5 py-0.5 text-phx-2xs font-black uppercase tracking-[0.1em] text-phx-danger">
                 {flag}
               </span>
             ))}

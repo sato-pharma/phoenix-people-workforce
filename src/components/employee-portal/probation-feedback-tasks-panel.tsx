@@ -120,11 +120,11 @@ export function ProbationFeedbackTasksPanel({ tasks }: { tasks: FeedbackTaskView
       >
         <span className="flex items-center gap-2 text-sm font-semibold text-slate-800">
           My feedback tasks
-          <span className="rounded-full bg-slate-800 px-2 py-0.5 text-xs font-medium text-white">
+          <span className="rounded-full bg-phx-ink px-2 py-0.5 text-xs font-medium text-white">
             {groups.length} {groups.length === 1 ? "rep" : "reps"} · {tasks.length} pending
           </span>
           {overdue > 0 && (
-            <span className="rounded-full bg-rose-600 px-2 py-0.5 text-xs font-medium text-white">{overdue} overdue</span>
+            <span className="rounded-full bg-phx-danger px-2 py-0.5 text-xs font-medium text-white">{overdue} overdue</span>
           )}
         </span>
         <span className="text-xs text-slate-400">{open ? "Hide" : "Show"}</span>

@@ -350,7 +350,7 @@ export function CoachingReportsCenter({
           description="Filter by employee, coach, organization structure, date, status, and performance zone."
           action={
             lockedCoachHrId ? (
-              <span className="rounded-full border border-orange-200 bg-orange-50 px-3 py-1.5 text-xs font-black text-orange-700">
+              <span className="rounded-full border border-phx-warn-line bg-phx-warn-bg px-3 py-1.5 text-xs font-black text-phx-warn">
                 {lockedCoachLabel ? `${lockedCoachLabel}'s reports` : "My coaching reports"}
               </span>
             ) : null
@@ -481,7 +481,7 @@ export function CoachingReportsCenter({
           </div>
           <div className="flex flex-wrap gap-2">
             {error ? (
-              <span className="rounded-full border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-black text-rose-700">
+              <span className="rounded-full border border-phx-danger-line bg-phx-danger-bg px-3 py-1.5 text-xs font-black text-phx-danger">
                 {error}
               </span>
             ) : null}

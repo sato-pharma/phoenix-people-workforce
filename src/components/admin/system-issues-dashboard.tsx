@@ -115,14 +115,14 @@ function severityBadgeClasses(severity: string) {
 function StatusBadge({ status }: { status: IssueStatus }) {
   if (status === "resolved") {
     return (
-      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-phx-xs font-bold text-emerald-700 ring-1 ring-emerald-100">
+      <span className="inline-flex items-center gap-1 rounded-full bg-phx-ok-bg px-2.5 py-1 text-phx-xs font-bold text-phx-ok ring-1 ring-phx-ok-line">
         <Check className="h-3 w-3" />
         Resolved
       </span>
     );
   }
   return (
-    <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-1 text-phx-xs font-bold text-amber-700 ring-1 ring-amber-100">
+    <span className="inline-flex items-center gap-1 rounded-full bg-phx-warn-bg px-2.5 py-1 text-phx-xs font-bold text-phx-warn ring-1 ring-phx-warn-line">
       <AlertTriangle className="h-3 w-3" />
       Active
     </span>
@@ -176,7 +176,7 @@ function DeployTimelinePanel({ state }: { state: TimelineState }) {
       {t.markers.length > 0 && (
         <div className="mt-2 flex flex-wrap gap-1.5">
           {t.markers.slice(-8).map((m) => (
-            <span className="rounded-full bg-violet-50 px-2 py-0.5 font-mono text-phx-3xs font-bold text-violet-700 ring-1 ring-violet-100" key={m.release}>
+            <span className="rounded-full bg-phx-info-bg px-2 py-0.5 font-mono text-phx-3xs font-bold text-phx-info ring-1 ring-phx-info-line" key={m.release}>
               {m.release}
             </span>
           ))}
@@ -281,7 +281,7 @@ function SecurityLens({
                 <li className="flex items-center justify-between gap-2 text-xs" key={a.hrId}>
                   <span className="font-bold text-phx-ink">
                     {accountLabel(a.hrId, a.name)}
-                    {a.distributed && <span className="ml-1.5 rounded-full bg-rose-100 px-1.5 py-0.5 text-phx-3xs font-black text-rose-700">DISTRIBUTED</span>}
+                    {a.distributed && <span className="ml-1.5 rounded-full bg-phx-danger-bg px-1.5 py-0.5 text-phx-3xs font-black text-phx-danger">DISTRIBUTED</span>}
                   </span>
                   <span className="whitespace-nowrap font-mono text-phx-2xs text-amber-700">{a.failCount} fails · {a.distinctIps} IPs</span>
                 </li>
@@ -299,8 +299,8 @@ function SecurityLens({
                 <li className="flex items-center justify-between gap-2 text-xs" key={ip.ip}>
                   <span className="font-mono font-bold text-phx-ink">
                     {ip.ip}
-                    {ip.credentialStuffing && <span className="ml-1.5 rounded-full bg-rose-100 px-1.5 py-0.5 text-phx-3xs font-black text-rose-700">CRED-STUFFING</span>}
-                    {ip.blocked && <span className="ml-1.5 rounded-full bg-slate-200 px-1.5 py-0.5 text-phx-3xs font-black text-slate-600">BLOCKED</span>}
+                    {ip.credentialStuffing && <span className="ml-1.5 rounded-full bg-phx-danger-bg px-1.5 py-0.5 text-phx-3xs font-black text-phx-danger">CRED-STUFFING</span>}
+                    {ip.blocked && <span className="ml-1.5 rounded-full bg-phx-paper px-1.5 py-0.5 text-phx-3xs font-black text-phx-ink-soft">BLOCKED</span>}
                   </span>
                   <span className="flex items-center gap-2">
                     <span className="whitespace-nowrap font-mono text-phx-2xs text-amber-700">{ip.failCount} fails · {ip.distinctAccounts} accts</span>
@@ -1112,7 +1112,7 @@ export function SystemIssuesDashboard({
                   {summaryState.data.themes.length > 0 && (
                     <ul className="flex flex-wrap gap-1.5">
                       {summaryState.data.themes.map((theme, i) => (
-                        <li className="rounded-full bg-violet-100 px-2.5 py-1 text-phx-xs font-bold text-violet-700" key={i}>
+                        <li className="rounded-full bg-phx-info-bg px-2.5 py-1 text-phx-xs font-bold text-phx-info" key={i}>
                           {theme}
                         </li>
                       ))}

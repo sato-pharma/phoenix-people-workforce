@@ -281,7 +281,7 @@ function NeedsActionInbox({
                       <p className="truncate text-phx-xs text-slate-500">{item.subtitle}</p>
                     </div>
                     {item.flagged ? (
-                      <span className="shrink-0 rounded-full bg-rose-100 px-1.5 py-0.5 text-phx-3xs font-black uppercase tracking-wide text-rose-700">
+                      <span className="shrink-0 rounded-full bg-phx-danger-bg px-1.5 py-0.5 text-phx-3xs font-black uppercase tracking-wide text-phx-danger">
                         over cap
                       </span>
                     ) : null}

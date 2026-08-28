@@ -428,11 +428,11 @@ function IdentityHero({
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <h1 className="truncate text-xl font-black text-white sm:text-2xl">{subject.displayName}</h1>
-              <span className="rounded-full border border-white/20 bg-white/10 px-2 py-0.5 text-phx-xs font-bold text-slate-200 backdrop-blur">
+              <span className="rounded-full border border-white/20 bg-white/10 px-2 py-0.5 text-phx-xs font-bold text-phx-paper backdrop-blur">
                 {subject.hrId.toUpperCase()}
               </span>
               {subject.employmentStatus && subject.employmentStatus !== "active" ? (
-                <span className="rounded-full border border-amber-400/40 bg-amber-500/15 px-2 py-0.5 text-phx-2xs font-black uppercase tracking-wide text-amber-200">
+                <span className="rounded-full border border-phx-warn-line/40 bg-phx-warn/15 px-2 py-0.5 text-phx-2xs font-black uppercase tracking-wide text-phx-warn-bg">
                   {subject.employmentStatus.replace(/_/g, " ")}
                 </span>
               ) : null}
@@ -447,10 +447,10 @@ function IdentityHero({
           </div>
         </div>
         <div className="flex shrink-0 flex-row flex-wrap items-center gap-2 lg:flex-col lg:items-end lg:gap-1.5">
-          <span className="rounded-full border border-white/15 bg-white/10 px-3 py-1 text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-200 backdrop-blur">
+          <span className="rounded-full border border-white/15 bg-white/10 px-3 py-1 text-phx-2xs font-black uppercase tracking-[0.14em] text-phx-paper backdrop-blur">
             {roleLabel}
           </span>
-          <span className="rounded-full border border-orange-400/40 bg-orange-500/15 px-3 py-1 text-phx-xs font-bold text-orange-200">
+          <span className="rounded-full border border-phx-warn-line/40 bg-phx-warn/15 px-3 py-1 text-phx-xs font-bold text-phx-warn-bg">
             {windowLabel}
           </span>
           <span className="text-phx-xs text-slate-400">{benchmarkLabel}</span>
@@ -586,7 +586,7 @@ export function Employee360View({
                 <div className="mb-1.5 text-xs font-bold text-slate-500">Most-visited customers</div>
                 <div className="flex flex-wrap gap-1.5">
                   {summary.topCustomers.map((c) => (
-                    <span key={c.name} className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs text-slate-500">{c.name} · {c.count}</span>
+                    <span key={c.name} className="rounded-full border border-phx-line bg-phx-paper px-2 py-0.5 text-xs text-phx-ink-soft">{c.name} · {c.count}</span>
                   ))}
                 </div>
               </div>
@@ -1224,7 +1224,7 @@ function TrainingManagerSection({ a }: { a: TrainingManagerAnalytics }) {
               {a.neglectedReps.length > 0 ? (
                 <div className="flex flex-wrap gap-1.5">
                   {a.neglectedReps.map((r) => (
-                    <span key={r.hrId} className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs text-amber-700" title={r.line ?? undefined}>
+                    <span key={r.hrId} className="rounded-full border border-phx-warn-line bg-phx-warn-bg px-2 py-0.5 text-xs text-phx-warn" title={r.line ?? undefined}>
                       {r.name}
                     </span>
                   ))}
@@ -1331,7 +1331,7 @@ function TeamHealthSection({ teamHealth }: { teamHealth: TeamHealthSummary }) {
               <div className="mb-1.5 text-xs font-black text-rose-700">Fully neglected — neither coached nor double-visited ({teamHealth.fullyNeglected.length})</div>
               <div className="flex flex-wrap gap-1.5">
                 {teamHealth.fullyNeglected.map((r) => (
-                  <span key={r.hrId} className="rounded-full border border-rose-200 bg-white px-2 py-0.5 text-xs text-rose-700">{r.name}</span>
+                  <span key={r.hrId} className="rounded-full border border-phx-danger-line bg-white px-2 py-0.5 text-xs text-phx-danger">{r.name}</span>
                 ))}
               </div>
             </div>
@@ -1341,7 +1341,7 @@ function TeamHealthSection({ teamHealth }: { teamHealth: TeamHealthSummary }) {
               <div className="mb-1.5 text-xs font-bold text-amber-600">Never coached this period ({teamHealth.neglected.length})</div>
               <div className="flex flex-wrap gap-1.5">
                 {teamHealth.neglected.map((r) => (
-                  <span key={r.hrId} className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs text-amber-700">{r.name}</span>
+                  <span key={r.hrId} className="rounded-full border border-phx-warn-line bg-phx-warn-bg px-2 py-0.5 text-xs text-phx-warn">{r.name}</span>
                 ))}
               </div>
             </div>
@@ -1409,7 +1409,7 @@ function TeamLifecycleSection({ lifecycle }: { lifecycle: TeamLifecycleSummary }
               </div>
               <div className="flex flex-wrap gap-1.5">
                 {lifecycle.probationReps.map((r) => (
-                  <span key={r.hrId} className="rounded-full border border-blue-200 bg-white px-2 py-0.5 text-xs text-blue-700">
+                  <span key={r.hrId} className="rounded-full border border-phx-info-line bg-white px-2 py-0.5 text-xs text-phx-info">
                     {r.name} · <span className="tabular-nums text-blue-500">{r.daysRemaining}d left</span>
                   </span>
                 ))}
@@ -1515,7 +1515,7 @@ function ExpensesSection({
                   <div className="mb-1.5 text-xs font-bold text-slate-500">By expense type</div>
                   <div className="flex flex-wrap gap-1.5">
                     {payroll.byType.map((b) => (
-                      <span key={b.type} className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs text-slate-500">
+                      <span key={b.type} className="rounded-full border border-phx-line bg-phx-paper px-2.5 py-1 text-xs text-phx-ink-soft">
                         {b.type}: {intFmt.format(b.trips)} · {compactFmt.format(b.cost)}
                       </span>
                     ))}
@@ -1597,7 +1597,7 @@ function ExpensesSection({
                   <div className="mb-1.5 text-xs font-bold text-slate-500">Transport</div>
                   <div className="flex flex-wrap gap-1.5">
                     {payroll.transportMix.map((t) => (
-                      <span key={t.name} className="rounded-full border border-slate-200 px-2 py-0.5 text-xs text-slate-500">{t.name} · {t.trips}t · {compactFmt.format(t.cost)}</span>
+                      <span key={t.name} className="rounded-full border border-phx-line px-2 py-0.5 text-xs text-phx-ink-soft">{t.name} · {t.trips}t · {compactFmt.format(t.cost)}</span>
                     ))}
                   </div>
                 </div>

@@ -170,7 +170,7 @@ export function ExpenseDetailTable({
         sorted.length > RENDER_CAP ? ` Showing the first ${RENDER_CAP} of ${sorted.length.toLocaleString()}.` : ""
       } Full amount breakdown is in the charts above and the Excel export.`}
       action={
-        <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-bold text-slate-600">
+        <span className="inline-flex items-center rounded-full border border-phx-line bg-phx-paper px-3 py-1 text-xs font-bold text-phx-ink-soft">
           {sorted.length.toLocaleString()} rows
         </span>
       }

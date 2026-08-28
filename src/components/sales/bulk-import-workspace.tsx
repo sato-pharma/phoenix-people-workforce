@@ -256,9 +256,9 @@ export function BulkImportWorkspace({ distributors, summaries, productOptions, b
           <div className="flex flex-wrap items-center gap-2">
             <h3 className="text-base font-black tracking-tight text-slate-950">Confirm & Import All</h3>
             {blockingCodes.length > 0 ? (
-              <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-0.5 text-phx-xs font-bold text-amber-700"><AlertTriangle className="h-3 w-3" /> {blockingCodes.length} distributor(s) not ready yet</span>
+              <span className="inline-flex items-center gap-1 rounded-full bg-phx-warn-bg px-2.5 py-0.5 text-phx-xs font-bold text-phx-warn"><AlertTriangle className="h-3 w-3" /> {blockingCodes.length} distributor(s) not ready yet</span>
             ) : (
-              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-0.5 text-phx-xs font-bold text-emerald-700"><CheckCircle2 className="h-3 w-3" /> Every distributor here is validated</span>
+              <span className="inline-flex items-center gap-1 rounded-full bg-phx-ok-bg px-2.5 py-0.5 text-phx-xs font-bold text-phx-ok"><CheckCircle2 className="h-3 w-3" /> Every distributor here is validated</span>
             )}
           </div>
 

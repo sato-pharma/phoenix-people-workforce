@@ -1298,7 +1298,7 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
                     <td className="px-3 py-2 text-right tabular-nums">
                       {bonusCell(r)}
                       {r.bonusOverCap ? (
-                        <span className="ml-1.5 inline-block rounded-full bg-rose-100 px-1.5 py-0.5 text-phx-3xs font-black uppercase tracking-wide text-rose-700">
+                        <span className="ml-1.5 inline-block rounded-full bg-phx-danger-bg px-1.5 py-0.5 text-phx-3xs font-black uppercase tracking-wide text-phx-danger">
                           over cap
                         </span>
                       ) : null}

@@ -598,9 +598,9 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
                             <div className="px-3 py-2" key={c.key}>
                               <div className="flex flex-wrap items-center gap-2">
                                 <span className="text-sm font-bold text-slate-900">{c.label}</span>
-                                <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-600">{c.members.length} pharmac{c.members.length === 1 ? "y" : "ies"}</span>
+                                <span className="rounded-full bg-phx-paper px-2 py-0.5 text-xs font-semibold text-phx-ink-soft">{c.members.length} pharmac{c.members.length === 1 ? "y" : "ies"}</span>
                                 {c.suggestedBricks.slice(0, 3).map((s) => (
-                                  <button className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-phx-xs font-bold text-emerald-700 transition hover:bg-emerald-100" key={s.brickId} onClick={() => assignClusterBrick(c, s.brickId)} title={s.distanceKm != null ? `~${s.distanceKm} km from cluster center — click to assign to all` : "Click to assign to all"} type="button">
+                                  <button className="rounded-full border border-phx-ok-line bg-phx-ok-bg px-2 py-0.5 text-phx-xs font-bold text-phx-ok transition hover:bg-phx-ok-bg" key={s.brickId} onClick={() => assignClusterBrick(c, s.brickId)} title={s.distanceKm != null ? `~${s.distanceKm} km from cluster center — click to assign to all` : "Click to assign to all"} type="button">
                                     {s.brickId}{s.distanceKm != null ? ` · ${s.distanceKm}km` : ""}
                                   </button>
                                 ))}

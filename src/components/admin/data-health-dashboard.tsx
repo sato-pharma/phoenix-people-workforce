@@ -595,7 +595,7 @@ export function DataHealthDashboard({ salaryFlags: initialSalaryFlags, stats }: 
   let detailContent = <></>;
   let detailAction = (
     <div className="flex flex-wrap items-center gap-2">
-      <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-bold text-slate-600">
+      <span className="rounded-full border border-phx-line bg-phx-paper px-3 py-2 text-xs font-bold text-phx-ink-soft">
         {selectedMeta.count} records
       </span>
       {exportButton}
@@ -866,11 +866,11 @@ export function DataHealthDashboard({ salaryFlags: initialSalaryFlags, stats }: 
     detailAction = (
       <div className="flex flex-wrap items-center gap-2">
         {unresolvedCount > 0 ? (
-          <span className="rounded-full border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-700">
+          <span className="rounded-full border border-phx-danger-line bg-phx-danger-bg px-3 py-2 text-xs font-bold text-phx-danger">
             {unresolvedCount} unresolved
           </span>
         ) : null}
-        <label className="flex cursor-pointer items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600">
+        <label className="flex cursor-pointer items-center gap-2 rounded-full border border-phx-line bg-white px-3 py-2 text-xs font-semibold text-phx-ink-soft">
           <input
             checked={showResolved}
             className="h-3.5 w-3.5 accent-orange-500"
@@ -908,7 +908,7 @@ export function DataHealthDashboard({ salaryFlags: initialSalaryFlags, stats }: 
                   <tr className={tableRowClass} key={flag.id}>
                     <td className="px-6 py-4 font-mono text-sm font-bold text-slate-600">{flag.hrId ?? "-"}</td>
                     <td className="px-6 py-4 text-sm font-medium text-slate-700">
-                      <span className="rounded-full border border-orange-200 bg-orange-50 px-3 py-1 text-phx-xs font-bold text-orange-700">
+                      <span className="rounded-full border border-phx-warn-line bg-phx-warn-bg px-3 py-1 text-phx-xs font-bold text-phx-warn">
                         {flag.flagType?.replace(/_/g, " ") ?? "unknown"}
                       </span>
                     </td>

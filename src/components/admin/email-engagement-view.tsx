@@ -22,9 +22,9 @@ function formatCairo(iso: string | null): string {
 // A lifecycle stage cell: green tick when reached, muted dash otherwise.
 function Stage({ on, label }: { on: boolean; label: string }) {
   return on ? (
-    <span className="inline-flex items-center rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">✓ {label}</span>
+    <span className="inline-flex items-center rounded-full bg-phx-ok-bg px-2 py-0.5 text-xs font-medium text-phx-ok">✓ {label}</span>
   ) : (
-    <span className="inline-flex items-center rounded-full bg-slate-50 px-2 py-0.5 text-xs text-slate-400">— {label}</span>
+    <span className="inline-flex items-center rounded-full bg-phx-paper px-2 py-0.5 text-xs text-phx-ink-soft">— {label}</span>
   );
 }
 
@@ -93,7 +93,7 @@ export function EmailEngagementView({ data, filters }: { data: EmailActivityData
                     <td className="px-4 py-3">
                       {notSent ? (
                         <div>
-                          <span className="inline-flex items-center rounded-full bg-red-50 px-2 py-0.5 text-xs font-medium text-red-700">
+                          <span className="inline-flex items-center rounded-full bg-phx-danger-bg px-2 py-0.5 text-xs font-medium text-phx-danger">
                             {row.sendStatus === "failed" ? "Failed" : row.sendStatus === "pending" ? "Pending (retrying)" : row.sendStatus}
                           </span>
                           {row.failedReason ? <div className="mt-1 max-w-[280px] truncate text-xs text-slate-500" title={row.failedReason}>{row.failedReason}</div> : null}
@@ -104,7 +104,7 @@ export function EmailEngagementView({ data, filters }: { data: EmailActivityData
                           <Stage on={row.delivered} label="Delivered" />
                           <Stage on={row.opened} label="Opened" />
                           <Stage on={row.clicked} label="Clicked" />
-                          {row.bounced ? <span className="inline-flex items-center rounded-full bg-red-50 px-2 py-0.5 text-xs font-medium text-red-700">Bounced</span> : null}
+                          {row.bounced ? <span className="inline-flex items-center rounded-full bg-phx-danger-bg px-2 py-0.5 text-xs font-medium text-phx-danger">Bounced</span> : null}
                         </div>
                       )}
                     </td>
