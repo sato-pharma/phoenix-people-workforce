@@ -280,6 +280,9 @@ function roleSetGates(source: string): string[][] {
  * loudly, and one that becomes readable has to be removed from here.
  */
 const GATE_SHAPE_NOT_MACHINE_READABLE: Record<string, string> = {
+  "/hr/admin/hr-command-center":
+    "hrBundleForRole(access.role) — the same lookup that decides the seat's grants, so it admits " +
+    "exactly the two seats by construction rather than by a second list agreeing with the first",
   "/hr/probation": "canReadAllProbation(access) — true for both seats",
   "/hr/recruitment/contact-review": "canReviewCandidateContacts(access) — true for Advisory, the only seat offered it",
   "/hr/recruitment/intake-health": "canViewInboundIntakeHealth(access) — true for Advisory, the only seat offered it",

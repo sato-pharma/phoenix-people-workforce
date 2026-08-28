@@ -529,6 +529,7 @@ import { runAdminPayslipImageExportTests } from "./admin-payslip-image-export.te
 import { runEmployeePayrollEligibilityTests } from "./employee-payroll-eligibility.test.ts";
 import { runEmployeeAccessProvisioningTests } from "./employee-access-provisioning.test.ts";
 import { runHrFunctionGovernanceTests } from "./hr-function-governance.test.ts";
+import { runHrCommandCenterTests } from "./hr-command-center.test.ts";
 import { runHrSeatRouteCoherenceTests } from "./hr-seat-route-coherence.test.ts";
 import { runTitlePermissionGovernanceTests } from "./title-permission-governance.test.ts";
 import { runOrganogramHardeningTests } from "./organogram-hardening.test.ts";
@@ -1813,6 +1814,11 @@ await runTest(
   "HR seat route coherence (no HR seat holds PART of a route handler's permission set, so no page "
   + "its own sidebar offers can 403 it halfway)",
   runHrSeatRouteCoherenceTests,
+);
+await runTest(
+  "HR command centre (every tile on a seat's landing dashboard links to a row that seat is "
+  + "offered, so no figure leads to a page it cannot open)",
+  runHrCommandCenterTests,
 );
 await runTest("organogram hardening", runOrganogramHardeningTests);
 await runTest("vacancy report / organogram consistency", runVacancyReportOrganogramConsistencyTests);
