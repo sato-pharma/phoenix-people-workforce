@@ -239,22 +239,28 @@
   --phx-max: 1680px;
 
   /* ===================================================================== FONT
-     Inter, self-hosted, loaded by the @font-face block in app/layout.tsx.
+     No webfont. None of these three stacks is webfont-backed, so the typeface
+     still varies by machine: Aptos on a Windows PC with Office, Segoe UI Variable
+     on one without, something else again on a Mac or a phone.
 
-     The old stack led with "Aptos" and then "Segoe UI Variable" — neither is a
-     webfont, so the app rendered in whatever the machine happened to have: Aptos
-     on a Windows PC with Office, Segoe UI Variable on one without, something else
-     again on a Mac or a phone. Nobody was looking at the same product. The stack
-     behind Inter is kept as the fallback for the seconds before the file lands,
-     and for a browser that refuses webfonts outright.
+     That inconsistency is real and known. #2541 fixed it by self-hosting Inter and
+     leading the stack with it; the owner reverted that on 2026-08-28 because the
+     cure was worse than the disease. Inter is optically much larger than the Aptos
+     it displaced at an identical font-size — x-height ~0.73em against ~0.50em,
+     plus wider advances — so the entire shell read as bigger and heavier overnight
+     and sidebar labels that used to fit started hitting `truncate`. The type scale
+     below was calibrated by eye against Aptos across ~4,800 call sites, so changing
+     the face rescales every one of them at once.
 
-     Inter specifically: it was drawn for screen UI at small sizes, its digits are
-     even-width, and it has a proper tabular-figures feature — which matters here,
-     because most of this app is columns of money and headcount that have to line
-     up. A face without that makes every numeric table ripple. */
+     Whoever ships a UI webfont next: size-match it first. `size-adjust` on the
+     @font-face is the mechanism, Aptos is the reference, and
+     `pnpm run ui:measure-sidebar-labels` must be re-run afterwards — note that
+     harness measures whatever src/config/sidebar-metrics.ts names, so that file
+     has to be updated in the same change or the guard silently certifies the old
+     face. That is exactly how this shipped unnoticed. */
 
   --phx-font-ui:
-    "Inter", "Aptos", "Segoe UI Variable Display", "Segoe UI Variable Text", "Segoe UI",
+    "Aptos", "Segoe UI Variable Display", "Segoe UI Variable Text", "Segoe UI", "Inter",
     "Helvetica Neue", Arial, sans-serif;
   --phx-font-mono:
     "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
