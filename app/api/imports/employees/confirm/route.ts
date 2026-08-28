@@ -6,6 +6,7 @@ import { provisionNewHireAccess } from "@/lib/employees/access-provisioning";
 import { invalidateEmployeeDirectoryCache } from "@/lib/employees/employee-directory";
 import { loadEmployeeImportExistingState } from "@/lib/imports/employee-import-existing-state";
 import { createEmployeeImportPlan } from "@/lib/imports/employee-import-plan";
+import { splitInsertOnly } from "@/lib/imports/org-entity-write-guard";
 import type {
   EmployeeImportRecord,
   EmployeeImportValidationResult,
@@ -350,51 +351,39 @@ async function upsertTeams(
   areaIds: IdMap,
 ) {
   if (entities.length === 0) {
-    return { created: 0, ids: new Map<string, number>() };
+    return { created: 0, ids: new Map<string, number>(), preserved: 0 };
   }
 
   const codes = codesFor(entities);
-  const existingCodes = await existingCodeSet(supabase, "teams", codes);
   const existingIds = await idsForCodes(supabase, "teams", codes);
   const now = new Date().toISOString();
-  let created = 0;
 
-  for (const entity of entities) {
-    const areaId = entity.parentCode ? areaIds.get(entity.parentCode) ?? null : null;
-    const payload = {
-      area_id: areaId,
+  // Insert-only. An existing team row is never rewritten from the spreadsheet — including a
+  // deactivated one, which a lookup by code still finds even though loadTeamState() reports it as
+  // absent. Reactivating a team is a deliberate act for the organogram admin, not a side effect of
+  // an employee upload. Full reasoning and the production measurement: org-entity-write-guard.ts.
+  const { preserved, toInsert } = splitInsertOnly(entities, (code) =>
+    existingIds.has(code),
+  );
+
+  for (const entity of toInsert) {
+    const { error } = await supabase.from("teams").insert({
+      area_id: entity.parentCode ? areaIds.get(entity.parentCode) ?? null : null,
       code: entity.code,
       is_active: true,
       name: truncate(entity.name, 160) ?? entity.code,
       updated_at: now,
-    };
-    const existingId = existingIds.get(entity.code);
-
-    if (existingId) {
-      const { error } = await supabase
-        .from("teams")
-        .update(payload)
-        .eq("id", existingId);
-
-      if (error) {
-        throw new Error(error.message);
-      }
-
-      continue;
-    }
-
-    const { error } = await supabase.from("teams").insert(payload);
+    });
 
     if (error) {
       throw new Error(error.message);
     }
-
-    created += existingCodes.has(entity.code) ? 0 : 1;
   }
 
   return {
-    created,
+    created: toInsert.length,
     ids: await idsForCodes(supabase, "teams", codes),
+    preserved: preserved.length,
   };
 }
 
@@ -1226,6 +1215,10 @@ export async function POST(request: Request) {
       importedEmployees: employeeResult.imported,
       importedCompensationRows: compensationResult.upserted,
       importedResidenceRows: residenceResult.upserted,
+      // Teams the sheet named that already exist and were left exactly as they are — including any
+      // that are deactivated. Reported rather than silent, because "the import quietly left this
+      // alone" is the fact somebody needs when a team looks stale after an upload.
+      preservedTeams: teamResult.preserved,
       recordedVacancies: vacancyResult.recorded,
       skippedVacantRows: 0,
       updatedEmployees: employeeResult.updated,

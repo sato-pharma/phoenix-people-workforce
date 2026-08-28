@@ -368,6 +368,7 @@ import { runSalesChannelsByRepTests } from "./sales-channels-by-rep.test.ts";
 import { runSosNormalizerPersistShapeTests } from "./sos-normalizer-persist-shape.test.ts";
 import { runSosImportTemplateTests } from "./sos-import-template.test.ts";
 import { runImportPreviewTests } from "./import-preview.test.ts";
+import { runEmployeeImportTeamResurrectionGuardTests } from "./employee-import-team-resurrection-guard.test.ts";
 import { runImportsLineCanonicalizationTests } from "./imports-line-canonicalization.test.ts";
 import { runDetectDistributorTests } from "./detect-distributor.test.ts";
 import { runDistributorDetectionHeaderRowTests } from "./distributor-detection-header-row.test.ts";
@@ -1621,6 +1622,7 @@ await runTest("sales channels by rep (stems derived, restricted fail-closed, una
 await runTest("sos normalizer persist shape", runSosNormalizerPersistShapeTests);
 await runTest("sos import template", runSosImportTemplateTests);
 await runTest("import preview diff", runImportPreviewTests);
+await runTest("employee import never resurrects a deactivated team (insert-only org entities)", runEmployeeImportTeamResurrectionGuardTests);
 await runTest("imports line canonicalization (Anti Inf → Anti infective; no duplicate lines rows)", runImportsLineCanonicalizationTests);
 await runTest("detect distributor", runDetectDistributorTests);
 await runTest("detect distributor header-row pick (EG-BR regression)", runDistributorDetectionHeaderRowTests);
