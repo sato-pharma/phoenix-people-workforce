@@ -36,11 +36,11 @@ import { cairoTodayIso } from "@/lib/crm/dates";
 /**
  * What happened to one planned item.
  *
- * The three miss verdicts are deliberately NOT one "missed" bucket. They have
- * different causes and different fixes, and collapsing them would leave the screen
- * saying "you missed 90" with no way to act on it:
+ * The miss verdicts are deliberately NOT one "missed" bucket. They have different
+ * causes and different fixes, and collapsing them would leave the screen saying
+ * "you missed 90" with no way to act on it:
  *
- *   wrong_partner   he WAS out that day — with somebody else. The plan went stale.
+ *   wrong_partner   he WAS out that day — with somebody else. COUNTS AS KEPT (see below).
  *   partner_alone   the rep he named worked; he was not with him.
  *   no_trace        neither of them logged anything. The day did not happen as written.
  */
@@ -52,7 +52,7 @@ export type PlanAdherenceVerdict =
   | "not_yet_due"
   | "not_checkable";
 
-/** The verdicts that count in the score — kept, plus the three real ways to miss. */
+/** The verdicts that reach the DENOMINATOR — the days the CRM can answer for. */
 const SCORED_VERDICTS: ReadonlySet<PlanAdherenceVerdict> = new Set<PlanAdherenceVerdict>([
   "kept",
   "wrong_partner",
@@ -60,8 +60,32 @@ const SCORED_VERDICTS: ReadonlySet<PlanAdherenceVerdict> = new Set<PlanAdherence
   "no_trace",
 ]);
 
+/**
+ * The verdicts that reach the NUMERATOR — the days that count as kept.
+ *
+ * OWNER RULE, 2026-08-28, asked and answered in plain words: a partner swap agreed on the day
+ * counts as KEPT. He went to the field on the day he committed to; which colleague ended up beside
+ * him is a scheduling detail the CRM cannot distinguish from a verbal agreement, and scoring it as
+ * a failure punishes a manager for a day he actually worked.
+ *
+ * `wrong_partner` therefore survives as its own verdict rather than being folded into `kept` — the
+ * swap is still worth SEEING ("you went with Esraa, not Aya"), it is simply not worth DEDUCTING.
+ * Keeping the two sets separate is the whole point: what is measurable and what is creditable are
+ * different questions, and the next verdict added has to answer both deliberately.
+ *
+ * Do not "fix" this back to a miss without asking him again.
+ */
+const KEPT_VERDICTS: ReadonlySet<PlanAdherenceVerdict> = new Set<PlanAdherenceVerdict>([
+  "kept",
+  "wrong_partner",
+]);
+
 export function isScoredVerdict(verdict: PlanAdherenceVerdict): boolean {
   return SCORED_VERDICTS.has(verdict);
+}
+
+export function countsAsKept(verdict: PlanAdherenceVerdict): boolean {
+  return KEPT_VERDICTS.has(verdict);
 }
 
 /**
@@ -167,10 +191,13 @@ export type PlanAdherenceScore = {
 function adviceFor(verdict: PlanAdherenceVerdict, plannedName: string | null, actualNames: readonly string[]): string | null {
   const planned = plannedName ?? "the rep you named";
   switch (verdict) {
+    // Not corrective. This day already counts as kept, so the line records what happened and says
+    // so plainly — telling a manager to fix a day he is not being marked down for is how a score
+    // stops being believed.
     case "wrong_partner":
       return actualNames.length > 0
-        ? `You were in the field, but with ${actualNames.join(" and ")} instead of ${planned}. Revise the plan when the day changes — a revised plan still counts as kept.`
-        : `You were in the field with somebody else that day. Revise the plan when the day changes — a revised plan still counts as kept.`;
+        ? `Counted as kept — you were in the field that day, with ${actualNames.join(" and ")} rather than ${planned}. Revising the plan keeps the record straight, but it does not change your score.`
+        : `Counted as kept — you were in the field that day, with somebody other than ${planned}. Revising the plan keeps the record straight, but it does not change your score.`;
     case "partner_alone":
       return `${planned} worked that day without you. Join him as planned, or move the double visit to a day you can make.`;
     case "no_trace":
@@ -242,11 +269,11 @@ export function scorePlanAdherence(
       }
     }
 
-    // Which verdicts reach the denominator is asked of SCORED_VERDICTS rather than re-decided here,
-    // so a verdict added later cannot silently land in the score, or silently fall out of it.
+    // Both halves of the fraction are asked of a named set rather than re-decided here, so a
+    // verdict added later cannot silently land in the score — or silently earn credit.
     if (isScoredVerdict(verdict)) {
       checkable += 1;
-      if (verdict === "kept") kept += 1;
+      if (countsAsKept(verdict)) kept += 1;
     } else if (verdict === "not_yet_due") notYetDue += 1;
     else notCheckable += 1;
 
@@ -292,7 +319,9 @@ export function planAdherenceTone(scorePct: number | null): string {
 /** The one-line human label for a verdict. Never a raw code — owner's standing rule. */
 export const PLAN_ADHERENCE_VERDICT_LABELS: ReadonlyMap<PlanAdherenceVerdict, string> = new Map([
   ["kept", "Kept"],
-  ["wrong_partner", "Went with someone else"],
+  // Leads with "Kept" because it now scores as kept — a label reading like a fault beside a number
+  // that does not deduct for it is the kind of mismatch that makes people distrust the whole score.
+  ["wrong_partner", "Kept — went with someone else"],
   ["partner_alone", "He went without you"],
   ["no_trace", "Nothing logged"],
   ["not_yet_due", "Still to come"],
