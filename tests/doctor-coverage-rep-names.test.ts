@@ -7,6 +7,7 @@ import {
   type DoctorCoveragePlanInput,
   type DoctorCoverageVisitInput,
 } from "../src/lib/crm/sfe-doctor-coverage.ts";
+import { crmTerritoryFrom, splitCrmRepName } from "../src/lib/crm/rep-name.ts";
 import { CAMPAIGN_TYPE } from "../src/lib/crm/visit-types.ts";
 
 // WHAT A REP IS CALLED — the owner's instruction of 2026-08-27: "show the real name and keep the
@@ -209,11 +210,24 @@ export function runDoctorCoverageRepNameTests() {
   );
 
   // ── Source contracts ─────────────────────────────────────────────────────────────────────────
-  const serviceSource = readFileSync("src/lib/crm/sfe-doctor-coverage.ts", "utf8");
+  // The pattern moved to src/lib/crm/rep-name.ts when Reps Plans needed it too — one regex, two
+  // boards. Pinned at its new home, and the old home is pinned to IMPORT rather than re-declare:
+  // a second copy is how two boards start disagreeing about what a territory is.
+  const repNameSource = readFileSync("src/lib/crm/rep-name.ts", "utf8");
   assert.match(
-    serviceSource,
+    repNameSource,
     /const CRM_TERRITORY = \/\\\(\\s\*\(\[\^\(\)\]\+\?\)\\s\*\\\)\\s\*\$\//,
     "the territory pattern must stay anchored at the END and refuse nested brackets — an unanchored one lifts a bracket out of the middle of a name",
+  );
+
+  const serviceSource = readFileSync("src/lib/crm/sfe-doctor-coverage.ts", "utf8");
+  assert.ok(
+    serviceSource.includes('import { crmTerritoryFrom } from "@/lib/crm/rep-name";'),
+    "coverage must IMPORT the shared splitter, never carry its own copy of the pattern",
+  );
+  assert.ok(
+    !serviceSource.includes("const CRM_TERRITORY ="),
+    "and the private copy must stay deleted",
   );
 
   const tablesSource = readFileSync("src/components/crm/doctor-coverage-tables.tsx", "utf8");
@@ -227,5 +241,44 @@ export function runDoctorCoverageRepNameTests() {
     tablesSource,
     /truncate[^"]*>\{(?:row|rep)\.repName\}/,
     "and it must never be truncated — the owner's rule is that text is never elided",
+  );
+
+  // ── Splitting the handle, for a card that must not wrap ──────────────────────────────────────
+  // Reps Plans shows one card per rep on a phone. Its title WRAPS below md and has to keep doing
+  // so: #2268 (2026-08-21) measured whitespace-nowrap taking a 375px page out to 455px of sideways
+  // scroll, and the owner rejects an ellipsis everywhere. So the fix for a wrapping name is a
+  // SHORTER STRING, not a nowrap — the person in the title, the territory one line below.
+  assert.deepEqual(
+    splitCrmRepName("Adel.Srour ( Down-town / C )"),
+    { name: "Adel.Srour", territory: "Down-town / C" },
+    "a handle splits into the person half and the territory half",
+  );
+  assert.deepEqual(
+    splitCrmRepName("Nermeen.Salah"),
+    { name: "Nermeen.Salah", territory: null },
+    "a handle with no bracket keeps its whole name and reports no territory",
+  );
+  assert.deepEqual(
+    splitCrmRepName("( Behira 2 / C )"),
+    { name: "", territory: "Behira 2 / C" },
+    "the pathological handle that is territory and NOTHING else leaves an empty person half, so the caller can decide rather than being handed an invented label",
+  );
+  assert.deepEqual(
+    splitCrmRepName("Ahmed (Ali) Hassan ( Tanta / P )"),
+    { name: "Ahmed (Ali) Hassan", territory: "Tanta / P" },
+    "a bracket in the MIDDLE of a name is part of the name — only the trailing group is a territory",
+  );
+  assert.deepEqual(splitCrmRepName(null), { name: "", territory: null }, "a missing name never throws");
+  assert.equal(crmTerritoryFrom("Aisha.Ehab ( Minia 2 / E )"), "Minia 2 / E");
+  assert.equal(crmTerritoryFrom(""), null);
+
+  const repsPlansSource = readFileSync("src/components/crm/reps-plans-tables.tsx", "utf8");
+  assert.ok(
+    repsPlansSource.includes("splitCrmRepName(row.repName)"),
+    "the Reps Plans card must split the handle rather than printing it whole",
+  );
+  assert.ok(
+    !/whitespace-nowrap[^>]*>\{cardTitle\}/.test(repsPlansSource),
+    "and it must NOT pin the card title to one line — that is the change #2268 reverted, and it returns a sideways-scrolling phone page",
   );
 }
