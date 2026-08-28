@@ -281,6 +281,45 @@ export function PortalDesktopTable({
   );
 }
 
+/**
+ * The stacking-table pattern: ONE table that becomes a labelled stack on a phone.
+ *
+ * `PortalResponsiveDataList` below is the usual answer, and the better one for a read-only report.
+ * But it renders every row TWICE — a card instance and a table instance — so a row's `useState` is
+ * held in two independent copies. Harmless for a report; NOT harmless for a row carrying an
+ * unsaved edit, because a phone rotated to landscape is wider than the `md` breakpoint, so
+ * crossing it mid-edit swaps in the other instance and the pending change is gone with no warning.
+ *
+ * Use these when a row holds draft state, and `PortalResponsiveDataList` otherwise. Apply the four
+ * class constants to the table, thead, tbody and each tr, and render every cell as a
+ * `PortalStackingCell` so it carries its own label once the column headers are hidden.
+ */
+export const portalStackingTableClassName = "block min-w-0 text-left md:table md:min-w-full";
+export const portalStackingHeadClassName = "hidden md:table-header-group";
+export const portalStackingBodyClassName = "block md:table-row-group";
+export const portalStackingRowClassName = "block md:table-row";
+
+export function PortalStackingCell({
+  children,
+  className,
+  colSpan,
+  label,
+}: {
+  children: ReactNode;
+  className?: string;
+  colSpan?: number;
+  label: string;
+}) {
+  return (
+    <td className={cn("block px-4 py-1.5 md:table-cell md:py-3", className)} colSpan={colSpan}>
+      <span className="mb-0.5 block text-phx-2xs font-black uppercase tracking-[0.16em] text-slate-400 md:hidden">
+        {label}
+      </span>
+      {children}
+    </td>
+  );
+}
+
 export function PortalResponsiveDataList<T>({
   empty,
   getKey,

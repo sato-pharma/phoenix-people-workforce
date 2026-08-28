@@ -11,7 +11,15 @@ import {
 } from "@/components/admin/admin-design-system";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  PortalStackingCell,
+  portalStackingBodyClassName,
+  portalStackingHeadClassName,
+  portalStackingRowClassName,
+  portalStackingTableClassName,
+} from "@/components/employee-portal/portal-primitives";
 import { PHOENIX_BUSINESS_TIME_ZONE } from "@/lib/i18n/format";
+import { cn } from "@/lib/utils";
 import type {
   AttendanceDeviceUserMappingDashboard,
   AttendanceDeviceUserMappingRow,
@@ -149,12 +157,20 @@ function MappingRow({
   }
 
   return (
-    <tr className="border-b border-slate-100 last:border-0">
-      <td className="whitespace-nowrap px-4 py-3 text-sm font-semibold text-slate-700">{row.deviceId}</td>
-      <td className="whitespace-nowrap px-4 py-3 text-sm font-black text-slate-900">{row.deviceUserId}</td>
-      <td className="whitespace-nowrap px-4 py-3 text-sm text-slate-600">{formatDate(row.latestPunchAt)}</td>
-      <td className="whitespace-nowrap px-4 py-3">{statusBadge(row)}</td>
-      <td className="min-w-[260px] px-4 py-3">
+    <tr className={cn(portalStackingRowClassName, "border-b border-slate-100 py-2 last:border-0 md:py-0")}>
+      <PortalStackingCell className="text-sm font-semibold text-slate-700 md:whitespace-nowrap" label="Device">
+        {row.deviceId}
+      </PortalStackingCell>
+      <PortalStackingCell className="text-sm font-black text-slate-900 md:whitespace-nowrap" label="Device User">
+        {row.deviceUserId}
+      </PortalStackingCell>
+      <PortalStackingCell className="text-sm text-slate-600 md:whitespace-nowrap" label="Latest Punch">
+        {formatDate(row.latestPunchAt)}
+      </PortalStackingCell>
+      <PortalStackingCell className="md:whitespace-nowrap" label="Status">
+        {statusBadge(row)}
+      </PortalStackingCell>
+      <PortalStackingCell className="md:min-w-[260px]" label="Employee HR_ID">
         <SearchableSelect
           className="h-9 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-800 outline-none transition focus:border-orange-400 focus:ring-2 focus:ring-orange-100 disabled:bg-slate-50 disabled:text-slate-400"
           disabled={!canUpdate || saving}
@@ -180,8 +196,8 @@ function MappingRow({
             </option>
           ))}
         </SearchableSelect>
-      </td>
-      <td className="min-w-[180px] px-4 py-3 text-sm text-slate-600">
+      </PortalStackingCell>
+      <PortalStackingCell className="text-sm text-slate-600 md:min-w-[180px]" label="Employee">
         {nonEmployee ? (
           <input
             className="h-9 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-800 outline-none transition focus:border-orange-400 focus:ring-2 focus:ring-orange-100 disabled:bg-slate-50 disabled:text-slate-400"
@@ -195,8 +211,8 @@ function MappingRow({
         ) : (
           row.employeeName ?? "Not assigned"
         )}
-      </td>
-      <td className="whitespace-nowrap px-4 py-3">
+      </PortalStackingCell>
+      <PortalStackingCell className="md:whitespace-nowrap" label="Active">
         <label className="inline-flex items-center gap-2 text-sm font-semibold text-slate-700">
           <input
             checked={isActive}
@@ -207,8 +223,8 @@ function MappingRow({
           />
           Active
         </label>
-      </td>
-      <td className="whitespace-nowrap px-4 py-3 text-right">
+      </PortalStackingCell>
+      <PortalStackingCell className="md:whitespace-nowrap md:text-right" label="Action">
         <Button
           className={hasChanges ? "px-3 py-1.5 text-xs" : "border border-slate-200 bg-slate-100 px-3 py-1.5 text-xs text-slate-500 hover:bg-slate-100"}
           disabled={cannotSave}
@@ -219,7 +235,7 @@ function MappingRow({
           {hasChanges ? <Save className="h-3.5 w-3.5" /> : <Check className="h-3.5 w-3.5" />}
           {saving ? "Saving" : hasChanges ? "Save" : "Saved"}
         </Button>
-      </td>
+      </PortalStackingCell>
     </tr>
   );
 }
@@ -540,8 +556,12 @@ export function DeviceUserMappingManager({ agentIsRemotelyReachable, canUpdate, 
         title="Device Users"
       >
         <div className="overflow-x-auto">
-          <table className="min-w-full text-left">
-            <thead className="bg-slate-50 text-phx-xs font-black uppercase tracking-[0.16em] text-slate-500">
+          {/* Eight columns at px-4 cannot fit a phone, so on mobile the rows stack and each cell
+              carries its own label; the column headers are hidden because they would label
+              nothing. See the Cell helper above for why this table stacks rather than becoming a
+              separate card list like the read-only reports do. */}
+          <table className={portalStackingTableClassName}>
+            <thead className={cn(portalStackingHeadClassName, "bg-slate-50 text-phx-xs font-black uppercase tracking-[0.16em] text-slate-500")}>
               <tr>
                 <th className="px-4 py-3">Device</th>
                 <th className="px-4 py-3">Device User</th>
@@ -553,7 +573,7 @@ export function DeviceUserMappingManager({ agentIsRemotelyReachable, canUpdate, 
                 <th className="px-4 py-3 text-right">Action</th>
               </tr>
             </thead>
-            <tbody>
+            <tbody className={portalStackingBodyClassName}>
               {filteredMappings.map((row) => (
                 <MappingRow
                   canUpdate={canUpdate}
@@ -564,8 +584,8 @@ export function DeviceUserMappingManager({ agentIsRemotelyReachable, canUpdate, 
                 />
               ))}
               {filteredMappings.length === 0 ? (
-                <tr>
-                  <td className="px-4 py-8 text-center text-sm text-slate-500" colSpan={8}>
+                <tr className={portalStackingRowClassName}>
+                  <td className="block px-4 py-8 text-center text-sm text-slate-500 md:table-cell" colSpan={8}>
                     No device users match this filter.
                   </td>
                 </tr>
