@@ -3,7 +3,7 @@
 import type { ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { X } from "lucide-react";
+import { Minus, Plus, X } from "lucide-react";
 
 import { useDialogA11y } from "@/components/ui/use-dialog-a11y";
 import { detectCvFileKind } from "@/lib/recruitment/cv-file-kind";
@@ -15,6 +15,23 @@ type CvDocumentProps = {
   downloadUrl: string;
   /** Wrapper classes. The document paints its own light page background inside whatever box it gets. */
   className?: string;
+  /**
+   * Shrink (or grow) the document so a whole page fits the width it is given, and offer a zoom
+   * control beside it.
+   *
+   * ON BY DEFAULT, because the alternative is what shipped on 2026-08-27 and was immediately and
+   * correctly rejected: a CV rendered at its true page size in a column narrower than a page.
+   * Measured on a 1366px laptop with the screening page open — the Word page is a fixed 816px and
+   * the pane it was handed is 652px, so the document overflowed by 164px and the reader got a
+   * sideways scrollbar and a squeezed wall of words instead of a CV. PDFs were worse: pdf.js
+   * rasterises at scale 1.5, so a US-Letter page is a 918px canvas in that same 652px pane.
+   *
+   * The full-screen overlay never showed this because it covers the sidebar and hands the document
+   * ~986px. The same component in a page, inside the shell, gets 652px. Fitting the width means the
+   * document is legible at whatever width it is actually given, which is the only version of this
+   * that survives someone opening it on a smaller screen.
+   */
+  fitToWidth?: boolean;
 };
 
 type Props = {
@@ -59,6 +76,15 @@ function base64ToBytes(encoded: string): Uint8Array<ArrayBuffer> {
   return bytes;
 }
 
+/** How far the reader may push the zoom by hand, and the step the buttons move in. */
+const MIN_ZOOM = 0.35;
+const MAX_ZOOM = 2;
+const ZOOM_STEP = 0.15;
+
+function clampZoom(value: number): number {
+  return Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, value));
+}
+
 /**
  * The CV itself, rendered in place — no dialog, no chrome, no close button.
  *
@@ -67,7 +93,7 @@ function base64ToBytes(encoded: string): Uint8Array<ArrayBuffer> {
  * quirk documented below was learned the hard way and none of it is duplicated: the modal now
  * renders this component too, so both paths cannot drift.
  */
-export function CvDocumentView({ className, downloadUrl, fileName, mimeType }: CvDocumentProps) {
+export function CvDocumentView({ className, downloadUrl, fileName, mimeType, fitToWidth = true }: CvDocumentProps) {
   const kind = detectCvFileKind(mimeType ?? "", fileName);
   const separator = downloadUrl.includes("?") ? "&" : "?";
   // The Download link needs "attachment" (a real save-file prompt); "inline" is for the
@@ -84,6 +110,66 @@ export function CvDocumentView({ className, downloadUrl, fileName, mimeType }: C
   const [loading, setLoading] = useState(kind === "docx" || kind === "pdf" || kind === "image");
   const [error, setError] = useState<string | null>(null);
   const [imageUrl, setImageUrl] = useState<string | null>(null);
+
+  // ── Fit to the width we were actually given ────────────────────────────────
+  //
+  // Only pdf and docx: both paint a page at a fixed pixel width that has nothing to do with the
+  // column it lands in. An image already fits — ZoomablePhoto constrains it and opens full screen
+  // on a click — and the "no preview for this type" notice is a sentence, not a page.
+  const canFit = fitToWidth && (kind === "pdf" || kind === "docx");
+  const paneRef = useRef<HTMLDivElement | null>(null);
+  const contentRef = useRef<HTMLDivElement | null>(null);
+  /** The document's own page width in CSS pixels, measured once while nothing is zoomed. */
+  const [naturalWidth, setNaturalWidth] = useState<number | null>(null);
+  const [paneWidth, setPaneWidth] = useState<number | null>(null);
+  /** null = follow the width. A number = the reader took over with the +/- buttons. */
+  const [manualZoom, setManualZoom] = useState<number | null>(null);
+
+  // Measure the page ONCE, the first time the document has finished painting. It has to happen at
+  // zoom 1 or the reading is in already-scaled pixels and every resize would compound the last
+  // one — which is why naturalWidth gates the fit below rather than being recomputed from it.
+  useEffect(() => {
+    if (!canFit || loading || naturalWidth !== null) return;
+    const content = contentRef.current;
+    if (!content) return;
+    // The PAGE element, not the scroll width of the container. scrollWidth is the wrong number
+    // here and misleadingly close to the right one: measured live, a 816px Word page inside a
+    // 637px pane reported scrollWidth 727, because the wrapper and the page each carry their own
+    // padding and the overflow is only partly counted. `.docx` is docx-preview's page section and
+    // `canvas` is one rasterised PDF page; both are the real thing a reader is trying to fit.
+    const pages = content.querySelectorAll<HTMLElement>(".docx, canvas");
+    let measured = 0;
+    for (const page of pages) measured = Math.max(measured, page.getBoundingClientRect().width);
+    // Padding around the page, so "fit" leaves the document a margin instead of jamming it edge
+    // to edge against the panel beside it.
+    if (measured > 0) setNaturalWidth(measured + 32);
+  }, [canFit, loading, naturalWidth]);
+
+  // And re-fit whenever the column changes size — the screening page has a collapsible facts panel
+  // beside the document, so this is not only about someone resizing a window.
+  useEffect(() => {
+    if (!canFit) return;
+    const pane = paneRef.current;
+    if (!pane) return;
+    const observer = new ResizeObserver((entries) => {
+      const width = entries[0]?.contentRect.width ?? 0;
+      if (width > 0) setPaneWidth(width);
+    });
+    observer.observe(pane);
+    setPaneWidth(pane.clientWidth || null);
+    return () => observer.disconnect();
+  }, [canFit]);
+
+  // Fit only ever SHRINKS. Capped at 1 on purpose: a pane wider than the page would otherwise blow
+  // the document up to fill it, which upscales pdf.js's raster into a blurry page and silently
+  // changes the modal — where the document already fits and nobody complained — into something
+  // nobody asked for. This exists to fix a document too big for its column, and that is all it does
+  // by itself. Wanting it larger is a real thing to want, and it is what the + button is for.
+  const fitZoom = canFit && naturalWidth && paneWidth ? clampZoom(Math.min(1, paneWidth / naturalWidth)) : 1;
+  const zoom = manualZoom ?? fitZoom;
+  // Nothing to offer until the page has been measured; a zoom control that reads 100% while the
+  // document is still blank invites a click that does nothing.
+  const showZoomControl = canFit && naturalWidth !== null && !error;
 
   useEffect(() => {
     if (kind !== "docx" && kind !== "pdf" && kind !== "image") return;
@@ -248,7 +334,61 @@ export function CvDocumentView({ className, downloadUrl, fileName, mimeType }: C
     );
 
 
-  return <div className={className}>{documentBody}</div>;
+  if (!canFit) return <div className={className}>{documentBody}</div>;
+
+  return (
+    <div className={className} ref={paneRef}>
+      {showZoomControl ? (
+        // Sticky, because the reason to reach for it is usually three pages down. Small and quiet:
+        // this is a reading surface, and a toolbar that competes with the CV for attention has
+        // already lost the point.
+        <div className="sticky top-0 z-10 flex items-center justify-end gap-1 border-b border-slate-200/70 bg-slate-100/90 px-3 py-1.5 backdrop-blur">
+          <button
+            aria-label="Zoom out"
+            className="rounded p-1 text-slate-600 transition hover:bg-white hover:text-slate-900 disabled:opacity-40"
+            disabled={zoom <= MIN_ZOOM + 0.001}
+            onClick={() => setManualZoom(clampZoom(zoom - ZOOM_STEP))}
+            type="button"
+          >
+            <Minus className="h-3.5 w-3.5" />
+          </button>
+          <span className="min-w-[3.25rem] text-center text-[11px] font-bold tabular-nums text-slate-700">
+            {Math.round(zoom * 100)}%
+          </span>
+          <button
+            aria-label="Zoom in"
+            className="rounded p-1 text-slate-600 transition hover:bg-white hover:text-slate-900 disabled:opacity-40"
+            disabled={zoom >= MAX_ZOOM - 0.001}
+            onClick={() => setManualZoom(clampZoom(zoom + ZOOM_STEP))}
+            type="button"
+          >
+            <Plus className="h-3.5 w-3.5" />
+          </button>
+          <button
+            className={`ml-1 rounded px-2 py-1 text-[11px] font-bold transition ${
+              manualZoom === null ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-white hover:text-slate-900"
+            }`}
+            onClick={() => setManualZoom(null)}
+            title="Fit a whole page to this column, and keep fitting it when the column changes size"
+            type="button"
+          >
+            Fit width
+          </button>
+        </div>
+      ) : null}
+      {/*
+        CSS `zoom`, not `transform: scale()`, and that is the whole reason this is three lines
+        instead of thirty. `transform` does not affect layout: the scaled document keeps its
+        original box, so the scroll container ends up with the height of an unscaled page and
+        either clips the bottom or leaves a screen of empty grey under it, and every fix for that
+        means recomputing a height by hand on every resize. `zoom` reflows, so the container is
+        simply the right size and scrolling is correct with no arithmetic at all.
+      */}
+      <div ref={contentRef} style={{ zoom }}>
+        {documentBody}
+      </div>
+    </div>
+  );
 }
 
 export function CvPreviewModal({ fileName, mimeType, downloadUrl, onClose, sidePanel }: Props) {

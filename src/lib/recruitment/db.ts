@@ -170,14 +170,24 @@ export function mapCandidate(row: CandidateDbRow): Candidate {
       row.position_specific_fields && typeof row.position_specific_fields === "object"
         ? (row.position_specific_fields as Record<string, unknown>)
         : {},
-    // Present only when the identifying half of the stamp is there. The write path sets all three
-    // columns in ONE update, so a partial stamp cannot normally exist — but reading it defensively
-    // means the worst case is "never sent" rather than a send attributed to nobody at no time.
+    // Present only when the identifying half of the stamp is there. The write path sets every
+    // stamp column in ONE update, so a partial stamp cannot normally exist — but reading it
+    // defensively means the worst case is "never sent" rather than a send attributed to nobody at
+    // no time.
+    //
+    // The seat columns are read separately and stay nullable, because the identity of a send does
+    // NOT depend on them: rows written before 2026-08-27 carry a name and no title, and a send
+    // whose manager could not be resolved carries an HR_ID and nothing else. Requiring the seat
+    // here would turn every one of those into "never sent", which is a lie about the one thing
+    // this stamp exists to record.
     managerNotified:
       textOrNull(row.manager_notified_hr_id) && textOrNull(row.manager_notified_at)
         ? {
+            areaName: textOrNull(row.manager_notified_area),
             hrId: String(row.manager_notified_hr_id),
+            jobTitle: textOrNull(row.manager_notified_job_title),
             name: textOrNull(row.manager_notified_name) ?? String(row.manager_notified_hr_id),
+            regionName: textOrNull(row.manager_notified_region),
             sentAt: String(row.manager_notified_at),
           }
         : null,
