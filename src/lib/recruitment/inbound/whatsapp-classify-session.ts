@@ -14,7 +14,7 @@
 // written.
 
 import { logError, logWarning } from "@/lib/observability/log";
-import { candidateRegionLabels, type CandidateRegionCode } from "@/lib/recruitment/candidate-region";
+import { candidateRegionCodes, candidateRegionLabels, type CandidateRegionCode } from "@/lib/recruitment/candidate-region";
 import { candidateRoleFamilyLabels, type CandidateRoleFamily } from "@/lib/recruitment/candidate-role-family";
 import { recruitmentDb, textOrNull } from "@/lib/recruitment/db";
 import {
@@ -121,6 +121,26 @@ async function loadAreasByRegion(): Promise<Map<string, string[]>> {
 export async function areaNamesForRegion(regionCode: string): Promise<string[]> {
   const byRegion = await loadAreasByRegion();
   return byRegion.get(regionCode) ?? [];
+}
+
+/**
+ * The regions worth offering at question 2: those that have at least one active area to follow up
+ * with. Keeps a region out of the menu until its areas exist, so nobody is walked to an empty
+ * question 3 — see regionMenu's note.
+ *
+ * Fails OPEN to the full vocabulary, deliberately. A transient read error must not shrink or empty
+ * the menu: an applicant mid-conversation would silently lose the region they were about to pick,
+ * and the flow already handles an empty area list gracefully further down (it finishes on two of
+ * three answers rather than dead-ending). The worst case here is today's behaviour.
+ */
+export async function offeredRegionCodes(): Promise<readonly CandidateRegionCode[]> {
+  try {
+    const byRegion = await loadAreasByRegion();
+    const withAreas = candidateRegionCodes.filter((code) => (byRegion.get(code) ?? []).length > 0);
+    return withAreas.length > 0 ? withAreas : candidateRegionCodes;
+  } catch {
+    return candidateRegionCodes;
+  }
 }
 
 // ── Sending one step's prompt ────────────────────────────────────────────────────────────────────
@@ -331,12 +351,15 @@ export async function handleClassifyReply(input: {
         .from(SESSIONS_TABLE)
         .update({ job_title_family: parsed.value, step: "region", updated_at: nowIso })
         .eq("id", session.id);
-      const sent = await sendStep({ ...session, phone_number_id: session.phone_number_id ?? input.phoneNumberId }, regionMenu());
+      const sent = await sendStep(
+        { ...session, phone_number_id: session.phone_number_id ?? input.phoneNumberId },
+        regionMenu(await offeredRegionCodes()),
+      );
       return sent ? "advanced" : "advanced";
     }
 
     if (parsed.step === "region") {
-      if (!isOfferedRegion(parsed.value)) return "unknown_value";
+      if (!isOfferedRegion(parsed.value, await offeredRegionCodes())) return "unknown_value";
       const areas = await areaNamesForRegion(parsed.value);
       if (areas.length === 0) {
         // No area list to offer. Finish on what we have rather than dead-ending the applicant on a
@@ -434,7 +457,7 @@ export async function handleClassifyText(input: {
       .from(SESSIONS_TABLE)
       .update({ job_title_other_text: typed, step: "region", updated_at: nowIso })
       .eq("id", session.id);
-    await sendStep(withPhone, regionMenu());
+    await sendStep(withPhone, regionMenu(await offeredRegionCodes()));
     return "advanced";
   } catch (error) {
     logError("WhatsApp classification failed to handle a typed answer", {

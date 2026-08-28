@@ -211,23 +211,43 @@ export function cleanTypedJobTitle(raw: string | null | undefined): string | nul
 }
 
 // ── Question 2 — which region? ───────────────────────────────────────────────────────────────────
-// The 7 company regions. Deliberately NOT read from au.regions live: that table also carries
-// `UE-1` and `UE-2`, which have ZERO active areas (verified 2026-08-28) and would dead-end the
-// candidate at question 3 with an empty list. `candidateRegionCodes` is the reviewed 7 that have
-// areas, and it is the same vocabulary the pool's Region filter offers.
-export function regionMenu(): ClassifyMenu {
+// The company regions that CAN be followed by question 3. The caller passes which ones those are,
+// read live from au.canonical_areas, and the menu never offers one that has no areas behind it.
+//
+// This used to be `candidateRegionCodes` verbatim, with a comment explaining that au.regions also
+// carries `UE-1`/`UE-2` — regions with ZERO active areas that would walk an applicant to question 3
+// and show an empty list. That was a hazard held off by a hand-maintained list, and it went stale
+// the moment a real region joined the vocabulary before its areas moved: "Delta (3)" was added to
+// the pool's Region filter on 2026-08-28, while the sales geography move behind it waits on the
+// August closing. Deriving the offer from the areas themselves fixes both cases at once — UE-1 and
+// UE-2 stay out because they have no areas, and Delta (3) starts being offered by itself, with no
+// second code change, on the day its areas arrive.
+//
+// Ordered by `candidateRegionCodes` rather than by the caller's set, so the list a candidate sees
+// keeps the company's own order however the areas were read.
+export function regionMenu(offeredCodes: readonly CandidateRegionCode[]): ClassifyMenu {
+  const offered = new Set<string>(offeredCodes);
   return {
     body: "Which region would you like to work in?",
     buttonLabel: "Choose a region",
-    rows: candidateRegionCodes.map((code) => rowFor("region", code, candidateRegionLabels[code])),
+    rows: candidateRegionCodes
+      .filter((code) => offered.has(code))
+      .map((code) => rowFor("region", code, candidateRegionLabels[code])),
     sectionTitle: "Regions",
     step: "region",
   };
 }
 
-/** True for a region we are willing to offer — guards against a stale code arriving in a reply. */
-export function isOfferedRegion(value: string): value is CandidateRegionCode {
-  return (candidateRegionCodes as readonly string[]).includes(value);
+/**
+ * True for a region we are willing to offer — guards against a stale code arriving in a reply.
+ * `offeredCodes` is the same set the menu was built from, so a candidate who kept an old message
+ * open cannot answer with a region that has since stopped being offered.
+ */
+export function isOfferedRegion(
+  value: string,
+  offeredCodes: readonly CandidateRegionCode[],
+): value is CandidateRegionCode {
+  return (offeredCodes as readonly string[]).includes(value);
 }
 
 /** True for a role family we offered. Same guard, for question 1. */

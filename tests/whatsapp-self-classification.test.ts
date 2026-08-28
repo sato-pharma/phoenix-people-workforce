@@ -11,6 +11,7 @@ import {
   jobTitleOtherPromptText,
   jobTitleOtherTooLongText,
   JOB_TITLE_OTHER_MAX,
+  isOfferedRegion,
   menuViolations,
   offeredRoleMenuFamilies,
   parseClassifyRowId,
@@ -64,7 +65,8 @@ export function runWhatsAppSelfClassificationTests() {
   // ── The menus must satisfy Meta's limits, or the message is a 400 and the flow dies silently ──
 
   assert.deepEqual(menuViolations(jobTitleMenu()), [], "the role menu must satisfy every Cloud API limit");
-  assert.deepEqual(menuViolations(regionMenu()), [], "the region menu must satisfy every Cloud API limit");
+  const OFFERED = Object.keys(PRODUCTION_AREAS) as Array<(typeof candidateRegionCodes)[number]>;
+  assert.deepEqual(menuViolations(regionMenu(OFFERED)), [], "the region menu must satisfy every Cloud API limit");
 
   for (const [regionCode, areas] of Object.entries(PRODUCTION_AREAS)) {
     const menu = areaMenu(regionCode as (typeof candidateRegionCodes)[number], areas);
@@ -96,18 +98,43 @@ export function runWhatsAppSelfClassificationTests() {
   assert.equal(fayoum.description, undefined, "a title that already fits must not repeat itself as a description");
 
   // ── The region menu must not offer a dead end ─────────────────────────────────────────────────
-  // au.regions also holds UE-1 and UE-2, which have ZERO active areas. Offering either would walk
-  // the applicant to question 3 and present an empty list.
-  const regionIds = regionMenu().rows.map((row) => row.id);
+  // The menu is built from the regions that actually HAVE areas, read live from au.canonical_areas.
+  // au.regions also holds UE-1 and UE-2 with zero active areas, and the pool vocabulary now carries
+  // "Delta (3)" whose areas have not moved yet — offering any of the three would walk an applicant
+  // to question 3 and show an empty list.
+  const regionIds = regionMenu(OFFERED).rows.map((row) => row.id);
   assert.ok(!regionIds.includes(classifyRowId("region", "UE-1")), "UE-1 has no areas and must never be offered");
   assert.ok(!regionIds.includes(classifyRowId("region", "UE-2")), "UE-2 has no areas and must never be offered");
-  assert.equal(regionMenu().rows.length, candidateRegionCodes.length, "every offered region must have an area list");
-  for (const code of candidateRegionCodes) {
+  assert.equal(regionMenu(OFFERED).rows.length, OFFERED.length, "every offered region must have an area list");
+  for (const code of OFFERED) {
     assert.ok(
       Array.isArray(PRODUCTION_AREAS[code]) && PRODUCTION_AREAS[code].length > 0,
       `region ${candidateRegionLabels[code]} is offered but has no areas to follow it with`,
     );
   }
+
+  // Delta (3) is in the pool vocabulary but has no canonical areas yet (verified in production
+  // 2026-08-28: au.canonical_areas has 0 rows with code_region_code = 'D3'). It must stay OUT of
+  // the menu until they move — and it must appear by itself, with no code change, once they do.
+  assert.ok(
+    candidateRegionCodes.includes("D3"),
+    "Delta (3) must be in the pool vocabulary — the Region filter is how her reps get recruited",
+  );
+  assert.ok(
+    !regionIds.includes(classifyRowId("region", "D3")),
+    "Delta (3) has no areas yet and must not be offered on WhatsApp",
+  );
+  const withDelta3 = regionMenu([...OFFERED, "D3"]).rows.map((row) => row.id);
+  assert.ok(
+    withDelta3.includes(classifyRowId("region", "D3")),
+    "the day Delta (3) has areas, the menu must offer it with no further code change",
+  );
+
+  // The guard on the REPLY must use the same set as the menu, or a candidate holding an older
+  // message could answer with a region that is no longer offered.
+  assert.equal(isOfferedRegion("D3", OFFERED), false, "a region that was not offered is not accepted back");
+  assert.equal(isOfferedRegion("D3", [...OFFERED, "D3"]), true, "a region that WAS offered is accepted back");
+  assert.equal(isOfferedRegion("UE-1", OFFERED), false, "a region with no areas is never accepted");
 
   // ── The role menu offers the OWNER'S list, not every family ───────────────────────────────────
   // This assertion used to read `roleMenu.rows.length === candidateRoleFamilies.length` — "every
