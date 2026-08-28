@@ -308,13 +308,13 @@ export function runCrmContactListsTests() {
     ["Super Admin"],
     "widening this list requires the reps-per-manager scope in the loader FIRST — a picker is never wider than its viewer",
   );
-  assert.equal(canAccessDoctorList({ role: "Super Admin", scope: "admin" }), true);
+  assert.equal(canAccessDoctorList({ role: "Super Admin", scope: "company" }), true);
   // The `system` scope shortcut is the same one every other canAccess* helper in permissions.ts
   // carries; it admits the system-administrator workspace regardless of the role label it wears.
   assert.equal(canAccessDoctorList({ role: "Employee", scope: "system" }), true);
   for (const role of ["District Manager", "Medical Rep", "CEO", "SFE Manager", "Employee"] as const) {
     assert.equal(
-      canAccessDoctorList({ role, scope: "admin" }),
+      canAccessDoctorList({ role, scope: "company" }),
       false,
       `${role} must not reach the doctor list until the per-manager scope exists`,
     );

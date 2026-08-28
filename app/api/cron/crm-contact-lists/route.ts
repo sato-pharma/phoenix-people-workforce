@@ -14,6 +14,8 @@ export const dynamic = "force-dynamic";
 // mirror that disagrees with the CRM until tomorrow.
 export const maxDuration = 800;
 
+const JOB_NAME = "crm-contact-lists";
+
 // Refreshes each rep's assigned doctor list from the CRM web app, daily.
 //
 // This is the ONLY writer of ireports360_contacts, and the only path by which Phoenix learns about
@@ -36,7 +38,7 @@ function isAuthorized(request: Request) {
 
 export async function GET(request: Request) {
   if (!isAuthorized(request)) {
-    logCronUnauthorized("cron/crm-contact-lists", request);
+    logCronUnauthorized(`cron/${JOB_NAME}`, request);
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
@@ -95,7 +97,10 @@ export async function GET(request: Request) {
       { headers: { "Cache-Control": "no-store" } },
     );
   } catch (error) {
-    logError("cron/crm-contact-lists failed", error);
-    return NextResponse.json({ error: clientSafeErrorMessage(error) }, { status: 500 });
+    logError("CRM contact list sync failed", { error, labels: { event: "cron_failed", job: JOB_NAME } });
+    return NextResponse.json(
+      { error: clientSafeErrorMessage(error, "The CRM contact list sync failed.") },
+      { status: 500 },
+    );
   }
 }
