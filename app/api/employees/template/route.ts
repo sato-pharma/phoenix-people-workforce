@@ -9,6 +9,11 @@ import { assertPermission, filterEmployeeDirectoryForAccess } from "@/lib/auth/p
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { getEmployeeDirectory, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { resolveEmployeeMasterExportSalary } from "@/lib/employees/employee-master-export";
+import {
+  AREAS_LIST_NAME,
+  areaTeamValidationFormula,
+  buildAreaTeamRanges,
+} from "@/lib/employees/template-lookup-names";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
@@ -224,21 +229,6 @@ function employeeToExportRow(employee: EmployeeDirectoryRow): ExportRow {
 // Deterministic sanitizer shared between the TS-side defined-name registration and the
 // live Excel formula (SUBSTITUTE chain below) — both MUST transform a Line/Area label
 // into the identical token, or the INDIRECT() cascade resolves to a dead reference.
-function definedNameToken(prefix: string, label: string) {
-  const token = label
-    .toUpperCase()
-    .replace(/[-\s]+/g, "_")
-    .replace(/[^A-Z0-9_]/g, "")
-    .replace(/^_+|_+$/g, "");
-  return `${prefix}_${token || "NA"}`;
-}
-
-// The live formula equivalent of definedNameToken(), so a dropdown picked from a cell
-// resolves via INDIRECT to the matching named range built below.
-function indirectTokenFormula(prefix: string, cellRef: string) {
-  return `"${prefix}_"&SUBSTITUTE(SUBSTITUTE(UPPER(${cellRef}),"-","_")," ","_")`;
-}
-
 function columnLetter(index: number) {
   let n = index;
   let out = "";
@@ -264,9 +254,12 @@ function addLookupDataSheet(workbook: ExcelJS.Workbook, lookups: LookupValues) {
     values.forEach((value, index) => {
       sheet.getCell(2 + index, col).value = value;
     });
-    if (values.length > 0) {
-      workbook.definedNames.add(`'Lookup Data'!$${letter}$2:$${letter}$${1 + values.length}`, name);
-    }
+    // Registered even when the list is EMPTY, pointing at the single blank cell under the header.
+    // An empty dropdown is a correct answer; a MISSING defined name makes the INDIRECT below
+    // resolve to #REF! and kills the cell's validation outright — which is how all 23 team-less
+    // areas (Delta (3) among them) ended up with a dead Team dropdown.
+    const lastRow = Math.max(2, 1 + values.length);
+    workbook.definedNames.add(`'Lookup Data'!$${letter}$2:$${letter}$${lastRow}`, name);
     col += 1;
   }
 
@@ -278,21 +271,15 @@ function addLookupDataSheet(workbook: ExcelJS.Workbook, lookups: LookupValues) {
   // Pedia reps commonly share the same area name. A per-line area cascade would either
   // wrongly hide valid areas or, once corrected for real overlap, degrade to "show all
   // areas anyway" — so Area is one flat list, consistent for every Line.
-  writeList("AREAS_LIST", "Areas", lookups.areas.map((area) => area.label));
+  writeList(AREAS_LIST_NAME, "Areas", lookups.areas.map((area) => area.label));
 
-  // Area -> Teams: each team carries its owning area's numeric id; resolve that id back
-  // to the area's label (the same label the cascade formula keys off of) via `value`.
-  const areaLabelById = new Map(lookups.areas.map((area) => [Number(area.value), area.label]));
-  const teamsByAreaLabel = new Map<string, string[]>();
-  for (const area of lookups.areas) teamsByAreaLabel.set(area.label, []);
-  for (const team of lookups.teams) {
-    if (team.areaId == null) continue;
-    const areaLabel = areaLabelById.get(team.areaId);
-    if (!areaLabel) continue;
-    teamsByAreaLabel.get(areaLabel)?.push(team.label);
-  }
-  for (const area of lookups.areas) {
-    writeList(definedNameToken("TEAMS", area.label), `Teams (${area.label})`, teamsByAreaLabel.get(area.label) ?? []);
+  // Area -> Teams. Ranges are numbered by the area's POSITION in AREAS_LIST, never by a token
+  // derived from its label, so the builder here and the live MATCH formula in the Team cell cannot
+  // drift apart. Eleven live areas — "Delta (1)", "Delta (2)", "Delta (3)", "Gharbia 1 (Tanta)",
+  // "Port said - Domiat" among them — had a dead dropdown because they did.
+  // Full account: src/lib/employees/template-lookup-names.ts.
+  for (const range of buildAreaTeamRanges({ areas: lookups.areas, teams: lookups.teams })) {
+    writeList(range.name, range.header, range.teamLabels);
   }
 
   // Flat manager directory for the live VLOOKUP-driven "Direct Manager (auto)" column.
@@ -440,10 +427,11 @@ async function styleWorksheet(sheet: ExcelJS.Worksheet, workbook: ExcelJS.Workbo
     if (departmentFormula) {
       sheet.getCell(rowNumber, departmentCol).dataValidation = { allowBlank: true, formulae: [departmentFormula], type: "list" };
     }
-    // Team cascades from Area, same INDIRECT technique as Area cascading from Line.
+    // Team cascades from Area: MATCH the picked area in AREAS_LIST, then INDIRECT to that
+    // position's range. An empty / unrecognised Area falls back to the always-present empty range.
     sheet.getCell(rowNumber, teamCol).dataValidation = {
       allowBlank: true,
-      formulae: [`=INDIRECT(${indirectTokenFormula("TEAMS", `${areaLetter}${rowNumber}`)})`],
+      formulae: [areaTeamValidationFormula(`${areaLetter}${rowNumber}`)],
       type: "list",
       promptTitle: "Select Team",
       prompt: "Pick an Area first — only that area's teams are shown.",
@@ -461,7 +449,7 @@ async function styleWorksheet(sheet: ExcelJS.Worksheet, workbook: ExcelJS.Workbo
     };
     sheet.getCell(rowNumber, areaCol).dataValidation = {
       allowBlank: true,
-      formulae: ["AREAS_LIST"],
+      formulae: [AREAS_LIST_NAME],
       type: "list",
       promptTitle: "Select Area",
       prompt: "All currently active areas. Not filtered by Line — most areas have a dedicated rep per line.",
