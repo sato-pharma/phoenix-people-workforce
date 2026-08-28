@@ -452,6 +452,23 @@ this file already gives them)
   entirely; with `.upsert()` carry a before-image. Both real occurrences are fixed (#2326, #2329) —
   the PATTERN is what regenerates, not those two call sites.
   `optional-field-written-unconditionally-is-a-silent-erase`
+- **A feature can ship green, deploy cleanly, and be reachable by NOBODY - and zero usage is what
+  both look like.** #2237's Capture Evidence was rejected for every `doctor` customer (**59 of the
+  65 customers it existed for**, and 115 of the 126 pending links behind them) because one
+  hand-written copy of the type list omitted `doctor`, while the union, the DB constraint and the
+  classifier all allowed it - the module minted rows it then refused to accept back. Nothing
+  errored, CI was green, the deploy was healthy, and the ONLY symptom was zero evidence files
+  captured since it went live, which reads exactly like slow adoption. **When a just-shipped
+  feature shows zero usage, exercise the path end to end before concluding it is adoption** - a
+  silent 100%-rejection rate and nobody-tried-it are indistinguishable from outside. Fixed by
+  #2249, which also deleted the copy: check a shared list, never a local duplicate of one.
+  `capture-evidence-was-dead-on-arrival-for-doctor-customers`
+- **A merged fix on a path nobody has exercised is untested, not proven.** #2241 gave the three
+  payroll batch mutations audit rows; verified 2026-08-28, production `audit_logs` still holds
+  exactly **15 `payroll_batch` rows, newest 2026-07-13, 0 since the fix** - no batch has been
+  imported, replaced or deleted since, so the new path has never written anything. The row count
+  cannot tell "works" from "broken" until someone touches a batch.
+  `payroll-mutations-were-unaudited-until-2026-08-21`
 
 **Memory and this index**
 
