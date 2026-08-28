@@ -14,6 +14,7 @@ import {
 } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage, resolveViewerIdentityFromPage } from "@/lib/auth/server";
 import { formatHrIdForDisplay } from "@/lib/hr-id";
+import { layoutOwnerKey } from "@/lib/navigation/personal-layout";
 import { loadPersonalLayout } from "@/lib/navigation/personal-layout-store";
 import { CommandPalette } from "@/components/layout/command-palette";
 import { DocumentTitleSync } from "@/components/layout/document-title-sync";
@@ -79,7 +80,7 @@ export async function AppShell({
   // missing table (before the migration is applied), an unreadable row, a layout written by a
   // future version — and null means the sidebar renders exactly as the code defines it. A cosmetic
   // preference must never be able to break navigation for someone trying to do their job.
-  const personalLayout = await loadPersonalLayout(access.hrId);
+  const personalLayout = await loadPersonalLayout(layoutOwnerKey(access));
 
   const viewer = showTopbar
     ? await resolveViewerIdentityFromPage(access)
