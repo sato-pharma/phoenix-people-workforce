@@ -184,6 +184,23 @@ file holding the full account, under
   verdict — name the later commit with `git log <squashSHA>..origin/main -- <files>` before calling
   anything stranded. `not-remotes-flips-when-remote-refs-are-pruned` ·
   `repo-doctor-no-origin-ref-is-usually-squash-residue`
+- **A UTC merge time read against a Cairo commit time INVERTS the merged/stranded verdict.** §4's
+  "report in Africa/Cairo, never raw UTC" is a REPORTING rule; this is the ANALYSIS failure it does
+  not cover, and it is what makes the two traps above dangerous. `gh pr view --json mergedAt` returns
+  **UTC** (`2026-08-28T09:51:22Z`) while `git log --format=%cI` returns **Cairo**
+  (`2026-08-28T12:44:26+03:00`). Side by side, 12:44 looks LATER than 09:51, so squash residue reads
+  as new post-merge work — but 09:51Z **is** 12:51 Cairo, and that commit predates its own merge by
+  seven minutes. Measured 2026-08-28 on a peer session's worktree audit: combined with `ls-remote` =
+  **0** (which is `delete_branch_on_merge` succeeding, not a missing backup) and `git cherry`'s
+  multi-commit-squash false positive, it produced a confident STOP telling two sessions to **push**
+  already-merged branches — the exact move that opens a conflicting PR, and a conflicted PR runs no
+  CI at all here. Each signal is ambiguous alone; the timestamp is what *appears* to resolve them,
+  and it resolves them backwards. **Compare instants, never wall clocks** — put both sides in one
+  zone (`TZ=UTC git log`) before subtracting. And a timestamp is never the verdict anyway: the answer
+  is CONTENT, per §5 — `git diff $(git merge-base origin/main <branch>) <branch> | git patch-id
+  --stable` against the squash commit's own patch-id. Identical means fully represented on `main`,
+  whatever the clocks appear to say.
+  `a-utc-timestamp-compared-against-cairo-manufactures-a-false-signal`
 - **`git` "Authentication failed" can be the credential HELPER (GCM) going OOM, not a bad token.**
   Git Credential Manager dies at `internal/cpu.doinit` and git then retries ANONYMOUSLY, so the token
   is never presented — the failure is memory pressure, not auth. Look UP the output for a Go panic;
@@ -721,6 +738,15 @@ something real. The 2026-08-27 pass freed 320 bytes with all counts identical (1
 append re-breaks it the same silent way. When compression is exhausted, move guidance HERE rather
 than deleting a hook. That is what §2.1 did in August, and what this section is.
 
+**"Here" is three places, not one, and the SessionStart hook now names all three.** Route by KIND of
+fact: an agent-operating trap to §2.1, a production or approval hook to §2.3, an **owner product
+rule to §4** — which is where 2026-08-28's two relocations went, eight marketing-validation hooks
+into §4.1 (#2565) and seven owner product rules into §4 itself (#2566). Filing an owner rule among
+the session traps is not merely untidy: §2.1 is the section a session skims for shell and git
+behaviour, so a payroll or export rule parked there is read by nobody who needs it. The hook said
+"2.1/2.3" for its first day and would have sent exactly those seven to the wrong section;
+`tests/session-start-memory-index-guard.test.ts` now pins all three routes.
+
 **Trim BEFORE the cliff, and relocate rather than compress once the levers are gone.** Measured
 2026-08-27 evening at **23,937 bytes - 463 bytes of headroom**, so not yet over, but every
 punctuation lever the passes above used was already spent: **zero** trailing whitespace, **zero**
@@ -772,6 +798,19 @@ smaller number. `node scripts/repo-doctor.mjs` now prints the verdict and **the 
 free**; `scripts/memory-index-budget.mjs` holds the arithmetic and `tests/memory-index-budget.test.ts`
 pins it — including a pin that the OLD ceiling-only rule stayed **silent at 335 bytes from the
 cliff**, which is what proves the test discriminates rather than passing for free.
+
+**And nobody has to go looking for that verdict any more.** `.claude/hooks/memory-index-guard.mjs`
+runs on **SessionStart** and puts the same three figures — size, headroom to the budget, and the
+exact bytes to free — plus the displacement rule below into every session's context *before* it
+appends anything. That closes the gap the doctor cannot: the doctor is a periodic audit, and an
+audit fires after the write. Two details are deliberate. It is **its own hook entry**, not a line
+inside `session-lock.mjs`, because that script returns early whenever another session's lock is
+live — exactly the case that produces colliding appends. And it resolves the index from the
+**primary checkout**, not from the worktree a session is sitting in, or every `_wt-*` session would
+look up a slug of its own path, find no directory, and stay silent while doing most of the
+appending. The human is interrupted only when action is due; the session is told every time.
+`tests/session-start-memory-index-guard.test.ts` pins the wiring and both lookups, and both were
+proven by breaking them.
 
 **THE DISPLACEMENT RULE: you may not add an index line without freeing at least as many bytes in
 the same edit.** Retire a resolved hook, or relocate one to §2.1/§2.3. This is the only part that
@@ -1092,61 +1131,28 @@ These are the owner's own decisions, stated across many sessions. They are not s
 - Marketing Manager is hidden from the portal Incentive tab; GPM still sees it.
 - The Organogram / AU seat model is the source of truth for org-structure and vacancy data.
 - All SoS sales, historical and future, attribute to **today's** geography — never as-was.
-- 🔒 **The August 2026 closing is NOT affected by the Anti Infective Delta (3) split.** Owner's
-  words, said at least ten times and still being misread: *"This employee will be hired on one
-  September. So the monthly closing of August will not be distributed on him. It will be normally
-  before the change we made. Starting from September, everything will be changed and divided."*
-  August is computed on the **pre-split** geography — D11, D24, D25, OT2 and OT9 stay under
-  `SEAT-AIF-OTHERS` / `SEAT-AIF-DM-D2` exactly as they are today, and Samaa Shalaby (`AI-0014`,
-  hired 2026-09-01) gets no share of it. The split is applied **after** August is published, and
-  it governs September onward. Verified in production 2026-08-28: `au.line_area_map` has **0** rows
-  carrying `operational_region_code = 'D3'`, so the move is not merely deferred — it does not
-  exist yet, and no closing run can pick it up.
-- 🔒 **Delta (3) is HALF applied — the seats exist, the territory has NOT moved, and PR #2499 says
-  otherwise.** Merged 2026-08-28 05:21 Cairo as "a vacant placeholder". LIVE in production:
-  `au.regions` D3, five `au.seats` rows (`SEAT-AIF-DM-D3` plus reps for D11, D24, D25, OT2),
-  `source_of_sales_regions` D3, an `areas` row `delta_3`, the `position_vacancies` row, and
-  `au.occupancy_history` hiring Samaa (`AI-0014`) into `SEAT-AIF-DM-D3` **effective 2026-09-01**.
-  NOT live: **`au.line_area_map` holds 0 rows with `operational_region_code = 'D3'`**, and all five
-  target rows are byte-identical to `au.bak_20260828_d3_line_area_map` — a backup taken for a change
-  that was then never made. **Do not read #2499 as evidence the move happened.** Its body states
-  *"Only `line_area_map.operational_region_code` moves"* and predicts `vacant_will_hire` 38 → 42 and
-  `other_line_specific` 13 → 11; the migration
-  `supabase/migrations/20260828064500_anti_infective_delta_3_district.sql` contains **zero**
-  occurrences of `line_area_map` across all seven of its statements, is **absent from the production
-  ledger** (those seven statements were applied by hand), and production reads `other_line_specific`
-  **13**. All verified 2026-08-28.
-- **The Delta (3) territory move is still OWED, and NOTHING schedules it** — no migration on `main`,
-  no open PR, no branch. It fires **only after August's closing is published** (the closing golden
-  rule below), never before: sales attribute to **today's** geography, so moving these rows early is
-  precisely what the owner forbade. Five `au.line_area_map` rows, `line_code = 'anti_infective'`
-  ONLY — the `cns` and `pedia` rows for the same five areas must not be touched:
-
-  | area | today | after the move |
-  | --- | --- | --- |
-  | `D11` Qalubeya | `OT` / `other_line_specific` / `SEAT-AIF-OTHERS` | `D3` / `vacant_will_hire` / `SEAT-AIF-DM-D3` |
-  | `D24` Sharkia 1 | `D2` / `vacant_will_hire` / `SEAT-AIF-DM-D2` | `D3` / `vacant_will_hire` / `SEAT-AIF-DM-D3` |
-  | `D25` Sharkia 2 | `OT` / `other_line_specific` / `SEAT-AIF-OTHERS` | `D3` / `vacant_will_hire` / `SEAT-AIF-DM-D3` |
-  | `OT2` Suez | `OT` / `other_permanent` / `SEAT-AIF-OTHERS` | `D3` / `vacant_will_hire` / `SEAT-AIF-DM-D3` |
-  | `OT9` Ismailia | `OT` / `other_permanent` / `SEAT-AIF-OTHERS` | `D3` / `vacant_will_hire` / `SEAT-AIF-DM-D3` |
-
-  Three things to know before running it. **`carries_target` is a GENERATED column** —
-  `(area_state = any (array['occupied','vacant_will_hire']))` — so it cannot be set directly, and
-  moving these five to `vacant_will_hire` is what makes them target-bearing. That **creates no
-  target**: `au.monthly_targets` is keyed by `(period, line_code, area_code, product_code)` with no
-  region column. **`au.canonical_areas.code_region_code` must NOT move** — it is the structural code
-  space and stays `D11=D1 D24=D2 D25=D2 OT2=OT OT9=OT`, following the UE-1/UE-2 precedent. And
-  **OT9 has no rep seat at all** (`au.seats` returns none for `area_code = 'OT9'`; `SEAT-AIF-REP-OT2`
-  is labelled "Suez & Ismailia rep" but carries `area_code = 'OT2'`), so whether OT9's `rep_seat_id`
-  stays null or points at the OT2 seat is an **open question for the owner — do not invent an
-  answer.** One contradiction is live meanwhile and is harmless: `SEAT-AIF-REP-D24` reports to
-  `SEAT-AIF-DM-D3` while the map still routes D24's DM to `SEAT-AIF-DM-D2`.
-- **Nobody knows WHEN the August closing happens, and it is not 1 September.** It waits on the
-  distributor companies sending their sales data, which arrives on their schedule, not ours. The
-  closing golden rule above sets the EARLIEST date a month may be released; it never sets the
-  actual date. Do not put a date on a closing, do not tell the owner one is "due", and do not
-  treat the 1st of the month as a deadline he has missed. Retire this bullet and the three Delta (3)
-  bullets above it once the territory move has been applied.
+- **Delta (3) territory move — fully applied, verified live 2026-08-28.** The five areas (`D11`
+  Qalubeya, `D24` Sharkia 1, `D25` Sharkia 2, `OT2` Suez, `OT9` Ismailia) now each carry a correctly
+  forward-dated PAIR of `au.line_area_map` rows, not an in-place edit: the pre-split row closes with
+  `effective_to = '2026-09-01'`, and a new `operational_region_code = 'D3'` row opens at that same
+  date with `effective_to` null. Confirmed with `au.f_line_area_map_asof()`: 2026-08-31 still
+  resolves all five to their pre-split region (`OT` for four, `D2` for D24); 2026-09-01 resolves all
+  five to `D3`. **So the August 2026 closing is genuinely unaffected, by construction** — the
+  owner's repeated instruction (*"the monthly closing of August will not be distributed on
+  [Samaa]... starting from September, everything will be changed and divided"*) is honoured. This
+  retires the four bullets that used to occupy this spot ("still OWED", "HALF applied", the pre-move
+  mapping table, and a closing-date disclaimer) — do not resurrect them or re-derive "is it done yet"
+  from an older memory note; it is done. One caution those bullets carried that is still true on its
+  own: nobody knows WHEN the August closing itself will publish — it waits on distributor data, not
+  a calendar date, so 1 September is not a deadline to report as missed.
+  **Two things this move did NOT touch, both still open:** the recruitment map's area menus
+  (`src/lib/recruitment/inbound/whatsapp-classify-place-hints.ts`) still list these five areas under
+  Delta (1)/(2) — a known, separately-tracked residue (see that file and
+  `docs/recruitment-inbound-intake.md`). And the weekly/monthly **plan** region picker
+  (`src/lib/weekly-planning/regions.ts`) never had "Delta 3" in its approved region list at all —
+  unlike the sales map, that picker has no as-of awareness, so it was silently blocking the Anti
+  Infective NSM from planning against these areas today, weeks before the sales split takes effect.
+  Fixed 2026-08-28 in that file.
 - 🔒 **THE CLOSING GOLDEN RULE — a closing is never done or sent during the month it covers.**
   Owner's rule, stated 2026-08-28, in his words: *"no closing is ever done or sent during the
   month. Closing after the month closes."* The closing for `YYYY-MM` becomes publishable on the
@@ -1161,6 +1167,101 @@ These are the owner's own decisions, stated across many sessions. They are not s
   still calls the gate. **`unpublishClosing` is deliberately NOT gated** — it is the recovery
   path, and a recovery path that stops working when you need it is not one. Do not "fix" this
   back, do not add an override flag, and do not offer to publish a running month "just to see".
+
+**More of the same relocation, the same day and for the same reason — §4.1 below carries the cliff
+mechanics in full.** These seven index lines went the way the eight marketing hooks did: `MEMORY.md`
+had crossed 24,400 bytes again, and compression was spent (zero em-dashes, zero trailing whitespace
+and zero double spaces left; two prose passes freed 888 bytes against a 2,400-byte shortfall). Every
+rule below is an owner **decision** rather than a measurement — decisions do not rot the way counts
+do — so each belongs in a file that auto-loads in full. Each names the memory file holding the full
+account, under `C:\Users\satoh\.claude\projects\F--Phoenix-Workforce-phoenix-workforce\memory\`.
+
+- **Every weekly report and export MUST set `excludeUnmapped`** — an unmapped SKU double-counts
+  against the real product it belongs to. **An export must MATCH the screen**: a sheet or a column
+  may never be dropped silently because it cannot be filtered — label it instead (owner rule
+  2026-08-26). And the Weekly **Summarized Report's layout and scope are LOCKED**, learned over many
+  rejected iterations — do not restyle it.
+  `unmapped-products-must-never-reach-a-report` ·
+  `an-export-must-match-the-screen-never-different-data` · `weekly-summarized-report-owner-rules`
+- **The system FLAGS an expense; it NEVER auto-rejects one.** Owner rule 2026-08-09: every failed
+  check flags the claim for the Super Admin, who decides. **Never auto-publish a deductions month**
+  either, and never approve a batch on your own initiative — CRM-derived detections run around 80%
+  accurate, so the order is always recommend, the owner confirms, only then publish. And **a
+  same-day check against the CRM reads zero because visits are entered through and after the
+  working day** — never report that as a measured zero.
+  `system-flags-expenses-never-rejects` · `never-auto-publish-deductions-owner-confirms-first` ·
+  `dv-evidence-window-same-day-submits`
+- **CRM visit types `-5` (Public Holiday) and `-6` (Casual Leave) are WORKING days, never absence.**
+  Owner rule 2026-08-21, independently re-verified the same day including which map is actually
+  load-bearing. `-4` is the only real leave type, and only **FWC** reaches salary.
+  `public-holiday-and-casual-leave-are-working-days`
+- **The Ready-sheet >25th full-pay waiver is for genuine RESIGNATIONS only** — terminated and
+  inactive leavers stay prorated with zero allowances. **A regional employee travelling TO Cairo
+  earns no outstation per-diem** (live in production, #2160 — do not undo). **DSM and Medical Rep
+  titles auto-provision their real role**, and the title-governance guard was DELIBERATELY relaxed
+  for exactly those two — do not restore the blanket-`Employee` assertion.
+  `resignation-full-pay-rule-is-resignation-only` ·
+  `cairo-trip-no-per-diem-allowance-live-prod-2026-08-15` ·
+  `field-force-provisioning-live-and-guard-relaxed-2026-08-14`
+- **Social-insurance Form 1 prints exactly as the Authority issues it** — page 2 carries nothing
+  Phoenix wrote, and the whole form is duplex. `government-form1-prints-exactly-as-issued`
+- **The organogram XLSX carries a Mobile column**, by the owner's explicit override of §4's
+  work-fields-only export rule on 2026-08-23. It is fetched at export time: do not remove it, and
+  do not "simplify" it onto the row. `organogram-export-carries-the-mobile-by-owner-override`
+- **The public Territory Management preview link must NEVER display or offer the line** — it is
+  pinned to Pedia server-side (owner rule 2026-08-14). **The organogram CHART and the employee
+  detail popup read two different sources**, so adding a per-person field to the chart means editing
+  the seat report's select, not the directory. And **the one-press WhatsApp button STAYS on the CEO
+  and NSM rows** — the owner was asked directly on 2026-08-23 and said keep it; do not add
+  rank-based suppression. `territory-preview-link-must-never-show-the-line` ·
+  `organogram-chart-source-is-au-seat-model-not-directory` ·
+  `whatsapp-button-on-leadership-rows-is-an-owner-decision`
+
+### 4.1 Marketing customer, venue and licence validation (relocated from `MEMORY.md`, 2026-08-28)
+
+**Relocated because the index crossed its cliff — three times in one morning.** `MEMORY.md` is the
+only memory file that auto-loads and the loader truncates it at **24,400 bytes**. On 2026-08-28 it
+was measured at 24,605 with the tail already being dropped **silently**, and the line being lost was
+the signpost saying session and tooling traps live in §2.1 — the one whose absence causes the next
+session to re-add agent-operating hooks to the index and overflow it again. Per §2.2 the remedy once
+compression is exhausted is to move guidance **here**, where `CLAUDE.md`'s `@AGENTS.md` loads it in
+full with no cliff. These eight hooks are one coherent domain and three of them are explicit owner
+rules, so §4 is their home. Reach is identical; only scannability changed. Each names the memory file
+holding the full account, under
+`C:\Users\satoh\.claude\projects\F--Phoenix-Workforce-phoenix-workforce\memory\`.
+
+- 🔒 **Venue validation is GPS + a live picture ALWAYS, and THEN either the registered code or the
+  licence.** Owner rule, 2026-08-26. The licence is a **fallback identity route** for when the code
+  is not in our database — it is *never* evidence in its own right. This governs the direct-order
+  desk only (#2434), **not** marketing.
+  `venue-validation-rule-gps-photo-then-code-or-licence`
+- 🔴 **Marketing pharmacies are TERRITORIAL, and a NULL `area_id` makes one invisible.** Seeded rows
+  carry no area and so appear nowhere at all. **Owner rule: the REGISTERED CODE beats live GPS.**
+  `seeded-marketing-pharmacies-have-no-area-and-are-invisible`
+- 🔴 **A licence verdict is PERMANENT and has no correction path.** It is write-once at approval: the
+  write gate requires the caller to hold the request's *current* approval step, and once the request
+  is decided that step stops existing — so not even a Super Admin can correct a wrong verdict, and it
+  is then displayed indefinitely on a register. **Ask the owner before the first one is recorded.**
+  The counts live in the memory file deliberately, because a hook whose content is a number is one
+  that will one day be wrong.
+  `a-licence-verdict-is-permanent-and-has-no-correction-path`
+- 🔴 **`system_validated` means NO HUMAN LOOKED.** The admin register never blocks on it, and the
+  screen is **Super Admin only** — not SFE.
+  `marketing-system-validated-means-no-human-looked`
+- 🔴 **A venue's evidence was WRITE-ONCE, writable only at insert** — fixed in #2352. **AREA governs
+  both sight and reuse; never backfill ownership.**
+  `marketing-venue-evidence-was-writable-only-at-insert`
+- 🔴 **The badge read a FROZEN note, never the live evidence** (#2354). EITHER half reaching
+  `complete` clears it, so setting both halves is a no-op.
+  `marketing-badge-read-a-frozen-note-not-the-live-evidence`
+- 🔴 **A duplicate merge STRANDS the desk validation on the retired row.** The links move; the
+  `validation_status` does not — so the surviving row sits `pending` and is invisible in every
+  dropdown. Repair it with hand SQL, not code.
+  `a-duplicate-merge-strands-the-desk-validation-on-the-retired-row`
+- 🔴 **The screen that SHOWS a badge is not the screen a rep can OPEN.** The portal Customer
+  **Database** is Super Admin + SFE only — a 403 for the medical reps — while the capture path is
+  `/validation`. Check the gate before wiring any `actionUrl`.
+  `the-screen-that-shows-a-badge-is-not-the-screen-a-rep-can-open`
 
 ## 5. Session, worktree, and parallel-work safety
 

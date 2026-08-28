@@ -19,6 +19,17 @@ import {
   AdminStatCard,
   AdminTableShell,
 } from "@/components/admin/admin-design-system";
+import {
+  PortalEmptyState,
+  PortalRecordCard,
+  PortalRecordFields,
+  PortalResponsiveDataList,
+  PortalStackingCell,
+  portalStackingBodyClassName,
+  portalStackingHeadClassName,
+  portalStackingRowClassName,
+  portalStackingTableClassName,
+} from "@/components/employee-portal/portal-primitives";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -460,9 +471,17 @@ function InboxTable({
   onDecisionSaved?: () => void;
 }) {
   return (
+    /* Fourteen columns at a 1320px minimum — three and a half phone screens. This one STACKS
+       rather than becoming a card list, because the Decision cell is `DecisionControls`, which
+       holds an unsaved status, applied value, reason and HR note; a card list would render every
+       row twice and quietly drop whichever copy the viewer was not looking at. */
     <div className="phoenix-horizontal-scroll max-h-[60vh] overflow-auto">
-      <table className="w-full min-w-[1320px] text-left text-sm">
-        <thead className="sticky top-0 z-10 bg-slate-50 text-phx-xs font-black uppercase tracking-[0.14em] text-slate-500">
+      {/* The 1320px floor lives on this wrapper, not on the table: the table's own min-width is
+          what switches between stacked (`min-w-0`) and tabular (`md:min-w-full`), and two
+          min-width utilities on one element resolve by stylesheet order, not by class order. */}
+      <div className="md:min-w-[1320px]">
+      <table className={cn(portalStackingTableClassName, "text-sm")}>
+        <thead className={cn(portalStackingHeadClassName, "sticky top-0 z-10 bg-slate-50 text-phx-xs font-black uppercase tracking-[0.14em] text-slate-500")}>
           <tr>
             <th className="px-4 py-3">Employee</th>
             <th className="px-4 py-3">Code</th>
@@ -480,53 +499,54 @@ function InboxTable({
             <th className="px-4 py-3">Created</th>
           </tr>
         </thead>
-        <tbody className="divide-y divide-slate-100">
+        <tbody className={cn(portalStackingBodyClassName, "divide-y divide-slate-100")}>
           {rows.map((row) => {
             const status: DeductionDecisionStatus = row.decision?.decisionStatus ?? "Pending";
             return (
-              <tr className="align-top text-slate-700 hover:bg-slate-50/70" key={row.id}>
-                <td className="px-4 py-3">
+              <tr className={cn(portalStackingRowClassName, "py-2 align-top text-slate-700 hover:bg-slate-50/70 md:py-0")} key={row.id}>
+                <PortalStackingCell label="Employee">
                   <p className="font-black text-slate-950">{row.employeeName ?? "-"}</p>
-                </td>
-                <td className="px-4 py-3 font-mono text-xs font-semibold text-slate-500">{row.employeeCode}</td>
-                <td className="px-4 py-3"><Badge variant="neutral">{row.sourceModule}</Badge></td>
-                <td className="px-4 py-3 text-xs font-semibold">{row.deductionType}</td>
-                <td className="whitespace-nowrap px-4 py-3 font-mono text-xs">{row.monthKey}</td>
-                <td className="px-4 py-3 text-xs">{row.deductionUnit}</td>
-                <td className="px-4 py-3 font-mono text-xs font-bold">{formatNumber(row.deductionValue)}</td>
-                <td className="px-4 py-3 text-xs">
+                </PortalStackingCell>
+                <PortalStackingCell className="font-mono text-xs font-semibold text-slate-500" label="Code">{row.employeeCode}</PortalStackingCell>
+                <PortalStackingCell label="Source"><Badge variant="neutral">{row.sourceModule}</Badge></PortalStackingCell>
+                <PortalStackingCell className="text-xs font-semibold" label="Type">{row.deductionType}</PortalStackingCell>
+                <PortalStackingCell className="font-mono text-xs md:whitespace-nowrap" label="Month">{row.monthKey}</PortalStackingCell>
+                <PortalStackingCell className="text-xs" label="Unit">{row.deductionUnit}</PortalStackingCell>
+                <PortalStackingCell className="font-mono text-xs font-bold" label="Value">{formatNumber(row.deductionValue)}</PortalStackingCell>
+                <PortalStackingCell className="text-xs" label="Estimated / Calc">
                   {row.estimatedAmount !== null
                     ? formatMoney(row.estimatedAmount)
                     : <span className="text-slate-400">{row.calculationStatus}</span>}
-                </td>
-                <td className="px-4 py-3">
+                </PortalStackingCell>
+                <PortalStackingCell label="Severity">
                   <Badge variant={severityBadgeVariant(row.severity)}>
                     {row.severity ?? "-"}
                   </Badge>
-                </td>
-                <td className="px-4 py-3">
+                </PortalStackingCell>
+                <PortalStackingCell label="Decision">
                   {canEditDecisions ? (
                     <DecisionControls row={row} onSaved={onDecisionSaved} />
                   ) : (
                     <Badge variant={decisionBadgeVariant(status)}>{status}</Badge>
                   )}
-                </td>
-                <td className="max-w-[240px] px-4 py-3 text-xs leading-5 text-slate-600">{row.decision?.decisionReason || "-"}</td>
-                <td className="max-w-[240px] px-4 py-3 text-xs leading-5 text-slate-600">{row.decision?.hrNote || "-"}</td>
-                <td className="px-4 py-3 text-xs">{row.decision?.payrollHandoffStatus ?? "Not pushed"}</td>
-                <td className="whitespace-nowrap px-4 py-3 text-xs text-slate-500">{formatDateTime(row.createdAt)}</td>
+                </PortalStackingCell>
+                <PortalStackingCell className="text-xs leading-5 text-slate-600 md:max-w-[240px]" label="Reason">{row.decision?.decisionReason || "-"}</PortalStackingCell>
+                <PortalStackingCell className="text-xs leading-5 text-slate-600 md:max-w-[240px]" label="HR Note">{row.decision?.hrNote || "-"}</PortalStackingCell>
+                <PortalStackingCell className="text-xs" label="Handoff">{row.decision?.payrollHandoffStatus ?? "Not pushed"}</PortalStackingCell>
+                <PortalStackingCell className="text-xs text-slate-500 md:whitespace-nowrap" label="Created">{formatDateTime(row.createdAt)}</PortalStackingCell>
               </tr>
             );
           })}
           {rows.length === 0 ? (
-            <tr>
-              <td className="px-4 py-8 text-center text-sm text-slate-500" colSpan={14}>
+            <tr className={portalStackingRowClassName}>
+              <td className="block px-4 py-8 text-center text-sm text-slate-500 md:table-cell" colSpan={14}>
                 No deduction candidates match the current filters.
               </td>
             </tr>
           ) : null}
         </tbody>
       </table>
+      </div>
     </div>
   );
 }
@@ -687,6 +707,40 @@ function BySourcePanel({ groups }: { groups: DeductionSourceGroup[] }) {
 function ByEmployeePanel({ groups }: { groups: DeductionEmployeeGroup[] }) {
   return (
     <div className="phoenix-horizontal-scroll max-h-[60vh] overflow-auto">
+      {/* Read-only totals per employee, so unlike the inbox above this one becomes a card list —
+          there is no draft state to duplicate. */}
+      <PortalResponsiveDataList
+        empty={
+          <PortalEmptyState
+            message="No employees match the current filters."
+            title="No employees"
+          />
+        }
+        getKey={(group) => group.employeeCode}
+        items={groups}
+        renderCard={(group) => (
+          <PortalRecordCard
+            meta={<span className="font-mono">{group.employeeCode}</span>}
+            status={
+              <Badge variant={group.pending > 0 ? "warning" : "neutral"}>
+                {formatNumber(group.totalCandidates)} total
+              </Badge>
+            }
+            title={group.employeeName}
+          >
+            <PortalRecordFields
+              fields={[
+                { label: "Pending", value: formatNumber(group.pending) },
+                { label: "Appr. Payroll", value: formatNumber(group.approvedForPayroll) },
+                { label: "Appr. Leave", value: formatNumber(group.approvedForLeaveAdjustment) },
+                { label: "Disputed", value: formatNumber(group.disputed) },
+                { label: "Months", value: group.monthsAffected.join(", ") || "-" },
+              ]}
+            />
+          </PortalRecordCard>
+        )}
+        renderTable={() => (
+          <div className="hidden md:block">
       <table className="w-full min-w-[920px] text-left text-sm">
         <thead className="sticky top-0 z-10 bg-slate-50 text-phx-xs font-black uppercase tracking-[0.14em] text-slate-500">
           <tr>
@@ -713,15 +767,11 @@ function ByEmployeePanel({ groups }: { groups: DeductionEmployeeGroup[] }) {
               <td className="max-w-[240px] px-4 py-3 text-xs">{group.monthsAffected.join(", ") || "-"}</td>
             </tr>
           ))}
-          {groups.length === 0 ? (
-            <tr>
-              <td className="px-4 py-8 text-center text-sm text-slate-500" colSpan={8}>
-                No employees match the current filters.
-              </td>
-            </tr>
-          ) : null}
         </tbody>
       </table>
+          </div>
+        )}
+      />
       {groups.length === 100 ? (
         <p className="px-4 py-3 text-xs text-slate-400">
           Showing top 100. Refine filters to narrow further.
@@ -1197,6 +1247,57 @@ export function DeductionsGovernanceWorkspace(props: DeductionsGovernanceWorkspa
             </ul>
           ) : null}
           <div className="phoenix-horizontal-scroll mt-3 max-h-64 overflow-auto">
+            {/* Read-only preview of what an import would do to each person's payroll totals. On a
+                phone the three "now + add = new" columns — the only reason to read this at all —
+                were entirely past the right edge. */}
+            <PortalResponsiveDataList
+              empty={
+                <PortalEmptyState
+                  message="Nothing in this preview."
+                  title="No rows"
+                />
+              }
+              getKey={(row) => row.employeeCode}
+              items={payrollPreview.rows.slice(0, 50)}
+              renderCard={(row) => (
+                <PortalRecordCard
+                  accent={row.matched ? "emerald" : "rose"}
+                  meta={<span className="font-mono">{row.employeeCode}</span>}
+                  status={
+                    <Badge variant={row.matched ? "success" : "danger"}>
+                      {row.matched ? "Matched" : "Unmatched"}
+                    </Badge>
+                  }
+                  title={row.employeeName ?? "-"}
+                >
+                  <PortalRecordFields
+                    fields={[
+                      {
+                        label: "CRM (now + add = new)",
+                        value: `${formatMoney(row.existingTotals.crm)} + ${formatMoney(row.appliedTotals.crm)} = ${formatMoney(row.resultingTotals.crm)}`,
+                      },
+                      {
+                        label: "Finger Print (now + add = new)",
+                        value: `${formatMoney(row.existingTotals.fingerPrint)} + ${formatMoney(row.appliedTotals.fingerPrint)} = ${formatMoney(row.resultingTotals.fingerPrint)}`,
+                      },
+                      {
+                        label: "Unpaid Vacations (now + add = new)",
+                        value: `${formatMoney(row.existingTotals.unpaidVacations)} + ${formatMoney(row.appliedTotals.unpaidVacations)} = ${formatMoney(row.resultingTotals.unpaidVacations)}`,
+                      },
+                      {
+                        label: "Total Added",
+                        value: (
+                          <span className={cn("font-mono font-bold", row.delta > 0 ? "text-rose-600" : "text-slate-500")}>
+                            {formatMoney(row.delta)}
+                          </span>
+                        ),
+                      },
+                    ]}
+                  />
+                </PortalRecordCard>
+              )}
+              renderTable={() => (
+                <div className="hidden md:block">
             <table className="w-full min-w-[780px] text-left text-xs">
               <thead className="bg-slate-50 font-black uppercase tracking-[0.12em] text-slate-500">
                 <tr>
@@ -1227,6 +1328,9 @@ export function DeductionsGovernanceWorkspace(props: DeductionsGovernanceWorkspa
                 ))}
               </tbody>
             </table>
+                </div>
+              )}
+            />
           </div>
         </Card>
       ) : null}

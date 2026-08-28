@@ -26,9 +26,20 @@ export function resolveLandingPathForRole(role: string | null | undefined) {
   if (normalized === "training manager") return "/employee-portals/training-manager";
   // The two HR seats (owner, 2026-08-28). Admin-shell, so they must NOT be in the portal set
   // above — but /admin is the Super Admin home and shows them a shell of modules they do not
-  // hold, so they land on the personal admin-shell workspace instead, like Financial Advisor.
-  // Phase 2 repoints both at their own /hr namespace; this is the correct answer until it exists.
-  if (normalized === "hr advisory" || normalized === "hr operations") return "/workspace";
+  // hold, so they get their own command centre, composed from the function bundle each seat
+  // actually holds.
+  //
+  // The ADDRESS is what selects the HR shell, not the role (`resolveNavigationMode` never returns
+  // "hr" — see its comment), so this must be the /hr spelling. Landing on the bare
+  // /admin/hr-command-center would render the right page wearing the ADMIN sidebar for exactly one
+  // paint, until AppShell's namespace redirect bounced it here anyway. Naming the /hr address
+  // directly saves that round trip on every single sign-in.
+  //
+  // Until 2026-08-28 this returned "/workspace" — the personal admin-shell workspace — as a
+  // placeholder while the namespace was being built.
+  if (normalized === "hr advisory" || normalized === "hr operations") {
+    return "/hr/admin/hr-command-center";
+  }
   if (normalized === "ceo") return "/admin/ceo-command-center";
   return portalLandingRoleNames.has(normalized) ? "/employee-portals" : "/admin";
 }

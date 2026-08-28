@@ -18,6 +18,12 @@ import {
   AdminStatCard,
   AdminTableShell,
 } from "@/components/admin/admin-design-system";
+import {
+  PortalEmptyState,
+  PortalRecordCard,
+  PortalRecordFields,
+  PortalResponsiveDataList,
+} from "@/components/employee-portal/portal-primitives";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -521,7 +527,44 @@ export function HrCalendar({ initialData, initialError }: Props) {
           description="Compact list for review and filtering."
           title={`Event Details (${filteredEvents.length})`}
         />
-        <div className="overflow-x-auto bg-white/80">
+        {/* 980px minimum — on a phone the event badge and everything after it was off-screen,
+            which on a birthdays-and-anniversaries list is the entire content. */}
+        <PortalResponsiveDataList
+          empty={
+            <PortalEmptyState
+              message="Try another month, year, line, area, or event type."
+              title="No HR calendar events found."
+            />
+          }
+          getKey={(event) => `${event.eventType}-${event.employee.hrId}-${event.date}`}
+          items={filteredEvents}
+          renderCard={(event) => (
+            <PortalRecordCard
+              meta={
+                <span>
+                  {formatDate(event.date)} · <span className="font-mono">{event.employee.hrId}</span>
+                </span>
+              }
+              status={
+                <Badge variant={eventBadgeVariant(event.eventType)}>
+                  {eventDayLabel(event.eventType)}
+                </Badge>
+              }
+              title={formatEmployeeDisplayName(event.employee.fullName)}
+            >
+              <PortalRecordFields
+                fields={[
+                  { label: "Job Title", value: event.employee.jobTitle },
+                  { label: "Line", value: event.employee.lineName },
+                  { label: "Area", value: event.employee.areaName },
+                  { label: "Manager", value: event.employee.managerName },
+                  { label: "Work Email", value: event.employee.workEmail ?? "No work email" },
+                ]}
+              />
+            </PortalRecordCard>
+          )}
+          renderTable={() => (
+            <div className="hidden overflow-x-auto bg-white/80 md:block">
           <table className="w-full min-w-[980px] text-left text-sm">
             <thead>
               <tr className="border-b border-[#FED7AA] bg-phx-accent-soft/80 text-phx-2xs font-black uppercase tracking-[0.16em] text-phx-ink-soft">
@@ -533,19 +576,7 @@ export function HrCalendar({ initialData, initialError }: Props) {
               </tr>
             </thead>
             <tbody className="divide-y divide-phx-line">
-              {filteredEvents.length === 0 ? (
-                <tr>
-                  <td className="px-3 py-10 text-center" colSpan={8}>
-                    <p className="text-sm font-semibold text-phx-ink">
-                      No HR calendar events found.
-                    </p>
-                    <p className="mt-2 text-sm text-phx-ink-soft">
-                      Try another month, year, line, area, or event type.
-                    </p>
-                  </td>
-                </tr>
-              ) : (
-                filteredEvents.map((event) => (
+              {filteredEvents.map((event) => (
                   <tr
                     className="transition-colors hover:bg-phx-accent-soft/55"
                     key={`${event.eventType}-${event.employee.hrId}-${event.date}-row`}
@@ -584,11 +615,12 @@ export function HrCalendar({ initialData, initialError }: Props) {
                       {event.employee.managerName}
                     </td>
                   </tr>
-                ))
-              )}
+                ))}
             </tbody>
           </table>
-        </div>
+            </div>
+          )}
+        />
       </Card>
     </HrCalendarPageShell>
   );

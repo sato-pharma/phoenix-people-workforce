@@ -20,6 +20,7 @@ import { runHrUrlNamespaceTests } from "./hr-url-namespace.test.ts";
 import { runNotificationLinksResolveTests } from "./notification-links-resolve.test.ts";
 import { runNavigationPersonalLayoutTests } from "./navigation-personal-layout.test.ts";
 import { runFinanceManagerSixModuleAccessTests } from "./finance-manager-six-module-access.test.ts";
+import { runSidebarLabelFontSyncTests } from "./sidebar-label-font-sync.test.ts";
 import { runSidebarLabelWidthTests } from "./sidebar-label-width.test.ts";
 import { runAutomatedPayrollPageWidthTests } from "./automated-payroll-page-width.test.ts";
 import { runWorkspaceSingleHeroTests } from "./workspace-single-hero.test.ts";
@@ -371,6 +372,7 @@ import { runSosNormalizerPersistShapeTests } from "./sos-normalizer-persist-shap
 import { runSosImportTemplateTests } from "./sos-import-template.test.ts";
 import { runImportPreviewTests } from "./import-preview.test.ts";
 import { runEmployeeImportTeamResurrectionGuardTests } from "./employee-import-team-resurrection-guard.test.ts";
+import { runOrgTitleCaseAcronymTests } from "./org-title-case-acronyms.test.ts";
 import { runImportsLineCanonicalizationTests } from "./imports-line-canonicalization.test.ts";
 import { runImportTeamBlankWarningTests } from "./import-team-blank-warning.test.ts";
 import { runDetectDistributorTests } from "./detect-distributor.test.ts";
@@ -529,6 +531,7 @@ import { runAdminPayslipImageExportTests } from "./admin-payslip-image-export.te
 import { runEmployeePayrollEligibilityTests } from "./employee-payroll-eligibility.test.ts";
 import { runEmployeeAccessProvisioningTests } from "./employee-access-provisioning.test.ts";
 import { runHrFunctionGovernanceTests } from "./hr-function-governance.test.ts";
+import { runHrCommandCenterTests } from "./hr-command-center.test.ts";
 import { runHrSeatRouteCoherenceTests } from "./hr-seat-route-coherence.test.ts";
 import { runTitlePermissionGovernanceTests } from "./title-permission-governance.test.ts";
 import { runOrganogramHardeningTests } from "./organogram-hardening.test.ts";
@@ -745,6 +748,7 @@ import { runDirectOrdersApprovalWindowMobileTests } from "./direct-orders-approv
 import { runEmployeePortalMobileInputZoomTests } from "./employee-portal-mobile-input-zoom.test.ts";
 import { runEmployeePortalMobileTableCardTests } from "./employee-portal-mobile-table-cards.test.ts";
 import { runCrmMobileTableCardTests } from "./crm-mobile-table-cards.test.ts";
+import { runHrShellMobileTableTests } from "./hr-shell-mobile-tables.test.ts";
 import { runOutstationMobileTableCardTests } from "./outstation-mobile-table-cards.test.ts";
 import { runDoctorCoveragePaginationTests } from "./crm-doctor-coverage-pagination.test.ts";
 import { runPharmacySearchTests } from "./pharmacy-search.test.ts";
@@ -933,6 +937,7 @@ import { runOutstationAllowanceDuplicateDayGuardTests } from "./outstation-allow
 import { runOutstationCairoNoAllowanceTests } from "./outstation-cairo-no-allowance.test.ts";
 import { runOutstationClaimValidationTests } from "./outstation-claim-validation.test.ts";
 import { runOutstationEvidenceWaiverTests } from "./outstation-evidence-waiver.test.ts";
+import { runOutstationNsmNoHoldTests } from "./outstation-nsm-no-hold.test.ts";
 import { runOutstationExpenseNoteAssistTests } from "./outstation-expense-note-assist.test.ts";
 import { runOutstationSubmissionWaitsForApprovalTests } from "./outstation-submission-waits-for-approval.test.ts";
 import { runDirectOrdersPharmacyStandingTests } from "./direct-orders-pharmacy-standing.test.ts";
@@ -1014,6 +1019,7 @@ import { runRecruitmentExtractionRecordsIsCvTests } from "./recruitment-extracti
 import { runRecruitmentRereadNotACvSkipsTests } from "./recruitment-reread-not-a-cv-skips.test.ts";
 import { runWorktreeExitGuardPreRemovalTests } from "./worktree-exit-guard-pre-removal.test.ts";
 import { runMemoryIndexBudgetTests } from "./memory-index-budget.test.ts";
+import { runSessionStartMemoryIndexGuardTests } from "./session-start-memory-index-guard.test.ts";
 import { runRepoDoctorUnpushedCommitsTests } from "./repo-doctor-unpushed-commits.test.ts";
 
 import { runCvRereadAppliesWhatItReadsTests } from "./cv-reread-applies-what-it-reads.test.ts";
@@ -1072,6 +1078,7 @@ await runTest(
   runFinanceManagerSixModuleAccessTests,
 );
 await runTest("automated payroll pages render full width", runAutomatedPayrollPageWidthTests);
+await runTest("sidebar width guard measures the font the app actually renders", runSidebarLabelFontSyncTests);
 await runTest("sidebar labels never clip (no ellipsis, no wrap)", runSidebarLabelWidthTests);
 await runTest("workspace pages render exactly one hero", runWorkspaceSingleHeroTests);
 await runTest(
@@ -1632,6 +1639,7 @@ await runTest("sos normalizer persist shape", runSosNormalizerPersistShapeTests)
 await runTest("sos import template", runSosImportTemplateTests);
 await runTest("import preview diff", runImportPreviewTests);
 await runTest("employee import never resurrects a deactivated team (insert-only org entities)", runEmployeeImportTeamResurrectionGuardTests);
+await runTest("org title casing keeps acronyms (HR/QPPV/CEO/SFE/R&D) and round-trips to the same code", runOrgTitleCaseAcronymTests);
 await runTest("imports line canonicalization (Anti Inf → Anti infective; no duplicate lines rows)", runImportsLineCanonicalizationTests);
 await runTest("employee import warns when an Area carries no Team (warn, never block)", runImportTeamBlankWarningTests);
 await runTest("detect distributor", runDetectDistributorTests);
@@ -1813,6 +1821,11 @@ await runTest(
   "HR seat route coherence (no HR seat holds PART of a route handler's permission set, so no page "
   + "its own sidebar offers can 403 it halfway)",
   runHrSeatRouteCoherenceTests,
+);
+await runTest(
+  "HR command centre (every tile on a seat's landing dashboard links to a row that seat is "
+  + "offered, so no figure leads to a page it cannot open)",
+  runHrCommandCenterTests,
 );
 await runTest("organogram hardening", runOrganogramHardeningTests);
 await runTest("vacancy report / organogram consistency", runVacancyReportOrganogramConsistencyTests);
@@ -2101,6 +2114,7 @@ await runTest("employee portal mobile input zoom (16px floor on every portal inp
 await runTest("employee portal mobile table cards (every converted table is desktop-gated with cards beside it, one shared SourceBreakdown, no <table> nested inside PortalDesktopTable)", runEmployeePortalMobileTableCardTests);
 await runTest("CRM mobile table cards (whole-directory scan: every CRM table desktop-gated, every table file has a card path, no bare overflow-x-auto, both coverage boards moved together)", runCrmMobileTableCardTests);
 await runTest("Outstation mobile table cards (whole-directory scan: every outstation table desktop-gated, every table file has a card path, no fixed-pixel floor in an ungated scroll box, HR decision controls shared by both halves)", runOutstationMobileTableCardTests);
+await runTest("HR shell mobile tables (closure scan from the HR sidebar: every wide table desktop-gated with a mobile half beside it, stacking primitives pinned, exemptions justified)", runHrShellMobileTableTests);
 await runTest("Doctor Coverage drill-down is windowed (both halves draw the same page, page clamps, controls exist, xlsx export still spans every row, call list cap intact)", runDoctorCoveragePaginationTests);
 await runTest("RSC boundary (no server component hands a function prop to a client component — the crash that 500d Doctor Coverage; follows the real import graph so client-parent files are not flagged)", runRscClientFunctionPropTests);
 await runTest("direct orders invoice scan (a dim page gains real contrast, a failed prepare returns the original, EXIF rotation is applied, no binarisation, the reader is sent the PREPARED image)", runDirectOrdersInvoiceScanTests);
@@ -2855,6 +2869,11 @@ await runTest(
 );
 
 await runTest(
+  "outstation National Sales Manager no-hold rule (never held by the photo or workload gate, accepted on submission, released into payroll as the system — and nobody else exempted)",
+  runOutstationNsmNoHoldTests,
+);
+
+await runTest(
   "sales pharmacy-code sync re-run (twice leaves exactly one row per distributor+code, spreadsheet rows untouched, links not detached)",
   runMarketingSalesCodeSyncRerunTests,
 );
@@ -2932,6 +2951,15 @@ await runTest(
   + "ceiling-only rule was silent 335 bytes from silent truncation, mustFree closes the gap exactly, "
   + "and an index it cannot measure reports unknown rather than healthy)",
   runMemoryIndexBudgetTests,
+);
+
+await runTest(
+  "The memory index budget reaches a session at SessionStart, not only when somebody runs "
+  + "repo-doctor (the guard is registered as its own hook entry so a live session lock cannot mute "
+  + "it, a worktree is graded against the PRIMARY checkout index rather than an empty one of its "
+  + "own, a healthy index reports its headroom without interrupting the human, and a file it cannot "
+  + "measure reports unknown rather than healthy)",
+  runSessionStartMemoryIndexGuardTests,
 );
 
 await runTest(

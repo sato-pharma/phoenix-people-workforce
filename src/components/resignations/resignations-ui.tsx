@@ -255,16 +255,35 @@ export function RgField({ children, label }: { children: ReactNode; label: strin
 
 // ── Table shell ──────────────────────────────────────────────────────────────
 
-export function RgTable({ children, head }: { children: ReactNode; head: ReactNode }) {
+/**
+ * Desktop table, mobile cards — the owner's standing rule (AGENTS.md §4).
+ *
+ * `cards` is REQUIRED, not optional. Every table in this module puts its controls in the last
+ * column, which is the first thing off the right edge of a phone, and an optional prop is exactly
+ * how that defect creeps back in the next call site somebody adds. Required means the compiler
+ * asks the question.
+ */
+export function RgTable({
+  cards,
+  children,
+  head,
+}: {
+  cards: ReactNode;
+  children: ReactNode;
+  head: ReactNode;
+}) {
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full border-collapse text-xs">
-        <thead>
-          <tr className="bg-slate-900 text-left">{head}</tr>
-        </thead>
-        <tbody className="divide-y divide-slate-100">{children}</tbody>
-      </table>
-    </div>
+    <>
+      <div className="divide-y divide-slate-100 md:hidden">{cards}</div>
+      <div className="hidden overflow-x-auto md:block">
+        <table className="w-full border-collapse text-xs">
+          <thead>
+            <tr className="bg-slate-900 text-left">{head}</tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">{children}</tbody>
+        </table>
+      </div>
+    </>
   );
 }
 
