@@ -498,6 +498,8 @@ function daysBetween(from: string, to: string) {
 // A day still sitting at the default blank "Office" — no region/area/objective/
 // notes, not locked, not sourced. Used to nudge the user before they submit a
 // week of untouched placeholder days.
+type PlanMessage = { text: string; tone: "error" | "info" };
+
 function isUntouchedRow(row: DraftItem) {
   return (
     !row.locked &&
@@ -1013,7 +1015,12 @@ export function PlansWorkspace({
       ? draftRowsFromPlan(initialSelectedPlan, initialWorkspace.medicalRepOptions)
       : defaultRows(initialKind, initialAnchorDate, initialWorkweek),
   );
-  const [message, setMessage] = useState<string | null>(null);
+  const [message, setMessage] = useState<PlanMessage | null>(null);
+  // A failed action and a successful one used to render in the SAME sky-blue box, so a
+  // rejection ("a plan already exists for this week") was indistinguishable from a
+  // confirmation and got read as success. Tone travels WITH the text so they cannot drift.
+  const showInfo = (text: string) => setMessage({ text, tone: "info" });
+  const showError = (text: string) => setMessage({ text, tone: "error" });
   const [comment, setComment] = useState("");
   const [returnNotes, setReturnNotes] = useState<Record<string, Record<string, string>>>({});
   const [visitDetailsPlan, setVisitDetailsPlan] = useState<EmployeePlan | null>(null);
@@ -1406,7 +1413,7 @@ export function PlansWorkspace({
       });
       return sortDraftRows([...lockedRows, ...copied]);
     });
-    setMessage("Copied your previous week — review and adjust before submitting.");
+    showInfo("Copied your previous week — review and adjust before submitting.");
   }
 
   function updateRow(key: string, field: keyof EmployeePlanItemInput, value: string) {
@@ -1561,7 +1568,7 @@ export function PlansWorkspace({
         await action();
         await reload();
       } catch (error) {
-        setMessage(friendlyError(error instanceof Error ? error.message : "Action failed."));
+        showError(friendlyError(error instanceof Error ? error.message : "Action failed."));
       }
     });
   }
@@ -1577,7 +1584,7 @@ export function PlansWorkspace({
     const result = await response.json();
     if (!response.ok || !result.success) throw new Error(result.message ?? "Unable to save plan.");
     setSelectedPlan(result.data.id);
-    setMessage(submit ? "Plan submitted for direct manager review." : "Plan draft saved.");
+    showInfo(submit ? "Plan submitted for direct manager review." : "Plan draft saved.");
   }
 
   // Guard against an accidental "empty week" submit: if every day is still an
@@ -1612,7 +1619,7 @@ export function PlansWorkspace({
     if (!response.ok || !result.success) throw new Error(result.message ?? "Decision failed.");
     setComment("");
     if (action.includes("return")) setReturnNotes((c) => ({ ...c, [planId]: {} }));
-    setMessage("Decision recorded.");
+    showInfo("Decision recorded.");
   }
 
   async function requestPlanEdit(planId: string) {
@@ -1623,7 +1630,7 @@ export function PlansWorkspace({
     });
     const result = await response.json();
     if (!response.ok || !result.success) throw new Error(result.message ?? "Request failed.");
-    setMessage("Edit request sent to your manager.");
+    showInfo("Edit request sent to your manager.");
   }
 
   async function decideEditRequestAction(planId: string, decision: "approve" | "reject") {
@@ -1635,7 +1642,7 @@ export function PlansWorkspace({
     const result = await response.json();
     if (!response.ok || !result.success) throw new Error(result.message ?? "Decision failed.");
     setComment("");
-    setMessage(decision === "approve" ? "Edit approved — employee can now revise." : "Edit request rejected.");
+    showInfo(decision === "approve" ? "Edit approved — employee can now revise." : "Edit request rejected.");
   }
 
   async function doBulkApprove(planIds: string[]) {
@@ -1657,7 +1664,7 @@ export function PlansWorkspace({
     });
     const result = await response.json();
     if (!response.ok || !result.success) throw new Error(result.message ?? "Request failed.");
-    setMessage("Visit details requested. Employee has been notified.");
+    showInfo("Visit details requested. Employee has been notified.");
   }
 
   async function doSubmitVisitDetails(planId: string, details: VisitDetailInput[]) {
@@ -1669,7 +1676,7 @@ export function PlansWorkspace({
     const result = await response.json();
     if (!response.ok || !result.success) throw new Error(result.message ?? "Submission failed.");
     setVisitDetailsPlan(null);
-    setMessage("Visit details submitted. Plan resubmitted for manager review.");
+    showInfo("Visit details submitted. Plan resubmitted for manager review.");
   }
 
   async function acknowledge(planId: string) {
@@ -1682,7 +1689,7 @@ export function PlansWorkspace({
     if (!response.ok || !result.success)
       throw new Error(result.message ?? "Acknowledgement failed.");
     setComment("");
-    setMessage("HR acknowledgement recorded.");
+    showInfo("HR acknowledgement recorded.");
   }
 
   function loadPlanForEdit(target: EmployeePlan) {
@@ -1848,9 +1855,19 @@ export function PlansWorkspace({
     </div>
   ) : null;
 
+  // Red for a rejection, sky for a confirmation. role=alert makes a screen reader announce
+  // the failure instead of leaving it as a silent colour change.
   const messageBanner = message ? (
-    <div className="border border-sky-200 bg-sky-50 p-3 text-sm font-semibold text-sky-800">
-      {message}
+    <div
+      className={
+        message.tone === "error"
+          ? "flex items-start gap-2 border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-800"
+          : "flex items-start gap-2 border border-sky-200 bg-sky-50 p-3 text-sm font-semibold text-sky-800"
+      }
+      role={message.tone === "error" ? "alert" : "status"}
+    >
+      {message.tone === "error" ? <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" /> : null}
+      <span>{message.text}</span>
     </div>
   ) : null;
 
