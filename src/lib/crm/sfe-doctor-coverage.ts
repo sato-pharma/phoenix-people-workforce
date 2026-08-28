@@ -77,6 +77,7 @@ import { CAMPAIGN_TYPE } from "@/lib/crm/visit-types";
 import { collapseDuplicateVisitSubmissions, getEffectiveExcludedAgentCrmIds, queryVisits } from "@/lib/crm/reads";
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
 import { scanPlanEntries } from "@/lib/crm/rep-doctor-lists";
+import { crmTerritoryFrom } from "@/lib/crm/rep-name";
 import { cairoTodayIso } from "@/lib/crm/dates";
 import { classifyCrmContactSpeciality, type CrmContactKind } from "@/lib/crm/contact-taxonomy";
 import {
@@ -612,14 +613,6 @@ function pairKeyOf(repKey: string, contactCrmId: number): string {
  * `"( Mahalla  / A )"` with a double space inside, and that is the vendor's text, not ours to
  * normalise. What is dropped is the vendor's spacing OUTSIDE the brackets.
  */
-const CRM_TERRITORY = /\(\s*([^()]+?)\s*\)\s*$/;
-
-function crmTerritoryFrom(crmName: string | undefined): string | null {
-  if (!crmName) return null;
-  const territory = CRM_TERRITORY.exec(crmName)?.[1]?.trim();
-  return territory ? territory : null;
-}
-
 /**
  * What a rep is CALLED, in one place, for every row this board emits.
  *

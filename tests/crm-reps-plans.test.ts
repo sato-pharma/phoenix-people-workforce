@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import {
   AM_CALL_RATE_TARGET,
@@ -383,4 +384,20 @@ export function runCrmRepsPlansTests() {
   assert.equal(attainmentTone(70), "amber");
   assert.equal(attainmentTone(69.9), "rose");
   assert.equal(attainmentTone(null), undefined);
+
+  // ── Source contract ──────────────────────────────────────────────────────────────────
+  // This board is the THIRD reader of the CRM's territory pattern, after Doctor Coverage and the
+  // mobile card. #2491 moved the regex to src/lib/crm/rep-name.ts for exactly that reason, and its
+  // own test pins coverage to import it — this pins the same thing here, because the copy this
+  // board briefly carried is precisely what that extraction existed to prevent. Two copies is how
+  // two boards start disagreeing about what a territory is.
+  const boardSource = readFileSync("src/lib/crm/reps-plans.ts", "utf8");
+  assert.ok(
+    boardSource.includes('import { crmTerritoryFrom } from "@/lib/crm/rep-name";'),
+    "Reps Plans must IMPORT the shared territory splitter, never carry its own copy of the pattern",
+  );
+  assert.ok(
+    !boardSource.includes("const CRM_TERRITORY ="),
+    "and it must not re-declare the pattern locally",
+  );
 }

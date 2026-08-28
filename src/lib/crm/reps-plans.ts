@@ -27,6 +27,7 @@ import {
   type CallRateSlice,
   type RepCallRate,
 } from "@/lib/crm/call-rate";
+import { crmTerritoryFrom } from "@/lib/crm/rep-name";
 
 export const REPS_PLANS_MONTH_PATTERN = /^\d{4}-(0[1-9]|1[0-2])$/;
 
@@ -203,26 +204,6 @@ function repKeyOf(rep: RepCallRate): string {
   if (rep.agentCrmId != null) return `crm:${rep.agentCrmId}`;
   if (rep.agentHrId) return `hr:${rep.agentHrId}`;
   return `name:${rep.agentName}`;
-}
-
-/**
- * The territory the CRM appends to an agent's name, in trailing brackets:
- * `"Adel.Srour ( Down-town / C )"` -> `"Down-town / C"`. Anchored at the END and refusing nested
- * brackets, so a name that legitimately contains parentheses cannot be mistaken for one.
- *
- * The interior is trimmed at its edges only, never rewritten — production carries `"( Mahalla  / A )"`
- * with a double space inside, and that is the vendor's text, not ours to normalise.
- *
- * Deliberately identical to the copy in crm/sfe-doctor-coverage.ts, where this rule was settled
- * (#2480). That module imports the Supabase reader chain and this one is pure, so the four lines
- * are repeated rather than shared — the same reason monthBounds is repeated at the top of this file.
- */
-const CRM_TERRITORY = /\(\s*([^()]+?)\s*\)\s*$/;
-
-function crmTerritoryFrom(crmName: string | undefined): string | null {
-  if (!crmName) return null;
-  const territory = CRM_TERRITORY.exec(crmName)?.[1]?.trim();
-  return territory ? territory : null;
 }
 
 /**
