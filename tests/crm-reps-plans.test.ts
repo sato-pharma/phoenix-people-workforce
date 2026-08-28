@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import {
   AM_CALL_RATE_TARGET,
@@ -454,4 +455,34 @@ export function runCrmRepsPlansTests() {
   assert.equal(only.worstCampaignCalls, 12);
   assert.equal(liveBoard.totals.repsOnTarget, 0);
   assert.equal(liveBoard.campaignLimit, 3, "the owner's daily campaign limit reaches the screen");
+
+  // ── The column is LINE · REGION, and it must never call itself "Territory" ────────────────────
+  //
+  // This is a collision two green PRs made between them, neither able to see it. #2491 shortened
+  // the mobile card title by moving the CRM handle's trailing bracket — "( Down-town / C )", an
+  // AREA and a line letter — down to the card's meta line, and the desktop Rep cell renders that
+  // same bracket inline. This branch then added a column of the ORG MODEL's line and region. Both
+  // merged clean; the result put the line on one row twice, once labelled "Territory" and once not.
+  //
+  // The data is right and stays. The LABEL is what was wrong, so the label is pinned: one word for
+  // one thing. The rep's CRM bracket is his area; this column is what the two pickers filter on.
+  const repsPlansTables = readFileSync("src/components/crm/reps-plans-tables.tsx", "utf8");
+  assert.ok(
+    repsPlansTables.includes("Line · Region"),
+    "the org-model column must be labelled Line · Region — the name of the two things it holds and the two pickers that filter it",
+  );
+  assert.ok(
+    !/>\s*Territory\s*</.test(repsPlansTables) && !/label: "Territory"/.test(repsPlansTables),
+    "and it must NOT be called Territory: the Rep column beside it already ends in the CRM handle's own territory bracket, so a second column of that name puts the line on the row twice under two names",
+  );
+  assert.ok(
+    !repsPlansTables.includes("No territory"),
+    "the marker follows the label — a rep with no org seat reads No seat, matching the note above the tiles, not a second sense of the word territory",
+  );
+
+  const repsPlansBoard = readFileSync("src/components/crm/reps-plans-board.tsx", "utf8");
+  assert.ok(
+    repsPlansBoard.includes(">No seat<"),
+    "the note above the tiles must name the marker the table actually renders — it tells the reader what to look for, and a note pointing at a label that no longer exists is worse than no note",
+  );
 }

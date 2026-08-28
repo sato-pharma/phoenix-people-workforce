@@ -141,7 +141,7 @@ export function RepsPlansBoardView({ basePath, board }: { basePath: string; boar
               <span className="font-black text-slate-900">{board.unseatedShown}</span>{" "}
               {board.unseatedShown === 1 ? "rep holds" : "reps hold"} no seat in the organogram, so{" "}
               {board.unseatedShown === 1 ? "he is" : "they are"} listed in the table marked{" "}
-              <span className="font-black text-slate-900">No territory</span> and counted in no rate on this page.
+              <span className="font-black text-slate-900">No seat</span> and counted in no rate on this page.
             </p>
           ) : null}
 

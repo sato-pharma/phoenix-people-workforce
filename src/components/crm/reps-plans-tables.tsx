@@ -217,10 +217,15 @@ function territoryText(row: RepsPlansRepRow): string {
 
 const REP_COLS = [
   { accessor: (r: RepsPlansRepRow) => r.repName, defaultDir: "asc" as const, key: "repName", type: "string" as const },
-  // Sorts the marked reps together rather than scattering them: an empty territory sorts as the
-  // marker text, so "No territory" lands in one block instead of at both ends of the alphabet.
+  // NOT called "Territory", deliberately. The Rep column beside it already ends in the CRM handle's
+  // own bracket — "( Down-town / C )", an AREA and a line letter — so a second column called
+  // territory would put the line on the row twice under two names. This column is the org model's
+  // LINE and REGION, which is what the two pickers above filter on, and it says so.
+  //
+  // Sorts the marked reps together rather than scattering them: an empty cell sorts as the marker
+  // text, so "No seat" lands in one block instead of at both ends of the alphabet.
   {
-    accessor: (r: RepsPlansRepRow) => territoryText(r) || "No territory",
+    accessor: (r: RepsPlansRepRow) => territoryText(r) || "No seat",
     defaultDir: "asc" as const,
     key: "territory",
     type: "string" as const,
@@ -254,12 +259,12 @@ export function RepsPlansRepTable({
     // Opens on the worst PM attainment, because PM is ten of the twelve calls a perfect day is made
     // of — a rep short there is short on the month whatever the AM column says.
     initialSort: { dir: "asc", key: "pmAttainmentPct" },
-    // Territory is searchable so "CNS" or "Delta" narrows the table without touching the pickers,
-    // and so does the marker itself — typing "No territory" lists exactly the unseated reps.
+    // Line · Region is searchable so "CNS" or "Delta" narrows the table without touching the
+    // pickers, and so is the marker itself — typing "No seat" lists exactly the unseated reps.
     searchAccessors: [
       (r) => r.repName,
       (r) => r.agentHrId ?? "",
-      (r) => territoryText(r) || "No territory",
+      (r) => territoryText(r) || "No seat",
     ],
   });
 
@@ -278,7 +283,7 @@ export function RepsPlansRepTable({
     rep: row.repName,
     // The export must match the screen (owner's standing rule), marker included — a file that
     // silently dropped the territory column would read as though every rep had one.
-    territory: territoryText(row) || "No territory",
+    territory: territoryText(row) || "No seat",
     unproven: row.unprovenPct,
     unspecified: row.unspecified,
     working_days: row.workingDays,
@@ -294,7 +299,7 @@ export function RepsPlansRepTable({
         <ExportXlsxButton
           columns={[
             { key: "rep", label: "Rep" },
-            { key: "territory", label: "Territory" },
+            { key: "territory", label: "Line · Region" },
             { key: "hr_id", label: "HR ID" },
             { key: "working_days", label: "Working Days", numeric: true },
             { key: "am_proved", label: "AM Proved Rate", numeric: true },
@@ -367,11 +372,11 @@ export function RepsPlansRepTable({
             <PortalRecordFields
               fields={[
                 {
-                  label: "Territory",
+                  label: "Line · Region",
                   value:
                     row.territories.length === 0 ? (
                       <span className="border border-amber-300 bg-amber-50 px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.1em] text-amber-700">
-                        No territory
+                        No seat
                       </span>
                     ) : (
                       <span className="text-slate-500">{territoryText(row)}</span>
@@ -427,7 +432,7 @@ export function RepsPlansRepTable({
                   Rep
                 </th>
                 <th className={THEAD} rowSpan={2} scope="col">
-                  Territory
+                  Line · Region
                 </th>
                 <th className={`${THEAD} border-l border-slate-700 text-center`} colSpan={3} scope="colgroup">
                   AM — target 2 / day
@@ -541,7 +546,7 @@ export function RepsPlansRepTable({
                   <td className="px-3 py-2">
                     {row.territories.length === 0 ? (
                       <span className="border border-amber-300 bg-amber-50 px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.1em] text-amber-700">
-                        No territory
+                        No seat
                       </span>
                     ) : (
                       <span className="font-semibold text-slate-500">{territoryText(row)}</span>
