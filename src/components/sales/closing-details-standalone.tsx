@@ -19,7 +19,7 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 // NEVER picks a line — it is resolved from their HR_ID", see monthly-closing-portal.ts).
 
 const selectClassName =
-  "h-11 w-full rounded-2xl border border-[#D8E0EA] bg-[#F8FAFC] px-3.5 text-sm font-semibold text-[#0F172A] outline-none transition focus:border-[#FDBA74] focus:ring-4 focus:ring-[#F97316]/10 disabled:opacity-60";
+  "h-11 w-full rounded-2xl border border-phx-line bg-phx-paper px-3.5 text-sm font-semibold text-phx-ink outline-none transition focus:border-phx-accent-line focus:ring-4 focus:ring-phx-accent/10 disabled:opacity-60";
 
 function PickerOrLocked({
   label,
@@ -44,7 +44,7 @@ function PickerOrLocked({
           ))}
         </SearchableSelect>
       ) : (
-        <div className="flex h-11 w-full items-center rounded-2xl border border-[#E2E8F0] bg-[#F8FAFC] px-3.5 text-sm font-semibold text-[#0F172A]">
+        <div className="flex h-11 w-full items-center rounded-2xl border border-phx-line bg-phx-paper px-3.5 text-sm font-semibold text-phx-ink">
           {value || emptyLabel}
         </div>
       )}

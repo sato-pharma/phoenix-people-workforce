@@ -110,23 +110,23 @@ export function PayrollHistory({
     <Card className={`${panelClassName} p-5`}>
       <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h2 className="text-base font-bold text-[#0F172A]">
+          <h2 className="text-base font-bold text-phx-ink">
             Uploaded Files History
           </h2>
-          <p className="mt-1 text-sm text-[#64748B]">
+          <p className="mt-1 text-sm text-phx-ink-soft">
             Review uploaded payroll sheets, download stored data, replace incorrect files, or delete batches.
           </p>
         </div>
         <Badge variant="neutral">{batches.length} files</Badge>
       </div>
-      <div className="mb-4 grid gap-3 rounded-[24px] border border-[#E2E8F0] bg-[#FCFDFE] p-3 md:grid-cols-[1fr_220px]">
+      <div className="mb-4 grid gap-3 rounded-[24px] border border-phx-line bg-[#FCFDFE] p-3 md:grid-cols-[1fr_220px]">
         <Input
           onChange={(event) => setFileSearch(event.target.value)}
           placeholder="Filter uploaded files by period, file, status..."
           value={fileSearch}
         />
         <SearchableSelect
-          className="h-10 rounded-2xl border border-[#D7E0EA] bg-white px-3 text-sm text-[#0F172A] focus:outline-none"
+          className="h-10 rounded-2xl border border-[#D7E0EA] bg-white px-3 text-sm text-phx-ink focus:outline-none"
           onChange={(event) => setFileSort(event.target.value)}
           value={fileSort}
         >
@@ -138,13 +138,13 @@ export function PayrollHistory({
           <option value="file">File A-Z</option>
         </SearchableSelect>
       </div>
-      <div className="overflow-hidden rounded-[24px] border border-[#E2E8F0]">
+      <div className="overflow-hidden rounded-[24px] border border-phx-line">
         <div className="overflow-x-auto">
         <table className="w-full min-w-[760px] text-left text-sm">
           <thead>
-            <tr className="border-b border-[#E2E8F0] bg-[#F8FAFC]">
+            <tr className="border-b border-phx-line bg-phx-paper">
               {[...fileColumns, { key: "actions", label: "Actions" }].map((column) => (
-                <th className="px-3 py-3 font-medium text-[#64748B]" key={column.key}>
+                <th className="px-3 py-3 font-medium text-phx-ink-soft" key={column.key}>
                   {column.key === "actions" ? (
                     column.label
                   ) : (
@@ -168,7 +168,7 @@ export function PayrollHistory({
           <tbody className="divide-y divide-border">
             {visibleBatches.length === 0 ? (
               <tr>
-                <td className="px-3 py-8 text-center text-sm text-[#64748B]" colSpan={5}>
+                <td className="px-3 py-8 text-center text-sm text-phx-ink-soft" colSpan={5}>
                   No uploaded files match the current filter.
                 </td>
               </tr>

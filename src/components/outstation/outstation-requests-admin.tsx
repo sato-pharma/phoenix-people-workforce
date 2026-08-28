@@ -130,14 +130,14 @@ function statusTone(status: string) {
   const normalized = status.toLowerCase();
   if (normalized === "eligible") return "bg-[#ECFDF5] text-[#047857] ring-[#A7F3D0]";
   if (normalized === "not_eligible") return "bg-[#FEF2F2] text-[#B91C1C] ring-[#FECACA]";
-  return "bg-[#FFF7ED] text-[#C2410C] ring-[#FED7AA]";
+  return "bg-phx-accent-soft text-phx-accent-press ring-[#FED7AA]";
 }
 
 function requestStatusTone(status: string) {
   const normalized = status.toLowerCase();
   if (normalized.includes("accept") || normalized === "approved") return "bg-[#ECFDF5] text-[#047857] ring-[#A7F3D0]";
   if (normalized.includes("reject") || normalized === "rejected") return "bg-[#FEF2F2] text-[#B91C1C] ring-[#FECACA]";
-  return "bg-[#FFF7ED] text-[#C2410C] ring-[#FED7AA]";
+  return "bg-phx-accent-soft text-phx-accent-press ring-[#FED7AA]";
 }
 
 function recommendationTone(value: string) {
@@ -145,27 +145,27 @@ function recommendationTone(value: string) {
   if (normalized === "auto_approve") return "text-[#047857]";
   if (normalized === "hr_review" || normalized === "finance_review") return "text-[#1D4ED8]";
   if (normalized === "reject") return "text-[#B91C1C]";
-  return "text-[#C2410C]";
+  return "text-phx-accent-press";
 }
 
 const panelClassName =
-  "rounded-lg border border-[#D8E0EA] bg-white/94 shadow-[0_1px_3px_rgba(15,23,42,0.06)] backdrop-blur";
-const adminTableHeaderClassName = "px-4 py-3 text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]";
-const stickyEmployeeHeaderClassName = `${adminTableHeaderClassName} sticky left-0 z-30 w-[260px] min-w-[260px] bg-[#F8FAFC] shadow-[10px_0_18px_rgba(15,23,42,0.06)]`;
-const stickyTripHeaderClassName = `${adminTableHeaderClassName} sticky left-[260px] z-30 w-[220px] min-w-[220px] bg-[#F8FAFC] shadow-[10px_0_18px_rgba(15,23,42,0.04)]`;
+  "rounded-lg border border-phx-line bg-white/94 shadow-[0_1px_3px_rgba(15,23,42,0.06)] backdrop-blur";
+const adminTableHeaderClassName = "px-4 py-3 text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-soft";
+const stickyEmployeeHeaderClassName = `${adminTableHeaderClassName} sticky left-0 z-30 w-[260px] min-w-[260px] bg-phx-paper shadow-[10px_0_18px_rgba(15,23,42,0.06)]`;
+const stickyTripHeaderClassName = `${adminTableHeaderClassName} sticky left-[260px] z-30 w-[220px] min-w-[220px] bg-phx-paper shadow-[10px_0_18px_rgba(15,23,42,0.04)]`;
 const stickyEmployeeCellClassName = "sticky left-0 z-20 w-[260px] min-w-[260px] px-4 py-3 shadow-[10px_0_18px_rgba(15,23,42,0.05)]";
 const stickyTripCellClassName = "sticky left-[260px] z-20 w-[220px] min-w-[220px] px-4 py-3 shadow-[10px_0_18px_rgba(15,23,42,0.04)]";
 
 function OutstationAdminShell({ children }: { children: ReactNode }) {
   return (
-    <div className="relative isolate min-h-[calc(100vh-8rem)] overflow-hidden rounded-lg border border-[#D8E0EA] bg-[radial-gradient(circle_at_top_left,rgba(249,115,22,0.16),transparent_32%),linear-gradient(135deg,#FFF9F3_0%,#FFFFFF_44%,#F7FAFC_100%)] p-4 shadow-[0_24px_70px_rgba(15,23,42,0.1)] sm:p-6">
+    <div className="relative isolate min-h-[calc(100vh-8rem)] overflow-hidden rounded-lg border border-phx-line bg-[radial-gradient(circle_at_top_left,rgba(249,115,22,0.16),transparent_32%),linear-gradient(135deg,#FFF9F3_0%,#FFFFFF_44%,#F7FAFC_100%)] p-4 shadow-[0_24px_70px_rgba(15,23,42,0.1)] sm:p-6">
       <div
         aria-hidden="true"
-        className="pointer-events-none absolute -right-24 -top-28 h-72 w-72 rounded-full bg-[#F97316]/12 blur-3xl"
+        className="pointer-events-none absolute -right-24 -top-28 h-72 w-72 rounded-full bg-phx-accent/12 blur-3xl"
       />
       <div
         aria-hidden="true"
-        className="pointer-events-none absolute bottom-10 left-1/4 h-64 w-64 rounded-full bg-[#0F172A]/6 blur-3xl"
+        className="pointer-events-none absolute bottom-10 left-1/4 h-64 w-64 rounded-full bg-phx-ink/6 blur-3xl"
       />
       <div className="relative z-10 space-y-6">{children}</div>
     </div>
@@ -181,8 +181,8 @@ function Metric({
 }) {
   return (
     <Card className={`${panelClassName} p-4 transition-transform duration-200 hover:-translate-y-0.5`}>
-      <p className="text-[11px] font-black uppercase tracking-[0.16em] text-[#64748B]">{label}</p>
-      <p className="mt-2 truncate text-lg font-black text-[#0F172A]">{value}</p>
+      <p className="text-[11px] font-black uppercase tracking-[0.16em] text-phx-ink-soft">{label}</p>
+      <p className="mt-2 truncate text-lg font-black text-phx-ink">{value}</p>
     </Card>
   );
 }
@@ -195,9 +195,9 @@ function Info({
   value: string;
 }) {
   return (
-    <div className="rounded-[18px] border border-[#E2E8F0] bg-[#F8FAFC]/85 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.75)]">
-      <p className="text-[11px] font-black uppercase tracking-[0.16em] text-[#64748B]">{label}</p>
-      <p className="mt-2 text-sm font-semibold text-[#0F172A]">{value}</p>
+    <div className="rounded-[18px] border border-phx-line bg-phx-paper/85 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.75)]">
+      <p className="text-[11px] font-black uppercase tracking-[0.16em] text-phx-ink-soft">{label}</p>
+      <p className="mt-2 text-sm font-semibold text-phx-ink">{value}</p>
     </div>
   );
 }
@@ -314,7 +314,7 @@ function RequestDetailsModal({
 
   return createPortal(
     <div className="fixed inset-0 z-[200] flex items-start justify-center overflow-y-auto bg-[#020617]/65 p-3 backdrop-blur-sm sm:p-6">
-      <div className="w-full max-w-4xl overflow-hidden rounded-lg border border-[#D8E0EA] bg-white shadow-[0_28px_90px_rgba(15,23,42,0.3)]">
+      <div className="w-full max-w-4xl overflow-hidden rounded-lg border border-phx-line bg-white shadow-[0_28px_90px_rgba(15,23,42,0.3)]">
         {/* Owner request (2026-08-04): a held request must read EXACTLY as the Expense Approval
             detail. This is that screen's header — dark bar, eyebrow, name, HR ID / id, status
             badge — and the fact grid below it is its fact grid. The shared pieces come from
@@ -405,26 +405,26 @@ function RequestDetailsModal({
 
           <Card className={`${panelClassName} p-5`}>
             <div className="mb-4 flex items-start gap-3">
-              <span className="flex h-11 w-11 items-center justify-center rounded-md bg-[#FFF7ED] text-[#EA580C]">
+              <span className="flex h-11 w-11 items-center justify-center rounded-md bg-phx-accent-soft text-phx-accent-hover">
                 <Calculator className="h-5 w-5" />
               </span>
               <div>
-                <p className="text-xs font-black uppercase tracking-[0.16em] text-[#EA580C]">Allowance calculation</p>
-                <h3 className="mt-1 text-lg font-black text-[#0F172A]">How fuel &amp; allowance are calculated</h3>
+                <p className="text-xs font-black uppercase tracking-[0.16em] text-phx-accent-hover">Allowance calculation</p>
+                <h3 className="mt-1 text-lg font-black text-phx-ink">How fuel &amp; allowance are calculated</h3>
               </div>
             </div>
             <div className="grid gap-3 sm:grid-cols-2">
-              <div className="rounded-md border border-[#E2E8F0] bg-[#F8FAFC] px-4 py-3">
-                <p className="text-[11px] font-black uppercase tracking-[0.12em] text-[#64748B]">Fuel (round trip)</p>
-                <p className="mt-1 text-lg font-black text-[#0F172A]">{formatCurrency(request.fuelAmount)}</p>
-                <p className="mt-0.5 text-[11px] text-[#94A3B8]">
+              <div className="rounded-md border border-phx-line bg-phx-paper px-4 py-3">
+                <p className="text-[11px] font-black uppercase tracking-[0.12em] text-phx-ink-soft">Fuel (round trip)</p>
+                <p className="mt-1 text-lg font-black text-phx-ink">{formatCurrency(request.fuelAmount)}</p>
+                <p className="mt-0.5 text-[11px] text-phx-ink-faint">
                   {formatKm(request.distanceFromResidenceKm)} &times; 2 &middot; {formatStatus(request.transportationType)}
                 </p>
               </div>
-              <div className="rounded-md border border-[#E2E8F0] bg-[#F8FAFC] px-4 py-3">
-                <p className="text-[11px] font-black uppercase tracking-[0.12em] text-[#64748B]">Allowance</p>
-                <p className="mt-1 text-lg font-black text-[#0F172A]">{formatCurrency(request.allowanceAmount)}</p>
-                <p className="mt-0.5 text-[11px] text-[#94A3B8]">
+              <div className="rounded-md border border-phx-line bg-phx-paper px-4 py-3">
+                <p className="text-[11px] font-black uppercase tracking-[0.12em] text-phx-ink-soft">Allowance</p>
+                <p className="mt-1 text-lg font-black text-phx-ink">{formatCurrency(request.allowanceAmount)}</p>
+                <p className="mt-0.5 text-[11px] text-phx-ink-faint">
                   {request.sameDayTrip
                     ? "Same-day trip"
                     : `${request.overnightDays} overnight ${request.overnightDays === 1 ? "night" : "nights"} + return day`}
@@ -432,14 +432,14 @@ function RequestDetailsModal({
               </div>
             </div>
             {request.allowanceBreakdown && request.allowanceBreakdown.rows.length > 0 ? (
-              <div className="mt-4 overflow-hidden rounded-md border border-[#E2E8F0]">
+              <div className="mt-4 overflow-hidden rounded-md border border-phx-line">
                 {request.allowanceBreakdown.rows.map((row, index) => (
                   <div
-                    className="flex items-center justify-between border-b border-[#E2E8F0] px-4 py-2.5 text-sm last:border-b-0"
+                    className="flex items-center justify-between border-b border-phx-line px-4 py-2.5 text-sm last:border-b-0"
                     key={`${row.type}-${index}`}
                   >
-                    <span className="font-semibold text-[#475569]">{row.label}</span>
-                    <span className="font-black text-[#0F172A]">{formatCurrency(row.amount)}</span>
+                    <span className="font-semibold text-phx-ink-2">{row.label}</span>
+                    <span className="font-black text-phx-ink">{formatCurrency(row.amount)}</span>
                   </div>
                 ))}
               </div>
@@ -449,17 +449,17 @@ function RequestDetailsModal({
           <div className="grid gap-5 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
             <Card className={`${panelClassName} p-5`}>
               <div className="mb-4 flex items-start gap-3">
-                <span className="flex h-11 w-11 items-center justify-center rounded-md bg-[#FFF7ED] text-[#EA580C]">
+                <span className="flex h-11 w-11 items-center justify-center rounded-md bg-phx-accent-soft text-phx-accent-hover">
                   <Camera className="h-5 w-5" />
                 </span>
                 <div>
-                  <p className="text-xs font-black uppercase tracking-[0.16em] text-[#EA580C]">Evidence</p>
-                  <h3 className="mt-1 text-lg font-black text-[#0F172A]">Photo and attachments</h3>
+                  <p className="text-xs font-black uppercase tracking-[0.16em] text-phx-accent-hover">Evidence</p>
+                  <h3 className="mt-1 text-lg font-black text-phx-ink">Photo and attachments</h3>
                 </div>
               </div>
 
               {request.carEvidenceImageUrl ? (
-                <div className="overflow-hidden rounded-lg border border-[#E2E8F0] bg-[#F8FAFC]">
+                <div className="overflow-hidden rounded-lg border border-phx-line bg-phx-paper">
                   <ZoomablePhoto
                     alt={`Car evidence for outstation request ${request.id}`}
                     caption={`Car evidence · outstation request ${request.id}`}
@@ -468,7 +468,7 @@ function RequestDetailsModal({
                   />
                 </div>
               ) : (
-                <div className="rounded-lg border border-dashed border-[#CBD5E1] bg-[#F8FAFC] p-5 text-sm font-semibold text-[#64748B]">
+                <div className="rounded-lg border border-dashed border-phx-line-strong bg-phx-paper p-5 text-sm font-semibold text-phx-ink-soft">
                   {/* A car photo is only ever required for a CAR trip. On a train/bus/other trip
                       its absence is correct, not missing evidence — saying "not available" there
                       reads as a fault and was part of the "I see nulls on non-car trips" report. */}
@@ -493,7 +493,7 @@ function RequestDetailsModal({
                 />
                 {request.carEvidenceImageUrl ? (
                   <a
-                    className="inline-flex w-fit items-center gap-2 rounded-xl bg-[#EA580C] px-4 py-2 text-xs font-black text-white hover:bg-[#C2410C]"
+                    className="inline-flex w-fit items-center gap-2 rounded-xl bg-phx-accent-hover px-4 py-2 text-xs font-black text-white hover:bg-phx-accent-press"
                     href={request.carEvidenceImageUrl}
                     rel="noreferrer"
                     target="_blank"
@@ -504,8 +504,8 @@ function RequestDetailsModal({
                 ) : null}
               </div>
 
-              <div className="mt-5 rounded-[18px] border border-[#E2E8F0] bg-[#F8FAFC]/85 p-4">
-                <p className="text-[11px] font-black uppercase tracking-[0.16em] text-[#64748B]">Ticket attachments</p>
+              <div className="mt-5 rounded-[18px] border border-phx-line bg-phx-paper/85 p-4">
+                <p className="text-[11px] font-black uppercase tracking-[0.16em] text-phx-ink-soft">Ticket attachments</p>
                 {request.ticketAttachmentMetadata.length > 0 ? (
                   <div className="mt-3 space-y-2">
                     {request.ticketAttachmentMetadata.map((attachment, index) => {
@@ -517,20 +517,20 @@ function RequestDetailsModal({
                       const body = (
                         <>
                           <div className="min-w-0">
-                            <p className="truncate font-bold text-[#0F172A]">{attachment.name}</p>
-                            <p className="text-xs text-[#64748B]">{attachment.contentType} - {(attachment.size / 1024).toFixed(1)} KB</p>
+                            <p className="truncate font-bold text-phx-ink">{attachment.name}</p>
+                            <p className="text-xs text-phx-ink-soft">{attachment.contentType} - {(attachment.size / 1024).toFixed(1)} KB</p>
                           </div>
                           {url ? (
-                            <ExternalLink className="h-4 w-4 shrink-0 text-[#EA580C]" />
+                            <ExternalLink className="h-4 w-4 shrink-0 text-phx-accent-hover" />
                           ) : (
-                            <FileText className="h-4 w-4 shrink-0 text-[#94A3B8]" />
+                            <FileText className="h-4 w-4 shrink-0 text-phx-ink-faint" />
                           )}
                         </>
                       );
 
                       return url ? (
                         <a
-                          className="flex items-center justify-between gap-3 rounded-xl bg-white px-3 py-2 text-sm transition-colors hover:bg-[#FFF7ED]"
+                          className="flex items-center justify-between gap-3 rounded-xl bg-white px-3 py-2 text-sm transition-colors hover:bg-phx-accent-soft"
                           href={url}
                           key={attachment.path}
                           rel="noopener noreferrer"
@@ -551,7 +551,7 @@ function RequestDetailsModal({
                     })}
                   </div>
                 ) : (
-                  <p className="mt-2 text-sm font-semibold text-[#64748B]">No ticket attachments were uploaded.</p>
+                  <p className="mt-2 text-sm font-semibold text-phx-ink-soft">No ticket attachments were uploaded.</p>
                 )}
               </div>
             </Card>
@@ -568,34 +568,34 @@ function RequestDetailsModal({
           <Card className={`${panelClassName} p-5`}>
             <div className="grid gap-4 lg:grid-cols-3">
               <div className="flex items-start gap-3">
-                <CalendarDays className="mt-1 h-5 w-5 text-[#EA580C]" />
+                <CalendarDays className="mt-1 h-5 w-5 text-phx-accent-hover" />
                 <div>
-                  <p className="text-xs font-black uppercase tracking-[0.16em] text-[#64748B]">Eligibility</p>
-                  <p className="mt-1 text-sm font-semibold text-[#0F172A]">{request.eligibilityReason}</p>
+                  <p className="text-xs font-black uppercase tracking-[0.16em] text-phx-ink-soft">Eligibility</p>
+                  <p className="mt-1 text-sm font-semibold text-phx-ink">{request.eligibilityReason}</p>
                 </div>
               </div>
               <div className="flex items-start gap-3">
-                <Clock className="mt-1 h-5 w-5 text-[#EA580C]" />
+                <Clock className="mt-1 h-5 w-5 text-phx-accent-hover" />
                 <div>
-                  <p className="text-xs font-black uppercase tracking-[0.16em] text-[#64748B]">Approval reason</p>
-                  <p className="mt-1 text-sm font-semibold text-[#0F172A]">{request.approvalReason}</p>
+                  <p className="text-xs font-black uppercase tracking-[0.16em] text-phx-ink-soft">Approval reason</p>
+                  <p className="mt-1 text-sm font-semibold text-phx-ink">{request.approvalReason}</p>
                 </div>
               </div>
               <div className="flex items-start gap-3">
-                <MapPinned className="mt-1 h-5 w-5 text-[#EA580C]" />
+                <MapPinned className="mt-1 h-5 w-5 text-phx-accent-hover" />
                 <div>
-                  <p className="text-xs font-black uppercase tracking-[0.16em] text-[#64748B]">Notes</p>
-                  <p className="mt-1 whitespace-pre-wrap text-sm font-semibold text-[#0F172A]">{request.notes ?? "No notes"}</p>
+                  <p className="text-xs font-black uppercase tracking-[0.16em] text-phx-ink-soft">Notes</p>
+                  <p className="mt-1 whitespace-pre-wrap text-sm font-semibold text-phx-ink">{request.notes ?? "No notes"}</p>
                 </div>
               </div>
             </div>
           </Card>
         </div>
-        <div className="sticky bottom-0 z-10 border-t border-[#E2E8F0] bg-white/98 px-5 py-4 backdrop-blur">
+        <div className="sticky bottom-0 z-10 border-t border-phx-line bg-white/98 px-5 py-4 backdrop-blur">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div>
-              <p className="text-xs font-black uppercase tracking-[0.16em] text-[#64748B]">Admin decision</p>
-              <p className="mt-1 text-sm font-semibold text-[#475569]">Approve, reject, edit, or delete before the expense is added to payroll.</p>
+              <p className="text-xs font-black uppercase tracking-[0.16em] text-phx-ink-soft">Admin decision</p>
+              <p className="mt-1 text-sm font-semibold text-phx-ink-2">Approve, reject, edit, or delete before the expense is added to payroll.</p>
             </div>
             <RequestActionButtons
               actionError={actionError}
@@ -902,7 +902,7 @@ export function OutstationRequestsAdmin({
           title="Residence-validated expense review"
           actions={(
             <Button
-              className="gap-2 rounded-xl bg-[#EA580C] px-4 py-2 text-xs font-black text-white hover:bg-[#C2410C]"
+              className="gap-2 rounded-xl bg-phx-accent-hover px-4 py-2 text-xs font-black text-white hover:bg-phx-accent-press"
               onClick={() => setManagerExpenseModal({ mode: "create" })}
               type="button"
             >
@@ -912,8 +912,8 @@ export function OutstationRequestsAdmin({
           )}
         />
         <AdminCallout tone="neutral">
-          <ShieldAlert className="mt-0.5 h-5 w-5 text-[#EA580C]" />
-          <p className="font-semibold text-[#334155]">No requests were returned from the data source.</p>
+          <ShieldAlert className="mt-0.5 h-5 w-5 text-phx-accent-hover" />
+          <p className="font-semibold text-phx-ink-2">No requests were returned from the data source.</p>
         </AdminCallout>
         {managerExpenseModal ? (
           managerExpenseModal.mode === "create" ? (
@@ -956,7 +956,7 @@ export function OutstationRequestsAdmin({
                 title="Outstation expenses"
               />
               <Button
-                className="gap-2 rounded-xl bg-[#EA580C] px-4 py-2 text-xs font-black text-white hover:bg-[#C2410C]"
+                className="gap-2 rounded-xl bg-phx-accent-hover px-4 py-2 text-xs font-black text-white hover:bg-phx-accent-press"
                 onClick={() => setManagerExpenseModal({ mode: "create" })}
                 type="button"
               >
@@ -990,7 +990,7 @@ export function OutstationRequestsAdmin({
         <AdminTableShell
           action={hasActiveFilters ? (
             <button
-              className="inline-flex rounded-md border border-[#E2E8F0] bg-white px-3 py-2 text-xs font-semibold text-[#64748B] shadow-sm transition hover:border-[#F97316] hover:text-[#EA580C]"
+              className="inline-flex rounded-md border border-phx-line bg-white px-3 py-2 text-xs font-semibold text-phx-ink-soft shadow-sm transition hover:border-phx-accent hover:text-phx-accent-hover"
               onClick={clearFilters}
               type="button"
             >
@@ -1002,9 +1002,9 @@ export function OutstationRequestsAdmin({
         >
           <div className="grid gap-4 p-4 sm:p-5 md:grid-cols-2 xl:grid-cols-4">
             <label className="block">
-              <span className="mb-1 block text-[11px] font-black uppercase tracking-[0.16em] text-[#64748B]">Search</span>
+              <span className="mb-1 block text-[11px] font-black uppercase tracking-[0.16em] text-phx-ink-soft">Search</span>
               <div className="relative">
-                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#94A3B8]" />
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-phx-ink-faint" />
                 <Input
                   className="h-11 rounded-md border-[#DDE6F1] bg-white/95 pl-9 shadow-sm"
                   onChange={(event) => setSearch(event.target.value)}
@@ -1015,9 +1015,9 @@ export function OutstationRequestsAdmin({
             </label>
 
             <label className="block">
-              <span className="mb-1 block text-[11px] font-black uppercase tracking-[0.16em] text-[#64748B]">Eligibility</span>
+              <span className="mb-1 block text-[11px] font-black uppercase tracking-[0.16em] text-phx-ink-soft">Eligibility</span>
               <SearchableSelect
-                className="h-11 w-full rounded-md border border-[#DDE6F1] bg-white/95 px-3 text-sm font-semibold text-[#0F172A] shadow-sm focus:outline-none focus:ring-2 focus:ring-[#FED7AA]"
+                className="h-11 w-full rounded-md border border-[#DDE6F1] bg-white/95 px-3 text-sm font-semibold text-phx-ink shadow-sm focus:outline-none focus:ring-2 focus:ring-[#FED7AA]"
                 onChange={(event) => setEligibility(event.target.value)}
                 value={eligibility}
               >
@@ -1029,9 +1029,9 @@ export function OutstationRequestsAdmin({
             </label>
 
             <label className="block">
-              <span className="mb-1 block text-[11px] font-black uppercase tracking-[0.16em] text-[#64748B]">Role</span>
+              <span className="mb-1 block text-[11px] font-black uppercase tracking-[0.16em] text-phx-ink-soft">Role</span>
               <SearchableSelect
-                className="h-11 w-full rounded-md border border-[#DDE6F1] bg-white/95 px-3 text-sm font-semibold text-[#0F172A] shadow-sm focus:outline-none focus:ring-2 focus:ring-[#FED7AA]"
+                className="h-11 w-full rounded-md border border-[#DDE6F1] bg-white/95 px-3 text-sm font-semibold text-phx-ink shadow-sm focus:outline-none focus:ring-2 focus:ring-[#FED7AA]"
                 onChange={(event) => setRole(event.target.value)}
                 value={role}
               >
@@ -1045,9 +1045,9 @@ export function OutstationRequestsAdmin({
             </label>
 
             <label className="block">
-              <span className="mb-1 block text-[11px] font-black uppercase tracking-[0.16em] text-[#64748B]">Month</span>
+              <span className="mb-1 block text-[11px] font-black uppercase tracking-[0.16em] text-phx-ink-soft">Month</span>
               <SearchableSelect
-                className="h-11 w-full rounded-md border border-[#DDE6F1] bg-white/95 px-3 text-sm font-semibold text-[#0F172A] shadow-sm focus:outline-none focus:ring-2 focus:ring-[#FED7AA]"
+                className="h-11 w-full rounded-md border border-[#DDE6F1] bg-white/95 px-3 text-sm font-semibold text-phx-ink shadow-sm focus:outline-none focus:ring-2 focus:ring-[#FED7AA]"
                 onChange={(event) => setMonth(event.target.value)}
                 value={month}
               >
@@ -1066,12 +1066,12 @@ export function OutstationRequestsAdmin({
             <div className="relative overflow-hidden border-b border-[#1F2937] bg-[radial-gradient(circle_at_top_right,rgba(249,115,22,0.24),transparent_34%),linear-gradient(135deg,#080B10_0%,#111827_58%,#24150D_100%)] px-5 py-5 text-white">
               <div
                 aria-hidden="true"
-                className="pointer-events-none absolute -right-16 -top-20 h-44 w-44 rounded-full bg-[#F97316]/20 blur-3xl"
+                className="pointer-events-none absolute -right-16 -top-20 h-44 w-44 rounded-full bg-phx-accent/20 blur-3xl"
               />
               <div className="relative z-10 space-y-1.5">
-                <p className="inline-flex rounded-full border border-[#F97316]/35 bg-[#F97316]/12 px-3 py-1 text-xs font-black uppercase tracking-[0.16em] text-[#FDBA74]">Request queue</p>
+                <p className="inline-flex rounded-full border border-phx-accent/35 bg-phx-accent/12 px-3 py-1 text-xs font-black uppercase tracking-[0.16em] text-phx-accent">Request queue</p>
                 <h2 className="text-xl font-black text-white">Outstation expense queue</h2>
-                <p className="text-sm text-[#CBD5E1]">Open any row to inspect evidence, route metrics, location validation, and admin decisions.</p>
+                <p className="text-sm text-phx-line-strong">Open any row to inspect evidence, route metrics, location validation, and admin decisions.</p>
               </div>
             </div>
 
@@ -1092,7 +1092,7 @@ export function OutstationRequestsAdmin({
                     actions={
                       <>
                         <Button
-                          className="gap-1.5 rounded-xl border border-[#DDE6F1] bg-white px-3 py-2 text-xs font-black text-[#0F172A]"
+                          className="gap-1.5 rounded-xl border border-[#DDE6F1] bg-white px-3 py-2 text-xs font-black text-phx-ink"
                           onClick={() => openDetails(request)}
                           type="button"
                         >
@@ -1100,7 +1100,7 @@ export function OutstationRequestsAdmin({
                           View
                         </Button>
                         <Button
-                          className="gap-1.5 rounded-xl border border-[#FED7AA] bg-[#FFF7ED] px-3 py-2 text-xs font-black text-[#EA580C]"
+                          className="gap-1.5 rounded-xl border border-[#FED7AA] bg-phx-accent-soft px-3 py-2 text-xs font-black text-phx-accent-hover"
                           onClick={() => setManagerExpenseModal({ mode: "edit", request })}
                           type="button"
                         >
@@ -1138,7 +1138,7 @@ export function OutstationRequestsAdmin({
 
             <div className="hidden max-h-[68vh] overflow-auto md:block">
               <table className="min-w-[1240px] w-full border-separate border-spacing-0 text-left text-sm">
-                <thead className="sticky top-0 z-40 bg-[#F8FAFC] text-[11px] uppercase tracking-[0.16em] text-[#64748B]">
+                <thead className="sticky top-0 z-40 bg-phx-paper text-[11px] uppercase tracking-[0.16em] text-phx-ink-soft">
                   <tr>
                     <th className={stickyEmployeeHeaderClassName}>Employee</th>
                     <th className={stickyTripHeaderClassName}>Trip</th>
@@ -1150,24 +1150,24 @@ export function OutstationRequestsAdmin({
                     <th className={adminTableHeaderClassName}>Actions</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-[#E2E8F0] bg-white">
+                <tbody className="divide-y divide-phx-line bg-white">
                   {filtered.map((request) => {
                     const selected = request.id === selectedRequest?.id;
-                    const stickyCellBg = selected ? "bg-[#FFF7ED]" : "bg-white";
+                    const stickyCellBg = selected ? "bg-phx-accent-soft" : "bg-white";
                     return (
                       <tr
-                        className={`cursor-pointer ${selected ? "bg-[#FFF7ED] ring-1 ring-inset ring-[#FDBA74]/60" : "transition-colors hover:bg-[#FFF7ED]/65"}`}
+                        className={`cursor-pointer ${selected ? "bg-phx-accent-soft ring-1 ring-inset ring-phx-accent-line/60" : "transition-colors hover:bg-phx-accent-soft/65"}`}
                         key={request.id}
                         onClick={() => selectRequest(request)}
                       >
                         <td className={`${stickyEmployeeCellClassName} ${stickyCellBg}`}>
-                          <div className="font-bold text-[#0F172A]">{formatEmployeeDisplayName(request.employeeName)}</div>
-                          <div className="text-xs text-[#64748B]">{`${request.employeeHrId} - ${request.employeeRole}`}</div>
+                          <div className="font-bold text-phx-ink">{formatEmployeeDisplayName(request.employeeName)}</div>
+                          <div className="text-xs text-phx-ink-soft">{`${request.employeeHrId} - ${request.employeeRole}`}</div>
                         </td>
-                        <td className={`${stickyTripCellClassName} ${stickyCellBg} text-[#64748B]`}>
+                        <td className={`${stickyTripCellClassName} ${stickyCellBg} text-phx-ink-soft`}>
                           {formatDate(request.tripStartDate)} to {formatDate(request.tripEndDate)}
                         </td>
-                        <td className="px-4 py-3 font-semibold text-[#0F172A]">
+                        <td className="px-4 py-3 font-semibold text-phx-ink">
                           {formatKm(request.distanceFromResidenceKm)}
                         </td>
                         <td className="px-4 py-3">
@@ -1180,7 +1180,7 @@ export function OutstationRequestsAdmin({
                             {formatStatus(request.status)}
                           </span>
                         </td>
-                        <td className="px-4 py-3 font-semibold text-[#64748B]">
+                        <td className="px-4 py-3 font-semibold text-phx-ink-soft">
                           {formatCurrency(request.claimedTotalAmount)}
                         </td>
                         <td className={`px-4 py-3 text-[11px] font-black uppercase tracking-[0.14em] ${recommendationTone(request.approvalRecommendation)}`}>
@@ -1189,7 +1189,7 @@ export function OutstationRequestsAdmin({
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-1.5">
                             <Button
-                              className="gap-1.5 rounded-xl border border-[#DDE6F1] bg-white px-3 py-2 text-xs font-black text-[#0F172A] hover:bg-[#FFF7ED]"
+                              className="gap-1.5 rounded-xl border border-[#DDE6F1] bg-white px-3 py-2 text-xs font-black text-phx-ink hover:bg-phx-accent-soft"
                               onClick={(event) => {
                                 event.stopPropagation();
                                 openDetails(request);
@@ -1200,7 +1200,7 @@ export function OutstationRequestsAdmin({
                               View
                             </Button>
                             <Button
-                              className="gap-1.5 rounded-xl border border-[#FED7AA] bg-[#FFF7ED] px-3 py-2 text-xs font-black text-[#EA580C] hover:bg-[#FFEDD5]"
+                              className="gap-1.5 rounded-xl border border-[#FED7AA] bg-phx-accent-soft px-3 py-2 text-xs font-black text-phx-accent-hover hover:bg-[#FFEDD5]"
                               onClick={(event) => {
                                 event.stopPropagation();
                                 setManagerExpenseModal({ mode: "edit", request });

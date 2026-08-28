@@ -72,7 +72,7 @@ export async function AppShell({
 
   return (
     <RouteTransitionProvider>
-      <div className={`min-h-screen text-[#0F172A] ${isAdminMode ? `admin-shell ${adminShellBackgroundClassName}` : "bg-[#F8FAFC]"}`}>
+      <div className={`min-h-screen text-phx-ink ${isAdminMode ? `admin-shell ${adminShellBackgroundClassName}` : "bg-phx-paper"}`}>
         <SessionSecurityGuard />
         <OneSignalProvider />
         <DocumentTitleSync mode={resolvedNavigationMode} />

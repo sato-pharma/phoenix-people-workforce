@@ -64,10 +64,10 @@ export function ExportXlsxButton({
   return (
     <button
       className={cn(
-        "inline-flex h-9 items-center gap-2 whitespace-nowrap border px-3 text-xs font-bold shadow-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F97316]/40 disabled:opacity-50",
+        "inline-flex h-9 items-center gap-2 whitespace-nowrap border px-3 text-xs font-bold shadow-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-phx-accent/40 disabled:opacity-50",
         failed
           ? "border-rose-500 bg-rose-50 text-rose-700 hover:border-rose-600"
-          : "border-[#D8E0EA] bg-white text-[#0F172A] hover:border-[#FDBA74] hover:text-[#F97316]",
+          : "border-phx-line bg-white text-phx-ink hover:border-phx-accent-line hover:text-phx-accent",
         className,
       )}
       disabled={disabled}

@@ -69,7 +69,7 @@ export function ExpenseFilterBar({
   const preset = filters.preset ?? "all";
 
   return (
-    <div className="rounded-[18px] border border-[#D8E0EA] bg-white p-4 shadow-[0_18px_46px_rgba(15,23,42,0.06)]">
+    <div className="rounded-[18px] border border-phx-line bg-white p-4 shadow-[0_18px_46px_rgba(15,23,42,0.06)]">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-3">
         <div className="flex items-center gap-2">
           <Filter className="h-4 w-4 text-orange-500" />
@@ -105,7 +105,7 @@ export function ExpenseFilterBar({
             onClick={() => onChange({ preset: value })}
             className={`rounded-full px-3 py-1.5 text-xs font-bold transition-colors ${
               preset === value
-                ? "bg-[#0F172A] text-white"
+                ? "bg-phx-ink text-white"
                 : "border border-slate-200 bg-white text-slate-600 hover:border-orange-300 hover:text-orange-600"
             }`}
           >

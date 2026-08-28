@@ -71,13 +71,13 @@ function RoiReportTable({
   selectedRequestId: string | null;
 }) {
   if (rows.length === 0) {
-    return <div className="px-4 py-8 text-center text-[13px] font-medium text-[#64748B]">No marketing requests found for this selection.</div>;
+    return <div className="px-4 py-8 text-center text-[13px] font-medium text-phx-ink-soft">No marketing requests found for this selection.</div>;
   }
 
   return (
     <div className="overflow-x-auto">
       <table className="w-full min-w-[1100px] border-collapse text-left text-[12px]">
-        <thead className="bg-[#0F172A] text-[10px] font-black uppercase tracking-[0.1em] text-white">
+        <thead className="bg-phx-ink text-[10px] font-black uppercase tracking-[0.1em] text-white">
           <tr>
             <th className="px-3 py-2.5">Request</th>
             <th className="px-3 py-2.5">{secondaryColumnLabel}</th>
@@ -95,23 +95,23 @@ function RoiReportTable({
         </thead>
         <tbody className="bg-white">
           {rows.map((row) => (
-            <tr key={row.requestId} className={cn("border-t border-[#FEE7D2]", selectedRequestId === row.requestId && "bg-[#FFF7ED]")}>
-              <td className="px-3 py-2.5 font-mono font-bold text-[#0F172A]">{row.requestCode}</td>
-              <td className="px-3 py-2.5 font-semibold text-[#334155]">{secondaryColumnValue(row)}</td>
-              <td className="px-3 py-2.5 font-medium text-[#64748B]">{row.payDate ?? "—"}</td>
-              <td className="px-3 py-2.5 text-right font-medium text-[#64748B]">{money(row.estimatedCost)}</td>
-              <td className="px-3 py-2.5 text-right font-semibold text-[#475569]">{money(row.requiredRoiValue)}</td>
-              <td className="px-3 py-2.5 text-right font-medium text-[#64748B]">{money(row.expectedRoiValue)}</td>
-              <td className="px-3 py-2.5 text-right font-bold text-[#0F172A]">{money(row.actualSalesValue)}</td>
-              <td className="px-3 py-2.5 text-right font-bold text-[#0F172A]">{row.hasSalesData ? percent(row.actualCoverageRatio) : "—"}</td>
+            <tr key={row.requestId} className={cn("border-t border-[#FEE7D2]", selectedRequestId === row.requestId && "bg-phx-accent-soft")}>
+              <td className="px-3 py-2.5 font-mono font-bold text-phx-ink">{row.requestCode}</td>
+              <td className="px-3 py-2.5 font-semibold text-phx-ink-2">{secondaryColumnValue(row)}</td>
+              <td className="px-3 py-2.5 font-medium text-phx-ink-soft">{row.payDate ?? "—"}</td>
+              <td className="px-3 py-2.5 text-right font-medium text-phx-ink-soft">{money(row.estimatedCost)}</td>
+              <td className="px-3 py-2.5 text-right font-semibold text-phx-ink-2">{money(row.requiredRoiValue)}</td>
+              <td className="px-3 py-2.5 text-right font-medium text-phx-ink-soft">{money(row.expectedRoiValue)}</td>
+              <td className="px-3 py-2.5 text-right font-bold text-phx-ink">{money(row.actualSalesValue)}</td>
+              <td className="px-3 py-2.5 text-right font-bold text-phx-ink">{row.hasSalesData ? percent(row.actualCoverageRatio) : "—"}</td>
               <td className="px-3 py-2.5"><StatusBadge status={row.simpleStatus} /></td>
-              <td className="px-3 py-2.5 text-[11px] font-semibold text-[#64748B]">{ROI_MAIN_PROBLEM_LABEL[row.mainProblem]}</td>
-              <td className="px-3 py-2.5 text-[11px] font-semibold text-[#64748B]">{ROI_NEXT_ACTION_LABEL[row.nextAction]}</td>
+              <td className="px-3 py-2.5 text-[11px] font-semibold text-phx-ink-soft">{ROI_MAIN_PROBLEM_LABEL[row.mainProblem]}</td>
+              <td className="px-3 py-2.5 text-[11px] font-semibold text-phx-ink-soft">{ROI_NEXT_ACTION_LABEL[row.nextAction]}</td>
               <td className="px-2 py-2.5 text-right">
                 <button
                   type="button"
                   onClick={() => onSelectRow(row)}
-                  className="inline-flex items-center gap-1 rounded-[5px] border border-[#E2E8F0] bg-white px-2 py-1 text-[11px] font-black text-[#F97316] transition hover:border-[#FDBA74] hover:bg-[#FFF7ED]"
+                  className="inline-flex items-center gap-1 rounded-[5px] border border-phx-line bg-white px-2 py-1 text-[11px] font-black text-phx-accent transition hover:border-phx-accent-line hover:bg-phx-accent-soft"
                 >
                   View details
                 </button>
@@ -149,17 +149,17 @@ function RequestDetailPanel({ row }: { row: RoiBusinessRow }) {
   }, [row.requestId]);
 
   return (
-    <section className="overflow-hidden rounded-[6px] border border-[#E2E8F0] bg-white shadow-sm">
-      <div className="flex items-center justify-between border-b border-[#E2E8F0] px-4 py-3">
+    <section className="overflow-hidden rounded-[6px] border border-phx-line bg-white shadow-sm">
+      <div className="flex items-center justify-between border-b border-phx-line px-4 py-3">
         <div>
-          <p className="text-[10px] font-black uppercase tracking-[0.16em] text-[#F97316]">Request details</p>
-          <h3 className="text-[14px] font-black tracking-tight text-[#0F172A]">{row.requestCode} · {row.customerName}</h3>
+          <p className="text-[10px] font-black uppercase tracking-[0.16em] text-phx-accent">Request details</p>
+          <h3 className="text-[14px] font-black tracking-tight text-phx-ink">{row.requestCode} · {row.customerName}</h3>
         </div>
         <a
           href={`/admin/marketing-requests/${row.requestId}/view-sales`}
           target="_blank"
           rel="noopener noreferrer"
-          className="inline-flex items-center gap-1 rounded-[5px] border border-[#E2E8F0] bg-white px-2 py-1 text-[11px] font-black text-[#F97316] transition hover:border-[#FDBA74] hover:bg-[#FFF7ED]"
+          className="inline-flex items-center gap-1 rounded-[5px] border border-phx-line bg-white px-2 py-1 text-[11px] font-black text-phx-accent transition hover:border-phx-accent-line hover:bg-phx-accent-soft"
         >
           <ExternalLink className="h-3 w-3" /> View Sales
         </a>
@@ -178,7 +178,7 @@ function RequestDetailPanel({ row }: { row: RoiBusinessRow }) {
         </div>
 
         {loading ? (
-          <div className="flex items-center gap-2 px-1 py-4 text-[13px] font-semibold text-[#64748B]">
+          <div className="flex items-center gap-2 px-1 py-4 text-[13px] font-semibold text-phx-ink-soft">
             <LoadingSpinner /> Loading attribution details…
           </div>
         ) : error ? (
@@ -187,28 +187,28 @@ function RequestDetailPanel({ row }: { row: RoiBusinessRow }) {
           <>
             {/* 2) Target setup */}
             <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-              <div className="rounded-[6px] border border-[#E2E8F0] bg-[#F8FAFC] p-3">
-                <p className="mb-2 text-[11px] font-black uppercase tracking-[0.12em] text-[#94A3B8]">Target products</p>
+              <div className="rounded-[6px] border border-phx-line bg-phx-paper p-3">
+                <p className="mb-2 text-[11px] font-black uppercase tracking-[0.12em] text-phx-ink-faint">Target products</p>
                 <div className="flex flex-wrap gap-1.5">
                   {explain.targetSetup.products.length === 0 ? (
-                    <span className="text-[12px] font-medium text-[#94A3B8]">No products.</span>
+                    <span className="text-[12px] font-medium text-phx-ink-faint">No products.</span>
                   ) : (
                     explain.targetSetup.products.map((product) => (
-                      <span key={product.code} className="inline-flex items-center rounded-[5px] border border-[#E2E8F0] bg-white px-2 py-0.5 text-[11px] font-bold text-[#334155]">
+                      <span key={product.code} className="inline-flex items-center rounded-[5px] border border-phx-line bg-white px-2 py-0.5 text-[11px] font-bold text-phx-ink-2">
                         {product.name}
                       </span>
                     ))
                   )}
                 </div>
               </div>
-              <div className="rounded-[6px] border border-[#E2E8F0] bg-[#F8FAFC] p-3">
-                <p className="mb-2 text-[11px] font-black uppercase tracking-[0.12em] text-[#94A3B8]">Target pharmacies</p>
+              <div className="rounded-[6px] border border-phx-line bg-phx-paper p-3">
+                <p className="mb-2 text-[11px] font-black uppercase tracking-[0.12em] text-phx-ink-faint">Target pharmacies</p>
                 <div className="flex flex-wrap gap-1.5">
                   {explain.targetSetup.pharmacies.length === 0 ? (
-                    <span className="text-[12px] font-medium text-[#94A3B8]">No pharmacy codes.</span>
+                    <span className="text-[12px] font-medium text-phx-ink-faint">No pharmacy codes.</span>
                   ) : (
                     explain.targetSetup.pharmacies.map((pharmacy) => (
-                      <span key={pharmacy.code} className="inline-flex items-center rounded-[5px] border border-[#E2E8F0] bg-white px-2 py-0.5 text-[11px] font-bold text-[#334155]">
+                      <span key={pharmacy.code} className="inline-flex items-center rounded-[5px] border border-phx-line bg-white px-2 py-0.5 text-[11px] font-bold text-phx-ink-2">
                         {pharmacy.name}
                       </span>
                     ))
@@ -217,9 +217,9 @@ function RequestDetailPanel({ row }: { row: RoiBusinessRow }) {
               </div>
             </div>
 
-            <div className="rounded-[6px] border border-[#E2E8F0] bg-[#F8FAFC] p-3 text-[12px]">
-              <p className="mb-1.5 text-[11px] font-black uppercase tracking-[0.12em] text-[#94A3B8]">ROI window</p>
-              <p className="font-semibold text-[#334155]">
+            <div className="rounded-[6px] border border-phx-line bg-phx-paper p-3 text-[12px]">
+              <p className="mb-1.5 text-[11px] font-black uppercase tracking-[0.12em] text-phx-ink-faint">ROI window</p>
+              <p className="font-semibold text-phx-ink-2">
                 Validated: <span className="text-emerald-700">{explain.targetSetup.validatedPeriodsInWindow.join(", ") || "none"}</span>
                 {explain.targetSetup.pendingPeriodsInWindow.length > 0 ? (
                   <>
@@ -230,14 +230,14 @@ function RequestDetailPanel({ row }: { row: RoiBusinessRow }) {
             </div>
 
             {/* 3) Attributed sales ledger — collapsed by default; sos_row_id lives only here. */}
-            <details className="overflow-hidden rounded-[6px] border border-[#E2E8F0]">
-              <summary className="flex cursor-pointer list-none items-center justify-between bg-white px-3 py-2 text-[11px] font-black uppercase tracking-[0.12em] text-[#0F172A]">
+            <details className="overflow-hidden rounded-[6px] border border-phx-line">
+              <summary className="flex cursor-pointer list-none items-center justify-between bg-white px-3 py-2 text-[11px] font-black uppercase tracking-[0.12em] text-phx-ink">
                 <span className="inline-flex items-center gap-1.5"><ChevronRight className="h-3.5 w-3.5 [details[open]_&]:hidden" /><ChevronDown className="hidden h-3.5 w-3.5 [details[open]_&]:inline" /> Explain ROI ledger (advanced)</span>
-                <span className="inline-flex items-center rounded-[5px] border border-[#E2E8F0] bg-[#F8FAFC] px-2 py-0.5 text-[11px] font-bold text-[#64748B]">{explain.ledger.length} row{explain.ledger.length === 1 ? "" : "s"}</span>
+                <span className="inline-flex items-center rounded-[5px] border border-phx-line bg-phx-paper px-2 py-0.5 text-[11px] font-bold text-phx-ink-soft">{explain.ledger.length} row{explain.ledger.length === 1 ? "" : "s"}</span>
               </summary>
-              <div className="overflow-x-auto border-t border-[#E2E8F0]">
+              <div className="overflow-x-auto border-t border-phx-line">
                 <table className="w-full min-w-[820px] border-collapse text-left text-[12px]">
-                  <thead className="bg-[#0F172A] text-[10px] font-black uppercase tracking-[0.1em] text-white">
+                  <thead className="bg-phx-ink text-[10px] font-black uppercase tracking-[0.1em] text-white">
                     <tr>
                       <th className="px-3 py-2">SoS row</th>
                       <th className="px-3 py-2">Period</th>
@@ -250,16 +250,16 @@ function RequestDetailPanel({ row }: { row: RoiBusinessRow }) {
                   </thead>
                   <tbody className="bg-white">
                     {explain.ledger.length === 0 ? (
-                      <tr><td className="px-4 py-4 text-center text-[12px] font-medium text-[#64748B]" colSpan={7}>No attributed sales rows.</td></tr>
+                      <tr><td className="px-4 py-4 text-center text-[12px] font-medium text-phx-ink-soft" colSpan={7}>No attributed sales rows.</td></tr>
                     ) : (
                       explain.ledger.map((ledgerRow) => (
                         <tr key={ledgerRow.ledgerKey} className="border-t border-[#FEE7D2]">
-                          <td className="px-3 py-1.5 font-mono text-[#94A3B8]">{ledgerRow.sosRowId ?? "—"}</td>
-                          <td className="px-3 py-1.5 font-mono font-bold text-[#0F172A]">{ledgerRow.invoicePeriod}</td>
-                          <td className="px-3 py-1.5 font-mono text-[#64748B]">{ledgerRow.clientCode}</td>
-                          <td className="px-3 py-1.5 font-semibold text-[#334155]">{ledgerRow.productName}</td>
-                          <td className="px-3 py-1.5 text-right font-semibold text-[#475569]">{units(ledgerRow.qty)}</td>
-                          <td className="px-3 py-1.5 text-right font-bold text-[#0F172A]">{money(ledgerRow.valueCounted)}</td>
+                          <td className="px-3 py-1.5 font-mono text-phx-ink-faint">{ledgerRow.sosRowId ?? "—"}</td>
+                          <td className="px-3 py-1.5 font-mono font-bold text-phx-ink">{ledgerRow.invoicePeriod}</td>
+                          <td className="px-3 py-1.5 font-mono text-phx-ink-soft">{ledgerRow.clientCode}</td>
+                          <td className="px-3 py-1.5 font-semibold text-phx-ink-2">{ledgerRow.productName}</td>
+                          <td className="px-3 py-1.5 text-right font-semibold text-phx-ink-2">{units(ledgerRow.qty)}</td>
+                          <td className="px-3 py-1.5 text-right font-bold text-phx-ink">{money(ledgerRow.valueCounted)}</td>
                           <td className="px-3 py-1.5 font-bold uppercase text-emerald-700">{ledgerRow.confidence}</td>
                         </tr>
                       ))
@@ -277,10 +277,10 @@ function RequestDetailPanel({ row }: { row: RoiBusinessRow }) {
 
 function SummaryStat({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
-    <div className="rounded-[6px] border border-[#E2E8F0] bg-white px-3 py-2.5">
-      <p className="text-[10px] font-black uppercase tracking-[0.12em] text-[#94A3B8]">{label}</p>
-      <p className="mt-1 text-[14px] font-black leading-none text-[#0F172A]">{value}</p>
-      {hint ? <p className="mt-1 truncate text-[11px] font-semibold text-[#94A3B8]" title={hint}>{hint}</p> : null}
+    <div className="rounded-[6px] border border-phx-line bg-white px-3 py-2.5">
+      <p className="text-[10px] font-black uppercase tracking-[0.12em] text-phx-ink-faint">{label}</p>
+      <p className="mt-1 text-[14px] font-black leading-none text-phx-ink">{value}</p>
+      {hint ? <p className="mt-1 truncate text-[11px] font-semibold text-phx-ink-faint" title={hint}>{hint}</p> : null}
     </div>
   );
 }
@@ -289,17 +289,17 @@ type Tab = "requester" | "customer" | "performance";
 
 function CohortTable({ entityLabel, title, hint, rows, showForecast }: { entityLabel: string; title: string; hint: string; rows: RoiCohortRow[]; showForecast?: boolean }) {
   return (
-    <section className="overflow-hidden rounded-[6px] border border-[#E2E8F0] bg-white shadow-sm">
-      <div className="border-b border-[#E2E8F0] px-4 py-2.5">
-        <h3 className="text-[13px] font-black text-[#0F172A]">{title}</h3>
-        <p className="text-[11px] font-medium text-[#64748B]">{hint}</p>
+    <section className="overflow-hidden rounded-[6px] border border-phx-line bg-white shadow-sm">
+      <div className="border-b border-phx-line px-4 py-2.5">
+        <h3 className="text-[13px] font-black text-phx-ink">{title}</h3>
+        <p className="text-[11px] font-medium text-phx-ink-soft">{hint}</p>
       </div>
       {rows.length === 0 ? (
-        <div className="px-4 py-6 text-center text-[12px] font-medium text-[#94A3B8]">No data.</div>
+        <div className="px-4 py-6 text-center text-[12px] font-medium text-phx-ink-faint">No data.</div>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full border-collapse text-left text-[12px]">
-            <thead className="bg-[#F8FAFC] text-[10px] font-bold uppercase tracking-[0.08em] text-[#64748B]">
+            <thead className="bg-phx-paper text-[10px] font-bold uppercase tracking-[0.08em] text-phx-ink-soft">
               <tr>
                 <th className="px-3 py-2">{entityLabel}</th>
                 <th className="px-3 py-2 text-right">Reqs</th>
@@ -310,17 +310,17 @@ function CohortTable({ entityLabel, title, hint, rows, showForecast }: { entityL
                 {showForecast ? <th className="px-3 py-2 text-right">Forecast acc.</th> : null}
               </tr>
             </thead>
-            <tbody className="divide-y divide-[#F1F5F9]">
+            <tbody className="divide-y divide-phx-paper-2">
               {rows.map((row) => (
                 <tr key={row.key}>
-                  <td className="px-3 py-2 font-bold text-[#0F172A]">{row.label}</td>
-                  <td className="px-3 py-2 text-right text-[#475569]">{row.requestCount}</td>
-                  <td className="px-3 py-2 text-right text-[#475569]">{money(row.totalCost)}</td>
-                  <td className="px-3 py-2 text-right font-bold text-[#0F172A]">{money(row.totalActual)}</td>
-                  <td className="px-3 py-2 text-right text-[#475569]">{percent(row.coverageRatio)}</td>
-                  <td className="px-3 py-2 text-right font-bold text-[#0F172A]">{row.efficiencyRatio.toFixed(2)}×</td>
+                  <td className="px-3 py-2 font-bold text-phx-ink">{row.label}</td>
+                  <td className="px-3 py-2 text-right text-phx-ink-2">{row.requestCount}</td>
+                  <td className="px-3 py-2 text-right text-phx-ink-2">{money(row.totalCost)}</td>
+                  <td className="px-3 py-2 text-right font-bold text-phx-ink">{money(row.totalActual)}</td>
+                  <td className="px-3 py-2 text-right text-phx-ink-2">{percent(row.coverageRatio)}</td>
+                  <td className="px-3 py-2 text-right font-bold text-phx-ink">{row.efficiencyRatio.toFixed(2)}×</td>
                   {showForecast ? (
-                    <td className="px-3 py-2 text-right text-[#475569]">
+                    <td className="px-3 py-2 text-right text-phx-ink-2">
                       {row.forecastAccuracyRatio === null ? "—" : percent(row.forecastAccuracyRatio)}
                     </td>
                   ) : null}
@@ -337,7 +337,7 @@ function CohortTable({ entityLabel, title, hint, rows, showForecast }: { entityL
 function PerformanceCohorts({ cohorts, loading, error }: { cohorts: RoiCohorts | null; loading: boolean; error: string | null }) {
   if (loading) {
     return (
-      <div className="flex items-center gap-2 rounded-[6px] border border-[#E2E8F0] bg-white px-4 py-8 text-[13px] font-medium text-[#64748B] shadow-sm">
+      <div className="flex items-center gap-2 rounded-[6px] border border-phx-line bg-white px-4 py-8 text-[13px] font-medium text-phx-ink-soft shadow-sm">
         <LoadingSpinner /> Building performance cohorts…
       </div>
     );
@@ -348,7 +348,7 @@ function PerformanceCohorts({ cohorts, loading, error }: { cohorts: RoiCohorts |
   if (!cohorts) return null;
   return (
     <div className="space-y-4">
-      <p className="rounded-[6px] border border-[#E2E8F0] bg-[#F8FAFC] px-3.5 py-2 text-[11px] font-medium text-[#64748B]">
+      <p className="rounded-[6px] border border-phx-line bg-phx-paper px-3.5 py-2 text-[11px] font-medium text-phx-ink-soft">
         ROI-weighted across every visible request. <b>Efficiency</b> = EGP returned per EGP spent · <b>Coverage</b> = actual ÷ required · <b>Forecast acc.</b> = actual ÷ forecast. Approver-role totals can exceed the whole — a request with several approvers counts under each.
       </p>
       <CohortTable entityLabel="Request type" title="By request type" hint="Which activity types actually return." rows={cohorts.byRequestType} showForecast />
@@ -424,13 +424,13 @@ export function MarketingRoiReportWorkspace() {
     <WorkspaceErrorBoundary fallbackTitle="Marketing ROI Report error">
       <div className="space-y-4">
         {/* Tabs */}
-        <div className="inline-flex rounded-[6px] border border-[#E2E8F0] bg-white p-1 shadow-sm">
+        <div className="inline-flex rounded-[6px] border border-phx-line bg-white p-1 shadow-sm">
           <button
             type="button"
             onClick={() => switchTab("requester")}
             className={cn(
               "inline-flex items-center gap-1.5 rounded-[5px] px-3 py-1.5 text-[12px] font-black transition",
-              tab === "requester" ? "bg-[#0F172A] text-white" : "text-[#64748B] hover:bg-[#F8FAFC]",
+              tab === "requester" ? "bg-phx-ink text-white" : "text-phx-ink-soft hover:bg-phx-paper",
             )}
           >
             <Users className="h-3.5 w-3.5" /> By Requester
@@ -440,7 +440,7 @@ export function MarketingRoiReportWorkspace() {
             onClick={() => switchTab("customer")}
             className={cn(
               "inline-flex items-center gap-1.5 rounded-[5px] px-3 py-1.5 text-[12px] font-black transition",
-              tab === "customer" ? "bg-[#0F172A] text-white" : "text-[#64748B] hover:bg-[#F8FAFC]",
+              tab === "customer" ? "bg-phx-ink text-white" : "text-phx-ink-soft hover:bg-phx-paper",
             )}
           >
             <ClipboardList className="h-3.5 w-3.5" /> By Customer
@@ -450,7 +450,7 @@ export function MarketingRoiReportWorkspace() {
             onClick={() => switchTab("performance")}
             className={cn(
               "inline-flex items-center gap-1.5 rounded-[5px] px-3 py-1.5 text-[12px] font-black transition",
-              tab === "performance" ? "bg-[#0F172A] text-white" : "text-[#64748B] hover:bg-[#F8FAFC]",
+              tab === "performance" ? "bg-phx-ink text-white" : "text-phx-ink-soft hover:bg-phx-paper",
             )}
           >
             <TrendingUp className="h-3.5 w-3.5" /> Performance
@@ -462,9 +462,9 @@ export function MarketingRoiReportWorkspace() {
         ) : (
           <>
         {/* Selector */}
-        <div className="rounded-[6px] border border-[#E2E8F0] bg-white p-3 shadow-sm">
+        <div className="rounded-[6px] border border-phx-line bg-white p-3 shadow-sm">
           {tab === "requester" ? (
-            <label className="block text-[12px] font-bold text-[#334155]">
+            <label className="block text-[12px] font-bold text-phx-ink-2">
               Requester
               <select
                 value={selectedRequesterHrId}
@@ -473,7 +473,7 @@ export function MarketingRoiReportWorkspace() {
                   void loadRows("requester", event.target.value);
                 }}
                 disabled={optionsLoading}
-                className="mt-1 block w-full max-w-md rounded-[5px] border border-[#E2E8F0] bg-white px-2.5 py-2 text-[13px] font-semibold text-[#0F172A]"
+                className="mt-1 block w-full max-w-md rounded-[5px] border border-phx-line bg-white px-2.5 py-2 text-[13px] font-semibold text-phx-ink"
               >
                 <option value="">{optionsLoading ? "Loading requesters…" : "Select a requester…"}</option>
                 {options.requesters.map((requester) => (
@@ -484,7 +484,7 @@ export function MarketingRoiReportWorkspace() {
               </select>
             </label>
           ) : (
-            <label className="block text-[12px] font-bold text-[#334155]">
+            <label className="block text-[12px] font-bold text-phx-ink-2">
               Customer
               <select
                 value={selectedCustomerName}
@@ -493,7 +493,7 @@ export function MarketingRoiReportWorkspace() {
                   void loadRows("customer", event.target.value);
                 }}
                 disabled={optionsLoading}
-                className="mt-1 block w-full max-w-md rounded-[5px] border border-[#E2E8F0] bg-white px-2.5 py-2 text-[13px] font-semibold text-[#0F172A]"
+                className="mt-1 block w-full max-w-md rounded-[5px] border border-phx-line bg-white px-2.5 py-2 text-[13px] font-semibold text-phx-ink"
               >
                 <option value="">{optionsLoading ? "Loading customers…" : "Select a customer…"}</option>
                 {options.customers.map((customer) => (
@@ -507,15 +507,15 @@ export function MarketingRoiReportWorkspace() {
         </div>
 
         {/* Results table */}
-        <section className="overflow-hidden rounded-[6px] border border-[#E2E8F0] bg-white shadow-sm">
+        <section className="overflow-hidden rounded-[6px] border border-phx-line bg-white shadow-sm">
           {rowsLoading ? (
-            <div className="flex items-center gap-2 px-4 py-8 text-[13px] font-medium text-[#64748B]">
+            <div className="flex items-center gap-2 px-4 py-8 text-[13px] font-medium text-phx-ink-soft">
               <LoadingSpinner /> Loading marketing requests…
             </div>
           ) : rowsError ? (
             <div className="m-4 rounded-[6px] border border-amber-200 bg-amber-50 px-3.5 py-2.5 text-[13px] font-semibold text-amber-800">{rowsError}</div>
           ) : (!selectedRequesterHrId && tab === "requester") || (!selectedCustomerName && tab === "customer") ? (
-            <div className="px-4 py-8 text-center text-[13px] font-medium text-[#64748B]">
+            <div className="px-4 py-8 text-center text-[13px] font-medium text-phx-ink-soft">
               {tab === "requester" ? "Select a requester to see their marketing requests." : "Select a customer to see their marketing request history."}
             </div>
           ) : (

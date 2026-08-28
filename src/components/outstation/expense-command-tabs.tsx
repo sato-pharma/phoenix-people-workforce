@@ -59,7 +59,7 @@ export function ExpenseCommandTabs({
   return (
     <div className="space-y-5">
       <div
-        className="inline-flex w-full overflow-hidden rounded-[14px] border border-[#D8E0EA] bg-white p-1 shadow-[0_8px_22px_rgba(15,23,42,0.04)] sm:w-auto"
+        className="inline-flex w-full overflow-hidden rounded-[14px] border border-phx-line bg-white p-1 shadow-[0_8px_22px_rgba(15,23,42,0.04)] sm:w-auto"
         role="tablist"
       >
         {visibleTabs.map((tab) => {
@@ -72,7 +72,7 @@ export function ExpenseCommandTabs({
               className={cn(
                 "inline-flex items-center gap-2 rounded-[10px] px-4 py-2 text-sm font-bold transition-colors",
                 isActive
-                  ? "bg-[#0F172A] text-white shadow-[0_4px_12px_rgba(15,23,42,0.18)]"
+                  ? "bg-phx-ink text-white shadow-[0_4px_12px_rgba(15,23,42,0.18)]"
                   : "text-slate-600 hover:bg-slate-50 hover:text-slate-900",
                 isPending && "opacity-70",
               )}

@@ -136,9 +136,9 @@ export default async function CompanyDsmPerformancePage({
     <div className="mx-auto max-w-7xl space-y-5 p-6">
       {/* ── Page header ── */}
       <div className="flex items-center gap-3 border-b border-border pb-5">
-        <div className="h-12 w-1 shrink-0 bg-[#F97316]" />
+        <div className="h-12 w-1 shrink-0 bg-phx-accent" />
         <div>
-          <p className="mb-0.5 text-[10px] font-bold uppercase tracking-widest text-[#F97316]">Field Sales · Company Scope</p>
+          <p className="mb-0.5 text-[10px] font-bold uppercase tracking-widest text-phx-accent">Field Sales · Company Scope</p>
           <h1 className="text-2xl font-bold leading-tight text-foreground">DSM Performance</h1>
           <p className="mt-0.5 text-xs text-muted-foreground">
             Every line&apos;s district managers — targets, sales, achievement and product depth.

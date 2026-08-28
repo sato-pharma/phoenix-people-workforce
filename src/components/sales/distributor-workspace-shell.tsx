@@ -39,12 +39,12 @@ export function DistributorWorkspaceShell({ distributors, children, weeklyOnly =
 
   return (
     <div className="grid gap-5 lg:grid-cols-[260px_minmax(0,1fr)]">
-      <Card className="h-fit overflow-hidden rounded-[6px] border border-[#E2E8F0] bg-white p-0 shadow-sm">
-        <div className="border-b border-[#E2E8F0] p-3">
+      <Card className="h-fit overflow-hidden rounded-[6px] border border-phx-line bg-white p-0 shadow-sm">
+        <div className="border-b border-phx-line p-3">
           <div className="relative">
-            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[#94A3B8]" />
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-phx-ink-faint" />
             <input
-              className="h-9 w-full rounded-[6px] border border-[#E2E8F0] bg-white pl-8 pr-2 text-sm outline-none focus:border-[#FDBA74]"
+              className="h-9 w-full rounded-[6px] border border-phx-line bg-white pl-8 pr-2 text-sm outline-none focus:border-phx-accent-line"
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search distributor"
               value={query}
@@ -53,7 +53,7 @@ export function DistributorWorkspaceShell({ distributors, children, weeklyOnly =
         </div>
         <div className="max-h-[70vh] overflow-auto p-2">
           {filtered.length === 0 ? (
-            <p className="px-2 py-3 text-xs text-[#64748B]">No distributors match.</p>
+            <p className="px-2 py-3 text-xs text-phx-ink-soft">No distributors match.</p>
           ) : (
             filtered.map((d) => {
               const active = selected?.code === d.code;
@@ -62,19 +62,19 @@ export function DistributorWorkspaceShell({ distributors, children, weeklyOnly =
                   key={d.code}
                   className={cn(
                     "mb-1 flex w-full items-center justify-between gap-2 rounded-[6px] px-3 py-2 text-left text-sm transition",
-                    active ? "bg-[#0B0B0B] text-white" : "text-[#0F172A] hover:bg-[#FFF7ED]",
+                    active ? "bg-[#0B0B0B] text-white" : "text-phx-ink hover:bg-phx-accent-soft",
                   )}
                   onClick={() => setSelectedCode(d.code)}
                   type="button"
                 >
                   <span className="min-w-0">
                     <span className="block truncate font-bold">{d.name}</span>
-                    <span className={cn("block font-mono text-[11px]", active ? "text-slate-300" : "text-[#94A3B8]")}>{d.code}</span>
+                    <span className={cn("block font-mono text-[11px]", active ? "text-slate-300" : "text-phx-ink-faint")}>{d.code}</span>
                   </span>
                   {d.weeklySupported ? (
                     <span className={cn(
                       "shrink-0 rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-[0.1em]",
-                      active ? "bg-white/15 text-white" : "bg-[#FFEAD5] text-[#C2410C]",
+                      active ? "bg-white/15 text-white" : "bg-[#FFEAD5] text-phx-accent-press",
                     )}>Weekly</span>
                   ) : null}
                 </button>
@@ -88,8 +88,8 @@ export function DistributorWorkspaceShell({ distributors, children, weeklyOnly =
         {selected ? (
           children(selected)
         ) : (
-          <Card className="flex items-center gap-3 rounded-[6px] border border-[#E2E8F0] bg-white p-6 text-sm text-[#64748B]">
-            <Store className="h-5 w-5 text-[#94A3B8]" />
+          <Card className="flex items-center gap-3 rounded-[6px] border border-phx-line bg-white p-6 text-sm text-phx-ink-soft">
+            <Store className="h-5 w-5 text-phx-ink-faint" />
             No distributors available.
           </Card>
         )}

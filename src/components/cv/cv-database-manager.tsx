@@ -41,22 +41,22 @@ import { cn } from "@/lib/utils";
 type ExperienceFilter = "all" | CvExperienceStatus;
 
 const panelClassName =
-  "rounded-[28px] border border-[#D8E0EA] bg-white/94 shadow-[0_18px_46px_rgba(15,23,42,0.08)] backdrop-blur";
+  "rounded-[28px] border border-phx-line bg-white/94 shadow-[0_18px_46px_rgba(15,23,42,0.08)] backdrop-blur";
 
 // Every data cell. `whitespace-nowrap` rather than a fixed width and a clamp: the owner's rule is
 // that nothing truncates with an ellipsis and nothing wraps to a second line, and the honest way to
 // honour both is to let the table be as wide as its widest real value and let PortalDesktopTable's
 // own `overflow-x-auto` wrapper scroll. The previous version used `line-clamp-2`, which broke both
 // halves of that rule at once.
-const cellClassName = "whitespace-nowrap px-4 py-4 text-[#64748B]";
+const cellClassName = "whitespace-nowrap px-4 py-4 text-phx-ink-soft";
 const headCellClassName = "whitespace-nowrap px-4 py-3";
 
 function CvDatabaseShell({ children }: { children: React.ReactNode }) {
   return (
-    <div className="relative isolate min-h-[calc(100vh-8rem)] overflow-hidden rounded-[34px] border border-[#D8E0EA] bg-[radial-gradient(circle_at_top_left,rgba(14,165,233,0.12),transparent_32%),linear-gradient(135deg,#F8FAFC_0%,#FFFFFF_44%,#FFF7ED_100%)] p-4 shadow-[0_24px_70px_rgba(15,23,42,0.1)] sm:p-6">
+    <div className="relative isolate min-h-[calc(100vh-8rem)] overflow-hidden rounded-[34px] border border-phx-line bg-[radial-gradient(circle_at_top_left,rgba(14,165,233,0.12),transparent_32%),linear-gradient(135deg,#F8FAFC_0%,#FFFFFF_44%,#FFF7ED_100%)] p-4 shadow-[0_24px_70px_rgba(15,23,42,0.1)] sm:p-6">
       <div
         aria-hidden="true"
-        className="pointer-events-none absolute -right-24 -top-28 h-72 w-72 rounded-full bg-[#F97316]/10 blur-3xl"
+        className="pointer-events-none absolute -right-24 -top-28 h-72 w-72 rounded-full bg-phx-accent/10 blur-3xl"
       />
       <div
         aria-hidden="true"
@@ -148,8 +148,8 @@ function filterButtonClassName(active: boolean) {
   return cn(
     "h-10 rounded-2xl border px-3 text-xs font-bold transition",
     active
-      ? "border-[#F97316] bg-[#FFF7ED] text-[#C2410C] shadow-sm"
-      : "border-[#D7E0EA] bg-white/95 text-[#64748B] hover:bg-[#F8FAFC]",
+      ? "border-phx-accent bg-phx-accent-soft text-phx-accent-press shadow-sm"
+      : "border-[#D7E0EA] bg-white/95 text-phx-ink-soft hover:bg-phx-paper",
   );
 }
 
@@ -299,7 +299,7 @@ export function CvDatabaseManager({ rows }: { rows: CvLibraryRow[] }) {
           <div className="grid gap-3 p-4 lg:grid-cols-[1.4fr_auto] lg:items-end">
             <label className="relative block">
               <span className="sr-only">Search the CV database</span>
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#64748B]" />
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-phx-ink-soft" />
               <Input
                 className="h-11 rounded-2xl border-[#D7E0EA] bg-white/95 pl-9 shadow-sm"
                 onChange={(event) => setQuery(event.target.value)}
@@ -329,7 +329,7 @@ export function CvDatabaseManager({ rows }: { rows: CvLibraryRow[] }) {
                 Role
               </label>
               <select
-                className="h-10 rounded-2xl border border-[#D7E0EA] bg-white/95 px-3 text-xs font-bold text-[#64748B] shadow-sm"
+                className="h-10 rounded-2xl border border-[#D7E0EA] bg-white/95 px-3 text-xs font-bold text-phx-ink-soft shadow-sm"
                 id="cv-database-role"
                 onChange={(event) => setRoleFilter(event.target.value as CandidateRoleFamily | "" | "unknown")}
                 value={roleFilter}
@@ -346,7 +346,7 @@ export function CvDatabaseManager({ rows }: { rows: CvLibraryRow[] }) {
                 Region
               </label>
               <select
-                className="h-10 rounded-2xl border border-[#D7E0EA] bg-white/95 px-3 text-xs font-bold text-[#64748B] shadow-sm"
+                className="h-10 rounded-2xl border border-[#D7E0EA] bg-white/95 px-3 text-xs font-bold text-phx-ink-soft shadow-sm"
                 id="cv-database-region"
                 onChange={(event) => setRegionFilter(event.target.value as CandidateRegionCode | "" | "unknown")}
                 value={regionFilter}
@@ -366,7 +366,7 @@ export function CvDatabaseManager({ rows }: { rows: CvLibraryRow[] }) {
               ) : null}
               {governorateOptions.length > 1 ? (
                 <select
-                  className="h-10 rounded-2xl border border-[#D7E0EA] bg-white/95 px-3 text-xs font-bold text-[#64748B] shadow-sm"
+                  className="h-10 rounded-2xl border border-[#D7E0EA] bg-white/95 px-3 text-xs font-bold text-phx-ink-soft shadow-sm"
                   id="cv-database-governorate"
                   onChange={(event) => setGovernorate(event.target.value)}
                   value={governorate}
@@ -442,7 +442,7 @@ export function CvDatabaseManager({ rows }: { rows: CvLibraryRow[] }) {
             )}
             renderTable={() => (
               <PortalDesktopTable minWidth="1560px">
-                <thead className="bg-[#F8FAFC] text-[10px] font-black uppercase tracking-[0.16em] text-[#64748B]">
+                <thead className="bg-phx-paper text-[10px] font-black uppercase tracking-[0.16em] text-phx-ink-soft">
                   <tr>
                     <th className={headCellClassName}>Candidate</th>
                     <th className={headCellClassName}>CV received</th>
@@ -456,12 +456,12 @@ export function CvDatabaseManager({ rows }: { rows: CvLibraryRow[] }) {
                     <th className={headCellClassName}>CV file</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-[#E2E8F0]">
+                <tbody className="divide-y divide-phx-line">
                   {filteredRows.map((row) => (
-                    <tr className="transition-colors hover:bg-[#F8FAFC]" key={row.id}>
+                    <tr className="transition-colors hover:bg-phx-paper" key={row.id}>
                       <td className="whitespace-nowrap px-4 py-4">
                         <Link
-                          className="font-bold text-[#0F172A] underline-offset-2 hover:text-[#C2410C] hover:underline"
+                          className="font-bold text-phx-ink underline-offset-2 hover:text-phx-accent-press hover:underline"
                           href={`/recruitment?candidate=${encodeURIComponent(row.id)}`}
                         >
                           {emptyText(row.name)}
@@ -477,7 +477,7 @@ export function CvDatabaseManager({ rows }: { rows: CvLibraryRow[] }) {
                             {experienceLabel(row.medicalSales)}
                           </Badge>
                           {row.medicalSalesDuration ? (
-                            <span className="text-[#64748B]">{row.medicalSalesDuration}</span>
+                            <span className="text-phx-ink-soft">{row.medicalSalesDuration}</span>
                           ) : null}
                         </span>
                       </td>

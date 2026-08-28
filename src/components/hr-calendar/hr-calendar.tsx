@@ -42,7 +42,7 @@ type Props = {
 const allValue = "__all__";
 const weekdays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const selectClassName =
-  "h-11 w-full rounded-2xl border border-[#D8E0EA] bg-white/95 px-3 text-sm font-semibold text-[#0F172A] shadow-[0_14px_35px_rgba(15,23,42,0.06)] outline-none transition focus:border-[#FDBA74] focus:ring-2 focus:ring-[#F97316]/15";
+  "h-11 w-full rounded-2xl border border-phx-line bg-white/95 px-3 text-sm font-semibold text-phx-ink shadow-[0_14px_35px_rgba(15,23,42,0.06)] outline-none transition focus:border-phx-accent-line focus:ring-2 focus:ring-phx-accent/15";
 const panelClassName =
   "rounded-[28px] border border-white/75 bg-white/94 shadow-[0_28px_90px_rgba(15,23,42,0.12)] ring-1 ring-slate-900/5";
 const months = [
@@ -63,7 +63,7 @@ const months = [
 function HrCalendarPageShell({ children }: { children: ReactNode }) {
   return (
     <div className="relative overflow-hidden rounded-[34px] border border-[#FED7AA]/80 bg-[radial-gradient(circle_at_10%_0%,rgba(249,115,22,0.13),transparent_34%),linear-gradient(135deg,#FFF7ED_0%,#F8FAFC_44%,#FFFFFF_100%)] p-4 shadow-[0_30px_110px_rgba(15,23,42,0.11)] sm:p-5">
-      <div className="pointer-events-none absolute inset-x-10 top-0 h-px bg-gradient-to-r from-transparent via-[#F97316]/45 to-transparent" />
+      <div className="pointer-events-none absolute inset-x-10 top-0 h-px bg-gradient-to-r from-transparent via-phx-accent/45 to-transparent" />
       <div className="relative space-y-6">{children}</div>
     </div>
   );
@@ -101,10 +101,10 @@ function eventClass(eventType: HrCalendarEventType) {
   }
 
   if (eventType === "birthday") {
-    return "border-[#CBD5E1] bg-[#F8FAFC] text-[#334155]";
+    return "border-phx-line-strong bg-phx-paper text-phx-ink-2";
   }
 
-  return "border-[#FED7AA] bg-[#FFF7ED] text-[#C2410C]";
+  return "border-[#FED7AA] bg-phx-accent-soft text-phx-accent-press";
 }
 
 function eventBadgeVariant(eventType: HrCalendarEventType) {
@@ -336,7 +336,7 @@ export function HrCalendar({ initialData, initialError }: Props) {
       >
         <div className="grid gap-3 p-4 xl:grid-cols-6">
           <label className="block">
-            <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">Month</span>
+            <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-soft">Month</span>
             <SearchableSelect
               className={selectClassName}
               onChange={(event) => setSelectedMonth(Number(event.target.value))}
@@ -351,7 +351,7 @@ export function HrCalendar({ initialData, initialError }: Props) {
           </label>
 
           <label className="block">
-            <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">Year</span>
+            <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-soft">Year</span>
             <SearchableSelect
               className={selectClassName}
               onChange={(event) => setSelectedYear(Number(event.target.value))}
@@ -370,9 +370,9 @@ export function HrCalendar({ initialData, initialError }: Props) {
 
           <label className="relative block">
             <span className="sr-only">Search events</span>
-            <Search className="pointer-events-none absolute left-3 top-9 h-4 w-4 text-[#64748B]" />
+            <Search className="pointer-events-none absolute left-3 top-9 h-4 w-4 text-phx-ink-soft" />
             <Input
-              className="h-11 rounded-2xl border-[#D8E0EA] bg-white/95 pl-9 shadow-[0_14px_35px_rgba(15,23,42,0.06)]"
+              className="h-11 rounded-2xl border-phx-line bg-white/95 pl-9 shadow-[0_14px_35px_rgba(15,23,42,0.06)]"
               onChange={(event) => setQuery(event.target.value)}
               placeholder="Search name, HR ID, manager"
               value={query}
@@ -380,7 +380,7 @@ export function HrCalendar({ initialData, initialError }: Props) {
           </label>
 
           <label className="block">
-            <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">Event Type</span>
+            <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-soft">Event Type</span>
             <SearchableSelect
               className={selectClassName}
               onChange={(event) =>
@@ -398,7 +398,7 @@ export function HrCalendar({ initialData, initialError }: Props) {
           </label>
 
           <label className="block">
-            <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">Line</span>
+            <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-soft">Line</span>
             <SearchableSelect
               className={selectClassName}
               onChange={(event) => setLineFilter(event.target.value)}
@@ -414,7 +414,7 @@ export function HrCalendar({ initialData, initialError }: Props) {
           </label>
 
           <label className="block">
-            <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">Area</span>
+            <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-soft">Area</span>
             <SearchableSelect
               className={selectClassName}
               onChange={(event) => setAreaFilter(event.target.value)}
@@ -438,10 +438,10 @@ export function HrCalendar({ initialData, initialError }: Props) {
         />
         <div className="overflow-x-auto">
           <div className="min-w-[980px] bg-white/80">
-            <div className="grid grid-cols-7 border-b border-[#FED7AA] bg-[#FFF7ED]/80 backdrop-blur">
+            <div className="grid grid-cols-7 border-b border-[#FED7AA] bg-phx-accent-soft/80 backdrop-blur">
               {weekdays.map((weekday) => (
                 <div
-                  className="px-3 py-2 text-[10px] font-black uppercase tracking-[0.14em] text-[#64748B]"
+                  className="px-3 py-2 text-[10px] font-black uppercase tracking-[0.14em] text-phx-ink-soft"
                   key={weekday}
                 >
                   {weekday}
@@ -461,9 +461,9 @@ export function HrCalendar({ initialData, initialError }: Props) {
                 return (
                   <div
                     className={cn(
-                      "min-h-36 border-b border-r border-[#E2E8F0] bg-white/95 p-2 transition-colors hover:bg-[#FFF7ED]/55",
-                      !date && "bg-[#F8FAFC]",
-                      isToday && "bg-[#FFF7ED]",
+                      "min-h-36 border-b border-r border-phx-line bg-white/95 p-2 transition-colors hover:bg-phx-accent-soft/55",
+                      !date && "bg-phx-paper",
+                      isToday && "bg-phx-accent-soft",
                     )}
                     key={`${index}-${day ?? "empty"}`}
                   >
@@ -471,8 +471,8 @@ export function HrCalendar({ initialData, initialError }: Props) {
                       <>
                         <div
                           className={cn(
-                            "mb-2 flex h-6 w-6 items-center justify-center rounded-full text-sm font-semibold text-[#0F172A]",
-                            isToday && "bg-[#F97316] text-white",
+                            "mb-2 flex h-6 w-6 items-center justify-center rounded-full text-sm font-semibold text-phx-ink",
+                            isToday && "bg-phx-accent text-white",
                           )}
                         >
                           {day}
@@ -496,7 +496,7 @@ export function HrCalendar({ initialData, initialError }: Props) {
                             </div>
                           ))}
                           {dayEvents.length > 4 ? (
-                            <div className="rounded-xl border border-[#CBD5E1] bg-[#F8FAFC] px-2 py-1 text-xs font-medium text-[#64748B]">
+                            <div className="rounded-xl border border-phx-line-strong bg-phx-paper px-2 py-1 text-xs font-medium text-phx-ink-soft">
                               +{dayEvents.length - 4} more
                             </div>
                           ) : null}
@@ -524,7 +524,7 @@ export function HrCalendar({ initialData, initialError }: Props) {
         <div className="overflow-x-auto bg-white/80">
           <table className="w-full min-w-[980px] text-left text-sm">
             <thead>
-              <tr className="border-b border-[#FED7AA] bg-[#FFF7ED]/80 text-[10px] font-black uppercase tracking-[0.16em] text-[#64748B]">
+              <tr className="border-b border-[#FED7AA] bg-phx-accent-soft/80 text-[10px] font-black uppercase tracking-[0.16em] text-phx-ink-soft">
                 {["Date", "Event", "Employee", "HR ID", "Job Title", "Line", "Area", "Manager"].map((column) => (
                   <th className="px-3 py-3" key={column}>
                     {column}
@@ -532,14 +532,14 @@ export function HrCalendar({ initialData, initialError }: Props) {
                 ))}
               </tr>
             </thead>
-            <tbody className="divide-y divide-[#E2E8F0]">
+            <tbody className="divide-y divide-phx-line">
               {filteredEvents.length === 0 ? (
                 <tr>
                   <td className="px-3 py-10 text-center" colSpan={8}>
-                    <p className="text-sm font-semibold text-[#0F172A]">
+                    <p className="text-sm font-semibold text-phx-ink">
                       No HR calendar events found.
                     </p>
-                    <p className="mt-2 text-sm text-[#64748B]">
+                    <p className="mt-2 text-sm text-phx-ink-soft">
                       Try another month, year, line, area, or event type.
                     </p>
                   </td>
@@ -547,10 +547,10 @@ export function HrCalendar({ initialData, initialError }: Props) {
               ) : (
                 filteredEvents.map((event) => (
                   <tr
-                    className="transition-colors hover:bg-[#FFF7ED]/55"
+                    className="transition-colors hover:bg-phx-accent-soft/55"
                     key={`${event.eventType}-${event.employee.hrId}-${event.date}-row`}
                   >
-                    <td className="whitespace-nowrap px-3 py-3 font-medium text-[#0F172A]">
+                    <td className="whitespace-nowrap px-3 py-3 font-medium text-phx-ink">
                       {formatDate(event.date)}
                     </td>
                     <td className="px-3 py-3">
@@ -560,27 +560,27 @@ export function HrCalendar({ initialData, initialError }: Props) {
                     </td>
                     <td className="px-3 py-3">
                       <div>
-                        <p className="font-semibold text-[#0F172A]">
+                        <p className="font-semibold text-phx-ink">
                           {formatEmployeeDisplayName(event.employee.fullName)}
                         </p>
-                        <p className="mt-0.5 text-xs text-[#64748B]">
+                        <p className="mt-0.5 text-xs text-phx-ink-soft">
                           {event.employee.workEmail ?? "No work email"}
                         </p>
                       </div>
                     </td>
-                    <td className="whitespace-nowrap px-3 py-3 font-mono text-xs text-[#64748B]">
+                    <td className="whitespace-nowrap px-3 py-3 font-mono text-xs text-phx-ink-soft">
                       {event.employee.hrId}
                     </td>
-                    <td className="px-3 py-3 text-[#64748B]">
+                    <td className="px-3 py-3 text-phx-ink-soft">
                       {event.employee.jobTitle}
                     </td>
-                    <td className="px-3 py-3 text-[#64748B]">
+                    <td className="px-3 py-3 text-phx-ink-soft">
                       {event.employee.lineName}
                     </td>
-                    <td className="px-3 py-3 text-[#64748B]">
+                    <td className="px-3 py-3 text-phx-ink-soft">
                       {event.employee.areaName}
                     </td>
-                    <td className="px-3 py-3 text-[#64748B]">
+                    <td className="px-3 py-3 text-phx-ink-soft">
                       {event.employee.managerName}
                     </td>
                   </tr>

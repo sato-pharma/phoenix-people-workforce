@@ -197,8 +197,8 @@ export function SharedTerritoryView({ browserKey, token }: Props) {
   // A dead link gets the whole page, not a banner over a form that cannot work.
   if (regions !== null && regions.length === 0 && error) {
     return (
-      <section className="mx-auto max-w-md border border-[#e4e9ec] bg-white">
-        <header className="border-b border-[#e4e9ec] bg-slate-900 px-4 py-3">
+      <section className="mx-auto max-w-md border border-phx-line bg-white">
+        <header className="border-b border-phx-line bg-slate-900 px-4 py-3">
           <p className="text-[11px] font-black tracking-[0.14em] text-orange-400 uppercase">Phoenix</p>
           <h1 className="text-base font-black text-white">Territory Preview</h1>
         </header>
@@ -210,8 +210,8 @@ export function SharedTerritoryView({ browserKey, token }: Props) {
   const areasInRegion = areas.filter((entry) => entry.regionCode === regionCode);
 
   return (
-    <section className="border border-[#e4e9ec] bg-white">
-      <header className="flex flex-wrap items-center justify-between gap-2 border-b border-[#e4e9ec] bg-slate-900 px-4 py-3">
+    <section className="border border-phx-line bg-white">
+      <header className="flex flex-wrap items-center justify-between gap-2 border-b border-phx-line bg-slate-900 px-4 py-3">
         <div>
           <p className="text-[11px] font-black tracking-[0.14em] text-orange-400 uppercase">Phoenix</p>
           <h1 className="text-base font-black text-white">{label ?? "Territory Preview"}</h1>
@@ -269,7 +269,7 @@ export function SharedTerritoryView({ browserKey, token }: Props) {
 
         {error ? <p className="text-[13px] font-semibold text-rose-600">{error}</p> : null}
 
-        <div className="border border-[#e4e9ec]">
+        <div className="border border-phx-line">
           {browserKey ? (
             <div className="h-[420px] w-full sm:h-[520px]" ref={mapRef} />
           ) : (

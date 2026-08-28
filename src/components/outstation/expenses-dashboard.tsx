@@ -41,19 +41,19 @@ import {
 
 
 const panelClassName =
-  "rounded-[28px] border border-[#D8E0EA] bg-white/94 shadow-[0_18px_46px_rgba(15,23,42,0.08)] backdrop-blur";
-const adminTableHeaderClassName = "px-3 py-2 text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]";
+  "rounded-[28px] border border-phx-line bg-white/94 shadow-[0_18px_46px_rgba(15,23,42,0.08)] backdrop-blur";
+const adminTableHeaderClassName = "px-3 py-2 text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-soft";
 
 function ExpensesDashboardShell({ children }: { children: ReactNode }) {
   return (
-    <div className="relative isolate min-h-[calc(100vh-8rem)] overflow-hidden rounded-[34px] border border-[#D8E0EA] bg-[radial-gradient(circle_at_top_left,rgba(249,115,22,0.16),transparent_32%),linear-gradient(135deg,#FFF9F3_0%,#FFFFFF_44%,#F7FAFC_100%)] p-4 shadow-[0_24px_70px_rgba(15,23,42,0.1)] sm:p-6">
+    <div className="relative isolate min-h-[calc(100vh-8rem)] overflow-hidden rounded-[34px] border border-phx-line bg-[radial-gradient(circle_at_top_left,rgba(249,115,22,0.16),transparent_32%),linear-gradient(135deg,#FFF9F3_0%,#FFFFFF_44%,#F7FAFC_100%)] p-4 shadow-[0_24px_70px_rgba(15,23,42,0.1)] sm:p-6">
       <div
         aria-hidden="true"
-        className="pointer-events-none absolute -right-24 -top-28 h-72 w-72 rounded-full bg-[#F97316]/12 blur-3xl"
+        className="pointer-events-none absolute -right-24 -top-28 h-72 w-72 rounded-full bg-phx-accent/12 blur-3xl"
       />
       <div
         aria-hidden="true"
-        className="pointer-events-none absolute bottom-8 left-1/3 h-64 w-64 rounded-full bg-[#0F172A]/6 blur-3xl"
+        className="pointer-events-none absolute bottom-8 left-1/3 h-64 w-64 rounded-full bg-phx-ink/6 blur-3xl"
       />
       <div className="relative z-10 space-y-6">{children}</div>
     </div>
@@ -180,7 +180,7 @@ function StatCard({
   const tones = {
     blue: "bg-[#EFF6FF] text-[#1D4ED8] ring-[#BFDBFE]",
     green: "bg-[#ECFDF5] text-[#047857] ring-[#A7F3D0]",
-    orange: "bg-[#FFF7ED] text-[#C2410C] ring-[#FED7AA]",
+    orange: "bg-phx-accent-soft text-phx-accent-press ring-[#FED7AA]",
     red: "bg-[#FEF2F2] text-[#B91C1C] ring-[#FECACA]",
   };
 
@@ -191,9 +191,9 @@ function StatCard({
           <Icon className="h-5 w-5" />
         </span>
         <div className="min-w-0">
-          <p className="text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">{label}</p>
-          <p className="mt-1 truncate text-2xl font-black text-[#0F172A]">{value}</p>
-          <p className="mt-1 text-xs font-medium text-[#64748B]">{sub}</p>
+          <p className="text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-soft">{label}</p>
+          <p className="mt-1 truncate text-2xl font-black text-phx-ink">{value}</p>
+          <p className="mt-1 text-xs font-medium text-phx-ink-soft">{sub}</p>
         </div>
       </div>
     </Card>
@@ -213,9 +213,9 @@ function SelectFilter({
 }) {
   return (
     <label className="block">
-      <span className="mb-1 block text-[11px] font-bold uppercase tracking-[0.14em] text-[#64748B]">{label}</span>
+      <span className="mb-1 block text-[11px] font-bold uppercase tracking-[0.14em] text-phx-ink-soft">{label}</span>
       <SearchableSelect
-        className="h-11 w-full rounded-2xl border border-[#DDE6F1] bg-white/95 px-3 text-sm font-semibold text-[#0F172A] shadow-sm outline-none transition focus:border-[#F97316] focus:ring-2 focus:ring-[#FED7AA]"
+        className="h-11 w-full rounded-2xl border border-[#DDE6F1] bg-white/95 px-3 text-sm font-semibold text-phx-ink shadow-sm outline-none transition focus:border-phx-accent focus:ring-2 focus:ring-[#FED7AA]"
         onChange={(event) => onChange(event.target.value)}
         value={value}
       >
@@ -235,23 +235,23 @@ function BarRows({ rows, title }: { rows: GroupRow[]; title: string }) {
 
   return (
     <Card className={`${panelClassName} p-5`}>
-      <h2 className="text-sm font-black uppercase tracking-[0.12em] text-[#0F172A]">{title}</h2>
+      <h2 className="text-sm font-black uppercase tracking-[0.12em] text-phx-ink">{title}</h2>
       <div className="mt-4 space-y-3">
         {rows.slice(0, 8).map((row, index) => (
           <div className="grid grid-cols-[24px_minmax(0,1fr)_86px] items-center gap-3" key={row.key}>
-            <span className="flex h-6 w-6 items-center justify-center rounded-md bg-[#F8FAFC] text-xs font-black text-[#64748B]">
+            <span className="flex h-6 w-6 items-center justify-center rounded-md bg-phx-paper text-xs font-black text-phx-ink-soft">
               {index + 1}
             </span>
             <div className="min-w-0">
               <div className="flex items-center justify-between gap-3">
-                <p className="truncate text-sm font-bold text-[#0F172A]">{row.key}</p>
-                <p className="shrink-0 text-[11px] font-semibold text-[#64748B]">{formatNumber(row.count)} rows</p>
+                <p className="truncate text-sm font-bold text-phx-ink">{row.key}</p>
+                <p className="shrink-0 text-[11px] font-semibold text-phx-ink-soft">{formatNumber(row.count)} rows</p>
               </div>
-              <div className="mt-1.5 h-2 rounded-full bg-[#F1F5F9] shadow-inner">
-                <div className="h-full rounded-full bg-gradient-to-r from-[#F97316] to-[#FDBA74]" style={{ width: `${Math.min((row.total / max) * 100, 100)}%` }} />
+              <div className="mt-1.5 h-2 rounded-full bg-phx-paper-2 shadow-inner">
+                <div className="h-full rounded-full bg-gradient-to-r from-phx-accent to-phx-accent-line" style={{ width: `${Math.min((row.total / max) * 100, 100)}%` }} />
               </div>
             </div>
-            <p className="text-right text-xs font-black text-[#0F172A]">{formatEGP(row.total).replace("EGP", "")}</p>
+            <p className="text-right text-xs font-black text-phx-ink">{formatEGP(row.total).replace("EGP", "")}</p>
           </div>
         ))}
       </div>
@@ -266,11 +266,11 @@ function MonthlyComparison({ rows }: { rows: GroupRow[] }) {
     <Card className={`${panelClassName} p-5`}>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h2 className="text-sm font-black uppercase tracking-[0.12em] text-[#0F172A]">Monthly Comparison</h2>
-          <p className="mt-1 text-xs text-[#64748B]">Trip month comparison by travel, meetings, allowance, other, total, and KM.</p>
+          <h2 className="text-sm font-black uppercase tracking-[0.12em] text-phx-ink">Monthly Comparison</h2>
+          <p className="mt-1 text-xs text-phx-ink-soft">Trip month comparison by travel, meetings, allowance, other, total, and KM.</p>
         </div>
       </div>
-      <div className="mt-4 overflow-hidden rounded-2xl border border-[#E2E8F0] bg-white shadow-[0_12px_30px_rgba(15,23,42,0.05)]">
+      <div className="mt-4 overflow-hidden rounded-2xl border border-phx-line bg-white shadow-[0_12px_30px_rgba(15,23,42,0.05)]">
         <PortalResponsiveDataList
           empty={<p className="px-3 py-8 text-center text-sm font-semibold text-slate-400">No months in range.</p>}
           getKey={(row) => row.key}
@@ -279,7 +279,7 @@ function MonthlyComparison({ rows }: { rows: GroupRow[] }) {
             <PortalRecordCard
               accent="orange"
               meta={`${formatNumber(row.count)} trips · ${formatNumber(row.km)} km`}
-              status={<span className="text-sm font-black tabular-nums text-[#EA580C]">{formatEGP(row.total)}</span>}
+              status={<span className="text-sm font-black tabular-nums text-phx-accent-hover">{formatEGP(row.total)}</span>}
               title={compactMonth(row.key)}
             >
               <PortalRecordFields
@@ -290,14 +290,14 @@ function MonthlyComparison({ rows }: { rows: GroupRow[] }) {
                   { label: "Other", value: formatEGP(row.other) },
                 ]}
               />
-              <div className="mt-3 h-2 w-full rounded-full bg-[#F1F5F9] shadow-inner">
-                <div className="h-full rounded-full bg-gradient-to-r from-[#F97316] to-[#FDBA74]" style={{ width: `${Math.min((row.total / max) * 100, 100)}%` }} />
+              <div className="mt-3 h-2 w-full rounded-full bg-phx-paper-2 shadow-inner">
+                <div className="h-full rounded-full bg-gradient-to-r from-phx-accent to-phx-accent-line" style={{ width: `${Math.min((row.total / max) * 100, 100)}%` }} />
               </div>
             </PortalRecordCard>
           )}
           renderTable={() => (
             <PortalDesktopTable minWidth="760px">
-            <thead className="bg-[#F8FAFC] text-[11px] uppercase tracking-[0.12em] text-[#64748B]">
+            <thead className="bg-phx-paper text-[11px] uppercase tracking-[0.12em] text-phx-ink-soft">
               <tr>
                 <th className={adminTableHeaderClassName}>Month</th>
                 <th className={adminTableHeaderClassName}>Trips</th>
@@ -310,20 +310,20 @@ function MonthlyComparison({ rows }: { rows: GroupRow[] }) {
                 <th className={adminTableHeaderClassName}>Trend</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-[#E2E8F0] bg-white">
+            <tbody className="divide-y divide-phx-line bg-white">
               {rows.map((row) => (
-                <tr className="transition-colors hover:bg-[#FFF7ED]/70" key={row.key}>
-                  <td className="px-3 py-2 font-bold text-[#0F172A]">{compactMonth(row.key)}</td>
-                  <td className="px-3 py-2 text-[#64748B]">{formatNumber(row.count)}</td>
-                  <td className="px-3 py-2 text-[#64748B]">{formatEGP(row.travel)}</td>
-                  <td className="px-3 py-2 text-[#64748B]">{formatEGP(row.meeting)}</td>
-                  <td className="px-3 py-2 text-[#64748B]">{formatEGP(row.allowance)}</td>
-                  <td className="px-3 py-2 text-[#64748B]">{formatEGP(row.other)}</td>
-                  <td className="px-3 py-2 font-black text-[#EA580C]">{formatEGP(row.total)}</td>
-                  <td className="px-3 py-2 text-[#64748B]">{formatNumber(row.km)}</td>
+                <tr className="transition-colors hover:bg-phx-accent-soft/70" key={row.key}>
+                  <td className="px-3 py-2 font-bold text-phx-ink">{compactMonth(row.key)}</td>
+                  <td className="px-3 py-2 text-phx-ink-soft">{formatNumber(row.count)}</td>
+                  <td className="px-3 py-2 text-phx-ink-soft">{formatEGP(row.travel)}</td>
+                  <td className="px-3 py-2 text-phx-ink-soft">{formatEGP(row.meeting)}</td>
+                  <td className="px-3 py-2 text-phx-ink-soft">{formatEGP(row.allowance)}</td>
+                  <td className="px-3 py-2 text-phx-ink-soft">{formatEGP(row.other)}</td>
+                  <td className="px-3 py-2 font-black text-phx-accent-hover">{formatEGP(row.total)}</td>
+                  <td className="px-3 py-2 text-phx-ink-soft">{formatNumber(row.km)}</td>
                   <td className="px-3 py-2">
-                    <div className="h-2 w-28 rounded-full bg-[#F1F5F9] shadow-inner">
-                      <div className="h-full rounded-full bg-gradient-to-r from-[#F97316] to-[#FDBA74]" style={{ width: `${Math.min((row.total / max) * 100, 100)}%` }} />
+                    <div className="h-2 w-28 rounded-full bg-phx-paper-2 shadow-inner">
+                      <div className="h-full rounded-full bg-gradient-to-r from-phx-accent to-phx-accent-line" style={{ width: `${Math.min((row.total / max) * 100, 100)}%` }} />
                     </div>
                   </td>
                 </tr>
@@ -340,9 +340,9 @@ function MonthlyComparison({ rows }: { rows: GroupRow[] }) {
 function SpecialistComparison({ rows }: { rows: GroupRow[] }) {
   return (
     <Card className={`${panelClassName} p-5`}>
-      <h2 className="text-sm font-black uppercase tracking-[0.12em] text-[#0F172A]">Specialist Detailed Comparison</h2>
-      <p className="mt-1 text-xs text-[#64748B]">Compare specialists by trips, total, KM, cost per trip, and cost per KM.</p>
-      <div className="mt-4 overflow-hidden rounded-2xl border border-[#E2E8F0] bg-white shadow-[0_12px_30px_rgba(15,23,42,0.05)]">
+      <h2 className="text-sm font-black uppercase tracking-[0.12em] text-phx-ink">Specialist Detailed Comparison</h2>
+      <p className="mt-1 text-xs text-phx-ink-soft">Compare specialists by trips, total, KM, cost per trip, and cost per KM.</p>
+      <div className="mt-4 overflow-hidden rounded-2xl border border-phx-line bg-white shadow-[0_12px_30px_rgba(15,23,42,0.05)]">
         <PortalResponsiveDataList
           empty={<p className="px-3 py-8 text-center text-sm font-semibold text-slate-400">No specialists in range.</p>}
           getKey={(row) => row.key}
@@ -351,7 +351,7 @@ function SpecialistComparison({ rows }: { rows: GroupRow[] }) {
             <PortalRecordCard
               accent="orange"
               meta={`${formatNumber(row.count)} trips · ${formatNumber(row.km)} km`}
-              status={<span className="text-sm font-black tabular-nums text-[#EA580C]">{formatEGP(row.total)}</span>}
+              status={<span className="text-sm font-black tabular-nums text-phx-accent-hover">{formatEGP(row.total)}</span>}
               title={row.key}
             >
               <PortalRecordFields
@@ -368,7 +368,7 @@ function SpecialistComparison({ rows }: { rows: GroupRow[] }) {
           )}
           renderTable={() => (
             <PortalDesktopTable minWidth="860px">
-            <thead className="bg-[#F8FAFC] text-[11px] uppercase tracking-[0.12em] text-[#64748B]">
+            <thead className="bg-phx-paper text-[11px] uppercase tracking-[0.12em] text-phx-ink-soft">
               <tr>
                 <th className={adminTableHeaderClassName}>Specialist</th>
                 <th className={adminTableHeaderClassName}>Trips</th>
@@ -382,19 +382,19 @@ function SpecialistComparison({ rows }: { rows: GroupRow[] }) {
                 <th className={adminTableHeaderClassName}>Cost / KM</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-[#E2E8F0] bg-white">
+            <tbody className="divide-y divide-phx-line bg-white">
               {rows.slice(0, 50).map((row) => (
-                <tr className="transition-colors hover:bg-[#FFF7ED]/70" key={row.key}>
-                  <td className="max-w-[220px] truncate px-3 py-2 font-bold text-[#0F172A]">{row.key}</td>
-                  <td className="px-3 py-2 text-[#64748B]">{formatNumber(row.count)}</td>
-                  <td className="px-3 py-2 font-black text-[#EA580C]">{formatEGP(row.total)}</td>
-                  <td className="px-3 py-2 text-[#64748B]">{formatEGP(row.travel)}</td>
-                  <td className="px-3 py-2 text-[#64748B]">{formatEGP(row.meeting)}</td>
-                  <td className="px-3 py-2 text-[#64748B]">{formatEGP(row.allowance)}</td>
-                  <td className="px-3 py-2 text-[#64748B]">{formatEGP(row.other)}</td>
-                  <td className="px-3 py-2 text-[#64748B]">{formatNumber(row.km)}</td>
-                  <td className="px-3 py-2 text-[#64748B]">{formatEGP(row.count ? row.total / row.count : 0)}</td>
-                  <td className="px-3 py-2 text-[#64748B]">{formatEGP(row.km ? row.total / row.km : 0)}</td>
+                <tr className="transition-colors hover:bg-phx-accent-soft/70" key={row.key}>
+                  <td className="max-w-[220px] truncate px-3 py-2 font-bold text-phx-ink">{row.key}</td>
+                  <td className="px-3 py-2 text-phx-ink-soft">{formatNumber(row.count)}</td>
+                  <td className="px-3 py-2 font-black text-phx-accent-hover">{formatEGP(row.total)}</td>
+                  <td className="px-3 py-2 text-phx-ink-soft">{formatEGP(row.travel)}</td>
+                  <td className="px-3 py-2 text-phx-ink-soft">{formatEGP(row.meeting)}</td>
+                  <td className="px-3 py-2 text-phx-ink-soft">{formatEGP(row.allowance)}</td>
+                  <td className="px-3 py-2 text-phx-ink-soft">{formatEGP(row.other)}</td>
+                  <td className="px-3 py-2 text-phx-ink-soft">{formatNumber(row.km)}</td>
+                  <td className="px-3 py-2 text-phx-ink-soft">{formatEGP(row.count ? row.total / row.count : 0)}</td>
+                  <td className="px-3 py-2 text-phx-ink-soft">{formatEGP(row.km ? row.total / row.km : 0)}</td>
                 </tr>
               ))}
             </tbody>
@@ -414,38 +414,38 @@ function DestinationChart({ rows }: { rows: GroupRow[] }) {
     <Card className={`${panelClassName} p-5`}>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h2 className="text-sm font-black uppercase tracking-[0.12em] text-[#0F172A]">Top Destinations</h2>
-          <p className="mt-1 text-xs text-[#64748B]">Destination names are normalized before comparison. Bars show total cost; side metric shows cost per visit.</p>
+          <h2 className="text-sm font-black uppercase tracking-[0.12em] text-phx-ink">Top Destinations</h2>
+          <p className="mt-1 text-xs text-phx-ink-soft">Destination names are normalized before comparison. Bars show total cost; side metric shows cost per visit.</p>
         </div>
-        <span className="rounded-full bg-[#FFF7ED] px-3 py-1 text-xs font-bold text-[#C2410C]">
+        <span className="rounded-full bg-phx-accent-soft px-3 py-1 text-xs font-bold text-phx-accent-press">
           {formatNumber(rows.length)} destinations
         </span>
       </div>
       <div className="mt-5 space-y-4">
         {topRows.length === 0 ? (
-          <p className="rounded-2xl border border-[#E2E8F0] bg-[#F8FAFC] p-4 text-sm text-[#64748B]">No destination data for the current filters.</p>
+          <p className="rounded-2xl border border-phx-line bg-phx-paper p-4 text-sm text-phx-ink-soft">No destination data for the current filters.</p>
         ) : (
           topRows.map((row, index) => {
             const costPerVisit = row.count ? row.total / row.count : 0;
             return (
               <div className="grid gap-2" key={row.key}>
                 <div className="grid grid-cols-[28px_minmax(0,1fr)_120px] items-center gap-3">
-                  <span className="flex h-7 w-7 items-center justify-center rounded-xl bg-[#FFF7ED] text-xs font-black text-[#EA580C]">
+                  <span className="flex h-7 w-7 items-center justify-center rounded-xl bg-phx-accent-soft text-xs font-black text-phx-accent-hover">
                     {index + 1}
                   </span>
                   <div className="min-w-0">
-                    <p className="truncate text-sm font-black text-[#0F172A]">{row.key}</p>
-                    <p className="text-[11px] font-semibold text-[#64748B]">
+                    <p className="truncate text-sm font-black text-phx-ink">{row.key}</p>
+                    <p className="text-[11px] font-semibold text-phx-ink-soft">
                       {formatNumber(row.count)} visits - {formatNumber(row.km)} KM
                     </p>
                   </div>
                   <div className="text-right">
-                    <p className="text-sm font-black text-[#EA580C]">{formatEGP(row.total)}</p>
-                    <p className="text-[11px] font-semibold text-[#64748B]">{formatEGP(costPerVisit)} / visit</p>
+                    <p className="text-sm font-black text-phx-accent-hover">{formatEGP(row.total)}</p>
+                    <p className="text-[11px] font-semibold text-phx-ink-soft">{formatEGP(costPerVisit)} / visit</p>
                   </div>
                 </div>
-                <div className="ml-10 h-2.5 rounded-full bg-[#F1F5F9] shadow-inner">
-                  <div className="h-full rounded-full bg-gradient-to-r from-[#FB923C] to-[#FDBA74]" style={{ width: `${Math.min((row.total / max) * 100, 100)}%` }} />
+                <div className="ml-10 h-2.5 rounded-full bg-phx-paper-2 shadow-inner">
+                  <div className="h-full rounded-full bg-gradient-to-r from-[#FB923C] to-phx-accent-line" style={{ width: `${Math.min((row.total / max) * 100, 100)}%` }} />
                 </div>
               </div>
             );
@@ -650,10 +650,10 @@ export function ExpensesDashboard({
         }
         badges={(
           <div className="flex flex-wrap gap-2 text-xs">
-            <span className="rounded-full border border-[#DDE6F1] bg-[#F8FAFC] px-3 py-1.5 font-semibold text-[#64748B]">Historical uploads: {formatNumber(initialReports.length)}</span>
-            <span className="rounded-full border border-[#DDE6F1] bg-[#F8FAFC] px-3 py-1.5 font-semibold text-[#64748B]">Saved rows: {formatNumber(initialMetrics?.totalRows ?? initialExpenses.length)}</span>
-            <span className="rounded-full border border-[#DDE6F1] bg-[#F8FAFC] px-3 py-1.5 font-semibold text-[#64748B]">Filtered: {formatNumber(summary.trips)} trips</span>
-            <span className="rounded-full border border-[#DDE6F1] bg-[#F8FAFC] px-3 py-1.5 font-semibold text-[#64748B]">{formatEGP(summary.total)} total</span>
+            <span className="rounded-full border border-[#DDE6F1] bg-phx-paper px-3 py-1.5 font-semibold text-phx-ink-soft">Historical uploads: {formatNumber(initialReports.length)}</span>
+            <span className="rounded-full border border-[#DDE6F1] bg-phx-paper px-3 py-1.5 font-semibold text-phx-ink-soft">Saved rows: {formatNumber(initialMetrics?.totalRows ?? initialExpenses.length)}</span>
+            <span className="rounded-full border border-[#DDE6F1] bg-phx-paper px-3 py-1.5 font-semibold text-phx-ink-soft">Filtered: {formatNumber(summary.trips)} trips</span>
+            <span className="rounded-full border border-[#DDE6F1] bg-phx-paper px-3 py-1.5 font-semibold text-phx-ink-soft">{formatEGP(summary.total)} total</span>
           </div>
         )}
         description={portalMode
@@ -697,10 +697,10 @@ export function ExpensesDashboard({
             />
           </div>
           {activeFilters.length > 0 ? (
-            <div className="flex flex-wrap items-center gap-2 border-t border-[#E2E8F0] pt-4">
+            <div className="flex flex-wrap items-center gap-2 border-t border-phx-line pt-4">
               {activeFilters.map((filter) => (
                 <button
-                  className="inline-flex items-center rounded-full border border-[#E2E8F0] bg-[#F8FAFC] px-3 py-1.5 text-xs font-semibold text-[#64748B] transition hover:border-[#F97316] hover:text-[#EA580C]"
+                  className="inline-flex items-center rounded-full border border-phx-line bg-phx-paper px-3 py-1.5 text-xs font-semibold text-phx-ink-soft transition hover:border-phx-accent hover:text-phx-accent-hover"
                   key={filter.key}
                   onClick={() => clearFilter(filter.key)}
                   type="button"
@@ -743,24 +743,24 @@ export function ExpensesDashboard({
       <Card className={`${panelClassName} p-5`}>
         <div className="grid gap-4 md:grid-cols-3">
           <div className="flex items-center gap-3">
-            <MapPinned className="h-5 w-5 text-[#F97316]" />
+            <MapPinned className="h-5 w-5 text-phx-accent" />
             <div>
-              <p className="text-xs text-[#64748B]">Travel + Allowance</p>
-              <p className="font-bold text-[#0F172A]">{formatEGP(summary.travel + summary.allowance)}</p>
+              <p className="text-xs text-phx-ink-soft">Travel + Allowance</p>
+              <p className="font-bold text-phx-ink">{formatEGP(summary.travel + summary.allowance)}</p>
             </div>
           </div>
           <div className="flex items-center gap-3">
-            <ReceiptText className="h-5 w-5 text-[#F97316]" />
+            <ReceiptText className="h-5 w-5 text-phx-accent" />
             <div>
-              <p className="text-xs text-[#64748B]">Cost / Trip</p>
-              <p className="font-bold text-[#0F172A]">{formatEGP(summary.trips ? summary.total / summary.trips : 0)}</p>
+              <p className="text-xs text-phx-ink-soft">Cost / Trip</p>
+              <p className="font-bold text-phx-ink">{formatEGP(summary.trips ? summary.total / summary.trips : 0)}</p>
             </div>
           </div>
           <div className="flex items-center gap-3">
-            <Car className="h-5 w-5 text-[#F97316]" />
+            <Car className="h-5 w-5 text-phx-accent" />
             <div>
-              <p className="text-xs text-[#64748B]">Cost / KM</p>
-              <p className="font-bold text-[#0F172A]">{formatEGP(summary.km ? summary.total / summary.km : 0)}</p>
+              <p className="text-xs text-phx-ink-soft">Cost / KM</p>
+              <p className="font-bold text-phx-ink">{formatEGP(summary.km ? summary.total / summary.km : 0)}</p>
             </div>
           </div>
         </div>

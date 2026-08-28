@@ -43,7 +43,7 @@ function fmtValue(value: number) {
 }
 
 const selectClassName =
-  "h-10 w-full rounded-2xl border border-[#D8E0EA] bg-[#F8FAFC] px-3 text-sm font-semibold text-[#0F172A] outline-none transition focus:border-[#FDBA74] focus:ring-4 focus:ring-[#F97316]/10 disabled:opacity-60";
+  "h-10 w-full rounded-2xl border border-phx-line bg-phx-paper px-3 text-sm font-semibold text-phx-ink outline-none transition focus:border-phx-accent-line focus:ring-4 focus:ring-phx-accent/10 disabled:opacity-60";
 
 export function ClosingDetailsPanel({ line, period, showConfidentialToggle = false }: Props) {
   const [data, setData] = useState<ClosingDetailsResult | null>(null);
@@ -233,7 +233,7 @@ export function ClosingDetailsPanel({ line, period, showConfidentialToggle = fal
     <div className="space-y-4">
       <div className="flex items-center justify-end px-4 pt-4 md:px-5">
         <button
-          className="inline-flex h-10 shrink-0 items-center gap-2 border border-[#0B0B0B] bg-[#0B0B0B] px-4 text-sm font-bold text-white transition hover:bg-[#F97316] disabled:opacity-50"
+          className="inline-flex h-10 shrink-0 items-center gap-2 border border-[#0B0B0B] bg-[#0B0B0B] px-4 text-sm font-bold text-white transition hover:bg-phx-accent disabled:opacity-50"
           disabled={isExporting || !data || data.filteredRowCount === 0}
           onClick={() => void handleExport()}
           type="button"
@@ -417,7 +417,7 @@ export function ClosingDetailsPanel({ line, period, showConfidentialToggle = fal
           <label className="inline-flex items-center gap-2 text-xs font-semibold text-slate-600">
             <input
               checked={includeConfidential}
-              className="h-4 w-4 accent-[#F97316]"
+              className="h-4 w-4 accent-phx-accent"
               onChange={(event) => onFilter(setIncludeConfidential)(event.target.checked)}
               type="checkbox"
             />

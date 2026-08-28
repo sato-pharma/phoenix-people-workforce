@@ -68,10 +68,10 @@ function LineButtons({
               <button
                 aria-pressed={isActive}
                 className={cn(
-                  "border px-4 py-2 text-sm font-semibold transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F97316]/40",
+                  "border px-4 py-2 text-sm font-semibold transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-phx-accent/40",
                   isActive
-                    ? "border-[#F97316] bg-[#F97316] text-white shadow-[0_10px_24px_rgba(249,115,22,0.28)]"
-                    : "border-[#D7E0EA] bg-white/95 text-[#0F172A] shadow-[0_10px_28px_rgba(15,23,42,0.06)] hover:-translate-y-0.5 hover:border-[#FDBA74] hover:text-[#EA580C] hover:shadow-[0_14px_30px_rgba(15,23,42,0.1)]",
+                    ? "border-phx-accent bg-phx-accent text-white shadow-[0_10px_24px_rgba(249,115,22,0.28)]"
+                    : "border-[#D7E0EA] bg-white/95 text-phx-ink shadow-[0_10px_28px_rgba(15,23,42,0.06)] hover:-translate-y-0.5 hover:border-phx-accent-line hover:text-phx-accent-hover hover:shadow-[0_14px_30px_rgba(15,23,42,0.1)]",
                 )}
                 key={option}
                 onClick={() => onChange(isActive ? "" : option)}
@@ -101,8 +101,8 @@ function OrganogramView({
     >
       <div className="p-3 sm:p-4">
         {!selectedLine ? (
-          <div className="border border-dashed border-[#CBD5E1] bg-gradient-to-b from-white to-orange-50/40 p-10 text-center shadow-[0_18px_55px_rgba(15,23,42,0.08)]">
-            <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center bg-gradient-to-br from-orange-50 to-orange-100 text-[#F97316] shadow-[0_8px_20px_rgba(249,115,22,0.15)] ring-1 ring-orange-200">
+          <div className="border border-dashed border-phx-line-strong bg-gradient-to-b from-white to-orange-50/40 p-10 text-center shadow-[0_18px_55px_rgba(15,23,42,0.08)]">
+            <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center bg-gradient-to-br from-orange-50 to-orange-100 text-phx-accent shadow-[0_8px_20px_rgba(249,115,22,0.15)] ring-1 ring-orange-200">
               <Network className="h-5 w-5" />
             </div>
             <h2 className="text-base font-semibold text-text">
@@ -114,7 +114,7 @@ function OrganogramView({
             </p>
           </div>
         ) : rows.length === 0 ? (
-          <div className="border border-dashed border-[#CBD5E1] bg-white/90 p-8 text-center text-sm text-[#64748B]">
+          <div className="border border-dashed border-phx-line-strong bg-white/90 p-8 text-center text-sm text-phx-ink-soft">
             No rows match the current search or line filter. Clear the search or
             choose another line to reveal the structure.
           </div>
@@ -237,7 +237,7 @@ export function OrganogramReport({
             </Button>
           }
           badges={
-            <div className="flex flex-wrap gap-2 text-xs text-[#475569]">
+            <div className="flex flex-wrap gap-2 text-xs text-phx-ink-2">
               <AdminInsightChip>
                 {effectiveLineFilter ? `${effectiveLineFilter} selected` : "Select line"}
               </AdminInsightChip>
@@ -253,7 +253,7 @@ export function OrganogramReport({
         />
       ) : (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-[24px] border border-white/75 bg-white/90 px-4 py-3 shadow-[0_18px_48px_rgba(15,23,42,0.07)]">
-          <div className="flex flex-wrap gap-2 text-xs text-[#475569]">
+          <div className="flex flex-wrap gap-2 text-xs text-phx-ink-2">
             <AdminInsightChip>
               {effectiveLineFilter ? `${effectiveLineFilter} selected` : "Select line"}
             </AdminInsightChip>
@@ -285,7 +285,7 @@ export function OrganogramReport({
 
       {isLoading && !report ? (
         <Card className={cn(adminSoftPanelClassName, "p-4")}>
-          <div className="flex items-center gap-3 text-sm text-[#64748B]">
+          <div className="flex items-center gap-3 text-sm text-phx-ink-soft">
             <LoadingSpinner />
             Loading organogram...
           </div>
@@ -325,14 +325,14 @@ export function OrganogramReport({
                     Search
                   </span>
                   <Input
-                    className="h-11 rounded-2xl border-[#D7E0EA] bg-white/95 text-sm font-semibold text-[#0F172A] shadow-[0_14px_35px_rgba(15,23,42,0.06)] focus:border-[#FDBA74] focus:ring-2 focus:ring-[#F97316]/15"
+                    className="h-11 rounded-2xl border-[#D7E0EA] bg-white/95 text-sm font-semibold text-phx-ink shadow-[0_14px_35px_rgba(15,23,42,0.06)] focus:border-phx-accent-line focus:ring-2 focus:ring-phx-accent/15"
                     onChange={(event) => setOrganogramSearch(event.target.value)}
                     placeholder="HR ID, employee, manager"
                     value={organogramSearch}
                   />
                 </label>
                 <div className="flex items-end">
-                  <div className="rounded-2xl border border-[#E2E8F0] bg-white/80 px-4 py-3 text-sm text-text-secondary shadow-[0_12px_36px_rgba(15,23,42,0.06)]">
+                  <div className="rounded-2xl border border-phx-line bg-white/80 px-4 py-3 text-sm text-text-secondary shadow-[0_12px_36px_rgba(15,23,42,0.06)]">
                     {normalizedOrganogramSearch
                       ? `Showing ${filteredRows.length} matching rows.`
                       : effectiveLineFilter

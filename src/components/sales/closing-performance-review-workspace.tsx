@@ -403,7 +403,7 @@ export function ClosingPerformanceReviewWorkspace({ initialError, initialReview 
 
   if (!review) {
     return (
-      <div className="min-h-[calc(100vh-7rem)] rounded-[32px] border border-[#E2E8F0] bg-[#F8FAFC] p-5 sm:p-6 xl:p-8">
+      <div className="min-h-[calc(100vh-7rem)] rounded-[32px] border border-phx-line bg-phx-paper p-5 sm:p-6 xl:p-8">
         <AdminCallout tone="danger">
           <AlertTriangle className="h-4 w-4" />
           <p>{error ?? "No closing has been uploaded yet, so there is nothing to review."}</p>
@@ -413,7 +413,7 @@ export function ClosingPerformanceReviewWorkspace({ initialError, initialReview 
   }
 
   const selectClassName =
-    "h-11 w-full rounded-2xl border border-[#D8E0EA] bg-[#F8FAFC] px-3.5 text-sm font-semibold text-[#0F172A] outline-none transition focus:border-[#FDBA74] focus:ring-4 focus:ring-[#F97316]/10 disabled:opacity-60";
+    "h-11 w-full rounded-2xl border border-phx-line bg-phx-paper px-3.5 text-sm font-semibold text-phx-ink outline-none transition focus:border-phx-accent-line focus:ring-4 focus:ring-phx-accent/10 disabled:opacity-60";
 
   return (
     <div className="min-h-[calc(100vh-7rem)] space-y-7">
@@ -457,7 +457,7 @@ export function ClosingPerformanceReviewWorkspace({ initialError, initialReview 
       {/* The filter bar narrows every section at once, and it does so on the SERVER: the ranks,
           the region subtotals and the national total are all re-derived from what survives, so a
           rank of "3rd" always counts the rows the reader can actually see. */}
-      <div className="flex flex-col gap-3 rounded-[28px] border border-[#E2E8F0] bg-white p-4 shadow-[0_10px_30px_rgba(15,23,42,0.05)] sm:p-5">
+      <div className="flex flex-col gap-3 rounded-[28px] border border-phx-line bg-white p-4 shadow-[0_10px_30px_rgba(15,23,42,0.05)] sm:p-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <span className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-500">Filter the review</span>
           <span className="text-xs font-semibold text-slate-500">

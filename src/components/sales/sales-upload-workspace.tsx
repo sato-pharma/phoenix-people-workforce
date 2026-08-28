@@ -60,9 +60,9 @@ type AnalyzeResponse = { success: boolean; data?: Preview; reconciliation?: Reco
 type CommitResponse = { success: boolean; message?: string; error?: string; importedRows?: number; period?: string | null; reconciliation?: Reconciliation; validation?: ValidationReport; data?: Preview; code?: string };
 type DetectResponse = { success?: boolean; data?: { best?: { distributorCode: string; distributorName: string }; confidence: string }; error?: string };
 
-const panel = "rounded-2xl border border-[#D8E0EA] bg-white/95 shadow-[0_8px_22px_rgba(15,23,42,0.06)]";
+const panel = "rounded-2xl border border-phx-line bg-white/95 shadow-[0_8px_22px_rgba(15,23,42,0.06)]";
 // Weekly-style step UI tokens (match /sales/weekly exactly).
-const stepCard = "rounded-[6px] border border-[#E2E8F0] bg-white shadow-sm";
+const stepCard = "rounded-[6px] border border-phx-line bg-white shadow-sm";
 const darkHead = "bg-[#020617] px-3 py-2 text-xs font-black uppercase tracking-wide text-white";
 export const money = (value: number) => `EGP ${Number(value || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
 export const num = (value: number) => Number(value || 0).toLocaleString(undefined, { maximumFractionDigits: 0 });
@@ -90,10 +90,10 @@ const CUSTOMER_FIX_COLUMNS: ExportColumn[] = [
 function StepBadge({ n, label, done, active }: { n: number; label: string; done?: boolean; active?: boolean }) {
   return (
     <div className="flex items-center gap-2">
-      <span className={cn("inline-flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-black", done ? "bg-emerald-500 text-white" : active ? "bg-[#020617] text-white" : "bg-[#E2E8F0] text-[#64748B]")}>
+      <span className={cn("inline-flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-black", done ? "bg-emerald-500 text-white" : active ? "bg-[#020617] text-white" : "bg-phx-line text-phx-ink-soft")}>
         {done ? <CheckCircle2 className="h-3.5 w-3.5" /> : n}
       </span>
-      <span className="text-[11px] font-black uppercase tracking-[0.16em] text-[#0F172A]">{label}</span>
+      <span className="text-[11px] font-black uppercase tracking-[0.16em] text-phx-ink">{label}</span>
     </div>
   );
 }
@@ -101,19 +101,19 @@ function StepBadge({ n, label, done, active }: { n: number; label: string; done?
 function Metric({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
   return (
     <div className="bg-white px-3 py-2.5">
-      <div className="text-[10px] font-black uppercase tracking-wide text-[#94A3B8]">{label}</div>
-      <div className={cn("mt-0.5 text-sm font-black tabular-nums", accent ? "text-[#F97316]" : "text-[#0F172A]")}>{value}</div>
+      <div className="text-[10px] font-black uppercase tracking-wide text-phx-ink-faint">{label}</div>
+      <div className={cn("mt-0.5 text-sm font-black tabular-nums", accent ? "text-phx-accent" : "text-phx-ink")}>{value}</div>
     </div>
   );
 }
 
 export function BreakdownTable({ title, headLabel, rows }: { title: string; headLabel: string; rows: BreakdownRow[] }) {
   return (
-    <div className="overflow-hidden rounded-[6px] border border-[#E2E8F0]">
+    <div className="overflow-hidden rounded-[6px] border border-phx-line">
       <div className={darkHead}>{title}</div>
       <div className="max-h-72 overflow-auto">
         <table className="w-full text-sm">
-          <thead className="text-left text-[11px] font-bold uppercase text-[#94A3B8]">
+          <thead className="text-left text-[11px] font-bold uppercase text-phx-ink-faint">
             <tr>
               <th className="px-3 py-1.5">{headLabel}</th>
               <th className="px-3 py-1.5 text-right">Qty</th>
@@ -122,13 +122,13 @@ export function BreakdownTable({ title, headLabel, rows }: { title: string; head
             </tr>
           </thead>
           <tbody>
-            {rows.length === 0 && <tr><td className="px-3 py-3 text-center text-[#94A3B8]" colSpan={4}>—</td></tr>}
+            {rows.length === 0 && <tr><td className="px-3 py-3 text-center text-phx-ink-faint" colSpan={4}>—</td></tr>}
             {rows.map((r) => (
               <tr className="border-t border-[#FFE8D6]" key={r.code}>
-                <td className="px-3 py-1.5 font-semibold text-[#0F172A]">{r.label}{r.parent ? <span className="ml-1 text-[11px] font-medium text-[#94A3B8]">· {r.parent}</span> : null}</td>
-                <td className="px-3 py-1.5 text-right tabular-nums text-[#334155]">{num(r.totalQty)}</td>
-                <td className="px-3 py-1.5 text-right tabular-nums text-[#334155]">{num(r.totalBonusQty)}</td>
-                <td className="px-3 py-1.5 text-right tabular-nums text-[#334155]">{money(r.totalValue)}</td>
+                <td className="px-3 py-1.5 font-semibold text-phx-ink">{r.label}{r.parent ? <span className="ml-1 text-[11px] font-medium text-phx-ink-faint">· {r.parent}</span> : null}</td>
+                <td className="px-3 py-1.5 text-right tabular-nums text-phx-ink-2">{num(r.totalQty)}</td>
+                <td className="px-3 py-1.5 text-right tabular-nums text-phx-ink-2">{num(r.totalBonusQty)}</td>
+                <td className="px-3 py-1.5 text-right tabular-nums text-phx-ink-2">{money(r.totalValue)}</td>
               </tr>
             ))}
           </tbody>
@@ -185,7 +185,7 @@ async function postSalesUpload(endpoint: string, file: File, fields: Record<stri
 
 function ProfileViewer({ summary }: { summary?: DistributorProfileSummary }) {
   if (!summary) {
-    return <AdminCallout tone="neutral"><span>No recognition profile for this distributor yet. Set one up in <Link className="font-semibold text-[#F97316] underline" href="/sales/database-mapping">Master Data &amp; Profiles</Link>.</span></AdminCallout>;
+    return <AdminCallout tone="neutral"><span>No recognition profile for this distributor yet. Set one up in <Link className="font-semibold text-phx-accent underline" href="/sales/database-mapping">Master Data &amp; Profiles</Link>.</span></AdminCallout>;
   }
   const rows: { label: string; value: string[] }[] = [
     { label: "Product", value: summary.productColumns },
@@ -197,19 +197,19 @@ function ProfileViewer({ summary }: { summary?: DistributorProfileSummary }) {
     { label: "Discount", value: summary.discountColumns },
   ];
   return (
-    <div className="rounded-xl border border-[#E2E8F0]">
-      <div className="border-b border-[#E2E8F0] px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-[#64748B]">What the system reads in this distributor&apos;s file</div>
+    <div className="rounded-xl border border-phx-line">
+      <div className="border-b border-phx-line px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">What the system reads in this distributor&apos;s file</div>
       <table className="w-full text-sm">
         <tbody>
           {rows.map((r) => (
-            <tr className="border-b border-[#F1F5F9] last:border-0" key={r.label}>
-              <td className="w-40 px-4 py-1.5 font-semibold text-[#0F172A]">{r.label}</td>
-              <td className="px-4 py-1.5 font-mono text-xs text-[#64748B]">{r.value.length ? r.value.join(", ") : <span className="italic text-[#94A3B8]">—</span>}</td>
+            <tr className="border-b border-phx-paper-2 last:border-0" key={r.label}>
+              <td className="w-40 px-4 py-1.5 font-semibold text-phx-ink">{r.label}</td>
+              <td className="px-4 py-1.5 font-mono text-xs text-phx-ink-soft">{r.value.length ? r.value.join(", ") : <span className="italic text-phx-ink-faint">—</span>}</td>
             </tr>
           ))}
           <tr>
-            <td className="px-4 py-1.5 font-semibold text-[#0F172A]">Value</td>
-            <td className="px-4 py-1.5 text-xs text-[#64748B]">{summary.valueSource === "sheet" ? "taken from the sheet" : "recomputed from master price"}{summary.hasDateColumn ? "" : " · no date column — pick a period"}</td>
+            <td className="px-4 py-1.5 font-semibold text-phx-ink">Value</td>
+            <td className="px-4 py-1.5 text-xs text-phx-ink-soft">{summary.valueSource === "sheet" ? "taken from the sheet" : "recomputed from master price"}{summary.hasDateColumn ? "" : " · no date column — pick a period"}</td>
           </tr>
         </tbody>
       </table>
@@ -237,10 +237,10 @@ function ValidationPanel({ report }: { report: ValidationReport }) {
       ? { tone: "border-amber-200 bg-amber-50 text-amber-800", text: `${report.warningCount} warning(s) — review, but you can still import.` }
       : { tone: "border-emerald-200 bg-emerald-50 text-emerald-700", text: "Strict validation passed — no warnings." };
   return (
-    <div className="space-y-2 rounded-xl border border-[#E2E8F0] p-3">
+    <div className="space-y-2 rounded-xl border border-phx-line p-3">
       <div className="flex items-center gap-2">
-        <ShieldCheck className="h-4 w-4 text-[#0F172A]" />
-        <span className="text-xs font-black uppercase tracking-[0.12em] text-[#64748B]">Strict validation</span>
+        <ShieldCheck className="h-4 w-4 text-phx-ink" />
+        <span className="text-xs font-black uppercase tracking-[0.12em] text-phx-ink-soft">Strict validation</span>
         <span className={cn("ml-auto rounded-full border px-2.5 py-0.5 text-[11px] font-bold", headline.tone)}>{headline.text}</span>
       </div>
       <ul className="space-y-1.5">
@@ -252,10 +252,10 @@ function ValidationPanel({ report }: { report: ValidationReport }) {
               <div className="flex items-start gap-2">
                 <Icon className={cn("mt-0.5 h-4 w-4 shrink-0", st.iconClass)} />
                 <div className="min-w-0 flex-1">
-                  <p className="text-sm font-bold text-[#0F172A]">{f.title}{f.count > 1 ? <span className="ml-1 font-mono text-xs text-[#64748B]">×{f.count.toLocaleString()}</span> : null}</p>
-                  <p className="text-xs text-[#475569]">{f.detail}</p>
-                  {f.fixHint ? <p className="mt-0.5 text-xs italic text-[#64748B]">{f.fixHint}</p> : null}
-                  {f.sampleRows.length > 0 ? <p className="mt-0.5 font-mono text-[11px] text-[#94A3B8]">rows: {f.sampleRows.map((row, i) => f.sampleProducts?.[i] ? `${row} (${f.sampleProducts[i]})` : row).join(", ")}{f.count > f.sampleRows.length ? "…" : ""}</p> : null}
+                  <p className="text-sm font-bold text-phx-ink">{f.title}{f.count > 1 ? <span className="ml-1 font-mono text-xs text-phx-ink-soft">×{f.count.toLocaleString()}</span> : null}</p>
+                  <p className="text-xs text-phx-ink-2">{f.detail}</p>
+                  {f.fixHint ? <p className="mt-0.5 text-xs italic text-phx-ink-soft">{f.fixHint}</p> : null}
+                  {f.sampleRows.length > 0 ? <p className="mt-0.5 font-mono text-[11px] text-phx-ink-faint">rows: {f.sampleRows.map((row, i) => f.sampleProducts?.[i] ? `${row} (${f.sampleProducts[i]})` : row).join(", ")}{f.count > f.sampleRows.length ? "…" : ""}</p> : null}
                 </div>
               </div>
             </li>
@@ -335,11 +335,11 @@ function IgnoredItemsReview({ items, productOptions, distributorCode, onSaved, o
 
   return (
     <div className="space-y-2 rounded-[6px] border border-slate-300 bg-slate-50/60 p-3">
-      <p className="text-sm font-bold text-[#0F172A]">Review ignored items — {items.length} product{items.length === 1 ? "" : "s"} set to ignore</p>
-      <p className="text-xs text-[#475569]">These products appeared in the sheet but were previously set to be ignored. You must explicitly decide what to do with each one before uploading. Nothing is silently excluded without your decision.</p>
+      <p className="text-sm font-bold text-phx-ink">Review ignored items — {items.length} product{items.length === 1 ? "" : "s"} set to ignore</p>
+      <p className="text-xs text-phx-ink-2">These products appeared in the sheet but were previously set to be ignored. You must explicitly decide what to do with each one before uploading. Nothing is silently excluded without your decision.</p>
       <div className="overflow-visible rounded-[6px] border border-slate-200 bg-white">
         <table className="w-full text-sm">
-          <thead className="text-left text-[11px] font-bold uppercase text-[#94A3B8]">
+          <thead className="text-left text-[11px] font-bold uppercase text-phx-ink-faint">
             <tr>
               <th className="px-3 py-1.5">Product</th>
               <th className="px-3 py-1.5 text-right">Rows</th>
@@ -353,16 +353,16 @@ function IgnoredItemsReview({ items, productOptions, distributorCode, onSaved, o
                 <tr className="border-t border-slate-100" key={item.raw}>
                   <td className="px-3 py-2">
                     {item.displayName !== item.raw ? (
-                      <span className="font-medium text-[#0F172A]">{item.displayName}<span className="ml-1 font-mono text-[11px] text-[#94A3B8]">({item.raw})</span></span>
+                      <span className="font-medium text-phx-ink">{item.displayName}<span className="ml-1 font-mono text-[11px] text-phx-ink-faint">({item.raw})</span></span>
                     ) : (
-                      <span><span className="font-mono text-xs font-semibold text-[#0F172A]">{item.raw}</span><span className="ml-1 text-[11px] text-[#94A3B8]">no name in sheet</span></span>
+                      <span><span className="font-mono text-xs font-semibold text-phx-ink">{item.raw}</span><span className="ml-1 text-[11px] text-phx-ink-faint">no name in sheet</span></span>
                     )}
                   </td>
-                  <td className="px-3 py-2 text-right tabular-nums text-[#334155]">{item.count.toLocaleString()}</td>
+                  <td className="px-3 py-2 text-right tabular-nums text-phx-ink-2">{item.count.toLocaleString()}</td>
                   <td className="px-3 py-2">
                     <div className="flex items-center gap-2 flex-wrap">
                       <select
-                        className="rounded border border-[#E2E8F0] bg-white px-2 py-1 text-xs text-[#0F172A] focus:outline-none focus:ring-1 focus:ring-[#F97316]"
+                        className="rounded border border-phx-line bg-white px-2 py-1 text-xs text-phx-ink focus:outline-none focus:ring-1 focus:ring-phx-accent"
                         onChange={(e) => {
                           const v = e.target.value as "ignore" | "include" | "";
                           setDecisions((p) => ({ ...p, [item.raw]: v as "ignore" | "include" }));
@@ -395,7 +395,7 @@ function IgnoredItemsReview({ items, productOptions, distributorCode, onSaved, o
       {err ? <p className="text-xs text-rose-600">{err}</p> : null}
       <div className="flex items-center gap-3">
         <button
-          className="rounded-[6px] bg-[#0F172A] px-4 py-2 text-xs font-bold text-white transition hover:bg-[#1E293B] disabled:cursor-not-allowed disabled:opacity-40"
+          className="rounded-[6px] bg-phx-ink px-4 py-2 text-xs font-bold text-white transition hover:bg-[#1E293B] disabled:cursor-not-allowed disabled:opacity-40"
           disabled={!allDecided || busy}
           onClick={() => void apply()}
           type="button"
@@ -550,7 +550,7 @@ function UnmappedList({ products, customers, territories, productOptions, brickO
             />
           ) : null}
           <button
-            className="inline-flex h-8 items-center gap-1.5 rounded-[6px] bg-[#0F172A] px-3 text-xs font-black text-white transition hover:bg-[#1E293B] disabled:cursor-not-allowed disabled:bg-[#CBD5E1]"
+            className="inline-flex h-8 items-center gap-1.5 rounded-[6px] bg-phx-ink px-3 text-xs font-black text-white transition hover:bg-[#1E293B] disabled:cursor-not-allowed disabled:bg-phx-line-strong"
             disabled={busy || ready.length === 0}
             onClick={() => void save()}
             type="button"
@@ -579,7 +579,7 @@ function UnmappedList({ products, customers, territories, productOptions, brickO
           </div>
           <div className="overflow-visible rounded-[6px] border border-amber-200 bg-white">
             <table className="w-full text-sm">
-              <thead className="text-left text-[11px] font-bold uppercase text-[#94A3B8]">
+              <thead className="text-left text-[11px] font-bold uppercase text-phx-ink-faint">
                 <tr>
                   <th className="px-3 py-1.5">Value in sheet</th>
                   <th className="px-3 py-1.5">Name in sheet</th>
@@ -592,14 +592,14 @@ function UnmappedList({ products, customers, territories, productOptions, brickO
                   const k = mapKey(g.type, u.raw);
                   return (
                     <tr className="border-t border-[#FFE8D6]" key={k}>
-                      <td className="px-3 py-1.5 align-top font-mono text-xs font-semibold text-[#0F172A]">{u.raw || <span className="italic text-[#94A3B8]">(blank)</span>}</td>
-                      <td className="px-3 py-1.5 align-top text-[#334155]">{u.rawName || <span className="italic text-[#94A3B8]">—</span>}</td>
-                      <td className="px-3 py-1.5 text-right align-top tabular-nums text-[#334155]">{u.count.toLocaleString()}</td>
+                      <td className="px-3 py-1.5 align-top font-mono text-xs font-semibold text-phx-ink">{u.raw || <span className="italic text-phx-ink-faint">(blank)</span>}</td>
+                      <td className="px-3 py-1.5 align-top text-phx-ink-2">{u.rawName || <span className="italic text-phx-ink-faint">—</span>}</td>
+                      <td className="px-3 py-1.5 text-right align-top tabular-nums text-phx-ink-2">{u.count.toLocaleString()}</td>
                       <td className="px-3 py-1.5">
                         {excluded[k] ? (
                           <div className="flex items-center gap-2">
                             <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-bold text-slate-500">Excluded — rows will be skipped</span>
-                            <button className="text-[11px] text-[#64748B] underline hover:text-[#0F172A]" onClick={() => unexclude(g.type, u.raw)} type="button">Undo</button>
+                            <button className="text-[11px] text-phx-ink-soft underline hover:text-phx-ink" onClick={() => unexclude(g.type, u.raw)} type="button">Undo</button>
                           </div>
                         ) : (
                           <>
@@ -607,14 +607,14 @@ function UnmappedList({ products, customers, territories, productOptions, brickO
                               <input
                                 aria-label="include this mapping"
                                 checked={Boolean(confirmed[k])}
-                                className="h-4 w-4 shrink-0 accent-[#F97316]"
+                                className="h-4 w-4 shrink-0 accent-phx-accent"
                                 onChange={(e) => toggle(g.type, u.raw, e.target.checked)}
                                 type="checkbox"
                               />
                               <div className="w-56"><MappingCombobox onChange={(c) => setCode(g.type, u.raw, c)} options={g.options} placeholder={g.placeholder} value={selected[k] ?? ""} /></div>
                               {g.type === "product" ? (
                                 <button
-                                  className="shrink-0 rounded px-1.5 py-0.5 text-[11px] font-bold text-[#94A3B8] transition hover:bg-slate-100 hover:text-slate-600"
+                                  className="shrink-0 rounded px-1.5 py-0.5 text-[11px] font-bold text-phx-ink-faint transition hover:bg-slate-100 hover:text-slate-600"
                                   onClick={() => exclude(g.type, u.raw)}
                                   title="Exclude — skip all rows with this product instead of mapping it"
                                   type="button"
@@ -624,7 +624,7 @@ function UnmappedList({ products, customers, territories, productOptions, brickO
                               ) : null}
                             </div>
                             {u.suggestionLabel && (selected[k] ?? "") === (u.suggestionCode ?? "") ? (
-                              <p className="mt-0.5 pl-6 text-[11px] text-[#64748B]">Suggested: {u.suggestionLabel}{u.suggestionCode ? ` (${u.suggestionCode})` : ""}</p>
+                              <p className="mt-0.5 pl-6 text-[11px] text-phx-ink-soft">Suggested: {u.suggestionLabel}{u.suggestionCode ? ` (${u.suggestionCode})` : ""}</p>
                             ) : null}
                           </>
                         )}
@@ -728,8 +728,8 @@ export const MonthlyUpload = forwardRef<MonthlyUploadHandle, MonthlyUploadProps>
   const confirmClass = verifyStep.panel === "mismatch"
     ? "border border-amber-300 bg-white text-amber-800 hover:bg-amber-50"
     : verifyStep.panel === "unrecognized"
-      ? "bg-[#0F172A] text-white hover:bg-[#1E293B]"
-      : "bg-[#F97316] text-white hover:bg-[#EA6A0C]";
+      ? "bg-phx-ink text-white hover:bg-[#1E293B]"
+      : "bg-phx-accent text-white hover:bg-[#EA6A0C]";
   const confirmLabel = verifyStep.panel === "mismatch"
     ? `Yes, this is the ${distributorCode} sheet — continue`
     : verifyStep.panel === "unrecognized"
@@ -811,21 +811,21 @@ export const MonthlyUpload = forwardRef<MonthlyUploadHandle, MonthlyUploadProps>
       <div className="flex flex-wrap items-end gap-2">
         <div className="flex flex-col gap-1">
           <div className="flex items-center gap-2">
-            <span className="text-[10px] font-black uppercase tracking-[0.12em] text-[#94A3B8]">Period{hasDateColumn ? " (optional)" : " (required)"}</span>
+            <span className="text-[10px] font-black uppercase tracking-[0.12em] text-phx-ink-faint">Period{hasDateColumn ? " (optional)" : " (required)"}</span>
             {periodAutoDetected && <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700 ring-1 ring-emerald-200"><CheckCircle2 className="h-3 w-3" /> Auto-detected</span>}
           </div>
           <div className="flex gap-1">
-            <select className={cn("h-9 rounded-[6px] border px-2 text-sm", periodAutoDetected ? "border-emerald-300 bg-emerald-50/40" : "border-[#E2E8F0]")} disabled={busy !== null} onChange={(e) => onMonthChange(e.target.value)} value={periodMonth}>
+            <select className={cn("h-9 rounded-[6px] border px-2 text-sm", periodAutoDetected ? "border-emerald-300 bg-emerald-50/40" : "border-phx-line")} disabled={busy !== null} onChange={(e) => onMonthChange(e.target.value)} value={periodMonth}>
               <option value="">Month</option>
               {MONTHS.map((m, i) => <option key={m} value={String(i + 1).padStart(2, "0")}>{m}</option>)}
             </select>
-            <select className={cn("h-9 rounded-[6px] border px-2 text-sm", periodAutoDetected ? "border-emerald-300 bg-emerald-50/40" : "border-[#E2E8F0]")} disabled={busy !== null} onChange={(e) => onYearChange(e.target.value)} value={periodYear}>
+            <select className={cn("h-9 rounded-[6px] border px-2 text-sm", periodAutoDetected ? "border-emerald-300 bg-emerald-50/40" : "border-phx-line")} disabled={busy !== null} onChange={(e) => onYearChange(e.target.value)} value={periodYear}>
               <option value="">Year</option>
               {UPLOAD_YEARS.map((y) => <option key={y} value={String(y)}>{y}</option>)}
             </select>
           </div>
         </div>
-        <Button className="h-9 gap-2 bg-[#0B0B0B] font-black text-white hover:bg-[#F97316]" disabled={!hasProfile || busy !== null} onClick={() => fileRef.current?.click()} type="button">
+        <Button className="h-9 gap-2 bg-[#0B0B0B] font-black text-white hover:bg-phx-accent" disabled={!hasProfile || busy !== null} onClick={() => fileRef.current?.click()} type="button">
           <FileText className="h-4 w-4" />{file ? file.name.slice(0, 28) : "Choose raw sheet"}
         </Button>
         <input accept=".xlsx" className="hidden" onChange={(e) => onPickFile(e.target.files?.[0] ?? null)} ref={fileRef} type="file" />
@@ -834,17 +834,17 @@ export const MonthlyUpload = forwardRef<MonthlyUploadHandle, MonthlyUploadProps>
       {error ? <AdminCallout tone="danger"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" /><span>{error}</span></AdminCallout> : null}
 
       {/* ── Step 1: AI verification ── */}
-      <div className="border-t border-dashed border-[#E2E8F0] pt-4">
+      <div className="border-t border-dashed border-phx-line pt-4">
         <StepBadge active={!verified} done={verified} label="AI verification" n={1} />
-        <p className="mt-1 text-xs font-medium text-[#64748B]">
+        <p className="mt-1 text-xs font-medium text-phx-ink-soft">
           Reads the file&apos;s headers and confirms which distributor it is and which column feeds product, quantity, date, customer and territory (shown above). Nothing is stored.
         </p>
         <div className="mt-3 flex flex-wrap items-center gap-3">
-          <button className="inline-flex h-10 items-center gap-2 rounded-[6px] border border-[#020617] bg-white px-4 text-sm font-black text-[#0F172A] transition hover:bg-[#F8FAFC] disabled:opacity-60" disabled={busy !== null || !file} onClick={handleVerify} type="button">
-            {busy === "verify" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4 text-[#F97316]" />}
+          <button className="inline-flex h-10 items-center gap-2 rounded-[6px] border border-[#020617] bg-white px-4 text-sm font-black text-phx-ink transition hover:bg-phx-paper disabled:opacity-60" disabled={busy !== null || !file} onClick={handleVerify} type="button">
+            {busy === "verify" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4 text-phx-accent" />}
             {busy === "verify" ? "Analyzing…" : verifyRan ? "Re-run verification" : "Run AI verification"}
           </button>
-          {!file && <span className="text-xs font-medium text-[#94A3B8]">Pick the raw sheet above first.</span>}
+          {!file && <span className="text-xs font-medium text-phx-ink-faint">Pick the raw sheet above first.</span>}
         </div>
 
         {/* Verification result — one block, three outcomes. The Confirm control is driven by
@@ -876,17 +876,17 @@ export const MonthlyUpload = forwardRef<MonthlyUploadHandle, MonthlyUploadProps>
       </div>
 
       {/* ── Step 2: Strict validation ── */}
-      <div className={cn("border-t border-dashed border-[#E2E8F0] pt-4", !verified && "opacity-60")}>
+      <div className={cn("border-t border-dashed border-phx-line pt-4", !verified && "opacity-60")}>
         <StepBadge active={verified && !analysis?.success} done={Boolean(analysis?.success)} label="Strict validation" n={2} />
-        <p className="mt-1 text-xs font-medium text-[#64748B]">
+        <p className="mt-1 text-xs font-medium text-phx-ink-soft">
           Parses the sheet, maps every product / territory / customer, runs the strict rules, and shows totals per product, per region and per brick. Nothing is stored yet.
         </p>
         <div className="mt-3 flex flex-wrap items-center gap-3">
-          <button className="inline-flex h-10 items-center gap-2 rounded-[6px] bg-[#0F172A] px-4 text-sm font-black text-white transition hover:bg-[#1E293B] disabled:cursor-not-allowed disabled:bg-[#CBD5E1]" disabled={busy !== null || !verified || !hasProfile} onClick={() => void analyze()} type="button">
+          <button className="inline-flex h-10 items-center gap-2 rounded-[6px] bg-phx-ink px-4 text-sm font-black text-white transition hover:bg-[#1E293B] disabled:cursor-not-allowed disabled:bg-phx-line-strong" disabled={busy !== null || !verified || !hasProfile} onClick={() => void analyze()} type="button">
             {busy === "analyze" ? <Loader2 className="h-4 w-4 animate-spin" /> : !verified ? <Lock className="h-4 w-4" /> : <FileUp className="h-4 w-4" />}
             {busy === "analyze" ? "Validating…" : "Validate"}
           </button>
-          {!verified && <span className="inline-flex items-center gap-1 text-xs font-semibold text-[#94A3B8]"><Lock className="h-3.5 w-3.5" /> Complete AI verification above to unlock.</span>}
+          {!verified && <span className="inline-flex items-center gap-1 text-xs font-semibold text-phx-ink-faint"><Lock className="h-3.5 w-3.5" /> Complete AI verification above to unlock.</span>}
         </div>
       </div>
 
@@ -923,13 +923,13 @@ export const MonthlyUpload = forwardRef<MonthlyUploadHandle, MonthlyUploadProps>
       {analysis?.success && rec ? (
         <div className={stepCard}>
           {/* Header */}
-          <div className={cn("flex flex-wrap items-center gap-2 border-b border-[#E2E8F0] px-4 py-3 text-sm font-black", canImport ? "text-emerald-700" : "text-amber-700")}>
+          <div className={cn("flex flex-wrap items-center gap-2 border-b border-phx-line px-4 py-3 text-sm font-black", canImport ? "text-emerald-700" : "text-amber-700")}>
             {canImport ? <CheckCircle2 className="h-4 w-4" /> : <AlertTriangle className="h-4 w-4" />}
             {canImport ? `Validation passed — ${num(rec.rowsCoded)} rows ready to upload` : "Validation blocked — resolve the items below"}
           </div>
 
           {/* KPI strip (reconciliation receipt) */}
-          <div className="grid grid-cols-2 gap-px bg-[#E2E8F0] sm:grid-cols-3 lg:grid-cols-6">
+          <div className="grid grid-cols-2 gap-px bg-phx-line sm:grid-cols-3 lg:grid-cols-6">
             <Metric label="Rows read" value={num(rec.rowsRead)} />
             <Metric accent label="Coded" value={num(rec.rowsCoded)} />
             <Metric label="Ignored" value={num(rec.rowsIgnored)} />
@@ -985,7 +985,7 @@ export const MonthlyUpload = forwardRef<MonthlyUploadHandle, MonthlyUploadProps>
           ) : null}
 
           {/* Step 3 — Confirm & Upload */}
-          <div className="border-t border-[#E2E8F0] px-4 py-4">
+          <div className="border-t border-phx-line px-4 py-4">
             <div className="mb-3"><StepBadge active label="Confirm & Upload" n={3} /></div>
             {committed?.success ? (
               <div className="flex items-center gap-2 rounded-[6px] border border-emerald-200 bg-emerald-50 px-4 py-3">
@@ -997,11 +997,11 @@ export const MonthlyUpload = forwardRef<MonthlyUploadHandle, MonthlyUploadProps>
               </div>
             ) : canImport ? (
               <div className="flex flex-wrap items-center gap-3">
-                <button className="inline-flex h-10 items-center gap-2 rounded-[6px] bg-[#F97316] px-5 text-sm font-black text-white transition hover:bg-[#EA6A0C] disabled:cursor-not-allowed disabled:bg-[#CBD5E1]" disabled={busy !== null} onClick={() => void commit()} type="button">
+                <button className="inline-flex h-10 items-center gap-2 rounded-[6px] bg-phx-accent px-5 text-sm font-black text-white transition hover:bg-[#EA6A0C] disabled:cursor-not-allowed disabled:bg-phx-line-strong" disabled={busy !== null} onClick={() => void commit()} type="button">
                   {busy === "commit" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
                   {busy === "commit" ? "Uploading…" : "Confirm & Upload"}
                 </button>
-                <span className="text-xs font-medium text-[#64748B]">{productUnknowns > 0 ? `${num(rec.rowsBlocked)} unmapped product row(s) will be excluded — the rest will be stored.` : "Review the totals above, then confirm to store the data."}</span>
+                <span className="text-xs font-medium text-phx-ink-soft">{productUnknowns > 0 ? `${num(rec.rowsBlocked)} unmapped product row(s) will be excluded — the rest will be stored.` : "Review the totals above, then confirm to store the data."}</span>
               </div>
             ) : (
               <p className="text-xs font-semibold text-amber-700">Fix unmapped customers / territories above, then re-validate before uploading.</p>
@@ -1020,12 +1020,12 @@ MonthlyUpload.displayName = "MonthlyUpload";
 // off to that single canonical wizard.
 function WeeklyUpload({ distributorName }: { distributorName: string }) {
   return (
-    <div className="flex flex-wrap items-center gap-3 rounded-[6px] border border-[#E2E8F0] bg-[#FCFDFE] px-4 py-3">
+    <div className="flex flex-wrap items-center gap-3 rounded-[6px] border border-phx-line bg-[#FCFDFE] px-4 py-3">
       <div className="min-w-0 flex-1">
-        <p className="text-sm font-bold text-[#0F172A]">Weekly sales use the guided weekly wizard</p>
-        <p className="mt-0.5 text-xs text-[#64748B]">Same AI verify → validate → confirm flow as monthly, with the weekly column checks and per-week replace. Upload {distributorName}&apos;s weekly sheet there.</p>
+        <p className="text-sm font-bold text-phx-ink">Weekly sales use the guided weekly wizard</p>
+        <p className="mt-0.5 text-xs text-phx-ink-soft">Same AI verify → validate → confirm flow as monthly, with the weekly column checks and per-week replace. Upload {distributorName}&apos;s weekly sheet there.</p>
       </div>
-      <Link className="inline-flex h-10 shrink-0 items-center gap-2 rounded-[6px] bg-[#0B0B0B] px-4 text-sm font-black text-white transition hover:bg-[#F97316]" href="/sales/weekly">
+      <Link className="inline-flex h-10 shrink-0 items-center gap-2 rounded-[6px] bg-[#0B0B0B] px-4 text-sm font-black text-white transition hover:bg-phx-accent" href="/sales/weekly">
         <UploadCloud className="h-4 w-4" /> Open Weekly Upload
       </Link>
     </div>
@@ -1059,11 +1059,11 @@ function HealthDashboard({ distributorCode }: { distributorCode: string }) {
 
   if (!health) return null;
   const bandTone = readiness?.band === "Healthy" ? "border-emerald-200 bg-emerald-50 text-emerald-700" : readiness?.band === "Attention" ? "border-amber-200 bg-amber-50 text-amber-800" : "border-rose-200 bg-rose-50 text-rose-700";
-  const chip = (label: string, value: string) => <span className="rounded-full border border-[#E2E8F0] bg-[#FCFDFE] px-3 py-1 text-xs font-bold text-[#0F172A]">{label}: {value}</span>;
+  const chip = (label: string, value: string) => <span className="rounded-full border border-phx-line bg-[#FCFDFE] px-3 py-1 text-xs font-bold text-phx-ink">{label}: {value}</span>;
   return (
     <div className="flex flex-wrap items-center gap-2">
       {readiness ? <span className={cn("rounded-full border px-3 py-1 text-xs font-black", bandTone)}>{readiness.band} · {readiness.score}</span> : null}
-      {certification ? <span className="rounded-full border border-[#E2E8F0] bg-[#FCFDFE] px-3 py-1 text-xs font-bold text-[#475569]">Cert: {certification}</span> : null}
+      {certification ? <span className="rounded-full border border-phx-line bg-[#FCFDFE] px-3 py-1 text-xs font-bold text-phx-ink-2">Cert: {certification}</span> : null}
       {chip("Customers", health.customerMappings.toLocaleString())}
       {chip("Products", health.productAliases.toLocaleString())}
       {chip("Last monthly", health.lastMonthlyPeriod ?? "—")}
@@ -1080,10 +1080,10 @@ function DistributorUpload({ selected, summary, productOptions, brickOptions, ai
       <Card className={cn(panel, "space-y-3 p-5")}>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h2 className="text-lg font-black tracking-tight text-slate-900">{selected.name} <span className="font-mono text-sm text-[#94A3B8]">{selected.code}</span></h2>
-            <p className="text-xs text-[#64748B]">{selected.monthlySupported ? "Monthly ✓" : "No monthly profile"}{selected.weeklySupported ? " · Weekly ✓" : ""}</p>
+            <h2 className="text-lg font-black tracking-tight text-slate-900">{selected.name} <span className="font-mono text-sm text-phx-ink-faint">{selected.code}</span></h2>
+            <p className="text-xs text-phx-ink-soft">{selected.monthlySupported ? "Monthly ✓" : "No monthly profile"}{selected.weeklySupported ? " · Weekly ✓" : ""}</p>
           </div>
-          <a className="inline-flex h-9 items-center gap-2 rounded-[6px] border border-[#D8E0EA] bg-white px-3 text-sm font-bold text-[#0F172A] transition hover:border-[#F97316] hover:text-[#F97316]" href={`/api/sales/source-of-sales/raw-template?distributor=${encodeURIComponent(selected.code)}`}>
+          <a className="inline-flex h-9 items-center gap-2 rounded-[6px] border border-phx-line bg-white px-3 text-sm font-bold text-phx-ink transition hover:border-phx-accent hover:text-phx-accent" href={`/api/sales/source-of-sales/raw-template?distributor=${encodeURIComponent(selected.code)}`}>
             <Download className="h-4 w-4" />Emergency template
           </a>
         </div>
@@ -1116,21 +1116,21 @@ export function SalesUploadWorkspace({ distributors, summaries, batches, product
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <div className="flex items-center gap-2">
-              <span aria-hidden className="h-2 w-2 rounded-full bg-[#F97316]" />
-              <span className="text-[11px] font-black uppercase tracking-[0.16em] text-[#F97316]">Sales · One connected module</span>
+              <span aria-hidden className="h-2 w-2 rounded-full bg-phx-accent" />
+              <span className="text-[11px] font-black uppercase tracking-[0.16em] text-phx-accent">Sales · One connected module</span>
             </div>
-            <h1 className="mt-1 text-xl font-black text-[#0F172A]">Sales Upload</h1>
-            <p className="mt-1 text-sm font-medium text-[#64748B]">
+            <h1 className="mt-1 text-xl font-black text-phx-ink">Sales Upload</h1>
+            <p className="mt-1 text-sm font-medium text-phx-ink-soft">
               {mode === "single"
                 ? "Pick a distributor, analyze its raw sheet, then import — the analyzer and the importer use the exact same engine, so what's recognized always imports."
                 : "Pick the month, then upload each distributor's sheet from the grid below — same analyzer, same importer, one screen."}
             </p>
           </div>
-          <div className="inline-flex shrink-0 items-center gap-1 rounded-[6px] border border-[#E2E8F0] bg-white p-1">
-            <button className={cn("inline-flex h-8 items-center gap-1.5 rounded-[4px] px-3 text-xs font-black transition", mode === "single" ? "bg-[#0F172A] text-white" : "text-[#64748B] hover:text-[#0F172A]")} onClick={() => setMode("single")} type="button">
+          <div className="inline-flex shrink-0 items-center gap-1 rounded-[6px] border border-phx-line bg-white p-1">
+            <button className={cn("inline-flex h-8 items-center gap-1.5 rounded-[4px] px-3 text-xs font-black transition", mode === "single" ? "bg-phx-ink text-white" : "text-phx-ink-soft hover:text-phx-ink")} onClick={() => setMode("single")} type="button">
               <Store className="h-3.5 w-3.5" /> Single distributor
             </button>
-            <button className={cn("inline-flex h-8 items-center gap-1.5 rounded-[4px] px-3 text-xs font-black transition", mode === "bulk" ? "bg-[#0F172A] text-white" : "text-[#64748B] hover:text-[#0F172A]")} onClick={() => setMode("bulk")} type="button">
+            <button className={cn("inline-flex h-8 items-center gap-1.5 rounded-[4px] px-3 text-xs font-black transition", mode === "bulk" ? "bg-phx-ink text-white" : "text-phx-ink-soft hover:text-phx-ink")} onClick={() => setMode("bulk")} type="button">
               <Grid3x3 className="h-3.5 w-3.5" /> Bulk import
             </button>
           </div>

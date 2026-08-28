@@ -385,10 +385,10 @@ export function OfferComposer({
   }
 
   const money = (label: string, value: number, note?: string) => (
-    <div className="rounded-2xl border border-[#D8E0EA] bg-white px-4 py-3 shadow-sm" key={label}>
-      <p className="text-[10px] font-black uppercase tracking-[0.14em] text-[#94A3B8]">{label}</p>
+    <div className="rounded-2xl border border-phx-line bg-white px-4 py-3 shadow-sm" key={label}>
+      <p className="text-[10px] font-black uppercase tracking-[0.14em] text-phx-ink-faint">{label}</p>
       <p className="mt-1 whitespace-nowrap text-lg font-black tabular-nums text-slate-900">EGP {offerMoney(value)}</p>
-      {note ? <p className="mt-0.5 whitespace-nowrap text-[11px] text-[#94A3B8]">{note}</p> : null}
+      {note ? <p className="mt-0.5 whitespace-nowrap text-[11px] text-phx-ink-faint">{note}</p> : null}
     </div>
   );
 
@@ -424,7 +424,7 @@ export function OfferComposer({
   /** A one-click date shortcut. Sets the field and nothing else. */
   const chip = (key: "dateOfIssue" | "startDate" | "validUntil", label: string, value: string) => (
     <button
-      className="rounded-lg border border-[#D8E0EA] bg-white px-2 py-1 text-[11px] font-bold whitespace-nowrap text-[#475569] shadow-sm transition hover:border-[#FDBA74] hover:text-[#B45309] disabled:cursor-not-allowed disabled:opacity-50"
+      className="rounded-lg border border-phx-line bg-white px-2 py-1 text-[11px] font-bold whitespace-nowrap text-phx-ink-2 shadow-sm transition hover:border-phx-accent-line hover:text-[#B45309] disabled:cursor-not-allowed disabled:opacity-50"
       disabled={!canManage || !value}
       key={label}
       onClick={() => setDraft((current) => ({ ...current, [key]: value }))}
@@ -636,7 +636,7 @@ export function OfferComposer({
         </div>
 
         <div className="border-t border-slate-200/80 bg-slate-50/50 px-5 py-5 sm:px-6">
-          <p className="mb-3 text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">
+          <p className="mb-3 text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-soft">
             Derived compensation
           </p>
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -645,7 +645,7 @@ export function OfferComposer({
             {money("Cost of living", pay.costOfLiving.monthly, `${offerMoney(pay.costOfLiving.annual)} a year`)}
             {money("Total package", pay.total.monthly, `${offerMoney(pay.total.annual)} a year`)}
           </div>
-          <p className="mt-3 text-[11px] leading-4 text-[#94A3B8]">
+          <p className="mt-3 text-[11px] leading-4 text-phx-ink-faint">
             Basic is 70% of the package after cost of living; transportation is exactly what remains, so the three
             lines always add back to the total to the pound.
           </p>
@@ -664,7 +664,7 @@ export function OfferComposer({
         <div className="max-h-[720px] overflow-auto bg-slate-100 p-4">
           {previewHtml ? (
             <iframe
-              className="mx-auto block w-full max-w-[860px] rounded-xl border border-[#D8E0EA] bg-white shadow-lg"
+              className="mx-auto block w-full max-w-[860px] rounded-xl border border-phx-line bg-white shadow-lg"
               height={900}
               sandbox=""
               srcDoc={previewHtml}
@@ -683,7 +683,7 @@ export function OfferComposer({
               <tr className="border-b border-slate-200/80 bg-slate-50/60 text-left">
                 {["Candidate", "Title", "Package", "Status", "Sent", ""].map((heading) => (
                   <th
-                    className="whitespace-nowrap px-5 py-3 text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]"
+                    className="whitespace-nowrap px-5 py-3 text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-soft"
                     key={heading}
                   >
                     {heading}
@@ -730,7 +730,7 @@ export function OfferComposer({
 
         <div className="flex flex-col gap-3 px-5 py-5 md:hidden">
           {offers.map((offer) => (
-            <div className="rounded-2xl border border-[#D8E0EA] bg-white p-4 shadow-sm" key={offer.id}>
+            <div className="rounded-2xl border border-phx-line bg-white p-4 shadow-sm" key={offer.id}>
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   {/* No `truncate` here on purpose — the owner's standing rule is that text is
@@ -759,12 +759,12 @@ export function OfferComposer({
       </AdminTableShell>
 
       {!canManage ? (
-        <p className="inline-flex items-center gap-2 text-xs font-semibold text-[#94A3B8]">
+        <p className="inline-flex items-center gap-2 text-xs font-semibold text-phx-ink-faint">
           <Mail className="h-3.5 w-3.5" /> You can read offers but not create or send them.
         </p>
       ) : null}
       {templates.length === 0 ? (
-        <p className="inline-flex items-center gap-2 text-xs font-semibold text-[#94A3B8]">
+        <p className="inline-flex items-center gap-2 text-xs font-semibold text-phx-ink-faint">
           <Plus className="h-3.5 w-3.5" /> No template yet — open the Letter designer tab to create one.
         </p>
       ) : null}

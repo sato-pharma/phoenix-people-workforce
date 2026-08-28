@@ -119,17 +119,17 @@ export function CrmSyncStatusPanel({
       <div className="flex flex-wrap items-end gap-3 border-t border-slate-100 bg-slate-50 px-5 py-3">
         <label className="flex flex-col gap-1 text-[10px] font-bold uppercase tracking-wider text-slate-500">
           Backfill from
-          <input type="date" value={backfillFrom} onChange={(event) => setBackfillFrom(event.target.value)} className="h-9 border border-[#D8E0EA] bg-white px-2 text-sm" />
+          <input type="date" value={backfillFrom} onChange={(event) => setBackfillFrom(event.target.value)} className="h-9 border border-phx-line bg-white px-2 text-sm" />
         </label>
         <label className="flex flex-col gap-1 text-[10px] font-bold uppercase tracking-wider text-slate-500">
           to
-          <input type="date" value={backfillTo} onChange={(event) => setBackfillTo(event.target.value)} className="h-9 border border-[#D8E0EA] bg-white px-2 text-sm" />
+          <input type="date" value={backfillTo} onChange={(event) => setBackfillTo(event.target.value)} className="h-9 border border-phx-line bg-white px-2 text-sm" />
         </label>
         <button
           type="button"
           onClick={runBackfill}
           disabled={busy || !configured}
-          className="inline-flex h-9 items-center gap-2 border border-[#D8E0EA] bg-white px-3 text-xs font-bold text-[#0F172A] shadow-sm transition hover:border-[#FDBA74] hover:text-[#F97316] disabled:opacity-50"
+          className="inline-flex h-9 items-center gap-2 border border-phx-line bg-white px-3 text-xs font-bold text-phx-ink shadow-sm transition hover:border-phx-accent-line hover:text-phx-accent disabled:opacity-50"
         >
           {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCcw className="h-3.5 w-3.5" />}
           Run backfill (max 45 days/request)

@@ -105,7 +105,7 @@ export default async function MPayrollPage({
       <AdminPageHero
         actions={(
           <Link href={selectedDownloadUrl} target="_blank">
-            <Button className="h-10 rounded-xl border border-[#FDBA74] bg-[#FFF7ED] px-5 font-semibold text-[#9A3412] hover:bg-[#FFEDD5]">
+            <Button className="h-10 rounded-xl border border-phx-accent-line bg-phx-accent-soft px-5 font-semibold text-[#9A3412] hover:bg-[#FFEDD5]">
               <Download className="mr-2 h-4 w-4" />
               Download Payroll XLSX
             </Button>
@@ -126,11 +126,11 @@ export default async function MPayrollPage({
       <Card className={`${adminPanelClassName} p-5`}>
         <form action="/admin/m-payroll" className="grid gap-4 md:grid-cols-[220px_160px_auto]">
           <label className="block">
-            <span className="mb-1.5 block text-xs font-black uppercase tracking-[0.14em] text-[#64748B]">
+            <span className="mb-1.5 block text-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">
               Month
             </span>
             <select
-              className="h-11 w-full rounded-xl border border-[#D8E0EA] bg-white px-3 text-sm font-semibold text-[#0F172A] outline-none transition focus:border-[#FDBA74] focus:ring-2 focus:ring-[#F97316]/12"
+              className="h-11 w-full rounded-xl border border-phx-line bg-white px-3 text-sm font-semibold text-phx-ink outline-none transition focus:border-phx-accent-line focus:ring-2 focus:ring-phx-accent/12"
               defaultValue={String(month)}
               name="month"
             >
@@ -143,11 +143,11 @@ export default async function MPayrollPage({
           </label>
 
           <label className="block">
-            <span className="mb-1.5 block text-xs font-black uppercase tracking-[0.14em] text-[#64748B]">
+            <span className="mb-1.5 block text-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">
               Year
             </span>
             <select
-              className="h-11 w-full rounded-xl border border-[#D8E0EA] bg-white px-3 text-sm font-semibold text-[#0F172A] outline-none transition focus:border-[#FDBA74] focus:ring-2 focus:ring-[#F97316]/12"
+              className="h-11 w-full rounded-xl border border-phx-line bg-white px-3 text-sm font-semibold text-phx-ink outline-none transition focus:border-phx-accent-line focus:ring-2 focus:ring-phx-accent/12"
               defaultValue={String(year)}
               name="year"
             >
@@ -200,19 +200,19 @@ export default async function MPayrollPage({
       ) : null}
 
       <Card className={`${adminPanelClassName} overflow-hidden p-0`}>
-        <div className="border-b border-[#E2E8F0] bg-[#F8FAFC] p-4 sm:p-5">
+        <div className="border-b border-phx-line bg-phx-paper p-4 sm:p-5">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <h2 className="text-base font-bold text-[#0F172A]">Uploaded Salary Sheets</h2>
+            <h2 className="text-base font-bold text-phx-ink">Uploaded Salary Sheets</h2>
             <Badge variant="neutral">{periodBatches.length} sheets</Badge>
           </div>
-          <p className="mt-2 text-sm text-[#64748B]">
+          <p className="mt-2 text-sm text-phx-ink-soft">
             Period selected: {periodLabel} • Showing uploads stored in the payroll vault
           </p>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full min-w-[680px] text-left text-sm">
             <thead>
-              <tr className="border-b border-[#E2E8F0] bg-[#F8FAFC] text-xs font-black uppercase tracking-[0.12em] text-[#64748B]">
+              <tr className="border-b border-phx-line bg-phx-paper text-xs font-black uppercase tracking-[0.12em] text-phx-ink-soft">
                 <th className="px-3 py-3">Uploaded File</th>
                 <th className="px-3 py-3">Uploaded by HR</th>
                 <th className="px-3 py-3">Status</th>
@@ -220,10 +220,10 @@ export default async function MPayrollPage({
                 <th className="px-3 py-3">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-[#E2E8F0]">
+            <tbody className="divide-y divide-phx-line">
               {fetchError || periodBatches.length === 0 ? (
                 <tr>
-                  <td className="px-3 py-8 text-center text-sm text-[#64748B]" colSpan={5}>
+                  <td className="px-3 py-8 text-center text-sm text-phx-ink-soft" colSpan={5}>
                     {fetchError
                       ? "Payroll batches could not be loaded."
                       : `No salary sheets were uploaded for ${periodLabel}.`}
@@ -233,14 +233,14 @@ export default async function MPayrollPage({
                 periodBatches.map((batch) => {
                   const isSelected = selectedBatchId === batch.id;
                   return (
-                    <tr className={`transition-colors ${isSelected ? "bg-[#FFF7ED]" : "hover:bg-[#FCFDFE]"}`} key={batch.id}>
+                    <tr className={`transition-colors ${isSelected ? "bg-phx-accent-soft" : "hover:bg-[#FCFDFE]"}`} key={batch.id}>
                       <td className="px-3 py-3">
-                        <p className="font-semibold text-[#0F172A]">{batch.fileName}</p>
-                        <p className="mt-0.5 text-xs text-[#64748B]">Batch ID: {batch.id}</p>
+                        <p className="font-semibold text-phx-ink">{batch.fileName}</p>
+                        <p className="mt-0.5 text-xs text-phx-ink-soft">Batch ID: {batch.id}</p>
                       </td>
-                      <td className="px-3 py-3 text-[#0F172A]">{batch.uploadedBy ?? "System Upload"}</td>
+                      <td className="px-3 py-3 text-phx-ink">{batch.uploadedBy ?? "System Upload"}</td>
                       <td className="px-3 py-3">{statusBadge(batch.status)}</td>
-                      <td className="px-3 py-3 text-[#64748B]">{formatDateTimeValue(batch.createdAt)}</td>
+                      <td className="px-3 py-3 text-phx-ink-soft">{formatDateTimeValue(batch.createdAt)}</td>
                       <td className="px-3 py-3">
                         <div className="flex flex-wrap gap-2">
                           <Link href={`/api/payroll/${batch.id}/download`} target="_blank">

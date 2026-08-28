@@ -172,9 +172,9 @@ function FieldLabel({
   required?: boolean;
 }) {
   return (
-    <span className="mb-2 block text-[11px] font-black uppercase tracking-[0.16em] text-[#64748B]">
+    <span className="mb-2 block text-[11px] font-black uppercase tracking-[0.16em] text-phx-ink-soft">
       {children}
-      {required ? <span className="ml-1 text-[#F97316]">*</span> : null}
+      {required ? <span className="ml-1 text-phx-accent">*</span> : null}
     </span>
   );
 }
@@ -182,8 +182,8 @@ function FieldLabel({
 function DetailPill({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div className={cn(adminInsetPanelClassName, "px-3 py-2.5")}>
-      <p className="text-[10px] font-black uppercase tracking-[0.15em] text-[#94A3B8]">{label}</p>
-      <p className="mt-1 truncate text-sm font-bold text-[#0F172A]">{value || "-"}</p>
+      <p className="text-[10px] font-black uppercase tracking-[0.15em] text-phx-ink-faint">{label}</p>
+      <p className="mt-1 truncate text-sm font-bold text-phx-ink">{value || "-"}</p>
     </div>
   );
 }
@@ -372,12 +372,12 @@ export function CoachingReportForm({ coach, employees, initialDraft }: CoachingR
           <div className="grid gap-4 p-4 sm:p-5 lg:grid-cols-2">
             <div className={`${adminSoftPanelClassName} p-4`}>
               <div className="mb-4 flex items-center gap-3">
-                <div className="rounded-md bg-[#FFF7ED] p-3 text-[#F97316]">
+                <div className="rounded-md bg-phx-accent-soft p-3 text-phx-accent">
                   <UserRound className="h-5 w-5" />
                 </div>
                 <div>
-                  <p className="text-[11px] font-black uppercase tracking-[0.18em] text-[#64748B]">Coach</p>
-                  <h2 className="text-base font-black tracking-[-0.03em] text-[#0F172A] sm:text-lg">{coach.name}</h2>
+                  <p className="text-[11px] font-black uppercase tracking-[0.18em] text-phx-ink-soft">Coach</p>
+                  <h2 className="text-base font-black tracking-[-0.03em] text-phx-ink sm:text-lg">{coach.name}</h2>
                 </div>
               </div>
               <div className="grid gap-3 sm:grid-cols-2">
@@ -390,7 +390,7 @@ export function CoachingReportForm({ coach, employees, initialDraft }: CoachingR
               <label className="block">
                 <FieldLabel required>Medical Rep</FieldLabel>
                 <SearchableSelect
-                  className="h-12 w-full rounded-md border border-[#D8E0EA] bg-white px-3 text-sm font-bold text-[#0F172A] outline-none transition focus:border-[#FDBA74] focus:ring-4 focus:ring-[#F97316]/10"
+                  className="h-12 w-full rounded-md border border-phx-line bg-white px-3 text-sm font-bold text-phx-ink outline-none transition focus:border-phx-accent-line focus:ring-4 focus:ring-phx-accent/10"
                   onChange={(event) => setSelectedHrId(event.target.value)}
                   value={selectedHrId}
                 >
@@ -416,9 +416,9 @@ export function CoachingReportForm({ coach, employees, initialDraft }: CoachingR
             <label className="block lg:col-span-2">
               <FieldLabel required>Coaching Date</FieldLabel>
               <div className="relative">
-                <CalendarDays className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#94A3B8]" />
+                <CalendarDays className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-phx-ink-faint" />
                 <input
-                  className="h-12 w-full rounded-md border border-[#D8E0EA] bg-white pl-10 pr-3 text-sm font-bold text-[#0F172A] outline-none transition focus:border-[#FDBA74] focus:ring-4 focus:ring-[#F97316]/10"
+                  className="h-12 w-full rounded-md border border-phx-line bg-white pl-10 pr-3 text-sm font-bold text-phx-ink outline-none transition focus:border-phx-accent-line focus:ring-4 focus:ring-phx-accent/10"
                   onChange={(event) => setCoachingDate(event.target.value)}
                   type="date"
                   value={coachingDate}
@@ -433,12 +433,12 @@ export function CoachingReportForm({ coach, employees, initialDraft }: CoachingR
             description="Rate every field observation from 0 to 5. The score panel updates when all 20 items are complete."
             title="Structured Scoring"
           />
-          <div className="border-b border-[#E2E8F0] bg-[#F8FAFC] px-4 py-3 sm:px-5">
+          <div className="border-b border-phx-line bg-phx-paper px-4 py-3 sm:px-5">
             <div className="grid gap-2 md:grid-cols-6">
               {ratingMeanings.map((meaning) => (
-                <div className="rounded-md border border-[#E2E8F0] bg-white px-3 py-2" key={meaning.value}>
-                  <p className="text-xs font-black text-[#0F172A]">{meaning.value}</p>
-                  <p className="mt-0.5 text-[11px] font-semibold leading-4 text-[#64748B]">{meaning.label}</p>
+                <div className="rounded-md border border-phx-line bg-white px-3 py-2" key={meaning.value}>
+                  <p className="text-xs font-black text-phx-ink">{meaning.value}</p>
+                  <p className="mt-0.5 text-[11px] font-semibold leading-4 text-phx-ink-soft">{meaning.label}</p>
                 </div>
               ))}
             </div>
@@ -446,24 +446,24 @@ export function CoachingReportForm({ coach, employees, initialDraft }: CoachingR
           <div className="space-y-4 p-4 sm:p-5">
             {groups.map((group) => (
               <div className={`${adminSoftPanelClassName} overflow-hidden`} key={group.category}>
-                <div className="flex flex-col gap-2 border-b border-[#E2E8F0] bg-white px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex flex-col gap-2 border-b border-phx-line bg-white px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
                   <div>
-                    <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[#F97316]">
+                    <p className="text-[10px] font-black uppercase tracking-[0.18em] text-phx-accent">
                       {categoryLetters[group.category]}) Parameter
                     </p>
-                    <h3 className="mt-1 text-base font-black tracking-[-0.02em] text-[#0F172A]">{group.label}</h3>
+                    <h3 className="mt-1 text-base font-black tracking-[-0.02em] text-phx-ink">{group.label}</h3>
                   </div>
-                  <span className="rounded-full border border-[#E2E8F0] bg-[#F8FAFC] px-3 py-1 text-xs font-bold text-[#64748B]">
+                  <span className="rounded-full border border-phx-line bg-phx-paper px-3 py-1 text-xs font-bold text-phx-ink-soft">
                     {group.items.length} scoring items
                   </span>
                 </div>
-                <div className="divide-y divide-[#E2E8F0]">
+                <div className="divide-y divide-phx-line">
                   {group.items.map((item) => (
                     <div className="grid gap-3 px-4 py-3" key={item.key}>
                       <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
                         <div>
-                          <p className="text-sm font-bold text-[#0F172A]">{item.label}</p>
-                          <p className="mt-1 text-xs font-semibold uppercase tracking-[0.12em] text-[#94A3B8]">
+                          <p className="text-sm font-bold text-phx-ink">{item.label}</p>
+                          <p className="mt-1 text-xs font-semibold uppercase tracking-[0.12em] text-phx-ink-faint">
                             Point {item.displayOrder} of {coachingScoreItems.length}
                           </p>
                         </div>
@@ -475,8 +475,8 @@ export function CoachingReportForm({ coach, employees, initialDraft }: CoachingR
                                 className={cn(
                                   "h-10 w-full rounded-xl border text-sm font-black transition lg:w-10",
                                   selected
-                                    ? "border-[#F97316] bg-[#F97316] text-white shadow-[0_10px_20px_rgba(249,115,22,0.22)]"
-                                    : "border-[#D8E0EA] bg-white text-[#475569] hover:border-[#FDBA74] hover:bg-[#FFF7ED]",
+                                    ? "border-phx-accent bg-phx-accent text-white shadow-[0_10px_20px_rgba(249,115,22,0.22)]"
+                                    : "border-phx-line bg-white text-phx-ink-2 hover:border-phx-accent-line hover:bg-phx-accent-soft",
                                 )}
                                 key={rating}
                                 onClick={() => setScores((current) => ({ ...current, [item.key]: rating }))}
@@ -490,22 +490,22 @@ export function CoachingReportForm({ coach, employees, initialDraft }: CoachingR
                       </div>
                       <div className="grid gap-3 lg:grid-cols-2">
                         <label className="block">
-                          <span className="mb-1.5 block text-[10px] font-black uppercase tracking-[0.14em] text-[#64748B]">
+                          <span className="mb-1.5 block text-[10px] font-black uppercase tracking-[0.14em] text-phx-ink-soft">
                             Area to be Improved
                           </span>
                           <textarea
-                            className="min-h-20 w-full rounded-md border border-[#D8E0EA] bg-white px-3 py-2.5 text-sm font-semibold leading-5 text-[#0F172A] outline-none transition placeholder:text-[#94A3B8] focus:border-[#FDBA74] focus:ring-4 focus:ring-[#F97316]/10"
+                            className="min-h-20 w-full rounded-md border border-phx-line bg-white px-3 py-2.5 text-sm font-semibold leading-5 text-phx-ink outline-none transition placeholder:text-phx-ink-faint focus:border-phx-accent-line focus:ring-4 focus:ring-phx-accent/10"
                             onChange={(event) => updateScoreNote(item.key, "areaToBeImproved", event.target.value)}
                             placeholder="What should be improved for this point?"
                             value={scoreNotes[item.key]?.areaToBeImproved ?? ""}
                           />
                         </label>
                         <label className="block">
-                          <span className="mb-1.5 block text-[10px] font-black uppercase tracking-[0.14em] text-[#64748B]">
+                          <span className="mb-1.5 block text-[10px] font-black uppercase tracking-[0.14em] text-phx-ink-soft">
                             Strength Point
                           </span>
                           <textarea
-                            className="min-h-20 w-full rounded-md border border-[#D8E0EA] bg-white px-3 py-2.5 text-sm font-semibold leading-5 text-[#0F172A] outline-none transition placeholder:text-[#94A3B8] focus:border-[#FDBA74] focus:ring-4 focus:ring-[#F97316]/10"
+                            className="min-h-20 w-full rounded-md border border-phx-line bg-white px-3 py-2.5 text-sm font-semibold leading-5 text-phx-ink outline-none transition placeholder:text-phx-ink-faint focus:border-phx-accent-line focus:ring-4 focus:ring-phx-accent/10"
                             onChange={(event) => updateScoreNote(item.key, "strengthPoint", event.target.value)}
                             placeholder="What was strong in this point?"
                             value={scoreNotes[item.key]?.strengthPoint ?? ""}
@@ -534,7 +534,7 @@ export function CoachingReportForm({ coach, employees, initialDraft }: CoachingR
               <label className="block" key={label as string}>
                 <FieldLabel required>{label as string}</FieldLabel>
                 <textarea
-                  className="min-h-28 w-full rounded-md border border-[#D8E0EA] bg-white px-4 py-3 text-sm font-semibold leading-6 text-[#0F172A] outline-none transition placeholder:text-[#94A3B8] focus:border-[#FDBA74] focus:ring-4 focus:ring-[#F97316]/10"
+                  className="min-h-28 w-full rounded-md border border-phx-line bg-white px-4 py-3 text-sm font-semibold leading-6 text-phx-ink outline-none transition placeholder:text-phx-ink-faint focus:border-phx-accent-line focus:ring-4 focus:ring-phx-accent/10"
                   onChange={(event) => (setValue as React.Dispatch<React.SetStateAction<string>>)(event.target.value)}
                   placeholder={`Write ${String(label).toLowerCase()}...`}
                   value={value as string}
@@ -547,13 +547,13 @@ export function CoachingReportForm({ coach, employees, initialDraft }: CoachingR
 
       <aside className="space-y-4 xl:sticky xl:top-6 xl:self-start">
         <Card className={`${adminPanelClassName} overflow-hidden p-0`}>
-          <div className="border-b border-[#E2E8F0] bg-[#0F172A] px-5 py-5 text-white">
+          <div className="border-b border-phx-line bg-phx-ink px-5 py-5 text-white">
             <div className="flex items-center gap-3">
-              <div className="rounded-md bg-white/10 p-3 text-[#FDBA74]">
+              <div className="rounded-md bg-white/10 p-3 text-phx-accent">
                 <Sparkles className="h-5 w-5" />
               </div>
               <div>
-                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-[#FDBA74]">Live Score</p>
+                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-phx-accent">Live Score</p>
                 <h2 className="text-xl font-black tracking-[-0.04em]">Field Excellence</h2>
               </div>
             </div>
@@ -567,12 +567,12 @@ export function CoachingReportForm({ coach, employees, initialDraft }: CoachingR
 
             <div className={`${adminSoftPanelClassName} p-4`}>
               <div className="mb-2 flex items-center justify-between gap-3">
-                <p className="text-[11px] font-black uppercase tracking-[0.16em] text-[#64748B]">Completion</p>
-                <p className="text-xs font-black text-[#0F172A]">{Math.round((completedScores / coachingScoreItems.length) * 100)}%</p>
+                <p className="text-[11px] font-black uppercase tracking-[0.16em] text-phx-ink-soft">Completion</p>
+                <p className="text-xs font-black text-phx-ink">{Math.round((completedScores / coachingScoreItems.length) * 100)}%</p>
               </div>
-              <div className="h-2 overflow-hidden rounded-full bg-[#E2E8F0]">
+              <div className="h-2 overflow-hidden rounded-full bg-phx-line">
                 <div
-                  className="h-full rounded-full bg-[#F97316] transition-all"
+                  className="h-full rounded-full bg-phx-accent transition-all"
                   style={{ width: `${(completedScores / coachingScoreItems.length) * 100}%` }}
                 />
               </div>
@@ -581,10 +581,10 @@ export function CoachingReportForm({ coach, employees, initialDraft }: CoachingR
             {liveScore ? (
               <>
                 <div className={`${adminSoftPanelClassName} p-4`}>
-                  <p className="text-[11px] font-black uppercase tracking-[0.16em] text-[#64748B]">Final Score</p>
+                  <p className="text-[11px] font-black uppercase tracking-[0.16em] text-phx-ink-soft">Final Score</p>
                   <div className="mt-2 flex items-end justify-between gap-3">
-                    <p className="text-3xl font-black tracking-[-0.05em] text-[#0F172A] sm:text-4xl">{liveScore.finalScorePercent}%</p>
-                    <p className="pb-1 text-sm font-bold text-[#64748B]">{liveScore.actualScore} / {liveScore.maxScore}</p>
+                    <p className="text-3xl font-black tracking-[-0.05em] text-phx-ink sm:text-4xl">{liveScore.finalScorePercent}%</p>
+                    <p className="pb-1 text-sm font-bold text-phx-ink-soft">{liveScore.actualScore} / {liveScore.maxScore}</p>
                   </div>
                 </div>
 
@@ -597,24 +597,24 @@ export function CoachingReportForm({ coach, employees, initialDraft }: CoachingR
                     <div className="flex items-start gap-3">
                       <Award className="mt-0.5 h-4 w-4 text-emerald-600" />
                       <div>
-                        <p className="text-[10px] font-black uppercase tracking-[0.14em] text-[#64748B]">Strongest Parameter</p>
-                        <p className="mt-1 text-sm font-black text-[#0F172A]">{liveScore.strongestParameter.label}</p>
+                        <p className="text-[10px] font-black uppercase tracking-[0.14em] text-phx-ink-soft">Strongest Parameter</p>
+                        <p className="mt-1 text-sm font-black text-phx-ink">{liveScore.strongestParameter.label}</p>
                       </div>
                     </div>
                   </div>
                   <div className={`${adminInsetPanelClassName} p-4`}>
                     <div className="flex items-start gap-3">
-                      <Target className="mt-0.5 h-4 w-4 text-[#F97316]" />
+                      <Target className="mt-0.5 h-4 w-4 text-phx-accent" />
                       <div>
-                        <p className="text-[10px] font-black uppercase tracking-[0.14em] text-[#64748B]">Key Development Area</p>
-                        <p className="mt-1 text-sm font-black text-[#0F172A]">{liveScore.keyDevelopmentArea.label}</p>
+                        <p className="text-[10px] font-black uppercase tracking-[0.14em] text-phx-ink-soft">Key Development Area</p>
+                        <p className="mt-1 text-sm font-black text-phx-ink">{liveScore.keyDevelopmentArea.label}</p>
                       </div>
                     </div>
                   </div>
                 </div>
               </>
             ) : (
-              <div className="rounded-md border border-dashed border-[#CBD5E1] bg-[#F8FAFC] p-4 text-sm font-semibold leading-6 text-[#64748B]">
+              <div className="rounded-md border border-dashed border-phx-line-strong bg-phx-paper p-4 text-sm font-semibold leading-6 text-phx-ink-soft">
                 Complete all 20 ratings to calculate the final score, zone, strongest parameter, and key development area.
               </div>
             )}
@@ -635,15 +635,15 @@ export function CoachingReportForm({ coach, employees, initialDraft }: CoachingR
 
             {result ? (
               <div className={`${adminInsetPanelClassName} p-4`}>
-                <p className="text-[10px] font-black uppercase tracking-[0.16em] text-[#64748B]">Latest Result</p>
-                <p className="mt-1 text-sm font-black text-[#0F172A]">{result.report.report_number}</p>
-                <p className="mt-1 text-xs font-semibold uppercase tracking-[0.12em] text-[#F97316]">{result.report.status.replace(/_/g, " ")}</p>
+                <p className="text-[10px] font-black uppercase tracking-[0.16em] text-phx-ink-soft">Latest Result</p>
+                <p className="mt-1 text-sm font-black text-phx-ink">{result.report.report_number}</p>
+                <p className="mt-1 text-xs font-semibold uppercase tracking-[0.12em] text-phx-accent">{result.report.status.replace(/_/g, " ")}</p>
               </div>
             ) : null}
 
             <div className="grid gap-2">
               <Button
-                className="h-12 gap-2 rounded-md bg-white text-[#0F172A] ring-1 ring-[#D8E0EA] hover:bg-[#F8FAFC]"
+                className="h-12 gap-2 rounded-md bg-white text-phx-ink ring-1 ring-phx-line hover:bg-phx-paper"
                 disabled={isBusy}
                 onClick={handleSaveDraft}
                 variant="secondary"
@@ -652,7 +652,7 @@ export function CoachingReportForm({ coach, employees, initialDraft }: CoachingR
                 Save Draft
               </Button>
               <Button
-                className="h-12 gap-2 rounded-md bg-[#F97316] font-black shadow-[0_14px_30px_rgba(249,115,22,0.22)] hover:bg-[#EA580C]"
+                className="h-12 gap-2 rounded-md bg-phx-accent font-black shadow-[0_14px_30px_rgba(249,115,22,0.22)] hover:bg-phx-accent-hover"
                 disabled={isBusy}
                 onClick={handleSubmitReport}
               >
@@ -661,8 +661,8 @@ export function CoachingReportForm({ coach, employees, initialDraft }: CoachingR
               </Button>
             </div>
 
-            <div className="flex items-start gap-3 rounded-md border border-[#E2E8F0] bg-[#F8FAFC] p-4 text-xs font-semibold leading-5 text-[#64748B]">
-              <ClipboardCheck className="mt-0.5 h-4 w-4 text-[#F97316]" />
+            <div className="flex items-start gap-3 rounded-md border border-phx-line bg-phx-paper p-4 text-xs font-semibold leading-5 text-phx-ink-soft">
+              <ClipboardCheck className="mt-0.5 h-4 w-4 text-phx-accent" />
               <p>No notification or employee acknowledgment UI is triggered from this screen yet.</p>
             </div>
           </div>

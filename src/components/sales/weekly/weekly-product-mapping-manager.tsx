@@ -195,11 +195,11 @@ export function WeeklyProductMappingManager({
     <div className="space-y-5 p-4 sm:p-6">
       <header>
         <div className="flex items-center gap-2">
-          <span className="h-2 w-2 rounded-full bg-[#F97316]" aria-hidden />
-          <span className="text-[11px] font-black uppercase tracking-[0.16em] text-[#F97316]">Weekly Sales</span>
+          <span className="h-2 w-2 rounded-full bg-phx-accent" aria-hidden />
+          <span className="text-[11px] font-black uppercase tracking-[0.16em] text-phx-accent">Weekly Sales</span>
         </div>
-        <h1 className="mt-1 text-xl font-black text-[#0F172A]">Product Mapping</h1>
-        <p className="mt-1 text-sm font-medium text-[#64748B]">
+        <h1 className="mt-1 text-xl font-black text-phx-ink">Product Mapping</h1>
+        <p className="mt-1 text-sm font-medium text-phx-ink-soft">
           Tell the system which master product each distributor code or name means. The weekly upload converts the
           distributor&apos;s own codes to your products using these aliases. Price and line come from the Source-of-Sales
           master — a product missing either will block an upload until it is fixed there.
@@ -215,12 +215,12 @@ export function WeeklyProductMappingManager({
       {notice && <div className="border border-emerald-200 bg-emerald-50 p-3 text-sm font-semibold text-emerald-700">{notice}</div>}
 
       {/* Toolbar */}
-      <div className="flex flex-wrap items-center gap-2 rounded-[6px] border border-[#E2E8F0] bg-white p-3 shadow-sm">
+      <div className="flex flex-wrap items-center gap-2 rounded-[6px] border border-phx-line bg-white p-3 shadow-sm">
         {lockedDistributor ? null : (
           <>
-            <span className="text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">Distributor</span>
+            <span className="text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-soft">Distributor</span>
             <SearchableSelect
-              className="h-9 min-w-[14rem] border border-[#E2E8F0] bg-white px-2 text-sm font-bold text-[#0F172A] outline-none focus:border-[#FDBA74]"
+              className="h-9 min-w-[14rem] border border-phx-line bg-white px-2 text-sm font-bold text-phx-ink outline-none focus:border-phx-accent-line"
               disabled={busy}
               value={distributor}
               onChange={(event) => {
@@ -238,13 +238,13 @@ export function WeeklyProductMappingManager({
         )}
         <div className="ml-auto flex items-center gap-2">
           <a
-            className="inline-flex h-9 items-center gap-1 rounded-[6px] border border-[#E2E8F0] px-3 text-xs font-bold text-[#334155] transition hover:border-[#FDBA74]"
+            className="inline-flex h-9 items-center gap-1 rounded-[6px] border border-phx-line px-3 text-xs font-bold text-phx-ink-2 transition hover:border-phx-accent-line"
             href={templateHref}
           >
             <Download className="h-4 w-4" /> Template
           </a>
           <button
-            className="inline-flex h-9 items-center gap-1 rounded-[6px] border border-[#E2E8F0] px-3 text-xs font-bold text-[#334155] transition hover:border-[#FDBA74] disabled:opacity-60"
+            className="inline-flex h-9 items-center gap-1 rounded-[6px] border border-phx-line px-3 text-xs font-bold text-phx-ink-2 transition hover:border-phx-accent-line disabled:opacity-60"
             disabled={busy}
             onClick={() => fileInput.current?.click()}
             type="button"
@@ -256,10 +256,10 @@ export function WeeklyProductMappingManager({
       </div>
 
       {/* Add row */}
-      <div className="flex flex-wrap items-end gap-2 rounded-[6px] border border-[#E2E8F0] bg-white p-3 shadow-sm">
+      <div className="flex flex-wrap items-end gap-2 rounded-[6px] border border-phx-line bg-white p-3 shadow-sm">
         <Field label="Distributor alias (code or name)">
           <input
-            className="h-9 w-64 border border-[#E2E8F0] px-2 text-sm text-[#0F172A] outline-none focus:border-[#FDBA74]"
+            className="h-9 w-64 border border-phx-line px-2 text-sm text-phx-ink outline-none focus:border-phx-accent-line"
             disabled={busy}
             onChange={(event) => setDraft((prev) => ({ ...prev, alias: event.target.value }))}
             placeholder="e.g. 607294 or ROYAFLOXACIN 500 TAB"
@@ -268,7 +268,7 @@ export function WeeklyProductMappingManager({
         </Field>
         <Field label="Kind">
           <SearchableSelect
-            className="h-9 w-28 border border-[#E2E8F0] bg-white px-2 text-sm font-semibold text-[#0F172A] outline-none focus:border-[#FDBA74]"
+            className="h-9 w-28 border border-phx-line bg-white px-2 text-sm font-semibold text-phx-ink outline-none focus:border-phx-accent-line"
             disabled={busy}
             onChange={(event) => setDraft((prev) => ({ ...prev, aliasKind: event.target.value === "name" ? "name" : "code" }))}
             value={draft.aliasKind}
@@ -279,7 +279,7 @@ export function WeeklyProductMappingManager({
         </Field>
         <Field label="Master product">
           <SearchableSelect
-            className="h-9 w-72 border border-[#E2E8F0] bg-white px-2 text-sm font-semibold text-[#0F172A] outline-none focus:border-[#FDBA74]"
+            className="h-9 w-72 border border-phx-line bg-white px-2 text-sm font-semibold text-phx-ink outline-none focus:border-phx-accent-line"
             disabled={busy}
             onChange={(event) => {
               setDraft((prev) => ({ ...prev, productCode: event.target.value }));
@@ -314,7 +314,7 @@ export function WeeklyProductMappingManager({
           </span>
         )}
         <button
-          className="inline-flex h-9 items-center gap-1 rounded-[6px] bg-[#F97316] px-4 text-sm font-black text-white transition hover:bg-[#EA6A0C] disabled:opacity-60"
+          className="inline-flex h-9 items-center gap-1 rounded-[6px] bg-phx-accent px-4 text-sm font-black text-white transition hover:bg-[#EA6A0C] disabled:opacity-60"
           disabled={busy}
           onClick={addDraft}
           type="button"
@@ -324,7 +324,7 @@ export function WeeklyProductMappingManager({
       </div>
 
       {/* Table */}
-      <div className="overflow-x-auto rounded-[6px] border border-[#E2E8F0] bg-white shadow-sm">
+      <div className="overflow-x-auto rounded-[6px] border border-phx-line bg-white shadow-sm">
         <table className="w-full text-sm">
           <thead className="bg-[#020617] text-left text-[11px] font-black uppercase tracking-wide text-white">
             <tr>
@@ -337,18 +337,18 @@ export function WeeklyProductMappingManager({
           <tbody>
             {aliases.length === 0 && (
               <tr>
-                <td className="px-3 py-4 text-center text-[#94A3B8]" colSpan={4}>
+                <td className="px-3 py-4 text-center text-phx-ink-faint" colSpan={4}>
                   No aliases yet — add one above or upload the template.
                 </td>
               </tr>
             )}
             {aliases.map((alias) => (
               <tr className="border-t border-[#FFE8D6] align-middle" key={alias.id}>
-                <td className="px-3 py-2 font-semibold text-[#0F172A]">{alias.alias}</td>
-                <td className="px-3 py-2 text-[#64748B]">{alias.aliasKind}</td>
+                <td className="px-3 py-2 font-semibold text-phx-ink">{alias.alias}</td>
+                <td className="px-3 py-2 text-phx-ink-soft">{alias.aliasKind}</td>
                 <td className="px-3 py-2">
-                  <span className="font-semibold text-[#0F172A]">{alias.productName}</span>
-                  <span className="ml-1 text-[11px] font-medium text-[#94A3B8]">{alias.productCode}</span>
+                  <span className="font-semibold text-phx-ink">{alias.productName}</span>
+                  <span className="ml-1 text-[11px] font-medium text-phx-ink-faint">{alias.productCode}</span>
                   {!alias.resolvable && (
                     <span className="ml-2 inline-flex items-center gap-1 bg-amber-100 px-2 py-0.5 text-[10px] font-black uppercase text-amber-700">
                       <AlertTriangle className="h-3 w-3" /> fix price/line in master
@@ -357,7 +357,7 @@ export function WeeklyProductMappingManager({
                 </td>
                 <td className="px-3 py-2 text-right">
                   <button
-                    className="inline-flex items-center gap-1 border border-[#E2E8F0] px-2 py-1 text-xs font-bold text-[#B91C1C] transition hover:border-[#FCA5A5]"
+                    className="inline-flex items-center gap-1 border border-phx-line px-2 py-1 text-xs font-bold text-[#B91C1C] transition hover:border-[#FCA5A5]"
                     disabled={busy}
                     onClick={() => void mutate({ action: "delete", id: alias.id })}
                     type="button"
@@ -377,7 +377,7 @@ export function WeeklyProductMappingManager({
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <label className="flex flex-col gap-1">
-      <span className="text-[10px] font-black uppercase tracking-[0.12em] text-[#94A3B8]">{label}</span>
+      <span className="text-[10px] font-black uppercase tracking-[0.12em] text-phx-ink-faint">{label}</span>
       {children}
     </label>
   );

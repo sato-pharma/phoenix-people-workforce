@@ -188,8 +188,8 @@ export function PlanDecisionActions({
   // Nothing actionable → render nothing (the page shows a read-only banner instead).
   if (!hasStandard && !canAcknowledge && !isEditRequestDecision && !canRequestVisitDetails) return null;
 
-  const shell = "border border-[#e4e9ec] bg-white";
-  const headerBar = "border-b border-[#e4e9ec] bg-slate-900 px-4 py-2.5";
+  const shell = "border border-phx-line bg-white";
+  const headerBar = "border-b border-phx-line bg-slate-900 px-4 py-2.5";
   const headerText = "text-[11px] font-black uppercase tracking-[0.14em] text-white";
 
   // ── Premium per-activity return composer ─────────────────────────────────────

@@ -8,38 +8,38 @@ type Tone = "orange" | "emerald" | "blue" | "slate" | "rose" | "violet";
 
 const toneClasses: Record<Tone, { border: string; icon: string; line: string; text: string }> = {
   blue: {
-    border: "border-[#E2E8F0]",
-    icon: "bg-[#F8FAFC] text-[#0F172A]",
+    border: "border-phx-line",
+    icon: "bg-phx-paper text-phx-ink",
     line: "bg-[#3B82F6]",
-    text: "text-[#0F172A]",
+    text: "text-phx-ink",
   },
   emerald: {
-    border: "border-[#E2E8F0]",
-    icon: "bg-[#F8FAFC] text-[#22C55E]",
+    border: "border-phx-line",
+    icon: "bg-phx-paper text-[#22C55E]",
     line: "bg-[#22C55E]",
     text: "text-[#22C55E]",
   },
   orange: {
-    border: "border-[#E2E8F0]",
-    icon: "bg-[#F8FAFC] text-[#F97316]",
-    line: "bg-[#F97316]",
-    text: "text-[#F97316]",
+    border: "border-phx-line",
+    icon: "bg-phx-paper text-phx-accent",
+    line: "bg-phx-accent",
+    text: "text-phx-accent",
   },
   rose: {
-    border: "border-[#E2E8F0]",
-    icon: "bg-[#F8FAFC] text-[#EF4444]",
+    border: "border-phx-line",
+    icon: "bg-phx-paper text-[#EF4444]",
     line: "bg-[#EF4444]",
     text: "text-[#EF4444]",
   },
   slate: {
-    border: "border-[#E2E8F0]",
-    icon: "bg-[#F8FAFC] text-[#0F172A]",
-    line: "bg-[#64748B]",
-    text: "text-[#64748B]",
+    border: "border-phx-line",
+    icon: "bg-phx-paper text-phx-ink",
+    line: "bg-phx-ink-soft",
+    text: "text-phx-ink-soft",
   },
   violet: {
-    border: "border-[#E2E8F0]",
-    icon: "bg-[#F8FAFC] text-[#8B5CF6]",
+    border: "border-phx-line",
+    icon: "bg-phx-paper text-[#8B5CF6]",
     line: "bg-[#8B5CF6]",
     text: "text-[#8B5CF6]",
   },
@@ -65,8 +65,8 @@ export function KPICard({ icon: Icon, label, value, delta, spark, tone = "orange
       <div className="p-4">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <p className="text-[10px] font-black uppercase tracking-[0.16em] text-[#64748B]">{label}</p>
-            <p className="mt-1 truncate text-2xl font-black text-[#0F172A]">{value}</p>
+            <p className="text-[10px] font-black uppercase tracking-[0.16em] text-phx-ink-soft">{label}</p>
+            <p className="mt-1 truncate text-2xl font-black text-phx-ink">{value}</p>
           </div>
           <span className={cn("flex h-10 w-10 shrink-0 items-center justify-center rounded-xl", toneStyle.icon)}>
             <Icon className="h-5 w-5" />

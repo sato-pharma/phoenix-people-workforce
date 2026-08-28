@@ -1106,7 +1106,7 @@ export function AccessControlManager({
         >
           <div className="max-h-96 overflow-y-auto">
             <table className="min-w-full text-left text-sm">
-              <thead className="bg-[#F8FAFC] text-[10px] font-black uppercase tracking-[0.16em] text-[#64748B]">
+              <thead className="bg-phx-paper text-[10px] font-black uppercase tracking-[0.16em] text-phx-ink-soft">
                 <tr>
                   <th className="px-4 py-3">Row</th>
                   <th className="px-4 py-3">HR_ID</th>
@@ -1119,7 +1119,7 @@ export function AccessControlManager({
               </thead>
               <tbody>
                 {uploadResults.map((result) => (
-                  <tr className="border-b border-[#E2E8F0]" key={result.row}>
+                  <tr className="border-b border-phx-line" key={result.row}>
                     <td className="px-4 py-2 font-mono text-xs">{result.row}</td>
                     <td className="px-4 py-2">{result.hrId}</td>
                     <td className="px-4 py-2">{result.name}</td>
@@ -1248,7 +1248,7 @@ export function AccessControlManager({
           <div className="grid gap-8 xl:grid-cols-[420px_minmax(0,1fr)]">
             <Card className={`${panelClassName} h-fit p-0 xl:sticky xl:top-6`}>
               <AdminSectionHeader
-                action={<div className="text-xs font-semibold text-[#0F172A]">{canManageUsers ? "Active" : "Read only"}</div>}
+                action={<div className="text-xs font-semibold text-phx-ink">{canManageUsers ? "Active" : "Read only"}</div>}
                 description="Create or update a user profile, then issue setup and reset links from the user table."
                 title="User editor"
               />

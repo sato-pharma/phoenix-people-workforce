@@ -68,7 +68,7 @@ export function Topbar({
       <header className={`sticky top-0 z-20 px-3 py-3 backdrop-blur-xl sm:px-6 ${
         isAdminMode
           ? "border-b border-[#1a1a1a] bg-[#000000]"
-          : "border-b border-[#E2E8F0]/80 bg-white/82"
+          : "border-b border-phx-line/80 bg-white/82"
       }`}>
         <div className="mx-auto flex min-h-14 w-full max-w-[1760px] items-center gap-2 sm:min-h-16 sm:gap-4">
         <button
@@ -76,7 +76,7 @@ export function Topbar({
           className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded lg:hidden ${
             isAdminMode
               ? "text-[#D4DDE8] hover:bg-[#1a1a1a] hover:text-[#F8B56B]"
-              : "text-[#64748B] hover:bg-[#F8FAFC] hover:text-[#0F172A]"
+              : "text-phx-ink-soft hover:bg-phx-paper hover:text-phx-ink"
           }`}
           onClick={() => setMenuOpen(true)}
           type="button"
@@ -88,16 +88,16 @@ export function Topbar({
           aria-label="Open command palette"
           className={`relative hidden h-10 flex-1 items-center gap-2 rounded border pl-9 pr-2 text-left text-sm md:flex md:max-w-[280px] xl:max-w-xl ${
             isAdminMode
-              ? "border-[#333333] bg-[#0B0B0B] text-[#64748B] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] hover:border-[#F97316]"
-              : "border-[#E2E8F0] bg-[#FCFDFE] text-[#64748B] shadow-[inset_0_1px_0_rgba(255,255,255,0.55)] hover:border-[#FDBA74]"
+              ? "border-[#333333] bg-[#0B0B0B] text-phx-ink-soft shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] hover:border-phx-accent"
+              : "border-phx-line bg-[#FCFDFE] text-phx-ink-soft shadow-[inset_0_1px_0_rgba(255,255,255,0.55)] hover:border-phx-accent-line"
           }`}
           onClick={() => window.dispatchEvent(new Event(COMMAND_PALETTE_EVENT))}
           type="button"
         >
-          <Search className={`pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 ${isAdminMode ? "text-[#F8B56B]" : "text-[#64748B]"}`} />
+          <Search className={`pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 ${isAdminMode ? "text-[#F8B56B]" : "text-phx-ink-soft"}`} />
           <span className="truncate">{systemUiText.globalSearchPlaceholder}</span>
           <kbd className={`ml-auto hidden shrink-0 items-center gap-0.5 border px-1.5 py-0.5 text-[10px] font-semibold sm:flex ${
-            isAdminMode ? "border-[#333333] bg-[#111111] text-[#94A3B8]" : "border-[#E2E8F0] bg-white text-[#64748B]"
+            isAdminMode ? "border-[#333333] bg-[#111111] text-phx-ink-faint" : "border-phx-line bg-white text-phx-ink-soft"
           }`}>
             ⌘K
           </kbd>
@@ -107,7 +107,7 @@ export function Topbar({
           <button
             aria-label="Open command palette"
             className={`inline-flex h-9 w-9 items-center justify-center rounded md:hidden ${
-              isAdminMode ? "text-[#D4DDE8] hover:bg-[#1a1a1a] hover:text-[#F8B56B]" : "text-[#64748B] hover:bg-[#F8FAFC] hover:text-[#0F172A]"
+              isAdminMode ? "text-[#D4DDE8] hover:bg-[#1a1a1a] hover:text-[#F8B56B]" : "text-phx-ink-soft hover:bg-phx-paper hover:text-phx-ink"
             }`}
             onClick={() => window.dispatchEvent(new Event(COMMAND_PALETTE_EVENT))}
             type="button"
@@ -123,7 +123,7 @@ export function Topbar({
               className={`flex max-w-[calc(100vw-7rem)] items-center gap-2 rounded border py-1 pl-1 pr-2 sm:max-w-none sm:gap-3 sm:pr-3 ${
                 isAdminMode
                   ? "border-[#333333] bg-[#0B0B0B] shadow-[0_10px_30px_rgba(0,0,0,0.24)] hover:bg-[#111111]"
-                  : "border-[#E2E8F0] bg-white/95 shadow-[0_10px_30px_rgba(15,23,42,0.06)] hover:bg-[#FCFDFE]"
+                  : "border-phx-line bg-white/95 shadow-[0_10px_30px_rgba(15,23,42,0.06)] hover:bg-[#FCFDFE]"
               }`}
               onClick={() => setUserMenuOpen(!userMenuOpen)}
               type="button"
@@ -136,19 +136,19 @@ export function Topbar({
                 width={36}
               />
               <div className="hidden text-left sm:block">
-                <p className={`text-sm font-semibold ${isAdminMode ? "text-white" : "text-[#0F172A]"}`}>{viewer.displayName}</p>
-                <p className={`text-xs ${isAdminMode ? "text-[#94A3B8]" : "text-[#64748B]"}`}>{viewer.roleLabel}</p>
+                <p className={`text-sm font-semibold ${isAdminMode ? "text-white" : "text-phx-ink"}`}>{viewer.displayName}</p>
+                <p className={`text-xs ${isAdminMode ? "text-phx-ink-faint" : "text-phx-ink-soft"}`}>{viewer.roleLabel}</p>
               </div>
-              <ChevronDown className={`hidden h-4 w-4 sm:block ${isAdminMode ? "text-[#F8B56B]" : "text-[#64748B]"}`} />
+              <ChevronDown className={`hidden h-4 w-4 sm:block ${isAdminMode ? "text-[#F8B56B]" : "text-phx-ink-soft"}`} />
             </button>
 
             {userMenuOpen && (
               <div className={`absolute right-0 top-full z-30 mt-1.5 w-56 overflow-hidden rounded border shadow-lg ${
-                isAdminMode ? "border-[#333333] bg-[#050505]" : "border-[#E2E8F0] bg-white"
+                isAdminMode ? "border-[#333333] bg-[#050505]" : "border-phx-line bg-white"
               }`} role="menu">
                 <Link
                   className={`flex w-full items-center gap-2 px-4 py-2 text-sm ${
-                    isAdminMode ? "text-[#D4DDE8] hover:bg-[#1a1a1a] hover:text-[#F8B56B]" : "text-[#0F172A] hover:bg-[#F8FAFC]"
+                    isAdminMode ? "text-[#D4DDE8] hover:bg-[#1a1a1a] hover:text-[#F8B56B]" : "text-phx-ink hover:bg-phx-paper"
                   }`}
                   href={profileHref}
                   onClick={() => setUserMenuOpen(false)}
@@ -157,14 +157,14 @@ export function Topbar({
                   <UserCog className="h-4 w-4" />
                   My Profile
                 </Link>
-                <div className={`px-4 py-2 text-xs ${isAdminMode ? "text-[#94A3B8]" : "text-[#64748B]"}`}>
+                <div className={`px-4 py-2 text-xs ${isAdminMode ? "text-phx-ink-faint" : "text-phx-ink-soft"}`}>
                   <p className="font-semibold">{viewer.roleLabel}</p>
                   <p className="mt-0.5 whitespace-nowrap">{viewer.displayName}</p>
                 </div>
-                <div className={`mx-3 h-px ${isAdminMode ? "bg-[#333333]" : "bg-[#E2E8F0]"}`} />
+                <div className={`mx-3 h-px ${isAdminMode ? "bg-[#333333]" : "bg-phx-line"}`} />
                 <button
                   className={`flex w-full items-center gap-2 px-4 py-2 text-sm ${
-                    isAdminMode ? "text-[#D4DDE8] hover:bg-[#1a1a1a] hover:text-[#F8B56B]" : "text-[#0F172A] hover:bg-[#F8FAFC]"
+                    isAdminMode ? "text-[#D4DDE8] hover:bg-[#1a1a1a] hover:text-[#F8B56B]" : "text-phx-ink hover:bg-phx-paper"
                   }`}
                   onClick={handleLogout}
                   role="menuitem"

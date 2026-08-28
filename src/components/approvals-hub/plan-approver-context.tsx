@@ -57,8 +57,8 @@ export function PlanApproverContext({ employeeHrId }: { employeeHrId: string }) 
   }, [employeeHrId]);
 
   return (
-    <section className="border border-[#e4e9ec] bg-white">
-      <header className="flex items-center gap-1.5 border-b border-[#e4e9ec] bg-slate-900 px-4 py-2.5">
+    <section className="border border-phx-line bg-white">
+      <header className="flex items-center gap-1.5 border-b border-phx-line bg-slate-900 px-4 py-2.5">
         <Activity className="h-3.5 w-3.5 text-white" />
         <h3 className="text-[11px] font-black uppercase tracking-[0.14em] text-white">Employee context · last 30 days</h3>
       </header>

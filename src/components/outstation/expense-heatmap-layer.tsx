@@ -297,19 +297,19 @@ export function ExpenseHeatmapLayer({
       : "linear-gradient(90deg, #FED7AA 0%, #F97316 55%, #9A3412 100%)";
 
   return (
-    <div className="overflow-hidden rounded-[18px] border border-[#D8E0EA] bg-white shadow-[0_18px_46px_rgba(15,23,42,0.08)]">
+    <div className="overflow-hidden rounded-[18px] border border-phx-line bg-white shadow-[0_18px_46px_rgba(15,23,42,0.08)]">
       <div className="relative overflow-hidden border-b border-[#1F2937] bg-[radial-gradient(circle_at_top_right,rgba(249,115,22,0.24),transparent_34%),linear-gradient(135deg,#080B10_0%,#111827_58%,#24150D_100%)] px-5 py-5 text-white">
         <div
           aria-hidden="true"
-          className="pointer-events-none absolute -right-16 -top-20 h-44 w-44 rounded-full bg-[#F97316]/20 blur-3xl"
+          className="pointer-events-none absolute -right-16 -top-20 h-44 w-44 rounded-full bg-phx-accent/20 blur-3xl"
         />
         <div className="relative z-10 flex flex-wrap items-end justify-between gap-3">
           <div>
-            <p className="inline-flex rounded-full border border-[#F97316]/35 bg-[#F97316]/12 px-3 py-1 text-xs font-black uppercase tracking-[0.16em] text-[#FDBA74]">
+            <p className="inline-flex rounded-full border border-phx-accent/35 bg-phx-accent/12 px-3 py-1 text-xs font-black uppercase tracking-[0.16em] text-phx-accent">
               Geographic Intelligence
             </p>
             <h2 className="mt-3 text-xl font-black tracking-[-0.03em] text-white">{title}</h2>
-            <p className="mt-1 text-sm text-[#CBD5E1]">{subtitle}</p>
+            <p className="mt-1 text-sm text-phx-line-strong">{subtitle}</p>
           </div>
           <div className="flex flex-wrap items-center gap-3">
             {supportsApprovalSplit ? (
@@ -318,7 +318,7 @@ export function ExpenseHeatmapLayer({
                   <button
                     key={option.value}
                     className={`px-3 py-1 text-[10px] font-bold uppercase tracking-[0.14em] transition-colors ${
-                      mode === option.value ? "bg-[#F97316] text-white" : "text-[#CBD5E1] hover:text-white"
+                      mode === option.value ? "bg-phx-accent text-white" : "text-phx-line-strong hover:text-white"
                     }`}
                     onClick={() => setMode(option.value)}
                     type="button"
@@ -328,7 +328,7 @@ export function ExpenseHeatmapLayer({
                 ))}
               </div>
             ) : null}
-            <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.14em] text-[#CBD5E1]">
+            <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.14em] text-phx-line-strong">
               <span>Low</span>
               <span
                 aria-hidden="true"
@@ -343,26 +343,26 @@ export function ExpenseHeatmapLayer({
 
       <div className="space-y-3 p-5">
         <div
-          className="flex items-center justify-center rounded-[14px] border border-[#DDE6F1] bg-[#F8FAFC] p-6 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.75)]"
+          className="flex items-center justify-center rounded-[14px] border border-[#DDE6F1] bg-phx-paper p-6 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.75)]"
           ref={mapRef}
           style={{ height }}
         >
           {!browserKey ? (
             <div>
-              <p className="text-sm font-black text-[#0F172A]">Map unavailable</p>
-              <p className="mt-2 max-w-xl text-sm leading-6 text-[#64748B]">
+              <p className="text-sm font-black text-phx-ink">Map unavailable</p>
+              <p className="mt-2 max-w-xl text-sm leading-6 text-phx-ink-soft">
                 NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY is missing from the environment.
               </p>
             </div>
           ) : error ? (
             <div>
-              <p className="text-sm font-black text-[#0F172A]">Google Maps unavailable</p>
-              <p className="mt-2 max-w-xl text-sm leading-6 text-[#64748B]">{error}</p>
+              <p className="text-sm font-black text-phx-ink">Google Maps unavailable</p>
+              <p className="mt-2 max-w-xl text-sm leading-6 text-phx-ink-soft">{error}</p>
             </div>
           ) : !ready ? (
-            <p className="text-sm font-semibold text-[#64748B]">Loading Google Maps…</p>
+            <p className="text-sm font-semibold text-phx-ink-soft">Loading Google Maps…</p>
           ) : !hasPoints ? (
-            <p className="text-sm font-semibold text-[#64748B]">
+            <p className="text-sm font-semibold text-phx-ink-soft">
               {mode === "approved"
                 ? "No approved expenses on the map for these filters."
                 : mode === "pending"

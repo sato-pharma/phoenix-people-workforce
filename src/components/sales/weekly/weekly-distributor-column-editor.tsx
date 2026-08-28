@@ -16,7 +16,7 @@ import type { WeeklyContractSheet, WeeklyDistributorContract } from "@/lib/sales
 
 type EditableContract = WeeklyDistributorContract & { isCustom: boolean };
 
-const card = "rounded-[6px] border border-[#E2E8F0] bg-white shadow-sm";
+const card = "rounded-[6px] border border-phx-line bg-white shadow-sm";
 
 const ROLE_LABEL: Record<string, string> = {
   combined: "Sales + Stock (one sheet)",
@@ -157,15 +157,15 @@ export function WeeklyDistributorColumnEditor({ initialContracts }: { initialCon
       <Card className={cn(card, "space-y-4 p-5")}>
         <div className="flex flex-wrap items-end gap-3">
           <label className="flex flex-col gap-1">
-            <span className="text-[10px] font-black uppercase tracking-[0.12em] text-[#94A3B8]">Distributor</span>
-            <select className="h-9 min-w-64 rounded-[6px] border border-[#E2E8F0] px-2 text-sm" onChange={(e) => pick(e.target.value)} value={selected}>
+            <span className="text-[10px] font-black uppercase tracking-[0.12em] text-phx-ink-faint">Distributor</span>
+            <select className="h-9 min-w-64 rounded-[6px] border border-phx-line px-2 text-sm" onChange={(e) => pick(e.target.value)} value={selected}>
               {contracts.map((c) => (
                 <option key={c.code} value={c.code}>{c.name} ({c.code}){c.isCustom ? " · edited" : ""}</option>
               ))}
             </select>
           </label>
-          {current?.isCustom ? <span className="mb-1.5 inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-0.5 text-[11px] font-bold text-amber-800">Overridden in-app</span> : current ? <span className="mb-1.5 inline-flex items-center gap-1 rounded-full border border-[#E2E8F0] bg-[#FCFDFE] px-2.5 py-0.5 text-[11px] font-bold text-[#64748B]">Built-in</span> : null}
-          {draft?.splitFiles ? <span className="mb-1.5 inline-flex items-center gap-1 rounded-full border border-[#E2E8F0] bg-[#FCFDFE] px-2.5 py-0.5 text-[11px] font-bold text-[#64748B]">Two files (sales + stock)</span> : null}
+          {current?.isCustom ? <span className="mb-1.5 inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-0.5 text-[11px] font-bold text-amber-800">Overridden in-app</span> : current ? <span className="mb-1.5 inline-flex items-center gap-1 rounded-full border border-phx-line bg-[#FCFDFE] px-2.5 py-0.5 text-[11px] font-bold text-phx-ink-soft">Built-in</span> : null}
+          {draft?.splitFiles ? <span className="mb-1.5 inline-flex items-center gap-1 rounded-full border border-phx-line bg-[#FCFDFE] px-2.5 py-0.5 text-[11px] font-bold text-phx-ink-soft">Two files (sales + stock)</span> : null}
         </div>
 
         <AdminCallout tone="neutral">
@@ -174,37 +174,37 @@ export function WeeklyDistributorColumnEditor({ initialContracts }: { initialCon
         </AdminCallout>
 
         {draft ? (
-          <div className="rounded-[6px] border border-dashed border-[#CBD5E1] bg-[#FCFDFE] p-3">
+          <div className="rounded-[6px] border border-dashed border-phx-line-strong bg-[#FCFDFE] p-3">
             <div className="flex flex-wrap items-end gap-3">
               {draft.splitFiles ? (
                 <>
                   <label className="flex flex-col gap-1">
-                    <span className="text-[10px] font-black uppercase tracking-[0.12em] text-[#94A3B8]">Sample sales file (.xlsx)</span>
+                    <span className="text-[10px] font-black uppercase tracking-[0.12em] text-phx-ink-faint">Sample sales file (.xlsx)</span>
                     <input accept=".xlsx" className="text-xs" onChange={(e) => setPreviewSalesFile(e.target.files?.[0] ?? null)} type="file" />
                   </label>
                   <label className="flex flex-col gap-1">
-                    <span className="text-[10px] font-black uppercase tracking-[0.12em] text-[#94A3B8]">Sample stock file (.xlsx)</span>
+                    <span className="text-[10px] font-black uppercase tracking-[0.12em] text-phx-ink-faint">Sample stock file (.xlsx)</span>
                     <input accept=".xlsx" className="text-xs" onChange={(e) => setPreviewStockFile(e.target.files?.[0] ?? null)} type="file" />
                   </label>
                 </>
               ) : (
                 <label className="flex flex-col gap-1">
-                  <span className="text-[10px] font-black uppercase tracking-[0.12em] text-[#94A3B8]">Sample file (.xlsx)</span>
+                  <span className="text-[10px] font-black uppercase tracking-[0.12em] text-phx-ink-faint">Sample file (.xlsx)</span>
                   <input accept=".xlsx" className="text-xs" onChange={(e) => setPreviewFile(e.target.files?.[0] ?? null)} type="file" />
                 </label>
               )}
-              <button className="inline-flex h-9 items-center gap-2 rounded-[6px] border border-[#E2E8F0] bg-white px-4 text-sm font-black text-[#0F172A] transition hover:border-[#F97316] disabled:opacity-60" disabled={previewing || (draft.splitFiles ? !previewSalesFile && !previewStockFile : !previewFile)} onClick={() => void runPreview()} type="button">
+              <button className="inline-flex h-9 items-center gap-2 rounded-[6px] border border-phx-line bg-white px-4 text-sm font-black text-phx-ink transition hover:border-phx-accent disabled:opacity-60" disabled={previewing || (draft.splitFiles ? !previewSalesFile && !previewStockFile : !previewFile)} onClick={() => void runPreview()} type="button">
                 {previewing ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileSearch className="h-4 w-4" />}
                 Preview columns from file
               </button>
             </div>
-            <p className="mt-2 text-[11px] text-[#94A3B8]">Reads each column&rsquo;s header from your sample file so you can confirm a column number points at the right field before saving. The file is not stored.</p>
+            <p className="mt-2 text-[11px] text-phx-ink-faint">Reads each column&rsquo;s header from your sample file so you can confirm a column number points at the right field before saving. The file is not stored.</p>
             {previewError ? <p className="mt-1 text-[11px] font-semibold text-amber-700">{previewError}</p> : null}
           </div>
         ) : null}
 
         {!draft ? (
-          <p className="text-sm text-[#64748B]">No weekly distributor selected.</p>
+          <p className="text-sm text-phx-ink-soft">No weekly distributor selected.</p>
         ) : (
           <div className="space-y-4">
             {draft.sheets.map((sheet, sheetIdx) => (
@@ -223,18 +223,18 @@ export function WeeklyDistributorColumnEditor({ initialContracts }: { initialCon
         {msg ? <AdminCallout tone="success"><CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" /><span>{msg}</span></AdminCallout> : null}
 
         <div className="flex flex-wrap items-center gap-3">
-          <button className="inline-flex h-10 items-center gap-2 rounded-[6px] bg-[#F97316] px-5 text-sm font-black text-white transition hover:bg-[#EA6A0C] disabled:bg-[#CBD5E1]" disabled={busy !== null || !draft} onClick={() => void save()} type="button">
+          <button className="inline-flex h-10 items-center gap-2 rounded-[6px] bg-phx-accent px-5 text-sm font-black text-white transition hover:bg-[#EA6A0C] disabled:bg-phx-line-strong" disabled={busy !== null || !draft} onClick={() => void save()} type="button">
             {busy === "save" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
             Save mapping
           </button>
           {current?.isCustom ? (
-            <button className="inline-flex h-10 items-center gap-2 rounded-[6px] border border-[#E2E8F0] bg-white px-4 text-sm font-black text-[#0F172A] transition hover:border-[#F97316] disabled:opacity-60" disabled={busy !== null} onClick={() => void reset()} type="button">
+            <button className="inline-flex h-10 items-center gap-2 rounded-[6px] border border-phx-line bg-white px-4 text-sm font-black text-phx-ink transition hover:border-phx-accent disabled:opacity-60" disabled={busy !== null} onClick={() => void reset()} type="button">
               {busy === "reset" ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />}
               Reset to built-in
             </button>
           ) : null}
         </div>
-        <p className="text-xs text-[#94A3B8]">A new weekly distributor can&rsquo;t be onboarded here — the weekly importer needs a per-distributor adapter. This editor adjusts the six built-in distributors&rsquo; column positions only.</p>
+        <p className="text-xs text-phx-ink-faint">A new weekly distributor can&rsquo;t be onboarded here — the weekly importer needs a per-distributor adapter. This editor adjusts the six built-in distributors&rsquo; column positions only.</p>
 
         <MappingAuditHistory distributorCode={selected} entityType="weekly_distributor_profile" />
       </Card>
@@ -254,7 +254,7 @@ function SheetEditor({
   onHeaderRow: (value: string) => void;
 }) {
   return (
-    <div className="rounded-[6px] border border-[#E2E8F0]">
+    <div className="rounded-[6px] border border-phx-line">
       <div className="flex flex-wrap items-center justify-between gap-2 bg-[#020617] px-3 py-2 text-white">
         <div className="flex items-center gap-2">
           <span className="text-xs font-black uppercase tracking-wide">{ROLE_LABEL[sheet.role] ?? sheet.role}</span>
@@ -269,14 +269,14 @@ function SheetEditor({
         </label>
       </div>
 
-      <div className="grid grid-cols-1 gap-px bg-[#E2E8F0] sm:grid-cols-2 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-px bg-phx-line sm:grid-cols-2 lg:grid-cols-3">
         {sheet.fields.map((field, fieldIdx) => {
           const obs = preview[`${sheet.role}|${field.field}`];
           return (
           <div className="flex items-center justify-between gap-3 bg-white px-3 py-2" key={field.field}>
             <div className="min-w-0">
-              <div className="truncate text-[12px] font-bold text-[#0F172A]">{field.label}</div>
-              <div className="truncate text-[10px] text-[#94A3B8]">{field.expectedHeaderHint || field.field}{field.role === "key" ? " · required" : field.role === "value" ? " · measure" : ""}</div>
+              <div className="truncate text-[12px] font-bold text-phx-ink">{field.label}</div>
+              <div className="truncate text-[10px] text-phx-ink-faint">{field.expectedHeaderHint || field.field}{field.role === "key" ? " · required" : field.role === "value" ? " · measure" : ""}</div>
               {obs ? (
                 obs.status === "empty"
                   ? <div className="mt-0.5 truncate text-[10px] font-bold text-amber-700">⚠ column {field.columnIndex} is blank in your file</div>
@@ -284,9 +284,9 @@ function SheetEditor({
               ) : null}
             </div>
             <label className="flex shrink-0 flex-col items-end gap-0.5">
-              <span className="text-[9px] font-black uppercase tracking-[0.1em] text-[#94A3B8]">Col</span>
+              <span className="text-[9px] font-black uppercase tracking-[0.1em] text-phx-ink-faint">Col</span>
               <input
-                className="h-8 w-16 rounded-[6px] border border-[#E2E8F0] px-2 text-right text-xs font-mono"
+                className="h-8 w-16 rounded-[6px] border border-phx-line px-2 text-right text-xs font-mono"
                 inputMode="numeric"
                 min={1}
                 onChange={(e) => onColumnIndex(fieldIdx, e.target.value)}
@@ -300,8 +300,8 @@ function SheetEditor({
       </div>
 
       {sheet.matrix ? (
-        <div className="border-t border-[#E2E8F0] bg-[#FCFDFE] px-3 py-2 text-[11px] text-[#64748B]">
-          <span className="inline-flex items-center gap-1 font-bold text-[#475569]"><Lock className="h-3 w-3" /> {sheet.matrix.kind === "branch-headers" ? "Branch columns" : "Location columns"} (fixed in code)</span>
+        <div className="border-t border-phx-line bg-[#FCFDFE] px-3 py-2 text-[11px] text-phx-ink-soft">
+          <span className="inline-flex items-center gap-1 font-bold text-phx-ink-2"><Lock className="h-3 w-3" /> {sheet.matrix.kind === "branch-headers" ? "Branch columns" : "Location columns"} (fixed in code)</span>
           <span className="ml-1">from column {sheet.matrix.firstColumn}{sheet.matrix.lastColumn ? `–${sheet.matrix.lastColumn}` : "+"}. {sheet.matrix.note}</span>
         </div>
       ) : null}

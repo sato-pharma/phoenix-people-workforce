@@ -13,7 +13,7 @@ type Props = {
 
 const labelClass = "block text-[11px] font-black uppercase tracking-wider text-slate-500";
 const inputClass =
-  "mt-1 w-full border border-[#e4e9ec] px-3 py-2 text-sm text-slate-900 outline-none focus:border-slate-400";
+  "mt-1 w-full border border-phx-line px-3 py-2 text-sm text-slate-900 outline-none focus:border-slate-400";
 
 /**
  * Withdraw a HELD direct order (audit finding F3).
@@ -64,7 +64,7 @@ export function CancelHeldOrder({ requestId, productName, qty, salesValue }: Pro
 
   if (done) {
     return (
-      <section className="border border-[#e4e9ec] bg-white px-4 py-3">
+      <section className="border border-phx-line bg-white px-4 py-3">
         <p className="text-[12px] font-bold text-slate-700">
           Withdrawn. This request is now cancelled and no longer counts against your held total.
         </p>
@@ -87,8 +87,8 @@ export function CancelHeldOrder({ requestId, productName, qty, salesValue }: Pro
   }
 
   return (
-    <section className="border border-[#e4e9ec] bg-white">
-      <header className="border-b border-[#e4e9ec] bg-slate-900 px-4 py-2.5">
+    <section className="border border-phx-line bg-white">
+      <header className="border-b border-phx-line bg-slate-900 px-4 py-2.5">
         <h3 className="text-[11px] font-black uppercase tracking-[0.14em] text-white">Withdraw this request</h3>
       </header>
       <div className="space-y-3 px-4 py-4">

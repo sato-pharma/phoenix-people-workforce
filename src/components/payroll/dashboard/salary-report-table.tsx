@@ -43,10 +43,10 @@ export function SalaryReportTable({
 }) {
   return (
     <>
-      <div className="overflow-x-auto rounded-2xl border border-[#E2E8F0] bg-white shadow-[inset_0_1px_0_rgba(255,255,255,0.75)]">
+      <div className="overflow-x-auto rounded-2xl border border-phx-line bg-white shadow-[inset_0_1px_0_rgba(255,255,255,0.75)]">
         <table className="w-full min-w-[1180px] text-left text-sm">
           <thead>
-            <tr className="border-b border-[#E2E8F0] bg-[#F8FAFC] text-xs uppercase tracking-[0.12em] text-[#64748B]">
+            <tr className="border-b border-phx-line bg-phx-paper text-xs uppercase tracking-[0.12em] text-phx-ink-soft">
               {columns.map((column) => (
                 <th className="sticky top-0 z-10 px-4 py-3 font-semibold" key={column.key}>
                   <TableHeaderMenu
@@ -76,7 +76,7 @@ export function SalaryReportTable({
                 return (
                   <tr
                     className={cn(
-                      "transition-colors hover:bg-[#F8FAFC]",
+                      "transition-colors hover:bg-phx-paper",
                       isOnHold && "bg-red-50/70",
                     )}
                     key={record.id}

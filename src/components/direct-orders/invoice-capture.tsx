@@ -18,7 +18,7 @@ type Props = {
   customerHint?: string;
 };
 
-const box = "border border-[#e4e9ec] bg-white";
+const box = "border border-phx-line bg-white";
 
 /**
  * Invoice-photo prefill (spec B5).
@@ -124,7 +124,7 @@ export function InvoiceCapture({ onApply, customerHint }: Props) {
 
   return (
     <section className={box}>
-      <header className="border-b border-[#e4e9ec] bg-slate-900 px-4 py-2.5">
+      <header className="border-b border-phx-line bg-slate-900 px-4 py-2.5">
         <h3 className="text-[11px] font-black uppercase tracking-[0.14em] text-white">Fill from the invoice</h3>
       </header>
       <div className="space-y-3 px-4 py-4">
@@ -235,7 +235,7 @@ export function InvoiceCapture({ onApply, customerHint }: Props) {
             ) : null}
 
             {/* The pharmacy, and only if the master database confirmed it. */}
-            <div className="border border-[#e4e9ec] px-3 py-2">
+            <div className="border border-phx-line px-3 py-2">
               <p className="text-[11px] font-black uppercase tracking-wider text-slate-500">Pharmacy on the invoice</p>
               {result.resolved.customer ? (
                 <>
@@ -280,7 +280,7 @@ export function InvoiceCapture({ onApply, customerHint }: Props) {
                   qty !== (line.read.qty == null ? "" : String(line.read.qty)) ||
                   bonus !== (line.read.bonus == null ? "" : String(line.read.bonus));
                 return (
-                  <div key={`${line.read.productCode ?? "?"}-${index}`} className="border border-[#e4e9ec] px-3 py-2">
+                  <div key={`${line.read.productCode ?? "?"}-${index}`} className="border border-phx-line px-3 py-2">
                     <p className="text-sm font-bold text-slate-900" dir="auto">
                       {line.product?.productName ?? line.read.productName ?? line.read.productCode ?? "Unreadable line"}
                     </p>
@@ -298,7 +298,7 @@ export function InvoiceCapture({ onApply, customerHint }: Props) {
                           value={qty}
                           placeholder={line.read.qty == null ? "not read — type it" : undefined}
                           onChange={(event) => setField(index, "qty", event.target.value, line.read)}
-                          className="mt-0.5 w-28 border border-[#e4e9ec] px-2 py-1 text-sm font-semibold text-slate-900"
+                          className="mt-0.5 w-28 border border-phx-line px-2 py-1 text-sm font-semibold text-slate-900"
                         />
                       </label>
                       <label className="block">
@@ -311,7 +311,7 @@ export function InvoiceCapture({ onApply, customerHint }: Props) {
                           min={0}
                           value={bonus}
                           onChange={(event) => setField(index, "bonus", event.target.value, line.read)}
-                          className="mt-0.5 w-24 border border-[#e4e9ec] px-2 py-1 text-sm font-semibold text-slate-900"
+                          className="mt-0.5 w-24 border border-phx-line px-2 py-1 text-sm font-semibold text-slate-900"
                         />
                       </label>
                       {line.product ? (

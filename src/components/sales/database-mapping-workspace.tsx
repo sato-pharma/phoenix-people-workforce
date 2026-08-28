@@ -48,12 +48,12 @@ import {
 import type { MasterImportResult } from "@/lib/sales/master-data/import-service";
 import { cn } from "@/lib/utils";
 
-const fieldInputClass = "h-9 border border-[#E2E8F0] px-2 text-sm text-[#0F172A] outline-none focus:border-[#FDBA74]";
+const fieldInputClass = "h-9 border border-phx-line px-2 text-sm text-phx-ink outline-none focus:border-phx-accent-line";
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <label className="flex flex-col gap-1">
-      <span className="text-[10px] font-black uppercase tracking-[0.12em] text-[#94A3B8]">{label}</span>
+      <span className="text-[10px] font-black uppercase tracking-[0.12em] text-phx-ink-faint">{label}</span>
       {children}
     </label>
   );
@@ -378,7 +378,7 @@ function MasterTab({
               Export XLSX
             </Button>
             <Button
-              className="gap-2 bg-[#0B0B0B] text-white hover:bg-[#F97316]"
+              className="gap-2 bg-[#0B0B0B] text-white hover:bg-phx-accent"
               disabled={importing}
               onClick={() => fileInputRef.current?.click()}
             >
@@ -445,7 +445,7 @@ function MasterTab({
       {result && result.blockedRows.length > 0 ? (
         <AdminTableShell description="Fix these rows in the workbook and re-import." title="Blocked Rows">
           <div className="overflow-x-auto p-4 md:p-5">
-            <div className="overflow-hidden rounded-[16px] border border-[#E2E8F0]">
+            <div className="overflow-hidden rounded-[16px] border border-phx-line">
               <table className="w-full min-w-[640px] text-left text-sm">
                 <thead>
                   <tr>
@@ -454,10 +454,10 @@ function MasterTab({
                     <th className={tableHeaderClassName}>Reason</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-[#E2E8F0]">
+                <tbody className="divide-y divide-phx-line">
                   {result.blockedRows.slice(0, 200).map((blocked, index) => (
-                    <tr className="text-[#64748B]" key={`${blocked.row}:${blocked.key}:${index}`}>
-                      <td className="px-4 py-3 font-semibold text-[#0F172A]">{blocked.row}</td>
+                    <tr className="text-phx-ink-soft" key={`${blocked.row}:${blocked.key}:${index}`}>
+                      <td className="px-4 py-3 font-semibold text-phx-ink">{blocked.row}</td>
                       <td className="px-4 py-3">{blocked.key || "-"}</td>
                       <td className="px-4 py-3">{blocked.reason}</td>
                     </tr>
@@ -469,9 +469,9 @@ function MasterTab({
         </AdminTableShell>
       ) : null}
 
-      <Card className="rounded-[32px] border border-[#D8E0EA] bg-white/95 shadow-[0_18px_42px_rgba(15,23,42,0.07)] p-5">
+      <Card className="rounded-[32px] border border-phx-line bg-white/95 shadow-[0_18px_42px_rgba(15,23,42,0.07)] p-5">
         <div className="space-y-3">
-          <p className="text-xs font-black uppercase tracking-[0.14em] text-[#64748B]">Add Single Row</p>
+          <p className="text-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">Add Single Row</p>
           <div className="flex flex-wrap items-end gap-2">
             {def.columns.map((column) => (
               <Field key={column.key} label={column.label}>
@@ -486,7 +486,7 @@ function MasterTab({
               </Field>
             ))}
             <Button
-              className="h-9 gap-1 rounded-xl bg-[#F97316] font-black text-white transition hover:bg-[#EA6A0C]"
+              className="h-9 gap-1 rounded-xl bg-phx-accent font-black text-white transition hover:bg-[#EA6A0C]"
               disabled={adding}
               onClick={() => void handleAddRow()}
               type="button"
@@ -499,7 +499,7 @@ function MasterTab({
 
       <AdminTableShell description={`Live rows currently stored in ${def.table}.`} title={`${def.label} Rows`}>
         <div className="overflow-x-auto p-4 md:p-5">
-          <div className="overflow-hidden rounded-[16px] border border-[#E2E8F0]">
+          <div className="overflow-hidden rounded-[16px] border border-phx-line">
             <table className="w-full min-w-[720px] text-left text-sm">
               <thead>
                 <tr>
@@ -519,7 +519,7 @@ function MasterTab({
                   <th className={tableHeaderClassName}>Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-[#E2E8F0]">
+              <tbody className="divide-y divide-phx-line">
                 {rows.map((row) => {
                   const rowKey = String(row[def.keyColumn]);
                   const isEditing = editingKey === rowKey;
@@ -529,10 +529,10 @@ function MasterTab({
                   const isRelocatingEdit =
                     isEditing && def.master === "bricks" && (editValues.block_code ?? "") !== String(row.block_code ?? "");
                   return (
-                    <tr className="text-[#64748B]" key={rowKey}>
+                    <tr className="text-phx-ink-soft" key={rowKey}>
                       {def.columns.map((column, columnIndex) => (
                         <td
-                          className={cn("px-4 py-2.5 align-top", columnIndex === 0 ? "font-semibold text-[#0F172A]" : "")}
+                          className={cn("px-4 py-2.5 align-top", columnIndex === 0 ? "font-semibold text-phx-ink" : "")}
                           key={column.key}
                         >
                           {isEditing && !column.locked ? (
@@ -550,7 +550,7 @@ function MasterTab({
                         </td>
                       ))}
                       {lookups.map((column) => (
-                        <td className="px-4 py-2.5 align-top text-[#475569]" key={column.key}>
+                        <td className="px-4 py-2.5 align-top text-phx-ink-2" key={column.key}>
                           {resolveLookup(row, column)}
                         </td>
                       ))}
@@ -578,7 +578,7 @@ function MasterTab({
                               </Button>
                             </div>
                             {isRelocatingEdit ? (
-                              <p className="max-w-[220px] text-[10px] font-semibold leading-tight text-[#94A3B8]">
+                              <p className="max-w-[220px] text-[10px] font-semibold leading-tight text-phx-ink-faint">
                                 Creates a new brick ID in the target block and deactivates this one.
                               </p>
                             ) : null}
@@ -628,7 +628,7 @@ function MasterTab({
                 })}
                 {rows.length === 0 ? (
                   <tr>
-                    <td className="px-4 py-8 text-center text-sm font-semibold text-[#64748B]" colSpan={def.columns.length + lookups.length + 3}>
+                    <td className="px-4 py-8 text-center text-sm font-semibold text-phx-ink-soft" colSpan={def.columns.length + lookups.length + 3}>
                       No rows yet. Export the template, fill it in, then import.
                     </td>
                   </tr>
@@ -646,7 +646,7 @@ function ResultStat({ label, tone = "neutral", value }: { label: string; tone?: 
   const tones = {
     bad: "border-[#FECACA] bg-[#FEF2F2] text-[#991B1B]",
     good: "border-[#BBF7D0] bg-[#F0FDF4] text-[#166534]",
-    neutral: "border-[#E2E8F0] bg-[#FCFDFE] text-[#0F172A]",
+    neutral: "border-phx-line bg-[#FCFDFE] text-phx-ink",
   };
   return (
     <div className={cn("rounded-2xl border p-4", tones[tone])}>
@@ -689,7 +689,7 @@ export function DatabaseMappingWorkspace({ initialError, initialHeaderGrid, init
 
   if (initialError) {
     return (
-      <div className="min-h-[calc(100vh-7rem)] rounded-[32px] border border-[#E2E8F0] bg-[#F8FAFC] p-5 sm:p-6 xl:p-8">
+      <div className="min-h-[calc(100vh-7rem)] rounded-[32px] border border-phx-line bg-phx-paper p-5 sm:p-6 xl:p-8">
         <AdminCallout tone="danger">
           <AlertTriangle className="h-4 w-4" />
           <p>{initialError}</p>
@@ -701,9 +701,9 @@ export function DatabaseMappingWorkspace({ initialError, initialHeaderGrid, init
   const activeDef = activeTab === "validation" || activeTab === "profiles" ? null : MASTER_DEFINITIONS[activeTab];
 
   return (
-    <div className="min-h-[calc(100vh-7rem)] rounded-[32px] border border-[#E2E8F0] bg-[linear-gradient(180deg,#F8FAFC_0%,#EEF3F8_100%)] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.9)] sm:p-6 xl:p-8">
+    <div className="min-h-[calc(100vh-7rem)] rounded-[32px] border border-phx-line bg-[linear-gradient(180deg,#F8FAFC_0%,#EEF3F8_100%)] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.9)] sm:p-6 xl:p-8">
       <div className="space-y-7">
-        <div className="relative overflow-hidden rounded-3xl border border-[#D8E0EA] bg-white/95 p-7 shadow-[0_20px_54px_rgba(15,23,42,0.09)]">
+        <div className="relative overflow-hidden rounded-3xl border border-phx-line bg-white/95 p-7 shadow-[0_20px_54px_rgba(15,23,42,0.09)]">
           <div className="pointer-events-none absolute -right-16 -top-16 h-48 w-48 rounded-full bg-orange-200/35 blur-3xl" />
           <div className="relative flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
             <div>
@@ -720,7 +720,7 @@ export function DatabaseMappingWorkspace({ initialError, initialHeaderGrid, init
             </div>
             <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
               <Button
-                className="gap-2 bg-[#0B0B0B] text-white hover:bg-[#F97316]"
+                className="gap-2 bg-[#0B0B0B] text-white hover:bg-phx-accent"
                 disabled={downloadingMaster}
                 onClick={() => void handleDownloadMaster()}
                 title="Download the full master workbook, populated live from the current system data."
@@ -745,14 +745,14 @@ export function DatabaseMappingWorkspace({ initialError, initialHeaderGrid, init
           </AdminCallout>
         ) : null}
 
-        <div className="flex flex-wrap gap-2 rounded-2xl border border-[#D8E0EA] bg-white/90 p-2 shadow-[0_14px_32px_rgba(15,23,42,0.06)]">
+        <div className="flex flex-wrap gap-2 rounded-2xl border border-phx-line bg-white/90 p-2 shadow-[0_14px_32px_rgba(15,23,42,0.06)]">
           {MASTER_ORDER.map((master) => {
             const Icon = MASTER_ICONS[master];
             return (
               <Button
                 className={cn(
                   "gap-2 rounded-xl font-black",
-                  activeTab === master ? "bg-[#0B0B0B] text-white hover:bg-[#F97316]" : "",
+                  activeTab === master ? "bg-[#0B0B0B] text-white hover:bg-phx-accent" : "",
                 )}
                 key={master}
                 onClick={() => setActiveTab(master)}
@@ -764,7 +764,7 @@ export function DatabaseMappingWorkspace({ initialError, initialHeaderGrid, init
             );
           })}
           <Button
-            className={cn("gap-2 rounded-xl font-black", activeTab === "validation" ? "bg-[#0B0B0B] text-white hover:bg-[#F97316]" : "")}
+            className={cn("gap-2 rounded-xl font-black", activeTab === "validation" ? "bg-[#0B0B0B] text-white hover:bg-phx-accent" : "")}
             onClick={() => setActiveTab("validation")}
             variant="secondary"
           >

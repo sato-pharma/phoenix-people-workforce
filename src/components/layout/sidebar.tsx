@@ -453,7 +453,7 @@ function NavRow({
         aria-label={rail ? item.label : undefined}
         className={cn(
           "relative flex w-full items-center text-[13px] font-semibold transition-colors duration-150",
-          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F97316]/60 focus-visible:ring-offset-2",
+          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-phx-accent/60 focus-visible:ring-offset-2",
           dark ? "focus-visible:ring-offset-slate-900" : "focus-visible:ring-offset-white",
           rail ? "justify-center px-0 py-2.5" : "gap-3 px-2.5 py-2.5",
           // Premium row: the owner's own overview outranks every other tab, so it carries a
@@ -461,20 +461,20 @@ function NavRow({
           // and heavier than the active state so it still reads as "the top one" when you are
           // somewhere else in the app.
           premium && (dark
-            ? "bg-[linear-gradient(90deg,rgba(249,115,22,0.18)_0%,rgba(249,115,22,0.05)_60%,transparent_100%)] text-white ring-1 ring-[#F97316]/45 shadow-[0_6px_20px_rgba(249,115,22,0.16),inset_0_1px_0_rgba(255,255,255,0.08)] hover:ring-[#F97316]/70"
-            : "bg-[linear-gradient(90deg,#FFF4E9_0%,#FFFBF7_70%,#FFFFFF_100%)] text-[#0F172A] ring-1 ring-[#F9A85E]/60 shadow-[0_6px_18px_rgba(249,115,22,0.13)] hover:ring-[#F97316]/70"),
+            ? "bg-[linear-gradient(90deg,rgba(249,115,22,0.18)_0%,rgba(249,115,22,0.05)_60%,transparent_100%)] text-white ring-1 ring-phx-accent/45 shadow-[0_6px_20px_rgba(249,115,22,0.16),inset_0_1px_0_rgba(255,255,255,0.08)] hover:ring-phx-accent/70"
+            : "bg-[linear-gradient(90deg,#FFF4E9_0%,#FFFBF7_70%,#FFFFFF_100%)] text-phx-ink ring-1 ring-[#F9A85E]/60 shadow-[0_6px_18px_rgba(249,115,22,0.13)] hover:ring-phx-accent/70"),
           !premium && (dark
             ? active
-              ? "bg-white/[0.08] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] ring-1 ring-[#F97316]/30"
+              ? "bg-white/[0.08] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] ring-1 ring-phx-accent/30"
               : "text-slate-400 hover:bg-white/[0.06] hover:text-white"
             : active
-              ? "bg-white text-[#0F172A] shadow-[0_1px_2px_rgba(15,23,42,0.06)] ring-1 ring-[#F4D9BE]"
-              : "text-[#5A6678] hover:bg-white hover:text-[#0F172A] hover:shadow-[0_1px_2px_rgba(15,23,42,0.05)]"),
+              ? "bg-white text-phx-ink shadow-[0_1px_2px_rgba(15,23,42,0.06)] ring-1 ring-[#F4D9BE]"
+              : "text-[#5A6678] hover:bg-white hover:text-phx-ink hover:shadow-[0_1px_2px_rgba(15,23,42,0.05)]"),
         )}
         href={item.href}
         onClick={onActivate}
       >
-        {active && <span className={cn("absolute left-0 w-[3px] bg-[#F97316]", rail ? "top-1.5 bottom-1.5" : "top-1.5 bottom-1.5")} />}
+        {active && <span className={cn("absolute left-0 w-[3px] bg-phx-accent", rail ? "top-1.5 bottom-1.5" : "top-1.5 bottom-1.5")} />}
         <span
           className={cn(
             "relative flex h-9 w-9 shrink-0 items-center justify-center transition-colors duration-150",
@@ -489,10 +489,10 @@ function NavRow({
                     ? "bg-orange-500/15 text-[#F8B56B] ring-1 ring-orange-400/30 group-hover:ring-orange-400/50"
                     : "bg-white/5 text-slate-400 ring-1 ring-white/10 group-hover:text-[#F8B56B] group-hover:ring-white/20"
                 : active
-                  ? "bg-[#F97316] text-white shadow-[0_8px_16px_rgba(249,115,22,0.28)]"
+                  ? "bg-phx-accent text-white shadow-[0_8px_16px_rgba(249,115,22,0.28)]"
                   : standalone
-                    ? "bg-orange-50 text-[#F97316] ring-1 ring-orange-200 group-hover:ring-orange-300"
-                    : "bg-white text-[#64748B] ring-1 ring-[#EBE4DA] group-hover:text-[#F97316] group-hover:ring-[#FDBA74]",
+                    ? "bg-orange-50 text-phx-accent ring-1 ring-orange-200 group-hover:ring-orange-300"
+                    : "bg-white text-phx-ink-soft ring-1 ring-[#EBE4DA] group-hover:text-phx-accent group-hover:ring-phx-accent-line",
           )}
         >
           <Icon className="h-4 w-4" />
@@ -527,7 +527,7 @@ function NavRow({
           className={cn(
             "absolute right-1.5 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded transition",
             pinned ? "opacity-100" : "opacity-0 focus-visible:opacity-100 group-hover:opacity-100",
-            dark ? "text-slate-400 hover:text-[#F8B56B]" : "text-[#94A3B8] hover:text-[#F97316]",
+            dark ? "text-slate-400 hover:text-[#F8B56B]" : "text-phx-ink-faint hover:text-phx-accent",
           )}
           onClick={(event) => {
             event.preventDefault();
@@ -537,7 +537,7 @@ function NavRow({
           title={pinned ? "Unpin" : "Pin to favourites"}
           type="button"
         >
-          <Star className={cn("h-3.5 w-3.5", pinned && (dark ? "fill-[#F8B56B] text-[#F8B56B]" : "fill-[#F97316] text-[#F97316]"))} />
+          <Star className={cn("h-3.5 w-3.5", pinned && (dark ? "fill-[#F8B56B] text-[#F8B56B]" : "fill-phx-accent text-phx-accent"))} />
         </button>
       ) : null}
     </div>
@@ -739,7 +739,7 @@ function SortableSectionBlock({
             aria-controls={sectionContentId}
             aria-expanded={!collapsed}
             className={cn(
-              "group/sec flex flex-1 items-center gap-1.5 pb-1.5 pt-4 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F97316]/60 focus-visible:ring-offset-2",
+              "group/sec flex flex-1 items-center gap-1.5 pb-1.5 pt-4 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-phx-accent/60 focus-visible:ring-offset-2",
               isAdmin && !dragDisabled ? "px-1" : "px-1.5",
               isAdmin ? "focus-visible:ring-offset-slate-900" : "focus-visible:ring-offset-white",
             )}
@@ -750,14 +750,14 @@ function SortableSectionBlock({
               className={cn(
                 "h-3.5 w-3.5 shrink-0 ease-out",
                 transitionsReady && "transition-transform duration-300",
-                isAdmin ? "text-slate-400 group-hover/sec:text-slate-200" : "text-[#64748B] group-hover/sec:text-[#334155]",
+                isAdmin ? "text-slate-400 group-hover/sec:text-slate-200" : "text-phx-ink-soft group-hover/sec:text-phx-ink-2",
                 !collapsed && "rotate-90",
               )}
             />
             <span
               className={cn(
                 "min-w-0 flex-1 truncate text-[13px] font-bold tracking-[-0.01em]",
-                isAdmin ? "text-white" : "text-[#0F172A]",
+                isAdmin ? "text-white" : "text-phx-ink",
               )}
             >
               {section.label}
@@ -1109,7 +1109,7 @@ function SidebarNav({
             <input
               ref={searchInputRef}
               aria-label="Search modules"
-              className="h-9 w-full border border-white/10 bg-white/5 pl-9 pr-8 text-[13px] font-semibold text-slate-100 outline-none transition placeholder:text-slate-500 focus:border-[#FDBA74] focus:bg-white/[0.08] focus:ring-2 focus:ring-[#F97316]/25"
+              className="h-9 w-full border border-white/10 bg-white/5 pl-9 pr-8 text-[13px] font-semibold text-slate-100 outline-none transition placeholder:text-slate-500 focus:border-phx-accent-line focus:bg-white/[0.08] focus:ring-2 focus:ring-phx-accent/25"
               onChange={(event) => setSearchQuery(event.target.value)}
               onKeyDown={(event) => {
                 if (event.key === "Escape") {
@@ -1169,8 +1169,8 @@ function SidebarNav({
           <Fragment>
             <div className={cn("sticky top-0 z-20 -mx-3 px-3", isAdmin ? "bg-[#000000]" : "bg-white")}>
               <div className="flex w-full items-center gap-1.5 px-1.5 pb-1.5 pt-3">
-                <Star className={cn("h-3.5 w-3.5 shrink-0", isAdmin ? "fill-[#F8B56B] text-[#F8B56B]" : "fill-[#F97316] text-[#F97316]")} />
-                <span className={cn("min-w-0 flex-1 truncate text-[13px] font-bold tracking-[-0.01em]", isAdmin ? "text-white" : "text-[#0F172A]")}>
+                <Star className={cn("h-3.5 w-3.5 shrink-0", isAdmin ? "fill-[#F8B56B] text-[#F8B56B]" : "fill-phx-accent text-phx-accent")} />
+                <span className={cn("min-w-0 flex-1 truncate text-[13px] font-bold tracking-[-0.01em]", isAdmin ? "text-white" : "text-phx-ink")}>
                   Favourites
                 </span>
               </div>
@@ -1229,7 +1229,7 @@ function SidebarNav({
 
         {isAdmin && query && visibleSections.length === 0 && (
           <div className="flex flex-col items-center justify-center gap-3 px-4 py-12 text-center">
-            <span className="flex h-12 w-12 items-center justify-center bg-[#F97316]/10 text-[#F97316] ring-1 ring-[#F97316]/25">
+            <span className="flex h-12 w-12 items-center justify-center bg-phx-accent/10 text-phx-accent ring-1 ring-phx-accent/25">
               <Search className="h-5 w-5" />
             </span>
             <div>
@@ -1243,7 +1243,7 @@ function SidebarNav({
         {isAdmin && !query && hasCustomOrder && (
           <div className="mt-4 px-1">
             <button
-              className="flex w-full items-center gap-2 px-1.5 py-1.5 text-[11px] font-semibold text-slate-600 transition hover:text-slate-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F97316]/60"
+              className="flex w-full items-center gap-2 px-1.5 py-1.5 text-[11px] font-semibold text-slate-600 transition hover:text-slate-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-phx-accent/60"
               onClick={() => clearSidebarOrder(mode)}
               title="Reset sidebar to default order"
               type="button"
@@ -1301,7 +1301,7 @@ function SidebarBrand({
     return (
       <Link
         aria-label={`${systemIdentity.brandName} Portal`}
-        className="mx-auto mt-3 flex h-12 w-12 items-center justify-center overflow-hidden border border-[#E7DECF] bg-white shadow-[0_1px_2px_rgba(15,23,42,0.05)] transition hover:border-[#FDBA74]"
+        className="mx-auto mt-3 flex h-12 w-12 items-center justify-center overflow-hidden border border-[#E7DECF] bg-white shadow-[0_1px_2px_rgba(15,23,42,0.05)] transition hover:border-phx-accent-line"
         href={homePath}
         onClick={onNavigate}
       >
@@ -1347,11 +1347,11 @@ function SidebarBrand({
         />
       </span>
       <div className="min-w-0">
-        <p className={cn("whitespace-nowrap text-[15px] font-black tracking-[0.22em]", isAdmin ? "text-white" : "text-[#0F172A]")}>
+        <p className={cn("whitespace-nowrap text-[15px] font-black tracking-[0.22em]", isAdmin ? "text-white" : "text-phx-ink")}>
           {systemIdentity.brandName.slice(0, -1).toUpperCase()}
-          <span className="text-[#F97316]">{systemIdentity.brandName.slice(-1).toUpperCase()}</span>
+          <span className="text-phx-accent">{systemIdentity.brandName.slice(-1).toUpperCase()}</span>
         </p>
-        <p className={cn("mt-0.5 whitespace-nowrap text-[10px] font-semibold uppercase tracking-[0.22em]", isAdmin ? "text-slate-400" : "text-[#64748B]")}>
+        <p className={cn("mt-0.5 whitespace-nowrap text-[10px] font-semibold uppercase tracking-[0.22em]", isAdmin ? "text-slate-400" : "text-phx-ink-soft")}>
           {subtitle}
         </p>
       </div>
@@ -1363,10 +1363,10 @@ function SidebarBrand({
 function SidebarIntro({ mode = "admin" }: { mode?: NavigationMode }) {
   if (mode === "admin") return null;
   return (
-    <div className="mx-3 mt-3 border border-[#E2E8F0] bg-[linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)] p-4">
-      <p className="text-[10px] font-black uppercase tracking-[0.22em] text-[#F97316]">{systemUiText.sidebar.employeePortalKicker}</p>
-      <p className="mt-2 text-lg font-black tracking-[-0.03em] text-[#0F172A]">{systemUiText.sidebar.employeePortalTitle}</p>
-      <p className="mt-2 text-sm leading-6 text-[#64748B]">{systemUiText.sidebar.employeePortalDescription}</p>
+    <div className="mx-3 mt-3 border border-phx-line bg-[linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)] p-4">
+      <p className="text-[10px] font-black uppercase tracking-[0.22em] text-phx-accent">{systemUiText.sidebar.employeePortalKicker}</p>
+      <p className="mt-2 text-lg font-black tracking-[-0.03em] text-phx-ink">{systemUiText.sidebar.employeePortalTitle}</p>
+      <p className="mt-2 text-sm leading-6 text-phx-ink-soft">{systemUiText.sidebar.employeePortalDescription}</p>
     </div>
   );
 }
@@ -1375,14 +1375,14 @@ function SidebarFooter({ mode = "admin" }: { mode?: NavigationMode }) {
   if (mode === "admin") return null;
   return (
     <div className="p-3">
-      <div className="overflow-hidden border border-[#E2E8F0] bg-[linear-gradient(180deg,#fff7ed_0%,#ffffff_100%)] p-3">
+      <div className="overflow-hidden border border-phx-line bg-[linear-gradient(180deg,#fff7ed_0%,#ffffff_100%)] p-3">
         <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center bg-[#F97316]/10 text-[#F97316]">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center bg-phx-accent/10 text-phx-accent">
             <ShieldCheck className="h-5 w-5" />
           </div>
           <div className="min-w-0">
-            <p className="text-sm font-bold text-[#0F172A]">{systemUiText.sidebar.employeePortalFooterTitle}</p>
-            <p className="mt-1 text-xs leading-5 text-[#64748B]">{systemUiText.sidebar.employeePortalFooterDescription}</p>
+            <p className="text-sm font-bold text-phx-ink">{systemUiText.sidebar.employeePortalFooterTitle}</p>
+            <p className="mt-1 text-xs leading-5 text-phx-ink-soft">{systemUiText.sidebar.employeePortalFooterDescription}</p>
           </div>
         </div>
       </div>
@@ -1432,7 +1432,7 @@ export function Sidebar({
         transitionsReady && "transition-[width] duration-200",
         isAdmin
           ? cn("border-r text-slate-100", ADMIN_SIDEBAR_BORDER, ADMIN_SIDEBAR_BG)
-          : "border-r border-[#E2E8F0] bg-white",
+          : "border-r border-phx-line bg-white",
         railActive ? SIDEBAR_WIDTH_RAIL : SIDEBAR_WIDTH_EXPANDED,
       )}
     >
@@ -1440,7 +1440,7 @@ export function Sidebar({
         <button
           aria-label={railActive ? "Expand sidebar" : "Collapse sidebar"}
           aria-pressed={railActive}
-          className="absolute -right-3 top-[86px] z-40 flex h-7 w-7 items-center justify-center rounded-full border border-[#333333] bg-[#111111] text-slate-300 shadow-[0_6px_16px_rgba(0,0,0,0.6)] transition hover:border-[#FDBA74] hover:text-[#F8B56B] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F97316]/60"
+          className="absolute -right-3 top-[86px] z-40 flex h-7 w-7 items-center justify-center rounded-full border border-[#333333] bg-[#111111] text-slate-300 shadow-[0_6px_16px_rgba(0,0,0,0.6)] transition hover:border-phx-accent-line hover:text-[#F8B56B] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-phx-accent/60"
           onClick={toggleRail}
           type="button"
         >
@@ -1500,7 +1500,7 @@ export function MobileSidebar({
       <aside
         className={cn(
           "absolute inset-y-0 left-0 flex w-[min(90vw,320px)] flex-col shadow-2xl transition-transform duration-200",
-          isAdmin ? cn("border-r text-slate-100", ADMIN_SIDEBAR_BORDER, ADMIN_SIDEBAR_BG) : "border-r border-[#E2E8F0] bg-white",
+          isAdmin ? cn("border-r text-slate-100", ADMIN_SIDEBAR_BORDER, ADMIN_SIDEBAR_BG) : "border-r border-phx-line bg-white",
           open ? "translate-x-0" : "-translate-x-full",
         )}
       >
@@ -1513,7 +1513,7 @@ export function MobileSidebar({
                 "mr-3 mt-4 flex h-9 w-9 shrink-0 items-center justify-center transition",
                 isAdmin
                   ? "bg-white/[0.06] text-slate-300 ring-1 ring-white/10 hover:text-[#F8B56B]"
-                  : "bg-white text-[#64748B] ring-1 ring-[#EBE4DA] hover:bg-[#F1EBE1] hover:text-[#0F172A]",
+                  : "bg-white text-phx-ink-soft ring-1 ring-[#EBE4DA] hover:bg-[#F1EBE1] hover:text-phx-ink",
               )}
               onClick={onClose}
               type="button"

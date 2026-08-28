@@ -68,7 +68,7 @@ export function ApprovalExceptionsDesk({ rows }: Props) {
 
   if (rows.length === 0) {
     return (
-      <div className="border border-[#e4e9ec] bg-white px-4 py-10 text-center">
+      <div className="border border-phx-line bg-white px-4 py-10 text-center">
         <p className="text-sm font-bold text-slate-900">No stuck approvals</p>
         <p className="mt-1 text-xs text-slate-500">
           Every in-flight order&apos;s next approval is addressed to somebody the directory knows.
@@ -89,7 +89,7 @@ export function ApprovalExceptionsDesk({ rows }: Props) {
       {ok ? <p className="px-1 text-sm font-semibold text-emerald-600">{ok}</p> : null}
 
       {rows.map((row) => (
-        <section key={row.stepId} className="border border-[#e4e9ec] bg-white">
+        <section key={row.stepId} className="border border-phx-line bg-white">
           <header className="flex flex-wrap items-baseline justify-between gap-2 border-b border-slate-100 px-4 py-3">
             <div className="min-w-0">
               <p className="truncate text-sm font-bold text-slate-900">
