@@ -1,7 +1,7 @@
 "use client";
 
 import type { Dispatch, ReactNode, SetStateAction } from "react";
-import { useCallback, useEffect, useRef, useState, useTransition } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState, useTransition } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   AlertTriangle,
@@ -15,11 +15,13 @@ import {
   Eye,
   FileSpreadsheet,
   Send,
+  Sparkles,
   Trash2,
   UserPlus,
   Users,
   X,
 } from "lucide-react";
+import Link from "next/link";
 
 import {
   AdminCallout,
@@ -42,6 +44,13 @@ import type { ApplicationWithContext } from "@/lib/recruitment/applications";
 import type { CandidateProfile } from "@/lib/recruitment/candidates";
 import { APPLIED_FOR_SOURCE_LABEL, APPLIED_FOR_SOURCE_SHORT, candidateRowAppliedFor } from "@/lib/recruitment/applied-for";
 import { candidateDisplayName, isShortenedCandidateName } from "@/lib/recruitment/candidate-display";
+import {
+  groupCandidatesByNotifiedManager,
+  managerPickerLabel as hiringManagerOptionLabel,
+  managerSeatLabel,
+  type ManagerGroup,
+} from "@/lib/recruitment/manager-grouping";
+import { screeningHref } from "@/lib/recruitment/screening-link";
 import {
   applicationStageLabel,
   humanizeRecruitmentTerm,
@@ -1911,7 +1920,7 @@ function RequisitionsTab({
                   <option value="">Hiring manager…</option>
                   {hiringManagers.map((manager) => (
                     <option key={manager.hrId} value={manager.hrId}>
-                      {manager.name} · {manager.jobTitle}
+                      {hiringManagerOptionLabel(manager)}
                     </option>
                   ))}
                 </SearchableSelect>
@@ -2442,7 +2451,7 @@ function CandidateActionsControl({
             <option value="">Send to manager…</option>
             {hiringManagers.map((manager) => (
               <option key={manager.hrId} value={manager.hrId}>
-                {manager.name} · {manager.jobTitle}
+                {hiringManagerOptionLabel(manager)}
               </option>
             ))}
           </SearchableSelect>
@@ -2475,13 +2484,106 @@ function CandidateActionsControl({
       {notified ? (
         // Truncated, with the whole sentence on hover: the column is a fixed 220px, and a manager
         // with a long name must not be what pushes the table back into horizontal scroll.
-        <p className="truncate text-[11px] text-slate-500" title={`Sent to ${notified.name} on ${cairoDateTime(notified.sentAt)}`}>
-          Sent to {notified.name} on {cairoDateTime(notified.sentAt)}
-        </p>
+        <div className="space-y-0.5">
+          <p className="truncate text-[11px] text-slate-500" title={`Sent to ${notified.name} on ${cairoDateTime(notified.sentAt)}`}>
+            Sent to {notified.name} on {cairoDateTime(notified.sentAt)}
+          </p>
+          {/* The seat, on its own line rather than appended to the one above — the cell is 220px
+              and one long sentence would hide the end of it, while two short lines each fit. This
+              is the SENT-TIME seat, not a live lookup: a manager who moves area next month did not
+              retroactively move the CVs that were sent to their old one. */}
+          {managerSeatLabel(notified) ? (
+            <p className="truncate text-[11px] font-medium text-slate-400" title={managerSeatLabel(notified)}>
+              {managerSeatLabel(notified)}
+            </p>
+          ) : null}
+        </div>
       ) : null}
     </div>
   );
 }
+
+/**
+ * Where one manager's pile starts, in the pool grouped by who each CV was sent to.
+ *
+ * Deliberately one component for both surfaces — the desktop table renders it inside a full-width
+ * <td> and the mobile stack renders it above a card — so the heading a recruiter reads on a phone
+ * cannot come to say something different from the one on the laptop.
+ *
+ * The seat here is the one FROZEN at send time, never a live lookup of where the manager sits
+ * today. That is the whole reason the three columns were added: a District Sales Manager who moves
+ * from Giza to Alexandria next month must not silently drag last month's CVs across the country.
+ */
+function ManagerGroupHeading({
+  count,
+  lastSentAt,
+  name,
+  regionName,
+  seatLabel,
+}: {
+  count: number;
+  lastSentAt: string | null;
+  name: string;
+  regionName: string | null;
+  seatLabel: string;
+}) {
+  return (
+    <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+      <span className="text-sm font-black text-[#0F172A]">{name}</span>
+      {seatLabel ? <span className="text-xs font-semibold text-slate-600">{seatLabel}</span> : null}
+      {regionName ? <span className="text-xs font-medium text-slate-400">{regionName}</span> : null}
+      <span className="ml-auto text-xs font-bold tabular-nums text-[#C2410C]">
+        {count} {count === 1 ? "CV" : "CVs"}
+      </span>
+      {lastSentAt ? (
+        <span className="text-[11px] font-medium text-slate-400">last sent {cairoDateTime(lastSentAt)}</span>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * Anchor for the jump chips above the pool. Encoded because the key is an HR_ID, not a slug.
+ *
+ * Two ids per group, not one, because BOTH surfaces are mounted at every width — the mobile stack
+ * is `md:hidden` and the desktop table `hidden md:block`, so a single id would appear twice in the
+ * document and every jump would land on whichever copy is currently display:none.
+ */
+function managerGroupAnchorId(key: string, surface: "table" | "card"): string {
+  return `manager-group-${surface}-${encodeURIComponent(key)}`;
+}
+
+/**
+ * Scroll to a manager's pile, whichever surface is actually on screen.
+ *
+ * getClientRects() is empty for anything inside a display:none subtree, which is exactly the test
+ * needed here and is cheaper and more honest than re-deriving the breakpoint in JavaScript.
+ *
+ * `behavior: "auto"`, and NOT because instant is prettier. Measured on this exact page on
+ * 2026-08-21: Chrome abandons a programmatic SMOOTH scroll over a long distance, leaving the page
+ * where it was — so the jump reads as a dead button. This is the same 434-row page that defect was
+ * found on, and a manager's pile is exactly the thing that sits fifteen screens down, so the smooth
+ * version would fail here more often than anywhere else. `tests/recruitment-candidate-pool-table`
+ * pins the whole file against the word, which is how this one was caught.
+ */
+function scrollToManagerGroup(key: string): void {
+  if (typeof document === "undefined") return;
+  for (const surface of ["table", "card"] as const) {
+    const element = document.getElementById(managerGroupAnchorId(key, surface));
+    if (element && element.getClientRects().length > 0) {
+      element.scrollIntoView({ behavior: "auto", block: "start" });
+      return;
+    }
+  }
+}
+
+/**
+ * The key for the tail of the grouped pool — everyone on screen nobody has sent to a manager yet.
+ *
+ * They are NOT dropped. 370 of the 434 rows in production have never been sent, and a grouped view
+ * that silently hides five sixths of the pool is how a recruiter concludes a CV was deleted.
+ */
+const UNSENT_GROUP_KEY = "not-sent";
 
 function CandidatePoolCard({
   candidate,
@@ -2800,6 +2902,12 @@ function CandidatesTab({
   // or the same applicant applying again. The flag was already computed; there was no way to ask for
   // just those rows, which is the only way anyone is going to work through them.
   const [duplicatesOnly, setDuplicatesOnly] = useState(false);
+  // "What is sitting with the Giza District Sales Manager?" — a question the pool could not answer
+  // at all before 2026-08-27, because a push recorded only a manager NAME and the list stayed one
+  // flat column ordered by arrival. Off by default: the pool is a pool first, and 370 of the 434
+  // rows in production have never been sent to anybody, so grouping would show one enormous
+  // ungrouped remainder to anyone who did not ask for it.
+  const [groupByManager, setGroupByManager] = useState(false);
   // Bulk send: which candidates are ticked, and who they all go to. Held here rather than per row
   // so the choice survives the re-render router.refresh() triggers after some other row is acted on.
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -2825,6 +2933,14 @@ function CandidatesTab({
   // every inbound CV and stores the result, so for those candidates the fields are waiting here
   // before anyone opens the profile — reviewing them costs nothing, unlike "Extract from CV".
   const [storedExtraction, setStoredExtraction] = useState<StoredCvExtraction | null>(null);
+
+  // Which shell this pool is rendering in, so the screening link points at the twin the caller can
+  // actually open. A hard-coded /recruitment/screening in the portal would bounce Talent
+  // Acquisition straight back out through the (admin) group's redirect.
+  const poolPathname = usePathname();
+  const screeningBasePath = poolPathname?.startsWith("/employee-portals")
+    ? "/employee-portals/recruitment"
+    : "/recruitment";
 
   // Every "how long ago" on this screen is measured from the SAME instant the stat cards were
   // counted from, stamped once on the server. Two benefits: the cards and the list can never
@@ -2928,6 +3044,26 @@ function CandidatesTab({
     // Newest first, always. The pool grew by 152 rows in the last 7 days; anything else buries the
     // CV that arrived an hour ago under one from March.
     .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime());
+
+  // Grouped by the manager each CV was SENT to, and only ever over what is already on screen — so
+  // narrowing to "this week" narrows the piles too, rather than showing groups that disagree with
+  // the count in the panel header. Candidates nobody has sent keep their place at the end: they
+  // are still part of the pool, they are simply not part of this question.
+  const managerGroups: ManagerGroup[] = groupByManager ? groupCandidatesByNotifiedManager(visibleCandidates) : [];
+  const notifiedVisibleCount = visibleCandidates.filter((candidate) => candidate.managerNotified).length;
+  const unsentVisible = groupByManager ? visibleCandidates.filter((candidate) => !candidate.managerNotified) : [];
+  // One flat list again once the groups are laid end to end, because the table below is a single
+  // <tbody> and the mobile list a single stack. The section headings come from the map next to
+  // this one rather than from a nested render, which keeps the 200-line row renderer untouched.
+  const displayedCandidates = groupByManager ? [...managerGroups.flatMap((group) => group.candidates), ...unsentVisible] : visibleCandidates;
+  const groupHeaderByCandidateId = new Map<string, ManagerGroup>();
+  if (groupByManager) {
+    for (const group of managerGroups) {
+      const first = group.candidates[0];
+      if (first) groupHeaderByCandidateId.set(first.id, group);
+    }
+  }
+  const firstUnsentId = groupByManager ? (unsentVisible[0]?.id ?? null) : null;
 
   const visibleIds = visibleCandidates.map((candidate) => candidate.id);
   const selectedVisibleIds = selectedIds.filter((id) => visibleIds.includes(id));
@@ -3334,6 +3470,27 @@ function CandidatesTab({
                 <span className="tabular-nums opacity-70">{duplicateCount}</span>
               </button>
             ) : null}
+            {/* Group by the manager the CV was SENT to — the owner asked for this in those exact
+                terms: "the same area are listed together and the same title are listed together".
+                It reads the seat frozen onto the candidate at send time, so a manager who changes
+                area does not silently rewrite where last month's CVs went. Hidden when nothing on
+                screen has been sent, because an empty grouping is a control that does nothing. */}
+            {notifiedVisibleCount > 0 ? (
+              <button
+                aria-pressed={groupByManager}
+                className={`inline-flex h-9 shrink-0 items-center gap-1.5 whitespace-nowrap border px-3 text-xs font-semibold transition ${
+                  groupByManager
+                    ? "border-[#F97316] bg-orange-50 text-[#C2410C]"
+                    : "border-[#D8E0EA] bg-white text-slate-600 hover:border-[#FDBA74] hover:text-[#F97316]"
+                }`}
+                onClick={() => setGroupByManager((previous) => !previous)}
+                type="button"
+              >
+                <Users className="h-3.5 w-3.5" />
+                Group by manager
+                <span className="tabular-nums opacity-70">{notifiedVisibleCount}</span>
+              </button>
+            ) : null}
             {/* The way into screening mode, and deliberately the loudest control on the toolbar.
                 It takes the queue EXACTLY as filtered and ordered on screen, so narrowing to
                 "District Manager · Alex-BHR" and pressing this is a session with an end. */}
@@ -3342,6 +3499,18 @@ function CandidatesTab({
                 Screen {visibleCandidates.length} {visibleCandidates.length === 1 ? "CV" : "CVs"}
               </Button>
             ) : null}
+            {/* The same queue with an ADDRESS. Deliberately a second control rather than a
+                replacement: the button above carries every filter on this toolbar exactly, which a
+                URL cannot, while this one is bookmarkable and survives closing the browser. It
+                opens on the unread pile because that is the reason to come back a second time. */}
+            <Link
+              className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 px-2.5 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-50"
+              href={screeningHref(screeningBasePath, { unseenOnly: true })}
+              title="Open the screening queue on its own page, starting with the CVs you have never read"
+            >
+              <Sparkles className="h-3.5 w-3.5" />
+              Screening page
+            </Link>
             {dateFilter !== "all" || experienceFilter !== "all" || statusFilter || sourceFilter || roleFilter || regionFilter || query || duplicatesOnly ? (
               <Button
                 variant="ghost"
@@ -3362,6 +3531,45 @@ function CandidatesTab({
           </div>
         </div>
 
+        {/* Who is holding what, in one line, before the list itself. With five managers and 434
+            rows the grouping is only useful if you can see the shape of it without scrolling
+            through it, and a chip jumps straight to that manager's pile. Ordered by title then
+            area then name — the same order the send dropdown uses, so the summary reads in the
+            order the recruiter chose from. */}
+        {groupByManager && managerGroups.length > 0 ? (
+          <div className="flex flex-wrap items-center gap-1.5 border-y border-orange-200 bg-orange-50/60 px-3 py-2">
+            <span className="mr-1 whitespace-nowrap text-xs font-black uppercase tracking-wide text-slate-500">
+              {managerGroups.length} {managerGroups.length === 1 ? "manager" : "managers"}
+            </span>
+            {managerGroups.map((group) => {
+              const seatLabel = managerSeatLabel(group.seat);
+              return (
+                <button
+                  className="inline-flex items-center gap-1.5 whitespace-nowrap border border-[#FDBA74] bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 transition hover:border-[#F97316] hover:text-[#C2410C]"
+                  key={group.key}
+                  onClick={() => scrollToManagerGroup(group.key)}
+                  title={seatLabel ? `${group.seat.name} — ${seatLabel}` : group.seat.name}
+                  type="button"
+                >
+                  <span className="font-bold">{group.seat.name}</span>
+                  {seatLabel ? <span className="font-medium text-slate-500">{seatLabel}</span> : null}
+                  <span className="font-bold tabular-nums text-[#C2410C]">{group.candidates.length}</span>
+                </button>
+              );
+            })}
+            {unsentVisible.length > 0 ? (
+              <button
+                className="inline-flex items-center gap-1.5 whitespace-nowrap border border-[#D8E0EA] bg-white px-2.5 py-1 text-xs font-semibold text-slate-600 transition hover:border-slate-400"
+                onClick={() => scrollToManagerGroup(UNSENT_GROUP_KEY)}
+                type="button"
+              >
+                Not sent yet
+                <span className="font-bold tabular-nums text-slate-500">{unsentVisible.length}</span>
+              </button>
+            ) : null}
+          </div>
+        ) : null}
+
         {/*
           Bulk send. One notification names everybody in it rather than one alert per candidate:
           the pool takes 152 CVs a week and the District Sales Managers receive nearly all of them,
@@ -3381,7 +3589,7 @@ function CandidatesTab({
               <option value="">Send all of them to…</option>
               {hiringManagers.map((manager) => (
                 <option key={manager.hrId} value={manager.hrId}>
-                  {manager.name} · {manager.jobTitle}
+                  {hiringManagerOptionLabel(manager)}
                 </option>
               ))}
             </SearchableSelect>
@@ -3412,24 +3620,60 @@ function CandidatesTab({
         <PortalResponsiveDataList
           empty={<PortalEmptyState message="Add a candidate above, or try a different search." title="No candidates found" />}
           getKey={(candidate) => candidate.id}
-          items={visibleCandidates}
-          renderCard={(candidate) => (
-            <CandidatePoolCard
-              candidate={candidate}
-              canDelete={canDelete}
-              canManage={canManage}
-              hiringManagers={hiringManagers}
-              isNew={isNewArrival(candidate)}
-              openProfile={openProfile}
-              openRequisitions={openRequisitions}
-              pending={pending}
-              run={run}
-              sendTo={sendTo}
-              setSendTo={setSendTo}
-              setStartReq={setStartReq}
-              startReq={startReq}
-            />
-          )}
+          items={displayedCandidates}
+          renderCard={(candidate) => {
+            // The mobile half of the grouping. Rendered above the first card of each pile rather
+            // than as its own list level, because the wrapper this sits in is what carries the
+            // divider between rows — a nested list would draw a second one.
+            const groupHeader = groupHeaderByCandidateId.get(candidate.id) ?? null;
+            return (
+              <>
+                {groupHeader ? (
+                  <div
+                    className="border-l-4 border-[#F97316] bg-orange-50/70 px-4 py-2"
+                    id={managerGroupAnchorId(groupHeader.key, "card")}
+                  >
+                    <ManagerGroupHeading
+                      count={groupHeader.candidates.length}
+                      lastSentAt={groupHeader.lastSentAt}
+                      name={groupHeader.seat.name}
+                      regionName={groupHeader.seat.regionName}
+                      seatLabel={managerSeatLabel(groupHeader.seat)}
+                    />
+                  </div>
+                ) : null}
+                {candidate.id === firstUnsentId ? (
+                  <div
+                    className="border-l-4 border-slate-300 bg-slate-50 px-4 py-2"
+                    id={managerGroupAnchorId(UNSENT_GROUP_KEY, "card")}
+                  >
+                    <ManagerGroupHeading
+                      count={unsentVisible.length}
+                      lastSentAt={null}
+                      name="Not sent to a manager yet"
+                      regionName={null}
+                      seatLabel=""
+                    />
+                  </div>
+                ) : null}
+                <CandidatePoolCard
+                  candidate={candidate}
+                  canDelete={canDelete}
+                  canManage={canManage}
+                  hiringManagers={hiringManagers}
+                  isNew={isNewArrival(candidate)}
+                  openProfile={openProfile}
+                  openRequisitions={openRequisitions}
+                  pending={pending}
+                  run={run}
+                  sendTo={sendTo}
+                  setSendTo={setSendTo}
+                  setStartReq={setStartReq}
+                  startReq={startReq}
+                />
+              </>
+            );
+          }}
           renderTable={() => (
             /*
              * Rebuilt 2026-08-20 to fit the page without sideways scroll; re-cut 2026-08-24 when
@@ -3521,7 +3765,7 @@ function CandidatesTab({
                 </tr>
               </thead>
               <tbody>
-                {visibleCandidates.map((candidate) => {
+                {displayedCandidates.map((candidate) => {
                   const displayName = candidateDisplayName(candidate.fullName);
                   const contact = [candidate.email, candidate.phone].filter(Boolean).join(" · ");
                   const appliedFor = candidateRowAppliedFor(candidate);
@@ -3537,8 +3781,40 @@ function CandidatesTab({
                     roleFamily !== null &&
                     normalizeJobTitle(facts.roleTitle?.value ?? appliedFor.text) ===
                       normalizeJobTitle(candidateRoleFamilyLabels[roleFamily]);
+                  // The desktop half of the grouping. A full-width heading row rather than a
+                  // nested table, so all 200 lines of the row renderer below stay exactly as they
+                  // are and the columns cannot come to disagree between one pile and the next.
+                  const groupHeader = groupHeaderByCandidateId.get(candidate.id) ?? null;
+                  const headingColSpan = canManage ? 8 : 7;
                   return (
-                    <tr className="align-top transition-colors hover:bg-orange-50/50" key={candidate.id}>
+                    <Fragment key={candidate.id}>
+                      {groupHeader ? (
+                        <tr className="bg-orange-50/70" id={managerGroupAnchorId(groupHeader.key, "table")}>
+                          <td className="border-l-4 border-[#F97316] px-3 py-2" colSpan={headingColSpan}>
+                            <ManagerGroupHeading
+                              count={groupHeader.candidates.length}
+                              lastSentAt={groupHeader.lastSentAt}
+                              name={groupHeader.seat.name}
+                              regionName={groupHeader.seat.regionName}
+                              seatLabel={managerSeatLabel(groupHeader.seat)}
+                            />
+                          </td>
+                        </tr>
+                      ) : null}
+                      {candidate.id === firstUnsentId ? (
+                        <tr className="bg-slate-50" id={managerGroupAnchorId(UNSENT_GROUP_KEY, "table")}>
+                          <td className="border-l-4 border-slate-300 px-3 py-2" colSpan={headingColSpan}>
+                            <ManagerGroupHeading
+                              count={unsentVisible.length}
+                              lastSentAt={null}
+                              name="Not sent to a manager yet"
+                              regionName={null}
+                              seatLabel=""
+                            />
+                          </td>
+                        </tr>
+                      ) : null}
+                    <tr className="align-top transition-colors hover:bg-orange-50/50">
                       {canManage ? (
                         <td className="px-3 py-2.5">
                           <input
@@ -3804,6 +4080,7 @@ function CandidatesTab({
                         />
                       </td>
                     </tr>
+                    </Fragment>
                   );
                 })}
               </tbody>
@@ -4157,6 +4434,10 @@ function CandidatesTab({
           {screeningQueue ? (
             <CandidateScreeningSession
               candidates={screeningQueue}
+              // `canManage` is the pool's own `recruitment: update` gate, and it is the same grant
+              // the send route enforces — so a reader who cannot send simply gets no picker here,
+              // exactly as on the standalone page.
+              hiringManagers={canManage ? hiringManagers : []}
               onClose={(decidedCount) => {
                 setScreeningQueue(null);
                 // Only pay for a reload when something actually changed. Leaving the queue after

@@ -177,7 +177,17 @@ export async function runRecruitmentSimplifyTests() {
       fakeCandidate({
         createdAt: "2026-06-01T09:00:00.000Z",
         id: "old",
-        managerNotified: { hrId: "B-1", name: "Nosiba", sentAt: "2026-08-14T09:00:00.000Z" },
+        // The three seat fields arrived on 2026-08-27 so the pool can pile CVs under the manager
+        // they were sent to. Null here on purpose: this fixture predates the stamp, which is
+        // exactly what every send made before that migration looks like.
+        managerNotified: {
+          areaName: null,
+          hrId: "B-1",
+          jobTitle: null,
+          name: "Nosiba",
+          regionName: null,
+          sentAt: "2026-08-14T09:00:00.000Z",
+        },
         status: "sent_to_manager",
       }),
     ],

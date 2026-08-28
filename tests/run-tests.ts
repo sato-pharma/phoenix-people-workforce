@@ -153,6 +153,9 @@ import { runRecruitmentLabelTests } from "./recruitment-labels.test.ts";
 import { runHiringDocumentsLabelTests } from "./hiring-documents-labels.test.ts";
 import { runSearchableSelectNoEllipsisTests } from "./searchable-select-no-ellipsis.test.ts";
 import { runRecruitmentAppliedForTests } from "./recruitment-applied-for.test.ts";
+import { runRecruitmentManagerGroupingTests } from "./recruitment-manager-grouping.test.ts";
+import { runRecruitmentCandidateSeenTests } from "./recruitment-candidate-seen.test.ts";
+import { runRecruitmentScreeningPageTests } from "./recruitment-screening-page.test.ts";
 import { runRecruitmentJobPostChannelTests } from "./recruitment-job-post-channels.test.ts";
 import { runRecruitmentHubPortalCoverageTests } from "./recruitment-hub-portal-coverage.test.ts";
 import { runRecruitmentPortalCvViewTests } from "./recruitment-portal-cv-view.test.ts";
@@ -1227,6 +1230,18 @@ await runTest(
 await runTest(
   "recruitment \"Applying for\" (the evidence ladder that lifts the column from 15 answered rows to 394, on verbatim production strings)",
   runRecruitmentAppliedForTests,
+);
+await runTest(
+  "recruitment manager grouping (CVs pile up under the seat they were SENT to, and b-10 is not a second manager from B-10)",
+  runRecruitmentManagerGroupingTests,
+);
+await runTest(
+  "recruitment candidate seen tracking (a CV read once is never offered as a stranger again, and the marker survives the case trap)",
+  runRecruitmentCandidateSeenTests,
+);
+await runTest(
+  "recruitment screening page (the queue has an address, in both shells, and the viewer never comes from the URL)",
+  runRecruitmentScreeningPageTests,
 );
 await runTest(
   "recruitment advertising channels (the code round-trips from apply link to intake, or every CV loses its source)",
