@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { sendCandidatesToManager } from "@/lib/recruitment/candidates";
 import {
   assertSameOriginMutation,
+  positionInput,
   readJsonObject,
   recruitmentApiError,
   requireRecruitmentAccess,
@@ -47,7 +48,8 @@ export async function POST(request: Request) {
       );
     }
 
-    const result = await sendCandidatesToManager(access, candidateIds, managerHrId);
+    // The position rides along optionally. A body that names none still sends — see positionInput.
+    const result = await sendCandidatesToManager(access, candidateIds, managerHrId, positionInput(body));
     return NextResponse.json({ result, success: true });
   } catch (error) {
     return recruitmentApiError(error, "Failed to send those candidates to that manager.");

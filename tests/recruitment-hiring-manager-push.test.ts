@@ -215,18 +215,27 @@ export async function runRecruitmentHiringManagerPushTests() {
     /await createSystemNotification\([\s\S]*?const sentAt[\s\S]*?manager_notified_at/,
     "the stamp must be written AFTER the notification, or the row can claim a send that never happened",
   );
-  // BOTH writes, listed separately on purpose: the fallback is not a best-effort retry, it is the
-  // same and only record of the send, made without three columns the database has not learned yet.
-  // Swallowing either would recreate exactly the invisibility this work exists to end.
+  // Re-cut 2026-08-28, and the note above about pinning a PROPERTY rather than a spelling applies
+  // to this pair too — it just took a second change to prove it. These asserted the two literal
+  // lines of a TWO-branch write (`attempt.error` / `retry.error`). The position columns arrive in
+  // their own migration, separate from the seat columns, so a database can have one and not the
+  // other and the write now falls through THREE tiers in a loop; there is no `retry` any more.
+  // Behaviour is unchanged and is what these lines still hold: a write that never succeeded throws,
+  // and only a missing column is allowed to narrow what is written.
   assert.match(
     pushBody,
-    /if \(attempt\.error\) throw attempt\.error;/,
+    /if \(!written\) throw lastError;/,
     "a failed stamp write must throw — it is the only record of the send",
   );
   assert.match(
     pushBody,
-    /if \(retry\.error\) throw retry\.error;/,
-    "the seat-less fallback write must throw too — it records the same send",
+    /if \(!isMissingSeatColumn\(attempt\.error\)\) break;/,
+    "and only a MISSING COLUMN may narrow the write — any other failure has to reach the caller",
+  );
+  assert.doesNotMatch(
+    pushBody,
+    /catch\s*(\([^)]*\))?\s*\{\s*\}/,
+    "nothing around the stamp may swallow an error — an empty catch is the exact defect this module was built to end",
   );
 
   // Only real managers are offered, and only current employees.

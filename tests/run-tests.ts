@@ -156,6 +156,7 @@ import { runRecruitmentAppliedForTests } from "./recruitment-applied-for.test.ts
 import { runRecruitmentManagerGroupingTests } from "./recruitment-manager-grouping.test.ts";
 import { runRecruitmentCandidateSeenTests } from "./recruitment-candidate-seen.test.ts";
 import { runRecruitmentScreeningPageTests } from "./recruitment-screening-page.test.ts";
+import { runCandidatePositionFolderTests } from "./candidate-position-folders.test.ts";
 import { runRecruitmentJobPostChannelTests } from "./recruitment-job-post-channels.test.ts";
 import { runRecruitmentHubPortalCoverageTests } from "./recruitment-hub-portal-coverage.test.ts";
 import { runRecruitmentPortalCvViewTests } from "./recruitment-portal-cv-view.test.ts";
@@ -1242,6 +1243,10 @@ await runTest(
 await runTest(
   "recruitment screening page (the queue has an address, in both shells, and the viewer never comes from the URL)",
   runRecruitmentScreeningPageTests,
+);
+await runTest(
+  "recruitment position folders (a CV is sent FOR a vacancy, and a manager's inbox folds into one page per position)",
+  runCandidatePositionFolderTests,
 );
 await runTest(
   "recruitment advertising channels (the code round-trips from apply link to intake, or every CV loses its source)",

@@ -90,7 +90,9 @@ async function ScreeningContent({
       candidates={queue.candidates}
       hiringManagers={queue.hiringManagers}
       initialViews={queue.views}
+      openVacancies={queue.openVacancies}
       poolHref="/employee-portals/recruitment"
+      positionSuggestions={queue.positionSuggestions}
     />
   );
 }

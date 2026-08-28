@@ -203,14 +203,25 @@ export async function runRecruitmentManagerGroupingTests() {
     /code === "PGRST204" \|\| code === "42703"/,
     "both spellings of \"that column does not exist\" must be recognised — PostgREST caches its own answer",
   );
+  // Re-cut 2026-08-28, for the same reason the pin above it was re-cut on 2026-08-27: this
+  // asserted the SPELLING of the fallback (`seatColumnsExist = false;`) rather than the property.
+  // When the position columns arrived the write grew a THIRD tier and that boolean became an index,
+  // so a pin on the old variable name turned `validate` red on a change that preserved every
+  // behaviour it was protecting. What must stay true is that a missing column NARROWS the write
+  // instead of failing it — never how that narrowing is spelled.
   assert.match(
     notifySource,
-    /seatColumnsExist = false;/,
-    "a missing seat column must fall back to recording the send without the seat",
+    /const tiers = \[/,
+    "a missing column must fall back to recording the send with fewer columns, not fail the send",
   );
   assert.match(
     notifySource,
-    /if \(retry\.error\) throw retry\.error;/,
+    /if \(!isMissingSeatColumn\(attempt\.error\)\) break;/,
+    "and ONLY a missing column may narrow it — any other write failure has to surface",
+  );
+  assert.match(
+    notifySource,
+    /if \(!written\) throw lastError;/,
     "the fallback write is still the only record of the send — it must never be swallowed",
   );
 

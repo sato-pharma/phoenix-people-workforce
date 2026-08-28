@@ -186,6 +186,23 @@ export type Requisition = {
   updatedAt: string;
 };
 
+/**
+ * The position a candidate was sent FOR, frozen at the moment of the send.
+ *
+ * Named here rather than written inline on Candidate because four other places have to agree on its
+ * shape — the picker that produces it, the route that validates it, the write path that stamps it,
+ * and the grouping that folds it into folders. A shape repeated in four places is a shape that
+ * drifts in three of them.
+ */
+export type SentForPosition = {
+  /** The open vacancy this came from, when one was picked. Null for a free-typed position. */
+  vacancyId: number | null;
+  jobTitle: string | null;
+  areaName: string | null;
+  lineName: string | null;
+  regionName: string | null;
+};
+
 export type Candidate = {
   id: string;
   fullName: string;
@@ -264,6 +281,20 @@ export type Candidate = {
     areaName: string | null;
     regionName: string | null;
   } | null;
+  /**
+   * The POSITION this candidate was sent for — "Nasr City · Medical Representative · Pedia".
+   *
+   * A different thing from `managerNotified` above, which is the manager's OWN seat. One manager
+   * holds several open vacancies (measured 2026-08-28: Ahmed Mohamed Nagy is named on five, across
+   * four areas), so grouping a manager's inbox by the manager produces one pile, and grouping it by
+   * this produces the folder-per-vacancy the owner asked for.
+   *
+   * `vacancyId` is set when the recruiter picked an open seat from the organogram and null when
+   * they typed the position instead — both are valid, and the text is what the folder is keyed on
+   * either way. See position-folder.ts. Null on every send made before 2026-08-28, which is honest:
+   * no position was recorded, and none is invented.
+   */
+  sentFor: SentForPosition | null;
   createdBy: string | null;
   createdAt: string;
   updatedAt: string;

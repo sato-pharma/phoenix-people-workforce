@@ -191,6 +191,25 @@ export function mapCandidate(row: CandidateDbRow): Candidate {
             sentAt: String(row.manager_notified_at),
           }
         : null,
+    // The position the candidate was sent FOR — a different thing from the manager's own seat
+    // above, and the one the manager's folders are built on. Present whenever ANY part of it was
+    // recorded: a free-typed position has no vacancy id, and a vacancy picked before the line was
+    // known would still name an area and a title. Requiring all of them would silently unfile a
+    // candidate the recruiter did file. Absent entirely — every part null — reads as null, which is
+    // what every send made before 2026-08-28 genuinely is.
+    sentFor:
+      textOrNull(row.sent_for_job_title) || textOrNull(row.sent_for_area) || textOrNull(row.sent_for_line)
+        ? {
+            areaName: textOrNull(row.sent_for_area),
+            jobTitle: textOrNull(row.sent_for_job_title),
+            lineName: textOrNull(row.sent_for_line),
+            regionName: textOrNull(row.sent_for_region),
+            // numberOrNull, not a bare Number(): `Number(null)` is 0, not NaN, so a hand-rolled
+            // finiteness check would turn an absent id into vacancy 0 — a real-looking foreign key
+            // pointing at nothing.
+            vacancyId: numberOrNull(row.sent_for_vacancy_id),
+          }
+        : null,
     createdBy: textOrNull(row.created_by),
     createdAt: String(row.created_at ?? ""),
     updatedAt: String(row.updated_at ?? ""),
