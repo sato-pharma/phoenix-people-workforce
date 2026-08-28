@@ -55,11 +55,8 @@ export function runCandidateRoleRegionTests() {
     "other",
     "a bare NSM is ambiguous and unused here — same reasoning as the excluded bare MR and KAM",
   );
-  // Recorded, not endorsed: "Regional Sales Manager" lands in `sales`, because the area/regional
-  // branch anchors on "regional" immediately followed by manager/supervisor/head and this title
-  // separates them. Pre-existing behaviour, unchanged by the national family — asserted here so a
-  // future fix is a deliberate decision with a visible diff, not an accident.
-  assert.equal(candidateRoleFamily("Regional Sales Manager"), "sales");
+  // "Regional Sales Manager" now resolves to area_regional_manager, not sales — see the dedicated
+  // block below, where the area/regional branch's fix and its production measurement are documented.
 
   // --- Compound titles name two jobs. The more senior, more specific one wins.
   assert.equal(
@@ -94,6 +91,30 @@ export function runCandidateRoleRegionTests() {
 
   assert.equal(candidateRoleFamily("Regional Manager \u2013 Upper Egypt"), "area_regional_manager");
   assert.equal(candidateRoleFamily("Area Supervisor"), "area_regional_manager");
+
+  // --- "Sales" wedged between the region word and the seniority word must not push these into the
+  // --- sales catch-all: "Regional/Area Sales Manager" is this pool's own name for the RSM/ASM
+  // --- field-force role. Measured against production 2026-08-28: 12 of 345 titled candidates (9
+  // --- distinct titles, all this shape) were falling through to "sales" before this fix.
+  for (const title of [
+    "Regional Sales Manager",
+    "7-Regional Sales Manager",
+    "Regional Sales Manager (Alex & Delta)",
+    "Regional sales manager for great cairo",
+    "Area Sales Manager",
+    "area sales manager",
+    "Area Sales Manager GCC Region",
+  ]) {
+    assert.equal(candidateRoleFamily(title), "area_regional_manager", `"${title}" is an Area / Regional Manager`);
+  }
+  // --- But not ANY word between the two \u2014 "Regional Collection Manager" carries both "regional"
+  // --- and "manager" and is still not a field role, so it must stay unclaimed.
+  assert.equal(
+    candidateRoleFamily("Regional Collection Manager"),
+    "other",
+    "a Regional Collection Manager is not the Area / Regional field-force role",
+  );
+
   assert.equal(candidateRoleFamily("Product Manager (Respiratory & Anti-Infective)"), "product_manager");
   assert.equal(candidateRoleFamily("Senior HR Generalist"), "human_resources");
   assert.equal(candidateRoleFamily("Sr. Payroll & Personnel Specialist"), "human_resources",
