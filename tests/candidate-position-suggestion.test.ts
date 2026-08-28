@@ -317,7 +317,7 @@ export async function runCandidatePositionSuggestionTests(): Promise<void> {
       ...(screen.match(/(?:label|title|placeholder|aria-label)="[^"]{4,}"/g) ?? []),
     ];
     for (const chunk of visibleText) {
-      assert.doesNotMatch(chunk, /AI|artificial intelligence|machine learning|GPT|automatically detected|we think|our system (thinks|suggests)/i,
+      assert.doesNotMatch(chunk, /\bAI\b|artificial intelligence|machine learning|\bGPT\b|automatically detected|we think|our system (thinks|suggests)/i,
         `no visible label may name the machinery: ${chunk.trim()}`);
     }
     for (const label of ["Looks like this one", "Looks like one of these"]) {
