@@ -253,9 +253,10 @@ export function runCrmContactListsTests() {
 
   // ── 7b. The sweep is sliced, because the scheduler cuts every request at 30 seconds ───────────
   // Measured 2026-08-28 on the real route: cron-job.org killed the connection at ms=30108 with the
-  // job's requestTimeout set to 300 (a platform cap, not a setting), and the database then showed
-  // 39 of 68 agents re-stamped — the server does NOT finish after the client hangs up. So the
-  // partition has to be complete and disjoint, or a rep silently stops being refreshed.
+  // job's requestTimeout set to 300 — a platform cap, not a setting. The handler does finish past
+  // the cut, so slicing buys a truthful report rather than rescuing data; what it must never do is
+  // LOSE a rep, because the schedule gives each twelfth exactly one turn a day. So the partition
+  // has to be complete and disjoint, or a rep silently stops being refreshed and nothing says so.
   const roster = Array.from({ length: 82 }, (_value, index) => index);
   const slices = Array.from({ length: CONTACT_SYNC_SLICE_COUNT }, (_value, slice) =>
     selectContactSyncSlice(roster, slice, CONTACT_SYNC_SLICE_COUNT),

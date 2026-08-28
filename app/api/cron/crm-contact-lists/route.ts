@@ -25,10 +25,11 @@ const JOB_NAME = "crm-contact-lists";
  * How long this handler may spend fetching before it stops starting new agents.
  *
  * cron-job.org cuts every request at 30 seconds — a platform cap that ignores the per-job
- * `requestTimeout`, measured 2026-08-28 at `ms=30108` against a job set to 300 — and the work does
- * NOT continue server-side after the cut: 39 of 68 agents had been re-stamped and the rest had not.
- * 21 seconds leaves room for the roster read, the vendor login and the audit write inside the cap,
- * so the scheduler records a real answer instead of a timeout it cannot interpret.
+ * `requestTimeout`, measured 2026-08-28 at `ms=30108` against a job set to 300. The handler DOES
+ * keep running past the cut and finishes (see contacts-sync.ts), so the budget is not protecting
+ * the data; it is protecting the REPORT. 21 seconds leaves room for the roster read, the vendor
+ * login and the audit write inside the cap, so the scheduler records a real answer with a readable
+ * body instead of a permanent timeout nobody reads. Measured on production: 8-10s for a full tick.
  */
 const SLICE_BUDGET_MS = 21_000;
 
