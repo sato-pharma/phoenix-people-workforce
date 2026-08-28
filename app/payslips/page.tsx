@@ -10,7 +10,6 @@ import {
 import { AppShell } from "@/components/layout/app-shell";
 import { PageTransition } from "@/components/ui/page-transition";
 import { employeeHasActiveDeviceMapping } from "@/lib/attendance/device-user-mapping";
-import { getEffectiveSidebarModuleIds } from "@/lib/admin/modules-control";
 import { assertPermission, resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAuthenticatedPageAccess } from "@/lib/auth/page-access";
 import { resolveEmployeePortalNavVisibility } from "@/lib/employee-portal/navigation";
@@ -58,7 +57,6 @@ export default async function PayslipsPage() {
   const hasDeviceMapping = access.hrId
     ? await employeeHasActiveDeviceMapping(access.hrId).catch(() => false)
     : false;
-  const effectiveModuleIds = await getEffectiveSidebarModuleIds(access, "employee-portal").catch(() => null);
 
   const visibility = resolveEmployeePortalNavVisibility(
     data.employee.roleLabel,
@@ -94,7 +92,7 @@ export default async function PayslipsPage() {
   }
 
   return (
-    <EmployeePortalChrome data={data} effectiveModuleIds={effectiveModuleIds} visibility={visibility}>
+    <EmployeePortalChrome data={data} visibility={visibility}>
             <EmployeePortalPageShell
         description="Review your monthly compensation with clarity and confidence."
         title="My Earnings"

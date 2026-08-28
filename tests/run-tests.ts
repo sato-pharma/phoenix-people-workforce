@@ -20,7 +20,6 @@ import { runAutomatedPayrollPageWidthTests } from "./automated-payroll-page-widt
 import { runWorkspaceSingleHeroTests } from "./workspace-single-hero.test.ts";
 import { runSidebarRoleScopedHeadingsTests } from "./sidebar-role-scoped-headings.test.ts";
 import { runSosProductMappingCheckTests } from "./sos-product-mapping-checks.test.ts";
-import { runModulesControlTests } from "./modules-control.test.ts";
 import { runIncentiveSchemeTests } from "./incentive-scheme.test.ts";
 import { runEmailNotificationTests } from "./email-notifications.test.ts";
 import { runEmailGovernanceTests } from "./email-governance.test.ts";
@@ -501,7 +500,6 @@ import { runEmployeePortalNavigationTests } from "./employee-portal-navigation.t
 import { runPortalNavActingDmUsesAppRoleTests } from "./portal-nav-acting-dm-uses-app-role.test.ts";
 import { runEmployeePortalBottomNavTests } from "./employee-portal-bottom-nav.test.ts";
 import { runEmployeePortalNavCatalogSyncTests } from "./employee-portal-nav-catalog-sync.test.ts";
-import { runEmployeePortalModuleCurationTests } from "./employee-portal-module-curation.test.ts";
 import { runCompanyCalendarTests } from "./company-calendar.test.ts";
 import { runPortalLoggingTests } from "./portal-logging.test.ts";
 import { runScopeBadgeTests } from "./scope-badge.test.ts";
@@ -1045,7 +1043,6 @@ await runTest(
   "source-of-sales product mapping checks (duplicate item codes + zero-sales gaps)",
   runSosProductMappingCheckTests,
 );
-await runTest("modules control governance", runModulesControlTests);
 await runTest("incentive scheme", runIncentiveSchemeTests);
 await runTest("email notifications", runEmailNotificationTests);
 await runTest("notification confidence gate (checks + decision logic)", runNotificationConfidenceGateTests);
@@ -1718,7 +1715,6 @@ await runTest("employee portal navigation", runEmployeePortalNavigationTests);
 await runTest("portal nav acting DM follows app access role, not job title", runPortalNavActingDmUsesAppRoleTests);
 await runTest("employee portal bottom nav", runEmployeePortalBottomNavTests);
 await runTest("employee portal nav catalog sync (M12)", runEmployeePortalNavCatalogSyncTests);
-await runTest("employee portal module curation (Modules Control sidebar wiring)", runEmployeePortalModuleCurationTests);
 await runTest("company calendar", runCompanyCalendarTests);
 await runTest("portal logging", runPortalLoggingTests);
 await runTest("scope badge", runScopeBadgeTests);
