@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 
+import { hrNamespaceRemainder, isHrRewritablePath, toHrNamespacePath } from "@/lib/navigation/shell-headers";
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Every nav test in this repo checks the same direction: nav -> route. Given a
 // sidebar link, does a page exist? (`sfe-manager-nav-dead-links`,
@@ -28,6 +30,23 @@ import path from "node:path";
 // A first pass at this measurement excluded system-navigation.ts entirely, to
 // answer "not in the sidebar" — and so counted every hub-only page as
 // unreachable, reporting 56 when the real figure was 11. Both layers count.
+//
+// AND SO DOES THE SECOND SPELLING OF THE SAME PAGE
+// The HR seats reach admin pages through an /hr address that middleware rewrites
+// onto the real route: the sidebar links /hr/admin/hr-command-center, and the
+// page serving it is app/(admin)/admin/hr-command-center/page.tsx. A scan
+// matching only the filesystem route therefore reads a page linked ONLY by its
+// /hr spelling as reachable by nobody. That is how this file first went red, on
+// a page that was linked from the HR rail and was every HR seat's own landing
+// destination. A mention of the /hr spelling counts as a mention.
+//
+// The alias is built from the rewrite contract itself (isHrRewritablePath,
+// toHrNamespacePath, hrNamespaceRemainder in src/lib/navigation/shell-headers)
+// rather than by pasting the prefix, so if that contract changes this follows it
+// instead of quietly counting an address that no longer resolves. It corrects a
+// blind spot rather than hiding a strand, and that is measurable: applied to the
+// tree at eccf0920 the count is still 11, exactly as it was without it. The
+// alias moves nothing that was already counted honestly.
 //
 // WHAT THIS CANNOT SEE, AND WHY THE BASELINE IS A CEILING NOT A CENSUS
 // A route assembled at runtime is invisible to a literal scan: 63 files build
@@ -136,9 +155,24 @@ export function runNavigationPageFindabilityRatchetTests() {
     }
   }
 
+  // Both addresses that resolve to this page: its own route, and the /hr spelling
+  // middleware rewrites onto it. Round-tripped through the contract rather than
+  // assumed, so an /hr address the rewrite would refuse is never counted as a link.
+  const spellingsOf = (route: string): string[] => {
+    const prefixed = toHrNamespacePath(route);
+    if (prefixed === route) return [route];
+    if (!isHrRewritablePath(prefixed) || hrNamespaceRemainder(prefixed) !== route) return [route];
+    return [route, prefixed];
+  };
+
   // A page mentioning its own path does not make it reachable.
   const unreachable = [...pageFileOf.entries()]
-    .filter(([route, own]) => [...(mentionedIn.get(route) ?? [])].filter((f) => f !== own).length === 0)
+    .filter(
+      ([route, own]) =>
+        spellingsOf(route)
+          .flatMap((spelling) => [...(mentionedIn.get(spelling) ?? [])])
+          .filter((f) => f !== own).length === 0,
+    )
     .map(([route]) => route)
     .sort();
 
