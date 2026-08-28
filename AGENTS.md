@@ -119,6 +119,21 @@ file holding the full account, under
   That is the SERVER's own auth, not the staging database, which was healthy. Route staging work
   through `mcp__supabase-production__*` passing the staging `project_id` (§8: the `project_id`
   argument is the only thing separating the two). `supabase-staging-named-server-broken-2026-08-10`
+- **A Windows USER env var SHADOWS every `.env.local` in every worktree, silently.** `node --env-file`
+  / `--env-file-if-exists` only FILLS IN variables that are missing — it never overwrites one already
+  in the process environment. So editing `.env.local` and re-running changes nothing, with no warning.
+  **Which copy is valid has already flipped once**, hours apart on the same day: the env var was the
+  dead key shadowing a good file at 10:00 Cairo and the only live key by 12:35, with three distinct
+  164-char `OPENAI_API_KEY`s in play at once. Never reuse a previous session's answer — re-probe
+  process env, `.env.local` and the Windows User env, all three, and never print the value.
+  `windows-env-var-shadows-every-env-local-key`
+- **The local attendance agent dies at EVERY logon and loses NOTHING — do not escalate it.** The
+  `Phoenix Attendance Agent - Run At Logon` task ends `0xE0434352` (an unhandled managed exception)
+  every single boot, but `Phoenix Attendance Sync - Every 2 Hours` starts the agent on demand and
+  those runs INSERT — 19 rows and 1 row on 2026-08-26 off 5,406 device records. Overnight `503`s are
+  the DEVICE, not the code (`192.168.100.52:4370` is reachable roughly 11:00–18:00 Cairo). **Never
+  disable the 2-hourly task, and never launch a second agent — it can fire a PRODUCTION sync.**
+  `attendance-agent-crashes-at-logon-but-loses-no-attendance`
 
 **Git**
 
@@ -249,6 +264,17 @@ file holding the full account, under
   409" and "0 have a stored file"; chunked at 50 the truth was **10**. Chunk every `.in()` at ~50, and
   print the row count of the intermediate fetch — a pool of 409 candidates cannot return 0 extraction
   rows, which is what exposed it. `postgrest-in-with-hundreds-of-ids-silently-returns-nothing`
+- **A Supabase client request that times out at 15s STILL COMMITS.** `getSupabaseAdmin()` aborts after
+  15s (`src/lib/supabase/server.ts`; raise it with `getSupabaseAdmin({ requestTimeoutMs })`), and the
+  JS client throws "Supabase request timed out" — but Postgres keeps running and commits the
+  statement. Every later step of a multi-call orchestration (rollup refresh, audit write) is skipped,
+  so the result is a **silent half-applied state with no audit row**, not a clean failure. Hit in
+  production 2026-08-09: Territory Sync re-stamped ~14k `source_of_sales_import_rows` (committed),
+  the client timed out, and 55 batches' rollups were never refreshed — rows on the new geography, the
+  drilldown on the old. Do a heavy multi-step mutation in ONE `plpgsql` function so a client abort
+  rolls it all back. Three further DB-performance hooks sit in `MEMORY-ARCHIVE.md`, including the
+  one this depends on: every DB round trip from here crosses the Atlantic.
+  `supabase-client-15s-timeout-commits-anyway-half-applies`
 
 **Validation**
 
@@ -385,12 +411,30 @@ Phoenix business rules, and the index line at its cliff is the wrong place for t
   `repo-doctor-no-origin-ref-is-usually-squash-residue`
 - **Self-removing a worktree MUTES its own session-end guard.**
   `self-removing-a-worktree-mutes-its-own-session-end-guard`
+- **`next dev` CANNOT run in a worktree — the junction §5 prescribes is what breaks it.** Turbopack's
+  resolver reads the Windows directory junction as a symlink escaping the project root and fatals on
+  the first route: `Symlink [project]/node_modules is invalid, it points out of the filesystem root`.
+  Reproduced twice on 2026-08-28, with and without `--turbopack` — Next 16.2.11 prints "(Turbopack)"
+  either way, so the CLI flag alone gives you no webpack fallback. The primary checkout, same repo and
+  same version, is fine: its `node_modules` is a real directory. §5's junction pattern was written and
+  tested for `typecheck`/`lint`/`node scripts/…`, none of which go through Turbopack's root
+  resolution. **Do not burn more than one retry on it** — verify against the primary checkout's server,
+  or prove the change at data level instead. `turbopack-cannot-resolve-a-junctioned-node-modules-here`
 
 **Next.js runtime**
 
 - **A >2MB `unstable_cache` entry KILLS the dev server** — it throws only in dev, is uncatchable, and is
   muted in prod. Gzip rows; return null over the ceiling.
   `next-2mb-data-cache-throws-only-in-dev-and-kills-the-server`
+- **`unstable_cache` SERIALIZES, so a returned `Map` comes back `{}`** — and the page works on exactly
+  one render, the one that fills the cache, then throws on every render after it for the whole
+  revalidate window. Measured 2026-08-28 on `/admin/reps-plans` (#2494): first load the full board,
+  every load after `TypeError: index.get is not a function`, rendered as the admin error boundary — a
+  page that reads as a **permission redirect**, not a crash, which is where the first 30 minutes of
+  diagnosis went. Cache the ROWS and rebuild the object graph per call. **No unit test can see this**:
+  every test calls the pure builder, where a Map is still a Map, and it is only reachable by loading
+  the page TWICE. Pin it two ways — assert a JSON round-trip loses `.get`, and source-pin the loader
+  as a plain `async function`. `unstable-cache-serializes-a-map-into-an-empty-object`
 - **Standalone tracing copies FILES, not pnpm SYMLINKS** (fixed 2026-08-22 with a hoist plus a `*/**`
   glob, now CI-gated), and **a top-level `import sharp` 500s a whole PAGE** when the `.so` is missing.
   Load native modules on demand and assert at BUILD. `next-tracing-copies-files-not-pnpm-symlinks` ·
@@ -728,7 +772,7 @@ Before editing, run `git status`, `git branch --show-current`, `git log -1 --one
 - Never discard, overwrite, clean, reset, or revert changes you did not create. Treat unexpected changes as the owner's work. If the tree is dirty, classify and preserve it; continue only when your work can be isolated safely.
 - **Never delete a `.xlsx` or `.pdf` file**, even a stray untracked one in a broken worktree being cleaned up. Scan any folder for them before removing it; if found and not identical to a git-tracked copy, move them into an `xlsx/` folder at the repo root instead.
 - **Start a session with `node scripts/new-session.mjs <task>` — one command for the whole four-step ritual** ([scripts/new-session.mjs](scripts/new-session.mjs), also wired as `pnpm run session:new`; invoke `node` directly per §2.1): fetch `origin/main`, create `_wt-<task>` on `codex/<task>`, junction `node_modules` from the primary, copy the gitignored env files. It refuses to start below 6 GB of free commit charge. `--status` prints live headroom and which folders can actually run, `--repair` fixes a worktree missing either piece, `--from <ref>` branches from something other than `origin/main`. **`git worktree add` is only step one of four** — it never copies gitignored files, so a hand-made worktree has no `.env.local` (dev-auth and the dev server then fail silently, with no error) and no `node_modules` (nothing runs at all). By hand that is `git worktree add` **plus** `pnpm run worktree:sync-env` **plus** the junction. On 2026-08-26 every sibling worktree was in exactly that state — zero `node_modules`, two with no `.env.local` — so no session could run a test, a script, or a dev server anywhere but the primary, which is precisely how the collisions in this section happen.
-- **Never `pnpm install` inside a worktree, and never `pnpm run` there.** The install duplicates ~1.9M path entries (see the payload note below), and `pnpm run` purges `node_modules` outright once it sees the lockfile has moved — destroying the junction before your script starts. Junction `node_modules` from the primary and invoke `node scripts/…` directly.
+- **Never `pnpm install` inside a worktree, and never `pnpm run` there.** The install duplicates ~1.9M path entries (see the payload note below), and `pnpm run` purges `node_modules` outright once it sees the lockfile has moved — destroying the junction before your script starts. Junction `node_modules` from the primary and invoke `node scripts/…` directly. That junction is enough for `typecheck`, `lint` and `node scripts/…`, but **not for `next dev`** — Turbopack reads it as a symlink out of the project root and refuses to start (§2.1, Worktrees).
 - Prefer worktrees as siblings (`git worktree add ../_wt-<task>`). If one must live inside the repo, its folder name must start with `_wt-` (or sit under `.codex-worktrees/` or `.claude/worktrees/`) — `tsconfig.json`, `eslint.config.mjs`, and `.gitignore` exclude those patterns, and a folder that matches none of them silently makes every local `typecheck`/`lint` several times slower (confirmed ~12x file count, 70s vs 8s). Locked worktrees under `.claude/worktrees/` belong to other live sessions — never remove them.
 - **Remove worktrees with `node scripts/new-session.mjs --remove <task>`** (`pnpm run session:remove`), only after approval. It runs three gates in cost order before touching anything — untracked `.xlsx`/`.pdf` rescue scan, then uncommitted work, then commits that are on no remote branch **and** have no merged PR — drops the `node_modules` junction with `cmd /c rmdir` so no husk is left, and re-reads the folder's branch live rather than trusting an earlier scan (a parallel session can repoint a tree first). **A squash-merged branch legitimately holds commits `main` does not**, so the last gate asks `gh pr list --head <branch> --state merged`, never reachability: pure reachability calls every successfully merged worktree stranded, and the advice that follows from it — "push the branch" — is how you get a conflicting PR that runs no CI at all. By hand it is `git worktree remove` plus that same PR check; `git branch --merged` is always wrong here. Stale worktrees must not accumulate — 26 folders was the historical failure mode.
 - **`git worktree remove` leaves a HUSK, and nothing built into git can see it.** It deletes tracked files and the registry entry but leaves the gitignored payload — `node_modules/` and `.next/` — on disk. What remains has no `.git` file and no registry entry, so `git worktree prune` cannot find it and the SessionEnd leg of `.claude/hooks/worktree-exit-guard.mjs` exits early because `git rev-parse --git-dir` resolves nothing. Husks therefore accumulate forever and are invisible to every "list the worktrees" check. **The backup check no longer depends on that leg:** since 2026-08-23 `bash-guard.mjs` hands any removal-shaped command to `worktree-exit-guard.mjs --pre-removal`, which reports unpushed commits and uncommitted files and writes them to `.claude/worktree-exit.log` *before* the directory is deleted. It never blocks. The SessionEnd leg had been silent for a full day while three worktree sessions ended, with the hook still registered and the script still on disk — silence was its only symptom. **Run `pnpm run repo:doctor`** ([scripts/repo-doctor.mjs](scripts/repo-doctor.mjs)) after any removal: it reports by default, `--fix` deletes only husks proven to hold zero files, and it refuses to act while more than one Claude Code session is live. Anything holding even one file is reported NEEDS REVIEW and never touched.
