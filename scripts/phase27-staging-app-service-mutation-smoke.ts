@@ -6,7 +6,7 @@ type PhoenixRole =
   | "Medical Rep"
   | "District Manager"
   | "Finance Manager"
-  | "Talent Acquisition"
+  | "HR Advisory"
   | "CEO"
   | "Super Admin";
 
@@ -59,7 +59,7 @@ const baseUrl = `http://localhost:${port}`;
 
 const roles: PhoenixRole[] = [
   "Super Admin",
-  "Talent Acquisition",
+  "HR Advisory",
   "Finance Manager",
   "CEO",
   "District Manager",
@@ -439,13 +439,13 @@ async function seedPhase27Fixtures(
   cleanup.employeeHrIds.push(employeeHrId);
   await sql`
     insert into public.employees (hr_id, full_name, employment_status, hire_date, job_title, manager_hr_id)
-    values (${employeeHrId}, ${`${phaseTag} App Service Employee`}, 'active', '2026-05-19', 'PHASE27 Fixture', ${users["Talent Acquisition"].hrId})
+    values (${employeeHrId}, ${`${phaseTag} App Service Employee`}, 'active', '2026-05-19', 'PHASE27 Fixture', ${users["HR Advisory"].hrId})
     on conflict (hr_id) do update set updated_at = now()
   `;
 
   const probationRows = await sql`
     insert into public.employee_probation (employee_hr_id, hr_id, manager_hr_id, notes, probation_start_date, probation_end_date, status)
-    values (${users.Employee.hrId}, ${users.Employee.hrId}, ${users["Talent Acquisition"].hrId}, ${`${phaseTag} probation fixture`}, '2026-05-19', '2026-06-18', 'active')
+    values (${users.Employee.hrId}, ${users.Employee.hrId}, ${users["HR Advisory"].hrId}, ${`${phaseTag} probation fixture`}, '2026-05-19', '2026-06-18', 'active')
     returning id
   `;
   cleanup.probationIds.push(String(probationRows[0].id));
@@ -720,7 +720,7 @@ async function runDirectAppRouteChecks(
   let superAdminCookie = "";
   try {
     const sessions = await Promise.all([
-      loginCookieHeader(sql, "Talent Acquisition", users["Talent Acquisition"]),
+      loginCookieHeader(sql, "HR Advisory", users["HR Advisory"]),
       loginCookieHeader(sql, "Finance Manager", users["Finance Manager"]),
       loginCookieHeader(sql, "Employee", users.Employee),
       loginCookieHeader(sql, "District Manager", users["District Manager"]),
@@ -730,7 +730,7 @@ async function runDirectAppRouteChecks(
     if (!superAdminCookie) throw new Error("Super Admin app login did not return a session cookie.");
     const bridgeCount = sessions.filter((session) => session.supabaseBridge).length;
     const bridgeWarnings = sessions
-      .map((session, index) => session.supabaseBridge ? null : `${["Talent Acquisition", "Finance Manager", "Employee", "District Manager", "Super Admin"][index]}: ${session.supabaseBridgeWarning}`)
+      .map((session, index) => session.supabaseBridge ? null : `${["HR Advisory", "Finance Manager", "Employee", "District Manager", "Super Admin"][index]}: ${session.supabaseBridgeWarning}`)
       .filter(Boolean)
       .join(" | ");
     checks.push(pass(
@@ -752,14 +752,14 @@ async function runDirectAppRouteChecks(
         hireDate: "2026-05-19",
         hrId: fixtures.employeeHrId,
         jobTitle: "PHASE27 App Service Updated",
-        managerHrId: users["Talent Acquisition"].hrId,
+        managerHrId: users["HR Advisory"].hrId,
         originalHrId: fixtures.employeeHrId,
       },
     });
     expectStatus(result.status, 200, "HR employee governance update", result.body);
-    checks.push(pass("App service mutations", "HR can update disposable employee through direct app route", "Talent Acquisition"));
+    checks.push(pass("App service mutations", "HR can update disposable employee through direct app route", "HR Advisory"));
   } catch (error) {
-    checks.push(fail("App service mutations", "HR can update disposable employee through direct app route", error, "Talent Acquisition"));
+    checks.push(fail("App service mutations", "HR can update disposable employee through direct app route", error, "HR Advisory"));
   }
 
   try {
@@ -849,9 +849,9 @@ async function runDirectAppRouteChecks(
       { action: "pass", note: "PHASE27 probation pass" },
     );
     expectStatus(result.status, 200, "HR probation workflow app route", result.body);
-    checks.push(pass("App service mutations", "HR can run probation decision through direct app route", "Talent Acquisition"));
+    checks.push(pass("App service mutations", "HR can run probation decision through direct app route", "HR Advisory"));
   } catch (error) {
-    checks.push(fail("App service mutations", "HR can run probation decision through direct app route", error, "Talent Acquisition"));
+    checks.push(fail("App service mutations", "HR can run probation decision through direct app route", error, "HR Advisory"));
   }
 
   try {

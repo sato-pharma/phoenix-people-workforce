@@ -151,8 +151,8 @@ export const DEFAULT_NOTIFICATION_ROLE_POLICIES: Record<NotificationRoleKey, Not
     key: "resignation_workflow_alert",
     label: "Resignation workflow alert",
     description:
-      "Who is told when a resignation is submitted or changes state. Owner-set 2026-08-09: Super Admin and Talent Acquisition only — deliberately NOT the CEO and NOT the leaver's manager chain. Editable here rather than in code.",
-    roles: ["Super Admin", "Talent Acquisition"],
+      "Who is told when a resignation is submitted or changes state. Owner-set 2026-08-09 (the Talent Acquisition seat, retired 2026-08-28, now HR Operations): Super Admin and HR Operations only — deliberately NOT the CEO and NOT the leaver's manager chain. Editable here rather than in code.",
+    roles: ["Super Admin", "HR Operations"],
     enabled: true,
   },
   attendance_ingestion_alert: {

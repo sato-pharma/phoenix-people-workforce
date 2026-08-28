@@ -18,10 +18,10 @@ export type AccountActivationRow = {
   role: PhoenixRole;
 };
 
-const TALENT_ACQUISITION_RANK = getRolePrivilegeRank("Talent Acquisition");
+const HR_ADVISORY_RANK = getRolePrivilegeRank("HR Advisory");
 
 function isEligibleRole(role: PhoenixRole) {
-  return getRolePrivilegeRank(role) < TALENT_ACQUISITION_RANK;
+  return getRolePrivilegeRank(role) < HR_ADVISORY_RANK;
 }
 
 /**
@@ -75,6 +75,6 @@ export async function setAccountActiveForRecruiting(
     loginId,
     isActive,
     { loginId: access.loginId ?? null, role: access.role },
-    isActive ? "Activated via Talent Acquisition portal tool" : "Deactivated via Talent Acquisition portal tool",
+    isActive ? "Activated via the HR account-activation tool" : "Deactivated via the HR account-activation tool",
   );
 }

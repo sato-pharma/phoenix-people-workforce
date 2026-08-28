@@ -45,7 +45,8 @@ const rows: EmployeeDirectoryRow[] = [
   row("C-1", "Chief Executive Officer", null, null, null),
   row("SA-1", "System Administrator", null, null, null),
   row("SFE-1", "SFE Manager", null, null, null),
-  row("TA-1", "Talent Acquisition", null, null, null),
+  row("HRBP-1", "HR Business Partner", null, null, null),
+  row("HROPS-1", "HR Operations Coordinator", null, null, null),
   row("TM-1", "Training Manager", null, null, null),
   row("NSM-A", "National Sales Manager", null, 1, 1),
   row("RM-A", "Regional Manager", "NSM-A", 1, 1),
@@ -91,12 +92,13 @@ export async function runEmployee360AccessTests() {
   // decide whether a non-field-force self-record falls back to a browse-all list ──
   assert.equal(isCompany360Viewer({ role: "CEO", scope: "company" }), true);
   assert.equal(isCompany360Viewer({ role: "Super Admin", scope: "company" }), true);
-  // SFE Manager and Talent Acquisition's generic scopeForRole is "self" (they're
+  // SFE Manager and both HR bundles have a generic scopeForRole of "self" (they're
   // not in permissions.ts's scopeForRole company/team/hierarchy/line branches) —
   // asserting with scope:"self" here proves the grant is pure role-set membership,
   // independent of the generic AccessScope value.
   assert.equal(isCompany360Viewer({ role: "SFE Manager", scope: "self" }), true);
-  assert.equal(isCompany360Viewer({ role: "Talent Acquisition", scope: "self" }), true);
+  assert.equal(isCompany360Viewer({ role: "HR Advisory", scope: "self" }), true);
+  assert.equal(isCompany360Viewer({ role: "HR Operations", scope: "self" }), true);
   assert.equal(isCompany360Viewer({ role: "Medical Rep", scope: "self" }), false);
   assert.equal(isCompany360Viewer({ role: "District Manager", scope: "team" }), false);
   assert.equal(isCompany360Viewer({ role: "Finance Manager", scope: "self" }), false);
@@ -107,21 +109,38 @@ export async function runEmployee360AccessTests() {
   assert.deepEqual(tm, new Set(["TM-1", ...ALL_REPS]), "TM sees all Medical Reps + self only");
   assert.ok(!tm.has("DM-A") && !tm.has("NSM-A") && !tm.has("PM-A"), "TM does NOT see managers/PMs");
 
-  // ── Talent Acquisition (owner-requested 2026-07-26, narrowing the prior
-  // 2026-07-25 whole-company grant): all Medical Reps, nobody else — same shape as
-  // Training Manager, not the CEO/SFE/SA whole-company set. TA-1's own row is
-  // excluded here (as TM-1's would be too) because resolveEmployee360VisibleRows
-  // only ever lists field-force subjects, and "Talent Acquisition" isn't one of
-  // the six covered job titles; her own-record access is still granted separately
-  // by the hrIdsMatch self-check in canViewEmployee360Subject. ──
-  const ta = await visible(ctx("Talent Acquisition", "TA-1", "self"));
-  assert.deepEqual(ta, ALL_REPS, "TA sees all Medical Reps, nobody else");
-  assert.ok(!ta.has("DM-A") && !ta.has("NSM-A") && !ta.has("PM-A"), "TA does NOT see managers/PMs");
-  assert.equal(
-    canViewEmployee360Subject(ctx("Talent Acquisition", "TA-1", "self"), row("TA-1", "Talent Acquisition", null, null, null), await buildEmployee360Scope(rows, ctx("Talent Acquisition", "TA-1", "self"))),
-    true,
-    "TA can still open her own (non-field-force) record",
-  );
+  // ── The two HR bundles (owner-requested 2026-07-26 on the seat they replace,
+  // narrowing the prior 2026-07-25 whole-company grant): all Medical Reps, nobody
+  // else — same shape as Training Manager, not the CEO/SFE/SA whole-company set.
+  // Their own rows are excluded here (as TM-1's would be too) because
+  // resolveEmployee360VisibleRows only ever lists field-force subjects, and neither
+  // "HR Business Partner" nor "HR Operations Coordinator" is one of the six covered
+  // job titles; own-record access is still granted separately by the hrIdsMatch
+  // self-check in canViewEmployee360Subject.
+  //
+  // Both are asserted rather than one, because the grant is role-set membership: a
+  // successor added to the matrix but not to the 360 viewer set would show an empty
+  // Employee 360 with no error, which is the shape that is hard to notice. ──
+  for (const [role, hrId, jobTitle] of [
+    ["HR Advisory", "HRBP-1", "HR Business Partner"],
+    ["HR Operations", "HROPS-1", "HR Operations Coordinator"],
+  ] as const) {
+    const seen = await visible(ctx(role, hrId, "self"));
+    assert.deepEqual(seen, ALL_REPS, `${role} sees all Medical Reps, nobody else`);
+    assert.ok(
+      !seen.has("DM-A") && !seen.has("NSM-A") && !seen.has("PM-A"),
+      `${role} does NOT see managers/PMs`,
+    );
+    assert.equal(
+      canViewEmployee360Subject(
+        ctx(role, hrId, "self"),
+        row(hrId, jobTitle, null, null, null),
+        await buildEmployee360Scope(rows, ctx(role, hrId, "self")),
+      ),
+      true,
+      `${role} can still open her own (non-field-force) record`,
+    );
+  }
 
   // ── NSM (line 1): their whole line, department-safe; not the other line ──
   const nsmA = await visible(ctx("National Sales Manager", "NSM-A", "line"));

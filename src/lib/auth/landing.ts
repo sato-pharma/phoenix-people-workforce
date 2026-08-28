@@ -9,7 +9,6 @@ const portalLandingRoleNames = new Set([
   "marketing manager",
   "training manager",
   "manager",
-  "talent acquisition",
 ]);
 
 export function resolveLandingPathForRole(role: string | null | undefined) {
@@ -25,6 +24,11 @@ export function resolveLandingPathForRole(role: string | null | undefined) {
   // Financial Advisor's job is executing the marketing finance step — land on its workspace inbox.
   if (normalized === "financial advisor") return "/workspace/marketing-requests/inbox";
   if (normalized === "training manager") return "/employee-portals/training-manager";
+  // The two HR seats (owner, 2026-08-28). Admin-shell, so they must NOT be in the portal set
+  // above — but /admin is the Super Admin home and shows them a shell of modules they do not
+  // hold, so they land on the personal admin-shell workspace instead, like Financial Advisor.
+  // Phase 2 repoints both at their own /hr namespace; this is the correct answer until it exists.
+  if (normalized === "hr advisory" || normalized === "hr operations") return "/workspace";
   if (normalized === "ceo") return "/admin/ceo-command-center";
   return portalLandingRoleNames.has(normalized) ? "/employee-portals" : "/admin";
 }

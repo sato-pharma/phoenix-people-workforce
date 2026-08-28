@@ -23,11 +23,18 @@ export type PlanViewerScope = {
   hierarchyReportHrIds: ReadonlySet<string>;
 };
 
-// Training Manager and Talent Acquisition already see every plan on the Calendar tab
+// Training Manager and HR Advisory already see every plan on the Calendar tab
 // (calendar-service.ts) and every employee in the general directory (canSeeEmployee,
 // permissions.ts) — this extends that same, already-established company-wide rule to the
 // List page too, rather than inventing a third rule for these two roles.
-const COMPANY_WIDE_PLAN_VIEWER_ROLES = new Set(["training manager", "talent acquisition"]);
+//
+// LOWERCASED ROLE NAMES, so neither the PhoenixRole union nor a title-case grep can see them:
+// this Set still read "talent acquisition" after that seat was retired on 2026-08-28, typechecked
+// clean, and silently returned false for its successor. If a role name changes, this line does not
+// move on its own — the test is weekly-plan-visibility.test.ts.
+// HR Advisory only: the Planning Calendar follows workforce_insight (hr-functions.ts), and HR
+// Operations has no reason to read a rep{"'"}s call plan.
+const COMPANY_WIDE_PLAN_VIEWER_ROLES = new Set(["training manager", "hr advisory"]);
 
 /**
  * True when the plan owner sits anywhere in the viewer's downward management chain — direct

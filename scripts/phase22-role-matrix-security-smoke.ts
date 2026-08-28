@@ -28,7 +28,7 @@ const warnings: string[] = [];
 
 const phase22Roles: PhoenixRole[] = [
   "Super Admin",
-  "Talent Acquisition",
+  "HR Advisory",
   "Finance Manager",
   "Marketing Manager",
   "CEO",
@@ -56,7 +56,7 @@ function loadLocalEnv() {
 }
 
 function contextFor(role: PhoenixRole): AccessContext {
-  const hrId = role === "Talent Acquisition"
+  const hrId = role === "HR Advisory"
     ? "A-16"
     : `PHASE22-${role.replace(/[^A-Z0-9]+/gi, "").toUpperCase()}`;
   return createAccessContext({
@@ -105,26 +105,58 @@ async function verifyRoleMatrix() {
   await expectAccess(superAdmin, "recruitment", "approve", true);
   await expectAccess(superAdmin, "offers", "update", true);
 
-  const talentAcquisition = contextFor("Talent Acquisition");
-  await expectAccess(talentAcquisition, "recruitment", "create", true);
-  await expectAccess(talentAcquisition, "candidates", "read", true);
-  await expectAccess(talentAcquisition, "offers", "create", true);
-  await expectAccess(talentAcquisition, "employee_documents", "update", true);
-  await expectAccess(talentAcquisition, "leave", "update", true);
-  await expectAccess(talentAcquisition, "support_requests", "read", true);
-  await expectAccess(talentAcquisition, "support_requests", "update", true);
-  await expectAccess(talentAcquisition, "support_requests", "export", true);
-  await expectAccess(talentAcquisition, "employee_profile", "update", true);
-  await expectAccess(talentAcquisition, "employees", "read", false);
-  await expectAccess(talentAcquisition, "overview", "read", false);
-  await expectAccess(talentAcquisition, "communication", "update", false);
-  await expectAccess(talentAcquisition, "payslips", "read", false);
-  await expectAccess(talentAcquisition, "user_admin", "update", false);
-  await expectAccess(talentAcquisition, "payroll", "import", false);
-  await expectAccess(talentAcquisition, "expenses", "read", false);
-  await expectAccess(talentAcquisition, "probation", "approve", false);
-  addCheck("Talent Acquisition cannot access attendance setup", !await canAccessAttendanceSetup(talentAcquisition, "read"));
-  addCheck("Talent Acquisition cannot update attendance setup", !await canAccessAttendanceSetup(talentAcquisition, "update"));
+  // ---- The two HR bundles ------------------------------------------------------------------
+  // One seat became two on 2026-08-28. The grants are COMPOSED from hr-functions.ts rather than
+  // written out per role, so this block is the runtime check that composition produced what the
+  // job descriptions actually say. Four expectations here were wrong the moment the split landed
+  // and passed anyway, because a smoke script asserts what someone typed, not what the matrix holds.
+  const hrAdvisory = contextFor("HR Advisory");
+  const hrOperations = contextFor("HR Operations");
+
+  // Shared floor: every HR seat administers other people AND remains an employee herself.
+  for (const [label, seat] of [["HR Advisory", hrAdvisory], ["HR Operations", hrOperations]] as const) {
+    await expectAccess(seat, "employee_profile", "update", true);
+    await expectAccess(seat, "employees", "read", true);
+    await expectAccess(seat, "overview", "read", true);
+    await expectAccess(seat, "support_requests", "read", true);
+    await expectAccess(seat, "support_requests", "update", true);
+    await expectAccess(seat, "support_requests", "export", true);
+    // HR_SEAT_SELF_SERVICE. Composing purely from HR functions produced a seat that could
+    // administer everyone else's leave and payslip and not reach her own; /payslips throws an
+    // uncaught Forbidden rather than rendering an empty state.
+    await expectAccess(seat, "payslips", "read", true);
+    await expectAccess(seat, "leave", "create", true);
+    await expectAccess(seat, "attendance", "read", true);
+    // Neither seat is an administrator, and neither touches money it does not own.
+    await expectAccess(seat, "user_admin", "update", false);
+    await expectAccess(seat, "payroll", "import", false);
+    await expectAccess(seat, "expenses", "read", false);
+    await expectAccess(seat, "communication", "update", false);
+    await expectAccess(seat, "probation", "approve", false);
+    addCheck(`${label} cannot access attendance setup`, !await canAccessAttendanceSetup(seat, "read"));
+    addCheck(`${label} cannot update attendance setup`, !await canAccessAttendanceSetup(seat, "update"));
+  }
+
+  // What separates them. If a future change collapses the bundles back into one HR role, this is
+  // what fails — which is the whole reason the owner asked for a function catalogue.
+  await expectAccess(hrAdvisory, "recruitment", "create", true);
+  await expectAccess(hrAdvisory, "candidates", "read", true);
+  await expectAccess(hrAdvisory, "offers", "create", true);
+  await expectAccess(hrAdvisory, "employee_documents", "update", true);
+  await expectAccess(hrAdvisory, "weekly_plans", "read", true);
+  await expectAccess(hrOperations, "recruitment", "create", false);
+  await expectAccess(hrOperations, "candidates", "read", false);
+  await expectAccess(hrOperations, "offers", "create", false);
+  await expectAccess(hrOperations, "weekly_plans", "read", false);
+
+  await expectAccess(hrOperations, "leave", "update", true);
+  await expectAccess(hrOperations, "contracts", "update", true);
+  await expectAccess(hrOperations, "resignations", "update", true);
+  await expectAccess(hrOperations, "employees", "update", true);
+  await expectAccess(hrAdvisory, "leave", "update", false);
+  await expectAccess(hrAdvisory, "contracts", "update", false);
+  await expectAccess(hrAdvisory, "resignations", "update", false);
+  await expectAccess(hrAdvisory, "employees", "update", false);
 
   const finance = contextFor("Finance Manager");
   await expectAccess(finance, "payroll", "approve", true);
@@ -205,7 +237,7 @@ async function verifyRoleMatrix() {
 
 function verifyScopeHelpers() {
   expectScope("Super Admin navigation mode is admin", resolveNavigationMode(contextFor("Super Admin")), "admin");
-  expectScope("Talent Acquisition navigation mode is admin", resolveNavigationMode(contextFor("Talent Acquisition")), "admin");
+  expectScope("HR Advisory navigation mode is admin", resolveNavigationMode(contextFor("HR Advisory")), "admin");
   expectScope("Finance Manager navigation mode is admin", resolveNavigationMode(contextFor("Finance Manager")), "admin");
   expectScope("Marketing Manager navigation mode is employee portal", resolveNavigationMode(contextFor("Marketing Manager")), "employee-portal");
   expectScope("CEO navigation mode is admin", resolveNavigationMode(contextFor("CEO")), "admin");
@@ -216,7 +248,7 @@ function verifyScopeHelpers() {
   expectScope("Medical Rep payroll scope is SELF", getPayrollScope(contextFor("Medical Rep")), "SELF");
   expectScope("District Manager payroll scope is SELF", getPayrollScope(contextFor("District Manager")), "SELF");
   expectScope("Finance Manager payroll scope is COMPANY", getPayrollScope(contextFor("Finance Manager")), "COMPANY");
-  expectScope("Talent Acquisition payroll scope is SELF", getPayrollScope(contextFor("Talent Acquisition")), "SELF");
+  expectScope("HR Advisory payroll scope is SELF", getPayrollScope(contextFor("HR Advisory")), "SELF");
   expectScope("CEO payroll scope is COMPANY", getPayrollScope(contextFor("CEO")), "COMPANY");
 
   expectScope("Employee sales scope is SELF", getSalesScope(contextFor("Employee")), "SELF");

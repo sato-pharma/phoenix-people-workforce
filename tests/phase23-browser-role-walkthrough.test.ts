@@ -13,7 +13,8 @@ export function runPhase23BrowserRoleWalkthroughTests() {
   assert.match(smoke, /context\.request\.get/);
   assert.match(smoke, /context\.addCookies/);
   assert.match(smoke, /Super Admin/);
-  assert.match(smoke, /Talent Acquisition/);
+  assert.match(smoke, /HR Advisory/);
+  assert.match(smoke, /HR Operations/);
   assert.match(smoke, /Finance Manager/);
   assert.match(smoke, /CEO/);
   assert.match(smoke, /District Manager/);

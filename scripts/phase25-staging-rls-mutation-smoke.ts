@@ -8,7 +8,7 @@ type PhoenixRole =
   | "Medical Rep"
   | "District Manager"
   | "Finance Manager"
-  | "Talent Acquisition"
+  | "HR Operations"
   | "CEO"
   | "Super Admin";
 
@@ -43,7 +43,7 @@ const phaseTag = `PHASE25-${Date.now()}`;
 
 const roles: PhoenixRole[] = [
   "Super Admin",
-  "Talent Acquisition",
+  "HR Operations",
   "Finance Manager",
   "CEO",
   "District Manager",
@@ -430,7 +430,7 @@ async function verifyEmployeeMutations(
   }
 
   try {
-    const { data, error } = await clients["Talent Acquisition"]
+    const { data, error } = await clients["HR Operations"]
       .from("employees")
       .insert({
         employment_status: "active",
@@ -438,16 +438,16 @@ async function verifyEmployeeMutations(
         hire_date: "2026-05-19",
         hr_id: hrFixture,
         job_title: "PHASE25 HR Governance Fixture",
-        manager_hr_id: users["Talent Acquisition"].hrId,
+        manager_hr_id: users["HR Operations"].hrId,
       })
       .select("hr_id")
       .maybeSingle();
     assertAllowed(error, "HR employee governance insert");
     if (!data?.hr_id) throw new Error("HR employee governance insert returned no fixture");
     cleanup.employeeHrIds.push(hrFixture);
-    checks.push(pass("Employees RLS", "HR can create disposable employee governance fixture", "Talent Acquisition"));
+    checks.push(pass("Employees RLS", "HR can create disposable employee governance fixture", "HR Operations"));
   } catch (error) {
-    checks.push(fail("Employees RLS", "HR can create disposable employee governance fixture", error, "Talent Acquisition"));
+    checks.push(fail("Employees RLS", "HR can create disposable employee governance fixture", error, "HR Operations"));
   }
 
   try {
@@ -564,12 +564,12 @@ async function verifyProbationAndLeaveMutations(
   let managerVacationRequestId: string | undefined;
 
   try {
-    const { data, error } = await clients["Talent Acquisition"]
+    const { data, error } = await clients["HR Operations"]
       .from("employee_probation")
       .insert({
         employee_hr_id: users["Employee"].hrId,
         hr_id: users["Employee"].hrId,
-        manager_hr_id: users["Talent Acquisition"].hrId,
+        manager_hr_id: users["HR Operations"].hrId,
         notes: `${phaseTag} HR probation fixture`,
         probation_end_date: "2026-06-18",
         probation_start_date: "2026-05-19",
@@ -581,9 +581,9 @@ async function verifyProbationAndLeaveMutations(
     if (!data?.id) throw new Error("HR probation insert returned no fixture id");
     probationId = String(data.id);
     cleanup.probationIds.push(probationId);
-    checks.push(pass("Probation RLS", "HR can create disposable probation fixture", "Talent Acquisition"));
+    checks.push(pass("Probation RLS", "HR can create disposable probation fixture", "HR Operations"));
   } catch (error) {
-    checks.push(fail("Probation RLS", "HR can create disposable probation fixture", error, "Talent Acquisition"));
+    checks.push(fail("Probation RLS", "HR can create disposable probation fixture", error, "HR Operations"));
   }
 
   if (probationId) {
@@ -659,13 +659,13 @@ async function verifyProbationAndLeaveMutations(
   }
 
   try {
-    const { data, error } = await clients["Talent Acquisition"]
+    const { data, error } = await clients["HR Operations"]
       .from("v2_vacation_requests")
       .insert({
         calendar_days: 1,
-        employee_hr_id: users["Talent Acquisition"].hrId,
+        employee_hr_id: users["HR Operations"].hrId,
         end_date: "2026-05-22",
-        manager_hr_id: users["Talent Acquisition"].hrId,
+        manager_hr_id: users["HR Operations"].hrId,
         notes: `${phaseTag} outside manager leave fixture`,
         start_date: "2026-05-22",
         status: "pending",
@@ -678,9 +678,9 @@ async function verifyProbationAndLeaveMutations(
     if (!data?.id) throw new Error("HR outside-manager leave fixture insert returned no fixture id");
     managerVacationRequestId = String(data.id);
     cleanup.vacationRequestIds.push(managerVacationRequestId);
-    checks.push(pass("Leave RLS", "HR can create disposable outside-manager leave fixture", "Talent Acquisition"));
+    checks.push(pass("Leave RLS", "HR can create disposable outside-manager leave fixture", "HR Operations"));
   } catch (error) {
-    checks.push(fail("Leave RLS", "HR can create disposable outside-manager leave fixture", error, "Talent Acquisition"));
+    checks.push(fail("Leave RLS", "HR can create disposable outside-manager leave fixture", error, "HR Operations"));
   }
 
   if (managerVacationRequestId) {

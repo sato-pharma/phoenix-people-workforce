@@ -53,7 +53,6 @@ export const workspaceMarketingRoles = [
 export const workspaceExpenseDashboardRoles = [
   "SFE Manager",
   "Financial Advisor",
-  "Talent Acquisition",
 ] as const satisfies readonly PhoenixRole[];
 
 function includesRole(roles: readonly PhoenixRole[], role: PhoenixRole) {

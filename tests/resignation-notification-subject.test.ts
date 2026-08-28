@@ -136,7 +136,7 @@ export function runResignationNotificationSubjectTests() {
     "The fail-closed governance warning must remain; this fix resolves the subject, it does not disable the guard.",
   );
 
-  // ── Owner's recipient decision (2026-08-09): Super Admin + Talent Acquisition ──
+  // ── Owner's recipient decision (2026-08-09): Super Admin + HR Operations ──
   // Explicitly NOT the CEO, and explicitly NOT the leaver's manager chain. Pinned
   // here because "who is told someone resigned" is a business decision that must
   // not drift back to an org-chart inference.
@@ -151,14 +151,14 @@ export function runResignationNotificationSubjectTests() {
 
   assert.match(
     roleRecipientsSource,
-    /resignation_workflow_alert: \{[\s\S]{0,400}roles: \["Super Admin", "Talent Acquisition"\]/,
-    "Resignation notifications must go to Super Admin and Talent Acquisition.",
+    /resignation_workflow_alert: \{[\s\S]{0,400}roles: \["Super Admin", "HR Operations"\]/,
+    "Resignation notifications must go to Super Admin and HR Operations.",
   );
 
   assert.doesNotMatch(
     policySource,
     /"resignations\.\*": \{[^}]*manager_chain/,
-    "A resignation must NOT fan out up the leaver's manager chain — the owner asked for Super Admin + Talent Acquisition only.",
+    "A resignation must NOT fan out up the leaver's manager chain — the owner asked for Super Admin + HR Operations only.",
   );
 
   assert.match(

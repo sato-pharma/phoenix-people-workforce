@@ -8,7 +8,7 @@ type PhoenixRole =
   | "Medical Rep"
   | "District Manager"
   | "Finance Manager"
-  | "Talent Acquisition"
+  | "HR Operations"
   | "CEO"
   | "Super Admin";
 
@@ -46,7 +46,7 @@ const fakeUuid = "00000000-0000-0000-0000-000000000000";
 
 const roles: PhoenixRole[] = [
   "Super Admin",
-  "Talent Acquisition",
+  "HR Operations",
   "Finance Manager",
   "CEO",
   "District Manager",
@@ -519,22 +519,22 @@ async function runBrowserRlsMutations(
   }
 
   try {
-    assertAllowed(await restFetch(page, sessions["Talent Acquisition"], {
+    assertAllowed(await restFetch(page, sessions["HR Operations"], {
       body: {
         employment_status: "active",
         full_name: `${phaseTag} HR Governance Fixture`,
         hire_date: "2026-05-19",
         hr_id: hrFixture,
         job_title: "PHASE26 HR Governance Fixture",
-        manager_hr_id: users["Talent Acquisition"].hrId,
+        manager_hr_id: users["HR Operations"].hrId,
       },
       method: "POST",
       table: "employees",
     }), "browser HR employee insert");
     cleanup.employeeHrIds.push(hrFixture);
-    checks.push(pass("Browser RLS", "HR browser token can create disposable employee fixture", "Talent Acquisition"));
+    checks.push(pass("Browser RLS", "HR browser token can create disposable employee fixture", "HR Operations"));
   } catch (error) {
-    checks.push(fail("Browser RLS", "HR browser token can create disposable employee fixture", error, "Talent Acquisition"));
+    checks.push(fail("Browser RLS", "HR browser token can create disposable employee fixture", error, "HR Operations"));
   }
 
   try {
@@ -623,11 +623,11 @@ async function runBrowserRlsMutations(
   }
 
   try {
-    const result = await restFetch(page, sessions["Talent Acquisition"], {
+    const result = await restFetch(page, sessions["HR Operations"], {
       body: {
         employee_hr_id: users.Employee.hrId,
         hr_id: users.Employee.hrId,
-        manager_hr_id: users["Talent Acquisition"].hrId,
+        manager_hr_id: users["HR Operations"].hrId,
         notes: `${phaseTag} HR probation fixture`,
         probation_end_date: "2026-06-18",
         probation_start_date: "2026-05-19",
@@ -639,9 +639,9 @@ async function runBrowserRlsMutations(
     assertAllowed(result, "browser HR probation insert");
     probationId = returnedId(result);
     cleanup.probationIds.push(probationId);
-    checks.push(pass("Browser RLS", "HR browser token can create disposable probation fixture", "Talent Acquisition"));
+    checks.push(pass("Browser RLS", "HR browser token can create disposable probation fixture", "HR Operations"));
   } catch (error) {
-    checks.push(fail("Browser RLS", "HR browser token can create disposable probation fixture", error, "Talent Acquisition"));
+    checks.push(fail("Browser RLS", "HR browser token can create disposable probation fixture", error, "HR Operations"));
   }
 
   if (probationId) {
@@ -703,12 +703,12 @@ async function runBrowserRlsMutations(
   }
 
   try {
-    const result = await restFetch(page, sessions["Talent Acquisition"], {
+    const result = await restFetch(page, sessions["HR Operations"], {
       body: {
         calendar_days: 1,
-        employee_hr_id: users["Talent Acquisition"].hrId,
+        employee_hr_id: users["HR Operations"].hrId,
         end_date: "2026-05-22",
-        manager_hr_id: users["Talent Acquisition"].hrId,
+        manager_hr_id: users["HR Operations"].hrId,
         notes: `${phaseTag} outside manager leave fixture`,
         start_date: "2026-05-22",
         status: "pending",
@@ -721,9 +721,9 @@ async function runBrowserRlsMutations(
     assertAllowed(result, "browser HR outside-manager vacation insert");
     managerVacationId = returnedId(result);
     cleanup.vacationRequestIds.push(managerVacationId);
-    checks.push(pass("Browser RLS", "HR browser token can create outside-manager leave fixture", "Talent Acquisition"));
+    checks.push(pass("Browser RLS", "HR browser token can create outside-manager leave fixture", "HR Operations"));
   } catch (error) {
-    checks.push(fail("Browser RLS", "HR browser token can create outside-manager leave fixture", error, "Talent Acquisition"));
+    checks.push(fail("Browser RLS", "HR browser token can create outside-manager leave fixture", error, "HR Operations"));
   }
 
   if (managerVacationId) {

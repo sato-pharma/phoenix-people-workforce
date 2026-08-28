@@ -888,7 +888,7 @@ function OfferCard({
           </div>
         ) : (
           <p className="text-xs text-slate-500">
-            Waiting for approval. Talent Acquisition cannot approve an offer it prepared.
+            Waiting for approval. The recruiter who prepared an offer cannot approve it.
           </p>
         )
       ) : null}
@@ -3851,7 +3851,7 @@ function CandidatesTab({
                           ) : null}
                           {/* 132 of 555 rows share a person with another row. The flag was already
                               computed and already on the mobile card; the desktop table — the
-                              surface Talent Acquisition actually works in — never showed it. */}
+                              surface the recruiting seat actually works in — never showed it. */}
                           <DuplicateFlagControl
                             candidate={candidate}
                             canManage={canManage}
