@@ -883,6 +883,17 @@ pointer: the index carries the hook, this block carries the detail.)
   into the test inboxes. Re-read both environments after any such change. Setting a variable **does**
   trigger a redeploy (unless `--skip-deploys`), and the change is inert until that deploy reaches
   `SUCCESS`.
+- **That deploy fires in SECONDS but serves in MINUTES — and reading the gap as "no deploy" is a
+  mistake already made here.** Measured on staging 2026-08-28: environment settled on `96fa5e19`
+  `SUCCESS`; `railway variable set` at **08:57:42Z**, no `--skip-deploys`; deployment `6c805087`
+  created **08:57:46.663Z** — 3 seconds later, on the SAME commit `fdc63919`, with no push behind
+  it. Production carries the identical shape: `e84f0c05` at 07:57:56Z on `8f27b62b`, with no commit
+  to explain it. So for the first minutes a correct trigger and a missing one look alike — the old
+  container is still serving and the variable appears inert. On 2026-08-24 a session read exactly
+  that window as proof Railway does **not** restart on a variable change, ran an explicit
+  `railway redeploy`, and wrote the inverted rule into a memory file, where it stood until
+  2026-08-28. **Confirm by listing DEPLOYMENTS, never by probing the running app**, and never
+  `railway redeploy` to make a variable "take" — that is a second build of the same commit.
 
 ## 3. Stable Environment Facts
 
