@@ -55,11 +55,8 @@ export function runCandidateRoleRegionTests() {
     "other",
     "a bare NSM is ambiguous and unused here — same reasoning as the excluded bare MR and KAM",
   );
-  // Recorded, not endorsed: "Regional Sales Manager" lands in `sales`, because the area/regional
-  // branch anchors on "regional" immediately followed by manager/supervisor/head and this title
-  // separates them. Pre-existing behaviour, unchanged by the national family — asserted here so a
-  // future fix is a deliberate decision with a visible diff, not an accident.
-  assert.equal(candidateRoleFamily("Regional Sales Manager"), "sales");
+  // "Regional Sales Manager" now resolves to area_regional_manager, not sales — see the dedicated
+  // block below, where the area/regional branch's fix and its production measurement are documented.
 
   // --- Compound titles name two jobs. The more senior, more specific one wins.
   assert.equal(
