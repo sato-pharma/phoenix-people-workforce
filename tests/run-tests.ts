@@ -893,6 +893,7 @@ import { runDeductionsCrmSingleMonthScanTests } from "./deductions-crm-single-mo
 import { runCrmDayMapPushdownTests } from "./crm-day-map-pushdown.test.ts";
 import { runSfeManagerNavDeadLinksTests } from "./sfe-manager-nav-dead-links.test.ts";
 import { runOrganogramNavLinkExistsTests } from "./organogram-nav-link-exists-for-every-role-that-can-open-it.test.ts";
+import { runCrmHubCardReachabilityTests } from "./crm-hub-cards-are-reachable-by-the-roles-they-name.test.ts";
 import { runCrmDepartedExclusionHandoverTests } from "./crm-departed-exclusion-handover.test.ts";
 import { runOutstationArrivalPhotoCaptureReachableTests } from "./outstation-arrival-photo-capture-reachable.test.ts";
 import { runOutstationAdminManualExpenseGateTests } from "./outstation-admin-manual-expense-gate.test.ts";
@@ -2417,6 +2418,14 @@ await runTest(
   + "the whole chart on request — but neither was listed on any sidebar entry, so there was no way to reach "
   + "it; the owner hit this on 2026-08-25 after the Head Office branch shipped)",
   runOrganogramNavLinkExistsTests,
+);
+
+await runTest(
+  "a CRM hub card is reachable by the role it names (Rep Doctor Lists and Reps Plans are both "
+  + "roles: [\"Super Admin\"] cards on /admin/crm-tools, the one page that renders crmPageItems — and "
+  + "that hub's sidebar row excludes Super Admin by name, so the only role either card admitted was "
+  + "the only role that could not see the hub holding it; both pages rendered fine on a typed URL)",
+  runCrmHubCardReachabilityTests,
 );
 
 await runTest(
