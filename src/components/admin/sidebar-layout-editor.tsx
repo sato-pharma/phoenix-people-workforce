@@ -22,7 +22,18 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { EyeOff, GripVertical, LayoutList, PanelBottom, PanelTop, Pin, RotateCcw, Save } from "lucide-react";
+import {
+  ChevronDown,
+  ChevronUp,
+  EyeOff,
+  GripVertical,
+  LayoutList,
+  PanelBottom,
+  PanelTop,
+  Pin,
+  RotateCcw,
+  Save,
+} from "lucide-react";
 
 import {
   applyPersonalLayout,
@@ -31,6 +42,13 @@ import {
   type PersonalLayoutRowSet,
   type PersonalNavigationLayout,
 } from "@/lib/navigation/personal-layout";
+
+/** Everything a row needs to be moved without dragging it. */
+type RowControls = {
+  destinations: { id: string; label: string }[];
+  onMove: (href: string, from: string, to: string) => void;
+  onReorder: (href: string, containerId: string, delta: -1 | 1) => void;
+};
 
 type CataloguePage = { href: string; label: string };
 type CatalogueSection = { id: string; label: string; items: CataloguePage[] };
@@ -178,8 +196,33 @@ function writeContainer(state: EditorState, scope: Scope, containerId: string, i
   };
 }
 
-function DraggableRow({ href, label }: { href: string; label: string }) {
+/**
+ * A page in a column.
+ *
+ * The row is draggable, but drag is NOT the only way to move it and must never be the only way: it
+ * needs a pointer that can hold a button down across two columns, it is hostile on a touchscreen,
+ * and when it fails it fails silently — the page simply stays put with nothing to say why. So every
+ * row also carries plain controls: two arrows to reorder it where it is, and a "Move to" list that
+ * sends it to any other column outright. Two clicks, no aim required, and it works identically with
+ * a mouse, a finger, or a keyboard.
+ */
+function DraggableRow({
+  href,
+  label,
+  controls,
+  containerId,
+  canMoveUp,
+  canMoveDown,
+}: {
+  href: string;
+  label: string;
+  controls: RowControls;
+  containerId: string;
+  canMoveUp: boolean;
+  canMoveDown: boolean;
+}) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: href });
+  const destinations = controls.destinations.filter((entry) => entry.id !== containerId);
   return (
     <div
       ref={setNodeRef}
@@ -201,7 +244,54 @@ function DraggableRow({ href, label }: { href: string; label: string }) {
       {/* Owner rule: never truncate with an ellipsis and never let a label wrap. The row grows
           instead, and the column scrolls sideways if it must. */}
       <span className="whitespace-nowrap text-phx-md font-medium text-slate-700">{label}</span>
-      <span className="ml-auto whitespace-nowrap pl-3 text-phx-xs text-slate-400">{href}</span>
+      <span className="whitespace-nowrap pl-3 text-phx-xs text-slate-400">{href}</span>
+
+      {/* The controls sit INSIDE the draggable row, so a pointer-down on them would otherwise start
+          a drag instead of pressing the button. Stopping propagation here — and only here — keeps
+          the whole row draggable while leaving these genuinely clickable. */}
+      <div
+        className="ml-auto flex shrink-0 items-center gap-1 pl-3"
+        onPointerDown={(event) => event.stopPropagation()}
+      >
+        <button
+          aria-label={`Move ${label} up`}
+          className="border border-slate-200 bg-white p-1 text-slate-500 hover:border-slate-400 hover:text-slate-800 disabled:cursor-not-allowed disabled:opacity-30"
+          disabled={!canMoveUp}
+          onClick={() => controls.onReorder(href, containerId, -1)}
+          type="button"
+        >
+          <ChevronUp className="h-3 w-3" />
+        </button>
+        <button
+          aria-label={`Move ${label} down`}
+          className="border border-slate-200 bg-white p-1 text-slate-500 hover:border-slate-400 hover:text-slate-800 disabled:cursor-not-allowed disabled:opacity-30"
+          disabled={!canMoveDown}
+          onClick={() => controls.onReorder(href, containerId, 1)}
+          type="button"
+        >
+          <ChevronDown className="h-3 w-3" />
+        </button>
+        <select
+          aria-label={`Move ${label} to another row`}
+          className="cursor-pointer whitespace-nowrap border border-slate-200 bg-white px-1.5 py-1 text-phx-xs font-medium text-slate-600 outline-none hover:border-slate-400 focus:border-[#F8B56B]"
+          onChange={(event) => {
+            const to = event.target.value;
+            // Reset first: the control is a verb, not a value. Left showing the destination it
+            // would read as "this page lives there now", and picking the same place twice in a row
+            // would fire no change event at all.
+            event.target.value = "";
+            if (to) controls.onMove(href, containerId, to);
+          }}
+          value=""
+        >
+          <option value="">Move to</option>
+          {destinations.map((entry) => (
+            <option key={entry.id} value={entry.id}>
+              {entry.label}
+            </option>
+          ))}
+        </select>
+      </div>
     </div>
   );
 }
@@ -212,6 +302,7 @@ function DropColumn({
   hint,
   items,
   labelOf,
+  controls,
   accent,
   icon,
   onRename,
@@ -221,6 +312,7 @@ function DropColumn({
   hint?: string;
   items: string[];
   labelOf: Map<string, string>;
+  controls: RowControls;
   accent?: "zone" | "hidden";
   icon?: ReactNode;
   onRename?: (label: string) => void;
@@ -256,12 +348,22 @@ function DropColumn({
       ) : null}
       <div ref={setNodeRef} className="min-h-[64px] space-y-1.5 overflow-x-auto p-2">
         <SortableContext items={items} strategy={verticalListSortingStrategy}>
-          {items.map((href) => (
-            <DraggableRow href={href} key={href} label={labelOf.get(href) ?? href} />
+          {items.map((href, index) => (
+            <DraggableRow
+              canMoveDown={index < items.length - 1}
+              canMoveUp={index > 0}
+              containerId={containerId}
+              controls={controls}
+              href={href}
+              key={href}
+              label={labelOf.get(href) ?? href}
+            />
           ))}
         </SortableContext>
         {items.length === 0 ? (
-          <p className="px-1 py-3 text-phx-xs text-slate-400">Drop a page here.</p>
+          <p className="whitespace-nowrap px-1 py-3 text-phx-xs text-slate-400">
+            Empty. Use Move to on any page, or drag one here.
+          </p>
         ) : null}
       </div>
     </div>
@@ -373,6 +475,49 @@ export function SidebarLayoutEditor({
       return next;
     });
   }
+
+  /**
+   * Move a page to another column from the "Move to" list — the same operation a drag performs,
+   * reached by two clicks instead. It reuses moveBetweenContainers, passing the destination's own
+   * id as the drop target, which appends the page at the end of that column exactly as dropping on
+   * a column's empty space does.
+   */
+  function movePage(href: string, from: string, to: string) {
+    if (from === to) return;
+    moveBetweenContainers(from, to, href, to);
+    setDirty(true);
+  }
+
+  /** Reorder a page within the column it is already in. */
+  function reorderPage(href: string, containerId: string, delta: -1 | 1) {
+    const items = readContainer(state, scope, available, containerId);
+    const index = items.indexOf(href);
+    const next = index + delta;
+    if (index === -1 || next < 0 || next >= items.length) return;
+    const reordered = arrayMove(items, index, next);
+    if (containerId === AVAILABLE) setAvailable(reordered);
+    else setState((current) => writeContainer(current, scope, containerId, reordered));
+    setDirty(true);
+  }
+
+  /**
+   * Where a page can be sent. Scope decides the list: module scope edits only the two rows and the
+   * pool, so offering the strip or a sidebar module there would promise a move this screen does not
+   * make. Each row filters its own column out of this list before rendering it.
+   */
+  const destinations: { id: string; label: string }[] = scope
+    ? [
+        { id: UPPER, label: "Upper nav row" },
+        { id: LOWER, label: "Lower nav row" },
+        { id: AVAILABLE, label: "Pages you can add" },
+      ]
+    : [
+        ...HORIZONTAL_ZONES.map((zone) => ({ id: zone.key as string, label: zone.label as string })),
+        { id: HIDDEN, label: "Hidden" },
+        ...state.sections.map((section) => ({ id: `${SECTION_PREFIX}${section.id}`, label: section.label })),
+      ];
+
+  const rowControls: RowControls = { destinations, onMove: movePage, onReorder: reorderPage };
 
   // Every move happens here, on DROP — deliberately never on drag-over.
   //
@@ -606,6 +751,7 @@ export function SidebarLayoutEditor({
                 <DropColumn
                   accent="zone"
                   containerId={zone.key}
+                  controls={rowControls}
                   hint={zone.hint}
                   icon={ZONE_ICON[zone.key]}
                   items={zone.key === STRIP ? state.strip : rows[zone.key === UPPER ? "upperRow" : "lowerRow"]}
@@ -617,6 +763,7 @@ export function SidebarLayoutEditor({
               <DropColumn
                 accent="hidden"
                 containerId={HIDDEN}
+                controls={rowControls}
                 hint="Hidden from your navigation. This only affects what you see — it removes no access."
                 icon={<EyeOff className="h-3.5 w-3.5 shrink-0 text-slate-400" />}
                 items={state.hidden}
@@ -629,6 +776,7 @@ export function SidebarLayoutEditor({
               {state.sections.map((section) => (
                 <DropColumn
                   containerId={`${SECTION_PREFIX}${section.id}`}
+                  controls={rowControls}
                   items={section.items}
                   key={section.id}
                   labelOf={labelOf}
@@ -646,6 +794,7 @@ export function SidebarLayoutEditor({
             <DropColumn
               accent="zone"
               containerId={UPPER}
+              controls={rowControls}
               hint={`Above the page title, inside ${scopeLabel}.`}
               icon={ZONE_ICON[UPPER]}
               items={rows.upperRow}
@@ -655,6 +804,7 @@ export function SidebarLayoutEditor({
             <DropColumn
               accent="zone"
               containerId={LOWER}
+              controls={rowControls}
               hint={`Below the page title, inside ${scopeLabel}.`}
               icon={ZONE_ICON[LOWER]}
               items={rows.lowerRow}
@@ -663,6 +813,7 @@ export function SidebarLayoutEditor({
             />
             <DropColumn
               containerId={AVAILABLE}
+              controls={rowControls}
               hint={`Every page you can reach. ${scopeLabel} pages are listed first.`}
               items={available}
               labelOf={labelOf}
