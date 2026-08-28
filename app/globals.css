@@ -6,31 +6,55 @@
 
 @custom-variant dark (&:where(.dark, .dark *));
 
+/* The shadcn token block, re-pointed at the --phx- system (Phase 3).
+   These names stay because shadcn's own primitives read them; what changed is that
+   each now follows a --phx- token instead of holding an achromatic oklch() literal.
+   That is the whole unification: one place decides a colour, and .dark needs no
+   second copy — a var() resolves where it is USED, so these same declarations pick
+   up the dark --phx- values automatically.
+
+   Read the DEAD markers before adding anything here. 14 of these 32 names are read
+   by nothing at all — not by a utility class, not by a var(), not by the shadcn
+   package. They are scaffolding from the initial shadcn install. They are marked
+   rather than deleted so the removal can be reviewed as its own change instead of
+   riding along inside a re-skin. Do not build on a name marked DEAD. */
 :root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
+  --background: var(--phx-paper);
+  --foreground: var(--phx-ink);
+  --card: var(--phx-surface);
+  --card-foreground: var(--phx-ink);
+  --popover: var(--phx-surface);
+  --popover-foreground: var(--phx-ink);
+  /* DEAD — @theme inline below maps --color-primary to --phoenix-primary, not to
+     this, so bg-primary/text-primary/border-primary have always rendered the
+     orange and this value has never reached a pixel. Verified by compiling the
+     sheet against 16 primary-family utilities: 0 rules reference var(--primary). */
   --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
+  --primary-foreground: var(--phx-accent-ink);
+  --secondary: var(--phx-paper-2);
+  --secondary-foreground: var(--phx-ink);
+  --muted: var(--phx-paper-2);
+  --muted-foreground: var(--phx-ink-soft);
+  /* shadcn's --accent is the subtle hover ground, not the brand colour. Pointing it
+     at the orange TINT rather than a grey is what makes a hovered row read as this
+     product's hover instead of a default one. */
+  --accent: var(--phx-accent-soft);
+  --accent-foreground: var(--phx-ink);
+  --destructive: var(--phx-danger);
+  --border: var(--phx-line);
+  --input: var(--phx-line);
+  --ring: var(--phx-accent);
+  /* DEAD ×5 — no chart class or var() reads these anywhere in app/ or src/. They are
+     also an achromatic ramp, so every chart they were meant to colour would have
+     rendered in five shades of grey. Nothing does. */
   --chart-1: oklch(0.87 0 0);
   --chart-2: oklch(0.556 0 0);
   --chart-3: oklch(0.439 0 0);
   --chart-4: oklch(0.371 0 0);
   --chart-5: oklch(0.269 0 0);
-  --radius: 0.625rem;
+  --radius: var(--phx-radius);
+  /* DEAD ×8 — the sidebar in this app is hand-built and reads none of these; zero
+     files use bg-sidebar / text-sidebar / border-sidebar. */
   --sidebar: oklch(0.985 0 0);
   --sidebar-foreground: oklch(0.145 0 0);
   --sidebar-primary: oklch(0.205 0 0);
@@ -56,23 +80,14 @@
   --color-success: var(--success);
   --color-warning: var(--warning);
   --color-danger: var(--danger);
-  /* These three stacks carried a var(--font-dm-sans / --font-jetbrains-mono /
-     --font-dm-serif, <list>) wrapper. All three variables were scaffolded for
-     next/font and defined NOWHERE in the repo, so every var() resolved to
-     nothing and fell straight through to the list after it. The lists below
-     are therefore exactly what renders today — removing the wrappers changes
-     no pixel, it only stops the file claiming a font it never loaded.
-     Note none of these is webfont-backed, so the typeface still varies by
-     machine (Aptos on Windows with Office, Segoe UI Variable without it).
-     Shipping a real font is Phase 2 of the design-token work — when it lands,
-     define the variable and reintroduce the wrapper deliberately. */
-  --font-sans:
-    "Aptos", "Segoe UI Variable Display", "Segoe UI Variable Text", "Segoe UI", "Inter",
-    "Helvetica Neue", Arial, sans-serif;
-  --font-mono:
-    "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
-    "Courier New", monospace;
-  --font-display: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
+  /* The three stacks now live in tokens.css beside everything else they belong
+     with. --font-sans is Inter, self-hosted and actually loaded (@font-face in
+     app/layout.tsx) — the first webfont this app has ever named. Before this the
+     stack led with "Aptos", which exists only on a Windows machine with Office
+     installed, so the product rendered in a different typeface desk to desk. */
+  --font-sans: var(--phx-font-ui);
+  --font-mono: var(--phx-font-mono);
+  --font-display: var(--phx-font-display);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -99,34 +114,37 @@
   --color-popover-foreground: var(--popover-foreground);
   --color-popover: var(--popover);
   --color-card-foreground: var(--card-foreground);
-  --radius-sm: calc(var(--radius) * 0.6);
-  --radius-md: calc(var(--radius) * 0.8);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) * 1.4);
-  --radius-2xl: calc(var(--radius) * 1.8);
-  --radius-3xl: calc(var(--radius) * 2.2);
-  --radius-4xl: calc(var(--radius) * 2.6);
+  /* The radius scale, taken off the multiply chain and onto real values.
+     calc(var(--radius) * 0.8) was landing rounded-md on 8px and, once --radius
+     moved to 4px, would have landed it on 3.2px — a fractional radius that
+     antialiases differently at each corner. Each step below is a whole pixel from
+     the --phx- scale. rounded-lg is the one that matters: it is the default card
+     and button class across the admin shell (1,401 uses of md/lg/xl between them),
+     and it moves 10px -> 4px. That single line is most of what makes the shell
+     read as sharp rather than soft. */
+  --radius-sm: var(--phx-radius-xs);
+  --radius-md: var(--phx-radius-sm);
+  --radius-lg: var(--phx-radius);
+  --radius-xl: var(--phx-radius-lg);
+  --radius-2xl: var(--phx-radius-xl);
+  --radius-3xl: 14px;
+  --radius-4xl: 18px;
 }
 
+/* DARK
+   Only the names that do NOT already follow a --phx- token are listed here.
+
+   Everything re-pointed in :root above needs no entry: a var() resolves against the
+   element it is used on, so --background: var(--phx-paper) picks up the dark
+   --phx-paper the moment it is read inside .dark. Repeating those names here with a
+   second set of literals is what forces someone to keep two palettes in step by
+   hand, and it is why this file and tokens.css had drifted apart in the first place.
+
+   What is left is the 14 names marked DEAD in :root. They are kept only so this
+   block still matches that one name for name until the removal lands as its own
+   change; none of them renders. */
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
   --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
   --chart-1: oklch(0.87 0 0);
   --chart-2: oklch(0.556 0 0);
   --chart-3: oklch(0.439 0 0);
