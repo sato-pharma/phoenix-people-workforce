@@ -5,6 +5,7 @@ import {
   normalizeRole,
   resolveEmployeeIdentityId,
   resolveNavigationMode,
+  systemAccessContext,
   type AccessContext,
   type NavigationMode,
   type PhoenixRole,
@@ -24,6 +25,10 @@ import {
   isOutstationEvidenceWaivedRole,
   isOutstationTicketWaivedRole,
 } from "@/lib/outstation/evidence-waiver";
+import {
+  OUTSTATION_NO_HOLD_APPROVAL_REASON,
+  isOutstationNoHoldRole,
+} from "@/lib/outstation/nsm-no-hold";
 import {
   createOutstationCarEvidenceSignedUrl,
   createOutstationEvidenceSignedUrls,
@@ -1644,6 +1649,10 @@ export async function submitOutstationRequest(
   // same value written to `employee_role` below and therefore the same value every later read of
   // this request resolves the waiver from.
   const evidencePhotoWaived = isOutstationEvidenceWaivedRole(calculation.employeeRole);
+  // Owner rule (2026-08-28): a National Sales Manager is never held, for any reason. Read from
+  // the same CALCULATION role written to `employee_role` below, so every later read of this
+  // request resolves the rule from the value the claim was submitted under.
+  const noHoldRole = isOutstationNoHoldRole(calculation.employeeRole);
 
   if (!evidenceValidation.isValid) {
     throw new Error(evidenceValidation.message);
@@ -1795,7 +1804,7 @@ export async function submitOutstationRequest(
     "This train or bus claim was captured offline and could not carry its ticket attachment, so it is held for Super Admin review before it moves to payroll.";
   // Ordered worst-first: the flag most likely to decide the outcome is the one the approver
   // should read first, and this list is joined into the reason the queue renders.
-  const reviewHoldReasons = [
+  const detectedHoldReasons = [
     eligibilityFlagReason,
     campaignRejectionReason,
     campaignHoldReason,
@@ -1804,6 +1813,15 @@ export async function submitOutstationRequest(
     gpsAccuracyHoldReason,
     offlineSyncHoldReason,
   ].filter((reason): reason is string => Boolean(reason));
+  /**
+   * Owner rule (2026-08-28): a National Sales Manager is never held, for any reason.
+   *
+   * Every check above still RAN, and every flag it raised is still written onto the request in
+   * `decisionReason` below, so a reviewer reads exactly what the system saw. What is removed for
+   * this one role is the HOLD itself — the same shape as the owner's 2026-08-09 "the system
+   * flags, it never rejects" rule, taken one step further. See nsm-no-hold.ts.
+   */
+  const reviewHoldReasons = noHoldRole ? [] : detectedHoldReasons;
   const decisionStatus = reviewHoldReasons.length > 0 ? "submitted" : "accepted_by_system";
   /**
    * Where the request sits in the WORKFLOW — deliberately separate from what the automated
@@ -1819,12 +1837,22 @@ export async function submitOutstationRequest(
    * distinguishable from "flagged by one" — the distinction is preserved, it just no longer
    * decides where the money goes.
    *
-   * Since the owner's 2026-08-09 flag-never-reject rule this is unconditional: no submission
-   * produces `rejected_by_system` any more, so there is nothing left for it to branch on.
+   * Since the owner's 2026-08-09 flag-never-reject rule no submission produces
+   * `rejected_by_system` any more, so nothing here branches on a refusal.
+   *
+   * The one branch that DOES exist is the owner's 2026-08-28 rule — "once submitted, once
+   * accepted" for a National Sales Manager. His claim is accepted the moment it is submitted and
+   * released into payroll below. Nobody else auto-accepts; the 2026-08-08 decision stands for
+   * every other role.
    */
-  const workflowStatus = "submitted";
-  const decisionReason =
-    reviewHoldReasons.length > 0 ? reviewHoldReasons.join(" ") : calculation.approvalReason;
+  const workflowStatus = noHoldRole ? "accepted_by_system" : "submitted";
+  // A no-hold claim carries the rule FIRST and then any flag the checks raised, so the screen
+  // says why it was accepted without hiding what was noticed.
+  const decisionReason = noHoldRole
+    ? [OUTSTATION_NO_HOLD_APPROVAL_REASON, ...detectedHoldReasons].join(" ")
+    : reviewHoldReasons.length > 0
+      ? reviewHoldReasons.join(" ")
+      : calculation.approvalReason;
 
   let uploadedTicketAttachments: OutstationTicketAttachmentMetadata[] = [];
   if (ticketAttachmentInputs.length > 0) {
@@ -1984,9 +2012,37 @@ export async function submitOutstationRequest(
   // reading. The submit-time rejection email is gone with the submit-time rejection: the only
   // rejection notice an employee can now receive is one a Super Admin actually chose to send.
   await notifyOutstationSubmitted(submitted, {
-    heldForReview: true,
+    heldForReview: !noHoldRole,
     reviewReason: reviewHoldReasons.length > 0 ? reviewHoldReasons.join(" ") : null,
   });
+
+  /**
+   * Owner rule (2026-08-28), the second half of it: "once submitted, once accepted".
+   *
+   * The row was written `accepted_by_system` above, but an accepted claim that nobody releases
+   * is held under a different name — the push into payroll is what actually pays the man.
+   *
+   * Runs as the SYSTEM, not as the submitter, for two reasons. The payroll write asserts a
+   * manual-approval permission a National Sales Manager does not hold, so his own context would
+   * be refused; and it was the rule that accepted this claim, not him, so the audit row should
+   * not read as though he approved his own money.
+   *
+   * Never throws — it reports failure in its return value — so a payroll hiccup cannot fail a
+   * submission the employee has already completed. A failure is logged rather than swallowed,
+   * because the one outcome this rule exists to prevent is a claim sitting unpaid unnoticed.
+   */
+  if (noHoldRole) {
+    const release = await releaseOutstationRequestToPayrollIfReady(submitted.id, systemAccessContext);
+    if (!release.released) {
+      logError("Outstation no-hold request accepted on submission but not released into payroll", {
+        labels: {
+          event: "outstation_no_hold_release_failed",
+          reason: release.reason,
+          requestId: String(submitted.id),
+        },
+      });
+    }
+  }
 
   // Tell him NOW, not tomorrow morning.
   //

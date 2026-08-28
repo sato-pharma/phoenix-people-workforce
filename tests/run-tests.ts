@@ -936,6 +936,7 @@ import { runOutstationAllowanceDuplicateDayGuardTests } from "./outstation-allow
 import { runOutstationCairoNoAllowanceTests } from "./outstation-cairo-no-allowance.test.ts";
 import { runOutstationClaimValidationTests } from "./outstation-claim-validation.test.ts";
 import { runOutstationEvidenceWaiverTests } from "./outstation-evidence-waiver.test.ts";
+import { runOutstationNsmNoHoldTests } from "./outstation-nsm-no-hold.test.ts";
 import { runOutstationExpenseNoteAssistTests } from "./outstation-expense-note-assist.test.ts";
 import { runOutstationSubmissionWaitsForApprovalTests } from "./outstation-submission-waits-for-approval.test.ts";
 import { runDirectOrdersPharmacyStandingTests } from "./direct-orders-pharmacy-standing.test.ts";
@@ -2863,6 +2864,11 @@ await runTest(
 await runTest(
   "outstation evidence waiver (Product / Group Product / National Sales Managers submit with no photo, and their train-bus ticket is optional)",
   runOutstationEvidenceWaiverTests,
+);
+
+await runTest(
+  "outstation National Sales Manager no-hold rule (never held by the photo or workload gate, accepted on submission, released into payroll as the system — and nobody else exempted)",
+  runOutstationNsmNoHoldTests,
 );
 
 await runTest(

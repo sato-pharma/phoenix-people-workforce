@@ -421,8 +421,8 @@ export function runOutstationDecisionTests() {
   );
   assert.match(
     submitSlice,
-    /const workflowStatus = "submitted";/,
-    "every submission lands in the pending queue, unconditionally",
+    /const workflowStatus = noHoldRole \? "accepted_by_system" : "submitted";/,
+    "every submission lands in the pending queue — with exactly one exception, the owner's 2026-08-28 National Sales Manager rule (nsm-no-hold.ts). A second branch appearing here means someone else stopped waiting for a human",
   );
   // Each rule's failure reason must actually reach the approver. A rule that is neither enforced
   // nor surfaced has been deleted, not relaxed — that is the failure mode this rule change could
@@ -436,10 +436,15 @@ export function runOutstationDecisionTests() {
   ] as const) {
     assert.match(
       submitSlice,
-      new RegExp(`reviewHoldReasons = \\[[^\\]]*${flag}`, "s"),
-      `${why} must still reach the approver via reviewHoldReasons — relaxed, not deleted`,
+      new RegExp(`detectedHoldReasons = \\[[^\\]]*${flag}`, "s"),
+      `${why} must still reach the approver via detectedHoldReasons — relaxed, not deleted`,
     );
   }
+  assert.match(
+    submitSlice,
+    /const reviewHoldReasons = noHoldRole \? \[\] : detectedHoldReasons;/,
+    "the flags above are what HOLD a claim for everyone except the one role the owner exempted — a list that stops feeding this line has been deleted, not renamed",
+  );
   assert.match(
     submitSlice,
     /eligibilityFlagReason\s*=\s*\n?\s*calculation\.eligibilityStatus === "not_eligible"/,

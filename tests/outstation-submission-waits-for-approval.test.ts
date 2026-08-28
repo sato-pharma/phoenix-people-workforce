@@ -17,6 +17,13 @@ import { expenseApprovalState } from "../src/lib/outstation/approval-state.ts";
 //
 // Owner decision, same day: "yes make it wait for my approval."
 //
+// NARROWED 2026-08-28 by a later owner rule: "Don't hold the expenses of the national sales
+// manager for any reason. Once submitted, once accepted." A National Sales Manager's claim — and
+// ONLY his — is accepted the moment he submits it and released into payroll (nsm-no-hold.ts). His
+// hold could never have cleared on its own: the workload gate matches AM/PM visits out of the CRM
+// and he runs no doctor list. Everything below still holds for every other role, and each
+// assertion now also pins that the exception is exactly one role wide.
+//
 // This pins the three things that have to stay true for that to hold. All by source inspection —
 // the submit paths need Supabase, storage and a live geocoder, so the assertable surface is the
 // wiring itself, the same approach outstation-expense-gate.test.ts takes for the payroll gate.
@@ -67,8 +74,13 @@ export function runOutstationSubmissionWaitsForApprovalTests() {
   // in the process.
   assert.match(
     submitSlice,
-    /const workflowStatus\s*=\s*"submitted";/,
-    "every submission must persist as `submitted` so it lands in the pending queue",
+    /const workflowStatus = noHoldRole \? "accepted_by_system" : "submitted";/,
+    "every submission must persist as `submitted` so it lands in the pending queue — with exactly one exception, the owner's 2026-08-28 National Sales Manager rule. A second branch appearing here means somebody else stopped waiting for a human",
+  );
+  assert.match(
+    submitSlice,
+    /const noHoldRole = isOutstationNoHoldRole\(calculation\.employeeRole\);/,
+    "…and that exception must come from the rule module, never from an inline role comparison that can drift away from it",
   );
   assert.match(
     submitSlice,
@@ -89,8 +101,37 @@ export function runOutstationSubmissionWaitsForApprovalTests() {
   for (const signature of submitPaths) {
     assert.match(
       functionSlice(service, signature),
-      /notifyOutstationSubmitted\([\s\S]{0,160}heldForReview:\s*true/,
+      /notifyOutstationSubmitted\([\s\S]{0,160}heldForReview:\s*(?:true|!noHoldRole)/,
       `${signature} must raise the awaiting-approval alert itself, now that no approval fires it`,
+    );
+  }
+  // Only ONE path may ever say the claim is not waiting, and only for the one reason.
+  assert.match(
+    submitSlice,
+    /heldForReview: !noHoldRole,/,
+    "the alert tells the truth on both sides of the rule: still 'waiting for you' for every role except the exempt one",
+  );
+  for (const signature of submitPaths.filter((path) => !path.includes("submitOutstationRequest"))) {
+    assert.match(
+      functionSlice(service, signature),
+      /heldForReview:\s*true/,
+      `${signature} has no exception — an admin typing a trip in on someone's behalf still waits for the amount to be confirmed`,
+    );
+  }
+
+  // The one submit path that now moves money does it through the release function, which re-reads
+  // the request and re-resolves the gate — and it must be reachable ONLY through the role rule.
+  // An unguarded call here is the 2026-08-08 defect returning by another name.
+  assert.match(
+    submitSlice,
+    /if \(noHoldRole\) \{[\s\S]{0,240}releaseOutstationRequestToPayrollIfReady\(/,
+    "the payroll release at submit must sit behind the National Sales Manager rule and nothing else",
+  );
+  for (const signature of submitPaths.filter((path) => !path.includes("submitOutstationRequest"))) {
+    assert.doesNotMatch(
+      functionSlice(service, signature),
+      /releaseOutstationRequestToPayrollIfReady\(/,
+      `${signature} must not release anything into payroll — no exception was granted to it`,
     );
   }
 

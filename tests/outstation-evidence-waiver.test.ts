@@ -196,13 +196,20 @@ export function runOutstationEvidenceWaiverTests() {
     );
     assert.match(
       gate.message,
-      /not required for this role/i,
+      /not required for this role|never held/i,
       "the reason must say the photo was waived, so a reviewer never reads a photo-less row as one that lost its evidence",
     );
   }
 
-  // The workload gate is untouched. Only the photographs were waived, and folding the day's work
-  // into the same exemption would release these roles from a rule the owner did not mention.
+  // A National Sales Manager takes a STRONGER rule than this waiver as of 2026-08-28 — he is
+  // never held at all (nsm-no-hold.ts) — so his gate message names that rule rather than the
+  // photo waiver. Both readings are accepted above; what must never appear for a waived role is
+  // a blocker.
+
+  // The workload gate is untouched FOR THE OTHER TWO WAIVED ROLES. Only the photographs were
+  // waived for them, and folding the day's work into the same exemption would release them from
+  // a rule the owner did not mention. Asserted on Group Product Manager deliberately: National
+  // Sales Manager is no longer a valid subject for this check.
   const waivedNoWorkload = resolveOutstationGateState({
     employeeRole: "Group Product Manager",
     evidenceGateStatus: "pending_arrival_photo",

@@ -17,6 +17,10 @@
  */
 
 import { isOutstationEvidenceWaivedRole } from "@/lib/outstation/evidence-waiver";
+import {
+  OUTSTATION_NO_HOLD_GATE_MESSAGE,
+  isOutstationNoHoldRole,
+} from "@/lib/outstation/nsm-no-hold";
 import type {
   OutstationEvidenceGateStatus,
   OutstationWorkloadGateStatus,
@@ -84,6 +88,21 @@ export function resolveOutstationGateState(input: {
 }): OutstationGateState {
   const { employeeRole, evidenceGateStatus, hasArrivalPhoto, hasDeparturePhoto, workloadGateStatus } =
     input;
+
+  // Owner rule (2026-08-28): a National Sales Manager is never held, for any reason. This sits
+  // ABOVE every other test on purpose — it is the strongest rule in this function, and putting
+  // it anywhere lower would leave the reading of a claim depending on which check ran first.
+  //
+  // The workload gate is the one that actually bites here: it matches AM/PM visits out of the
+  // CRM, an NSM generates none, so the gate could never clear and the claim could never be paid
+  // without a Super Admin typing a workload in by hand. See nsm-no-hold.ts for the full rule.
+  if (isOutstationNoHoldRole(employeeRole)) {
+    return {
+      blocker: null,
+      isPayrollEligible: true,
+      message: OUTSTATION_NO_HOLD_GATE_MESSAGE,
+    };
+  }
 
   if (isGrandfathered(evidenceGateStatus, workloadGateStatus)) {
     return {
