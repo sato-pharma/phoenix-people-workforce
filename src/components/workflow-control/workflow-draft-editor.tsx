@@ -24,9 +24,9 @@ import { simulateWorkflow, type WorkflowSimulationResult } from "@/lib/workflow-
 import { WorkflowMap } from "./workflow-map";
 import { PersistenceStatusPanel } from "./persistence-status-panel";
 
-const inputBase = "w-full rounded-lg border bg-white px-2.5 py-1.5 text-[13px] text-phx-ink outline-none focus:border-phx-accent";
-const label = "text-[10px] font-black uppercase tracking-[0.10em] text-phx-ink-soft";
-const currentNote = "mt-0.5 text-[11px] text-phx-ink-faint";
+const inputBase = "w-full rounded-lg border bg-white px-2.5 py-1.5 text-phx-md text-phx-ink outline-none focus:border-phx-accent";
+const label = "text-phx-2xs font-black uppercase tracking-[0.10em] text-phx-ink-soft";
+const currentNote = "mt-0.5 text-phx-xs text-phx-ink-faint";
 
 /**
  * Phase 2A/2B/2C Controlled Draft Builder (CLIENT-ONLY).
@@ -125,7 +125,7 @@ export function WorkflowDraftEditor({
         {/* Safety banner */}
         <div className="mx-5 mt-4 flex items-start gap-2 rounded-xl border border-[#FED7AA] bg-phx-accent-soft px-4 py-3">
           <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-phx-accent-press" />
-          <p className="text-[13px] leading-5 text-[#9A3412]">
+          <p className="text-phx-md leading-5 text-[#9A3412]">
             <span className="font-black">Local preview only — the runtime workflow is unchanged.</span> Nothing is saved,
             published, or run. Save/Persist and Publish/versioning come in Phase 3.
           </p>
@@ -136,11 +136,11 @@ export function WorkflowDraftEditor({
 
         {/* Draft impact summary (Current vs Draft) */}
         <div className="mx-5 mt-3 rounded-xl border border-phx-line px-4 py-2.5">
-          <p className="text-[11px] font-black uppercase tracking-[0.10em] text-phx-ink-faint">Draft impact (Current vs Draft)</p>
+          <p className="text-phx-xs font-black uppercase tracking-[0.10em] text-phx-ink-faint">Draft impact (Current vs Draft)</p>
           {!hasAnyChange ? (
-            <p className="mt-0.5 text-[12px] text-phx-ink-soft">No changes yet — edit a field, reorder, or hide a step to start a draft.</p>
+            <p className="mt-0.5 text-phx-sm text-phx-ink-soft">No changes yet — edit a field, reorder, or hide a step to start a draft.</p>
           ) : (
-            <ul className="mt-0.5 space-y-0.5 text-[12px] text-phx-ink-2">
+            <ul className="mt-0.5 space-y-0.5 text-phx-sm text-phx-ink-2">
               <li>
                 <span className="font-black text-phx-accent-press">{diff.changeCount}</span> field change{diff.changeCount === 1 ? "" : "s"}
                 {diff.changedStepNames.length ? <span className="text-phx-ink-soft"> · {diff.changedStepNames.join(", ")}</span> : null}
@@ -178,7 +178,7 @@ export function WorkflowDraftEditor({
             <Lock className="h-4 w-4" /> Rollback <span className="font-normal">(Rollback requires published versions)</span>
           </button>
         </div>
-        <p className="px-5 pt-1.5 text-[11px] text-phx-ink-faint">
+        <p className="px-5 pt-1.5 text-phx-xs text-phx-ink-faint">
           Reorder/visibility/edits are <span className="font-bold">draft preview only</span>. Save Draft →{" "}
           <span className="font-bold">Phase 3 persistence required</span>. Publish → <span className="font-bold">Phase 3 versioning + approval required</span>. Rollback → <span className="font-bold">Rollback requires published versions</span>.
         </p>
@@ -186,7 +186,7 @@ export function WorkflowDraftEditor({
         {/* Draft map preview */}
         {showPreview ? (
           <div className="mx-5 mt-3 rounded-xl border border-phx-line bg-phx-paper p-3">
-            <p className="text-[11px] font-black uppercase tracking-[0.10em] text-phx-ink-faint">Draft map preview (display only)</p>
+            <p className="text-phx-xs font-black uppercase tracking-[0.10em] text-phx-ink-faint">Draft map preview (display only)</p>
             <div className="mt-2 max-h-[280px] overflow-auto">
               <WorkflowMap steps={draftMapSteps} compact />
             </div>
@@ -196,59 +196,59 @@ export function WorkflowDraftEditor({
         {/* Validation result */}
         {validation ? (
           <div className="mx-5 mt-3 rounded-xl border border-phx-line p-3">
-            <p className={`text-[11px] font-black uppercase tracking-[0.10em] ${validation.status === "valid" ? "text-[#047857]" : "text-phx-accent-press"}`}>
+            <p className={`text-phx-xs font-black uppercase tracking-[0.10em] ${validation.status === "valid" ? "text-[#047857]" : "text-phx-accent-press"}`}>
               Validation: {validation.status === "valid" ? "Valid" : "Warnings"}
             </p>
             {validation.warnings.length ? (
               <ul className="mt-1 list-disc space-y-0.5 pl-5">
                 {validation.warnings.map((w) => (
-                  <li key={w} className="text-[12px] leading-5 text-[#9A3412]">{w}</li>
+                  <li key={w} className="text-phx-sm leading-5 text-[#9A3412]">{w}</li>
                 ))}
               </ul>
             ) : (
-              <p className="mt-1 text-[12px] text-phx-ink-2">All edited fields look fine.</p>
+              <p className="mt-1 text-phx-sm text-phx-ink-2">All edited fields look fine.</p>
             )}
-            <p className="mt-2 text-[10px] font-black uppercase tracking-[0.10em] text-phx-ink-faint">Blocked fields (not editable in Phase 2)</p>
-            <p className="mt-0.5 text-[11px] leading-5 text-phx-ink-soft">{validation.blockedFields.join(" · ")}</p>
-            <p className="mt-1.5 text-[11px] font-semibold text-[#B91C1C]">Publish blocked: {validation.publishBlocked}</p>
+            <p className="mt-2 text-phx-2xs font-black uppercase tracking-[0.10em] text-phx-ink-faint">Blocked fields (not editable in Phase 2)</p>
+            <p className="mt-0.5 text-phx-xs leading-5 text-phx-ink-soft">{validation.blockedFields.join(" · ")}</p>
+            <p className="mt-1.5 text-phx-xs font-semibold text-[#B91C1C]">Publish blocked: {validation.publishBlocked}</p>
           </div>
         ) : null}
 
         {/* Draft simulation result */}
         {simResult ? (
           <div className="mx-5 mt-3 rounded-xl border border-[#FED7AA] bg-phx-accent-soft p-3">
-            <p className="inline-flex items-center gap-1.5 rounded-full bg-white px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.10em] text-phx-accent-press">
+            <p className="inline-flex items-center gap-1.5 rounded-full bg-white px-2 py-0.5 text-phx-2xs font-black uppercase tracking-[0.10em] text-phx-accent-press">
               Draft simulation only
             </p>
-            <p className="mt-1.5 text-[11px] font-black uppercase tracking-[0.10em] text-phx-ink-faint">
+            <p className="mt-1.5 text-phx-xs font-black uppercase tracking-[0.10em] text-phx-ink-faint">
               {simResult.domainName} → {simResult.subflowName}
             </p>
             {simResult.routePath.length ? (
-              <p className="mt-1 text-[12px] text-phx-ink-2"><span className="font-bold">Route path</span> {simResult.routePath.join(" → ")}</p>
+              <p className="mt-1 text-phx-sm text-phx-ink-2"><span className="font-bold">Route path</span> {simResult.routePath.join(" → ")}</p>
             ) : null}
             <ol className="mt-1.5 space-y-1">
               {simResult.steps.map((s) => (
                 <li key={s.id} className="rounded-lg bg-white px-2.5 py-1.5">
-                  <p className="text-[12px] font-bold text-phx-ink">Step {s.index + 1}: {s.name} <span className="font-semibold text-phx-ink-soft">→ {s.routesTo}</span></p>
-                  {s.notificationRecipients.length ? <p className="text-[11px] text-phx-ink-2">In-app: {s.notificationRecipients.join(", ")}</p> : null}
-                  {s.emailRecipients.length ? <p className="text-[11px] text-phx-ink-2">Emails: {s.emailRecipients.join(", ")}</p> : null}
-                  {s.notificationGap ? <p className="text-[11px] font-semibold text-[#B91C1C]">Notification gap: not implemented yet</p> : null}
+                  <p className="text-phx-sm font-bold text-phx-ink">Step {s.index + 1}: {s.name} <span className="font-semibold text-phx-ink-soft">→ {s.routesTo}</span></p>
+                  {s.notificationRecipients.length ? <p className="text-phx-xs text-phx-ink-2">In-app: {s.notificationRecipients.join(", ")}</p> : null}
+                  {s.emailRecipients.length ? <p className="text-phx-xs text-phx-ink-2">Emails: {s.emailRecipients.join(", ")}</p> : null}
+                  {s.notificationGap ? <p className="text-phx-xs font-semibold text-[#B91C1C]">Notification gap: not implemented yet</p> : null}
                 </li>
               ))}
             </ol>
-            <p className="mt-1.5 text-[12px] font-black text-phx-ink">Final status: <span className="text-phx-accent-press">{simResult.finalStatus}</span></p>
+            <p className="mt-1.5 text-phx-sm font-black text-phx-ink">Final status: <span className="text-phx-accent-press">{simResult.finalStatus}</span></p>
             {simResult.sideEffects.length ? (
               <div className="mt-1">
-                <p className="text-[10px] font-black uppercase tracking-[0.10em] text-phx-ink-faint">Side effects</p>
+                <p className="text-phx-2xs font-black uppercase tracking-[0.10em] text-phx-ink-faint">Side effects</p>
                 <ul className="mt-0.5 list-disc space-y-0.5 pl-5">
-                  {simResult.sideEffects.map((e) => <li key={e} className="text-[11px] leading-5 text-phx-ink-2">{e}</li>)}
+                  {simResult.sideEffects.map((e) => <li key={e} className="text-phx-xs leading-5 text-phx-ink-2">{e}</li>)}
                 </ul>
               </div>
             ) : null}
             {simResult.warnings.length ? (
               <div className="mt-1 flex items-start gap-1.5">
                 <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-phx-accent-press" />
-                <p className="text-[11px] leading-5 text-[#9A3412]">{simResult.warnings.join(" · ")}</p>
+                <p className="text-phx-xs leading-5 text-[#9A3412]">{simResult.warnings.join(" · ")}</p>
               </div>
             ) : null}
           </div>
@@ -268,7 +268,7 @@ export function WorkflowDraftEditor({
 
         {/* Editable step list — in draft order, with move + visibility controls */}
         <div className="space-y-3 p-5">
-          <p className="text-[11px] font-black uppercase tracking-[0.10em] text-phx-ink-faint">Editable steps (safe fields, local order)</p>
+          <p className="text-phx-xs font-black uppercase tracking-[0.10em] text-phx-ink-faint">Editable steps (safe fields, local order)</p>
           {orderedSteps.map((step, oi) => {
             const o = draft[step.id] ?? {};
             const notifEnabled = o.notificationEnabled ?? step.notificationRecipients.length > 0;
@@ -278,10 +278,10 @@ export function WorkflowDraftEditor({
             return (
               <div key={step.id} className={cn("rounded-xl border p-3", hidden ? "border-phx-line bg-phx-paper-2 opacity-80" : stepChanged ? "border-[#FED7AA] bg-[#FFFBEB]" : "border-phx-line")}>
                 <div className="flex items-start justify-between gap-2">
-                  <p className="text-[11px] font-black uppercase tracking-[0.12em] text-phx-ink-faint">
+                  <p className="text-phx-xs font-black uppercase tracking-[0.12em] text-phx-ink-faint">
                     Draft step {oi + 1} · <span className="text-phx-ink-2">{step.actor} / {step.role}</span> · → {step.statusProduced}
-                    {stepChanged ? <span className="ml-1.5 rounded bg-phx-accent-soft px-1.5 py-0.5 text-[9px] font-black text-phx-accent-press">CHANGED</span> : null}
-                    {hidden ? <span className="ml-1.5 rounded bg-phx-line px-1.5 py-0.5 text-[9px] font-black text-phx-ink-2">HIDDEN</span> : null}
+                    {stepChanged ? <span className="ml-1.5 rounded bg-phx-accent-soft px-1.5 py-0.5 text-phx-3xs font-black text-phx-accent-press">CHANGED</span> : null}
+                    {hidden ? <span className="ml-1.5 rounded bg-phx-line px-1.5 py-0.5 text-phx-3xs font-black text-phx-ink-2">HIDDEN</span> : null}
                   </p>
                   <div className="flex shrink-0 items-center gap-1">
                     <button aria-label="Move up" className="rounded border border-phx-line p-1 text-phx-ink-soft hover:bg-phx-paper disabled:opacity-40" disabled={oi === 0} onClick={() => move(step.id, "up")} type="button">
@@ -338,21 +338,21 @@ export function WorkflowDraftEditor({
                 <div className="mt-2 flex flex-wrap items-center gap-4">
                   <label className="flex items-center gap-1.5">
                     <input type="checkbox" checked={notifEnabled} onChange={(e) => setField(step.id, "notificationEnabled", e.target.checked)} />
-                    <span className="text-[12px] font-semibold text-phx-ink-2">In-app notifications enabled</span>
+                    <span className="text-phx-sm font-semibold text-phx-ink-2">In-app notifications enabled</span>
                   </label>
                   <label className="flex items-center gap-1.5">
                     <input type="checkbox" checked={emailEnabled} onChange={(e) => setField(step.id, "emailEnabled", e.target.checked)} />
-                    <span className="text-[12px] font-semibold text-phx-ink-2">Email enabled</span>
+                    <span className="text-phx-sm font-semibold text-phx-ink-2">Email enabled</span>
                   </label>
                   <label className="flex items-center gap-1.5">
                     <input type="checkbox" checked={o.optional ?? false} onChange={(e) => setField(step.id, "optional", e.target.checked)} />
-                    <span className="text-[12px] font-semibold text-phx-ink-2">Mark optional (display only)</span>
+                    <span className="text-phx-sm font-semibold text-phx-ink-2">Mark optional (display only)</span>
                   </label>
                 </div>
               </div>
             );
           })}
-          <p className="text-[11px] leading-5 text-phx-ink-faint">
+          <p className="text-phx-xs leading-5 text-phx-ink-faint">
             Reorder and hide affect the <span className="font-bold">draft preview only</span> — runtime steps are never removed
             or reordered. Approval roles, runtime execution, payroll, security/RLS, access and data changes are{" "}
             <span className="font-bold">not editable</span> here.

@@ -144,12 +144,12 @@ export function PlanAdherenceDashboardCard({
           <span className="flex h-7 w-7 shrink-0 items-center justify-center bg-slate-900 text-white transition-colors group-hover:bg-orange-600">
             <Target className="h-3.5 w-3.5" />
           </span>
-          <p className="whitespace-nowrap text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">
+          <p className="whitespace-nowrap text-phx-2xs font-bold uppercase tracking-[0.12em] text-slate-400">
             My plan score
           </p>
         </div>
         {adherence.averagePct != null ? (
-          <p className="whitespace-nowrap text-[11px] font-bold text-slate-500 tabular-nums">
+          <p className="whitespace-nowrap text-phx-xs font-bold text-slate-500 tabular-nums">
             {adherence.averagePct}% across {adherence.measuredPeriods} period{adherence.measuredPeriods === 1 ? "" : "s"}
           </p>
         ) : null}
@@ -164,8 +164,8 @@ export function PlanAdherenceDashboardCard({
       {/* whitespace-nowrap, never `truncate`: Tailwind's truncate IS an ellipsis, and text is never
           ellipsised in this product. The longest this line gets is
           "2026-W34 · nothing in it the CRM can check", which fits the card at 375px. */}
-      <p className="whitespace-nowrap text-[11px] font-medium text-slate-500">{sub}</p>
-      <p className="mt-1 whitespace-nowrap text-[11px] font-bold text-orange-600 group-hover:text-orange-700">
+      <p className="whitespace-nowrap text-phx-xs font-medium text-slate-500">{sub}</p>
+      <p className="mt-1 whitespace-nowrap text-phx-xs font-bold text-orange-600 group-hover:text-orange-700">
         See where the plan and the CRM disagree →
       </p>
     </Link>
@@ -179,7 +179,7 @@ function ItemRow({ item }: { item: PlanAdherenceItem }) {
       <div className="flex flex-wrap items-center gap-2">
         <span className="whitespace-nowrap text-xs font-black tabular-nums text-slate-900">{dayLabel(item.activityDate)}</span>
         <span
-          className={`inline-flex items-center gap-1.5 whitespace-nowrap border px-2 py-0.5 text-[11px] font-bold ${VERDICT_TONE[item.verdict]}`}
+          className={`inline-flex items-center gap-1.5 whitespace-nowrap border px-2 py-0.5 text-phx-xs font-bold ${VERDICT_TONE[item.verdict]}`}
         >
           <Icon className="h-3 w-3" />
           {planAdherenceVerdictLabel(item.verdict)}
@@ -216,9 +216,9 @@ export function PlanAdherenceReport({ score }: { score: PlanAdherenceScore }) {
   return (
     <section className="border border-phx-line bg-white">
       <header className="flex flex-wrap items-center justify-between gap-2 border-b border-phx-line bg-slate-900 px-4 py-2.5">
-        <h3 className="text-[11px] font-black uppercase tracking-[0.14em] text-white">Did the plan hold up</h3>
+        <h3 className="text-phx-xs font-black uppercase tracking-[0.14em] text-white">Did the plan hold up</h3>
         {score.measurable ? (
-          <span className="whitespace-nowrap text-[11px] font-bold text-white/70">
+          <span className="whitespace-nowrap text-phx-xs font-bold text-white/70">
             {score.kept} of {score.checkable} checked against the CRM
           </span>
         ) : null}
@@ -296,7 +296,7 @@ export function PlanAdherenceReport({ score }: { score: PlanAdherenceScore }) {
           same list would make a manager read it as something he owes an answer for. */}
       {swaps.length > 0 ? (
         <>
-          <p className="border-y border-slate-100 bg-white px-4 py-2 text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">
+          <p className="border-y border-slate-100 bg-white px-4 py-2 text-phx-xs font-black uppercase tracking-[0.14em] text-slate-500">
             Went ahead with someone else — counted as kept
           </p>
           <ul>
@@ -309,7 +309,7 @@ export function PlanAdherenceReport({ score }: { score: PlanAdherenceScore }) {
 
       {upcoming.length > 0 ? (
         <div className="border-t border-slate-100">
-          <p className="px-4 pb-1 pt-3 text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">
+          <p className="px-4 pb-1 pt-3 text-phx-xs font-black uppercase tracking-[0.14em] text-slate-500">
             Still to come — not counted yet
           </p>
           <ul>
@@ -345,8 +345,8 @@ export function PlanAdherenceHistoryPanel({
   return (
     <section className="border border-phx-line bg-white">
       <header className="flex flex-wrap items-center justify-between gap-2 border-b border-phx-line bg-slate-900 px-4 py-2.5">
-        <h3 className="text-[11px] font-black uppercase tracking-[0.14em] text-white">Plan score history</h3>
-        <span className="whitespace-nowrap text-[11px] font-bold text-white/70">
+        <h3 className="text-phx-xs font-black uppercase tracking-[0.14em] text-white">Plan score history</h3>
+        <span className="whitespace-nowrap text-phx-xs font-bold text-white/70">
           {history.averagePct == null
             ? "No measured period yet"
             : `${history.averagePct}% across ${history.measuredPeriods} measured period${history.measuredPeriods === 1 ? "" : "s"}`}

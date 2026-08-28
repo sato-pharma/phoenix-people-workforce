@@ -100,7 +100,7 @@ function LeaveHubCard({ tool, pendingCount }: { pendingCount: number | null; too
           <div className="flex items-center gap-2">
             <h3 className="text-sm font-bold tracking-[-0.01em] text-slate-950">{tool.label}</h3>
             {pendingCount !== null ? (
-              <span className="inline-flex shrink-0 items-center justify-center bg-orange-100 px-1.5 py-0.5 text-[10px] font-black text-orange-700">
+              <span className="inline-flex shrink-0 items-center justify-center bg-orange-100 px-1.5 py-0.5 text-phx-2xs font-black text-orange-700">
                 {pendingCount} pending
               </span>
             ) : null}

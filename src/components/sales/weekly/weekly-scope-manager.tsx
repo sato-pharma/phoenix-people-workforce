@@ -72,7 +72,7 @@ export function WeeklyScopeManager({
 
       {/* Add a person who has no scope yet */}
       <div className="flex flex-wrap items-center gap-2 border border-phx-line bg-white p-3">
-        <span className="text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-soft">Add product owner</span>
+        <span className="text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">Add product owner</span>
         <SearchableSelect
           className="h-9 min-w-[16rem] border border-phx-line bg-white px-2 text-sm font-bold text-phx-ink outline-none focus:border-phx-accent-line"
           disabled={busy}
@@ -94,7 +94,7 @@ export function WeeklyScopeManager({
       {/* Current assignments */}
       <div className="overflow-x-auto border border-phx-line bg-white">
         <table className="w-full text-sm">
-          <thead className="bg-phx-paper text-left text-[11px] font-black uppercase tracking-wide text-phx-ink-soft">
+          <thead className="bg-phx-paper text-left text-phx-xs font-black uppercase tracking-wide text-phx-ink-soft">
             <tr>
               <th className="px-3 py-2">Person</th>
               <th className="px-3 py-2">Role</th>
@@ -156,14 +156,14 @@ function AssignmentRow({
     <tr className="border-t border-phx-paper-2 align-top">
       <td className="px-3 py-2">
         <div className="font-bold text-phx-ink">{assignment.name}</div>
-        <div className="text-[11px] font-medium text-phx-ink-faint">{assignment.hrId}</div>
+        <div className="text-phx-xs font-medium text-phx-ink-faint">{assignment.hrId}</div>
       </td>
       <td className="px-3 py-2 text-phx-ink-2">{assignment.role}</td>
       <td className="px-3 py-2">
         <div className="flex flex-wrap gap-1">
           {assignment.productCodes.length === 0 && <span className="text-phx-ink-faint">— none —</span>}
           {assignment.productCodes.map((code) => (
-            <span key={code} className="inline-flex items-center bg-phx-paper-2 px-2 py-0.5 text-[11px] font-bold text-phx-ink-2">
+            <span key={code} className="inline-flex items-center bg-phx-paper-2 px-2 py-0.5 text-phx-xs font-bold text-phx-ink-2">
               {nameByCode.get(code) ?? code}
             </span>
           ))}
@@ -221,7 +221,7 @@ function EditDrawer({
         <div className="flex items-center justify-between border-b border-phx-line px-4 py-3">
           <div>
             <div className="text-sm font-black text-phx-ink">{person.name}</div>
-            <div className="text-[11px] font-medium text-phx-ink-faint">{person.role} · {person.hrId}</div>
+            <div className="text-phx-xs font-medium text-phx-ink-faint">{person.role} · {person.hrId}</div>
           </div>
           <button className="text-phx-ink-faint transition hover:text-phx-ink" onClick={onClose} type="button">
             <X className="h-5 w-5" />
@@ -238,7 +238,7 @@ function EditDrawer({
               value={query}
             />
           </div>
-          <div className="mt-2 flex items-center justify-between text-[11px] font-bold text-phx-ink-soft">
+          <div className="mt-2 flex items-center justify-between text-phx-xs font-bold text-phx-ink-soft">
             <span>{selected.size} selected</span>
             <div className="flex gap-2">
               <button className="underline" onClick={() => setSelected(new Set(products.map((p) => p.code)))} type="button">
@@ -265,7 +265,7 @@ function EditDrawer({
                   {checked && <Check className="h-3 w-3" />}
                 </span>
                 <span className="font-semibold text-phx-ink">{product.name}</span>
-                <span className="ml-auto text-[11px] font-medium text-phx-ink-faint">{product.code}</span>
+                <span className="ml-auto text-phx-xs font-medium text-phx-ink-faint">{product.code}</span>
               </button>
             );
           })}

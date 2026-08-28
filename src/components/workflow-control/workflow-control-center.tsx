@@ -77,7 +77,7 @@ export function WorkflowControlCenter({
       {/* Governance warning */}
       <div className="mt-4 flex items-start gap-2 rounded-xl border border-[#FED7AA] bg-phx-accent-soft px-4 py-3">
         <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-phx-accent-press" />
-        <p className="text-[13px] leading-5 text-[#9A3412]">
+        <p className="text-phx-md leading-5 text-[#9A3412]">
           <span className="font-black">Phase 1 is a read-only workflow map and simulator.</span> It does not change
           production workflow behavior, approval logic, notifications, or data.
         </p>
@@ -127,44 +127,44 @@ export function WorkflowControlCenter({
                 >
                   <div className="flex items-start justify-between gap-2">
                     <p className="text-sm font-black text-phx-ink">{domain.name}</p>
-                    <span className={cn("shrink-0 rounded-full px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.08em]", RISK_BADGE[domain.riskLevel])}>
+                    <span className={cn("shrink-0 rounded-full px-2 py-0.5 text-phx-2xs font-black uppercase tracking-[0.08em]", RISK_BADGE[domain.riskLevel])}>
                       {domain.riskLevel}
                     </span>
                   </div>
-                  <p className="mt-1 text-[12px] leading-5 text-phx-ink-soft">{domain.summary}</p>
+                  <p className="mt-1 text-phx-sm leading-5 text-phx-ink-soft">{domain.summary}</p>
                   <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                    <span className={cn("rounded px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.08em]", STATUS_BADGE[domain.status])}>
+                    <span className={cn("rounded px-2 py-0.5 text-phx-2xs font-black uppercase tracking-[0.08em]", STATUS_BADGE[domain.status])}>
                       {domain.status}
                     </span>
                     {domain.crossCutting ? (
-                      <span className="rounded bg-[#EEF2FF] px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.08em] text-[#4338CA]">
+                      <span className="rounded bg-[#EEF2FF] px-2 py-0.5 text-phx-2xs font-black uppercase tracking-[0.08em] text-[#4338CA]">
                         Cross-cutting
                       </span>
                     ) : null}
                     {domain.beta ? (
-                      <span className="rounded bg-[#FEF9C3] px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.08em] text-[#854D0E]">
+                      <span className="rounded bg-[#FEF9C3] px-2 py-0.5 text-phx-2xs font-black uppercase tracking-[0.08em] text-[#854D0E]">
                         Beta
                       </span>
                     ) : null}
-                    <span className="rounded bg-phx-paper-2 px-2 py-0.5 text-[10px] font-bold text-phx-ink-2">
+                    <span className="rounded bg-phx-paper-2 px-2 py-0.5 text-phx-2xs font-bold text-phx-ink-2">
                       {domain.subflows.length} subflows
                     </span>
-                    <span className="rounded bg-phx-paper-2 px-2 py-0.5 text-[10px] font-bold text-phx-ink-2">
+                    <span className="rounded bg-phx-paper-2 px-2 py-0.5 text-phx-2xs font-bold text-phx-ink-2">
                       {domainStepCount(domain)} steps
                     </span>
-                    <span className="rounded bg-phx-paper-2 px-2 py-0.5 text-[10px] font-bold text-phx-ink-2">
+                    <span className="rounded bg-phx-paper-2 px-2 py-0.5 text-phx-2xs font-bold text-phx-ink-2">
                       {domain.modulesAffected.length} modules
                     </span>
-                    <span className="rounded bg-phx-paper-2 px-2 py-0.5 text-[10px] font-bold text-phx-ink-2">
+                    <span className="rounded bg-phx-paper-2 px-2 py-0.5 text-phx-2xs font-bold text-phx-ink-2">
                       {domainNotificationCount(domain)} in-app · {domainEmailCount(domain)} email
                     </span>
                     {domainHasNotificationGap(domain) ? (
-                      <span className="rounded bg-[#FEF2F2] px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.08em] text-[#B91C1C]">
+                      <span className="rounded bg-[#FEF2F2] px-2 py-0.5 text-phx-2xs font-black uppercase tracking-[0.08em] text-[#B91C1C]">
                         Notif gap
                       </span>
                     ) : null}
                     {domainGaps(domain).length ? (
-                      <span className="rounded bg-phx-accent-soft px-2 py-0.5 text-[10px] font-bold text-phx-accent-press">
+                      <span className="rounded bg-phx-accent-soft px-2 py-0.5 text-phx-2xs font-bold text-phx-accent-press">
                         {domainGaps(domain).length} open gap{domainGaps(domain).length === 1 ? "" : "s"}
                       </span>
                     ) : null}
@@ -198,7 +198,7 @@ export function WorkflowControlCenter({
               {selectedDomain.status === "Not implemented" ? (
                 <div className="mt-3 flex items-start gap-2 rounded-xl border border-[#FECACA] bg-[#FEF2F2] px-4 py-3">
                   <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-[#B91C1C]" />
-                  <p className="text-[13px] leading-5 text-[#B91C1C]">
+                  <p className="text-phx-md leading-5 text-[#B91C1C]">
                     <span className="font-black">Not implemented:</span> nothing in the system runs these steps today. This is the intended
                     design kept as a specification, not a live governed process — do not rely on it, and do not report that anything here
                     was approved.
@@ -209,7 +209,7 @@ export function WorkflowControlCenter({
               {selectedDomain.status === "Partially implemented" ? (
                 <div className="mt-3 flex items-start gap-2 rounded-xl border border-[#FDE68A] bg-[#FFFBEB] px-4 py-3">
                   <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-[#B45309]" />
-                  <p className="text-[13px] leading-5 text-[#B45309]">
+                  <p className="text-phx-md leading-5 text-[#B45309]">
                     <span className="font-black">Partially implemented:</span> some of these steps run today and some are still only a
                     specification. Read each subflow&apos;s gaps below before relying on it — a step with a NOT BUILT gap does nothing.
                   </p>
@@ -219,7 +219,7 @@ export function WorkflowControlCenter({
               {selectedDomain.beta ? (
                 <div className="mt-3 flex items-start gap-2 rounded-xl border border-[#FDE68A] bg-[#FEF9C3] px-4 py-3">
                   <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-[#854D0E]" />
-                  <p className="text-[13px] leading-5 text-[#854D0E]">
+                  <p className="text-phx-md leading-5 text-[#854D0E]">
                     <span className="font-black">Beta:</span> this domain is still being implemented; some steps are declared but not fully wired up.
                   </p>
                 </div>
@@ -229,12 +229,12 @@ export function WorkflowControlCenter({
                 <div className="mt-3 flex items-start gap-2 rounded-xl border border-phx-line bg-phx-paper px-4 py-3">
                   <Info className="mt-0.5 h-4 w-4 shrink-0 text-phx-ink-soft" />
                   {canEdit ? (
-                    <p className="text-[13px] leading-5 text-phx-ink-2">Editing is enabled for your role.</p>
+                    <p className="text-phx-md leading-5 text-phx-ink-2">Editing is enabled for your role.</p>
                   ) : (
                     <div className="min-w-0">
-                      <p className="text-[13px] font-black text-phx-ink">Workflow editing is locked in Phase 1</p>
-                      <p className="mt-0.5 text-[12px] leading-5 text-phx-ink-2">This view is read-only — editing is coming in Phase 2.</p>
-                      <ul className="mt-1 list-disc space-y-0.5 pl-5 text-[12px] leading-5 text-phx-ink-2">
+                      <p className="text-phx-md font-black text-phx-ink">Workflow editing is locked in Phase 1</p>
+                      <p className="mt-0.5 text-phx-sm leading-5 text-phx-ink-2">This view is read-only — editing is coming in Phase 2.</p>
+                      <ul className="mt-1 list-disc space-y-0.5 pl-5 text-phx-sm leading-5 text-phx-ink-2">
                         <li>Phase 2 will support <span className="font-bold">draft → edit → publish → rollback</span> with versioning.</li>
                         <li>Runtime workflow execution is <span className="font-bold">not changed</span> in Phase 1.</li>
                         <li>Admins <span className="font-bold">cannot accidentally change live workflow behavior</span> from this read-only view.</li>
@@ -265,12 +265,12 @@ export function WorkflowControlCenter({
 
               {selectedSubflow.gaps?.length ? (
                 <div className="mt-3 rounded-xl border border-[#FEE2E2] bg-[#FEF2F2] px-4 py-3">
-                  <p className="text-[11px] font-black uppercase tracking-[0.10em] text-[#B91C1C]">
+                  <p className="text-phx-xs font-black uppercase tracking-[0.10em] text-[#B91C1C]">
                     Known gaps (read-only — not changed in Phase 1)
                   </p>
                   <ul className="mt-1 list-disc space-y-0.5 pl-5">
                     {selectedSubflow.gaps.map((gap) => (
-                      <li key={gap} className="text-[12px] leading-5 text-[#991B1B]">{gap}</li>
+                      <li key={gap} className="text-phx-sm leading-5 text-[#991B1B]">{gap}</li>
                     ))}
                   </ul>
                 </div>
@@ -278,13 +278,13 @@ export function WorkflowControlCenter({
 
               <div className="mt-4 grid grid-cols-1 gap-5 lg:grid-cols-2">
                 <div>
-                  <p className="mb-2 text-[11px] font-black uppercase tracking-[0.10em] text-phx-ink-faint">
+                  <p className="mb-2 text-phx-xs font-black uppercase tracking-[0.10em] text-phx-ink-faint">
                     {selectedSubflow.name} — map
                   </p>
                   <WorkflowMap steps={selectedSubflow.steps} />
                 </div>
                 <div>
-                  <p className="mb-2 text-[11px] font-black uppercase tracking-[0.10em] text-phx-ink-faint">Simulator</p>
+                  <p className="mb-2 text-phx-xs font-black uppercase tracking-[0.10em] text-phx-ink-faint">Simulator</p>
                   <WorkflowSimulatorPanel
                     key={`sim-${selectedDomain.key}-${selectedSubflow.key}`}
                     domainKey={selectedDomain.key}

@@ -20,7 +20,7 @@ import {
 const fieldClass =
   "h-10 w-full border border-slate-300 bg-white px-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500/20";
 const selectClass = `${fieldClass} cursor-pointer`;
-const microLabel = "mb-1.5 block text-[11px] font-black uppercase tracking-wide text-slate-500";
+const microLabel = "mb-1.5 block text-phx-xs font-black uppercase tracking-wide text-slate-500";
 const btnDark =
   "inline-flex items-center gap-1.5 border border-slate-900 bg-slate-900 px-5 py-2 text-sm font-bold text-white transition hover:bg-slate-800 disabled:pointer-events-none disabled:opacity-50";
 const btnGhost =
@@ -141,11 +141,11 @@ function rowToFullExport(r: ReportItReportRow) {
 
 function SeriousChip({ serious }: { serious: boolean }) {
   return serious ? (
-    <span className="inline-block border border-rose-300 bg-rose-50 px-2 py-0.5 text-[11px] font-bold text-rose-700">
+    <span className="inline-block border border-rose-300 bg-rose-50 px-2 py-0.5 text-phx-xs font-bold text-rose-700">
       Serious
     </span>
   ) : (
-    <span className="inline-block border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] font-bold text-slate-500">
+    <span className="inline-block border border-slate-200 bg-slate-50 px-2 py-0.5 text-phx-xs font-bold text-slate-500">
       No
     </span>
   );
@@ -157,7 +157,7 @@ function DetailRow({ label, value }: { label: string; value: React.ReactNode }) 
   if (!value && value !== 0) return null;
   return (
     <div className="flex gap-3 text-sm">
-      <span className="w-40 shrink-0 pt-0.5 text-[11px] font-black uppercase tracking-wide text-slate-400">
+      <span className="w-40 shrink-0 pt-0.5 text-phx-xs font-black uppercase tracking-wide text-slate-400">
         {label}
       </span>
       <span className="flex-1 font-semibold text-slate-800">{value}</span>
@@ -167,7 +167,7 @@ function DetailRow({ label, value }: { label: string; value: React.ReactNode }) 
 
 function SectionHeading({ children }: { children: React.ReactNode }) {
   return (
-    <p className="border-b border-slate-200 pb-1 text-[11px] font-black uppercase tracking-wide text-slate-500">
+    <p className="border-b border-slate-200 pb-1 text-phx-xs font-black uppercase tracking-wide text-slate-500">
       {children}
     </p>
   );
@@ -182,7 +182,7 @@ function ReportDetailDrawer({ report, onClose }: { report: ReportItReportRow; on
         {/* Dark command header */}
         <div className="flex items-start justify-between bg-slate-900 px-5 py-4">
           <div>
-            <p className="text-[10px] font-black uppercase tracking-[0.25em] text-orange-400">Report Detail</p>
+            <p className="text-phx-2xs font-black uppercase tracking-[0.25em] text-orange-400">Report Detail</p>
             <p className="mt-0.5 font-mono text-base font-black text-white">{report.report_number}</p>
           </div>
           <button onClick={onClose} className="p-1 text-slate-400 transition hover:text-white" aria-label="Close">
@@ -236,14 +236,14 @@ function ReportDetailDrawer({ report, onClose }: { report: ReportItReportRow; on
                 <DetailRow label="Serious" value={rx.isSerious} />
                 {rx.seriousnessReasons.length > 0 && (
                   <div className="flex gap-3 text-sm">
-                    <span className="w-40 shrink-0 text-[11px] font-black uppercase tracking-wide text-slate-400">
+                    <span className="w-40 shrink-0 text-phx-xs font-black uppercase tracking-wide text-slate-400">
                       Reasons
                     </span>
                     <div className="flex flex-1 flex-wrap gap-1">
                       {rx.seriousnessReasons.map((r, j) => (
                         <span
                           key={j}
-                          className="border border-rose-200 bg-rose-50 px-1.5 py-0.5 text-[10px] font-bold text-rose-700"
+                          className="border border-rose-200 bg-rose-50 px-1.5 py-0.5 text-phx-2xs font-bold text-rose-700"
                         >
                           {r}
                         </span>
@@ -271,7 +271,7 @@ function ReportDetailDrawer({ report, onClose }: { report: ReportItReportRow; on
                 <div className="flex items-center justify-between">
                   <p className="text-xs font-black uppercase text-slate-500">Medicine {i + 1}</p>
                   {m.probablyCausingReaction && (
-                    <span className="border border-amber-300 bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-800">
+                    <span className="border border-amber-300 bg-amber-100 px-1.5 py-0.5 text-phx-2xs font-bold text-amber-800">
                       Probably Causing
                     </span>
                   )}
@@ -376,7 +376,7 @@ export function ReportItEmployeeDashboard({ initialRows, initialTotal }: Props) 
     <div className="space-y-5">
       {/* Premium dark hero */}
       <div className="bg-slate-900 px-5 py-5">
-        <p className="text-[10px] font-black uppercase tracking-[0.25em] text-orange-400">Pharmacovigilance</p>
+        <p className="text-phx-2xs font-black uppercase tracking-[0.25em] text-orange-400">Pharmacovigilance</p>
         <div className="mt-1 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h1 className="text-lg font-black text-white">Report It — Dashboard</h1>
@@ -394,7 +394,7 @@ export function ReportItEmployeeDashboard({ initialRows, initialTotal }: Props) 
         <button
           type="button"
           className={[
-            "px-5 py-2.5 text-[11px] font-black uppercase tracking-wide border-b-2 -mb-px transition",
+            "px-5 py-2.5 text-phx-xs font-black uppercase tracking-wide border-b-2 -mb-px transition",
             tab === "reports"
               ? "border-orange-500 text-orange-600"
               : "border-transparent text-slate-500 hover:text-slate-800",
@@ -409,7 +409,7 @@ export function ReportItEmployeeDashboard({ initialRows, initialTotal }: Props) 
         <button
           type="button"
           className={[
-            "px-5 py-2.5 text-[11px] font-black uppercase tracking-wide border-b-2 -mb-px transition",
+            "px-5 py-2.5 text-phx-xs font-black uppercase tracking-wide border-b-2 -mb-px transition",
             tab === "submit"
               ? "border-orange-500 text-orange-600"
               : "border-transparent text-slate-500 hover:text-slate-800",
@@ -442,7 +442,7 @@ export function ReportItEmployeeDashboard({ initialRows, initialTotal }: Props) 
           <div className="border border-slate-200 bg-white">
             <button
               type="button"
-              className="flex w-full items-center justify-between px-4 py-3 text-[11px] font-black uppercase tracking-wide text-slate-700 transition hover:bg-slate-50"
+              className="flex w-full items-center justify-between px-4 py-3 text-phx-xs font-black uppercase tracking-wide text-slate-700 transition hover:bg-slate-50"
               onClick={() => setShowFilters((v) => !v)}
             >
               <span>Filters</span>
@@ -583,7 +583,7 @@ export function ReportItEmployeeDashboard({ initialRows, initialTotal }: Props) 
               renderTable={() => (
                 <PortalDesktopTable minWidth="860px">
                   <thead>
-                    <tr className="bg-slate-900 text-left text-[11px] font-black uppercase tracking-wide text-white">
+                    <tr className="bg-slate-900 text-left text-phx-xs font-black uppercase tracking-wide text-white">
                       <th className="px-3 py-2.5">Report #</th>
                       <th className="px-3 py-2.5">Date</th>
                       <th className="px-3 py-2.5">Submitted By</th>

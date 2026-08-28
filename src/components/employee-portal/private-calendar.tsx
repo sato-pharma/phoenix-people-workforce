@@ -582,16 +582,16 @@ export function PrivateCalendar({
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
-                <span className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-1 text-[11px] font-black uppercase tracking-[0.14em] text-white/80 ring-1 ring-white/20">
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-1 text-phx-xs font-black uppercase tracking-[0.14em] text-white/80 ring-1 ring-white/20">
                   Private Calendar
                 </span>
                 {workspace.access.isGlobalViewer ? (
-                  <span className="inline-flex items-center gap-1.5 rounded-full bg-blue-500/20 px-3 py-1 text-[11px] font-black uppercase tracking-[0.14em] text-blue-200 ring-1 ring-blue-400/30">
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-blue-500/20 px-3 py-1 text-phx-xs font-black uppercase tracking-[0.14em] text-blue-200 ring-1 ring-blue-400/30">
                     Global view
                   </span>
                 ) : null}
                 {isTeamView ? (
-                  <span className="inline-flex items-center gap-1.5 rounded-full bg-indigo-500/20 px-3 py-1 text-[11px] font-black uppercase tracking-[0.14em] text-indigo-200 ring-1 ring-indigo-400/30">
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-indigo-500/20 px-3 py-1 text-phx-xs font-black uppercase tracking-[0.14em] text-indigo-200 ring-1 ring-indigo-400/30">
                     Team mode
                   </span>
                 ) : null}
@@ -699,7 +699,7 @@ export function PrivateCalendar({
       {/* ── Filters ── */}
       <section className={secondaryPanelClass}>
         <div className="border-b border-slate-100 px-5 py-3">
-          <p className="text-[11px] font-black uppercase tracking-[0.14em] text-slate-400">Filter &amp; Search</p>
+          <p className="text-phx-xs font-black uppercase tracking-[0.14em] text-slate-400">Filter &amp; Search</p>
         </div>
         <div className={canFilterAcrossEmployees
           ? "grid gap-4 p-5 lg:grid-cols-[minmax(220px,1fr)_repeat(5,minmax(140px,190px))_auto] lg:items-end"
@@ -708,7 +708,7 @@ export function PrivateCalendar({
           {canFilterAcrossEmployees ? (
             <>
               <label className="block">
-                <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">Search</span>
+                <span className="mb-1.5 block text-phx-xs font-black uppercase tracking-[0.14em] text-slate-500">Search</span>
                 <span className="relative block">
                   <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                   <input
@@ -721,7 +721,7 @@ export function PrivateCalendar({
               </label>
 
               <label className="block">
-                <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">View</span>
+                <span className="mb-1.5 block text-phx-xs font-black uppercase tracking-[0.14em] text-slate-500">View</span>
                 <SearchableSelect
                   className={inputClass}
                   disabled={isPending}
@@ -735,7 +735,7 @@ export function PrivateCalendar({
 
               {!isTeamView ? (
                 <label className="block">
-                  <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">Employee</span>
+                  <span className="mb-1.5 block text-phx-xs font-black uppercase tracking-[0.14em] text-slate-500">Employee</span>
                   <SearchableSelect
                     className={inputClass}
                     disabled={isPending}
@@ -751,7 +751,7 @@ export function PrivateCalendar({
                 </label>
               ) : (
                 <label className="block">
-                  <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">Employee</span>
+                  <span className="mb-1.5 block text-phx-xs font-black uppercase tracking-[0.14em] text-slate-500">Employee</span>
                   <SearchableSelect
                     className={inputClass}
                     onChange={(event) => setEmployeeFilter(event.target.value)}
@@ -768,7 +768,7 @@ export function PrivateCalendar({
               )}
 
               <label className="block">
-                <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">Line</span>
+                <span className="mb-1.5 block text-phx-xs font-black uppercase tracking-[0.14em] text-slate-500">Line</span>
                 <SearchableSelect
                   className={inputClass}
                   onChange={(event) => setLineFilter(event.target.value)}
@@ -780,7 +780,7 @@ export function PrivateCalendar({
               </label>
 
               <label className="block">
-                <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">Department</span>
+                <span className="mb-1.5 block text-phx-xs font-black uppercase tracking-[0.14em] text-slate-500">Department</span>
                 <SearchableSelect
                   className={inputClass}
                   onChange={(event) => setDepartmentFilter(event.target.value)}
@@ -794,7 +794,7 @@ export function PrivateCalendar({
           ) : null}
 
           <label className="block">
-            <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">Source</span>
+            <span className="mb-1.5 block text-phx-xs font-black uppercase tracking-[0.14em] text-slate-500">Source</span>
             <SearchableSelect
               className={inputClass}
               onChange={(event) => setSourceFilter(event.target.value)}
@@ -835,7 +835,7 @@ export function PrivateCalendar({
 
         <div className="grid gap-4 border-t border-slate-100 px-5 py-4 sm:grid-cols-2 lg:grid-cols-4">
           <label className="block">
-            <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">Status</span>
+            <span className="mb-1.5 block text-phx-xs font-black uppercase tracking-[0.14em] text-slate-500">Status</span>
             <SearchableSelect
               className={inputClass}
               onChange={(event) => setStatusFilter(event.target.value)}
@@ -856,7 +856,7 @@ export function PrivateCalendar({
       {presentSources.length > 0 ? (
         <section className={[secondaryPanelClass, "px-5 py-4"].join(" ")}>
           <div className="flex flex-wrap items-center gap-2">
-            <span className="mr-1 text-[11px] font-black uppercase tracking-[0.14em] text-slate-400">Sources</span>
+            <span className="mr-1 text-phx-xs font-black uppercase tracking-[0.14em] text-slate-400">Sources</span>
             {presentSources.map((source) => {
               const hidden = hiddenSources.has(source);
               return (
@@ -894,7 +894,7 @@ export function PrivateCalendar({
       {filteredExceptions.length > 0 ? (
         <section className={["border-l-4 border-l-red-500", secondaryPanelClass].join(" ")}>
           <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 px-5 py-3">
-            <span className="text-[11px] font-black uppercase tracking-[0.14em] text-red-700">
+            <span className="text-phx-xs font-black uppercase tracking-[0.14em] text-red-700">
               {filteredExceptions.length} {filteredExceptions.every((exception) => exception.title === "No Activity Recorded")
                 ? `No Activity Day${filteredExceptions.length === 1 ? "" : "s"}`
                 : `Exception${filteredExceptions.length === 1 ? "" : "s"}`} Need Review
@@ -910,14 +910,14 @@ export function PrivateCalendar({
                   onClick={() => focusException(exception.date)}
                   type="button"
                 >
-                  <span className="whitespace-nowrap font-mono text-[11px] font-semibold text-slate-500">{reportDateLabel(exception.date)}</span>
+                  <span className="whitespace-nowrap font-mono text-phx-xs font-semibold text-slate-500">{reportDateLabel(exception.date)}</span>
                   <span className="whitespace-nowrap text-sm font-black text-slate-900">{exception.title}</span>
                   {exception.employeeName ? (
-                    <span className="inline-flex items-center whitespace-nowrap rounded-sm bg-slate-100 px-1.5 py-0.5 text-[11px] font-semibold text-slate-600">
+                    <span className="inline-flex items-center whitespace-nowrap rounded-sm bg-slate-100 px-1.5 py-0.5 text-phx-xs font-semibold text-slate-600">
                       {exception.employeeName}{exception.employeeHrId ? ` (${exception.employeeHrId})` : ""}
                     </span>
                   ) : null}
-                  <span className="inline-flex items-center whitespace-nowrap rounded-sm bg-white px-1.5 py-0.5 text-[11px] font-semibold text-slate-500 ring-1 ring-slate-200/60">
+                  <span className="inline-flex items-center whitespace-nowrap rounded-sm bg-white px-1.5 py-0.5 text-phx-xs font-semibold text-slate-500 ring-1 ring-slate-200/60">
                     {exception.description}
                   </span>
                 </button>
@@ -949,7 +949,7 @@ export function PrivateCalendar({
               header row and the day grid below or the columns misalign. */}
           <div className="grid grid-cols-[repeat(5,minmax(0,1fr))_56px_minmax(0,1fr)] bg-slate-950">
             {weekdays.map((weekday) => (
-              <div key={weekday} className="px-1 py-3 text-center text-[10px] font-black uppercase tracking-[0.14em] text-slate-400">
+              <div key={weekday} className="px-1 py-3 text-center text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-400">
                 {weekday}
               </div>
             ))}
@@ -990,12 +990,12 @@ export function PrivateCalendar({
                     </span>
                     <span className="flex items-center gap-1">
                       {dayExceptions.length > 0 ? (
-                        <span className="rounded-full bg-red-100 px-1.5 py-0.5 text-[10px] font-black text-red-600">
+                        <span className="rounded-full bg-red-100 px-1.5 py-0.5 text-phx-2xs font-black text-red-600">
                           {dayExceptions.length}
                         </span>
                       ) : null}
                       {dayItems.length > 0 ? (
-                        <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-black text-slate-500">
+                        <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-phx-2xs font-black text-slate-500">
                           {dayItems.length}
                         </span>
                       ) : null}
@@ -1004,7 +1004,7 @@ export function PrivateCalendar({
                   <span className="mt-1.5 block space-y-2">
                     {dayExceptions.slice(0, visibleExceptionCount).map((exception) => (
                       <span
-                        className="block whitespace-nowrap rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-bold text-red-700"
+                        className="block whitespace-nowrap rounded bg-red-100 px-1.5 py-0.5 text-phx-2xs font-bold text-red-700"
                         key={exception.id}
                         title={exception.description}
                       >
@@ -1016,7 +1016,7 @@ export function PrivateCalendar({
                       const lines = viewMode === "team" && item.employeeName ? [item.employeeName, ...baseLines] : baseLines;
                       return (
                         <span
-                          className={["block divide-y divide-black/15 rounded px-1.5 py-0.5 text-[10px] font-bold leading-tight", sourceChipTone(item.source, item.severity)].join(" ")}
+                          className={["block divide-y divide-black/15 rounded px-1.5 py-0.5 text-phx-2xs font-bold leading-tight", sourceChipTone(item.source, item.severity)].join(" ")}
                           key={item.id}
                           title={chipTitle(item, viewMode)}
                         >
@@ -1027,7 +1027,7 @@ export function PrivateCalendar({
                       );
                     })}
                     {hiddenCount > 0 ? (
-                      <span className="block rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold text-slate-500">
+                      <span className="block rounded bg-slate-100 px-1.5 py-0.5 text-phx-2xs font-bold text-slate-500">
                         + {hiddenCount} more
                       </span>
                     ) : null}
@@ -1042,7 +1042,7 @@ export function PrivateCalendar({
         <section className={panelClass}>
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-6 py-4">
             <div>
-              <div className="flex items-center gap-2 text-[11px] font-black uppercase tracking-[0.14em] text-slate-400">
+              <div className="flex items-center gap-2 text-phx-xs font-black uppercase tracking-[0.14em] text-slate-400">
                 Daily Timeline
               </div>
               <h3 className="mt-1.5 text-xl font-black text-slate-950">{dayLabel(selectedDate)}</h3>
@@ -1173,7 +1173,7 @@ function PrivateCalendarAgenda({
             type="button"
           >
             <span className="whitespace-nowrap text-sm font-black text-white">{dayLabel(date)}</span>
-            <span className="whitespace-nowrap text-[11px] font-bold text-slate-300">
+            <span className="whitespace-nowrap text-phx-xs font-bold text-slate-300">
               {dayItems.length} item{dayItems.length === 1 ? "" : "s"}
               {dayExceptions.length > 0 ? ` · ${dayExceptions.length} exception${dayExceptions.length === 1 ? "" : "s"}` : ""}
             </span>
@@ -1186,17 +1186,17 @@ function PrivateCalendarAgenda({
                   <div className="flex flex-wrap items-center gap-2">
                     <span className={["inline-block h-2.5 w-2.5 shrink-0 rounded-full", tone.dot].join(" ")} />
                     <span className="whitespace-nowrap text-sm font-black text-slate-900">{exception.title}</span>
-                    <span className={["ml-auto inline-flex items-center whitespace-nowrap rounded-full px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.1em]", tone.badge].join(" ")}>
+                    <span className={["ml-auto inline-flex items-center whitespace-nowrap rounded-full px-2 py-0.5 text-phx-2xs font-black uppercase tracking-[0.1em]", tone.badge].join(" ")}>
                       Exception
                     </span>
                   </div>
                   <div className="mt-1.5 flex flex-wrap gap-1.5 pl-[18px]">
                     {exception.employeeName ? (
-                      <span className="inline-flex items-center whitespace-nowrap rounded-sm bg-slate-50 px-1.5 py-0.5 text-[11px] font-semibold text-slate-600">
+                      <span className="inline-flex items-center whitespace-nowrap rounded-sm bg-slate-50 px-1.5 py-0.5 text-phx-xs font-semibold text-slate-600">
                         {exception.employeeName}{exception.employeeHrId ? ` (${exception.employeeHrId})` : ""}
                       </span>
                     ) : null}
-                    <span className="inline-flex items-center whitespace-nowrap rounded-sm bg-slate-50 px-1.5 py-0.5 text-[11px] font-semibold text-slate-600">
+                    <span className="inline-flex items-center whitespace-nowrap rounded-sm bg-slate-50 px-1.5 py-0.5 text-phx-xs font-semibold text-slate-600">
                       {exception.description}
                     </span>
                   </div>
@@ -1215,11 +1215,11 @@ function PrivateCalendarAgenda({
                   <div className="flex flex-wrap items-center gap-2">
                     <span className={["inline-block h-2.5 w-2.5 shrink-0 rounded-full", sourceSwatchColor(item.source)].join(" ")} />
                     <span className="whitespace-nowrap text-sm font-black text-slate-900">{item.title}</span>
-                    <span className={["inline-flex items-center gap-1 whitespace-nowrap rounded px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.1em]", sourceChipTone(item.source, item.severity)].join(" ")}>
+                    <span className={["inline-flex items-center gap-1 whitespace-nowrap rounded px-2 py-0.5 text-phx-2xs font-black uppercase tracking-[0.1em]", sourceChipTone(item.source, item.severity)].join(" ")}>
                       {privateCalendarSourceLabels[item.source]}
                     </span>
                     {item.status ? (
-                      <span className="ml-auto inline-flex items-center whitespace-nowrap rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.1em] text-slate-600">
+                      <span className="ml-auto inline-flex items-center whitespace-nowrap rounded-full bg-slate-100 px-2 py-0.5 text-phx-2xs font-black uppercase tracking-[0.1em] text-slate-600">
                         {item.status}
                       </span>
                     ) : null}
@@ -1228,7 +1228,7 @@ function PrivateCalendarAgenda({
                     <div className="mt-1.5 flex flex-wrap gap-1.5 pl-[18px]">
                       {meta.map((value, index) => (
                         <span
-                          className="inline-flex items-center whitespace-nowrap rounded-sm bg-slate-50 px-1.5 py-0.5 text-[11px] font-semibold text-slate-600"
+                          className="inline-flex items-center whitespace-nowrap rounded-sm bg-slate-50 px-1.5 py-0.5 text-phx-xs font-semibold text-slate-600"
                           key={`${item.id}-meta-${index}`}
                         >
                           {value}
@@ -1239,7 +1239,7 @@ function PrivateCalendarAgenda({
                   {item.exceptionFlags.length > 0 ? (
                     <div className="mt-1.5 flex flex-wrap gap-1.5 pl-[18px]">
                       {item.exceptionFlags.map((flag) => (
-                        <span className="inline-flex items-center whitespace-nowrap rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.1em] text-red-700" key={flag}>
+                        <span className="inline-flex items-center whitespace-nowrap rounded-full bg-red-100 px-2 py-0.5 text-phx-2xs font-black uppercase tracking-[0.1em] text-red-700" key={flag}>
                           {flag}
                         </span>
                       ))}
@@ -1269,12 +1269,12 @@ function Metric({
   return (
     <div className={["rounded-sm border p-4", tone === "warning" ? "bg-red-50/60 border-red-100" : "bg-slate-50/60 border-slate-200"].join(" ")}>
       <div className="flex items-center justify-end">
-        <span className={["rounded-full px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.12em]", ready ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"].join(" ")}>
+        <span className={["rounded-full px-2 py-0.5 text-phx-2xs font-black uppercase tracking-[0.12em]", ready ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"].join(" ")}>
           {ready ? "Ready" : "N/A"}
         </span>
       </div>
       <p className="mt-3 text-3xl font-black text-slate-950">{value}</p>
-      <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500">{label}</p>
+      <p className="text-phx-xs font-bold uppercase tracking-[0.12em] text-slate-500">{label}</p>
     </div>
   );
 }
@@ -1285,7 +1285,7 @@ function TeamSummaryPanel({ rows }: { rows: PrivateCalendarWorkspace["teamSummar
     <section className="overflow-hidden rounded-sm border border-slate-200 bg-white shadow-sm">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-6 py-4">
         <div>
-          <div className="flex items-center gap-2 text-[11px] font-black uppercase tracking-[0.14em] text-slate-400">
+          <div className="flex items-center gap-2 text-phx-xs font-black uppercase tracking-[0.14em] text-slate-400">
             Manager Team Calendar
           </div>
           <h3 className="mt-1 text-lg font-black text-slate-950">Visible employees snapshot</h3>
@@ -1300,15 +1300,15 @@ function TeamSummaryPanel({ rows }: { rows: PrivateCalendarWorkspace["teamSummar
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <h4 className="whitespace-nowrap text-sm font-black text-slate-900">{row.fullName}</h4>
-                <p className="mt-0.5 whitespace-nowrap text-[11px] font-semibold text-slate-400">
+                <p className="mt-0.5 whitespace-nowrap text-phx-xs font-semibold text-slate-400">
                   {row.hrId}{row.lineName ? ` · ${row.lineName}` : ""}
                 </p>
               </div>
-              <span className={["shrink-0 rounded-full px-2.5 py-0.5 text-[10px] font-black", row.exceptionCount ? "bg-red-100 text-red-700" : "bg-emerald-100 text-emerald-700"].join(" ")}>
+              <span className={["shrink-0 rounded-full px-2.5 py-0.5 text-phx-2xs font-black", row.exceptionCount ? "bg-red-100 text-red-700" : "bg-emerald-100 text-emerald-700"].join(" ")}>
                 {row.exceptionCount} warn{row.exceptionCount === 1 ? "" : "s"}
               </span>
             </div>
-            <div className="mt-3 grid grid-cols-4 gap-1.5 text-center text-[10px] font-black text-slate-500">
+            <div className="mt-3 grid grid-cols-4 gap-1.5 text-center text-phx-2xs font-black text-slate-500">
               <span className="rounded-sm bg-emerald-100 px-1 py-1.5 text-emerald-700">A {row.sourceCounts.attendance}</span>
               <span className="rounded-sm bg-blue-100 px-1 py-1.5 text-blue-700">V {row.sourceCounts.vacation}</span>
               <span className="rounded-sm bg-amber-100 px-1 py-1.5 text-amber-700">E {row.sourceCounts.excuse}</span>
@@ -1403,11 +1403,11 @@ function TimelineItem({ item, viewMode }: { item: PrivateCalendarItem; viewMode:
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
-              <span className={["inline-flex items-center gap-1.5 rounded px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.12em]", sourceChipTone(item.source, item.severity)].join(" ")}>
+              <span className={["inline-flex items-center gap-1.5 rounded px-2 py-0.5 text-phx-2xs font-black uppercase tracking-[0.12em]", sourceChipTone(item.source, item.severity)].join(" ")}>
                 {privateCalendarSourceLabels[item.source]}
               </span>
               {item.time ? (
-                <span className="rounded bg-slate-100 px-2 py-0.5 text-[10px] font-black text-slate-600">
+                <span className="rounded bg-slate-100 px-2 py-0.5 text-phx-2xs font-black text-slate-600">
                   {item.time}
                 </span>
               ) : null}
@@ -1420,7 +1420,7 @@ function TimelineItem({ item, viewMode }: { item: PrivateCalendarItem; viewMode:
             ) : null}
           </div>
           {item.status ? (
-            <span className="shrink-0 rounded-full bg-slate-100 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-[0.1em] text-slate-600">
+            <span className="shrink-0 rounded-full bg-slate-100 px-2.5 py-0.5 text-phx-2xs font-black uppercase tracking-[0.1em] text-slate-600">
               {item.status}
             </span>
           ) : null}
@@ -1429,7 +1429,7 @@ function TimelineItem({ item, viewMode }: { item: PrivateCalendarItem; viewMode:
         {item.exceptionFlags.length > 0 ? (
           <div className="mt-3 flex flex-wrap gap-1.5">
             {item.exceptionFlags.map((flag) => (
-              <span key={flag} className="rounded-full bg-red-100 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-[0.1em] text-red-700">
+              <span key={flag} className="rounded-full bg-red-100 px-2.5 py-0.5 text-phx-2xs font-black uppercase tracking-[0.1em] text-red-700">
                 {flag}
               </span>
             ))}
@@ -1453,13 +1453,13 @@ function TimelineItem({ item, viewMode }: { item: PrivateCalendarItem; viewMode:
         ) : null}
 
         <div className="mt-4 border-t border-slate-100 pt-3">
-          <div className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-[0.12em] text-slate-400">
+          <div className="flex items-center gap-1.5 text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400">
             <FileSearch className="h-3 w-3" />
             Source trace
           </div>
-          <p className="mt-1 text-[11px] font-semibold text-slate-500">{item.sourceLabel}</p>
-          <p className="text-[11px] font-semibold text-slate-400">{item.sourceSystem}{item.sourceTable ? ` · ${item.sourceTable}` : ""}</p>
-          {item.sourceRecordId ? <p className="font-mono text-[11px] text-slate-400">ID: {item.sourceRecordId}</p> : null}
+          <p className="mt-1 text-phx-xs font-semibold text-slate-500">{item.sourceLabel}</p>
+          <p className="text-phx-xs font-semibold text-slate-400">{item.sourceSystem}{item.sourceTable ? ` · ${item.sourceTable}` : ""}</p>
+          {item.sourceRecordId ? <p className="font-mono text-phx-xs text-slate-400">ID: {item.sourceRecordId}</p> : null}
         </div>
       </div>
     </article>

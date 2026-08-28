@@ -190,7 +190,7 @@ export function PlanDecisionActions({
 
   const shell = "border border-phx-line bg-white";
   const headerBar = "border-b border-phx-line bg-slate-900 px-4 py-2.5";
-  const headerText = "text-[11px] font-black uppercase tracking-[0.14em] text-white";
+  const headerText = "text-phx-xs font-black uppercase tracking-[0.14em] text-white";
 
   // ── Premium per-activity return composer ─────────────────────────────────────
   if (mode.kind === "return") {
@@ -198,14 +198,14 @@ export function PlanDecisionActions({
       <section className={shell}>
         <header className={`flex items-center justify-between ${headerBar}`}>
           <h3 className={headerText}>Return plan — flag what to fix</h3>
-          <span className="inline-flex items-center gap-1 rounded-full bg-orange-500 px-2 py-0.5 text-[10px] font-black text-white">
+          <span className="inline-flex items-center gap-1 rounded-full bg-orange-500 px-2 py-0.5 text-phx-2xs font-black text-white">
             <Flag className="h-3 w-3" /> {flaggedCount} flagged
           </span>
         </header>
 
         <div className="space-y-4 px-4 py-4">
           <div>
-            <label className="mb-1 block text-[11px] font-black uppercase tracking-wide text-slate-500">
+            <label className="mb-1 block text-phx-xs font-black uppercase tracking-wide text-slate-500">
               Overall reason <span className="text-orange-600">*</span>
             </label>
             <textarea
@@ -219,7 +219,7 @@ export function PlanDecisionActions({
           </div>
 
           <div>
-            <p className="mb-2 flex items-center gap-1.5 text-[11px] font-black uppercase tracking-wide text-slate-500">
+            <p className="mb-2 flex items-center gap-1.5 text-phx-xs font-black uppercase tracking-wide text-slate-500">
               <MessageSquarePlus className="h-3.5 w-3.5" /> Per-activity notes (optional)
             </p>
             <p className="mb-2 text-xs text-slate-500">Flag any specific day the employee should change — each note shows next to that activity.</p>
@@ -232,7 +232,7 @@ export function PlanDecisionActions({
               <div className="space-y-3">
                 {activitiesByDay.map(([date, acts]) => (
                   <div key={date} className="border border-slate-200">
-                    <div className="border-b border-slate-100 bg-slate-50 px-3 py-1.5 text-[11px] font-black uppercase tracking-wide text-slate-600">
+                    <div className="border-b border-slate-100 bg-slate-50 px-3 py-1.5 text-phx-xs font-black uppercase tracking-wide text-slate-600">
                       {dayLabel(date)}
                     </div>
                     <div className="divide-y divide-slate-100">
@@ -247,10 +247,10 @@ export function PlanDecisionActions({
                             >
                               <span className="min-w-0">
                                 <span className="block truncate text-sm font-bold text-slate-800">{a.label}</span>
-                                {a.timeLabel ? <span className="text-[11px] text-slate-500">{a.timeLabel}</span> : null}
+                                {a.timeLabel ? <span className="text-phx-xs text-slate-500">{a.timeLabel}</span> : null}
                               </span>
                               <span
-                                className={`inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                                className={`inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-phx-2xs font-bold ${
                                   flagged ? "bg-orange-500 text-white" : "border border-slate-300 text-slate-500"
                                 }`}
                               >

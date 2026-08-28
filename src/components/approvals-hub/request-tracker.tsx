@@ -34,7 +34,7 @@ export function RequestTracker({ steps, stageLabel, ageDays, fallbackStatusLabel
   return (
     <section className="border border-phx-line bg-white">
       <header className="flex items-center justify-between border-b border-phx-line bg-slate-900 px-4 py-2.5">
-        <h3 className="text-[11px] font-black uppercase tracking-[0.14em] text-white">Approval tracker</h3>
+        <h3 className="text-phx-xs font-black uppercase tracking-[0.14em] text-white">Approval tracker</h3>
         {typeof ageDays === "number" ? <SlaAgeBadge ageDays={ageDays} module={slaModule} /> : null}
       </header>
 
@@ -63,7 +63,7 @@ export function RequestTracker({ steps, stageLabel, ageDays, fallbackStatusLabel
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-baseline justify-between gap-x-3">
                       <p className="text-sm font-bold text-slate-900">{stepTitle(step)}</p>
-                      <span className={`text-[11px] font-bold uppercase tracking-wide ${tone.text}`}>
+                      <span className={`text-phx-xs font-bold uppercase tracking-wide ${tone.text}`}>
                         {isActive ? "Current" : tone.label}
                       </span>
                     </div>

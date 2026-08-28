@@ -126,7 +126,7 @@ function WaitPill({ days }: { days: number | null }) {
   if (days === null) return null;
   return (
     <span
-      className={`inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-sm border px-2 py-1 text-[10px] font-black uppercase tracking-[0.1em] ${waitTone(days).pill}`}
+      className={`inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-sm border px-2 py-1 text-phx-2xs font-black uppercase tracking-[0.1em] ${waitTone(days).pill}`}
     >
       <Timer className="h-3 w-3" />
       {waitLabel(days)}
@@ -152,8 +152,8 @@ function QueueHeading({
         <Icon className="h-3.5 w-3.5" />
       </div>
       <div className="min-w-0">
-        <h2 className="text-[15px] font-black tracking-tight text-slate-950">{title}</h2>
-        <p className="text-[11px] font-medium text-slate-400">{description}</p>
+        <h2 className="text-phx-lg font-black tracking-tight text-slate-950">{title}</h2>
+        <p className="text-phx-xs font-medium text-slate-400">{description}</p>
       </div>
     </div>
   );
@@ -203,18 +203,18 @@ function InboxRowCard({
         className={`flex flex-wrap items-start justify-between gap-2 border-b border-slate-100 bg-gradient-to-r px-4 py-3 ${tone.header}`}
       >
         <div className="min-w-0">
-          <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-orange-600">
+          <p className="text-phx-2xs font-bold uppercase tracking-[0.14em] text-orange-600">
             {row.requestCode}
           </p>
           {/* Owner rules: never truncate with an ellipsis, never wrap to a second line. On a 375px
               phone a long pharmacy name honours both by SCROLLING inside its own box — measured
               459px of text in a 317px box, so without this it painted 113px off the screen edge. */}
           <div className="overflow-x-auto">
-            <h3 className="mt-0.5 whitespace-nowrap text-[15px] font-black tracking-tight text-slate-950">
+            <h3 className="mt-0.5 whitespace-nowrap text-phx-lg font-black tracking-tight text-slate-950">
               {row.customerName}
             </h3>
           </div>
-          <p className="mt-0.5 text-[11px] font-medium text-slate-500">
+          <p className="mt-0.5 text-phx-xs font-medium text-slate-500">
             {row.requestType} · From {row.requesterName} ({row.requesterRole})
           </p>
         </div>
@@ -235,35 +235,35 @@ function InboxRowCard({
           product line and every pharmacy on the request. */}
       <div className="grid gap-3 border-b border-slate-100 px-4 py-3 sm:grid-cols-4">
         <div className="flex flex-col">
-          <span className="text-[9px] font-bold uppercase tracking-[0.12em] text-slate-400">
+          <span className="text-phx-3xs font-bold uppercase tracking-[0.12em] text-slate-400">
             Estimated Cost
           </span>
-          <span className="text-[13px] font-black text-slate-950">
+          <span className="text-phx-md font-black text-slate-950">
             {egp(row.estimatedCost)}
           </span>
         </div>
         <div className="flex flex-col">
-          <span className="text-[9px] font-bold uppercase tracking-[0.12em] text-slate-400">
+          <span className="text-phx-3xs font-bold uppercase tracking-[0.12em] text-slate-400">
             Pay Date
           </span>
-          <span className="flex items-center gap-1 text-[13px] font-bold text-slate-700">
+          <span className="flex items-center gap-1 text-phx-md font-bold text-slate-700">
             <CalendarDays className="h-3 w-3 text-slate-400" />
             {formatDate(row.payDate)}
           </span>
         </div>
         <div className="flex flex-col">
-          <span className="text-[9px] font-bold uppercase tracking-[0.12em] text-slate-400">
+          <span className="text-phx-3xs font-bold uppercase tracking-[0.12em] text-slate-400">
             Submitted
           </span>
-          <span className="text-[13px] font-bold text-slate-700">
+          <span className="text-phx-md font-bold text-slate-700">
             {formatDate(row.submittedAt)}
           </span>
         </div>
         <div className="flex flex-col">
-          <span className="text-[9px] font-bold uppercase tracking-[0.12em] text-slate-400">
+          <span className="text-phx-3xs font-bold uppercase tracking-[0.12em] text-slate-400">
             Waiting
           </span>
-          <span className="whitespace-nowrap text-[13px] font-bold text-slate-700">
+          <span className="whitespace-nowrap text-phx-md font-bold text-slate-700">
             {waitLabel(days)}
           </span>
         </div>
@@ -298,7 +298,7 @@ function InboxRowCard({
           onClick={onToggleDetail}
           type="button"
         >
-          <span className="inline-flex items-center gap-1.5 text-[10px] font-black uppercase tracking-[0.12em] text-slate-500">
+          <span className="inline-flex items-center gap-1.5 text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">
             {isDetailOpen ? (
               <ChevronDown className="h-3.5 w-3.5" />
             ) : (
@@ -306,7 +306,7 @@ function InboxRowCard({
             )}
             Full request detail
           </span>
-          <span className="whitespace-nowrap text-[10px] font-bold text-slate-400">
+          <span className="whitespace-nowrap text-phx-2xs font-bold text-slate-400">
             {isDetailOpen ? "Hide" : "Show"}
           </span>
         </button>
@@ -345,7 +345,7 @@ function InboxRowCard({
           re-run the whole gate, so hiding a control here removes a dead end, it grants nothing. */}
       <div className="flex flex-wrap items-center gap-2 border-t border-slate-100 bg-slate-50/50 px-4 py-3">
         <Link
-          className="inline-flex min-h-9 items-center gap-1.5 rounded-sm bg-emerald-600 px-4 text-[12px] font-bold text-white shadow-sm transition hover:bg-emerald-700"
+          className="inline-flex min-h-9 items-center gap-1.5 rounded-sm bg-emerald-600 px-4 text-phx-sm font-bold text-white shadow-sm transition hover:bg-emerald-700"
           href={decisionHref(decisionBasePath, row.id, "approve")}
         >
           <CheckCircle2 className="h-3.5 w-3.5" />
@@ -353,7 +353,7 @@ function InboxRowCard({
         </Link>
         {row.allowReturn ? (
           <Link
-            className="inline-flex min-h-9 items-center gap-1.5 rounded-sm border border-amber-300 bg-white px-4 text-[12px] font-bold text-amber-800 shadow-sm transition hover:bg-amber-50"
+            className="inline-flex min-h-9 items-center gap-1.5 rounded-sm border border-amber-300 bg-white px-4 text-phx-sm font-bold text-amber-800 shadow-sm transition hover:bg-amber-50"
             href={decisionHref(decisionBasePath, row.id, "return")}
           >
             <Undo2 className="h-3.5 w-3.5" />
@@ -362,7 +362,7 @@ function InboxRowCard({
         ) : null}
         {row.allowReject ? (
           <Link
-            className="inline-flex min-h-9 items-center gap-1.5 rounded-sm border border-rose-300 bg-white px-4 text-[12px] font-bold text-rose-700 shadow-sm transition hover:bg-rose-50"
+            className="inline-flex min-h-9 items-center gap-1.5 rounded-sm border border-rose-300 bg-white px-4 text-phx-sm font-bold text-rose-700 shadow-sm transition hover:bg-rose-50"
             href={decisionHref(decisionBasePath, row.id, "reject")}
           >
             <XCircle className="h-3.5 w-3.5" />
@@ -370,7 +370,7 @@ function InboxRowCard({
           </Link>
         ) : null}
         <Link
-          className="ml-auto inline-flex min-h-9 items-center gap-1.5 rounded-sm border border-slate-300 bg-white px-4 text-[12px] font-bold text-slate-700 shadow-sm transition hover:border-orange-200 hover:bg-orange-50 hover:text-orange-700"
+          className="ml-auto inline-flex min-h-9 items-center gap-1.5 rounded-sm border border-slate-300 bg-white px-4 text-phx-sm font-bold text-slate-700 shadow-sm transition hover:border-orange-200 hover:bg-orange-50 hover:text-orange-700"
           href={`/marketing-requests/${row.id}`}
         >
           <Eye className="h-3.5 w-3.5" />
@@ -390,16 +390,16 @@ function AdvisoryRowCard({ onPosted, row }: { onPosted: () => void; row: Marketi
     <Card className="rounded-sm border border-l-[3px] border-sky-200 border-l-sky-500 bg-white p-0 shadow-[0_8px_24px_rgba(15,23,42,0.05)]">
       <div className="flex flex-wrap items-start justify-between gap-2 border-b border-slate-100 bg-gradient-to-r from-white via-sky-50/40 to-white px-4 py-3">
         <div className="min-w-0">
-          <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-sky-600">{row.requestCode}</p>
+          <p className="text-phx-2xs font-bold uppercase tracking-[0.14em] text-sky-600">{row.requestCode}</p>
           {/* Owner rules: never truncate with an ellipsis, never wrap to a second line. On a 375px
               phone a long pharmacy name honours both by SCROLLING inside its own box — measured
               459px of text in a 317px box, so without this it painted 113px off the screen edge. */}
           <div className="overflow-x-auto">
-            <h3 className="mt-0.5 whitespace-nowrap text-[15px] font-black tracking-tight text-slate-950">
+            <h3 className="mt-0.5 whitespace-nowrap text-phx-lg font-black tracking-tight text-slate-950">
               {row.customerName}
             </h3>
           </div>
-          <p className="mt-0.5 text-[11px] font-medium text-slate-500">
+          <p className="mt-0.5 text-phx-xs font-medium text-slate-500">
             {row.requestType} · From {row.requesterName} ({row.requesterRole})
           </p>
         </div>
@@ -559,10 +559,10 @@ function MarketingRequestInboxInner({ decisionBasePath }: { decisionBasePath: st
             <Inbox className="h-3.5 w-3.5" />
           </div>
           <div>
-            <h2 className="text-[15px] font-black tracking-tight text-slate-950">
+            <h2 className="text-phx-lg font-black tracking-tight text-slate-950">
               Requests awaiting my decision
             </h2>
-            <p className="text-[11px] font-medium text-slate-400">
+            <p className="text-phx-xs font-medium text-slate-400">
               {isLoading
                 ? "Loading…"
                 : `${rows.length} request${rows.length === 1 ? "" : "s"} pending`}
@@ -586,7 +586,7 @@ function MarketingRequestInboxInner({ decisionBasePath }: { decisionBasePath: st
 
       {/* ------ Error ------------------------------------------------------------------------------------------------------------------------------------- */}
       {error ? (
-        <div className="flex items-center gap-2 rounded-sm border border-amber-200 bg-amber-50 px-3 py-2 text-[13px] font-semibold text-amber-900">
+        <div className="flex items-center gap-2 rounded-sm border border-amber-200 bg-amber-50 px-3 py-2 text-phx-md font-semibold text-amber-900">
           <span className="min-w-0 break-words">{error}</span>
         </div>
       ) : null}
@@ -663,7 +663,7 @@ function MarketingRequestInboxInner({ decisionBasePath }: { decisionBasePath: st
             return (
               <button
                 aria-selected={isActive}
-                className={`inline-flex flex-1 items-center justify-center gap-2 whitespace-nowrap rounded-sm px-3 py-2 text-[12px] font-bold transition-colors ${
+                className={`inline-flex flex-1 items-center justify-center gap-2 whitespace-nowrap rounded-sm px-3 py-2 text-phx-sm font-bold transition-colors ${
                   isActive
                     ? "bg-slate-900 text-white shadow-[0_4px_12px_rgba(15,23,42,0.18)]"
                     : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
@@ -676,7 +676,7 @@ function MarketingRequestInboxInner({ decisionBasePath }: { decisionBasePath: st
                 <Icon className="h-3.5 w-3.5 shrink-0" />
                 <span>{segment.label}</span>
                 <span
-                  className={`rounded-sm px-1.5 py-0.5 text-[10px] font-black ${
+                  className={`rounded-sm px-1.5 py-0.5 text-phx-2xs font-black ${
                     isActive ? "bg-white/15 text-white" : "bg-slate-100 text-slate-600"
                   }`}
                 >
@@ -699,10 +699,10 @@ function MarketingRequestInboxInner({ decisionBasePath }: { decisionBasePath: st
           <div className="flex h-10 w-10 items-center justify-center rounded-sm bg-slate-50 text-slate-400 ring-1 ring-slate-100">
             <Inbox className="h-4 w-4" />
           </div>
-          <p className="text-[14px] font-black text-slate-800">
+          <p className="text-phx-base font-black text-slate-800">
             No marketing requests involve you right now
           </p>
-          <p className="max-w-sm text-[12px] font-medium text-slate-500">
+          <p className="max-w-sm text-phx-sm font-medium text-slate-500">
             Requests appear here from the moment they are submitted — both the ones waiting on you and
             the ones still moving toward your step.
           </p>
@@ -717,7 +717,7 @@ function MarketingRequestInboxInner({ decisionBasePath }: { decisionBasePath: st
               <Search className="h-3.5 w-3.5 shrink-0 text-slate-400" />
               {/* 16px floor: anything smaller makes iOS Safari zoom the page on focus. */}
               <input
-                className="min-h-10 w-full min-w-0 border-0 bg-transparent text-[16px] font-medium text-slate-800 outline-none placeholder:text-slate-400 sm:text-[13px]"
+                className="min-h-10 w-full min-w-0 border-0 bg-transparent text-[16px] font-medium text-slate-800 outline-none placeholder:text-slate-400 sm:text-phx-md"
                 onChange={(event) => setSearch(event.target.value)}
                 placeholder="Search code, customer, requester, step"
                 type="search"
@@ -728,7 +728,7 @@ function MarketingRequestInboxInner({ decisionBasePath }: { decisionBasePath: st
               {DECIDE_SORTS.map((option) => (
                 <button
                   aria-pressed={sort === option.key}
-                  className={`min-h-9 whitespace-nowrap rounded-sm border px-3 text-[12px] font-bold transition ${
+                  className={`min-h-9 whitespace-nowrap rounded-sm border px-3 text-phx-sm font-bold transition ${
                     sort === option.key
                       ? "border-slate-900 bg-slate-900 text-white"
                       : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
@@ -742,7 +742,7 @@ function MarketingRequestInboxInner({ decisionBasePath }: { decisionBasePath: st
               ))}
             </div>
             <button
-              className="min-h-9 whitespace-nowrap rounded-sm border border-slate-200 bg-white px-3 text-[12px] font-bold text-slate-600 shadow-sm transition hover:border-orange-200 hover:bg-orange-50 hover:text-orange-700 sm:ml-auto"
+              className="min-h-9 whitespace-nowrap rounded-sm border border-slate-200 bg-white px-3 text-phx-sm font-bold text-slate-600 shadow-sm transition hover:border-orange-200 hover:bg-orange-50 hover:text-orange-700 sm:ml-auto"
               onClick={() =>
                 setCollapsedIds(
                   openRowCount > 0 ? new Set(rows.map((row) => row.id)) : new Set<string>(),
@@ -756,7 +756,7 @@ function MarketingRequestInboxInner({ decisionBasePath }: { decisionBasePath: st
 
           {visibleRows.length === 0 ? (
             <Card className="rounded-sm border border-slate-200 bg-white px-4 py-8 text-center shadow-[0_8px_24px_rgba(15,23,42,0.05)]">
-              <p className="text-[13px] font-bold text-slate-700">No request matches this search.</p>
+              <p className="text-phx-md font-bold text-slate-700">No request matches this search.</p>
             </Card>
           ) : (
             visibleRows.map((row) => (
@@ -889,7 +889,7 @@ function ChainWatchList({
     <Card className="overflow-hidden rounded-sm border border-slate-200 bg-white p-0 shadow-[0_8px_24px_rgba(15,23,42,0.05)]">
       <PortalResponsiveDataList
         empty={
-          <p className="px-4 py-8 text-center text-[13px] font-bold text-slate-500">
+          <p className="px-4 py-8 text-center text-phx-md font-bold text-slate-500">
             Nothing is in this list right now.
           </p>
         }
@@ -900,7 +900,7 @@ function ChainWatchList({
             accent={row.ageDays >= 7 ? "rose" : row.ageDays >= 3 ? "amber" : "slate"}
             actions={
               <Link
-                className="inline-flex min-h-9 items-center gap-1.5 rounded-sm border border-slate-300 bg-white px-4 text-[12px] font-bold text-slate-700 shadow-sm transition hover:border-orange-200 hover:bg-orange-50 hover:text-orange-700"
+                className="inline-flex min-h-9 items-center gap-1.5 rounded-sm border border-slate-300 bg-white px-4 text-phx-sm font-bold text-slate-700 shadow-sm transition hover:border-orange-200 hover:bg-orange-50 hover:text-orange-700"
                 href={`/marketing-requests/${row.id}`}
               >
                 <Eye className="h-3.5 w-3.5" />
@@ -917,7 +917,7 @@ function ChainWatchList({
               </>
             }
             status={
-              <span className="whitespace-nowrap rounded-sm bg-slate-100 px-2.5 py-1 text-[11px] font-black text-slate-700">
+              <span className="whitespace-nowrap rounded-sm bg-slate-100 px-2.5 py-1 text-phx-xs font-black text-slate-700">
                 {age(row)}
               </span>
             }
@@ -931,7 +931,7 @@ function ChainWatchList({
                 {["Request", "Customer", "Raised by", "Value", "Now with", "Position", "In system", ""].map(
                   (heading, index) => (
                     <th
-                      className="whitespace-nowrap px-3 py-2.5 text-[10px] font-black uppercase tracking-[0.12em] text-slate-500"
+                      className="whitespace-nowrap px-3 py-2.5 text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500"
                       key={`${heading}-${index}`}
                       scope="col"
                     >
@@ -944,27 +944,27 @@ function ChainWatchList({
             <tbody>
               {visible.map((row) => (
                 <tr className="border-b border-slate-100 transition hover:bg-orange-50/30" key={`watch-row-${row.id}`}>
-                  <td className="whitespace-nowrap px-3 py-2.5 text-[12px] font-bold text-slate-500">
+                  <td className="whitespace-nowrap px-3 py-2.5 text-phx-sm font-bold text-slate-500">
                     {row.requestCode}
                   </td>
-                  <td className="whitespace-nowrap px-3 py-2.5 text-[13px] font-black text-slate-950">
+                  <td className="whitespace-nowrap px-3 py-2.5 text-phx-md font-black text-slate-950">
                     {row.customerName}
                   </td>
-                  <td className="whitespace-nowrap px-3 py-2.5 text-[12px] font-bold text-slate-700">
+                  <td className="whitespace-nowrap px-3 py-2.5 text-phx-sm font-bold text-slate-700">
                     {row.requesterName}
                   </td>
-                  <td className="whitespace-nowrap px-3 py-2.5 text-[13px] font-black text-slate-950">
+                  <td className="whitespace-nowrap px-3 py-2.5 text-phx-md font-black text-slate-950">
                     {egp(row.estimatedCost)}
                   </td>
-                  <td className="whitespace-nowrap px-3 py-2.5 text-[12px] font-bold text-slate-700">
+                  <td className="whitespace-nowrap px-3 py-2.5 text-phx-sm font-bold text-slate-700">
                     {holder(row)}
                   </td>
-                  <td className="whitespace-nowrap px-3 py-2.5 text-[12px] font-medium text-slate-500">
+                  <td className="whitespace-nowrap px-3 py-2.5 text-phx-sm font-medium text-slate-500">
                     {position(row)}
                   </td>
                   <td className="whitespace-nowrap px-3 py-2.5">
                     <span
-                      className={`rounded-sm px-2.5 py-1 text-[11px] font-black ${
+                      className={`rounded-sm px-2.5 py-1 text-phx-xs font-black ${
                         row.ageDays >= 7
                           ? "bg-rose-50 text-rose-800"
                           : row.ageDays >= 3
@@ -977,7 +977,7 @@ function ChainWatchList({
                   </td>
                   <td className="whitespace-nowrap px-3 py-2.5 text-right">
                     <Link
-                      className="inline-flex min-h-9 items-center gap-1.5 rounded-sm border border-slate-300 bg-white px-3 text-[12px] font-bold text-slate-700 shadow-sm transition hover:border-orange-200 hover:bg-orange-50 hover:text-orange-700"
+                      className="inline-flex min-h-9 items-center gap-1.5 rounded-sm border border-slate-300 bg-white px-3 text-phx-sm font-bold text-slate-700 shadow-sm transition hover:border-orange-200 hover:bg-orange-50 hover:text-orange-700"
                       href={`/marketing-requests/${row.id}`}
                     >
                       <Eye className="h-3.5 w-3.5" />
@@ -995,7 +995,7 @@ function ChainWatchList({
           label={`Showing ${safePage * WATCH_PAGE_SIZE + 1}–${safePage * WATCH_PAGE_SIZE + visible.length} of ${rows.length}`}
         >
           <button
-            className="min-h-9 rounded-sm border border-slate-200 bg-white px-3 text-[12px] font-bold text-slate-600 transition hover:bg-slate-50 disabled:opacity-40"
+            className="min-h-9 rounded-sm border border-slate-200 bg-white px-3 text-phx-sm font-bold text-slate-600 transition hover:bg-slate-50 disabled:opacity-40"
             disabled={safePage === 0}
             onClick={() => setPage(Math.max(0, safePage - 1))}
             type="button"
@@ -1003,7 +1003,7 @@ function ChainWatchList({
             Previous
           </button>
           <button
-            className="min-h-9 rounded-sm border border-slate-200 bg-white px-3 text-[12px] font-bold text-slate-600 transition hover:bg-slate-50 disabled:opacity-40"
+            className="min-h-9 rounded-sm border border-slate-200 bg-white px-3 text-phx-sm font-bold text-slate-600 transition hover:bg-slate-50 disabled:opacity-40"
             disabled={safePage >= pageCount - 1}
             onClick={() => setPage(Math.min(pageCount - 1, safePage + 1))}
             type="button"
@@ -1051,7 +1051,7 @@ function MarketingInboxTabs({ decisionBasePath }: { decisionBasePath: string }) 
           return (
             <button
               aria-selected={isActive}
-              className={`inline-flex flex-1 items-center justify-center gap-2 whitespace-nowrap rounded-sm px-4 py-2 text-[13px] font-bold transition-colors sm:flex-none ${
+              className={`inline-flex flex-1 items-center justify-center gap-2 whitespace-nowrap rounded-sm px-4 py-2 text-phx-md font-bold transition-colors sm:flex-none ${
                 isActive
                   ? "bg-slate-900 text-white shadow-[0_4px_12px_rgba(15,23,42,0.18)]"
                   : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
@@ -1067,7 +1067,7 @@ function MarketingInboxTabs({ decisionBasePath }: { decisionBasePath: string }) 
               <Icon className="h-4 w-4 shrink-0" />
               <span>{definition.label}</span>
               <span
-                className={`hidden whitespace-nowrap text-[11px] font-medium sm:inline ${
+                className={`hidden whitespace-nowrap text-phx-xs font-medium sm:inline ${
                   isActive ? "text-slate-300" : "text-slate-400"
                 }`}
               >

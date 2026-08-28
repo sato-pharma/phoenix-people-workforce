@@ -186,7 +186,7 @@ export function SourceSalesByAreaDashboard({
       <div className="flex items-center gap-3 border-b border-border pb-5">
         <div className="w-1 h-12 bg-phx-accent shrink-0" />
         <div>
-          <p className="text-[10px] font-bold uppercase tracking-widest text-phx-accent mb-0.5">SoS</p>
+          <p className="text-phx-2xs font-bold uppercase tracking-widest text-phx-accent mb-0.5">SoS</p>
           <h1 className="text-2xl font-bold text-foreground leading-tight">SoS — By Region / Area</h1>
           <p className="text-xs text-muted-foreground mt-0.5">
             Geography-level SoS breakdown. Drill from region summary to period × area detail.

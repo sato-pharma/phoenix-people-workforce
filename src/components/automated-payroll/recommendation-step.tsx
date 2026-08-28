@@ -116,7 +116,7 @@ function AddEmployeePanel({
 
       <div className="flex flex-col gap-3 lg:flex-row lg:items-end">
         <div className="relative flex flex-col gap-1 lg:w-80">
-          <span className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Employee</span>
+          <span className="text-phx-xs font-bold uppercase tracking-wide text-slate-500">Employee</span>
           <Input
             value={picked ? `${picked.fullName} (${picked.hrId})` : query}
             placeholder="Search by name or HR_ID…"
@@ -157,7 +157,7 @@ function AddEmployeePanel({
         </div>
 
         <label className="flex flex-col gap-1 lg:w-40">
-          <span className="text-[11px] font-bold uppercase tracking-wide text-slate-500">{moneyLabel}</span>
+          <span className="text-phx-xs font-bold uppercase tracking-wide text-slate-500">{moneyLabel}</span>
           <Input
             type="number"
             value={amount}
@@ -169,7 +169,7 @@ function AddEmployeePanel({
 
         {noteLabel ? (
           <label className="flex flex-1 flex-col gap-1">
-            <span className="text-[11px] font-bold uppercase tracking-wide text-slate-500">{noteLabel}</span>
+            <span className="text-phx-xs font-bold uppercase tracking-wide text-slate-500">{noteLabel}</span>
             <Input
               value={note}
               placeholder="Why is this being reimbursed?"

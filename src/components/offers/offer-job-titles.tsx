@@ -183,11 +183,11 @@ export function OfferJobTitleCatalogue({
           <table className="w-full min-w-[900px] text-sm">
             <thead>
               <tr className="border-b border-slate-200/80 bg-slate-50/60 text-left">
-                <th className="px-5 py-3 text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-soft">Title</th>
-                <th className="px-5 py-3 text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-soft">Reports to</th>
-                <th className="px-5 py-3 text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-soft">Contract</th>
-                <th className="px-5 py-3 text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-soft">Letter design</th>
-                <th className="px-5 py-3 text-right text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-soft">
+                <th className="px-5 py-3 text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">Title</th>
+                <th className="px-5 py-3 text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">Reports to</th>
+                <th className="px-5 py-3 text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">Contract</th>
+                <th className="px-5 py-3 text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">Letter design</th>
+                <th className="px-5 py-3 text-right text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">
                   Cost of living (EGP)
                 </th>
                 <th className="px-5 py-3" />

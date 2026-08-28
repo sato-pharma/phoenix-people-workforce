@@ -31,8 +31,8 @@ import {
 // Desktop table / mobile cards via PortalResponsiveDataList — AGENTS.md §4. Nothing wraps or
 // ellipsises; the table scrolls inside its own container.
 
-const THEAD = "px-3 py-2.5 text-[10px] font-black uppercase tracking-[0.12em] text-white";
-const CHIP = "px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.1em]";
+const THEAD = "px-3 py-2.5 text-phx-2xs font-black uppercase tracking-[0.12em] text-white";
+const CHIP = "px-2 py-0.5 text-phx-2xs font-black uppercase tracking-[0.1em]";
 
 /** The proof bucket, coloured. Green proved, rose unproved, sky campaign, slate not-field-work. */
 function standingChip(standing: RepVisitStanding): string {
@@ -136,7 +136,7 @@ function SummaryStrip({ summary }: { summary: RepVisitsSummary }) {
     <div className="grid grid-cols-2 gap-px border border-slate-200 bg-slate-200 sm:grid-cols-3 lg:grid-cols-9">
       {cells.map((cell) => (
         <div className="bg-white px-3 py-2.5" key={cell.label}>
-          <p className="text-[9px] font-black uppercase tracking-[0.16em] text-slate-400">{cell.label}</p>
+          <p className="text-phx-3xs font-black uppercase tracking-[0.16em] text-slate-400">{cell.label}</p>
           <p className={`text-lg font-black ${cell.tone}`}>{cell.value.toLocaleString("en-US")}</p>
         </div>
       ))}
@@ -219,7 +219,7 @@ export function RepVisitsDetail({
             {summary.unmappedTerritory.toLocaleString("en-US")} of these calls sit in a CRM region that is not tied to a
             Phoenix brick yet, so their area and region cannot be resolved.
           </p>
-          <p className="mt-1 text-[11px] text-amber-800">
+          <p className="mt-1 text-phx-xs text-amber-800">
             {mappedRegions === 0
               ? "No CRM region has been mapped at all so far."
               : `${mappedRegions.toLocaleString("en-US")} CRM regions are mapped so far.`}{" "}
@@ -406,9 +406,9 @@ export function RepVisitsDetail({
                         <span className="flex flex-col leading-tight">
                           <span className="font-semibold text-slate-900">{contactText(row)}</span>
                           {row.contactCrmId != null ? (
-                            <span className="text-[10px] font-semibold text-slate-400">CRM #{row.contactCrmId}</span>
+                            <span className="text-phx-2xs font-semibold text-slate-400">CRM #{row.contactCrmId}</span>
                           ) : note ? (
-                            <span className={`text-[10px] font-black uppercase tracking-[0.1em] ${note.tone}`}>
+                            <span className={`text-phx-2xs font-black uppercase tracking-[0.1em] ${note.tone}`}>
                               {note.text}
                             </span>
                           ) : null}
@@ -455,8 +455,8 @@ export function RepVisitsDetail({
       {offDutyRows.length > 0 ? (
         <div className="border border-slate-200 bg-white">
           <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-slate-200 bg-slate-100 px-5 py-3">
-            <h3 className="text-[11px] font-black uppercase tracking-[0.14em] text-slate-600">Days not in the field</h3>
-            <p className="text-[11px] text-slate-500">
+            <h3 className="text-phx-xs font-black uppercase tracking-[0.14em] text-slate-600">Days not in the field</h3>
+            <p className="text-phx-xs text-slate-500">
               {offDutyRows.length.toLocaleString("en-US")}{" "}
               {offDutyRows.length === 1 ? "day" : "days"} · leave, public holidays, meetings and training · counted in no
               rate, and never a visit

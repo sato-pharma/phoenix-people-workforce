@@ -352,7 +352,7 @@ export function CvDocumentView({ className, downloadUrl, fileName, mimeType, fit
           >
             <Minus className="h-3.5 w-3.5" />
           </button>
-          <span className="min-w-[3.25rem] text-center text-[11px] font-bold tabular-nums text-slate-700">
+          <span className="min-w-[3.25rem] text-center text-phx-xs font-bold tabular-nums text-slate-700">
             {Math.round(zoom * 100)}%
           </span>
           <button
@@ -365,7 +365,7 @@ export function CvDocumentView({ className, downloadUrl, fileName, mimeType, fit
             <Plus className="h-3.5 w-3.5" />
           </button>
           <button
-            className={`ml-1 rounded px-2 py-1 text-[11px] font-bold transition ${
+            className={`ml-1 rounded px-2 py-1 text-phx-xs font-bold transition ${
               manualZoom === null ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-white hover:text-slate-900"
             }`}
             onClick={() => setManualZoom(null)}

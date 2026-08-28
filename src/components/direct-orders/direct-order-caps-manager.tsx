@@ -107,14 +107,14 @@ export function DirectOrderCapsManager({
 
       {/* Global caps */}
       <section className="border border-slate-200 bg-white p-4">
-        <h3 className="mb-3 text-[11px] font-black uppercase tracking-wider text-slate-500">Global caps (default for every product)</h3>
+        <h3 className="mb-3 text-phx-xs font-black uppercase tracking-wider text-slate-500">Global caps (default for every product)</h3>
         <div className="flex flex-wrap items-end gap-4">
           <label className="text-sm">
-            <span className="block text-[11px] font-bold text-slate-500">Bonus cap %</span>
+            <span className="block text-phx-xs font-bold text-slate-500">Bonus cap %</span>
             <input className={inputClass} value={gBonus} onChange={(e) => setGBonus(e.target.value)} disabled={!canEdit} />
           </label>
           <label className="text-sm">
-            <span className="block text-[11px] font-bold text-slate-500">Discount cap %</span>
+            <span className="block text-phx-xs font-bold text-slate-500">Discount cap %</span>
             <input className={inputClass} value={gDiscount} onChange={(e) => setGDiscount(e.target.value)} disabled={!canEdit} />
           </label>
           {canEdit ? (
@@ -132,10 +132,10 @@ export function DirectOrderCapsManager({
 
       {/* Per-product overrides */}
       <section className="border border-slate-200 bg-white p-4">
-        <h3 className="mb-3 text-[11px] font-black uppercase tracking-wider text-slate-500">Per-product cap overrides</h3>
+        <h3 className="mb-3 text-phx-xs font-black uppercase tracking-wider text-slate-500">Per-product cap overrides</h3>
         <table className="w-full border-collapse text-sm">
           <thead>
-            <tr className="border-b border-slate-200 text-left text-[11px] font-black uppercase text-slate-500">
+            <tr className="border-b border-slate-200 text-left text-phx-xs font-black uppercase text-slate-500">
               <th className="px-2 py-1">Product</th>
               <th className="px-2 py-1">Bonus cap %</th>
               <th className="px-2 py-1">Discount cap %</th>
@@ -163,15 +163,15 @@ export function DirectOrderCapsManager({
         {canEdit ? (
           <div className="mt-3 flex flex-wrap items-end gap-2 border-t border-slate-100 pt-3">
             <label className="text-sm">
-              <span className="block text-[11px] font-bold text-slate-500">Product</span>
+              <span className="block text-phx-xs font-bold text-slate-500">Product</span>
               <select className="border border-slate-300 px-2 py-1 text-sm" value={ovProduct} onChange={(e) => setOvProduct(e.target.value)}>
                 <option value="">Select…</option>
                 {products.map((p) => <option key={p.productCode} value={p.productCode}>{p.productName}</option>)}
               </select>
             </label>
-            <label className="text-sm"><span className="block text-[11px] font-bold text-slate-500">Bonus cap %</span>
+            <label className="text-sm"><span className="block text-phx-xs font-bold text-slate-500">Bonus cap %</span>
               <input className={inputClass} value={ovBonus} onChange={(e) => setOvBonus(e.target.value)} placeholder="(global)" /></label>
-            <label className="text-sm"><span className="block text-[11px] font-bold text-slate-500">Discount cap %</span>
+            <label className="text-sm"><span className="block text-phx-xs font-bold text-slate-500">Discount cap %</span>
               <input className={inputClass} value={ovDiscount} onChange={(e) => setOvDiscount(e.target.value)} placeholder="(global)" /></label>
             <button type="button" disabled={busy || !ovProduct} className="bg-slate-800 px-3 py-1.5 text-sm font-bold text-white hover:bg-slate-900 disabled:opacity-50"
               onClick={() => run(() => postCaps({ action: "upsert", productCode: ovProduct, bonusCapPct: ovBonus === "" ? null : Number(ovBonus), discountCapPct: ovDiscount === "" ? null : Number(ovDiscount) }), "Override saved.")}>
@@ -185,15 +185,15 @@ export function DirectOrderCapsManager({
       <section className="border border-slate-200 bg-white p-4">
         <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
           <div>
-            <h3 className="text-[11px] font-black uppercase tracking-wider text-slate-500">Product prices</h3>
-            <p className="mt-1 text-[11px] text-slate-500">
+            <h3 className="text-phx-xs font-black uppercase tracking-wider text-slate-500">Product prices</h3>
+            <p className="mt-1 text-phx-xs text-slate-500">
               A BONUS direct order is valued at qty × pharmacy price. A DISCOUNT order is valued at
               qty × public price × (1 − discount %). Those two prices are the only bases a direct
               order uses, so a product with no pharmacy price cannot be submitted as a bonus deal.
             </p>
           </div>
           <label className="text-sm">
-            <span className="block text-[11px] font-bold text-slate-500">Find a product</span>
+            <span className="block text-phx-xs font-bold text-slate-500">Find a product</span>
             <input
               className="w-56 border border-slate-300 px-2 py-1 text-sm"
               value={productFilter}
@@ -206,7 +206,7 @@ export function DirectOrderCapsManager({
         <div className="overflow-x-auto">
           <table className="w-full min-w-[720px] border-collapse text-sm">
             <thead>
-              <tr className="border-b border-slate-200 text-left text-[11px] font-black uppercase text-slate-500">
+              <tr className="border-b border-slate-200 text-left text-phx-xs font-black uppercase text-slate-500">
                 <th className="whitespace-nowrap px-2 py-1">Product</th>
                 <th className="whitespace-nowrap px-2 py-1 text-right">Public price (discount)</th>
                 <th className="whitespace-nowrap px-2 py-1 text-right">Pharmacy price (bonus)</th>
@@ -289,7 +289,7 @@ export function DirectOrderCapsManager({
           </table>
         </div>
         {canEdit ? (
-          <p className="mt-3 border-t border-slate-100 pt-3 text-[11px] text-slate-500">
+          <p className="mt-3 border-t border-slate-100 pt-3 text-phx-xs text-slate-500">
             Every active product already has a row — adding a price means typing into a row that reads
             “not set”. Leave a field blank (or 0) to clear it back to unset.
           </p>

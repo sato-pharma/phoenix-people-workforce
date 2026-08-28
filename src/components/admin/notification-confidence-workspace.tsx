@@ -101,14 +101,14 @@ function ReviewRow({ review, onDecided }: { review: AdminNotificationSendReview;
   return (
     <div className="border border-red-200 bg-red-50/40 px-4 py-3">
       <div className="flex flex-wrap items-center gap-2">
-        <span className={`whitespace-nowrap rounded-full px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.1em] ${confidenceTone(review.confidencePercent)}`}>
+        <span className={`whitespace-nowrap rounded-full px-2 py-0.5 text-phx-2xs font-black uppercase tracking-[0.1em] ${confidenceTone(review.confidencePercent)}`}>
           {review.confidencePercent}% confidence
         </span>
-        <span className="whitespace-nowrap rounded-sm bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-700">
+        <span className="whitespace-nowrap rounded-sm bg-slate-100 px-2 py-0.5 text-phx-xs font-semibold text-slate-700">
           {review.module ?? "unknown"} / {review.eventType ?? "unknown"}
         </span>
-        <span className="whitespace-nowrap font-mono text-[11px] text-slate-500">{formatWhen(review.createdAt)}</span>
-        <button className="ml-auto inline-flex items-center gap-1 text-[11px] font-bold text-slate-500 hover:text-slate-800" onClick={() => setExpanded((value) => !value)} type="button">
+        <span className="whitespace-nowrap font-mono text-phx-xs text-slate-500">{formatWhen(review.createdAt)}</span>
+        <button className="ml-auto inline-flex items-center gap-1 text-phx-xs font-bold text-slate-500 hover:text-slate-800" onClick={() => setExpanded((value) => !value)} type="button">
           {expanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
           Checks
         </button>
@@ -166,15 +166,15 @@ function RecentRow({ review }: { review: AdminNotificationSendReview }) {
   return (
     <div className="px-4 py-2.5">
       <div className="flex flex-wrap items-center gap-2">
-        <span className={`whitespace-nowrap rounded-full px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.1em] ${statusTone(review.status)}`}>
+        <span className={`whitespace-nowrap rounded-full px-2 py-0.5 text-phx-2xs font-black uppercase tracking-[0.1em] ${statusTone(review.status)}`}>
           {review.status.replace("_", " ")}
         </span>
-        <span className={`text-[11px] font-black ${confidenceTone(review.confidencePercent)}`}>{review.confidencePercent}%</span>
-        <span className="whitespace-nowrap rounded-sm bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-700">
+        <span className={`text-phx-xs font-black ${confidenceTone(review.confidencePercent)}`}>{review.confidencePercent}%</span>
+        <span className="whitespace-nowrap rounded-sm bg-slate-100 px-2 py-0.5 text-phx-xs font-semibold text-slate-700">
           {review.module ?? "unknown"} / {review.eventType ?? "unknown"}
         </span>
         <span className="min-w-0 flex-1 truncate text-xs font-semibold text-slate-800">{review.subject}</span>
-        <span className="whitespace-nowrap font-mono text-[11px] text-slate-500">{formatWhen(review.createdAt)}</span>
+        <span className="whitespace-nowrap font-mono text-phx-xs text-slate-500">{formatWhen(review.createdAt)}</span>
         <button className="text-slate-400 hover:text-slate-700" onClick={() => setExpanded((value) => !value)} type="button">
           {expanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
         </button>
@@ -222,15 +222,15 @@ export function NotificationConfidenceWorkspace({
     <section className="space-y-4">
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <div className="border border-slate-200 bg-white p-4">
-          <p className="text-[11px] font-black uppercase tracking-[0.1em] text-slate-400">Recorded sends</p>
+          <p className="text-phx-xs font-black uppercase tracking-[0.1em] text-slate-400">Recorded sends</p>
           <p className="mt-1 text-2xl font-black text-slate-900">{stats.total}</p>
         </div>
         <div className="border border-slate-200 bg-white p-4">
-          <p className="text-[11px] font-black uppercase tracking-[0.1em] text-slate-400">Avg. confidence</p>
+          <p className="text-phx-xs font-black uppercase tracking-[0.1em] text-slate-400">Avg. confidence</p>
           <p className={`mt-1 text-2xl font-black ${confidenceTone(stats.avgConfidence)}`}>{stats.avgConfidence}%</p>
         </div>
         <div className="border border-slate-200 bg-white p-4">
-          <p className="text-[11px] font-black uppercase tracking-[0.1em] text-slate-400">Held (in this list)</p>
+          <p className="text-phx-xs font-black uppercase tracking-[0.1em] text-slate-400">Held (in this list)</p>
           <p className="mt-1 text-2xl font-black text-red-700">{stats.held}</p>
         </div>
       </div>

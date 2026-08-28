@@ -27,7 +27,7 @@ import {
 
 const SELECT_CLASS =
   "h-9 w-full border border-slate-200 bg-white px-2 text-sm font-semibold text-slate-700 outline-none focus:border-orange-400";
-const LABEL_CLASS = "block text-[9px] font-black uppercase tracking-[0.16em] text-slate-400";
+const LABEL_CLASS = "block text-phx-3xs font-black uppercase tracking-[0.16em] text-slate-400";
 
 export const COVERAGE_SELECT_CLASS = SELECT_CLASS;
 export const COVERAGE_LABEL_CLASS = LABEL_CLASS;
@@ -136,7 +136,7 @@ export function CoverageFilterBar({
 
       <div className="flex flex-wrap items-center gap-3">
         <button
-          className="h-9 border border-slate-200 bg-slate-900 px-4 text-[11px] font-black uppercase tracking-[0.12em] text-white hover:bg-slate-700"
+          className="h-9 border border-slate-200 bg-slate-900 px-4 text-phx-xs font-black uppercase tracking-[0.12em] text-white hover:bg-slate-700"
           onClick={() => push(draftMonth, draft)}
           type="button"
         >
@@ -144,7 +144,7 @@ export function CoverageFilterBar({
         </button>
         {coverageSelectionIsActive(selection) ? (
           <button
-            className="h-9 border border-slate-200 bg-white px-4 text-[11px] font-black uppercase tracking-[0.12em] text-slate-600 hover:border-orange-400"
+            className="h-9 border border-slate-200 bg-white px-4 text-phx-xs font-black uppercase tracking-[0.12em] text-slate-600 hover:border-orange-400"
             onClick={clearAll}
             type="button"
           >
@@ -152,7 +152,7 @@ export function CoverageFilterBar({
           </button>
         ) : null}
         {coverageSelectionIsActive(selection) ? (
-          <span className="whitespace-nowrap text-[11px] font-semibold text-amber-700">
+          <span className="whitespace-nowrap text-phx-xs font-semibold text-amber-700">
             Filtered — every figure below counts only the matching rows.
           </span>
         ) : null}

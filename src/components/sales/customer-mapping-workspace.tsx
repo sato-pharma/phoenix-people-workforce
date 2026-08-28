@@ -244,7 +244,7 @@ export function CustomerMappingWorkspace({ initialError, initialResult, options 
                           <td className="whitespace-nowrap px-3 py-2.5">
                             <span className="font-mono text-xs font-semibold text-slate-700">{row.masterCustomerId}</span>
                             {row.matched ? (
-                              <span className="ml-2 bg-phx-accent px-1.5 text-[10px] font-black text-white">×{row.distributorSpan}</span>
+                              <span className="ml-2 bg-phx-accent px-1.5 text-phx-2xs font-black text-white">×{row.distributorSpan}</span>
                             ) : null}
                           </td>
                         </tr>
@@ -279,7 +279,7 @@ export function CustomerMappingWorkspace({ initialError, initialResult, options 
                           <td className="whitespace-nowrap px-3 py-2.5">
                             <span className="font-mono text-xs font-semibold text-slate-700">{master.masterCustomerId}</span>
                             {master.distributorSpan > 1 ? (
-                              <span className="ml-2 bg-phx-accent px-1.5 text-[10px] font-black text-white">×{master.distributorSpan}</span>
+                              <span className="ml-2 bg-phx-accent px-1.5 text-phx-2xs font-black text-white">×{master.distributorSpan}</span>
                             ) : null}
                           </td>
                           <td className="px-3 py-2.5 font-semibold text-phx-ink">{master.customerName || "—"}</td>

@@ -125,7 +125,7 @@ function DeskGroup({
   }
   return (
     <div className="space-y-3">
-      <p className="px-1 text-[12px] leading-5 text-slate-500">{intro}</p>
+      <p className="px-1 text-phx-sm leading-5 text-slate-500">{intro}</p>
       <div className="grid gap-2 sm:grid-cols-2">
         {tools.map((tool) => (
           <Link
@@ -136,7 +136,7 @@ function DeskGroup({
             <Wrench className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" aria-hidden="true" />
             <span className="min-w-0">
               <span className="block text-sm font-bold text-slate-900">{tool.label}</span>
-              <span className="mt-0.5 block text-[11px] leading-4 text-slate-500">{tool.description}</span>
+              <span className="mt-0.5 block text-phx-xs leading-4 text-slate-500">{tool.description}</span>
             </span>
           </Link>
         ))}
@@ -191,10 +191,10 @@ function SummaryCard({
         <span className={`flex h-8 w-8 shrink-0 items-center justify-center ring-1 ${TONE_RING[tone]} ${control(variant)}`}>
           {icon}
         </span>
-        <span className="text-[11px] font-black uppercase tracking-wide text-slate-500">{label}</span>
+        <span className="text-phx-xs font-black uppercase tracking-wide text-slate-500">{label}</span>
       </div>
       <p className="mt-2 text-2xl font-black tabular-nums text-slate-950">{value.toLocaleString("en-US")}</p>
-      <p className="mt-0.5 text-[11px] text-slate-500">{hint}</p>
+      <p className="mt-0.5 text-phx-xs text-slate-500">{hint}</p>
     </>
   );
   const className = `${surface(variant)} min-h-[44px] p-3 text-left transition-colors ${
@@ -256,7 +256,7 @@ function NeedsActionInbox({
           <header className="flex flex-wrap items-baseline justify-between gap-2 border-b border-slate-100 px-4 py-3">
             <h3 className="text-sm font-black text-slate-950">{group.headline}</h3>
             {group.totalValue > 0 ? (
-              <span className="text-[11px] font-bold tabular-nums text-slate-500">{money(group.totalValue)}</span>
+              <span className="text-phx-xs font-bold tabular-nums text-slate-500">{money(group.totalValue)}</span>
             ) : null}
           </header>
 
@@ -278,14 +278,14 @@ function NeedsActionInbox({
                   >
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm font-bold text-slate-900">{item.title}</p>
-                      <p className="truncate text-[11px] text-slate-500">{item.subtitle}</p>
+                      <p className="truncate text-phx-xs text-slate-500">{item.subtitle}</p>
                     </div>
                     {item.flagged ? (
-                      <span className="shrink-0 rounded-full bg-rose-100 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wide text-rose-700">
+                      <span className="shrink-0 rounded-full bg-rose-100 px-1.5 py-0.5 text-phx-3xs font-black uppercase tracking-wide text-rose-700">
                         over cap
                       </span>
                     ) : null}
-                    <span className="shrink-0 text-[11px] font-black text-orange-700">{group.actionLabel}</span>
+                    <span className="shrink-0 text-phx-xs font-black text-orange-700">{group.actionLabel}</span>
                   </Link>
                 </li>
               ))}
@@ -448,7 +448,7 @@ function OrderRow({
                 {item.productName} × {item.qty.toLocaleString("en-US")}
               </p>
             ))}
-            <p className="truncate text-[11px] text-slate-500">
+            <p className="truncate text-phx-xs text-slate-500">
               {row.requesterName} · {row.pharmacyName}
             </p>
           </div>
@@ -460,7 +460,7 @@ function OrderRow({
             salesMonth={row.salesMonth}
             variant={variant === "portal" ? "ring" : "solid"}
           />
-          <span className="text-[11px] text-slate-500">
+          <span className="text-phx-xs text-slate-500">
             {row.areaName || row.regionName || "—"} · {shortDate(row.createdAt)}
           </span>
         </div>
@@ -594,7 +594,7 @@ function OrdersList({
                 setShown(PAGE_SIZE);
                 server?.onGroupChange(entry.key);
               }}
-              className={`min-h-[36px] whitespace-nowrap px-3 py-1.5 text-[12px] font-black uppercase tracking-wide transition-colors ${control(variant)} ${
+              className={`min-h-[36px] whitespace-nowrap px-3 py-1.5 text-phx-sm font-black uppercase tracking-wide transition-colors ${control(variant)} ${
                 filter === entry.key ? "bg-slate-900 text-white" : "text-slate-500 hover:bg-slate-100"
               }`}
             >
@@ -804,7 +804,7 @@ export function DirectOrdersWorkspace(props: DirectOrdersWorkspaceProps) {
       {props.reportHref ? (
         <Link
           href={props.reportHref}
-          className="inline-flex min-h-[40px] items-center gap-1.5 px-2 text-[12px] font-black uppercase tracking-wide text-slate-500 hover:text-orange-700"
+          className="inline-flex min-h-[40px] items-center gap-1.5 px-2 text-phx-sm font-black uppercase tracking-wide text-slate-500 hover:text-orange-700"
         >
           <FileSpreadsheet className="h-3.5 w-3.5" aria-hidden="true" />
           Report
@@ -829,7 +829,7 @@ export function DirectOrdersWorkspace(props: DirectOrdersWorkspaceProps) {
               <button
                 type="button"
                 onClick={() => goTab("orders")}
-                className="-my-2 inline-flex min-h-[44px] items-center px-2 text-[11px] font-black text-orange-700"
+                className="-my-2 inline-flex min-h-[44px] items-center px-2 text-phx-xs font-black text-orange-700"
               >
                 See all
               </button>
@@ -873,7 +873,7 @@ export function DirectOrdersWorkspace(props: DirectOrdersWorkspaceProps) {
                   role="tab"
                   aria-selected={ordersFilter === option.key}
                   onClick={() => goOrdersFilter(option.key)}
-                  className={`min-h-[36px] px-3 text-[12px] font-black transition-colors ${
+                  className={`min-h-[36px] px-3 text-phx-sm font-black transition-colors ${
                     ordersFilter === option.key ? "bg-slate-900 text-white" : "text-slate-500 hover:bg-slate-100"
                   } ${control(variant)}`}
                 >
@@ -914,7 +914,7 @@ export function DirectOrdersWorkspace(props: DirectOrdersWorkspaceProps) {
               className="flex items-center justify-between gap-3 px-1"
               aria-label="Orders pagination"
             >
-              <p className="text-[11px] font-bold tabular-nums text-slate-500">
+              <p className="text-phx-xs font-bold tabular-nums text-slate-500">
                 {(servedPage.page - 1) * servedPage.pageSize + 1}–
                 {Math.min(servedPage.page * servedPage.pageSize, servedPage.totalCount)} of{" "}
                 {servedPage.totalCount.toLocaleString("en-US")}
@@ -924,7 +924,7 @@ export function DirectOrdersWorkspace(props: DirectOrdersWorkspaceProps) {
                   type="button"
                   onClick={() => goPage(servedPage.page - 1)}
                   disabled={servedPage.page <= 1}
-                  className={`min-h-[44px] border border-slate-300 px-3 text-[12px] font-black text-slate-700 disabled:opacity-40 ${control(variant)}`}
+                  className={`min-h-[44px] border border-slate-300 px-3 text-phx-sm font-black text-slate-700 disabled:opacity-40 ${control(variant)}`}
                 >
                   Previous
                 </button>
@@ -932,7 +932,7 @@ export function DirectOrdersWorkspace(props: DirectOrdersWorkspaceProps) {
                   type="button"
                   onClick={() => goPage(servedPage.page + 1)}
                   disabled={servedPage.page * servedPage.pageSize >= servedPage.totalCount}
-                  className={`min-h-[44px] border border-slate-300 px-3 text-[12px] font-black text-slate-700 disabled:opacity-40 ${control(variant)}`}
+                  className={`min-h-[44px] border border-slate-300 px-3 text-phx-sm font-black text-slate-700 disabled:opacity-40 ${control(variant)}`}
                 >
                   Next
                 </button>
@@ -975,7 +975,7 @@ export function DirectOrdersWorkspace(props: DirectOrdersWorkspaceProps) {
       ) : null}
 
       {needsAction.some((group) => group.kind === "verify_customer") && tab === "overview" ? (
-        <p className="flex items-start gap-2 px-1 text-[11px] text-slate-500">
+        <p className="flex items-start gap-2 px-1 text-phx-xs text-slate-500">
           <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-500" aria-hidden="true" />
           An order waiting on pharmacy verification is in nobody&apos;s approval queue, and it expires 14 days after
           it was raised.

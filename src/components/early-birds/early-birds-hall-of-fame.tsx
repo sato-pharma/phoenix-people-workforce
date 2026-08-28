@@ -38,7 +38,7 @@ export function EarlyBirdsHallOfFame({ winners }: { winners: EarlyBirdsWinnerRec
       <SectionHead
         title="Hall of Fame"
         right={
-          <span className="whitespace-nowrap text-[10px] font-bold uppercase tracking-widest text-slate-400">
+          <span className="whitespace-nowrap text-phx-2xs font-bold uppercase tracking-widest text-slate-400">
             {winners.length} fortnights
           </span>
         }
@@ -53,7 +53,7 @@ export function EarlyBirdsHallOfFame({ winners }: { winners: EarlyBirdsWinnerRec
                 <div className="flex items-center gap-1.5">
                   {wins > 1 && (
                     <span
-                      className="flex h-7 items-center justify-center rounded-md bg-slate-700 px-2 text-[11px] font-black text-white shadow"
+                      className="flex h-7 items-center justify-center rounded-md bg-slate-700 px-2 text-phx-xs font-black text-white shadow"
                       title={`Won ${wins} fortnights`}
                     >
                       ×{wins}
@@ -72,7 +72,7 @@ export function EarlyBirdsHallOfFame({ winners }: { winners: EarlyBirdsWinnerRec
               <p className="whitespace-nowrap text-xs font-bold text-slate-900" dir="auto">
                 {winner.employeeName}
               </p>
-              <p className="whitespace-nowrap text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+              <p className="whitespace-nowrap text-phx-2xs font-semibold uppercase tracking-wider text-slate-400">
                 {winner.periodLabel}
               </p>
             </div>
@@ -82,11 +82,11 @@ export function EarlyBirdsHallOfFame({ winners }: { winners: EarlyBirdsWinnerRec
 
       {mostStars.length > 0 && (
         <div className="border-t border-slate-200 px-4 py-3 sm:px-5">
-          <p className="mb-2 text-[10px] font-black uppercase tracking-[0.14em] text-slate-400">Most stars</p>
+          <p className="mb-2 text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-400">Most stars</p>
           <div className="divide-y divide-slate-100">
             {mostStars.map((entry, index) => (
               <div key={entry.name} className="flex items-center gap-3 py-1.5">
-                <span className="w-5 whitespace-nowrap text-[11px] font-black text-slate-300">{index + 1}</span>
+                <span className="w-5 whitespace-nowrap text-phx-xs font-black text-slate-300">{index + 1}</span>
                 <span className="whitespace-nowrap text-xs font-bold text-slate-900" dir="auto">
                   {entry.name}
                 </span>

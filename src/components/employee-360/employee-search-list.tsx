@@ -235,7 +235,7 @@ export function EmployeeSearchList({
               {EMPLOYEE_360_ROLE_META[c].tab}
               <span
                 className={cn(
-                  "flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[10px] font-black",
+                  "flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-phx-2xs font-black",
                   active ? "bg-white/25 text-white" : "bg-slate-100 text-slate-500",
                 )}
               >
@@ -275,7 +275,7 @@ export function EmployeeSearchList({
             <SlidersHorizontal className="h-4 w-4" />
             Filters
             {activeFilterCount > 0 ? (
-              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-orange-600 text-[10px] font-black text-white">
+              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-orange-600 text-phx-2xs font-black text-white">
                 {activeFilterCount}
               </span>
             ) : null}
@@ -286,7 +286,7 @@ export function EmployeeSearchList({
           <div className="grid grid-cols-1 gap-3 border-t border-slate-200 p-4 sm:grid-cols-3">
             {FILTERS.map(({ key, label }) => (
               <label key={key} className="block">
-                <span className="mb-1.5 block text-[11px] font-black uppercase tracking-wide text-slate-500">
+                <span className="mb-1.5 block text-phx-xs font-black uppercase tracking-wide text-slate-500">
                   {label}
                 </span>
                 <select
@@ -353,7 +353,7 @@ export function EmployeeSearchList({
                 <h3 className="shrink-0 text-sm font-black uppercase tracking-wide text-slate-700">
                   {g.line || "Unassigned line"}
                 </h3>
-                <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-black text-slate-500">
+                <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-phx-2xs font-black text-slate-500">
                   {g.count}
                 </span>
                 <div className="h-px flex-1 bg-slate-200" />
@@ -365,7 +365,7 @@ export function EmployeeSearchList({
                       <div className="mb-2 flex items-center gap-1.5 pl-0.5">
                         <Users className="h-3.5 w-3.5 text-slate-400" />
                         <span className="text-xs font-bold text-slate-500">{mg.manager || "No manager"}</span>
-                        <span className="text-[10px] font-semibold text-slate-400">· {mg.items.length}</span>
+                        <span className="text-phx-2xs font-semibold text-slate-400">· {mg.items.length}</span>
                       </div>
                       <CardGrid items={mg.items} basePath={basePath} />
                     </div>
@@ -413,13 +413,13 @@ function EmployeeCard({ e, basePath }: { e: Employee360ListItem; basePath: strin
         <div className="flex items-center gap-2">
           <span className="truncate text-sm font-bold text-slate-900">{e.displayName}</span>
           {e.employmentStatus && e.employmentStatus !== "active" ? (
-            <span className="shrink-0 rounded-full bg-amber-100 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wide text-amber-700">
+            <span className="shrink-0 rounded-full bg-amber-100 px-1.5 py-0.5 text-phx-3xs font-black uppercase tracking-wide text-amber-700">
               {e.employmentStatus.replace(/_/g, " ")}
             </span>
           ) : null}
         </div>
         <div className="mt-0.5 truncate text-xs text-slate-500">{e.jobTitle || "—"}</div>
-        <div className="mt-1.5 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[11px] text-slate-400">
+        <div className="mt-1.5 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-phx-xs text-slate-400">
           <span className="rounded border border-slate-200 px-1.5 py-0.5 font-mono font-semibold text-slate-500">
             {e.hrId.toUpperCase()}
           </span>
@@ -428,7 +428,7 @@ function EmployeeCard({ e, basePath }: { e: Employee360ListItem; basePath: strin
           ))}
         </div>
         {e.managerName ? (
-          <div className="mt-1 truncate text-[11px] text-slate-400">Reports to {e.managerName}</div>
+          <div className="mt-1 truncate text-phx-xs text-slate-400">Reports to {e.managerName}</div>
         ) : null}
       </div>
       <ArrowRight className="mt-1 h-4 w-4 shrink-0 text-slate-300 transition group-hover:translate-x-0.5 group-hover:text-orange-500" />

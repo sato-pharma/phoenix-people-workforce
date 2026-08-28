@@ -42,7 +42,7 @@ function TableBreakdown({ entry }: { entry: AreaConsolidationTablePreview }) {
   return (
     <div className="rounded-lg border border-slate-200 bg-white p-3">
       <div className="flex items-center justify-between gap-3">
-        <p className="min-w-0 text-[13px] font-semibold text-slate-900 md:overflow-hidden md:text-ellipsis md:whitespace-nowrap">
+        <p className="min-w-0 text-phx-md font-semibold text-slate-900 md:overflow-hidden md:text-ellipsis md:whitespace-nowrap">
           {entry.label}
         </p>
         <Badge variant={entry.role === "historical" ? "neutral" : "warning"}>
@@ -51,7 +51,7 @@ function TableBreakdown({ entry }: { entry: AreaConsolidationTablePreview }) {
       </div>
 
       {entry.untouchedReason ? (
-        <p className="mt-1.5 text-[12px] font-medium leading-5 text-slate-600">{entry.untouchedReason}</p>
+        <p className="mt-1.5 text-phx-sm font-medium leading-5 text-slate-600">{entry.untouchedReason}</p>
       ) : null}
 
       {entry.rows.length > 0 ? (
@@ -64,7 +64,7 @@ function TableBreakdown({ entry }: { entry: AreaConsolidationTablePreview }) {
             // stays on one line from md: up, so nothing is hidden at either size.
             <li
               key={`${entry.table}-${row.primaryKey}`}
-              className="text-[12px] font-medium text-slate-700 md:overflow-hidden md:text-ellipsis md:whitespace-nowrap"
+              className="text-phx-sm font-medium text-slate-700 md:overflow-hidden md:text-ellipsis md:whitespace-nowrap"
             >
               {row.label}
             </li>
@@ -73,7 +73,7 @@ function TableBreakdown({ entry }: { entry: AreaConsolidationTablePreview }) {
       ) : null}
 
       {entry.truncated ? (
-        <p className="mt-1.5 text-[12px] font-semibold text-amber-700">
+        <p className="mt-1.5 text-phx-sm font-semibold text-amber-700">
           Showing the first {entry.rows.length} of {entry.count}. Every one of the {entry.count} moves.
         </p>
       ) : null}
@@ -216,14 +216,14 @@ export function AreaConsolidationWorkspace() {
       {error ? (
         <div className="flex items-start gap-2 rounded-lg border border-rose-200 bg-rose-50 p-3">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-rose-600" />
-          <p className="text-[13px] font-semibold leading-5 text-rose-800">{error}</p>
+          <p className="text-phx-md font-semibold leading-5 text-rose-800">{error}</p>
         </div>
       ) : null}
 
       {notice ? (
         <div className="flex items-start gap-2 rounded-lg border border-emerald-200 bg-emerald-50 p-3">
           <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
-          <p className="text-[13px] font-semibold leading-5 text-emerald-800">{notice}</p>
+          <p className="text-phx-md font-semibold leading-5 text-emerald-800">{notice}</p>
         </div>
       ) : null}
 
@@ -255,10 +255,10 @@ export function AreaConsolidationWorkspace() {
                 onClick={() => void openPreview(candidate.source.id)}
                 type="button"
               >
-                <p className="text-[13px] font-bold text-slate-900 md:overflow-hidden md:text-ellipsis md:whitespace-nowrap">
+                <p className="text-phx-md font-bold text-slate-900 md:overflow-hidden md:text-ellipsis md:whitespace-nowrap">
                   {candidate.source.name}
                 </p>
-                <p className="mt-0.5 text-[12px] font-medium text-slate-600 md:overflow-hidden md:text-ellipsis md:whitespace-nowrap">
+                <p className="mt-0.5 text-phx-sm font-medium text-slate-600 md:overflow-hidden md:text-ellipsis md:whitespace-nowrap">
                   {candidate.target
                     ? `Ruled to move into ${candidate.target.name}`
                     : "No ruling yet — nothing can move"}
@@ -308,7 +308,7 @@ export function AreaConsolidationWorkspace() {
             {!preview.target ? (
               <div className="mt-3 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3">
                 <Info className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
-                <p className="text-[13px] font-medium leading-5 text-amber-900">
+                <p className="text-phx-md font-medium leading-5 text-amber-900">
                   {preview.source.name} has no ruling, so there is nothing to move it into. Tell me
                   which current area it means and it becomes available here — the system will never
                   guess a territory on its own.
@@ -341,12 +341,12 @@ export function AreaConsolidationWorkspace() {
             <div className="p-4">
             {confirming === "apply" && preview.target ? (
               <div className="rounded-lg border border-amber-300 bg-amber-50 p-4">
-                <p className="text-[13px] font-bold leading-6 text-amber-900">
+                <p className="text-phx-md font-bold leading-6 text-amber-900">
                   Are you sure you want to move {preview.totalToMove}{" "}
                   {preview.totalToMove === 1 ? "row" : "rows"} from {preview.source.name} to{" "}
                   {preview.target.name}?
                 </p>
-                <p className="mt-1 text-[12px] font-medium leading-5 text-amber-800">
+                <p className="mt-1 text-phx-sm font-medium leading-5 text-amber-800">
                   This changes territory for real people and real customers. {untouchedTotal}{" "}
                   historical {untouchedTotal === 1 ? "row is" : "rows are"} left as they are. You can
                   revert this afterwards.
@@ -359,7 +359,7 @@ export function AreaConsolidationWorkspace() {
                 />
                 <div className="mt-3 flex flex-wrap gap-2">
                   <button
-                    className="rounded-lg bg-amber-600 px-4 py-2 text-[13px] font-semibold text-white transition hover:bg-amber-700 disabled:opacity-60"
+                    className="rounded-lg bg-amber-600 px-4 py-2 text-phx-md font-semibold text-white transition hover:bg-amber-700 disabled:opacity-60"
                     disabled={busy}
                     onClick={() => void applyConsolidation()}
                     type="button"
@@ -367,7 +367,7 @@ export function AreaConsolidationWorkspace() {
                     Yes, move them
                   </button>
                   <button
-                    className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-[13px] font-semibold text-slate-700 transition hover:bg-slate-50"
+                    className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-phx-md font-semibold text-slate-700 transition hover:bg-slate-50"
                     onClick={() => setConfirming(null)}
                     type="button"
                   >
@@ -377,7 +377,7 @@ export function AreaConsolidationWorkspace() {
               </div>
             ) : confirming === "revert" ? (
               <div className="rounded-lg border border-sky-300 bg-sky-50 p-4">
-                <p className="text-[13px] font-bold leading-6 text-sky-900">
+                <p className="text-phx-md font-bold leading-6 text-sky-900">
                   Put every moved row back on {preview.source.name}?
                 </p>
                 <input
@@ -388,7 +388,7 @@ export function AreaConsolidationWorkspace() {
                 />
                 <div className="mt-3 flex flex-wrap gap-2">
                   <button
-                    className="rounded-lg bg-sky-600 px-4 py-2 text-[13px] font-semibold text-white transition hover:bg-sky-700 disabled:opacity-60"
+                    className="rounded-lg bg-sky-600 px-4 py-2 text-phx-md font-semibold text-white transition hover:bg-sky-700 disabled:opacity-60"
                     disabled={busy}
                     onClick={() => void revertConsolidation()}
                     type="button"
@@ -396,7 +396,7 @@ export function AreaConsolidationWorkspace() {
                     Yes, revert it
                   </button>
                   <button
-                    className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-[13px] font-semibold text-slate-700 transition hover:bg-slate-50"
+                    className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-phx-md font-semibold text-slate-700 transition hover:bg-slate-50"
                     onClick={() => setConfirming(null)}
                     type="button"
                   >
@@ -407,7 +407,7 @@ export function AreaConsolidationWorkspace() {
             ) : (
               <div className="flex flex-wrap gap-2">
                 <button
-                  className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-[13px] font-semibold text-white transition hover:bg-slate-800 disabled:opacity-50"
+                  className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-phx-md font-semibold text-white transition hover:bg-slate-800 disabled:opacity-50"
                   disabled={busy || !preview.target || preview.totalToMove === 0 || Boolean(preview.liveConsolidationId)}
                   onClick={() => setConfirming("apply")}
                   type="button"
@@ -419,7 +419,7 @@ export function AreaConsolidationWorkspace() {
 
                 {preview.liveConsolidationId ? (
                   <button
-                    className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-[13px] font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
+                    className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-phx-md font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
                     disabled={busy}
                     onClick={() => setConfirming("revert")}
                     type="button"

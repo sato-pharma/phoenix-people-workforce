@@ -173,7 +173,7 @@ function SelectField({
 }) {
   return (
     <label className="block">
-      <span className="text-[11px] font-black uppercase tracking-[0.16em] text-phx-ink-soft">{label}</span>
+      <span className="text-phx-xs font-black uppercase tracking-[0.16em] text-phx-ink-soft">{label}</span>
       <SearchableSelect
         className="mt-2 h-10 w-full rounded-xl border border-phx-line-strong bg-white px-3 text-sm font-semibold text-phx-ink shadow-sm outline-none transition focus:border-phx-accent focus:ring-2 focus:ring-phx-accent/20 disabled:cursor-not-allowed disabled:bg-phx-paper disabled:text-phx-ink-faint"
         disabled={disabled}
@@ -193,7 +193,7 @@ function SelectField({
 
 function Badge({ children, className }: { children: ReactNode; className: string }) {
   return (
-    <span className={cn("inline-flex rounded-full border px-2.5 py-1 text-[11px] font-black", className)}>
+    <span className={cn("inline-flex rounded-full border px-2.5 py-1 text-phx-xs font-black", className)}>
       {children}
     </span>
   );
@@ -426,7 +426,7 @@ export function CoachingReportsCenter({
               value={filters.year}
             />
             <label className="block">
-              <span className="text-[11px] font-black uppercase tracking-[0.16em] text-phx-ink-soft">Date From</span>
+              <span className="text-phx-xs font-black uppercase tracking-[0.16em] text-phx-ink-soft">Date From</span>
               <Input
                 className="mt-2 rounded-xl border-phx-line-strong bg-white font-semibold"
                 onChange={(event) => updateFilter("dateFrom", event.target.value)}
@@ -435,7 +435,7 @@ export function CoachingReportsCenter({
               />
             </label>
             <label className="block">
-              <span className="text-[11px] font-black uppercase tracking-[0.16em] text-phx-ink-soft">Date To</span>
+              <span className="text-phx-xs font-black uppercase tracking-[0.16em] text-phx-ink-soft">Date To</span>
               <Input
                 className="mt-2 rounded-xl border-phx-line-strong bg-white font-semibold"
                 onChange={(event) => updateFilter("dateTo", event.target.value)}
@@ -471,7 +471,7 @@ export function CoachingReportsCenter({
       <Card className={cn(adminPanelClassName, "overflow-hidden p-0")}>
         <div className="flex flex-wrap items-center justify-between gap-4 border-b border-phx-line px-5 py-4 sm:px-6">
           <div>
-            <p className="text-[11px] font-black uppercase tracking-[0.18em] text-phx-accent">Reports</p>
+            <p className="text-phx-xs font-black uppercase tracking-[0.18em] text-phx-accent">Reports</p>
             <h2 className="mt-1 text-xl font-black tracking-[-0.03em] text-phx-ink">
               Coaching reports center
             </h2>
@@ -536,7 +536,7 @@ export function CoachingReportsCenter({
           <div className="hidden overflow-x-auto md:block">
             <table className="w-full border-collapse text-left">
               <thead className="bg-phx-paper">
-                <tr className="border-b border-phx-line text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-soft">
+                <tr className="border-b border-phx-line text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">
                   <th className="px-4 py-3">Report #</th>
                   <th className="px-4 py-3">Medical Rep</th>
                   <th className="px-4 py-3">Coach</th>
@@ -557,7 +557,7 @@ export function CoachingReportsCenter({
                     </td>
                     <td className="px-4 py-3">
                       <div className="font-semibold text-phx-ink">{formatEmployeeDisplayName(report.medicalRepName)}</div>
-                      <div className="font-mono text-[11px] text-phx-ink-faint">{report.medicalRepHrId}</div>
+                      <div className="font-mono text-phx-xs text-phx-ink-faint">{report.medicalRepHrId}</div>
                     </td>
                     <td className="px-4 py-3 font-semibold text-phx-ink">{formatEmployeeDisplayName(report.coachName)}</td>
                     <td className="px-4 py-3 text-xs text-phx-ink-2">
@@ -600,7 +600,7 @@ export function CoachingReportsCenter({
                   <div className="min-w-0">
                     <p className="font-black text-phx-ink">{report.reportNumber}</p>
                     <p className="mt-1 truncate font-semibold text-phx-ink">{formatEmployeeDisplayName(report.medicalRepName)}</p>
-                    <p className="font-mono text-[11px] text-phx-ink-faint">{report.medicalRepHrId}</p>
+                    <p className="font-mono text-phx-xs text-phx-ink-faint">{report.medicalRepHrId}</p>
                   </div>
                   <Badge className={statusClassName(report.status)}>{statusLabel(report.status)}</Badge>
                 </div>

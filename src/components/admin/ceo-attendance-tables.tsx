@@ -58,11 +58,11 @@ function ManagersOnLeaveTable({ rows }: { rows: ManagerOnLeave[] }) {
           <thead>
             <tr className="bg-slate-900 text-left">
               <SortableTh label="Name" sortKey="name" sort={table.sort} onSort={table.toggleSort}
-                className="px-3 py-2 text-[10px] font-black uppercase tracking-[0.12em] text-white" />
+                className="px-3 py-2 text-phx-2xs font-black uppercase tracking-[0.12em] text-white" />
               <SortableTh label="Role" sortKey="role" sort={table.sort} onSort={table.toggleSort}
-                className="px-3 py-2 text-[10px] font-black uppercase tracking-[0.12em] text-white" />
+                className="px-3 py-2 text-phx-2xs font-black uppercase tracking-[0.12em] text-white" />
               <SortableTh label="HR ID" sortKey="hrId" sort={table.sort} onSort={table.toggleSort}
-                className="px-3 py-2 text-[10px] font-black uppercase tracking-[0.12em] text-white" />
+                className="px-3 py-2 text-phx-2xs font-black uppercase tracking-[0.12em] text-white" />
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
@@ -73,11 +73,11 @@ function ManagersOnLeaveTable({ rows }: { rows: ManagerOnLeave[] }) {
                 <tr key={r.hrId} className="bg-white hover:bg-amber-50/60">
                   <td className="px-3 py-2 font-semibold text-slate-800">{r.name}</td>
                   <td className="px-3 py-2">
-                    <span className="border border-amber-300 bg-amber-50 px-1.5 py-0.5 text-[9px] font-bold text-amber-700">
+                    <span className="border border-amber-300 bg-amber-50 px-1.5 py-0.5 text-phx-3xs font-bold text-amber-700">
                       {r.role}
                     </span>
                   </td>
-                  <td className="px-3 py-2 font-mono text-[10px] text-slate-400">{r.hrId}</td>
+                  <td className="px-3 py-2 font-mono text-phx-2xs text-slate-400">{r.hrId}</td>
                 </tr>
               ))
             )}
@@ -129,7 +129,7 @@ function AbsenteesTable({ rows, allCount }: { rows: AbsenteeRow[]; allCount: num
         />
       </div>
       {truncated && (
-        <p className="text-[10px] text-slate-400">
+        <p className="text-phx-2xs text-slate-400">
           Showing {rows.length} of {allCount} absentees.
         </p>
       )}
@@ -138,9 +138,9 @@ function AbsenteesTable({ rows, allCount }: { rows: AbsenteeRow[]; allCount: num
           <thead>
             <tr className="bg-slate-900 text-left">
               <SortableTh label="Name" sortKey="name" sort={table.sort} onSort={table.toggleSort}
-                className="px-3 py-2 text-[10px] font-black uppercase tracking-[0.12em] text-white" />
+                className="px-3 py-2 text-phx-2xs font-black uppercase tracking-[0.12em] text-white" />
               <SortableTh label="Department" sortKey="department" sort={table.sort} onSort={table.toggleSort}
-                className="px-3 py-2 text-[10px] font-black uppercase tracking-[0.12em] text-white" />
+                className="px-3 py-2 text-phx-2xs font-black uppercase tracking-[0.12em] text-white" />
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
@@ -211,11 +211,11 @@ function ChronicLateTable({ rows }: { rows: ChronicLateRow[] }) {
           <thead>
             <tr className="bg-slate-900 text-left">
               <SortableTh label="Name" sortKey="name" sort={table.sort} onSort={table.toggleSort}
-                className="px-3 py-2 text-[10px] font-black uppercase tracking-[0.12em] text-white" />
+                className="px-3 py-2 text-phx-2xs font-black uppercase tracking-[0.12em] text-white" />
               <SortableTh label="Late Days" sortKey="lateDays" sort={table.sort} onSort={table.toggleSort} align="right"
-                className="px-3 py-2 text-[10px] font-black uppercase tracking-[0.12em] text-white" />
+                className="px-3 py-2 text-phx-2xs font-black uppercase tracking-[0.12em] text-white" />
               <SortableTh label="Rate" sortKey="lateRate" sort={table.sort} onSort={table.toggleSort} align="right"
-                className="px-3 py-2 text-[10px] font-black uppercase tracking-[0.12em] text-white" />
+                className="px-3 py-2 text-phx-2xs font-black uppercase tracking-[0.12em] text-white" />
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
@@ -270,7 +270,7 @@ export function CeoAttendanceTables({
     <div className="space-y-6 px-5 py-5">
       {hasMol && (
         <div>
-          <p className="mb-3 text-[9px] font-black uppercase tracking-[0.16em] text-amber-600">
+          <p className="mb-3 text-phx-3xs font-black uppercase tracking-[0.16em] text-amber-600">
             Managers on leave today ({managersOnLeave.length})
           </p>
           <ManagersOnLeaveTable rows={managersOnLeave} />
@@ -278,7 +278,7 @@ export function CeoAttendanceTables({
       )}
       {hasAbs && (
         <div>
-          <p className="mb-3 text-[9px] font-black uppercase tracking-[0.16em] text-rose-600">
+          <p className="mb-3 text-phx-3xs font-black uppercase tracking-[0.16em] text-rose-600">
             Absent today ({allAbsenteesCount})
           </p>
           <AbsenteesTable rows={absentees} allCount={allAbsenteesCount} />
@@ -286,7 +286,7 @@ export function CeoAttendanceTables({
       )}
       {hasLate && (
         <div>
-          <p className="mb-3 text-[9px] font-black uppercase tracking-[0.16em] text-slate-400">
+          <p className="mb-3 text-phx-3xs font-black uppercase tracking-[0.16em] text-slate-400">
             Chronic late — 30-day window ({chronicLate.length})
           </p>
           <ChronicLateTable rows={chronicLate} />

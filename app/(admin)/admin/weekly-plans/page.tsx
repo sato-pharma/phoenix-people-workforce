@@ -47,14 +47,14 @@ export default async function AdminWeeklyPlansPage({
                 <ClipboardCheck className="h-4 w-4" />
                 Review queue
               </div>
-              <p className="mt-1 text-[11px] leading-4 text-slate-300">Manager approvals, returns, and CEO decisions.</p>
+              <p className="mt-1 text-phx-xs leading-4 text-slate-300">Manager approvals, returns, and CEO decisions.</p>
             </div>
             <div className="border border-white/15 bg-white/10 p-3 backdrop-blur">
               <div className="flex items-center gap-2 text-emerald-100">
                 <ShieldCheck className="h-4 w-4" />
                 HR acknowledgement
               </div>
-              <p className="mt-1 text-[11px] leading-4 text-slate-300">Final approvals remain visible for HR follow-through.</p>
+              <p className="mt-1 text-phx-xs leading-4 text-slate-300">Final approvals remain visible for HR follow-through.</p>
             </div>
           </div>
         }

@@ -251,9 +251,9 @@ function TipsPanel({ onNavigate }: { onNavigate?: (scrollId: string) => void }) 
                 <p className="text-xs font-black text-phx-ink">{tip.title}</p>
                 <p className="text-xs leading-5 text-phx-ink-soft">{tip.body}</p>
                 {tip.href ? (
-                  <Link className="inline-flex w-fit items-center gap-1 rounded-lg border border-phx-accent px-2.5 py-1 text-[11px] font-black text-phx-accent transition hover:bg-phx-accent hover:text-white" href={tip.href}>{tip.actionLabel}</Link>
+                  <Link className="inline-flex w-fit items-center gap-1 rounded-lg border border-phx-accent px-2.5 py-1 text-phx-xs font-black text-phx-accent transition hover:bg-phx-accent hover:text-white" href={tip.href}>{tip.actionLabel}</Link>
                 ) : tip.scrollId ? (
-                  <button className="inline-flex w-fit items-center gap-1 rounded-lg border border-phx-accent px-2.5 py-1 text-[11px] font-black text-phx-accent transition hover:bg-phx-accent hover:text-white" onClick={() => { if (onNavigate) onNavigate(tip.scrollId!); else document.getElementById(tip.scrollId!)?.scrollIntoView({ behavior: "smooth", block: "start" }); }} type="button">{tip.actionLabel}</button>
+                  <button className="inline-flex w-fit items-center gap-1 rounded-lg border border-phx-accent px-2.5 py-1 text-phx-xs font-black text-phx-accent transition hover:bg-phx-accent hover:text-white" onClick={() => { if (onNavigate) onNavigate(tip.scrollId!); else document.getElementById(tip.scrollId!)?.scrollIntoView({ behavior: "smooth", block: "start" }); }} type="button">{tip.actionLabel}</button>
                 ) : null}
               </div>
             </div>
@@ -887,7 +887,7 @@ function UnknownTable({
       </div>
       <div className="max-h-72 overflow-auto">
         <table className="w-full text-sm">
-          <thead className="sticky top-0 bg-[#020617] text-left text-[11px] font-black uppercase tracking-[0.12em] text-white">
+          <thead className="sticky top-0 bg-[#020617] text-left text-phx-xs font-black uppercase tracking-[0.12em] text-white">
             <tr>
               <th className="px-4 py-2">Raw {rawLabel}</th>
               <th className="px-4 py-2 text-right">Rows</th>
@@ -912,9 +912,9 @@ function UnknownTable({
                       value={codes[row.raw] ?? ""}
                     />
                     {codes[row.raw] ? (
-                      <span className="shrink-0 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-black text-emerald-700">✓</span>
+                      <span className="shrink-0 rounded-full bg-emerald-100 px-2 py-0.5 text-phx-2xs font-black text-emerald-700">✓</span>
                     ) : (
-                      <span className="shrink-0 rounded-full bg-rose-50 px-2 py-0.5 text-[10px] font-black text-rose-500">○</span>
+                      <span className="shrink-0 rounded-full bg-rose-50 px-2 py-0.5 text-phx-2xs font-black text-rose-500">○</span>
                     )}
                   </div>
                 </td>
@@ -932,7 +932,7 @@ const fieldInputClass = "h-9 border border-phx-line px-2 text-sm text-phx-ink ou
 function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
     <label className="flex flex-col gap-1">
-      <span className="text-[10px] font-black uppercase tracking-[0.12em] text-phx-ink-faint">{label}</span>
+      <span className="text-phx-2xs font-black uppercase tracking-[0.12em] text-phx-ink-faint">{label}</span>
       {children}
     </label>
   );

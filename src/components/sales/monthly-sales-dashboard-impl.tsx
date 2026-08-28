@@ -185,7 +185,7 @@ function CurrencyTooltip({ active, payload, label }: { active?: boolean; payload
   if (!active || !payload || payload.length === 0) return null;
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-xl">
-      <p className="mb-1 text-[10px] font-black uppercase tracking-wider text-slate-400">{String(label ?? "")}</p>
+      <p className="mb-1 text-phx-2xs font-black uppercase tracking-wider text-slate-400">{String(label ?? "")}</p>
       <div className="space-y-1.5">
         {payload.map((entry, index) => {
           const name = String(entry.name ?? "");
@@ -195,9 +195,9 @@ function CurrencyTooltip({ active, payload, label }: { active?: boolean; payload
             <div key={index} className="flex items-center justify-between gap-4">
               <div className="flex items-center gap-2">
                 <span className="h-2 w-2 rounded-full" style={{ backgroundColor: String(entry.color ?? "#94A3B8") }} />
-                <span className="text-[11px] font-bold text-slate-600">{name}:</span>
+                <span className="text-phx-xs font-bold text-slate-600">{name}:</span>
               </div>
-              <span className="text-[11px] font-black text-slate-900">
+              <span className="text-phx-xs font-black text-slate-900">
                 {isPercent ? formatPercent(raw, { digits: 1 }) : formatCurrency(raw)}
               </span>
             </div>
@@ -223,7 +223,7 @@ function FilterSelect({
 }) {
   return (
     <label className="flex h-[58px] cursor-pointer flex-col justify-center rounded-[6px] border border-phx-line bg-white px-3 py-2 shadow-sm transition focus-within:border-phx-accent-line hover:border-phx-accent-line">
-      <span className="mb-1 flex items-center gap-1.5 text-[10px] font-black uppercase tracking-[0.14em] text-phx-ink-faint">
+      <span className="mb-1 flex items-center gap-1.5 text-phx-2xs font-black uppercase tracking-[0.14em] text-phx-ink-faint">
         {icon}
         {label}
       </span>
@@ -546,11 +546,11 @@ export function MonthlySalesDashboard({
         aside={
           <div className="grid grid-cols-2 gap-3">
             <div className="rounded-xl border border-white/15 bg-white/10 px-4 py-3 backdrop-blur">
-              <p className="text-[10px] font-black uppercase tracking-[0.15em] text-slate-300">Total Sales</p>
+              <p className="text-phx-2xs font-black uppercase tracking-[0.15em] text-slate-300">Total Sales</p>
               <p className="mt-1 text-xl font-black text-white">{compactEGP(totalSales)}</p>
             </div>
             <div className="rounded-xl border border-white/15 bg-white/10 px-4 py-3 backdrop-blur">
-              <p className="text-[10px] font-black uppercase tracking-[0.15em] text-slate-300">Top Manager</p>
+              <p className="text-phx-2xs font-black uppercase tracking-[0.15em] text-slate-300">Top Manager</p>
               <p className="mt-1 truncate text-sm font-black text-white">{topManager}</p>
             </div>
           </div>
@@ -564,7 +564,7 @@ export function MonthlySalesDashboard({
             <Filter className="h-4 w-4 text-orange-500" />
             Filters
             {activeFilterCount > 0 ? (
-              <span className="rounded-full bg-orange-100 px-2 py-0.5 text-[11px] font-black text-orange-700">
+              <span className="rounded-full bg-orange-100 px-2 py-0.5 text-phx-xs font-black text-orange-700">
                 {activeFilterCount} active
               </span>
             ) : null}

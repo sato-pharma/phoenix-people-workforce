@@ -69,11 +69,11 @@ export function DistributorWorkspaceShell({ distributors, children, weeklyOnly =
                 >
                   <span className="min-w-0">
                     <span className="block truncate font-bold">{d.name}</span>
-                    <span className={cn("block font-mono text-[11px]", active ? "text-slate-300" : "text-phx-ink-faint")}>{d.code}</span>
+                    <span className={cn("block font-mono text-phx-xs", active ? "text-slate-300" : "text-phx-ink-faint")}>{d.code}</span>
                   </span>
                   {d.weeklySupported ? (
                     <span className={cn(
-                      "shrink-0 rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-[0.1em]",
+                      "shrink-0 rounded-full px-2 py-0.5 text-phx-3xs font-black uppercase tracking-[0.1em]",
                       active ? "bg-white/15 text-white" : "bg-[#FFEAD5] text-phx-accent-press",
                     )}>Weekly</span>
                   ) : null}

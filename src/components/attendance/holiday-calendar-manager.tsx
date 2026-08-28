@@ -212,12 +212,12 @@ export function HolidayCalendarManager({ initialYear, initialView, initialError,
                   ref={isFocused ? focusedRowRef : undefined}
                 >
                   <div className="w-32 shrink-0">
-                    <p className="text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">Official</p>
+                    <p className="text-phx-xs font-black uppercase tracking-[0.14em] text-slate-500">Official</p>
                     <p className="text-sm font-bold text-slate-900">{row.officialDate}</p>
                   </div>
                   <div className="min-w-[12rem] flex-1">
                     <label className="block space-y-1">
-                      <span className="text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">Name</span>
+                      <span className="text-phx-xs font-black uppercase tracking-[0.14em] text-slate-500">Name</span>
                       <input
                         className="h-9 w-full rounded-lg border border-slate-200 px-2 text-sm font-semibold text-slate-900 outline-none focus:border-orange-300 focus:ring-2 focus:ring-orange-100 disabled:bg-slate-50"
                         disabled={!canEdit}
@@ -228,7 +228,7 @@ export function HolidayCalendarManager({ initialYear, initialView, initialError,
                   </div>
                   <div className="flex shrink-0 gap-2">
                     <label className="block w-36 space-y-1">
-                      <span className="text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">Observed from</span>
+                      <span className="text-phx-xs font-black uppercase tracking-[0.14em] text-slate-500">Observed from</span>
                       <input
                         className="h-9 w-full rounded-lg border border-slate-200 px-2 text-sm font-semibold text-slate-900 outline-none focus:border-orange-300 focus:ring-2 focus:ring-orange-100 disabled:bg-slate-50"
                         disabled={!canEdit}
@@ -238,7 +238,7 @@ export function HolidayCalendarManager({ initialYear, initialView, initialError,
                       />
                     </label>
                     <label className="block w-36 space-y-1">
-                      <span className="text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">Observed to</span>
+                      <span className="text-phx-xs font-black uppercase tracking-[0.14em] text-slate-500">Observed to</span>
                       <input
                         className="h-9 w-full rounded-lg border border-slate-200 px-2 text-sm font-semibold text-slate-900 outline-none focus:border-orange-300 focus:ring-2 focus:ring-orange-100 disabled:bg-slate-50"
                         disabled={!canEdit}
@@ -251,7 +251,7 @@ export function HolidayCalendarManager({ initialYear, initialView, initialError,
                   </div>
                   <div className="min-w-[10rem] flex-1">
                     <label className="block space-y-1">
-                      <span className="text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">Notes</span>
+                      <span className="text-phx-xs font-black uppercase tracking-[0.14em] text-slate-500">Notes</span>
                       <input
                         className="h-9 w-full rounded-lg border border-slate-200 px-2 text-sm font-medium text-slate-700 outline-none focus:border-orange-300 focus:ring-2 focus:ring-orange-100 disabled:bg-slate-50"
                         disabled={!canEdit}

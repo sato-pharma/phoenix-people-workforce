@@ -17,7 +17,7 @@ export function TableHeaderMenu({
     <details className="group relative">
       <summary className="flex cursor-pointer list-none items-center gap-1 text-xs font-semibold uppercase tracking-[0.12em] text-text-secondary">
         {label}
-        <span className="text-[10px] text-text-secondary group-open:rotate-180">v</span>
+        <span className="text-phx-2xs text-text-secondary group-open:rotate-180">v</span>
       </summary>
       <div className="absolute left-0 top-7 z-20 w-56 rounded-xl border border-border bg-card p-3 normal-case tracking-normal shadow-xl">
         <div className="mb-2 grid gap-2">

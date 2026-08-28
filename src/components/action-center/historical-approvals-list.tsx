@@ -61,12 +61,12 @@ export function HistoricalApprovalsList({ items }: Props) {
           <div className="flex flex-col gap-0.5">
             <div className="flex items-center gap-2">
               <span
-                className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[10px] font-black uppercase tracking-wide ${DECISION_CLASSES[item.decision]}`}
+                className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-phx-2xs font-black uppercase tracking-wide ${DECISION_CLASSES[item.decision]}`}
               >
                 <span className={`h-1.5 w-1.5 rounded-full ${DECISION_DOTS[item.decision]}`} />
                 {DECISION_LABEL[item.decision]}
               </span>
-              <span className="rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[10px] font-semibold text-slate-500 uppercase tracking-wide">
+              <span className="rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-phx-2xs font-semibold text-slate-500 uppercase tracking-wide">
                 {HISTORY_MODULE_LABELS[item.module]}
               </span>
             </div>

@@ -100,8 +100,8 @@ function Section(props: { title: string; count: number; children: ReactNode }) {
   return (
     <section className="border border-phx-line bg-white">
       <header className="flex items-center justify-between border-b border-phx-line bg-slate-900 px-4 py-2.5">
-        <h3 className="text-[11px] font-black uppercase tracking-[0.14em] text-white">{props.title}</h3>
-        <span className="text-[11px] font-bold text-slate-300">{props.count}</span>
+        <h3 className="text-phx-xs font-black uppercase tracking-[0.14em] text-white">{props.title}</h3>
+        <span className="text-phx-xs font-bold text-slate-300">{props.count}</span>
       </header>
       <div className="space-y-2 p-3">{props.children}</div>
     </section>

@@ -90,7 +90,7 @@ function statusCellClass(cell: FieldWorkforceDayCell) {
 function LegendChip({ children, className, label }: { children: string; className: string; label: string }) {
   return (
     <div className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 shadow-sm">
-      <span className={cn("inline-flex h-7 min-w-7 items-center justify-center rounded-md border px-1.5 text-[11px] font-black", className)}>
+      <span className={cn("inline-flex h-7 min-w-7 items-center justify-center rounded-md border px-1.5 text-phx-xs font-black", className)}>
         {children}
       </span>
       {label}
@@ -183,7 +183,7 @@ function RepMonthRow({ employee, isFirst }: { employee: FieldWorkforceEmployeeSu
             {hierarchy ? ` · ${hierarchy}` : ""}
           </p>
         </div>
-        <div className="flex items-center gap-3 text-[11px] font-bold">
+        <div className="flex items-center gap-3 text-phx-xs font-bold">
           <span className="text-emerald-700">{ownVisits} visits</span>
           {coachingDays > 0 ? <span className="text-fuchsia-700">{coachingDays} DV days</span> : null}
           <span className="text-slate-500">{employee.compliancePercent}% compliance</span>
@@ -194,13 +194,13 @@ function RepMonthRow({ employee, isFirst }: { employee: FieldWorkforceEmployeeSu
           {employee.timeline.map((cell) => (
             <div
               className={cn(
-                "rounded-md py-1 text-center text-[9px] font-black uppercase tracking-tight text-slate-500",
+                "rounded-md py-1 text-center text-phx-3xs font-black uppercase tracking-tight text-slate-500",
                 cell.isFriday ? "bg-slate-100" : "",
                 cell.isPublicHoliday ? "bg-amber-50 text-amber-700" : "",
               )}
               key={`${cell.dateIso}-header`}
             >
-              <span className="block text-[11px] leading-tight text-slate-900">{cell.dayNumber}</span>
+              <span className="block text-phx-xs leading-tight text-slate-900">{cell.dayNumber}</span>
               <span>{weekday(cell.dateIso)}</span>
             </div>
           ))}
@@ -235,7 +235,7 @@ function ManagerBlock({ group }: { group: TeamCalendarGroup }) {
         <span className="text-xs font-black uppercase tracking-wide text-white">
           {managerBlockLabel(group)}
         </span>
-        <span className="whitespace-nowrap text-[11px] font-bold text-slate-300">{group.members.length} shown</span>
+        <span className="whitespace-nowrap text-phx-xs font-bold text-slate-300">{group.members.length} shown</span>
       </div>
       {group.members.map((employee, index) => (
         <RepMonthRow employee={employee} isFirst={index === 0} key={employee.hrId} />

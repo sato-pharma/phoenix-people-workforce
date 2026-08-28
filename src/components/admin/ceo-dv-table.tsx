@@ -69,7 +69,7 @@ export function CeoDvTable({
           onClear={table.clearQuery}
         />
         <div className="flex items-center gap-2">
-          <span className="text-[10px] text-slate-400">{dateFrom} → {dateTo}</span>
+          <span className="text-phx-2xs text-slate-400">{dateFrom} → {dateTo}</span>
           <ExportXlsxButton
             title="Double-Visit Intelligence"
             subtitle={`${dateFrom} to ${dateTo}`}
@@ -89,7 +89,7 @@ export function CeoDvTable({
           />
           <Link
             href="/admin/double-visit-analytics"
-            className="inline-flex items-center gap-1.5 border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-bold text-slate-700 hover:border-orange-300 hover:text-orange-700"
+            className="inline-flex items-center gap-1.5 border border-slate-200 bg-white px-3 py-1.5 text-phx-xs font-bold text-slate-700 hover:border-orange-300 hover:text-orange-700"
           >
             Full Analytics <ExternalLink className="h-3 w-3" />
           </Link>
@@ -100,14 +100,14 @@ export function CeoDvTable({
         <table className="w-full border-collapse text-xs">
           <thead>
             <tr className="bg-slate-900 text-left">
-              <SortableTh label="Manager"      sortKey="managerName"        sort={table.sort} onSort={table.toggleSort} className="px-3 py-2.5 text-[10px] font-black uppercase tracking-[0.12em] text-white" />
-              <SortableTh label="Role"         sortKey="roleCode"           sort={table.sort} onSort={table.toggleSort} className="px-3 py-2.5 text-[10px] font-black uppercase tracking-[0.12em] text-white" />
-              <SortableTh label="MRs"          sortKey="distinctMrs"        sort={table.sort} onSort={table.toggleSort} className="px-3 py-2.5 text-[10px] font-black uppercase tracking-[0.12em] text-white text-right" align="right" />
-              <SortableTh label="Over-Focused" sortKey="overFocusedMrCount" sort={table.sort} onSort={table.toggleSort} className="px-3 py-2.5 text-[10px] font-black uppercase tracking-[0.12em] text-amber-300 text-right" align="right" />
-              <SortableTh label="Neglected"    sortKey="neglectedMrCount"   sort={table.sort} onSort={table.toggleSort} className="px-3 py-2.5 text-[10px] font-black uppercase tracking-[0.12em] text-rose-300 text-right" align="right" />
-              <SortableTh label="Neglect %"    sortKey="neglectIndex"       sort={table.sort} onSort={table.toggleSort} className="px-3 py-2.5 text-[10px] font-black uppercase tracking-[0.12em] text-rose-300 text-right" align="right" />
-              <SortableTh label="Last DV"      sortKey="daysSinceLastDv"    sort={table.sort} onSort={table.toggleSort} className="px-3 py-2.5 text-[10px] font-black uppercase tracking-[0.12em] text-white text-right" align="right" />
-              <SortableTh label="Coverage"     sortKey="coveragePct"        sort={table.sort} onSort={table.toggleSort} className="px-3 py-2.5 text-[10px] font-black uppercase tracking-[0.12em] text-emerald-300 text-right" align="right" />
+              <SortableTh label="Manager"      sortKey="managerName"        sort={table.sort} onSort={table.toggleSort} className="px-3 py-2.5 text-phx-2xs font-black uppercase tracking-[0.12em] text-white" />
+              <SortableTh label="Role"         sortKey="roleCode"           sort={table.sort} onSort={table.toggleSort} className="px-3 py-2.5 text-phx-2xs font-black uppercase tracking-[0.12em] text-white" />
+              <SortableTh label="MRs"          sortKey="distinctMrs"        sort={table.sort} onSort={table.toggleSort} className="px-3 py-2.5 text-phx-2xs font-black uppercase tracking-[0.12em] text-white text-right" align="right" />
+              <SortableTh label="Over-Focused" sortKey="overFocusedMrCount" sort={table.sort} onSort={table.toggleSort} className="px-3 py-2.5 text-phx-2xs font-black uppercase tracking-[0.12em] text-amber-300 text-right" align="right" />
+              <SortableTh label="Neglected"    sortKey="neglectedMrCount"   sort={table.sort} onSort={table.toggleSort} className="px-3 py-2.5 text-phx-2xs font-black uppercase tracking-[0.12em] text-rose-300 text-right" align="right" />
+              <SortableTh label="Neglect %"    sortKey="neglectIndex"       sort={table.sort} onSort={table.toggleSort} className="px-3 py-2.5 text-phx-2xs font-black uppercase tracking-[0.12em] text-rose-300 text-right" align="right" />
+              <SortableTh label="Last DV"      sortKey="daysSinceLastDv"    sort={table.sort} onSort={table.toggleSort} className="px-3 py-2.5 text-phx-2xs font-black uppercase tracking-[0.12em] text-white text-right" align="right" />
+              <SortableTh label="Coverage"     sortKey="coveragePct"        sort={table.sort} onSort={table.toggleSort} className="px-3 py-2.5 text-phx-2xs font-black uppercase tracking-[0.12em] text-emerald-300 text-right" align="right" />
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
@@ -123,10 +123,10 @@ export function CeoDvTable({
                   <tr key={row.managerHrId} className="bg-white hover:bg-slate-50">
                     <td className="px-3 py-2">
                       <span className="font-semibold text-slate-900">{row.managerName}</span>
-                      {row.lineName ? <span className="ml-1.5 text-[10px] text-slate-400">{row.lineName}</span> : null}
+                      {row.lineName ? <span className="ml-1.5 text-phx-2xs text-slate-400">{row.lineName}</span> : null}
                     </td>
                     <td className="px-3 py-2">
-                      <span className="border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[10px] font-bold text-slate-600">
+                      <span className="border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-phx-2xs font-bold text-slate-600">
                         {row.roleCode ?? "—"}
                       </span>
                     </td>

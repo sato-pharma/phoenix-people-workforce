@@ -184,7 +184,7 @@ function Avatar({
   return (
     <span
       aria-hidden
-      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-slate-700 to-slate-900 text-[11px] font-black text-white"
+      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-slate-700 to-slate-900 text-phx-xs font-black text-white"
     >
       {initials(name)}
     </span>
@@ -217,16 +217,16 @@ function PersonNode({
       <Avatar name={row.displayName} vacancy={isVacancy} />
       <div className="min-w-0 flex-1">
         <div className="flex items-start justify-between gap-2">
-          <p className="whitespace-normal break-words text-[12px] font-bold leading-tight text-slate-900">
+          <p className="whitespace-normal break-words text-phx-sm font-bold leading-tight text-slate-900">
             {isVacancy ? "Open Vacancy" : formatEmployeeDisplayName(row.displayName)}
           </p>
           {isVacancy ? (
-            <span className="shrink-0 rounded-md bg-orange-100 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-[0.12em] text-orange-700">
+            <span className="shrink-0 rounded-md bg-orange-100 px-1.5 py-0.5 text-phx-3xs font-black uppercase tracking-[0.12em] text-orange-700">
               Vacant
             </span>
           ) : null}
         </div>
-        <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px] text-slate-500">
+        <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-phx-2xs text-slate-500">
           <span className="font-mono font-semibold text-slate-400">{row.hrId}</span>
           {/* A vacancy normally hides its title because the PLACE already says which seat is
               open — "Open Vacancy" over a Cairo pin reads correctly on a sales chart. A Head
@@ -242,7 +242,7 @@ function PersonNode({
             is shown only when its value exists, so managers/office staff without
             an area never render an empty pill. */}
         {row.hireDate || place ? (
-          <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[10px] text-slate-500">
+          <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-phx-2xs text-slate-500">
             {row.hireDate ? (
               <span className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-1.5 py-0.5 font-medium">
                 <span aria-hidden className="h-1 w-1 rounded-full bg-slate-400" />
@@ -299,7 +299,7 @@ function PersonNode({
         <button
           aria-expanded={!collapsed}
           aria-label={collapsed ? "Expand reports" : "Collapse reports"}
-          className="ml-1 inline-flex shrink-0 items-center gap-1 self-center rounded-md border border-slate-200 bg-white px-1.5 py-1 text-[10px] font-bold text-slate-500 shadow-sm transition hover:border-orange-300 hover:text-orange-600"
+          className="ml-1 inline-flex shrink-0 items-center gap-1 self-center rounded-md border border-slate-200 bg-white px-1.5 py-1 text-phx-2xs font-bold text-slate-500 shadow-sm transition hover:border-orange-300 hover:text-orange-600"
           onClick={onToggle}
           type="button"
         >
@@ -425,7 +425,7 @@ function ManagerLane({
               <span
                 aria-hidden
                 className={cn(
-                  "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[11px] font-black",
+                  "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-phx-xs font-black",
                   isVacantManagerSeat
                     ? "border border-dashed border-orange-400 bg-white text-orange-500"
                     : "bg-white/10 text-white ring-1 ring-white/20",
@@ -436,19 +436,19 @@ function ManagerLane({
               <div className="min-w-0 flex-1">
                 <p
                   className={cn(
-                    "text-[9px] font-black uppercase tracking-[0.14em]",
+                    "text-phx-3xs font-black uppercase tracking-[0.14em]",
                     isVacantManagerSeat ? "text-orange-600" : "text-orange-300",
                   )}
                 >
                   {group.title}
                 </p>
-                <p className="mt-0.5 break-words text-[13px] font-bold leading-snug">
+                <p className="mt-0.5 break-words text-phx-md font-bold leading-snug">
                   {isVacantManagerSeat ? "Open Seat" : formatEmployeeDisplayName(group.name)}
                 </p>
                 {managerScope ? (
                   <p
                     className={cn(
-                      "mt-0.5 break-words text-[10px] font-semibold",
+                      "mt-0.5 break-words text-phx-2xs font-semibold",
                       isVacantManagerSeat ? "text-orange-600" : "text-orange-200",
                     )}
                   >
@@ -456,7 +456,7 @@ function ManagerLane({
                   </p>
                 ) : null}
                 {dsmFacts ? (
-                  <p className="mt-0.5 break-words text-[10px] font-semibold text-orange-200">
+                  <p className="mt-0.5 break-words text-phx-2xs font-semibold text-orange-200">
                     {dsmFacts}
                   </p>
                 ) : null}
@@ -486,7 +486,7 @@ function ManagerLane({
           ) : null}
           <span
             className={cn(
-              "rounded-md px-1.5 py-1 text-center text-[10px] font-black leading-none ring-1",
+              "rounded-md px-1.5 py-1 text-center text-phx-2xs font-black leading-none ring-1",
               isVacantManagerSeat
                 ? "bg-white text-orange-600 ring-orange-200"
                 : "bg-white/10 text-white ring-white/20",
@@ -518,7 +518,7 @@ function ManagerLane({
       </div>
 
       {/* Team summary */}
-      <div className="flex items-center justify-between border-y border-slate-100 bg-slate-50/70 px-3 py-1.5 text-[10px]">
+      <div className="flex items-center justify-between border-y border-slate-100 bg-slate-50/70 px-3 py-1.5 text-phx-2xs">
         <span className="font-semibold text-slate-500">
           {group.members.length} team {group.members.length === 1 ? "member" : "members"}
         </span>
@@ -535,7 +535,7 @@ function ManagerLane({
       {!laneCollapsed ? (
         <div className="px-3 py-3">
           {group.members.length === 0 ? (
-            <div className="rounded-lg border border-dashed border-slate-300 px-3 py-4 text-center text-[11px] text-slate-400">
+            <div className="rounded-lg border border-dashed border-slate-300 px-3 py-4 text-center text-phx-xs text-slate-400">
               No team rows under this manager.
             </div>
           ) : (
@@ -592,7 +592,7 @@ function SpineNode({
     <>
       <div
         className={cn(
-          "mb-1 flex items-center justify-center gap-1.5 text-[10px] font-black uppercase tracking-[0.16em]",
+          "mb-1 flex items-center justify-center gap-1.5 text-phx-2xs font-black uppercase tracking-[0.16em]",
           tone === "dark" ? "text-orange-300" : "text-orange-600",
         )}
       >
@@ -610,7 +610,7 @@ function SpineNode({
       {facts ? (
         <p
           className={cn(
-            "mt-1 break-words text-[10px] font-semibold",
+            "mt-1 break-words text-phx-2xs font-semibold",
             tone === "dark" ? "text-orange-200" : "text-orange-600",
           )}
         >
@@ -721,7 +721,7 @@ function KpiCard({
         )}
       />
       <div className="relative flex items-start justify-between gap-2">
-        <p className="break-words text-[10px] font-black uppercase tracking-[0.12em] text-slate-500">
+        <p className="break-words text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">
           {label}
         </p>
         <span
@@ -749,10 +749,10 @@ function KpiCard({
         >
           <div className={cn("h-full transition-all duration-500", TONE_FILL[tone])} style={{ width: `${pct}%` }} />
         </div>
-        <span className="text-[10px] font-black text-slate-400">{pct}%</span>
+        <span className="text-phx-2xs font-black text-slate-400">{pct}%</span>
       </div>
       {vacant > 0 ? (
-        <p className="relative mt-1.5 text-[10px] font-black uppercase tracking-[0.08em] text-orange-600">
+        <p className="relative mt-1.5 text-phx-2xs font-black uppercase tracking-[0.08em] text-orange-600">
           {vacant} vacant
         </p>
       ) : null}
@@ -783,14 +783,14 @@ function CompletionBar({
           <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
           <div>
             <h3 className="text-sm font-black text-slate-900">Structure Completion</h3>
-            <p className="mt-0.5 text-[11px] text-slate-500">
+            <p className="mt-0.5 text-phx-xs text-slate-500">
               {employees} employees across {scopeLabel}
             </p>
           </div>
         </div>
         {total > 0 ? (
           <div className="text-right">
-            <p className="text-[10px] font-black uppercase tracking-[0.12em] text-slate-500">
+            <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">
               Filled
             </p>
             <p className="text-base font-black text-slate-900">{filledPct}%</p>
@@ -813,7 +813,7 @@ function CompletionBar({
               style={{ width: `${vacantPct}%`, minWidth: vacant > 0 ? "3px" : "0" }}
             />
           </div>
-          <div className="mt-2.5 flex flex-wrap items-center gap-3 text-[11px]">
+          <div className="mt-2.5 flex flex-wrap items-center gap-3 text-phx-xs">
             <span className="inline-flex items-center gap-1.5 text-slate-600">
               <span aria-hidden className="inline-block h-2 w-2 rounded-sm bg-emerald-500" />
               <span className="font-medium">Filled {filledPct}%</span>
@@ -822,14 +822,14 @@ function CompletionBar({
               <span aria-hidden className="inline-block h-2 w-2 rounded-sm bg-orange-400" />
               <span className="font-medium">Vacant {vacantPct}%</span>
             </span>
-            <span className="ml-auto text-[10px] font-black uppercase tracking-[0.1em] text-slate-400">
+            <span className="ml-auto text-phx-2xs font-black uppercase tracking-[0.1em] text-slate-400">
               Total {total}
             </span>
           </div>
         </>
       ) : (
         <div className="flex h-3 w-full items-center justify-center rounded-full bg-slate-100">
-          <span className="text-[10px] text-slate-400">No data</span>
+          <span className="text-phx-2xs text-slate-400">No data</span>
         </div>
       )}
     </div>
@@ -854,11 +854,11 @@ function TierLabel({
   return (
     <div className="mb-2 flex items-center gap-2">
       <span aria-hidden className={cn("h-1.5 w-1.5 rounded-full", dotClassName)} />
-      <p className={cn("text-[10px] font-black uppercase tracking-[0.14em]", textClassName)}>
+      <p className={cn("text-phx-2xs font-black uppercase tracking-[0.14em]", textClassName)}>
         {text}
       </p>
       {typeof count === "number" ? (
-        <span className="text-[10px] font-semibold text-slate-400">
+        <span className="text-phx-2xs font-semibold text-slate-400">
           · {count} {count === 1 ? "lane" : "lanes"}
         </span>
       ) : null}
@@ -1301,19 +1301,19 @@ export function OrgChartTree({
                           <>
                             <span
                               aria-hidden
-                              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-orange-500 text-[11px] font-black text-white"
+                              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-orange-500 text-phx-xs font-black text-white"
                             >
                               {initials(group.name)}
                             </span>
                             <div className="min-w-0">
-                              <p className="text-[9px] font-black uppercase tracking-[0.14em] text-orange-700">
+                              <p className="text-phx-3xs font-black uppercase tracking-[0.14em] text-orange-700">
                                 {group.title}
                               </p>
-                              <p className="mt-0.5 break-words text-[13px] font-bold text-slate-900">
+                              <p className="mt-0.5 break-words text-phx-md font-bold text-slate-900">
                                 {formatEmployeeDisplayName(group.name)}
                               </p>
                               {rsmFacts ? (
-                                <p className="mt-0.5 break-words text-[10px] font-semibold text-orange-700">
+                                <p className="mt-0.5 break-words text-phx-2xs font-semibold text-orange-700">
                                   {rsmFacts}
                                 </p>
                               ) : null}
@@ -1333,7 +1333,7 @@ export function OrgChartTree({
                           <div className="flex items-center gap-2.5">{rsmInner}</div>
                         );
                       })()}
-                      <div className="flex items-center gap-1.5 text-[10px]">
+                      <div className="flex items-center gap-1.5 text-phx-2xs">
                         <span className="inline-flex items-center gap-1 rounded-md bg-white px-1.5 py-1 font-bold text-slate-600 ring-1 ring-orange-200">
                           <Layers className="h-3 w-3 text-orange-500" />
                           {childLanes.length} DSM lanes
@@ -1366,7 +1366,7 @@ export function OrgChartTree({
                           );
                         })
                       ) : (
-                        <div className="rounded-lg border border-dashed border-slate-300 p-4 text-center text-[11px] text-slate-400">
+                        <div className="rounded-lg border border-dashed border-slate-300 p-4 text-center text-phx-xs text-slate-400">
                           No DSM lanes under this regional manager.
                         </div>
                       )}
@@ -1408,7 +1408,7 @@ export function OrgChartTree({
               </div>
             ) : null}
 
-            <p className="pt-1 text-[10px] font-semibold text-slate-400">
+            <p className="pt-1 text-phx-2xs font-semibold text-slate-400">
               {filledLaneCount} staffed {filledLaneCount === 1 ? "lane" : "lanes"} shown
             </p>
           </div>

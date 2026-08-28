@@ -43,14 +43,14 @@ export default async function AdminPlanningCalendarPage() {
                 <CalendarDays className="h-4 w-4" />
                 Plan coverage
               </div>
-              <p className="mt-1 text-[11px] leading-4 text-slate-300">Weekly and monthly submissions in one calendar.</p>
+              <p className="mt-1 text-phx-xs leading-4 text-slate-300">Weekly and monthly submissions in one calendar.</p>
             </div>
             <div className="border border-white/15 bg-white/10 p-3 backdrop-blur">
               <div className="flex items-center gap-2 text-amber-100">
                 <TriangleAlert className="h-4 w-4" />
                 Conflict signals
               </div>
-              <p className="mt-1 text-[11px] leading-4 text-slate-300">Same-line overlaps stay visible for review.</p>
+              <p className="mt-1 text-phx-xs leading-4 text-slate-300">Same-line overlaps stay visible for review.</p>
             </div>
           </div>
         }

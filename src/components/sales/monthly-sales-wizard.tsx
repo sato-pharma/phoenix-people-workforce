@@ -372,7 +372,7 @@ export function MonthlySalesWizard({
                         {index + 1}
                       </span>
                       <span className="flex-1 truncate">{step.distributorName}</span>
-                      <span className={cn("rounded-full border px-2 py-0.5 text-[10px] font-black uppercase", active ? "border-white/40 text-white" : statusTone(step.stepStatus))}>
+                      <span className={cn("rounded-full border px-2 py-0.5 text-phx-2xs font-black uppercase", active ? "border-white/40 text-white" : statusTone(step.stepStatus))}>
                         {step.stepStatus}
                       </span>
                     </button>

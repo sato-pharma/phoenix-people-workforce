@@ -141,7 +141,7 @@ function monthLabel(period: string): string {
 
 function Badge({ className, children }: { className?: string; children: React.ReactNode }) {
   return (
-    <span className={cn("inline-flex items-center rounded-sm border px-2 py-0.5 text-[10px] font-black uppercase tracking-wide", className)}>
+    <span className={cn("inline-flex items-center rounded-sm border px-2 py-0.5 text-phx-2xs font-black uppercase tracking-wide", className)}>
       {children}
     </span>
   );
@@ -231,7 +231,7 @@ function FacetSelect({
       <div className="absolute left-0 z-30 mt-1 flex max-h-72 w-64 flex-col gap-0.5 overflow-auto rounded-sm border border-slate-200 bg-white p-2 shadow-lg">
         {selected.length > 0 ? (
           <button
-            className="mb-1 self-start text-[11px] font-semibold text-slate-500 underline"
+            className="mb-1 self-start text-phx-xs font-semibold text-slate-500 underline"
             onClick={() => onChange([])}
             type="button"
           >
@@ -330,10 +330,10 @@ function FlightPath({
           >
             <span className="flex items-center gap-1.5">
               <span className={cn("h-2 w-2 rounded-sm", STAGE_META[stage].bar)} />
-              <span className="text-[10px] font-black uppercase tracking-wide text-slate-500">{STAGE_META[stage].label}</span>
+              <span className="text-phx-2xs font-black uppercase tracking-wide text-slate-500">{STAGE_META[stage].label}</span>
             </span>
             <span className="text-sm font-bold tabular-nums text-slate-900">{money(totals[stage].cost)}</span>
-            <span className="text-[11px] text-slate-500">
+            <span className="text-phx-xs text-slate-500">
               {totals[stage].count} request(s) · {STAGE_META[stage].help}
             </span>
           </button>
@@ -410,7 +410,7 @@ function JudgementCalendar({ rows, dataFrontier }: { rows: RoiTrackerRow[]; data
                   style={{ width: `${Math.max(Math.round(share * 100), 2)}%` }}
                 />
               </div>
-              <span className="w-24 shrink-0 text-right text-[11px] text-slate-500">
+              <span className="w-24 shrink-0 text-right text-phx-xs text-slate-500">
                 {entry.judgedCount > 0 ? `${entry.judgedCount}/${entry.count} judged` : `${entry.count} pending`}
               </span>
             </li>
@@ -490,7 +490,7 @@ function WaitingOnAPerson({ rows, onPick }: { rows: RoiTrackerRow[]; onPick: (re
         ))}
       </ul>
       {waiting.length > 8 ? (
-        <p className="text-[11px] text-slate-500">Showing the 8 longest-waiting of {waiting.length}.</p>
+        <p className="text-phx-xs text-slate-500">Showing the 8 longest-waiting of {waiting.length}.</p>
       ) : null}
     </section>
   );
@@ -524,7 +524,7 @@ const STEP_TONE: Record<string, { bar: string; dot: string }> = {
 function ApprovalTracker({ row }: { row: RoiTrackerRow }) {
   const steps = row.approvals.filter((approval) => !approval.isCc);
   if (steps.length === 0) {
-    return <p className="text-[11px] text-slate-400">No approval chain on this request.</p>;
+    return <p className="text-phx-xs text-slate-400">No approval chain on this request.</p>;
   }
 
   const currentIndex = steps.findIndex((step) => step.status === "current");
@@ -563,7 +563,7 @@ function ApprovalTracker({ row }: { row: RoiTrackerRow }) {
       </div>
       <span
         className={cn(
-          "text-[11px] font-semibold",
+          "text-phx-xs font-semibold",
           rejected ? "text-rose-600" : current ? "text-amber-700" : returned ? "text-orange-700" : "text-emerald-700",
         )}
       >
@@ -646,16 +646,16 @@ function RequestCard({
 
         {/* The clock — this surface's signature, in place of the archive's static coverage label. */}
         <div className="flex flex-col gap-1 rounded-sm border border-slate-100 bg-slate-50/50 p-2">
-          <span className="text-[10px] font-black uppercase tracking-wide text-slate-500">Judgeable</span>
+          <span className="text-phx-2xs font-black uppercase tracking-wide text-slate-500">Judgeable</span>
           <span className="text-lg font-bold text-slate-900">{month ? monthLabel(month) : "—"}</span>
-          <span className="text-[11px] text-slate-500">
+          <span className="text-phx-xs text-slate-500">
             {row.roiWindow ? `Window ${row.roiWindow}` : "No window — not paid yet"}
           </span>
-          <span className="text-[11px] text-slate-500">{ROI_DATA_COVERAGE_LABEL[row.dataCoverage]}</span>
+          <span className="text-phx-xs text-slate-500">{ROI_DATA_COVERAGE_LABEL[row.dataCoverage]}</span>
         </div>
 
         <div className="flex flex-col gap-1 rounded-sm border border-slate-100 bg-slate-50/50 p-2">
-          <span className="text-[10px] font-black uppercase tracking-wide text-slate-500">Committed vs returned</span>
+          <span className="text-phx-2xs font-black uppercase tracking-wide text-slate-500">Committed vs returned</span>
           <div className="flex items-baseline gap-1.5">
             <span className="text-lg font-bold tabular-nums text-slate-900">
               {measured ? money(row.actualSalesValue) : "—"}
@@ -670,7 +670,7 @@ function RequestCard({
               />
             ) : null}
           </div>
-          <span className="text-[11px] tabular-nums text-slate-500">
+          <span className="text-phx-xs tabular-nums text-slate-500">
             spent {money(row.estimatedCost)} ·{" "}
             {measured ? `${units(row.actualSalesUnits)} of ${units(forecastUnits)} units` : `${units(forecastUnits)} units forecast`}
           </span>

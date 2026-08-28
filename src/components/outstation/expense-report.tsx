@@ -321,7 +321,7 @@ function HrDecisionControls({
         onChange={(checked) => onUpdate({ hrApproved: checked })}
       />
       <div className="flex items-center gap-2">
-        <span className="w-12 shrink-0 text-[10px] font-bold uppercase tracking-[0.1em] text-text-secondary">
+        <span className="w-12 shrink-0 text-phx-2xs font-bold uppercase tracking-[0.1em] text-text-secondary">
           Amount
         </span>
         <input
@@ -341,7 +341,7 @@ function HrDecisionControls({
         value={approval.hrComment}
       />
       {reasonMissing ? (
-        <p className="text-[10px] font-semibold text-rose-600">Add a reason for the changed amount.</p>
+        <p className="text-phx-2xs font-semibold text-rose-600">Add a reason for the changed amount.</p>
       ) : null}
     </div>
   );
@@ -619,36 +619,36 @@ export function ExpenseReport({
     return (
       <div className="space-y-3">
         <div className="flex flex-wrap items-center gap-2">
-          <span className="text-[11px] font-bold uppercase tracking-[0.14em] text-text-secondary">Verified workload</span>
+          <span className="text-phx-xs font-bold uppercase tracking-[0.14em] text-text-secondary">Verified workload</span>
           <Badge variant={tone}>{data.matchStatus.replace(/_/g, " ")}</Badge>
-          <span className="text-[11px] text-text-secondary">{data.sourceLabel}</span>
+          <span className="text-phx-xs text-text-secondary">{data.sourceLabel}</span>
         </div>
         <div className="grid gap-2 sm:grid-cols-3">
           <div className="rounded-xl border border-slate-200 bg-white p-3">
-            <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-text-secondary">Declared (sheet)</p>
+            <p className="text-phx-2xs font-bold uppercase tracking-[0.12em] text-text-secondary">Declared (sheet)</p>
             <p className="mt-1 font-mono text-sm font-semibold text-text">
               AM {formatNumber(record.amWorkload)} · PM {formatNumber(record.pmWorkload)}
             </p>
           </div>
           <div className={cn("rounded-xl border p-3", mismatch ? "border-rose-300 bg-rose-50" : "border-emerald-200 bg-emerald-50")}>
-            <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-text-secondary">Actual (evidence)</p>
+            <p className="text-phx-2xs font-bold uppercase tracking-[0.12em] text-text-secondary">Actual (evidence)</p>
             <p className="mt-1 font-mono text-sm font-semibold text-text">
               AM {formatNumber(data.amWorkload)} · PM {formatNumber(data.pmWorkload)}
             </p>
             {mismatch ? (
-              <p className="mt-0.5 text-[10px] font-semibold text-rose-600">
+              <p className="mt-0.5 text-phx-2xs font-semibold text-rose-600">
                 ≠ declared ({formatNumber(actualTotal)} actual vs {formatNumber(declaredTotal)} declared)
               </p>
             ) : null}
           </div>
           <div className="rounded-xl border border-slate-200 bg-white p-3">
-            <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-text-secondary">Visit type</p>
+            <p className="text-phx-2xs font-bold uppercase tracking-[0.12em] text-text-secondary">Visit type</p>
             <p className="mt-1 font-mono text-sm font-semibold text-text">
               Regular {formatNumber(data.regularVisits)} · Campaign {formatNumber(data.campaignVisits)}
             </p>
             {/* Doctor/pharmacy/institution mix of the regular visits — display-only context so the
                 approver can see WHAT kind of fieldwork justified the trip; no rule consumes it. */}
-            <p className="mt-0.5 text-[10px] text-text-secondary">
+            <p className="mt-0.5 text-phx-2xs text-text-secondary">
               Doctor {formatNumber(data.doctorVisits)} · Pharmacy {formatNumber(data.pharmacyVisits)} · Institution{" "}
               {formatNumber(data.institutionVisits)}
               {data.regularVisits > data.doctorVisits + data.pharmacyVisits + data.institutionVisits
@@ -686,7 +686,7 @@ export function ExpenseReport({
             )}
             renderTable={() => (
               <PortalDesktopTable className="text-xs" minWidth="0px">
-            <thead className="bg-slate-50 text-[10px] uppercase tracking-[0.1em] text-text-secondary">
+            <thead className="bg-slate-50 text-phx-2xs uppercase tracking-[0.1em] text-text-secondary">
               <tr>
                 <th className="px-3 py-2 font-semibold">Day</th>
                 <th className="px-3 py-2 text-right font-semibold">AM</th>
@@ -1010,7 +1010,7 @@ export function ExpenseReport({
         />
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="relative z-10">
-            <p className="inline-flex rounded-full border border-phx-accent/35 bg-phx-accent/12 px-3 py-1 text-[11px] font-black uppercase tracking-[0.22em] text-phx-accent">
+            <p className="inline-flex rounded-full border border-phx-accent/35 bg-phx-accent/12 px-3 py-1 text-phx-xs font-black uppercase tracking-[0.22em] text-phx-accent">
               Outstation Expense Operations
             </p>
             <h2 className="mt-3 text-2xl font-black tracking-tight text-white">Outstation Expenses Report</h2>
@@ -1170,7 +1170,7 @@ export function ExpenseReport({
               { label: "Unmapped", tone: "bg-rose-50 text-rose-800", value: formatNumber(unmappedRecords.length) },
             ].map((metric) => (
               <div className={cn("rounded-2xl border border-phx-line p-4", metric.tone)} key={metric.label}>
-                <p className="text-[10px] font-bold uppercase tracking-[0.16em] opacity-70">{metric.label}</p>
+                <p className="text-phx-2xs font-bold uppercase tracking-[0.16em] opacity-70">{metric.label}</p>
                 <p className="mt-2 truncate font-mono text-lg font-bold">{metric.value}</p>
               </div>
             ))}
@@ -1320,19 +1320,19 @@ export function ExpenseReport({
                       <div className="fixed inset-0 z-30" onClick={() => setColumnsMenuOpen(false)} />
                       <div className="absolute right-0 z-40 mt-1 max-h-[340px] w-64 overflow-y-auto rounded-2xl border border-border bg-card p-2 shadow-xl">
                         <div className="flex items-center justify-between px-2 pb-2 pt-1">
-                          <span className="text-[11px] font-bold uppercase tracking-[0.14em] text-text-secondary">
+                          <span className="text-phx-xs font-bold uppercase tracking-[0.14em] text-text-secondary">
                             Detail columns
                           </span>
                           <div className="flex items-center gap-2">
                             <button
-                              className="text-[11px] font-semibold text-phx-accent-hover hover:underline"
+                              className="text-phx-xs font-semibold text-phx-accent-hover hover:underline"
                               onClick={() => setHiddenColumns(new Set())}
                               type="button"
                             >
                               Show all
                             </button>
                             <button
-                              className="text-[11px] font-semibold text-text-secondary hover:underline"
+                              className="text-phx-xs font-semibold text-text-secondary hover:underline"
                               onClick={() => setHiddenColumns(new Set(expenseDefaultHiddenColumns))}
                               type="button"
                             >
@@ -1417,7 +1417,7 @@ export function ExpenseReport({
                           />
                         </div>
                         <button
-                          className="mt-3 inline-flex items-center gap-1 rounded-md border border-slate-200 px-1.5 py-0.5 text-[10px] font-semibold text-slate-600"
+                          className="mt-3 inline-flex items-center gap-1 rounded-md border border-slate-200 px-1.5 py-0.5 text-phx-2xs font-semibold text-slate-600"
                           onClick={() => toggleTripExpand(record)}
                           type="button"
                         >
@@ -1476,7 +1476,7 @@ export function ExpenseReport({
                       ))}
                       <th className="sticky right-0 top-0 z-30 min-w-[320px] border-b border-l border-phx-line bg-phx-paper px-3 py-3 text-left align-top font-semibold shadow-[-8px_0_12px_-12px_rgba(15,23,42,0.45)]">
                         HR Decision
-                        <span className="mt-1 block text-[10px] font-medium normal-case tracking-normal text-text-secondary">
+                        <span className="mt-1 block text-phx-2xs font-medium normal-case tracking-normal text-text-secondary">
                           Approve · adjust amount · add reason
                         </span>
                       </th>
@@ -1502,20 +1502,20 @@ export function ExpenseReport({
                         <tr className="group">
                           <td className="sticky left-0 z-10 min-w-[210px] border-b border-r border-slate-100 bg-white px-3 py-3 align-top shadow-[8px_0_12px_-12px_rgba(15,23,42,0.35)] group-hover:bg-phx-accent-soft">
                             <p className="whitespace-nowrap font-semibold text-text">{record.specialist || "Unassigned"}</p>
-                            <p className="mt-0.5 whitespace-nowrap font-mono text-[11px] text-text-secondary">
+                            <p className="mt-0.5 whitespace-nowrap font-mono text-phx-xs text-text-secondary">
                               {record.hrId ? record.hrId : "HR ID not mapped"}
                             </p>
                             <div className="mt-1.5 flex flex-wrap items-center gap-1">
-                              <span className="whitespace-nowrap rounded-md bg-sky-50 px-1.5 py-0.5 text-[10px] font-bold text-sky-700">
+                              <span className="whitespace-nowrap rounded-md bg-sky-50 px-1.5 py-0.5 text-phx-2xs font-bold text-sky-700">
                                 AM {formatNumber(record.amWorkload)}
                               </span>
-                              <span className="whitespace-nowrap rounded-md bg-violet-50 px-1.5 py-0.5 text-[10px] font-bold text-violet-700">
+                              <span className="whitespace-nowrap rounded-md bg-violet-50 px-1.5 py-0.5 text-phx-2xs font-bold text-violet-700">
                                 PM {formatNumber(record.pmWorkload)}
                               </span>
-                              <span className="text-[9px] font-semibold uppercase tracking-wide text-text-secondary">declared</span>
+                              <span className="text-phx-3xs font-semibold uppercase tracking-wide text-text-secondary">declared</span>
                             </div>
                             <button
-                              className="mt-1.5 inline-flex items-center gap-1 whitespace-nowrap rounded-md border border-slate-200 px-1.5 py-0.5 text-[10px] font-semibold text-slate-600 hover:bg-slate-50"
+                              className="mt-1.5 inline-flex items-center gap-1 whitespace-nowrap rounded-md border border-slate-200 px-1.5 py-0.5 text-phx-2xs font-semibold text-slate-600 hover:bg-slate-50"
                               onClick={() => toggleTripExpand(record)}
                               type="button"
                             >

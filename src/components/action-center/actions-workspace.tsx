@@ -83,7 +83,7 @@ export function ActionsWorkspace({
             <Icon className="h-3.5 w-3.5" />
             {label}
             <span
-              className={`inline-flex min-w-[1.25rem] items-center justify-center rounded-full px-1.5 py-0.5 text-[10px] font-black leading-none ${
+              className={`inline-flex min-w-[1.25rem] items-center justify-center rounded-full px-1.5 py-0.5 text-phx-2xs font-black leading-none ${
                 tab === key ? "bg-orange-500 text-white" : "bg-slate-200/80 text-slate-500"
               }`}
             >

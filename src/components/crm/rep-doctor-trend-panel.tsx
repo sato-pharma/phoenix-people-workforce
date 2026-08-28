@@ -25,7 +25,7 @@ import type { RepDoctorTrend, RepDoctorTrendPoint } from "@/lib/crm/rep-doctor-l
 
 type Metric = "coverage" | "frequency";
 
-const THEAD = "px-3 py-2.5 text-[10px] font-black uppercase tracking-[0.12em] text-white";
+const THEAD = "px-3 py-2.5 text-phx-2xs font-black uppercase tracking-[0.12em] text-white";
 
 const METRIC_LABEL: Record<Metric, string> = { coverage: "Coverage", frequency: "Frequency" };
 
@@ -63,20 +63,20 @@ function Delta({ value }: { value: number | null }) {
 function MonthTile({ point }: { point: RepDoctorTrendPoint }) {
   return (
     <div className="border border-slate-200 px-2.5 py-2">
-      <p className="whitespace-nowrap text-[9px] font-black uppercase tracking-[0.12em] text-slate-400">
+      <p className="whitespace-nowrap text-phx-3xs font-black uppercase tracking-[0.12em] text-slate-400">
         {shortMonth(point.monthLabel)}
         {point.isPartialMonth ? <span className="text-amber-600"> · to date</span> : null}
         {point.sparseAgentCoverage ? <span className="text-rose-600"> · few reps</span> : null}
       </p>
       <p className="whitespace-nowrap">
         <span className={`text-base font-black ${coverageText(point.coveragePct)}`}>{point.coveragePct}%</span>
-        <span className="text-[10px] font-bold text-slate-300"> cov</span>
+        <span className="text-phx-2xs font-bold text-slate-300"> cov</span>
       </p>
       <p className="whitespace-nowrap">
         <span className={`text-base font-black ${frequencyText(point.frequencyPct)}`}>{point.frequencyPct}%</span>
-        <span className="text-[10px] font-bold text-slate-300"> freq</span>
+        <span className="text-phx-2xs font-bold text-slate-300"> freq</span>
       </p>
-      <p className="whitespace-nowrap text-[10px] font-semibold text-slate-400">
+      <p className="whitespace-nowrap text-phx-2xs font-semibold text-slate-400">
         {point.plannedDoctors} doctors · {point.measuredReps} reps
       </p>
     </div>
@@ -105,7 +105,7 @@ export function RepDoctorTrendPanel({ trend }: { trend: RepDoctorTrend }) {
       {/* The population caveat comes FIRST, before any number, because the company line below rises
           for a reason that has nothing to do with performance and the reader needs that before the
           chart, not after it. */}
-      <div className="border border-amber-200 bg-amber-50 px-3 py-2.5 text-[11px] font-semibold text-amber-900">
+      <div className="border border-amber-200 bg-amber-50 px-3 py-2.5 text-phx-xs font-semibold text-amber-900">
         The company line changes population as it goes. A rep who has since left the company is
         excluded from every month, so an early month is scored over the survivors only — the plan
         mirror holds {first?.measuredReps ?? 0} measurable reps in {first?.monthLabel ?? "the first month"} against{" "}
@@ -115,7 +115,7 @@ export function RepDoctorTrendPanel({ trend }: { trend: RepDoctorTrend }) {
       </div>
 
       <div className="space-y-2">
-        <p className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-400">
+        <p className="text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-400">
           Everyone measured that month
         </p>
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-8">
@@ -127,7 +127,7 @@ export function RepDoctorTrendPanel({ trend }: { trend: RepDoctorTrend }) {
 
       {lfl.length > 0 ? (
         <div className="space-y-2">
-          <p className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-400">
+          <p className="text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-400">
             Like for like — the same {trend.likeForLikeReps} reps in every month
           </p>
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-8">
@@ -136,7 +136,7 @@ export function RepDoctorTrendPanel({ trend }: { trend: RepDoctorTrend }) {
             ))}
           </div>
           {lflFirst && lflLast ? (
-            <p className="text-[11px] font-semibold text-slate-500">
+            <p className="text-phx-xs font-semibold text-slate-500">
               Across the range those {trend.likeForLikeReps} reps moved{" "}
               <span className={coverageText(lflLast.coveragePct)}>
                 {lflFirst.coveragePct}% → {lflLast.coveragePct}%
@@ -155,10 +155,10 @@ export function RepDoctorTrendPanel({ trend }: { trend: RepDoctorTrend }) {
       ) : null}
 
       <div className="flex flex-wrap items-center gap-2">
-        <span className="text-[9px] font-black uppercase tracking-[0.16em] text-slate-400">Show</span>
+        <span className="text-phx-3xs font-black uppercase tracking-[0.16em] text-slate-400">Show</span>
         {(["coverage", "frequency"] as Metric[]).map((option) => (
           <button
-            className={`h-8 border px-3 text-[11px] font-black uppercase tracking-[0.12em] ${
+            className={`h-8 border px-3 text-phx-xs font-black uppercase tracking-[0.12em] ${
               metric === option
                 ? "border-slate-900 bg-slate-900 text-white"
                 : "border-slate-200 bg-white text-slate-600 hover:border-orange-400"
@@ -170,7 +170,7 @@ export function RepDoctorTrendPanel({ trend }: { trend: RepDoctorTrend }) {
             {METRIC_LABEL[option]}
           </button>
         ))}
-        <span className="whitespace-nowrap text-[11px] font-semibold text-slate-400">
+        <span className="whitespace-nowrap text-phx-xs font-semibold text-slate-400">
           Worst change first · a blank month is one with no plan, never a zero
         </span>
       </div>
@@ -189,7 +189,7 @@ export function RepDoctorTrendPanel({ trend }: { trend: RepDoctorTrend }) {
                   <span className={`text-sm font-black ${toneText(metric, pctOf(series.latest, metric))}`}>
                     {pctOf(series.latest, metric)}%
                   </span>
-                  <span className="whitespace-nowrap text-[8px] font-black uppercase tracking-[0.12em] text-slate-400">
+                  <span className="whitespace-nowrap text-phx-4xs font-black uppercase tracking-[0.12em] text-slate-400">
                     {METRIC_LABEL[metric]} now
                   </span>
                 </span>
@@ -205,7 +205,7 @@ export function RepDoctorTrendPanel({ trend }: { trend: RepDoctorTrend }) {
                   className="min-w-[54px] border border-slate-100 px-1.5 py-1 text-center"
                   key={trend.months[index]}
                 >
-                  <span className="block whitespace-nowrap text-[8px] font-black uppercase tracking-[0.1em] text-slate-400">
+                  <span className="block whitespace-nowrap text-phx-4xs font-black uppercase tracking-[0.1em] text-slate-400">
                     {shortMonth(trend.company[index].monthLabel)}
                   </span>
                   {cell ? (
@@ -218,7 +218,7 @@ export function RepDoctorTrendPanel({ trend }: { trend: RepDoctorTrend }) {
                 </span>
               ))}
             </div>
-            <p className="mt-2 whitespace-nowrap text-[11px] font-semibold text-slate-500">
+            <p className="mt-2 whitespace-nowrap text-phx-xs font-semibold text-slate-500">
               First measured to latest:{" "}
               <Delta value={metric === "coverage" ? series.coverageChange : series.frequencyChange} /> pts
             </p>
@@ -265,7 +265,7 @@ export function RepDoctorTrendPanel({ trend }: { trend: RepDoctorTrend }) {
         )}
       />
 
-      <p className="text-[11px] font-semibold text-slate-400">
+      <p className="text-phx-xs font-semibold text-slate-400">
         {trend.company.some((point) => point.isPartialMonth)
           ? "* still running — scored to the day, so its frequency is not directly comparable with a closed month. "
           : ""}

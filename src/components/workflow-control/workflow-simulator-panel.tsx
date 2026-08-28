@@ -10,7 +10,7 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 
 const inputClass =
   "w-full rounded-lg border border-phx-line bg-white px-3 py-2 text-sm text-phx-ink outline-none focus:border-phx-accent";
-const labelClass = "text-[11px] font-black uppercase tracking-[0.10em] text-phx-ink-soft";
+const labelClass = "text-phx-xs font-black uppercase tracking-[0.10em] text-phx-ink-soft";
 
 /**
  * Read-only workflow simulator with domain + subflow selection. Runs entirely
@@ -114,7 +114,7 @@ export function WorkflowSimulatorPanel({
 
       {result ? (
         <div className="mt-4 border-t border-phx-line pt-4">
-          <p className="mb-3 text-[12px] text-phx-ink-2">
+          <p className="mb-3 text-phx-sm text-phx-ink-2">
             <span className="font-black uppercase tracking-[0.10em] text-phx-ink-faint">Simulating</span>{" "}
             <span className="font-bold text-phx-ink">{result.domainName}</span>
             {" → "}
@@ -123,19 +123,19 @@ export function WorkflowSimulatorPanel({
 
           {result.warnings.length ? (
             <div className="mb-3 rounded-lg border border-[#FED7AA] bg-phx-accent-soft px-3 py-2">
-              <p className="flex items-center gap-1.5 text-[11px] font-black uppercase tracking-[0.10em] text-phx-accent-press">
+              <p className="flex items-center gap-1.5 text-phx-xs font-black uppercase tracking-[0.10em] text-phx-accent-press">
                 <AlertTriangle className="h-3.5 w-3.5" /> Warnings
               </p>
               <ul className="mt-1 space-y-0.5">
                 {result.warnings.map((w) => (
-                  <li key={w} className="text-[12px] leading-5 text-[#9A3412]">{w}</li>
+                  <li key={w} className="text-phx-sm leading-5 text-[#9A3412]">{w}</li>
                 ))}
               </ul>
             </div>
           ) : null}
 
           {result.routePath.length ? (
-            <p className="mb-3 text-[12px] text-phx-ink-2">
+            <p className="mb-3 text-phx-sm text-phx-ink-2">
               <span className="font-black uppercase tracking-[0.10em] text-phx-ink-faint">Route path</span>{" "}
               {result.routePath.join(" → ")}
             </p>
@@ -144,40 +144,40 @@ export function WorkflowSimulatorPanel({
           <ol className="space-y-2">
             {result.steps.map((step) => (
               <li key={step.id} className="rounded-lg bg-phx-paper px-3 py-2">
-                <p className="text-[13px] font-bold text-phx-ink">
+                <p className="text-phx-md font-bold text-phx-ink">
                   Step {step.index + 1}: {step.name}{" "}
                   <span className="font-semibold text-phx-ink-soft">→ routes to {step.routesTo}</span>
                 </p>
-                <p className="text-[12px] text-phx-ink-2">Status produced: {step.statusProduced}</p>
+                <p className="text-phx-sm text-phx-ink-2">Status produced: {step.statusProduced}</p>
                 {step.actionRequiredRecipients.length ? (
-                  <p className="text-[12px] text-[#B91C1C]">Action required: {step.actionRequiredRecipients.join(", ")}</p>
+                  <p className="text-phx-sm text-[#B91C1C]">Action required: {step.actionRequiredRecipients.join(", ")}</p>
                 ) : null}
                 {step.fyiRecipients.length ? (
-                  <p className="text-[12px] text-phx-ink-2">FYI: {step.fyiRecipients.join(", ")}</p>
+                  <p className="text-phx-sm text-phx-ink-2">FYI: {step.fyiRecipients.join(", ")}</p>
                 ) : null}
                 {step.notificationRecipients.length ? (
-                  <p className="text-[12px] text-phx-ink-2">In-app: {step.notificationRecipients.join(", ")}</p>
+                  <p className="text-phx-sm text-phx-ink-2">In-app: {step.notificationRecipients.join(", ")}</p>
                 ) : null}
                 {step.emailRecipients.length ? (
-                  <p className="text-[12px] text-phx-ink-2">Emails: {step.emailRecipients.join(", ")}</p>
+                  <p className="text-phx-sm text-phx-ink-2">Emails: {step.emailRecipients.join(", ")}</p>
                 ) : null}
                 {step.notificationGap ? (
-                  <p className="text-[12px] font-semibold text-[#B91C1C]">Notification gap: not implemented yet</p>
+                  <p className="text-phx-sm font-semibold text-[#B91C1C]">Notification gap: not implemented yet</p>
                 ) : null}
               </li>
             ))}
           </ol>
 
-          <p className="mt-3 text-[13px] font-black text-phx-ink">
+          <p className="mt-3 text-phx-md font-black text-phx-ink">
             Final status: <span className="text-phx-accent-press">{result.finalStatus}</span>
           </p>
 
           {result.sideEffects.length ? (
             <div className="mt-3">
-              <p className="text-[10px] font-black uppercase tracking-[0.10em] text-phx-ink-faint">Side effects</p>
+              <p className="text-phx-2xs font-black uppercase tracking-[0.10em] text-phx-ink-faint">Side effects</p>
               <ul className="mt-1 list-disc space-y-0.5 pl-5">
                 {result.sideEffects.map((effect) => (
-                  <li key={effect} className="text-[12px] leading-5 text-phx-ink-2">{effect}</li>
+                  <li key={effect} className="text-phx-sm leading-5 text-phx-ink-2">{effect}</li>
                 ))}
               </ul>
             </div>

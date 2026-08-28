@@ -252,7 +252,7 @@ export function ConsolidatedReportView({ report }: { report: ConsolidatedReport 
                   </Badge>
                 </div>
                 {a.description && <p className="mt-0.5 text-xs text-slate-600">{a.description}</p>}
-                <p className="mt-1 text-[11px] text-slate-400">
+                <p className="mt-1 text-phx-xs text-slate-400">
                   {a.scoreCategory ? `${a.scoreCategory} · ` : ""}{a.ownerHrId ? `owner ${a.ownerName ?? a.ownerHrId} · ` : ""}{a.dueDate ? `due ${a.dueDate}` : "no due date"}
                   {a.followUpOutcome ? ` · outcome: ${a.followUpOutcome}` : ""}
                 </p>
@@ -273,7 +273,7 @@ export function ConsolidatedReportView({ report }: { report: ConsolidatedReport 
             </li>
           ))}
         </ol>
-        <p className="mt-2 text-[11px] text-slate-400">
+        <p className="mt-2 text-phx-xs text-slate-400">
           Generated {report.generatedAt.slice(0, 16).replace("T", " ")} · Last CRM sync {report.dataFreshness.lastCrmSyncAt?.slice(0, 16).replace("T", " ") ?? "never"}
         </p>
       </Section>

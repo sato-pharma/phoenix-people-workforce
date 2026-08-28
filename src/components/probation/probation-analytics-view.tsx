@@ -22,7 +22,7 @@ function OutcomeTable({ title, groups, firstColLabel }: { title: string; groups:
       <h2 className="border-b border-slate-100 px-4 py-2.5 text-sm font-semibold text-slate-700">{title}</h2>
       <div className="overflow-x-auto">
         <table className="w-full min-w-[560px] text-sm">
-          <thead className="bg-slate-50 text-left text-[11px] uppercase tracking-wide text-slate-500">
+          <thead className="bg-slate-50 text-left text-phx-xs uppercase tracking-wide text-slate-500">
             <tr>
               <th className="px-3 py-2">{firstColLabel}</th>
               <th className="px-3 py-2">Decided</th>
@@ -73,7 +73,7 @@ export function ProbationAnalyticsView({ data }: { data: OutcomesAnalytics }) {
         ].map((t) => (
           <div key={t.label} className="rounded border border-slate-200 bg-white p-3">
             <div className={`text-xl font-semibold ${t.tone}`}>{t.value}</div>
-            <div className="text-[11px] text-slate-500">{t.label}</div>
+            <div className="text-phx-xs text-slate-500">{t.label}</div>
           </div>
         ))}
       </div>
@@ -92,7 +92,7 @@ export function ProbationAnalyticsView({ data }: { data: OutcomesAnalytics }) {
         </h2>
         <div className="overflow-x-auto">
           <table className="w-full min-w-[560px] text-sm">
-            <thead className="bg-slate-50 text-left text-[11px] uppercase tracking-wide text-slate-500">
+            <thead className="bg-slate-50 text-left text-phx-xs uppercase tracking-wide text-slate-500">
               <tr>
                 <th className="px-3 py-2">Recommendation</th>
                 <th className="px-3 py-2">Feedbacks</th>
@@ -116,7 +116,7 @@ export function ProbationAnalyticsView({ data }: { data: OutcomesAnalytics }) {
         </div>
       </section>
 
-      <p className="text-[11px] text-slate-400">
+      <p className="text-phx-xs text-slate-400">
         {data.totalDecided} decided case{data.totalDecided === 1 ? "" : "s"} · scores frozen at decision time · generated{" "}
         {data.generatedAt.slice(0, 16).replace("T", " ")}
       </p>

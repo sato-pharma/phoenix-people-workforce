@@ -212,7 +212,7 @@ function PhotoLightbox({
       <div className="flex shrink-0 items-center justify-between gap-3 border-b border-white/10 px-3 py-2 sm:px-5 sm:py-3">
         {/* The owner's rule: never truncate with an ellipsis and never let a label wrap. The
             caption is given the room it needs and the toolbar keeps its own width. */}
-        <p className="overflow-hidden whitespace-nowrap text-[12px] font-black text-white/90 sm:text-sm">
+        <p className="overflow-hidden whitespace-nowrap text-phx-sm font-black text-white/90 sm:text-sm">
           {caption ?? alt}
         </p>
         <div className="flex shrink-0 items-center gap-1">
@@ -225,7 +225,7 @@ function PhotoLightbox({
           >
             <Minus className="h-4 w-4" />
           </button>
-          <span className="min-w-[3.5rem] text-center text-[12px] font-black tabular-nums text-white/80">
+          <span className="min-w-[3.5rem] text-center text-phx-sm font-black tabular-nums text-white/80">
             {zoomLabel}
           </span>
           <button
@@ -287,7 +287,7 @@ function PhotoLightbox({
         />
       </div>
 
-      <p className="shrink-0 border-t border-white/10 px-3 py-2 text-center text-[11px] font-semibold text-white/50 sm:px-5">
+      <p className="shrink-0 border-t border-white/10 px-3 py-2 text-center text-phx-xs font-semibold text-white/50 sm:px-5">
         Pinch or scroll to zoom · drag to move · double-tap to fit
       </p>
     </div>
@@ -365,7 +365,7 @@ export function ZoomHint({ className }: { className?: string }) {
   return (
     <span
       className={cn(
-        "pointer-events-none inline-flex items-center gap-1 bg-slate-900/70 px-1.5 py-0.5 text-[10px] font-black text-white",
+        "pointer-events-none inline-flex items-center gap-1 bg-slate-900/70 px-1.5 py-0.5 text-phx-2xs font-black text-white",
         className,
       )}
     >

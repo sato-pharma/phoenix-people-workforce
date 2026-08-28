@@ -225,11 +225,11 @@ export function DeparturePhotoCard({
     <section className="overflow-hidden rounded-lg border border-orange-200 bg-orange-50/60 p-4 shadow-[0_1px_3px_rgba(15,23,42,0.06)] sm:p-5">
       <div className="flex items-center gap-2">
         <Camera className="h-4 w-4 text-orange-600" />
-        <span className="rounded-md bg-orange-100 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-orange-700">
+        <span className="rounded-md bg-orange-100 px-2 py-1 text-phx-2xs font-bold uppercase tracking-wider text-orange-700">
           {isRetake ? "Retake the departure photo" : "Departure photo needed"}
         </span>
       </div>
-      <p className="mt-2 max-w-3xl text-[13px] leading-relaxed text-orange-900">
+      <p className="mt-2 max-w-3xl text-phx-md leading-relaxed text-orange-900">
         {isRetake
           ? "Take it again while you are still at the destination. The photo you replace is kept and stays visible to your approver, so a retake never hides anything — it just corrects it."
           : `${requests.length === 1 ? "One expense request is" : `${requests.length} expense requests are`} waiting for a departure photo. Capture it before you leave the destination — the request does not reach payroll until it is taken.`}
@@ -299,7 +299,7 @@ export function DeparturePhotoCard({
                     ref={videoRef}
                   />
                   {!videoReady ? (
-                    <p className="bg-slate-900 px-3 py-2 text-center text-[11px] font-bold text-white">
+                    <p className="bg-slate-900 px-3 py-2 text-center text-phx-xs font-bold text-white">
                       Starting the camera…
                     </p>
                   ) : null}
@@ -307,14 +307,14 @@ export function DeparturePhotoCard({
               ) : null}
 
               {isActive && state.kind === "done" ? (
-                <p className="mt-2 flex items-start gap-2 text-[13px] leading-relaxed text-emerald-700">
+                <p className="mt-2 flex items-start gap-2 text-phx-md leading-relaxed text-emerald-700">
                   <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
                   {state.message}
                 </p>
               ) : null}
 
               {isActive && state.kind === "error" ? (
-                <p className="mt-2 flex items-start gap-2 text-[13px] leading-relaxed text-rose-700">
+                <p className="mt-2 flex items-start gap-2 text-phx-md leading-relaxed text-rose-700">
                   <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
                   {state.message}
                 </p>

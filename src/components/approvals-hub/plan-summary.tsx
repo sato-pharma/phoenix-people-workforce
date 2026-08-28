@@ -20,8 +20,8 @@ export function PlanCompositionSummary({ composition }: { composition: PlanCompo
   return (
     <section className="border border-phx-line bg-white">
       <header className="flex items-center justify-between border-b border-phx-line bg-slate-900 px-4 py-2.5">
-        <h3 className="text-[11px] font-black uppercase tracking-[0.14em] text-white">Plan at a glance</h3>
-        <span className="text-[11px] font-bold text-white/70">
+        <h3 className="text-phx-xs font-black uppercase tracking-[0.14em] text-white">Plan at a glance</h3>
+        <span className="text-phx-xs font-bold text-white/70">
           {composition.total} activit{composition.total === 1 ? "y" : "ies"} · {composition.plannedDays} day
           {composition.plannedDays === 1 ? "" : "s"}
         </span>
@@ -59,7 +59,7 @@ const PERIOD_BADGE: Record<PlanPeriodStatus, { label: string; cls: string }> = {
 export function PlanPeriodBadge({ status }: { status: PlanPeriodStatus }) {
   const b = PERIOD_BADGE[status];
   return (
-    <span className={`inline-flex items-center gap-1.5 whitespace-nowrap border px-2 py-0.5 text-[11px] font-bold ${b.cls}`}>
+    <span className={`inline-flex items-center gap-1.5 whitespace-nowrap border px-2 py-0.5 text-phx-xs font-bold ${b.cls}`}>
       {status === "current" ? <span className="h-1.5 w-1.5 rounded-full bg-orange-500" /> : null}
       {b.label}
     </span>

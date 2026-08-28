@@ -223,8 +223,8 @@ export function MarketingOverviewDashboard({
               {action.icon}
             </span>
             <span className="min-w-0">
-              <span className="block text-[13px] font-black tracking-tight text-slate-900">{action.label}</span>
-              <span className="mt-0.5 block text-[11px] font-medium leading-4 text-slate-500">{action.description}</span>
+              <span className="block text-phx-md font-black tracking-tight text-slate-900">{action.label}</span>
+              <span className="mt-0.5 block text-phx-xs font-medium leading-4 text-slate-500">{action.description}</span>
             </span>
           </Link>
         ))}
@@ -232,7 +232,7 @@ export function MarketingOverviewDashboard({
 
       {/* ---- Executive reports & intelligence ------------------------------------------------- */}
       <div>
-        <h2 className="mb-3 text-[12px] font-black uppercase tracking-[0.16em] text-slate-500">
+        <h2 className="mb-3 text-phx-sm font-black uppercase tracking-[0.16em] text-slate-500">
           Executive reports &amp; intelligence
         </h2>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -246,8 +246,8 @@ export function MarketingOverviewDashboard({
                 {action.icon}
               </span>
               <span className="min-w-0">
-                <span className="block text-[13px] font-black tracking-tight text-slate-900">{action.label}</span>
-                <span className="mt-0.5 block text-[11px] font-medium leading-4 text-slate-500">{action.description}</span>
+                <span className="block text-phx-md font-black tracking-tight text-slate-900">{action.label}</span>
+                <span className="mt-0.5 block text-phx-xs font-medium leading-4 text-slate-500">{action.description}</span>
               </span>
             </Link>
           ))}
@@ -269,15 +269,15 @@ export function MarketingOverviewDashboard({
       >
         {data.topPendingForMe.length === 0 ? (
           <div className="px-6 py-10 text-center">
-            <p className="text-[14px] font-black text-slate-800">You&apos;re all caught up</p>
-            <p className="mt-1 text-[12px] font-medium text-slate-500">
+            <p className="text-phx-base font-black text-slate-800">You&apos;re all caught up</p>
+            <p className="mt-1 text-phx-sm font-medium text-slate-500">
               No marketing requests are waiting on your decision right now.
             </p>
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full border-collapse text-left text-[13px]">
-              <thead className="bg-phx-ink text-[10px] font-bold uppercase tracking-[0.12em] text-white">
+            <table className="w-full border-collapse text-left text-phx-md">
+              <thead className="bg-phx-ink text-phx-2xs font-bold uppercase tracking-[0.12em] text-white">
                 <tr>
                   <th className="px-4 py-3">Request</th>
                   <th className="px-4 py-3">Customer</th>
@@ -289,7 +289,7 @@ export function MarketingOverviewDashboard({
               <tbody>
                 {data.topPendingForMe.map((row) => (
                   <tr className="border-b border-[#FEE7D2] last:border-0 hover:bg-orange-50/40" key={row.id}>
-                    <td className="px-4 py-3 font-mono text-[11px] font-bold text-slate-600">{row.requestCode}</td>
+                    <td className="px-4 py-3 font-mono text-phx-xs font-bold text-slate-600">{row.requestCode}</td>
                     <td className="px-4 py-3 font-bold text-slate-900">{row.customerName}</td>
                     <td className="px-4 py-3 font-medium text-slate-600">{row.requestType}</td>
                     <td className="px-4 py-3 text-right font-bold text-slate-900">{egp(row.estimatedCost)}</td>

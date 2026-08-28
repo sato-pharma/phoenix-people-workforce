@@ -85,7 +85,7 @@ export default async function AdminPayslipsCenterPage(
         <Card className={`${adminPanelClassName} p-5`}>
           <form action="/admin/payslips-center" className="grid gap-3 lg:grid-cols-[1fr_auto]">
             <label className="block">
-              <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-soft">
+              <span className="mb-1.5 block text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">
                 Employee
               </span>
               <select
@@ -128,7 +128,7 @@ export default async function AdminPayslipsCenterPage(
             <div className="overflow-x-auto">
               <table className="w-full min-w-[980px] text-left text-sm">
                 <thead>
-                  <tr className="border-b border-phx-line bg-phx-paper text-[10px] font-black uppercase tracking-[0.12em] text-phx-ink-soft">
+                  <tr className="border-b border-phx-line bg-phx-paper text-phx-2xs font-black uppercase tracking-[0.12em] text-phx-ink-soft">
                     {["Employee", "HR ID", "Period", "Line", "Gross", "Additions", "Deductions", "Net", "Status", "Action"].map((column) => (
                       <th className="px-3 py-3" key={column}>{column}</th>
                     ))}

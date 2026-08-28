@@ -100,7 +100,7 @@ export function EarlyBirdsBoard({
           title={`This fortnight · ${data.period.label}`}
           right={
             action ?? (
-              <span className="whitespace-nowrap text-[10px] font-bold uppercase tracking-widest text-slate-400">
+              <span className="whitespace-nowrap text-phx-2xs font-bold uppercase tracking-widest text-slate-400">
                 {data.scopeLabel}
               </span>
             )

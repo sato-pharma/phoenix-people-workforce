@@ -127,7 +127,7 @@ function Metric({
   };
   return (
     <Card className={cn(panelClassName, "p-4", tones[tone])}>
-      <p className="text-[10px] font-black uppercase tracking-[0.18em] opacity-70">{label}</p>
+      <p className="text-phx-2xs font-black uppercase tracking-[0.18em] opacity-70">{label}</p>
       <p className="mt-2 text-2xl font-black tracking-[-0.03em]">{value}</p>
     </Card>
   );
@@ -137,7 +137,7 @@ function LinkageList({ linked, notLinked, title }: { linked: string[]; notLinked
   return (
     <Card className={cn(panelClassName, "p-4")}>
       <div className="flex items-center justify-between gap-3">
-        <p className="text-[11px] font-black uppercase tracking-[0.18em] text-phx-ink-soft">{title}</p>
+        <p className="text-phx-xs font-black uppercase tracking-[0.18em] text-phx-ink-soft">{title}</p>
         <span className="rounded-full border border-phx-line bg-white px-2.5 py-1 text-xs font-semibold text-phx-ink-soft">
           {linked.length + notLinked.length} people
         </span>
@@ -404,7 +404,7 @@ export function SalesQueue({ initialData, initialError }: Props) {
       <div className="min-h-[calc(100vh-7rem)] rounded-[32px] border border-phx-line bg-[radial-gradient(circle_at_top_left,rgba(249,115,22,0.12),transparent_30%),linear-gradient(180deg,#F8FAFC_0%,#EEF3F8_100%)] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.9)] sm:p-6 xl:p-8">
         <div className="mb-5 flex items-center justify-between rounded-3xl border border-phx-line bg-white/95 p-7 shadow-[0_20px_54px_rgba(15,23,42,0.09)]">
           <div>
-            <p className="text-[11px] font-black uppercase tracking-[0.18em] text-orange-600">Sales queue</p>
+            <p className="text-phx-xs font-black uppercase tracking-[0.18em] text-orange-600">Sales queue</p>
             <h1 className="mt-2 text-3xl font-black tracking-tight text-slate-950">Unable to open sales queue</h1>
             <p className="mt-1 text-sm text-slate-500">The sales queue could not be loaded.</p>
           </div>
@@ -447,7 +447,7 @@ export function SalesQueue({ initialData, initialError }: Props) {
           <div>
             <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-orange-200 bg-orange-50 px-3 py-1">
               <span className="h-1.5 w-1.5 rounded-full bg-orange-500" />
-              <span className="text-[11px] font-black uppercase tracking-[0.18em] text-orange-600">Sales queue</span>
+              <span className="text-phx-xs font-black uppercase tracking-[0.18em] text-orange-600">Sales queue</span>
             </div>
             <div className="flex items-center gap-3">
               <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#0B0B0B] text-orange-400 shadow-[0_14px_30px_rgba(15,23,42,0.22)]">
@@ -504,7 +504,7 @@ export function SalesQueue({ initialData, initialError }: Props) {
                 <span className="flex items-center justify-between text-xs font-bold uppercase tracking-[0.16em] text-phx-ink-soft">
                   Line
                   <a
-                    className="inline-flex items-center gap-1 text-[11px] font-bold normal-case tracking-normal text-phx-accent hover:underline"
+                    className="inline-flex items-center gap-1 text-phx-xs font-bold normal-case tracking-normal text-phx-accent hover:underline"
                     href="/api/sales/import/template"
                   >
                     <Download className="h-3 w-3" />

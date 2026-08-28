@@ -22,7 +22,7 @@ const SIZE_CLASS: Record<PersonPhotoSize, string> = {
 const FALLBACK_TEXT_CLASS: Record<PersonPhotoSize, string> = {
   xl: "text-3xl",
   md: "text-lg",
-  sm: "text-[10px]",
+  sm: "text-phx-2xs",
 };
 
 export function personInitials(name: string): string {

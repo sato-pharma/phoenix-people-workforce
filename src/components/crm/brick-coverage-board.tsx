@@ -32,8 +32,8 @@ function Section({
     <div className="border-b border-slate-200 bg-white last:border-b-0">
       <div className="flex items-start justify-between gap-4 border-b border-slate-200 bg-slate-900 px-5 py-3.5">
         <div>
-          <h2 className="text-[11px] font-black uppercase tracking-[0.14em] text-white">{title}</h2>
-          {description ? <p className="mt-0.5 text-[10px] text-slate-400">{description}</p> : null}
+          <h2 className="text-phx-xs font-black uppercase tracking-[0.14em] text-white">{title}</h2>
+          {description ? <p className="mt-0.5 text-phx-2xs text-slate-400">{description}</p> : null}
         </div>
         {action}
       </div>
@@ -47,9 +47,9 @@ function Tile({ label, sub, tone, value }: { label: string; sub?: string; tone?:
     tone === "emerald" ? "text-emerald-700" : tone === "amber" ? "text-amber-700" : tone === "rose" ? "text-rose-700" : "text-slate-900";
   return (
     <div className="border border-slate-200 px-3 py-2.5">
-      <p className="text-[9px] font-black uppercase tracking-[0.14em] text-slate-400">{label}</p>
+      <p className="text-phx-3xs font-black uppercase tracking-[0.14em] text-slate-400">{label}</p>
       <p className={`text-lg font-black ${valueClass}`}>{value}</p>
-      {sub ? <p className="text-[10px] text-slate-400">{sub}</p> : null}
+      {sub ? <p className="text-phx-2xs text-slate-400">{sub}</p> : null}
     </div>
   );
 }
@@ -96,7 +96,7 @@ export function BrickCoverageBoard({
           which is a partial feed, and the number it produces is about people's work — anyone
           reading it has to know what it is before they read a percentage. */}
       <div className="border border-amber-200 bg-amber-50 px-5 py-3">
-        <p className="text-[11px] font-black uppercase tracking-[0.14em] text-amber-900">Interim board — built on GPS check-ins</p>
+        <p className="text-phx-xs font-black uppercase tracking-[0.14em] text-amber-900">Interim board — built on GPS check-ins</p>
         <p className="mt-1 text-xs leading-relaxed text-amber-800">
           Rep visits carry the CRM vendor&apos;s locality id, not a Phoenix brick, and the CRM region → brick mapping is still empty, so
           coverage here is inferred from where each rep physically checked in. Check-ins are a partial feed:{" "}
@@ -141,7 +141,7 @@ export function BrickCoverageBoard({
               <Tile label="Reps scored" sub="had a GPS feed" value={String(totals.measuredReps)} />
               <Tile label="Reps not scored" sub="no check-in this month" tone={totals.unmeasuredReps > 0 ? "amber" : undefined} value={String(totals.unmeasuredReps)} />
             </div>
-            <p className="text-[11px] leading-relaxed text-slate-500">
+            <p className="text-phx-xs leading-relaxed text-slate-500">
               Coverage is weighted by <span className="font-bold text-slate-700">selling units, not brick count</span>. A territory holds many
               bricks that sell nothing, and counting those makes a diligent rep look negligent — so the denominator here is only the bricks that
               actually produced sales this month.

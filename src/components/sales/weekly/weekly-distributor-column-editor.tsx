@@ -157,15 +157,15 @@ export function WeeklyDistributorColumnEditor({ initialContracts }: { initialCon
       <Card className={cn(card, "space-y-4 p-5")}>
         <div className="flex flex-wrap items-end gap-3">
           <label className="flex flex-col gap-1">
-            <span className="text-[10px] font-black uppercase tracking-[0.12em] text-phx-ink-faint">Distributor</span>
+            <span className="text-phx-2xs font-black uppercase tracking-[0.12em] text-phx-ink-faint">Distributor</span>
             <select className="h-9 min-w-64 rounded-[6px] border border-phx-line px-2 text-sm" onChange={(e) => pick(e.target.value)} value={selected}>
               {contracts.map((c) => (
                 <option key={c.code} value={c.code}>{c.name} ({c.code}){c.isCustom ? " · edited" : ""}</option>
               ))}
             </select>
           </label>
-          {current?.isCustom ? <span className="mb-1.5 inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-0.5 text-[11px] font-bold text-amber-800">Overridden in-app</span> : current ? <span className="mb-1.5 inline-flex items-center gap-1 rounded-full border border-phx-line bg-[#FCFDFE] px-2.5 py-0.5 text-[11px] font-bold text-phx-ink-soft">Built-in</span> : null}
-          {draft?.splitFiles ? <span className="mb-1.5 inline-flex items-center gap-1 rounded-full border border-phx-line bg-[#FCFDFE] px-2.5 py-0.5 text-[11px] font-bold text-phx-ink-soft">Two files (sales + stock)</span> : null}
+          {current?.isCustom ? <span className="mb-1.5 inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-0.5 text-phx-xs font-bold text-amber-800">Overridden in-app</span> : current ? <span className="mb-1.5 inline-flex items-center gap-1 rounded-full border border-phx-line bg-[#FCFDFE] px-2.5 py-0.5 text-phx-xs font-bold text-phx-ink-soft">Built-in</span> : null}
+          {draft?.splitFiles ? <span className="mb-1.5 inline-flex items-center gap-1 rounded-full border border-phx-line bg-[#FCFDFE] px-2.5 py-0.5 text-phx-xs font-bold text-phx-ink-soft">Two files (sales + stock)</span> : null}
         </div>
 
         <AdminCallout tone="neutral">
@@ -179,17 +179,17 @@ export function WeeklyDistributorColumnEditor({ initialContracts }: { initialCon
               {draft.splitFiles ? (
                 <>
                   <label className="flex flex-col gap-1">
-                    <span className="text-[10px] font-black uppercase tracking-[0.12em] text-phx-ink-faint">Sample sales file (.xlsx)</span>
+                    <span className="text-phx-2xs font-black uppercase tracking-[0.12em] text-phx-ink-faint">Sample sales file (.xlsx)</span>
                     <input accept=".xlsx" className="text-xs" onChange={(e) => setPreviewSalesFile(e.target.files?.[0] ?? null)} type="file" />
                   </label>
                   <label className="flex flex-col gap-1">
-                    <span className="text-[10px] font-black uppercase tracking-[0.12em] text-phx-ink-faint">Sample stock file (.xlsx)</span>
+                    <span className="text-phx-2xs font-black uppercase tracking-[0.12em] text-phx-ink-faint">Sample stock file (.xlsx)</span>
                     <input accept=".xlsx" className="text-xs" onChange={(e) => setPreviewStockFile(e.target.files?.[0] ?? null)} type="file" />
                   </label>
                 </>
               ) : (
                 <label className="flex flex-col gap-1">
-                  <span className="text-[10px] font-black uppercase tracking-[0.12em] text-phx-ink-faint">Sample file (.xlsx)</span>
+                  <span className="text-phx-2xs font-black uppercase tracking-[0.12em] text-phx-ink-faint">Sample file (.xlsx)</span>
                   <input accept=".xlsx" className="text-xs" onChange={(e) => setPreviewFile(e.target.files?.[0] ?? null)} type="file" />
                 </label>
               )}
@@ -198,8 +198,8 @@ export function WeeklyDistributorColumnEditor({ initialContracts }: { initialCon
                 Preview columns from file
               </button>
             </div>
-            <p className="mt-2 text-[11px] text-phx-ink-faint">Reads each column&rsquo;s header from your sample file so you can confirm a column number points at the right field before saving. The file is not stored.</p>
-            {previewError ? <p className="mt-1 text-[11px] font-semibold text-amber-700">{previewError}</p> : null}
+            <p className="mt-2 text-phx-xs text-phx-ink-faint">Reads each column&rsquo;s header from your sample file so you can confirm a column number points at the right field before saving. The file is not stored.</p>
+            {previewError ? <p className="mt-1 text-phx-xs font-semibold text-amber-700">{previewError}</p> : null}
           </div>
         ) : null}
 
@@ -258,9 +258,9 @@ function SheetEditor({
       <div className="flex flex-wrap items-center justify-between gap-2 bg-[#020617] px-3 py-2 text-white">
         <div className="flex items-center gap-2">
           <span className="text-xs font-black uppercase tracking-wide">{ROLE_LABEL[sheet.role] ?? sheet.role}</span>
-          <span className="inline-flex items-center gap-1 rounded-full border border-white/20 px-2 py-0.5 text-[10px] font-bold text-white/70"><Lock className="h-3 w-3" /> {FILE_LABEL[sheet.formField] ?? sheet.formField}</span>
+          <span className="inline-flex items-center gap-1 rounded-full border border-white/20 px-2 py-0.5 text-phx-2xs font-bold text-white/70"><Lock className="h-3 w-3" /> {FILE_LABEL[sheet.formField] ?? sheet.formField}</span>
         </div>
-        <label className="flex items-center gap-1.5 text-[11px] font-bold text-white/80">
+        <label className="flex items-center gap-1.5 text-phx-xs font-bold text-white/80">
           Header row
           <select className="h-7 rounded-[6px] border border-white/20 bg-[#020617] px-1.5 text-xs text-white" onChange={(e) => onHeaderRow(e.target.value)} value={sheet.headerRowNumber}>
             <option value={1}>1</option>
@@ -275,16 +275,16 @@ function SheetEditor({
           return (
           <div className="flex items-center justify-between gap-3 bg-white px-3 py-2" key={field.field}>
             <div className="min-w-0">
-              <div className="truncate text-[12px] font-bold text-phx-ink">{field.label}</div>
-              <div className="truncate text-[10px] text-phx-ink-faint">{field.expectedHeaderHint || field.field}{field.role === "key" ? " · required" : field.role === "value" ? " · measure" : ""}</div>
+              <div className="truncate text-phx-sm font-bold text-phx-ink">{field.label}</div>
+              <div className="truncate text-phx-2xs text-phx-ink-faint">{field.expectedHeaderHint || field.field}{field.role === "key" ? " · required" : field.role === "value" ? " · measure" : ""}</div>
               {obs ? (
                 obs.status === "empty"
-                  ? <div className="mt-0.5 truncate text-[10px] font-bold text-amber-700">⚠ column {field.columnIndex} is blank in your file</div>
-                  : <div className="mt-0.5 truncate text-[10px] font-semibold text-emerald-700" title={obs.observedHeader}>your file: &ldquo;{obs.observedHeader}&rdquo;</div>
+                  ? <div className="mt-0.5 truncate text-phx-2xs font-bold text-amber-700">⚠ column {field.columnIndex} is blank in your file</div>
+                  : <div className="mt-0.5 truncate text-phx-2xs font-semibold text-emerald-700" title={obs.observedHeader}>your file: &ldquo;{obs.observedHeader}&rdquo;</div>
               ) : null}
             </div>
             <label className="flex shrink-0 flex-col items-end gap-0.5">
-              <span className="text-[9px] font-black uppercase tracking-[0.1em] text-phx-ink-faint">Col</span>
+              <span className="text-phx-3xs font-black uppercase tracking-[0.1em] text-phx-ink-faint">Col</span>
               <input
                 className="h-8 w-16 rounded-[6px] border border-phx-line px-2 text-right text-xs font-mono"
                 inputMode="numeric"
@@ -300,7 +300,7 @@ function SheetEditor({
       </div>
 
       {sheet.matrix ? (
-        <div className="border-t border-phx-line bg-[#FCFDFE] px-3 py-2 text-[11px] text-phx-ink-soft">
+        <div className="border-t border-phx-line bg-[#FCFDFE] px-3 py-2 text-phx-xs text-phx-ink-soft">
           <span className="inline-flex items-center gap-1 font-bold text-phx-ink-2"><Lock className="h-3 w-3" /> {sheet.matrix.kind === "branch-headers" ? "Branch columns" : "Location columns"} (fixed in code)</span>
           <span className="ml-1">from column {sheet.matrix.firstColumn}{sheet.matrix.lastColumn ? `–${sheet.matrix.lastColumn}` : "+"}. {sheet.matrix.note}</span>
         </div>

@@ -584,7 +584,7 @@ export const EmailBodyEditor = forwardRef<EmailBodyEditorHandle, Props>(function
         </button>
         <button
           aria-label="Left-to-right paragraph (English)"
-          className="flex h-8 items-center justify-center border border-transparent px-1.5 text-[10px] font-black text-phx-ink-2 hover:border-[#FED7AA] hover:bg-phx-accent-soft hover:text-phx-accent-press"
+          className="flex h-8 items-center justify-center border border-transparent px-1.5 text-phx-2xs font-black text-phx-ink-2 hover:border-[#FED7AA] hover:bg-phx-accent-soft hover:text-phx-accent-press"
           onClick={() => applyToSelectedBlocks((block) => block.setAttribute("dir", "ltr"))}
           onMouseDown={(event) => event.preventDefault()}
           title="Left-to-right paragraph (English)"
@@ -629,7 +629,7 @@ export const EmailBodyEditor = forwardRef<EmailBodyEditorHandle, Props>(function
         </span>
       </div>
       <div
-        className="phx-email-editor min-h-[320px] w-full bg-white px-5 py-4 text-[15px] leading-[1.75] text-[#111827] outline-none"
+        className="phx-email-editor min-h-[320px] w-full bg-white px-5 py-4 text-phx-lg leading-[1.75] text-[#111827] outline-none"
         contentEditable
         data-placeholder="Write the email message here..."
         onBlur={rememberSelection}

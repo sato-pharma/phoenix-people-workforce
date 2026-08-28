@@ -53,7 +53,7 @@ const panelClassName =
   "rounded-[20px] border border-slate-200/80 bg-white shadow-[0_16px_44px_rgba(15,23,42,0.06)]";
 
 const tableCellClassName = "px-2 py-1.5 text-xs text-text-secondary";
-const tableHeaderClassName = "px-2.5 py-2 text-[10px] font-black uppercase tracking-[0.14em] text-phx-ink-soft";
+const tableHeaderClassName = "px-2.5 py-2 text-phx-2xs font-black uppercase tracking-[0.14em] text-phx-ink-soft";
 
 function ContractsPageShell({ children }: { children: React.ReactNode }) {
   return (
@@ -202,10 +202,10 @@ export function ContractRenewal({ initialData, initialError }: Props) {
       <AdminPageHero
         actions={
           <div className="flex flex-wrap items-center gap-2">
-            <Button className="h-8 rounded-lg px-3 py-0 text-[11px]" variant="secondary">
+            <Button className="h-8 rounded-lg px-3 py-0 text-phx-xs" variant="secondary">
               {summary.upcoming30} due in 30 days
             </Button>
-            <Button className="h-8 rounded-lg px-3 py-0 text-[11px]" variant="secondary">
+            <Button className="h-8 rounded-lg px-3 py-0 text-phx-xs" variant="secondary">
               {summary.upcoming70} due in 70 days
             </Button>
             <Button
@@ -313,7 +313,7 @@ export function ContractRenewal({ initialData, initialError }: Props) {
         >
         <div className="grid gap-2 p-3 xl:grid-cols-6">
           <label className="block">
-            <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-soft">Month</span>
+            <span className="mb-1.5 block text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">Month</span>
             <SearchableSelect
               className={selectClassName}
               value={selectedMonth}
@@ -327,7 +327,7 @@ export function ContractRenewal({ initialData, initialError }: Props) {
             </SearchableSelect>
           </label>
           <label className="block">
-            <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-soft">Year</span>
+            <span className="mb-1.5 block text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">Year</span>
             <SearchableSelect
               className={selectClassName}
               value={selectedYear}
@@ -351,7 +351,7 @@ export function ContractRenewal({ initialData, initialError }: Props) {
             />
           </label>
           <label className="block">
-            <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-soft">Line</span>
+            <span className="mb-1.5 block text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">Line</span>
             <SearchableSelect
               className={selectClassName}
               value={lineFilter}
@@ -366,7 +366,7 @@ export function ContractRenewal({ initialData, initialError }: Props) {
             </SearchableSelect>
           </label>
           <label className="block">
-            <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-soft">Area</span>
+            <span className="mb-1.5 block text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">Area</span>
             <SearchableSelect
               className={selectClassName}
               value={areaFilter}

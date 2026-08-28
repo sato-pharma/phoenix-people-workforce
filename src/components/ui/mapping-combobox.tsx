@@ -67,7 +67,7 @@ export function MappingCombobox({ values, onChange, suggestions = [], placeholde
         )}
       >
         {values.map((value) => (
-          <span key={value} className="inline-flex items-center gap-1 bg-phx-ink px-2 py-0.5 text-[11px] font-semibold text-white">
+          <span key={value} className="inline-flex items-center gap-1 bg-phx-ink px-2 py-0.5 text-phx-xs font-semibold text-white">
             {value}
             {!disabled ? (
               <button type="button" aria-label={`Remove ${value}`} className="text-white/70 hover:text-white" onClick={() => remove(value)}>

@@ -118,7 +118,7 @@ export function ProbationDecisionPanel({ caseId, employeeName, decisionReady, al
         {busy ? "Recording…" : "Record decision"}
       </button>
       {outcome === "terminate" && (
-        <p className="mt-2 text-[11px] text-rose-500">Terminate opens the resignation/vacancy flow. This runs once and cannot be undone here.</p>
+        <p className="mt-2 text-phx-xs text-rose-500">Terminate opens the resignation/vacancy flow. This runs once and cannot be undone here.</p>
       )}
     </section>
   );

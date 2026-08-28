@@ -152,7 +152,7 @@ export default async function CrmHubPage({
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <p className="text-[10px] font-bold uppercase tracking-widest text-orange-600">CRM</p>
+          <p className="text-phx-2xs font-bold uppercase tracking-widest text-orange-600">CRM</p>
           <h1 className="text-xl font-bold tracking-[-0.01em] text-slate-950">CRM Master Data (iReports360)</h1>
           <p className="mt-1 text-xs leading-5 text-slate-500">
             The exact mirror of the CRM — every visit and check-in pulled, with all columns and each record&apos;s

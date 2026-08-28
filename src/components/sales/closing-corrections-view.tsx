@@ -21,7 +21,7 @@ type Props = {
   initialError: string | null;
 };
 
-const headerCell = "px-3 py-2 text-left text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500";
+const headerCell = "px-3 py-2 text-left text-phx-2xs font-bold uppercase tracking-[0.14em] text-slate-500";
 const bodyCell = "px-3 py-2.5 text-sm text-slate-700 align-top";
 
 function SectionTable({
@@ -97,7 +97,7 @@ export function ClosingCorrectionsView({ initialData, initialError }: Props) {
       <AdminTableShell
         action={(
           <label className="flex flex-col gap-1 sm:w-44">
-            <span className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">Month</span>
+            <span className="text-phx-2xs font-bold uppercase tracking-[0.16em] text-slate-500">Month</span>
             <SearchableSelect
               className="h-11 w-full rounded-2xl border border-phx-line bg-phx-paper px-3.5 text-sm font-semibold text-phx-ink outline-none transition focus:border-phx-accent-line focus:ring-4 focus:ring-phx-accent/10 disabled:opacity-60"
               disabled={isPending || availablePeriods.length === 0}

@@ -354,7 +354,7 @@ function MetricBlock({
 }) {
   return (
     <Card className={`${panelClassName} p-4 transition-transform duration-200 hover:-translate-y-0.5`}>
-      <p className="text-[11px] font-black uppercase tracking-[0.16em] text-phx-ink-soft">{label}</p>
+      <p className="text-phx-xs font-black uppercase tracking-[0.16em] text-phx-ink-soft">{label}</p>
       <p className="mt-2 truncate text-2xl font-black text-phx-ink">{value}</p>
       <p className="mt-2 text-xs text-phx-ink-soft">{description}</p>
     </Card>
@@ -370,7 +370,7 @@ function Field({
 }) {
   return (
     <label className="block">
-      <span className="mb-1 block text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-soft">{label}</span>
+      <span className="mb-1 block text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">{label}</span>
       {children}
     </label>
   );

@@ -241,7 +241,7 @@ function VacationAttachmentLinks({
     <div className="mt-1.5 flex flex-wrap gap-1">
       {attachments.map((attachment) => (
         <a
-          className="inline-flex items-center gap-1 rounded-sm border border-sky-200 bg-sky-50 px-2 py-1 text-[10px] font-bold text-sky-700 transition hover:border-sky-300 hover:bg-sky-100"
+          className="inline-flex items-center gap-1 rounded-sm border border-sky-200 bg-sky-50 px-2 py-1 text-phx-2xs font-bold text-sky-700 transition hover:border-sky-300 hover:bg-sky-100"
           href={attachment.href}
           key={attachment.href}
           rel="noreferrer"
@@ -421,9 +421,9 @@ function SortableHeader<K extends string>({
 /* ═══════════════════════════════════════════════════════════════════ */
 
 const selectClass =
-  "h-10 w-full rounded-sm border border-slate-200 bg-white px-3 text-[13px] font-semibold text-slate-800 outline-none transition focus:border-orange-300 focus:ring-2 focus:ring-orange-100";
+  "h-10 w-full rounded-sm border border-slate-200 bg-white px-3 text-phx-md font-semibold text-slate-800 outline-none transition focus:border-orange-300 focus:ring-2 focus:ring-orange-100";
 
-const labelClass = "text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500";
+const labelClass = "text-phx-xs font-bold uppercase tracking-[0.12em] text-slate-500";
 
 /* ═══════════════════════════════════════════════════════════════════ */
 /* ─── Skeleton Loaders ─────────────────────────────────────────────── */
@@ -491,13 +491,13 @@ function MetricCard({
 
   return (
     <div className={cn("rounded-sm border p-4 shadow-[0_1px_3px_rgba(15,23,42,0.04)]", t.border, t.bg)}>
-      <p className={cn("text-[10px] font-bold uppercase tracking-[0.12em]", t.label)}>
+      <p className={cn("text-phx-2xs font-bold uppercase tracking-[0.12em]", t.label)}>
         {label}
       </p>
       <p className={cn("mt-1.5 text-[1.75rem] font-extrabold leading-none tracking-[-0.04em]", t.value)}>
         {value}
       </p>
-      <p className="mt-2 text-[11px] font-medium leading-4 text-slate-500">{description}</p>
+      <p className="mt-2 text-phx-xs font-medium leading-4 text-slate-500">{description}</p>
     </div>
   );
 }
@@ -526,8 +526,8 @@ function StatusDistributionBar({
   return (
     <div className="rounded-sm border border-slate-200 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.04)]">
       <div className="flex items-center justify-between">
-        <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500">Request status distribution</p>
-        <p className="text-[11px] font-bold text-slate-400">{total} total</p>
+        <p className="text-phx-xs font-bold uppercase tracking-[0.12em] text-slate-500">Request status distribution</p>
+        <p className="text-phx-xs font-bold text-slate-400">{total} total</p>
       </div>
       <div className="mt-2.5 flex h-3 w-full overflow-hidden rounded-sm bg-slate-100">
         {approvedPct > 0 ? (
@@ -552,7 +552,7 @@ function StatusDistributionBar({
           />
         ) : null}
       </div>
-      <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[10px] font-bold uppercase tracking-[0.08em]">
+      <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-phx-2xs font-bold uppercase tracking-[0.08em]">
         <span className="flex items-center gap-1.5">
           <span className="inline-block h-2 w-2 rounded-sm bg-emerald-500" />
           <span className="text-emerald-700">Approved {approved}</span>
@@ -594,8 +594,8 @@ function EligibilityDistributionBar({
   return (
     <div className="rounded-sm border border-slate-200 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.04)]">
       <div className="flex items-center justify-between">
-        <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500">Eligibility distribution</p>
-        <p className="text-[11px] font-bold text-slate-400">{total} employees</p>
+        <p className="text-phx-xs font-bold uppercase tracking-[0.12em] text-slate-500">Eligibility distribution</p>
+        <p className="text-phx-xs font-bold text-slate-400">{total} employees</p>
       </div>
       <div className="mt-2.5 flex h-3 w-full overflow-hidden rounded-sm bg-slate-100">
         {eligiblePct > 0 ? (
@@ -620,7 +620,7 @@ function EligibilityDistributionBar({
           />
         ) : null}
       </div>
-      <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[10px] font-bold uppercase tracking-[0.08em]">
+      <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-phx-2xs font-bold uppercase tracking-[0.08em]">
         <span className="flex items-center gap-1.5">
           <span className="inline-block h-2 w-2 rounded-sm bg-emerald-500" />
           <span className="text-emerald-700">Eligible {eligible}</span>
@@ -657,8 +657,8 @@ function PaidUnpaidBar({
   return (
     <div className="rounded-sm border border-slate-200 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.04)]">
       <div className="flex items-center justify-between">
-        <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500">Paid vs Unpaid days</p>
-        <p className="text-[11px] font-bold text-slate-400">{formatDays(total)} total</p>
+        <p className="text-phx-xs font-bold uppercase tracking-[0.12em] text-slate-500">Paid vs Unpaid days</p>
+        <p className="text-phx-xs font-bold text-slate-400">{formatDays(total)} total</p>
       </div>
       <div className="mt-2.5 flex h-3 w-full overflow-hidden rounded-sm bg-slate-100">
         <div
@@ -672,7 +672,7 @@ function PaidUnpaidBar({
           title={`Unpaid: ${formatDays(unpaidDays)}`}
         />
       </div>
-      <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[10px] font-bold uppercase tracking-[0.08em]">
+      <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-phx-2xs font-bold uppercase tracking-[0.08em]">
         <span className="flex items-center gap-1.5">
           <span className="inline-block h-2 w-2 rounded-sm bg-emerald-500" />
           <span className="text-emerald-700">Paid {formatDays(paidDays)} days</span>
@@ -747,9 +747,9 @@ function FilterPanel({
       >
         <div className="flex items-center gap-2">
           <Filter className="h-3.5 w-3.5 text-slate-400" />
-          <span className="text-[13px] font-bold text-slate-800">Filters</span>
+          <span className="text-phx-md font-bold text-slate-800">Filters</span>
           {filterCount > 0 ? (
-            <Badge className="border border-orange-200 bg-orange-50 px-1.5 py-0.5 text-[10px] font-bold text-orange-700">
+            <Badge className="border border-orange-200 bg-orange-50 px-1.5 py-0.5 text-phx-2xs font-bold text-orange-700">
               {filterCount} active
             </Badge>
           ) : null}
@@ -763,7 +763,7 @@ function FilterPanel({
           </div>
           <div className="mt-3 flex items-center justify-end gap-2">
             <Button
-              className="h-9 gap-2 rounded-sm bg-orange-500 px-4 text-[12px] font-bold text-white hover:bg-orange-600"
+              className="h-9 gap-2 rounded-sm bg-orange-500 px-4 text-phx-sm font-bold text-white hover:bg-orange-600"
               onClick={() => {
                 onApply();
                 setOpen(false);
@@ -800,8 +800,8 @@ function EntitlementCard({ row }: { row: VacationEmployeeEligibilityRow }) {
     <div className="rounded-sm border border-slate-200 bg-white p-3 shadow-[0_1px_3px_rgba(15,23,42,0.04)]">
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
-          <p className="text-[13px] font-bold text-slate-900">{row.displayName}</p>
-          <p className="mt-0.5 text-[11px] font-medium text-slate-500">
+          <p className="text-phx-md font-bold text-slate-900">{row.displayName}</p>
+          <p className="mt-0.5 text-phx-xs font-medium text-slate-500">
             {row.hrId} {[row.departmentName, row.lineName].filter(Boolean).join(" / ") ? ` · ${[row.departmentName, row.lineName].filter(Boolean).join(" / ")}` : ""}
           </p>
         </div>
@@ -812,22 +812,22 @@ function EntitlementCard({ row }: { row: VacationEmployeeEligibilityRow }) {
 
       <div className="mt-2.5 grid grid-cols-3 gap-2">
         <div>
-          <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-slate-400">Hire date</p>
-          <p className="mt-0.5 text-[12px] font-semibold text-slate-700">{formatDate(row.hireDate)}</p>
+          <p className="text-phx-2xs font-bold uppercase tracking-[0.08em] text-slate-400">Hire date</p>
+          <p className="mt-0.5 text-phx-sm font-semibold text-slate-700">{formatDate(row.hireDate)}</p>
         </div>
         <div>
-          <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-slate-400">Since hire</p>
-          <p className="mt-0.5 text-[12px] font-semibold text-slate-700">{row.daysSinceHire ?? "-"} days</p>
+          <p className="text-phx-2xs font-bold uppercase tracking-[0.08em] text-slate-400">Since hire</p>
+          <p className="mt-0.5 text-phx-sm font-semibold text-slate-700">{row.daysSinceHire ?? "-"} days</p>
         </div>
         <div>
-          <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-slate-400">6-mo date</p>
-          <p className="mt-0.5 text-[12px] font-semibold text-slate-700">{formatDate(row.sixMonthAnniversary)}</p>
+          <p className="text-phx-2xs font-bold uppercase tracking-[0.08em] text-slate-400">6-mo date</p>
+          <p className="mt-0.5 text-phx-sm font-semibold text-slate-700">{formatDate(row.sixMonthAnniversary)}</p>
         </div>
       </div>
 
       {/* Balance bar */}
       <div className="mt-2.5">
-        <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-[0.08em] text-slate-400">
+        <div className="flex items-center justify-between text-phx-2xs font-bold uppercase tracking-[0.08em] text-slate-400">
           <span>Used {formatDays(row.annualUsedDays)}</span>
           <span>of {formatDays(row.annualEntitlementDays)}</span>
         </div>
@@ -837,15 +837,15 @@ function EntitlementCard({ row }: { row: VacationEmployeeEligibilityRow }) {
             style={{ width: `${usedPct}%` }}
           />
         </div>
-        <p className="mt-1 text-[12px] font-extrabold text-slate-900">{formatDays(row.annualBalanceDays)} days remaining</p>
+        <p className="mt-1 text-phx-sm font-extrabold text-slate-900">{formatDays(row.annualBalanceDays)} days remaining</p>
       </div>
 
       {row.eligibilityStatus === "first_six_months" && (row.daysUntilEligibility ?? 0) > 0 ? (
-        <p className="mt-1.5 text-[11px] font-bold text-amber-700">{row.daysUntilEligibility} days until eligible</p>
+        <p className="mt-1.5 text-phx-xs font-bold text-amber-700">{row.daysUntilEligibility} days until eligible</p>
       ) : null}
 
       {row.managerName ? (
-        <p className="mt-1.5 text-[11px] font-medium text-slate-500">Manager: {row.managerName}</p>
+        <p className="mt-1.5 text-phx-xs font-medium text-slate-500">Manager: {row.managerName}</p>
       ) : null}
 
       {row.reviewFlags.length > 0 ? (
@@ -890,11 +890,11 @@ function RequestCard({
     <div className="rounded-sm border border-slate-200 bg-white p-3 shadow-[0_1px_3px_rgba(15,23,42,0.04)]">
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
-          <p className="text-[13px] font-bold text-slate-900">{row.employeeName}</p>
-          <p className="mt-0.5 text-[11px] font-medium text-slate-500">
+          <p className="text-phx-md font-bold text-slate-900">{row.employeeName}</p>
+          <p className="mt-0.5 text-phx-xs font-medium text-slate-500">
             {row.employeeHrId} · {vacationRequestDisplayId(row.id)}
           </p>
-          <p className="mt-0.5 text-[11px] font-medium text-slate-500">
+          <p className="mt-0.5 text-phx-xs font-medium text-slate-500">
             {[row.departmentName, row.lineName].filter(Boolean).join(" / ") || "-"}
           </p>
         </div>
@@ -906,44 +906,44 @@ function RequestCard({
 
       <div className="mt-2.5 grid grid-cols-2 gap-2">
         <div>
-          <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-slate-400">Type</p>
-          <p className="mt-0.5 text-[12px] font-semibold text-slate-700">{vacationTypeLabel(row.vacationType)}</p>
-          <p className="text-[11px] font-medium text-slate-500">{vacationDayPartLabel(row.dayPart)}</p>
+          <p className="text-phx-2xs font-bold uppercase tracking-[0.08em] text-slate-400">Type</p>
+          <p className="mt-0.5 text-phx-sm font-semibold text-slate-700">{vacationTypeLabel(row.vacationType)}</p>
+          <p className="text-phx-xs font-medium text-slate-500">{vacationDayPartLabel(row.dayPart)}</p>
         </div>
         <div>
-          <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-slate-400">Duration</p>
-          <p className="mt-0.5 text-[12px] font-extrabold text-slate-900">{formatDays(row.durationDays)} days</p>
+          <p className="text-phx-2xs font-bold uppercase tracking-[0.08em] text-slate-400">Duration</p>
+          <p className="mt-0.5 text-phx-sm font-extrabold text-slate-900">{formatDays(row.durationDays)} days</p>
         </div>
       </div>
 
       <div className="mt-2 grid grid-cols-2 gap-2">
         <div>
-          <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-slate-400">From</p>
-          <p className="mt-0.5 text-[12px] font-semibold text-slate-700">{formatDate(row.startDate)}</p>
+          <p className="text-phx-2xs font-bold uppercase tracking-[0.08em] text-slate-400">From</p>
+          <p className="mt-0.5 text-phx-sm font-semibold text-slate-700">{formatDate(row.startDate)}</p>
         </div>
         <div>
-          <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-slate-400">To</p>
-          <p className="mt-0.5 text-[12px] font-semibold text-slate-700">{formatDate(row.endDate)}</p>
+          <p className="text-phx-2xs font-bold uppercase tracking-[0.08em] text-slate-400">To</p>
+          <p className="mt-0.5 text-phx-sm font-semibold text-slate-700">{formatDate(row.endDate)}</p>
         </div>
       </div>
 
       <div className="mt-2">
-        <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-slate-400">Balance</p>
-        <p className="mt-0.5 text-[12px] font-semibold text-slate-700">
+        <p className="text-phx-2xs font-bold uppercase tracking-[0.08em] text-slate-400">Balance</p>
+        <p className="mt-0.5 text-phx-sm font-semibold text-slate-700">
           {formatDays(row.balanceBeforeDays)} <span className="text-slate-400">&rarr;</span>{" "}
           <span className="font-bold text-slate-900">{formatDays(row.balanceAfterDays)}</span>
         </p>
       </div>
 
       {row.paymentStatus === "partial" ? (
-        <p className="mt-1.5 text-[11px] font-bold text-amber-700">
+        <p className="mt-1.5 text-phx-xs font-bold text-amber-700">
           {formatDays(row.paidDurationDays)} paid / {formatDays(row.unpaidDurationDays)} unpaid
         </p>
       ) : null}
-      {row.unpaidReason ? <p className="mt-1 text-[11px] font-bold text-amber-700">{vacationUnpaidReasonLabel(row.unpaidReason)}</p> : null}
+      {row.unpaidReason ? <p className="mt-1 text-phx-xs font-bold text-amber-700">{vacationUnpaidReasonLabel(row.unpaidReason)}</p> : null}
 
       {row.vacationType === "compensatory" ? (
-        <div className="mt-2 rounded-sm border border-orange-100 bg-orange-50/70 px-2.5 py-2 text-[11px] font-semibold leading-4 text-orange-900">
+        <div className="mt-2 rounded-sm border border-orange-100 bg-orange-50/70 px-2.5 py-2 text-phx-xs font-semibold leading-4 text-orange-900">
           <p>{row.compensatoryEventName ?? "Compensatory event"}</p>
           <p className="text-orange-700">{[row.compensatoryEventDate, row.compensatoryEventLocation].filter(Boolean).join(" / ")}</p>
           <VacationAttachmentLinks canReviewAttachments={canReviewAttachments} row={row} />
@@ -951,12 +951,12 @@ function RequestCard({
       ) : null}
       {row.vacationType === "sick" ? <VacationAttachmentLinks canReviewAttachments={canReviewAttachments} row={row} /> : null}
       {row.vacationType === "other" && row.notes ? (
-        <p className="mt-2 rounded-sm border border-amber-100 bg-amber-50/70 px-2.5 py-2 text-[11px] font-semibold leading-4 text-amber-900">
+        <p className="mt-2 rounded-sm border border-amber-100 bg-amber-50/70 px-2.5 py-2 text-phx-xs font-semibold leading-4 text-amber-900">
           {row.notes}
         </p>
       ) : null}
 
-      <div className="mt-2 flex items-center justify-between text-[11px] font-medium text-slate-500">
+      <div className="mt-2 flex items-center justify-between text-phx-xs font-medium text-slate-500">
         <span>Submitted {formatDateTime(row.createdAt)}</span>
         {row.managerName ? <span>Mgr: {row.managerName}</span> : null}
       </div>
@@ -968,7 +968,7 @@ function RequestCard({
       ) : null}
       {!canAdminManage ? (
         <button
-          className="mt-2 flex items-center gap-1 text-[11px] font-bold text-slate-500 transition hover:text-slate-700"
+          className="mt-2 flex items-center gap-1 text-phx-xs font-bold text-slate-500 transition hover:text-slate-700"
           onClick={() => onReview(row)}
           type="button"
         >
@@ -979,11 +979,11 @@ function RequestCard({
       {/* Resubmit button for returned requests (employee only) */}
       {row.status === "returned" && viewerHrId && row.employeeHrId.toUpperCase() === viewerHrId.toUpperCase() ? (
         <div className="mt-2.5 space-y-1.5 border border-amber-200 bg-amber-50 p-2">
-          <p className="text-[11px] font-bold text-amber-900">
+          <p className="text-phx-xs font-bold text-amber-900">
             Returned by manager — {row.managerDecisionComment ? `"${row.managerDecisionComment}"` : "see the return reason in the timeline."}
           </p>
           <button
-            className="w-full border border-amber-600 bg-amber-600 px-3 py-1.5 text-[12px] font-bold text-white disabled:opacity-50"
+            className="w-full border border-amber-600 bg-amber-600 px-3 py-1.5 text-phx-sm font-bold text-white disabled:opacity-50"
             disabled={actingId === row.id}
             onClick={() => onResubmit(row)}
             type="button"
@@ -999,7 +999,7 @@ function RequestCard({
           <VacationApprovalImpactPreview row={row} />
           <div className="mt-2.5 flex gap-2">
             <Button
-              className="h-8 flex-1 gap-1.5 rounded-sm bg-emerald-600 text-[11px] font-bold hover:bg-emerald-700"
+              className="h-8 flex-1 gap-1.5 rounded-sm bg-emerald-600 text-phx-xs font-bold hover:bg-emerald-700"
               disabled={actingId === row.id}
               onClick={() => onDecide(row, "approve")}
               type="button"
@@ -1008,7 +1008,7 @@ function RequestCard({
               {row.status === "pending_hr" ? "Final Approve" : "Approve"}
             </Button>
             <Button
-              className="h-8 flex-1 gap-1.5 rounded-sm bg-rose-600 text-[11px] font-bold text-white hover:bg-rose-700"
+              className="h-8 flex-1 gap-1.5 rounded-sm bg-rose-600 text-phx-xs font-bold text-white hover:bg-rose-700"
               disabled={actingId === row.id}
               onClick={() => onDecide(row, "reject")}
               type="button"
@@ -1019,7 +1019,7 @@ function RequestCard({
           </div>
         </>
       ) : (
-        <div className="mt-2 text-[11px] text-slate-500">
+        <div className="mt-2 text-phx-xs text-slate-500">
           {row.hrDecisionAt ? <p>HR: {formatDateTime(row.hrDecisionAt)}</p> : null}
           {row.managerDecisionAt ? <p>Manager: {formatDateTime(row.managerDecisionAt)}</p> : null}
           {row.managerDecisionComment ? <p className="text-slate-600">{row.managerDecisionComment}</p> : null}
@@ -1030,14 +1030,14 @@ function RequestCard({
       {canAdminManage ? (
         <div className="mt-2 flex gap-2 border-t border-slate-100 pt-2">
           <button
-            className="flex items-center gap-1 text-[11px] font-bold text-slate-500 transition hover:text-slate-700"
+            className="flex items-center gap-1 text-phx-xs font-bold text-slate-500 transition hover:text-slate-700"
             onClick={() => onReview(row)}
             type="button"
           >
             <FileText className="h-3 w-3" /> Timeline
           </button>
           <button
-            className="flex items-center gap-1 text-[11px] font-bold text-slate-500 transition hover:text-slate-700"
+            className="flex items-center gap-1 text-phx-xs font-bold text-slate-500 transition hover:text-slate-700"
             disabled={actingId === row.id}
             onClick={() => onEdit(row)}
             type="button"
@@ -1045,7 +1045,7 @@ function RequestCard({
             <Pencil className="h-3 w-3" /> Edit
           </button>
           <button
-            className="flex items-center gap-1 text-[11px] font-bold text-rose-500 transition hover:text-rose-700"
+            className="flex items-center gap-1 text-phx-xs font-bold text-rose-500 transition hover:text-rose-700"
             disabled={actingId === row.id}
             onClick={() => onDelete(row)}
             type="button"
@@ -1067,8 +1067,8 @@ function VacationApprovalImpactPreview({ compact = false, row }: { compact?: boo
   return (
     <div
       className={compact
-        ? "mb-2 border border-emerald-200 bg-emerald-50 px-2 py-1 text-[10px] font-bold leading-4 text-emerald-800"
-        : "mt-2 border border-emerald-200 bg-emerald-50 px-2.5 py-2 text-[11px] font-bold leading-4 text-emerald-800"}
+        ? "mb-2 border border-emerald-200 bg-emerald-50 px-2 py-1 text-phx-2xs font-bold leading-4 text-emerald-800"
+        : "mt-2 border border-emerald-200 bg-emerald-50 px-2.5 py-2 text-phx-xs font-bold leading-4 text-emerald-800"}
     >
       <p className="font-black uppercase tracking-[0.1em]">Approval impact preview</p>
       <p>
@@ -1508,16 +1508,16 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
                     ? pendingAction.status === "pending_hr" ? "Final approve request" : "Approve request"
                     : pendingAction.status === "pending_hr" ? "Final reject request" : "Reject request"}
               </h3>
-              <p className="mt-2 text-[13px] font-medium leading-5 text-slate-600">
+              <p className="mt-2 text-phx-md font-medium leading-5 text-slate-600">
                 {pendingAction.kind === "delete"
                   ? `This removes ${vacationRequestDisplayId(pendingAction.row.id)} from the master report. The admin audit log keeps the deleted record context.`
                   : "This records the workflow decision and notifies the next responsible people."}
               </p>
               {pendingAction.kind === "decision" && pendingAction.decision === "reject" ? (
                 <label className="mt-3 block space-y-1.5">
-                  <span className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500">Rejection reason</span>
+                  <span className="text-phx-xs font-bold uppercase tracking-[0.12em] text-slate-500">Rejection reason</span>
                   <textarea
-                    className="min-h-24 w-full rounded-sm border border-slate-200 bg-white px-3 py-2 text-[13px] font-medium text-slate-800 outline-none transition focus:border-orange-300 focus:ring-2 focus:ring-orange-100"
+                    className="min-h-24 w-full rounded-sm border border-slate-200 bg-white px-3 py-2 text-phx-md font-medium text-slate-800 outline-none transition focus:border-orange-300 focus:ring-2 focus:ring-orange-100"
                     value={decisionComment}
                     onChange={(event) => setDecisionComment(event.target.value)}
                   />
@@ -1525,7 +1525,7 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
               ) : null}
               <div className="mt-4 flex justify-end gap-2">
                 <Button
-                  className="rounded-sm border border-slate-200 bg-white text-[12px] font-bold text-slate-700 hover:bg-slate-50"
+                  className="rounded-sm border border-slate-200 bg-white text-phx-sm font-bold text-slate-700 hover:bg-slate-50"
                   onClick={() => setPendingAction(null)}
                   type="button"
                 >
@@ -1533,7 +1533,7 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
                 </Button>
                 <Button
                   className={cn(
-                    "rounded-sm text-[12px] font-bold text-white",
+                    "rounded-sm text-phx-sm font-bold text-white",
                     pendingAction.kind === "delete" || (pendingAction.kind === "decision" && pendingAction.decision === "reject")
                       ? "bg-rose-600 hover:bg-rose-700"
                       : "bg-emerald-600 hover:bg-emerald-700",
@@ -1560,7 +1560,7 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
               <button
                 aria-selected={active}
                 className={cn(
-                  "flex h-9 shrink-0 items-center gap-2 whitespace-nowrap rounded-sm px-3 text-[13px] font-bold transition",
+                  "flex h-9 shrink-0 items-center gap-2 whitespace-nowrap rounded-sm px-3 text-phx-md font-bold transition",
                   active ? "bg-white text-orange-600 shadow-sm" : "text-slate-500 hover:bg-white/70 hover:text-slate-700",
                 )}
                 key={tab.value}
@@ -1570,7 +1570,7 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
               >
                 {tab.label}
                 <span className={cn(
-                  "inline-flex h-5 min-w-5 items-center justify-center rounded-sm px-1 text-[10px] font-bold",
+                  "inline-flex h-5 min-w-5 items-center justify-center rounded-sm px-1 text-phx-2xs font-bold",
                   active ? "bg-orange-100 text-orange-700" : "bg-slate-200 text-slate-600",
                 )}>
                   {tab.count}
@@ -1670,7 +1670,7 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
                 <div className="flex flex-wrap gap-1.5">
                   {DATE_PRESETS.map((preset) => (
                     <button
-                      className="rounded-sm border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-bold text-slate-700 transition hover:border-orange-300 hover:bg-orange-50 hover:text-orange-700"
+                      className="rounded-sm border border-slate-200 bg-white px-3 py-1.5 text-phx-xs font-bold text-slate-700 transition hover:border-orange-300 hover:bg-orange-50 hover:text-orange-700"
                       key={preset.value}
                       onClick={() => applyDatePreset(preset.value)}
                       type="button"
@@ -1745,20 +1745,20 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
               <div className="border-b border-slate-100 px-4 py-3">
                 <div className="flex flex-col gap-1.5 sm:flex-row sm:items-start sm:justify-between">
                   <div>
-                    <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-emerald-600">
+                    <p className="text-phx-xs font-bold uppercase tracking-[0.12em] text-emerald-600">
                       {canAdminManage ? "Master review" : "Visible scope review"}
                     </p>
                     <h3 className="mt-1 text-base font-extrabold text-slate-900">Employee leave entitlements</h3>
-                    <p className="mt-0.5 text-[12px] font-medium leading-5 text-slate-500">
+                    <p className="mt-0.5 text-phx-sm font-medium leading-5 text-slate-500">
                       Tracks visible employees against the 6-month rule and current annual leave balance.
                     </p>
                   </div>
                   <div className="flex items-center gap-2">
-                    <Badge className="w-fit border border-slate-200 bg-slate-50 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-600">
+                    <Badge className="w-fit border border-slate-200 bg-slate-50 px-2.5 py-1 text-phx-2xs font-bold uppercase tracking-[0.12em] text-slate-600">
                       {employeeEligibility.length} records
                     </Badge>
                     <button
-                      className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-slate-200 bg-white px-2.5 text-[10px] font-bold text-slate-600 transition hover:bg-slate-50 print:hidden"
+                      className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-slate-200 bg-white px-2.5 text-phx-2xs font-bold text-slate-600 transition hover:bg-slate-50 print:hidden"
                       onClick={() => exportEntitlementsCSV(sortedEntitlements)}
                       title="Export to CSV"
                       type="button"
@@ -1766,7 +1766,7 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
                       <Download className="h-3 w-3" /> CSV
                     </button>
                     <button
-                      className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-slate-200 bg-white px-2.5 text-[10px] font-bold text-slate-600 transition hover:bg-slate-50 print:hidden"
+                      className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-slate-200 bg-white px-2.5 text-phx-2xs font-bold text-slate-600 transition hover:bg-slate-50 print:hidden"
                       onClick={() => window.print()}
                       title="Print report"
                       type="button"
@@ -1779,8 +1779,8 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
 
               {/* Desktop table (md+) */}
               <div className="hidden md:block overflow-x-auto">
-                <table className="w-full border-collapse text-left text-[12px]">
-                  <thead className="bg-slate-50 text-[10px] font-bold uppercase tracking-[0.10em] text-slate-500">
+                <table className="w-full border-collapse text-left text-phx-sm">
+                  <thead className="bg-slate-50 text-phx-2xs font-bold uppercase tracking-[0.10em] text-slate-500">
                     <tr>
                       <SortableHeader active={entitlementSort === "hrId"} direction={entitlementSortDir} sortKey="hrId" onSort={toggleEntitlementSort}>HR ID</SortableHeader>
                       <SortableHeader active={entitlementSort === "fullName"} direction={entitlementSortDir} sortKey="fullName" onSort={toggleEntitlementSort}>Employee</SortableHeader>
@@ -1796,11 +1796,11 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
                   <tbody className="divide-y divide-slate-100">
                     {paginatedEntitlements.map((row) => (
                       <tr key={row.hrId} className="bg-white transition hover:bg-emerald-50/30">
-                        <td className="border-r border-slate-100 px-3 py-2.5 font-mono text-[12px] font-bold text-slate-900">{row.hrId}</td>
+                        <td className="border-r border-slate-100 px-3 py-2.5 font-mono text-phx-sm font-bold text-slate-900">{row.hrId}</td>
                         <td className="border-r border-slate-100 px-3 py-2.5">
                           <p className="font-bold text-slate-900">{row.displayName}</p>
-                          <p className="mt-0.5 text-[11px] font-medium text-slate-500">{[row.departmentName, row.lineName].filter(Boolean).join(" / ") || "-"}</p>
-                          <p className="text-[11px] text-slate-400">{row.employmentStatus ?? "-"}</p>
+                          <p className="mt-0.5 text-phx-xs font-medium text-slate-500">{[row.departmentName, row.lineName].filter(Boolean).join(" / ") || "-"}</p>
+                          <p className="text-phx-xs text-slate-400">{row.employmentStatus ?? "-"}</p>
                         </td>
                         <td className="border-r border-slate-100 px-3 py-2.5 font-semibold text-slate-700">{formatDate(row.hireDate)}</td>
                         <td className="border-r border-slate-100 px-3 py-2.5 text-center font-bold text-slate-800">{row.daysSinceHire ?? "-"}</td>
@@ -1810,18 +1810,18 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
                             {eligibilityStatusLabel(row.eligibilityStatus)}
                           </Badge>
                           {row.eligibilityStatus === "first_six_months" && (row.daysUntilEligibility ?? 0) > 0 ? (
-                            <p className="mt-1 text-[11px] font-bold text-amber-700">{row.daysUntilEligibility} days left</p>
+                            <p className="mt-1 text-phx-xs font-bold text-amber-700">{row.daysUntilEligibility} days left</p>
                           ) : null}
                         </td>
                         <td className="border-r border-slate-100 px-3 py-2.5">
                           <p className="font-bold text-slate-900">{formatDays(row.annualBalanceDays)} left</p>
-                          <p className="mt-0.5 text-[11px] font-medium text-slate-500">
+                          <p className="mt-0.5 text-phx-xs font-medium text-slate-500">
                             {formatDays(row.annualEntitlementDays)} total / {formatDays(row.annualUsedDays)} used
                           </p>
                         </td>
                         <td className="border-r border-slate-100 px-3 py-2.5">
                           <p className="font-semibold text-slate-700">{row.managerName ?? "-"}</p>
-                          <p className="text-[11px] text-slate-400">{row.managerHrId ?? ""}</p>
+                          <p className="text-phx-xs text-slate-400">{row.managerHrId ?? ""}</p>
                         </td>
                         <td className="px-3 py-2.5">
                           {row.reviewFlags.length > 0 ? (
@@ -1831,14 +1831,14 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
                               ))}
                             </div>
                           ) : (
-                            <span className="text-[11px] font-bold text-emerald-600">No issue</span>
+                            <span className="text-phx-xs font-bold text-emerald-600">No issue</span>
                           )}
                         </td>
                       </tr>
                     ))}
                     {paginatedEntitlements.length === 0 ? (
                       <tr>
-                        <td className="border-b border-slate-100 px-4 py-8 text-center text-[13px] font-medium text-slate-500" colSpan={9}>
+                        <td className="border-b border-slate-100 px-4 py-8 text-center text-phx-md font-medium text-slate-500" colSpan={9}>
                           No active employees matched the current filters.
                         </td>
                       </tr>
@@ -1851,7 +1851,7 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
               {/* Mobile card view (< md) */}
               <div className="block md:hidden space-y-2 p-3">
                 {paginatedEntitlements.length === 0 ? (
-                  <p className="py-6 text-center text-[13px] font-medium text-slate-500">
+                  <p className="py-6 text-center text-phx-md font-medium text-slate-500">
                     No active employees matched the current filters.
                   </p>
                 ) : (
@@ -1914,24 +1914,24 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
             {dashboard ? (
               <div className="grid gap-2 md:grid-cols-4">
                 <div className="rounded-sm border border-slate-200 bg-white p-3">
-                  <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">Pending by stage</p>
+                  <p className="text-phx-2xs font-bold uppercase tracking-[0.12em] text-slate-500">Pending by stage</p>
                   <p className="mt-1 text-xl font-black text-slate-900">{dashboard.pendingByStage.total}</p>
-                  <p className="text-[11px] font-semibold text-slate-500">Manager {dashboard.pendingByStage.manager} / HR {dashboard.pendingByStage.hr}</p>
+                  <p className="text-phx-xs font-semibold text-slate-500">Manager {dashboard.pendingByStage.manager} / HR {dashboard.pendingByStage.hr}</p>
                 </div>
                 <div className="rounded-sm border border-slate-200 bg-white p-3">
-                  <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">Overdue SLA</p>
+                  <p className="text-phx-2xs font-bold uppercase tracking-[0.12em] text-slate-500">Overdue SLA</p>
                   <p className="mt-1 text-xl font-black text-rose-700">{dashboard.overdueBySla.total}</p>
-                  <p className="text-[11px] font-semibold text-slate-500">Manager {dashboard.overdueBySla.manager} / HR {dashboard.overdueBySla.hr}</p>
+                  <p className="text-phx-xs font-semibold text-slate-500">Manager {dashboard.overdueBySla.manager} / HR {dashboard.overdueBySla.hr}</p>
                 </div>
                 <div className="rounded-sm border border-slate-200 bg-white p-3">
-                  <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">Evidence review</p>
+                  <p className="text-phx-2xs font-bold uppercase tracking-[0.12em] text-slate-500">Evidence review</p>
                   <p className="mt-1 text-xl font-black text-slate-900">{dashboard.evidence.pending + dashboard.evidence.needsFollowUp + dashboard.evidence.rejected}</p>
-                  <p className="text-[11px] font-semibold text-slate-500">Pending {dashboard.evidence.pending} / rejected {dashboard.evidence.rejected}</p>
+                  <p className="text-phx-xs font-semibold text-slate-500">Pending {dashboard.evidence.pending} / rejected {dashboard.evidence.rejected}</p>
                 </div>
                 <div className="rounded-sm border border-slate-200 bg-white p-3">
-                  <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">Daily SLA run</p>
+                  <p className="text-phx-2xs font-bold uppercase tracking-[0.12em] text-slate-500">Daily SLA run</p>
                   <p className="mt-1 text-xl font-black text-slate-900">{dashboard.dailyEscalationRunStatus.status}</p>
-                  <p className="text-[11px] font-semibold text-slate-500">{dashboard.dailyEscalationRunStatus.runDate ?? "No run recorded"}</p>
+                  <p className="text-phx-xs font-semibold text-slate-500">{dashboard.dailyEscalationRunStatus.runDate ?? "No run recorded"}</p>
                 </div>
               </div>
             ) : null}
@@ -1957,11 +1957,11 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
               <div className="rounded-sm border border-slate-200 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.04)]">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div>
-                    <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-orange-600">Admin controls</p>
+                    <p className="text-phx-xs font-bold uppercase tracking-[0.12em] text-orange-600">Admin controls</p>
                     <h3 className="mt-1 text-base font-extrabold text-slate-900">Employee master requests</h3>
                   </div>
                   <Button
-                    className="gap-2 rounded-sm bg-orange-500 px-4 py-2 text-[12px] font-bold text-white hover:bg-orange-600"
+                    className="gap-2 rounded-sm bg-orange-500 px-4 py-2 text-phx-sm font-bold text-white hover:bg-orange-600"
                     onClick={startAdminAdd}
                     type="button"
                   >
@@ -2011,7 +2011,7 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
                     </label>
                     <div className="flex items-end gap-2 xs:col-span-2">
                       <Button
-                        className="h-9 flex-1 rounded-sm bg-orange-500 text-[12px] font-bold text-white hover:bg-orange-600"
+                        className="h-9 flex-1 rounded-sm bg-orange-500 text-phx-sm font-bold text-white hover:bg-orange-600"
                         disabled={Boolean(actingId)}
                         onClick={submitAdminForm}
                         type="button"
@@ -2019,7 +2019,7 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
                         {adminMode === "edit" ? "Save Changes" : "Create Vacation"}
                       </Button>
                       <Button
-                        className="h-9 rounded-sm border border-slate-200 bg-white text-[12px] font-bold text-slate-700 hover:bg-slate-50"
+                        className="h-9 rounded-sm border border-slate-200 bg-white text-phx-sm font-bold text-slate-700 hover:bg-slate-50"
                         disabled={Boolean(actingId)}
                         onClick={() => setAdminMode(null)}
                         type="button"
@@ -2037,17 +2037,17 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
               <div className="border-b border-slate-100 px-4 py-3">
                 <div className="flex flex-col gap-1.5 sm:flex-row sm:items-start sm:justify-between">
                   <div>
-                    <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-orange-600">
+                    <p className="text-phx-xs font-bold uppercase tracking-[0.12em] text-orange-600">
                       {canAdminManage ? "Master ledger" : "Request history"}
                     </p>
                     <h3 className="mt-1 text-base font-extrabold text-slate-900">Vacation requests</h3>
                   </div>
                   <div className="flex items-center gap-2">
-                    <Badge className="w-fit border border-slate-200 bg-slate-50 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-600">
+                    <Badge className="w-fit border border-slate-200 bg-slate-50 px-2.5 py-1 text-phx-2xs font-bold uppercase tracking-[0.12em] text-slate-600">
                       {rows.length} requests
                     </Badge>
                     <button
-                      className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-slate-200 bg-white px-2.5 text-[10px] font-bold text-slate-600 transition hover:bg-slate-50 print:hidden"
+                      className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-slate-200 bg-white px-2.5 text-phx-2xs font-bold text-slate-600 transition hover:bg-slate-50 print:hidden"
                       onClick={() => exportRequestsCSV(sortedRequests)}
                       title="Export to CSV"
                       type="button"
@@ -2056,7 +2056,7 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
                     </button>
                     {canExport ? (
                       <a
-                        className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-orange-200 bg-orange-50 px-2.5 text-[10px] font-bold text-orange-700 transition hover:bg-orange-100 print:hidden"
+                        className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-orange-200 bg-orange-50 px-2.5 text-phx-2xs font-bold text-orange-700 transition hover:bg-orange-100 print:hidden"
                         href={auditExportHref}
                         title="Audit-grade XLSX export"
                       >
@@ -2064,7 +2064,7 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
                       </a>
                     ) : null}
                     <button
-                      className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-slate-200 bg-white px-2.5 text-[10px] font-bold text-slate-600 transition hover:bg-slate-50 print:hidden"
+                      className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-slate-200 bg-white px-2.5 text-phx-2xs font-bold text-slate-600 transition hover:bg-slate-50 print:hidden"
                       onClick={() => window.print()}
                       title="Print report"
                       type="button"
@@ -2077,8 +2077,8 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
 
               {/* Desktop table (md+) */}
               <div className="hidden md:block overflow-x-auto">
-                <table className="w-full border-collapse text-left text-[12px]">
-                  <thead className="bg-slate-50 text-[10px] font-bold uppercase tracking-[0.10em] text-slate-500">
+                <table className="w-full border-collapse text-left text-phx-sm">
+                  <thead className="bg-slate-50 text-phx-2xs font-bold uppercase tracking-[0.10em] text-slate-500">
                     <tr>
                       <th className="border-b border-r border-slate-100 px-3 py-2.5">ID</th>
                       <SortableHeader active={requestSort === "employeeName"} direction={requestSortDir} sortKey="employeeName" onSort={toggleRequestSort}>Employee</SortableHeader>
@@ -2098,18 +2098,18 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
                     {paginatedRequests.map((row) => (
                       <tr key={row.id} className="bg-white transition hover:bg-orange-50/30">
                         <td className="border-r border-slate-100 px-3 py-2.5">
-                          <span className="font-mono text-[11px] font-bold text-slate-800" title={row.id}>{vacationRequestDisplayId(row.id)}</span>
-                          <p className="mt-0.5 text-[10px] font-medium text-slate-400">{row.employeeHrId}</p>
+                          <span className="font-mono text-phx-xs font-bold text-slate-800" title={row.id}>{vacationRequestDisplayId(row.id)}</span>
+                          <p className="mt-0.5 text-phx-2xs font-medium text-slate-400">{row.employeeHrId}</p>
                         </td>
                         <td className="border-r border-slate-100 px-3 py-2.5">
                           <p className="font-bold text-slate-900">{row.employeeName}</p>
-                          <p className="mt-0.5 text-[11px] font-medium text-slate-500">{[row.departmentName, row.lineName].filter(Boolean).join(" / ") || "-"}</p>
+                          <p className="mt-0.5 text-phx-xs font-medium text-slate-500">{[row.departmentName, row.lineName].filter(Boolean).join(" / ") || "-"}</p>
                         </td>
                         <td className="border-r border-slate-100 px-3 py-2.5">
                           <p className="font-semibold text-slate-800">{vacationTypeLabel(row.vacationType)}</p>
-                          <p className="text-[11px] text-slate-500">{vacationDayPartLabel(row.dayPart)}</p>
+                          <p className="text-phx-xs text-slate-500">{vacationDayPartLabel(row.dayPart)}</p>
                           {row.vacationType === "compensatory" ? (
-                            <div className="mt-1.5 rounded-sm border border-orange-100 bg-orange-50/70 px-2 py-1.5 text-[10px] font-semibold leading-4 text-orange-900">
+                            <div className="mt-1.5 rounded-sm border border-orange-100 bg-orange-50/70 px-2 py-1.5 text-phx-2xs font-semibold leading-4 text-orange-900">
                               <p>{row.compensatoryEventName ?? "Event"}</p>
                               <p className="text-orange-700">{[row.compensatoryEventDate, row.compensatoryEventLocation].filter(Boolean).join(" / ")}</p>
                               <VacationAttachmentLinks canReviewAttachments={canReviewAttachments} row={row} />
@@ -2117,7 +2117,7 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
                           ) : null}
                           {row.vacationType === "sick" ? <VacationAttachmentLinks canReviewAttachments={canReviewAttachments} row={row} /> : null}
                           {row.vacationType === "other" && row.notes ? (
-                            <p className="mt-1.5 rounded-sm border border-amber-100 bg-amber-50/70 px-2 py-1.5 text-[10px] font-semibold leading-4 text-amber-900">{row.notes}</p>
+                            <p className="mt-1.5 rounded-sm border border-amber-100 bg-amber-50/70 px-2 py-1.5 text-phx-2xs font-semibold leading-4 text-amber-900">{row.notes}</p>
                           ) : null}
                         </td>
                         <td className="border-r border-slate-100 px-3 py-2.5 font-semibold text-slate-700">{formatDate(row.startDate)}</td>
@@ -2133,30 +2133,30 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
                             {paymentStatusLabel(row.paymentStatus)}
                           </Badge>
                           {row.paymentStatus === "partial" ? (
-                            <p className="mt-1 text-[10px] font-bold text-amber-700">
+                            <p className="mt-1 text-phx-2xs font-bold text-amber-700">
                               {formatDays(row.paidDurationDays)} paid / {formatDays(row.unpaidDurationDays)} unpaid
                             </p>
                           ) : null}
-                          {row.unpaidReason ? <p className="mt-1 text-[10px] font-bold text-amber-700">{vacationUnpaidReasonLabel(row.unpaidReason)}</p> : null}
+                          {row.unpaidReason ? <p className="mt-1 text-phx-2xs font-bold text-amber-700">{vacationUnpaidReasonLabel(row.unpaidReason)}</p> : null}
                         </td>
                         <td className="border-r border-slate-100 px-3 py-2.5">
                           <Badge variant={statusBadgeVariant(row.status)}>{dynamicStatusLabel(row)}</Badge>
                           {row.slaStatus.isOverdue ? (
-                            <p className="mt-1 text-[10px] font-bold text-rose-700">SLA overdue</p>
+                            <p className="mt-1 text-phx-2xs font-bold text-rose-700">SLA overdue</p>
                           ) : null}
                           {row.overlapWarnings.length > 0 ? (
-                            <p className="mt-1 text-[10px] font-bold text-amber-700">{row.overlapWarnings.length} warning(s)</p>
+                            <p className="mt-1 text-phx-2xs font-bold text-amber-700">{row.overlapWarnings.length} warning(s)</p>
                           ) : null}
                         </td>
                         <td className="border-r border-slate-100 px-3 py-2.5 font-medium text-slate-600">{formatDateTime(row.createdAt)}</td>
                         <td className="border-r border-slate-100 px-3 py-2.5">
                           <p className="font-semibold text-slate-700">{row.managerName ?? "-"}</p>
-                          <p className="text-[11px] text-slate-400">{row.managerHrId ?? ""}</p>
-                          {row.managerOfManagerName ? <p className="mt-0.5 text-[10px] text-slate-400">MoM: {row.managerOfManagerName}</p> : null}
+                          <p className="text-phx-xs text-slate-400">{row.managerHrId ?? ""}</p>
+                          {row.managerOfManagerName ? <p className="mt-0.5 text-phx-2xs text-slate-400">MoM: {row.managerOfManagerName}</p> : null}
                         </td>
                         <td className="px-3 py-2.5">
                           <button
-                            className="mb-2 flex items-center gap-1 rounded-sm border border-slate-200 bg-white px-2 py-1 text-[10px] font-bold text-slate-600 transition hover:bg-slate-50"
+                            className="mb-2 flex items-center gap-1 rounded-sm border border-slate-200 bg-white px-2 py-1 text-phx-2xs font-bold text-slate-600 transition hover:bg-slate-50"
                             onClick={() => openRequestReview(row)}
                             type="button"
                           >
@@ -2166,7 +2166,7 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
                           {canAdminManage ? (
                             <div className="mb-2 flex flex-wrap gap-1.5">
                               <button
-                                className="flex items-center gap-1 rounded-sm border border-slate-200 bg-white px-2 py-1 text-[10px] font-bold text-slate-600 transition hover:bg-slate-50"
+                                className="flex items-center gap-1 rounded-sm border border-slate-200 bg-white px-2 py-1 text-phx-2xs font-bold text-slate-600 transition hover:bg-slate-50"
                                 disabled={actingId === row.id}
                                 onClick={() => startAdminEdit(row)}
                                 type="button"
@@ -2174,7 +2174,7 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
                                 <Pencil className="h-3 w-3" /> Edit
                               </button>
                               <button
-                                className="flex items-center gap-1 rounded-sm bg-rose-600 px-2 py-1 text-[10px] font-bold text-white transition hover:bg-rose-700"
+                                className="flex items-center gap-1 rounded-sm bg-rose-600 px-2 py-1 text-phx-2xs font-bold text-white transition hover:bg-rose-700"
                                 disabled={actingId === row.id}
                                 onClick={() => deleteAdminRequest(row)}
                                 type="button"
@@ -2188,7 +2188,7 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
                               <VacationApprovalImpactPreview compact row={row} />
                               <div className="flex flex-wrap gap-1.5">
                                 <button
-                                  className="flex items-center gap-1 rounded-sm bg-emerald-600 px-2 py-1 text-[10px] font-bold text-white transition hover:bg-emerald-700"
+                                  className="flex items-center gap-1 rounded-sm bg-emerald-600 px-2 py-1 text-phx-2xs font-bold text-white transition hover:bg-emerald-700"
                                   disabled={actingId === row.id}
                                   onClick={() => decide(row, "approve")}
                                   type="button"
@@ -2197,7 +2197,7 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
                                   {row.status === "pending_hr" ? "Final Approve" : "Approve"}
                                 </button>
                                 <button
-                                  className="flex items-center gap-1 rounded-sm bg-rose-600 px-2 py-1 text-[10px] font-bold text-white transition hover:bg-rose-700"
+                                  className="flex items-center gap-1 rounded-sm bg-rose-600 px-2 py-1 text-phx-2xs font-bold text-white transition hover:bg-rose-700"
                                   disabled={actingId === row.id}
                                   onClick={() => decide(row, "reject")}
                                   type="button"
@@ -2208,7 +2208,7 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
                               </div>
                             </>
                           ) : (
-                            <div className="text-[11px]">
+                            <div className="text-phx-xs">
                               <p className="font-medium text-slate-600">{row.hrDecisionAt ? formatDateTime(row.hrDecisionAt) : row.managerDecisionAt ? formatDateTime(row.managerDecisionAt) : "-"}</p>
                               {row.managerDecisionComment ? <p className="mt-0.5 leading-4 text-slate-500">{row.managerDecisionComment}</p> : null}
                               {row.hrDecisionComment ? <p className="mt-0.5 leading-4 text-slate-500">{row.hrDecisionComment}</p> : null}
@@ -2219,7 +2219,7 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
                     ))}
                     {paginatedRequests.length === 0 ? (
                       <tr>
-                        <td className="border-b border-slate-100 px-4 py-8 text-center text-[13px] font-medium text-slate-500" colSpan={12}>
+                        <td className="border-b border-slate-100 px-4 py-8 text-center text-phx-md font-medium text-slate-500" colSpan={12}>
                           No vacation requests found.
                         </td>
                       </tr>
@@ -2232,7 +2232,7 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
               {/* Mobile card view (< md) */}
               <div className="block md:hidden space-y-2 p-3">
                 {paginatedRequests.length === 0 ? (
-                  <p className="py-6 text-center text-[13px] font-medium text-slate-500">
+                  <p className="py-6 text-center text-phx-md font-medium text-slate-500">
                     No vacation requests found.
                   </p>
                 ) : (
@@ -2264,9 +2264,9 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
           <div className="flex h-full w-full max-w-xl flex-col overflow-hidden rounded-sm bg-white shadow-2xl">
             <div className="flex items-start justify-between gap-3 border-b border-slate-200 p-4">
               <div>
-                <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-orange-600">Request review</p>
+                <p className="text-phx-xs font-bold uppercase tracking-[0.12em] text-orange-600">Request review</p>
                 <h3 className="mt-1 text-lg font-black text-slate-900">{vacationRequestDisplayId(selectedRequest.id)}</h3>
-                <p className="text-[12px] font-semibold text-slate-500">{selectedRequest.employeeName} / {dynamicStatusLabel(selectedRequest)}</p>
+                <p className="text-phx-sm font-semibold text-slate-500">{selectedRequest.employeeName} / {dynamicStatusLabel(selectedRequest)}</p>
               </div>
               <button className="rounded-sm p-2 text-slate-500 hover:bg-slate-100" onClick={() => setSelectedRequest(null)} type="button">
                 <XCircle className="h-4 w-4" />
@@ -2275,10 +2275,10 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
             <div className="flex-1 space-y-4 overflow-y-auto p-4">
               {selectedRequest.overlapWarnings.length > 0 ? (
                 <div className="rounded-sm border border-amber-200 bg-amber-50 p-3">
-                  <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-amber-700">Overlap intelligence</p>
+                  <p className="text-phx-xs font-bold uppercase tracking-[0.12em] text-amber-700">Overlap intelligence</p>
                   <div className="mt-2 space-y-1.5">
                     {selectedRequest.overlapWarnings.map((warning) => (
-                      <p className="text-[12px] font-semibold text-amber-900" key={`${warning.code}-${warning.relatedRequestIds.join("-")}`}>{warning.message}</p>
+                      <p className="text-phx-sm font-semibold text-amber-900" key={`${warning.code}-${warning.relatedRequestIds.join("-")}`}>{warning.message}</p>
                     ))}
                   </div>
                 </div>
@@ -2288,8 +2288,8 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
                 <div className="rounded-sm border border-slate-200 p-3">
                   <div className="flex items-center justify-between gap-2">
                     <div>
-                      <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500">Evidence review</p>
-                      <p className="mt-1 text-[12px] font-semibold text-slate-600">
+                      <p className="text-phx-xs font-bold uppercase tracking-[0.12em] text-slate-500">Evidence review</p>
+                      <p className="mt-1 text-phx-sm font-semibold text-slate-600">
                         Current: {selectedRequest.evidenceReviews[0]?.status ?? "pending"}
                       </p>
                     </div>
@@ -2302,23 +2302,23 @@ function VacationReportInner({ initialData, initialError, showHero = true }: Vac
                     value={evidenceReviewNote}
                   />
                   <div className="mt-2 flex flex-wrap gap-2">
-                    <Button className="h-8 rounded-sm bg-emerald-600 text-[11px] font-bold text-white hover:bg-emerald-700" disabled={actingId === selectedRequest.id} onClick={() => submitEvidenceReview("accepted")} type="button">Accept</Button>
-                    <Button className="h-8 rounded-sm bg-amber-500 text-[11px] font-bold text-white hover:bg-amber-600" disabled={actingId === selectedRequest.id} onClick={() => submitEvidenceReview("needs_follow_up")} type="button">Needs follow-up</Button>
-                    <Button className="h-8 rounded-sm bg-rose-600 text-[11px] font-bold text-white hover:bg-rose-700" disabled={actingId === selectedRequest.id} onClick={() => submitEvidenceReview("rejected")} type="button">Reject</Button>
+                    <Button className="h-8 rounded-sm bg-emerald-600 text-phx-xs font-bold text-white hover:bg-emerald-700" disabled={actingId === selectedRequest.id} onClick={() => submitEvidenceReview("accepted")} type="button">Accept</Button>
+                    <Button className="h-8 rounded-sm bg-amber-500 text-phx-xs font-bold text-white hover:bg-amber-600" disabled={actingId === selectedRequest.id} onClick={() => submitEvidenceReview("needs_follow_up")} type="button">Needs follow-up</Button>
+                    <Button className="h-8 rounded-sm bg-rose-600 text-phx-xs font-bold text-white hover:bg-rose-700" disabled={actingId === selectedRequest.id} onClick={() => submitEvidenceReview("rejected")} type="button">Reject</Button>
                   </div>
                 </div>
               ) : null}
 
               <div className="rounded-sm border border-slate-200 p-3">
-                <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500">Approval timeline</p>
+                <p className="text-phx-xs font-bold uppercase tracking-[0.12em] text-slate-500">Approval timeline</p>
                 {timelineLoading ? (
                   <p className="mt-3 text-sm font-semibold text-slate-500">Loading timeline...</p>
                 ) : (
                   <div className="mt-3 space-y-3">
                     {timeline.map((event) => (
                       <div className="border-l-2 border-orange-200 pl-3" key={event.id}>
-                        <p className="text-[12px] font-black text-slate-900">{event.message}</p>
-                        <p className="mt-0.5 text-[11px] font-semibold text-slate-500">{formatDateTime(event.createdAt)} / {event.eventType}</p>
+                        <p className="text-phx-sm font-black text-slate-900">{event.message}</p>
+                        <p className="mt-0.5 text-phx-xs font-semibold text-slate-500">{formatDateTime(event.createdAt)} / {event.eventType}</p>
                       </div>
                     ))}
                     {timeline.length === 0 ? <p className="text-sm font-semibold text-slate-500">No timeline events recorded yet.</p> : null}

@@ -28,7 +28,7 @@ export function CoachingArchivedList({ rows }: { rows: CoachingArchivedEvaluatio
     <Card className={cn(adminPanelClassName, "overflow-hidden p-0")}>
       <div className="overflow-x-auto">
         <table className="min-w-[1040px] w-full border-collapse text-left">
-          <thead className="bg-phx-ink text-[11px] font-black uppercase tracking-[0.12em] text-white">
+          <thead className="bg-phx-ink text-phx-xs font-black uppercase tracking-[0.12em] text-white">
             <tr>
               <th className="px-4 py-3">Rep</th>
               <th className="px-4 py-3">Territory</th>

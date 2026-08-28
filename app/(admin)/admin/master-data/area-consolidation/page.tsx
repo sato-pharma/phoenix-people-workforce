@@ -28,7 +28,7 @@ export default async function AreaConsolidationPage() {
           97-character sentence on a phone. The repo's answer (PR #2268) is to wrap on mobile and
           keep one line from md: up, which hides nothing at either size.
         */}
-        <p className="max-w-none text-[13px] font-medium leading-6 text-slate-600 md:overflow-hidden md:text-ellipsis md:whitespace-nowrap">
+        <p className="max-w-none text-phx-md font-medium leading-6 text-slate-600 md:overflow-hidden md:text-ellipsis md:whitespace-nowrap">
           Move everything off a legacy area onto the area it actually means — after you have read the list.
         </p>
       </div>

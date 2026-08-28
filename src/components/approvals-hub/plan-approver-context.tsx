@@ -60,7 +60,7 @@ export function PlanApproverContext({ employeeHrId }: { employeeHrId: string }) 
     <section className="border border-phx-line bg-white">
       <header className="flex items-center gap-1.5 border-b border-phx-line bg-slate-900 px-4 py-2.5">
         <Activity className="h-3.5 w-3.5 text-white" />
-        <h3 className="text-[11px] font-black uppercase tracking-[0.14em] text-white">Employee context · last 30 days</h3>
+        <h3 className="text-phx-xs font-black uppercase tracking-[0.14em] text-white">Employee context · last 30 days</h3>
       </header>
       <div className="px-4 py-3">
         {state === "loading" ? (
@@ -73,11 +73,11 @@ export function PlanApproverContext({ employeeHrId }: { employeeHrId: string }) 
               {STATS.map((s) => (
                 <div key={s.key} className={`border px-2 py-1.5 text-center ${s.cls}`}>
                   <p className="text-base font-black leading-none">{data.attendance[s.key]}</p>
-                  <p className="mt-1 text-[10px] font-bold uppercase tracking-wide opacity-80">{s.label}</p>
+                  <p className="mt-1 text-phx-2xs font-bold uppercase tracking-wide opacity-80">{s.label}</p>
                 </div>
               ))}
             </div>
-            <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-slate-600">
+            <div className="flex flex-wrap gap-x-4 gap-y-1 text-phx-xs text-slate-600">
               <span>
                 <span className="font-bold text-slate-900">{data.attendance.deductionDays}</span> deduction day
                 {data.attendance.deductionDays === 1 ? "" : "s"}

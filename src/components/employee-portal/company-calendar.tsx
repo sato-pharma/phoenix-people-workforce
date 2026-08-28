@@ -272,7 +272,7 @@ export function CompanyCalendar({
       <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
         <div className="grid grid-cols-7 border-b border-slate-100 bg-slate-50">
           {WEEKDAYS.map((day) => (
-            <div className="px-1 py-2 text-center text-[10px] font-black uppercase tracking-wide text-slate-400" key={day}>
+            <div className="px-1 py-2 text-center text-phx-2xs font-black uppercase tracking-wide text-slate-400" key={day}>
               {day}
             </div>
           ))}
@@ -294,28 +294,28 @@ export function CompanyCalendar({
               >
                 <div className="flex items-center justify-between">
                   <span
-                    className={`flex h-5 w-5 items-center justify-center rounded-full text-[11px] font-bold ${
+                    className={`flex h-5 w-5 items-center justify-center rounded-full text-phx-xs font-bold ${
                       isToday ? "bg-orange-600 text-white" : day.inMonth ? "text-slate-700" : "text-slate-300"
                     }`}
                   >
                     {day.date ? Number(day.date.slice(8, 10)) : ""}
                   </span>
                   {dayItems.length > 0 ? (
-                    <span className="text-[9px] font-black text-slate-400 sm:hidden">{dayItems.length}</span>
+                    <span className="text-phx-3xs font-black text-slate-400 sm:hidden">{dayItems.length}</span>
                   ) : null}
                 </div>
                 {/* Mobile: dots. Desktop: labels. */}
                 <div className="mt-1 hidden space-y-0.5 sm:block">
                   {dayItems.slice(0, 3).map((item) => (
                     <div
-                      className={`whitespace-nowrap rounded border px-1 py-0.5 text-[9px] font-bold ${toneFor(item).chip}`}
+                      className={`whitespace-nowrap rounded border px-1 py-0.5 text-phx-3xs font-bold ${toneFor(item).chip}`}
                       key={item.id}
                     >
                       {item.title}
                     </div>
                   ))}
                   {dayItems.length > 3 ? (
-                    <div className="px-1 text-[9px] font-bold text-slate-400">+{dayItems.length - 3} more</div>
+                    <div className="px-1 text-phx-3xs font-bold text-slate-400">+{dayItems.length - 3} more</div>
                   ) : null}
                 </div>
                 <div className="mt-1 flex flex-wrap gap-0.5 sm:hidden">
@@ -355,7 +355,7 @@ export function CompanyCalendar({
                 >
                   <div className="min-w-0">
                     <p className="whitespace-nowrap text-sm font-black">{item.title}</p>
-                    <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] font-semibold opacity-80">
+                    <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-phx-xs font-semibold opacity-80">
                       <span className="capitalize">{item.source === "event" ? item.category : item.source}</span>
                       {item.time ? (
                         <span className="inline-flex items-center gap-1">
@@ -375,7 +375,7 @@ export function CompanyCalendar({
                   </div>
                   {item.source === "event" && item.canManage ? (
                     <button
-                      className="shrink-0 rounded border border-black/10 bg-white/60 px-2 py-1 text-[11px] font-bold"
+                      className="shrink-0 rounded border border-black/10 bg-white/60 px-2 py-1 text-phx-xs font-bold"
                       onClick={() => openEdit(item)}
                       type="button"
                     >
@@ -547,7 +547,7 @@ const inputCls =
 function Field({ children, label }: { children: React.ReactNode; label: string }) {
   return (
     <label className="block">
-      <span className="mb-1 block text-[11px] font-black uppercase tracking-[0.08em] text-slate-500">{label}</span>
+      <span className="mb-1 block text-phx-xs font-black uppercase tracking-[0.08em] text-slate-500">{label}</span>
       {children}
     </label>
   );

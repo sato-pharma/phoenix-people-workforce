@@ -126,7 +126,7 @@ function PeriodFilterBar({ dateFrom, dateTo }: { dateFrom: string; dateTo: strin
         ))}
       </div>
       <span className="h-9 w-px bg-slate-200" />
-      <label className="flex flex-col gap-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+      <label className="flex flex-col gap-1 text-phx-2xs font-bold uppercase tracking-wider text-slate-400">
         From
         <input
           className="h-9 border border-slate-200 bg-white px-2 text-sm text-slate-800 outline-none focus:border-blue-400 focus:ring-4 focus:ring-blue-100"
@@ -136,7 +136,7 @@ function PeriodFilterBar({ dateFrom, dateTo }: { dateFrom: string; dateTo: strin
           value={from}
         />
       </label>
-      <label className="flex flex-col gap-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+      <label className="flex flex-col gap-1 text-phx-2xs font-bold uppercase tracking-wider text-slate-400">
         To
         <input
           className="h-9 border border-slate-200 bg-white px-2 text-sm text-slate-800 outline-none focus:border-blue-400 focus:ring-4 focus:ring-blue-100"
@@ -192,7 +192,7 @@ function RoleBreakdown({ visits }: { visits: DoubleVisitReportRow[] }) {
   const multipleRoles = roles.length > 1;
   return (
     <div className="border-b border-slate-200 bg-white px-4 py-2.5">
-      <p className="mb-1.5 text-[10px] font-black uppercase tracking-wider text-slate-400">
+      <p className="mb-1.5 text-phx-2xs font-black uppercase tracking-wider text-slate-400">
         Visited by {multipleRoles ? `${roles.length} different roles` : "1 role only"}
       </p>
       <div className="space-y-1">
@@ -232,7 +232,7 @@ function VisitHistory({ visits }: { visits: DoubleVisitReportRow[] }) {
             </div>
             <div className="mt-1 space-y-0.5">
               {day.visits.map((visit, index) => (
-                <div className="flex items-center justify-between gap-3 text-[11px] text-slate-500" key={`${day.date}-${index}`}>
+                <div className="flex items-center justify-between gap-3 text-phx-xs text-slate-500" key={`${day.date}-${index}`}>
                   <span className="text-slate-400">{visit.period}</span>
                   <span className="min-w-0 flex-1 truncate text-right">
                     {visit.doubleVisitorName ?? "Unknown"}
@@ -252,7 +252,7 @@ function DateCheckBadge({ result }: { result: ReturnType<typeof checkPlannedDate
   if (!result) return null;
   if (result.status === "future") {
     return (
-      <span className="inline-flex items-center gap-1 whitespace-nowrap border border-blue-200 bg-blue-50 px-2 py-1 text-[10px] font-bold uppercase text-blue-700">
+      <span className="inline-flex items-center gap-1 whitespace-nowrap border border-blue-200 bg-blue-50 px-2 py-1 text-phx-2xs font-bold uppercase text-blue-700">
         <Clock className="h-3 w-3" />
         Planned — not due yet
       </span>
@@ -260,7 +260,7 @@ function DateCheckBadge({ result }: { result: ReturnType<typeof checkPlannedDate
   }
   if (result.status === "confirmed") {
     return (
-      <span className="inline-flex items-center gap-1 whitespace-nowrap border border-emerald-200 bg-emerald-50 px-2 py-1 text-[10px] font-bold uppercase text-emerald-700">
+      <span className="inline-flex items-center gap-1 whitespace-nowrap border border-emerald-200 bg-emerald-50 px-2 py-1 text-phx-2xs font-bold uppercase text-emerald-700">
         <CheckCircle2 className="h-3 w-3" />
         Confirmed{result.visitorNames.length > 0 ? ` · with ${result.visitorNames.join(", ")}` : ""}
       </span>
@@ -268,14 +268,14 @@ function DateCheckBadge({ result }: { result: ReturnType<typeof checkPlannedDate
   }
   if (result.status === "outside-range") {
     return (
-      <span className="inline-flex items-center gap-1 whitespace-nowrap border border-slate-200 bg-slate-50 px-2 py-1 text-[10px] font-bold uppercase text-slate-500">
+      <span className="inline-flex items-center gap-1 whitespace-nowrap border border-slate-200 bg-slate-50 px-2 py-1 text-phx-2xs font-bold uppercase text-slate-500">
         <CalendarSearch className="h-3 w-3" />
         Widen date range above
       </span>
     );
   }
   return (
-    <span className="inline-flex items-center gap-1 whitespace-nowrap border border-rose-200 bg-rose-50 px-2 py-1 text-[10px] font-bold uppercase text-rose-700">
+    <span className="inline-flex items-center gap-1 whitespace-nowrap border border-rose-200 bg-rose-50 px-2 py-1 text-phx-2xs font-bold uppercase text-rose-700">
       <XCircle className="h-3 w-3" />
       Not recorded that day
     </span>
@@ -327,7 +327,7 @@ function RosterRow({
 
         <div>
           {entry.onProbation ? (
-            <span className="inline-flex items-center gap-1 whitespace-nowrap border border-orange-200 bg-orange-50 px-2 py-1 text-[10px] font-bold uppercase text-orange-700">
+            <span className="inline-flex items-center gap-1 whitespace-nowrap border border-orange-200 bg-orange-50 px-2 py-1 text-phx-2xs font-bold uppercase text-orange-700">
               <Hourglass className="h-3 w-3" />
               Probation
               {entry.probationDaysRemaining != null && entry.probationDaysRemaining > 0
@@ -341,14 +341,14 @@ function RosterRow({
 
         <div>
           {entry.visited ? (
-            <span className="inline-flex items-center gap-1 whitespace-nowrap border border-emerald-200 bg-emerald-50 px-2 py-1 text-[10px] font-bold uppercase text-emerald-700">
+            <span className="inline-flex items-center gap-1 whitespace-nowrap border border-emerald-200 bg-emerald-50 px-2 py-1 text-phx-2xs font-bold uppercase text-emerald-700">
               <CheckCircle2 className="h-3 w-3" />
               {entry.visitCount} DV{entry.visitCount === 1 ? "" : "s"} / {dayCount} day{dayCount === 1 ? "" : "s"} · last {formatDate(entry.lastVisitDate)}
             </span>
           ) : entry.lastVisitDateEver ? (
             // Not visited in the selected window, but HAS an older DV — the "getting stale" signal.
             <span
-              className={`inline-flex items-center gap-1 whitespace-nowrap border px-2 py-1 text-[10px] font-bold uppercase ${
+              className={`inline-flex items-center gap-1 whitespace-nowrap border px-2 py-1 text-phx-2xs font-bold uppercase ${
                 entry.cadenceBand === "critical"
                   ? "border-rose-200 bg-rose-50 text-rose-700"
                   : "border-amber-200 bg-amber-50 text-amber-700"
@@ -360,7 +360,7 @@ function RosterRow({
           ) : (
             // No DV at all within the cadence lookback — truly never visited.
             <span
-              className={`inline-flex items-center gap-1 whitespace-nowrap border px-2 py-1 text-[10px] font-bold uppercase ${
+              className={`inline-flex items-center gap-1 whitespace-nowrap border px-2 py-1 text-phx-2xs font-bold uppercase ${
                 entry.flagged
                   ? "border-rose-200 bg-rose-50 text-rose-700"
                   : "border-amber-200 bg-amber-50 text-amber-700"
@@ -387,7 +387,7 @@ function RosterRow({
           className="flex flex-wrap items-center gap-3 border-t border-dashed border-slate-200 bg-slate-50/70 px-5 py-2.5"
           onClick={(event) => event.stopPropagation()}
         >
-          <label className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-wider text-slate-500">
+          <label className="flex items-center gap-2 text-phx-xs font-bold uppercase tracking-wider text-slate-500">
             Planned date
             <input
               className="h-8 border border-slate-200 bg-white px-2 text-xs text-slate-800 outline-none focus:border-blue-400 focus:ring-4 focus:ring-blue-100"
@@ -399,7 +399,7 @@ function RosterRow({
             />
           </label>
           {dateCheckResult ? <DateCheckBadge result={dateCheckResult} /> : (
-            <span className="text-[11px] text-slate-400">Pick the date you chose for this rep.</span>
+            <span className="text-phx-xs text-slate-400">Pick the date you chose for this rep.</span>
           )}
         </div>
       ) : null}
@@ -474,7 +474,7 @@ function GroupCoverage({ summary, tone }: { summary: DvCoverageSummary; tone: "d
   const neutral = tone === "dark" ? "text-slate-300" : "text-slate-500";
   const track = tone === "dark" ? "bg-white/20" : "bg-slate-200";
   return (
-    <span className="flex shrink-0 items-center gap-2 text-[10px] font-bold uppercase tracking-wider">
+    <span className="flex shrink-0 items-center gap-2 text-phx-2xs font-bold uppercase tracking-wider">
       <span className={`hidden h-1.5 w-16 overflow-hidden rounded sm:flex ${track}`}>
         <span className="bg-emerald-500" style={{ width: `${summary.coveragePct}%` }} />
       </span>
@@ -578,7 +578,7 @@ export function DvPlannerWorkspace({
           <div className="flex items-center gap-3">
             <div className="flex flex-col">
               <span className="text-2xl font-black tabular-nums text-slate-950">{overall.coveragePct}%</span>
-              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Coverage</span>
+              <span className="text-phx-2xs font-bold uppercase tracking-wider text-slate-400">Coverage</span>
             </div>
             <div className="flex h-8 w-40 overflow-hidden rounded bg-slate-200">
               <span className="bg-emerald-500" style={{ width: `${overall.coveragePct}%` }} />
@@ -621,7 +621,7 @@ export function DvPlannerWorkspace({
               const active = activeFilters.has(option.key);
               return (
                 <button
-                  className={`h-8 border px-3 text-[11px] font-bold uppercase tracking-wide transition ${
+                  className={`h-8 border px-3 text-phx-xs font-bold uppercase tracking-wide transition ${
                     active
                       ? "border-orange-500 bg-orange-500 text-white shadow-sm"
                       : "border-slate-200 bg-white text-slate-600 hover:border-orange-300 hover:text-orange-600"
@@ -637,7 +637,7 @@ export function DvPlannerWorkspace({
             })}
             {activeFilters.size > 0 ? (
               <button
-                className="h-8 px-2 text-[11px] font-bold uppercase tracking-wide text-slate-400 transition hover:text-slate-700"
+                className="h-8 px-2 text-phx-xs font-bold uppercase tracking-wide text-slate-400 transition hover:text-slate-700"
                 onClick={() => setActiveFilters(new Set())}
                 type="button"
               >
@@ -645,7 +645,7 @@ export function DvPlannerWorkspace({
               </button>
             ) : null}
             <button
-              className={`inline-flex h-8 items-center gap-1.5 border px-3 text-[11px] font-bold uppercase tracking-wide transition ${
+              className={`inline-flex h-8 items-center gap-1.5 border px-3 text-phx-xs font-bold uppercase tracking-wide transition ${
                 dateCheckMode
                   ? "border-blue-600 bg-blue-600 text-white shadow-sm"
                   : "border-slate-200 bg-white text-slate-600 hover:border-blue-300 hover:text-blue-700"
@@ -661,7 +661,7 @@ export function DvPlannerWorkspace({
             <span className="ml-auto inline-flex items-center overflow-hidden border border-slate-200">
               {SORT_OPTIONS.map((option) => (
                 <button
-                  className={`h-8 px-3 text-[11px] font-bold uppercase tracking-wide transition ${
+                  className={`h-8 px-3 text-phx-xs font-bold uppercase tracking-wide transition ${
                     sortMode === option.key ? "bg-slate-900 text-white" : "bg-white text-slate-500 hover:bg-slate-100"
                   }`}
                   key={option.key}
@@ -719,7 +719,7 @@ export function DvPlannerWorkspace({
                               ) : (
                                 <ChevronDown className="h-3.5 w-3.5 text-slate-400" />
                               )}
-                              <span className="text-[11px] font-bold text-slate-600">DM: {managerGroup.managerName}</span>
+                              <span className="text-phx-xs font-bold text-slate-600">DM: {managerGroup.managerName}</span>
                             </span>
                             <GroupCoverage summary={dmSummary} tone="light" />
                           </button>

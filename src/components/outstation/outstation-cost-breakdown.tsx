@@ -20,7 +20,7 @@ export function OutstationCostBreakdown({
 
   return (
     <Card className="rounded-lg border border-gray-100 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.06)] sm:p-5">
-      <span className="rounded-md bg-orange-50 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-orange-600">
+      <span className="rounded-md bg-orange-50 px-2 py-1 text-phx-2xs font-bold uppercase tracking-wider text-orange-600">
         Cost breakdown
       </span>
       <div className="mt-3 grid grid-cols-1 divide-x divide-y divide-gray-100 overflow-hidden rounded-md border border-gray-100 sm:grid-cols-2 xl:grid-cols-4">
@@ -44,13 +44,13 @@ export function OutstationCostBreakdown({
         />
       </div>
       <div className="mt-3 rounded-md border border-gray-100 bg-slate-50/60 p-3">
-        <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+        <p className="text-phx-2xs font-semibold uppercase tracking-wider text-slate-500">
           Allowance Breakdown
         </p>
         <div className="mt-2 divide-y divide-gray-100">
           {result.allowanceBreakdown.rows.map((row, index) => (
             <div
-              className="flex items-center justify-between gap-3 py-1.5 text-[13px]"
+              className="flex items-center justify-between gap-3 py-1.5 text-phx-md"
               key={`${row.type}-${index}`}
             >
               <span className="font-medium text-slate-600">{row.label}</span>
@@ -74,10 +74,10 @@ function Line({
 }) {
   return (
     <div className={`border-l-2 ${accent} px-3 py-3`}>
-      <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+      <p className="text-phx-2xs font-semibold uppercase tracking-wider text-slate-500">
         {label}
       </p>
-      <p className="mt-1 truncate text-[13px] font-semibold text-slate-800" title={value}>
+      <p className="mt-1 truncate text-phx-md font-semibold text-slate-800" title={value}>
         {value}
       </p>
     </div>

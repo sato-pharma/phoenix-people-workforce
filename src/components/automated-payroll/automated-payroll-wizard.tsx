@@ -464,7 +464,7 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
           >
             <span
               className={cn(
-                "flex h-4 w-4 shrink-0 items-center justify-center text-[10px] font-bold",
+                "flex h-4 w-4 shrink-0 items-center justify-center text-phx-2xs font-bold",
                 isConfirmed ? "bg-emerald-600 text-white" : "border border-slate-300 text-slate-500",
               )}
             >
@@ -487,7 +487,7 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
     <div className="flex flex-col gap-2.5">
       {groups.map((group) => (
         <div key={group.label} className="flex flex-wrap items-center gap-2">
-          <span className="w-full text-[10px] font-bold uppercase tracking-wide text-slate-400 sm:w-auto sm:min-w-[132px]">
+          <span className="w-full text-phx-2xs font-bold uppercase tracking-wide text-slate-400 sm:w-auto sm:min-w-[132px]">
             {group.label}
           </span>
           {renderStepPills(group.keys, allKeys)}
@@ -832,7 +832,7 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
               fighting a fixed 260px sidebar for space). */}
           <div className={cn(adminSoftPanelClassName, "flex flex-col gap-3 p-4")}>
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="text-[11px] font-black uppercase tracking-wide text-slate-500">
+              <div className="text-phx-xs font-black uppercase tracking-wide text-slate-500">
                 Part 1 — First installment
               </div>
               <Button
@@ -847,7 +847,7 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
             <div className="flex flex-col gap-2.5">
               {renderStepGroups(PART1_STEP_GROUPS, PART1_STEP_KEYS)}
               <div className="flex flex-wrap items-center gap-2">
-                <span className="w-full text-[10px] font-bold uppercase tracking-wide text-slate-400 sm:w-auto sm:min-w-[132px]">
+                <span className="w-full text-phx-2xs font-bold uppercase tracking-wide text-slate-400 sm:w-auto sm:min-w-[132px]">
                   No HR record
                 </span>
                 {renderNonEmployeesPill("first")}
@@ -860,7 +860,7 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
               ) : (
                 <div className="flex flex-col gap-3">
                   <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div className="text-[11px] font-black uppercase tracking-wide text-slate-500">
+                    <div className="text-phx-xs font-black uppercase tracking-wide text-slate-500">
                       Part 2 — Full sheet
                     </div>
                     <div className="flex items-center gap-2">
@@ -891,7 +891,7 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
                   <div className="flex flex-col gap-2.5">
                     {renderStepGroups(PART2_STEP_GROUPS, PART2_STEP_KEYS)}
                     <div className="flex flex-wrap items-center gap-2">
-                      <span className="w-full text-[10px] font-bold uppercase tracking-wide text-slate-400 sm:w-auto sm:min-w-[132px]">
+                      <span className="w-full text-phx-2xs font-bold uppercase tracking-wide text-slate-400 sm:w-auto sm:min-w-[132px]">
                         No HR record
                       </span>
                       {renderNonEmployeesPill("second")}
@@ -902,7 +902,7 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
             </div>
 
             <div className="flex flex-wrap items-center gap-2 border-t border-slate-200 pt-3">
-              <span className="text-[11px] font-black uppercase tracking-wide text-slate-500">Sheets</span>
+              <span className="text-phx-xs font-black uppercase tracking-wide text-slate-500">Sheets</span>
               <Button
                 variant="outline"
                 size="sm"
@@ -952,7 +952,7 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
           {populationDiff && !populationDiff.noBaseline ? (
             <div className={cn(adminSoftPanelClassName, "flex flex-col gap-2 p-4")}>
               <div className="flex flex-wrap items-center gap-2">
-                <span className="text-[11px] font-black uppercase tracking-wide text-slate-500">
+                <span className="text-phx-xs font-black uppercase tracking-wide text-slate-500">
                   Roster vs last month
                 </span>
                 <AdminInsightChip tone="neutral">
@@ -1049,7 +1049,7 @@ function Stat({ label, value, tone = "slate" }: { label: string; value: string; 
     tone === "rose" ? "text-rose-700" : tone === "emerald" ? "text-emerald-700" : "text-slate-900";
   return (
     <div className="border border-slate-200 bg-white px-3 py-2">
-      <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">{label}</div>
+      <div className="text-phx-xs font-semibold uppercase tracking-wide text-slate-400">{label}</div>
       <div className={cn("text-lg font-black", toneClass)}>{value}</div>
     </div>
   );

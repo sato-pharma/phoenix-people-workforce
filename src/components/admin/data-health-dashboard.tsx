@@ -128,7 +128,7 @@ function SectionLabel({ action, eyebrow, title }: { action?: ReactNode; eyebrow:
       <div className="flex items-start gap-3">
         <span aria-hidden="true" className="mt-1 h-9 w-1.5 shrink-0 bg-gradient-to-b from-orange-500 to-amber-400" />
         <div>
-          <p className="text-[11px] font-bold uppercase tracking-[0.22em] text-orange-600">{eyebrow}</p>
+          <p className="text-phx-xs font-bold uppercase tracking-[0.22em] text-orange-600">{eyebrow}</p>
           <h2 className="mt-1 text-xl font-bold tracking-[-0.025em] text-slate-950">{title}</h2>
         </div>
       </div>
@@ -196,7 +196,7 @@ export function DataHealthDashboard({ salaryFlags: initialSalaryFlags, stats }: 
   const unresolvedCount = salaryFlagsData?.unresolvedCount ?? 0;
 
   const tableHeadClass =
-    "bg-slate-50 text-[11px] font-bold uppercase tracking-[0.16em] text-slate-500";
+    "bg-slate-50 text-phx-xs font-bold uppercase tracking-[0.16em] text-slate-500";
   const tableBodyClass = "divide-y divide-slate-200";
   const tableRowClass =
     "transition-colors hover:bg-slate-50";
@@ -628,7 +628,7 @@ export function DataHealthDashboard({ salaryFlags: initialSalaryFlags, stats }: 
             <thead>
               <tr className={tableHeadClass}>
                 {["HR_ID", "Employee Name", "Node Type", "Auth", "Manager HR_ID", "Status"].map((heading) => (
-                  <th className="px-6 py-4 text-[10px] font-black uppercase tracking-[0.15em] text-slate-400" key={heading}>
+                  <th className="px-6 py-4 text-phx-2xs font-black uppercase tracking-[0.15em] text-slate-400" key={heading}>
                     {heading}
                   </th>
                 ))}
@@ -702,7 +702,7 @@ export function DataHealthDashboard({ salaryFlags: initialSalaryFlags, stats }: 
             <thead>
               <tr className={tableHeadClass}>
                 {["Month", "Owner", "Line / Territory", "Product", "Sales", "Status"].map((heading) => (
-                  <th className="px-6 py-4 text-[10px] font-black uppercase tracking-[0.15em] text-slate-400" key={heading}>
+                  <th className="px-6 py-4 text-phx-2xs font-black uppercase tracking-[0.15em] text-slate-400" key={heading}>
                     {heading}
                   </th>
                 ))}
@@ -771,7 +771,7 @@ export function DataHealthDashboard({ salaryFlags: initialSalaryFlags, stats }: 
             <thead>
               <tr className={tableHeadClass}>
                 {["Vacancy Code", "Line", "Area", "Manager HR_ID", "Status"].map((heading) => (
-                  <th className="px-6 py-4 text-[10px] font-black uppercase tracking-[0.15em] text-slate-400" key={heading}>
+                  <th className="px-6 py-4 text-phx-2xs font-black uppercase tracking-[0.15em] text-slate-400" key={heading}>
                     {heading}
                   </th>
                 ))}
@@ -821,7 +821,7 @@ export function DataHealthDashboard({ salaryFlags: initialSalaryFlags, stats }: 
             <thead>
               <tr className={tableHeadClass}>
                 {["Source", "HR_ID", "Count", "Sample Name"].map((heading) => (
-                  <th className="px-6 py-4 text-[10px] font-black uppercase tracking-[0.15em] text-slate-400" key={heading}>
+                  <th className="px-6 py-4 text-phx-2xs font-black uppercase tracking-[0.15em] text-slate-400" key={heading}>
                     {heading}
                   </th>
                 ))}
@@ -837,7 +837,7 @@ export function DataHealthDashboard({ salaryFlags: initialSalaryFlags, stats }: 
               ) : (
                 visibleIssues.map((orphan, index) => (
                   <tr className={tableRowClass} key={`${orphan.source}-${orphan.hr_id}-${index}`}>
-                    <td className="px-6 py-4 text-[11px] font-bold uppercase tracking-tighter text-slate-400">
+                    <td className="px-6 py-4 text-phx-xs font-bold uppercase tracking-tighter text-slate-400">
                       {orphan.source}
                     </td>
                     <td className="px-6 py-4 font-mono text-sm font-bold text-rose-500">{orphan.hr_id}</td>
@@ -890,7 +890,7 @@ export function DataHealthDashboard({ salaryFlags: initialSalaryFlags, stats }: 
             <thead>
               <tr className={tableHeadClass}>
                 {["HR_ID", "Flag Type", "Severity", "Message", "Created At", "Action"].map((heading) => (
-                  <th className="px-6 py-4 text-[10px] font-black uppercase tracking-[0.15em] text-slate-400" key={heading}>
+                  <th className="px-6 py-4 text-phx-2xs font-black uppercase tracking-[0.15em] text-slate-400" key={heading}>
                     {heading}
                   </th>
                 ))}
@@ -908,7 +908,7 @@ export function DataHealthDashboard({ salaryFlags: initialSalaryFlags, stats }: 
                   <tr className={tableRowClass} key={flag.id}>
                     <td className="px-6 py-4 font-mono text-sm font-bold text-slate-600">{flag.hrId ?? "-"}</td>
                     <td className="px-6 py-4 text-sm font-medium text-slate-700">
-                      <span className="rounded-full border border-orange-200 bg-orange-50 px-3 py-1 text-[11px] font-bold text-orange-700">
+                      <span className="rounded-full border border-orange-200 bg-orange-50 px-3 py-1 text-phx-xs font-bold text-orange-700">
                         {flag.flagType?.replace(/_/g, " ") ?? "unknown"}
                       </span>
                     </td>
@@ -931,13 +931,13 @@ export function DataHealthDashboard({ salaryFlags: initialSalaryFlags, stats }: 
                     <td className="px-6 py-4 text-xs font-semibold text-slate-500">{formatDate(flag.createdAt)}</td>
                     <td className="px-6 py-4">
                       {flag.resolvedAt ? (
-                        <span className="flex items-center gap-1.5 text-[10px] font-semibold text-emerald-600">
+                        <span className="flex items-center gap-1.5 text-phx-2xs font-semibold text-emerald-600">
                           <CheckCircle2 className="h-3.5 w-3.5" />
                           Resolved
                         </span>
                       ) : (
                         <button
-                          className="flex h-9 items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3.5 text-[11px] font-bold text-emerald-700 transition hover:border-emerald-300 hover:bg-emerald-100 disabled:opacity-50"
+                          className="flex h-9 items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3.5 text-phx-xs font-bold text-emerald-700 transition hover:border-emerald-300 hover:bg-emerald-100 disabled:opacity-50"
                           disabled={resolvingId === flag.id}
                           onClick={() => handleResolveFlag(flag.id)}
                           type="button"
@@ -1086,7 +1086,7 @@ function QueueCard({
       <div aria-hidden="true" className={cn("pointer-events-none absolute -right-10 -top-10 h-28 w-28 rounded-full blur-2xl", accent.glow)} />
       <div className="relative flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="truncate text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">{title}</p>
+          <p className="truncate text-phx-2xs font-bold uppercase tracking-[0.16em] text-slate-500">{title}</p>
           <p className={cn("mt-2.5 break-words text-3xl font-black tracking-[-0.035em]", accent.value)}>{count}</p>
         </div>
         <div className={cn("flex h-12 w-12 shrink-0 items-center justify-center shadow-sm ring-1", accent.icon)}>
@@ -1094,7 +1094,7 @@ function QueueCard({
         </div>
       </div>
       <p className="relative mt-3 text-xs leading-5 text-slate-500">{description}</p>
-      <div className="relative mt-4 flex items-center gap-1 text-[11px] font-bold uppercase tracking-[0.12em] text-slate-700">
+      <div className="relative mt-4 flex items-center gap-1 text-phx-xs font-bold uppercase tracking-[0.12em] text-slate-700">
         View details
         <ArrowRight aria-hidden="true" className="h-3.5 w-3.5 transition-transform duration-200 group-hover:translate-x-0.5" />
       </div>
@@ -1111,7 +1111,7 @@ function SummaryCard({ color, icon: Icon, title, value }: SummaryCardProps) {
       <div aria-hidden="true" className={cn("pointer-events-none absolute -right-10 -top-10 h-28 w-28 rounded-full blur-2xl", accent.glow)} />
       <div className="relative flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="truncate text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">{title}</p>
+          <p className="truncate text-phx-2xs font-bold uppercase tracking-[0.16em] text-slate-500">{title}</p>
           <p className={cn("mt-2.5 break-words text-xl font-black tracking-[-0.03em]", accent.value)}>{value}</p>
         </div>
         <div className={cn("flex h-12 w-12 shrink-0 items-center justify-center shadow-sm ring-1", accent.icon)}>
@@ -1142,7 +1142,7 @@ function StatusBadge({ status }: { status: string }) {
   return (
     <span
       className={cn(
-        "inline-flex items-center rounded-full border px-3 py-1 text-[11px] font-bold uppercase tracking-wider",
+        "inline-flex items-center rounded-full border px-3 py-1 text-phx-xs font-bold uppercase tracking-wider",
         isOk
           ? "border-emerald-200 bg-emerald-50/80 text-emerald-800"
           : isWarning

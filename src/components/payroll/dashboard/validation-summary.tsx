@@ -188,7 +188,7 @@ export function ValidationSummary({ result }: { result: SalaryValidationResult }
           ["Failed", result.failedRows],
         ].map(([label, value]) => (
           <div className="rounded-[22px] border border-phx-line bg-[#FCFDFE] p-4" key={label}>
-            <p className="text-[10px] font-black uppercase tracking-[0.16em] text-phx-ink-soft">{label}</p>
+            <p className="text-phx-2xs font-black uppercase tracking-[0.16em] text-phx-ink-soft">{label}</p>
             <p className="mt-2 text-2xl font-black tracking-[-0.03em] text-phx-ink">{value}</p>
           </div>
         ))}
@@ -241,7 +241,7 @@ export function ValidationSummary({ result }: { result: SalaryValidationResult }
         <div className="grid divide-y divide-phx-line lg:grid-cols-3 lg:divide-x lg:divide-y-0">
           {totalSections.map((section) => (
             <div className="p-4" key={section.title}>
-              <p className="mb-3 text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink">
+              <p className="mb-3 text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink">
                 {section.title}
               </p>
               <dl className="space-y-2">

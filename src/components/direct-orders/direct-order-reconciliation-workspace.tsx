@@ -18,7 +18,7 @@ function Kpi({ label, value, tone }: { label: string; value: string; tone?: "dan
         : "ring-slate-200 bg-white";
   return (
     <div className={`rounded-2xl border border-transparent p-4 ring-1 ${ring}`}>
-      <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{label}</div>
+      <div className="text-phx-xs font-semibold uppercase tracking-wide text-slate-500">{label}</div>
       <div className="mt-1 text-2xl font-bold tabular-nums text-slate-800">{value}</div>
     </div>
   );
@@ -94,7 +94,7 @@ export function DirectOrderReconciliationWorkspace({ result }: { result: DirectS
 
       <div className="overflow-x-auto rounded-2xl border border-slate-200">
         <table className="w-full border-collapse text-sm">
-          <thead className="bg-slate-50 text-left text-[11px] uppercase tracking-wide text-slate-500">
+          <thead className="bg-slate-50 text-left text-phx-xs uppercase tracking-wide text-slate-500">
             <tr>
               <th className="px-3 py-2 font-semibold">Period</th>
               <th className="px-3 py-2 font-semibold">Line</th>

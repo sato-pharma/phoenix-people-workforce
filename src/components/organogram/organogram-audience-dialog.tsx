@@ -87,7 +87,7 @@ function FacetChip({
     <button
       aria-pressed={active}
       className={cn(
-        "inline-flex h-7 shrink-0 items-center gap-1 whitespace-nowrap border px-2.5 text-[11px] font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-phx-accent/40",
+        "inline-flex h-7 shrink-0 items-center gap-1 whitespace-nowrap border px-2.5 text-phx-xs font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-phx-accent/40",
         active
           ? "border-phx-accent bg-phx-accent-soft text-phx-accent-press"
           : "border-phx-line bg-white text-slate-600 hover:border-phx-accent-line hover:text-phx-accent",
@@ -213,7 +213,7 @@ export function OrganogramAudienceDialog({ onClose, rows, scopeLabel }: Props) {
             </span>
             <div className="min-w-0">
               <p className="whitespace-nowrap text-sm font-bold leading-tight">Select people</p>
-              <p className="mt-0.5 whitespace-nowrap text-[11px] font-medium text-orange-200">
+              <p className="mt-0.5 whitespace-nowrap text-phx-xs font-medium text-orange-200">
                 {scopeLabel}
               </p>
             </div>
@@ -236,7 +236,7 @@ export function OrganogramAudienceDialog({ onClose, rows, scopeLabel }: Props) {
             if (values.length === 0) return null;
             return (
               <div className="flex items-center gap-3" key={facet}>
-                <span className="w-14 shrink-0 whitespace-nowrap text-[10px] font-black uppercase tracking-[0.12em] text-slate-400">
+                <span className="w-14 shrink-0 whitespace-nowrap text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400">
                   {ORGANOGRAM_AUDIENCE_FACET_LABELS[facet]}
                 </span>
                 <div className="flex flex-nowrap items-center gap-1.5 overflow-x-auto overscroll-x-contain py-0.5">
@@ -264,7 +264,7 @@ export function OrganogramAudienceDialog({ onClose, rows, scopeLabel }: Props) {
               type="search"
               value={filters.search}
             />
-            <label className="inline-flex h-8 shrink-0 cursor-pointer items-center gap-1.5 whitespace-nowrap border border-phx-line bg-white px-2.5 text-[11px] font-bold text-slate-600">
+            <label className="inline-flex h-8 shrink-0 cursor-pointer items-center gap-1.5 whitespace-nowrap border border-phx-line bg-white px-2.5 text-phx-xs font-bold text-slate-600">
               <input
                 checked={filters.includeOpenSeats}
                 className="h-3.5 w-3.5 accent-phx-accent"
@@ -279,14 +279,14 @@ export function OrganogramAudienceDialog({ onClose, rows, scopeLabel }: Props) {
               Include open seats
             </label>
             <button
-              className="inline-flex h-8 shrink-0 items-center whitespace-nowrap border border-phx-line bg-white px-2.5 text-[11px] font-bold text-slate-600 transition hover:border-phx-accent-line hover:text-phx-accent"
+              className="inline-flex h-8 shrink-0 items-center whitespace-nowrap border border-phx-line bg-white px-2.5 text-phx-xs font-bold text-slate-600 transition hover:border-phx-accent-line hover:text-phx-accent"
               onClick={selectAllFiltered}
               type="button"
             >
               Tick all {filtered.length}
             </button>
             <button
-              className="inline-flex h-8 shrink-0 items-center whitespace-nowrap border border-phx-line bg-white px-2.5 text-[11px] font-bold text-slate-600 transition hover:border-phx-accent-line hover:text-phx-accent"
+              className="inline-flex h-8 shrink-0 items-center whitespace-nowrap border border-phx-line bg-white px-2.5 text-phx-xs font-bold text-slate-600 transition hover:border-phx-accent-line hover:text-phx-accent"
               onClick={clearAll}
               type="button"
             >
@@ -298,7 +298,7 @@ export function OrganogramAudienceDialog({ onClose, rows, scopeLabel }: Props) {
         {/* People — a table on desktop, cards on mobile. */}
         <div className="flex-1 overflow-auto">
           {filtered.length === 0 ? (
-            <p className="px-5 py-10 text-center text-[13px] font-medium text-slate-500">
+            <p className="px-5 py-10 text-center text-phx-md font-medium text-slate-500">
               No one matches these filters.
             </p>
           ) : (
@@ -309,7 +309,7 @@ export function OrganogramAudienceDialog({ onClose, rows, scopeLabel }: Props) {
                   <tr className="border-b border-phx-line">
                     {["", "Name", "Role", "Area", "Work Email"].map((label, index) => (
                       <th
-                        className="whitespace-nowrap px-3 py-2 text-[10px] font-black uppercase tracking-[0.12em] text-slate-400"
+                        className="whitespace-nowrap px-3 py-2 text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400"
                         key={label || `col-${index}`}
                         scope="col"
                       >
@@ -340,16 +340,16 @@ export function OrganogramAudienceDialog({ onClose, rows, scopeLabel }: Props) {
                             type="checkbox"
                           />
                         </td>
-                        <td className="whitespace-nowrap px-3 py-1.5 text-[12px] font-bold text-slate-800">
+                        <td className="whitespace-nowrap px-3 py-1.5 text-phx-sm font-bold text-slate-800">
                           {isOpenSeat ? "Open Vacancy" : organogramAudienceName(row)}
                         </td>
-                        <td className="whitespace-nowrap px-3 py-1.5 text-[12px] font-medium text-slate-600">
+                        <td className="whitespace-nowrap px-3 py-1.5 text-phx-sm font-medium text-slate-600">
                           {organogramAudienceRole(row)}
                         </td>
-                        <td className="whitespace-nowrap px-3 py-1.5 text-[12px] font-medium text-slate-600">
+                        <td className="whitespace-nowrap px-3 py-1.5 text-phx-sm font-medium text-slate-600">
                           {row.areaName ?? row.regionName ?? row.lineName ?? "—"}
                         </td>
-                        <td className="whitespace-nowrap px-3 py-1.5 text-[12px] font-medium">
+                        <td className="whitespace-nowrap px-3 py-1.5 text-phx-sm font-medium">
                           {isOpenSeat ? (
                             <span className="text-slate-400">No occupant</span>
                           ) : email ? (
@@ -385,16 +385,16 @@ export function OrganogramAudienceDialog({ onClose, rows, scopeLabel }: Props) {
                           type="checkbox"
                         />
                         <span className="min-w-0 flex-1 overflow-x-auto">
-                          <span className="block whitespace-nowrap text-[13px] font-bold text-slate-800">
+                          <span className="block whitespace-nowrap text-phx-md font-bold text-slate-800">
                             {isOpenSeat ? "Open Vacancy" : organogramAudienceName(row)}
                           </span>
-                          <span className="block whitespace-nowrap text-[11px] font-medium text-slate-500">
+                          <span className="block whitespace-nowrap text-phx-xs font-medium text-slate-500">
                             {organogramAudienceRole(row)}
                             {row.areaName ? ` · ${row.areaName}` : ""}
                           </span>
                           <span
                             className={cn(
-                              "block whitespace-nowrap text-[11px] font-medium",
+                              "block whitespace-nowrap text-phx-xs font-medium",
                               isOpenSeat
                                 ? "text-slate-400"
                                 : email
@@ -417,7 +417,7 @@ export function OrganogramAudienceDialog({ onClose, rows, scopeLabel }: Props) {
         {/* Actions */}
         <div className="space-y-2 border-t border-phx-line bg-slate-50/70 px-5 py-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <p className="whitespace-nowrap text-[11px] font-bold text-slate-500">
+            <p className="whitespace-nowrap text-phx-xs font-bold text-slate-500">
               {usingTicks
                 ? `${tickedCount} ticked · ${emails.length} email${emails.length === 1 ? "" : "s"}`
                 : `All ${peopleInPick} filtered · ${emails.length} email${emails.length === 1 ? "" : "s"}`}
@@ -459,11 +459,11 @@ export function OrganogramAudienceDialog({ onClose, rows, scopeLabel }: Props) {
 
           {/* Never a silent subset: say who was left out and why. */}
           {copyFailed ? (
-            <p className="whitespace-nowrap text-[11px] font-bold text-rose-600">
+            <p className="whitespace-nowrap text-phx-xs font-bold text-rose-600">
               The browser blocked the clipboard. Export the sheet instead.
             </p>
           ) : missing.length > 0 || openSeats > 0 ? (
-            <p className="overflow-x-auto whitespace-nowrap text-[11px] font-medium text-amber-700">
+            <p className="overflow-x-auto whitespace-nowrap text-phx-xs font-medium text-amber-700">
               Not in the copy:
               {missing.length > 0
                 ? ` ${missing.length} with no work email (${missing
@@ -475,7 +475,7 @@ export function OrganogramAudienceDialog({ onClose, rows, scopeLabel }: Props) {
               {openSeats > 0 ? ` ${openSeats} open seat${openSeats === 1 ? "" : "s"}` : ""}
             </p>
           ) : (
-            <p className="whitespace-nowrap text-[11px] font-medium text-slate-400">
+            <p className="whitespace-nowrap text-phx-xs font-medium text-slate-400">
               Addresses are separated by a semicolon — paste straight into the To or Bcc field.
             </p>
           )}

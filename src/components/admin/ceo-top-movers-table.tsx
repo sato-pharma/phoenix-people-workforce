@@ -103,7 +103,7 @@ export function CeoTopMoversTable({
         <table className="w-full border-collapse text-xs">
           <thead>
             <tr className="bg-slate-900 text-left">
-              <th className="px-2 py-2 text-[9px] font-black uppercase tracking-[0.14em] text-slate-500">
+              <th className="px-2 py-2 text-phx-3xs font-black uppercase tracking-[0.14em] text-slate-500">
                 #
               </th>
               <SortableTh
@@ -111,7 +111,7 @@ export function CeoTopMoversTable({
                 sortKey="label"
                 sort={table.sort}
                 onSort={table.toggleSort}
-                className="px-2 py-2 text-[10px] font-black uppercase tracking-[0.12em] text-white"
+                className="px-2 py-2 text-phx-2xs font-black uppercase tracking-[0.12em] text-white"
               />
               <SortableTh
                 label={valueHeader}
@@ -119,9 +119,9 @@ export function CeoTopMoversTable({
                 sort={table.sort}
                 onSort={table.toggleSort}
                 align="right"
-                className="px-2 py-2 text-[10px] font-black uppercase tracking-[0.12em] text-white"
+                className="px-2 py-2 text-phx-2xs font-black uppercase tracking-[0.12em] text-white"
               />
-              <th className="px-2 py-2 text-right text-[10px] font-black uppercase tracking-[0.12em] text-white">
+              <th className="px-2 py-2 text-right text-phx-2xs font-black uppercase tracking-[0.12em] text-white">
                 Share
               </th>
             </tr>
@@ -138,7 +138,7 @@ export function CeoTopMoversTable({
                 const visibleTotal = table.rows.reduce((s, r) => s + r.value, 0);
                 return table.rows.map((row, i) => (
                   <tr key={row.label} className="bg-white hover:bg-slate-50/80">
-                    <td className="px-2 py-2 text-[10px] font-black text-slate-300">
+                    <td className="px-2 py-2 text-phx-2xs font-black text-slate-300">
                       #{i + 1}
                     </td>
                     <td className="px-2 py-2">
@@ -169,7 +169,7 @@ export function CeoTopMoversTable({
       </div>
 
       {movers.length === 0 && !table.isFiltered ? (
-        <p className="py-2 text-center text-[11px] text-slate-400">{empty}</p>
+        <p className="py-2 text-center text-phx-xs text-slate-400">{empty}</p>
       ) : null}
     </div>
   );

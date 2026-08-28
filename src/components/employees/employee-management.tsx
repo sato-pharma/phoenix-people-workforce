@@ -404,7 +404,7 @@ function SelectField({
   return (
     <label className={cn("block group", className)}>
       <div className="mb-1.5 flex items-center px-0.5 whitespace-nowrap overflow-hidden">
-        <span className={cn("block text-[10px] font-black uppercase tracking-[0.15em] transition-colors truncate", toneStyles.label)}>
+        <span className={cn("block text-phx-2xs font-black uppercase tracking-[0.15em] transition-colors truncate", toneStyles.label)}>
           {label}
         </span>
       </div>
@@ -685,7 +685,7 @@ function DirectoryAvatar({
           src={mode === "uploaded" ? `/api/employees/${encodeURIComponent(hrId)}/photo` : (staticUrl ?? "")}
         />
       ) : (
-        <span className="text-[10px] font-black text-orange-600">{initials}</span>
+        <span className="text-phx-2xs font-black text-orange-600">{initials}</span>
       )}
     </div>
   );
@@ -1743,7 +1743,7 @@ export function EmployeeManagement({
                       <span>{tab.label}</span>
                       <span
                         className={cn(
-                          "rounded-full px-2 py-0.5 text-[10px] font-black",
+                          "rounded-full px-2 py-0.5 text-phx-2xs font-black",
                           isActive ? "bg-phx-paper-2 text-phx-ink" : "bg-white text-phx-ink-soft",
                         )}
                       >
@@ -1910,7 +1910,7 @@ export function EmployeeManagement({
                       key={employeeRowKey(employee, index)}
                       meta={
                         <div className="flex flex-wrap items-center gap-2">
-                          <span className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[10px] font-black uppercase tracking-wider text-slate-600">
+                          <span className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-phx-2xs font-black uppercase tracking-wider text-slate-600">
                             {employee.hrId}
                           </span>
                           {employee.employmentStatus === "active" ? (
@@ -1921,7 +1921,7 @@ export function EmployeeManagement({
                       status={
                         <Badge
                           className={cn(
-                            "border-none px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-tight whitespace-nowrap",
+                            "border-none px-2.5 py-0.5 text-phx-2xs font-bold uppercase tracking-tight whitespace-nowrap",
                             employee.salaryPaymentMode === "two_parts"
                               ? "bg-amber-100 text-amber-700"
                               : "bg-emerald-100 text-emerald-700"
@@ -1935,7 +1935,7 @@ export function EmployeeManagement({
                     >
                       {directoryTab === "missing" && missingFields.length > 0 ? (
                         <div
-                          className="mb-2 flex items-start gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-2 py-1 text-[10px] font-bold text-amber-700"
+                          className="mb-2 flex items-start gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-2 py-1 text-phx-2xs font-bold text-amber-700"
                           title={missingFields.join(", ")}
                         >
                           <AlertCircle className="mt-0.5 h-3 w-3 shrink-0" />
@@ -1961,12 +1961,12 @@ export function EmployeeManagement({
                             value: employee.managerHrId ? (
                               <>
                                 {emptyText(employee.managerName)}{" "}
-                                <span className="font-mono text-[10px] text-slate-400">
+                                <span className="font-mono text-phx-2xs text-slate-400">
                                   {employee.managerHrId}
                                 </span>
                               </>
                             ) : (
-                              <span className="inline-flex rounded-full border border-amber-100 bg-amber-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-tighter text-amber-600">
+                              <span className="inline-flex rounded-full border border-amber-100 bg-amber-50 px-2 py-0.5 text-phx-2xs font-bold uppercase tracking-tighter text-amber-600">
                                 Unassigned
                               </span>
                             ),
@@ -1984,7 +1984,7 @@ export function EmployeeManagement({
             {/* Desktop Table View */}
             <PortalDesktopTable minWidth="1200px">
               <thead>
-                <tr className="border-b border-phx-line bg-phx-paper text-[11px] font-bold uppercase tracking-wider text-phx-ink-soft">
+                <tr className="border-b border-phx-line bg-phx-paper text-phx-xs font-bold uppercase tracking-wider text-phx-ink-soft">
                   <th className="sticky top-0 z-10 px-6 py-4">Employee Information</th>
                   <th className="sticky top-0 z-10 px-6 py-4 whitespace-nowrap">Hiring Date</th>
                   <th className="sticky top-0 z-10 px-6 py-4">Organization</th>
@@ -2038,7 +2038,7 @@ export function EmployeeManagement({
                             {employee.displayName}
                           </span>
                           <div className="mt-1.5 flex items-center gap-2">
-                            <span className="font-mono text-[10px] font-black tracking-wider text-phx-ink-soft bg-slate-100 px-1.5 py-0.5 rounded uppercase">
+                            <span className="font-mono text-phx-2xs font-black tracking-wider text-phx-ink-soft bg-slate-100 px-1.5 py-0.5 rounded uppercase">
                               {employee.hrId}
                             </span>
                             {employee.employmentStatus === "active" && (
@@ -2047,7 +2047,7 @@ export function EmployeeManagement({
                           </div>
                           {directoryTab === "missing" && missingFields.length > 0 ? (
                             <span
-                              className="mt-2 inline-flex max-w-[280px] items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-700"
+                              className="mt-2 inline-flex max-w-[280px] items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-phx-2xs font-bold text-amber-700"
                               title={missingFields.join(", ")}
                             >
                               <AlertCircle className="h-3 w-3 shrink-0" />
@@ -2069,7 +2069,7 @@ export function EmployeeManagement({
                           <span className="text-xs font-semibold text-phx-ink leading-tight">
                             {emptyText(employee.positionTitle ?? employee.jobTitle)}
                           </span>
-                          <span className="text-[10px] text-phx-ink-soft">
+                          <span className="text-phx-2xs text-phx-ink-soft">
                             {emptyText(employee.departmentName)} · {emptyText(employee.lineName)}
                           </span>
                         </div>
@@ -2080,12 +2080,12 @@ export function EmployeeManagement({
                             <span className="text-xs font-medium text-phx-ink">
                               {emptyText(employee.managerName)}
                             </span>
-                            <span className="font-mono text-[10px] tracking-tight text-phx-ink-faint">
+                            <span className="font-mono text-phx-2xs tracking-tight text-phx-ink-faint">
                               {employee.managerHrId}
                             </span>
                           </div>
                         ) : (
-                          <span className="text-[10px] font-bold uppercase tracking-tighter text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-100">
+                          <span className="text-phx-2xs font-bold uppercase tracking-tighter text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-100">
                             Unassigned
                           </span>
                         )}
@@ -2093,7 +2093,7 @@ export function EmployeeManagement({
                       <td className="px-6 py-4 text-center">
                         <Badge
                           className={cn(
-                            "border-none px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-tight whitespace-nowrap",
+                            "border-none px-2.5 py-0.5 text-phx-2xs font-bold uppercase tracking-tight whitespace-nowrap",
                             employee.salaryPaymentMode === "two_parts"
                               ? "bg-amber-100 text-amber-700"
                               : "bg-emerald-100 text-emerald-700"
@@ -2110,7 +2110,7 @@ export function EmployeeManagement({
                           <span className="text-xs font-medium text-phx-ink leading-tight">
                             {emptyText(employee.workEmail)}
                           </span>
-                          <span className="font-mono text-[10px] tracking-tight text-phx-ink-soft">
+                          <span className="font-mono text-phx-2xs tracking-tight text-phx-ink-soft">
                             {emptyText(employee.mobileNumber)}
                           </span>
                         </div>
@@ -2181,8 +2181,8 @@ export function EmployeeManagement({
                 <div>
                   <h2 className="text-xl font-bold tracking-tight text-phx-ink" id="master-details-title">{masterDetailsEmployee.displayName}</h2>
                   <div className="mt-1 flex items-center gap-2">
-                    <span className="font-mono text-[10px] font-black tracking-wider text-phx-ink-soft bg-slate-100 px-2 py-0.5 rounded uppercase">{masterDetailsEmployee.hrId}</span>
-                    <span className="text-[10px] text-phx-ink-faint">·</span>
+                    <span className="font-mono text-phx-2xs font-black tracking-wider text-phx-ink-soft bg-slate-100 px-2 py-0.5 rounded uppercase">{masterDetailsEmployee.hrId}</span>
+                    <span className="text-phx-2xs text-phx-ink-faint">·</span>
                     <span className="text-sm text-phx-ink-soft">{masterText(masterDetailsEmployee.positionTitle ?? masterDetailsEmployee.jobTitle)}</span>
                   </div>
                 </div>
@@ -2320,7 +2320,7 @@ export function EmployeeManagement({
                         <div className="flex items-start justify-between gap-3">
                           <div>
                             <p className="text-sm font-semibold text-phx-ink">{detail.label}</p>
-                            <p className="text-[11px] uppercase tracking-[0.12em] text-phx-ink-soft">
+                            <p className="text-phx-xs uppercase tracking-[0.12em] text-phx-ink-soft">
                               {detail.category.replace(/_/g, " ")} · {detail.valueType}
                             </p>
                           </div>
@@ -2649,7 +2649,7 @@ export function EmployeeManagement({
                     value={form.residenceArea}
                   />
                 </div>
-                <div className="rounded-xl border border-blue-100 bg-blue-50/50 p-4 text-[11px] leading-relaxed text-phx-ink-2">
+                <div className="rounded-xl border border-blue-100 bg-blue-50/50 p-4 text-phx-xs leading-relaxed text-phx-ink-2">
                   <p className="font-bold text-[#1E40AF] mb-1 uppercase tracking-tight">Geocoding Information</p>
                   Residence address is automatically geocoded upon saving. Coordinates are used for distance-based expense validation and workforce heatmaps.
                 </div>
@@ -2812,7 +2812,7 @@ export function EmployeeManagement({
                             <p className="text-sm font-semibold text-phx-ink">
                               Salary Detail {index + 1}
                             </p>
-                            <p className="text-[11px] uppercase tracking-[0.12em] text-phx-ink-soft">
+                            <p className="text-phx-xs uppercase tracking-[0.12em] text-phx-ink-soft">
                               Flexible compensation row
                             </p>
                           </div>
@@ -2903,7 +2903,7 @@ export function EmployeeManagement({
               </div>
 
               {/* Payroll Information Note */}
-              <div className="rounded-xl border border-amber-100 bg-amber-50/50 p-4 text-[11px] leading-relaxed text-phx-ink-2">
+              <div className="rounded-xl border border-amber-100 bg-amber-50/50 p-4 text-phx-xs leading-relaxed text-phx-ink-2">
                 <p className="font-bold text-[#92400E] mb-1 uppercase tracking-tight">Payroll Payout Structure</p>
                 <span className="font-bold text-[#92400E]">1 Part:</span> Net salary on Day 1, expenses on Day 10.<br/>
                 <span className="font-bold text-[#92400E]">2 Parts:</span> 70% Basic on Day 1. Remaining 30%, Cost of Living, Fuel, and Expenses on Day 10.

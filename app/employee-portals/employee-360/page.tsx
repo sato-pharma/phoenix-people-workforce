@@ -185,8 +185,8 @@ export default async function EmployeePortalEmployee360Page({
         {teamRoster.length > 0 ? (
           <section className="space-y-2">
             <div className="flex items-baseline justify-between gap-3">
-              <h2 className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Select Employee</h2>
-              <span className="whitespace-nowrap text-[10px] font-semibold uppercase tracking-widest text-slate-400">
+              <h2 className="text-phx-2xs font-bold uppercase tracking-widest text-slate-500">Select Employee</h2>
+              <span className="whitespace-nowrap text-phx-2xs font-semibold uppercase tracking-widest text-slate-400">
                 {teamRoster.length} in your team
               </span>
             </div>
@@ -221,8 +221,8 @@ export default async function EmployeePortalEmployee360Page({
       <Shell description="Pick yourself or anyone in your team to open their 360 report." title="Employee 360">
         <section className="space-y-2">
           <div className="flex items-baseline justify-between gap-3">
-            <h2 className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Select Employee</h2>
-            <span className="whitespace-nowrap text-[10px] font-semibold uppercase tracking-widest text-slate-400">
+            <h2 className="text-phx-2xs font-bold uppercase tracking-widest text-slate-500">Select Employee</h2>
+            <span className="whitespace-nowrap text-phx-2xs font-semibold uppercase tracking-widest text-slate-400">
               you + {teamRoster.length - 1} in your team
             </span>
           </div>

@@ -75,7 +75,7 @@ function TrendDots({ values }: { values: number[] }) {
 function StatCard({ label, value, sub }: { label: string; sub?: string; value: string }) {
   return (
     <div className="rounded-xl border border-phx-line bg-phx-paper px-4 py-3">
-      <p className="text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-soft">{label}</p>
+      <p className="text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">{label}</p>
       <p className="mt-1 text-2xl font-black tabular-nums text-slate-950">{value}</p>
       {sub ? <p className="mt-0.5 text-xs text-phx-ink-faint">{sub}</p> : null}
     </div>
@@ -101,7 +101,7 @@ function DistributorCoverageTable({ rows }: { rows: DistributorCoverageRow[] }) 
   if (rows.length === 0) {
     return <p className="px-5 py-4 text-sm text-phx-ink-soft">No coverage data yet — data populates after the first confirmed import.</p>;
   }
-  const thProps = { sort: table.sort, onSort: table.toggleSort, variant: "dark" as const, className: "px-4 py-3 text-[11px] tracking-[0.14em]" };
+  const thProps = { sort: table.sort, onSort: table.toggleSort, variant: "dark" as const, className: "px-4 py-3 text-phx-xs tracking-[0.14em]" };
   return (
     <div>
       <div className="flex justify-end border-b border-[#EEF2F7] px-4 py-2">
@@ -160,7 +160,7 @@ function DriftAlertsTable({ alerts }: { alerts: DriftAlert[] }) {
     searchAccessors: [(row) => row.distributorCode],
     initialSort: { key: "committedAt", dir: "desc" },
   });
-  const thProps = { sort: table.sort, onSort: table.toggleSort, variant: "dark" as const, className: "px-4 py-3 text-[11px] tracking-[0.14em]" };
+  const thProps = { sort: table.sort, onSort: table.toggleSort, variant: "dark" as const, className: "px-4 py-3 text-phx-xs tracking-[0.14em]" };
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
@@ -258,7 +258,7 @@ function BulkMapTable({ bricks, onSaved, rows }: { bricks: BrickOption[]; onSave
           <thead>
             <tr className="bg-[#020617] text-left">
               {["Customer", "Distributor", "Imports", "Assign brick"].map((h) => (
-                <th key={h} className="px-4 py-3 text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-soft first:text-white">{h}</th>
+                <th key={h} className="px-4 py-3 text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft first:text-white">{h}</th>
               ))}
             </tr>
           </thead>

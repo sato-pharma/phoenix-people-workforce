@@ -558,7 +558,7 @@ export function WorkflowRegistryManager({
                     {module.isActive ? "Live" : "Off"}
                   </Badge>
                 </div>
-                <p className="mt-1 truncate font-mono text-[11px] text-slate-500">{module.moduleKey}</p>
+                <p className="mt-1 truncate font-mono text-phx-xs text-slate-500">{module.moduleKey}</p>
               </button>
             );
           })}

@@ -268,7 +268,7 @@ export function AttendanceExceptionsManager({ canReview, employees, initialData,
           >
             {filterLabels[s]}
             {s === "pending" && pendingCount > 0 && (
-              <span className="ml-1.5 rounded-full bg-orange-500 px-1.5 py-0.5 text-[10px] text-white">
+              <span className="ml-1.5 rounded-full bg-orange-500 px-1.5 py-0.5 text-phx-2xs text-white">
                 {pendingCount}
               </span>
             )}

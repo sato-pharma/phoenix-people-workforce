@@ -68,13 +68,13 @@ export function PhoenixIdentityCard({ employee, unoptimizedPhoto = false }: Phoe
               <p className="text-[22px] font-black uppercase leading-none tracking-[0.28em] text-slate-950 sm:text-[27px]">
                 Phoenix
               </p>
-              <p className="mt-2 text-[15px] font-black uppercase leading-none tracking-[0.30em] text-orange-600 sm:text-[18px]">
+              <p className="mt-2 text-phx-lg font-black uppercase leading-none tracking-[0.30em] text-orange-600 sm:text-[18px]">
                 Workforce
               </p>
             </div>
           </div>
           {employee.verified ? (
-            <div className="inline-flex w-fit items-center gap-3 rounded-full bg-[#111827] px-5 py-3 text-[12px] font-black uppercase tracking-[0.18em] text-white shadow-[0_14px_28px_rgba(15,23,42,0.22)] sm:self-start sm:px-6 sm:text-[13px]">
+            <div className="inline-flex w-fit items-center gap-3 rounded-full bg-[#111827] px-5 py-3 text-phx-sm font-black uppercase tracking-[0.18em] text-white shadow-[0_14px_28px_rgba(15,23,42,0.22)] sm:self-start sm:px-6 sm:text-phx-md">
               <ShieldCheck className="h-5 w-5" />
               Phoenix Verified
             </div>
@@ -106,7 +106,7 @@ export function PhoenixIdentityCard({ employee, unoptimizedPhoto = false }: Phoe
                 {employee.fullName}
               </h1>
               <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center">
-                <p className="text-[14px] font-black uppercase tracking-[0.24em] text-orange-600 sm:text-[17px]">
+                <p className="text-phx-base font-black uppercase tracking-[0.24em] text-orange-600 sm:text-[17px]">
                   {employee.title}
                 </p>
                 <span className="hidden h-px flex-1 bg-gradient-to-r from-orange-500/70 via-slate-300/70 to-transparent sm:block" />
@@ -142,7 +142,7 @@ function IdentityLine({
       <dt className="flex h-9 w-9 items-center justify-center rounded-[10px] border border-slate-200 bg-slate-50 text-slate-500 shadow-[inset_0_1px_0_rgba(255,255,255,0.9)]">
         {icon}
       </dt>
-      <dt className="min-w-0 text-[11px] font-black uppercase tracking-[0.20em] text-slate-500 sm:text-[12px]">
+      <dt className="min-w-0 text-phx-xs font-black uppercase tracking-[0.20em] text-slate-500 sm:text-phx-sm">
         {label}
       </dt>
       <dd className="col-start-2 min-w-0 break-words text-[17px] font-black leading-tight text-[#111827] sm:col-start-auto sm:text-[18px]">{value}</dd>

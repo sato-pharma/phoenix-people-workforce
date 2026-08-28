@@ -13,7 +13,7 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 const fieldClass =
   "h-10 w-full border border-slate-300 bg-white px-3 text-sm text-slate-900 transition placeholder:text-slate-400 focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500/20";
 const selectClass = `${fieldClass} cursor-pointer`;
-const microLabel = "mb-1.5 block text-[11px] font-black uppercase tracking-wide text-slate-500";
+const microLabel = "mb-1.5 block text-phx-xs font-black uppercase tracking-wide text-slate-500";
 
 const btnGhost =
   "inline-flex items-center gap-1.5 border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-700 transition hover:bg-slate-100 disabled:pointer-events-none disabled:opacity-40";
@@ -22,11 +22,11 @@ const btnDark =
 
 function SeriousChip({ serious }: { serious: boolean }) {
   return serious ? (
-    <span className="inline-block border border-rose-300 bg-rose-50 px-2 py-0.5 text-[11px] font-bold text-rose-700">
+    <span className="inline-block border border-rose-300 bg-rose-50 px-2 py-0.5 text-phx-xs font-bold text-rose-700">
       Serious
     </span>
   ) : (
-    <span className="inline-block border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] font-bold text-slate-500">
+    <span className="inline-block border border-slate-200 bg-slate-50 px-2 py-0.5 text-phx-xs font-bold text-slate-500">
       No
     </span>
   );
@@ -40,7 +40,7 @@ function KpiCard({ label, value, highlight }: { label: string; value: number; hi
     <div className="border border-slate-200 bg-white">
       <div className={["h-1", hot ? "bg-rose-600" : "bg-slate-900"].join(" ")} />
       <div className="p-4">
-        <p className="text-[11px] font-black uppercase tracking-wide text-slate-500">{label}</p>
+        <p className="text-phx-xs font-black uppercase tracking-wide text-slate-500">{label}</p>
         <p className={["mt-1 text-2xl font-black tabular-nums", hot ? "text-rose-600" : "text-slate-900"].join(" ")}>
           {value.toLocaleString()}
         </p>
@@ -55,7 +55,7 @@ function DetailRow({ label, value }: { label: string; value: React.ReactNode }) 
   if (!value && value !== 0) return null;
   return (
     <div className="flex gap-3 text-sm">
-      <span className="w-40 shrink-0 pt-0.5 text-[11px] font-black uppercase tracking-wide text-slate-400">
+      <span className="w-40 shrink-0 pt-0.5 text-phx-xs font-black uppercase tracking-wide text-slate-400">
         {label}
       </span>
       <span className="flex-1 font-semibold text-slate-800">{value}</span>
@@ -65,7 +65,7 @@ function DetailRow({ label, value }: { label: string; value: React.ReactNode }) 
 
 function SectionHeading({ children }: { children: React.ReactNode }) {
   return (
-    <p className="border-b border-slate-200 pb-1 text-[11px] font-black uppercase tracking-wide text-slate-500">
+    <p className="border-b border-slate-200 pb-1 text-phx-xs font-black uppercase tracking-wide text-slate-500">
       {children}
     </p>
   );
@@ -79,7 +79,7 @@ function ReportDetailDrawer({ report, onClose }: { report: ReportItReportRow; on
         {/* Dark command header */}
         <div className="flex items-start justify-between bg-slate-900 px-5 py-4">
           <div>
-            <p className="text-[10px] font-black uppercase tracking-[0.25em] text-orange-400">Report Detail</p>
+            <p className="text-phx-2xs font-black uppercase tracking-[0.25em] text-orange-400">Report Detail</p>
             <p className="mt-0.5 font-mono text-base font-black text-white">{report.report_number}</p>
           </div>
           <button
@@ -130,7 +130,7 @@ function ReportDetailDrawer({ report, onClose }: { report: ReportItReportRow; on
                 {report.suspected_medicines.map((m, i) => (
                   <span
                     key={i}
-                    className="inline-block border border-amber-300 bg-amber-50 px-2 py-0.5 text-[11px] font-bold text-amber-800"
+                    className="inline-block border border-amber-300 bg-amber-50 px-2 py-0.5 text-phx-xs font-bold text-amber-800"
                   >
                     {m}
                   </span>
@@ -272,7 +272,7 @@ export function ReportItAdminDashboard({ kpis, initialRows, initialTotal }: Prop
       <div className="border border-slate-200 bg-white">
         <button
           type="button"
-          className="flex w-full items-center justify-between px-4 py-3 text-[11px] font-black uppercase tracking-wide text-slate-700 transition hover:bg-slate-50"
+          className="flex w-full items-center justify-between px-4 py-3 text-phx-xs font-black uppercase tracking-wide text-slate-700 transition hover:bg-slate-50"
           onClick={() => setShowFilters((v) => !v)}
         >
           <span>Filters</span>
@@ -366,7 +366,7 @@ export function ReportItAdminDashboard({ kpis, initialRows, initialTotal }: Prop
       <div className="overflow-x-auto border border-slate-200">
         <table className="w-full border-collapse text-sm">
           <thead>
-            <tr className="bg-slate-900 text-left text-[11px] font-black uppercase tracking-wide text-white">
+            <tr className="bg-slate-900 text-left text-phx-xs font-black uppercase tracking-wide text-white">
               <th className="px-3 py-2.5">Report #</th>
               <th className="px-3 py-2.5">Date</th>
               <th className="px-3 py-2.5">Submitted By</th>

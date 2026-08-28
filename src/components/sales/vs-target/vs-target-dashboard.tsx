@@ -245,9 +245,9 @@ function SectionCard({
         <div className="flex min-w-0 items-center gap-2.5">
           <Icon className="h-4 w-4 shrink-0 text-orange-500" />
           <div className="min-w-0">
-            <h2 className="whitespace-nowrap text-[13px] font-black tracking-tight text-foreground">{title}</h2>
+            <h2 className="whitespace-nowrap text-phx-md font-black tracking-tight text-foreground">{title}</h2>
             {subtitle ? (
-              <p className="whitespace-nowrap text-[11px] text-muted-foreground">{subtitle}</p>
+              <p className="whitespace-nowrap text-phx-xs text-muted-foreground">{subtitle}</p>
             ) : null}
           </div>
         </div>
@@ -273,7 +273,7 @@ function ChartTooltipContent({
   return (
     <div className="border border-slate-700 bg-slate-900 px-3 py-2 shadow-xl">
       {label != null ? (
-        <p className="mb-1 whitespace-nowrap text-[10px] font-black uppercase tracking-[0.12em] text-slate-400">
+        <p className="mb-1 whitespace-nowrap text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400">
           {label}
         </p>
       ) : null}
@@ -282,9 +282,9 @@ function ChartTooltipContent({
           <div key={`${entry.name ?? index}`} className="flex items-center justify-between gap-4">
             <span className="flex items-center gap-1.5">
               <span className="h-2 w-2 shrink-0" style={{ backgroundColor: entry.color }} aria-hidden />
-              <span className="whitespace-nowrap text-[11px] font-semibold text-slate-300">{entry.name}</span>
+              <span className="whitespace-nowrap text-phx-xs font-semibold text-slate-300">{entry.name}</span>
             </span>
-            <span className="whitespace-nowrap text-[11px] font-black tabular-nums text-white">
+            <span className="whitespace-nowrap text-phx-xs font-black tabular-nums text-white">
               {formatEgpFull(Number(entry.value ?? 0))}
             </span>
           </div>
@@ -341,7 +341,7 @@ function HierarchyTable({
       <div className="hidden overflow-x-auto md:block">
         <table className="w-full text-left text-sm">
           <thead className="sticky top-0 z-10">
-            <tr className="bg-slate-900 text-[10px] uppercase tracking-[0.14em] text-slate-300">
+            <tr className="bg-slate-900 text-phx-2xs uppercase tracking-[0.14em] text-slate-300">
               <th className="whitespace-nowrap px-4 py-2.5 font-black">{columnLabel}</th>
               <th className="whitespace-nowrap px-4 py-2.5 text-right font-black">Sales</th>
               <th className="whitespace-nowrap px-4 py-2.5 font-black">Share</th>
@@ -485,13 +485,13 @@ function BrickPanel({ bricks, loading }: { bricks: BrickNode[] | null; loading: 
   const max = Math.max(...bricks.map((brick) => Math.abs(brick.salesValue)), 1);
   return (
     <div>
-      <p className="mb-2 text-[10px] font-black uppercase tracking-[0.14em] text-muted-foreground">
+      <p className="mb-2 text-phx-2xs font-black uppercase tracking-[0.14em] text-muted-foreground">
         Bricks — {bricks.length.toLocaleString("en-US")} in this area, {formatEgpFull(total)}
       </p>
       <div className="overflow-x-auto">
         <table className="w-full text-left text-xs">
           <thead>
-            <tr className="border-b border-border text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
+            <tr className="border-b border-border text-phx-2xs uppercase tracking-[0.12em] text-muted-foreground">
               <th className="whitespace-nowrap py-1.5 pr-4 font-black">Brick</th>
               <th className="w-32 py-1.5 pr-4 font-black">Share</th>
               <th className="whitespace-nowrap py-1.5 pr-4 text-right font-black">Source of Sales</th>
@@ -541,15 +541,15 @@ function LeaderList({
         <li key={node.key} className="flex items-center gap-3 px-4 py-2.5">
           <span
             className={cn(
-              "flex h-6 w-6 shrink-0 items-center justify-center text-[11px] font-black text-white",
+              "flex h-6 w-6 shrink-0 items-center justify-center text-phx-xs font-black text-white",
               tone === "top" ? "bg-emerald-500" : "bg-red-500",
             )}
           >
             {index + 1}
           </span>
           <div className="min-w-0 flex-1">
-            <p className="overflow-x-auto whitespace-nowrap text-[13px] font-bold text-foreground">{node.name}</p>
-            <p className="whitespace-nowrap text-[11px] text-muted-foreground">
+            <p className="overflow-x-auto whitespace-nowrap text-phx-md font-bold text-foreground">{node.name}</p>
+            <p className="whitespace-nowrap text-phx-xs text-muted-foreground">
               {formatEgpFull(node.current.actualValue)} of {formatEgpFull(node.current.targetValue)}
             </p>
           </div>
@@ -645,7 +645,7 @@ export function VsTargetDashboard({
 
         <div className="relative flex flex-col gap-6 px-5 py-6 sm:px-8 lg:flex-row lg:items-center lg:justify-between">
           <div className="min-w-0">
-            <p className="text-[11px] font-black uppercase tracking-[0.28em] text-orange-400">{kicker}</p>
+            <p className="text-phx-xs font-black uppercase tracking-[0.28em] text-orange-400">{kicker}</p>
             <h1 className="mt-1 text-3xl font-black leading-none tracking-tight text-white sm:text-[2.3rem]">
               Sales vs Target
             </h1>
@@ -656,11 +656,11 @@ export function VsTargetDashboard({
             {data.salesLoaded ? (
               <div className="mt-5 flex flex-wrap items-end gap-x-9 gap-y-4">
                 <div>
-                  <p className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-500">Total sales</p>
+                  <p className="text-phx-2xs font-black uppercase tracking-[0.18em] text-slate-500">Total sales</p>
                   <p className="mt-0.5 whitespace-nowrap text-3xl font-black tabular-nums text-white">
                     <CountUpNumber value={data.totals.actualValue} format={formatEgp} />
                   </p>
-                  <p className="mt-1 whitespace-nowrap text-[11px] text-slate-400">
+                  <p className="mt-1 whitespace-nowrap text-phx-xs text-slate-400">
                     {data.priorPeriod ? (
                       <span className="inline-flex items-center gap-1.5">
                         <GrowthPill dark value={data.growth} /> vs {priorLabel}
@@ -671,20 +671,20 @@ export function VsTargetDashboard({
                   </p>
                 </div>
                 <div>
-                  <p className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-500">Target</p>
+                  <p className="text-phx-2xs font-black uppercase tracking-[0.18em] text-slate-500">Target</p>
                   <p className="mt-0.5 whitespace-nowrap text-3xl font-black tabular-nums text-sky-300">
                     <CountUpNumber value={data.totals.targetValue} format={formatEgp} />
                   </p>
-                  <p className="mt-1 whitespace-nowrap text-[11px] text-slate-400">
+                  <p className="mt-1 whitespace-nowrap text-phx-xs text-slate-400">
                     {data.totals.coveredKeys.toLocaleString("en-US")} targeted product lines
                   </p>
                 </div>
                 <div>
-                  <p className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-500">Units sold</p>
+                  <p className="text-phx-2xs font-black uppercase tracking-[0.18em] text-slate-500">Units sold</p>
                   <p className="mt-0.5 whitespace-nowrap text-3xl font-black tabular-nums text-white">
                     <CountUpNumber value={data.totals.actualUnits} format={formatNumber} />
                   </p>
-                  <p className="mt-1 whitespace-nowrap text-[11px] text-slate-400">
+                  <p className="mt-1 whitespace-nowrap text-phx-xs text-slate-400">
                     {data.totals.targetUnits === 0 ? "No unit target" : `Target ${formatNumber(data.totals.targetUnits)}`}
                   </p>
                 </div>
@@ -696,11 +696,11 @@ export function VsTargetDashboard({
             <div className="flex shrink-0 items-center gap-6">
               <AchievementRing dark value={data.totals.achievementValue} size={150} stroke={13} label="Achievement" />
               <div className="hidden sm:block">
-                <p className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-500">Measured</p>
+                <p className="text-phx-2xs font-black uppercase tracking-[0.18em] text-slate-500">Measured</p>
                 <p className="mt-1 whitespace-nowrap text-2xl font-black tabular-nums text-white">
                   {formatPct(data.coverage)}
                 </p>
-                <p className="mt-1 max-w-[13rem] text-[11px] leading-4 text-slate-400">
+                <p className="mt-1 max-w-[13rem] text-phx-xs leading-4 text-slate-400">
                   of sales has a target to be measured against
                 </p>
               </div>
@@ -710,7 +710,7 @@ export function VsTargetDashboard({
 
         {/* Month selector, inside the band so the page starts with content, not chrome. */}
         <div className="relative flex flex-wrap items-center gap-1.5 border-t border-slate-800 px-5 py-2.5 sm:px-8">
-          <span className="mr-1 whitespace-nowrap text-[10px] font-black uppercase tracking-[0.18em] text-slate-500">
+          <span className="mr-1 whitespace-nowrap text-phx-2xs font-black uppercase tracking-[0.18em] text-slate-500">
             Month
           </span>
           {data.periods.map((period) => (
@@ -833,12 +833,12 @@ export function VsTargetDashboard({
               <ul className="divide-y divide-border">
                 {topProducts.map((product) => (
                   <li key={product.key} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-1 px-4 py-2">
-                    <p className="overflow-x-auto whitespace-nowrap text-[13px] font-bold text-foreground">{product.name}</p>
-                    <span className="whitespace-nowrap text-[13px] font-black tabular-nums">
+                    <p className="overflow-x-auto whitespace-nowrap text-phx-md font-bold text-foreground">{product.name}</p>
+                    <span className="whitespace-nowrap text-phx-md font-black tabular-nums">
                       {formatEgpFull(product.current.actualValue)}
                     </span>
                     <ProportionBar fraction={Math.abs(product.current.actualValue) / maxProduct} color={ACTUAL_COLOR} />
-                    <span className={cn("whitespace-nowrap text-right text-[11px] font-bold tabular-nums", achievementTone(product.current.achievementValue))}>
+                    <span className={cn("whitespace-nowrap text-right text-phx-xs font-bold tabular-nums", achievementTone(product.current.achievementValue))}>
                       {product.current.achievementValue == null ? "no target" : formatPct(product.current.achievementValue)}
                     </span>
                   </li>
@@ -866,19 +866,19 @@ export function VsTargetDashboard({
                       <div className="mt-1.5">
                         <ProportionBar fraction={Math.abs(entry.value) / Math.abs(channelTotal)} color={entry.color} />
                       </div>
-                      <p className="mt-1 whitespace-nowrap text-[11px] text-muted-foreground">
+                      <p className="mt-1 whitespace-nowrap text-phx-xs text-muted-foreground">
                         {((entry.value / channelTotal) * 100).toFixed(1)}% of total sales
                       </p>
                     </div>
                   ))}
                   {data.areaUnattributedValue !== 0 ? (
-                    <p className="border-t border-border pt-3 text-[11px] leading-4 text-muted-foreground">
+                    <p className="border-t border-border pt-3 text-phx-xs leading-4 text-muted-foreground">
                       {formatEgpFull(data.areaUnattributedValue)} of Direct Orders could not be placed in a single area, so
                       it counts at team and region level only.
                     </p>
                   ) : null}
                   {data.unplacedValue !== 0 ? (
-                    <p className="border-t border-border pt-3 text-[11px] leading-4 text-muted-foreground">
+                    <p className="border-t border-border pt-3 text-phx-xs leading-4 text-muted-foreground">
                       A further {formatEgpFull(data.unplacedValue)} could not be placed in any area or region. It is real
                       invoiced sales and is counted in the total above — the same figure Monthly Closing reports — but it
                       reaches no region, area or rep, and no target measures it.
@@ -954,7 +954,7 @@ export function VsTargetDashboard({
                       setDrillKey(null);
                     }}
                     className={cn(
-                      "whitespace-nowrap border px-2.5 py-1 text-[11px] font-bold transition-colors",
+                      "whitespace-nowrap border px-2.5 py-1 text-phx-xs font-bold transition-colors",
                       key === level
                         ? "border-orange-500 bg-orange-500 text-white"
                         : "border-border bg-background text-muted-foreground hover:border-orange-400 hover:text-foreground",
@@ -1002,7 +1002,7 @@ export function VsTargetDashboard({
               <div className="hidden max-h-80 overflow-auto md:block">
                 <table className="w-full text-left text-sm">
                   <thead className="sticky top-0 z-10">
-                    <tr className="bg-slate-900 text-[10px] uppercase tracking-[0.14em] text-slate-300">
+                    <tr className="bg-slate-900 text-phx-2xs uppercase tracking-[0.14em] text-slate-300">
                       <th className="whitespace-nowrap px-4 py-2.5 font-black">Team</th>
                       <th className="whitespace-nowrap px-4 py-2.5 font-black">Region</th>
                       <th className="whitespace-nowrap px-4 py-2.5 font-black">Area</th>

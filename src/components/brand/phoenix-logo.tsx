@@ -37,7 +37,7 @@ export function PhoenixLogo({ compact = false, className, onDark = false }: Phoe
           <div className="text-sm font-semibold tracking-[0.28em] text-text">
             {systemIdentity.brandName.toUpperCase()}
           </div>
-          <div className="text-[10px] font-semibold tracking-[0.34em] text-primary">
+          <div className="text-phx-2xs font-semibold tracking-[0.34em] text-primary">
             {systemIdentity.productName.toUpperCase()}
           </div>
         </div>

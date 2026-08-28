@@ -200,12 +200,12 @@ export function NonEmployeesPanel({ runId, part, locked, onChange }: Props) {
       <div className="hidden overflow-x-auto border border-slate-200 md:block">
         <div>
           <div className="grid grid-cols-[1.3fr_1.3fr_1fr_1fr_0.9fr_auto] items-center gap-x-3 bg-slate-900 px-3 py-2.5">
-            <div className="text-[11px] font-bold uppercase tracking-wide text-slate-300">Full Name (EN)</div>
-            <div className="text-[11px] font-bold uppercase tracking-wide text-slate-300">Full Name (AR)</div>
-            <div className="text-[11px] font-bold uppercase tracking-wide text-slate-300">Bank Name</div>
-            <div className="text-[11px] font-bold uppercase tracking-wide text-slate-300">Bank Account</div>
-            <div className="text-right text-[11px] font-bold uppercase tracking-wide text-slate-300">Total Salary</div>
-            <div className="text-[11px] font-bold uppercase tracking-wide text-slate-300">Actions</div>
+            <div className="text-phx-xs font-bold uppercase tracking-wide text-slate-300">Full Name (EN)</div>
+            <div className="text-phx-xs font-bold uppercase tracking-wide text-slate-300">Full Name (AR)</div>
+            <div className="text-phx-xs font-bold uppercase tracking-wide text-slate-300">Bank Name</div>
+            <div className="text-phx-xs font-bold uppercase tracking-wide text-slate-300">Bank Account</div>
+            <div className="text-right text-phx-xs font-bold uppercase tracking-wide text-slate-300">Total Salary</div>
+            <div className="text-phx-xs font-bold uppercase tracking-wide text-slate-300">Actions</div>
           </div>
 
           {rows.map((row, index) => {

@@ -289,13 +289,13 @@ export function PortalSosDashboard({ initialData, scope, initialComparison, init
                 <button
                   type="button"
                   onClick={resetFilters}
-                  className="inline-flex items-center gap-1.5 rounded-sm bg-white/10 px-2.5 py-1 text-[10px] font-black uppercase tracking-wide text-white transition hover:bg-orange-500"
+                  className="inline-flex items-center gap-1.5 rounded-sm bg-white/10 px-2.5 py-1 text-phx-2xs font-black uppercase tracking-wide text-white transition hover:bg-orange-500"
                 >
                   <RotateCcw className="h-3 w-3" />
                   Reset {activeFilterCount}
                 </button>
               ) : (
-                <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">No filters applied</span>
+                <span className="text-phx-2xs font-bold uppercase tracking-widest text-slate-400">No filters applied</span>
               )
             }
           >
@@ -410,9 +410,9 @@ function ScopeBar({
       <div className="flex min-w-0 items-center gap-3">
         <span className="h-9 w-[3px] shrink-0 bg-orange-500" />
         <div className="min-w-0">
-          <p className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">Your scope</p>
+          <p className="text-phx-2xs font-black uppercase tracking-[0.18em] text-slate-400">Your scope</p>
           <p className="whitespace-nowrap text-sm font-black text-slate-900">{scopeSummary}</p>
-          {stamp ? <p className="whitespace-nowrap text-[10px] font-semibold text-slate-400">Data as of {stamp}</p> : null}
+          {stamp ? <p className="whitespace-nowrap text-phx-2xs font-semibold text-slate-400">Data as of {stamp}</p> : null}
         </div>
       </div>
       <div className="flex items-center gap-2">
@@ -420,7 +420,7 @@ function ScopeBar({
           type="button"
           onClick={onRefresh}
           disabled={loading}
-          className="inline-flex items-center gap-1.5 rounded-sm border border-slate-200 bg-white px-2.5 py-1.5 text-[10px] font-black uppercase tracking-wide text-slate-700 transition hover:border-orange-300 hover:text-orange-600 disabled:opacity-50"
+          className="inline-flex items-center gap-1.5 rounded-sm border border-slate-200 bg-white px-2.5 py-1.5 text-phx-2xs font-black uppercase tracking-wide text-slate-700 transition hover:border-orange-300 hover:text-orange-600 disabled:opacity-50"
           title="Sync now — pull the latest uploaded sales"
         >
           <RefreshCw className={`h-3 w-3 ${loading ? "animate-spin" : ""}`} />
@@ -428,7 +428,7 @@ function ScopeBar({
         </button>
         {uploadStatus && uploadStatus.expectedCount > 0 ? (
           <span
-            className={`hidden items-center gap-1.5 whitespace-nowrap rounded-sm border px-2.5 py-1 text-[10px] font-black uppercase tracking-wide sm:inline-flex ${
+            className={`hidden items-center gap-1.5 whitespace-nowrap rounded-sm border px-2.5 py-1 text-phx-2xs font-black uppercase tracking-wide sm:inline-flex ${
               uploadStatus.awaitingCount > 0
                 ? "border-amber-200 bg-amber-50 text-amber-700"
                 : "border-emerald-200 bg-emerald-50 text-emerald-700"
@@ -441,7 +441,7 @@ function ScopeBar({
           </span>
         ) : null}
         {loading ? (
-          <span className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wide text-orange-600">
+          <span className="flex items-center gap-1.5 text-phx-2xs font-bold uppercase tracking-wide text-orange-600">
             <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-orange-500" />
             Updating
           </span>
@@ -489,7 +489,7 @@ function Section({
       <div className="flex items-center justify-between gap-3 rounded-t-sm border-b border-slate-800 bg-slate-900 px-4 py-2.5">
         <div className="flex items-center gap-2">
           <span className="h-3.5 w-[3px] bg-orange-500" />
-          <h2 className="whitespace-nowrap text-[10px] font-black uppercase tracking-[0.18em] text-slate-200">{title}</h2>
+          <h2 className="whitespace-nowrap text-phx-2xs font-black uppercase tracking-[0.18em] text-slate-200">{title}</h2>
         </div>
         {action ?? <span className="h-1.5 w-10 bg-orange-500/80" />}
       </div>
@@ -524,9 +524,9 @@ function StatTile({
           </span>
           {delta != null ? <DeltaPill delta={delta} /> : null}
         </div>
-        <p className="mt-2.5 whitespace-nowrap text-[10px] font-black uppercase tracking-[0.12em] text-slate-400">{label}</p>
+        <p className="mt-2.5 whitespace-nowrap text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400">{label}</p>
         <p className="mt-0.5 whitespace-nowrap text-lg font-black tabular-nums tracking-tight text-slate-900 sm:text-xl">{value}</p>
-        {sub ? <p className="mt-0.5 whitespace-nowrap text-[10px] font-semibold text-slate-400">{sub}</p> : null}
+        {sub ? <p className="mt-0.5 whitespace-nowrap text-phx-2xs font-semibold text-slate-400">{sub}</p> : null}
       </div>
     </div>
   );
@@ -537,7 +537,7 @@ function DeltaPill({ delta }: { delta: number }) {
   const Icon = up ? ArrowUpRight : ArrowDownRight;
   return (
     <span
-      className={`inline-flex items-center gap-0.5 rounded-sm px-1.5 py-0.5 text-[10px] font-black tabular-nums ${
+      className={`inline-flex items-center gap-0.5 rounded-sm px-1.5 py-0.5 text-phx-2xs font-black tabular-nums ${
         up ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700"
       }`}
     >
@@ -586,7 +586,7 @@ function MoverList({ title, tone, movers }: { title: string; tone: "up" | "down"
   if (movers.length === 0) return null;
   return (
     <div className="rounded-sm border border-slate-200 bg-white p-3">
-      <p className="mb-2 flex items-center gap-1.5 text-[10px] font-black uppercase tracking-[0.14em] text-slate-400">
+      <p className="mb-2 flex items-center gap-1.5 text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-400">
         {tone === "up" ? <ArrowUpRight className="h-3 w-3 text-emerald-600" /> : <ArrowDownRight className="h-3 w-3 text-rose-600" />}
         {title} · vs last month
       </p>
@@ -595,7 +595,7 @@ function MoverList({ title, tone, movers }: { title: string; tone: "up" | "down"
           <div key={mover.code} className="flex items-center justify-between gap-3">
             <span className="whitespace-nowrap text-xs font-bold text-slate-800">{mover.label}</span>
             <span className="flex shrink-0 items-center gap-2">
-              <span className="whitespace-nowrap text-[11px] tabular-nums text-slate-500">{formatEgp(mover.value)}</span>
+              <span className="whitespace-nowrap text-phx-xs tabular-nums text-slate-500">{formatEgp(mover.value)}</span>
               <DeltaPill delta={mover.deltaPct} />
             </span>
           </div>
@@ -611,7 +611,7 @@ function PremiumTooltip({ active, payload, label, valueOnly }: { active?: boolea
   const title = label ?? payload[0]?.payload?.label ?? payload[0]?.name ?? "";
   return (
     <div className="rounded-sm border border-slate-700 bg-slate-900 px-3 py-2 shadow-xl">
-      {title ? <p className="mb-0.5 text-[10px] font-black uppercase tracking-wide text-slate-400">{title}</p> : null}
+      {title ? <p className="mb-0.5 text-phx-2xs font-black uppercase tracking-wide text-slate-400">{title}</p> : null}
       {payload.map((entry, index) => (
         <p key={index} className="whitespace-nowrap text-xs font-black tabular-nums text-white">
           {valueOnly ? "" : `${entry.name}: `}
@@ -658,7 +658,7 @@ function DonutChart({ slices, total }: { slices: SosDashboardData["channelMix"];
         </PieChart>
       </ResponsiveContainer>
       <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
-        <p className="text-[10px] font-black uppercase tracking-wide text-slate-400">Total</p>
+        <p className="text-phx-2xs font-black uppercase tracking-wide text-slate-400">Total</p>
         <p className="text-base font-black tabular-nums text-slate-900">{formatEgp(total)}</p>
       </div>
     </div>
@@ -875,7 +875,7 @@ function DetailSection({
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 bg-slate-900 px-4 py-2.5">
         <div className="flex items-center gap-2">
           <span className="h-3.5 w-[3px] bg-orange-500" />
-          <h2 className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-200">Breakdown</h2>
+          <h2 className="text-phx-2xs font-black uppercase tracking-[0.18em] text-slate-200">Breakdown</h2>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <div className="flex overflow-hidden rounded-sm border border-slate-700">
@@ -884,7 +884,7 @@ function DetailSection({
                 key={tab.key}
                 type="button"
                 onClick={() => onViewChange(tab.key)}
-                className={`whitespace-nowrap px-2.5 py-1 text-[10px] font-black uppercase tracking-wide transition ${
+                className={`whitespace-nowrap px-2.5 py-1 text-phx-2xs font-black uppercase tracking-wide transition ${
                   view === tab.key ? "bg-orange-500 text-white" : "bg-slate-800 text-slate-300 hover:text-white"
                 }`}
               >
@@ -894,7 +894,7 @@ function DetailSection({
           </div>
           <a
             href={`/api/employee-portals/source-of-sales/export?${exportQuery}`}
-            className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-slate-600 bg-white px-2.5 text-[10px] font-black uppercase tracking-wide text-slate-900 transition hover:border-orange-400 hover:text-orange-600"
+            className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-slate-600 bg-white px-2.5 text-phx-2xs font-black uppercase tracking-wide text-slate-900 transition hover:border-orange-400 hover:text-orange-600"
           >
             <Download className="h-3 w-3" />
             Export workbook
@@ -910,7 +910,7 @@ function DetailSection({
           <div className="hidden overflow-x-auto md:block">
             <table className="w-full text-left text-sm">
               <thead>
-                <tr className="border-b border-slate-200 bg-slate-50 text-[10px] uppercase tracking-[0.12em] text-slate-500">
+                <tr className="border-b border-slate-200 bg-slate-50 text-phx-2xs uppercase tracking-[0.12em] text-slate-500">
                   <th className="px-4 py-2.5 font-black">{viewLabel(view)}</th>
                   <th className="px-4 py-2.5 text-right font-black">Value</th>
                   <th className="px-4 py-2.5 text-right font-black">Units</th>
@@ -923,7 +923,7 @@ function DetailSection({
                   <tr key={row.code} className="border-b border-slate-100 transition hover:bg-orange-50/40">
                     <td className="whitespace-nowrap px-4 py-2.5 font-bold text-slate-900">
                       {row.label}
-                      {row.extra ? <span className="ml-2 text-[11px] font-semibold text-slate-400">{row.extra}</span> : null}
+                      {row.extra ? <span className="ml-2 text-phx-xs font-semibold text-slate-400">{row.extra}</span> : null}
                     </td>
                     <td className="px-4 py-2">
                       <div className="relative ml-auto flex h-7 w-48 max-w-full items-center justify-end overflow-hidden rounded-sm">
@@ -934,7 +934,7 @@ function DetailSection({
                             background: "linear-gradient(90deg, #EA580C 0%, rgba(249,115,22,0.45) 62%, rgba(249,115,22,0.06) 100%)",
                           }}
                         />
-                        <span className="relative z-10 whitespace-nowrap pr-2 text-right text-[13px] font-black tabular-nums text-slate-900">
+                        <span className="relative z-10 whitespace-nowrap pr-2 text-right text-phx-md font-black tabular-nums text-slate-900">
                           {formatEgpFull(row.value)}
                         </span>
                       </div>
@@ -943,7 +943,7 @@ function DetailSection({
                     <td className="whitespace-nowrap px-4 py-2.5 text-right tabular-nums font-semibold text-slate-600">{formatPct(row.share)}</td>
                     {showDelta ? (
                       <td className="whitespace-nowrap px-4 py-2.5 text-right">
-                        {row.deltaPct != null ? <DeltaPill delta={row.deltaPct} /> : <span className="text-[11px] text-slate-300">—</span>}
+                        {row.deltaPct != null ? <DeltaPill delta={row.deltaPct} /> : <span className="text-phx-xs text-slate-300">—</span>}
                       </td>
                     ) : null}
                   </tr>
@@ -962,7 +962,7 @@ function DetailSection({
                     <p className="whitespace-nowrap text-sm font-black text-slate-900">{row.label}</p>
                     {showDelta && row.deltaPct != null ? <DeltaPill delta={row.deltaPct} /> : null}
                   </div>
-                  {row.extra ? <p className="whitespace-nowrap text-[11px] font-semibold text-slate-400">{row.extra}</p> : null}
+                  {row.extra ? <p className="whitespace-nowrap text-phx-xs font-semibold text-slate-400">{row.extra}</p> : null}
                   <div className="mt-2 grid grid-cols-3 gap-2">
                     <CardStat label="Value" value={formatEgp(row.value)} />
                     <CardStat label="Units" value={formatNumber(row.units)} />
@@ -981,7 +981,7 @@ function DetailSection({
 function CardStat({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-sm border border-slate-100 bg-slate-50 px-2 py-1.5">
-      <p className="whitespace-nowrap text-[9px] font-black uppercase tracking-wide text-slate-400">{label}</p>
+      <p className="whitespace-nowrap text-phx-3xs font-black uppercase tracking-wide text-slate-400">{label}</p>
       <p className="whitespace-nowrap text-xs font-black tabular-nums text-slate-900">{value}</p>
     </div>
   );

@@ -56,7 +56,7 @@ const scanModeOptions = [
   },
 ] as const;
 
-const panelLabelClassName = "mb-1 block text-[10px] font-black uppercase tracking-[0.12em] text-phx-ink-soft";
+const panelLabelClassName = "mb-1 block text-phx-2xs font-black uppercase tracking-[0.12em] text-phx-ink-soft";
 const selectClassName =
   "h-10 w-full rounded-xl border border-phx-line bg-white/95 px-3 text-sm font-semibold text-phx-ink shadow-sm outline-none focus:border-phx-accent-line focus:ring-2 focus:ring-phx-accent/15";
 
@@ -345,7 +345,7 @@ export function HiringDocumentCapture({
 
         {selectedEmployee ? (
           <div className="rounded-xl border border-phx-line bg-phx-paper p-3">
-            <p className="text-[10px] font-black uppercase tracking-[0.12em] text-phx-ink-soft">
+            <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-phx-ink-soft">
               Still outstanding for {selectedEmployee.fullName}
             </p>
             <div className="mt-2 overflow-x-auto">
@@ -363,7 +363,7 @@ export function HiringDocumentCapture({
             </div>
             {outstanding.tickedWithNothingOnFile.length > 0 ? (
               <div className="mt-3">
-                <p className="text-[10px] font-black uppercase tracking-[0.12em] text-[#B45309]">
+                <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-[#B45309]">
                   Ticked, but no scan on file
                 </p>
                 <div className="mt-2 overflow-x-auto">
@@ -459,7 +459,7 @@ export function HiringDocumentCapture({
                       add a loader for nothing. */}
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img alt={`Page ${index + 1}`} className="h-32 w-full object-cover" src={page.previewUrl} />
-                  <span className="absolute left-2 top-2 rounded-lg bg-phx-ink/80 px-2 py-0.5 text-[10px] font-black text-white">
+                  <span className="absolute left-2 top-2 rounded-lg bg-phx-ink/80 px-2 py-0.5 text-phx-2xs font-black text-white">
                     Page {index + 1}
                   </span>
                   <button

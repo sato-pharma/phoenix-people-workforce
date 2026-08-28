@@ -37,7 +37,7 @@ export function PerformanceReconciliationNote({
       className={`flex items-start gap-2.5 border border-slate-200 border-l-2 border-l-slate-400 bg-slate-50 px-3.5 py-2.5 ${className ?? ""}`}
     >
       <Info aria-hidden className="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-400" />
-      <p className="text-[11px] font-medium leading-relaxed text-slate-600">
+      <p className="text-phx-xs font-medium leading-relaxed text-slate-600">
         <span className="font-bold text-slate-800">{amount}</span> of {totalLabel} is Direct Orders and
         vacant seats not attributed to anyone listed below — so {totalLabel} equals the leaderboard total
         plus this amount.

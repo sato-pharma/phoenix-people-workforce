@@ -8,7 +8,7 @@ import type { SalesDistributorEntry } from "@/lib/sales/distributor-registry";
 import type { SourceOfSalesUploadBatch } from "@/lib/sales/monthly-distributor-import";
 
 const card = "rounded-[6px] border border-phx-line bg-white shadow-sm";
-const darkHead = "bg-[#020617] text-left text-[11px] font-black uppercase tracking-wide text-white";
+const darkHead = "bg-[#020617] text-left text-phx-xs font-black uppercase tracking-wide text-white";
 const money = (value: number) => `EGP ${Number(value || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
 const num = (value: number) => Number(value || 0).toLocaleString(undefined, { maximumFractionDigits: 0 });
 
@@ -93,14 +93,14 @@ export function UploadedSheetsPanel({
         <div>
           <div className="flex items-center gap-2">
             <span className="h-2 w-2 rounded-full bg-phx-accent" aria-hidden />
-            <span className="text-[11px] font-black uppercase tracking-[0.16em] text-phx-accent">Uploaded Sheets</span>
+            <span className="text-phx-xs font-black uppercase tracking-[0.16em] text-phx-accent">Uploaded Sheets</span>
           </div>
           <p className="mt-1 text-sm font-medium text-phx-ink-soft">
             Every monthly sheet uploaded for the chosen month, across all distributors — and who is still pending.
           </p>
         </div>
         <label className="flex flex-col gap-1">
-          <span className="text-[10px] font-black uppercase tracking-[0.12em] text-phx-ink-faint">Month</span>
+          <span className="text-phx-2xs font-black uppercase tracking-[0.12em] text-phx-ink-faint">Month</span>
           <SearchableSelect
             aria-label="Filter uploaded sheets by month"
             className="h-10 rounded-[6px] border border-phx-line bg-white px-3 text-sm font-bold text-phx-ink outline-none focus:border-phx-accent-line"
@@ -155,7 +155,7 @@ export function UploadedSheetsPanel({
                   {batch.distributorName} <span className="font-mono text-xs text-phx-ink-faint">{batch.distributorCode}</span>
                 </td>
                 <td className="px-3 py-2">
-                  <span className={`inline-flex items-center rounded px-2 py-0.5 text-[11px] font-black ${batch.status === "validated" ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>
+                  <span className={`inline-flex items-center rounded px-2 py-0.5 text-phx-xs font-black ${batch.status === "validated" ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>
                     {batch.status}
                   </span>
                 </td>

@@ -52,7 +52,7 @@ export function KPIBulletCard({
             <span className={cn("text-xs font-black", trendDir === "up" ? "text-emerald-500" : "text-rose-500")}>
               {trend}
             </span>
-            <span className="text-[10px] font-bold text-slate-400">vs last month</span>
+            <span className="text-phx-2xs font-bold text-slate-400">vs last month</span>
           </div>
         </div>
         <div className={cn(

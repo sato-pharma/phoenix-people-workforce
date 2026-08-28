@@ -67,7 +67,7 @@ export function CoachingQualityRadarCard({
     <ChartErrorBoundary>
       <div className="overflow-hidden border border-slate-200 bg-white" role="region" aria-label="Coaching quality overview">
         <div className="flex items-center justify-between bg-slate-900 px-5 py-3">
-          <h2 className="text-[10px] font-bold uppercase tracking-widest text-slate-300">{title}</h2>
+          <h2 className="text-phx-2xs font-bold uppercase tracking-widest text-slate-300">{title}</h2>
           <div className="h-1.5 w-12 bg-orange-500" />
         </div>
         <div className="grid gap-4 p-4 md:grid-cols-2 md:items-center">
@@ -86,7 +86,7 @@ export function CoachingQualityRadarCard({
             {data.map((point) => (
               <div key={point.dimension} className="cursor-help" title={DIMENSION_DESCRIPTIONS[point.dimension] ?? point.dimension}>
                 <div className="flex items-center justify-between gap-3">
-                  <span className="whitespace-nowrap text-[11px] font-semibold text-slate-600">{point.dimension}</span>
+                  <span className="whitespace-nowrap text-phx-xs font-semibold text-slate-600">{point.dimension}</span>
                   <span
                     className="whitespace-nowrap text-sm font-bold tabular-nums"
                     style={{ color: getCoachingScoreColor(point.value) }}

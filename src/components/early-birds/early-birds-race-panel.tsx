@@ -52,7 +52,7 @@ function RaceRow({
   return (
     <div className={`flex items-center gap-3 px-3 py-2 ${accent} ${isViewer ? "bg-orange-50" : "bg-white"}`}>
       <span
-        className={`flex h-5 w-5 shrink-0 items-center justify-center text-[11px] font-black ${
+        className={`flex h-5 w-5 shrink-0 items-center justify-center text-phx-xs font-black ${
           score.eligible ? rankChipClass(index) : "bg-slate-100 text-slate-400"
         }`}
       >
@@ -63,13 +63,13 @@ function RaceRow({
         <p className="flex items-center gap-1.5 whitespace-nowrap text-xs font-bold text-slate-900" dir="auto">
           {score.name}
           {isViewer && (
-            <span className="whitespace-nowrap bg-orange-500 px-1 py-0.5 text-[9px] font-black uppercase tracking-wide text-white">
+            <span className="whitespace-nowrap bg-orange-500 px-1 py-0.5 text-phx-3xs font-black uppercase tracking-wide text-white">
               You
             </span>
           )}
           {winCount > 1 && (
             <span
-              className="whitespace-nowrap bg-slate-700 px-1 py-0.5 text-[9px] font-black text-white"
+              className="whitespace-nowrap bg-slate-700 px-1 py-0.5 text-phx-3xs font-black text-white"
               title={`Won ${winCount} fortnights`}
             >
               ×{winCount}
@@ -78,7 +78,7 @@ function RaceRow({
         </p>
         <div className="mt-1 flex items-center gap-2">
           <StreakStrip score={score} />
-          <span className="whitespace-nowrap text-[10px] font-semibold text-slate-400 sm:hidden">
+          <span className="whitespace-nowrap text-phx-2xs font-semibold text-slate-400 sm:hidden">
             {beforeNineCount(score)}/{score.daysWithSubmission} days before 09:00
           </span>
         </div>
@@ -92,7 +92,7 @@ function RaceRow({
             master table states: a clock with no GPS behind it is not proof of being on site.
             Since the 2026-08-09 change only GPS check-ins are ranked, so this badge is GPS or
             nothing; it stays visible so "no clock" reads as unverified rather than as late. */}
-        <p className="whitespace-nowrap text-[9px] font-bold uppercase tracking-wide">
+        <p className="whitespace-nowrap text-phx-3xs font-bold uppercase tracking-wide">
           {score.medianStartMinutes === null ? (
             <span className="text-slate-400" title="No GPS check-in in this fortnight — worked, but no verified start time">
               No GPS
@@ -103,7 +103,7 @@ function RaceRow({
             </span>
           )}
         </p>
-        <p className="whitespace-nowrap text-[10px] font-semibold text-slate-400">
+        <p className="whitespace-nowrap text-phx-2xs font-semibold text-slate-400">
           {score.eligible ? `${formatPoints(score.totalScore)} pts` : "Not eligible"}
         </p>
         <div className="mt-1 h-1 w-16 bg-slate-100">
@@ -148,7 +148,7 @@ export function EarlyBirdsRacePanel({
       <SectionHead
         title="The Race"
         right={
-          <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-[10px] font-bold uppercase tracking-widest text-slate-400">
+          <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-phx-2xs font-bold uppercase tracking-widest text-slate-400">
             <Sunrise className="h-3.5 w-3.5 text-orange-400" />
             {scores.length} reps
           </span>
@@ -183,7 +183,7 @@ export function EarlyBirdsRacePanel({
         ))}
         {viewerBelowMobileCut && (
           <>
-            <div className="bg-slate-50 px-3 py-1 text-center text-[10px] font-bold uppercase tracking-widest text-slate-400">
+            <div className="bg-slate-50 px-3 py-1 text-center text-phx-2xs font-bold uppercase tracking-widest text-slate-400">
               Your position
             </div>
             <RaceRow

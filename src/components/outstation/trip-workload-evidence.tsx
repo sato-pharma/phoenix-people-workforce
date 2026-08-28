@@ -208,30 +208,30 @@ export function TripWorkloadEvidencePanel({
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">Verified workload</span>
+        <span className="text-phx-xs font-black uppercase tracking-[0.14em] text-slate-500">Verified workload</span>
         <Badge variant={tone}>{data.matchStatus.replace(/_/g, " ")}</Badge>
-        <span className="text-[11px] text-slate-500">{data.sourceLabel}</span>
+        <span className="text-phx-xs text-slate-500">{data.sourceLabel}</span>
       </div>
       <div className="grid gap-2 sm:grid-cols-3">
         <div className="rounded-xl border border-phx-line bg-white p-3">
-          <p className="text-[10px] font-black uppercase tracking-[0.12em] text-slate-500">Declared (sheet)</p>
+          <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">Declared (sheet)</p>
           <p className="mt-1 font-mono text-sm font-bold text-slate-900">
             AM {fmt(declaredAm)} · PM {fmt(declaredPm)}
           </p>
         </div>
         <div className={cn("rounded-xl border p-3", mismatch ? "border-rose-300 bg-rose-50" : "border-emerald-200 bg-emerald-50")}>
-          <p className="text-[10px] font-black uppercase tracking-[0.12em] text-slate-500">Actual (evidence)</p>
+          <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">Actual (evidence)</p>
           <p className="mt-1 font-mono text-sm font-bold text-slate-900">
             AM {fmt(data.amWorkload)} · PM {fmt(data.pmWorkload)}
           </p>
           {mismatch ? (
-            <p className="mt-0.5 text-[10px] font-bold text-rose-600">
+            <p className="mt-0.5 text-phx-2xs font-bold text-rose-600">
               ≠ declared ({fmt(actualTotal)} actual vs {fmt(declaredTotal)} declared)
             </p>
           ) : null}
         </div>
         <div className="rounded-xl border border-phx-line bg-white p-3">
-          <p className="text-[10px] font-black uppercase tracking-[0.12em] text-slate-500">Visit type</p>
+          <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">Visit type</p>
           <p className="mt-1 font-mono text-sm font-bold text-slate-900">
             Regular {fmt(data.regularVisits)} · Campaign {fmt(data.campaignVisits)}
           </p>
@@ -271,7 +271,7 @@ export function TripWorkloadEvidencePanel({
           )}
           renderTable={() => (
             <PortalDesktopTable className="text-xs" minWidth="0px">
-          <thead className="bg-slate-50 text-[10px] uppercase tracking-[0.1em] text-slate-500">
+          <thead className="bg-slate-50 text-phx-2xs uppercase tracking-[0.1em] text-slate-500">
             <tr>
               <th className="px-3 py-2 font-bold">Day</th>
               <th className="px-3 py-2 text-right font-bold">AM</th>
@@ -310,7 +310,7 @@ export function TripWorkloadEvidencePanel({
           vs check-in time, ordered by time = the day's route. */}
       {data.dateBreakdown.some((day) => (day.visits?.length ?? 0) > 0 || (day.checkins?.length ?? 0) > 0) ? (
         <div className="space-y-2">
-          <p className="text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">Visits &amp; route detail</p>
+          <p className="text-phx-xs font-black uppercase tracking-[0.14em] text-slate-500">Visits &amp; route detail</p>
           {data.dateBreakdown
             .filter((day) => (day.visits?.length ?? 0) > 0 || (day.checkins?.length ?? 0) > 0)
             .map((day) => (
@@ -322,7 +322,7 @@ export function TripWorkloadEvidencePanel({
                       check-in lists sized the column to their longest line (measured 283 vs 436). */}
                   <div className="grid gap-3 md:grid-cols-2 [&>*]:min-w-0">
                     <div>
-                      <p className="text-[10px] font-black uppercase tracking-wide text-slate-400">Visits</p>
+                      <p className="text-phx-2xs font-black uppercase tracking-wide text-slate-400">Visits</p>
                       {!day.visits?.length ? (
                         <p className="mt-1 text-xs text-slate-400">—</p>
                       ) : (
@@ -332,7 +332,7 @@ export function TripWorkloadEvidencePanel({
                               <span className="flex min-w-0 items-center gap-1.5">
                                 <span
                                   className={cn(
-                                    "shrink-0 rounded px-1 py-0.5 text-[9px] font-bold uppercase",
+                                    "shrink-0 rounded px-1 py-0.5 text-phx-3xs font-bold uppercase",
                                     visit.kind === "campaign" ? "bg-violet-100 text-violet-700" : "bg-sky-100 text-sky-700",
                                   )}
                                 >
@@ -348,7 +348,7 @@ export function TripWorkloadEvidencePanel({
                                   checked in — and reading a saved-at as a check-in time is exactly
                                   the mistake that makes a trip look wrongly claimed. */}
                               <span className="flex shrink-0 flex-col items-end leading-tight">
-                                <span className="whitespace-nowrap text-[9px] font-black uppercase tracking-wide text-slate-400">
+                                <span className="whitespace-nowrap text-phx-3xs font-black uppercase tracking-wide text-slate-400">
                                   Saved visit time
                                 </span>
                                 <span className="whitespace-nowrap font-mono text-slate-500">
@@ -362,7 +362,7 @@ export function TripWorkloadEvidencePanel({
                       )}
                     </div>
                     <div>
-                      <p className="text-[10px] font-black uppercase tracking-wide text-slate-400">Check-ins</p>
+                      <p className="text-phx-2xs font-black uppercase tracking-wide text-slate-400">Check-ins</p>
                       {!day.checkins?.length ? (
                         <p className="mt-1 text-xs text-slate-400">No GPS check-ins</p>
                       ) : (
@@ -379,7 +379,7 @@ export function TripWorkloadEvidencePanel({
                                 {checkin.via ? <span className="text-slate-400"> · via {checkin.via}</span> : null}
                               </span>
                               <span className="flex shrink-0 flex-col items-end leading-tight">
-                                <span className="whitespace-nowrap text-[9px] font-black uppercase tracking-wide text-slate-400">
+                                <span className="whitespace-nowrap text-phx-3xs font-black uppercase tracking-wide text-slate-400">
                                   Check-in time
                                 </span>
                                 <span className="whitespace-nowrap font-mono text-slate-500">{formatClock(checkin.at)}</span>
@@ -392,7 +392,7 @@ export function TripWorkloadEvidencePanel({
                   </div>
                   {day.checkins?.length ? (
                     <div className="min-w-0">
-                      <p className="mb-1 text-[10px] font-black uppercase tracking-wide text-slate-400">Route map</p>
+                      <p className="mb-1 text-phx-2xs font-black uppercase tracking-wide text-slate-400">Route map</p>
                       {/* overflow-hidden is load-bearing: Google Maps renders absolutely-positioned
                           internals (and, when the Maps key is rejected, a fixed-width "can't load
                           Google Maps" overlay) that are WIDER than their container. Measured at

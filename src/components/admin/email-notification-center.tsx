@@ -300,7 +300,7 @@ export function EmailNotificationCenter({
                     <span className="text-base font-black text-phx-ink">{policy.label}</span>
                     <span
                       className={cn(
-                        "rounded-full px-2 py-1 text-[10px] font-black uppercase tracking-[0.14em]",
+                        "rounded-full px-2 py-1 text-phx-2xs font-black uppercase tracking-[0.14em]",
                         policy.enabled
                           ? "bg-[#DCFCE7] text-[#166534]"
                           : "bg-phx-paper-2 text-phx-ink-soft",
@@ -315,7 +315,7 @@ export function EmailNotificationCenter({
 
               <div className="grid gap-3 md:grid-cols-[1fr_auto] md:items-start">
                 <div>
-                  <span className="mb-2 block text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-soft">
+                  <span className="mb-2 block text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">
                     Recipient logic
                   </span>
                   <div className="grid gap-2 sm:grid-cols-2">
@@ -378,7 +378,7 @@ export function EmailNotificationCenter({
 
               <div className="grid gap-3 lg:grid-cols-2">
                 <div className="rounded-[16px] border border-phx-line bg-phx-paper p-3">
-                  <p className="text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-soft">
+                  <p className="text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">
                     Company titles
                   </p>
                   <div className="mt-3 max-h-44 space-y-2 overflow-auto pr-1">
@@ -399,7 +399,7 @@ export function EmailNotificationCenter({
                 </div>
 
                 <div className="rounded-[16px] border border-phx-line bg-phx-paper p-3">
-                  <p className="text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-soft">
+                  <p className="text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">
                     Lines
                   </p>
                   <div className="mt-3 max-h-44 space-y-2 overflow-auto pr-1">

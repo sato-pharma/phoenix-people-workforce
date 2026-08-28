@@ -32,7 +32,7 @@ function RecommendationChip({ recommendation }: { recommendation: FeedbackRecomm
   return (
     <span
       className={cn(
-        "inline-block rounded border px-1.5 py-0.5 text-[10px] font-semibold",
+        "inline-block rounded border px-1.5 py-0.5 text-phx-2xs font-semibold",
         RECOMMENDATION_COLORS[recommendation],
       )}
     >
@@ -49,7 +49,7 @@ function RoleCell({
   submissions: AggregateFeedbackRow["submissions"];
 }) {
   const matching = submissions.filter((s) => s.submitterRole === role);
-  if (matching.length === 0) return <span className="text-[11px] text-slate-400">—</span>;
+  if (matching.length === 0) return <span className="text-phx-xs text-slate-400">—</span>;
   return (
     <div className="flex flex-wrap gap-1">
       {matching.map((s, i) => (
@@ -143,7 +143,7 @@ export function AggregateFeedbackReport() {
                 "TA",
               ].map((col) => (
                 <th
-                  className="px-2.5 py-2 text-[10px] font-black uppercase tracking-[0.14em] text-phx-ink-soft"
+                  className="px-2.5 py-2 text-phx-2xs font-black uppercase tracking-[0.14em] text-phx-ink-soft"
                   key={col}
                 >
                   {col}
@@ -169,7 +169,7 @@ export function AggregateFeedbackReport() {
                 >
                   <td className="px-2.5 py-2">
                     <p className="font-semibold text-slate-800">{row.employeeName}</p>
-                    <p className="font-mono text-[10px] text-slate-400">{row.employeeHrId}</p>
+                    <p className="font-mono text-phx-2xs text-slate-400">{row.employeeHrId}</p>
                   </td>
                   <td className="px-2.5 py-2 text-slate-600">{row.lineName ?? "—"}</td>
                   <td className="px-2.5 py-2 text-slate-600">{formatDate(row.hireDate)}</td>
@@ -177,7 +177,7 @@ export function AggregateFeedbackReport() {
                   <td className="px-2.5 py-2">
                     <span
                       className={cn(
-                        "inline-block rounded border px-1.5 py-0.5 text-[10px] font-semibold",
+                        "inline-block rounded border px-1.5 py-0.5 text-phx-2xs font-semibold",
                         row.dvTotalApplicable === 0
                           ? "border-slate-200 bg-slate-50 text-slate-400"
                           : row.dvDoneCount === row.dvTotalApplicable

@@ -249,7 +249,7 @@ export function DeductionReviewTable({
                           {row.dates.map((d) => (
                             <span
                               key={d}
-                              className="bg-slate-100 px-1.5 py-0.5 text-[11px] text-slate-600"
+                              className="bg-slate-100 px-1.5 py-0.5 text-phx-xs text-slate-600"
                             >
                               {shortDay(d)}
                             </span>
@@ -269,7 +269,7 @@ export function DeductionReviewTable({
                         {row.decisionStatus}
                       </span>
                       {autoApplies && row.decisionStatus === "Pending" ? (
-                        <div className="mt-0.5 text-[11px] font-normal text-amber-700">will deduct</div>
+                        <div className="mt-0.5 text-phx-xs font-normal text-amber-700">will deduct</div>
                       ) : null}
                     </td>
                     <td className="px-4 py-2">

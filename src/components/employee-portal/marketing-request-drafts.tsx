@@ -379,7 +379,7 @@ function CostSparkline({ drafts }: { drafts: MarketingRequest[] }) {
 
   return (
     <div className="mt-2 rounded-sm border border-slate-100 bg-slate-50 p-2">
-      <p className="mb-1 text-[10px] font-bold uppercase tracking-[0.10em] text-slate-400">
+      <p className="mb-1 text-phx-2xs font-bold uppercase tracking-[0.10em] text-slate-400">
         Cost Trend (last {Math.min(drafts.length, 12)} drafts)
       </p>
       <svg
@@ -447,7 +447,7 @@ function MetricCard({
     >
       <div className="flex items-center gap-1.5">
         <Icon className={`h-3 w-3 ${iconColors[accent]}`} />
-        <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">
+        <p className="text-phx-2xs font-bold uppercase tracking-[0.12em] text-slate-500">
           {label}
         </p>
       </div>
@@ -459,7 +459,7 @@ function MetricCard({
 function Field({ children, label }: { children: ReactNode; label: string }) {
   return (
     <label className="block min-w-0">
-      <span className="mb-1.5 block text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">
+      <span className="mb-1.5 block text-phx-2xs font-bold uppercase tracking-[0.12em] text-slate-500">
         {label}
       </span>
       {children}
@@ -480,7 +480,7 @@ function SelectField({
 }) {
   return (
     <SearchableSelect
-      className="h-10 w-full rounded-sm border border-slate-200 bg-white px-3 text-[13px] font-bold text-slate-800 outline-none transition focus:border-orange-300 focus:ring-2 focus:ring-orange-100 disabled:cursor-not-allowed disabled:opacity-50"
+      className="h-10 w-full rounded-sm border border-slate-200 bg-white px-3 text-phx-md font-bold text-slate-800 outline-none transition focus:border-orange-300 focus:ring-2 focus:ring-orange-100 disabled:cursor-not-allowed disabled:opacity-50"
       disabled={disabled}
       onChange={(event) => onChange(event.target.value)}
       value={value}
@@ -493,10 +493,10 @@ function SelectField({
 function RoiMetric({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-center justify-between gap-2 rounded-sm border border-slate-100 bg-slate-50 px-3 py-2">
-      <span className="text-[10px] font-bold uppercase tracking-[0.10em] text-slate-500">
+      <span className="text-phx-2xs font-bold uppercase tracking-[0.10em] text-slate-500">
         {label}
       </span>
-      <span className="text-[13px] font-black text-slate-950">{value}</span>
+      <span className="text-phx-md font-black text-slate-950">{value}</span>
     </div>
   );
 }
@@ -504,10 +504,10 @@ function RoiMetric({ label, value }: { label: string; value: string }) {
 function ReadOnlyValue({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex h-10 min-w-0 flex-col justify-center rounded-sm border border-slate-200 bg-white px-3">
-      <span className="text-[9px] font-bold uppercase tracking-[0.10em] text-slate-400">
+      <span className="text-phx-3xs font-bold uppercase tracking-[0.10em] text-slate-400">
         {label}
       </span>
-      <span className="text-[13px] font-black text-slate-800">{value}</span>
+      <span className="text-phx-md font-black text-slate-800">{value}</span>
     </div>
   );
 }
@@ -527,7 +527,7 @@ function EvidenceUpload({
 }) {
   return (
     <label className="flex min-w-0 cursor-pointer flex-col gap-1 rounded-sm border border-slate-200 bg-slate-50 px-2.5 py-2 transition hover:border-orange-200 hover:bg-orange-50">
-      <span className="flex items-center gap-1.5 text-[11px] font-bold text-slate-700">
+      <span className="flex items-center gap-1.5 text-phx-xs font-bold text-slate-700">
         {isUploading ? (
           <LoadingSpinner />
         ) : (
@@ -535,7 +535,7 @@ function EvidenceUpload({
         )}
         {isUploading ? "Uploading..." : label}
       </span>
-      <span className="break-all text-[10px] font-medium text-slate-500">
+      <span className="break-all text-phx-2xs font-medium text-slate-500">
         {fileName ?? "No file yet"}
       </span>
       <input
@@ -608,7 +608,7 @@ function DraftStatusBar({ drafts }: { drafts: MarketingRequest[] }) {
           />
         )}
       </div>
-      <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-[10px] font-medium text-slate-500">
+      <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-phx-2xs font-medium text-slate-500">
         <span className="flex items-center gap-1">
           <span className="inline-block h-1.5 w-1.5 rounded-sm bg-emerald-500" />
           Covers ROI {covers}
@@ -1343,7 +1343,7 @@ function MarketingRequestDraftWorkspaceInner() {
     <div className="space-y-3" dir="auto">
       {/* ------ Offline Banner (#3) ------------------------------------------------------------------------------------------------------------------ */}
       {!isOnline && (
-        <div className="flex items-center gap-2 rounded-sm border border-amber-200 bg-amber-50 px-3 py-2 text-[13px] font-semibold text-amber-900">
+        <div className="flex items-center gap-2 rounded-sm border border-amber-200 bg-amber-50 px-3 py-2 text-phx-md font-semibold text-amber-900">
           <WifiOff className="h-3.5 w-3.5 shrink-0" />
           <span>
             You are offline.
@@ -1416,10 +1416,10 @@ function MarketingRequestDraftWorkspaceInner() {
       {!isLoading && workspace.drafts.length > 0 && (
         <div className="rounded-sm border border-slate-200 bg-white px-4 py-3">
           <div className="mb-2 flex items-center justify-between">
-            <span className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">
+            <span className="text-phx-2xs font-bold uppercase tracking-[0.12em] text-slate-500">
               Draft ROI Health
             </span>
-            <span className="text-[11px] font-bold text-slate-600">
+            <span className="text-phx-xs font-bold text-slate-600">
               Total: {egp(totalDraftValue)}
             </span>
           </div>
@@ -1434,7 +1434,7 @@ function MarketingRequestDraftWorkspaceInner() {
       {/* ------ Alert Messages --------------------------------------------------------------------------------------------------------------------------------- */}
       {message ? (
         <div
-          className={`flex items-center gap-2 rounded-sm border px-3 py-2 text-[13px] font-semibold transition-all ${
+          className={`flex items-center gap-2 rounded-sm border px-3 py-2 text-phx-md font-semibold transition-all ${
             message.type === "success"
               ? "border-emerald-200 bg-emerald-50 text-emerald-800"
               : "border-amber-200 bg-amber-50 text-amber-900"
@@ -1450,7 +1450,7 @@ function MarketingRequestDraftWorkspaceInner() {
       {/* ------ Tab Switcher --------------------------------------------------------------------------------------------------------------------------------------- */}
       <div className="flex gap-1 rounded-sm border border-slate-200 bg-slate-50 p-1">
         <button
-          className={`flex flex-1 items-center justify-center gap-1.5 rounded-sm px-3 py-2 text-[13px] font-bold transition ${
+          className={`flex flex-1 items-center justify-center gap-1.5 rounded-sm px-3 py-2 text-phx-md font-bold transition ${
             activeView === "create"
               ? "bg-orange-500 text-white shadow-sm"
               : "bg-transparent text-slate-600 hover:bg-white"
@@ -1462,7 +1462,7 @@ function MarketingRequestDraftWorkspaceInner() {
           <span>Create</span>
           {!isLoading && (
             <span
-              className={`ml-0.5 rounded-sm px-1.5 py-0.5 text-[10px] font-black ${
+              className={`ml-0.5 rounded-sm px-1.5 py-0.5 text-phx-2xs font-black ${
                 activeView === "create"
                   ? "bg-white/20 text-white"
                   : "bg-slate-200/60 text-slate-500"
@@ -1473,7 +1473,7 @@ function MarketingRequestDraftWorkspaceInner() {
           )}
         </button>
         <button
-          className={`flex flex-1 items-center justify-center gap-1.5 rounded-sm px-3 py-2 text-[13px] font-bold transition ${
+          className={`flex flex-1 items-center justify-center gap-1.5 rounded-sm px-3 py-2 text-phx-md font-bold transition ${
             activeView === "approved"
               ? "bg-orange-500 text-white shadow-sm"
               : "bg-transparent text-slate-600 hover:bg-white"
@@ -1485,7 +1485,7 @@ function MarketingRequestDraftWorkspaceInner() {
           <span>Approved</span>
           {!isLoading && (
             <span
-              className={`ml-0.5 rounded-sm px-1.5 py-0.5 text-[10px] font-black ${
+              className={`ml-0.5 rounded-sm px-1.5 py-0.5 text-phx-2xs font-black ${
                 activeView === "approved"
                   ? "bg-white/20 text-white"
                   : "bg-slate-200/60 text-slate-500"
@@ -1496,7 +1496,7 @@ function MarketingRequestDraftWorkspaceInner() {
           )}
         </button>
         <button
-          className={`flex flex-1 items-center justify-center gap-1.5 rounded-sm px-3 py-2 text-[13px] font-bold transition ${
+          className={`flex flex-1 items-center justify-center gap-1.5 rounded-sm px-3 py-2 text-phx-md font-bold transition ${
             activeView === "tracking"
               ? "bg-orange-500 text-white shadow-sm"
               : "bg-transparent text-slate-600 hover:bg-white"
@@ -1508,7 +1508,7 @@ function MarketingRequestDraftWorkspaceInner() {
           <span>Tracking</span>
           {!isLoading && (
             <span
-              className={`ml-0.5 rounded-sm px-1.5 py-0.5 text-[10px] font-black ${
+              className={`ml-0.5 rounded-sm px-1.5 py-0.5 text-phx-2xs font-black ${
                 activeView === "tracking"
                   ? "bg-white/20 text-white"
                   : "bg-slate-200/60 text-slate-500"
@@ -1530,7 +1530,7 @@ function MarketingRequestDraftWorkspaceInner() {
         {/* ------ Resubmit banner --------------------------------------------------------------------------------------------------------------------------- */}
         {resubmitRequestId ? (
           <div className="rounded-sm border border-amber-200 bg-amber-50 px-3 py-2.5">
-            <div className="flex flex-wrap items-center justify-between gap-2 text-[13px] font-semibold text-amber-900">
+            <div className="flex flex-wrap items-center justify-between gap-2 text-phx-md font-semibold text-amber-900">
               <span className="flex min-w-0 items-center gap-2">
                 <Pencil className="h-3.5 w-3.5 shrink-0" />
                 <span className="min-w-0 break-words">
@@ -1542,7 +1542,7 @@ function MarketingRequestDraftWorkspaceInner() {
                 </span>
               </span>
               <button
-                className="flex shrink-0 items-center gap-1 rounded-sm border border-amber-300 bg-white px-2.5 py-1.5 text-[11px] font-bold text-amber-800 transition hover:bg-amber-100"
+                className="flex shrink-0 items-center gap-1 rounded-sm border border-amber-300 bg-white px-2.5 py-1.5 text-phx-xs font-bold text-amber-800 transition hover:bg-amber-100"
                 onClick={cancelResubmit}
                 type="button"
               >
@@ -1551,7 +1551,7 @@ function MarketingRequestDraftWorkspaceInner() {
               </button>
             </div>
             {resubmitReturnReason ? (
-              <div className="mt-2 border-l-4 border-amber-500 bg-white/70 px-3 py-2 text-[12px] text-amber-900">
+              <div className="mt-2 border-l-4 border-amber-500 bg-white/70 px-3 py-2 text-phx-sm text-amber-900">
                 <span className="font-bold">
                   Returned{resubmitReturnedBy ? ` by ${resubmitReturnedBy}` : ""} — reason:
                 </span>{" "}
@@ -1571,10 +1571,10 @@ function MarketingRequestDraftWorkspaceInner() {
               <div className="border-b border-slate-100 bg-gradient-to-r from-white via-orange-50/30 to-white px-4 py-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div>
-                    <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-orange-600">
+                    <p className="text-phx-2xs font-bold uppercase tracking-[0.14em] text-orange-600">
                       {resubmitRequestId ? "Edit & Resubmit" : "Create Draft"}
                     </p>
-                    <h2 className="mt-0.5 text-[15px] font-black tracking-tight text-slate-950">
+                    <h2 className="mt-0.5 text-phx-lg font-black tracking-tight text-slate-950">
                       {resubmitRequestId
                         ? "Returned request"
                         : "Activity request"}
@@ -1684,7 +1684,7 @@ function MarketingRequestDraftWorkspaceInner() {
                                 {unverified && checked ? (
                                   <div className="mt-1 mb-2 ml-5 flex flex-col gap-1">
                                     <textarea
-                                      className="min-h-16 w-full rounded-sm border border-amber-200 bg-amber-50/40 px-3 py-2 text-[13px] text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-orange-300 focus:ring-2 focus:ring-orange-100"
+                                      className="min-h-16 w-full rounded-sm border border-amber-200 bg-amber-50/40 px-3 py-2 text-phx-md text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-orange-300 focus:ring-2 focus:ring-orange-100"
                                       onChange={(event) => {
                                         const value = event.target.value;
                                         setUnverifiedCodeReasons((current) => ({
@@ -1740,7 +1740,7 @@ function MarketingRequestDraftWorkspaceInner() {
                   <div className="sm:col-span-6">
                     <Field label="Other Type Description">
                       <Input
-                        className="h-10 rounded-sm border-slate-200 bg-white text-[13px]"
+                        className="h-10 rounded-sm border-slate-200 bg-white text-phx-md"
                         onChange={(event) =>
                           setOtherRequestType(event.target.value)
                         }
@@ -1754,7 +1754,7 @@ function MarketingRequestDraftWorkspaceInner() {
                 <div className="sm:col-span-2">
                   <Field label="Request Date">
                     <Input
-                      className="h-10 rounded-sm border-slate-200 bg-white text-[13px]"
+                      className="h-10 rounded-sm border-slate-200 bg-white text-phx-md"
                       onChange={(event) =>
                         setRequestDate(event.target.value)
                       }
@@ -1767,7 +1767,7 @@ function MarketingRequestDraftWorkspaceInner() {
                 <div className="sm:col-span-2">
                   <Field label="Pay Date">
                     <Input
-                      className="h-10 rounded-sm border-slate-200 bg-white text-[13px]"
+                      className="h-10 rounded-sm border-slate-200 bg-white text-phx-md"
                       onChange={(event) =>
                         setPayDate(event.target.value)
                       }
@@ -1780,7 +1780,7 @@ function MarketingRequestDraftWorkspaceInner() {
                 <div className="sm:col-span-2">
                   <Field label="ROI Duration (months)">
                     <Input
-                      className="h-10 rounded-sm border-slate-200 bg-white text-[13px]"
+                      className="h-10 rounded-sm border-slate-200 bg-white text-phx-md"
                       min="1"
                       onChange={(event) =>
                         setRoiDurationMonths(event.target.value)
@@ -1794,7 +1794,7 @@ function MarketingRequestDraftWorkspaceInner() {
                 <div className="sm:col-span-3">
                   <Field label="Estimated Cost (EGP)">
                     <Input
-                      className="h-10 rounded-sm border-slate-200 bg-white text-[13px]"
+                      className="h-10 rounded-sm border-slate-200 bg-white text-phx-md"
                       min="0"
                       onChange={(event) =>
                         setEstimatedCost(event.target.value)
@@ -1811,7 +1811,7 @@ function MarketingRequestDraftWorkspaceInner() {
                   <div className="space-y-2">
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <div>
-                        <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">
+                        <p className="text-phx-2xs font-bold uppercase tracking-[0.12em] text-slate-500">
                           Products
                         </p>
                         {/* A null requesterLineId means BOTH "oversight role, every line" and
@@ -1821,11 +1821,11 @@ function MarketingRequestDraftWorkspaceInner() {
                             honest discriminator: the server sets it to "All product lines" for
                             an unrestricted role and to null only when no line is assigned. */}
                         {workspace.requesterLineName === null ? (
-                          <p className="mt-0.5 text-[11px] font-semibold text-amber-600">
+                          <p className="mt-0.5 text-phx-xs font-semibold text-amber-600">
                             No product line assigned — contact HR
                           </p>
                         ) : (
-                          <p className="mt-0.5 text-[11px] font-medium text-slate-400">
+                          <p className="mt-0.5 text-phx-xs font-medium text-slate-400">
                             {workspace.requesterLineId === null
                               ? "All available products"
                               : `Line: ${workspace.requesterLineName}`}
@@ -1833,7 +1833,7 @@ function MarketingRequestDraftWorkspaceInner() {
                         )}
                       </div>
                       <button
-                        className="flex items-center gap-1 rounded-sm border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-bold text-slate-700 transition hover:bg-slate-50"
+                        className="flex items-center gap-1 rounded-sm border border-slate-200 bg-white px-2.5 py-1.5 text-phx-xs font-bold text-slate-700 transition hover:bg-slate-50"
                         onClick={addProductLine}
                         type="button"
                       >
@@ -1876,7 +1876,7 @@ function MarketingRequestDraftWorkspaceInner() {
                               ))}
                             </SelectField>
                             <Input
-                              className="h-10 rounded-sm border-slate-200 bg-white text-[13px]"
+                              className="h-10 rounded-sm border-slate-200 bg-white text-phx-md"
                               min="0"
                               onChange={(event) =>
                                 updateProductLine(line.key, {
@@ -1960,7 +1960,7 @@ function MarketingRequestDraftWorkspaceInner() {
                             </SelectField>
                             <div className="grid grid-cols-[1fr_auto] gap-2">
                               <Input
-                                className="h-10 rounded-sm border-slate-200 bg-white text-[13px]"
+                                className="h-10 rounded-sm border-slate-200 bg-white text-phx-md"
                                 min="0"
                                 onChange={(event) =>
                                   updateProductLine(line.key, {
@@ -2021,7 +2021,7 @@ function MarketingRequestDraftWorkspaceInner() {
                 <div className="sm:col-span-6">
                   <Field label="Note">
                     <textarea
-                      className="min-h-20 w-full rounded-sm border border-slate-200 bg-white px-3 py-2 text-[13px] text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-orange-300 focus:ring-2 focus:ring-orange-100"
+                      className="min-h-20 w-full rounded-sm border border-slate-200 bg-white px-3 py-2 text-phx-md text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-orange-300 focus:ring-2 focus:ring-orange-100"
                       onChange={(event) => setNotes(event.target.value)}
                       placeholder="Optional request note"
                       value={notes}
@@ -2047,7 +2047,7 @@ function MarketingRequestDraftWorkspaceInner() {
                 */}
                 {saveBlockers.length > 0 ? (
                   <p
-                    className="mb-2 flex items-center gap-1.5 text-[12px] font-bold text-amber-700"
+                    className="mb-2 flex items-center gap-1.5 text-phx-sm font-bold text-amber-700"
                     id={SAVE_BLOCKED_HINT_ID}
                   >
                     <TriangleAlert className="h-3.5 w-3.5 shrink-0" />
@@ -2060,7 +2060,7 @@ function MarketingRequestDraftWorkspaceInner() {
                   </p>
                 ) : null}
                 <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div className="flex min-w-0 items-center gap-2 text-[13px] font-bold text-slate-700">
+                  <div className="flex min-w-0 items-center gap-2 text-phx-md font-bold text-slate-700">
                     <TrendingUp className="h-4 w-4 shrink-0 text-orange-500" />
                     <span>
                       Required ROI: {egp(roiPreview.requiredRoiValue)}
@@ -2070,7 +2070,7 @@ function MarketingRequestDraftWorkspaceInner() {
                     aria-describedby={
                       saveBlockers.length > 0 ? SAVE_BLOCKED_HINT_ID : undefined
                     }
-                    className="min-h-10 gap-1.5 rounded-sm bg-orange-500 px-5 text-[13px] font-bold text-white shadow-sm hover:bg-orange-600"
+                    className="min-h-10 gap-1.5 rounded-sm bg-orange-500 px-5 text-phx-md font-bold text-white shadow-sm hover:bg-orange-600"
                     disabled={!canSave}
                     type="submit"
                   >
@@ -2096,10 +2096,10 @@ function MarketingRequestDraftWorkspaceInner() {
               <BarChart3 className="h-3.5 w-3.5" />
             </div>
             <div>
-              <p className="text-[13px] font-black text-slate-950">
+              <p className="text-phx-md font-black text-slate-950">
                 ROI Preview
               </p>
-              <p className="text-[10px] font-medium text-slate-400">
+              <p className="text-phx-2xs font-medium text-slate-400">
                 Recalculates on save
               </p>
             </div>
@@ -2135,15 +2135,15 @@ function MarketingRequestDraftWorkspaceInner() {
           {/* Capture quality — trust in the FUTURE ROI, scored from what the requester can still fix. */}
           <div className={`mt-3 rounded-sm border px-3 py-2 ${CAPTURE_BAND_STYLE[captureConfidence.band]}`}>
             <div className="flex items-center justify-between gap-2">
-              <span className="text-[10px] font-bold uppercase tracking-[0.10em]">
+              <span className="text-phx-2xs font-bold uppercase tracking-[0.10em]">
                 Capture Quality
               </span>
-              <span className="text-[13px] font-black">
+              <span className="text-phx-md font-black">
                 {captureConfidence.score}
-                <span className="text-[10px] font-bold">/100</span>
+                <span className="text-phx-2xs font-bold">/100</span>
               </span>
             </div>
-            <p className="mt-1 text-[11px] font-medium leading-snug">
+            <p className="mt-1 text-phx-xs font-medium leading-snug">
               {captureConfidence.weakest
                 ? captureConfidence.weakest.detail
                 : "Everything needed to measure this request is captured."}
@@ -2155,8 +2155,8 @@ function MarketingRequestDraftWorkspaceInner() {
             {isLoading ? (
               <TableSkeleton cols={5} rows={3} />
             ) : (
-              <table className="w-full border-collapse text-left text-[13px]">
-                <thead className="bg-slate-50 text-[10px] font-bold uppercase tracking-[0.10em] text-slate-500">
+              <table className="w-full border-collapse text-left text-phx-md">
+                <thead className="bg-slate-50 text-phx-2xs font-bold uppercase tracking-[0.10em] text-slate-500">
                   <tr>
                     <th className="border-b border-r border-slate-100 px-3 py-2">
                       Product
@@ -2200,7 +2200,7 @@ function MarketingRequestDraftWorkspaceInner() {
                   {productLineMetrics.length === 0 ? (
                     <tr>
                       <td
-                        className="px-3 py-5 text-center text-[12px] font-medium text-slate-400"
+                        className="px-3 py-5 text-center text-phx-sm font-medium text-slate-400"
                         colSpan={5}
                       >
                         Add product quantities to preview ROI.
@@ -2215,7 +2215,7 @@ function MarketingRequestDraftWorkspaceInner() {
           {/* Product ROI --- Mobile cards */}
           <div className="mt-3 block md:hidden space-y-2">
             {productLineMetrics.length === 0 ? (
-              <p className="rounded-sm border border-dashed border-slate-200 bg-slate-50 px-3 py-4 text-center text-[11px] font-medium text-slate-400">
+              <p className="rounded-sm border border-dashed border-slate-200 bg-slate-50 px-3 py-4 text-center text-phx-xs font-medium text-slate-400">
                 Add product quantities to preview ROI.
               </p>
             ) : (
@@ -2225,10 +2225,10 @@ function MarketingRequestDraftWorkspaceInner() {
                   className="rounded-sm border border-slate-200 bg-slate-50 p-3 space-y-1.5"
                 >
                   <div className="flex items-center justify-between gap-2">
-                    <p className="text-[13px] font-bold text-slate-950">
+                    <p className="text-phx-md font-bold text-slate-950">
                       {product.productName}
                     </p>
-                    <span className="text-[12px] font-black text-orange-600">
+                    <span className="text-phx-sm font-black text-orange-600">
                       {Math.round(product.valueShare * 100)}%
                     </span>
                   </div>
@@ -2240,7 +2240,7 @@ function MarketingRequestDraftWorkspaceInner() {
                       }}
                     />
                   </div>
-                  <div className="grid grid-cols-3 gap-1 text-[10px]">
+                  <div className="grid grid-cols-3 gap-1 text-phx-2xs">
                     <div>
                       <span className="font-medium text-slate-400">
                         Qty
@@ -2279,10 +2279,10 @@ function MarketingRequestDraftWorkspaceInner() {
               <ListChecks className="h-3.5 w-3.5" />
             </div>
             <div>
-              <p className="text-[13px] font-black text-slate-950">
+              <p className="text-phx-md font-black text-slate-950">
                 Draft Rows
               </p>
-              <p className="text-[10px] font-medium text-slate-400">
+              <p className="text-phx-2xs font-medium text-slate-400">
                 {workspace.drafts.length > 0
                   ? `${Math.min(workspace.drafts.length, 6)} of ${workspace.drafts.length} shown`
                   : "No drafts yet"}
@@ -2319,10 +2319,10 @@ function MarketingRequestDraftWorkspaceInner() {
                   >
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
-                        <p className="font-mono text-[10px] font-bold text-slate-500">
+                        <p className="font-mono text-phx-2xs font-bold text-slate-500">
                           {draft.requestCode}
                         </p>
-                        <p className="mt-0.5 text-[13px] font-black text-slate-950">
+                        <p className="mt-0.5 text-phx-md font-black text-slate-950">
                           {egp(draft.estimatedCost)}
                         </p>
                       </div>
@@ -2333,11 +2333,11 @@ function MarketingRequestDraftWorkspaceInner() {
                       </Badge>
                     </div>
                     <div className="mt-1 flex items-center justify-between gap-2">
-                      <span className="flex items-center gap-1 text-[10px] font-medium text-slate-400">
+                      <span className="flex items-center gap-1 text-phx-2xs font-medium text-slate-400">
                         <CalendarDays className="h-2.5 w-2.5" />
                         {draft.requestDate}
                       </span>
-                      <span className="text-[10px] font-bold text-slate-500">
+                      <span className="text-phx-2xs font-bold text-slate-500">
                         {Math.round(draft.roiCoverageRatio * 100)}%
                         {" "}forecast coverage
                       </span>
@@ -2345,11 +2345,11 @@ function MarketingRequestDraftWorkspaceInner() {
                   </div>
                 ))}
                 {workspace.drafts.length === 0 ? (
-                  <p className="rounded-sm border border-dashed border-slate-200 bg-slate-50 px-3 py-4 text-center text-[12px] font-medium text-slate-400">
+                  <p className="rounded-sm border border-dashed border-slate-200 bg-slate-50 px-3 py-4 text-center text-phx-sm font-medium text-slate-400">
                     No draft rows yet.
                   </p>
                 ) : (
-                  <p className="mt-1 text-center text-[10px] font-semibold text-slate-400">
+                  <p className="mt-1 text-center text-phx-2xs font-semibold text-slate-400">
                     Forecast only — {ROI_ACTUAL_IN_TRACKING_NOTE}.
                   </p>
                 )}
@@ -2370,10 +2370,10 @@ function MarketingRequestDraftWorkspaceInner() {
           <div className="border-b border-slate-100 bg-slate-50 px-4 py-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
-                <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-orange-600">
+                <p className="text-phx-2xs font-bold uppercase tracking-[0.14em] text-orange-600">
                   Finance Evidence
                 </p>
-                <h2 className="mt-0.5 text-[15px] font-black tracking-tight text-slate-950">
+                <h2 className="mt-0.5 text-phx-lg font-black tracking-tight text-slate-950">
                   Approved Requests
                 </h2>
               </div>
@@ -2389,7 +2389,7 @@ function MarketingRequestDraftWorkspaceInner() {
               <div className="relative mt-2">
                 <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
                 <input
-                  className="h-9 w-full rounded-sm border border-slate-200 bg-white pl-8 pr-3 text-[13px] font-medium text-slate-800 outline-none placeholder:text-slate-400 focus:border-orange-300 focus:ring-2 focus:ring-orange-100"
+                  className="h-9 w-full rounded-sm border border-slate-200 bg-white pl-8 pr-3 text-phx-md font-medium text-slate-800 outline-none placeholder:text-slate-400 focus:border-orange-300 focus:ring-2 focus:ring-orange-100"
                   onChange={(e) => setApprovedSearch(e.target.value)}
                   placeholder="Search customer, contact, code, date..."
                   type="text"
@@ -2405,8 +2405,8 @@ function MarketingRequestDraftWorkspaceInner() {
             <>
               {/* Desktop table */}
               <div className="hidden md:block overflow-x-auto">
-                <table className="w-full border-collapse text-left text-[12px]">
-                  <thead className="bg-slate-50 text-[10px] font-bold uppercase tracking-[0.10em] text-slate-500">
+                <table className="w-full border-collapse text-left text-phx-sm">
+                  <thead className="bg-slate-50 text-phx-2xs font-bold uppercase tracking-[0.10em] text-slate-500">
                     <tr>
                       <th className="border-b border-r border-slate-100 px-3 py-2">
                         Transfer Date
@@ -2447,7 +2447,7 @@ function MarketingRequestDraftWorkspaceInner() {
                           <p className="font-bold text-slate-900">
                             {row.contactForMoneyTransfer}
                           </p>
-                          <p className="mt-0.5 font-mono text-[10px] font-medium text-slate-400">
+                          <p className="mt-0.5 font-mono text-phx-2xs font-medium text-slate-400">
                             {row.requesterHrId}
                           </p>
                         </td>
@@ -2455,7 +2455,7 @@ function MarketingRequestDraftWorkspaceInner() {
                           {row.customerName}
                         </td>
                         <td className="border-r border-slate-100 px-3 py-2 text-slate-500">
-                          <p className="text-[11px] font-medium break-words">
+                          <p className="text-phx-xs font-medium break-words">
                             {row.notes || "-"}
                           </p>
                         </td>
@@ -2503,7 +2503,7 @@ function MarketingRequestDraftWorkspaceInner() {
                     {filteredApproved.length === 0 ? (
                       <tr>
                         <td
-                          className="px-3 py-6 text-center text-[12px] font-medium text-slate-400"
+                          className="px-3 py-6 text-center text-phx-sm font-medium text-slate-400"
                           colSpan={8}
                         >
                           {approvedSearch
@@ -2519,7 +2519,7 @@ function MarketingRequestDraftWorkspaceInner() {
               {/* Mobile cards */}
               <div className="block md:hidden divide-y divide-slate-100">
                 {filteredApproved.length === 0 ? (
-                  <p className="px-4 py-5 text-center text-[11px] font-medium text-slate-400">
+                  <p className="px-4 py-5 text-center text-phx-xs font-medium text-slate-400">
                     {approvedSearch
                       ? "No matching results."
                       : "No approved requests yet."}
@@ -2529,22 +2529,22 @@ function MarketingRequestDraftWorkspaceInner() {
                     <div key={row.id} className="space-y-2 px-3 py-3">
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0">
-                          <p className="text-[13px] font-bold text-slate-950">
+                          <p className="text-phx-md font-bold text-slate-950">
                             {row.customerName}
                           </p>
-                          <p className="mt-0.5 text-[10px] font-medium text-slate-400">
+                          <p className="mt-0.5 text-phx-2xs font-medium text-slate-400">
                             {row.contactForMoneyTransfer}
                             {row.requesterHrId
                               ? ` (${row.requesterHrId})`
                               : ""}
                           </p>
                         </div>
-                        <span className="shrink-0 rounded-sm bg-slate-100 px-2 py-0.5 text-[12px] font-black text-slate-900">
+                        <span className="shrink-0 rounded-sm bg-slate-100 px-2 py-0.5 text-phx-sm font-black text-slate-900">
                           {egp(row.sumOfAmount)}
                         </span>
                       </div>
 
-                      <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 text-[10px]">
+                      <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 text-phx-2xs">
                         <span className="font-medium text-slate-400">
                           Transfer
                         </span>
@@ -2560,7 +2560,7 @@ function MarketingRequestDraftWorkspaceInner() {
                       </div>
 
                       {row.notes ? (
-                        <p className="text-[10px] font-medium text-slate-500 break-words">
+                        <p className="text-phx-2xs font-medium text-slate-500 break-words">
                           {row.notes}
                         </p>
                       ) : null}
@@ -2620,10 +2620,10 @@ function MarketingRequestDraftWorkspaceInner() {
           <div className="border-b border-slate-100 bg-slate-50 px-4 py-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
-                <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-amber-600">
+                <p className="text-phx-2xs font-bold uppercase tracking-[0.14em] text-amber-600">
                   Action Needed
                 </p>
-                <h2 className="mt-0.5 text-[15px] font-black tracking-tight text-slate-950">
+                <h2 className="mt-0.5 text-phx-lg font-black tracking-tight text-slate-950">
                   Returned to me
                 </h2>
               </div>
@@ -2636,7 +2636,7 @@ function MarketingRequestDraftWorkspaceInner() {
             {isLoading ? (
               <TableSkeleton cols={3} rows={2} />
             ) : workspace.returnedToMe.length === 0 ? (
-              <p className="rounded-sm border border-dashed border-slate-200 bg-slate-50 px-3 py-4 text-center text-[12px] font-medium text-slate-400">
+              <p className="rounded-sm border border-dashed border-slate-200 bg-slate-50 px-3 py-4 text-center text-phx-sm font-medium text-slate-400">
                 Nothing returned to you right now.
               </p>
             ) : (
@@ -2650,21 +2650,21 @@ function MarketingRequestDraftWorkspaceInner() {
                   >
                     <div className="flex flex-wrap items-start justify-between gap-2">
                       <div className="min-w-0">
-                        <p className="font-mono text-[10px] font-bold text-slate-500">
+                        <p className="font-mono text-phx-2xs font-bold text-slate-500">
                           {request.requestCode}
                         </p>
-                        <p className="mt-0.5 text-[13px] font-black text-slate-950">
+                        <p className="mt-0.5 text-phx-md font-black text-slate-950">
                           {customerNameMap.get(request.customerId) ??
                             "Customer"}
                         </p>
-                        <p className="mt-0.5 text-[11px] font-medium text-slate-500">
+                        <p className="mt-0.5 text-phx-xs font-medium text-slate-500">
                           {requestTypeNameMap.get(request.requestTypeId) ??
                             "Request"}{" "}
                           · {egp(request.estimatedCost)}
                         </p>
                       </div>
                       <button
-                        className="flex shrink-0 items-center gap-1.5 rounded-sm bg-orange-500 px-3 py-2 text-[12px] font-bold text-white shadow-sm transition hover:bg-orange-600"
+                        className="flex shrink-0 items-center gap-1.5 rounded-sm bg-orange-500 px-3 py-2 text-phx-sm font-bold text-white shadow-sm transition hover:bg-orange-600"
                         onClick={() => void startResubmit(request)}
                         type="button"
                       >
@@ -2673,7 +2673,7 @@ function MarketingRequestDraftWorkspaceInner() {
                       </button>
                     </div>
                     {progress?.returnReason ? (
-                      <p className="mt-2 rounded-sm border border-amber-200 bg-white px-2.5 py-1.5 text-[11px] font-medium text-amber-800">
+                      <p className="mt-2 rounded-sm border border-amber-200 bg-white px-2.5 py-1.5 text-phx-xs font-medium text-amber-800">
                         <span className="font-bold">Return reason: </span>
                         {progress.returnReason}
                       </p>
@@ -2690,10 +2690,10 @@ function MarketingRequestDraftWorkspaceInner() {
           <div className="border-b border-slate-100 bg-slate-50 px-4 py-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
-                <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-orange-600">
+                <p className="text-phx-2xs font-bold uppercase tracking-[0.14em] text-orange-600">
                   In Flight
                 </p>
-                <h2 className="mt-0.5 text-[15px] font-black tracking-tight text-slate-950">
+                <h2 className="mt-0.5 text-phx-lg font-black tracking-tight text-slate-950">
                   In approval
                 </h2>
               </div>
@@ -2706,7 +2706,7 @@ function MarketingRequestDraftWorkspaceInner() {
             {isLoading ? (
               <TableSkeleton cols={3} rows={3} />
             ) : workspace.inApproval.length === 0 ? (
-              <p className="rounded-sm border border-dashed border-slate-200 bg-slate-50 px-3 py-4 text-center text-[12px] font-medium text-slate-400">
+              <p className="rounded-sm border border-dashed border-slate-200 bg-slate-50 px-3 py-4 text-center text-phx-sm font-medium text-slate-400">
                 No requests are currently in approval.
               </p>
             ) : (
@@ -2722,14 +2722,14 @@ function MarketingRequestDraftWorkspaceInner() {
                   >
                     <div className="flex flex-wrap items-start justify-between gap-2">
                       <div className="min-w-0">
-                        <p className="font-mono text-[10px] font-bold text-slate-500">
+                        <p className="font-mono text-phx-2xs font-bold text-slate-500">
                           {request.requestCode}
                         </p>
-                        <p className="mt-0.5 text-[13px] font-black text-slate-950">
+                        <p className="mt-0.5 text-phx-md font-black text-slate-950">
                           {customerNameMap.get(request.customerId) ??
                             "Customer"}
                         </p>
-                        <p className="mt-0.5 text-[11px] font-medium text-slate-500">
+                        <p className="mt-0.5 text-phx-xs font-medium text-slate-500">
                           {requestTypeNameMap.get(request.requestTypeId) ??
                             "Request"}{" "}
                           · {egp(request.estimatedCost)}
@@ -2737,7 +2737,7 @@ function MarketingRequestDraftWorkspaceInner() {
                       </div>
                       <button
                         aria-expanded={expanded}
-                        className="flex shrink-0 items-center gap-1 rounded-sm border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-bold text-slate-700 transition hover:bg-slate-50"
+                        className="flex shrink-0 items-center gap-1 rounded-sm border border-slate-200 bg-white px-2.5 py-1.5 text-phx-xs font-bold text-slate-700 transition hover:bg-slate-50"
                         onClick={() =>
                           void toggleTrackingExpand(request.id)
                         }
@@ -2763,7 +2763,7 @@ function MarketingRequestDraftWorkspaceInner() {
                     {expanded ? (
                       <div className="mt-2 border-t border-slate-200 pt-2">
                         {loadingDetailId === request.id && !detail ? (
-                          <div className="flex items-center gap-2 px-1 py-2 text-[11px] font-medium text-slate-400">
+                          <div className="flex items-center gap-2 px-1 py-2 text-phx-xs font-medium text-slate-400">
                             <LoadingSpinner />
                             Loading timeline...
                           </div>
@@ -2772,7 +2772,7 @@ function MarketingRequestDraftWorkspaceInner() {
                             <MarketingApprovalTimeline requestCode={request.requestCode} steps={detail.steps} />
                             {detail.viewerCanComment ? (
                               <div className="mt-3 rounded-sm border border-sky-200 bg-sky-50/40 px-3 py-3">
-                                <p className="mb-1.5 text-[11px] font-bold uppercase tracking-[0.12em] text-sky-700">
+                                <p className="mb-1.5 text-phx-xs font-bold uppercase tracking-[0.12em] text-sky-700">
                                   Add your comment
                                 </p>
                                 <MarketingAdvisoryCommentBox
@@ -2789,7 +2789,7 @@ function MarketingRequestDraftWorkspaceInner() {
                             ) : null}
                           </>
                         ) : (
-                          <p className="px-1 py-2 text-[11px] font-medium text-slate-400">
+                          <p className="px-1 py-2 text-phx-xs font-medium text-slate-400">
                             Timeline unavailable.
                           </p>
                         )}
@@ -2817,10 +2817,10 @@ function MarketingRequestDraftWorkspaceInner() {
           <div className="border-b border-slate-100 bg-rose-50/60 px-4 py-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
-                <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-rose-600">
+                <p className="text-phx-2xs font-bold uppercase tracking-[0.14em] text-rose-600">
                   Not Proceeding
                 </p>
-                <h2 className="mt-0.5 text-[15px] font-black tracking-tight text-slate-950">
+                <h2 className="mt-0.5 text-phx-lg font-black tracking-tight text-slate-950">
                   Rejected
                 </h2>
               </div>
@@ -2833,7 +2833,7 @@ function MarketingRequestDraftWorkspaceInner() {
             {isLoading ? (
               <TableSkeleton cols={3} rows={2} />
             ) : workspace.rejected.length === 0 ? (
-              <p className="rounded-sm border border-dashed border-slate-200 bg-slate-50 px-3 py-4 text-center text-[12px] font-medium text-slate-400">
+              <p className="rounded-sm border border-dashed border-slate-200 bg-slate-50 px-3 py-4 text-center text-phx-sm font-medium text-slate-400">
                 No requests have been rejected.
               </p>
             ) : (
@@ -2847,20 +2847,20 @@ function MarketingRequestDraftWorkspaceInner() {
                   >
                     <div className="flex flex-wrap items-start justify-between gap-2">
                       <div className="min-w-0">
-                        <p className="font-mono text-[10px] font-bold text-slate-500">
+                        <p className="font-mono text-phx-2xs font-bold text-slate-500">
                           {request.requestCode}
                         </p>
-                        <p className="mt-0.5 text-[13px] font-black text-slate-950">
+                        <p className="mt-0.5 text-phx-md font-black text-slate-950">
                           {customerNameMap.get(request.customerId) ??
                             "Customer"}
                         </p>
-                        <p className="mt-0.5 text-[11px] font-medium text-slate-500">
+                        <p className="mt-0.5 text-phx-xs font-medium text-slate-500">
                           {requestTypeNameMap.get(request.requestTypeId) ??
                             "Request"}{" "}
                           · {egp(request.estimatedCost)}
                         </p>
                       </div>
-                      <span className="shrink-0 rounded-sm border border-rose-200 bg-white px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.06em] text-rose-700">
+                      <span className="shrink-0 rounded-sm border border-rose-200 bg-white px-1.5 py-0.5 text-phx-2xs font-bold uppercase tracking-[0.06em] text-rose-700">
                         Rejected
                       </span>
                     </div>
@@ -2884,28 +2884,28 @@ function MarketingRequestDraftWorkspaceInner() {
                               .filter(([, value]) => Boolean(value))
                               .map(([label, value]) => (
                                 <div className="flex items-baseline gap-2" key={label}>
-                                  <dt className="w-[66px] shrink-0 text-[9px] font-bold uppercase tracking-[0.08em] text-rose-700/70">
+                                  <dt className="w-[66px] shrink-0 text-phx-3xs font-bold uppercase tracking-[0.08em] text-rose-700/70">
                                     {label}
                                   </dt>
-                                  <dd className="min-w-0 text-[11px] font-bold text-slate-700">
+                                  <dd className="min-w-0 text-phx-xs font-bold text-slate-700">
                                     {value}
                                   </dd>
                                 </div>
                               ))}
                           </dl>
                           {rejection.reason ? (
-                            <p className="mt-1.5 rounded-sm border border-rose-200 bg-white px-2.5 py-1.5 text-[11px] font-medium text-rose-900">
+                            <p className="mt-1.5 rounded-sm border border-rose-200 bg-white px-2.5 py-1.5 text-phx-xs font-medium text-rose-900">
                               <span className="font-bold">Reason: </span>
                               {rejection.reason}
                             </p>
                           ) : (
-                            <p className="mt-1.5 text-[11px] font-medium text-slate-400">
+                            <p className="mt-1.5 text-phx-xs font-medium text-slate-400">
                               No reason was recorded.
                             </p>
                           )}
                         </>
                       ) : (
-                        <p className="text-[11px] font-medium text-slate-400">
+                        <p className="text-phx-xs font-medium text-slate-400">
                           Rejection details unavailable — the approval chain for
                           this request could not be read.
                         </p>
@@ -2923,10 +2923,10 @@ function MarketingRequestDraftWorkspaceInner() {
           <div className="border-b border-slate-100 bg-slate-50 px-4 py-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
-                <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500">
+                <p className="text-phx-2xs font-bold uppercase tracking-[0.14em] text-slate-500">
                   Not Submitted
                 </p>
-                <h2 className="mt-0.5 text-[15px] font-black tracking-tight text-slate-950">
+                <h2 className="mt-0.5 text-phx-lg font-black tracking-tight text-slate-950">
                   Drafts
                 </h2>
               </div>
@@ -2937,7 +2937,7 @@ function MarketingRequestDraftWorkspaceInner() {
             {isLoading ? (
               <TableSkeleton cols={3} rows={2} />
             ) : workspace.drafts.length === 0 ? (
-              <p className="rounded-sm border border-dashed border-slate-200 bg-slate-50 px-3 py-4 text-center text-[12px] font-medium text-slate-400">
+              <p className="rounded-sm border border-dashed border-slate-200 bg-slate-50 px-3 py-4 text-center text-phx-sm font-medium text-slate-400">
                 No drafts yet.
               </p>
             ) : (
@@ -2947,20 +2947,20 @@ function MarketingRequestDraftWorkspaceInner() {
                   key={draft.id}
                 >
                   <div className="min-w-0">
-                    <p className="font-mono text-[10px] font-bold text-slate-500">
+                    <p className="font-mono text-phx-2xs font-bold text-slate-500">
                       {draft.requestCode}
                     </p>
-                    <p className="mt-0.5 text-[13px] font-black text-slate-950">
+                    <p className="mt-0.5 text-phx-md font-black text-slate-950">
                       {customerNameMap.get(draft.customerId) ?? "Customer"}
                     </p>
-                    <p className="mt-0.5 text-[11px] font-medium text-slate-500">
+                    <p className="mt-0.5 text-phx-xs font-medium text-slate-500">
                       {requestTypeNameMap.get(draft.requestTypeId) ??
                         "Request"}{" "}
                       · {egp(draft.estimatedCost)}
                     </p>
                   </div>
                   <button
-                    className="flex shrink-0 items-center gap-1 rounded-sm border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-bold text-slate-700 transition hover:bg-slate-50"
+                    className="flex shrink-0 items-center gap-1 rounded-sm border border-slate-200 bg-white px-2.5 py-1.5 text-phx-xs font-bold text-slate-700 transition hover:bg-slate-50"
                     onClick={() => setActiveView("create")}
                     type="button"
                   >
@@ -2976,13 +2976,13 @@ function MarketingRequestDraftWorkspaceInner() {
 
       {/* ------ Empty-data hint ------------------------------------------------------------------------------------------------------------------------------ */}
       {!isLoading && !workspace.canCreateDraft ? (
-        <div className="rounded-sm border border-slate-200 bg-white px-3 py-2 text-[12px] font-medium text-slate-500">
+        <div className="rounded-sm border border-slate-200 bg-white px-3 py-2 text-phx-sm font-medium text-slate-500">
           You have review access to marketing requests. Draft creation is limited to assigned requesters in the employee directory.
         </div>
       ) : !isLoading &&
         (workspace.customers.length === 0 ||
           workspace.products.length === 0) ? (
-        <div className="rounded-sm border border-slate-200 bg-white px-3 py-2 text-[12px] font-medium text-slate-500">
+        <div className="rounded-sm border border-slate-200 bg-white px-3 py-2 text-phx-sm font-medium text-slate-500">
           {workspace.customers.length === 0
             ? "No active marketing customers available. Customer creation is coming next."
             : "No active marketing products available. Run the reference-data seed."}

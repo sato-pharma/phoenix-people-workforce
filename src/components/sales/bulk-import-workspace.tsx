@@ -154,7 +154,7 @@ export function BulkImportWorkspace({ distributors, summaries, productOptions, b
     <div className="space-y-4">
       {/* Shared month for this bulk session */}
       <Card className="space-y-2 rounded-[6px] border border-phx-line bg-white p-4">
-        <span className="text-[10px] font-black uppercase tracking-[0.12em] text-phx-ink-faint">Month for this bulk import</span>
+        <span className="text-phx-2xs font-black uppercase tracking-[0.12em] text-phx-ink-faint">Month for this bulk import</span>
         <div className="flex gap-2">
           <select className="h-10 rounded-[6px] border border-phx-line bg-white px-3 text-sm font-bold" onChange={(e) => applyPeriod(e.target.value, periodYear)} value={periodMonth}>
             <option value="">Month</option>
@@ -171,7 +171,7 @@ export function BulkImportWorkspace({ distributors, summaries, productOptions, b
       {/* Horizontal distributor grid */}
       <Card className="space-y-3 rounded-[6px] border border-phx-line bg-white p-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <span className="text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-soft">Distributors ({filtered.length})</span>
+          <span className="text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">Distributors ({filtered.length})</span>
           <div className="relative w-56">
             <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-phx-ink-faint" />
             <input className="h-9 w-full rounded-[6px] border border-phx-line bg-white pl-8 pr-2 text-sm outline-none focus:border-phx-accent-line" onChange={(e) => setQuery(e.target.value)} placeholder="Search distributor" value={query} />
@@ -200,10 +200,10 @@ export function BulkImportWorkspace({ distributors, summaries, productOptions, b
                   <span aria-hidden className={cn("h-2 w-2 shrink-0 rounded-full", style.dot)} />
                   <span className="truncate text-xs font-black text-phx-ink">{d.name}</span>
                 </div>
-                <span className="font-mono text-[10px] text-phx-ink-faint">{d.code}</span>
-                <span className={cn("text-[10px] font-bold", style.text)}>{style.label}</span>
+                <span className="font-mono text-phx-2xs text-phx-ink-faint">{d.code}</span>
+                <span className={cn("text-phx-2xs font-bold", style.text)}>{style.label}</span>
                 {status?.reconciliation ? (
-                  <span className="text-[10px] font-medium text-phx-ink-soft">{num(status.reconciliation.rowsCoded)} rows · {money(status.reconciliation.totalValue)}</span>
+                  <span className="text-phx-2xs font-medium text-phx-ink-soft">{num(status.reconciliation.rowsCoded)} rows · {money(status.reconciliation.totalValue)}</span>
                 ) : null}
               </button>
             );
@@ -256,9 +256,9 @@ export function BulkImportWorkspace({ distributors, summaries, productOptions, b
           <div className="flex flex-wrap items-center gap-2">
             <h3 className="text-base font-black tracking-tight text-slate-950">Confirm & Import All</h3>
             {blockingCodes.length > 0 ? (
-              <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-0.5 text-[11px] font-bold text-amber-700"><AlertTriangle className="h-3 w-3" /> {blockingCodes.length} distributor(s) not ready yet</span>
+              <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-0.5 text-phx-xs font-bold text-amber-700"><AlertTriangle className="h-3 w-3" /> {blockingCodes.length} distributor(s) not ready yet</span>
             ) : (
-              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-0.5 text-[11px] font-bold text-emerald-700"><CheckCircle2 className="h-3 w-3" /> Every distributor here is validated</span>
+              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-0.5 text-phx-xs font-bold text-emerald-700"><CheckCircle2 className="h-3 w-3" /> Every distributor here is validated</span>
             )}
           </div>
 

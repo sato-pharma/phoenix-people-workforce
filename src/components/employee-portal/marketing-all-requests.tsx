@@ -267,7 +267,7 @@ export function MarketingAllRequests() {
           renderCard={(row) => <RequestRowCard row={row} />}
           renderTable={() => (
             <PortalDesktopTable minWidth="1500px">
-              <thead className="bg-slate-50 text-[11px] font-black uppercase tracking-[0.12em] text-slate-500">
+              <thead className="bg-slate-50 text-phx-xs font-black uppercase tracking-[0.12em] text-slate-500">
                 <tr>
                   <th className="px-4 py-3">Request Code</th>
                   <th className="px-4 py-3">Status</th>

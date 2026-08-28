@@ -120,11 +120,11 @@ function KpiCard({ accent, label, note, value }: { accent: Accent; label: string
       <div className="flex h-full flex-col justify-between gap-4 p-5">
         <div className="flex items-center gap-2">
           <span className={`h-1.5 w-1.5 ${bar}`} />
-          <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">{label}</p>
+          <p className="text-phx-2xs font-bold uppercase tracking-[0.16em] text-slate-500">{label}</p>
         </div>
         <div>
           <p className={`text-[28px] font-black leading-none tracking-tight tabular-nums ${valueColor}`}>{value}</p>
-          <p className="mt-2 text-[11px] font-semibold text-slate-400">{note}</p>
+          <p className="mt-2 text-phx-xs font-semibold text-slate-400">{note}</p>
         </div>
       </div>
     </div>
@@ -237,8 +237,8 @@ export function FingerprintAnalytics({ hrId, initialData, targets }: Props) {
                 <Users className="h-4 w-4" />
               </span>
               <div>
-                <p className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">Whose Report</p>
-                <p className="text-[13px] font-semibold text-slate-800">
+                <p className="text-phx-2xs font-black uppercase tracking-[0.18em] text-slate-400">Whose Report</p>
+                <p className="text-phx-md font-semibold text-slate-800">
                   {selectedTarget?.isSelf
                     ? "Your own attendance"
                     : `${selectedTarget?.label}${selectedTarget?.sublabel ? ` · ${selectedTarget.sublabel}` : ""}`}
@@ -276,7 +276,7 @@ export function FingerprintAnalytics({ hrId, initialData, targets }: Props) {
                   type="button"
                   disabled={isPending}
                   className={[
-                    "inline-flex h-9 items-center gap-1.5 px-4 text-[12px] font-bold uppercase tracking-wide transition-colors duration-150",
+                    "inline-flex h-9 items-center gap-1.5 px-4 text-phx-sm font-bold uppercase tracking-wide transition-colors duration-150",
                     active
                       ? "bg-orange-500 text-white"
                       : "border border-slate-300 bg-white text-slate-600 hover:border-orange-300 hover:bg-orange-50 hover:text-orange-700",
@@ -292,7 +292,7 @@ export function FingerprintAnalytics({ hrId, initialData, targets }: Props) {
 
           {/* Export button */}
           <a
-            className="inline-flex h-9 shrink-0 items-center gap-1.5 border border-slate-300 bg-white px-4 text-[12px] font-bold uppercase tracking-wide text-slate-600 transition-colors hover:border-orange-300 hover:bg-orange-50 hover:text-orange-700"
+            className="inline-flex h-9 shrink-0 items-center gap-1.5 border border-slate-300 bg-white px-4 text-phx-sm font-bold uppercase tracking-wide text-slate-600 transition-colors hover:border-orange-300 hover:bg-orange-50 hover:text-orange-700"
             href={exportHref}
             data-no-print
           >
@@ -305,7 +305,7 @@ export function FingerprintAnalytics({ hrId, initialData, targets }: Props) {
         {activeFilter === "custom" && (
           <div className="mt-4 flex flex-wrap items-end gap-3 border-t border-slate-100 pt-4">
             <div className="space-y-1.5">
-              <p className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">Select Month</p>
+              <p className="text-phx-2xs font-black uppercase tracking-[0.18em] text-slate-400">Select Month</p>
               <SearchableSelect
                 className={FIELD}
                 onChange={(e) => handleCustomMonth(e.target.value)}
@@ -362,13 +362,13 @@ export function FingerprintAnalytics({ hrId, initialData, targets }: Props) {
                   <Fingerprint className="h-4 w-4" />
                 </span>
                 <div>
-                  <p className="text-[10px] font-black uppercase tracking-[0.20em] text-orange-500">Fingerprint Log</p>
-                  <p className="mt-0.5 text-[13px] font-semibold text-slate-800 tabular-nums">
+                  <p className="text-phx-2xs font-black uppercase tracking-[0.20em] text-orange-500">Fingerprint Log</p>
+                  <p className="mt-0.5 text-phx-md font-semibold text-slate-800 tabular-nums">
                     {displayDate(data.dateFrom)} → {displayDate(data.dateTo)}
                   </p>
                 </div>
               </div>
-              <span className="bg-slate-900 px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide text-slate-100 tabular-nums">
+              <span className="bg-slate-900 px-2.5 py-1 text-phx-xs font-bold uppercase tracking-wide text-slate-100 tabular-nums">
                 {rows.length} {rows.length === 1 ? "record" : "records"}
               </span>
             </div>
@@ -385,21 +385,21 @@ export function FingerprintAnalytics({ hrId, initialData, targets }: Props) {
                     </div>
                     <dl className="mt-2.5 grid grid-cols-3 gap-2 text-center">
                       <div>
-                        <dt className="text-[9px] font-black uppercase tracking-[0.12em] text-slate-400">In</dt>
+                        <dt className="text-phx-3xs font-black uppercase tracking-[0.12em] text-slate-400">In</dt>
                         <dd className="mt-0.5 font-mono text-xs font-semibold text-slate-700">{row.firstPunch || "—"}</dd>
                       </div>
                       <div>
-                        <dt className="text-[9px] font-black uppercase tracking-[0.12em] text-slate-400">Out</dt>
+                        <dt className="text-phx-3xs font-black uppercase tracking-[0.12em] text-slate-400">Out</dt>
                         <dd className="mt-0.5 font-mono text-xs font-semibold text-slate-700">{row.lastPunch || "—"}</dd>
                       </div>
                       <div>
-                        <dt className="text-[9px] font-black uppercase tracking-[0.12em] text-slate-400">Duration</dt>
+                        <dt className="text-phx-3xs font-black uppercase tracking-[0.12em] text-slate-400">Duration</dt>
                         <dd className="mt-0.5 font-mono text-xs font-semibold text-slate-700">{row.timeLong || "—"}</dd>
                       </div>
                     </dl>
                     {lateMin > 0 && (
                       <div className="mt-2 flex flex-wrap items-center gap-2">
-                        <span className="inline-flex bg-amber-100 px-2.5 py-0.5 text-[11px] font-bold text-amber-800 tabular-nums">
+                        <span className="inline-flex bg-amber-100 px-2.5 py-0.5 text-phx-xs font-bold text-amber-800 tabular-nums">
                           +{lateMin} min late
                         </span>
                       </div>
@@ -472,7 +472,7 @@ export function FingerprintAnalytics({ hrId, initialData, targets }: Props) {
 
                             <td className="px-4 py-3 text-center">
                               {lateMin > 0 ? (
-                                <span className="inline-flex bg-amber-100 px-2.5 py-0.5 text-[11px] font-bold text-amber-800 tabular-nums">
+                                <span className="inline-flex bg-amber-100 px-2.5 py-0.5 text-phx-xs font-bold text-amber-800 tabular-nums">
                                   +{lateMin} min
                                 </span>
                               ) : (

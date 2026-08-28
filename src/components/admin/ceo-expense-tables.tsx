@@ -28,7 +28,7 @@ export function CeoExpenseTables({
   return (
     <div className="grid gap-5 p-5 lg:grid-cols-2">
       <div>
-        <p className="mb-3 text-[9px] font-black uppercase tracking-[0.16em] text-slate-400">
+        <p className="mb-3 text-phx-3xs font-black uppercase tracking-[0.16em] text-slate-400">
           Spend by Region
         </p>
         <CeoTopMoversTable
@@ -43,7 +43,7 @@ export function CeoExpenseTables({
         />
       </div>
       <div>
-        <p className="mb-3 text-[9px] font-black uppercase tracking-[0.16em] text-slate-400">
+        <p className="mb-3 text-phx-3xs font-black uppercase tracking-[0.16em] text-slate-400">
           Top Spenders
         </p>
         <CeoTopMoversTable

@@ -274,7 +274,7 @@ export function WeeklyDashboardView({ initial, initialError }: { initial: Weekly
       <header className="rounded-[6px] border border-phx-line bg-white px-4 py-3 shadow-sm">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
-            <div className="mb-1 flex items-center gap-2 text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-faint">
+            <div className="mb-1 flex items-center gap-2 text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-faint">
               <span className="h-2 w-2 rounded-full bg-phx-accent" />
               Weekly Sales
             </div>
@@ -319,7 +319,7 @@ export function WeeklyDashboardView({ initial, initialError }: { initial: Weekly
       </header>
 
       <div className="rounded-[6px] border border-phx-line bg-white p-2 shadow-sm">
-        <div className="mb-2 flex items-center justify-between px-1 text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-faint">
+        <div className="mb-2 flex items-center justify-between px-1 text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-faint">
           <span className="flex items-center gap-1.5">
             <Filter className="h-3.5 w-3.5" />
             Filters
@@ -494,7 +494,7 @@ function WeekComparisonTable({ rows }: { rows: WeeklyDashboard["weekComparison"]
       </div>
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
-          <thead className="bg-[#020617] text-left text-[11px] font-black uppercase tracking-wide text-white">
+          <thead className="bg-[#020617] text-left text-phx-xs font-black uppercase tracking-wide text-white">
             <tr>
               <th className="px-3 py-2">Month</th>
               <th className="px-3 py-2">Week</th>
@@ -511,12 +511,12 @@ function WeekComparisonTable({ rows }: { rows: WeeklyDashboard["weekComparison"]
                 <td className="px-3 py-2 font-semibold text-phx-ink">{monthLabelClient(row.cycleMonth)}</td>
                 <td className="px-3 py-2">
                   <span className="inline-flex items-center gap-1">
-                    <span className="inline-flex items-center rounded bg-phx-accent-soft px-2 py-0.5 text-[11px] font-black text-[#9A3412]">
+                    <span className="inline-flex items-center rounded bg-phx-accent-soft px-2 py-0.5 text-phx-xs font-black text-[#9A3412]">
                       W{row.weekNumber}
                     </span>
                     {row.spansGap ? (
                       <span
-                        className="inline-flex items-center rounded bg-[#FEF3C7] px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[#92400E]"
+                        className="inline-flex items-center rounded bg-[#FEF3C7] px-1.5 py-0.5 text-phx-2xs font-bold uppercase tracking-wide text-[#92400E]"
                         title="An earlier week of this month was never uploaded, so this week's figure spans the missing week(s) — it is not a true single-week value."
                       >
                         Spans gap
@@ -561,12 +561,12 @@ function Kpi({
 }) {
   return (
     <div className="rounded-[6px] border border-phx-line bg-white p-3 shadow-sm">
-      <div className="flex items-center gap-2 text-[11px] font-black uppercase tracking-wide text-phx-ink-faint">
+      <div className="flex items-center gap-2 text-phx-xs font-black uppercase tracking-wide text-phx-ink-faint">
         <span className="flex h-7 w-7 items-center justify-center rounded-[5px] border border-phx-line bg-phx-paper text-phx-ink-soft">{icon}</span>
         {label}
       </div>
       <div className="mt-2 text-lg font-black tabular-nums text-phx-ink">{value}</div>
-      {delta ? <DeltaLabel delta={delta} format={format} /> : sub ? <div className="mt-0.5 text-[11px] font-bold text-phx-ink-faint">{sub}</div> : null}
+      {delta ? <DeltaLabel delta={delta} format={format} /> : sub ? <div className="mt-0.5 text-phx-xs font-bold text-phx-ink-faint">{sub}</div> : null}
     </div>
   );
 }
@@ -574,7 +574,7 @@ function Kpi({
 function DeltaLabel({ delta, format }: { delta: WeeklyDelta; format?: (value: number) => string }) {
   if (delta.prior == null) {
     return (
-      <div className="mt-0.5 flex items-center gap-1 text-[11px] font-bold text-phx-ink-faint">
+      <div className="mt-0.5 flex items-center gap-1 text-phx-xs font-bold text-phx-ink-faint">
         <Minus className="h-3 w-3" /> no prior week
       </div>
     );
@@ -582,7 +582,7 @@ function DeltaLabel({ delta, format }: { delta: WeeklyDelta; format?: (value: nu
   const up = (delta.pct ?? 0) >= 0;
   const tone = delta.pct == null ? "text-phx-ink-faint" : up ? "text-emerald-600" : "text-rose-600";
   return (
-    <div className={`mt-0.5 flex items-center gap-1 text-[11px] font-bold ${tone}`}>
+    <div className={`mt-0.5 flex items-center gap-1 text-phx-xs font-bold ${tone}`}>
       {delta.pct == null ? <Minus className="h-3 w-3" /> : up ? <ArrowUpRight className="h-3 w-3" /> : <ArrowDownRight className="h-3 w-3" />}
       {delta.pct == null ? "-" : pct(delta.pct)}
       <span className="font-medium text-phx-ink-faint">vs {format ? format(delta.prior) : delta.prior}</span>
@@ -616,7 +616,7 @@ function ChartPanel({
     <div className="overflow-hidden rounded-[6px] border border-phx-line bg-white shadow-sm">
       <div className="flex items-center justify-between gap-3 border-b border-phx-line bg-phx-paper px-3 py-2">
         <span className="text-xs font-black uppercase tracking-wide text-phx-ink-soft">{title}</span>
-        {meta ? <span className="text-[10px] font-black uppercase tracking-wide text-phx-ink-faint">{meta}</span> : null}
+        {meta ? <span className="text-phx-2xs font-black uppercase tracking-wide text-phx-ink-faint">{meta}</span> : null}
       </div>
       {children}
     </div>
@@ -786,7 +786,7 @@ function RankTable({
       />
       <div className={cn("overflow-auto", maxHeight)}>
         <table className="w-full min-w-[620px] text-sm">
-          <thead className="sticky top-0 z-10 bg-[#020617] text-left text-[10px] font-black uppercase text-white">
+          <thead className="sticky top-0 z-10 bg-[#020617] text-left text-phx-2xs font-black uppercase text-white">
             <tr>
               <SortableTh label="Name" sortKey="name" sort={table.sort} onSort={table.toggleSort} />
               <SortableTh label="Sales value" sortKey="salesValue" sort={table.sort} onSort={table.toggleSort} align="right" />
@@ -846,7 +846,7 @@ function BranchComparisonTable({ rows }: { rows: WeeklyBranchComparisonRow[] }) 
       />
       <div className="max-h-96 overflow-auto">
         <table className="w-full min-w-[760px] text-sm">
-          <thead className="sticky top-0 z-10 bg-[#020617] text-left text-[10px] font-black uppercase text-white">
+          <thead className="sticky top-0 z-10 bg-[#020617] text-left text-phx-2xs font-black uppercase text-white">
             <tr>
               <SortableTh label="Branch" sortKey="name" sort={table.sort} onSort={table.toggleSort} />
               <SortableTh label="Region" sortKey="regionName" sort={table.sort} onSort={table.toggleSort} />
@@ -898,7 +898,7 @@ function ZeroStockTable({ rows, totalStock }: { rows: WeeklyBranchRow[]; totalSt
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-phx-line bg-phx-paper px-3 py-2">
         <div>
           <div className="text-xs font-black uppercase tracking-wide text-phx-ink-soft">Stock on hand watchlist</div>
-          <div className="text-[11px] font-bold text-phx-ink-faint">Zero sales branches</div>
+          <div className="text-phx-xs font-bold text-phx-ink-faint">Zero sales branches</div>
         </div>
         <div className="flex items-center gap-2">
           <div className="w-40 sm:w-48">
@@ -906,7 +906,7 @@ function ZeroStockTable({ rows, totalStock }: { rows: WeeklyBranchRow[]; totalSt
           </div>
           <div className="text-right">
             <div className="text-sm font-black tabular-nums text-phx-ink">{num(shownStock)}</div>
-            <div className="text-[10px] font-black uppercase tracking-wide text-phx-ink-faint">
+            <div className="text-phx-2xs font-black uppercase tracking-wide text-phx-ink-faint">
               {table.isFiltered && table.visible !== table.total ? `${table.visible} / ${table.total}` : table.visible} rows
             </div>
           </div>
@@ -914,7 +914,7 @@ function ZeroStockTable({ rows, totalStock }: { rows: WeeklyBranchRow[]; totalSt
       </div>
       <div className="max-h-80 overflow-auto">
         <table className="w-full table-fixed text-sm">
-          <thead className="sticky top-0 z-10 bg-[#020617] text-left text-[10px] font-black uppercase text-white">
+          <thead className="sticky top-0 z-10 bg-[#020617] text-left text-phx-2xs font-black uppercase text-white">
             <tr>
               <SortableTh label="Branch" sortKey="branchName" sort={table.sort} onSort={table.toggleSort} className="w-[52%]" />
               <SortableTh label="Region" sortKey="regionName" sort={table.sort} onSort={table.toggleSort} className="w-[24%]" />
@@ -961,7 +961,7 @@ function PanelTitle({
       <span className="text-xs font-black uppercase tracking-wide text-phx-ink-soft">{title}</span>
       <div className="flex items-center gap-2">
         {actions ? <div className="w-40 sm:w-48">{actions}</div> : null}
-        <span className="shrink-0 rounded-[4px] border border-phx-line bg-white px-2 py-1 text-[10px] font-black uppercase tracking-wide text-phx-ink-faint">
+        <span className="shrink-0 rounded-[4px] border border-phx-line bg-white px-2 py-1 text-phx-2xs font-black uppercase tracking-wide text-phx-ink-faint">
           {showSplit ? `${count} / ${total}` : count} rows
         </span>
       </div>
@@ -1069,12 +1069,12 @@ function TrendTooltip({
   return (
     <div className="pointer-events-none min-w-[200px] max-w-[270px] rounded-[6px] border border-phx-line bg-white px-3 py-2.5 shadow-[0_8px_24px_-8px_rgba(15,23,42,0.25)]">
       <div className="flex items-center justify-between gap-3">
-        <span className="flex items-center gap-1.5 text-[11px] font-bold tabular-nums text-phx-ink-soft">
+        <span className="flex items-center gap-1.5 text-phx-xs font-bold tabular-nums text-phx-ink-soft">
           <span className="inline-block h-2 w-2 rounded-full" style={{ background: color }} />
           {datum.label}
         </span>
         {datum.selected && (
-          <span className="rounded-[4px] bg-phx-accent-soft px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wide text-phx-accent-hover">
+          <span className="rounded-[4px] bg-phx-accent-soft px-1.5 py-0.5 text-phx-3xs font-black uppercase tracking-wide text-phx-accent-hover">
             Selected
           </span>
         )}
@@ -1084,7 +1084,7 @@ function TrendTooltip({
         {datum.wow !== null && (
           <span
             className={cn(
-              "inline-flex items-center gap-1 rounded-[4px] px-1.5 py-1 text-[13px] font-black tabular-nums",
+              "inline-flex items-center gap-1 rounded-[4px] px-1.5 py-1 text-phx-md font-black tabular-nums",
               up ? "bg-[#ECFDF5] text-[#047857]" : "bg-[#FEF2F2] text-[#B91C1C]",
             )}
           >
@@ -1093,7 +1093,7 @@ function TrendTooltip({
           </span>
         )}
       </div>
-      {datum.wow !== null && <div className="mt-0.5 text-[10px] font-bold text-phx-ink-faint">vs previous week</div>}
+      {datum.wow !== null && <div className="mt-0.5 text-phx-2xs font-bold text-phx-ink-faint">vs previous week</div>}
       {top.length > 0 && (
         <div className="mt-2 space-y-1 border-t border-phx-paper-2 pt-2">
           {top.map((row) => {
@@ -1102,9 +1102,9 @@ function TrendTooltip({
               <div className="flex items-center justify-between gap-3" key={row.distributorCode}>
                 <span className="flex min-w-0 items-center gap-1.5">
                   <span className="inline-block h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: color, opacity: 0.45 }} />
-                  <span className="truncate text-[10px] font-bold text-phx-ink-soft">{row.distributorName || row.distributorCode}</span>
+                  <span className="truncate text-phx-2xs font-bold text-phx-ink-soft">{row.distributorName || row.distributorCode}</span>
                 </span>
-                <span className="shrink-0 text-[10px] font-black tabular-nums text-phx-ink-2">
+                <span className="shrink-0 text-phx-2xs font-black tabular-nums text-phx-ink-2">
                   {(share * 100).toFixed(0)}% · {compactEgp(row.salesValue)}
                 </span>
               </div>
@@ -1112,8 +1112,8 @@ function TrendTooltip({
           })}
           {rest.length > 0 && (
             <div className="flex items-center justify-between gap-3">
-              <span className="text-[10px] font-bold text-phx-ink-faint">+{rest.length} more</span>
-              <span className="shrink-0 text-[10px] font-black tabular-nums text-phx-ink-faint">{compactEgp(restValue)}</span>
+              <span className="text-phx-2xs font-bold text-phx-ink-faint">+{rest.length} more</span>
+              <span className="shrink-0 text-phx-2xs font-black tabular-nums text-phx-ink-faint">{compactEgp(restValue)}</span>
             </div>
           )}
         </div>
@@ -1187,11 +1187,11 @@ function TrendStrip({ trend, selected }: { trend: WeeklyDashboard["trend"]; sele
         <div className="flex items-center gap-1.5 border-b border-phx-line bg-phx-paper px-4 py-3">
           <span className="inline-block h-1.5 w-1.5 rounded-full bg-phx-accent" />
           <span className="text-xs font-black uppercase tracking-wide text-phx-ink-soft">Weekly sales-value trend</span>
-          <span className="ml-2 text-[11px] font-semibold text-phx-ink-faint">
+          <span className="ml-2 text-phx-xs font-semibold text-phx-ink-faint">
             {trend.length === 0 ? "No data for current filter" : "1 week — need at least 2 to draw a trend"}
           </span>
         </div>
-        <div className="flex h-20 items-center justify-center text-[11px] font-medium text-phx-line-strong">
+        <div className="flex h-20 items-center justify-center text-phx-xs font-medium text-phx-line-strong">
           {trend.length === 0
             ? "No weekly sales data matches the current filter selection."
             : "Upload a second week or clear filters to display the trend chart."}
@@ -1212,13 +1212,13 @@ function TrendStrip({ trend, selected }: { trend: WeeklyDashboard["trend"]; sele
             Weekly sales-value trend
           </div>
           <div className="mt-1 flex items-center gap-2.5">
-            <span className="text-[11px] font-bold text-phx-ink-faint">{trend.length} weeks</span>
+            <span className="text-phx-xs font-bold text-phx-ink-faint">{trend.length} weeks</span>
             {multiYear && (
               <span className="flex items-center gap-2 border-l border-phx-line pl-2.5">
                 {years.map((year) => (
                   <span className="flex items-center gap-1" key={year}>
                     <span className="inline-block h-1.5 w-3 rounded-full" style={{ background: trendYearColor(year) }} />
-                    <span className="text-[10px] font-bold tabular-nums text-phx-ink-faint">{year}</span>
+                    <span className="text-phx-2xs font-bold tabular-nums text-phx-ink-faint">{year}</span>
                   </span>
                 ))}
               </span>
@@ -1227,11 +1227,11 @@ function TrendStrip({ trend, selected }: { trend: WeeklyDashboard["trend"]; sele
         </div>
         <div className="flex flex-wrap items-center gap-3 text-right">
           <div>
-            <div className="text-[10px] font-black uppercase tracking-wide text-phx-ink-soft">Average</div>
+            <div className="text-phx-2xs font-black uppercase tracking-wide text-phx-ink-soft">Average</div>
             <div className="text-sm font-black tabular-nums text-phx-ink-2">{money(meta.average)}</div>
           </div>
           <div className="border-l border-phx-line pl-3">
-            <div className="text-[10px] font-black uppercase tracking-wide text-phx-accent-hover">
+            <div className="text-phx-2xs font-black uppercase tracking-wide text-phx-accent-hover">
               {meta.selectedCount > 1 ? `${meta.selectedCount} selected weeks` : "Highlighted week"}
             </div>
             <div className="text-lg font-black tabular-nums text-phx-ink">{money(meta.highlightTotal)}</div>

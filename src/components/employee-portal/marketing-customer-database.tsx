@@ -306,7 +306,7 @@ function MergeVenuesPanel({ onMerged }: { onMerged: () => void }) {
         <div className="grid gap-4 lg:grid-cols-2">
           <div className="grid gap-1.5">
             <label
-              className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-500"
+              className="text-phx-xs font-black uppercase tracking-[0.16em] text-slate-500"
               htmlFor="venue-merge-survivor"
             >
               Venue that survives
@@ -327,7 +327,7 @@ function MergeVenuesPanel({ onMerged }: { onMerged: () => void }) {
 
           <div className="grid gap-1.5">
             <label
-              className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-500"
+              className="text-phx-xs font-black uppercase tracking-[0.16em] text-slate-500"
               htmlFor="venue-merge-loser"
             >
               Duplicate to retire
@@ -351,7 +351,7 @@ function MergeVenuesPanel({ onMerged }: { onMerged: () => void }) {
 
         <div className="grid gap-1.5">
           <label
-            className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-500"
+            className="text-phx-xs font-black uppercase tracking-[0.16em] text-slate-500"
             htmlFor="venue-merge-reason"
           >
             Why these two are one shop
@@ -510,7 +510,7 @@ export function MarketingCustomerDatabase() {
           renderCard={(row) => <CustomerRowCard row={row} />}
           renderTable={() => (
             <PortalDesktopTable minWidth="1800px">
-            <thead className="bg-slate-50 text-[11px] font-black uppercase tracking-[0.12em] text-slate-500">
+            <thead className="bg-slate-50 text-phx-xs font-black uppercase tracking-[0.12em] text-slate-500">
               <tr>
                 <th className="px-4 py-3">Customer Type</th>
                 <th className="px-4 py-3">Customer ID</th>

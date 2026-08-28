@@ -189,11 +189,11 @@ function JobCard({
         <div>
           <div className="flex flex-wrap items-center gap-2.5">
             <h3 className="text-base font-black text-phx-ink">{job.label}</h3>
-            <span className={`rounded-full border px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wide ${STATE_STYLES[job.state] ?? "border-slate-200 bg-slate-50 text-slate-600"}`}>
+            <span className={`rounded-full border px-2.5 py-0.5 text-phx-2xs font-black uppercase tracking-wide ${STATE_STYLES[job.state] ?? "border-slate-200 bg-slate-50 text-slate-600"}`}>
               {job.state}
             </span>
             {!job.isKnown ? (
-              <span className="rounded-full border border-sky-200 bg-sky-50 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wide text-sky-700">
+              <span className="rounded-full border border-sky-200 bg-sky-50 px-2.5 py-0.5 text-phx-2xs font-black uppercase tracking-wide text-sky-700">
                 Not in local registry
               </span>
             ) : null}
@@ -208,7 +208,7 @@ function JobCard({
         {canMutate ? (
           <div className="flex flex-wrap items-center gap-2">
             <button
-              className="inline-flex items-center gap-1.5 rounded-lg border border-phx-line bg-white px-3 py-1.5 text-[11px] font-black text-phx-ink transition hover:border-orange-300 hover:text-orange-700 disabled:opacity-50"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-phx-line bg-white px-3 py-1.5 text-phx-xs font-black text-phx-ink transition hover:border-orange-300 hover:text-orange-700 disabled:opacity-50"
               disabled={pending}
               onClick={() => onMutate("run")}
               type="button"
@@ -217,7 +217,7 @@ function JobCard({
               Run now
             </button>
             <button
-              className="inline-flex items-center gap-1.5 rounded-lg border border-phx-line bg-white px-3 py-1.5 text-[11px] font-black text-phx-ink transition hover:border-orange-300 hover:text-orange-700 disabled:opacity-50"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-phx-line bg-white px-3 py-1.5 text-phx-xs font-black text-phx-ink transition hover:border-orange-300 hover:text-orange-700 disabled:opacity-50"
               disabled={pending}
               onClick={() => onMutate(isPaused ? "resume" : "pause")}
               type="button"
@@ -226,7 +226,7 @@ function JobCard({
               {isPaused ? "Resume" : "Pause"}
             </button>
             <button
-              className="inline-flex items-center gap-1.5 rounded-lg bg-[#0B0B0B] px-3 py-1.5 text-[11px] font-black text-white transition hover:bg-[#1E293B]"
+              className="inline-flex items-center gap-1.5 rounded-lg bg-[#0B0B0B] px-3 py-1.5 text-phx-xs font-black text-white transition hover:bg-[#1E293B]"
               onClick={onToggleExpand}
               type="button"
             >
@@ -343,10 +343,10 @@ function SchedulePanel({
   return (
     <div className="mt-4 rounded-xl border border-phx-line bg-phx-paper p-4">
       <div className="mb-3 flex flex-wrap items-center gap-1.5">
-        <span className="mr-1 text-[11px] font-black uppercase tracking-wide text-phx-ink-faint">Quick pick:</span>
+        <span className="mr-1 text-phx-xs font-black uppercase tracking-wide text-phx-ink-faint">Quick pick:</span>
         {SCHEDULE_PRESETS.map((preset) => (
           <button
-            className="rounded-full border border-phx-line bg-white px-2.5 py-1 text-[11px] font-bold text-phx-ink-2 transition hover:border-orange-300 hover:text-orange-700"
+            className="rounded-full border border-phx-line bg-white px-2.5 py-1 text-phx-xs font-bold text-phx-ink-2 transition hover:border-orange-300 hover:text-orange-700"
             key={preset.label}
             onClick={() => setCronExpression(preset.cronExpression)}
             type="button"
@@ -378,7 +378,7 @@ function SchedulePanel({
         </div>
         <div className="flex items-end gap-2">
           <button
-            className="inline-flex items-center gap-1.5 rounded-lg border border-phx-line bg-white px-3 py-2 text-[11px] font-black text-phx-ink transition hover:border-orange-300 hover:text-orange-700 disabled:opacity-50"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-phx-line bg-white px-3 py-2 text-phx-xs font-black text-phx-ink transition hover:border-orange-300 hover:text-orange-700 disabled:opacity-50"
             disabled={previewing || !cronExpression || !timeZone}
             onClick={() => handlePreview()}
             type="button"
@@ -388,7 +388,7 @@ function SchedulePanel({
           </button>
         </div>
       </div>
-      <p className="mt-1.5 text-[11px] text-phx-ink-faint">Auto-previews as you type — this button just forces an immediate check.</p>
+      <p className="mt-1.5 text-phx-xs text-phx-ink-faint">Auto-previews as you type — this button just forces an immediate check.</p>
 
       {preview ? (
         <div className="mt-3 rounded-lg border border-phx-line bg-white p-3 text-xs">
@@ -417,11 +417,11 @@ function SchedulePanel({
       ) : null}
 
       <div className="mt-3 flex items-center justify-end gap-2">
-        <button className="rounded-lg px-3 py-1.5 text-[11px] font-black text-phx-ink-soft hover:text-phx-ink" onClick={onCancel} type="button">
+        <button className="rounded-lg px-3 py-1.5 text-phx-xs font-black text-phx-ink-soft hover:text-phx-ink" onClick={onCancel} type="button">
           Cancel
         </button>
         <button
-          className="inline-flex items-center gap-1.5 rounded-lg bg-[#0B0B0B] px-3 py-1.5 text-[11px] font-black text-white transition hover:bg-[#1E293B] disabled:opacity-40"
+          className="inline-flex items-center gap-1.5 rounded-lg bg-[#0B0B0B] px-3 py-1.5 text-phx-xs font-black text-white transition hover:bg-[#1E293B] disabled:opacity-40"
           disabled={!canConfirm || saving}
           onClick={handleConfirm}
           type="button"

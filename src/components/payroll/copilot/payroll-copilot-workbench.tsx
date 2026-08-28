@@ -594,7 +594,7 @@ function RunWorkspace(props: {
           >
             {tab.label}
             {tab.count > 0 ? (
-              <span className="bg-gradient-to-r from-orange-600 to-orange-500 px-1.5 py-0.5 text-[10px] font-bold text-white">
+              <span className="bg-gradient-to-r from-orange-600 to-orange-500 px-1.5 py-0.5 text-phx-2xs font-bold text-white">
                 {tab.count}
               </span>
             ) : null}
@@ -829,7 +829,7 @@ function Stat({
       <div aria-hidden="true" className={`pointer-events-none absolute -right-8 -top-8 h-24 w-24 rounded-full blur-2xl ${style.glow}`} />
       <div className="relative flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="overflow-hidden whitespace-nowrap text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">
+          <p className="overflow-hidden whitespace-nowrap text-phx-2xs font-bold uppercase tracking-[0.16em] text-slate-500">
             {label}
           </p>
           <p className={`mt-2 text-2xl font-black tracking-[-0.02em] ${style.text}`}>{value}</p>
@@ -1088,7 +1088,7 @@ function PayrollSheetTable({
                         >
                           {column.render(employee)}
                           {column.key === "fullName" && groupedHrIds.has(employee.hrId) ? (
-                            <span className="ml-2 bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                            <span className="ml-2 bg-slate-100 px-1.5 py-0.5 text-phx-2xs font-semibold uppercase tracking-wide text-slate-500">
                               Grouped
                             </span>
                           ) : null}

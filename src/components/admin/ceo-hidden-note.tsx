@@ -49,7 +49,7 @@ export function CeoHiddenNote() {
             className="absolute left-0 top-8 z-50 w-[min(92vw,420px)] border border-orange-400/30 bg-slate-950 p-5 text-left shadow-[0_24px_60px_rgba(0,0,0,0.5)]"
           >
             <div className="mb-3 flex items-center justify-between">
-              <span className="text-[9px] font-black uppercase tracking-[0.28em] text-orange-300/80">
+              <span className="text-phx-3xs font-black uppercase tracking-[0.28em] text-orange-300/80">
                 A note
               </span>
               <button
@@ -61,15 +61,15 @@ export function CeoHiddenNote() {
                 <X aria-hidden="true" className="h-3.5 w-3.5" />
               </button>
             </div>
-            <p className="text-[13px] font-medium leading-6 text-slate-200">
+            <p className="text-phx-md font-medium leading-6 text-slate-200">
               To the leader who built all of this —
             </p>
-            <p className="mt-2 text-[13px] leading-6 text-slate-400">
+            <p className="mt-2 text-phx-md leading-6 text-slate-400">
               Every screen here exists because of the standard you set. We see how much you
               carry, and how quietly you carry it. This was made so your days feel a little
               lighter, and so the company you love is always one glance away.
             </p>
-            <p className="mt-3 text-[13px] italic leading-6 text-slate-300">
+            <p className="mt-3 text-phx-md italic leading-6 text-slate-300">
               With respect and gratitude — always.
             </p>
           </div>

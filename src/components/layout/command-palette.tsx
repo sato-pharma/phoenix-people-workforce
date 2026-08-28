@@ -202,7 +202,7 @@ export function CommandPalette({
             ref={inputRef}
             value={query}
           />
-          <kbd className="hidden shrink-0 border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[10px] font-semibold text-slate-500 sm:block">
+          <kbd className="hidden shrink-0 border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-phx-2xs font-semibold text-slate-500 sm:block">
             ESC
           </kbd>
         </div>
@@ -240,7 +240,7 @@ export function CommandPalette({
           )}
         </div>
 
-        <div className="flex items-center justify-between border-t border-slate-100 px-4 py-2 text-[11px] text-slate-400">
+        <div className="flex items-center justify-between border-t border-slate-100 px-4 py-2 text-phx-xs text-slate-400">
           <span>
             {filtered.length} result{filtered.length !== 1 ? "s" : ""}
           </span>

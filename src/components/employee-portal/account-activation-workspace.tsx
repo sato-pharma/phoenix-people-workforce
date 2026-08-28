@@ -53,7 +53,7 @@ export function AccountActivationWorkspace({ initialUsers }: AccountActivationWo
   return (
     <div className="space-y-4">
       <Card className="rounded-lg border border-gray-200 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.08)]">
-        <label className="mb-2 block text-[11px] font-semibold uppercase tracking-wider text-slate-400" htmlFor="account-activation-search">
+        <label className="mb-2 block text-phx-xs font-semibold uppercase tracking-wider text-slate-400" htmlFor="account-activation-search">
           Search
         </label>
         <input
@@ -74,9 +74,9 @@ export function AccountActivationWorkspace({ initialUsers }: AccountActivationWo
 
       <Card className="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-[0_1px_3px_rgba(15,23,42,0.08)]">
         <div className="border-b border-gray-100 px-4 py-4 sm:px-6">
-          <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Accounts</p>
+          <p className="text-phx-xs font-semibold uppercase tracking-wider text-slate-400">Accounts</p>
           <h2 className="mt-1 text-base font-semibold text-slate-900">{filtered.length} matching</h2>
-          <p className="mt-0.5 text-[11px] font-medium text-slate-400">
+          <p className="mt-0.5 text-phx-xs font-medium text-slate-400">
             Super Admin, CEO, and Talent Acquisition accounts are never listed here.
           </p>
         </div>

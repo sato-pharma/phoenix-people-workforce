@@ -374,7 +374,7 @@ function BrandPanel() {
           <h1 className="-mt-2 text-4xl font-black uppercase tracking-[0.20em] text-white drop-shadow-[0_0_18px_rgba(255,255,255,0.22)] sm:text-6xl lg:text-6xl xl:text-7xl">
             {systemIdentity.brandName.slice(0, -1).toUpperCase()}<span className="text-[#ff6a00]">{systemIdentity.brandName.slice(-1).toUpperCase()}</span>
           </h1>
-          <p className="mt-2 text-[10px] font-black uppercase tracking-[0.20em] text-white/88 sm:mt-3 sm:text-sm sm:tracking-[0.28em]">
+          <p className="mt-2 text-phx-2xs font-black uppercase tracking-[0.20em] text-white/88 sm:mt-3 sm:text-sm sm:tracking-[0.28em]">
             {systemUiText.login.tagline}
           </p>
 

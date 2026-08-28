@@ -73,7 +73,7 @@ export function TrendChart({ data, hoveredElement, onHover, loading = false }: T
         title="Performance Trend"
       />
       <div className="mt-6 grid h-48 grid-cols-[30px_minmax(0,1fr)] gap-2 sm:h-64 sm:grid-cols-[42px_minmax(0,1fr)] sm:gap-3 md:h-72">
-        <div className="flex flex-col justify-between pb-7 text-right text-[9px] font-bold text-phx-ink-soft sm:text-[10px]">
+        <div className="flex flex-col justify-between pb-7 text-right text-phx-3xs font-bold text-phx-ink-soft sm:text-phx-2xs">
           <span>{compactEGP(max).replace("EGP ", "")}</span>
           <span>{compactEGP(max / 2).replace("EGP ", "")}</span>
           <span>0</span>
@@ -92,10 +92,10 @@ export function TrendChart({ data, hoveredElement, onHover, loading = false }: T
                 content={
                   <div className="space-y-1">
                     <p className="text-xs font-bold text-phx-ink">{row.label}</p>
-                    <p className="text-[11px] text-phx-ink-soft">Sales: {compactEGP(row.sales)}</p>
-                    <p className="text-[11px] text-phx-ink-soft">Target: {compactEGP(row.target)}</p>
-                    <p className="text-[11px] font-bold text-phx-accent">{row.target > 0 ? formatPercent((row.sales - row.target) / row.target) : "N/A"} vs target</p>
-                    <p className="text-[10px] text-phx-ink-soft">{changeMessage}</p>
+                    <p className="text-phx-xs text-phx-ink-soft">Sales: {compactEGP(row.sales)}</p>
+                    <p className="text-phx-xs text-phx-ink-soft">Target: {compactEGP(row.target)}</p>
+                    <p className="text-phx-xs font-bold text-phx-accent">{row.target > 0 ? formatPercent((row.sales - row.target) / row.target) : "N/A"} vs target</p>
+                    <p className="text-phx-2xs text-phx-ink-soft">{changeMessage}</p>
                   </div>
                 }
                 key={row.label}
@@ -110,7 +110,7 @@ export function TrendChart({ data, hoveredElement, onHover, loading = false }: T
                     <span className={cn("w-2 rounded-t sm:w-2.5 md:w-4", isHovered ? "bg-[#FB923C]" : "bg-orange-500")} style={{ height: `${Math.max((row.sales / max) * 100, 3)}%` }} />
                     <span className="w-2 rounded-t bg-phx-line-strong sm:w-2.5 md:w-4" style={{ height: `${Math.max((row.target / max) * 100, 3)}%` }} />
                   </div>
-                  <span className={cn("absolute -bottom-1 max-w-8 translate-y-full truncate text-[9px] font-bold sm:max-w-10 sm:text-[10px] md:max-w-none md:text-[11px]", isHovered ? "text-phx-accent" : "text-phx-ink-soft")}>{row.label.replace(" 2026", "")}</span>
+                  <span className={cn("absolute -bottom-1 max-w-8 translate-y-full truncate text-phx-3xs font-bold sm:max-w-10 sm:text-phx-2xs md:max-w-none md:text-phx-xs", isHovered ? "text-phx-accent" : "text-phx-ink-soft")}>{row.label.replace(" 2026", "")}</span>
                 </div>
               </PremiumTooltip>
             );

@@ -196,7 +196,7 @@ export function WeeklyProductMappingManager({
       <header>
         <div className="flex items-center gap-2">
           <span className="h-2 w-2 rounded-full bg-phx-accent" aria-hidden />
-          <span className="text-[11px] font-black uppercase tracking-[0.16em] text-phx-accent">Weekly Sales</span>
+          <span className="text-phx-xs font-black uppercase tracking-[0.16em] text-phx-accent">Weekly Sales</span>
         </div>
         <h1 className="mt-1 text-xl font-black text-phx-ink">Product Mapping</h1>
         <p className="mt-1 text-sm font-medium text-phx-ink-soft">
@@ -218,7 +218,7 @@ export function WeeklyProductMappingManager({
       <div className="flex flex-wrap items-center gap-2 rounded-[6px] border border-phx-line bg-white p-3 shadow-sm">
         {lockedDistributor ? null : (
           <>
-            <span className="text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-soft">Distributor</span>
+            <span className="text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">Distributor</span>
             <SearchableSelect
               className="h-9 min-w-[14rem] border border-phx-line bg-white px-2 text-sm font-bold text-phx-ink outline-none focus:border-phx-accent-line"
               disabled={busy}
@@ -326,7 +326,7 @@ export function WeeklyProductMappingManager({
       {/* Table */}
       <div className="overflow-x-auto rounded-[6px] border border-phx-line bg-white shadow-sm">
         <table className="w-full text-sm">
-          <thead className="bg-[#020617] text-left text-[11px] font-black uppercase tracking-wide text-white">
+          <thead className="bg-[#020617] text-left text-phx-xs font-black uppercase tracking-wide text-white">
             <tr>
               <th className="px-3 py-2">Distributor alias</th>
               <th className="px-3 py-2">Kind</th>
@@ -348,9 +348,9 @@ export function WeeklyProductMappingManager({
                 <td className="px-3 py-2 text-phx-ink-soft">{alias.aliasKind}</td>
                 <td className="px-3 py-2">
                   <span className="font-semibold text-phx-ink">{alias.productName}</span>
-                  <span className="ml-1 text-[11px] font-medium text-phx-ink-faint">{alias.productCode}</span>
+                  <span className="ml-1 text-phx-xs font-medium text-phx-ink-faint">{alias.productCode}</span>
                   {!alias.resolvable && (
-                    <span className="ml-2 inline-flex items-center gap-1 bg-amber-100 px-2 py-0.5 text-[10px] font-black uppercase text-amber-700">
+                    <span className="ml-2 inline-flex items-center gap-1 bg-amber-100 px-2 py-0.5 text-phx-2xs font-black uppercase text-amber-700">
                       <AlertTriangle className="h-3 w-3" /> fix price/line in master
                     </span>
                   )}
@@ -377,7 +377,7 @@ export function WeeklyProductMappingManager({
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <label className="flex flex-col gap-1">
-      <span className="text-[10px] font-black uppercase tracking-[0.12em] text-phx-ink-faint">{label}</span>
+      <span className="text-phx-2xs font-black uppercase tracking-[0.12em] text-phx-ink-faint">{label}</span>
       {children}
     </label>
   );

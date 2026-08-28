@@ -104,7 +104,7 @@ export default async function AdminPrivateCalendarsPage({ searchParams }: PagePr
       <form className="border border-phx-line bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.06)]" method="get">
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           <div>
-            <label className="mb-1 block text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-soft">
+            <label className="mb-1 block text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">
               Name
             </label>
             <input
@@ -116,7 +116,7 @@ export default async function AdminPrivateCalendarsPage({ searchParams }: PagePr
             />
           </div>
           <div>
-            <label className="mb-1 block text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-soft">
+            <label className="mb-1 block text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">
               Line
             </label>
             <select
@@ -131,7 +131,7 @@ export default async function AdminPrivateCalendarsPage({ searchParams }: PagePr
             </select>
           </div>
           <div>
-            <label className="mb-1 block text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-soft">
+            <label className="mb-1 block text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">
               Region / Area
             </label>
             <select
@@ -146,7 +146,7 @@ export default async function AdminPrivateCalendarsPage({ searchParams }: PagePr
             </select>
           </div>
           <div>
-            <label className="mb-1 block text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-soft">
+            <label className="mb-1 block text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">
               Title
             </label>
             <input
@@ -160,7 +160,7 @@ export default async function AdminPrivateCalendarsPage({ searchParams }: PagePr
         </div>
         <div className="mt-3 flex items-center gap-3">
           <div>
-            <label className="mb-1 block text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-soft">
+            <label className="mb-1 block text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">
               Month
             </label>
             <select
@@ -174,7 +174,7 @@ export default async function AdminPrivateCalendarsPage({ searchParams }: PagePr
             </select>
           </div>
           <div>
-            <label className="mb-1 block text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-soft">
+            <label className="mb-1 block text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">
               Year
             </label>
             <input
@@ -221,7 +221,7 @@ export default async function AdminPrivateCalendarsPage({ searchParams }: PagePr
           ) : (
             <table className="w-full border-collapse text-left">
               <thead className="bg-phx-paper">
-                <tr className="border-b border-phx-line text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-soft">
+                <tr className="border-b border-phx-line text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">
                   <th className="px-5 py-3">Employee</th>
                   <th className="px-5 py-3">Title</th>
                   <th className="px-5 py-3">Line</th>
@@ -247,7 +247,7 @@ export default async function AdminPrivateCalendarsPage({ searchParams }: PagePr
                     >
                       <td className="px-5 py-3">
                         <div className="font-semibold text-phx-ink">{emp.fullName}</div>
-                        <div className="font-mono text-[11px] text-phx-ink-faint">{emp.hrId}</div>
+                        <div className="font-mono text-phx-xs text-phx-ink-faint">{emp.hrId}</div>
                       </td>
                       <td className="px-5 py-3 text-phx-ink-2">{emp.jobTitle ?? "—"}</td>
                       <td className="px-5 py-3 text-phx-ink-2">{emp.lineName ?? "—"}</td>

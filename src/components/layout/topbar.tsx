@@ -97,7 +97,7 @@ export function Topbar({
         >
           <Search className={`pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 ${isAdminMode ? "text-[#F8B56B]" : "text-phx-ink-soft"}`} />
           <span className="truncate">{systemUiText.globalSearchPlaceholder}</span>
-          <kbd className={`ml-auto hidden shrink-0 items-center gap-0.5 border px-1.5 py-0.5 text-[10px] font-semibold sm:flex ${
+          <kbd className={`ml-auto hidden shrink-0 items-center gap-0.5 border px-1.5 py-0.5 text-phx-2xs font-semibold sm:flex ${
             isAdminMode ? "border-[#333333] bg-[#111111] text-phx-ink-faint" : "border-phx-line bg-white text-phx-ink-soft"
           }`}>
             ⌘K

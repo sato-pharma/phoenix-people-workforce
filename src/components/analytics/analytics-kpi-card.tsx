@@ -17,7 +17,7 @@ export function AnalyticsKpiCard({ label, value, subValue, growth, prefix, class
   return (
     <div className={`border border-border border-l-4 border-l-phx-accent bg-card flex flex-col overflow-hidden ${className ?? ""}`}>
       <div className="bg-phx-ink px-3 py-1.5">
-        <p className="text-[10px] text-white/70 uppercase tracking-widest font-semibold truncate">{label}</p>
+        <p className="text-phx-2xs text-white/70 uppercase tracking-widest font-semibold truncate">{label}</p>
       </div>
       <div className="px-4 py-3 flex flex-col gap-1.5 flex-1">
         <p className="text-3xl font-bold text-foreground tabular-nums leading-none">
@@ -26,7 +26,7 @@ export function AnalyticsKpiCard({ label, value, subValue, growth, prefix, class
         </p>
         {subValue && <p className="text-xs text-muted-foreground">{subValue}</p>}
         {growthSign != null && (
-          <div className={`inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 self-start ${
+          <div className={`inline-flex items-center gap-1 text-phx-xs font-semibold px-2 py-0.5 self-start ${
             growthSign === "up"
               ? "bg-emerald-900/20 text-emerald-600"
               : growthSign === "down"

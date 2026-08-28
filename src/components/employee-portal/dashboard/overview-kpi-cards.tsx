@@ -77,7 +77,7 @@ function OverviewStatCard({
               <p
                 className={[
                   "whitespace-nowrap font-bold uppercase text-slate-400",
-                  isLongLabel ? "text-[9px] tracking-[0.08em]" : "text-[10px] tracking-[0.15em]",
+                  isLongLabel ? "text-phx-3xs tracking-[0.08em]" : "text-phx-2xs tracking-[0.15em]",
                 ].join(" ")}
               >
                 {label}
@@ -103,7 +103,7 @@ function OverviewStatCard({
           <div className="flex items-end justify-between gap-3">
             <div className="min-w-0">
               {note ? (
-                <p className="whitespace-nowrap text-[11px] font-semibold leading-snug text-slate-500" title={note}>
+                <p className="whitespace-nowrap text-phx-xs font-semibold leading-snug text-slate-500" title={note}>
                   {note}
                 </p>
               ) : null}

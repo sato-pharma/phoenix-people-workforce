@@ -19,11 +19,11 @@ function ageInDays(iso: string | null, now: number): number | null {
 
 function AgeBadge({ days }: { days: number | null }) {
   if (days == null)
-    return <span className="shrink-0 text-[11px] font-medium text-slate-400 whitespace-nowrap">no date</span>;
+    return <span className="shrink-0 text-phx-xs font-medium text-slate-400 whitespace-nowrap">no date</span>;
   const tone =
     days >= 7 ? "bg-rose-100 text-rose-700" : days >= 3 ? "bg-amber-100 text-amber-700" : "bg-slate-100 text-slate-600";
   return (
-    <span className={`inline-flex shrink-0 items-center gap-1 px-2 py-0.5 text-[11px] font-semibold whitespace-nowrap ${tone}`}>
+    <span className={`inline-flex shrink-0 items-center gap-1 px-2 py-0.5 text-phx-xs font-semibold whitespace-nowrap ${tone}`}>
       <Clock className="h-3 w-3" />
       {days}d
     </span>
@@ -101,9 +101,9 @@ export function MmInboxClient({ rows, now }: { rows: MarketingApproverInboxRow[]
   return (
     <div className="overflow-hidden border border-slate-200">
       <div className="flex items-center justify-between bg-slate-900 px-5 py-3">
-        <h2 className="text-[10px] font-bold uppercase tracking-widest text-slate-300">Needs Your Decision</h2>
+        <h2 className="text-phx-2xs font-bold uppercase tracking-widest text-slate-300">Needs Your Decision</h2>
         {visibleRows.length > 0 && oldestAge > 0 ? (
-          <span className="text-[10px] font-semibold uppercase tracking-wider text-orange-400 whitespace-nowrap">
+          <span className="text-phx-2xs font-semibold uppercase tracking-wider text-orange-400 whitespace-nowrap">
             oldest {oldestAge}d waiting
           </span>
         ) : (
@@ -127,7 +127,7 @@ export function MmInboxClient({ rows, now }: { rows: MarketingApproverInboxRow[]
                     <p className="text-sm font-semibold text-slate-900 whitespace-nowrap">
                       {row.requestCode} · {row.requesterName}
                     </p>
-                    <p className="text-[11px] text-slate-500 whitespace-nowrap">
+                    <p className="text-phx-xs text-slate-500 whitespace-nowrap">
                       {row.requestType} — {row.currentStepName}
                     </p>
                   </div>
@@ -137,11 +137,11 @@ export function MmInboxClient({ rows, now }: { rows: MarketingApproverInboxRow[]
 
                 {/* Error notice */}
                 {rowOutcome && !rowOutcome.ok ? (
-                  <div className="flex items-center gap-2 border-t border-amber-100 bg-amber-50 px-5 py-2 text-[12px] text-amber-800">
+                  <div className="flex items-center gap-2 border-t border-amber-100 bg-amber-50 px-5 py-2 text-phx-sm text-amber-800">
                     <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-amber-600" />
                     <span className="flex-1">{rowOutcome.message}</span>
                     <button
-                      className="text-[11px] text-slate-400 hover:text-slate-600 whitespace-nowrap"
+                      className="text-phx-xs text-slate-400 hover:text-slate-600 whitespace-nowrap"
                       onClick={() => setOutcome(null)}
                     >
                       dismiss
@@ -152,7 +152,7 @@ export function MmInboxClient({ rows, now }: { rows: MarketingApproverInboxRow[]
                 {/* Inline reason input (return / reject) */}
                 {expandedKind ? (
                   <div className="space-y-2 border-t border-slate-100 bg-slate-50 px-5 py-3">
-                    <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+                    <p className="text-phx-xs font-semibold uppercase tracking-wider text-slate-500">
                       {expandedKind === "return" ? row.decisionLabels.return : row.decisionLabels.reject} — reason required
                     </p>
                     <textarea
@@ -167,7 +167,7 @@ export function MmInboxClient({ rows, now }: { rows: MarketingApproverInboxRow[]
                       <button
                         disabled={isBusy || !reason.trim()}
                         onClick={() => decide(row.id, expandedKind, reason.trim())}
-                        className={`px-4 py-1.5 text-[12px] font-semibold uppercase tracking-wider text-white transition-colors
+                        className={`px-4 py-1.5 text-phx-sm font-semibold uppercase tracking-wider text-white transition-colors
                           ${expandedKind === "reject"
                             ? "bg-rose-600 hover:bg-rose-700 disabled:bg-rose-300"
                             : "bg-amber-600 hover:bg-amber-700 disabled:bg-amber-300"
@@ -177,7 +177,7 @@ export function MmInboxClient({ rows, now }: { rows: MarketingApproverInboxRow[]
                       </button>
                       <button
                         onClick={() => { setInline(null); setReason(""); }}
-                        className="px-3 py-1.5 text-[12px] font-medium text-slate-500 hover:text-slate-700"
+                        className="px-3 py-1.5 text-phx-sm font-medium text-slate-500 hover:text-slate-700"
                       >
                         Cancel
                       </button>
@@ -190,7 +190,7 @@ export function MmInboxClient({ rows, now }: { rows: MarketingApproverInboxRow[]
                   <button
                     disabled={isBusy}
                     onClick={() => decide(row.id, "approve")}
-                    className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-white bg-slate-800 hover:bg-orange-600 disabled:bg-slate-300 transition-colors"
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-phx-xs font-semibold uppercase tracking-wider text-white bg-slate-800 hover:bg-orange-600 disabled:bg-slate-300 transition-colors"
                   >
                     <CheckCircle className="h-3 w-3" />
                     {isBusy && !expandedKind ? "…" : row.decisionLabels.approve}
@@ -199,7 +199,7 @@ export function MmInboxClient({ rows, now }: { rows: MarketingApproverInboxRow[]
                     <button
                       disabled={isBusy}
                       onClick={() => toggleInline(row.id, "return")}
-                      className={`flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wider transition-colors
+                      className={`flex items-center gap-1.5 px-3 py-1.5 text-phx-xs font-semibold uppercase tracking-wider transition-colors
                         ${expandedKind === "return"
                           ? "bg-amber-600 text-white"
                           : "bg-amber-50 text-amber-700 hover:bg-amber-100 disabled:opacity-50"
@@ -213,7 +213,7 @@ export function MmInboxClient({ rows, now }: { rows: MarketingApproverInboxRow[]
                     <button
                       disabled={isBusy}
                       onClick={() => toggleInline(row.id, "reject")}
-                      className={`flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wider transition-colors
+                      className={`flex items-center gap-1.5 px-3 py-1.5 text-phx-xs font-semibold uppercase tracking-wider transition-colors
                         ${expandedKind === "reject"
                           ? "bg-rose-600 text-white"
                           : "bg-rose-50 text-rose-600 hover:bg-rose-100 disabled:opacity-50"
@@ -225,7 +225,7 @@ export function MmInboxClient({ rows, now }: { rows: MarketingApproverInboxRow[]
                   ) : null}
                   <Link
                     href={`/employee-portals/marketing-requests/decision/${row.id}`}
-                    className="ml-auto flex items-center gap-1 text-[11px] text-slate-400 hover:text-orange-500 transition-colors whitespace-nowrap"
+                    className="ml-auto flex items-center gap-1 text-phx-xs text-slate-400 hover:text-orange-500 transition-colors whitespace-nowrap"
                   >
                     Full view <ArrowRight className="h-3 w-3" />
                   </Link>

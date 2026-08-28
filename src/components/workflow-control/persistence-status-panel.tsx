@@ -58,14 +58,14 @@ export function PersistenceStatusPanel() {
     <div className="mx-5 mt-4 space-y-3" data-testid="persistence-status-panel">
       {/* Persistence status grid */}
       <div className="rounded-xl border border-phx-line bg-phx-paper p-4">
-        <p className="text-[11px] font-black uppercase tracking-[0.10em] text-phx-ink-soft">Phase 3 persistence status</p>
+        <p className="text-phx-xs font-black uppercase tracking-[0.10em] text-phx-ink-soft">Phase 3 persistence status</p>
         <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
           {statusRows.map(({ icon: Icon, label, value, tone }) => (
             <div key={label} className="flex items-center gap-2 rounded-lg border border-phx-line bg-white px-3 py-2">
               <Icon className={`h-4 w-4 ${tone === "off" ? "text-phx-ink-faint" : "text-phx-ink-2"}`} />
               <div className="min-w-0 flex-1">
-                <p className="text-[11px] font-black uppercase tracking-[0.08em] text-phx-ink-faint">{label}</p>
-                <p className={`mt-0.5 text-[12px] font-bold ${tone === "off" ? "text-[#B91C1C]" : "text-phx-ink"}`}>{value}</p>
+                <p className="text-phx-xs font-black uppercase tracking-[0.08em] text-phx-ink-faint">{label}</p>
+                <p className={`mt-0.5 text-phx-sm font-bold ${tone === "off" ? "text-[#B91C1C]" : "text-phx-ink"}`}>{value}</p>
               </div>
             </div>
           ))}
@@ -76,33 +76,33 @@ export function PersistenceStatusPanel() {
       <div className="rounded-xl border border-phx-line bg-white p-4">
         <div className="flex items-center gap-2">
           <History className="h-4 w-4 text-phx-ink-faint" />
-          <p className="text-[12px] font-black uppercase tracking-[0.10em] text-phx-ink-soft">Version History</p>
-          <span className="inline-flex items-center gap-1 rounded-full bg-phx-paper-2 px-2 py-0.5 text-[10px] font-bold text-phx-ink-2">
+          <p className="text-phx-sm font-black uppercase tracking-[0.10em] text-phx-ink-soft">Version History</p>
+          <span className="inline-flex items-center gap-1 rounded-full bg-phx-paper-2 px-2 py-0.5 text-phx-2xs font-bold text-phx-ink-2">
             <Lock className="h-3 w-3" /> Locked
           </span>
         </div>
-        <p className="mt-1 text-[12px] leading-5 text-phx-ink-soft">
+        <p className="mt-1 text-phx-sm leading-5 text-phx-ink-soft">
           Version history will become available after Phase 3 persistence migration.
         </p>
         <div className="mt-2 rounded-lg border border-dashed border-phx-line bg-phx-paper px-3 py-3 text-center">
-          <p className="text-[11px] font-bold uppercase tracking-[0.10em] text-phx-ink-faint">Persisted Drafts</p>
-          <p className="mt-0.5 text-[11px] text-phx-ink-faint">Empty — Saved drafts unavailable until persistence is enabled.</p>
+          <p className="text-phx-xs font-bold uppercase tracking-[0.10em] text-phx-ink-faint">Persisted Drafts</p>
+          <p className="mt-0.5 text-phx-xs text-phx-ink-faint">Empty — Saved drafts unavailable until persistence is enabled.</p>
         </div>
       </div>
 
       {/* Publish safety note */}
       <div className="rounded-xl border border-[#FED7AA] bg-phx-accent-soft px-4 py-3">
-        <p className="flex items-center gap-1.5 text-[11px] font-black uppercase tracking-[0.10em] text-phx-accent-press">
+        <p className="flex items-center gap-1.5 text-phx-xs font-black uppercase tracking-[0.10em] text-phx-accent-press">
           <ShieldCheck className="h-3.5 w-3.5" /> Publish safety
         </p>
-        <p className="mt-1 text-[12px] leading-5 text-[#9A3412]">
+        <p className="mt-1 text-phx-sm leading-5 text-[#9A3412]">
           Publishing will never change live workflows without validation, audit log, and explicit approval.
         </p>
       </div>
 
       {/* Governance checklist */}
       <div className="rounded-xl border border-phx-line bg-white p-4">
-        <p className="flex items-center gap-1.5 text-[11px] font-black uppercase tracking-[0.10em] text-phx-ink-soft">
+        <p className="flex items-center gap-1.5 text-phx-xs font-black uppercase tracking-[0.10em] text-phx-ink-soft">
           <ClipboardList className="h-3.5 w-3.5" /> Governance checklist
         </p>
         <ul className="mt-1.5 grid grid-cols-1 gap-1 sm:grid-cols-2">
@@ -113,7 +113,7 @@ export function PersistenceStatusPanel() {
               ) : (
                 <XCircle className="h-3.5 w-3.5 text-phx-ink-faint" />
               )}
-              <span className="text-[12px] text-phx-ink-2">{label}</span>
+              <span className="text-phx-sm text-phx-ink-2">{label}</span>
             </li>
           ))}
         </ul>

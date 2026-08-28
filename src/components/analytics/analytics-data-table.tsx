@@ -71,7 +71,7 @@ function MobileRow<T extends Record<string, unknown>>({
         <dl className="mt-2 grid grid-cols-2 gap-2 text-xs">
           {fields.map((col) => (
             <div key={String(col.key)}>
-              <dt className="text-[10px] uppercase tracking-wide text-muted-foreground">{col.label}</dt>
+              <dt className="text-phx-2xs uppercase tracking-wide text-muted-foreground">{col.label}</dt>
               <dd className={`font-medium text-foreground ${col.align === "right" ? "tabular-nums" : ""}`}>
                 {formatValue(col.formatKind, row[col.key])}
               </dd>

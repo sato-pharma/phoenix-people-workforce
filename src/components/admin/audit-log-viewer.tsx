@@ -215,7 +215,7 @@ export function AuditLogViewer({
               <tr className="border-b border-phx-line bg-phx-paper">
                 {["Created At", "Actor", "Role", "Entity Type", "Entity ID", "Summary", "IP"].map((h) => (
                   <th
-                    className="px-5 py-4 text-left text-[10px] font-black uppercase tracking-widest text-phx-ink-soft"
+                    className="px-5 py-4 text-left text-phx-2xs font-black uppercase tracking-widest text-phx-ink-soft"
                     key={h}
                   >
                     {h}
@@ -251,7 +251,7 @@ export function AuditLogViewer({
                     <td className="px-5 py-4 text-sm text-phx-ink-soft">{log.actorRole ?? "-"}</td>
                     <td className="px-5 py-4">
                       {log.entityType ? (
-                        <span className="inline-flex items-center rounded-full bg-orange-50 px-2.5 py-1 text-[11px] font-bold text-orange-600 ring-1 ring-orange-100">
+                        <span className="inline-flex items-center rounded-full bg-orange-50 px-2.5 py-1 text-phx-xs font-bold text-orange-600 ring-1 ring-orange-100">
                           {log.entityType}
                         </span>
                       ) : (

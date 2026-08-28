@@ -529,7 +529,7 @@ export function TargetsWorkspace(props: TargetsWorkspaceProps) {
               </Button>
             </div>
           ) : (
-            <span className="rounded-full border border-input px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+            <span className="rounded-full border border-input px-2.5 py-1 text-phx-2xs font-semibold uppercase tracking-wide text-muted-foreground">
               View only
             </span>
           )}
@@ -566,17 +566,17 @@ export function TargetsWorkspace(props: TargetsWorkspaceProps) {
                       </div>
                       <div className={`shrink-0 text-right text-sm font-semibold tabular-nums ${achievementTone(view.liveAch)}`}>
                         {fmtPct(view.liveAch)}
-                        <div className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Ach%</div>
+                        <div className="text-phx-2xs font-medium uppercase tracking-wide text-muted-foreground">Ach%</div>
                       </div>
                     </div>
 
                     <dl className="mt-2 flex flex-wrap gap-x-5 gap-y-1 text-xs">
                       <div className="flex items-baseline gap-1.5">
-                        <dt className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Actual</dt>
+                        <dt className="text-phx-2xs font-bold uppercase tracking-wide text-muted-foreground">Actual</dt>
                         <dd className="font-semibold tabular-nums">{fmtMoney(row.actualValue)}</dd>
                       </div>
                       <div className="flex items-baseline gap-1.5">
-                        <dt className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Unit price</dt>
+                        <dt className="text-phx-2xs font-bold uppercase tracking-wide text-muted-foreground">Unit price</dt>
                         <dd className="tabular-nums text-muted-foreground">{fmtPrice(row.unitPrice)}</dd>
                       </div>
                     </dl>
@@ -584,7 +584,7 @@ export function TargetsWorkspace(props: TargetsWorkspaceProps) {
                     {canEdit ? (
                       <div className="mt-2 grid grid-cols-2 gap-2">
                         <label className="block">
-                          <span className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Target units</span>
+                          <span className="text-phx-2xs font-bold uppercase tracking-wide text-muted-foreground">Target units</span>
                           <Input
                             type="number"
                             inputMode="decimal"
@@ -595,7 +595,7 @@ export function TargetsWorkspace(props: TargetsWorkspaceProps) {
                           />
                         </label>
                         <label className="block">
-                          <span className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Target value</span>
+                          <span className="text-phx-2xs font-bold uppercase tracking-wide text-muted-foreground">Target value</span>
                           <Input
                             type="number"
                             inputMode="decimal"
@@ -609,11 +609,11 @@ export function TargetsWorkspace(props: TargetsWorkspaceProps) {
                     ) : (
                       <dl className="mt-1 flex flex-wrap gap-x-5 gap-y-1 text-xs">
                         <div className="flex items-baseline gap-1.5">
-                          <dt className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Target units</dt>
+                          <dt className="text-phx-2xs font-bold uppercase tracking-wide text-muted-foreground">Target units</dt>
                           <dd className="tabular-nums">{row.targetUnits == null ? "—" : row.targetUnits.toLocaleString("en-EG")}</dd>
                         </div>
                         <div className="flex items-baseline gap-1.5">
-                          <dt className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Target value</dt>
+                          <dt className="text-phx-2xs font-bold uppercase tracking-wide text-muted-foreground">Target value</dt>
                           <dd className="font-semibold tabular-nums">{row.targetValue == null ? "—" : fmtMoney(row.targetValue)}</dd>
                         </div>
                       </dl>
@@ -761,15 +761,15 @@ export function TargetsWorkspace(props: TargetsWorkspaceProps) {
                   </p>
                   <dl className="mt-1.5 flex flex-wrap gap-x-5 gap-y-1 text-xs">
                     <div className="flex items-baseline gap-1.5">
-                      <dt className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Rows</dt>
+                      <dt className="text-phx-2xs font-bold uppercase tracking-wide text-muted-foreground">Rows</dt>
                       <dd className="tabular-nums">{money.format(Math.round(sourceFile.importableRows))}</dd>
                     </div>
                     <div className="flex items-baseline gap-1.5">
-                      <dt className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Units</dt>
+                      <dt className="text-phx-2xs font-bold uppercase tracking-wide text-muted-foreground">Units</dt>
                       <dd className="tabular-nums">{money.format(Math.round(sourceFile.totalQty))}</dd>
                     </div>
                     <div className="flex items-baseline gap-1.5">
-                      <dt className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Value</dt>
+                      <dt className="text-phx-2xs font-bold uppercase tracking-wide text-muted-foreground">Value</dt>
                       <dd className="font-semibold tabular-nums">{fmtMoney(sourceFile.totalValue)}</dd>
                     </div>
                   </dl>

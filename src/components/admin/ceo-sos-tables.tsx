@@ -60,10 +60,10 @@ function RegionTable({ rows, period }: { rows: RegionRow[]; period: string | nul
       <table className="w-full border-collapse text-xs">
         <thead>
           <tr className="bg-slate-900 text-left">
-            <SortableTh label="Region" sortKey="label"      sort={table.sort} onSort={table.toggleSort} className="px-3 py-2 text-[10px] font-black uppercase tracking-[0.12em] text-white" />
-            <SortableTh label="Value"  sortKey="totalValue" sort={table.sort} onSort={table.toggleSort} className="px-3 py-2 text-[10px] font-black uppercase tracking-[0.12em] text-white" align="right" />
-            <SortableTh label="Qty"    sortKey="totalQty"   sort={table.sort} onSort={table.toggleSort} className="px-3 py-2 text-[10px] font-black uppercase tracking-[0.12em] text-white" align="right" />
-            <th className="px-3 py-2 text-right text-[10px] font-black uppercase tracking-[0.12em] text-white">Share</th>
+            <SortableTh label="Region" sortKey="label"      sort={table.sort} onSort={table.toggleSort} className="px-3 py-2 text-phx-2xs font-black uppercase tracking-[0.12em] text-white" />
+            <SortableTh label="Value"  sortKey="totalValue" sort={table.sort} onSort={table.toggleSort} className="px-3 py-2 text-phx-2xs font-black uppercase tracking-[0.12em] text-white" align="right" />
+            <SortableTh label="Qty"    sortKey="totalQty"   sort={table.sort} onSort={table.toggleSort} className="px-3 py-2 text-phx-2xs font-black uppercase tracking-[0.12em] text-white" align="right" />
+            <th className="px-3 py-2 text-right text-phx-2xs font-black uppercase tracking-[0.12em] text-white">Share</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-100">
@@ -137,11 +137,11 @@ function ProductTable({ rows, period }: { rows: ProductRow[]; period: string | n
       <table className="w-full border-collapse text-xs">
         <thead>
           <tr className="bg-slate-900 text-left">
-            <SortableTh label="Product" sortKey="label"      sort={table.sort} onSort={table.toggleSort} className="px-3 py-2 text-[10px] font-black uppercase tracking-[0.12em] text-white" />
-            <SortableTh label="Line"    sortKey="line"       sort={table.sort} onSort={table.toggleSort} className="px-3 py-2 text-[10px] font-black uppercase tracking-[0.12em] text-white" />
-            <SortableTh label="Value"   sortKey="totalValue" sort={table.sort} onSort={table.toggleSort} className="px-3 py-2 text-[10px] font-black uppercase tracking-[0.12em] text-white" align="right" />
-            <SortableTh label="Qty"     sortKey="totalQty"   sort={table.sort} onSort={table.toggleSort} className="px-3 py-2 text-[10px] font-black uppercase tracking-[0.12em] text-white" align="right" />
-            <th className="px-3 py-2 text-right text-[10px] font-black uppercase tracking-[0.12em] text-white">Share</th>
+            <SortableTh label="Product" sortKey="label"      sort={table.sort} onSort={table.toggleSort} className="px-3 py-2 text-phx-2xs font-black uppercase tracking-[0.12em] text-white" />
+            <SortableTh label="Line"    sortKey="line"       sort={table.sort} onSort={table.toggleSort} className="px-3 py-2 text-phx-2xs font-black uppercase tracking-[0.12em] text-white" />
+            <SortableTh label="Value"   sortKey="totalValue" sort={table.sort} onSort={table.toggleSort} className="px-3 py-2 text-phx-2xs font-black uppercase tracking-[0.12em] text-white" align="right" />
+            <SortableTh label="Qty"     sortKey="totalQty"   sort={table.sort} onSort={table.toggleSort} className="px-3 py-2 text-phx-2xs font-black uppercase tracking-[0.12em] text-white" align="right" />
+            <th className="px-3 py-2 text-right text-phx-2xs font-black uppercase tracking-[0.12em] text-white">Share</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-100">
@@ -192,7 +192,7 @@ export function CeoSosTables({
             <button
               key={t}
               onClick={() => setTab(t)}
-              className={`px-4 py-1.5 text-[11px] font-bold uppercase tracking-[0.1em] transition ${
+              className={`px-4 py-1.5 text-phx-xs font-bold uppercase tracking-[0.1em] transition ${
                 tab === t
                   ? "bg-slate-900 text-white"
                   : "bg-white text-slate-600 hover:bg-slate-50"
@@ -202,10 +202,10 @@ export function CeoSosTables({
             </button>
           ))}
         </div>
-        {period ? <span className="text-[10px] text-slate-400">Period: {period}</span> : null}
+        {period ? <span className="text-phx-2xs text-slate-400">Period: {period}</span> : null}
         <Link
           href="/admin/analytics/monthly-closing"
-          className="inline-flex items-center gap-1.5 border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-bold text-slate-700 hover:border-orange-300 hover:text-orange-700"
+          className="inline-flex items-center gap-1.5 border border-slate-200 bg-white px-3 py-1.5 text-phx-xs font-bold text-slate-700 hover:border-orange-300 hover:text-orange-700"
         >
           Full SoS <ExternalLink className="h-3 w-3" />
         </Link>

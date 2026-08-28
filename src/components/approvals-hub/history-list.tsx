@@ -69,7 +69,7 @@ export function HistoryList({ items, emptyLabel, exportTitle, exportSheetName, s
     <div className="space-y-3">
       <div className="flex flex-wrap items-end gap-2 border border-phx-line bg-white px-3 py-2.5">
         <label className="flex flex-col gap-0.5">
-          <span className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Employee</span>
+          <span className="text-phx-2xs font-bold uppercase tracking-wide text-slate-500">Employee</span>
           <input
             type="text"
             value={employee}
@@ -79,7 +79,7 @@ export function HistoryList({ items, emptyLabel, exportTitle, exportSheetName, s
           />
         </label>
         <label className="flex flex-col gap-0.5">
-          <span className="text-[10px] font-bold uppercase tracking-wide text-slate-500">From</span>
+          <span className="text-phx-2xs font-bold uppercase tracking-wide text-slate-500">From</span>
           <input
             type="date"
             value={dateFrom}
@@ -88,7 +88,7 @@ export function HistoryList({ items, emptyLabel, exportTitle, exportSheetName, s
           />
         </label>
         <label className="flex flex-col gap-0.5">
-          <span className="text-[10px] font-bold uppercase tracking-wide text-slate-500">To</span>
+          <span className="text-phx-2xs font-bold uppercase tracking-wide text-slate-500">To</span>
           <input
             type="date"
             value={dateTo}
@@ -97,7 +97,7 @@ export function HistoryList({ items, emptyLabel, exportTitle, exportSheetName, s
           />
         </label>
         <label className="flex flex-col gap-0.5">
-          <span className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Decision</span>
+          <span className="text-phx-2xs font-bold uppercase tracking-wide text-slate-500">Decision</span>
           <select
             value={decision}
             onChange={(e) => setDecision(e.target.value as typeof decision)}
@@ -111,7 +111,7 @@ export function HistoryList({ items, emptyLabel, exportTitle, exportSheetName, s
         </label>
         {types.length > 0 ? (
           <label className="flex flex-col gap-0.5">
-            <span className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Type</span>
+            <span className="text-phx-2xs font-bold uppercase tracking-wide text-slate-500">Type</span>
             <select
               value={type}
               onChange={(e) => setType(e.target.value)}
@@ -166,11 +166,11 @@ export function HistoryList({ items, emptyLabel, exportTitle, exportSheetName, s
                 </p>
               </div>
               <div className="flex shrink-0 items-center gap-2">
-                <span className={`rounded-full px-2 py-0.5 text-[10px] font-black uppercase tracking-wide ${decisionPill(item.decision)}`}>
+                <span className={`rounded-full px-2 py-0.5 text-phx-2xs font-black uppercase tracking-wide ${decisionPill(item.decision)}`}>
                   {item.decision}
                 </span>
                 {item.href ? (
-                  <Link href={item.href} className="text-[11px] font-bold text-orange-600 hover:text-orange-700">
+                  <Link href={item.href} className="text-phx-xs font-bold text-orange-600 hover:text-orange-700">
                     View
                   </Link>
                 ) : null}

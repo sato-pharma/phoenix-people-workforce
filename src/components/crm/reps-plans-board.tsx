@@ -20,8 +20,8 @@ function Section({
     <div className="border-b border-slate-200 bg-white last:border-b-0">
       <div className="flex flex-wrap items-start justify-between gap-4 border-b border-slate-200 bg-slate-900 px-5 py-3.5">
         <div>
-          <h2 className="text-[11px] font-black uppercase tracking-[0.14em] text-white">{title}</h2>
-          {description ? <p className="mt-0.5 text-[10px] text-slate-400">{description}</p> : null}
+          <h2 className="text-phx-xs font-black uppercase tracking-[0.14em] text-white">{title}</h2>
+          {description ? <p className="mt-0.5 text-phx-2xs text-slate-400">{description}</p> : null}
         </div>
         {action}
       </div>
@@ -53,9 +53,9 @@ function Tile({
             : "text-slate-900";
   return (
     <div className="border border-slate-200 px-3 py-2.5">
-      <p className="text-[9px] font-black uppercase tracking-[0.14em] text-slate-400">{label}</p>
+      <p className="text-phx-3xs font-black uppercase tracking-[0.14em] text-slate-400">{label}</p>
       <p className={`text-lg font-black ${valueClass}`}>{value}</p>
-      {sub ? <p className="text-[10px] text-slate-400">{sub}</p> : null}
+      {sub ? <p className="text-phx-2xs text-slate-400">{sub}</p> : null}
     </div>
   );
 }
@@ -279,7 +279,7 @@ export function RepsPlansBoardView({ basePath, board }: { basePath: string; boar
           </div>
 
           {/* Why a campaign call cannot be proved, stated once rather than implied by a colour. */}
-          <p className="text-[11px] leading-relaxed text-slate-500">
+          <p className="text-phx-xs leading-relaxed text-slate-500">
             A campaign call is made to a doctor who is not a registered customer, so it carries no customer, no location
             and no check-in — there is nothing in the system to attach it to. That is by design, not a fault, and it is
             why campaign calls sit beside both rates and never inside either. More than {board.campaignLimit} of them in

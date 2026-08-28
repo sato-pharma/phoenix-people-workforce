@@ -222,7 +222,7 @@ export function AdminStatCard({
   const statDefaultSize = {
     containerClass: "space-y-3",
     iconContainerClass: "flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br p-3 ring-1 transition-all duration-300 hover:scale-110",
-    labelClass: "text-[10px] font-bold uppercase tracking-[0.15em]",
+    labelClass: "text-phx-2xs font-bold uppercase tracking-[0.15em]",
     valueClass: "text-3xl font-black tracking-tight",
     descriptionClass: "mt-4 text-sm leading-6",
   };
@@ -230,7 +230,7 @@ export function AdminStatCard({
   const compactSize = {
     containerClass: "space-y-2",
     iconContainerClass: "flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br p-2 ring-1 transition-all duration-300 hover:scale-110",
-    labelClass: "text-[8px] font-black uppercase tracking-[0.12em]",
+    labelClass: "text-phx-4xs font-black uppercase tracking-[0.12em]",
     valueClass: "text-xl font-black tracking-tight",
     descriptionClass: "mt-2 text-xs leading-4",
   };
@@ -242,7 +242,7 @@ export function AdminStatCard({
       <Card className={cn("rounded-[24px] border p-6 transition-all duration-300 ease-out hover:-translate-y-1 hover:scale-[1.01]", toneClasses.card)}>
         <div className="flex items-start justify-between gap-4">
           <div className="space-y-3">
-            <p className={cn("text-[10px] font-black uppercase tracking-[0.15em]", toneClasses.label)}>{label}</p>
+            <p className={cn("text-phx-2xs font-black uppercase tracking-[0.15em]", toneClasses.label)}>{label}</p>
             <div className={cn("text-3xl font-black tracking-tight", toneClasses.value)}>{value}</div>
           </div>
           <div className={cn("shrink-0", toneClasses.iconPlain)}>{icon}</div>

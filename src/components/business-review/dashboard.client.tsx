@@ -78,7 +78,7 @@ const BAND_LABEL: Record<string, string> = {
   elite: "Elite 150%+", "over-achiever": "120–150%", "on-target": "100–120%", threshold: "90–100%", "not-eligible": "< 90%",
 };
 const Band = ({ band }: { band: string }) => (
-  <span className={cn("rounded px-1.5 py-0.5 text-[10px] font-bold", BAND_STYLE[band] ?? BAND_STYLE["not-eligible"])}>{BAND_LABEL[band] ?? band}</span>
+  <span className={cn("rounded px-1.5 py-0.5 text-phx-2xs font-bold", BAND_STYLE[band] ?? BAND_STYLE["not-eligible"])}>{BAND_LABEL[band] ?? band}</span>
 );
 
 /** Rebuilt from canonical SoS, this review can show different bands than what H1 was
@@ -156,7 +156,7 @@ function ReviewHeader({
     <header className="space-y-3 border-b border-border pb-4">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-primary">Business Review · Read-only</p>
+          <p className="text-phx-xs font-semibold uppercase tracking-[0.18em] text-primary">Business Review · Read-only</p>
           <h1 className="mt-1 text-2xl font-bold tracking-tight">{title}</h1>
           <p className="mt-0.5 text-sm text-muted-foreground">{subtitle}</p>
         </div>
@@ -355,9 +355,9 @@ function LineDashboard({
 function Kpi({ label, value, sub, accent }: { label: string; value: string; sub?: string; accent?: string }) {
   return (
     <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
-      <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">{label}</p>
+      <p className="text-phx-2xs font-bold uppercase tracking-[0.14em] text-muted-foreground">{label}</p>
       <p className={cn("mt-1.5 text-xl font-bold tabular-nums", accent)}>{value}</p>
-      {sub && <p className="mt-0.5 text-[11px] text-muted-foreground">{sub}</p>}
+      {sub && <p className="mt-0.5 text-phx-xs text-muted-foreground">{sub}</p>}
     </div>
   );
 }
@@ -372,8 +372,8 @@ function Section({ title, note, children }: { title: string; note?: string; chil
     </div>
   );
 }
-const TH = "px-3 py-2 text-left text-[11px] font-bold uppercase tracking-wide text-muted-foreground";
-const THR = "px-3 py-2 text-right text-[11px] font-bold uppercase tracking-wide text-muted-foreground";
+const TH = "px-3 py-2 text-left text-phx-xs font-bold uppercase tracking-wide text-muted-foreground";
+const THR = "px-3 py-2 text-right text-phx-xs font-bold uppercase tracking-wide text-muted-foreground";
 const TD = "px-3 py-2 text-sm";
 const TDR = "px-3 py-2 text-sm text-right tabular-nums";
 
@@ -394,7 +394,7 @@ function AchieversTab({ dms, areas, visitsAvailable }: { dms: DmRow[]; areas: Ar
             {dms.map((d, i) => (
               <tr key={d.dm} className={cn("border-b border-border/60 last:border-0", (d.allProducts.ach ?? 0) >= 90 && "bg-emerald-50/40")}>
                 <td className={cn(TD, "text-muted-foreground")}>{i + 1}</td>
-                <td className={cn(TD, "font-semibold")}>{d.dm}{d.vacant && <span className="ml-2 rounded bg-bg-muted px-1.5 py-0.5 text-[10px] font-bold text-muted-foreground">VACANT</span>}</td>
+                <td className={cn(TD, "font-semibold")}>{d.dm}{d.vacant && <span className="ml-2 rounded bg-bg-muted px-1.5 py-0.5 text-phx-2xs font-bold text-muted-foreground">VACANT</span>}</td>
                 <td className={TD}>{achCell(d.allProducts.ach)}</td>
                 <td className={TD}><Band band={d.band} /></td>
                 <td className={cn(TDR, "font-semibold")}>{d.payoutPct > 0 ? `${d.payoutPct.toFixed(0)}%` : "—"}</td>
@@ -468,7 +468,7 @@ function FailsTab({ dms, areas, thresholds, keyProducts }: { dms: DmRow[]; areas
                 <td className={cn(TD, "text-xs text-muted-foreground")}>{a.dm}</td>
                 <td className={TD}>{achCell(a.allProducts.ach)}</td>
                 {prods.map((p) => <td key={p} className={TDR}>{achCell(a.products?.[p]?.ach ?? null)}</td>)}
-                <td className={TD}>{a.hasReturns ? <span className="rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-bold text-red-600">RETURNS</span> : ""}</td>
+                <td className={TD}>{a.hasReturns ? <span className="rounded bg-red-100 px-1.5 py-0.5 text-phx-2xs font-bold text-red-600">RETURNS</span> : ""}</td>
               </tr>
             ))}
           </tbody>
@@ -578,7 +578,7 @@ function DeepTab({
               <h2 className="text-sm font-bold">{d.dm}</h2>
               <span className={cn("text-lg font-bold", achColor(d.allProducts.ach))}>{pct(d.allProducts.ach)}</span>
               <Band band={d.band} />
-              {d.vacant && <span className="rounded bg-bg-muted px-1.5 py-0.5 text-[10px] font-bold text-muted-foreground">VACANT</span>}
+              {d.vacant && <span className="rounded bg-bg-muted px-1.5 py-0.5 text-phx-2xs font-bold text-muted-foreground">VACANT</span>}
             </div>
             <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
               <span>Payout <b className="text-foreground">{d.payoutPct.toFixed(0)}%</b></span>
@@ -685,7 +685,7 @@ function DeepTab({
 }
 
 const LineChip = ({ line }: { line: string }) => (
-  <span className="rounded bg-bg-muted px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground">{line}</span>
+  <span className="rounded bg-bg-muted px-1.5 py-0.5 text-phx-2xs font-semibold text-muted-foreground">{line}</span>
 );
 
 function CompanyAchieversTab({ company, dms, areas }: { company: ReviewCompany; dms: CoDmRow[]; areas: CoAreaRow[] }) {
@@ -716,7 +716,7 @@ function CompanyAchieversTab({ company, dms, areas }: { company: ReviewCompany; 
                 <td className={cn(TDR, "text-muted-foreground")}>{egp(l.marketingCost)}</td>
                 <td className={cn(TDR, "text-muted-foreground")}>{egp(l.outstationCost)}</td>
                 <td className={TDR}>{num(l.earners)}</td>
-                <td className={cn(TDR, "text-muted-foreground")}>{num(l.dms)}{l.dmsVacant > 0 && <span className="text-[11px]"> +{l.dmsVacant} vac</span>}</td>
+                <td className={cn(TDR, "text-muted-foreground")}>{num(l.dms)}{l.dmsVacant > 0 && <span className="text-phx-xs"> +{l.dmsVacant} vac</span>}</td>
               </tr>
             ))}
             <tr className="border-t-2 border-border bg-bg-muted/40 font-bold">
@@ -728,7 +728,7 @@ function CompanyAchieversTab({ company, dms, areas }: { company: ReviewCompany; 
               <td className={TDR}>{egp(T.marketingCost)}</td>
               <td className={TDR}>{egp(T.outstationCost)}</td>
               <td className={TDR}>{num(company.lines.reduce((s, l) => s + l.earners, 0))}</td>
-              <td className={TDR}>{num(company.lines.reduce((s, l) => s + l.dms, 0))}<span className="text-[11px]"> +{company.lines.reduce((s, l) => s + l.dmsVacant, 0)} vac</span></td>
+              <td className={TDR}>{num(company.lines.reduce((s, l) => s + l.dms, 0))}<span className="text-phx-xs"> +{company.lines.reduce((s, l) => s + l.dmsVacant, 0)} vac</span></td>
             </tr>
           </tbody>
         </table>
@@ -746,7 +746,7 @@ function CompanyAchieversTab({ company, dms, areas }: { company: ReviewCompany; 
             {dms.map((d, i) => (
               <tr key={`${d.lineId}:${d.dm}`} className={cn("border-b border-border/60 last:border-0", (d.allProducts.ach ?? 0) >= 90 && "bg-emerald-50/40")}>
                 <td className={cn(TD, "text-muted-foreground")}>{i + 1}</td>
-                <td className={cn(TD, "font-semibold")}>{d.dm}{d.vacant && <span className="ml-2 rounded bg-bg-muted px-1.5 py-0.5 text-[10px] font-bold text-muted-foreground">VACANT</span>}</td>
+                <td className={cn(TD, "font-semibold")}>{d.dm}{d.vacant && <span className="ml-2 rounded bg-bg-muted px-1.5 py-0.5 text-phx-2xs font-bold text-muted-foreground">VACANT</span>}</td>
                 <td className={TD}><LineChip line={d.line} /></td>
                 <td className={TD}>{achCell(d.allProducts.ach)}</td>
                 <td className={TD}><Band band={d.band} /></td>
@@ -834,7 +834,7 @@ function CompanyFailsTab({ dms, areas, thresholds }: { dms: CoDmRow[]; areas: Co
                 <td className={cn(TD, "text-xs text-muted-foreground")}>{a.dm}</td>
                 <td className={TD}>{achCell(a.allProducts.ach)}</td>
                 <td className={cn(TDR, "text-muted-foreground")}>{egp(a.allProducts.sales)}</td>
-                <td className={TD}>{a.hasReturns ? <span className="rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-bold text-red-600">RETURNS</span> : ""}</td>
+                <td className={TD}>{a.hasReturns ? <span className="rounded bg-red-100 px-1.5 py-0.5 text-phx-2xs font-bold text-red-600">RETURNS</span> : ""}</td>
               </tr>
             ))}
             {failAreas.length === 0 && <tr><td className={cn(TD, "text-muted-foreground")} colSpan={6}>No rep area below threshold in this view.</td></tr>}
@@ -919,7 +919,7 @@ function CompanyDeepTab({
                 <LineChip line={d.line} />
                 <span className={cn("text-lg font-bold", achColor(d.allProducts.ach))}>{pct(d.allProducts.ach)}</span>
                 <Band band={d.band} />
-                {d.vacant && <span className="rounded bg-bg-muted px-1.5 py-0.5 text-[10px] font-bold text-muted-foreground">VACANT</span>}
+                {d.vacant && <span className="rounded bg-bg-muted px-1.5 py-0.5 text-phx-2xs font-bold text-muted-foreground">VACANT</span>}
               </div>
               <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
                 <span>Payout <b className="text-foreground">{d.payoutPct.toFixed(0)}%</b></span>

@@ -1554,7 +1554,7 @@ function Donut({
         )}
       />
       <div className="pointer-events-none relative z-30 text-center">
-        <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-text-secondary">
+        <p className="text-phx-2xs font-bold uppercase tracking-[0.22em] text-text-secondary">
           {centerLabel}
         </p>
         {centerMeta && (
@@ -1616,7 +1616,7 @@ function BarRows({
             {(["3M", "6M", "12M", "All"] as ZoomPreset[]).map((preset) => (
               <button
                 className={cn(
-                  "rounded-lg px-2 py-1 text-[10px] font-semibold transition",
+                  "rounded-lg px-2 py-1 text-phx-2xs font-semibold transition",
                   zoomPreset === preset ? "bg-phx-accent/10 text-phx-accent" : "text-phx-ink-soft hover:bg-phx-paper",
                 )}
                 key={preset}
@@ -1631,7 +1631,7 @@ function BarRows({
             ))}
           </div>
           <button
-            className="text-[10px] font-semibold uppercase tracking-[0.14em] text-phx-accent"
+            className="text-phx-2xs font-semibold uppercase tracking-[0.14em] text-phx-accent"
             onClick={() => {
               setZoomPreset("All");
               setViewStart(0);
@@ -1678,7 +1678,7 @@ function BarRows({
                     style={{ left: `${hoveredRow.x}%` }}
                   />
                   <span
-                    className="phoenix-bar-crosshair pointer-events-none absolute -top-11 z-10 -translate-x-1/2 rounded-xl border border-phx-line bg-white px-3 py-2 text-[11px] font-semibold text-phx-ink shadow-[0_8px_20px_rgba(15,23,42,0.04)]"
+                    className="phoenix-bar-crosshair pointer-events-none absolute -top-11 z-10 -translate-x-1/2 rounded-xl border border-phx-line bg-white px-3 py-2 text-phx-xs font-semibold text-phx-ink shadow-[0_8px_20px_rgba(15,23,42,0.04)]"
                     style={{ left: `${clamp(hoveredRow.x, 12, 88)}%` }}
                   >
                     {row.label}: {valueFormatter(row.value)}
@@ -1753,7 +1753,7 @@ function InteractiveVerticalBars({
             {(["3M", "6M", "12M", "All"] as ZoomPreset[]).map((preset) => (
               <button
                 className={cn(
-                  "rounded-lg px-2 py-1 text-[10px] font-semibold transition",
+                  "rounded-lg px-2 py-1 text-phx-2xs font-semibold transition",
                   zoomPreset === preset ? "bg-phx-accent/10 text-phx-accent" : "text-phx-ink-soft hover:bg-phx-paper",
                 )}
                 key={preset}
@@ -1768,7 +1768,7 @@ function InteractiveVerticalBars({
             ))}
           </div>
           <button
-            className="text-[10px] font-semibold uppercase tracking-[0.14em] text-phx-accent"
+            className="text-phx-2xs font-semibold uppercase tracking-[0.14em] text-phx-accent"
             onClick={() => {
               setZoomPreset("All");
               setViewStart(0);
@@ -2165,7 +2165,7 @@ function ComparePayrollChart({
                 </span>
                 <span className="font-mono font-semibold">{formatEGP(activeCompareSeries.values[hoverIndex])}</span>
               </div>
-              <p className="mt-1 text-[11px] text-text-secondary">
+              <p className="mt-1 text-phx-xs text-text-secondary">
                 {(() => {
                   const periodTotal = hoverIndex === 0 ? previousTotal : currentTotal;
                   const share = periodTotal > 0 ? (activeCompareSeries.values[hoverIndex] / periodTotal) * 100 : 0;
@@ -2301,7 +2301,7 @@ function PayrollOverviewChart({
         {series.map((item) => (
           <button
             className={cn(
-              "flex items-center gap-2 text-[11px] text-text-secondary transition hover:text-text",
+              "flex items-center gap-2 text-phx-xs text-text-secondary transition hover:text-text",
               hiddenSeries.includes(item.label) && "opacity-40",
             )}
             key={item.label}
@@ -2317,7 +2317,7 @@ function PayrollOverviewChart({
           {(["3M", "6M", "12M", "All"] as ZoomPreset[]).map((preset) => (
             <button
               className={cn(
-                "rounded-lg px-2.5 py-1 text-[11px] font-semibold transition",
+                "rounded-lg px-2.5 py-1 text-phx-xs font-semibold transition",
                 zoomPreset === preset ? "bg-phx-accent/10 text-phx-accent" : "text-phx-ink-soft hover:bg-phx-paper",
               )}
               key={preset}
@@ -2328,7 +2328,7 @@ function PayrollOverviewChart({
             </button>
           ))}
           <button
-            className="rounded-lg px-2.5 py-1 text-[11px] font-semibold text-phx-ink-soft transition hover:bg-phx-paper hover:text-phx-ink"
+            className="rounded-lg px-2.5 py-1 text-phx-xs font-semibold text-phx-ink-soft transition hover:bg-phx-paper hover:text-phx-ink"
             onClick={() => {
               setPreset("All");
               setHiddenSeries([]);
@@ -2629,7 +2629,7 @@ function PayrollOverviewChart({
                 <span className="h-2 w-2 rounded-sm" style={{ backgroundColor: String(color) }} />
                 {label}
               </span>
-              <span className="font-mono text-[11px] text-text">{formatCompact(Number(value))}</span>
+              <span className="font-mono text-phx-xs text-text">{formatCompact(Number(value))}</span>
             </div>
           ))}
         </div>
@@ -2864,7 +2864,7 @@ function ImpactBadge({ level }: { level: ImpactLevel }) {
   }[level];
 
   return (
-    <span className={cn("rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.14em]", className)}>
+    <span className={cn("rounded-full border px-2.5 py-1 text-phx-2xs font-bold uppercase tracking-[0.14em]", className)}>
       {level}
     </span>
   );
@@ -2903,7 +2903,7 @@ function ScoreGauge({ label, score }: { label: string; score: number }) {
           <span className="phoenix-count-up text-3xl font-semibold tracking-tight text-text">
             {score}
           </span>
-          <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-text-secondary">
+          <span className="text-phx-2xs font-bold uppercase tracking-[0.18em] text-text-secondary">
             Score
           </span>
         </div>
@@ -2987,7 +2987,7 @@ function AiPayrollInsights({
           >
             <div className="mb-3 flex items-start justify-between gap-3">
               <div>
-                <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-text-secondary">
+                <p className="text-phx-2xs font-bold uppercase tracking-[0.18em] text-text-secondary">
                   {insight.metric}
                 </p>
                 <h3 className="mt-1 text-sm font-semibold text-text">{insight.title}</h3>
@@ -2999,11 +2999,11 @@ function AiPayrollInsights({
             </p>
             <p className="mt-2 min-h-12 text-sm text-text-secondary">{insight.summary}</p>
             <div className="mt-4 rounded-xl border border-white/70 bg-white/70 p-3">
-              <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-phx-accent">
+              <p className="text-phx-2xs font-bold uppercase tracking-[0.16em] text-phx-accent">
                 Suggested action
               </p>
               <p className="mt-1 text-xs text-text">{insight.action}</p>
-              <p className="mt-2 text-[11px] text-text-secondary">
+              <p className="mt-2 text-phx-xs text-text-secondary">
                 Confidence {insight.confidence}%
               </p>
             </div>
@@ -3988,7 +3988,7 @@ export function PayrollDashboard({
                 { label: "Second Part", tone: "bg-amber-50 text-amber-800", value: formatEGP(salaryReportTotals.secondPart) },
               ].map((metric) => (
                 <div className={cn("rounded-[22px] border border-phx-line p-4 shadow-[0_12px_30px_rgba(15,23,42,0.05)]", metric.tone)} key={metric.label}>
-                  <p className="text-[10px] font-bold uppercase tracking-[0.16em] opacity-70">{metric.label}</p>
+                  <p className="text-phx-2xs font-bold uppercase tracking-[0.16em] opacity-70">{metric.label}</p>
                   <p className="mt-2 truncate font-mono text-lg font-bold">{metric.value}</p>
                 </div>
               ))}

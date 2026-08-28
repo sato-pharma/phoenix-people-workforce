@@ -233,7 +233,7 @@ function CoachingReviewSkeleton() {
 function DetailPill({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded border border-slate-100 bg-slate-50/90 px-4 py-3">
-      <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">{label}</p>
+      <p className="text-phx-2xs font-semibold uppercase tracking-wider text-slate-500">{label}</p>
       <p className="mt-1 text-sm font-bold text-slate-900">{value}</p>
     </div>
   );
@@ -242,7 +242,7 @@ function DetailPill({ label, value }: { label: string; value: string }) {
 function FeedbackBlock({ label, text }: { label: string; text: string | null }) {
   return (
     <Card className="rounded border border-slate-200/80 bg-white p-4 shadow-sm sm:p-5">
-      <p className="text-[10px] font-semibold uppercase tracking-wider text-orange-600">{label}</p>
+      <p className="text-phx-2xs font-semibold uppercase tracking-wider text-orange-600">{label}</p>
       <p className="mt-2 break-words whitespace-pre-wrap text-sm leading-7 text-slate-700 sm:mt-3">
         {text?.trim() || "No feedback was provided."}
       </p>
@@ -259,13 +259,13 @@ function ScoreItemNotes({ score }: { score: CoachingScoreItemRow | undefined }) 
     <div className="mt-3 grid gap-2 sm:grid-cols-2">
       {area ? (
         <div className="rounded border border-orange-100 bg-orange-50/70 px-3 py-2.5">
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-orange-700">Area to be Improved</p>
+          <p className="text-phx-2xs font-semibold uppercase tracking-wider text-orange-700">Area to be Improved</p>
           <p className="mt-1 break-words whitespace-pre-wrap text-xs font-semibold leading-5 text-orange-950">{area}</p>
         </div>
       ) : null}
       {strength ? (
         <div className="rounded border border-emerald-100 bg-emerald-50/70 px-3 py-2.5">
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-emerald-700">Strength Point</p>
+          <p className="text-phx-2xs font-semibold uppercase tracking-wider text-emerald-700">Strength Point</p>
           <p className="mt-1 break-words whitespace-pre-wrap text-xs font-semibold leading-5 text-emerald-950">{strength}</p>
         </div>
       ) : null}
@@ -282,12 +282,12 @@ function ScoreDistributionBar({ scores }: { scores: CoachingScoreItemRow[] }) {
 
   return (
     <div aria-label={`Score distribution: ${distribution.filter((d) => d.count > 0).map((d) => `${d.score}/5: ${d.count}`).join(", ")}`} role="img">
-      <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Score distribution</p>
+      <p className="text-phx-2xs font-semibold uppercase tracking-wider text-slate-500">Score distribution</p>
       <div className="mt-2 flex h-6 w-full overflow-hidden rounded">
         {distribution.map((d) =>
           d.count > 0 ? (
             <div
-              className={cn("flex items-center justify-center text-[10px] font-bold text-white", distributionSegmentColor(d.score))}
+              className={cn("flex items-center justify-center text-phx-2xs font-bold text-white", distributionSegmentColor(d.score))}
               key={d.score}
               style={{ width: `${(d.count / total) * 100}%` }}
               title={`Score ${d.score}: ${d.count} item${d.count > 1 ? "s" : ""}`}
@@ -300,7 +300,7 @@ function ScoreDistributionBar({ scores }: { scores: CoachingScoreItemRow[] }) {
       <div className="mt-1.5 flex flex-wrap gap-3">
         {distribution.map((d) =>
           d.count > 0 ? (
-            <span className="flex items-center gap-1 text-[10px] text-slate-500" key={d.score}>
+            <span className="flex items-center gap-1 text-phx-2xs text-slate-500" key={d.score}>
               <span className={cn("inline-block h-2 w-2 rounded-sm", distributionSegmentColor(d.score))} />
               {d.score}/5: {d.count}
             </span>
@@ -336,7 +336,7 @@ function ReviewHeroHeader({
         <div className="pointer-events-none absolute -right-16 -top-20 h-56 w-56 rounded-full bg-orange-500/20 blur-3xl" />
         <div className="relative grid gap-4 sm:gap-5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
           <div>
-            <p className="inline-flex rounded border border-orange-400/40 bg-orange-500/10 px-3 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-orange-200">
+            <p className="inline-flex rounded border border-orange-400/40 bg-orange-500/10 px-3 py-1 text-phx-2xs font-bold uppercase tracking-[0.18em] text-orange-200">
               {reportNumber}
             </p>
             <h2 className="mt-3 text-2xl font-black tracking-[-0.03em] text-white sm:mt-4 sm:text-3xl">
@@ -446,7 +446,7 @@ export function EmployeeCoachingReview({ allowAcknowledgment = true, initialDeta
         <Card className="rounded border border-slate-200 bg-white p-4 shadow-[0_4px_24px_rgba(15,23,42,0.06)] sm:p-6">
           <div className="flex flex-wrap items-start justify-between gap-3 sm:gap-4">
             <div>
-              <p className="text-[10px] font-semibold uppercase tracking-wider text-orange-600">Employee context</p>
+              <p className="text-phx-2xs font-semibold uppercase tracking-wider text-orange-600">Employee context</p>
               <h3 className="mt-2 text-xl font-black tracking-[-0.03em] text-slate-900 sm:text-2xl">
                 {formatEmployeeDisplayName(summary?.medicalRepName, report.medical_rep_hr_id)}
               </h3>
@@ -466,7 +466,7 @@ export function EmployeeCoachingReview({ allowAcknowledgment = true, initialDeta
         <Card className="rounded border border-slate-200 bg-white p-4 shadow-[0_4px_24px_rgba(15,23,42,0.06)] sm:p-6">
           <div className="flex items-start justify-between gap-3 sm:gap-4">
             <div>
-              <p className="text-[10px] font-semibold uppercase tracking-wider text-orange-600">Final score</p>
+              <p className="text-phx-2xs font-semibold uppercase tracking-wider text-orange-600">Final score</p>
               <p className="mt-2 text-3xl font-black tracking-[-0.04em] text-slate-900 sm:text-4xl">
                 {formatPercent(report.final_score_percent)}
               </p>
@@ -495,7 +495,7 @@ export function EmployeeCoachingReview({ allowAcknowledgment = true, initialDeta
               <div aria-label="Category performance radar chart showing percentage scores for each coaching parameter" role="img">
                 <div className="flex items-center gap-2">
                   <BarChart3 className="h-4 w-4 text-orange-600" />
-                  <p className="text-[10px] font-semibold uppercase tracking-wider text-orange-600">Category performance</p>
+                  <p className="text-phx-2xs font-semibold uppercase tracking-wider text-orange-600">Category performance</p>
                 </div>
                 <RadarChart data={radarData} dataKey="score" subjectKey="subject" height={240} />
               </div>
@@ -504,7 +504,7 @@ export function EmployeeCoachingReview({ allowAcknowledgment = true, initialDeta
                   {detail.scoreResult.categorySubtotals.map((cat) => (
                     <div className="flex items-center justify-between gap-3 rounded border border-slate-100 bg-slate-50/60 px-3 py-2" key={cat.category}>
                       <span className="text-xs font-semibold text-slate-700">{cat.label}</span>
-                      <span className={cn("rounded border px-2 py-0.5 text-[11px] font-bold", categoryColorClass(cat.percent))}>
+                      <span className={cn("rounded border px-2 py-0.5 text-phx-xs font-bold", categoryColorClass(cat.percent))}>
                         {Math.round(cat.percent)}%
                       </span>
                     </div>
@@ -521,7 +521,7 @@ export function EmployeeCoachingReview({ allowAcknowledgment = true, initialDeta
       <Card className="rounded border border-slate-200 bg-white p-4 shadow-[0_4px_24px_rgba(15,23,42,0.06)] sm:p-6">
         <div className="flex flex-wrap items-start justify-between gap-3 sm:gap-4">
           <div>
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-orange-600">Structured scoring</p>
+            <p className="text-phx-2xs font-semibold uppercase tracking-wider text-orange-600">Structured scoring</p>
             <h3 className="mt-2 text-xl font-black tracking-[-0.03em] text-slate-900 sm:text-2xl">
               20 field excellence points
             </h3>
@@ -546,7 +546,7 @@ export function EmployeeCoachingReview({ allowAcknowledgment = true, initialDeta
                     </span>
                     <div>
                       <p className="text-sm font-bold text-slate-900">{group.label}</p>
-                      <p className="text-[11px] font-medium text-slate-500">{group.items.length} scoring items</p>
+                      <p className="text-phx-xs font-medium text-slate-500">{group.items.length} scoring items</p>
                     </div>
                   </div>
                   {catSub ? (
@@ -568,7 +568,7 @@ export function EmployeeCoachingReview({ allowAcknowledgment = true, initialDeta
                         <div className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-center">
                           <div>
                             <p className="text-sm font-semibold text-slate-800">{item.label}</p>
-                            <p className="mt-0.5 text-[11px] font-medium text-slate-400">Point {item.displayOrder}</p>
+                            <p className="mt-0.5 text-phx-xs font-medium text-slate-400">Point {item.displayOrder}</p>
                           </div>
                           <span className={cn(
                             "inline-flex h-8 min-w-12 items-center justify-center rounded px-3 text-sm font-bold ring-1",
@@ -599,7 +599,7 @@ export function EmployeeCoachingReview({ allowAcknowledgment = true, initialDeta
       <Card className="rounded border border-slate-200 bg-white p-4 shadow-[0_4px_24px_rgba(15,23,42,0.06)] sm:p-6">
         <div className="flex flex-wrap items-start justify-between gap-3 sm:gap-4">
           <div>
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-orange-600">Acknowledgment</p>
+            <p className="text-phx-2xs font-semibold uppercase tracking-wider text-orange-600">Acknowledgment</p>
             <h3 className="mt-2 text-xl font-black tracking-[-0.03em] text-slate-900 sm:text-2xl">
               Employee review confirmation
             </h3>

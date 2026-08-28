@@ -144,7 +144,7 @@ export function HeldDesk({ rows }: Props) {
     return (
       <section className="border border-phx-line bg-white px-4 py-8 text-center">
         <p className="text-sm font-bold text-slate-600">No held direct orders.</p>
-        <p className="mt-1 text-[12px] text-slate-400">
+        <p className="mt-1 text-phx-sm text-slate-400">
           Every submitted request is on a pharmacy the master database recognises.
         </p>
       </section>
@@ -154,14 +154,14 @@ export function HeldDesk({ rows }: Props) {
   return (
     <section className="border border-phx-line bg-white">
       <header className="flex flex-wrap items-center justify-between gap-3 border-b border-phx-line bg-slate-900 px-4 py-2.5">
-        <h3 className="text-[11px] font-black uppercase tracking-[0.14em] text-white">
+        <h3 className="text-phx-xs font-black uppercase tracking-[0.14em] text-white">
           Held requests — {rows.length}
         </h3>
         <button
           type="button"
           disabled={busy || selectedCount === 0}
           onClick={sendNotices}
-          className="bg-orange-500 px-3 py-1.5 text-[12px] font-black uppercase tracking-wider text-white hover:bg-orange-600 disabled:cursor-not-allowed disabled:bg-slate-600 disabled:text-slate-400"
+          className="bg-orange-500 px-3 py-1.5 text-phx-sm font-black uppercase tracking-wider text-white hover:bg-orange-600 disabled:cursor-not-allowed disabled:bg-slate-600 disabled:text-slate-400"
         >
           {busy ? "Sending…" : `Notify requester${selectedCount === 1 ? "" : "s"} (${selectedCount})`}
         </button>
@@ -174,7 +174,7 @@ export function HeldDesk({ rows }: Props) {
       <div className="hidden overflow-x-auto md:block">
         <table className="w-full text-left text-sm">
           <thead>
-            <tr className="border-b border-phx-line text-[11px] font-black uppercase tracking-wider text-slate-500">
+            <tr className="border-b border-phx-line text-phx-xs font-black uppercase tracking-wider text-slate-500">
               <th className="px-3 py-2">
                 <input type="checkbox" checked={allSelected} onChange={toggleAll} aria-label="Select all held requests" />
               </th>
@@ -200,11 +200,11 @@ export function HeldDesk({ rows }: Props) {
                 </td>
                 <td className="px-3 py-2">
                   <p className="font-bold text-slate-900">{row.requesterName}</p>
-                  <p className="text-[11px] text-slate-500">{row.requesterRole}</p>
+                  <p className="text-phx-xs text-slate-500">{row.requesterRole}</p>
                 </td>
                 <td className="px-3 py-2">
                   <p className="font-semibold text-slate-800" dir="auto">{row.pharmacyName}</p>
-                  <p className="text-[11px] text-slate-500">{row.phoenixPharmacyCode}</p>
+                  <p className="text-phx-xs text-slate-500">{row.phoenixPharmacyCode}</p>
                 </td>
                 <td className="px-3 py-2 text-slate-700">
                   {row.productName} × {row.qty.toLocaleString("en-US")}
@@ -212,7 +212,7 @@ export function HeldDesk({ rows }: Props) {
                 <td className="px-3 py-2 font-bold text-slate-900">{money(row.salesValue)}</td>
                 <td className="px-3 py-2 text-slate-600">{cairoStamp(row.heldAt)}</td>
                 <td className="px-3 py-2">
-                  <span className={`px-1.5 py-0.5 text-[11px] font-black ${urgency(row.daysRemaining)}`}>
+                  <span className={`px-1.5 py-0.5 text-phx-xs font-black ${urgency(row.daysRemaining)}`}>
                     {row.daysRemaining} day{row.daysRemaining === 1 ? "" : "s"}
                   </span>
                 </td>
@@ -230,17 +230,17 @@ export function HeldDesk({ rows }: Props) {
             <div className="flex items-start justify-between gap-2">
               <div>
                 <p className="text-sm font-black text-slate-900">{row.requesterName}</p>
-                <p className="text-[11px] text-slate-500">{row.requesterRole}</p>
+                <p className="text-phx-xs text-slate-500">{row.requesterRole}</p>
               </div>
               <input type="checkbox" checked={selected.has(row.id)} onChange={() => toggle(row.id)} aria-label={`Select ${row.requesterName}'s request`} />
             </div>
             <p className="mt-2 text-sm font-semibold text-slate-800" dir="auto">
-              {row.pharmacyName} <span className="text-[11px] font-normal text-slate-500">({row.phoenixPharmacyCode})</span>
+              {row.pharmacyName} <span className="text-phx-xs font-normal text-slate-500">({row.phoenixPharmacyCode})</span>
             </p>
-            <p className="text-[12px] text-slate-600">
+            <p className="text-phx-sm text-slate-600">
               {row.productName} × {row.qty.toLocaleString("en-US")} · {money(row.salesValue)}
             </p>
-            <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-slate-500">
+            <div className="mt-2 flex flex-wrap items-center gap-2 text-phx-xs text-slate-500">
               <span>Held {cairoStamp(row.heldAt)}</span>
               <span className={`px-1.5 py-0.5 font-black ${urgency(row.daysRemaining)}`}>
                 expires in {row.daysRemaining}d
@@ -259,7 +259,7 @@ export function HeldDesk({ rows }: Props) {
           Cards on both breakpoints, deliberately: this is a decision surface, not a data table,
           and the reason box has to sit beside the button that requires it. */}
       <div className="space-y-3 border-t border-phx-line p-3">
-        <p className="text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">
+        <p className="text-phx-xs font-black uppercase tracking-[0.14em] text-slate-500">
           Decide — {pharmacies.length} pharmac{pharmacies.length === 1 ? "y" : "ies"}
         </p>
         {pharmacies.map(({ head, rows: pharmacyRows }) => {
@@ -272,22 +272,22 @@ export function HeldDesk({ rows }: Props) {
                 <div className="min-w-0">
                   <p className="text-sm font-black text-slate-900" dir="auto">
                     {head.pharmacyName}{" "}
-                    <span className="text-[11px] font-normal text-slate-500">({head.phoenixPharmacyCode})</span>
+                    <span className="text-phx-xs font-normal text-slate-500">({head.phoenixPharmacyCode})</span>
                   </p>
-                  <p className="text-[11px] text-slate-500">
+                  <p className="text-phx-xs text-slate-500">
                     {orderCount} held order{orderCount === 1 ? "" : "s"} ·{" "}
                     {money(pharmacyRows.reduce((sum, row) => sum + row.salesValue, 0))}
                   </p>
                 </div>
-                <span className={`px-1.5 py-0.5 text-[10px] font-black uppercase tracking-wide ${GROUND_TONE[head.holdGround] ?? "bg-slate-200 text-slate-600"}`}>
+                <span className={`px-1.5 py-0.5 text-phx-2xs font-black uppercase tracking-wide ${GROUND_TONE[head.holdGround] ?? "bg-slate-200 text-slate-600"}`}>
                   {head.holdGround.replace(/_/g, " ")}
                 </span>
               </div>
 
-              <p className="mt-2 text-[12px] text-slate-700">{head.holdGroundNote}</p>
+              <p className="mt-2 text-phx-sm text-slate-700">{head.holdGroundNote}</p>
 
               {/* Declared vs mapped, side by side — the comparison this desk never showed. */}
-              <dl className="mt-2 space-y-1 text-[11px]">
+              <dl className="mt-2 space-y-1 text-phx-xs">
                 <div className="flex flex-wrap gap-x-2">
                   <dt className="font-black uppercase tracking-wider text-slate-400">Declared</dt>
                   <dd className="text-slate-700">
@@ -312,7 +312,7 @@ export function HeldDesk({ rows }: Props) {
               </dl>
 
               {head.holdReleaseGround ? (
-                <p className="mt-2 border border-slate-200 bg-slate-50 px-2 py-1.5 text-[11px] text-slate-600">
+                <p className="mt-2 border border-slate-200 bg-slate-50 px-2 py-1.5 text-phx-xs text-slate-600">
                   Already ruled <b>{head.holdReleaseGround.replace(/_/g, " ")}</b> on{" "}
                   {cairoStamp(head.holdReleaseDecidedAt)} — {head.holdReleaseReason}
                 </p>
@@ -322,14 +322,14 @@ export function HeldDesk({ rows }: Props) {
                   Auto-releasing instead would enter the chain with still no code on file. */}
               {candidate ? (
                 <div className="mt-2 border border-emerald-300 bg-emerald-50 px-3 py-2">
-                  <p className="text-[12px] font-black text-emerald-900">
+                  <p className="text-phx-sm font-black text-emerald-900">
                     This pharmacy&apos;s NAME is a real {candidate.distributorName} customer code.
                   </p>
-                  <p className="mt-0.5 text-[12px] text-emerald-800" dir="auto">
+                  <p className="mt-0.5 text-phx-sm text-emerald-800" dir="auto">
                     {candidate.customerCode} · {candidate.customerName}
                     {candidate.areaCode ? ` · area ${candidate.areaCode}` : ""}
                   </p>
-                  <label className="mt-1.5 flex items-center gap-2 text-[11px] text-emerald-900">
+                  <label className="mt-1.5 flex items-center gap-2 text-phx-xs text-emerald-900">
                     <input
                       type="checkbox"
                       checked={renameOn[head.pharmacyId] !== false}
@@ -355,7 +355,7 @@ export function HeldDesk({ rows }: Props) {
                           `Code linked. ${Number(result.released ?? 0)} order(s) moved into the approval chain.`,
                       )
                     }
-                    className="mt-2 bg-emerald-600 px-3 py-1.5 text-[12px] font-black uppercase tracking-wider text-white hover:bg-emerald-700 disabled:bg-slate-300"
+                    className="mt-2 bg-emerald-600 px-3 py-1.5 text-phx-sm font-black uppercase tracking-wider text-white hover:bg-emerald-700 disabled:bg-slate-300"
                   >
                     Link this code
                   </button>
@@ -379,7 +379,7 @@ export function HeldDesk({ rows }: Props) {
                       `Released ${Number(result.released ?? 0)} order(s) into the approval chain.`,
                     )
                   }
-                  className="bg-slate-900 px-3 py-1.5 text-[12px] font-black uppercase tracking-wider text-white hover:bg-black disabled:bg-slate-300"
+                  className="bg-slate-900 px-3 py-1.5 text-phx-sm font-black uppercase tracking-wider text-white hover:bg-black disabled:bg-slate-300"
                 >
                   Release {orderCount} order{orderCount === 1 ? "" : "s"} to SFE
                 </button>
@@ -389,7 +389,7 @@ export function HeldDesk({ rows }: Props) {
                   onClick={() =>
                     decide(head.pharmacyId, { decision: "keep", reason }, () => "Recorded — the request stays held.")
                   }
-                  className="border border-slate-400 px-3 py-1.5 text-[12px] font-black uppercase tracking-wider text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                  className="border border-slate-400 px-3 py-1.5 text-phx-sm font-black uppercase tracking-wider text-slate-700 hover:bg-slate-50 disabled:opacity-50"
                 >
                   Keep held
                 </button>

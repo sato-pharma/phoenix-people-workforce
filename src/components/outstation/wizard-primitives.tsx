@@ -31,14 +31,14 @@ export function WizardStep({
       }`}
     >
       <span
-        className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-sm text-[11px] font-bold ${
+        className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-sm text-phx-xs font-bold ${
           active ? "bg-orange-500 text-white" : "bg-slate-100 text-slate-500"
         }`}
       >
         {index}
       </span>
       <span
-        className={`truncate text-[12px] font-semibold ${
+        className={`truncate text-phx-sm font-semibold ${
           active ? "text-slate-900" : "text-slate-500"
         }`}
       >
@@ -61,7 +61,7 @@ export function Field({
 }) {
   return (
     <label className="block">
-      <span className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+      <span className="mb-1 block text-phx-2xs font-semibold uppercase tracking-wider text-slate-500">
         {label}
       </span>
       {children}
@@ -82,11 +82,11 @@ export function Stat({
 }) {
   return (
     <div className="px-3 py-3">
-      <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+      <p className="text-phx-2xs font-semibold uppercase tracking-wider text-slate-500">
         {label}
       </p>
       <p
-        className="mt-1 truncate text-[13px] font-semibold text-slate-800"
+        className="mt-1 truncate text-phx-md font-semibold text-slate-800"
         title={value}
       >
         {value}
@@ -110,11 +110,11 @@ export function FieldValue({
 }) {
   return (
     <div className={`border-l-2 ${accent} px-3 py-3`}>
-      <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+      <p className="text-phx-2xs font-semibold uppercase tracking-wider text-slate-500">
         {label}
       </p>
       <p
-        className="mt-1 truncate text-[13px] font-semibold capitalize text-slate-800"
+        className="mt-1 truncate text-phx-md font-semibold capitalize text-slate-800"
         title={value}
       >
         {value}
@@ -138,11 +138,11 @@ export function SummaryValue({
 }) {
   return (
     <div className={`border-l-2 ${accent} px-3 py-3`}>
-      <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+      <p className="text-phx-2xs font-semibold uppercase tracking-wider text-slate-500">
         {label}
       </p>
       <p
-        className="mt-1 truncate text-[15px] font-bold text-slate-900"
+        className="mt-1 truncate text-phx-lg font-bold text-slate-900"
         title={value}
       >
         {value}

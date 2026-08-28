@@ -189,7 +189,7 @@ export function InternalMessagesMenu({ isAdminMode }: { isAdminMode: boolean }) 
       >
         <Mail className="h-[18px] w-[18px]" />
         {unreadCount > 0 ? (
-          <span className="absolute right-1 top-1 flex h-4 min-w-4 items-center justify-center rounded bg-phx-accent px-1 text-[9px] font-black text-white">
+          <span className="absolute right-1 top-1 flex h-4 min-w-4 items-center justify-center rounded bg-phx-accent px-1 text-phx-3xs font-black text-white">
             {unreadCount > 9 ? "9+" : unreadCount}
           </span>
         ) : null}
@@ -233,10 +233,10 @@ export function InternalMessagesMenu({ isAdminMode }: { isAdminMode: boolean }) 
               ) : null}
 
               <div className="mb-2 flex items-center gap-2">
-                <span className="rounded bg-phx-accent-soft px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-phx-accent-press">
+                <span className="rounded bg-phx-accent-soft px-2.5 py-1 text-phx-2xs font-black uppercase tracking-[0.12em] text-phx-accent-press">
                   Inbox {inboxMessages.length}
                 </span>
-                <span className={cn("rounded px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.12em]", isAdminMode ? "bg-[#111111] text-phx-ink-faint" : "bg-phx-paper text-phx-ink-soft")}>
+                <span className={cn("rounded px-2.5 py-1 text-phx-2xs font-black uppercase tracking-[0.12em]", isAdminMode ? "bg-[#111111] text-phx-ink-faint" : "bg-phx-paper text-phx-ink-soft")}>
                   Sent {sentMessages.length}
                 </span>
               </div>
@@ -262,12 +262,12 @@ export function InternalMessagesMenu({ isAdminMode }: { isAdminMode: boolean }) 
                             {message.direction === "inbox" ? `From ${message.sender.name}` : `To ${message.recipient.name}`}
                           </p>
                         </div>
-                        <span className="shrink-0 rounded bg-phx-accent-soft px-2 py-0.5 text-[10px] font-black uppercase text-phx-accent-press">
+                        <span className="shrink-0 rounded bg-phx-accent-soft px-2 py-0.5 text-phx-2xs font-black uppercase text-phx-accent-press">
                           {message.direction}
                         </span>
                       </div>
                       <p className={cn("mt-2 line-clamp-2 text-xs leading-5", isAdminMode ? "text-phx-line-strong" : "text-phx-ink-2")}>{message.body}</p>
-                      <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px]">
+                      <div className="mt-2 flex flex-wrap items-center gap-2 text-phx-xs">
                         <span className={isAdminMode ? "text-phx-ink-soft" : "text-phx-ink-faint"}>{formatMessageTime(message.createdAt)}</span>
                         <span className={cn("inline-flex items-center gap-1 rounded px-2 py-0.5 font-bold", message.emailStatus === "sent" ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-600")}>
                           {message.emailStatus === "sent" ? <CheckCircle2 className="h-3 w-3" /> : message.emailStatus === "failed" ? <XCircle className="h-3 w-3" /> : null}
@@ -289,7 +289,7 @@ export function InternalMessagesMenu({ isAdminMode }: { isAdminMode: boolean }) 
 
             <div className="mt-4 space-y-3">
               <label className="block">
-                <span className={cn("mb-1 block text-[10px] font-black uppercase tracking-[0.12em]", isAdminMode ? "text-phx-ink-faint" : "text-phx-ink-soft")}>Recipient</span>
+                <span className={cn("mb-1 block text-phx-2xs font-black uppercase tracking-[0.12em]", isAdminMode ? "text-phx-ink-faint" : "text-phx-ink-soft")}>Recipient</span>
                 <div className="relative">
                   <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-phx-ink-faint" />
                   <input
@@ -324,7 +324,7 @@ export function InternalMessagesMenu({ isAdminMode }: { isAdminMode: boolean }) 
               </label>
 
               <label className="block">
-                <span className={cn("mb-1 block text-[10px] font-black uppercase tracking-[0.12em]", isAdminMode ? "text-phx-ink-faint" : "text-phx-ink-soft")}>Subject</span>
+                <span className={cn("mb-1 block text-phx-2xs font-black uppercase tracking-[0.12em]", isAdminMode ? "text-phx-ink-faint" : "text-phx-ink-soft")}>Subject</span>
                 <input
                   className={cn("h-10 w-full rounded border px-3 text-sm font-semibold outline-none", isAdminMode ? "border-[#333333] bg-[#0B0B0B] text-white focus:border-phx-accent" : "border-phx-line bg-white text-phx-ink focus:border-phx-accent-line")}
                   onChange={(event) => setForm((current) => ({ ...current, subject: event.target.value }))}
@@ -334,7 +334,7 @@ export function InternalMessagesMenu({ isAdminMode }: { isAdminMode: boolean }) 
               </label>
 
               <label className="block">
-                <span className={cn("mb-1 block text-[10px] font-black uppercase tracking-[0.12em]", isAdminMode ? "text-phx-ink-faint" : "text-phx-ink-soft")}>Message</span>
+                <span className={cn("mb-1 block text-phx-2xs font-black uppercase tracking-[0.12em]", isAdminMode ? "text-phx-ink-faint" : "text-phx-ink-soft")}>Message</span>
                 <textarea
                   className={cn("min-h-28 w-full resize-y rounded border px-3 py-2.5 text-sm font-medium leading-6 outline-none", isAdminMode ? "border-[#333333] bg-[#0B0B0B] text-white focus:border-phx-accent" : "border-phx-line bg-white text-phx-ink focus:border-phx-accent-line")}
                   onChange={(event) => setForm((current) => ({ ...current, body: event.target.value }))}

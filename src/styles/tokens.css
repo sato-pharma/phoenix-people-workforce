@@ -148,19 +148,40 @@
   --phx-shadow-lg: 0 16px 46px rgba(13, 16, 21, 0.08);
 
   /* ==================================================================== TYPE
-     The scale covers what the app actually uses. Today 14 different sizes are
-     in play across 238 admin pages, six of them arbitrary pixel values
-     (text-[11px] alone appears 1,962 times), which means there is no scale at
-     all. These ten replace them. The small end is real: dense tables genuinely
-     need 10px and 11px, so they are in the scale rather than left arbitrary. */
+     Counted 2026-08-28 across 2,855 tracked .ts/.tsx files: 4,856 arbitrary
+     text-[Npx] classes over 26 distinct sizes, beside 7,126 uses of Tailwind's
+     named scale. No single scale, and the two disagree — text-xs and
+     text-[12px] are both 12px and render differently, because the named one
+     carries a line-height and the arbitrary one does not.
 
+     This ladder existed before today and was used ZERO times, because a raw
+     custom property generates no Tailwind utility. app/globals.css now maps
+     each step into @theme, which is what makes text-phx-xs a real class.
+
+     The dense end is fitted to what the app measurably does, not to a tidy
+     progression. Uses per size: 11px 1,984 · 10px 1,638 · 12px 534 · 13px 354 ·
+     9px 241 · 15px 38 · 8px 14 · 14px 12. So 8-15px is contiguous here — that
+     range is 4,815 of the 4,856, and dense payroll tables genuinely need it.
+
+     Two deliberate choices. --phx-fs-lg is 15px, not the 16px it read while
+     nothing used it: 15px appears 38 times and 16px 3 times, so the step is
+     spent where the app actually spends it. And everything from 16px up is a
+     thin tail of one-off display numbers (10 at 22px, then singletons) that is
+     left arbitrary on purpose — a shared scale for a hero figure used once is
+     not a scale. xl/2xl/3xl stay as the display ladder for new work.
+
+     Do NOT give any step a --*--line-height companion in globals.css. These
+     replace font-size-only classes, and a paired leading would silently move
+     ~4,800 call sites at once. */
+
+  --phx-fs-4xs: 8px;
   --phx-fs-3xs: 9px;
   --phx-fs-2xs: 10px;
   --phx-fs-xs: 11px;
   --phx-fs-sm: 12px;
   --phx-fs-md: 13px;
   --phx-fs-base: 14px;
-  --phx-fs-lg: 16px;
+  --phx-fs-lg: 15px;
   --phx-fs-xl: 20px;
   --phx-fs-2xl: 26px;
   --phx-fs-3xl: 34px;

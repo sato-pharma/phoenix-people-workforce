@@ -120,7 +120,7 @@ export function IntakeHealthView({
                         ["Errors", c.errors, c.errors > 0 ? "text-rose-600" : "text-slate-700"],
                       ].map(([label, value, tone]) => (
                         <div className="flex items-baseline gap-1.5" key={String(label)}>
-                          <dt className="text-[10px] font-bold uppercase tracking-wide text-slate-400">{label}</dt>
+                          <dt className="text-phx-2xs font-bold uppercase tracking-wide text-slate-400">{label}</dt>
                           <dd className={`font-bold tabular-nums ${tone}`}>{value}</dd>
                         </div>
                       ))}

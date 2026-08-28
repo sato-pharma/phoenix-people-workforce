@@ -138,7 +138,7 @@ export default async function CompanyDsmPerformancePage({
       <div className="flex items-center gap-3 border-b border-border pb-5">
         <div className="h-12 w-1 shrink-0 bg-phx-accent" />
         <div>
-          <p className="mb-0.5 text-[10px] font-bold uppercase tracking-widest text-phx-accent">Field Sales · Company Scope</p>
+          <p className="mb-0.5 text-phx-2xs font-bold uppercase tracking-widest text-phx-accent">Field Sales · Company Scope</p>
           <h1 className="text-2xl font-bold leading-tight text-foreground">DSM Performance</h1>
           <p className="mt-0.5 text-xs text-muted-foreground">
             Every line&apos;s district managers — targets, sales, achievement and product depth.
@@ -152,7 +152,7 @@ export default async function CompanyDsmPerformancePage({
         <div className="border border-slate-200 bg-white p-4 sm:p-6">
           <div className="mb-4 grid gap-4 sm:mb-5 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
             <div className="min-w-0">
-              <span className="inline-flex border border-orange-200 bg-orange-50 px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wider text-orange-600">
+              <span className="inline-flex border border-orange-200 bg-orange-50 px-2.5 py-0.5 text-phx-xs font-semibold uppercase tracking-wider text-orange-600">
                 Company View
               </span>
               <h2 className="mt-3 break-words text-xl font-black tracking-tight text-slate-900 sm:text-2xl">
@@ -165,7 +165,7 @@ export default async function CompanyDsmPerformancePage({
               </p>
             </div>
             <div className="w-full border border-slate-100 bg-slate-50 px-4 py-3 text-left sm:w-auto sm:text-right">
-              <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+              <p className="text-phx-xs font-semibold uppercase tracking-wider text-slate-400">
                 Company achievement
               </p>
               <p className={`mt-1 text-2xl font-bold ${achievementColor(data.companyAchievementPercent)}`}>
@@ -212,7 +212,7 @@ export default async function CompanyDsmPerformancePage({
                 className={`min-w-0 border-l-2 ${statBorders[stat.label] ?? "border-l-slate-300"} bg-white px-3 py-3 sm:px-4 sm:py-4`}
                 key={stat.label}
               >
-                <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">{stat.label}</p>
+                <p className="text-phx-xs font-semibold uppercase tracking-wider text-slate-400">{stat.label}</p>
                 <p className="mt-1.5 break-words text-lg font-bold text-slate-900 sm:text-xl">{stat.value}</p>
               </div>
             ))}
@@ -245,7 +245,7 @@ export default async function CompanyDsmPerformancePage({
               <div className="bg-red-400" style={{ width: `${(zoneLow / totalDsms) * 100}%` }} title={`${zoneLow} DSMs below 70%`} />
             )}
           </div>
-          <div className="mt-2.5 flex flex-wrap gap-x-4 gap-y-1 text-[11px] font-medium text-slate-500">
+          <div className="mt-2.5 flex flex-wrap gap-x-4 gap-y-1 text-phx-xs font-medium text-slate-500">
             <span className="inline-flex items-center gap-1.5"><span className="inline-block h-2 w-2 bg-emerald-500" />{zoneExcellent} at 100%+</span>
             <span className="inline-flex items-center gap-1.5"><span className="inline-block h-2 w-2 bg-emerald-300" />{zoneGood} at 90-99%</span>
             <span className="inline-flex items-center gap-1.5"><span className="inline-block h-2 w-2 bg-amber-400" />{zoneFair} at 70-89%</span>
@@ -279,14 +279,14 @@ export default async function CompanyDsmPerformancePage({
           <div className="border border-slate-200 bg-white" key={`${line.lineId ?? ""}-${line.lineName}`}>
             <div className="flex flex-wrap items-end justify-between gap-3 border-b border-slate-200 bg-slate-900 px-5 py-4">
               <div>
-                <p className="text-[10px] font-black uppercase tracking-[0.16em] text-orange-400">Line</p>
+                <p className="text-phx-2xs font-black uppercase tracking-[0.16em] text-orange-400">Line</p>
                 <h2 className="text-sm font-black uppercase tracking-[0.12em] text-white">{line.lineName}</h2>
-                <p className="mt-0.5 text-[11px] text-slate-400">
+                <p className="mt-0.5 text-phx-xs text-slate-400">
                   NSM: {line.nsmName ?? "Seat vacant"} · {line.performance.dsmCount} DSMs
                 </p>
               </div>
               <div className="text-right">
-                <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">
+                <p className="text-phx-2xs font-bold uppercase tracking-[0.12em] text-slate-400">
                   {egp(line.performance.lineTotalSales)} / {egp(line.performance.lineTotalTarget)}
                 </p>
                 <p className={`text-xl font-black ${line.performance.lineAchievementPercent >= 90 ? "text-emerald-400" : line.performance.lineAchievementPercent >= 70 ? "text-amber-400" : "text-rose-400"}`}>

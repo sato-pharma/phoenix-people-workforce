@@ -176,7 +176,7 @@ const hiringManagerCriteria = [
 function Field({ label, value }: { label: string; value: string | null | undefined }) {
   return (
     <div>
-      <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">{label}</p>
+      <p className="text-phx-xs font-semibold uppercase tracking-wider text-slate-400">{label}</p>
       <p className="text-slate-700">{value?.trim() ? value : "—"}</p>
     </div>
   );
@@ -290,7 +290,7 @@ function CandidateCard({ application, onChanged }: { application: ApplicationWit
             {requisition.jobTitle} · {requisition.requisitionCode}
           </p>
         </div>
-        <span className={`inline-block rounded border px-2 py-0.5 text-[11px] font-semibold ${badge.tone}`}>
+        <span className={`inline-block rounded border px-2 py-0.5 text-phx-xs font-semibold ${badge.tone}`}>
           {badge.label}
         </span>
       </div>
@@ -447,7 +447,7 @@ function SentCandidateCard({ candidate: initial }: { candidate: Candidate }) {
             );
           })()}
         </div>
-        <span className="inline-block rounded border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] font-semibold text-slate-600">
+        <span className="inline-block rounded border border-slate-200 bg-slate-50 px-2 py-0.5 text-phx-xs font-semibold text-slate-600">
           {candidateStatusLabel(candidate.status)}
         </span>
       </div>

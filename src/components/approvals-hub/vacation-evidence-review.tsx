@@ -57,7 +57,7 @@ export function VacationEvidenceReviewActions({ evidenceType, existingReview, re
 
   return (
     <div className="mt-2 space-y-2">
-      <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">
+      <p className="text-phx-xs font-bold uppercase tracking-wide text-slate-500">
         Evidence review — <span className="text-slate-700">{STATUS_LABEL[status]}</span>
       </p>
       <textarea

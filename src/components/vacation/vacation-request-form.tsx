@@ -385,7 +385,7 @@ function BalanceUsageBar({ balance }: { balance: VacationBalanceSnapshot | null 
 
   return (
     <div className="mt-3 space-y-1">
-      <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-[0.10em] text-slate-400">
+      <div className="flex items-center justify-between text-phx-2xs font-bold uppercase tracking-[0.10em] text-slate-400">
         <span>Used {formatDays(balance.usedPaidDays)}</span>
         <span>of {formatDays(balance.entitlementDays)}</span>
       </div>
@@ -423,7 +423,7 @@ function VacationBalanceCard({
     <div className="rounded-sm border border-slate-200 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.04)]">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="text-[10px] font-bold uppercase tracking-[0.10em] text-slate-400">
+          <p className="text-phx-2xs font-bold uppercase tracking-[0.10em] text-slate-400">
             {headlineLabel}
           </p>
           <p className="mt-1.5 text-[1.75rem] font-extrabold leading-none tracking-[-0.04em] text-slate-900">
@@ -435,12 +435,12 @@ function VacationBalanceCard({
         </div>
       </div>
 
-      <p className="mt-2 text-[12px] font-medium leading-5 text-slate-500">{description}</p>
+      <p className="mt-2 text-phx-sm font-medium leading-5 text-slate-500">{description}</p>
 
       <BalanceUsageBar balance={balance} />
 
       {isFirstSixMonthsLock && balance ? (
-        <p className="mt-2 text-[12px] font-semibold leading-5 text-amber-700">
+        <p className="mt-2 text-phx-sm font-semibold leading-5 text-amber-700">
           Available now: {formatDays(balance.balanceBeforeDays)}. Not available for use yet.
         </p>
       ) : null}
@@ -463,13 +463,13 @@ function VacationSummaryPerson({
 }) {
   return (
     <div className="rounded-sm border border-slate-100 bg-slate-50/50 px-3 py-3">
-      <p className="text-[10px] font-bold uppercase tracking-[0.10em] text-slate-400">
+      <p className="text-phx-2xs font-bold uppercase tracking-[0.10em] text-slate-400">
         {label}
       </p>
-      <p className="mt-1 text-[13px] font-semibold leading-5 text-slate-900">
+      <p className="mt-1 text-phx-md font-semibold leading-5 text-slate-900">
         {name}
       </p>
-      <p className="mt-0.5 text-[10px] font-medium uppercase tracking-[0.12em] text-slate-500">
+      <p className="mt-0.5 text-phx-2xs font-medium uppercase tracking-[0.12em] text-slate-500">
         {formatHrIdForDisplay(hrId) ?? "No HR ID"}
       </p>
     </div>
@@ -643,11 +643,11 @@ function VacationDatePicker({
 
   return (
     <div className="relative space-y-1.5">
-      <span className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500">{label}</span>
+      <span className="text-phx-xs font-bold uppercase tracking-[0.12em] text-slate-500">{label}</span>
       <button
         ref={triggerRef}
         className={cn(
-          "flex h-10 w-full items-center justify-between rounded-sm border border-slate-200 bg-white px-3 text-left text-[13px] font-semibold text-slate-800 outline-none transition focus:border-orange-300 focus:ring-2 focus:ring-orange-100",
+          "flex h-10 w-full items-center justify-between rounded-sm border border-slate-200 bg-white px-3 text-left text-phx-md font-semibold text-slate-800 outline-none transition focus:border-orange-300 focus:ring-2 focus:ring-orange-100",
           disabled ? "cursor-not-allowed opacity-55" : "hover:border-orange-200",
         )}
         disabled={disabled}
@@ -665,7 +665,7 @@ function VacationDatePicker({
         >
           <div className="grid grid-cols-2 gap-1.5">
             <SearchableSelect
-              className="h-9 rounded-sm border border-slate-200 bg-white px-2 text-[13px] font-bold text-slate-800 outline-none focus:border-orange-300"
+              className="h-9 rounded-sm border border-slate-200 bg-white px-2 text-phx-md font-bold text-slate-800 outline-none focus:border-orange-300"
               value={visibleMonth}
               onChange={(event) =>
                 setPanelDate({
@@ -680,7 +680,7 @@ function VacationDatePicker({
               ))}
             </SearchableSelect>
             <SearchableSelect
-              className="h-9 rounded-sm border border-slate-200 bg-white px-2 text-[13px] font-bold text-slate-800 outline-none focus:border-orange-300"
+              className="h-9 rounded-sm border border-slate-200 bg-white px-2 text-phx-md font-bold text-slate-800 outline-none focus:border-orange-300"
               value={visibleYear}
               onChange={(event) =>
                 setPanelDate({
@@ -694,7 +694,7 @@ function VacationDatePicker({
             </SearchableSelect>
           </div>
 
-          <div className="mt-2 grid grid-cols-7 gap-0.5 text-center text-[10px] font-bold uppercase tracking-[0.08em] text-slate-400">
+          <div className="mt-2 grid grid-cols-7 gap-0.5 text-center text-phx-2xs font-bold uppercase tracking-[0.08em] text-slate-400">
             {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day) => (
               <span className={day === "Fri" ? "text-rose-500" : ""} key={day}>{day}</span>
             ))}
@@ -720,7 +720,7 @@ function VacationDatePicker({
               return (
                 <button
                   className={cn(
-                    "h-8 rounded-sm text-[13px] font-bold transition",
+                    "h-8 rounded-sm text-phx-md font-bold transition",
                     selected ? "bg-orange-500 text-white" : "",
                     !selected && focused ? "ring-2 ring-orange-300" : "",
                     !selected && friday ? "bg-rose-50 text-rose-500" : "",
@@ -745,7 +745,7 @@ function VacationDatePicker({
               );
             })}
           </div>
-          <p className="mt-2 text-[11px] font-medium leading-4 text-slate-400">
+          <p className="mt-2 text-phx-xs font-medium leading-4 text-slate-400">
             Fridays in red. Grey dates outside current vacation policy.
           </p>
         </div>
@@ -866,13 +866,13 @@ function VacationPolicyPanel() {
       <div className="space-y-4">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
           <div>
-            <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-orange-600">Application Policy</p>
+            <p className="text-phx-xs font-bold uppercase tracking-[0.12em] text-orange-600">Application Policy</p>
             <h3 className="mt-1 text-base font-extrabold tracking-[-0.02em] text-slate-900">How vacation requests are classified and reviewed</h3>
-            <p className="mt-1.5 text-[13px] font-medium leading-5 text-slate-600">
+            <p className="mt-1.5 text-phx-md font-medium leading-5 text-slate-600">
               These rules explain what the system calculates automatically and what remains subject to manager and HR review.
             </p>
           </div>
-          <Badge className="w-fit border border-orange-200 bg-orange-50 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.12em] text-orange-700">
+          <Badge className="w-fit border border-orange-200 bg-orange-50 px-2.5 py-1 text-phx-2xs font-bold uppercase tracking-[0.12em] text-orange-700">
             Policy Guide
           </Badge>
         </div>
@@ -884,20 +884,20 @@ function VacationPolicyPanel() {
               key={item.title}
             >
               <div className="flex items-start gap-2.5">
-                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-sm bg-orange-50 text-[11px] font-bold text-orange-700">
+                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-sm bg-orange-50 text-phx-xs font-bold text-orange-700">
                   {index + 1}
                 </span>
                 <div className="min-w-0 flex-1">
-                  <h4 className="text-[13px] font-bold text-slate-900">{item.title}</h4>
-                  <p className="mt-1 text-[12px] font-medium leading-5 text-slate-700">{item.rule}</p>
+                  <h4 className="text-phx-md font-bold text-slate-900">{item.title}</h4>
+                  <p className="mt-1 text-phx-sm font-medium leading-5 text-slate-700">{item.rule}</p>
                   <div className="mt-2 grid gap-1.5 lg:grid-cols-2">
                     <div className="rounded-sm border border-slate-100 bg-slate-50 px-2.5 py-2">
-                      <p className="text-[10px] font-bold uppercase tracking-[0.10em] text-slate-400">Situation</p>
-                      <p className="mt-0.5 text-[11px] font-medium leading-4 text-slate-600">{item.situation}</p>
+                      <p className="text-phx-2xs font-bold uppercase tracking-[0.10em] text-slate-400">Situation</p>
+                      <p className="mt-0.5 text-phx-xs font-medium leading-4 text-slate-600">{item.situation}</p>
                     </div>
                     <div className={cn("rounded-sm border px-2.5 py-2", toneClasses[item.tone].card)}>
-                      <p className={cn("text-[10px] font-bold uppercase tracking-[0.10em]", toneClasses[item.tone].label)}>Example</p>
-                      <p className={cn("mt-0.5 text-[11px] font-medium leading-4", toneClasses[item.tone].text)}>{item.example}</p>
+                      <p className={cn("text-phx-2xs font-bold uppercase tracking-[0.10em]", toneClasses[item.tone].label)}>Example</p>
+                      <p className={cn("mt-0.5 text-phx-xs font-medium leading-4", toneClasses[item.tone].text)}>{item.example}</p>
                     </div>
                   </div>
                 </div>
@@ -975,13 +975,13 @@ function NationalEgyptianVacationPanel() {
     <div className="rounded-sm border border-slate-200 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.04)]">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-orange-600">Google Calendar Connection</p>
+          <p className="text-phx-xs font-bold uppercase tracking-[0.12em] text-orange-600">Google Calendar Connection</p>
           <h3 className="mt-1 text-base font-extrabold tracking-normal text-slate-900">National Egyptian holiday</h3>
-          <p className="mt-1.5 text-[13px] font-medium leading-5 text-slate-600">
+          <p className="mt-1.5 text-phx-md font-medium leading-5 text-slate-600">
             Connected to Google Calendar. Government holiday decisions can be moved or shifted. Follow the official HR announcement before taking any national holiday.
           </p>
         </div>
-        <Badge className="w-fit border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.12em] text-emerald-700">
+        <Badge className="w-fit border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-phx-2xs font-bold uppercase tracking-[0.12em] text-emerald-700">
           Google Calendar
         </Badge>
       </div>
@@ -999,7 +999,7 @@ function NationalEgyptianVacationPanel() {
 
         <SearchableSelect
           aria-label="National holidays month"
-          className="h-8 flex-1 min-w-[100px] rounded-sm border border-slate-200 bg-white px-2 text-[13px] font-bold text-slate-800 outline-none focus:border-orange-300"
+          className="h-8 flex-1 min-w-[100px] rounded-sm border border-slate-200 bg-white px-2 text-phx-md font-bold text-slate-800 outline-none focus:border-orange-300"
           value={month}
           onChange={(event) => setMonth(Number(event.target.value))}
         >
@@ -1012,7 +1012,7 @@ function NationalEgyptianVacationPanel() {
 
         <SearchableSelect
           aria-label="National holidays year"
-          className="h-8 w-[80px] shrink-0 rounded-sm border border-slate-200 bg-white px-2 text-[13px] font-bold text-slate-800 outline-none focus:border-orange-300"
+          className="h-8 w-[80px] shrink-0 rounded-sm border border-slate-200 bg-white px-2 text-phx-md font-bold text-slate-800 outline-none focus:border-orange-300"
           value={year}
           onChange={(event) => setYear(Number(event.target.value))}
         >
@@ -1053,8 +1053,8 @@ function NationalEgyptianVacationPanel() {
           <>
             {/* Desktop table (xs+) */}
             <div className="hidden md:block overflow-hidden rounded-sm border border-slate-200 bg-white">
-              <table className="w-full border-collapse text-left text-[12px]">
-                <thead className="bg-slate-50 text-[10px] font-bold uppercase tracking-[0.10em] text-slate-500">
+              <table className="w-full border-collapse text-left text-phx-sm">
+                <thead className="bg-slate-50 text-phx-2xs font-bold uppercase tracking-[0.10em] text-slate-500">
                   <tr>
                     <th className="border-b border-r border-slate-100 px-3 py-2">Holiday</th>
                     <th className="border-b border-r border-slate-100 px-3 py-2">Start</th>
@@ -1068,7 +1068,7 @@ function NationalEgyptianVacationPanel() {
                       <td className="border-r border-slate-100 px-3 py-2">
                         <p className="font-bold text-slate-900">{holiday.name}</p>
                         {holiday.description ? (
-                          <p className="mt-0.5 text-[11px] font-medium leading-4 text-slate-500">{holiday.description}</p>
+                          <p className="mt-0.5 text-phx-xs font-medium leading-4 text-slate-500">{holiday.description}</p>
                         ) : null}
                       </td>
                       <td className="border-r border-slate-100 px-3 py-2 font-medium text-slate-700">
@@ -1092,21 +1092,21 @@ function NationalEgyptianVacationPanel() {
             <div className="block md:hidden space-y-2">
               {data.holidays.map((holiday) => (
                 <div key={holiday.id} className="rounded-sm border border-slate-200 bg-white p-3">
-                  <p className="text-[13px] font-bold text-slate-900">{holiday.name}</p>
+                  <p className="text-phx-md font-bold text-slate-900">{holiday.name}</p>
                   {holiday.description ? (
-                    <p className="mt-0.5 text-[11px] font-medium leading-4 text-slate-500">{holiday.description}</p>
+                    <p className="mt-0.5 text-phx-xs font-medium leading-4 text-slate-500">{holiday.description}</p>
                   ) : null}
                   <div className="mt-2 grid grid-cols-3 gap-2">
                     <div>
-                      <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-slate-400">Start</p>
-                      <p className="mt-0.5 text-[12px] font-medium text-slate-700">{formatHolidayDate(holiday.startDate)}</p>
+                      <p className="text-phx-2xs font-bold uppercase tracking-[0.08em] text-slate-400">Start</p>
+                      <p className="mt-0.5 text-phx-sm font-medium text-slate-700">{formatHolidayDate(holiday.startDate)}</p>
                     </div>
                     <div>
-                      <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-slate-400">End</p>
-                      <p className="mt-0.5 text-[12px] font-medium text-slate-700">{formatHolidayDate(holiday.endDate ?? holiday.startDate)}</p>
+                      <p className="text-phx-2xs font-bold uppercase tracking-[0.08em] text-slate-400">End</p>
+                      <p className="mt-0.5 text-phx-sm font-medium text-slate-700">{formatHolidayDate(holiday.endDate ?? holiday.startDate)}</p>
                     </div>
                     <div>
-                      <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-slate-400">Duration</p>
+                      <p className="text-phx-2xs font-bold uppercase tracking-[0.08em] text-slate-400">Duration</p>
                       <Badge className="mt-0.5 w-fit border border-emerald-200 bg-emerald-50 text-emerald-700">
                         {formatDays(holiday.durationDays)}
                       </Badge>
@@ -1117,7 +1117,7 @@ function NationalEgyptianVacationPanel() {
             </div>
           </>
         ) : (
-          <div className="rounded-sm border border-slate-200 bg-white px-3 py-4 text-[13px] font-medium text-slate-600">
+          <div className="rounded-sm border border-slate-200 bg-white px-3 py-4 text-phx-md font-medium text-slate-600">
             No official Egyptian national vacations found for {monthLabel(month, year)} in Google Calendar.
           </div>
         )}
@@ -1458,7 +1458,7 @@ function VacationRequestFormInner({ initialData, initialError, showHero = true }
 
         {/* ── Offline banner (#2) ────────────────────────────────── */}
         {!isOnline ? (
-          <div className="flex items-center gap-2 rounded-sm border border-amber-200 bg-amber-50 px-3 py-2.5 text-[13px] font-bold text-amber-800">
+          <div className="flex items-center gap-2 rounded-sm border border-amber-200 bg-amber-50 px-3 py-2.5 text-phx-md font-bold text-amber-800">
             <WifiOff className="h-4 w-4 shrink-0 text-amber-600" />
             <span>
               You are offline. Annual, emergency, and other requests are saved in this browser and sent automatically when you reconnect. Evidence requests require online upload.
@@ -1469,7 +1469,7 @@ function VacationRequestFormInner({ initialData, initialError, showHero = true }
 
         {/* ── Optimistic success animation (#3) ──────────────────── */}
         {submitSuccess ? (
-          <div className="flex items-center gap-2.5 rounded-sm border border-emerald-200 bg-emerald-50 px-4 py-3 text-[13px] font-bold text-emerald-800 animate-in fade-in duration-300">
+          <div className="flex items-center gap-2.5 rounded-sm border border-emerald-200 bg-emerald-50 px-4 py-3 text-phx-md font-bold text-emerald-800 animate-in fade-in duration-300">
             <CheckCircle2 className="h-5 w-5 shrink-0 text-emerald-600" />
             <span>{isOnline ? "Request submitted successfully. Redirecting..." : "Request queued in this browser. It will retry when you are back online."}</span>
           </div>
@@ -1487,7 +1487,7 @@ function VacationRequestFormInner({ initialData, initialError, showHero = true }
               <button
                 aria-selected={active}
                 className={cn(
-                  "h-9 shrink-0 whitespace-nowrap rounded-sm px-3 text-[13px] font-bold transition",
+                  "h-9 shrink-0 whitespace-nowrap rounded-sm px-3 text-phx-md font-bold transition",
                   active ? "bg-white text-orange-600 shadow-sm" : "text-slate-500 hover:bg-white/70 hover:text-slate-700",
                 )}
                 key={tab.value}
@@ -1530,7 +1530,7 @@ function VacationRequestFormInner({ initialData, initialError, showHero = true }
                     name={initialData?.managerOfManager?.displayName ?? (initialData?.manager ? "Top of hierarchy" : "Not assigned")}
                   />
                   <Badge
-                    className="w-fit px-3 py-1.5 text-[10px] font-bold tracking-[0.12em] md:justify-self-end"
+                    className="w-fit px-3 py-1.5 text-phx-2xs font-bold tracking-[0.12em] md:justify-self-end"
                     variant={balance?.paymentStatus === "paid" ? "success" : "warning"}
                   >
                     {balance?.paymentStatus === "paid"
@@ -1548,7 +1548,7 @@ function VacationRequestFormInner({ initialData, initialError, showHero = true }
               <div className="grid gap-3 sm:grid-cols-2">
                 {/* Vacation type selector */}
                 <div className="space-y-1.5 sm:col-span-2">
-                  <span className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500">Vacation type</span>
+                  <span className="text-phx-xs font-bold uppercase tracking-[0.12em] text-slate-500">Vacation type</span>
                   <div
                     className="grid grid-cols-2 gap-1 rounded-sm border border-slate-200 bg-slate-50 p-0.5 sm:grid-cols-4"
                     role="tablist"
@@ -1561,7 +1561,7 @@ function VacationRequestFormInner({ initialData, initialError, showHero = true }
                           key={option.value}
                           aria-selected={active}
                           className={cn(
-                            "min-h-[36px] rounded-sm px-2 py-1.5 text-[12px] font-bold transition sm:text-[13px]",
+                            "min-h-[36px] rounded-sm px-2 py-1.5 text-phx-sm font-bold transition sm:text-phx-md",
                             active ? "bg-white text-orange-600 shadow-sm" : "text-slate-500 hover:bg-white/70 hover:text-slate-700",
                           )}
                           role="tab"
@@ -1577,7 +1577,7 @@ function VacationRequestFormInner({ initialData, initialError, showHero = true }
 
                 {/* Day part */}
                 <div className="space-y-1.5">
-                  <span className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500">Day part</span>
+                  <span className="text-phx-xs font-bold uppercase tracking-[0.12em] text-slate-500">Day part</span>
                   <ChoiceGroup
                     aria-label="Day part"
                     className="grid-cols-3"
@@ -1617,11 +1617,11 @@ function VacationRequestFormInner({ initialData, initialError, showHero = true }
                 <div className="rounded-sm border border-orange-100 bg-orange-50/60 px-3 py-3 sm:col-span-2">
                   <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                     <div>
-                      <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-orange-700">Calculated duration</p>
+                      <p className="text-phx-xs font-bold uppercase tracking-[0.12em] text-orange-700">Calculated duration</p>
                       <p className="mt-1 text-xl font-extrabold text-slate-900">
                         {durationPreview.error ? "Invalid" : durationDisplay(durationPreview.days)}
                       </p>
-                      <p className="mt-0.5 text-[11px] font-medium text-orange-800">
+                      <p className="mt-0.5 text-phx-xs font-medium text-orange-800">
                         Duration updates automatically based on selected dates and day part.
                       </p>
                     </div>
@@ -1631,9 +1631,9 @@ function VacationRequestFormInner({ initialData, initialError, showHero = true }
                       </Badge>
                     ) : null}
                   </div>
-                  {durationPreview.error ? <p className="mt-2 text-[12px] font-semibold text-rose-700">{durationPreview.error}</p> : null}
+                  {durationPreview.error ? <p className="mt-2 text-phx-sm font-semibold text-rose-700">{durationPreview.error}</p> : null}
                   {policyWarnings.length > 0 ? (
-                    <div className="mt-2 rounded-sm border border-amber-200 bg-amber-50 px-2.5 py-2 text-[11px] font-bold leading-4 text-amber-800">
+                    <div className="mt-2 rounded-sm border border-amber-200 bg-amber-50 px-2.5 py-2 text-phx-xs font-bold leading-4 text-amber-800">
                       {policyWarnings.map((warning) => (
                         <p key={warning}>{warning}</p>
                       ))}
@@ -1645,7 +1645,7 @@ function VacationRequestFormInner({ initialData, initialError, showHero = true }
                 {/* Sick document upload */}
                 {isSick ? (
                   <div className="space-y-1.5 sm:col-span-2">
-                    <span className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500">Medical document</span>
+                    <span className="text-phx-xs font-bold uppercase tracking-[0.12em] text-slate-500">Medical document</span>
                     <label className="flex cursor-pointer flex-col items-center justify-center rounded-sm border-2 border-dashed border-sky-200 bg-sky-50/50 px-4 py-4 text-center transition hover:border-sky-300 hover:bg-sky-50">
                       <input
                         accept=".pdf,.doc,.docx,image/jpeg,image/png,image/webp"
@@ -1654,14 +1654,14 @@ function VacationRequestFormInner({ initialData, initialError, showHero = true }
                         type="file"
                         onChange={(event) => selectAttachment(event.target.files?.[0] ?? null, "Medical document", setSickDocument)}
                       />
-                      <span className="rounded-sm bg-sky-600 px-3 py-1.5 text-[13px] font-bold text-white shadow-sm">
+                      <span className="rounded-sm bg-sky-600 px-3 py-1.5 text-phx-md font-bold text-white shadow-sm">
                         Browse medical document
                       </span>
-                      <span className="mt-1.5 text-[11px] font-medium leading-4 text-slate-600">
+                      <span className="mt-1.5 text-phx-xs font-medium leading-4 text-slate-600">
                         Upload a stamped governmental hospital document. PDF, Word, JPG, PNG, or WEBP accepted. Up to {MAX_ATTACHMENT_LABEL}.
                       </span>
                     </label>
-                    <p className="text-[11px] font-medium text-slate-500">
+                    <p className="text-phx-xs font-medium text-slate-500">
                       {sickDocument ? sickDocument.name : "Required for sick vacation requests."}
                     </p>
                   </div>
@@ -1670,15 +1670,15 @@ function VacationRequestFormInner({ initialData, initialError, showHero = true }
                 {/* Other reason */}
                 {isOther ? (
                   <label className="space-y-1.5 sm:col-span-2">
-                    <span className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500">Other vacation explanation</span>
+                    <span className="text-phx-xs font-bold uppercase tracking-[0.12em] text-slate-500">Other vacation explanation</span>
                     <textarea
-                      className="min-h-24 w-full rounded-sm border border-slate-200 bg-white px-3 py-2.5 text-[13px] font-medium text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-orange-300 focus:ring-2 focus:ring-orange-100"
+                      className="min-h-24 w-full rounded-sm border border-slate-200 bg-white px-3 py-2.5 text-phx-md font-medium text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-orange-300 focus:ring-2 focus:ring-orange-100"
                       placeholder="Explain what this Other vacation is for. HR will review whether it affects balance, does not affect balance, or will be unpaid."
                       required
                       value={otherReason}
                       onChange={(event) => setOtherReason(event.target.value)}
                     />
-                    <p className="text-[11px] font-medium text-slate-500">
+                    <p className="text-phx-xs font-medium text-slate-500">
                       Required for Other vacation requests.
                     </p>
                   </label>
@@ -1688,14 +1688,14 @@ function VacationRequestFormInner({ initialData, initialError, showHero = true }
                 {isCompensatory ? (
                   <div className="space-y-3 rounded-sm border border-orange-100 bg-orange-50/40 p-3 sm:col-span-2">
                     <div>
-                      <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-orange-700">Compensatory Day evidence</p>
-                      <p className="mt-0.5 text-[11px] font-medium leading-4 text-orange-800">
+                      <p className="text-phx-xs font-bold uppercase tracking-[0.12em] text-orange-700">Compensatory Day evidence</p>
+                      <p className="mt-0.5 text-phx-xs font-medium leading-4 text-orange-800">
                         Required because this day is granted instead of work done during a weekly-off event. Does not deduct from vacation balance and expires 14 days after the event date.
                       </p>
                     </div>
                     <div className="grid gap-3 sm:grid-cols-2">
                       <label className="space-y-1.5">
-                        <span className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500">Event name</span>
+                        <span className="text-phx-xs font-bold uppercase tracking-[0.12em] text-slate-500">Event name</span>
                         <Input
                           className="rounded-sm"
                           placeholder="Conference or event name"
@@ -1705,7 +1705,7 @@ function VacationRequestFormInner({ initialData, initialError, showHero = true }
                         />
                       </label>
                       <label className="space-y-1.5">
-                        <span className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500">Event date</span>
+                        <span className="text-phx-xs font-bold uppercase tracking-[0.12em] text-slate-500">Event date</span>
                         <Input
                           className="rounded-sm"
                           required
@@ -1714,13 +1714,13 @@ function VacationRequestFormInner({ initialData, initialError, showHero = true }
                           onChange={(event) => setCompensatoryEventDate(event.target.value)}
                         />
                         {compensatoryExpiryDate ? (
-                          <p className="text-[11px] font-medium text-orange-800">
+                          <p className="text-phx-xs font-medium text-orange-800">
                             Available until {formatHolidayDate(compensatoryExpiryDate)}.
                           </p>
                         ) : null}
                       </label>
                       <label className="space-y-1.5 sm:col-span-2">
-                        <span className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500">Event location</span>
+                        <span className="text-phx-xs font-bold uppercase tracking-[0.12em] text-slate-500">Event location</span>
                         <Input
                           className="rounded-sm"
                           placeholder="Venue, city, or territory"
@@ -1730,7 +1730,7 @@ function VacationRequestFormInner({ initialData, initialError, showHero = true }
                         />
                       </label>
                       <label className="space-y-1.5">
-                        <span className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500">Manager with you 1</span>
+                        <span className="text-phx-xs font-bold uppercase tracking-[0.12em] text-slate-500">Manager with you 1</span>
                         <Input
                           className="rounded-sm"
                           placeholder="Manager name"
@@ -1740,7 +1740,7 @@ function VacationRequestFormInner({ initialData, initialError, showHero = true }
                         />
                       </label>
                       <label className="space-y-1.5">
-                        <span className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500">Manager with you 2</span>
+                        <span className="text-phx-xs font-bold uppercase tracking-[0.12em] text-slate-500">Manager with you 2</span>
                         <Input
                           className="rounded-sm"
                           placeholder="Manager name (optional)"
@@ -1749,7 +1749,7 @@ function VacationRequestFormInner({ initialData, initialError, showHero = true }
                         />
                       </label>
                       <div className="space-y-1.5 sm:col-span-2">
-                        <label className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500" htmlFor="compensatory-photo">
+                        <label className="text-phx-xs font-bold uppercase tracking-[0.12em] text-slate-500" htmlFor="compensatory-photo">
                           Event photo
                         </label>
                         <label className="flex cursor-pointer flex-col items-center justify-center rounded-sm border-2 border-dashed border-orange-200 bg-white/60 px-4 py-4 text-center transition hover:border-orange-300 hover:bg-white" htmlFor="compensatory-photo">
@@ -1761,20 +1761,20 @@ function VacationRequestFormInner({ initialData, initialError, showHero = true }
                             type="file"
                             onChange={(event) => selectAttachment(event.target.files?.[0] ?? null, "Event photo", setCompensatoryPhoto)}
                           />
-                          <span className="rounded-sm bg-orange-500 px-3 py-1.5 text-[13px] font-bold text-white shadow-sm">
+                          <span className="rounded-sm bg-orange-500 px-3 py-1.5 text-phx-md font-bold text-white shadow-sm">
                             Browse event photo
                           </span>
-                          <span className="mt-1.5 text-[11px] font-medium leading-4 text-slate-600">
+                          <span className="mt-1.5 text-phx-xs font-medium leading-4 text-slate-600">
                             Upload the event or conference photo. JPG, PNG, or WEBP accepted. Up to {MAX_ATTACHMENT_LABEL}.
                           </span>
                         </label>
-                        <p className="text-[11px] font-medium text-slate-500">
+                        <p className="text-phx-xs font-medium text-slate-500">
                           {compensatoryPhoto ? compensatoryPhoto.name : "Required event or conference photo."}
                         </p>
                       </div>
                     </div>
                     {compensatoryDateError ? (
-                      <div className="rounded-sm border border-rose-200 bg-rose-50 px-2.5 py-2 text-[11px] font-bold leading-4 text-rose-800">
+                      <div className="rounded-sm border border-rose-200 bg-rose-50 px-2.5 py-2 text-phx-xs font-bold leading-4 text-rose-800">
                         {compensatoryDateError}
                       </div>
                     ) : null}
@@ -1782,16 +1782,16 @@ function VacationRequestFormInner({ initialData, initialError, showHero = true }
                 ) : null}
                 {/* Optional employee note */}
                 <label className="space-y-1.5 sm:col-span-2">
-                  <span className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500">Note <span className="font-medium normal-case tracking-normal text-slate-400">(optional)</span></span>
+                  <span className="text-phx-xs font-bold uppercase tracking-[0.12em] text-slate-500">Note <span className="font-medium normal-case tracking-normal text-slate-400">(optional)</span></span>
                   <textarea
-                    className="min-h-16 w-full rounded-sm border border-slate-200 bg-white px-3 py-2.5 text-[13px] font-medium text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-orange-300 focus:ring-2 focus:ring-orange-100"
+                    className="min-h-16 w-full rounded-sm border border-slate-200 bg-white px-3 py-2.5 text-phx-md font-medium text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-orange-300 focus:ring-2 focus:ring-orange-100"
                     maxLength={500}
                     placeholder="Any context for your manager — travel plans, coverage arrangements, etc."
                     value={employeeNote}
                     onChange={(event) => setEmployeeNote(event.target.value)}
                   />
                   {employeeNote.length > 0 && (
-                    <p className="text-[11px] font-medium text-slate-400">{employeeNote.length}/500</p>
+                    <p className="text-phx-xs font-medium text-slate-400">{employeeNote.length}/500</p>
                   )}
                 </label>
               </div>

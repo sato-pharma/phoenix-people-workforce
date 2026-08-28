@@ -130,7 +130,7 @@ export function DoctorCoverageFilterBar({
 
       <div className="flex flex-wrap items-center gap-3">
         <button
-          className="h-9 border border-slate-200 bg-slate-900 px-4 text-[11px] font-black uppercase tracking-[0.12em] text-white hover:bg-slate-700"
+          className="h-9 border border-slate-200 bg-slate-900 px-4 text-phx-xs font-black uppercase tracking-[0.12em] text-white hover:bg-slate-700"
           onClick={() => push(draft, draftScope)}
           type="button"
         >
@@ -138,7 +138,7 @@ export function DoctorCoverageFilterBar({
         </button>
         {anyActive ? (
           <button
-            className="h-9 border border-slate-200 bg-white px-4 text-[11px] font-black uppercase tracking-[0.12em] text-slate-600 hover:border-orange-400"
+            className="h-9 border border-slate-200 bg-white px-4 text-phx-xs font-black uppercase tracking-[0.12em] text-slate-600 hover:border-orange-400"
             onClick={clearAll}
             type="button"
           >
@@ -146,7 +146,7 @@ export function DoctorCoverageFilterBar({
           </button>
         ) : null}
         {anyActive ? (
-          <span className="whitespace-nowrap text-[11px] font-semibold text-amber-700">
+          <span className="whitespace-nowrap text-phx-xs font-semibold text-amber-700">
             Filtered — every figure below counts only the matching rows.
           </span>
         ) : null}

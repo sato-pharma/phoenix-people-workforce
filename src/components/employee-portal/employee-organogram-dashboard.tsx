@@ -32,7 +32,7 @@ type EmployeeOrganogramDashboardProps = {
 /* ------------------------------------------------------------------ */
 
 const labelClassName =
-  "text-[11px] font-semibold uppercase tracking-wider text-slate-400";
+  "text-phx-xs font-semibold uppercase tracking-wider text-slate-400";
 
 const cardShadow = "shadow-[0_1px_3px_rgba(15,23,42,0.08)]";
 
@@ -161,7 +161,7 @@ export function EmployeeOrganogramDashboard({
               ? "Select a line to view its organogram"
               : "Select a product line to view its organogram"}
           </h3>
-          <p className="mx-auto mt-2 max-w-md text-[11px] text-slate-400">
+          <p className="mx-auto mt-2 max-w-md text-phx-xs text-slate-400">
             Choose a line from the dropdown above. KPIs, vacancies, and the full hierarchy tree will appear for the selected line.
           </p>
         </Card>
@@ -192,16 +192,16 @@ export function EmployeeOrganogramDashboard({
         <Card className={`rounded border border-slate-100 p-4 sm:p-5 ${cardShadow}`}>
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-2">
-              <span className="inline-flex items-center rounded bg-orange-50 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-orange-600">
+              <span className="inline-flex items-center rounded bg-orange-50 px-2 py-1 text-phx-2xs font-bold uppercase tracking-wider text-orange-600">
                 Filters
               </span>
-              <span className="text-[11px] font-medium text-slate-500">
+              <span className="text-phx-xs font-medium text-slate-500">
                 {filteredRows.length} of {rows.length} positions shown
               </span>
             </div>
             <button
               aria-label="Refresh organogram data"
-              className="inline-flex h-10 items-center rounded bg-orange-500 px-4 text-[12px] font-semibold text-white shadow-sm transition hover:bg-orange-600 disabled:opacity-50"
+              className="inline-flex h-10 items-center rounded bg-orange-500 px-4 text-phx-sm font-semibold text-white shadow-sm transition hover:bg-orange-600 disabled:opacity-50"
               disabled={isLoading}
               onClick={() => void loadReport()}
               type="button"
@@ -225,21 +225,21 @@ export function EmployeeOrganogramDashboard({
                     <h3 className="text-sm font-bold text-slate-800">
                       {lineName} Structure
                     </h3>
-                    <p className="mt-0.5 text-[11px] text-slate-500">
+                    <p className="mt-0.5 text-phx-xs text-slate-500">
                       Leadership, manager lanes, employees, and vacancies
                     </p>
                   </div>
                 </div>
                 <div className="flex flex-wrap gap-1.5">
-                  <span className="rounded bg-slate-100 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-600">
+                  <span className="rounded bg-slate-100 px-2 py-1 text-phx-2xs font-bold uppercase tracking-wider text-slate-600">
                     {employees} employees
                   </span>
                   {vacancies > 0 && (
-                    <span className="rounded bg-orange-50 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-orange-600">
+                    <span className="rounded bg-orange-50 px-2 py-1 text-phx-2xs font-bold uppercase tracking-wider text-orange-600">
                       {vacancies} vacancies
                     </span>
                   )}
-                  <span className="rounded bg-slate-100 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-600">
+                  <span className="rounded bg-slate-100 px-2 py-1 text-phx-2xs font-bold uppercase tracking-wider text-slate-600">
                     {lanes.groups.length} lanes
                   </span>
                 </div>
@@ -265,7 +265,7 @@ export function EmployeeOrganogramDashboard({
           <h3 className="text-sm font-semibold text-slate-700">
             Select a line to view the organogram
           </h3>
-          <p className="mx-auto mt-2 max-w-md text-[11px] text-slate-400">
+          <p className="mx-auto mt-2 max-w-md text-phx-xs text-slate-400">
             The hierarchy stays hidden until a line is selected, so the chart
             only shows the exact structure you are reviewing.
           </p>

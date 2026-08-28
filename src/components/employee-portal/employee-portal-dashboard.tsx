@@ -208,8 +208,8 @@ function PeriodSegmentedControl({
           <button
             aria-checked={active}
             className={active
-              ? "rounded bg-slate-950 px-3 py-1.5 text-[11px] font-bold text-white shadow-sm transition-all focus:outline-none focus:ring-2 focus:ring-orange-400 focus:ring-offset-1"
-              : "rounded px-3 py-1.5 text-[11px] font-bold text-slate-500 transition-all hover:bg-slate-100 hover:text-slate-800 focus:outline-none focus:ring-2 focus:ring-orange-400 focus:ring-offset-1"}
+              ? "rounded bg-slate-950 px-3 py-1.5 text-phx-xs font-bold text-white shadow-sm transition-all focus:outline-none focus:ring-2 focus:ring-orange-400 focus:ring-offset-1"
+              : "rounded px-3 py-1.5 text-phx-xs font-bold text-slate-500 transition-all hover:bg-slate-100 hover:text-slate-800 focus:outline-none focus:ring-2 focus:ring-orange-400 focus:ring-offset-1"}
             key={option.value}
             onClick={() => onChange(option.value)}
             onKeyDown={(e) => handleKeyDown(e, index)}
@@ -316,7 +316,7 @@ const chartAxisStyle = {
 
 /* Enterprise table grid: thin vertical + horizontal lines in very light grey */
 const gridCellClass = "border border-slate-100 px-4 py-3";
-const gridHeaderClass = "border border-slate-100 bg-slate-50 px-4 py-3 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500";
+const gridHeaderClass = "border border-slate-100 bg-slate-50 px-4 py-3 text-phx-2xs font-bold uppercase tracking-[0.14em] text-slate-500";
 
 const chartMargin = { bottom: 6, left: 2, right: 16, top: 16 };
 const chartGridStroke = "#e8edf4";
@@ -409,7 +409,7 @@ function sectionTitle(kicker: string, title: string) {
     <div className="mb-2 flex items-center gap-3">
       <div className="h-8 w-[3px] rounded-sm bg-gradient-to-b from-orange-400 to-orange-600" />
       <div>
-        <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-orange-500">{kicker}</p>
+        <p className="text-phx-2xs font-bold uppercase tracking-[0.18em] text-orange-500">{kicker}</p>
         <h2 className="mt-0.5 text-[22px] font-semibold leading-tight tracking-tight text-slate-900">{title}</h2>
       </div>
     </div>
@@ -492,7 +492,7 @@ export function EmptyStateCard({
 }) {
   return (
     <Card className="rounded border border-slate-200/90 bg-gradient-to-br from-white to-slate-50/50 p-10 text-center shadow-[0_12px_34px_rgba(15,23,42,0.05)]">
-      <p className="mt-4 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">{title}</p>
+      <p className="mt-4 text-phx-2xs font-bold uppercase tracking-[0.16em] text-slate-500">{title}</p>
       <p className="mt-2 text-sm text-slate-600">{message}</p>
     </Card>
   );
@@ -512,7 +512,7 @@ export function MetricCard({
       className="group relative overflow-hidden rounded border border-slate-200/90 bg-gradient-to-br from-white to-slate-50/50 px-4 py-3 shadow-[0_4px_14px_rgba(15,23,42,0.04)] transition-all duration-160 ease-out hover:-translate-y-px hover:shadow-md hover:border-slate-300"
       title={tooltip}
     >
-      <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">
+      <div className="flex items-center gap-1.5 text-phx-2xs font-bold uppercase tracking-[0.12em] text-slate-500">
         <span>{label}</span>
       </div>
       <p className="mt-2 text-base font-semibold text-slate-900">{value}</p>
@@ -530,7 +530,7 @@ export function SmartInsightCard({
   return (
     <div className="group relative overflow-hidden rounded border border-slate-200/90 bg-gradient-to-br from-white to-slate-50/50 p-4 shadow-[0_4px_16px_rgba(15,23,42,0.04)] transition-all duration-160 ease-out hover:-translate-y-px hover:shadow-md hover:border-slate-300">
       <div className="flex items-center gap-2 text-slate-700">
-        <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">{label}</p>
+        <p className="text-phx-2xs font-bold uppercase tracking-[0.12em] text-slate-500">{label}</p>
       </div>
       <p className="mt-2.5 text-sm font-semibold text-slate-900">{value}</p>
     </div>
@@ -575,12 +575,12 @@ export function SalesAchievementRing({
 
   return (
     <div className="flex h-full flex-col justify-center rounded border border-slate-100 bg-white p-6 shadow-[0_1px_3px_rgba(15,23,42,0.06)]">
-      <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-slate-500">Sales Achievement — This Month</p>
+      <p className="text-phx-xs font-medium uppercase tracking-[0.16em] text-slate-500">Sales Achievement — This Month</p>
       <div className="mt-4 flex flex-col items-center">
         <div className="relative flex aspect-square h-[clamp(200px,62vw,280px)] w-[clamp(200px,62vw,280px)] items-center justify-center rounded-full" style={circleStyle} title="Sales achievement">
           <div className="flex aspect-square h-[clamp(168px,52vw,236px)] w-[clamp(168px,52vw,236px)] flex-col items-center justify-center rounded-full bg-white shadow-[inset_0_0_0_1px_rgba(15,23,42,0.06)]">
             <p className="text-[clamp(48px,15vw,68px)] font-semibold leading-none text-slate-950">{clamped}%</p>
-            <p className="mt-1 text-[12px] font-medium uppercase tracking-[0.1em] text-slate-500">of target</p>
+            <p className="mt-1 text-phx-sm font-medium uppercase tracking-[0.1em] text-slate-500">of target</p>
           </div>
         </div>
         <p className="mt-5 text-3xl font-semibold text-slate-900">{egp(salesValue)}</p>
@@ -757,7 +757,7 @@ export function PersonalOverviewHero({ data }: { data: MedicalRepPortalData }) {
           />
           <div className="rounded border border-slate-100 bg-white p-4 shadow-[0_4px_16px_rgba(15,23,42,0.04)]">
             <div className="flex items-center justify-between">
-              <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-slate-500">Trend</p>
+              <p className="text-phx-xs font-medium uppercase tracking-[0.12em] text-slate-500">Trend</p>
               <p className={`text-sm font-medium ${growthNegative ? "text-rose-600" : "text-emerald-600"}`}>
                 {sales.growthVsLastMonthPercent === null ? "N/A" : `${sales.growthVsLastMonthPercent.toFixed(1)}%`}
               </p>
@@ -798,9 +798,9 @@ function SmartInsightsStrip({ data }: { data: MedicalRepPortalData }) {
             <div key={insight} className="group relative overflow-hidden rounded border border-slate-200/90 bg-gradient-to-br from-white to-slate-50/50 px-4 py-3 shadow-[0_4px_14px_rgba(15,23,42,0.04)] transition-all duration-160 ease-out hover:-translate-y-px hover:shadow-md hover:border-slate-300">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2 text-slate-700">
-                  <span className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">Insight</span>
+                  <span className="text-phx-2xs font-bold uppercase tracking-[0.12em] text-slate-500">Insight</span>
                 </div>
-                <span className={`rounded px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.08em] ${meta.classes}`}>{meta.badge}</span>
+                <span className={`rounded px-2 py-0.5 text-phx-2xs font-bold uppercase tracking-[0.08em] ${meta.classes}`}>{meta.badge}</span>
               </div>
               <p className="mt-2.5 text-sm font-medium text-slate-700">{shortInsight(insight)}</p>
             </div>
@@ -939,7 +939,7 @@ function ExecutiveCommandStrip({ data }: { data: MedicalRepPortalData }) {
     <section className="space-y-4">
       <div className="flex flex-wrap items-end justify-between gap-3 px-1">
         <div>
-          <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-orange-700">Command Metrics</p>
+          <p className="text-phx-2xs font-bold uppercase tracking-[0.18em] text-orange-700">Command Metrics</p>
           <h2 className="mt-1 text-lg font-black tracking-[-0.02em] text-slate-950">Key operating signals</h2>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -948,7 +948,7 @@ function ExecutiveCommandStrip({ data }: { data: MedicalRepPortalData }) {
             value={lens}
             onChange={(value) => setLens(value as CommandLens)}
           />
-          <span className="rounded border border-slate-200 bg-white/80 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-700 shadow-sm backdrop-blur-sm">{data.workforce.scopeLabel}</span>
+          <span className="rounded border border-slate-200 bg-white/80 px-3 py-1.5 text-phx-xs font-semibold uppercase tracking-[0.12em] text-slate-700 shadow-sm backdrop-blur-sm">{data.workforce.scopeLabel}</span>
         </div>
       </div>
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -961,11 +961,11 @@ function ExecutiveCommandStrip({ data }: { data: MedicalRepPortalData }) {
             >
               <div className="flex flex-1 flex-col justify-between gap-2">
                 <div className="min-w-0">
-                  <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500">{signal.label}</p>
+                  <p className="text-phx-2xs font-bold uppercase tracking-[0.14em] text-slate-500">{signal.label}</p>
                   <p className="mt-2 break-words text-2xl font-black leading-none tracking-[-0.03em] tabular-nums text-slate-900">
                     <CountUpNumber value={signal.numeric} format={signal.format} />
                   </p>
-                  <p className="mt-1.5 text-[11px] font-medium leading-snug text-slate-500">{signal.note}</p>
+                  <p className="mt-1.5 text-phx-xs font-medium leading-snug text-slate-500">{signal.note}</p>
                 </div>
                 <div className="space-y-1">
                   <div className="h-1 overflow-hidden rounded-sm bg-slate-100">
@@ -1051,7 +1051,7 @@ function IncentiveSimulatorCard({
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-5 py-3">
         <div className="flex items-center gap-2">
           <span className="h-1.5 w-1.5 rounded-sm bg-orange-500" />
-          <h3 className="text-[15px] font-bold tracking-tight text-slate-900">Simulate Achievement</h3>
+          <h3 className="text-phx-lg font-bold tracking-tight text-slate-900">Simulate Achievement</h3>
         </div>
         <IncentiveSalaryVisibilityToggle
           isSalaryVisible={isSalaryVisible}
@@ -1063,8 +1063,8 @@ function IncentiveSimulatorCard({
         {/* Slider */}
         <div>
           <div className="flex items-center justify-between">
-            <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">Achievement %</p>
-            <span className="rounded border border-orange-200 bg-orange-50 px-2 py-0.5 text-[11px] font-black text-orange-700">{simAchievement.toFixed(0)}%</span>
+            <p className="text-phx-2xs font-bold uppercase tracking-[0.14em] text-slate-400">Achievement %</p>
+            <span className="rounded border border-orange-200 bg-orange-50 px-2 py-0.5 text-phx-xs font-black text-orange-700">{simAchievement.toFixed(0)}%</span>
           </div>
           <input
             type="range"
@@ -1075,7 +1075,7 @@ function IncentiveSimulatorCard({
             step={1}
             className="mt-3 h-1.5 w-full cursor-pointer appearance-none rounded-sm bg-slate-100 accent-orange-500"
           />
-          <div className="mt-1 flex items-center justify-between text-[9px] text-slate-400">
+          <div className="mt-1 flex items-center justify-between text-phx-3xs text-slate-400">
             <span>0%</span>
             <span className="font-semibold text-rose-400">90%</span>
             <span>100%</span>
@@ -1090,11 +1090,11 @@ function IncentiveSimulatorCard({
         <div className="rounded border border-orange-200 bg-gradient-to-br from-orange-50 to-amber-50/60 p-4">
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <p className="text-[9px] font-bold uppercase tracking-[0.14em] text-slate-400">Payout Rate</p>
+              <p className="text-phx-3xs font-bold uppercase tracking-[0.14em] text-slate-400">Payout Rate</p>
               <p className="mt-1.5 text-xl font-black text-orange-700">{calc.payoutPercentage.toFixed(1)}%</p>
             </div>
             <div>
-              <p className="text-[9px] font-bold uppercase tracking-[0.14em] text-slate-400">Estimated Payout</p>
+              <p className="text-phx-3xs font-bold uppercase tracking-[0.14em] text-slate-400">Estimated Payout</p>
               <p className="mt-1.5 break-words text-xl font-black text-slate-900">{isSalaryVisible ? egp(calc.payoutAmount) : maskedMoneyValue}</p>
             </div>
           </div>
@@ -1103,13 +1103,13 @@ function IncentiveSimulatorCard({
         {/* Actual vs simulated */}
         <div className="rounded border border-orange-100 bg-orange-50/40 px-3 py-2">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <p className="text-[11px] font-bold text-orange-800">
+            <p className="text-phx-xs font-bold text-orange-800">
               Your actual:{" "}
               {data.sales.incentiveSemesterTarget > 0
                 ? `${data.sales.overviewAchievementPercent.toFixed(1)}%`
                 : "No target yet"}
             </p>
-            <p className="text-[11px] font-bold text-orange-600">
+            <p className="text-phx-xs font-bold text-orange-600">
               Simulating: {simAchievement.toFixed(0)}%
             </p>
           </div>
@@ -1136,9 +1136,9 @@ function IncentivePayoutCurveChart({ data }: { data: MedicalRepPortalData }) {
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-5 py-3">
         <div className="flex items-center gap-2">
           <span className="h-1.5 w-1.5 rounded-sm bg-orange-500" />
-          <h3 className="text-[15px] font-bold tracking-tight text-slate-900">Performance Payout Curve</h3>
+          <h3 className="text-phx-lg font-bold tracking-tight text-slate-900">Performance Payout Curve</h3>
         </div>
-        <span className="text-[10px] font-medium text-slate-400">Achievement vs Payout %</span>
+        <span className="text-phx-2xs font-medium text-slate-400">Achievement vs Payout %</span>
       </div>
       <div className="p-5">
         <ChartErrorBoundary>
@@ -1178,8 +1178,8 @@ function IncentivePayoutCurveChart({ data }: { data: MedicalRepPortalData }) {
                     if (!d) return null;
                     return (
                       <div className="rounded border border-slate-200 bg-white px-3 py-2 shadow-[0_12px_32px_rgba(15,23,42,0.16)]">
-                        <p className="text-[11px] font-black text-slate-700">Achievement: {d.achievement}%</p>
-                        <p className="mt-1 text-[11px] font-bold text-orange-600">Payout: {d.payout.toFixed(1)}%</p>
+                        <p className="text-phx-xs font-black text-slate-700">Achievement: {d.achievement}%</p>
+                        <p className="mt-1 text-phx-xs font-bold text-orange-600">Payout: {d.payout.toFixed(1)}%</p>
                       </div>
                     );
                   }}
@@ -1264,39 +1264,39 @@ function IncentiveSchemeDescriptionCard() {
     <Card className="rounded border border-slate-200 bg-white p-5 shadow-[0_8px_20px_rgba(15,23,42,0.04)]">
       <div className="mb-4 flex items-center gap-2">
         <span className="h-1.5 w-1.5 rounded-sm bg-orange-500" />
-        <p className="text-[15px] font-bold tracking-tight text-slate-900">2026 Incentive Policy</p>
+        <p className="text-phx-lg font-bold tracking-tight text-slate-900">2026 Incentive Policy</p>
       </div>
 
       {/* Key formula */}
       <div className="mb-4 rounded border border-slate-100 bg-slate-50/60 px-3 py-2.5">
-        <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">Semester Target</p>
+        <p className="text-phx-2xs font-bold uppercase tracking-[0.14em] text-slate-400">Semester Target</p>
         <p className="mt-1 text-sm font-bold text-slate-800">Basic Salary x 2 months</p>
-        <p className="mt-0.5 text-[11px] text-slate-500">2 payouts per year - paid each semester</p>
+        <p className="mt-0.5 text-phx-xs text-slate-500">2 payouts per year - paid each semester</p>
       </div>
 
       {/* Tiered bands */}
       <div className="space-y-1">
         {/* Header */}
         <div className="grid grid-cols-[1fr_80px_1fr] gap-2 px-3 pb-1">
-          <p className="text-[9px] font-bold uppercase tracking-[0.14em] text-slate-400">Achievement</p>
-          <p className="text-[9px] font-bold uppercase tracking-[0.14em] text-slate-400">Payout</p>
-          <p className="text-right text-[9px] font-bold uppercase tracking-[0.14em] text-slate-400">Rate</p>
+          <p className="text-phx-3xs font-bold uppercase tracking-[0.14em] text-slate-400">Achievement</p>
+          <p className="text-phx-3xs font-bold uppercase tracking-[0.14em] text-slate-400">Payout</p>
+          <p className="text-right text-phx-3xs font-bold uppercase tracking-[0.14em] text-slate-400">Rate</p>
         </div>
         {tiers.map((tier) => (
           <div
             key={tier.range}
             className={`grid grid-cols-[1fr_80px_1fr] items-center gap-2 rounded border border-slate-100 border-l-[3px] px-3 py-2 ${tier.accent}`}
           >
-            <p className="text-[12px] font-bold text-slate-700">{tier.range}</p>
-            <span className={`inline-flex w-fit rounded border px-2 py-0.5 text-[10px] font-bold ${tier.badge}`}>
+            <p className="text-phx-sm font-bold text-slate-700">{tier.range}</p>
+            <span className={`inline-flex w-fit rounded border px-2 py-0.5 text-phx-2xs font-bold ${tier.badge}`}>
               {tier.payout}
             </span>
-            <p className="text-right text-[11px] font-medium text-slate-500">{tier.rate}</p>
+            <p className="text-right text-phx-xs font-medium text-slate-500">{tier.rate}</p>
           </div>
         ))}
       </div>
 
-      <p className="mt-3 text-[10px] font-medium text-slate-400">
+      <p className="mt-3 text-phx-2xs font-medium text-slate-400">
         Achievement capped at 150%. Maximum payout: 220%.
       </p>
     </Card>
@@ -1354,11 +1354,11 @@ function IncentiveKpiCards({ data, isSalaryVisible }: { data: MedicalRepPortalDa
             className={`group relative flex min-w-0 flex-col overflow-hidden rounded border-l-[3px] border bg-white px-4 py-3.5 shadow-sm ${tone.border}`}
             key={card.label}
           >
-            <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500">{card.label}</p>
+            <p className="text-phx-2xs font-bold uppercase tracking-[0.14em] text-slate-500">{card.label}</p>
             <p className={`mt-2 break-words text-xl font-black leading-none tracking-tight tabular-nums ${tone.value}`}>
               {card.value}
             </p>
-            <p className="mt-1.5 break-words text-[11px] font-medium leading-snug text-slate-500">{card.note}</p>
+            <p className="mt-1.5 break-words text-phx-xs font-medium leading-snug text-slate-500">{card.note}</p>
             <div className="mt-auto pt-2">
               <div className="h-1 w-12 rounded-sm" style={{ background: tone.lineGradient }} />
             </div>
@@ -1383,7 +1383,7 @@ export function EmployeePortalIncentivePage({ data }: { data: MedicalRepPortalDa
           scored on five months while a colleague is scored on six. Saying so, with the month named,
           is the difference between a provisional figure and a wrong promise. */}
       {data.sales.incentiveWindowNotice ? (
-        <div className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-[13px] font-semibold text-amber-900">
+        <div className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-phx-md font-semibold text-amber-900">
           {data.sales.incentiveWindowNotice}
         </div>
       ) : null}
@@ -1476,12 +1476,12 @@ function TeamRankComparisonWidget({ data }: { data: MedicalRepPortalData }) {
             <div key={`${row.position}-${row.name}`} className="rounded border border-slate-100 bg-white px-3 py-3 shadow-[0_2px_8px_rgba(15,23,42,0.04)] transition-colors hover:border-orange-200 hover:bg-orange-50/30">
               <div className="flex items-center justify-between gap-3">
                 <div className="flex min-w-0 items-center gap-2.5">
-                  <span className={`shrink-0 flex h-7 w-7 items-center justify-center rounded text-[11px] font-black ${row.position === 1 ? "bg-slate-950 text-white shadow-sm" : "bg-slate-100 text-slate-600 ring-1 ring-slate-200"}`}>
+                  <span className={`shrink-0 flex h-7 w-7 items-center justify-center rounded text-phx-xs font-black ${row.position === 1 ? "bg-slate-950 text-white shadow-sm" : "bg-slate-100 text-slate-600 ring-1 ring-slate-200"}`}>
                     {row.position}
                   </span>
                   <span className="break-words text-sm font-bold text-slate-700">{row.name}</span>
                   {belowTarget ? (
-                    <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-rose-100 bg-rose-50/80 px-2 py-0.5 text-[10px] font-semibold text-rose-500">
+                    <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-rose-100 bg-rose-50/80 px-2 py-0.5 text-phx-2xs font-semibold text-rose-500">
                       <AlertTriangle className="h-2.5 w-2.5" />
                       Below target
                     </span>
@@ -1491,7 +1491,7 @@ function TeamRankComparisonWidget({ data }: { data: MedicalRepPortalData }) {
                   <p className="font-mono text-sm font-black tabular-nums text-slate-700">
                     {hasTarget ? `${pct.toFixed(1)}%` : "No target"}
                   </p>
-                  <p className="break-words font-mono text-[11px] text-slate-400 tabular-nums">{egp(row.sales)}</p>
+                  <p className="break-words font-mono text-phx-xs text-slate-400 tabular-nums">{egp(row.sales)}</p>
                 </div>
               </div>
               <div className="mt-2 h-1.5 overflow-hidden rounded-sm bg-slate-100">
@@ -1525,7 +1525,7 @@ function OverviewPagePanel({
       <div className="relative mb-3 flex flex-wrap items-center justify-between gap-3 lg:mb-4">
         <div className="flex items-center gap-2">
           <span className="h-1.5 w-1.5 rounded-sm bg-orange-500" />
-          <h3 className="text-[15px] font-semibold tracking-tight text-slate-900 lg:text-base">{title}</h3>
+          <h3 className="text-phx-lg font-semibold tracking-tight text-slate-900 lg:text-base">{title}</h3>
         </div>
         {action}
       </div>
@@ -1613,7 +1613,7 @@ function OverviewInsightsAlerts({ data }: { data: MedicalRepPortalData }) {
               <div key={item.text} className={`rounded border border-slate-100 border-l-2 ${meta.border} bg-white p-3 shadow-[0_4px_14px_rgba(15,23,42,0.03)]`}>
                 <div className="flex items-center gap-2">
                   <Icon className="h-4 w-4 text-slate-500" />
-                  <span className={`rounded px-2 py-0.5 text-[11px] font-medium ${meta.classes}`}>{meta.badge}</span>
+                  <span className={`rounded px-2 py-0.5 text-phx-xs font-medium ${meta.classes}`}>{meta.badge}</span>
                 </div>
                 <p className="mt-2 text-sm text-slate-700">{shortInsight(item.text)}</p>
               </div>
@@ -1655,7 +1655,7 @@ function OverviewTopProducts({ data }: { data: MedicalRepPortalData }) {
               <div className="mb-1 flex items-center justify-between text-sm">
                 <div className="flex flex-col">
                   <span className="font-bold text-slate-800">{row.name}</span>
-                  <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">{contributionPercent.toFixed(1)}% of top 4</span>
+                  <span className="text-phx-2xs font-semibold uppercase tracking-[0.12em] text-slate-400">{contributionPercent.toFixed(1)}% of top 4</span>
                 </div>
                 <span className="font-mono text-xs font-black text-slate-900 tabular-nums">{formatContributionValue(metric, value)}</span>
               </div>
@@ -1680,7 +1680,7 @@ function PerformanceChartTooltip({ active, payload, label }: { active?: boolean;
   const gap = sales - target;
   return (
     <div className="rounded border border-slate-200 bg-white px-4 py-3 shadow-[0_16px_40px_rgba(15,23,42,0.18)]">
-      <p className="text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">{label}</p>
+      <p className="text-phx-xs font-black uppercase tracking-[0.14em] text-slate-500">{label}</p>
       <div className="mt-2 space-y-1.5">
         <div className="flex items-center justify-between gap-6">
           <span className="flex items-center gap-1.5 text-xs text-slate-600"><span className="inline-block h-2 w-2 rounded-sm bg-orange-500" />Sales</span>
@@ -1692,11 +1692,11 @@ function PerformanceChartTooltip({ active, payload, label }: { active?: boolean;
         </div>
         <div className="border-t border-slate-100 pt-1.5">
           <div className="flex items-center justify-between gap-6">
-            <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Achievement</span>
+            <span className="text-phx-2xs font-semibold uppercase tracking-wide text-slate-400">Achievement</span>
             <span className="text-xs font-black text-orange-600">{achievement}%</span>
           </div>
           <div className="mt-0.5 flex items-center justify-between gap-6">
-            <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Gap</span>
+            <span className="text-phx-2xs font-semibold uppercase tracking-wide text-slate-400">Gap</span>
             <span className="text-xs font-black text-slate-700">{gap >= 0 ? "+" : ""}{egp(gap)}</span>
           </div>
         </div>
@@ -1729,10 +1729,10 @@ function OverviewPerformanceChart({ data }: { data: MedicalRepPortalData }) {
       title="Performance Overview"
       action={
         <div className="flex flex-wrap items-center gap-2">
-          <span className="rounded border border-slate-200 bg-white px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">
+          <span className="rounded border border-slate-200 bg-white px-2.5 py-1 text-phx-2xs font-bold uppercase tracking-[0.12em] text-slate-500">
             {trendData.length} months
           </span>
-          <span className="rounded border border-orange-200 bg-orange-50 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.12em] text-orange-700">
+          <span className="rounded border border-orange-200 bg-orange-50 px-2.5 py-1 text-phx-2xs font-bold uppercase tracking-[0.12em] text-orange-700">
             {overallAchievement}% achievement
           </span>
         </div>
@@ -1748,15 +1748,15 @@ function OverviewPerformanceChart({ data }: { data: MedicalRepPortalData }) {
             {/* Summary metrics strip */}
             <div className="grid grid-cols-3 gap-2">
               <div className="rounded border border-slate-100 bg-slate-50/60 px-3 py-2.5">
-                <p className="text-[9px] font-bold uppercase tracking-[0.16em] text-slate-400">Total Sales</p>
+                <p className="text-phx-3xs font-bold uppercase tracking-[0.16em] text-slate-400">Total Sales</p>
                 <p className="mt-1 text-sm font-black text-orange-600">{egp(totalSales)}</p>
               </div>
               <div className="rounded border border-slate-100 bg-slate-50/60 px-3 py-2.5">
-                <p className="text-[9px] font-bold uppercase tracking-[0.16em] text-slate-400">Total Target</p>
+                <p className="text-phx-3xs font-bold uppercase tracking-[0.16em] text-slate-400">Total Target</p>
                 <p className="mt-1 text-sm font-black text-slate-700">{egp(totalTarget)}</p>
               </div>
               <div className="rounded border border-slate-100 bg-slate-50/60 px-3 py-2.5">
-                <p className="text-[9px] font-bold uppercase tracking-[0.16em] text-slate-400">Gap</p>
+                <p className="text-phx-3xs font-bold uppercase tracking-[0.16em] text-slate-400">Gap</p>
                 <p className="mt-1 text-sm font-black text-slate-700">
                   {totalSales >= totalTarget ? "+" : ""}{egp(totalSales - totalTarget)}
                 </p>
@@ -1908,7 +1908,7 @@ function MyActionsPanel({ data, surface }: { data: MedicalRepPortalData; surface
                 })()}
               </span>
               <div className="min-w-0 flex-1">
-                <p className="text-[15px] font-medium text-slate-800">{item.label}</p>
+                <p className="text-phx-lg font-medium text-slate-800">{item.label}</p>
               </div>
               <span className="shrink-0 text-sm font-semibold text-orange-600">({item.count})</span>
               <ArrowUpRight className="h-4 w-4 shrink-0 text-slate-300 transition-colors duration-200 group-hover:text-slate-500" />
@@ -1958,10 +1958,10 @@ function QuickActionsPanel({ data, surface }: { data: MedicalRepPortalData; surf
             <span className="flex h-12 w-12 items-center justify-center rounded bg-slate-100 text-slate-700 ring-1 ring-slate-200 transition-all duration-200 group-hover:scale-105 group-hover:bg-white">
               <item.icon className="h-5 w-5" />
             </span>
-            <span className="flex min-h-[40px] items-center text-[14px] font-medium leading-5 text-slate-800">
+            <span className="flex min-h-[40px] items-center text-phx-base font-medium leading-5 text-slate-800">
               {item.label}
             </span>
-            <span className="inline-flex items-center gap-1 text-[10px] font-medium text-slate-400 transition-colors duration-200 group-hover:text-slate-500">
+            <span className="inline-flex items-center gap-1 text-phx-2xs font-medium text-slate-400 transition-colors duration-200 group-hover:text-slate-500">
               Open
               <ArrowUpRight className="h-3 w-3" />
             </span>
@@ -2069,7 +2069,7 @@ function EmployeesOnLeaveTodayPanel({ data }: { data: MedicalRepPortalData }) {
                   {row.lineName ?? row.departmentName ?? "Phoenix"} / {prettyDate(row.startDate)} - {prettyDate(row.endDate)}
                 </p>
               </div>
-              <span className="shrink-0 rounded border border-sky-200 bg-sky-50 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-sky-700">
+              <span className="shrink-0 rounded border border-sky-200 bg-sky-50 px-2.5 py-1 text-phx-2xs font-semibold uppercase tracking-[0.12em] text-sky-700">
                 {vacationTypeChipLabel(row.vacationType)}
               </span>
             </div>
@@ -2118,15 +2118,15 @@ function TeamStructurePanel({ data }: { data: MedicalRepPortalData }) {
       {/* Summary metrics */}
       <div className="grid grid-cols-3 gap-2">
         <div className="rounded border border-slate-200 bg-white/80 p-3 shadow-sm">
-          <p className="text-[9px] font-bold uppercase tracking-[0.14em] text-slate-400">Structure</p>
+          <p className="text-phx-3xs font-bold uppercase tracking-[0.14em] text-slate-400">Structure</p>
           <p className="mt-1.5 text-xl font-black text-slate-900">{formatUnits(totalStructure)}</p>
         </div>
         <div className="rounded border border-slate-200 bg-white/80 p-3 shadow-sm">
-          <p className="text-[9px] font-bold uppercase tracking-[0.14em] text-slate-400">Filled</p>
+          <p className="text-phx-3xs font-bold uppercase tracking-[0.14em] text-slate-400">Filled</p>
           <p className="mt-1.5 text-xl font-black text-emerald-600">{formatUnits(actualNow)}</p>
         </div>
         <div className="rounded border border-slate-200 bg-white/80 p-3 shadow-sm">
-          <p className="text-[9px] font-bold uppercase tracking-[0.14em] text-slate-400">Vacant</p>
+          <p className="text-phx-3xs font-bold uppercase tracking-[0.14em] text-slate-400">Vacant</p>
           <p className="mt-1.5 text-xl font-black text-orange-600">{formatUnits(vacancies)}</p>
         </div>
       </div>
@@ -2134,7 +2134,7 @@ function TeamStructurePanel({ data }: { data: MedicalRepPortalData }) {
       {/* Fill rate bar */}
       <div className="mt-3 rounded border border-slate-200 bg-white/80 p-3">
         <div className="flex items-center justify-between">
-          <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">Fill Rate</p>
+          <p className="text-phx-2xs font-bold uppercase tracking-[0.14em] text-slate-400">Fill Rate</p>
           <span className="text-xs font-black text-slate-700">{fillRate}%</span>
         </div>
         <div className="relative mt-2 h-2.5 w-full overflow-hidden rounded-sm bg-slate-100">
@@ -2150,7 +2150,7 @@ function TeamStructurePanel({ data }: { data: MedicalRepPortalData }) {
         <p className="text-sm font-medium text-slate-900">
           {data.orgStructure?.scopeLabel ?? data.workforce.scopeLabel}
         </p>
-        <span className="rounded border border-orange-200 bg-orange-50 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.12em] text-orange-700">
+        <span className="rounded border border-orange-200 bg-orange-50 px-2.5 py-1 text-phx-2xs font-bold uppercase tracking-[0.12em] text-orange-700">
           {formatUnits(allVacancies.length)} open position{allVacancies.length !== 1 ? "s" : ""}
         </span>
       </div>
@@ -2161,15 +2161,15 @@ function TeamStructurePanel({ data }: { data: MedicalRepPortalData }) {
           {titleGroups.map(([title, rows], groupIndex) => (
             <div key={title} className={`rounded border border-slate-200 border-l-[3px] p-3 ${titleColorMap[groupIndex % 5] ?? "border-l-slate-400 bg-slate-50/40"}`}>
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <p className="text-[13px] font-bold text-slate-800">{title}</p>
-                <span className={`rounded border px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.12em] ${titleBadgeMap[groupIndex % 5] ?? "border-slate-200 bg-slate-50 text-slate-600"}`}>
+                <p className="text-phx-md font-bold text-slate-800">{title}</p>
+                <span className={`rounded border px-2 py-0.5 text-phx-2xs font-bold uppercase tracking-[0.12em] ${titleBadgeMap[groupIndex % 5] ?? "border-slate-200 bg-slate-50 text-slate-600"}`}>
                   {rows.length} vacant
                 </span>
               </div>
               <div className="mt-2 flex flex-wrap gap-1.5">
                 {rows.map((row) => (
                   <span
-                    className="rounded border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-medium text-slate-600"
+                    className="rounded border border-slate-200 bg-white px-2.5 py-1 text-phx-xs font-medium text-slate-600"
                     key={row.id ?? row.vacancyCode}
                   >
                     {row.areaName ?? row.regionName ?? "Unassigned"}
@@ -2483,7 +2483,7 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
   const cardShadow = "shadow-[0_1px_3px_rgba(15,23,42,0.06)]";
   const inputClass =
     "h-10 w-full rounded border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none transition focus:border-orange-300 focus:shadow-[0_0_0_3px_rgba(249,115,22,0.08)]";
-  const labelClass = "text-[10px] font-semibold uppercase tracking-wider text-slate-500";
+  const labelClass = "text-phx-2xs font-semibold uppercase tracking-wider text-slate-500";
 
   return (
     <div className="space-y-5" dir="auto">
@@ -2495,17 +2495,17 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
           <div className="border-l-2 border-l-emerald-400 px-4 py-3">
             <p className={labelClass}>Avg response time</p>
             <p className="mt-1 text-base font-bold text-slate-800">~ 4 hours</p>
-            <p className="mt-0.5 text-[11px] text-slate-500">During office hours</p>
+            <p className="mt-0.5 text-phx-xs text-slate-500">During office hours</p>
           </div>
           <div className="border-l-2 border-l-sky-400 px-4 py-3">
             <p className={labelClass}>Channels open</p>
             <p className="mt-1 text-base font-bold text-slate-800">{hrTeam.length}</p>
-            <p className="mt-0.5 text-[11px] text-slate-500">HR support desks</p>
+            <p className="mt-0.5 text-phx-xs text-slate-500">HR support desks</p>
           </div>
           <div className="border-l-2 border-l-orange-400 px-4 py-3">
             <p className={labelClass}>Office hours</p>
             <p className="mt-1 text-base font-bold text-slate-800">Sun&ndash;Thu</p>
-            <p className="mt-0.5 text-[11px] text-slate-500">9:00 AM &mdash; 5:00 PM</p>
+            <p className="mt-0.5 text-phx-xs text-slate-500">9:00 AM &mdash; 5:00 PM</p>
           </div>
         </div>
       </Card>
@@ -2520,12 +2520,12 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
               <span aria-hidden className="h-1.5 w-1.5 rounded-sm bg-orange-500" />
               <div>
                 <h2 className="text-sm font-bold text-slate-800">HR Support Channels</h2>
-                <p className="mt-0.5 text-[11px] text-slate-500">
+                <p className="mt-0.5 text-phx-xs text-slate-500">
                   Pick the right desk for your request
                 </p>
               </div>
             </div>
-            <span className="rounded bg-orange-50 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-orange-600">
+            <span className="rounded bg-orange-50 px-2 py-1 text-phx-2xs font-bold uppercase tracking-wider text-orange-600">
               {hrTeam.length}
             </span>
           </div>
@@ -2540,7 +2540,7 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
                   <div className="flex items-start gap-3">
                     <span
                       aria-hidden
-                      className="flex h-9 w-9 shrink-0 items-center justify-center rounded bg-slate-100 text-[11px] font-bold text-slate-700"
+                      className="flex h-9 w-9 shrink-0 items-center justify-center rounded bg-slate-100 text-phx-xs font-bold text-slate-700"
                     >
                       {member.name
                         .split(" ")
@@ -2550,20 +2550,20 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
                         .toUpperCase()}
                     </span>
                     <div className="min-w-0 flex-1">
-                      <p className="text-[13px] font-semibold text-slate-900">
+                      <p className="text-phx-md font-semibold text-slate-900">
                         {member.name}
                       </p>
-                      <p className="mt-0.5 text-[11px] font-medium text-slate-500">
+                      <p className="mt-0.5 text-phx-xs font-medium text-slate-500">
                         {member.role}
                       </p>
-                      <p className="mt-1 text-[11px] leading-relaxed text-slate-500">
+                      <p className="mt-1 text-phx-xs leading-relaxed text-slate-500">
                         {member.summary}
                       </p>
                       {/* Quick-action chips */}
                       <div className="mt-2 flex flex-wrap items-center gap-1.5">
                         <button
                           aria-label={`Use support form for ${member.name}`}
-                          className="inline-flex h-7 items-center gap-1 rounded bg-orange-500 px-2 text-[11px] font-semibold text-white shadow-sm transition hover:bg-orange-600"
+                          className="inline-flex h-7 items-center gap-1 rounded bg-orange-500 px-2 text-phx-xs font-semibold text-white shadow-sm transition hover:bg-orange-600"
                           onClick={() => {
                             setCategory("HR Request");
                             setSubject(`${member.name} request`);
@@ -2575,7 +2575,7 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
                         </button>
                         <a
                           aria-label={`Email ${member.name}`}
-                          className="inline-flex h-7 items-center gap-1 rounded border border-slate-200 bg-white px-2 text-[11px] font-semibold text-slate-700 shadow-sm transition hover:border-orange-200 hover:text-orange-600"
+                          className="inline-flex h-7 items-center gap-1 rounded border border-slate-200 bg-white px-2 text-phx-xs font-semibold text-slate-700 shadow-sm transition hover:border-orange-200 hover:text-orange-600"
                           href={`mailto:${member.email}?subject=${encodeURIComponent(
                             `Phoenix Workforce - ${employeeName}`,
                           )}`}
@@ -2585,7 +2585,7 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
                         </a>
                         <a
                           aria-label={`WhatsApp ${member.name}`}
-                          className="inline-flex h-7 items-center gap-1 rounded border border-slate-200 bg-white px-2 text-[11px] font-semibold text-emerald-700 shadow-sm transition hover:border-emerald-300 hover:bg-emerald-50"
+                          className="inline-flex h-7 items-center gap-1 rounded border border-slate-200 bg-white px-2 text-phx-xs font-semibold text-emerald-700 shadow-sm transition hover:border-emerald-300 hover:bg-emerald-50"
                           href={`https://wa.me/${member.whatsapp}?text=${encodeURIComponent(
                             `Hello ${member.name}, this is ${employeeName} (Phoenix Workforce).`,
                           )}`}
@@ -2601,17 +2601,17 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
               ))
             ) : (
               <div className="flex flex-col items-center justify-center px-4 py-10 text-center">
-                <p className="text-[12px] font-semibold uppercase tracking-wider text-slate-400">
+                <p className="text-phx-sm font-semibold uppercase tracking-wider text-slate-400">
                   No HR contacts available
                 </p>
-                <p className="mt-1 text-[12px] text-slate-500">
+                <p className="mt-1 text-phx-sm text-slate-500">
                   Please use the support form for inquiries.
                 </p>
               </div>
             )}
           </div>
 
-          <div className="border-t border-slate-100 bg-slate-50/60 px-4 py-2.5 text-[11px] text-slate-500 sm:px-5">
+          <div className="border-t border-slate-100 bg-slate-50/60 px-4 py-2.5 text-phx-xs text-slate-500 sm:px-5">
             For urgent HR matters, use the support form so the request is tracked inside Phoenix Workforce.
           </div>
         </Card>
@@ -2625,12 +2625,12 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
               <span aria-hidden className="h-1.5 w-1.5 rounded-sm bg-orange-500" />
               <div>
                 <h2 className="text-sm font-bold text-slate-800">Request Support</h2>
-                <p className="mt-0.5 text-[11px] text-slate-500">
+                <p className="mt-0.5 text-phx-xs text-slate-500">
                   We get back to you as soon as possible
                 </p>
               </div>
             </div>
-            <span className="hidden whitespace-nowrap rounded bg-slate-100 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-600 sm:inline-block">
+            <span className="hidden whitespace-nowrap rounded bg-slate-100 px-2 py-1 text-phx-2xs font-bold uppercase tracking-wider text-slate-600 sm:inline-block">
               {employeeName}
             </span>
           </div>
@@ -2643,7 +2643,7 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
             {showSuccess && (
               <div
                 aria-live="polite"
-                className="rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-[12px] font-semibold text-emerald-800"
+                className="rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-phx-sm font-semibold text-emerald-800"
                 role="status"
               >
                 Request submitted successfully.
@@ -2652,7 +2652,7 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
             {submitError && (
               <div
                 aria-live="polite"
-                className="rounded border border-rose-200 bg-rose-50 px-3 py-2 text-[12px] font-semibold text-rose-700"
+                className="rounded border border-rose-200 bg-rose-50 px-3 py-2 text-phx-sm font-semibold text-rose-700"
                 role="status"
               >
                 {submitError}
@@ -2716,7 +2716,7 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
                 <span className={labelClass}>Description</span>
                 <span
                   aria-live="polite"
-                  className={`text-[10px] font-semibold ${
+                  className={`text-phx-2xs font-semibold ${
                     descriptionOverSoftLimit ? "text-rose-600" : "text-slate-400"
                   }`}
                 >
@@ -2735,7 +2735,7 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
                 value={description}
               />
               {descriptionOverSoftLimit && (
-                <p className="mt-1 text-[10px] font-semibold text-rose-600">
+                <p className="mt-1 text-phx-2xs font-semibold text-rose-600">
                   Tip: keep the description under {DESCRIPTION_SOFT_LIMIT} characters
                   so it&apos;s easier to triage.
                 </p>
@@ -2762,10 +2762,10 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
                 type="button"
               >
                 <Upload className="mb-1 h-4 w-4 text-slate-400" />
-                <p className="text-[11px] font-medium text-slate-600">
+                <p className="text-phx-xs font-medium text-slate-600">
                   Click to choose files or drop them here
                 </p>
-                <p className="text-[10px] text-slate-400">
+                <p className="text-phx-2xs text-slate-400">
                   Max 10 MB each &middot; up to 10 files &middot; PDF, PNG, JPG
                 </p>
               </button>
@@ -2773,13 +2773,13 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
                 <ul className="mt-2 flex flex-wrap gap-1.5">
                   {attachments.map((file) => (
                     <li
-                      className="inline-flex items-center gap-1.5 rounded border border-orange-200 bg-orange-50 px-2 py-1 text-[11px] font-medium text-orange-800"
+                      className="inline-flex items-center gap-1.5 rounded border border-orange-200 bg-orange-50 px-2 py-1 text-phx-xs font-medium text-orange-800"
                       key={`${file.name}-${file.size}`}
                     >
                       <span className="whitespace-nowrap" title={file.name}>
                         {file.name}
                       </span>
-                      <span className="text-[10px] text-orange-600">
+                      <span className="text-phx-2xs text-orange-600">
                         {formatFileSize(file.size)}
                       </span>
                       <button
@@ -2821,29 +2821,29 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
           className={`overflow-hidden rounded border border-slate-100 p-0 ${cardShadow}`}
         >
           <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 bg-slate-50/40 px-4 py-2 sm:px-5">
-            <span className="rounded bg-orange-50 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-orange-600">
+            <span className="rounded bg-orange-50 px-2 py-1 text-phx-2xs font-bold uppercase tracking-wider text-orange-600">
               Your latest ticket
             </span>
             <span
-              className={`inline-flex rounded px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${getStatusTone(lastTicket.status)}`}
+              className={`inline-flex rounded px-2 py-0.5 text-phx-2xs font-bold uppercase tracking-wider ${getStatusTone(lastTicket.status)}`}
             >
               {lastTicket.status}
             </span>
           </div>
           <div className="border-l-2 border-l-orange-400 px-4 py-3 sm:px-5">
-            <p className="text-[13px] font-bold text-slate-900">
+            <p className="text-phx-md font-bold text-slate-900">
               {lastTicket.subject}
             </p>
-            <p className="mt-0.5 text-[11px] text-slate-500">
+            <p className="mt-0.5 text-phx-xs text-slate-500">
               {lastTicket.category}
               {lastTicket.subcategory ? ` / ${lastTicket.subcategory}` : ""} /{" "}
               {formatRequestDate(lastTicket.createdAt)}
             </p>
-            <p className="mt-2 whitespace-nowrap text-[12px] leading-relaxed text-slate-600">
+            <p className="mt-2 whitespace-nowrap text-phx-sm leading-relaxed text-slate-600">
               {lastTicket.description}
             </p>
             {lastTicket.attachments.length > 0 && (
-              <p className="mt-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+              <p className="mt-1.5 text-phx-2xs font-semibold uppercase tracking-wider text-slate-400">
                 {lastTicket.attachments.length} attachment
                 {lastTicket.attachments.length === 1 ? "" : "s"}
               </p>
@@ -2861,13 +2861,13 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
             <span aria-hidden className="h-1.5 w-1.5 rounded-sm bg-orange-500" />
             <div>
               <h2 className="text-sm font-bold text-slate-800">Recent Requests</h2>
-              <p className="mt-0.5 text-[11px] text-slate-500">
+              <p className="mt-0.5 text-phx-xs text-slate-500">
                 Track your support history
               </p>
             </div>
           </div>
           {recentRequests.length > 0 && (
-            <span className="rounded bg-slate-100 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-600">
+            <span className="rounded bg-slate-100 px-2 py-1 text-phx-2xs font-bold uppercase tracking-wider text-slate-600">
               {recentRequests.length}
             </span>
           )}
@@ -2875,16 +2875,16 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
 
         {isLoadingRequests ? (
           <div className="flex flex-col items-center justify-center px-4 py-10 text-center">
-            <p className="text-[12px] font-semibold uppercase tracking-wider text-slate-400">
+            <p className="text-phx-sm font-semibold uppercase tracking-wider text-slate-400">
               Loading...
             </p>
           </div>
         ) : recentRequests.length === 0 ? (
           <div className="flex flex-col items-center justify-center px-4 py-10 text-center">
-            <p className="text-[12px] font-semibold uppercase tracking-wider text-slate-400">
+            <p className="text-phx-sm font-semibold uppercase tracking-wider text-slate-400">
               No recent requests
             </p>
-            <p className="mt-1 max-w-sm text-[12px] text-slate-500">
+            <p className="mt-1 max-w-sm text-phx-sm text-slate-500">
               Your support history will appear here after your first request.
             </p>
           </div>
@@ -2895,19 +2895,19 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
               <table className="w-full text-left text-sm">
                 <thead className="border-b border-slate-100 bg-slate-50/60">
                   <tr>
-                    <th className="px-4 py-2 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                    <th className="px-4 py-2 text-phx-2xs font-semibold uppercase tracking-wider text-slate-500">
                       Request ID
                     </th>
-                    <th className="px-4 py-2 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                    <th className="px-4 py-2 text-phx-2xs font-semibold uppercase tracking-wider text-slate-500">
                       Subject
                     </th>
-                    <th className="px-4 py-2 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                    <th className="px-4 py-2 text-phx-2xs font-semibold uppercase tracking-wider text-slate-500">
                       Category
                     </th>
-                    <th className="px-4 py-2 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                    <th className="px-4 py-2 text-phx-2xs font-semibold uppercase tracking-wider text-slate-500">
                       Status
                     </th>
-                    <th className="px-4 py-2 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                    <th className="px-4 py-2 text-phx-2xs font-semibold uppercase tracking-wider text-slate-500">
                       Date
                     </th>
                   </tr>
@@ -2918,24 +2918,24 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
                       className="transition hover:bg-orange-50/30"
                       key={request.id}
                     >
-                      <td className="px-4 py-2.5 font-mono text-[10px] font-semibold text-slate-600">
+                      <td className="px-4 py-2.5 font-mono text-phx-2xs font-semibold text-slate-600">
                         {request.id.slice(0, 8)}
                       </td>
-                      <td className="px-4 py-2.5 text-[12px] font-semibold text-slate-800">
+                      <td className="px-4 py-2.5 text-phx-sm font-semibold text-slate-800">
                         {request.subject}
                       </td>
-                      <td className="px-4 py-2.5 text-[12px] text-slate-600">
+                      <td className="px-4 py-2.5 text-phx-sm text-slate-600">
                         {request.category}
                         {request.subcategory ? ` / ${request.subcategory}` : ""}
                       </td>
                       <td className="px-4 py-2.5">
                         <span
-                          className={`inline-flex rounded px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${getStatusTone(request.status)}`}
+                          className={`inline-flex rounded px-2 py-0.5 text-phx-2xs font-bold uppercase tracking-wider ${getStatusTone(request.status)}`}
                         >
                           {request.status}
                         </span>
                       </td>
-                      <td className="px-4 py-2.5 text-[12px] text-slate-600">
+                      <td className="px-4 py-2.5 text-phx-sm text-slate-600">
                         {formatRequestDate(request.createdAt)}
                       </td>
                     </tr>
@@ -2952,19 +2952,19 @@ export function ContactHRSupportPage({ data }: { data: EmployeePortalShellData }
                   key={request.id}
                 >
                   <div className="flex items-start justify-between gap-2">
-                    <p className="font-mono text-[10px] font-semibold text-slate-600">
+                    <p className="font-mono text-phx-2xs font-semibold text-slate-600">
                       {request.id.slice(0, 8)}
                     </p>
                     <span
-                      className={`inline-flex rounded px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${getStatusTone(request.status)}`}
+                      className={`inline-flex rounded px-2 py-0.5 text-phx-2xs font-bold uppercase tracking-wider ${getStatusTone(request.status)}`}
                     >
                       {request.status}
                     </span>
                   </div>
-                  <p className="mt-1 text-[13px] font-semibold text-slate-800">
+                  <p className="mt-1 text-phx-md font-semibold text-slate-800">
                     {request.subject}
                   </p>
-                  <p className="mt-0.5 text-[11px] text-slate-500">
+                  <p className="mt-0.5 text-phx-xs text-slate-500">
                     {request.category}
                     {request.subcategory ? ` / ${request.subcategory}` : ""} /{" "}
                     {formatRequestDate(request.createdAt)}
@@ -3234,7 +3234,7 @@ export function WorkloadExpenseDashboard({ data }: { data: MedicalRepPortalData 
               <div className="grid grid-cols-7 gap-1">
                 {["M", "T", "W", "T", "F", "S", "S"].map((day, i) => (
                   <div key={`${metric.label}-${i}`} className="text-center">
-                    <p className="mb-1 text-[9px] font-bold text-slate-400">{day}</p>
+                    <p className="mb-1 text-phx-3xs font-bold text-slate-400">{day}</p>
                     <div
                       className="flex h-8 items-center justify-center rounded text-xs font-semibold text-white"
                       style={{ backgroundColor: `rgba(249, 115, 22, ${0.2 + (metric.data[i] / metric.max) * 0.8})` }}
@@ -3325,15 +3325,15 @@ export function WorkloadExpenseDashboard({ data }: { data: MedicalRepPortalData 
               </div>
               <div className="mt-2.5 grid grid-cols-3 gap-2">
                 <div>
-                  <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">Trips</p>
+                  <p className="text-phx-2xs font-bold uppercase tracking-[0.12em] text-slate-400">Trips</p>
                   <p className="mt-0.5 text-sm font-semibold text-slate-900">{emp.trips}</p>
                 </div>
                 <div>
-                  <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">Distance</p>
+                  <p className="text-phx-2xs font-bold uppercase tracking-[0.12em] text-slate-400">Distance</p>
                   <p className="mt-0.5 text-sm text-slate-600">{emp.distance} km</p>
                 </div>
                 <div>
-                  <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">Active Days</p>
+                  <p className="text-phx-2xs font-bold uppercase tracking-[0.12em] text-slate-400">Active Days</p>
                   <p className="mt-0.5 text-sm text-slate-600">{emp.activeDays}</p>
                 </div>
               </div>
@@ -3421,15 +3421,15 @@ export function WorkloadExpenseDashboard({ data }: { data: MedicalRepPortalData 
                 <p className="text-sm font-bold text-slate-900">{territory.territory}</p>
                 <div className="mt-2 grid grid-cols-3 gap-2">
                   <div>
-                    <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">Trips</p>
+                    <p className="text-phx-2xs font-bold uppercase tracking-[0.12em] text-slate-400">Trips</p>
                     <p className="mt-0.5 text-sm text-slate-600">{territory.trips}</p>
                   </div>
                   <div>
-                    <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">Distance</p>
+                    <p className="text-phx-2xs font-bold uppercase tracking-[0.12em] text-slate-400">Distance</p>
                     <p className="mt-0.5 text-sm text-slate-600">{territory.distance} km</p>
                   </div>
                   <div>
-                    <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">Expenses</p>
+                    <p className="text-phx-2xs font-bold uppercase tracking-[0.12em] text-slate-400">Expenses</p>
                     <p className="mt-0.5 text-sm font-semibold text-slate-900">{egp(territory.expenses)}</p>
                   </div>
                 </div>
@@ -3564,7 +3564,7 @@ function WorkloadKPICard({
         <div className="min-w-0 flex-1">
           <p className="text-2xl font-semibold tracking-tight text-slate-900">{value}</p>
           <p className="mt-1 text-xs font-medium text-slate-500">{label}</p>
-          <p className="mt-0.5 text-[10px] text-slate-400">{subLabel}</p>
+          <p className="mt-0.5 text-phx-2xs text-slate-400">{subLabel}</p>
           <p className={`mt-1 text-xs font-medium ${isPositive ? "text-emerald-600" : "text-red-600"}`}>{delta}</p>
         </div>
         <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded bg-orange-50 text-orange-600">
@@ -3615,7 +3615,7 @@ function TerritoryComparisonChart({ data }: { data: MedicalRepPortalData }) {
     <OverviewPagePanel
       title="Territory Performance"
       action={
-        <span className="rounded border border-slate-200 bg-white px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">
+        <span className="rounded border border-slate-200 bg-white px-2.5 py-1 text-phx-2xs font-bold uppercase tracking-[0.12em] text-slate-500">
           {territories.length} territories
         </span>
       }
@@ -3624,11 +3624,11 @@ function TerritoryComparisonChart({ data }: { data: MedicalRepPortalData }) {
         {/* Totals */}
         <div className="grid grid-cols-2 gap-2">
           <div className="rounded border border-slate-100 bg-slate-50/60 px-3 py-2">
-            <p className="text-[9px] font-bold uppercase tracking-[0.14em] text-slate-400">Total Sales</p>
+            <p className="text-phx-3xs font-bold uppercase tracking-[0.14em] text-slate-400">Total Sales</p>
             <p className="mt-1 text-sm font-black text-orange-600">{egp(totalSales)}</p>
           </div>
           <div className="rounded border border-slate-100 bg-slate-50/60 px-3 py-2">
-            <p className="text-[9px] font-bold uppercase tracking-[0.14em] text-slate-400">Total Target</p>
+            <p className="text-phx-3xs font-bold uppercase tracking-[0.14em] text-slate-400">Total Target</p>
             <p className="mt-1 text-sm font-black text-slate-700">{egp(totalTarget)}</p>
           </div>
         </div>
@@ -3646,15 +3646,15 @@ function TerritoryComparisonChart({ data }: { data: MedicalRepPortalData }) {
                 content={
                   <div className="space-y-1.5">
                     <p className="text-xs font-black text-slate-900">{t.name}</p>
-                    <div className="flex items-center justify-between gap-5 text-[11px]">
+                    <div className="flex items-center justify-between gap-5 text-phx-xs">
                       <span className="text-slate-500">Sales</span>
                       <span className="font-bold text-orange-600">{egp(t.sales)}</span>
                     </div>
-                    <div className="flex items-center justify-between gap-5 text-[11px]">
+                    <div className="flex items-center justify-between gap-5 text-phx-xs">
                       <span className="text-slate-500">Target</span>
                       <span className="font-bold text-slate-700">{egp(t.target)}</span>
                     </div>
-                    <div className="flex items-center justify-between gap-5 border-t border-slate-100 pt-1 text-[11px]">
+                    <div className="flex items-center justify-between gap-5 border-t border-slate-100 pt-1 text-phx-xs">
                       <span className="text-slate-500">Achievement</span>
                       <span className="font-bold text-orange-600">{t.achievementPercent.toFixed(1)}%</span>
                     </div>
@@ -3662,7 +3662,7 @@ function TerritoryComparisonChart({ data }: { data: MedicalRepPortalData }) {
                 }
               >
                 <div className="flex items-center gap-2 rounded border border-slate-100 bg-white/80 px-3 py-1.5">
-                  <span className="w-[90px] shrink-0 break-words text-[12px] font-bold text-slate-700">{t.name}</span>
+                  <span className="w-[90px] shrink-0 break-words text-phx-sm font-bold text-slate-700">{t.name}</span>
                   <div className="relative h-2 flex-1 overflow-hidden rounded-sm bg-slate-100">
                     <div
                       className="absolute inset-y-0 left-0 rounded-sm"
@@ -3670,7 +3670,7 @@ function TerritoryComparisonChart({ data }: { data: MedicalRepPortalData }) {
                     />
                     <div className="absolute inset-y-0 border-r border-dashed border-slate-300/60" style={{ left: `${(100 / 150) * 100}%` }} />
                   </div>
-                  <span className="w-10 shrink-0 text-right text-[11px] font-black text-slate-700">{t.achievementPercent.toFixed(0)}%</span>
+                  <span className="w-10 shrink-0 text-right text-phx-xs font-black text-slate-700">{t.achievementPercent.toFixed(0)}%</span>
                 </div>
               </PremiumTooltip>
             );
@@ -3694,7 +3694,7 @@ function ProductFamilyBreakdown({ data }: { data: MedicalRepPortalData }) {
     <OverviewPagePanel
       title="Product Family Contribution"
       action={
-        <span className="rounded border border-slate-200 bg-white px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">
+        <span className="rounded border border-slate-200 bg-white px-2.5 py-1 text-phx-2xs font-bold uppercase tracking-[0.12em] text-slate-500">
           {families.length} families
         </span>
       }
@@ -3703,11 +3703,11 @@ function ProductFamilyBreakdown({ data }: { data: MedicalRepPortalData }) {
         {/* Totals */}
         <div className="grid grid-cols-2 gap-2">
           <div className="rounded border border-slate-100 bg-slate-50/60 px-3 py-2">
-            <p className="text-[9px] font-bold uppercase tracking-[0.14em] text-slate-400">Total Sales</p>
+            <p className="text-phx-3xs font-bold uppercase tracking-[0.14em] text-slate-400">Total Sales</p>
             <p className="mt-1 text-sm font-black text-orange-600">{egp(totalSales)}</p>
           </div>
           <div className="rounded border border-slate-100 bg-slate-50/60 px-3 py-2">
-            <p className="text-[9px] font-bold uppercase tracking-[0.14em] text-slate-400">Total Units</p>
+            <p className="text-phx-3xs font-bold uppercase tracking-[0.14em] text-slate-400">Total Units</p>
             <p className="mt-1 text-sm font-black text-slate-700">{formatUnits(totalUnits)}</p>
           </div>
         </div>
@@ -3727,15 +3727,15 @@ function ProductFamilyBreakdown({ data }: { data: MedicalRepPortalData }) {
                 content={
                   <div className="space-y-1.5">
                     <p className="text-xs font-black text-slate-900">{f.name}</p>
-                    <div className="flex items-center justify-between gap-5 text-[11px]">
+                    <div className="flex items-center justify-between gap-5 text-phx-xs">
                       <span className="text-slate-500">Sales</span>
                       <span className="font-bold text-orange-600">{egp(f.sales)}</span>
                     </div>
-                    <div className="flex items-center justify-between gap-5 text-[11px]">
+                    <div className="flex items-center justify-between gap-5 text-phx-xs">
                       <span className="text-slate-500">Units</span>
                       <span className="font-bold text-slate-700">{formatUnits(f.units)}</span>
                     </div>
-                    <div className="flex items-center justify-between gap-5 border-t border-slate-100 pt-1 text-[11px]">
+                    <div className="flex items-center justify-between gap-5 border-t border-slate-100 pt-1 text-phx-xs">
                       <span className="text-slate-500">Contribution</span>
                       <span className="font-bold text-orange-600">{pct.toFixed(1)}%</span>
                     </div>
@@ -3743,14 +3743,14 @@ function ProductFamilyBreakdown({ data }: { data: MedicalRepPortalData }) {
                 }
               >
                 <div className="flex items-center gap-2 rounded border border-slate-100 bg-white/80 px-3 py-1.5">
-                  <span className="w-[90px] shrink-0 break-words text-[12px] font-bold text-slate-700">{f.name}</span>
+                  <span className="w-[90px] shrink-0 break-words text-phx-sm font-bold text-slate-700">{f.name}</span>
                   <div className="relative h-2 flex-1 overflow-hidden rounded-sm bg-slate-100">
                     <div
                       className="absolute inset-y-0 left-0 rounded-sm"
                       style={{ width: `${barWidth}%`, background: `linear-gradient(to right, ${from}, ${to})` }}
                     />
                   </div>
-                  <span className="w-12 shrink-0 text-right text-[11px] font-black text-slate-700">{pct.toFixed(1)}%</span>
+                  <span className="w-12 shrink-0 text-right text-phx-xs font-black text-slate-700">{pct.toFixed(1)}%</span>
                 </div>
               </PremiumTooltip>
             );
@@ -3773,7 +3773,7 @@ function LinePerformanceBreakdown({ data }: { data: MedicalRepPortalData }) {
     <OverviewPagePanel
       title="Line Performance"
       action={
-        <span className="rounded border border-slate-200 bg-white px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">
+        <span className="rounded border border-slate-200 bg-white px-2.5 py-1 text-phx-2xs font-bold uppercase tracking-[0.12em] text-slate-500">
           {lines.length} line{lines.length === 1 ? "" : "s"}
         </span>
       }
@@ -3781,11 +3781,11 @@ function LinePerformanceBreakdown({ data }: { data: MedicalRepPortalData }) {
       <ChartErrorBoundary>
         <div className="grid grid-cols-2 gap-2">
           <div className="rounded border border-slate-100 bg-slate-50/60 px-3 py-2">
-            <p className="text-[9px] font-bold uppercase tracking-[0.14em] text-slate-400">Total Sales</p>
+            <p className="text-phx-3xs font-bold uppercase tracking-[0.14em] text-slate-400">Total Sales</p>
             <p className="mt-1 text-sm font-black text-orange-600">{egp(totalSales)}</p>
           </div>
           <div className="rounded border border-slate-100 bg-slate-50/60 px-3 py-2">
-            <p className="text-[9px] font-bold uppercase tracking-[0.14em] text-slate-400">Total Target</p>
+            <p className="text-phx-3xs font-bold uppercase tracking-[0.14em] text-slate-400">Total Target</p>
             <p className="mt-1 text-sm font-black text-slate-700">{egp(totalTarget)}</p>
           </div>
         </div>
@@ -3802,15 +3802,15 @@ function LinePerformanceBreakdown({ data }: { data: MedicalRepPortalData }) {
                 content={
                   <div className="space-y-1.5">
                     <p className="text-xs font-black text-slate-900">{line.name}</p>
-                    <div className="flex items-center justify-between gap-5 text-[11px]">
+                    <div className="flex items-center justify-between gap-5 text-phx-xs">
                       <span className="text-slate-500">Sales</span>
                       <span className="font-bold text-orange-600">{egp(line.sales)}</span>
                     </div>
-                    <div className="flex items-center justify-between gap-5 text-[11px]">
+                    <div className="flex items-center justify-between gap-5 text-phx-xs">
                       <span className="text-slate-500">Target</span>
                       <span className="font-bold text-slate-700">{egp(line.target)}</span>
                     </div>
-                    <div className="flex items-center justify-between gap-5 border-t border-slate-100 pt-1 text-[11px]">
+                    <div className="flex items-center justify-between gap-5 border-t border-slate-100 pt-1 text-phx-xs">
                       <span className="text-slate-500">Achievement</span>
                       <span className="font-bold text-orange-600">{line.achievementPercent.toFixed(1)}%</span>
                     </div>
@@ -3818,7 +3818,7 @@ function LinePerformanceBreakdown({ data }: { data: MedicalRepPortalData }) {
                 }
               >
                 <div className="flex items-center gap-2 rounded border border-slate-100 bg-white/80 px-3 py-1.5">
-                  <span className="w-[90px] shrink-0 break-words text-[12px] font-bold text-slate-700">{line.name}</span>
+                  <span className="w-[90px] shrink-0 break-words text-phx-sm font-bold text-slate-700">{line.name}</span>
                   <div className="relative h-2 flex-1 overflow-hidden rounded-sm bg-slate-100">
                     <div
                       className="absolute inset-y-0 left-0 rounded-sm"
@@ -3826,7 +3826,7 @@ function LinePerformanceBreakdown({ data }: { data: MedicalRepPortalData }) {
                     />
                     <div className="absolute inset-y-0 border-r border-dashed border-slate-300/60" style={{ left: `${(100 / 150) * 100}%` }} />
                   </div>
-                  <span className="w-10 shrink-0 text-right text-[11px] font-black text-slate-700">{line.achievementPercent.toFixed(0)}%</span>
+                  <span className="w-10 shrink-0 text-right text-phx-xs font-black text-slate-700">{line.achievementPercent.toFixed(0)}%</span>
                 </div>
               </PremiumTooltip>
             );

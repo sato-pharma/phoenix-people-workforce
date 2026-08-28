@@ -90,10 +90,10 @@ const CUSTOMER_FIX_COLUMNS: ExportColumn[] = [
 function StepBadge({ n, label, done, active }: { n: number; label: string; done?: boolean; active?: boolean }) {
   return (
     <div className="flex items-center gap-2">
-      <span className={cn("inline-flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-black", done ? "bg-emerald-500 text-white" : active ? "bg-[#020617] text-white" : "bg-phx-line text-phx-ink-soft")}>
+      <span className={cn("inline-flex h-5 w-5 items-center justify-center rounded-full text-phx-2xs font-black", done ? "bg-emerald-500 text-white" : active ? "bg-[#020617] text-white" : "bg-phx-line text-phx-ink-soft")}>
         {done ? <CheckCircle2 className="h-3.5 w-3.5" /> : n}
       </span>
-      <span className="text-[11px] font-black uppercase tracking-[0.16em] text-phx-ink">{label}</span>
+      <span className="text-phx-xs font-black uppercase tracking-[0.16em] text-phx-ink">{label}</span>
     </div>
   );
 }
@@ -101,7 +101,7 @@ function StepBadge({ n, label, done, active }: { n: number; label: string; done?
 function Metric({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
   return (
     <div className="bg-white px-3 py-2.5">
-      <div className="text-[10px] font-black uppercase tracking-wide text-phx-ink-faint">{label}</div>
+      <div className="text-phx-2xs font-black uppercase tracking-wide text-phx-ink-faint">{label}</div>
       <div className={cn("mt-0.5 text-sm font-black tabular-nums", accent ? "text-phx-accent" : "text-phx-ink")}>{value}</div>
     </div>
   );
@@ -113,7 +113,7 @@ export function BreakdownTable({ title, headLabel, rows }: { title: string; head
       <div className={darkHead}>{title}</div>
       <div className="max-h-72 overflow-auto">
         <table className="w-full text-sm">
-          <thead className="text-left text-[11px] font-bold uppercase text-phx-ink-faint">
+          <thead className="text-left text-phx-xs font-bold uppercase text-phx-ink-faint">
             <tr>
               <th className="px-3 py-1.5">{headLabel}</th>
               <th className="px-3 py-1.5 text-right">Qty</th>
@@ -125,7 +125,7 @@ export function BreakdownTable({ title, headLabel, rows }: { title: string; head
             {rows.length === 0 && <tr><td className="px-3 py-3 text-center text-phx-ink-faint" colSpan={4}>—</td></tr>}
             {rows.map((r) => (
               <tr className="border-t border-[#FFE8D6]" key={r.code}>
-                <td className="px-3 py-1.5 font-semibold text-phx-ink">{r.label}{r.parent ? <span className="ml-1 text-[11px] font-medium text-phx-ink-faint">· {r.parent}</span> : null}</td>
+                <td className="px-3 py-1.5 font-semibold text-phx-ink">{r.label}{r.parent ? <span className="ml-1 text-phx-xs font-medium text-phx-ink-faint">· {r.parent}</span> : null}</td>
                 <td className="px-3 py-1.5 text-right tabular-nums text-phx-ink-2">{num(r.totalQty)}</td>
                 <td className="px-3 py-1.5 text-right tabular-nums text-phx-ink-2">{num(r.totalBonusQty)}</td>
                 <td className="px-3 py-1.5 text-right tabular-nums text-phx-ink-2">{money(r.totalValue)}</td>
@@ -241,7 +241,7 @@ function ValidationPanel({ report }: { report: ValidationReport }) {
       <div className="flex items-center gap-2">
         <ShieldCheck className="h-4 w-4 text-phx-ink" />
         <span className="text-xs font-black uppercase tracking-[0.12em] text-phx-ink-soft">Strict validation</span>
-        <span className={cn("ml-auto rounded-full border px-2.5 py-0.5 text-[11px] font-bold", headline.tone)}>{headline.text}</span>
+        <span className={cn("ml-auto rounded-full border px-2.5 py-0.5 text-phx-xs font-bold", headline.tone)}>{headline.text}</span>
       </div>
       <ul className="space-y-1.5">
         {sorted.map((f) => {
@@ -255,7 +255,7 @@ function ValidationPanel({ report }: { report: ValidationReport }) {
                   <p className="text-sm font-bold text-phx-ink">{f.title}{f.count > 1 ? <span className="ml-1 font-mono text-xs text-phx-ink-soft">×{f.count.toLocaleString()}</span> : null}</p>
                   <p className="text-xs text-phx-ink-2">{f.detail}</p>
                   {f.fixHint ? <p className="mt-0.5 text-xs italic text-phx-ink-soft">{f.fixHint}</p> : null}
-                  {f.sampleRows.length > 0 ? <p className="mt-0.5 font-mono text-[11px] text-phx-ink-faint">rows: {f.sampleRows.map((row, i) => f.sampleProducts?.[i] ? `${row} (${f.sampleProducts[i]})` : row).join(", ")}{f.count > f.sampleRows.length ? "…" : ""}</p> : null}
+                  {f.sampleRows.length > 0 ? <p className="mt-0.5 font-mono text-phx-xs text-phx-ink-faint">rows: {f.sampleRows.map((row, i) => f.sampleProducts?.[i] ? `${row} (${f.sampleProducts[i]})` : row).join(", ")}{f.count > f.sampleRows.length ? "…" : ""}</p> : null}
                 </div>
               </div>
             </li>
@@ -339,7 +339,7 @@ function IgnoredItemsReview({ items, productOptions, distributorCode, onSaved, o
       <p className="text-xs text-phx-ink-2">These products appeared in the sheet but were previously set to be ignored. You must explicitly decide what to do with each one before uploading. Nothing is silently excluded without your decision.</p>
       <div className="overflow-visible rounded-[6px] border border-slate-200 bg-white">
         <table className="w-full text-sm">
-          <thead className="text-left text-[11px] font-bold uppercase text-phx-ink-faint">
+          <thead className="text-left text-phx-xs font-bold uppercase text-phx-ink-faint">
             <tr>
               <th className="px-3 py-1.5">Product</th>
               <th className="px-3 py-1.5 text-right">Rows</th>
@@ -353,9 +353,9 @@ function IgnoredItemsReview({ items, productOptions, distributorCode, onSaved, o
                 <tr className="border-t border-slate-100" key={item.raw}>
                   <td className="px-3 py-2">
                     {item.displayName !== item.raw ? (
-                      <span className="font-medium text-phx-ink">{item.displayName}<span className="ml-1 font-mono text-[11px] text-phx-ink-faint">({item.raw})</span></span>
+                      <span className="font-medium text-phx-ink">{item.displayName}<span className="ml-1 font-mono text-phx-xs text-phx-ink-faint">({item.raw})</span></span>
                     ) : (
-                      <span><span className="font-mono text-xs font-semibold text-phx-ink">{item.raw}</span><span className="ml-1 text-[11px] text-phx-ink-faint">no name in sheet</span></span>
+                      <span><span className="font-mono text-xs font-semibold text-phx-ink">{item.raw}</span><span className="ml-1 text-phx-xs text-phx-ink-faint">no name in sheet</span></span>
                     )}
                   </td>
                   <td className="px-3 py-2 text-right tabular-nums text-phx-ink-2">{item.count.toLocaleString()}</td>
@@ -534,7 +534,7 @@ function UnmappedList({ products, customers, territories, productOptions, brickO
   return (
     <div className="space-y-2 rounded-[6px] border border-amber-200 bg-amber-50/40 p-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-[11px] font-black uppercase tracking-[0.14em] text-amber-800">Map these here, then re-validate</p>
+        <p className="text-phx-xs font-black uppercase tracking-[0.14em] text-amber-800">Map these here, then re-validate</p>
         <div className="flex items-center gap-2">
           {msg ? <span className="text-xs font-semibold text-emerald-700">{msg}</span> : null}
           {err ? <span className="text-xs font-semibold text-rose-700">{err}</span> : null}
@@ -563,10 +563,10 @@ function UnmappedList({ products, customers, territories, productOptions, brickO
       {groups.map((g) => (
         <div key={g.type}>
           <div className="mb-1 flex items-center justify-between gap-2">
-            <span className="text-[11px] font-bold uppercase tracking-wide text-amber-700">{g.label} ({g.items.length})</span>
+            <span className="text-phx-xs font-bold uppercase tracking-wide text-amber-700">{g.label} ({g.items.length})</span>
             {aiEnabled && g.type !== "customer" ? (
               <button
-                className="inline-flex h-6 items-center gap-1 rounded-[6px] border border-violet-300 bg-violet-50 px-2 text-[11px] font-bold text-violet-700 transition hover:bg-violet-100 disabled:cursor-not-allowed disabled:opacity-50"
+                className="inline-flex h-6 items-center gap-1 rounded-[6px] border border-violet-300 bg-violet-50 px-2 text-phx-xs font-bold text-violet-700 transition hover:bg-violet-100 disabled:cursor-not-allowed disabled:opacity-50"
                 disabled={aiBusy !== null}
                 onClick={() => void runAiSuggest(g.type as "product" | "territory")}
                 title="Let AI pre-fill these from the mapping database"
@@ -579,7 +579,7 @@ function UnmappedList({ products, customers, territories, productOptions, brickO
           </div>
           <div className="overflow-visible rounded-[6px] border border-amber-200 bg-white">
             <table className="w-full text-sm">
-              <thead className="text-left text-[11px] font-bold uppercase text-phx-ink-faint">
+              <thead className="text-left text-phx-xs font-bold uppercase text-phx-ink-faint">
                 <tr>
                   <th className="px-3 py-1.5">Value in sheet</th>
                   <th className="px-3 py-1.5">Name in sheet</th>
@@ -598,8 +598,8 @@ function UnmappedList({ products, customers, territories, productOptions, brickO
                       <td className="px-3 py-1.5">
                         {excluded[k] ? (
                           <div className="flex items-center gap-2">
-                            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-bold text-slate-500">Excluded — rows will be skipped</span>
-                            <button className="text-[11px] text-phx-ink-soft underline hover:text-phx-ink" onClick={() => unexclude(g.type, u.raw)} type="button">Undo</button>
+                            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-phx-xs font-bold text-slate-500">Excluded — rows will be skipped</span>
+                            <button className="text-phx-xs text-phx-ink-soft underline hover:text-phx-ink" onClick={() => unexclude(g.type, u.raw)} type="button">Undo</button>
                           </div>
                         ) : (
                           <>
@@ -614,7 +614,7 @@ function UnmappedList({ products, customers, territories, productOptions, brickO
                               <div className="w-56"><MappingCombobox onChange={(c) => setCode(g.type, u.raw, c)} options={g.options} placeholder={g.placeholder} value={selected[k] ?? ""} /></div>
                               {g.type === "product" ? (
                                 <button
-                                  className="shrink-0 rounded px-1.5 py-0.5 text-[11px] font-bold text-phx-ink-faint transition hover:bg-slate-100 hover:text-slate-600"
+                                  className="shrink-0 rounded px-1.5 py-0.5 text-phx-xs font-bold text-phx-ink-faint transition hover:bg-slate-100 hover:text-slate-600"
                                   onClick={() => exclude(g.type, u.raw)}
                                   title="Exclude — skip all rows with this product instead of mapping it"
                                   type="button"
@@ -624,7 +624,7 @@ function UnmappedList({ products, customers, territories, productOptions, brickO
                               ) : null}
                             </div>
                             {u.suggestionLabel && (selected[k] ?? "") === (u.suggestionCode ?? "") ? (
-                              <p className="mt-0.5 pl-6 text-[11px] text-phx-ink-soft">Suggested: {u.suggestionLabel}{u.suggestionCode ? ` (${u.suggestionCode})` : ""}</p>
+                              <p className="mt-0.5 pl-6 text-phx-xs text-phx-ink-soft">Suggested: {u.suggestionLabel}{u.suggestionCode ? ` (${u.suggestionCode})` : ""}</p>
                             ) : null}
                           </>
                         )}
@@ -811,8 +811,8 @@ export const MonthlyUpload = forwardRef<MonthlyUploadHandle, MonthlyUploadProps>
       <div className="flex flex-wrap items-end gap-2">
         <div className="flex flex-col gap-1">
           <div className="flex items-center gap-2">
-            <span className="text-[10px] font-black uppercase tracking-[0.12em] text-phx-ink-faint">Period{hasDateColumn ? " (optional)" : " (required)"}</span>
-            {periodAutoDetected && <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700 ring-1 ring-emerald-200"><CheckCircle2 className="h-3 w-3" /> Auto-detected</span>}
+            <span className="text-phx-2xs font-black uppercase tracking-[0.12em] text-phx-ink-faint">Period{hasDateColumn ? " (optional)" : " (required)"}</span>
+            {periodAutoDetected && <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-phx-2xs font-bold text-emerald-700 ring-1 ring-emerald-200"><CheckCircle2 className="h-3 w-3" /> Auto-detected</span>}
           </div>
           <div className="flex gap-1">
             <select className={cn("h-9 rounded-[6px] border px-2 text-sm", periodAutoDetected ? "border-emerald-300 bg-emerald-50/40" : "border-phx-line")} disabled={busy !== null} onChange={(e) => onMonthChange(e.target.value)} value={periodMonth}>
@@ -1117,7 +1117,7 @@ export function SalesUploadWorkspace({ distributors, summaries, batches, product
           <div>
             <div className="flex items-center gap-2">
               <span aria-hidden className="h-2 w-2 rounded-full bg-phx-accent" />
-              <span className="text-[11px] font-black uppercase tracking-[0.16em] text-phx-accent">Sales · One connected module</span>
+              <span className="text-phx-xs font-black uppercase tracking-[0.16em] text-phx-accent">Sales · One connected module</span>
             </div>
             <h1 className="mt-1 text-xl font-black text-phx-ink">Sales Upload</h1>
             <p className="mt-1 text-sm font-medium text-phx-ink-soft">

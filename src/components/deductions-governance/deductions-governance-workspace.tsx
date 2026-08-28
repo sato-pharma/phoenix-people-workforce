@@ -462,7 +462,7 @@ function InboxTable({
   return (
     <div className="phoenix-horizontal-scroll max-h-[60vh] overflow-auto">
       <table className="w-full min-w-[1320px] text-left text-sm">
-        <thead className="sticky top-0 z-10 bg-slate-50 text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">
+        <thead className="sticky top-0 z-10 bg-slate-50 text-phx-xs font-black uppercase tracking-[0.14em] text-slate-500">
           <tr>
             <th className="px-4 py-3">Employee</th>
             <th className="px-4 py-3">Code</th>
@@ -597,7 +597,7 @@ function DecisionControls({
       </SearchableSelect>
       {status === "Approved for Payroll" ? (
         <div className="grid grid-cols-[1fr_1fr] gap-2">
-          <label className="text-[10px] font-black uppercase tracking-[0.12em] text-slate-400">
+          <label className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400">
             Original
             <input
               className="mt-1 h-8 w-full rounded-lg border border-slate-100 bg-slate-50 px-2 font-mono text-xs text-slate-500"
@@ -605,7 +605,7 @@ function DecisionControls({
               value={row.deductionValue}
             />
           </label>
-          <label className="text-[10px] font-black uppercase tracking-[0.12em] text-slate-400">
+          <label className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400">
             Apply
             <input
               className="mt-1 h-8 w-full rounded-lg border border-slate-200 bg-white px-2 font-mono text-xs text-slate-700 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
@@ -644,7 +644,7 @@ function DecisionControls({
         </Button>
         {message ? (
           <span className={cn(
-            "text-[11px] font-semibold",
+            "text-phx-xs font-semibold",
             message === "Saved" ? "text-emerald-600" : "text-rose-600",
           )}>
             {message}
@@ -667,7 +667,7 @@ function BySourcePanel({ groups }: { groups: DeductionSourceGroup[] }) {
     <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
       {groups.map((group) => (
         <Card className="rounded-2xl border border-slate-200 bg-white/95 p-5 shadow-sm" key={group.sourceModule}>
-          <p className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">{group.sourceModule}</p>
+          <p className="text-phx-2xs font-black uppercase tracking-[0.18em] text-slate-400">{group.sourceModule}</p>
           <p className="mt-2 text-3xl font-black tracking-tight text-slate-900">{formatNumber(group.count)}</p>
           <dl className="mt-4 grid grid-cols-2 gap-2 text-xs font-semibold text-slate-600">
             <div><dt className="text-slate-400">Pending</dt><dd>{formatNumber(group.pending)}</dd></div>
@@ -688,7 +688,7 @@ function ByEmployeePanel({ groups }: { groups: DeductionEmployeeGroup[] }) {
   return (
     <div className="phoenix-horizontal-scroll max-h-[60vh] overflow-auto">
       <table className="w-full min-w-[920px] text-left text-sm">
-        <thead className="sticky top-0 z-10 bg-slate-50 text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">
+        <thead className="sticky top-0 z-10 bg-slate-50 text-phx-xs font-black uppercase tracking-[0.14em] text-slate-500">
           <tr>
             <th className="px-4 py-3">Employee</th>
             <th className="px-4 py-3">Code</th>
@@ -768,7 +768,7 @@ function CommentsPanel({ comments }: { comments: DeductionCommentFeedItem[] }) {
         <div className="grid gap-2 px-4 py-3 lg:grid-cols-[180px_220px_160px_minmax(0,1fr)]" key={comment.id}>
           <div>
             <p className="text-xs font-semibold text-slate-500">{formatDateTime(comment.createdAt)}</p>
-            <p className="mt-1 font-mono text-[11px] font-semibold text-slate-400">{comment.authorHrId ?? comment.authorLoginId}</p>
+            <p className="mt-1 font-mono text-phx-xs font-semibold text-slate-400">{comment.authorHrId ?? comment.authorLoginId}</p>
           </div>
           <div>
             <p className="text-sm font-black text-slate-900">{comment.employeeName ?? comment.employeeCode ?? "-"}</p>

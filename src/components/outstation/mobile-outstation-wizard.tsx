@@ -1246,7 +1246,7 @@ export function MobileOutstationWizard({
 
       {showIntro ? (
         <section className="overflow-hidden rounded-lg border border-slate-200 bg-white p-5 shadow-[0_1px_3px_rgba(15,23,42,0.06)] sm:p-6">
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-orange-600">
+          <p className="text-phx-2xs font-semibold uppercase tracking-wider text-orange-600">
             Outstation Expense
           </p>
           <h1 className="mt-2 text-2xl font-bold text-slate-900 sm:text-3xl">
@@ -1287,7 +1287,7 @@ export function MobileOutstationWizard({
         className="rounded-lg border border-gray-100 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.06)] sm:p-5"
       >
         <div className="flex items-center justify-between gap-2">
-          <span className="rounded-md bg-orange-50 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-orange-600">
+          <span className="rounded-md bg-orange-50 px-2 py-1 text-phx-2xs font-bold uppercase tracking-wider text-orange-600">
             Request details
           </span>
         </div>
@@ -1298,7 +1298,7 @@ export function MobileOutstationWizard({
         {/* Conditional hint banner */}
         {(!hasResidenceCoordinates || isOffline) && (
           <div
-            className={`mt-3 flex items-start gap-2 rounded-md border px-3 py-2 text-[12px] ${
+            className={`mt-3 flex items-start gap-2 rounded-md border px-3 py-2 text-phx-sm ${
               !hasResidenceCoordinates
                 ? "border-rose-200 bg-rose-50 text-rose-700"
                 : "border-amber-200 bg-amber-50 text-amber-800"
@@ -1320,7 +1320,7 @@ export function MobileOutstationWizard({
 
         <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <div>
-            <span className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+            <span className="mb-1 block text-phx-2xs font-semibold uppercase tracking-wider text-slate-500">
               Expense Type
             </span>
             <ChoiceGroup
@@ -1620,7 +1620,7 @@ export function MobileOutstationWizard({
         </div>
 
         <div className="mt-5">
-          <span className="rounded-md bg-orange-50 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-orange-600">
+          <span className="rounded-md bg-orange-50 px-2 py-1 text-phx-2xs font-bold uppercase tracking-wider text-orange-600">
             Auto calculated summary
           </span>
           <div className="mt-3 grid grid-cols-1 divide-x divide-y divide-gray-100 overflow-hidden rounded-md border border-gray-100 sm:grid-cols-2 xl:grid-cols-3">
@@ -1677,7 +1677,7 @@ export function MobileOutstationWizard({
           </div>
         </div>
 
-        <div className="mt-4 rounded-md border border-gray-100 bg-slate-50/60 px-3 py-2.5 text-[12px] text-slate-600">
+        <div className="mt-4 rounded-md border border-gray-100 bg-slate-50/60 px-3 py-2.5 text-phx-sm text-slate-600">
           {isCalculating ? (
             <span className="inline-flex items-center gap-2 font-medium text-slate-800">
               <LoadingSpinner />
@@ -1740,18 +1740,18 @@ export function MobileOutstationWizard({
           is the same requirement, only asked more quietly. */}
       {isEvidencePhotoWaived ? null : (
       <Card className="rounded-lg border border-gray-100 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.06)] sm:p-5">
-          <span className="rounded-md bg-orange-50 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-orange-600">
+          <span className="rounded-md bg-orange-50 px-2 py-1 text-phx-2xs font-bold uppercase tracking-wider text-orange-600">
             {arrivalPhotoBadge}
           </span>
           <h2 className="mt-2 text-base font-bold text-slate-800 sm:text-lg">
             {arrivalPhotoHeading}
           </h2>
-          <p className="mt-2 max-w-2xl text-[13px] leading-relaxed text-slate-500">
+          <p className="mt-2 max-w-2xl text-phx-md leading-relaxed text-slate-500">
             {arrivalPhotoHint}
           </p>
           <div className="mt-5 grid gap-4 md:grid-cols-2">
             <label className="block">
-              <span className="mb-1 block text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">
+              <span className="mb-1 block text-phx-xs font-black uppercase tracking-[0.16em] text-slate-500">
                 Live Camera Photo
               </span>
               <button
@@ -1778,10 +1778,10 @@ export function MobileOutstationWizard({
               </button>
               {canUploadArrivalPhoto ? (
                 <>
-                  <span className="mt-3 mb-1 block text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">
+                  <span className="mt-3 mb-1 block text-phx-xs font-black uppercase tracking-[0.16em] text-slate-500">
                     Or upload a photo
                   </span>
-                  <label className="flex min-h-12 w-full cursor-pointer items-center justify-center gap-2 rounded-md border border-dashed border-orange-300 bg-orange-50/50 px-4 text-[13px] font-semibold text-orange-700 transition hover:bg-orange-50">
+                  <label className="flex min-h-12 w-full cursor-pointer items-center justify-center gap-2 rounded-md border border-dashed border-orange-300 bg-orange-50/50 px-4 text-phx-md font-semibold text-orange-700 transition hover:bg-orange-50">
                     <Upload className="h-4 w-4" />
                     {carEvidence?.source === "upload" ? "Replace uploaded photo" : "Upload Photo"}
                     <input
@@ -1802,7 +1802,7 @@ export function MobileOutstationWizard({
               ) : null}
             </label>
             <div className="rounded-md border border-slate-200 bg-slate-50 p-4">
-              <p className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">
+              <p className="text-phx-xs font-black uppercase tracking-[0.16em] text-slate-500">
                 Photo status
               </p>
               <p className="mt-2 text-sm font-semibold text-slate-900">
@@ -1889,7 +1889,7 @@ export function MobileOutstationWizard({
           <Card className="hidden rounded-lg border border-gray-100 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.06)] sm:block sm:p-5">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
-                <span className="rounded-md bg-orange-50 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-orange-600">
+                <span className="rounded-md bg-orange-50 px-2 py-1 text-phx-2xs font-bold uppercase tracking-wider text-orange-600">
                   Step 3
                 </span>
                 <h2 className="mt-2 text-base font-bold text-slate-800 sm:text-lg">
@@ -1920,7 +1920,7 @@ export function MobileOutstationWizard({
             {/* A disabled button that says nothing is what made this look broken: the
                 employee pressed it and the page did not react. Always name the reason. */}
             {!hasCarEvidence && !isEvidencePhotoWaived ? (
-              <p className="mt-2 text-[12px] font-semibold text-amber-700">
+              <p className="mt-2 text-phx-sm font-semibold text-amber-700">
                 {arrivalPhotoMissingMessage}
               </p>
             ) : null}
@@ -1937,7 +1937,7 @@ export function MobileOutstationWizard({
             aria-label="Submit expense action bar"
           >
             {!hasCarEvidence && !isEvidencePhotoWaived ? (
-              <p className="mb-1.5 whitespace-nowrap text-[11px] font-semibold text-amber-700">
+              <p className="mb-1.5 whitespace-nowrap text-phx-xs font-semibold text-amber-700">
                 {arrivalPhotoMissingShort}
               </p>
             ) : null}
@@ -1969,7 +1969,7 @@ export function MobileOutstationWizard({
         <>
           <Card
             aria-live="polite"
-            className="hidden rounded-md border border-amber-200 bg-amber-50 px-3 py-2.5 text-[12px] font-medium text-amber-800 sm:block"
+            className="hidden rounded-md border border-amber-200 bg-amber-50 px-3 py-2.5 text-phx-sm font-medium text-amber-800 sm:block"
             role="status"
           >
             {message}
@@ -1984,7 +1984,7 @@ export function MobileOutstationWizard({
           >
             <Card
               aria-live="polite"
-              className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2.5 text-[12px] font-medium text-amber-800 shadow-lg"
+              className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2.5 text-phx-sm font-medium text-amber-800 shadow-lg"
               role="status"
             >
               {message}
@@ -2005,7 +2005,7 @@ function LocationTooltipContent({
 }) {
   return (
     <div className="space-y-1">
-      <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500">
+      <p className="text-phx-2xs font-bold uppercase tracking-[0.14em] text-slate-500">
         {label}
       </p>
       <p className="break-words text-sm font-semibold leading-5 text-slate-900">
@@ -2108,7 +2108,7 @@ function PermissionPromptModal({
       role="dialog"
     >
       <div className="w-full max-w-md rounded-lg border border-white/30 bg-white p-5 shadow-[0_20px_50px_rgba(15,23,42,0.24)]">
-        <span className="inline-flex rounded-md bg-orange-50 px-2 py-1 text-[10px] font-bold uppercase tracking-[0.14em] text-orange-600">
+        <span className="inline-flex rounded-md bg-orange-50 px-2 py-1 text-phx-2xs font-bold uppercase tracking-[0.14em] text-orange-600">
           {copy.badge}
         </span>
         <h2 id="outstation-permission-title" className="mt-3 text-lg font-bold text-slate-900">

@@ -51,7 +51,7 @@ export function RepCountersTable({ data }: Props) {
     return (
       <section className="border border-phx-line bg-white px-4 py-8 text-center">
         <p className="text-sm font-bold text-slate-600">{emptyReason}</p>
-        <p className="mt-1 text-[12px] text-slate-400">
+        <p className="mt-1 text-phx-sm text-slate-400">
           Counters appear here as soon as a direct order is held or expires.
         </p>
       </section>
@@ -82,10 +82,10 @@ export function RepCountersTable({ data }: Props) {
   return (
     <section className="border border-phx-line bg-white">
       <header className="flex flex-wrap items-center justify-between gap-3 border-b border-phx-line bg-slate-900 px-4 py-2.5">
-        <h3 className="text-[11px] font-black uppercase tracking-[0.14em] text-white">
+        <h3 className="text-phx-xs font-black uppercase tracking-[0.14em] text-white">
           Per-rep counters — {rows.length} {rows.length === 1 ? "person" : "people"}
         </h3>
-        <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
+        <span className="text-phx-xs font-bold uppercase tracking-wider text-slate-400">
           {companyWide ? "Company-wide" : "Your team"} · {money(totals.heldValue)} held
           {totals.ordersRejectedValue > 0 ? ` · ${money(totals.ordersRejectedValue)} on rejected pharmacies` : ""}
         </span>
@@ -95,7 +95,7 @@ export function RepCountersTable({ data }: Props) {
       <div className="hidden overflow-x-auto md:block">
         <table className="w-full text-left text-sm">
           <thead>
-            <tr className="border-b border-phx-line text-[11px] font-black uppercase tracking-wider text-slate-500">
+            <tr className="border-b border-phx-line text-phx-xs font-black uppercase tracking-wider text-slate-500">
               <th className="px-3 py-2">Rep</th>
               <th className="px-3 py-2">Area</th>
               <th className="px-3 py-2">Held</th>
@@ -117,7 +117,7 @@ export function RepCountersTable({ data }: Props) {
                 <td className="px-3 py-2">
                   {/* Owner's rule: human-readable names, never raw codes. */}
                   <p className="font-bold text-slate-900">{row.name}</p>
-                  <p className="text-[11px] text-slate-500">{row.role}</p>
+                  <p className="text-phx-xs text-slate-500">{row.role}</p>
                 </td>
                 <td className="px-3 py-2 text-slate-700">{row.areaName || "—"}</td>
                 <td className="px-3 py-2">{count(row.held)}</td>
@@ -131,18 +131,18 @@ export function RepCountersTable({ data }: Props) {
                       is precisely the wrong impression for the column that names what somebody did.
                       The mobile card already used "·"; this makes the two agree. */}
                   {row.ordersRejectedValue > 0 ? (
-                    <span className="ml-2 text-[11px] text-slate-500">· {money(row.ordersRejectedValue)}</span>
+                    <span className="ml-2 text-phx-xs text-slate-500">· {money(row.ordersRejectedValue)}</span>
                   ) : null}
                 </td>
                 <td className="px-3 py-2">{count(row.validationsSubmitted)}</td>
                 <td className="px-3 py-2">{count(row.matchedExisting, "signal")}</td>
                 <td className="px-3 py-2">{count(row.suggestionsRefused, "signal")}</td>
-                <td className="px-3 py-2 text-[12px] text-slate-500">{cairoStamp(row.lastHeldAt)}</td>
+                <td className="px-3 py-2 text-phx-sm text-slate-500">{cairoStamp(row.lastHeldAt)}</td>
               </tr>
             ))}
           </tbody>
           <tfoot>
-            <tr className="border-t border-phx-line bg-slate-50 text-[12px] font-black text-slate-900">
+            <tr className="border-t border-phx-line bg-slate-50 text-phx-sm font-black text-slate-900">
               <td className="px-3 py-2 uppercase tracking-wider">Total</td>
               <td className="px-3 py-2" />
               <td className="px-3 py-2">{totals.held}</td>
@@ -169,7 +169,7 @@ export function RepCountersTable({ data }: Props) {
         {rows.map((row) => (
           <article key={row.hrId} className="block border border-phx-line p-3">
             <p className="text-sm font-black text-slate-900">{row.name}</p>
-            <p className="text-[11px] text-slate-500">
+            <p className="text-phx-xs text-slate-500">
               {row.role}
               {row.areaName ? ` · ${row.areaName}` : ""}
             </p>
@@ -180,14 +180,14 @@ export function RepCountersTable({ data }: Props) {
                 Given its own line rather than a chip, because on a cleaned-up module it is the only
                 thing on the card with a number on it. */}
             {row.ordersRejected > 0 ? (
-              <p className="mt-1 bg-rose-100 px-1.5 py-0.5 text-[12px] font-black text-rose-900">
+              <p className="mt-1 bg-rose-100 px-1.5 py-0.5 text-phx-sm font-black text-rose-900">
                 {row.ordersRejected} rejected · {money(row.ordersRejectedValue)}
                 {row.rejectedPharmacies > 0
                   ? ` · ${row.rejectedPharmacies} rejected ${row.rejectedPharmacies === 1 ? "pharmacy" : "pharmacies"}`
                   : ""}
               </p>
             ) : null}
-            <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-slate-500">
+            <div className="mt-2 flex flex-wrap items-center gap-2 text-phx-xs text-slate-500">
               {row.expired > 0 ? <span>{row.expired} expired</span> : null}
               {row.validationsSubmitted > 0 ? <span>{row.validationsSubmitted} evidence sent</span> : null}
               {row.matchedExisting > 0 ? (

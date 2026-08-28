@@ -39,16 +39,16 @@ function SectionGrid({ section }: { section: OrganogramDetailSection }) {
 
   return (
     <div>
-      <p className="mb-2 text-[10px] font-black uppercase tracking-[0.14em] text-orange-600">
+      <p className="mb-2 text-phx-2xs font-black uppercase tracking-[0.14em] text-orange-600">
         {section.title}
       </p>
       <dl className="grid grid-cols-1 gap-x-6 gap-y-2 sm:grid-cols-2">
         {section.items.map((item) => (
           <div className="flex flex-col gap-0.5" key={item.label}>
-            <dt className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+            <dt className="text-phx-2xs font-semibold uppercase tracking-wider text-slate-400">
               {item.label}
             </dt>
-            <dd className="whitespace-normal break-words text-[13px] font-semibold text-slate-800">
+            <dd className="whitespace-normal break-words text-phx-md font-semibold text-slate-800">
               {item.value ?? "—"}
             </dd>
           </div>
@@ -157,7 +157,7 @@ export function OrganogramNodeDetailModal({ row, onClose }: Props) {
             <span
               aria-hidden
               className={cn(
-                "flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-[13px] font-black",
+                "flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-phx-md font-black",
                 isVacancy
                   ? "border border-dashed border-orange-300 bg-white/10 text-orange-200"
                   : "bg-white/10 text-white ring-1 ring-white/20",
@@ -168,10 +168,10 @@ export function OrganogramNodeDetailModal({ row, onClose }: Props) {
             <div className="min-w-0">
               <p className="truncate text-sm font-bold leading-tight">{heading}</p>
               {subtitle ? (
-                <p className="mt-0.5 truncate text-[11px] font-medium text-orange-200">{subtitle}</p>
+                <p className="mt-0.5 truncate text-phx-xs font-medium text-orange-200">{subtitle}</p>
               ) : null}
               {!isVacancy ? (
-                <p className="mt-0.5 truncate font-mono text-[10px] text-slate-300">{row.hrId}</p>
+                <p className="mt-0.5 truncate font-mono text-phx-2xs text-slate-300">{row.hrId}</p>
               ) : null}
             </div>
           </div>
@@ -195,7 +195,7 @@ export function OrganogramNodeDetailModal({ row, onClose }: Props) {
                 <SectionGrid key={section.title} section={section} />
               ))}
               {!detail.canViewSensitive ? (
-                <p className="flex items-center gap-1.5 border-t border-slate-100 pt-3 text-[11px] font-medium text-slate-400">
+                <p className="flex items-center gap-1.5 border-t border-slate-100 pt-3 text-phx-xs font-medium text-slate-400">
                   <Lock className="h-3 w-3" />
                   Compensation and personal details are limited to HR, Finance, and executive roles.
                 </p>
@@ -206,13 +206,13 @@ export function OrganogramNodeDetailModal({ row, onClose }: Props) {
               {/* Row-only summary is always shown; it is the fallback when the fetch fails. */}
               <RowSummary row={row} />
               {loading ? (
-                <p className="flex items-center gap-2 text-[12px] text-slate-500">
+                <p className="flex items-center gap-2 text-phx-sm text-slate-500">
                   <Loader2 className="h-3.5 w-3.5 animate-spin" />
                   Loading full profile…
                 </p>
               ) : null}
               {error ? (
-                <p className="flex items-center gap-1.5 border-t border-slate-100 pt-3 text-[11px] font-medium text-rose-600">
+                <p className="flex items-center gap-1.5 border-t border-slate-100 pt-3 text-phx-xs font-medium text-rose-600">
                   <UserRound className="h-3 w-3" />
                   {error}
                 </p>

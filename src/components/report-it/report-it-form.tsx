@@ -99,7 +99,7 @@ const btnAddBlock =
 
 function FieldLabel({ children, required }: { children: React.ReactNode; required?: boolean }) {
   return (
-    <label className="mb-1.5 block text-[11px] font-black uppercase tracking-wide text-slate-500">
+    <label className="mb-1.5 block text-phx-xs font-black uppercase tracking-wide text-slate-500">
       {children}
       {required && <span className="ml-0.5 text-rose-600">*</span>}
     </label>
@@ -222,7 +222,7 @@ function BlockHeader({
 }) {
   return (
     <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-4 py-2.5">
-      <span className="flex items-center gap-2 text-[11px] font-black uppercase tracking-wide text-slate-700">
+      <span className="flex items-center gap-2 text-phx-xs font-black uppercase tracking-wide text-slate-700">
         <span aria-hidden className="h-3.5 w-1 bg-orange-500" />
         {label}
       </span>
@@ -431,7 +431,7 @@ function ReactionBlockCard({
 
         {reaction.isSerious === "Yes" && (
           <div className="border border-rose-200 bg-rose-50/50 p-3">
-            <p className="mb-2 text-[11px] font-black uppercase tracking-wide text-rose-700">
+            <p className="mb-2 text-phx-xs font-black uppercase tracking-wide text-rose-700">
               Reasons for seriousness
             </p>
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
@@ -727,7 +727,7 @@ function ConfirmationScreen({
           <div className="mx-auto flex h-16 w-16 items-center justify-center border border-emerald-200 bg-emerald-50">
             <CheckCircle2 className="h-9 w-9 text-emerald-600" />
           </div>
-          <p className="mt-5 text-[11px] font-black uppercase tracking-[0.2em] text-orange-600">Pharmacovigilance</p>
+          <p className="mt-5 text-phx-xs font-black uppercase tracking-[0.2em] text-orange-600">Pharmacovigilance</p>
           <h2 className="mt-1 text-2xl font-black text-slate-900">Report Submitted</h2>
         </div>
       ) : (
@@ -740,7 +740,7 @@ function ConfirmationScreen({
           <div className="mx-auto flex h-16 w-16 items-center justify-center bg-orange-600">
             <CheckCircle2 className="h-9 w-9 text-white" />
           </div>
-          <p className="mt-5 text-[11px] font-black uppercase tracking-[0.25em] text-orange-400">Pharmacovigilance</p>
+          <p className="mt-5 text-phx-xs font-black uppercase tracking-[0.25em] text-orange-400">Pharmacovigilance</p>
           <h2 className="mt-1 text-2xl font-black text-white">Report Submitted</h2>
           </div>
         </div>
@@ -750,7 +750,7 @@ function ConfirmationScreen({
           Your adverse drug reaction report has been submitted to the pharmacovigilance team.
         </p>
         <div className="inline-block border border-slate-900 bg-slate-900 px-7 py-3.5">
-          <p className="text-[10px] font-black uppercase tracking-[0.25em] text-orange-300">Report Number</p>
+          <p className="text-phx-2xs font-black uppercase tracking-[0.25em] text-orange-300">Report Number</p>
           <p className="mt-1 font-mono text-xl font-black tracking-wide text-white">{reportNumber}</p>
         </div>
         <p className="text-xs font-semibold text-slate-500">
@@ -843,7 +843,7 @@ function VerticalStepper({ step, onJump }: { step: number; onJump: (n: number) =
               <span className="min-w-0">
                 <span
                   className={[
-                    "block text-[11px] font-black uppercase tracking-wide",
+                    "block text-phx-xs font-black uppercase tracking-wide",
                     active ? "text-slate-900" : done ? "text-slate-700" : "text-slate-400",
                   ].join(" ")}
                 >
@@ -872,7 +872,7 @@ function MobileStepper({ step }: { step: number }) {
           <div key={label} className={["flex items-center", i < STEPS.length - 1 ? "flex-1" : ""].join(" ")}>
             <span
               className={[
-                "flex h-7 w-7 shrink-0 items-center justify-center text-[11px] font-black",
+                "flex h-7 w-7 shrink-0 items-center justify-center text-phx-xs font-black",
                 active ? "bg-orange-600 text-white" : done ? "bg-orange-100 text-orange-700" : "border border-slate-300 bg-white text-slate-400",
               ].join(" ")}
             >
@@ -963,19 +963,19 @@ export function ReportItForm({ onSubmitSuccess, variant = "employee" }: ReportIt
         <div className="border-b border-phx-line bg-[#FCFDFE] px-5 py-4 sm:px-6">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div className="min-w-0">
-              <p className="text-[11px] font-black uppercase tracking-[0.18em] text-orange-600">Admin submission</p>
+              <p className="text-phx-xs font-black uppercase tracking-[0.18em] text-orange-600">Admin submission</p>
               <h2 className="mt-1 text-lg font-black text-slate-900">Adverse Drug Reaction Report</h2>
               <p className="mt-1 max-w-2xl text-sm leading-6 text-slate-600">
                 File a pharmacovigilance report from the admin shell. Fields marked with <span className="font-bold text-orange-600">*</span> are required.
               </p>
             </div>
-            <span className="inline-flex w-fit items-center gap-1.5 border border-orange-200 bg-orange-50 px-2.5 py-1 text-[10px] font-black uppercase tracking-wide text-orange-700">
+            <span className="inline-flex w-fit items-center gap-1.5 border border-orange-200 bg-orange-50 px-2.5 py-1 text-phx-2xs font-black uppercase tracking-wide text-orange-700">
               <ShieldCheck className="h-3.5 w-3.5" />
               Confidential
             </span>
           </div>
           <div className="mt-4">
-            <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-wide text-slate-500">
+            <div className="flex items-center justify-between text-phx-2xs font-black uppercase tracking-wide text-slate-500">
               <span>Step {step} of {STEPS.length}</span>
               <span className="text-orange-600">{pct}%</span>
             </div>
@@ -992,14 +992,14 @@ export function ReportItForm({ onSubmitSuccess, variant = "employee" }: ReportIt
           />
           <div className="relative flex items-start gap-4">
             <div className="min-w-0 flex-1">
-              <p className="text-[11px] font-black uppercase tracking-[0.25em] text-orange-400">Pharmacovigilance</p>
+              <p className="text-phx-xs font-black uppercase tracking-[0.25em] text-orange-400">Pharmacovigilance</p>
               <h1 className="mt-1 text-2xl font-black leading-none text-white">Report It</h1>
               <p className="mt-2 max-w-xl text-sm text-slate-300">
                 Report an adverse drug reaction in a safe, confidential way. Fields marked
                 with <span className="font-bold text-orange-300">*</span> are required.
               </p>
             </div>
-            <span className="hidden items-center gap-1.5 self-start border border-white/15 bg-white/5 px-2.5 py-1 text-[10px] font-black uppercase tracking-wide text-slate-200 sm:inline-flex">
+            <span className="hidden items-center gap-1.5 self-start border border-white/15 bg-white/5 px-2.5 py-1 text-phx-2xs font-black uppercase tracking-wide text-slate-200 sm:inline-flex">
               <ShieldCheck className="h-3.5 w-3.5 text-orange-400" />
               Confidential
             </span>
@@ -1007,7 +1007,7 @@ export function ReportItForm({ onSubmitSuccess, variant = "employee" }: ReportIt
 
           {/* progress */}
           <div className="relative mt-6">
-            <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-wide text-slate-400">
+            <div className="flex items-center justify-between text-phx-2xs font-black uppercase tracking-wide text-slate-400">
               <span>Step {step} of {STEPS.length}</span>
               <span className="text-orange-400">{pct}%</span>
             </div>
@@ -1044,7 +1044,7 @@ export function ReportItForm({ onSubmitSuccess, variant = "employee" }: ReportIt
           {/* step heading */}
           <div className="mb-5 flex items-center justify-between border-b border-slate-200 pb-4">
             <div>
-              <p className="text-[10px] font-black uppercase tracking-[0.25em] text-orange-600">
+              <p className="text-phx-2xs font-black uppercase tracking-[0.25em] text-orange-600">
                 Step {step} of {STEPS.length}
               </p>
               <h2 className="mt-0.5 text-lg font-black text-slate-900">{STEP_TITLES[step - 1]}</h2>

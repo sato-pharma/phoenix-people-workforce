@@ -541,7 +541,7 @@ export function DeviceUserMappingManager({ agentIsRemotelyReachable, canUpdate, 
       >
         <div className="overflow-x-auto">
           <table className="min-w-full text-left">
-            <thead className="bg-slate-50 text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">
+            <thead className="bg-slate-50 text-phx-xs font-black uppercase tracking-[0.16em] text-slate-500">
               <tr>
                 <th className="px-4 py-3">Device</th>
                 <th className="px-4 py-3">Device User</th>
@@ -581,7 +581,7 @@ export function DeviceUserMappingManager({ agentIsRemotelyReachable, canUpdate, 
       >
         <div className="overflow-x-auto">
           <table className="min-w-full text-left">
-            <thead className="bg-slate-50 text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">
+            <thead className="bg-slate-50 text-phx-xs font-black uppercase tracking-[0.16em] text-slate-500">
               <tr>
                 <th className="px-4 py-3">Device</th>
                 <th className="px-4 py-3">Device User</th>

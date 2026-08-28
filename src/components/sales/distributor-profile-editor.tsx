@@ -161,7 +161,7 @@ export function DistributorProfileEditor({ initialProfiles }: { initialProfiles:
       <Card className={cn(card, "space-y-4 p-5")}>
         <div className="flex flex-wrap items-end gap-3">
           <label className="flex flex-col gap-1">
-            <span className="text-[10px] font-black uppercase tracking-[0.12em] text-phx-ink-faint">Distributor</span>
+            <span className="text-phx-2xs font-black uppercase tracking-[0.12em] text-phx-ink-faint">Distributor</span>
             <select className="h-9 min-w-64 rounded-[6px] border border-phx-line px-2 text-sm" onChange={(e) => pick(e.target.value)} value={selected}>
               {profiles.map((p) => (
                 <option key={p.distributorCode} value={p.distributorCode}>{p.distributorName} ({p.distributorCode}){p.isCustom ? " · edited" : ""}</option>
@@ -169,20 +169,20 @@ export function DistributorProfileEditor({ initialProfiles }: { initialProfiles:
               <option value={NEW}>➕ New distributor…</option>
             </select>
           </label>
-          {current?.isCustom ? <span className="mb-1.5 inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-0.5 text-[11px] font-bold text-amber-800">Overridden in-app</span> : !isNew ? <span className="mb-1.5 inline-flex items-center gap-1 rounded-full border border-phx-line bg-[#FCFDFE] px-2.5 py-0.5 text-[11px] font-bold text-phx-ink-soft">Built-in</span> : null}
+          {current?.isCustom ? <span className="mb-1.5 inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-0.5 text-phx-xs font-bold text-amber-800">Overridden in-app</span> : !isNew ? <span className="mb-1.5 inline-flex items-center gap-1 rounded-full border border-phx-line bg-[#FCFDFE] px-2.5 py-0.5 text-phx-xs font-bold text-phx-ink-soft">Built-in</span> : null}
         </div>
 
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
           <label className="flex flex-col gap-1">
-            <span className="text-[10px] font-black uppercase tracking-[0.12em] text-phx-ink-faint">Code</span>
+            <span className="text-phx-2xs font-black uppercase tracking-[0.12em] text-phx-ink-faint">Code</span>
             <input className="h-9 rounded-[6px] border border-phx-line px-2 text-sm font-mono disabled:bg-phx-paper-2" disabled={!isNew} onChange={(e) => setDraft((d) => ({ ...d, distributorCode: e.target.value.toUpperCase() }))} placeholder="e.g. NEW-DIST" value={draft.distributorCode} />
           </label>
           <label className="flex flex-col gap-1">
-            <span className="text-[10px] font-black uppercase tracking-[0.12em] text-phx-ink-faint">Name</span>
+            <span className="text-phx-2xs font-black uppercase tracking-[0.12em] text-phx-ink-faint">Name</span>
             <input className="h-9 rounded-[6px] border border-phx-line px-2 text-sm" onChange={(e) => setDraft((d) => ({ ...d, distributorName: e.target.value }))} value={draft.distributorName} />
           </label>
           <label className="flex flex-col gap-1">
-            <span className="text-[10px] font-black uppercase tracking-[0.12em] text-phx-ink-faint">Value source</span>
+            <span className="text-phx-2xs font-black uppercase tracking-[0.12em] text-phx-ink-faint">Value source</span>
             <select className="h-9 rounded-[6px] border border-phx-line px-2 text-sm" onChange={(e) => setDraft((d) => ({ ...d, valueSource: e.target.value === "sheet" ? "sheet" : "recompute" }))} value={draft.valueSource}>
               <option value="recompute">recompute (qty × master price)</option>
               <option value="sheet">sheet (value column)</option>
@@ -198,7 +198,7 @@ export function DistributorProfileEditor({ initialProfiles }: { initialProfiles:
         <div className="rounded-[6px] border border-dashed border-phx-line-strong bg-[#FCFDFE] p-3">
           <div className="flex flex-wrap items-end gap-3">
             <label className="flex flex-col gap-1">
-              <span className="text-[10px] font-black uppercase tracking-[0.12em] text-phx-ink-faint">Sample file (.xlsx)</span>
+              <span className="text-phx-2xs font-black uppercase tracking-[0.12em] text-phx-ink-faint">Sample file (.xlsx)</span>
               <input accept=".xlsx" className="text-xs" onChange={(e) => setPreviewFile(e.target.files?.[0] ?? null)} type="file" />
             </label>
             <button className="inline-flex h-9 items-center gap-2 rounded-[6px] border border-phx-line bg-white px-4 text-sm font-black text-phx-ink transition hover:border-phx-accent disabled:opacity-60" disabled={previewing || !previewFile} onClick={() => void runPreview()} type="button">
@@ -206,8 +206,8 @@ export function DistributorProfileEditor({ initialProfiles }: { initialProfiles:
               Check aliases against file
             </button>
           </div>
-          <p className="mt-2 text-[11px] text-phx-ink-faint">Reads your sample file&rsquo;s header row and flags, per field, whether any of your aliases is found. The file is not stored.</p>
-          {previewError ? <p className="mt-1 text-[11px] font-semibold text-amber-700">{previewError}</p> : null}
+          <p className="mt-2 text-phx-xs text-phx-ink-faint">Reads your sample file&rsquo;s header row and flags, per field, whether any of your aliases is found. The file is not stored.</p>
+          {previewError ? <p className="mt-1 text-phx-xs font-semibold text-amber-700">{previewError}</p> : null}
         </div>
 
         <div className="rounded-[6px] border border-phx-line">
@@ -217,12 +217,12 @@ export function DistributorProfileEditor({ initialProfiles }: { initialProfiles:
               const obs = preview[f.key];
               return (
               <label className="flex flex-col gap-1 bg-white px-3 py-2" key={f.key}>
-                <span className="text-[11px] font-bold text-phx-ink-2">{f.label}</span>
+                <span className="text-phx-xs font-bold text-phx-ink-2">{f.label}</span>
                 <input className="h-8 rounded-[6px] border border-phx-line px-2 text-xs font-mono" onChange={(e) => setField(f.key, e.target.value)} placeholder="—" value={draft.fields[f.key]} />
                 {obs && obs.status !== "empty" ? (
                   obs.status === "found"
-                    ? <span className="truncate text-[10px] font-semibold text-emerald-700" title={obs.foundAlias ?? ""}>✓ found &ldquo;{obs.foundAlias}&rdquo; in file</span>
-                    : <span className="truncate text-[10px] font-bold text-amber-700">✗ none of these aliases is in the file</span>
+                    ? <span className="truncate text-phx-2xs font-semibold text-emerald-700" title={obs.foundAlias ?? ""}>✓ found &ldquo;{obs.foundAlias}&rdquo; in file</span>
+                    : <span className="truncate text-phx-2xs font-bold text-amber-700">✗ none of these aliases is in the file</span>
                 ) : null}
               </label>
               );

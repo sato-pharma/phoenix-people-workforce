@@ -59,7 +59,7 @@ function StatCard({
     <Card className="rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_8px_22px_rgba(15,23,42,0.04)]">
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0 space-y-1.5">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">{label}</p>
+          <p className="text-phx-xs font-semibold uppercase tracking-[0.08em] text-slate-500">{label}</p>
           <p className="break-words text-[1.35rem] font-semibold leading-tight tracking-[-0.02em] text-slate-950">{value}</p>
         </div>
         <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ring-1 ${toneClass}`}>
@@ -216,10 +216,10 @@ export function MonitoringDashboard({ stats }: { stats: AdminMonitoringStats }) 
           <table className="min-w-full divide-y divide-slate-100 text-left">
             <thead className="bg-slate-50/80">
               <tr>
-                <th className="px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500 sm:px-6">Module</th>
-                <th className="px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">Activity</th>
-                <th className="px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">User</th>
-                <th className="px-4 py-3 text-right text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500 sm:px-6">Timestamp</th>
+                <th className="px-4 py-3 text-phx-xs font-semibold uppercase tracking-[0.08em] text-slate-500 sm:px-6">Module</th>
+                <th className="px-4 py-3 text-phx-xs font-semibold uppercase tracking-[0.08em] text-slate-500">Activity</th>
+                <th className="px-4 py-3 text-phx-xs font-semibold uppercase tracking-[0.08em] text-slate-500">User</th>
+                <th className="px-4 py-3 text-right text-phx-xs font-semibold uppercase tracking-[0.08em] text-slate-500 sm:px-6">Timestamp</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 bg-white">
@@ -233,13 +233,13 @@ export function MonitoringDashboard({ stats }: { stats: AdminMonitoringStats }) 
                 stats.operations.recent.map((event, index) => (
                   <tr key={`${event.module}-${event.timestamp}-${index}`} className="transition-colors hover:bg-orange-50/40">
                     <td className="whitespace-nowrap px-4 py-4 align-top sm:px-6">
-                      <span className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-600">
+                      <span className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-phx-xs font-semibold uppercase tracking-[0.08em] text-slate-600">
                         {event.module}
                       </span>
                     </td>
                     <td className="min-w-[260px] px-4 py-4 align-top">
                       <p className="text-sm font-medium leading-5 text-slate-800">{event.description}</p>
-                      <p className="mt-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-400">{event.status}</p>
+                      <p className="mt-1 text-phx-xs font-semibold uppercase tracking-[0.08em] text-slate-400">{event.status}</p>
                     </td>
                     <td className="min-w-[180px] px-4 py-4 align-top text-sm font-semibold text-slate-900">{event.userName}</td>
                     <td className="whitespace-nowrap px-4 py-4 text-right align-top text-xs font-medium text-slate-500 sm:px-6">
@@ -288,11 +288,11 @@ export function MonitoringDashboard({ stats }: { stats: AdminMonitoringStats }) 
           <table className="min-w-full divide-y divide-slate-100 text-left">
             <thead className="bg-slate-50/80">
               <tr>
-                <th className="px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500 sm:px-6">Status</th>
-                <th className="px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">Subject</th>
-                <th className="px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">Recipients</th>
-                <th className="px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">Reason</th>
-                <th className="px-4 py-3 text-right text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500 sm:px-6">Timestamp</th>
+                <th className="px-4 py-3 text-phx-xs font-semibold uppercase tracking-[0.08em] text-slate-500 sm:px-6">Status</th>
+                <th className="px-4 py-3 text-phx-xs font-semibold uppercase tracking-[0.08em] text-slate-500">Subject</th>
+                <th className="px-4 py-3 text-phx-xs font-semibold uppercase tracking-[0.08em] text-slate-500">Recipients</th>
+                <th className="px-4 py-3 text-phx-xs font-semibold uppercase tracking-[0.08em] text-slate-500">Reason</th>
+                <th className="px-4 py-3 text-right text-phx-xs font-semibold uppercase tracking-[0.08em] text-slate-500 sm:px-6">Timestamp</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 bg-white">
@@ -306,7 +306,7 @@ export function MonitoringDashboard({ stats }: { stats: AdminMonitoringStats }) 
                 stats.notifications.recentDeliveryEvents.map((event) => (
                   <tr key={event.id} className="transition-colors hover:bg-orange-50/40">
                     <td className="whitespace-nowrap px-4 py-4 align-top sm:px-6">
-                      <span className={`inline-flex rounded-full border px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.08em] ${deliveryStatusClass(event.status)}`}>
+                      <span className={`inline-flex rounded-full border px-2.5 py-1 text-phx-xs font-semibold uppercase tracking-[0.08em] ${deliveryStatusClass(event.status)}`}>
                         {event.status}
                       </span>
                     </td>
@@ -398,11 +398,11 @@ export function MonitoringDashboard({ stats }: { stats: AdminMonitoringStats }) 
           <table className="min-w-full divide-y divide-slate-100 text-left">
             <thead className="bg-slate-50/80">
               <tr>
-                <th className="px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500 sm:px-6">HR ID</th>
-                <th className="px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">Employee Name</th>
-                <th className="px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">Event</th>
-                <th className="px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">Type</th>
-                <th className="px-4 py-3 text-right text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500 sm:px-6">Timestamp</th>
+                <th className="px-4 py-3 text-phx-xs font-semibold uppercase tracking-[0.08em] text-slate-500 sm:px-6">HR ID</th>
+                <th className="px-4 py-3 text-phx-xs font-semibold uppercase tracking-[0.08em] text-slate-500">Employee Name</th>
+                <th className="px-4 py-3 text-phx-xs font-semibold uppercase tracking-[0.08em] text-slate-500">Event</th>
+                <th className="px-4 py-3 text-phx-xs font-semibold uppercase tracking-[0.08em] text-slate-500">Type</th>
+                <th className="px-4 py-3 text-right text-phx-xs font-semibold uppercase tracking-[0.08em] text-slate-500 sm:px-6">Timestamp</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 bg-white">
@@ -420,13 +420,13 @@ export function MonitoringDashboard({ stats }: { stats: AdminMonitoringStats }) 
                     </td>
                     <td className="min-w-[180px] px-4 py-4 align-top">
                       <p className="text-sm font-semibold text-slate-900">{event.actorName ?? event.actor}</p>
-                      {event.actorLoginId ? <p className="mt-1 text-[11px] font-medium text-slate-400">Login: {event.actorLoginId}</p> : null}
+                      {event.actorLoginId ? <p className="mt-1 text-phx-xs font-medium text-slate-400">Login: {event.actorLoginId}</p> : null}
                     </td>
                     <td className="min-w-[260px] px-4 py-4 align-top">
                       <p className="text-sm font-medium leading-5 text-slate-800">{event.summary}</p>
                     </td>
                     <td className="whitespace-nowrap px-4 py-4 align-top">
-                      <span className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-600">
+                      <span className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-phx-xs font-semibold uppercase tracking-[0.08em] text-slate-600">
                         {event.entityType}
                       </span>
                     </td>

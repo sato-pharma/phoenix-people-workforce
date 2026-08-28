@@ -29,7 +29,7 @@ export function EvidenceReading({
 }) {
   if (!check) {
     return (
-      <p className="mt-2 border border-slate-200 bg-slate-50 px-3 py-2 text-[12px] font-semibold text-slate-500">
+      <p className="mt-2 border border-slate-200 bg-slate-50 px-3 py-2 text-phx-sm font-semibold text-slate-500">
         The photo has not been read. Judge it yourself.
       </p>
     );
@@ -52,7 +52,7 @@ export function EvidenceReading({
         : "Could not tell whether this is a pharmacy.";
 
   return (
-    <div className={`mt-2 space-y-0.5 border px-3 py-2 text-[12px] ${tone}`}>
+    <div className={`mt-2 space-y-0.5 border px-3 py-2 text-phx-sm ${tone}`}>
       <p className="font-black">{headline}</p>
       {check.signText ? (
         <p dir="auto">

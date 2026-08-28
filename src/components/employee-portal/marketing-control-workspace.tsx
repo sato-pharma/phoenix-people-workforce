@@ -40,7 +40,7 @@ function Field({
 }) {
   return (
     <label className="block min-w-0">
-      <span className="mb-2 block text-[11px] font-black uppercase tracking-[0.15em] text-slate-500">
+      <span className="mb-2 block text-phx-xs font-black uppercase tracking-[0.15em] text-slate-500">
         {label}
       </span>
       {children}
@@ -245,15 +245,15 @@ export function MarketingControlWorkspace() {
       <Card className="rounded border border-slate-200 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.06)] sm:p-5">
         <div className="grid gap-3 md:grid-cols-4">
           <div className="rounded border border-slate-200 bg-slate-50 px-4 py-3">
-            <p className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">Request Types</p>
+            <p className="text-phx-xs font-black uppercase tracking-[0.16em] text-slate-500">Request Types</p>
             <p className="mt-1 text-2xl font-black text-slate-950">{workspace.requestTypes.length}</p>
           </div>
           <div className="rounded border border-slate-200 bg-slate-50 px-4 py-3">
-            <p className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">Workflow Steps</p>
+            <p className="text-phx-xs font-black uppercase tracking-[0.16em] text-slate-500">Workflow Steps</p>
             <p className="mt-1 text-2xl font-black text-slate-950">{workspace.workflowSteps.length}</p>
           </div>
           <div className="rounded border border-slate-200 bg-slate-50 px-4 py-3">
-            <p className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">Validation Settings</p>
+            <p className="text-phx-xs font-black uppercase tracking-[0.16em] text-slate-500">Validation Settings</p>
             <p className="mt-1 text-2xl font-black text-slate-950">
               {workspace.canManageValidationRules ? groupedSettings.validation.length : "Admin"}
             </p>
@@ -373,7 +373,7 @@ export function MarketingControlWorkspace() {
           })}
         </div>
         <PortalDesktopTable minWidth="980px">
-            <thead className="bg-slate-50 text-[11px] font-black uppercase tracking-[0.12em] text-slate-500">
+            <thead className="bg-slate-50 text-phx-xs font-black uppercase tracking-[0.12em] text-slate-500">
               <tr>
                 <th className="px-4 py-3">Code</th>
                 <th className="px-4 py-3">Name</th>
@@ -600,7 +600,7 @@ export function MarketingControlWorkspace() {
           })}
         </div>
         <PortalDesktopTable minWidth="1120px">
-            <thead className="bg-slate-50 text-[11px] font-black uppercase tracking-[0.12em] text-slate-500">
+            <thead className="bg-slate-50 text-phx-xs font-black uppercase tracking-[0.12em] text-slate-500">
               <tr>
                 <th className="px-4 py-3">Seq</th>
                 <th className="px-4 py-3">Step</th>

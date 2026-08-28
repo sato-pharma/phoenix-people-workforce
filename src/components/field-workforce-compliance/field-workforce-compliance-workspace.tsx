@@ -408,7 +408,7 @@ function LegendChip({
 }) {
   return (
     <div className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 shadow-sm">
-      <span className={cn("inline-flex h-7 min-w-7 items-center justify-center rounded-md border px-1.5 text-[11px] font-black", className)}>
+      <span className={cn("inline-flex h-7 min-w-7 items-center justify-center rounded-md border px-1.5 text-phx-xs font-black", className)}>
         {children}
       </span>
       {label}
@@ -433,7 +433,7 @@ function MetricCard({
   };
   return (
     <Card className={cn("rounded-xl border p-4 shadow-[0_12px_28px_rgba(15,23,42,0.06)]", tones[tone])}>
-      <p className="text-[10px] font-black uppercase tracking-[0.16em] opacity-70">{label}</p>
+      <p className="text-phx-2xs font-black uppercase tracking-[0.16em] opacity-70">{label}</p>
       <p className="mt-2 break-words text-xl font-black tracking-tight sm:text-2xl">{value}</p>
     </Card>
   );
@@ -532,7 +532,7 @@ function TimelineLegend() {
       <LegendChip className="border-violet-300 bg-violet-50 text-violet-800" label="Campaign (click to open)">CP</LegendChip>
       <LegendChip className="border-emerald-300 bg-emerald-50 text-emerald-800" label="Visits, full day">5</LegendChip>
       <div className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 shadow-sm">
-        <span className="relative inline-flex h-7 min-w-7 items-center justify-center overflow-hidden rounded-md border border-emerald-300 bg-emerald-50 px-1.5 text-[11px] font-black text-emerald-800">
+        <span className="relative inline-flex h-7 min-w-7 items-center justify-center overflow-hidden rounded-md border border-emerald-300 bg-emerald-50 px-1.5 text-phx-xs font-black text-emerald-800">
           <span aria-hidden className="pointer-events-none absolute inset-0 bg-violet-300/60 [clip-path:polygon(0_0,0_100%,100%_100%)]" />
           <span className="relative z-10">5</span>
         </span>
@@ -740,7 +740,7 @@ function EmployeeComplianceCard({ employee }: { employee: FieldWorkforceEmployee
     <Card className="rounded-xl border border-slate-200 bg-white p-4 shadow-[0_14px_34px_rgba(15,23,42,0.06)]">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <p className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">Employee Monthly Compliance</p>
+          <p className="text-phx-2xs font-black uppercase tracking-[0.16em] text-slate-400">Employee Monthly Compliance</p>
           <h3 className="mt-1 text-lg font-black text-slate-950">{employee.employeeName}</h3>
           <p className="mt-1 font-mono text-xs font-bold text-slate-500">{employee.hrId} / Hire date {employee.hiringDateIso ?? "-"}</p>
           <p className="mt-2 text-xs font-semibold text-slate-500">
@@ -804,13 +804,13 @@ function SingleEmployeeTimeline({ employee }: { employee: FieldWorkforceEmployee
           {employee.timeline.map((cell) => (
             <div
               className={cn(
-                "rounded-md py-1 text-center text-[9px] font-black uppercase tracking-tight text-slate-500",
+                "rounded-md py-1 text-center text-phx-3xs font-black uppercase tracking-tight text-slate-500",
                 cell.isFriday ? "bg-slate-100" : "",
                 cell.isPublicHoliday ? "bg-amber-50 text-amber-700" : "",
               )}
               key={`${cell.dateIso}-header`}
             >
-              <span className="block text-[11px] leading-tight text-slate-900">{cell.dayNumber}</span>
+              <span className="block text-phx-xs leading-tight text-slate-900">{cell.dayNumber}</span>
               <span>{weekday(cell.dateIso)}</span>
             </div>
           ))}
@@ -936,7 +936,7 @@ function EmployeeTrendStrip({ hrId }: { hrId: string }) {
               style={{ height: `${Math.max(6, Math.round(point.compliancePercent))}px` }}
               title={`${point.monthKey}: ${point.compliancePercent}% compliance, ${point.noActivityCandidates} no-activity day(s)${point.highSeverityCount > 0 ? ", High severity" : ""}`}
             />
-            <span className="text-[10px] font-bold text-slate-500">{point.monthKey.slice(5)}</span>
+            <span className="text-phx-2xs font-bold text-slate-500">{point.monthKey.slice(5)}</span>
           </div>
         ))}
       </div>
@@ -1115,7 +1115,7 @@ function ReviewQueue({
       </div>
       <div className="phoenix-horizontal-scroll max-h-[52vh] overflow-auto">
         <table className="w-full min-w-[1180px] text-left text-sm">
-          <thead className="sticky top-0 z-10 bg-slate-50 text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">
+          <thead className="sticky top-0 z-10 bg-slate-50 text-phx-xs font-black uppercase tracking-[0.14em] text-slate-500">
             <tr>
               <th className="px-4 py-3">Employee</th>
               <th className="px-4 py-3">Date</th>
@@ -1247,7 +1247,7 @@ function MonthlySummaryTable({
       </div>
       <div className="phoenix-horizontal-scroll max-h-[52vh] overflow-auto">
         <table className="w-full min-w-[1180px] text-left text-sm">
-          <thead className="sticky top-0 z-10 bg-slate-50 text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">
+          <thead className="sticky top-0 z-10 bg-slate-50 text-phx-xs font-black uppercase tracking-[0.14em] text-slate-500">
             <tr>
               <th className="px-4 py-3">Employee</th>
               <th className="px-4 py-3">Hiring Date</th>
@@ -1309,7 +1309,7 @@ function ScorecardTable({ scorecards, title }: { scorecards: FieldWorkforceGroup
     <AdminTableShell description="Worst-first (lowest average compliance). Informational rollup of the currently loaded month — no severity or deduction impact." title={title}>
       <div className="phoenix-horizontal-scroll overflow-auto">
         <table className="w-full min-w-[820px] text-left text-sm">
-          <thead className="sticky top-0 z-10 bg-slate-50 text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">
+          <thead className="sticky top-0 z-10 bg-slate-50 text-phx-xs font-black uppercase tracking-[0.14em] text-slate-500">
             <tr>
               <th className="px-4 py-3">Group</th>
               <th className="px-4 py-3">Employees</th>
@@ -1593,7 +1593,7 @@ function RecommendationRows({
       </div>
       <div className="phoenix-horizontal-scroll max-h-[56vh] overflow-auto">
         <table className="w-full min-w-[1480px] text-left text-sm">
-          <thead className="sticky top-0 z-10 bg-slate-50 text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">
+          <thead className="sticky top-0 z-10 bg-slate-50 text-phx-xs font-black uppercase tracking-[0.14em] text-slate-500">
             <tr>
               <th className="px-4 py-3">Employee</th>
               <th className="px-4 py-3">Dates</th>
@@ -1724,7 +1724,7 @@ function FinalActionsTable({
       </AdminCallout>
       <div className="phoenix-horizontal-scroll max-h-[52vh] overflow-auto">
         <table className="w-full min-w-[1280px] text-left text-sm">
-          <thead className="sticky top-0 z-10 bg-slate-50 text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">
+          <thead className="sticky top-0 z-10 bg-slate-50 text-phx-xs font-black uppercase tracking-[0.14em] text-slate-500">
             <tr>
               <th className="px-4 py-3">Employee</th>
               <th className="px-4 py-3">Action Type</th>
@@ -2052,7 +2052,7 @@ export function FieldWorkforceComplianceWorkspace({ showPayrollRecommendations =
         >
           <div className="flex flex-wrap items-end gap-3 p-4">
             {recentMonths.length > 0 ? (
-              <label className="flex flex-col gap-1 text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">
+              <label className="flex flex-col gap-1 text-phx-2xs font-black uppercase tracking-[0.16em] text-slate-400">
                 Month
                 <SearchableSelect
                   className="h-10 min-w-[220px] rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-orange-400"

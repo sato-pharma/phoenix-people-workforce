@@ -143,13 +143,13 @@ export function DoctorCoverageNormsEditor({
       {KINDS.map((kind) => (
         <div className="border border-slate-200 bg-white" key={kind.key}>
           <div className="border-b border-slate-200 bg-slate-900 px-4 py-3">
-            <h2 className="text-[11px] font-black uppercase tracking-[0.14em] text-white">{kind.title}</h2>
-            <p className="mt-0.5 text-[10px] text-slate-400">{kind.hint}</p>
+            <h2 className="text-phx-xs font-black uppercase tracking-[0.14em] text-white">{kind.title}</h2>
+            <p className="mt-0.5 text-phx-2xs text-slate-400">{kind.hint}</p>
           </div>
           <div className="grid grid-cols-3 gap-3 p-4">
             {GRADES.map((grade) => (
               <label className="space-y-1" key={grade}>
-                <span className="block text-[9px] font-black uppercase tracking-[0.16em] text-slate-400">
+                <span className="block text-phx-3xs font-black uppercase tracking-[0.16em] text-slate-400">
                   Grade {grade} — visits / month
                 </span>
                 <input
@@ -167,7 +167,7 @@ export function DoctorCoverageNormsEditor({
                   value={draft[kind.key][grade]}
                 />
                 {draft[kind.key][grade].trim() === "0" ? (
-                  <span className="block text-[10px] font-semibold text-amber-700">
+                  <span className="block text-phx-2xs font-semibold text-amber-700">
                     Not scored — leaves the coverage %
                   </span>
                 ) : null}
@@ -178,7 +178,7 @@ export function DoctorCoverageNormsEditor({
       ))}
 
       <div className="border border-slate-200 bg-slate-50 px-4 py-3">
-        <p className="text-[11px] text-slate-600">
+        <p className="text-phx-xs text-slate-600">
           <strong className="font-black">0 does not mean &ldquo;no visits needed&rdquo;.</strong> It means that group is not
           held to a frequency: those contacts drop out of the coverage %, the red/amber/green counts and the call list,
           instead of all turning green.
@@ -188,8 +188,8 @@ export function DoctorCoverageNormsEditor({
       {/* ── Line overrides ──────────────────────────────────────────────────────────────────── */}
       <div className="border border-slate-200 bg-white">
         <div className="border-b border-slate-200 bg-slate-900 px-4 py-3">
-          <h2 className="text-[11px] font-black uppercase tracking-[0.14em] text-white">Line coverage exceptions</h2>
-          <p className="mt-0.5 text-[10px] text-slate-400">
+          <h2 className="text-phx-xs font-black uppercase tracking-[0.14em] text-white">Line coverage exceptions</h2>
+          <p className="mt-0.5 text-phx-2xs text-slate-400">
             Product, Group Product and National Sales Managers normally see the one line on their employee record. Add
             someone here to give them more than one.
           </p>
@@ -208,12 +208,12 @@ export function DoctorCoverageNormsEditor({
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div className="whitespace-nowrap">
                       <span className="text-sm font-bold text-slate-900">{person?.name ?? key.toUpperCase()}</span>
-                      <span className="ml-2 text-[11px] text-slate-400">
+                      <span className="ml-2 text-phx-xs text-slate-400">
                         {person ? `${person.hrId} · ${person.jobTitle}` : "not a line-scoped role any more"}
                       </span>
                     </div>
                     <button
-                      className="h-8 border border-slate-200 bg-white px-3 text-[10px] font-black uppercase tracking-[0.12em] text-rose-700 hover:border-rose-400"
+                      className="h-8 border border-slate-200 bg-white px-3 text-phx-2xs font-black uppercase tracking-[0.12em] text-rose-700 hover:border-rose-400"
                       onClick={() => removeOverride(key)}
                       type="button"
                     >
@@ -233,12 +233,12 @@ export function DoctorCoverageNormsEditor({
                     ))}
                   </div>
                   {lineIds.length === 0 ? (
-                    <p className="mt-1 text-[10px] font-semibold text-rose-700">
+                    <p className="mt-1 text-phx-2xs font-semibold text-rose-700">
                       Pick at least one line, or remove this row — an empty exception is rejected on save.
                     </p>
                   ) : null}
                   {person?.lineId != null && lineIds.length === 1 && lineIds[0] === person.lineId ? (
-                    <p className="mt-1 text-[10px] text-slate-400">
+                    <p className="mt-1 text-phx-2xs text-slate-400">
                       Same as their own record ({person.lineName ?? "their line"}) — this row changes nothing yet.
                     </p>
                   ) : null}
@@ -250,7 +250,7 @@ export function DoctorCoverageNormsEditor({
 
         <div className="flex flex-wrap items-end gap-2 border-t border-slate-200 bg-slate-50 px-4 py-3">
           <label className="space-y-1">
-            <span className="block text-[9px] font-black uppercase tracking-[0.16em] text-slate-400">Add a person</span>
+            <span className="block text-phx-3xs font-black uppercase tracking-[0.16em] text-slate-400">Add a person</span>
             <select
               className="h-9 min-w-64 border border-slate-200 bg-white px-2 text-sm font-semibold text-slate-700 outline-none focus:border-orange-400"
               onChange={(event) => setAddHrId(event.target.value)}
@@ -267,14 +267,14 @@ export function DoctorCoverageNormsEditor({
             </select>
           </label>
           <button
-            className="h-9 border border-slate-200 bg-white px-4 text-[11px] font-black uppercase tracking-[0.12em] text-slate-600 hover:border-orange-400 disabled:opacity-40"
+            className="h-9 border border-slate-200 bg-white px-4 text-phx-xs font-black uppercase tracking-[0.12em] text-slate-600 hover:border-orange-400 disabled:opacity-40"
             disabled={!addHrId}
             onClick={addOverride}
             type="button"
           >
             Add
           </button>
-          <span className="whitespace-nowrap text-[10px] text-slate-400">
+          <span className="whitespace-nowrap text-phx-2xs text-slate-400">
             Only these roles are listed — an exception on a District Manager or a rep would do nothing.
           </span>
         </div>
@@ -293,7 +293,7 @@ export function DoctorCoverageNormsEditor({
 
       <div className="flex items-center gap-3">
         <button
-          className="h-9 border border-slate-200 bg-slate-900 px-4 text-[11px] font-black uppercase tracking-[0.12em] text-white hover:bg-slate-700 disabled:opacity-50"
+          className="h-9 border border-slate-200 bg-slate-900 px-4 text-phx-xs font-black uppercase tracking-[0.12em] text-white hover:bg-slate-700 disabled:opacity-50"
           disabled={status === "saving"}
           onClick={save}
           type="button"
@@ -302,7 +302,7 @@ export function DoctorCoverageNormsEditor({
         </button>
         {status === "saved" ? <span className="text-xs font-semibold text-emerald-700">Saved.</span> : null}
         {updatedAt ? (
-          <span className="text-[11px] text-slate-400">
+          <span className="text-phx-xs text-slate-400">
             Last changed {new Date(updatedAt).toLocaleString("en-GB", { timeZone: "Africa/Cairo" })} (Cairo)
           </span>
         ) : null}

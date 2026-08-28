@@ -386,9 +386,9 @@ export function OfferComposer({
 
   const money = (label: string, value: number, note?: string) => (
     <div className="rounded-2xl border border-phx-line bg-white px-4 py-3 shadow-sm" key={label}>
-      <p className="text-[10px] font-black uppercase tracking-[0.14em] text-phx-ink-faint">{label}</p>
+      <p className="text-phx-2xs font-black uppercase tracking-[0.14em] text-phx-ink-faint">{label}</p>
       <p className="mt-1 whitespace-nowrap text-lg font-black tabular-nums text-slate-900">EGP {offerMoney(value)}</p>
-      {note ? <p className="mt-0.5 whitespace-nowrap text-[11px] text-phx-ink-faint">{note}</p> : null}
+      {note ? <p className="mt-0.5 whitespace-nowrap text-phx-xs text-phx-ink-faint">{note}</p> : null}
     </div>
   );
 
@@ -397,7 +397,7 @@ export function OfferComposer({
     messages.length === 0 ? null : (
       <div className="mt-1.5 flex flex-col gap-1">
         {messages.map((message) => (
-          <p className="flex items-start gap-1.5 text-[11px] font-semibold leading-4 text-[#B45309]" key={message}>
+          <p className="flex items-start gap-1.5 text-phx-xs font-semibold leading-4 text-[#B45309]" key={message}>
             <TriangleAlert className="mt-px h-3 w-3 shrink-0" />
             <span>{message}</span>
           </p>
@@ -424,7 +424,7 @@ export function OfferComposer({
   /** A one-click date shortcut. Sets the field and nothing else. */
   const chip = (key: "dateOfIssue" | "startDate" | "validUntil", label: string, value: string) => (
     <button
-      className="rounded-lg border border-phx-line bg-white px-2 py-1 text-[11px] font-bold whitespace-nowrap text-phx-ink-2 shadow-sm transition hover:border-phx-accent-line hover:text-[#B45309] disabled:cursor-not-allowed disabled:opacity-50"
+      className="rounded-lg border border-phx-line bg-white px-2 py-1 text-phx-xs font-bold whitespace-nowrap text-phx-ink-2 shadow-sm transition hover:border-phx-accent-line hover:text-[#B45309] disabled:cursor-not-allowed disabled:opacity-50"
       disabled={!canManage || !value}
       key={label}
       onClick={() => setDraft((current) => ({ ...current, [key]: value }))}
@@ -636,7 +636,7 @@ export function OfferComposer({
         </div>
 
         <div className="border-t border-slate-200/80 bg-slate-50/50 px-5 py-5 sm:px-6">
-          <p className="mb-3 text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-soft">
+          <p className="mb-3 text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">
             Derived compensation
           </p>
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -645,7 +645,7 @@ export function OfferComposer({
             {money("Cost of living", pay.costOfLiving.monthly, `${offerMoney(pay.costOfLiving.annual)} a year`)}
             {money("Total package", pay.total.monthly, `${offerMoney(pay.total.annual)} a year`)}
           </div>
-          <p className="mt-3 text-[11px] leading-4 text-phx-ink-faint">
+          <p className="mt-3 text-phx-xs leading-4 text-phx-ink-faint">
             Basic is 70% of the package after cost of living; transportation is exactly what remains, so the three
             lines always add back to the total to the pound.
           </p>
@@ -683,7 +683,7 @@ export function OfferComposer({
               <tr className="border-b border-slate-200/80 bg-slate-50/60 text-left">
                 {["Candidate", "Title", "Package", "Status", "Sent", ""].map((heading) => (
                   <th
-                    className="whitespace-nowrap px-5 py-3 text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-soft"
+                    className="whitespace-nowrap px-5 py-3 text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft"
                     key={heading}
                   >
                     {heading}

@@ -27,7 +27,7 @@ export function ScopeBadge({ className, scope }: ScopeBadgeProps) {
 
   return (
     <span
-      className={`inline-flex items-center gap-1.5 rounded border px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.08em] ${view.toneClass}${className ? ` ${className}` : ""}`}
+      className={`inline-flex items-center gap-1.5 rounded border px-2.5 py-1 text-phx-xs font-semibold uppercase tracking-[0.08em] ${view.toneClass}${className ? ` ${className}` : ""}`}
       title={view.description}
     >
       <Icon className="h-3 w-3 shrink-0" />

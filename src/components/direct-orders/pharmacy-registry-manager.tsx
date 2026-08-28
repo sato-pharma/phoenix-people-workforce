@@ -203,7 +203,7 @@ export function PharmacyRegistryManager({
       {ok ? <p className="text-sm font-semibold text-emerald-600">{ok}</p> : null}
 
       {/* What is worth acting on, said as counts rather than left for the eye to find. */}
-      <div className="flex flex-wrap gap-3 text-[12px]">
+      <div className="flex flex-wrap gap-3 text-phx-sm">
         <span className="border border-slate-200 bg-white px-3 py-1.5 font-bold text-slate-700">
           {rows.length.toLocaleString("en-US")} pharmacies
         </span>
@@ -229,7 +229,7 @@ export function PharmacyRegistryManager({
         {canManage ? (
           <button
             type="button"
-            className="bg-orange-500 px-3 py-1.5 text-[12px] font-black uppercase tracking-wider text-white hover:bg-orange-600"
+            className="bg-orange-500 px-3 py-1.5 text-phx-sm font-black uppercase tracking-wider text-white hover:bg-orange-600"
             onClick={() => {
               setAdding((prev) => !prev);
               setEditingId(null);
@@ -242,8 +242,8 @@ export function PharmacyRegistryManager({
 
       {adding && canManage ? (
         <section className="border border-orange-200 bg-orange-50/40 p-4">
-          <h3 className="mb-1 text-[11px] font-black uppercase tracking-wider text-slate-600">Register a pharmacy</h3>
-          <p className="mb-3 text-[12px] text-slate-600">
+          <h3 className="mb-1 text-phx-xs font-black uppercase tracking-wider text-slate-600">Register a pharmacy</h3>
+          <p className="mb-3 text-phx-sm text-slate-600">
             A pharmacy registered here counts as confirmed — you are the authority the approval chain
             would otherwise wait for. An order placed on it later takes the ordinary route:
             SFE → managers → CEO, with no System Admin step.
@@ -255,14 +255,14 @@ export function PharmacyRegistryManager({
                 : "mb-2 border border-orange-300 bg-orange-50 p-2"
             }
           >
-            <p className="text-[11px] font-black uppercase tracking-wider text-slate-500">What is this? *</p>
+            <p className="text-phx-xs font-black uppercase tracking-wider text-slate-500">What is this? *</p>
             <div className="mt-1 flex items-center gap-1.5">
               {VENUE_TYPES.map((venueType) => (
                 <button
                   className={
                     newVenueType === venueType
-                      ? "border border-orange-300 bg-orange-50 px-2.5 py-1 text-[12px] font-black text-orange-700"
-                      : "border border-slate-200 bg-white px-2.5 py-1 text-[12px] font-bold text-slate-600 hover:bg-slate-50"
+                      ? "border border-orange-300 bg-orange-50 px-2.5 py-1 text-phx-sm font-black text-orange-700"
+                      : "border border-slate-200 bg-white px-2.5 py-1 text-phx-sm font-bold text-slate-600 hover:bg-slate-50"
                   }
                   key={venueType}
                   onClick={() => setNewVenueType(venueType)}
@@ -273,9 +273,9 @@ export function PharmacyRegistryManager({
               ))}
             </div>
             {!venueTypeIsAnswered(newVenueType) ? (
-              <p className="mt-1 text-[11px] font-bold text-orange-700">{VENUE_TYPE_UNANSWERED_MESSAGE}</p>
+              <p className="mt-1 text-phx-xs font-bold text-orange-700">{VENUE_TYPE_UNANSWERED_MESSAGE}</p>
             ) : choiceRequiresDistributorCode(newVenueType) ? null : (
-              <p className="mt-1 text-[11px] font-semibold text-slate-500">
+              <p className="mt-1 text-phx-xs font-semibold text-slate-500">
                 A {venueTypeLabel(newVenueType).toLowerCase()} has no distributor account, so it has no customer
                 code. Register it as one — never as a pharmacy with a made-up code.
               </p>
@@ -323,8 +323,8 @@ export function PharmacyRegistryManager({
           {/* Hidden until the type is known, and for good once it is a nursery: a venue with no
               distributor account has no code to give, and asking anyway is what produced `0000`. */}
           <div className={choiceRequiresDistributorCode(newVenueType) ? "mt-3 border border-slate-200 bg-white p-2" : "hidden"}>
-            <p className="text-[11px] font-black uppercase tracking-wider text-slate-500">Distributor customer codes</p>
-            <p className="mb-2 text-[11px] font-semibold text-slate-500">
+            <p className="text-phx-xs font-black uppercase tracking-wider text-slate-500">Distributor customer codes</p>
+            <p className="mb-2 text-phx-xs font-semibold text-slate-500">
               This is the point of registering ahead of time — search the distributor&apos;s own customer
               list by name and Phoenix will link this pharmacy&apos;s distributor sales to it.
             </p>
@@ -341,7 +341,7 @@ export function PharmacyRegistryManager({
             ))}
             <button
               type="button"
-              className="text-[12px] font-bold text-orange-600 hover:text-orange-700"
+              className="text-phx-sm font-bold text-orange-600 hover:text-orange-700"
               onClick={() => setNewCodes((prev) => [...prev, { ...EMPTY_ROW }])}
             >
               + Add distributor
@@ -351,7 +351,7 @@ export function PharmacyRegistryManager({
           <button
             type="button"
             disabled={busy || !newName.trim() || !venueTypeIsAnswered(newVenueType)}
-            className="mt-3 bg-orange-500 px-4 py-2 text-[12px] font-black uppercase tracking-wider text-white hover:bg-orange-600 disabled:opacity-50"
+            className="mt-3 bg-orange-500 px-4 py-2 text-phx-sm font-black uppercase tracking-wider text-white hover:bg-orange-600 disabled:opacity-50"
             onClick={() => run(register, `Registered ${newName.trim()}.`)}
           >
             {busy ? "Saving…" : `Register ${venueTypeChoiceLabel(newVenueType).toLowerCase()}`}
@@ -363,7 +363,7 @@ export function PharmacyRegistryManager({
       <div className="hidden overflow-x-auto border border-slate-200 md:block">
         <table className="w-full min-w-[1100px] border-collapse text-sm">
           <thead className="bg-slate-900 text-white">
-            <tr className="text-left text-[11px] font-black uppercase tracking-wider">
+            <tr className="text-left text-phx-xs font-black uppercase tracking-wider">
               <th className="px-3 py-2">Pharmacy</th>
               <th className="px-3 py-2">Geography</th>
               <th className="px-3 py-2">Doctor</th>
@@ -385,16 +385,16 @@ export function PharmacyRegistryManager({
               <tr key={row.id} className="border-b border-slate-100 align-top">
                 <td className="whitespace-nowrap px-3 py-2">
                   <div className="font-semibold text-slate-800">{row.pharmacyName}</div>
-                  <div className="text-[11px] text-slate-400">{row.phoenixPharmacyCode}</div>
+                  <div className="text-phx-xs text-slate-400">{row.phoenixPharmacyCode}</div>
                 </td>
-                <td className="whitespace-nowrap px-3 py-2 text-[12px] text-slate-600">
+                <td className="whitespace-nowrap px-3 py-2 text-phx-sm text-slate-600">
                   <div>{row.brickName ?? "—"}</div>
-                  <div className="text-[11px] text-slate-400">
+                  <div className="text-phx-xs text-slate-400">
                     {row.areaName ?? "—"} · {row.regionName ?? "—"}
                   </div>
                 </td>
-                <td className="whitespace-nowrap px-3 py-2 text-[12px] text-slate-600">{row.doctorName ?? "—"}</td>
-                <td className="px-3 py-2 text-[12px] text-slate-600">
+                <td className="whitespace-nowrap px-3 py-2 text-phx-sm text-slate-600">{row.doctorName ?? "—"}</td>
+                <td className="px-3 py-2 text-phx-sm text-slate-600">
                   {row.distributorCodes.length === 0 ? (
                     <span className="font-semibold text-amber-700">No code — sales cannot be linked</span>
                   ) : (
@@ -411,21 +411,21 @@ export function PharmacyRegistryManager({
                       pharmacy rendered green as "Confirmed". Tested first, deliberately. */}
                   {row.verificationStatus === "rejected" ? (
                     <div className="space-y-1">
-                      <span className="inline-block bg-rose-200 px-2 py-0.5 text-[11px] font-black text-rose-900">
+                      <span className="inline-block bg-rose-200 px-2 py-0.5 text-phx-xs font-black text-rose-900">
                         Rejected — proven false
                       </span>
-                      <p className="text-[11px] text-slate-500">Deactivated; cannot be used or confirmed.</p>
+                      <p className="text-phx-xs text-slate-500">Deactivated; cannot be used or confirmed.</p>
                     </div>
                   ) : row.verificationStatus === "pending_review" ? (
                     <div className="space-y-1">
-                      <span className="inline-block bg-rose-100 px-2 py-0.5 text-[11px] font-bold text-rose-800">
+                      <span className="inline-block bg-rose-100 px-2 py-0.5 text-phx-xs font-bold text-rose-800">
                         Waiting for confirmation
                       </span>
                       {canClearReview ? (
                         <button
                           type="button"
                           disabled={busy}
-                          className="block bg-slate-900 px-2 py-1 text-[11px] font-bold text-white hover:bg-slate-700 disabled:opacity-50"
+                          className="block bg-slate-900 px-2 py-1 text-phx-xs font-bold text-white hover:bg-slate-700 disabled:opacity-50"
                           onClick={() => run(() => post({ action: "confirm", pharmacyId: row.id }), `Confirmed ${row.pharmacyName}.`)}
                         >
                           Confirm this pharmacy
@@ -433,12 +433,12 @@ export function PharmacyRegistryManager({
                       ) : null}
                     </div>
                   ) : (
-                    <span className="inline-block bg-emerald-100 px-2 py-0.5 text-[11px] font-bold text-emerald-800">
+                    <span className="inline-block bg-emerald-100 px-2 py-0.5 text-phx-xs font-bold text-emerald-800">
                       Confirmed
                     </span>
                   )}
                 </td>
-                <td className="whitespace-nowrap px-3 py-2 text-[12px] text-slate-600">
+                <td className="whitespace-nowrap px-3 py-2 text-phx-sm text-slate-600">
                   {row.orderCount.toLocaleString("en-US")}
                   {row.pendingOrderCount > 0 ? (
                     <span className="text-orange-700"> · {row.pendingOrderCount} in flight</span>
@@ -448,7 +448,7 @@ export function PharmacyRegistryManager({
                   <td className="whitespace-nowrap px-3 py-2">
                     <button
                       type="button"
-                      className="border border-slate-300 px-2 py-1 text-[11px] font-bold text-slate-600 hover:bg-slate-50"
+                      className="border border-slate-300 px-2 py-1 text-phx-xs font-bold text-slate-600 hover:bg-slate-50"
                       onClick={() => (editingId === row.id ? setEditingId(null) : openEdit(row))}
                     >
                       {editingId === row.id ? "Close" : "Edit"}
@@ -468,23 +468,23 @@ export function PharmacyRegistryManager({
             <div className="flex items-start justify-between gap-2">
               <div>
                 <div className="font-semibold text-slate-800">{row.pharmacyName}</div>
-                <div className="text-[11px] text-slate-400">{row.phoenixPharmacyCode}</div>
+                <div className="text-phx-xs text-slate-400">{row.phoenixPharmacyCode}</div>
               </div>
               {/* `rejected` MUST be tested before the else. This was a two-way if/else, so a
                   rejected pharmacy fell through and rendered as a green "Confirmed" — a pharmacy
                   proven false, shown as trusted, with no type error to catch it. */}
               {row.verificationStatus === "rejected" ? (
-                <span className="bg-rose-200 px-2 py-0.5 text-[11px] font-black text-rose-900">Rejected</span>
+                <span className="bg-rose-200 px-2 py-0.5 text-phx-xs font-black text-rose-900">Rejected</span>
               ) : row.verificationStatus === "pending_review" ? (
-                <span className="bg-rose-100 px-2 py-0.5 text-[11px] font-bold text-rose-800">Waiting</span>
+                <span className="bg-rose-100 px-2 py-0.5 text-phx-xs font-bold text-rose-800">Waiting</span>
               ) : (
-                <span className="bg-emerald-100 px-2 py-0.5 text-[11px] font-bold text-emerald-800">Confirmed</span>
+                <span className="bg-emerald-100 px-2 py-0.5 text-phx-xs font-bold text-emerald-800">Confirmed</span>
               )}
             </div>
-            <div className="mt-2 text-[12px] text-slate-600">
+            <div className="mt-2 text-phx-sm text-slate-600">
               {row.brickName ?? "—"} · {row.areaName ?? "—"} · {row.regionName ?? "—"}
             </div>
-            <div className="mt-1 text-[12px] text-slate-600">
+            <div className="mt-1 text-phx-sm text-slate-600">
               {row.distributorCodes.length === 0
                 ? "No distributor code"
                 : row.distributorCodes.map((c) => `${c.distributorName}: ${c.customerCode}`).join(" · ")}
@@ -492,7 +492,7 @@ export function PharmacyRegistryManager({
             {canManage ? (
               <button
                 type="button"
-                className="mt-2 border border-slate-300 px-2 py-1 text-[11px] font-bold text-slate-600"
+                className="mt-2 border border-slate-300 px-2 py-1 text-phx-xs font-bold text-slate-600"
                 onClick={() => (editingId === row.id ? setEditingId(null) : openEdit(row))}
               >
                 {editingId === row.id ? "Close" : "Edit"}
@@ -504,7 +504,7 @@ export function PharmacyRegistryManager({
 
       {editingId && canManage ? (
         <section className="border border-slate-300 bg-white p-4">
-          <h3 className="mb-3 text-[11px] font-black uppercase tracking-wider text-slate-600">
+          <h3 className="mb-3 text-phx-xs font-black uppercase tracking-wider text-slate-600">
             Editing {rows.find((r) => r.id === editingId)?.pharmacyName ?? ""}
           </h3>
           {(() => {
@@ -513,7 +513,7 @@ export function PharmacyRegistryManager({
             return (
               <>
                 {row.pendingOrderCount > 0 ? (
-                  <p className="mb-3 border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] font-semibold text-amber-900">
+                  <p className="mb-3 border border-amber-200 bg-amber-50 px-3 py-2 text-phx-sm font-semibold text-amber-900">
                     {row.pendingOrderCount} order{row.pendingOrderCount === 1 ? " is" : "s are"} still climbing the
                     approval chain on this pharmacy. Changing a distributor code changes which distributor sales
                     Phoenix will match to {row.pendingOrderCount === 1 ? "it" : "them"}.
@@ -554,8 +554,8 @@ export function PharmacyRegistryManager({
                 </div>
 
                 <div className="mt-3 border border-slate-200 p-2">
-                  <p className="text-[11px] font-black uppercase tracking-wider text-slate-500">Distributor customer codes</p>
-                  <p className="mb-2 text-[11px] font-semibold text-slate-500">
+                  <p className="text-phx-xs font-black uppercase tracking-wider text-slate-500">Distributor customer codes</p>
+                  <p className="mb-2 text-phx-xs font-semibold text-slate-500">
                     What you save here REPLACES every code on this pharmacy. Remove a row to drop that
                     distributor entirely.
                   </p>
@@ -572,7 +572,7 @@ export function PharmacyRegistryManager({
                   ))}
                   <button
                     type="button"
-                    className="text-[12px] font-bold text-orange-600 hover:text-orange-700"
+                    className="text-phx-sm font-bold text-orange-600 hover:text-orange-700"
                     onClick={() => setEditCodes((prev) => [...prev, { ...EMPTY_ROW }])}
                   >
                     + Add distributor
@@ -583,14 +583,14 @@ export function PharmacyRegistryManager({
                   <button
                     type="button"
                     disabled={busy || !editName.trim()}
-                    className="bg-orange-500 px-4 py-2 text-[12px] font-black uppercase tracking-wider text-white hover:bg-orange-600 disabled:opacity-50"
+                    className="bg-orange-500 px-4 py-2 text-phx-sm font-black uppercase tracking-wider text-white hover:bg-orange-600 disabled:opacity-50"
                     onClick={() => run(() => saveEdit(row), `Saved ${editName.trim()}.`)}
                   >
                     {busy ? "Saving…" : "Save changes"}
                   </button>
                   <button
                     type="button"
-                    className="border border-slate-300 px-4 py-2 text-[12px] font-bold text-slate-600 hover:bg-slate-50"
+                    className="border border-slate-300 px-4 py-2 text-phx-sm font-bold text-slate-600 hover:bg-slate-50"
                     onClick={() => setEditingId(null)}
                   >
                     Cancel

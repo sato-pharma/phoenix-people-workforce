@@ -82,14 +82,14 @@ export function DirectOrderCorrectResubmit({
 
   return (
     <div className="border-t border-amber-200 bg-amber-50/60 px-4 py-3">
-      <p className="text-[10px] font-black uppercase tracking-wider text-amber-700">
+      <p className="text-phx-2xs font-black uppercase tracking-wider text-amber-700">
         Sent back to you for a correction
       </p>
 
       {returnComment ? (
         <blockquote className="mt-2 border-l-4 border-amber-400 bg-white px-3 py-2">
           <p className="text-sm font-semibold text-slate-900">“{returnComment.message}”</p>
-          <p className="mt-1 text-[11px] font-bold text-slate-500">
+          <p className="mt-1 text-phx-xs font-bold text-slate-500">
             {returnComment.byName ? `— ${returnComment.byName}` : "— the approver"}
             {returnComment.at ? ` · ${new Date(returnComment.at).toLocaleDateString("en-GB")}` : ""}
           </p>
@@ -110,7 +110,7 @@ export function DirectOrderCorrectResubmit({
         </button>
       ) : (
         <div className="mt-3 space-y-3">
-          <p className="text-[11px] font-semibold text-slate-600">
+          <p className="text-phx-xs font-semibold text-slate-600">
             Correcting <span className="font-black text-slate-900">{productName}</span> for{" "}
             <span className="font-black text-slate-900">{pharmacyName}</span>. This stays the same
             order and goes back to the same approver — it does not start again from the beginning.
@@ -119,7 +119,7 @@ export function DirectOrderCorrectResubmit({
 
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="block">
-              <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">Quantity</span>
+              <span className="text-phx-2xs font-black uppercase tracking-wider text-slate-500">Quantity</span>
               <input
                 type="number"
                 min={1}
@@ -130,7 +130,7 @@ export function DirectOrderCorrectResubmit({
             </label>
 
             <label className="block">
-              <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">Deal</span>
+              <span className="text-phx-2xs font-black uppercase tracking-wider text-slate-500">Deal</span>
               <select
                 value={nextDeal}
                 onChange={(event) => setNextDeal(event.target.value === "discount" ? "discount" : "bonus")}
@@ -143,7 +143,7 @@ export function DirectOrderCorrectResubmit({
 
             {nextDeal === "bonus" ? (
               <label className="block">
-                <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">Bonus units</span>
+                <span className="text-phx-2xs font-black uppercase tracking-wider text-slate-500">Bonus units</span>
                 <input
                   type="number"
                   min={0}
@@ -154,7 +154,7 @@ export function DirectOrderCorrectResubmit({
               </label>
             ) : (
               <label className="block">
-                <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">Discount %</span>
+                <span className="text-phx-2xs font-black uppercase tracking-wider text-slate-500">Discount %</span>
                 <input
                   type="number"
                   min={0}
@@ -167,7 +167,7 @@ export function DirectOrderCorrectResubmit({
             )}
 
             <label className="block">
-              <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">
+              <span className="text-phx-2xs font-black uppercase tracking-wider text-slate-500">
                 Money-collection date
               </span>
               <input
@@ -180,7 +180,7 @@ export function DirectOrderCorrectResubmit({
           </div>
 
           <label className="block">
-            <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">
+            <span className="text-phx-2xs font-black uppercase tracking-wider text-slate-500">
               What did you change? (the approver sees this)
             </span>
             <textarea

@@ -229,10 +229,10 @@ export default async function EmployeePortalVacanciesPage({
           data-no-print
         >
           <div className="mb-4 flex flex-wrap items-center gap-2">
-            <span className="inline-flex rounded border border-orange-200 bg-orange-50 px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wider text-orange-600">
+            <span className="inline-flex rounded border border-orange-200 bg-orange-50 px-2.5 py-0.5 text-phx-xs font-semibold uppercase tracking-wider text-orange-600">
               Filters
             </span>
-            <span className="text-[11px] font-medium text-slate-400">
+            <span className="text-phx-xs font-medium text-slate-400">
               {isNsm ? "Line Sales View" : "District Sales View"} &middot;{" "}
               {filteredVacancies.length} matching
             </span>
@@ -244,7 +244,7 @@ export default async function EmployeePortalVacanciesPage({
           >
             <div>
               <label
-                className="mb-2 block text-[11px] font-semibold uppercase tracking-wider text-slate-400"
+                className="mb-2 block text-phx-xs font-semibold uppercase tracking-wider text-slate-400"
                 htmlFor="vacancies-area"
               >
                 Area
@@ -266,7 +266,7 @@ export default async function EmployeePortalVacanciesPage({
 
             <div>
               <label
-                className="mb-2 block text-[11px] font-semibold uppercase tracking-wider text-slate-400"
+                className="mb-2 block text-phx-xs font-semibold uppercase tracking-wider text-slate-400"
                 htmlFor="vacancies-manager"
               >
                 Manager
@@ -311,13 +311,13 @@ export default async function EmployeePortalVacanciesPage({
                 key={stat.label}
                 className={`border-l-2 ${statBorders[stat.label] ?? "border-l-slate-300"} px-3 py-3 sm:px-4 sm:py-4`}
               >
-                <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                <p className="text-phx-xs font-semibold uppercase tracking-wider text-slate-400">
                   {stat.label}
                 </p>
                 <p className="mt-1 text-xl font-bold text-slate-900 sm:text-2xl">
                   {stat.value}
                 </p>
-                <p className="mt-0.5 text-[11px] font-medium text-slate-400">
+                <p className="mt-0.5 text-phx-xs font-medium text-slate-400">
                   {stat.sub}
                 </p>
               </div>
@@ -338,13 +338,13 @@ export default async function EmployeePortalVacanciesPage({
         ) : (
           <Card className="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-[0_1px_3px_rgba(15,23,42,0.08)] print:shadow-none">
             <div className="border-b border-gray-100 px-4 py-4 sm:px-6">
-              <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+              <p className="text-phx-xs font-semibold uppercase tracking-wider text-slate-400">
                 Open Positions
               </p>
               <h2 className="mt-1 text-base font-semibold text-slate-900">
                 Vacancy List
               </h2>
-              <p className="mt-0.5 text-[11px] font-medium text-slate-400">
+              <p className="mt-0.5 text-phx-xs font-medium text-slate-400">
                 {filteredVacancies.length}{" "}
                 {filteredVacancies.length === 1 ? "vacancy" : "vacancies"} in
                 selected scope
@@ -354,7 +354,7 @@ export default async function EmployeePortalVacanciesPage({
             {/* Desktop Table */}
             <div className="hidden overflow-x-auto md:block">
               <table className="min-w-full text-sm">
-                <thead className="bg-slate-50/80 text-left text-[11px] uppercase tracking-wider text-slate-400">
+                <thead className="bg-slate-50/80 text-left text-phx-xs uppercase tracking-wider text-slate-400">
                   <tr>
                     <th className="border-r border-slate-100 px-3 py-3 font-semibold sm:px-4">
                       Vacancy
@@ -390,16 +390,16 @@ export default async function EmployeePortalVacanciesPage({
                             {formattedCode.label}
                           </p>
                           {formattedCode.meta ? (
-                            <p className="mt-0.5 text-[11px] text-slate-400">
+                            <p className="mt-0.5 text-phx-xs text-slate-400">
                               {formattedCode.meta}
                             </p>
                           ) : (
-                            <p className="mt-0.5 text-[11px] text-slate-400">
+                            <p className="mt-0.5 text-phx-xs text-slate-400">
                               {vacancy.vacancyCode}
                             </p>
                           )}
                           {vacancy.lineName ? (
-                            <span className="mt-1 inline-block rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[10px] font-medium text-slate-500">
+                            <span className="mt-1 inline-block rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-phx-2xs font-medium text-slate-500">
                               {vacancy.lineName}
                             </span>
                           ) : null}
@@ -411,12 +411,12 @@ export default async function EmployeePortalVacanciesPage({
                               "Unspecified Position"}
                           </p>
                           {vacancy.note ? (
-                            <p className="mt-0.5 text-[11px] text-slate-400">
+                            <p className="mt-0.5 text-phx-xs text-slate-400">
                               {vacancy.note}
                             </p>
                           ) : null}
                           {vacancy.isDistrictManagerVacancy ? (
-                            <span className="mt-1 inline-block rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">
+                            <span className="mt-1 inline-block rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-phx-2xs font-semibold text-amber-700">
                               DSM Vacancy
                             </span>
                           ) : null}
@@ -424,7 +424,7 @@ export default async function EmployeePortalVacanciesPage({
                         <td className="border-r border-slate-100 px-3 py-3 text-slate-600 sm:px-4">
                           <p>{vacancy.areaName ?? "Unknown Area"}</p>
                           {vacancy.regionName ? (
-                            <p className="mt-0.5 text-[11px] text-slate-400">
+                            <p className="mt-0.5 text-phx-xs text-slate-400">
                               {vacancy.regionName}
                             </p>
                           ) : null}
@@ -436,7 +436,7 @@ export default async function EmployeePortalVacanciesPage({
                         </td>
                         <td className="border-r border-slate-100 px-3 py-3 sm:px-4">
                           <span
-                            className={`inline-block rounded border ${style.border} ${style.bg} px-2 py-0.5 text-[11px] font-semibold ${style.text}`}
+                            className={`inline-block rounded border ${style.border} ${style.bg} px-2 py-0.5 text-phx-xs font-semibold ${style.text}`}
                           >
                             {titleCaseWords(vacancy.status)}
                           </span>
@@ -473,7 +473,7 @@ export default async function EmployeePortalVacanciesPage({
                         </p>
                       </div>
                       <span
-                        className={`shrink-0 rounded border ${style.border} ${style.bg} px-2 py-0.5 text-[10px] font-semibold ${style.text}`}
+                        className={`shrink-0 rounded border ${style.border} ${style.bg} px-2 py-0.5 text-phx-2xs font-semibold ${style.text}`}
                       >
                         {titleCaseWords(vacancy.status)}
                       </span>
@@ -481,28 +481,28 @@ export default async function EmployeePortalVacanciesPage({
 
                     <div className="mt-2 flex flex-wrap items-center gap-1.5">
                       {vacancy.areaName ? (
-                        <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-500">
+                        <span className="rounded bg-slate-100 px-1.5 py-0.5 text-phx-2xs font-medium text-slate-500">
                           {vacancy.areaName}
                         </span>
                       ) : null}
                       {vacancy.regionName ? (
-                        <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-500">
+                        <span className="rounded bg-slate-100 px-1.5 py-0.5 text-phx-2xs font-medium text-slate-500">
                           {vacancy.regionName}
                         </span>
                       ) : null}
                       {vacancy.lineName ? (
-                        <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-500">
+                        <span className="rounded bg-slate-100 px-1.5 py-0.5 text-phx-2xs font-medium text-slate-500">
                           {vacancy.lineName}
                         </span>
                       ) : null}
                       {vacancy.isDistrictManagerVacancy ? (
-                        <span className="rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">
+                        <span className="rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-phx-2xs font-semibold text-amber-700">
                           DSM
                         </span>
                       ) : null}
                     </div>
 
-                    <div className="mt-2 flex items-center justify-between text-[11px] text-slate-400">
+                    <div className="mt-2 flex items-center justify-between text-phx-xs text-slate-400">
                       <span>
                         {vacancy.managerName ??
                           vacancy.managerHrId ??
@@ -512,7 +512,7 @@ export default async function EmployeePortalVacanciesPage({
                     </div>
 
                     {vacancy.note ? (
-                      <p className="mt-1.5 text-[11px] text-slate-400">
+                      <p className="mt-1.5 text-phx-xs text-slate-400">
                         {vacancy.note}
                       </p>
                     ) : null}

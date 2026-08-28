@@ -336,7 +336,7 @@ export function HrCalendar({ initialData, initialError }: Props) {
       >
         <div className="grid gap-3 p-4 xl:grid-cols-6">
           <label className="block">
-            <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-soft">Month</span>
+            <span className="mb-1.5 block text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">Month</span>
             <SearchableSelect
               className={selectClassName}
               onChange={(event) => setSelectedMonth(Number(event.target.value))}
@@ -351,7 +351,7 @@ export function HrCalendar({ initialData, initialError }: Props) {
           </label>
 
           <label className="block">
-            <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-soft">Year</span>
+            <span className="mb-1.5 block text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">Year</span>
             <SearchableSelect
               className={selectClassName}
               onChange={(event) => setSelectedYear(Number(event.target.value))}
@@ -380,7 +380,7 @@ export function HrCalendar({ initialData, initialError }: Props) {
           </label>
 
           <label className="block">
-            <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-soft">Event Type</span>
+            <span className="mb-1.5 block text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">Event Type</span>
             <SearchableSelect
               className={selectClassName}
               onChange={(event) =>
@@ -398,7 +398,7 @@ export function HrCalendar({ initialData, initialError }: Props) {
           </label>
 
           <label className="block">
-            <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-soft">Line</span>
+            <span className="mb-1.5 block text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">Line</span>
             <SearchableSelect
               className={selectClassName}
               onChange={(event) => setLineFilter(event.target.value)}
@@ -414,7 +414,7 @@ export function HrCalendar({ initialData, initialError }: Props) {
           </label>
 
           <label className="block">
-            <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-soft">Area</span>
+            <span className="mb-1.5 block text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">Area</span>
             <SearchableSelect
               className={selectClassName}
               onChange={(event) => setAreaFilter(event.target.value)}
@@ -441,7 +441,7 @@ export function HrCalendar({ initialData, initialError }: Props) {
             <div className="grid grid-cols-7 border-b border-[#FED7AA] bg-phx-accent-soft/80 backdrop-blur">
               {weekdays.map((weekday) => (
                 <div
-                  className="px-3 py-2 text-[10px] font-black uppercase tracking-[0.14em] text-phx-ink-soft"
+                  className="px-3 py-2 text-phx-2xs font-black uppercase tracking-[0.14em] text-phx-ink-soft"
                   key={weekday}
                 >
                   {weekday}
@@ -490,7 +490,7 @@ export function HrCalendar({ initialData, initialError }: Props) {
                               <p className="truncate font-semibold">
                                 {formatEmployeeDisplayName(event.employee.fullName)}
                               </p>
-                              <p className="truncate text-[11px] font-medium opacity-80">
+                              <p className="truncate text-phx-xs font-medium opacity-80">
                                 {eventLabel(event)}
                               </p>
                             </div>
@@ -524,7 +524,7 @@ export function HrCalendar({ initialData, initialError }: Props) {
         <div className="overflow-x-auto bg-white/80">
           <table className="w-full min-w-[980px] text-left text-sm">
             <thead>
-              <tr className="border-b border-[#FED7AA] bg-phx-accent-soft/80 text-[10px] font-black uppercase tracking-[0.16em] text-phx-ink-soft">
+              <tr className="border-b border-[#FED7AA] bg-phx-accent-soft/80 text-phx-2xs font-black uppercase tracking-[0.16em] text-phx-ink-soft">
                 {["Date", "Event", "Employee", "HR ID", "Job Title", "Line", "Area", "Manager"].map((column) => (
                   <th className="px-3 py-3" key={column}>
                     {column}

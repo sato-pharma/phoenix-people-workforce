@@ -107,7 +107,7 @@ function SummaryCard({ label, value, active, onClick, accent }: SummaryCardProps
         active ? "border-slate-900 bg-slate-900 text-white" : "border-slate-200 bg-white hover:border-slate-400",
       )}
     >
-      <span className={cn("text-[10px] font-bold uppercase tracking-[0.14em]", active ? "text-white/70" : accent)}>
+      <span className={cn("text-phx-2xs font-bold uppercase tracking-[0.14em]", active ? "text-white/70" : accent)}>
         {label}
       </span>
       <span className="text-2xl font-bold tabular-nums">{value}</span>
@@ -288,7 +288,7 @@ export function CustomerPharmacyMappingWorkspace() {
       <div className="overflow-x-auto rounded-sm border border-slate-200">
         <table className="w-full border-collapse text-sm">
           <thead>
-            <tr className="bg-slate-900 text-left text-[11px] font-bold uppercase tracking-[0.1em] text-white">
+            <tr className="bg-slate-900 text-left text-phx-xs font-bold uppercase tracking-[0.1em] text-white">
               <th className="whitespace-nowrap px-3 py-2.5">Customer</th>
               <th className="whitespace-nowrap px-3 py-2.5">Code</th>
               <th className="whitespace-nowrap px-3 py-2.5">Type</th>
@@ -535,7 +535,7 @@ function LinkDecisionDialog({ target, onClose, onDecided }: LinkDecisionDialogPr
           <div>
             <label
               htmlFor="link-decision-note"
-              className="mb-1 block text-[11px] font-bold uppercase tracking-wide text-slate-600"
+              className="mb-1 block text-phx-xs font-bold uppercase tracking-wide text-slate-600"
             >
               {noteLabel}
             </label>

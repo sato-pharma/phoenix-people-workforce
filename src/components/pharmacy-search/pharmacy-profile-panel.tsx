@@ -226,11 +226,11 @@ export function PharmacyProfilePanel({
             <div className="flex flex-wrap items-center gap-2">
               <h2 className="whitespace-nowrap text-xl font-black tracking-tight text-slate-950">{profile.name}</h2>
               {profile.origin === "google" ? (
-                <span className="whitespace-nowrap rounded-full border border-amber-300 bg-amber-50 px-2.5 py-1 text-[11px] font-black uppercase tracking-[0.12em] text-amber-800">
+                <span className="whitespace-nowrap rounded-full border border-amber-300 bg-amber-50 px-2.5 py-1 text-phx-xs font-black uppercase tracking-[0.12em] text-amber-800">
                   From Google — not in the database
                 </span>
               ) : (
-                <span className="whitespace-nowrap rounded-full border border-emerald-300 bg-emerald-50 px-2.5 py-1 text-[11px] font-black uppercase tracking-[0.12em] text-emerald-800">
+                <span className="whitespace-nowrap rounded-full border border-emerald-300 bg-emerald-50 px-2.5 py-1 text-phx-xs font-black uppercase tracking-[0.12em] text-emerald-800">
                   In the Phoenix database
                 </span>
               )}

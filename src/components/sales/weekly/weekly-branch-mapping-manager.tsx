@@ -190,7 +190,7 @@ export function WeeklyBranchMappingManager({
       <header>
         <div className="flex items-center gap-2">
           <span className="h-2 w-2 rounded-full bg-phx-accent" aria-hidden />
-          <span className="text-[11px] font-black uppercase tracking-[0.16em] text-phx-accent">Weekly Sales</span>
+          <span className="text-phx-xs font-black uppercase tracking-[0.16em] text-phx-accent">Weekly Sales</span>
         </div>
         <h1 className="mt-1 text-xl font-black text-phx-ink">Branch Region Mapping</h1>
         <p className="mt-1 text-sm font-medium text-phx-ink-soft">
@@ -217,7 +217,7 @@ export function WeeklyBranchMappingManager({
       <div className="flex flex-wrap items-center gap-2 rounded-[6px] border border-phx-line bg-white p-3 shadow-sm">
         {lockedDistributor ? null : (
           <>
-            <span className="text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-soft">Distributor</span>
+            <span className="text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">Distributor</span>
             <SearchableSelect
               className="h-9 min-w-[14rem] border border-phx-line bg-white px-2 text-sm font-bold text-phx-ink outline-none focus:border-phx-accent-line"
               disabled={busy}
@@ -358,7 +358,7 @@ export function WeeklyBranchMappingManager({
       {/* Table */}
       <div className="overflow-x-auto rounded-[6px] border border-phx-line bg-white shadow-sm">
         <table className="w-full text-sm">
-          <thead className="bg-[#020617] text-left text-[11px] font-black uppercase tracking-wide text-white">
+          <thead className="bg-[#020617] text-left text-phx-xs font-black uppercase tracking-wide text-white">
             <tr>
               <th className="px-3 py-2">Branch name</th>
               <th className="px-3 py-2">Code / key</th>
@@ -455,17 +455,17 @@ function SplitBand({ columns, split }: { columns: number; split: WeeklyBranchSpl
     <tr className="bg-[#FFFBF7]">
       <td className="px-3 pb-2.5 pt-0" colSpan={columns}>
         <div className="flex flex-col gap-1.5">
-          <span className="whitespace-nowrap text-[11px] font-semibold text-phx-ink-faint">{split.note}</span>
+          <span className="whitespace-nowrap text-phx-xs font-semibold text-phx-ink-faint">{split.note}</span>
           {split.arithmetic.map((entry) => (
             <div className="flex flex-wrap items-center gap-1.5" key={entry.lines.join("|")}>
               {showsLineLabels && (
-                <span className="whitespace-nowrap text-[10px] font-black uppercase tracking-[0.12em] text-phx-ink-faint">
+                <span className="whitespace-nowrap text-phx-2xs font-black uppercase tracking-[0.12em] text-phx-ink-faint">
                   {entry.lines.join(" + ")}
                 </span>
               )}
               {entry.shares.map((share) => (
                 <span
-                  className="whitespace-nowrap rounded-full border border-[#FFD8B4] bg-white px-2 py-0.5 text-[11px] font-bold text-[#9A3412]"
+                  className="whitespace-nowrap rounded-full border border-[#FFD8B4] bg-white px-2 py-0.5 text-phx-xs font-bold text-[#9A3412]"
                   key={share.areaCode}
                 >
                   {share.areaName} <span className="text-phx-accent-press">{share.percentLabel}</span>
@@ -482,7 +482,7 @@ function SplitBand({ columns, split }: { columns: number; split: WeeklyBranchSpl
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <label className="flex flex-col gap-1">
-      <span className="text-[10px] font-black uppercase tracking-[0.12em] text-phx-ink-faint">{label}</span>
+      <span className="text-phx-2xs font-black uppercase tracking-[0.12em] text-phx-ink-faint">{label}</span>
       {children}
     </label>
   );

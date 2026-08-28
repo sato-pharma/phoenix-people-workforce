@@ -74,7 +74,7 @@ function TemplateToolbar({ onImported }: { onImported: (summary: ImportSummary) 
       <p className="text-xs text-slate-500">
         Download every CRM customer (mapped + unmapped), fill in Brick IDs in Excel, re-upload — bulk corrections apply in one pass.
       </p>
-      {error && <p className="w-full text-[11px] font-medium text-rose-600">{error}</p>}
+      {error && <p className="w-full text-phx-xs font-medium text-rose-600">{error}</p>}
     </div>
   );
 }
@@ -173,7 +173,7 @@ function ResolutionCell({
           Save
         </button>
       </div>
-      {error && <p className="text-[11px] font-medium text-rose-600">{error}</p>}
+      {error && <p className="text-phx-xs font-medium text-rose-600">{error}</p>}
     </div>
   );
 }
@@ -315,13 +315,13 @@ export function CrmCustomerMappingPanel({
             <PortalDesktopTable minWidth="900px">
               <thead className="bg-slate-900">
                 <tr>
-                  <th className="px-3 py-3 text-[10px] font-black uppercase tracking-wider text-slate-300">CRM Contact ID</th>
-                  <th className="px-3 py-3 text-[10px] font-black uppercase tracking-wider text-slate-300">CRM Contact Name</th>
-                  <th className="px-3 py-3 text-[10px] font-black uppercase tracking-wider text-slate-300">Visits (all time)</th>
-                  <th className="px-3 py-3 text-[10px] font-black uppercase tracking-wider text-slate-300">First Seen</th>
-                  <th className="px-3 py-3 text-[10px] font-black uppercase tracking-wider text-slate-300">Last Seen</th>
-                  <th className="px-3 py-3 text-[10px] font-black uppercase tracking-wider text-slate-300">Resolution</th>
-                  <th className="px-3 py-3 text-[10px] font-black uppercase tracking-wider text-slate-300">Action</th>
+                  <th className="px-3 py-3 text-phx-2xs font-black uppercase tracking-wider text-slate-300">CRM Contact ID</th>
+                  <th className="px-3 py-3 text-phx-2xs font-black uppercase tracking-wider text-slate-300">CRM Contact Name</th>
+                  <th className="px-3 py-3 text-phx-2xs font-black uppercase tracking-wider text-slate-300">Visits (all time)</th>
+                  <th className="px-3 py-3 text-phx-2xs font-black uppercase tracking-wider text-slate-300">First Seen</th>
+                  <th className="px-3 py-3 text-phx-2xs font-black uppercase tracking-wider text-slate-300">Last Seen</th>
+                  <th className="px-3 py-3 text-phx-2xs font-black uppercase tracking-wider text-slate-300">Resolution</th>
+                  <th className="px-3 py-3 text-phx-2xs font-black uppercase tracking-wider text-slate-300">Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-orange-100">

@@ -101,7 +101,7 @@ export function ProbationDashboardView({ data }: { data: ProbationDashboard }) {
         ].map((t) => (
           <div key={t.label} className={`rounded border p-2 ${RISK_STYLE[t.tone]}`}>
             <div className="text-lg font-semibold">{t.value}</div>
-            <div className="text-[11px]">{t.label}</div>
+            <div className="text-phx-xs">{t.label}</div>
           </div>
         ))}
       </div>
@@ -139,7 +139,7 @@ export function ProbationDashboardView({ data }: { data: ProbationDashboard }) {
       {/* Table */}
       <div className="overflow-x-auto rounded-lg border border-slate-200">
         <table className="w-full min-w-[900px] text-sm">
-          <thead className="bg-slate-50 text-left text-[11px] uppercase tracking-wide text-slate-500">
+          <thead className="bg-slate-50 text-left text-phx-xs uppercase tracking-wide text-slate-500">
             <tr>
               <th className="px-3 py-2">Employee</th>
               <th className="px-3 py-2">Line / Manager</th>
@@ -160,7 +160,7 @@ export function ProbationDashboardView({ data }: { data: ProbationDashboard }) {
                     {row.crmUnmapped && (
                       <span
                         title="This rep never appears as a CRM agent — Double-Visit credit can't be attributed. Fix the CRM identity mapping; a zero here is a data gap, not poor performance."
-                        className="inline-flex items-center rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700"
+                        className="inline-flex items-center rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-phx-2xs font-medium text-amber-700"
                       >
                         CRM unmapped
                       </span>
@@ -210,7 +210,7 @@ export function ProbationDashboardView({ data }: { data: ProbationDashboard }) {
           </tbody>
         </table>
       </div>
-      <p className="text-[11px] text-slate-400">
+      <p className="text-phx-xs text-slate-400">
         {rows.length} of {data.rows.length} cases · generated {data.generatedAt.slice(0, 16).replace("T", " ")}
       </p>
     </div>

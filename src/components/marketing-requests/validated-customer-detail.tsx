@@ -260,7 +260,7 @@ export function ValidatedCustomerDetailView({ customerId }: { customerId: string
             Nothing is deleted — the record of this transfer and the revert both stay on file.
           </p>
           <label className="mt-3 block">
-            <span className="mb-1 block text-[10px] font-black uppercase tracking-[0.14em] text-rose-700">
+            <span className="mb-1 block text-phx-2xs font-black uppercase tracking-[0.14em] text-rose-700">
               Reason (optional)
             </span>
             <input

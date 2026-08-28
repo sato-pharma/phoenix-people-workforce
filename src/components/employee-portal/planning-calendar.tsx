@@ -172,7 +172,7 @@ function PlanningMetric({
   return (
     <div className={`rounded-sm border p-4 ${tone === "warning" ? "border-red-100 bg-red-50/60" : "border-slate-200 bg-slate-50/60"}`}>
       <p className="text-3xl font-black text-slate-950">{value}</p>
-      <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500">{label}</p>
+      <p className="text-phx-xs font-bold uppercase tracking-[0.12em] text-slate-500">{label}</p>
     </div>
   );
 }
@@ -431,12 +431,12 @@ export function PlanningCalendar({
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
-                <span className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-1 text-[11px] font-black uppercase tracking-[0.14em] text-white/80 ring-1 ring-white/20">
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-1 text-phx-xs font-black uppercase tracking-[0.14em] text-white/80 ring-1 ring-white/20">
                   <Sparkles className="h-3.5 w-3.5" />
                   Shared Planning Calendar
                 </span>
                 {summary.conflictCount > 0 ? (
-                  <span className="inline-flex items-center gap-1.5 rounded-full bg-red-500/20 px-3 py-1 text-[11px] font-black uppercase tracking-[0.14em] text-red-200 ring-1 ring-red-400/30">
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-red-500/20 px-3 py-1 text-phx-xs font-black uppercase tracking-[0.14em] text-red-200 ring-1 ring-red-400/30">
                     <TriangleAlert className="h-3.5 w-3.5" />
                     {summary.conflictCount} warnings
                   </span>
@@ -520,11 +520,11 @@ export function PlanningCalendar({
       {/* ── Filters ── */}
       <section className="overflow-hidden rounded-sm bg-white shadow-md ring-1 ring-slate-200/60">
         <div className="border-b border-slate-100 px-5 py-3">
-          <p className="text-[11px] font-black uppercase tracking-[0.14em] text-slate-400">Filter &amp; Search</p>
+          <p className="text-phx-xs font-black uppercase tracking-[0.14em] text-slate-400">Filter &amp; Search</p>
         </div>
         <div className="grid gap-4 p-5 lg:grid-cols-[minmax(180px,1fr)_minmax(160px,220px)_minmax(160px,220px)_auto_auto] lg:items-end">
           <label className="block">
-            <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">Search</span>
+            <span className="mb-1.5 block text-phx-xs font-black uppercase tracking-[0.14em] text-slate-500">Search</span>
             <span className="relative block">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
               <input
@@ -536,7 +536,7 @@ export function PlanningCalendar({
             </span>
           </label>
           <label className="block">
-            <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">Activity</span>
+            <span className="mb-1.5 block text-phx-xs font-black uppercase tracking-[0.14em] text-slate-500">Activity</span>
             <SearchableSelect
               className="h-10 w-full rounded-sm border-0 bg-slate-100 px-3 text-sm font-semibold text-slate-800 outline-none ring-1 ring-transparent transition focus:bg-white focus:ring-orange-300"
               onChange={(event) => setActivityFilter(event.target.value)}
@@ -551,7 +551,7 @@ export function PlanningCalendar({
             </SearchableSelect>
           </label>
           <label className="block">
-            <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">Region</span>
+            <span className="mb-1.5 block text-phx-xs font-black uppercase tracking-[0.14em] text-slate-500">Region</span>
             <SearchableSelect
               className="h-10 w-full rounded-sm border-0 bg-slate-100 px-3 text-sm font-semibold text-slate-800 outline-none ring-1 ring-transparent transition focus:bg-white focus:ring-orange-300"
               onChange={(event) => setRegionFilter(event.target.value)}
@@ -590,7 +590,7 @@ export function PlanningCalendar({
       {conflicts.length > 0 ? (
         <section className="overflow-hidden rounded-sm border-l-4 border-l-red-500 bg-white shadow-md ring-1 ring-slate-200/60">
           <div className="border-b border-slate-100 px-5 py-3">
-            <span className="text-[11px] font-black uppercase tracking-[0.14em] text-red-700">
+            <span className="text-phx-xs font-black uppercase tracking-[0.14em] text-red-700">
               {conflicts.length} Same-line Medical Rep Warning{conflicts.length === 1 ? "" : "s"}
             </span>
           </div>
@@ -602,7 +602,7 @@ export function PlanningCalendar({
                 onClick={() => setSelectedDate(conflict.date)}
                 type="button"
               >
-                <span className="whitespace-nowrap text-[11px] font-black uppercase tracking-wide text-red-700">{dayLabel(conflict.date)}</span>
+                <span className="whitespace-nowrap text-phx-xs font-black uppercase tracking-wide text-red-700">{dayLabel(conflict.date)}</span>
                 <span className="text-sm font-semibold text-slate-800">{conflict.warning}</span>
               </button>
             ))}
@@ -616,7 +616,7 @@ export function PlanningCalendar({
         ) : viewMode === "week" ? (
           <div className="space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2 rounded-sm border border-slate-200 bg-slate-50 px-4 py-2.5">
-              <span className="text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">Week of</span>
+              <span className="text-phx-xs font-black uppercase tracking-[0.14em] text-slate-500">Week of</span>
               <span className="whitespace-nowrap text-sm font-black text-slate-900">{weekRangeLabel}</span>
             </div>
             {weekDays.map(({ date, dayItems }) => (
@@ -641,7 +641,7 @@ export function PlanningCalendar({
               identical on the header row and the day grid below or the columns misalign. */}
           <div className="grid grid-cols-[repeat(5,minmax(0,1fr))_56px_minmax(0,1fr)] border-b-2 border-orange-500 bg-slate-900">
             {weekdays.map((weekday) => (
-              <div className="px-2 py-2.5 text-center text-[10px] font-black uppercase tracking-[0.14em] text-slate-300" key={weekday}>
+              <div className="px-2 py-2.5 text-center text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-300" key={weekday}>
                 {weekday}
               </div>
             ))}
@@ -684,7 +684,7 @@ export function PlanningCalendar({
                       {date ? Number(date.slice(8, 10)) : ""}
                     </span>
                     {dayConflicts.length > 0 ? (
-                      <span className="rounded-full bg-red-100 px-1.5 py-0.5 text-[10px] font-black text-red-600">
+                      <span className="rounded-full bg-red-100 px-1.5 py-0.5 text-phx-2xs font-black text-red-600">
                         {dayConflicts.length}
                       </span>
                     ) : null}
@@ -693,7 +693,7 @@ export function PlanningCalendar({
                   <span className="mt-1.5 block space-y-1">
                     {dayHolidays.map((holiday) => (
                       <span
-                        className="block whitespace-nowrap rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-normal text-emerald-700"
+                        className="block whitespace-nowrap rounded bg-emerald-100 px-1.5 py-0.5 text-phx-2xs font-normal text-emerald-700"
                         key={holiday.id}
                       >
                         {holiday.title}
@@ -701,13 +701,13 @@ export function PlanningCalendar({
                     ))}
                     {dayPlanGroups.map(({ group, plans }) => (
                       <span className="block" key={group}>
-                        <span className="block rounded bg-slate-900 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-slate-300">{group}</span>
+                        <span className="block rounded bg-slate-900 px-1.5 py-0.5 text-phx-3xs font-semibold uppercase tracking-wider text-slate-300">{group}</span>
                         <span className="mt-0.5 block space-y-1">
                           {plans.map((item) => {
                             const hue = employeeHueFor(dayHues, item.employeeHrId);
                             return (
                               <span
-                                className={`block whitespace-nowrap rounded px-1.5 py-0.5 text-[10px] font-normal leading-tight ${planChipTone(item, hue)}`}
+                                className={`block whitespace-nowrap rounded px-1.5 py-0.5 text-phx-2xs font-normal leading-tight ${planChipTone(item, hue)}`}
                                 key={item.id}
                                 title={item.title}
                               >
@@ -728,7 +728,7 @@ export function PlanningCalendar({
         <section className="overflow-hidden rounded-sm bg-white shadow-lg ring-1 ring-slate-200/60">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-6 py-4">
             <div>
-              <p className="text-[11px] font-black uppercase tracking-[0.14em] text-slate-400">Selected day</p>
+              <p className="text-phx-xs font-black uppercase tracking-[0.14em] text-slate-400">Selected day</p>
               <h3 className="mt-1 text-lg font-black text-slate-950">{dayLabel(selectedDate)}</h3>
             </div>
             <span className="rounded-full bg-slate-100 px-4 py-1.5 text-xs font-black text-slate-600">
@@ -791,7 +791,7 @@ function AgendaDayBlock({
         type="button"
       >
         <span className="whitespace-nowrap text-sm font-black text-white">{dayLabel(date)}</span>
-        <span className="whitespace-nowrap text-[11px] font-bold text-slate-300">
+        <span className="whitespace-nowrap text-phx-xs font-bold text-slate-300">
           {dayItems.length} item{dayItems.length === 1 ? "" : "s"}
         </span>
       </button>
@@ -807,7 +807,7 @@ function AgendaDayBlock({
                 <div className="flex items-center gap-2 px-4 py-3" key={item.id}>
                   <span className="inline-block h-2.5 w-2.5 shrink-0 rounded-full bg-emerald-500" />
                   <span className="whitespace-nowrap text-sm font-black text-slate-900">{item.title}</span>
-                  <span className="ml-auto inline-flex items-center whitespace-nowrap rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-emerald-800">
+                  <span className="ml-auto inline-flex items-center whitespace-nowrap rounded-full bg-emerald-100 px-2 py-0.5 text-phx-2xs font-black uppercase tracking-wide text-emerald-800">
                     National vacation
                   </span>
                 </div>
@@ -823,7 +823,7 @@ function AgendaDayBlock({
                     className={`inline-block h-2.5 w-2.5 shrink-0 rounded-full ${item.conflictWarning ? "bg-red-500" : employeeHueFor(dayHues, item.employeeHrId).dot}`}
                   />
                   <span className="whitespace-nowrap text-sm font-black text-slate-900">{item.title}</span>
-                  <span className="ml-auto inline-flex items-center whitespace-nowrap rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-slate-600">
+                  <span className="ml-auto inline-flex items-center whitespace-nowrap rounded-full bg-slate-100 px-2 py-0.5 text-phx-2xs font-black uppercase tracking-wide text-slate-600">
                     {planStatusLabels[item.status] ?? item.status}
                   </span>
                 </div>
@@ -831,7 +831,7 @@ function AgendaDayBlock({
                   <div className="mt-1.5 flex flex-wrap gap-1.5 pl-[18px]">
                     {meta.map((value, index) => (
                       <span
-                        className="inline-flex items-center whitespace-nowrap rounded-sm bg-slate-50 px-1.5 py-0.5 text-[11px] font-semibold text-slate-600"
+                        className="inline-flex items-center whitespace-nowrap rounded-sm bg-slate-50 px-1.5 py-0.5 text-phx-xs font-semibold text-slate-600"
                         key={`${item.id}-meta-${index}`}
                       >
                         {value}
@@ -891,7 +891,7 @@ function PlanningCalendarDetailsTable({
               key={`${row.id}-mobile`}
               meta={`${row.date} · ${row.employee}`}
               status={
-                <span className={`inline-flex border px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.1em] ${statusToneClass(row.tone)}`}>
+                <span className={`inline-flex border px-2 py-0.5 text-phx-2xs font-black uppercase tracking-[0.1em] ${statusToneClass(row.tone)}`}>
                   {row.status}
                 </span>
               }
@@ -925,7 +925,7 @@ function PlanningCalendarDetailsTable({
             <tr className="border-b-2 border-orange-500 bg-slate-950">
               {["Date", "Employee", "Activity", "Region / Location", "Area", "Medical Rep", "Time", "Plan Status", "Conflict Warning"].map((column) => (
                 <th
-                  className="border-r border-slate-800 px-3 py-3 text-[10px] font-black uppercase tracking-[0.14em] text-slate-300 last:border-r-0"
+                  className="border-r border-slate-800 px-3 py-3 text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-300 last:border-r-0"
                   key={column}
                 >
                   {column}
@@ -936,7 +936,7 @@ function PlanningCalendarDetailsTable({
           <tbody className="divide-y divide-slate-100">
             {rows.map((row) => (
                 <tr className={`transition-colors hover:bg-orange-50/40 ${detailToneClass(row.tone)}`} key={row.id}>
-                  <td className="border-r border-slate-100 px-3 py-2.5 font-mono text-[11px] font-semibold text-slate-500">{row.date}</td>
+                  <td className="border-r border-slate-100 px-3 py-2.5 font-mono text-phx-xs font-semibold text-slate-500">{row.date}</td>
                   <td className="whitespace-nowrap border-r border-slate-100 px-3 py-2.5 font-black text-slate-900">
                     <span className="inline-flex items-center gap-1.5">
                       <span className={`inline-block h-2 w-2 shrink-0 rounded-full ${employeeHueFor(hues, row.employeeHrId).dot}`} />
@@ -949,11 +949,11 @@ function PlanningCalendarDetailsTable({
                   <td className="whitespace-nowrap border-r border-slate-100 px-3 py-2.5 font-semibold text-slate-600">{row.medicalRep}</td>
                   <td className="whitespace-nowrap border-r border-slate-100 px-3 py-2.5 font-semibold text-slate-600">{row.time}</td>
                   <td className="border-r border-slate-100 px-3 py-2.5">
-                    <span className={`inline-flex whitespace-nowrap border px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.1em] ${statusToneClass(row.tone)}`}>
+                    <span className={`inline-flex whitespace-nowrap border px-2 py-0.5 text-phx-2xs font-black uppercase tracking-[0.1em] ${statusToneClass(row.tone)}`}>
                       {row.status}
                     </span>
                   </td>
-                  <td className="max-w-[260px] px-3 py-2.5 text-[11px] font-semibold leading-relaxed text-red-800">
+                  <td className="max-w-[260px] px-3 py-2.5 text-phx-xs font-semibold leading-relaxed text-red-800">
                     <span className="whitespace-nowrap">{row.conflictWarning}</span>
                   </td>
                 </tr>
