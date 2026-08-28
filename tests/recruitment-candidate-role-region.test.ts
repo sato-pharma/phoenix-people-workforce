@@ -159,8 +159,33 @@ export function runCandidateRoleRegionTests() {
   assert.equal(candidateRegionForGovernorate("Aswan"), "OT", "Aswan is Others, not Upper Egypt");
   assert.equal(candidateRegionForGovernorate("Luxor"), "OT");
 
+  // --- Delta (3): the Anti Infective district opened 2026-08-28 — Qalubeya, Sharkia, Suez, Ismailia.
+  // Before this the four sat in three different regions and there was no way to search the pool for
+  // the new district at all. These four assertions ARE the feature; they are not incidental.
+  for (const gov of ["Qalyubia", "Al-Qalyubia", "Qalubeya", "Banha"]) {
+    assert.equal(candidateRegionForGovernorate(gov), "D3", `${gov} is Delta (3), moved out of Delta (1)`);
+  }
+  for (const gov of ["Sharkia", "Sharqia", "El-Sharqia", "Zagazig"]) {
+    assert.equal(candidateRegionForGovernorate(gov), "D3", `${gov} is Delta (3), moved out of Delta (2)`);
+  }
+  assert.equal(candidateRegionForGovernorate("Suez"), "D3", "Suez is Delta (3), moved out of Others");
+  for (const gov of ["Ismailia", "Ismailiya"]) {
+    assert.equal(candidateRegionForGovernorate(gov), "D3", `${gov} is Delta (3), moved out of Others`);
+  }
+  assert.equal(candidateRegionLabels.D3, "Delta (3)", "the label is the company's own region name");
+
+  // The regions Delta (3) was carved OUT of must keep everything else — a carve-out that empties a
+  // neighbour is a mistake, not a move.
+  assert.equal(candidateRegionForGovernorate("Gharbia"), "D1", "Delta (1) keeps Gharbia");
+  assert.equal(candidateRegionForGovernorate("Menoufia"), "D1", "Delta (1) keeps Menoufia");
+  assert.equal(candidateRegionForGovernorate("Kafr El Sheikh"), "D1", "Delta (1) keeps Kafr El-Sheikh");
+  assert.equal(candidateRegionForGovernorate("Dakahlia"), "D2", "Delta (2) keeps Dakahlia");
+  assert.equal(candidateRegionForGovernorate("Port Said"), "D2", "Delta (2) keeps Port Said");
+  assert.equal(candidateRegionForGovernorate("Damietta"), "D2", "Delta (2) keeps Damietta");
+  assert.equal(candidateRegionForGovernorate("Hurghada"), "OT", "Others keeps Hurghada");
+  assert.equal(candidateRegionForGovernorate("North Sinai"), "OT", "Others keeps North Sinai");
+
   // --- Both spellings in production must land on one region, or each hides the other's people.
-  assert.equal(candidateRegionForGovernorate("Qalyubia"), "D1");
   assert.equal(
     candidateRegionForGovernorate("Al-Qalyubia"),
     candidateRegionForGovernorate("Qalyubia"),
