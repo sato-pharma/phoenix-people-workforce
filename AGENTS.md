@@ -1131,61 +1131,28 @@ These are the owner's own decisions, stated across many sessions. They are not s
 - Marketing Manager is hidden from the portal Incentive tab; GPM still sees it.
 - The Organogram / AU seat model is the source of truth for org-structure and vacancy data.
 - All SoS sales, historical and future, attribute to **today's** geography — never as-was.
-- 🔒 **The August 2026 closing is NOT affected by the Anti Infective Delta (3) split.** Owner's
-  words, said at least ten times and still being misread: *"This employee will be hired on one
-  September. So the monthly closing of August will not be distributed on him. It will be normally
-  before the change we made. Starting from September, everything will be changed and divided."*
-  August is computed on the **pre-split** geography — D11, D24, D25, OT2 and OT9 stay under
-  `SEAT-AIF-OTHERS` / `SEAT-AIF-DM-D2` exactly as they are today, and Samaa Shalaby (`AI-0014`,
-  hired 2026-09-01) gets no share of it. The split is applied **after** August is published, and
-  it governs September onward. Verified in production 2026-08-28: `au.line_area_map` has **0** rows
-  carrying `operational_region_code = 'D3'`, so the move is not merely deferred — it does not
-  exist yet, and no closing run can pick it up.
-- 🔒 **Delta (3) is HALF applied — the seats exist, the territory has NOT moved, and PR #2499 says
-  otherwise.** Merged 2026-08-28 05:21 Cairo as "a vacant placeholder". LIVE in production:
-  `au.regions` D3, five `au.seats` rows (`SEAT-AIF-DM-D3` plus reps for D11, D24, D25, OT2),
-  `source_of_sales_regions` D3, an `areas` row `delta_3`, the `position_vacancies` row, and
-  `au.occupancy_history` hiring Samaa (`AI-0014`) into `SEAT-AIF-DM-D3` **effective 2026-09-01**.
-  NOT live: **`au.line_area_map` holds 0 rows with `operational_region_code = 'D3'`**, and all five
-  target rows are byte-identical to `au.bak_20260828_d3_line_area_map` — a backup taken for a change
-  that was then never made. **Do not read #2499 as evidence the move happened.** Its body states
-  *"Only `line_area_map.operational_region_code` moves"* and predicts `vacant_will_hire` 38 → 42 and
-  `other_line_specific` 13 → 11; the migration
-  `supabase/migrations/20260828064500_anti_infective_delta_3_district.sql` contains **zero**
-  occurrences of `line_area_map` across all seven of its statements, is **absent from the production
-  ledger** (those seven statements were applied by hand), and production reads `other_line_specific`
-  **13**. All verified 2026-08-28.
-- **The Delta (3) territory move is still OWED, and NOTHING schedules it** — no migration on `main`,
-  no open PR, no branch. It fires **only after August's closing is published** (the closing golden
-  rule below), never before: sales attribute to **today's** geography, so moving these rows early is
-  precisely what the owner forbade. Five `au.line_area_map` rows, `line_code = 'anti_infective'`
-  ONLY — the `cns` and `pedia` rows for the same five areas must not be touched:
-
-  | area | today | after the move |
-  | --- | --- | --- |
-  | `D11` Qalubeya | `OT` / `other_line_specific` / `SEAT-AIF-OTHERS` | `D3` / `vacant_will_hire` / `SEAT-AIF-DM-D3` |
-  | `D24` Sharkia 1 | `D2` / `vacant_will_hire` / `SEAT-AIF-DM-D2` | `D3` / `vacant_will_hire` / `SEAT-AIF-DM-D3` |
-  | `D25` Sharkia 2 | `OT` / `other_line_specific` / `SEAT-AIF-OTHERS` | `D3` / `vacant_will_hire` / `SEAT-AIF-DM-D3` |
-  | `OT2` Suez | `OT` / `other_permanent` / `SEAT-AIF-OTHERS` | `D3` / `vacant_will_hire` / `SEAT-AIF-DM-D3` |
-  | `OT9` Ismailia | `OT` / `other_permanent` / `SEAT-AIF-OTHERS` | `D3` / `vacant_will_hire` / `SEAT-AIF-DM-D3` |
-
-  Three things to know before running it. **`carries_target` is a GENERATED column** —
-  `(area_state = any (array['occupied','vacant_will_hire']))` — so it cannot be set directly, and
-  moving these five to `vacant_will_hire` is what makes them target-bearing. That **creates no
-  target**: `au.monthly_targets` is keyed by `(period, line_code, area_code, product_code)` with no
-  region column. **`au.canonical_areas.code_region_code` must NOT move** — it is the structural code
-  space and stays `D11=D1 D24=D2 D25=D2 OT2=OT OT9=OT`, following the UE-1/UE-2 precedent. And
-  **OT9 has no rep seat at all** (`au.seats` returns none for `area_code = 'OT9'`; `SEAT-AIF-REP-OT2`
-  is labelled "Suez & Ismailia rep" but carries `area_code = 'OT2'`), so whether OT9's `rep_seat_id`
-  stays null or points at the OT2 seat is an **open question for the owner — do not invent an
-  answer.** One contradiction is live meanwhile and is harmless: `SEAT-AIF-REP-D24` reports to
-  `SEAT-AIF-DM-D3` while the map still routes D24's DM to `SEAT-AIF-DM-D2`.
-- **Nobody knows WHEN the August closing happens, and it is not 1 September.** It waits on the
-  distributor companies sending their sales data, which arrives on their schedule, not ours. The
-  closing golden rule above sets the EARLIEST date a month may be released; it never sets the
-  actual date. Do not put a date on a closing, do not tell the owner one is "due", and do not
-  treat the 1st of the month as a deadline he has missed. Retire this bullet and the three Delta (3)
-  bullets above it once the territory move has been applied.
+- **Delta (3) territory move — fully applied, verified live 2026-08-28.** The five areas (`D11`
+  Qalubeya, `D24` Sharkia 1, `D25` Sharkia 2, `OT2` Suez, `OT9` Ismailia) now each carry a correctly
+  forward-dated PAIR of `au.line_area_map` rows, not an in-place edit: the pre-split row closes with
+  `effective_to = '2026-09-01'`, and a new `operational_region_code = 'D3'` row opens at that same
+  date with `effective_to` null. Confirmed with `au.f_line_area_map_asof()`: 2026-08-31 still
+  resolves all five to their pre-split region (`OT` for four, `D2` for D24); 2026-09-01 resolves all
+  five to `D3`. **So the August 2026 closing is genuinely unaffected, by construction** — the
+  owner's repeated instruction (*"the monthly closing of August will not be distributed on
+  [Samaa]... starting from September, everything will be changed and divided"*) is honoured. This
+  retires the four bullets that used to occupy this spot ("still OWED", "HALF applied", the pre-move
+  mapping table, and a closing-date disclaimer) — do not resurrect them or re-derive "is it done yet"
+  from an older memory note; it is done. One caution those bullets carried that is still true on its
+  own: nobody knows WHEN the August closing itself will publish — it waits on distributor data, not
+  a calendar date, so 1 September is not a deadline to report as missed.
+  **Two things this move did NOT touch, both still open:** the recruitment map's area menus
+  (`src/lib/recruitment/inbound/whatsapp-classify-place-hints.ts`) still list these five areas under
+  Delta (1)/(2) — a known, separately-tracked residue (see that file and
+  `docs/recruitment-inbound-intake.md`). And the weekly/monthly **plan** region picker
+  (`src/lib/weekly-planning/regions.ts`) never had "Delta 3" in its approved region list at all —
+  unlike the sales map, that picker has no as-of awareness, so it was silently blocking the Anti
+  Infective NSM from planning against these areas today, weeks before the sales split takes effect.
+  Fixed 2026-08-28 in that file.
 - 🔒 **THE CLOSING GOLDEN RULE — a closing is never done or sent during the month it covers.**
   Owner's rule, stated 2026-08-28, in his words: *"no closing is ever done or sent during the
   month. Closing after the month closes."* The closing for `YYYY-MM` becomes publishable on the
