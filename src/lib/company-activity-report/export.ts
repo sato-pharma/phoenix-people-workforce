@@ -78,8 +78,12 @@ export const OUTCOME_FILL: Record<CompanyActivityDayOutcome, string> = {
 };
 
 /** Overrides the outcome's own fill — a conflict needs to stand out regardless of which outcome
- * won the day. */
-const CONFLICT_FILL = "FFFECDD3";
+ * won the day. Deliberately violet, not a shade of red: red is already this workbook's "count of
+ * a bad thing" color (no_entry, severity banding), and a conflict is a different KIND of signal —
+ * a data disagreement to review, not a failure — so it gets its own hue rather than one close
+ * enough to no_entry's FFFEE2E2 to blur together on a quick read (owner feedback, 2026-08-28). */
+const CONFLICT_FILL = "FFEDE9FE";
+const CONFLICT_FONT = "FF6D28D9";
 
 /** Severity banding for this report's own accuracy signals (No Entry / No Signal / Conflict day
  * counts) — same visual language as the achievement banding used elsewhere in the product, tuned
@@ -199,6 +203,7 @@ function buildDataSheet<T>(input: {
   rows: T[];
   rowValues: (row: T) => Array<string | number>;
   rowFill: (row: T) => string;
+  rowFont?: (row: T) => string | undefined;
 }): ExcelJS.Worksheet {
   const sheet = input.workbook.addWorksheet(input.sheetName, { properties: { tabColor: { argb: ORANGE } } });
 
@@ -211,10 +216,11 @@ function buildDataSheet<T>(input: {
   input.rows.forEach((row, i) => {
     const excelRow = sheet.getRow(headerRowIndex + 1 + i);
     const fill = input.rowFill(row);
+    const font = input.rowFont?.(row);
     input.rowValues(row).forEach((value, colIndex) => {
       const cell = excelRow.getCell(colIndex + 1);
       cell.value = value;
-      cell.font = { color: { argb: SLATE }, size: 10 };
+      cell.font = { color: { argb: font ?? SLATE }, size: 10, bold: !!font };
       cell.alignment = { vertical: "middle", wrapText: true };
       cell.border = { bottom: { style: "thin", color: { argb: HAIR } } };
       if (fill) cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: fill } };
@@ -333,42 +339,54 @@ function addExecutiveSummarySheet(
   const summaries = report.summaries;
   const total = (pick: (row: CompanyActivityEmployeeSummary) => number) => sumBy(summaries, pick);
 
+  // Same KPI-row idiom as business-review's own "Executive Summary" sheet (addSummarySheet in
+  // src/lib/business-review/excel-export.ts): label | big number | a short CONTEXTUAL aside, one
+  // row per metric — never a full definition, since that already lives on Notes & Legend and
+  // repeating it here read as cluttered and duplicative (owner feedback, 2026-08-28).
   let r = 6;
-  const kpi = (label: string, value: number, sub: string, flagged?: boolean) => {
-    sheet.mergeCells(r, 1, r, 2);
+  const kpi = (label: string, value: number, sub: string, color?: string) => {
     const l = sheet.getCell(r, 1);
     l.value = label;
     l.font = { bold: true, color: { argb: MUTED }, size: 9 };
-    l.alignment = { vertical: "middle" };
-
-    const v = sheet.getCell(r, 3);
+    const v = sheet.getCell(r, 2);
     v.value = value;
     v.numFmt = "#,##0";
-    v.font = { bold: true, color: { argb: flagged ? ORANGE : SLATE }, size: 14 };
-    v.alignment = { vertical: "middle" };
-
+    v.font = { bold: true, color: { argb: color ?? SLATE }, size: 13 };
     sheet.mergeCells(r, 4, r, ncols);
     const s = sheet.getCell(r, 4);
     s.value = sub;
     s.font = { color: { argb: MUTED }, size: 9, italic: true };
-    s.alignment = { vertical: "middle", wrapText: true };
-
-    sheet.getRow(r).height = 20;
     r += 1;
   };
 
-  kpi("Employees in this view", summaries.length, "Matches the current line / team / area / region / job title / name filter.");
-  kpi("Working days (company total)", total((s) => s.workingDays), "Summed across every employee below — weekly-off, holidays, and future dates excluded.");
-  kpi("Office Present days", total((s) => s.officePresentDays), "At least one fingerprint device punch recorded that day.");
-  kpi("CRM Field Visit days", total((s) => s.crmFieldVisitDays), "A real CRM-logged visit — a regular customer call or a CP-type activity (meeting, training, conference, campaign, etc.).");
-  kpi("Campaign Visits", total((s) => s.campaignVisits), "iReports360 type -8 specifically — narrower than CRM Field Visit days.");
-  kpi("Leave days (Approved / CRM)", total((s) => s.leaveApprovedDays), "Phoenix-approved leave requests plus CRM-confirmed Annual Vacation entries.");
-  kpi("Leave days (Pending)", total((s) => s.leavePendingDays), "Submitted but not yet approved — shown with its real status, never hidden or assumed approved.");
-  kpi("No Entry days", total((s) => s.noEntryDays), "Working days with nothing recorded at all. Banded green / amber / red per employee below.", true);
-  kpi("No Signal days", total((s) => s.noSignalDays), "Employee has no device mapping and no CRM identity — the system could not observe them that day at all. A coverage gap, not an absence.", true);
-  kpi("Conflict days", total((s) => s.conflictDays), "Presence evidence AND a leave signal on the same date — the core accuracy check this report exists to surface. Banded per employee below.", true);
+  kpi("Employees in view", summaries.length, "matching the active filters");
+  kpi("Working days", total((s) => s.workingDays), "sum across every employee shown");
+  kpi("Office present days", total((s) => s.officePresentDays), "at least one fingerprint punch that day");
+  kpi(
+    "CRM field visit days",
+    total((s) => s.crmFieldVisitDays),
+    `of which ${total((s) => s.campaignVisits).toLocaleString("en-US")} were campaign visits`,
+  );
+  kpi(
+    "Leave days",
+    total((s) => s.leaveApprovedDays) + total((s) => s.leavePendingDays),
+    `${total((s) => s.leaveApprovedDays).toLocaleString("en-US")} approved/CRM · ${total((s) => s.leavePendingDays).toLocaleString("en-US")} pending`,
+  );
+  kpi("No entry days", total((s) => s.noEntryDays), "working days with nothing recorded at all", ORANGE);
+  kpi("No signal days", total((s) => s.noSignalDays), "no device mapping and no CRM identity", ORANGE);
+  kpi(
+    "Conflict days",
+    total((s) => s.conflictDays),
+    "presence evidence AND a leave signal on the same date — surfaced for review, never auto-resolved",
+    CONFLICT_FONT,
+  );
   if (report.unmappedCrmVisitCount != null && report.unmappedCrmVisitCount > 0) {
-    kpi("Unmapped CRM visits (company-wide)", report.unmappedCrmVisitCount, "CRM visits in this date range with no resolved employee identity at all — not limited to the roster shown below. See Notes & Legend.", true);
+    kpi(
+      "Unmapped CRM visits",
+      report.unmappedCrmVisitCount,
+      "company-wide CRM attribution blind spot — not limited to this filter",
+      ORANGE,
+    );
   }
 
   r += 1;
@@ -495,6 +513,7 @@ export function generateCompanyActivityReportWorkbook(input: {
     rows: input.report.days,
     rowValues: (day) => detailRowValues({ day, employeeNameByHrId: input.employeeNameByHrId }),
     rowFill: (day) => (day.conflict ? CONFLICT_FILL : OUTCOME_FILL[day.outcome]),
+    rowFont: (day) => (day.conflict ? CONFLICT_FONT : undefined),
   });
 
   // Last sheet on purpose — a reader who scrolls to the end finds the definitions, and a reader
