@@ -9,6 +9,12 @@ import {
   AdminPageHero,
   AdminTableShell,
 } from "@/components/admin/admin-design-system";
+import {
+  PortalEmptyState,
+  PortalRecordCard,
+  PortalRecordFields,
+  PortalResponsiveDataList,
+} from "@/components/employee-portal/portal-primitives";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import type {
@@ -470,6 +476,27 @@ export function AttendancePoliciesManager({ canUpdate, initialData, initialError
     setNotice("Rule removed from the draft. Save policy to apply this change.");
   }
 
+  /** Rendered by both the desktop row and the phone card, so the two cannot drift apart. */
+  function policyActions(policy: AttendancePolicyGroup) {
+    return (
+      <div className="flex flex-wrap justify-end gap-2">
+        <Button variant="secondary" type="button" onClick={() => editPolicy(policy)}>
+          <Pencil className="h-4 w-4" />
+          Edit
+        </Button>
+        <Button
+          disabled={!canUpdate || deletingPolicyId !== null}
+          variant="destructive"
+          type="button"
+          onClick={() => deletePolicy(policy)}
+        >
+          <Trash2 className="h-4 w-4" />
+          {deletingPolicyId === policy.id ? "Deleting" : "Delete"}
+        </Button>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-5">
       <AdminPageHero
@@ -887,7 +914,66 @@ export function AttendancePoliciesManager({ canUpdate, initialData, initialError
         description="Priority is HR_ID policy, then job title policy, then default policy."
         title="Configured Policies"
       >
-        <div className="overflow-x-auto">
+        {/* Seven columns, three of which carry stacked sub-content. Unlike the device-mapping
+            table above, nothing here holds an unsaved draft — Edit and Delete both act on parent
+            state — so a separate card list is safe. */}
+        <PortalResponsiveDataList
+          empty={
+            <PortalEmptyState
+              message="No attendance policies configured yet."
+              title="No policies"
+            />
+          }
+          getKey={(policy) => String(policy.id)}
+          items={data?.policies ?? []}
+          renderCard={(policy) => (
+            <PortalRecordCard
+              accent={policy.isActive ? "emerald" : "slate"}
+              actions={policyActions(policy)}
+              meta={
+                <span>
+                  {policy.effectiveFrom}
+                  {policy.effectiveTo ? ` to ${policy.effectiveTo}` : ""}
+                </span>
+              }
+              status={
+                policy.isActive ? (
+                  <Badge variant="success">Active</Badge>
+                ) : (
+                  <Badge variant="neutral">Inactive</Badge>
+                )
+              }
+              title={policy.policyName}
+            >
+              <PortalRecordFields
+                fields={[
+                  {
+                    label: "Target",
+                    value: (
+                      <span className="space-y-1">
+                        {targetBadge(policy)}
+                        <span className="block font-semibold">{targetLabel(policy)}</span>
+                      </span>
+                    ),
+                  },
+                  {
+                    label: "Schedule",
+                    value: `${policy.scheduledStart} - ${policy.scheduledEnd} · ${formatAttendanceWorkingWeekdays(policy.workingWeekdays)}`,
+                  },
+                  { label: "Grace", value: `${policy.graceMinutes} min daily` },
+                  {
+                    label: "Rules",
+                    value:
+                      policy.rules.length === 0
+                        ? "No rules"
+                        : policy.rules.map((rule) => ruleSummary(rule)).join(" · "),
+                  },
+                ]}
+              />
+            </PortalRecordCard>
+          )}
+          renderTable={() => (
+            <div className="hidden overflow-x-auto md:block">
           <table className="min-w-full text-left">
             <thead className="bg-slate-950 text-phx-xs font-black uppercase tracking-[0.16em] text-slate-200">
               <tr>
@@ -933,33 +1019,14 @@ export function AttendancePoliciesManager({ canUpdate, initialData, initialError
                     )}
                   </td>
                   <td className="px-4 py-3">{policy.isActive ? <Badge variant="success">Active</Badge> : <Badge variant="neutral">Inactive</Badge>}</td>
-                  <td className="px-4 py-3 text-right">
-                    <div className="flex flex-wrap justify-end gap-2">
-                      <Button variant="secondary" type="button" onClick={() => editPolicy(policy)}>
-                        <Pencil className="h-4 w-4" />
-                        Edit
-                      </Button>
-                      <Button
-                        disabled={!canUpdate || deletingPolicyId !== null}
-                        variant="destructive"
-                        type="button"
-                        onClick={() => deletePolicy(policy)}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                        {deletingPolicyId === policy.id ? "Deleting" : "Delete"}
-                      </Button>
-                    </div>
-                  </td>
+                  <td className="px-4 py-3 text-right">{policyActions(policy)}</td>
                 </tr>
               ))}
-              {(data?.policies ?? []).length === 0 ? (
-                <tr>
-                  <td className="px-4 py-8 text-center text-sm text-slate-500" colSpan={7}>No attendance policies configured yet.</td>
-                </tr>
-              ) : null}
             </tbody>
           </table>
-        </div>
+            </div>
+          )}
+        />
       </AdminTableShell>
     </div>
   );

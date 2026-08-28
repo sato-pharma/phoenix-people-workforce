@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Check, Download, Fingerprint, RefreshCw, Save, Upload } from "lucide-react";
 
 import {
@@ -11,6 +11,13 @@ import {
 } from "@/components/admin/admin-design-system";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  PortalStackingCell,
+  portalStackingBodyClassName,
+  portalStackingHeadClassName,
+  portalStackingRowClassName,
+  portalStackingTableClassName,
+} from "@/components/employee-portal/portal-primitives";
 import { PHOENIX_BUSINESS_TIME_ZONE } from "@/lib/i18n/format";
 import { cn } from "@/lib/utils";
 import type {
@@ -103,35 +110,6 @@ function employeeLabel(hrId: string, fullName: string) {
   return `${hrId} - ${fullName}`;
 }
 
-/**
- * A stacking cell: a real table cell on desktop, a labelled block on a phone.
- *
- * Every other table in this sweep became a desktop table plus a separate mobile card list, but
- * that pattern renders each row TWICE — two independent React instances, two copies of
- * `useState`. Harmless for a read-only report; not harmless here, where a row holds an unsaved
- * employee assignment. Crossing the `md` breakpoint mid-edit (a phone rotated to landscape is
- * wider than 768px) would swap in the other instance and the pending change would be gone with
- * no warning. Stacking keeps one instance, so there is nothing to lose.
- */
-function Cell({
-  children,
-  className,
-  label,
-}: {
-  children: ReactNode;
-  className?: string;
-  label: string;
-}) {
-  return (
-    <td className={cn("block px-4 py-1.5 md:table-cell md:py-3", className)}>
-      <span className="mb-0.5 block text-phx-2xs font-black uppercase tracking-[0.16em] text-slate-400 md:hidden">
-        {label}
-      </span>
-      {children}
-    </td>
-  );
-}
-
 function MappingRow({
   canUpdate,
   employees,
@@ -179,20 +157,20 @@ function MappingRow({
   }
 
   return (
-    <tr className="block border-b border-slate-100 py-2 last:border-0 md:table-row md:py-0">
-      <Cell className="text-sm font-semibold text-slate-700 md:whitespace-nowrap" label="Device">
+    <tr className={cn(portalStackingRowClassName, "border-b border-slate-100 py-2 last:border-0 md:py-0")}>
+      <PortalStackingCell className="text-sm font-semibold text-slate-700 md:whitespace-nowrap" label="Device">
         {row.deviceId}
-      </Cell>
-      <Cell className="text-sm font-black text-slate-900 md:whitespace-nowrap" label="Device User">
+      </PortalStackingCell>
+      <PortalStackingCell className="text-sm font-black text-slate-900 md:whitespace-nowrap" label="Device User">
         {row.deviceUserId}
-      </Cell>
-      <Cell className="text-sm text-slate-600 md:whitespace-nowrap" label="Latest Punch">
+      </PortalStackingCell>
+      <PortalStackingCell className="text-sm text-slate-600 md:whitespace-nowrap" label="Latest Punch">
         {formatDate(row.latestPunchAt)}
-      </Cell>
-      <Cell className="md:whitespace-nowrap" label="Status">
+      </PortalStackingCell>
+      <PortalStackingCell className="md:whitespace-nowrap" label="Status">
         {statusBadge(row)}
-      </Cell>
-      <Cell className="md:min-w-[260px]" label="Employee HR_ID">
+      </PortalStackingCell>
+      <PortalStackingCell className="md:min-w-[260px]" label="Employee HR_ID">
         <SearchableSelect
           className="h-9 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-800 outline-none transition focus:border-orange-400 focus:ring-2 focus:ring-orange-100 disabled:bg-slate-50 disabled:text-slate-400"
           disabled={!canUpdate || saving}
@@ -218,8 +196,8 @@ function MappingRow({
             </option>
           ))}
         </SearchableSelect>
-      </Cell>
-      <Cell className="text-sm text-slate-600 md:min-w-[180px]" label="Employee">
+      </PortalStackingCell>
+      <PortalStackingCell className="text-sm text-slate-600 md:min-w-[180px]" label="Employee">
         {nonEmployee ? (
           <input
             className="h-9 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-800 outline-none transition focus:border-orange-400 focus:ring-2 focus:ring-orange-100 disabled:bg-slate-50 disabled:text-slate-400"
@@ -233,8 +211,8 @@ function MappingRow({
         ) : (
           row.employeeName ?? "Not assigned"
         )}
-      </Cell>
-      <Cell className="md:whitespace-nowrap" label="Active">
+      </PortalStackingCell>
+      <PortalStackingCell className="md:whitespace-nowrap" label="Active">
         <label className="inline-flex items-center gap-2 text-sm font-semibold text-slate-700">
           <input
             checked={isActive}
@@ -245,8 +223,8 @@ function MappingRow({
           />
           Active
         </label>
-      </Cell>
-      <Cell className="md:whitespace-nowrap md:text-right" label="Action">
+      </PortalStackingCell>
+      <PortalStackingCell className="md:whitespace-nowrap md:text-right" label="Action">
         <Button
           className={hasChanges ? "px-3 py-1.5 text-xs" : "border border-slate-200 bg-slate-100 px-3 py-1.5 text-xs text-slate-500 hover:bg-slate-100"}
           disabled={cannotSave}
@@ -257,7 +235,7 @@ function MappingRow({
           {hasChanges ? <Save className="h-3.5 w-3.5" /> : <Check className="h-3.5 w-3.5" />}
           {saving ? "Saving" : hasChanges ? "Save" : "Saved"}
         </Button>
-      </Cell>
+      </PortalStackingCell>
     </tr>
   );
 }
@@ -582,8 +560,8 @@ export function DeviceUserMappingManager({ agentIsRemotelyReachable, canUpdate, 
               carries its own label; the column headers are hidden because they would label
               nothing. See the Cell helper above for why this table stacks rather than becoming a
               separate card list like the read-only reports do. */}
-          <table className="block min-w-0 text-left md:table md:min-w-full">
-            <thead className="hidden bg-slate-50 text-phx-xs font-black uppercase tracking-[0.16em] text-slate-500 md:table-header-group">
+          <table className={portalStackingTableClassName}>
+            <thead className={cn(portalStackingHeadClassName, "bg-slate-50 text-phx-xs font-black uppercase tracking-[0.16em] text-slate-500")}>
               <tr>
                 <th className="px-4 py-3">Device</th>
                 <th className="px-4 py-3">Device User</th>
@@ -595,7 +573,7 @@ export function DeviceUserMappingManager({ agentIsRemotelyReachable, canUpdate, 
                 <th className="px-4 py-3 text-right">Action</th>
               </tr>
             </thead>
-            <tbody className="block md:table-row-group">
+            <tbody className={portalStackingBodyClassName}>
               {filteredMappings.map((row) => (
                 <MappingRow
                   canUpdate={canUpdate}
@@ -606,7 +584,7 @@ export function DeviceUserMappingManager({ agentIsRemotelyReachable, canUpdate, 
                 />
               ))}
               {filteredMappings.length === 0 ? (
-                <tr className="block md:table-row">
+                <tr className={portalStackingRowClassName}>
                   <td className="block px-4 py-8 text-center text-sm text-slate-500 md:table-cell" colSpan={8}>
                     No device users match this filter.
                   </td>
