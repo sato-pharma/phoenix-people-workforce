@@ -11,6 +11,7 @@
 import { ImapFlow, type ListResponse } from "imapflow";
 import { simpleParser } from "mailparser";
 
+import { describeImapError } from "@/lib/mailbox-monitor/imap-error";
 import type {
   MailboxAttachmentMeta,
   MailboxConnection,
@@ -102,7 +103,7 @@ export async function testMailboxConnection(conn: MailboxConnection): Promise<Ma
     });
     return { inboxExists, ok: true };
   } catch (error) {
-    return { error: error instanceof Error ? error.message : "IMAP connection failed.", ok: false };
+    return { error: describeImapError(error), ok: false };
   }
 }
 

@@ -20,6 +20,7 @@ import { AdminCallout, AdminTableShell } from "@/components/admin/admin-design-s
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type {
+  ImportableMailbox,
   MailboxFolder,
   MailboxMessageDetail,
   MailboxMessageSummary,
@@ -71,8 +72,18 @@ type ReaderState = {
   message: MailboxMessageDetail | null;
 };
 
-export function MailboxMonitorDashboard({ initialMonitors }: { initialMonitors: MailboxMonitor[] }) {
+export function MailboxMonitorDashboard({
+  initialImportable = [],
+  initialMonitors,
+}: {
+  initialImportable?: ImportableMailbox[];
+  initialMonitors: MailboxMonitor[];
+}) {
   const [monitors, setMonitors] = useState<MailboxMonitor[]>(initialMonitors);
+
+  // Company mailboxes Phoenix already holds a working credential for, not yet monitored.
+  const [importable, setImportable] = useState<ImportableMailbox[]>(initialImportable);
+  const [importing, setImporting] = useState(false);
 
   // Add form
   const [emailAddress, setEmailAddress] = useState("");
@@ -99,6 +110,45 @@ export function MailboxMonitorDashboard({ initialMonitors }: { initialMonitors: 
       return next;
     });
   }, []);
+
+  // One click: connect the company mailboxes Phoenix already has credentials for. No password is
+  // typed or sent — the server reuses the one already in its own environment.
+  async function handleImportConfigured() {
+    setImporting(true);
+    try {
+      const res = await fetch("/api/admin/mailbox-monitor", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ importConfigured: true }),
+      });
+      const data = (await res.json().catch(() => ({}))) as {
+        imported?: MailboxMonitor[];
+        skipped?: number;
+        failures?: Array<{ emailAddress: string; error: string }>;
+        message?: string;
+      };
+      if (!res.ok) {
+        toast.error(data.message || "Could not import the configured mailboxes.");
+        return;
+      }
+      const imported = data.imported ?? [];
+      for (const monitor of imported) upsertMonitor(monitor);
+      setImportable((prev) => prev.filter((row) => !imported.some((m) => m.emailAddress === row.emailAddress)));
+
+      if (imported.length > 0) {
+        toast.success(`Connected ${imported.length} mailbox${imported.length === 1 ? "" : "es"}.`);
+      } else if ((data.skipped ?? 0) > 0) {
+        toast.info("Those mailboxes are already being monitored.");
+      }
+      for (const failure of data.failures ?? []) {
+        toast.error(`${failure.emailAddress}: ${failure.error}`);
+      }
+    } catch {
+      toast.error("Could not reach the server. Try again.");
+    } finally {
+      setImporting(false);
+    }
+  }
 
   async function handleAdd(event: FormEvent) {
     event.preventDefault();
@@ -256,6 +306,41 @@ export function MailboxMonitorDashboard({ initialMonitors }: { initialMonitors: 
           </p>
         </div>
       </AdminCallout>
+
+      {/* Company mailboxes Phoenix already has a key for — one click, no password to find. */}
+      {importable.length > 0 ? (
+        <AdminTableShell
+          title="Company mailboxes ready to connect"
+          description="Phoenix already holds a working app password for these — no password to find or type."
+        >
+          <div className="px-5 py-5 sm:px-6">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+              <ul className="space-y-2">
+                {importable.map((row) => (
+                  <li key={row.emailAddress} className="flex items-center gap-2.5">
+                    <Mail className="h-4 w-4 shrink-0 text-slate-400" />
+                    <span className="whitespace-nowrap text-sm font-semibold text-slate-800">{row.label}</span>
+                    <span className="whitespace-nowrap text-sm text-slate-500">{row.emailAddress}</span>
+                  </li>
+                ))}
+              </ul>
+              <Button className="shrink-0" disabled={importing} onClick={handleImportConfigured} type="button">
+                {importing ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Connecting
+                  </>
+                ) : (
+                  <>
+                    <Inbox className="mr-2 h-4 w-4" />
+                    Connect {importable.length} mailbox{importable.length === 1 ? "" : "es"}
+                  </>
+                )}
+              </Button>
+            </div>
+          </div>
+        </AdminTableShell>
+      ) : null}
 
       {/* Add a mailbox */}
       <AdminTableShell

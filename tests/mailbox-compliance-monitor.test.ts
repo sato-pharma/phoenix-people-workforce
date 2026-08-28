@@ -7,6 +7,8 @@ import {
   phoenixRoles,
 } from "../src/lib/auth/permissions.ts";
 import { findAccessRegistryEntry } from "../src/lib/security/access-registry.ts";
+import { describeImapError, normalizeAppPassword } from "../src/lib/mailbox-monitor/imap-error.ts";
+import { parseRecruitmentEmailInboxesConfig } from "../src/lib/recruitment/inbound/email-mailboxes-config.ts";
 import {
   SecretBoxError,
   isSealed,
@@ -144,4 +146,68 @@ export function runMailboxComplianceMonitorTests() {
     "/api/admin/mailbox-monitor/:id",
     "the message route must not fall through to the /:id entry",
   );
+
+  // ── connection step: app-password normalisation + human-readable failure reasons ────
+  // Yahoo/Turbify shows an app password as four space-separated blocks; the IMAP LOGIN needs the
+  // 16 characters with no spaces. Stripping the spaces is the actual fix for "Command failed".
+  assert.equal(normalizeAppPassword("abcd efgh ijkl mnop"), "abcdefghijklmnop", "spaces inside an app password must be stripped");
+  assert.equal(normalizeAppPassword("  padded  "), "padded", "leading/trailing whitespace must be stripped too");
+  assert.equal(normalizeAppPassword("\tno\nline\r\n breaks "), "nolinebreaks", "tabs and newlines count as whitespace");
+  assert.equal(normalizeAppPassword("nospaces"), "nospaces", "a clean password is unchanged");
+
+  // A rejected LOGIN (imapflow's generic "Command failed") must surface as an auth problem, and
+  // carry the server's own text when present — never the opaque "Command failed".
+  const authErr = Object.assign(new Error("Command failed"), {
+    authenticationFailed: true,
+    responseStatus: "NO",
+    responseText: "[AUTHENTICATIONFAILED] (#MBR1240) Incorrect username or password.",
+    serverResponseCode: "AUTHENTICATIONFAILED",
+  });
+  const authMsg = describeImapError(authErr);
+  assert.ok(/rejected the app password/i.test(authMsg), "an auth failure must say the app password was rejected");
+  assert.ok(authMsg.includes("Incorrect username or password"), "the server's own reason must be carried through");
+  assert.equal(authMsg.includes("Command failed"), false, "the opaque 'Command failed' must not be the surfaced reason");
+
+  // A bare auth failure (no server text) still names the cause and tells the admin what to do.
+  const authNoText = describeImapError(Object.assign(new Error("Command failed"), { authenticationFailed: true }));
+  assert.ok(/no spaces/i.test(authNoText), "a bare auth failure must hint to paste the password with no spaces");
+
+  // Network-level failures report the socket reason, not an auth problem.
+  assert.ok(
+    describeImapError(Object.assign(new Error("getaddrinfo ENOTFOUND"), { code: "ENOTFOUND" })).includes("host was not found"),
+    "ENOTFOUND must read as a host problem",
+  );
+  assert.ok(
+    describeImapError(Object.assign(new Error("connect ECONNREFUSED"), { code: "ECONNREFUSED" })).includes("refused the connection"),
+    "ECONNREFUSED must read as a refused connection",
+  );
+
+  // Fallbacks: a plain error keeps its message; a non-error is handled without throwing.
+  assert.equal(describeImapError(new Error("boom")), "boom", "a plain error falls back to its message");
+  assert.equal(describeImapError(null), "IMAP connection failed.", "a null error yields a safe default");
+
+  // ── one-click import of the already-configured company mailboxes ───────────────────
+  // The import reuses the recruitment intake config, so that parser is the contract it depends on.
+  const configured = parseRecruitmentEmailInboxesConfig(
+    JSON.stringify([
+      { host: "imap.mail.yahoo.com", label: "Careers", password: "app-password-one", port: 993, secure: true, user: "Careers@satopharma.com" },
+      { host: "imap.mail.yahoo.com", label: "HR", password: "app-password-two", port: 993, secure: true, user: "hr@satopharma.com" },
+      { host: "imap.mail.yahoo.com", label: "Broken", port: 993, secure: true, user: "no-password@satopharma.com" },
+    ]),
+  );
+  assert.equal(configured.length, 2, "an entry with no password must be dropped, not imported half-configured");
+  assert.deepEqual(
+    configured.map((box) => box.user),
+    ["Careers@satopharma.com", "hr@satopharma.com"],
+    "the configured mailboxes are the ones the import offers",
+  );
+  // The import lower-cases the address before de-duplicating against what is already monitored,
+  // so a mixed-case configured address cannot be imported twice.
+  const importAddresses = configured.map((box) => box.user.trim().toLowerCase());
+  assert.deepEqual(importAddresses, ["careers@satopharma.com", "hr@satopharma.com"], "addresses normalise to lower case");
+  assert.equal(new Set(importAddresses).size, importAddresses.length, "normalised addresses must be unique");
+
+  // Malformed or absent config disables the import instead of throwing.
+  assert.deepEqual(parseRecruitmentEmailInboxesConfig(undefined), [], "no config → nothing to import");
+  assert.deepEqual(parseRecruitmentEmailInboxesConfig("{not json"), [], "invalid JSON → nothing to import");
 }

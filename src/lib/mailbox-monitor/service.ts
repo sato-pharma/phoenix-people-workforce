@@ -14,8 +14,12 @@ import {
   listMessages,
   testMailboxConnection,
 } from "@/lib/mailbox-monitor/imap-client";
+import { normalizeAppPassword } from "@/lib/mailbox-monitor/imap-error";
+import { loadConfiguredMailboxes } from "@/lib/recruitment/inbound/email-mailboxes-config";
 import type {
   AddMailboxMonitorInput,
+  ImportConfiguredResult,
+  ImportableMailbox,
   MailboxConnection,
   MailboxFolder,
   MailboxMessageDetail,
@@ -182,7 +186,9 @@ export async function listMonitors(): Promise<MailboxMonitor[]> {
  */
 export async function addMonitor(input: AddMailboxMonitorInput, actorHrId: string | null): Promise<MailboxMonitor> {
   const email = normalizeEmail(input.emailAddress ?? "");
-  const appPassword = (input.appPassword ?? "").trim();
+  // Strip ALL whitespace, not just the ends: Yahoo/Turbify shows an app password as four
+  // space-separated blocks, but the IMAP LOGIN needs the 16 characters with no spaces.
+  const appPassword = normalizeAppPassword(input.appPassword ?? "");
   if (!isEmail(email)) throw new MailboxMonitorError("Enter a valid mailbox email address.");
   if (appPassword.length < 6) throw new MailboxMonitorError("Paste the mailbox app password.");
 
@@ -225,6 +231,81 @@ export async function addMonitor(input: AddMailboxMonitorInput, actorHrId: strin
   await logAccess({ action: "add", actorHrId, emailAddress: email, monitorId: row.id });
   const names = await resolveEmployeeNames([row.employee_hr_id ?? ""]);
   return rowToMonitor(row, row.employee_hr_id ? names.get(row.employee_hr_id) ?? null : null);
+}
+
+/**
+ * The company mailboxes Phoenix already holds working credentials for — the recruitment intake
+ * inboxes (careers@ / hr@) configured in RECRUITMENT_EMAIL_INBOXES_JSON — minus the ones already
+ * monitored. Returns the address and label ONLY: the password stays in the environment and is
+ * never returned, so this is safe to render in the browser.
+ */
+export async function listImportableMailboxes(): Promise<ImportableMailbox[]> {
+  const configured = loadConfiguredMailboxes();
+  if (configured.length === 0) return [];
+
+  const emails = [...new Set(configured.map((box) => normalizeEmail(box.user)))];
+  const { data } = await db().from(MONITORS_TABLE).select("email_address").in("email_address", emails);
+  const alreadyMonitored = new Set(((data ?? []) as Array<{ email_address: string }>).map((row) => row.email_address));
+
+  const seen = new Set<string>();
+  const importable: ImportableMailbox[] = [];
+  for (const box of configured) {
+    const emailAddress = normalizeEmail(box.user);
+    if (alreadyMonitored.has(emailAddress) || seen.has(emailAddress)) continue;
+    seen.add(emailAddress);
+    importable.push({ emailAddress, label: box.label });
+  }
+  return importable;
+}
+
+/**
+ * Add every already-configured company mailbox that is not yet monitored, reusing the credential
+ * Phoenix already has. Goes through addMonitor, so each one is still connection-tested before it is
+ * stored and still writes its own access-log row — an import is not a back door around either.
+ * One mailbox failing never aborts the rest; it comes back in `failures`.
+ */
+export async function importConfiguredMailboxes(actorHrId: string | null): Promise<ImportConfiguredResult> {
+  const configured = loadConfiguredMailboxes();
+  const imported: MailboxMonitor[] = [];
+  const failures: Array<{ emailAddress: string; error: string }> = [];
+  const handled = new Set<string>();
+  let skipped = 0;
+
+  for (const box of configured) {
+    const emailAddress = normalizeEmail(box.user);
+    if (handled.has(emailAddress)) continue;
+    handled.add(emailAddress);
+
+    const { data: existing } = await db().from(MONITORS_TABLE).select("id").eq("email_address", emailAddress).maybeSingle();
+    if (existing) {
+      skipped += 1;
+      continue;
+    }
+
+    try {
+      imported.push(
+        await addMonitor(
+          {
+            appPassword: box.password,
+            displayLabel: box.label,
+            emailAddress,
+            employeeHrId: null,
+            imapHost: box.host,
+            imapPort: box.port,
+            imapSecure: box.secure,
+          },
+          actorHrId,
+        ),
+      );
+    } catch (error) {
+      failures.push({
+        emailAddress,
+        error: error instanceof Error ? error.message : "Import failed.",
+      });
+    }
+  }
+
+  return { failures, imported, skipped };
 }
 
 /** Remove a monitored mailbox (deletes the credential). The access log row survives (monitor_id
