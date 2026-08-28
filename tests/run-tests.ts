@@ -170,6 +170,7 @@ import { runRecruitmentScreeningOrderTests } from "./recruitment-screening-order
 import { runRecruitmentEmailIntakeTests } from "./recruitment-email-intake.test.ts";
 import { runRecruitmentWhatsAppIntakeTests } from "./recruitment-whatsapp-intake.test.ts";
 import { runWhatsAppSelfClassificationTests } from "./whatsapp-self-classification.test.ts";
+import { runWhatsAppOwnerMirrorTests } from "./whatsapp-owner-mirror.test.ts";
 import { runWhatsAppCoexistenceHistoryTests } from "./recruitment-whatsapp-coexistence-history.test.ts";
 import {
   runRecruitmentWhatsAppHealthTests,
@@ -1278,6 +1279,7 @@ await runTest(
 );
 await runTest("recruitment whatsapp intake", runRecruitmentWhatsAppIntakeTests);
 await runTest("whatsapp self-classification menus and replies", runWhatsAppSelfClassificationTests);
+  await runTest("whatsapp owner conversation mirror", runWhatsAppOwnerMirrorTests);
 await runTest(
   "recruitment whatsapp coexistence history (the backlog Meta replays)",
   runWhatsAppCoexistenceHistoryTests,

@@ -15,6 +15,10 @@ import { formatCoveringMessage } from "@/lib/recruitment/candidate-source-contex
 import { clearWhatsAppMessages, sweepOldWhatsAppMessages } from "@/lib/recruitment/inbound/whatsapp-message-buffer";
 import { downloadWhatsAppMedia, WhatsAppMediaTooLargeError } from "@/lib/recruitment/inbound/whatsapp-media";
 import { applyPendingClassification } from "@/lib/recruitment/inbound/whatsapp-classify-session";
+import {
+  candidateDisplayName,
+  mirrorWhatsAppEventToOwner,
+} from "@/lib/recruitment/inbound/whatsapp-conversation-mirror";
 import { isWhatsAppAutoReplyEnabled, sendWhatsAppCvAcknowledgement } from "@/lib/recruitment/inbound/whatsapp-reply";
 import { fetchAndParseEmailMessagesByUid } from "@/lib/recruitment/inbound/email-poller";
 import { fetchCvFromUrl } from "@/lib/recruitment/inbound/cv-link";
@@ -114,6 +118,29 @@ async function processWhatsAppRow(payload: WhatsAppQueuePayload): Promise<Inboun
   // here, the moment the candidate exists. Best-effort and flag-gated.
   if (!isImport && result.candidateId && (result.outcome === "candidate_created" || result.outcome === "candidate_matched")) {
     await applyPendingClassification({ candidateId: result.candidateId, waId: payload.from }).catch(() => {});
+  }
+
+  // Show the owner who just wrote in. The advertised number is moving to the Cloud API line, which
+  // cannot be opened on a phone and never will be — so without this he would gain the automation
+  // and lose sight of the conversation. Telegram is the replacement handset: he already carries it
+  // and already gets Phoenix alerts there.
+  //
+  // Same gate as the acknowledgement below, for the same reasons: an import sender is a forwarder
+  // and not the applicant, a match already applied, and a coexistence history replay would mirror
+  // months of past CVs in one burst the moment the handset is linked.
+  if (!isImport && !payload.historical && result.outcome === "candidate_created") {
+    await mirrorWhatsAppEventToOwner({
+      candidateName: await candidateDisplayName(result.candidateId),
+      contactName: payload.contactName,
+      filename: payload.filename,
+      kind: "cv_received",
+      note:
+        [payload.sourceContext?.caption, ...(payload.sourceContext?.firstMessages ?? [])]
+          .filter((line): line is string => typeof line === "string" && line.trim().length > 0)
+          .join("
+") || null,
+      waId: payload.from,
+    }).catch(() => {});
   }
 
   // Acknowledge a genuinely NEW direct applicant (flag-gated; strict no-op when off). Never on an
