@@ -350,6 +350,41 @@ export function buildEmployeePlanPeriod(
 }
 
 /**
+ * Whole days from one YYYY-MM-DD to another. Both sides are date-only and parsed as UTC, so no
+ * timezone ever enters the arithmetic and the result is exact.
+ */
+export function wholeDaysBetween(fromIso: string, toIso: string) {
+  const from = Date.parse(`${fromIso}T00:00:00Z`);
+  const to = Date.parse(`${toIso}T00:00:00Z`);
+  return Math.round((to - from) / 86_400_000);
+}
+
+/** Shift a YYYY-MM-DD date by whole days. */
+export function shiftIsoDate(iso: string, days: number) {
+  const base = new Date(`${iso}T00:00:00Z`);
+  base.setUTCDate(base.getUTCDate() + days);
+  return base.toISOString().slice(0, 10);
+}
+
+/**
+ * The destination period, plus the ONE whole-day delta to apply to every item, when a plan is
+ * re-dated onto a different period.
+ *
+ * A single delta for the whole plan is what preserves weekday alignment — a Sunday visit stays on
+ * Sunday. Re-deriving each item's new date on its own would not, and shifting the header without
+ * the items leaves a plan whose rows sit outside their own period.
+ */
+export function planPeriodMove(
+  planKind: EmployeePlanKind,
+  currentPeriodStartDate: string,
+  targetAnchorDate: string,
+  workweek: PlanWorkweek,
+) {
+  const target = buildEmployeePlanPeriod(planKind, targetAnchorDate, workweek);
+  return { dayDelta: wholeDaysBetween(currentPeriodStartDate, target.periodStartDate), target };
+}
+
+/**
  * The required working slot for each date in a period, per the workweek.
  * Returns a Map<YYYY-MM-DD, "full" | "am"> covering only the days that must be
  * planned. Days not present are off (Fri/Sat for Head Office, Fri for Field).
