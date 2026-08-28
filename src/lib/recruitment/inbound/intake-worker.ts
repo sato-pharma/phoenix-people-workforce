@@ -137,8 +137,7 @@ async function processWhatsAppRow(payload: WhatsAppQueuePayload): Promise<Inboun
       note:
         [payload.sourceContext?.caption, ...(payload.sourceContext?.firstMessages ?? [])]
           .filter((line): line is string => typeof line === "string" && line.trim().length > 0)
-          .join("
-") || null,
+          .join("\n") || null,
       waId: payload.from,
     }).catch(() => {});
   }
