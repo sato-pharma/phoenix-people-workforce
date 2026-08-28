@@ -1178,6 +1178,52 @@ These are the owner's own decisions, stated across many sessions. They are not s
   path, and a recovery path that stops working when you need it is not one. Do not "fix" this
   back, do not add an override flag, and do not offer to publish a running month "just to see".
 
+### 4.1 Marketing customer, venue and licence validation (relocated from `MEMORY.md`, 2026-08-28)
+
+**Relocated because the index crossed its cliff — three times in one morning.** `MEMORY.md` is the
+only memory file that auto-loads and the loader truncates it at **24,400 bytes**. On 2026-08-28 it
+was measured at 24,605 with the tail already being dropped **silently**, and the line being lost was
+the signpost saying session and tooling traps live in §2.1 — the one whose absence causes the next
+session to re-add agent-operating hooks to the index and overflow it again. Per §2.2 the remedy once
+compression is exhausted is to move guidance **here**, where `CLAUDE.md`'s `@AGENTS.md` loads it in
+full with no cliff. These eight hooks are one coherent domain and three of them are explicit owner
+rules, so §4 is their home. Reach is identical; only scannability changed. Each names the memory file
+holding the full account, under
+`C:\Users\satoh\.claude\projects\F--Phoenix-Workforce-phoenix-workforce\memory\`.
+
+- 🔒 **Venue validation is GPS + a live picture ALWAYS, and THEN either the registered code or the
+  licence.** Owner rule, 2026-08-26. The licence is a **fallback identity route** for when the code
+  is not in our database — it is *never* evidence in its own right. This governs the direct-order
+  desk only (#2434), **not** marketing.
+  `venue-validation-rule-gps-photo-then-code-or-licence`
+- 🔴 **Marketing pharmacies are TERRITORIAL, and a NULL `area_id` makes one invisible.** Seeded rows
+  carry no area and so appear nowhere at all. **Owner rule: the REGISTERED CODE beats live GPS.**
+  `seeded-marketing-pharmacies-have-no-area-and-are-invisible`
+- 🔴 **A licence verdict is PERMANENT and has no correction path.** It is write-once at approval: the
+  write gate requires the caller to hold the request's *current* approval step, and once the request
+  is decided that step stops existing — so not even a Super Admin can correct a wrong verdict, and it
+  is then displayed indefinitely on a register. **Ask the owner before the first one is recorded.**
+  The counts live in the memory file deliberately, because a hook whose content is a number is one
+  that will one day be wrong.
+  `a-licence-verdict-is-permanent-and-has-no-correction-path`
+- 🔴 **`system_validated` means NO HUMAN LOOKED.** The admin register never blocks on it, and the
+  screen is **Super Admin only** — not SFE.
+  `marketing-system-validated-means-no-human-looked`
+- 🔴 **A venue's evidence was WRITE-ONCE, writable only at insert** — fixed in #2352. **AREA governs
+  both sight and reuse; never backfill ownership.**
+  `marketing-venue-evidence-was-writable-only-at-insert`
+- 🔴 **The badge read a FROZEN note, never the live evidence** (#2354). EITHER half reaching
+  `complete` clears it, so setting both halves is a no-op.
+  `marketing-badge-read-a-frozen-note-not-the-live-evidence`
+- 🔴 **A duplicate merge STRANDS the desk validation on the retired row.** The links move; the
+  `validation_status` does not — so the surviving row sits `pending` and is invisible in every
+  dropdown. Repair it with hand SQL, not code.
+  `a-duplicate-merge-strands-the-desk-validation-on-the-retired-row`
+- 🔴 **The screen that SHOWS a badge is not the screen a rep can OPEN.** The portal Customer
+  **Database** is Super Admin + SFE only — a 403 for the medical reps — while the capture path is
+  `/validation`. Check the gate before wiring any `actionUrl`.
+  `the-screen-that-shows-a-badge-is-not-the-screen-a-rep-can-open`
+
 ## 5. Session, worktree, and parallel-work safety
 
 Before editing, run `git status`, `git branch --show-current`, `git log -1 --oneline`,
