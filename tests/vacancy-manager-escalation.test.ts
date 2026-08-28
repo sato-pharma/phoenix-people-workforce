@@ -29,7 +29,7 @@ const SEATS: ManagerSeatRow[] = [
   { is_vacant: true, line_name: "Pedia", occupant_hr_id: null, parent_seat_id: "SEAT-PED-NSM", region_name: "Cairo", seat_display_label: "PEDIA Cairo DM (VACANT)", seat_id: "SEAT-PED-DM-CA", seat_tier: "DM" },
   { is_vacant: true, line_name: "Pedia", occupant_hr_id: null, parent_seat_id: "SEAT-PED-RSM", region_name: "Alex-BHR", seat_display_label: "PEDIA Alex-BHR DM (VACANT)", seat_id: "SEAT-PED-DM-AB", seat_tier: "DM" },
   { is_vacant: false, line_name: "Pedia", occupant_hr_id: "B-94", parent_seat_id: "SEAT-PED-NSM", region_name: "Giza", seat_display_label: "PEDIA Giza DM", seat_id: "SEAT-PED-DM-GZ", seat_tier: "DM" },
-  { area_name: "Nasr City", is_vacant: true, line_name: "Pedia", occupant_hr_id: null, parent_seat_id: "SEAT-PED-DM-CA", region_name: "Cairo", seat_display_label: "PEDIA Nasr City rep (VACANT)", seat_id: "SEAT-PED-REP-CA2", seat_tier: "REP" },
+  { is_vacant: true, line_name: "Pedia", occupant_hr_id: null, parent_seat_id: "SEAT-PED-DM-CA", region_name: "Cairo", seat_display_label: "PEDIA Nasr City rep (VACANT)", seat_id: "SEAT-PED-REP-CA2", seat_tier: "REP" },
 
   // ANTI_INFECTIVE, for the acting district manager and the line-name spelling.
   { is_vacant: false, line_name: "Anti Infective", occupant_hr_id: "AI-0008", parent_seat_id: "SEAT-ROOT-CEO", seat_display_label: "ANTI_INFECTIVE NSM", seat_id: "SEAT-AIF-NSM", seat_tier: "NSM" },
