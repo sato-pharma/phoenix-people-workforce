@@ -302,6 +302,24 @@ export function computeRealAudienceSize(input: { bcc?: string[] | null; cc?: str
   return audience.size;
 }
 
+/**
+ * The same count, taken from a stored notification_send_reviews row.
+ *
+ * Exists because the row is snake_case and computeRealAudienceSize takes to/cc/bcc: handing it the
+ * row directly is a TS2559 "no properties in common", and had CI not caught that it would have
+ * scored every historical row as 0 recipients at runtime — collapsing the baseline to zero, pinning
+ * the ceiling at its bare floor of 3, and making the gate hold MORE mail rather than less. The
+ * compiler now rejects the un-mapped form, and the test pins that the mapping reads the right
+ * columns (a wrong-but-well-typed mapping, e.g. to: row.cc_addresses, would still compile).
+ */
+export function audienceSizeFromReviewRow(row: {
+  bcc_addresses?: string[] | null;
+  cc_addresses?: string[] | null;
+  to_addresses?: string[] | null;
+}): number {
+  return computeRealAudienceSize({ bcc: row.bcc_addresses, cc: row.cc_addresses, to: row.to_addresses });
+}
+
 // Minimum number of PRIOR SENDS (not days — a recipient-count distribution is a per-send metric)
 // of this (module,eventType) pair needed to trust a statistical baseline over the flat first-run
 // ceiling.
@@ -397,7 +415,7 @@ async function checkRecipientVolume(input: ConfidenceGateInput): Promise<Confide
     }>) {
       const key = row.idempotency_key ?? `row-${countByKey.size}`;
       if (countByKey.has(key)) continue;
-      countByKey.set(key, computeRealAudienceSize(row));
+      countByKey.set(key, audienceSizeFromReviewRow(row));
     }
     const priorCounts = Array.from(countByKey.values());
 

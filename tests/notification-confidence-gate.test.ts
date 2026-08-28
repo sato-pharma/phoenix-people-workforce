@@ -1,6 +1,7 @@
 import { strict as assert } from "node:assert";
 
 import {
+  audienceSizeFromReviewRow,
   checkContentIntegrity,
   checkIdentityResolved,
   checkRecipientValidity,
@@ -209,6 +210,38 @@ export function runNotificationConfidenceGateTests() {
     if (previousReplyTo === undefined) delete process.env.NOTIFICATION_REPLY_TO;
     else process.env.NOTIFICATION_REPLY_TO = previousReplyTo;
   }
+
+  // ── audienceSizeFromReviewRow ──────────────────────────────────────────────────────────────
+  // REGRESSION (caught by CI typecheck, 2026-08-28): the stored row is snake_case while
+  // computeRealAudienceSize takes to/cc/bcc. The first cut of this change passed the row straight
+  // in — a TS2559 the local test run could not see, and which at runtime would have scored EVERY
+  // historical row as 0 recipients, collapsing the baseline to zero and pinning the ceiling at its
+  // floor of 3, so the gate would have held MORE mail, not less. The compiler now rejects the
+  // un-mapped form; these pin that the mapping reads the RIGHT columns, since a wrong-but-
+  // well-typed mapping would still compile.
+  assert.equal(
+    audienceSizeFromReviewRow({
+      bcc_addresses: ["b@satopharma.com", STANDING_ADMIN_BCC],
+      cc_addresses: ["c@satopharma.com"],
+      to_addresses: ["a@satopharma.com"],
+    }),
+    3,
+    "a stored review row must yield its real audience — all three address columns read, standing admin stripped",
+  );
+  assert.equal(
+    audienceSizeFromReviewRow({ bcc_addresses: null, cc_addresses: null, to_addresses: ["a@satopharma.com"] }),
+    1,
+    "null address columns must not throw or inflate",
+  );
+  assert.notEqual(
+    audienceSizeFromReviewRow({
+      bcc_addresses: ["b@satopharma.com"],
+      cc_addresses: null,
+      to_addresses: ["a@satopharma.com"],
+    }),
+    0,
+    "a populated row must never score 0 — a zero baseline silently makes the gate hold more, not less",
+  );
 
   // ── isExemptFromVolumeChecks ───────────────────────────────────────────────────────────────
   // REGRESSION (production, measured 2026-08-28): 679 held rows, ZERO ever discarded as wrong,
