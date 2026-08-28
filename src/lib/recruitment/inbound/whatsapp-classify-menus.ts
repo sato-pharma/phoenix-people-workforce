@@ -8,8 +8,10 @@
 // so a tapped role lights up the existing "Applying for" column with no new read path at all.
 //
 // Vocabulary is BORROWED, never invented here:
-//   role   -> `candidateRoleFamilyLabels` (candidate-role-family.ts) — the same 9 families the
-//             pool's Role filter already offers, so an answer lands in the vocabulary the filter reads.
+//   role   -> `candidateRoleFamily` codes (candidate-role-family.ts), so an answer lands in the same
+//             vocabulary the pool's Role filter reads. The MENU offers a subset the owner named
+//             (see ROLE_MENU_ORDER) — a question put to a person, not a dump of the whole list —
+//             and "Other" opens a free-text follow-up for anything it does not cover.
 //   region -> `candidateRegionLabels` (candidate-region.ts) — the company's own `au.regions` names.
 //             Owner decision 2026-08-24: company regions, NOT geography.
 //   area   -> `au.canonical_areas`, read live (see whatsapp-classify-session.ts). Areas are the one
@@ -32,7 +34,24 @@ export const WHATSAPP_LIST_BUTTON_MAX = 20;
 export const WHATSAPP_SECTION_TITLE_MAX = 24;
 export const WHATSAPP_BODY_MAX = 1024;
 
+/** A step that is asked as a tappable list. Every menu below has one of these. */
 export type ClassifyStep = "job_title" | "region" | "area";
+
+/**
+ * Every value the session's `step` column may hold — the three tappable steps, plus the typed
+ * follow-up after "Other", plus the terminal state. Kept separate from `ClassifyStep` on purpose:
+ * `job_title_other` has no menu and no row ids, so letting it into `ClassifyStep` would imply a
+ * list that cannot exist. This union is the same vocabulary as the table's CHECK constraint.
+ */
+export type ClassifySessionStep = ClassifyStep | "job_title_other" | "done";
+
+export const classifySessionSteps: readonly ClassifySessionStep[] = [
+  "job_title",
+  "job_title_other",
+  "region",
+  "area",
+  "done",
+];
 
 export type ClassifyRow = {
   /** Row id sent back to us verbatim when tapped. Namespaced so a stray reply can't be misread. */
@@ -74,12 +93,24 @@ export function parseClassifyRowId(raw: string | null | undefined): ParsedClassi
   return { step, value };
 }
 
-// ── Titles that do not fit 24 characters ─────────────────────────────────────────────────────────
-// Listed explicitly rather than truncated. The owner's standing rule is that text is never cut with
-// an ellipsis, so the shortened form is a real abbreviation a person would write, and the full name
-// is carried on the description line where all 72 characters are available.
-const LONG_ROLE_TITLES: Partial<Record<CandidateRoleFamily, string>> = {
-  // "Sales & Business Development" is 28 characters.
+// ── What the APPLICANT sees ──────────────────────────────────────────────────────────────────────
+// The pool's own label (`candidateRoleFamilyLabels`) is written for a recruiter reading a filter
+// dropdown; this map is the wording an applicant reads on their phone, given verbatim by the owner
+// on 2026-08-28. Only the entries that differ are listed — everything else falls through to the
+// pool label, so the two vocabularies cannot drift apart silently.
+//
+// A row title also has a hard 24-character ceiling that Meta enforces server-side, and the owner's
+// standing rule is that text is never cut with an ellipsis. So where a name does not fit, the short
+// form here is a real abbreviation a person would write and the FULL name goes on the description
+// line, where all 72 characters are available.
+const MENU_ROLE_TITLES: Partial<Record<CandidateRoleFamily, string>> = {
+  // "Area / Regional Manager" fits, but the owner asked for the shorter name on the applicant's
+  // side. The pool filter keeps the longer label, which is the same bucket.
+  area_regional_manager: "Regional Manager",
+  // "Finance & Accounting" in the pool; the applicant is asked for "Finance".
+  finance: "Finance",
+  // "Sales & Business Development" is 28 characters. Not offered on the menu today, but kept so the
+  // ceiling stays satisfied if it is ever put back.
   sales: "Sales & Business Dev.",
 };
 
@@ -98,16 +129,21 @@ function rowFor(step: ClassifyStep, value: string, fullName: string, shortTitle?
 }
 
 // ── Question 1 — what are you applying for? ──────────────────────────────────────────────────────
-// The 9 families, most-applied-for first rather than alphabetically: this pool is overwhelmingly
-// medical reps, and a list is read top-down. "Other" is last because it is the answer that means
-// "none of these", and offering it early invites it.
+// THE OWNER NAMED THIS LIST, in this order, on 2026-08-28. It is NOT every role family and must not
+// be "corrected" back into one: `sales` and `pharmacist` are deliberately absent, because a menu is
+// a question put to a person rather than a dump of an internal vocabulary. Both families still
+// exist and still bucket CVs — someone applying for either taps "Other" and types it, which is a
+// better record than a bucket they did not choose.
+//
+// A list is read top-down and this pool is overwhelmingly medical reps, so the order is the owner's
+// own. "Other" stays last because it is the answer meaning "none of these", and offering it early
+// invites it.
 const ROLE_MENU_ORDER: CandidateRoleFamily[] = [
   "medical_rep",
   "district_manager",
   "area_regional_manager",
   "product_manager",
-  "sales",
-  "pharmacist",
+  "national_sales_manager",
   "human_resources",
   "finance",
   "other",
@@ -118,11 +154,60 @@ export function jobTitleMenu(): ClassifyMenu {
     body: "Thanks for sending your CV to Sato Pharma. To get it to the right manager, please tell us what you are applying for.",
     buttonLabel: "Choose a role",
     rows: ROLE_MENU_ORDER.map((family) =>
-      rowFor("job_title", family, candidateRoleFamilyLabels[family], LONG_ROLE_TITLES[family]),
+      rowFor("job_title", family, candidateRoleFamilyLabels[family], MENU_ROLE_TITLES[family]),
     ),
     sectionTitle: "Roles",
     step: "job_title",
   };
+}
+
+/** The families this menu offers. Exported so a test can pin the owner's list, not re-derive it. */
+export const offeredRoleMenuFamilies: readonly CandidateRoleFamily[] = ROLE_MENU_ORDER;
+
+// ── Question 1b — "Other", in their own words ────────────────────────────────────────────────────
+// Owner's instruction, 2026-08-28: "if he choose other, he free text what he want." So "Other" is
+// not a dead end that files someone under a label meaning nothing — it opens the one question this
+// flow cannot put in a list, and their typed answer becomes `applied_for_job_title` verbatim.
+//
+// Plain text, not a menu: there is nothing to tap. The reply arrives as an ordinary inbound message,
+// which is why the webhook has to route text into the session before buffering it as CV context.
+export function jobTitleOtherPromptText(): string {
+  return [
+    "No problem — please type the job title you are applying for.",
+    "",
+    "Send it as a normal message and we will record it exactly as you write it.",
+  ].join("\n");
+}
+
+/**
+ * What a typed "Other" answer is worth keeping. Trimmed, collapsed to single spaces, and capped at
+ * a length a job title can actually be — a pasted CV or a paragraph is not a job title, and storing
+ * one would put junk in the column the hiring manager reads.
+ *
+ * Returns null when there is nothing usable, so the caller can ask again rather than record noise.
+ */
+export const JOB_TITLE_OTHER_MAX = 120;
+
+/**
+ * Sent when the typed answer is too long to be a job title — someone pasted a paragraph or their
+ * whole CV. Names the limit rather than silently ignoring them, and deliberately does NOT quote
+ * their text back: it is already too long, and repeating it is what an ellipsis would be for.
+ */
+export function jobTitleOtherTooLongText(): string {
+  return [
+    "That looks longer than a job title.",
+    "",
+    `Please send just the title itself — up to ${JOB_TITLE_OTHER_MAX} characters, for example "Regulatory Affairs Specialist".`,
+  ].join("\n");
+}
+
+export function cleanTypedJobTitle(raw: string | null | undefined): string | null {
+  const cleaned = String(raw ?? "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!cleaned) return null;
+  if (cleaned.length > JOB_TITLE_OTHER_MAX) return null;
+  return cleaned;
 }
 
 // ── Question 2 — which region? ───────────────────────────────────────────────────────────────────

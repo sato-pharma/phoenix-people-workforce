@@ -29,6 +29,38 @@ export function runCandidateRoleRegionTests() {
     assert.equal(candidateRoleFamily(title), "district_manager", `"${title}" is a District Manager`);
   }
 
+  // --- National Sales Manager. Added 2026-08-28 when the owner put it on the WhatsApp menu. These
+  // --- are the SEVEN spellings production actually holds, read off ats_candidates that day. Every
+  // --- one landed in `sales` before this family existed — the catch-all that runs last — so they
+  // --- sorted below every medical rep in the screening queue.
+  for (const title of [
+    "National Sales Manager",
+    "National sales manager",
+    "NATIONAL SALES MANAGER - PHARMACEUTICALS",
+    "National Sales Manger", // spelled that way on the CV; normalizeJobTitle repairs it first
+    "National Sales Head",
+    "Head of Sales (National Sales Manager)", // compound: bare "sales" would otherwise claim it
+    "Market Access & National Sales Manager", // compound, and must not be read as marketing
+  ]) {
+    assert.equal(candidateRoleFamily(title), "national_sales_manager", `"${title}" is a National Sales Manager`);
+  }
+
+  // --- And it must not steal anyone. A district or regional seat is not a national one, and the
+  // --- bare abbreviation is deliberately unmatched — nobody in this pool uses it.
+  assert.equal(candidateRoleFamily("District Sales Manager"), "district_manager");
+  assert.equal(candidateRoleFamily("Regional Manager"), "area_regional_manager");
+  assert.equal(candidateRoleFamily("Area Manager"), "area_regional_manager");
+  assert.equal(
+    candidateRoleFamily("NSM"),
+    "other",
+    "a bare NSM is ambiguous and unused here — same reasoning as the excluded bare MR and KAM",
+  );
+  // Recorded, not endorsed: "Regional Sales Manager" lands in `sales`, because the area/regional
+  // branch anchors on "regional" immediately followed by manager/supervisor/head and this title
+  // separates them. Pre-existing behaviour, unchanged by the national family — asserted here so a
+  // future fix is a deliberate decision with a visible diff, not an accident.
+  assert.equal(candidateRoleFamily("Regional Sales Manager"), "sales");
+
   // --- Compound titles name two jobs. The more senior, more specific one wins.
   assert.equal(
     candidateRoleFamily("Medical Sales Professional | District Manager"),

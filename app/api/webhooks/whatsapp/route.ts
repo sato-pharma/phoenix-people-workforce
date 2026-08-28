@@ -3,7 +3,11 @@ import { NextResponse } from "next/server";
 import { logError, logWarning } from "@/lib/observability/log";
 import { assembleWhatsAppSourceContext, MAX_WHATSAPP_SOURCE_MESSAGES } from "@/lib/recruitment/candidate-source-context";
 import { enqueueInbound } from "@/lib/recruitment/inbound/intake-queue";
-import { handleClassifyReply, startClassification } from "@/lib/recruitment/inbound/whatsapp-classify-session";
+import {
+  handleClassifyReply,
+  handleClassifyText,
+  startClassification,
+} from "@/lib/recruitment/inbound/whatsapp-classify-session";
 import { bufferWhatsAppMessage, takeRecentWhatsAppMessages } from "@/lib/recruitment/inbound/whatsapp-message-buffer";
 import {
   isWhatsAppImportSender,
@@ -105,6 +109,32 @@ export async function POST(request: Request) {
         });
         outcomes.push({ outcome: `classify_${replyOutcome}`, wamid: message.wamid });
         continue;
+      }
+
+      // A typed answer to "Other" on question 1. Checked BEFORE buffering, because this text is the
+      // applicant's answer to a question we asked — not context about their CV — and filing it as
+      // context would both lose the answer and staple a job title onto the next document they send.
+      //
+      // Narrow on purpose: `handleClassifyText` acts only when this sender has an open conversation
+      // parked on `job_title_other`, and returns `not_awaiting_text` for everything else, which
+      // falls through to the buffer exactly as before. A message carrying a document is excluded
+      // outright — that is a CV with a caption, never an answer.
+      if (message.text && !message.document && !message.historical) {
+        const textOutcome = await handleClassifyText({
+          phoneNumberId: message.deliveredToPhoneNumberId,
+          text: message.text,
+          waId: message.from,
+        }).catch((textError) => {
+          logError("WhatsApp classification text handling threw", {
+            error: textError,
+            labels: { event: "whatsapp_classify_text_threw", wamid: message.wamid },
+          });
+          return "no_session" as const;
+        });
+        if (textOutcome === "advanced" || textOutcome === "unusable_text") {
+          outcomes.push({ outcome: `classify_${textOutcome}`, wamid: message.wamid });
+          continue;
+        }
       }
 
       // A plain text message is buffered so its first few lines can be shown next to the candidate

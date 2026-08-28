@@ -78,6 +78,34 @@ offered in the dashboard. **Under that design a WhatsApp intake event measures H
 activity, not applicant demand** — which is why 371 of 390 events are bulk forwards and why the
 2026-08-23 gap was never a quiet channel: it was CVs piling up unread on a phone.
 
+### The three questions, and what the applicant is actually asked (owner's list, 2026-08-28)
+
+Question 1 offers **eight** roles, named by the owner in this order: Medical Representative, District
+Manager, Regional Manager, Product Manager, National Sales Manager, Human Resources, Finance, Other.
+
+That is deliberately **not** every role family. `sales` and `pharmacist` still exist and still bucket
+CVs — they are simply not put to an applicant as a question, and anyone applying for either taps
+**Other** and types it. Do not "restore" them to the menu; `tests/whatsapp-self-classification.test.ts`
+pins the list and will go red.
+
+**"Other" is a real answer, not a dead end.** Choosing it parks the conversation on a fifth step,
+`job_title_other`, and the sender's next plain-text message becomes `applied_for_job_title` verbatim
+— the top rung of the applied-for ladder, because a human typed it. The webhook checks for that step
+*before* buffering text as CV context, so an answer is never mistaken for a note about a document.
+Anything longer than 120 characters is refused with a nudge naming the limit rather than truncated:
+text is never cut here.
+
+`national_sales_manager` was added to the family list for this. All seven people in production
+carrying that title previously fell into the `sales` catch-all and therefore sorted *below* every
+medical rep in the screening queue; they are field force, and `screening-order.ts` now says so.
+
+**Questions 2 and 3 come from the organogram, and nothing is gated on a vacancy.** Regions are the
+company's own `au.regions` names; areas are read live from `au_v_canonical_areas`, filtered only on
+`is_active`. An applicant may choose an area whose seat is currently filled — that is intended, and
+the owner confirmed it on 2026-08-28: the answer is a *preference*, recorded so the person is already
+in the pipeline when someone resigns. There is no vacancy check anywhere in this path and none should
+be added.
+
 ### Coexistence — what changes when the handset is linked (2026-08-23)
 
 The owner completed the Meta **Coexistence** QR scan for `01159888247`, which puts the advertised

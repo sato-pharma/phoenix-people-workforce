@@ -20,6 +20,7 @@
 export const candidateRoleFamilies = [
   "district_manager",
   "area_regional_manager",
+  "national_sales_manager",
   "medical_rep",
   "product_manager",
   "sales",
@@ -37,6 +38,7 @@ export const candidateRoleFamilyLabels: Record<CandidateRoleFamily, string> = {
   finance: "Finance & Accounting",
   human_resources: "Human Resources",
   medical_rep: "Medical Representative",
+  national_sales_manager: "National Sales Manager",
   other: "Other",
   pharmacist: "Pharmacist",
   product_manager: "Product Manager",
@@ -70,6 +72,20 @@ export function normalizeJobTitle(raw: string | null | undefined): string {
 export function candidateRoleFamily(raw: string | null | undefined): CandidateRoleFamily {
   const t = normalizeJobTitle(raw);
   if (!t) return "other";
+
+  // National sales manager runs FIRST, because every title that holds it also holds a word another
+  // family owns. Measured against production 2026-08-28, all 7 people carrying "national" landed in
+  // `sales` — the catch-all that runs last — including two compound titles that name a second job
+  // outright ("Head of Sales (National Sales Manager)", "Market Access & National Sales Manager")
+  // and one spelled "National Sales Manger", which `normalizeJobTitle` repairs before this sees it.
+  // Adding the family moves exactly those 7 out of `sales` and into field-force leadership, which is
+  // what an NSM is; nobody else moves, because no other title contains the phrase.
+  //
+  // "National Sales Head" is included for the same reason "area/regional" accepts `head`: it is the
+  // same seat under a different word. Deliberately NOT a bare \bnsm\b — like the \bmr\b and \bkam\b
+  // left out further down, the abbreviation is ambiguous and nothing in this pool needs it: zero
+  // candidates carry it, verified in the same measurement.
+  if (/\bnational\s+sales\s+(manager|head|director)\b/.test(t)) return "national_sales_manager";
 
   // District first: "Medical Sales Professional | District Manager" and "Pharmaceutical Area /
   // District Sales Manager" both name a second job that would otherwise claim them.
