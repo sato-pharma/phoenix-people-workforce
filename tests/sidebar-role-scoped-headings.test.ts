@@ -43,7 +43,6 @@ function sectionsFor(role: PhoenixRole) {
     "admin",
     lookupForRole(role),
     role,
-    null,
     role === "Super Admin",
   );
 }

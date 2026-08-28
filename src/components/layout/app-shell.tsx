@@ -20,7 +20,6 @@ import { Topbar } from "@/components/layout/topbar";
 import { SessionSecurityGuard } from "@/components/auth/session-security-guard";
 import { OneSignalProvider } from "@/components/notifications/onesignal-provider";
 import type { PermissionLookup } from "@/components/layout/sidebar";
-import { getEffectiveSidebarModuleIds } from "@/lib/admin/modules-control";
 
 export async function AppShell({
   accessContext,
@@ -51,10 +50,6 @@ export async function AppShell({
         roleLabel: access.role,
       };
   const resolvedNavigationMode = navigationMode ?? resolveNavigationMode(access);
-  const effectiveModuleIds = await getEffectiveSidebarModuleIds(access, resolvedNavigationMode).catch((error) => {
-    console.error("[modules-control] effective sidebar lookup failed", error);
-    return null;
-  });
   const isSystemAdministratorWorkspace = access.scope === "system" || access.role === "Super Admin";
 
   const permissionLookup: PermissionLookup = {};
@@ -77,7 +72,6 @@ export async function AppShell({
         <CommandPalette
           currentRole={access.role}
           isSystemAdministratorWorkspace={isSystemAdministratorWorkspace}
-          effectiveModuleIds={effectiveModuleIds}
           navigationMode={resolvedNavigationMode}
           permissionLookup={permissionLookup}
         />
@@ -85,7 +79,6 @@ export async function AppShell({
           <Sidebar
             currentRole={access.role}
             isSystemAdministratorWorkspace={isSystemAdministratorWorkspace}
-            effectiveModuleIds={effectiveModuleIds}
             navigationMode={resolvedNavigationMode}
             permissionLookup={permissionLookup}
           />
@@ -93,7 +86,6 @@ export async function AppShell({
             {showTopbar && (
               <Topbar
                 currentRole={access.role}
-                effectiveModuleIds={effectiveModuleIds}
                 navigationMode={resolvedNavigationMode}
                 permissionLookup={permissionLookup}
                 scope={access.scope}
