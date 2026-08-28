@@ -13,10 +13,15 @@ import { splitInsertOnly } from "../src/lib/imports/org-entity-write-guard.ts";
 // found it anyway, and UPDATEd it with is_active: true — silently reviving a team somebody had
 // deactivated on purpose and overwriting its curated name and area on the way.
 //
-// Measured against production 2026-08-28: exactly 2 of 120 teams sat in that gap, and both were
-// deactivated (the two "Delta (1)" rows, while Delta (3) was going live). A sheet naming
+// Measured against production 2026-08-28 at ~11:30 Cairo: exactly 2 of 120 teams sat in that gap, and
+// both were deactivated (the two "Delta (1)" rows, while Delta (3) was going live). A sheet naming
 // Area "Kafr El-Sheikh (1)" + Team "Delta (1)" resolved to that row's exact code, so the revival was
 // reachable from an ordinary upload — not theoretical.
+//
+// Re-measured at ~12:15 Cairo the same day: 57 of 120. The fixture below keeps the original Delta (1)
+// row because that is the case that was proven reachable, but do not read "2" as this guard's value —
+// the 37 rows that flipped in between were the importer's own junk teams being cleaned up by hand, and
+// the next upload would have reactivated all of them. Full account: org-entity-write-guard.ts.
 //
 // Two halves, and BOTH are needed. The behavioural half pins the rule; the source half pins that the
 // route still routes through it, because the rule is worthless if upsertTeams stops calling it.

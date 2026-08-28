@@ -18,9 +18,23 @@
 // in a single spreadsheet silently resurrected a team somebody had deactivated on purpose, and
 // overwrote its curated name and area on the way.
 //
-// Measured against production on 2026-08-28: exactly 2 of 120 teams sat in that gap, and both were
-// deactivated — reactivating them was the update branch's only reachable effect. Reactivating a team
-// is a deliberate act. It belongs in the organogram admin, never as a side effect of an upload.
+// Measured against production on 2026-08-28 at ~11:30 Cairo: exactly 2 of 120 teams sat in that gap,
+// and both were deactivated — reactivating them was the update branch's only reachable effect.
+//
+// RE-MEASURED THE SAME DAY at ~12:15 Cairo, minutes after this guard merged: 57 of 120. Do not read
+// the 2 as the scale of this — it was true when written and was 28x out of date within the hour. The
+// 37 rows that flipped in between are this importer's OWN junk teams being cleaned up by hand
+// (helwan_giza, fayoum_giza, imbaba_giza, one "Cairo"/"Giza"/"Upper Egypt"/"ALEX-BHR" per area), and
+// the next employee upload would have reactivated every one of them had this guard not landed first.
+// What this protects is whatever is deactivated TODAY, not what was deactivated when it was written.
+//
+// If you re-measure: teams.updated_at is NOT a reliable "when did this change" signal. That bulk
+// deactivation was plain SQL and never bumped it, so 37 freshly-written rows still read 2026-06-12 or
+// 2026-07-17. Use age(xmin) — the flipped rows read 91 transactions against 1,257,230 for genuinely
+// untouched rows.
+//
+// Reactivating a team is a deliberate act. It belongs in the organogram admin, never as a side effect
+// of an upload.
 
 export type OrgEntityWriteSplit<T> = {
   /** Entities with no row yet. Safe to INSERT. */
