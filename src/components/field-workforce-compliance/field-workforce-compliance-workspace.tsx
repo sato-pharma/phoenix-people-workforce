@@ -20,6 +20,12 @@ import {
   AdminPageHero,
   AdminTableShell,
 } from "@/components/admin/admin-design-system";
+import {
+  PortalEmptyState,
+  PortalRecordCard,
+  PortalRecordFields,
+  PortalResponsiveDataList,
+} from "@/components/employee-portal/portal-primitives";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -1032,6 +1038,27 @@ function ReviewQueue({
     setPage(1);
   }
 
+  /**
+   * Rendered by both the desktop row and the phone card. The value lives in this component's
+   * `notes`, not in the row, so the two copies are the same note rather than two drafts.
+   */
+  function sessionNoteInput(candidateId: string, widthClassName: string) {
+    return (
+      <input
+        className={cn(
+          "h-9 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100",
+          widthClassName,
+        )}
+        placeholder="Temporary note, not saved"
+        value={notes[candidateId] ?? ""}
+        onChange={(event) => setNotes((current) => ({
+          ...current,
+          [candidateId]: event.target.value,
+        }))}
+      />
+    );
+  }
+
   return (
     <AdminTableShell
       description="Review candidates are labels only. They do not approve, deduct, save, or mutate payroll/leave."
@@ -1114,6 +1141,54 @@ function ReviewQueue({
         </div>
       </div>
       <div className="phoenix-horizontal-scroll max-h-[52vh] overflow-auto">
+        {/* Eight columns at a 1180px minimum. A card list is safe here even though the last cell
+            is an input: `notes` lives in this component, not in the row, so the card copy and the
+            table copy read and write the same value and cannot diverge. */}
+        <PortalResponsiveDataList
+          empty={
+            <PortalEmptyState
+              message="No review candidates match the current filters."
+              title="Nothing to review"
+            />
+          }
+          getKey={(candidate) => candidate.id}
+          items={visibleRows}
+          renderCard={(candidate) => (
+            <PortalRecordCard
+              meta={
+                <span>
+                  <span className="font-mono">{candidate.hrId}</span> · {displayDate(candidate.dateIso)}
+                </span>
+              }
+              status={severityBadge(candidate.severity)}
+              title={candidate.employeeName}
+            >
+              <PortalRecordFields
+                fields={[
+                  { label: "Raw", value: formatRawValue(candidate.rawValue) },
+                  { label: "Meaning", value: candidate.normalizedMeaning },
+                  { label: "Explanation", value: candidate.explanation },
+                  {
+                    label: "Context",
+                    value: candidate.context.length ? (
+                      <span className="flex flex-wrap gap-1.5">
+                        {candidate.context.map((item) => (
+                          <Badge key={item} variant={item.includes("Public holiday") ? "warning" : "neutral"}>
+                            {item}
+                          </Badge>
+                        ))}
+                      </span>
+                    ) : (
+                      "-"
+                    ),
+                  },
+                  { label: "Session Note", value: sessionNoteInput(candidate.id, "w-full") },
+                ]}
+              />
+            </PortalRecordCard>
+          )}
+          renderTable={() => (
+            <div className="hidden md:block">
         <table className="w-full min-w-[1180px] text-left text-sm">
           <thead className="sticky top-0 z-10 bg-slate-50 text-phx-xs font-black uppercase tracking-[0.14em] text-slate-500">
             <tr>
@@ -1146,28 +1221,14 @@ function ReviewQueue({
                     )) : <span className="text-slate-400">-</span>}
                   </div>
                 </td>
-                <td className="px-4 py-3">
-                  <input
-                    className="h-9 w-64 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
-                    placeholder="Temporary note, not saved"
-                    value={notes[candidate.id] ?? ""}
-                    onChange={(event) => setNotes((current) => ({
-                      ...current,
-                      [candidate.id]: event.target.value,
-                    }))}
-                  />
-                </td>
+                <td className="px-4 py-3">{sessionNoteInput(candidate.id, "w-64")}</td>
               </tr>
             ))}
-            {visibleRows.length === 0 ? (
-              <tr>
-                <td className="px-4 py-8 text-center text-sm text-slate-500" colSpan={8}>
-                  No review candidates match the current filters.
-                </td>
-              </tr>
-            ) : null}
           </tbody>
         </table>
+            </div>
+          )}
+        />
       </div>
     </AdminTableShell>
   );
@@ -1246,6 +1307,77 @@ function MonthlySummaryTable({
         </div>
       </div>
       <div className="phoenix-horizontal-scroll max-h-[52vh] overflow-auto">
+        {/* Sixteen columns at a 1180px minimum. The card leads with the compliance percentage
+            because that is what this table is read for; the day counts follow. */}
+        <PortalResponsiveDataList
+          empty={
+            <PortalEmptyState
+              message="No employees match the current filters."
+              title="No employees"
+            />
+          }
+          getKey={(employee) => employee.hrId}
+          items={visibleRows}
+          renderCard={(employee) => (
+            <PortalRecordCard
+              accent={
+                employee.compliancePercent >= 75
+                  ? "emerald"
+                  : employee.compliancePercent >= 50
+                    ? "amber"
+                    : "rose"
+              }
+              meta={
+                <span>
+                  <span className="font-mono">{employee.hrId}</span> ·{" "}
+                  {[employee.managerName, employee.lineName, employee.areaName]
+                    .filter(Boolean)
+                    .join(" / ") || "-"}
+                </span>
+              }
+              status={
+                <span className="font-black text-slate-950">
+                  {formatNumber(employee.compliancePercent)}%
+                </span>
+              }
+              title={employee.employeeName}
+            >
+              <PortalRecordFields
+                fields={[
+                  { label: "Hiring Date", value: employee.hiringDateIso ?? "-" },
+                  { label: "Eligible", value: formatNumber(employee.eligibleWorkingDays) },
+                  { label: "Worked", value: formatNumber(employee.workedDays) },
+                  { label: "N (no activity)", value: formatNumber(employee.noActivityCandidates) },
+                  { label: "AV (vacation signal)", value: formatNumber(employee.vacationSignalDays) },
+                  { label: "CP (campaign)", value: formatNumber(employee.campaignDays) },
+                  { label: "Visits", value: formatNumber(employee.totalVisits) },
+                  { label: "Holidays", value: formatNumber(employee.holidayWarnings) },
+                  { label: "Pre-hire", value: formatNumber(employee.preHireIgnoredValues) },
+                  { label: "Unknown", value: formatNumber(employee.unknownValues) },
+                  {
+                    label: "Avg First Logged",
+                    value: employee.loggingTimingSummary?.avgFirstLoggedTime ?? "-",
+                  },
+                  {
+                    label: "Late Log Days",
+                    value: employee.loggingTimingSummary
+                      ? formatNumber(employee.loggingTimingSummary.lateStartDayCount)
+                      : "-",
+                  },
+                  {
+                    label: "Customer Pattern",
+                    value: employee.customerAuthenticity?.flagged
+                      ? employee.customerAuthenticity.flaggedRules
+                          .map(customerAuthenticityRuleLabel)
+                          .join("; ")
+                      : "-",
+                  },
+                ]}
+              />
+            </PortalRecordCard>
+          )}
+          renderTable={() => (
+            <div className="hidden md:block">
         <table className="w-full min-w-[1180px] text-left text-sm">
           <thead className="sticky top-0 z-10 bg-slate-50 text-phx-xs font-black uppercase tracking-[0.14em] text-slate-500">
             <tr>
@@ -1299,6 +1431,9 @@ function MonthlySummaryTable({
             ))}
           </tbody>
         </table>
+            </div>
+          )}
+        />
       </div>
     </AdminTableShell>
   );
@@ -1308,6 +1443,61 @@ function ScorecardTable({ scorecards, title }: { scorecards: FieldWorkforceGroup
   return (
     <AdminTableShell description="Worst-first (lowest average compliance). Informational rollup of the currently loaded month — no severity or deduction impact." title={title}>
       <div className="phoenix-horizontal-scroll overflow-auto">
+        <PortalResponsiveDataList
+          empty={
+            <PortalEmptyState
+              message="No employees to roll up for this month."
+              title="Nothing to roll up"
+            />
+          }
+          getKey={(scorecard) => scorecard.groupName}
+          items={scorecards}
+          renderCard={(scorecard) => (
+            <PortalRecordCard
+              accent={
+                scorecard.avgCompliancePercent >= 75
+                  ? "emerald"
+                  : scorecard.avgCompliancePercent >= 50
+                    ? "amber"
+                    : "rose"
+              }
+              meta={<span>{formatNumber(scorecard.employeeCount)} employees</span>}
+              status={
+                <span
+                  className={cn(
+                    "font-black",
+                    scorecard.avgCompliancePercent >= 75
+                      ? "text-emerald-700"
+                      : scorecard.avgCompliancePercent >= 50
+                        ? "text-amber-700"
+                        : "text-rose-700",
+                  )}
+                >
+                  {scorecard.avgCompliancePercent}%
+                </span>
+              }
+              title={scorecard.groupName}
+            >
+              <PortalRecordFields
+                fields={[
+                  {
+                    label: "No Activity Total",
+                    value: formatNumber(scorecard.totalNoActivityCandidates),
+                  },
+                  {
+                    label: "High Severity Total",
+                    value: formatNumber(scorecard.totalHighSeverityCount),
+                  },
+                  {
+                    label: "Flagged Employees",
+                    value: formatNumber(scorecard.flaggedEmployeeCount),
+                  },
+                ]}
+              />
+            </PortalRecordCard>
+          )}
+          renderTable={() => (
+            <div className="hidden md:block">
         <table className="w-full min-w-[820px] text-left text-sm">
           <thead className="sticky top-0 z-10 bg-slate-50 text-phx-xs font-black uppercase tracking-[0.14em] text-slate-500">
             <tr>
@@ -1320,9 +1510,7 @@ function ScorecardTable({ scorecards, title }: { scorecards: FieldWorkforceGroup
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {scorecards.length === 0 ? (
-              <tr><td className="px-4 py-6 text-sm text-slate-500" colSpan={6}>No employees to roll up for this month.</td></tr>
-            ) : scorecards.map((scorecard) => (
+            {scorecards.map((scorecard) => (
               <tr className="text-slate-700 hover:bg-slate-50/70" key={scorecard.groupName}>
                 <td className="px-4 py-3 font-black text-slate-950">{scorecard.groupName}</td>
                 <td className="px-4 py-3">{formatNumber(scorecard.employeeCount)}</td>
@@ -1336,6 +1524,9 @@ function ScorecardTable({ scorecards, title }: { scorecards: FieldWorkforceGroup
             ))}
           </tbody>
         </table>
+            </div>
+          )}
+        />
       </div>
     </AdminTableShell>
   );
@@ -1526,6 +1717,99 @@ function RecommendationRows({
     setPage(1);
   }
 
+  /**
+   * The four decision controls, extracted so the desktop row and the phone card render the same
+   * ones. All three drafts live in this component keyed by `recommendationKey`, not inside a row,
+   * so the two copies edit one value rather than two — that is what makes a card list safe here.
+   */
+  function decisionSelect(recommendation: FieldWorkforceRecommendation, widthClassName: string) {
+    const status = draftStatuses[recommendation.recommendationKey] ?? recommendation.decisionStatus;
+    return (
+      <div className="space-y-2">
+        {decisionBadge(recommendation.decisionStatus)}
+        <SearchableSelect
+          className={cn(
+            "h-9 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100",
+            widthClassName,
+          )}
+          value={status}
+          onChange={(event) => setDraftStatuses((current) => ({
+            ...current,
+            [recommendation.recommendationKey]: event.target.value as FieldWorkforceDecisionStatus,
+          }))}
+        >
+          {decisionStatusOptionsForRecommendation(recommendation).map((option) => (
+            <option key={option} value={option}>{option}</option>
+          ))}
+        </SearchableSelect>
+      </div>
+    );
+  }
+
+  function reasonSelect(recommendation: FieldWorkforceRecommendation, widthClassName: string) {
+    const status = draftStatuses[recommendation.recommendationKey] ?? recommendation.decisionStatus;
+    const reason = draftReasons[recommendation.recommendationKey] ?? recommendation.decisionReason;
+    const note = draftNotes[recommendation.recommendationKey] ?? recommendation.hrNote;
+    const requiresReason = status !== "Pending";
+    return (
+      <div>
+        <SearchableSelect
+          className={cn(
+            "h-9 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100",
+            widthClassName,
+          )}
+          value={reason}
+          onChange={(event) => setDraftReasons((current) => ({
+            ...current,
+            [recommendation.recommendationKey]: event.target.value as FieldWorkforceDecisionReason | "",
+          }))}
+        >
+          <option value="">{requiresReason ? "Choose reason" : "No reason needed"}</option>
+          {decisionReasonOptions.map((option) => <option key={option} value={option}>{option}</option>)}
+        </SearchableSelect>
+        {requiresReason && !reason ? <p className="mt-1 text-xs font-semibold text-rose-600">Required for this decision.</p> : null}
+        {reason === "Other" && !note.trim() ? <p className="mt-1 text-xs font-semibold text-rose-600">Other requires HR note.</p> : null}
+      </div>
+    );
+  }
+
+  function hrNoteInput(recommendation: FieldWorkforceRecommendation, widthClassName: string) {
+    const note = draftNotes[recommendation.recommendationKey] ?? recommendation.hrNote;
+    return (
+      <input
+        className={cn(
+          "h-9 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100",
+          widthClassName,
+        )}
+        placeholder="HR decision note"
+        value={note}
+        onChange={(event) => setDraftNotes((current) => ({
+          ...current,
+          [recommendation.recommendationKey]: event.target.value,
+        }))}
+      />
+    );
+  }
+
+  function saveDecisionButton(recommendation: FieldWorkforceRecommendation) {
+    const status = draftStatuses[recommendation.recommendationKey] ?? recommendation.decisionStatus;
+    const reason = draftReasons[recommendation.recommendationKey] ?? recommendation.decisionReason;
+    const note = draftNotes[recommendation.recommendationKey] ?? recommendation.hrNote;
+    const requiresReason = status !== "Pending";
+    return (
+      <Button
+        className="gap-2"
+        disabled={isSavingDecisionKey === recommendation.recommendationKey || (requiresReason && !reason) || (reason === "Other" && !note.trim())}
+        type="button"
+        variant="secondary"
+        onClick={() => onSaveDecision(recommendation, status, note, reason)}
+      >
+        {isSavingDecisionKey === recommendation.recommendationKey ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+        Save Decision
+      </Button>
+    );
+  }
+
   return (
     <div className="space-y-3">
       <div className="border-b border-slate-100 p-4">
@@ -1592,6 +1876,53 @@ function RecommendationRows({
         </div>
       </div>
       <div className="phoenix-horizontal-scroll max-h-[56vh] overflow-auto">
+        {/* Eleven columns at a 1480px minimum — the widest table in the HR namespace, and the one
+            where the columns off the right edge were the decision, the reason, the note and the
+            Save button. Cards are safe despite those being editable: all three drafts live in the
+            enclosing component keyed by recommendationKey, so both copies edit one value. */}
+        <PortalResponsiveDataList
+          empty={
+            <PortalEmptyState
+              message="No recommendations match the current filters."
+              title="Nothing to decide"
+            />
+          }
+          getKey={(recommendation) => recommendation.recommendationKey}
+          items={visibleRows}
+          renderCard={(recommendation) => (
+            <PortalRecordCard
+              actions={saveDecisionButton(recommendation)}
+              meta={
+                <span>
+                  <span className="font-mono">{recommendation.employeeCode}</span> ·{" "}
+                  {recommendation.monthKey} · {recommendation.sourceLabel}
+                </span>
+              }
+              status={severityBadge(recommendation.severity)}
+              title={recommendation.employeeName}
+            >
+              <PortalRecordFields
+                fields={[
+                  { label: "Dates", value: formatDates(recommendation.dates) },
+                  { label: "Days", value: formatNumber(recommendation.daysCount) },
+                  {
+                    label: "Coverage / Amount",
+                    value: `${coverageLabel(recommendation.existingCoverageStatus)} · Amount: ${
+                      recommendation.estimatedAmount === null
+                        ? "Requires payroll calculation"
+                        : formatNumber(recommendation.estimatedAmount)
+                    }`,
+                  },
+                  { label: "Recommendation", value: recommendation.recommendation },
+                  { label: "Decision", value: decisionSelect(recommendation, "w-full") },
+                  { label: "Reason", value: reasonSelect(recommendation, "w-full") },
+                  { label: "HR Note", value: hrNoteInput(recommendation, "w-full") },
+                ]}
+              />
+            </PortalRecordCard>
+          )}
+          renderTable={() => (
+            <div className="hidden md:block">
         <table className="w-full min-w-[1480px] text-left text-sm">
           <thead className="sticky top-0 z-10 bg-slate-50 text-phx-xs font-black uppercase tracking-[0.14em] text-slate-500">
             <tr>
@@ -1610,11 +1941,6 @@ function RecommendationRows({
           </thead>
           <tbody className="divide-y divide-slate-100">
             {visibleRows.map((recommendation) => {
-              const status = draftStatuses[recommendation.recommendationKey] ?? recommendation.decisionStatus;
-              const reason = draftReasons[recommendation.recommendationKey] ?? recommendation.decisionReason;
-              const note = draftNotes[recommendation.recommendationKey] ?? recommendation.hrNote;
-              const requiresReason = status !== "Pending";
-              const rowDecisionStatusOptions = decisionStatusOptionsForRecommendation(recommendation);
               return (
                 <tr className="align-top text-slate-700 hover:bg-slate-50/70" key={recommendation.recommendationKey}>
                   <td className="px-4 py-3">
@@ -1633,71 +1959,18 @@ function RecommendationRows({
                   </td>
                   <td className="max-w-[360px] px-4 py-3 leading-6">{recommendation.recommendation}</td>
                   <td className="px-4 py-3">{severityBadge(recommendation.severity)}</td>
-                  <td className="px-4 py-3">
-                    <div className="space-y-2">
-                      {decisionBadge(recommendation.decisionStatus)}
-                      <SearchableSelect
-                        className="h-9 w-64 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
-                        value={status}
-                        onChange={(event) => setDraftStatuses((current) => ({
-                          ...current,
-                          [recommendation.recommendationKey]: event.target.value as FieldWorkforceDecisionStatus,
-                        }))}
-                      >
-                        {rowDecisionStatusOptions.map((option) => <option key={option} value={option}>{option}</option>)}
-                      </SearchableSelect>
-                    </div>
-                  </td>
-                  <td className="px-4 py-3">
-                    <SearchableSelect
-                      className="h-9 w-64 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
-                      value={reason}
-                      onChange={(event) => setDraftReasons((current) => ({
-                        ...current,
-                        [recommendation.recommendationKey]: event.target.value as FieldWorkforceDecisionReason | "",
-                      }))}
-                    >
-                      <option value="">{requiresReason ? "Choose reason" : "No reason needed"}</option>
-                      {decisionReasonOptions.map((option) => <option key={option} value={option}>{option}</option>)}
-                    </SearchableSelect>
-                    {requiresReason && !reason ? <p className="mt-1 text-xs font-semibold text-rose-600">Required for this decision.</p> : null}
-                    {reason === "Other" && !note.trim() ? <p className="mt-1 text-xs font-semibold text-rose-600">Other requires HR note.</p> : null}
-                  </td>
-                  <td className="px-4 py-3">
-                    <input
-                      className="h-9 w-64 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
-                      placeholder="HR decision note"
-                      value={note}
-                      onChange={(event) => setDraftNotes((current) => ({
-                        ...current,
-                        [recommendation.recommendationKey]: event.target.value,
-                      }))}
-                    />
-                  </td>
-                  <td className="px-4 py-3">
-                    <Button
-                      className="gap-2"
-                      disabled={isSavingDecisionKey === recommendation.recommendationKey || (requiresReason && !reason) || (reason === "Other" && !note.trim())}
-                      type="button"
-                      variant="secondary"
-                      onClick={() => onSaveDecision(recommendation, status, note, reason)}
-                    >
-                      {isSavingDecisionKey === recommendation.recommendationKey ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                      Save Decision
-                    </Button>
-                  </td>
+                  <td className="px-4 py-3">{decisionSelect(recommendation, "w-64")}</td>
+                  <td className="px-4 py-3">{reasonSelect(recommendation, "w-64")}</td>
+                  <td className="px-4 py-3">{hrNoteInput(recommendation, "w-64")}</td>
+                  <td className="px-4 py-3">{saveDecisionButton(recommendation)}</td>
                 </tr>
               );
             })}
-            {visibleRows.length === 0 ? (
-              <tr>
-                <td className="px-4 py-8 text-center text-sm text-slate-500" colSpan={11}>
-                  No recommendations match the current filters.
-                </td>
-              </tr>
-            ) : null}
           </tbody>
         </table>
+            </div>
+          )}
+        />
       </div>
     </div>
   );
@@ -1723,6 +1996,48 @@ function FinalActionsTable({
         <p>Final approved actions are report-only. Exporting does not execute payroll, mutate leave balances, or push integrations.</p>
       </AdminCallout>
       <div className="phoenix-horizontal-scroll max-h-[52vh] overflow-auto">
+        {/* Ten read-only columns at a 1280px minimum. Nothing here is editable, so the double
+            render PortalResponsiveDataList performs is free — no draft state to lose across the
+            breakpoint. Push Status and HR Note were the two columns off the right edge. */}
+        <PortalResponsiveDataList
+          empty={
+            <PortalEmptyState
+              message="No approved report actions match the current filters."
+              title="Nothing approved yet"
+            />
+          }
+          getKey={(action) => action.recommendationKey}
+          items={filteredActions}
+          renderCard={(action) => (
+            <PortalRecordCard
+              meta={
+                <span>
+                  <span className="font-mono">{action.employeeCode}</span> · {action.actionType}
+                </span>
+              }
+              status={<Badge variant="neutral">{action.pushStatus}</Badge>}
+              title={action.employeeName}
+            >
+              <PortalRecordFields
+                fields={[
+                  { label: "Approved Dates", value: formatDates(action.approvedDates) },
+                  { label: "Days", value: formatNumber(action.approvedDaysCount) },
+                  {
+                    label: "Amount",
+                    value: action.amount === null
+                      ? "Amount requires payroll calculation"
+                      : formatNumber(action.amount),
+                  },
+                  { label: "Reason", value: action.decisionReason || "-" },
+                  { label: "Approved By", value: action.approvedBy ?? "-" },
+                  { label: "Approved At", value: displayDateTime(action.approvedAt) },
+                  { label: "HR Note", value: action.hrNote || "-" },
+                ]}
+              />
+            </PortalRecordCard>
+          )}
+          renderTable={() => (
+            <div className="hidden md:block">
         <table className="w-full min-w-[1280px] text-left text-sm">
           <thead className="sticky top-0 z-10 bg-slate-50 text-phx-xs font-black uppercase tracking-[0.14em] text-slate-500">
             <tr>
@@ -1756,15 +2071,11 @@ function FinalActionsTable({
                 <td className="px-4 py-3"><Badge variant="neutral">{action.pushStatus}</Badge></td>
               </tr>
             ))}
-            {filteredActions.length === 0 ? (
-              <tr>
-                <td className="px-4 py-8 text-center text-sm text-slate-500" colSpan={10}>
-                  No approved report actions match the current filters.
-                </td>
-              </tr>
-            ) : null}
           </tbody>
         </table>
+            </div>
+          )}
+        />
       </div>
     </div>
   );
