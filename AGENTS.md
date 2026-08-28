@@ -364,6 +364,36 @@ this file already gives them)
   `select email, banned_until from auth.users where not isfinite(banned_until)`. Repaired on prod
   2026-08-19. `banned-until-infinity-breaks-the-whole-auth-admin-api`
 
+**Probing, attributing and reporting production**
+
+- **A 200 from a health endpoint can be blind to the thing that is broken.** OpenAI's `/v1/models`
+  returns 200 for a key with no BALANCE, so it certifies an account that cannot complete a single
+  request — probe an actual completion instead. No AI failure is logged here, so the product
+  degrades silently to the rules path. The BILL cannot be read from the API at all: costs 403s and
+  usage returns 200-but-EMPTY, so reconstruct spend by counting `ats_candidate_cv_extractions`.
+  (That memory file's NAME is stale — the key WORKS.)
+  `openai-key-is-401-and-cv-extraction-silently-falls-back-to-rules` ·
+  `openai-spend-cannot-be-read-from-the-api-reconstruct-it`
+- **`app_error_events` returning 0 rows means QUIET, not broken.** It is fed by real users' browsers
+  and arrives in BURSTS (7 rows in 46s), so an empty table is an ordinary state and not evidence of
+  a dead route. Prove the route with **405 against a 404 control**, and **never POST a synthetic
+  error to production** to check that it works.
+  `app-error-events-is-user-triggered-zero-is-not-broken`
+- **The Error Monitor HIDES rows whose `environment` is NULL**, so the screen reads clean while the
+  table holds the incident. And **ad-hoc `zz_backup_…` tables are ANON-READABLE** — a backup taken
+  mid-investigation publishes whatever it copied. `error-monitor-hides-null-environment-rows` ·
+  `ad-hoc-backup-tables-are-anon-readable`
+- **`updated_by_hr_id` LIES about who wrote a row.** Never attribute a production write from it.
+  `how-to-attribute-a-production-write`
+- **HR ids are MIXED CASE in the database, so a plain `.eq` silently under-returns.**
+  `activity_events.hr_id` is mixed case, the direct-order tables carry BOTH cases, and `access.hrId`
+  is lowercase — one `.eq` hid **28% of reps' own orders**, which reads as a real business finding
+  rather than a query bug. `activity-events-hr-id-is-mixed-case-not-lowercase` ·
+  `direct-order-hr-id-columns-are-mixed-case-and-access-hrid-is-lowercase`
+- **The Sato logo's wordmark is WHITE, so "SATO" vanishes on white paper.** Reverse it onto a navy
+  band, or recolour the near-white pixels, before any export or print.
+  `sato-logo-wordmark-is-white-invisible-on-paper`
+
 **Validation**
 
 - **A repo-wide pattern sweep must grep the TESTS for the old string too — a pinning test can pin
@@ -415,6 +445,13 @@ this file already gives them)
   minutes. Back any such `Record` with a RUNTIME assertion in a registered test — iterate the union,
   assert the looked-up value is real (`Number.isFinite`), and assert no key outside the union
   appeared. `an-exhaustive-record-does-not-gate-the-build-here`
+- **A narrowed SELECT disarms every gate downstream of it.** A gate cannot fire on a column the
+  query no longer fetches, so the branch still *reads* correct while the check is dead. Test the
+  SELECT, not the branch. `a-narrowed-select-disarms-every-gate-downstream-of-it`
+- **An OPTIONAL field written UNCONDITIONALLY is a silent erase.** With `.update()` OMIT the column
+  entirely; with `.upsert()` carry a before-image. Both real occurrences are fixed (#2326, #2329) —
+  the PATTERN is what regenerates, not those two call sites.
+  `optional-field-written-unconditionally-is-a-silent-erase`
 
 **Memory and this index**
 
