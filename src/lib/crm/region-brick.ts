@@ -9,6 +9,12 @@
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { fetchAllRows } from "@/lib/supabase/paginated";
 import { isCrmSchemaMissingError } from "@/lib/crm/schema";
+import {
+  buildBrickNameIndex,
+  suggestBrickForCrmRegion,
+  type BrickForSuggestion,
+  type CrmRegionBrickSuggestion,
+} from "@/lib/crm/region-brick-suggest";
 import { CRM_REGION_BRICK_RESOLUTIONS_TABLE, CRM_VISITS_TABLE } from "@/lib/crm/tables";
 
 const visitsTable = CRM_VISITS_TABLE;
@@ -26,6 +32,12 @@ export type UnmappedCrmRegionRow = {
   firstSeen: string;
   lastSeen: string;
   visitCount: number;
+  /**
+   * The brick this region probably IS, from its Arabic name plus the organogram area its visiting
+   * reps sit in. A SUGGESTION — never applied, never written, and null when the two signals cannot
+   * agree on one brick. See `@/lib/crm/region-brick-suggest`.
+   */
+  suggestion: CrmRegionBrickSuggestion | null;
 };
 
 export type CrmRegionBrickResolutionResult = {
@@ -40,6 +52,8 @@ type MutableUnmappedRegion = {
   firstSeen: string;
   lastSeen: string;
   visitCount: number;
+  /** Visits per organogram area of the rep who logged them — the second, name-blind signal. */
+  repAreaCounts: Map<string, number>;
 };
 
 type StoredResolution = { brickId: string | null; status: string };
@@ -65,13 +79,17 @@ async function loadResolutionsByRegionId(): Promise<Map<number, StoredResolution
  * and getAllCrmRegionsForTemplate build on, so the two can never disagree about what regions exist. */
 async function scanAllCrmRegions(): Promise<Map<number, MutableUnmappedRegion>> {
   const supabase = getSupabaseAdmin();
+  const areaOfRep = await loadAreaByRepHrId();
   const regions = new Map<number, MutableUnmappedRegion>();
   const pageSize = 1000;
   let cursor: string | null = null;
   for (;;) {
     let query = supabase
       .from(visitsTable)
-      .select("id, crm_region_id, crm_region_name, visit_date")
+      // agent_hr_id rides along on the SAME scan rather than in a second one: it is what ties a
+      // visit to an organogram area, and that area is the only signal that can tell "Dokki" (الدقى,
+      // Giza) from "Edku" (إدكو, Beheira) — two different towns with the same consonant skeleton.
+      .select("id, crm_region_id, crm_region_name, visit_date, agent_hr_id")
       .not("crm_region_id", "is", null)
       .order("id", { ascending: true })
       .limit(pageSize);
@@ -81,27 +99,99 @@ async function scanAllCrmRegions(): Promise<Map<number, MutableUnmappedRegion>> 
       if (isCrmSchemaMissingError(error)) return regions;
       throw new Error(error.message);
     }
-    const page = (data ?? []) as Array<{ crm_region_id: number; crm_region_name: string | null; id: string; visit_date: string }>;
+    const page = (data ?? []) as Array<{
+      agent_hr_id: string | null;
+      crm_region_id: number;
+      crm_region_name: string | null;
+      id: string;
+      visit_date: string;
+    }>;
     for (const row of page) {
-      const existing = regions.get(row.crm_region_id);
+      let existing = regions.get(row.crm_region_id);
       if (!existing) {
-        regions.set(row.crm_region_id, {
+        existing = {
           crmRegionId: row.crm_region_id,
           crmRegionName: row.crm_region_name ?? "(no name on visit)",
           firstSeen: row.visit_date,
           lastSeen: row.visit_date,
           visitCount: 1,
-        });
+          repAreaCounts: new Map(),
+        };
+        regions.set(row.crm_region_id, existing);
       } else {
         existing.visitCount += 1;
         if (row.visit_date < existing.firstSeen) existing.firstSeen = row.visit_date;
         if (row.visit_date > existing.lastSeen) existing.lastSeen = row.visit_date;
       }
+      const area = row.agent_hr_id ? areaOfRep.get(row.agent_hr_id.toLowerCase()) : undefined;
+      if (area) existing.repAreaCounts.set(area, (existing.repAreaCounts.get(area) ?? 0) + 1);
     }
     if (page.length < pageSize) break;
     cursor = page[page.length - 1].id;
   }
   return regions;
+}
+
+/** hr_id -> the organogram area of the seat that person holds. Degrades to an empty map rather than
+ *  throwing: a missing seat model must cost the suggestion, never the punch-list itself. */
+async function loadAreaByRepHrId(): Promise<Map<string, string>> {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("au_v_org_tree")
+    .select("occupant_hr_id, area_code")
+    .not("occupant_hr_id", "is", null)
+    .not("area_code", "is", null);
+  if (error) return new Map();
+  const map = new Map<string, string>();
+  for (const row of (data ?? []) as Array<{ area_code: string; occupant_hr_id: string }>) {
+    const key = row.occupant_hr_id.toLowerCase();
+    if (!map.has(key)) map.set(key, row.area_code);
+  }
+  return map;
+}
+
+/** Every active brick, with the area and region names spelled out — the pool a suggestion is drawn
+ *  from. Empty on any error: no bricks simply means no suggestions. */
+async function loadBricksForSuggestion(): Promise<BrickForSuggestion[]> {
+  const supabase = getSupabaseAdmin();
+  const [bricks, areas, regions] = await Promise.all([
+    supabase.from("source_of_sales_bricks").select("brick_id, brick_name, area_code, region_code").eq("active", true),
+    supabase.from("source_of_sales_areas").select("area_code, area_name"),
+    supabase.from("source_of_sales_regions").select("region_code, region_name"),
+  ]);
+  if (bricks.error) return [];
+  const areaName = new Map<string, string>(
+    ((areas.data ?? []) as Array<{ area_code: string; area_name: string }>).map((a) => [a.area_code, a.area_name]),
+  );
+  const regionName = new Map<string, string>(
+    ((regions.data ?? []) as Array<{ region_code: string; region_name: string }>).map((r) => [r.region_code, r.region_name]),
+  );
+  return ((bricks.data ?? []) as Array<{
+    area_code: string | null;
+    brick_id: string;
+    brick_name: string;
+    region_code: string | null;
+  }>).map((brick) => ({
+    brickId: brick.brick_id,
+    brickName: brick.brick_name,
+    areaCode: brick.area_code,
+    areaName: brick.area_code ? (areaName.get(brick.area_code) ?? null) : null,
+    regionCode: brick.region_code,
+    regionName: brick.region_code ? (regionName.get(brick.region_code) ?? null) : null,
+  }));
+}
+
+/** The organogram area holding most of a region's visits, or null when no visiting rep has a seat. */
+function dominantAreaCode(counts: ReadonlyMap<string, number>): string | null {
+  let best: string | null = null;
+  let bestCount = 0;
+  for (const [area, count] of counts) {
+    if (count > bestCount) {
+      best = area;
+      bestCount = count;
+    }
+  }
+  return best;
 }
 
 /**
@@ -112,12 +202,21 @@ async function scanAllCrmRegions(): Promise<Map<number, MutableUnmappedRegion>> 
  * active in a chosen window.
  */
 export async function getUnmappedCrmRegions(): Promise<UnmappedCrmRegionRow[]> {
-  const [regions, resolutions] = await Promise.all([scanAllCrmRegions(), loadResolutionsByRegionId()]);
+  const [regions, resolutions, bricks] = await Promise.all([
+    scanAllCrmRegions(),
+    loadResolutionsByRegionId(),
+    loadBricksForSuggestion(),
+  ]);
+  const index = buildBrickNameIndex(bricks);
   return Array.from(regions.values())
     .filter((region) => {
       const status = resolutions.get(region.crmRegionId)?.status;
       return status !== "mapped" && status !== "ignored";
     })
+    .map(({ repAreaCounts, ...region }) => ({
+      ...region,
+      suggestion: suggestBrickForCrmRegion(region.crmRegionName, dominantAreaCode(repAreaCounts), index),
+    }))
     .sort((a, b) => b.visitCount - a.visitCount);
 }
 

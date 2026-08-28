@@ -19,7 +19,7 @@ import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { loadCallRateReport, loadJobTitlesByHrId, loadRepNamesByHrId } from "@/lib/crm/call-rate-service";
 import { loadOrgPlacementTree } from "@/lib/crm/org-placement-data";
 import { cairoTodayIso } from "@/lib/crm/dates";
-import { buildRepsPlansBoard, repsPlansRange, resolveRepsPlansMonth } from "@/lib/crm/reps-plans";
+import { buildRepsPlansBoard, repsPlansRange, repsPlansWeeks, resolveRepsPlansMonth } from "@/lib/crm/reps-plans";
 import { canAccessRepsPlans } from "@/lib/crm/reps-plans-access";
 
 export const runtime = "nodejs";
@@ -29,6 +29,8 @@ type PageProps = {
   searchParams?: Promise<{
     line?: string;
     month?: string;
+    /** `month` (default), `w1`…`w5`, or an explicit `YYYY-MM-DD..YYYY-MM-DD`. */
+    period?: string;
     region?: string;
     rep?: string;
   }>;
@@ -45,7 +47,11 @@ export default async function RepsPlansPage({ searchParams }: PageProps) {
   const params = await searchParams;
   const today = cairoTodayIso();
   const month = resolveRepsPlansMonth(params?.month, today);
-  const range = repsPlansRange(month, today);
+  // The window bounds the FETCH as well as the caption, so a week's rate is a week's calls over a
+  // week's working days. Owner, 2026-08-28: "if this is the plan of the first week, calculate the
+  // call rate on the first week only, not all the month."
+  const range = repsPlansRange(month, today, params?.period);
+  const weekOptions = repsPlansWeeks(month, today);
 
   // Data fetch and JSX stay separated (react-hooks/error-boundaries: JSX must not be constructed
   // inside try/catch). A data failure renders a plain explanation, never a crash page — and never a
@@ -101,9 +107,11 @@ export default async function RepsPlansPage({ searchParams }: PageProps) {
     isCurrentMonth: range.isCurrentMonth,
     jobTitleByHrId,
     month,
+    range,
     repKey: params?.rep ?? null,
     repNameByHrId,
     tree,
+    weekOptions,
   });
 
   return (

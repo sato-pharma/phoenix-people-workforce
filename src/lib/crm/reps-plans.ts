@@ -23,6 +23,7 @@
 import {
   AM_CALL_RATE_TARGET,
   PM_CALL_RATE_TARGET,
+  countCallRateWorkingDays,
   type CallRateReport,
   type CallRateSlice,
   type RepCallRate,
@@ -79,28 +80,183 @@ export function resolveRepsPlansMonth(month: string | undefined, todayIso: strin
 
 export type RepsPlansRange = {
   dateFrom: string;
-  /** Last day scored — today for the live month, the month's own last day otherwise. */
+  /** Last day scored — capped at today while the window is still running. */
   dateTo: string;
   /** The month's real last day, whether or not it has arrived. */
   monthEnd: string;
   isCurrentMonth: boolean;
+  /** The period in force: `month`, `w1`…`w5`, or an explicit `from..to`. */
+  periodKey: string;
+  /** "Whole month", "Week 1 · 1–7 Aug", "3–16 Aug" — what the screen prints. */
+  periodLabel: string;
+  /** The window's own last day BEFORE the today-cap, so the screen can say it was capped. */
+  windowEnd: string;
+  /** True when the whole month is in view — the default, and the only case with no extra caption. */
+  isWholeMonth: boolean;
+  /** True when the window has not begun. Every rate is null and the screen says so, never "0.00". */
+  notStarted: boolean;
 };
 
+const MONTH_SHORT_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
 /**
- * The scored window.
+ * The calendar day before this one.
  *
- * For a LIVE month it stops at today, deliberately. The denominator is the
- * CALENDAR count of Sat–Wed, so scoring the whole of August on the 12th divides
- * a third of a month's work by a full month of days and shows the entire field
- * force failing. Capping the window keeps the rate comparable on any day of the
- * month; the screen says which day it was scored through.
+ * Used for ONE thing: making a window that has not begun genuinely empty. `dateFrom > dateTo` is the
+ * shape `countCallRateWorkingDays` already documents as answering 0, and the reader fetches no rows
+ * for it — so a future week scores null everywhere instead of dividing real work by a day nobody has
+ * worked yet. UTC-only construction, and only the date STRING is read back out.
  */
-export function repsPlansRange(month: string, todayIso: string): RepsPlansRange {
-  const { from, to } = monthBounds(month);
+function previousDay(dateIso: string): string {
+  const cursor = new Date(`${dateIso}T00:00:00Z`);
+  cursor.setUTCDate(cursor.getUTCDate() - 1);
+  return cursor.toISOString().slice(0, 10);
+}
+
+/** "2026-08-03" -> "3 Aug". Read straight off the string — see {@link monthBounds} on why no Date. */
+function shortDayLabel(dateIso: string): string {
+  const month = MONTH_SHORT_NAMES[Number(dateIso.slice(5, 7)) - 1] ?? dateIso.slice(5, 7);
+  return `${Number(dateIso.slice(8, 10))} ${month}`;
+}
+
+/** "1–7 Aug", or "29 Jul – 4 Aug" when the two ends fall in different months. */
+function spanLabel(from: string, to: string): string {
+  if (from === to) return shortDayLabel(from);
+  if (from.slice(0, 7) === to.slice(0, 7)) {
+    return `${Number(from.slice(8, 10))}–${shortDayLabel(to)}`;
+  }
+  return `${shortDayLabel(from)} – ${shortDayLabel(to)}`;
+}
+
+/** One selectable window. */
+export type RepsPlansPeriodOption = {
+  key: string;
+  label: string;
+  from: string;
+  to: string;
+  /** Sat–Wed days inside it — the denominator this window would divide by. */
+  workingDays: number;
+  /** True once the window has begun; a future week is offered but marked. */
+  started: boolean;
+};
+
+const RANGE_PATTERN = /^(\d{4}-\d{2}-\d{2})\.\.(\d{4}-\d{2}-\d{2})$/;
+
+/**
+ * A real calendar day, not merely a digit-shaped one.
+ *
+ * The shape check alone is not enough and the difference is a 500: `2026-13-01` passes any regex
+ * written for `YYYY-MM-DD`, and `new Date("2026-13-01T00:00:00Z")` is an Invalid Date whose
+ * `toISOString()` THROWS. This period rides in the URL, so a hand-edited or bookmarked link is a
+ * user-reachable input and the page has to answer it rather than crash on it.
+ *
+ * Round-tripped rather than range-checked, so 31 February is rejected too — Date rolls it forward to
+ * 3 March, which would silently score a window nobody asked for.
+ */
+function isRealCalendarDay(dateIso: string): boolean {
+  const parsed = new Date(`${dateIso}T00:00:00Z`);
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === dateIso;
+}
+
+/**
+ * The month cut into 7-day blocks: 1–7, 8–14, 15–21, 22–28, 29–end.
+ *
+ * DAY BLOCKS, not Saturday-anchored calendar weeks. "The plan of the first week" means the first
+ * seven days of the month to the person asking; anchoring on Saturday would make a week 1 that holds
+ * two days of this month and five of the last, which is not what anybody plans against. Every label
+ * carries its real dates, so no reader has to know which convention was chosen.
+ *
+ * The block's own working-day count comes with it, because that is the number the rate divides by
+ * and a 5-day block and a 3-day tail are not the same denominator.
+ */
+export function repsPlansWeeks(month: string, todayIso: string): RepsPlansPeriodOption[] {
+  const { to: monthEnd } = monthBounds(month);
+  const lastDay = Number(monthEnd.slice(8, 10));
+  const options: RepsPlansPeriodOption[] = [];
+  for (let index = 0; index * 7 < lastDay; index += 1) {
+    const startDay = index * 7 + 1;
+    const endDay = Math.min(startDay + 6, lastDay);
+    const from = `${month}-${String(startDay).padStart(2, "0")}`;
+    const to = `${month}-${String(endDay).padStart(2, "0")}`;
+    options.push({
+      key: `w${index + 1}`,
+      label: `Week ${index + 1} · ${spanLabel(from, to)}`,
+      from,
+      to,
+      workingDays: countCallRateWorkingDays(from, todayIso < to ? todayIso : to),
+      started: todayIso >= from,
+    });
+  }
+  return options;
+}
+
+/**
+ * The scored window — a month, one of its weeks, or any explicit range.
+ *
+ * OWNER, 2026-08-28: *"if this is the plan of the first week, then you must calculate the call rate
+ * on the first week only, not all the month. And if you are calculating two weeks, then the two
+ * weeks."* The rate itself was already per working day, so the arithmetic was never the problem —
+ * the problem was that the window could only ever be a whole month, so a week's work was always
+ * divided by a month's days and every rep read as failing by a factor of four.
+ *
+ * IT STILL STOPS AT TODAY, for the same reason it always did: the denominator is the CALENDAR count
+ * of Sat–Wed, so scoring a window through days that have not happened shows the field force failing
+ * for not having worked them yet. A window that has not begun at all is marked `notStarted` and
+ * every rate is null — never a zero, which on this board reads as "did nothing".
+ */
+export function repsPlansRange(month: string, todayIso: string, period?: string | null): RepsPlansRange {
+  const { from: monthStart, to: monthEnd } = monthBounds(month);
   // Plain string comparison — YYYY-MM-DD sorts correctly as text, and parsing to a Date would move
   // the Cairo day this was resolved from.
-  const isCurrentMonth = todayIso >= from && todayIso <= to;
-  return { dateFrom: from, dateTo: isCurrentMonth ? todayIso : to, monthEnd: to, isCurrentMonth };
+  const isCurrentMonth = todayIso >= monthStart && todayIso <= monthEnd;
+
+  let windowStart = monthStart;
+  let windowEnd = monthEnd;
+  let periodKey = "month";
+  let periodLabel = "Whole month";
+
+  const requested = (period ?? "").trim();
+  const explicit = RANGE_PATTERN.exec(requested);
+  if (explicit && explicit[1] <= explicit[2] && isRealCalendarDay(explicit[1]) && isRealCalendarDay(explicit[2])) {
+    windowStart = explicit[1];
+    windowEnd = explicit[2];
+    periodKey = `${windowStart}..${windowEnd}`;
+    periodLabel = spanLabel(windowStart, windowEnd);
+  } else if (/^w[1-5]$/.test(requested)) {
+    const week = repsPlansWeeks(month, todayIso).find((option) => option.key === requested);
+    if (week) {
+      windowStart = week.from;
+      windowEnd = week.to;
+      periodKey = week.key;
+      periodLabel = week.label;
+    }
+  }
+
+  // ONLY a sub-month window can be "not started". Picking a future MONTH is a deliberate "show me
+  // December" and is scored whole with no data — the behaviour this board has always had, pinned by
+  // crm-reps-plans.test.ts. Picking week 4 on the 10th is the opposite: it is a window inside the
+  // month you are already looking at, and scoring it whole would divide a rep's nothing by days that
+  // have not happened.
+  const notStarted = periodKey !== "month" && todayIso < windowStart;
+  // Capped at today ONLY while today falls inside the window. A window entirely in the past is
+  // scored to its own end, and one entirely in the future must not be dragged back to today — that
+  // would score December as "1 Dec to 12 Aug", an empty range dressed up as a month.
+  const running = todayIso >= windowStart && todayIso < windowEnd;
+  const dateTo = running ? todayIso : windowEnd;
+  return {
+    dateFrom: windowStart,
+    // A window that has not begun is scored as EMPTY, not as its first day: `dateFrom > dateTo` is
+    // the shape countCallRateWorkingDays answers 0 for, so every rate comes back null and the screen
+    // says the week has not started rather than printing 0.00 against a target of 2.
+    dateTo: notStarted ? previousDay(windowStart) : dateTo,
+    monthEnd,
+    isCurrentMonth,
+    periodKey,
+    periodLabel,
+    windowEnd,
+    isWholeMonth: periodKey === "month",
+    notStarted,
+  };
 }
 
 const round2 = (value: number | null): number | null => (value == null ? null : Math.round(value * 100) / 100);
@@ -447,6 +603,18 @@ export type RepsPlansBoard = {
   dateFrom: string;
   dateTo: string;
   isCurrentMonth: boolean;
+  /** `month`, `w1`…`w5`, or `from..to` — what the period picker is showing as chosen. */
+  periodKey: string;
+  /** "Whole month", "Week 1 · 1–7 Aug", "3–16 Aug". */
+  periodLabel: string;
+  /** False when a week or a range is in view — the screen then names the window over every number. */
+  isWholeMonth: boolean;
+  /** True when the chosen window has not begun. Every rate is null and the screen says why. */
+  notStarted: boolean;
+  /** True when the window's own end is later than the day it was scored through. */
+  cappedAtToday: boolean;
+  /** The weeks offered for this month, each with the working days it would divide by. */
+  weekOptions: RepsPlansPeriodOption[];
   workingDays: number;
   campaignLimit: number;
   amTarget: number;
@@ -512,6 +680,15 @@ export function buildRepsPlansBoard(
   options: {
     month: string;
     isCurrentMonth: boolean;
+    /**
+     * The window in view. Supplied by the page from {@link repsPlansRange}, whose `dateFrom`/`dateTo`
+     * ALSO bounded the fetch — so the numbers and the caption describing them can never disagree.
+     * Optional so a test about naming or geography does not have to build one; a board without it
+     * reads as the whole month, which is what this page did before the period picker existed.
+     */
+    range?: RepsPlansRange;
+    /** Every week this month offers, for the picker. Same optionality, same reason. */
+    weekOptions?: RepsPlansPeriodOption[];
     repKey?: string | null;
     /** The organogram. Null when it could not be read. */
     tree?: OrgPlacementTree | null;
@@ -608,12 +785,22 @@ export function buildRepsPlansBoard(
       .filter((part): part is string => Boolean(part))
       .join(" · ") || null;
 
+  // The report's OWN dates, not the range's — the caption must describe the rows that were counted.
+  // If the two ever disagree the fetch is what happened, and saying otherwise is the exact class of
+  // "hilarious misleading" this picker was built to end.
+  const range = options.range ?? null;
   return {
     month: options.month,
     monthLabel: monthLabelOfKey(options.month),
     dateFrom: report.dateFrom,
     dateTo: report.dateTo,
     isCurrentMonth: options.isCurrentMonth,
+    periodKey: range?.periodKey ?? "month",
+    periodLabel: range?.periodLabel ?? "Whole month",
+    isWholeMonth: range?.isWholeMonth ?? true,
+    notStarted: range?.notStarted ?? false,
+    cappedAtToday: range ? !range.notStarted && report.dateTo < range.windowEnd : false,
+    weekOptions: options.weekOptions ?? [],
     workingDays: report.workingDays,
     campaignLimit: report.campaignLimit,
     amTarget: AM_CALL_RATE_TARGET,

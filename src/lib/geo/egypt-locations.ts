@@ -13,7 +13,10 @@
 // "Unknown"; resolveGovernorate returns null when nothing is confidently matched.
 
 // ── Arabic / general normalisation ───────────────────────────────────────────
-function normalizeArabic(s: string): string {
+/** Fold the Arabic orthography variants that carry no meaning for a place name: diacritics, tatweel,
+ *  bidi marks, the four alef forms, alef maqsura, ta marbuta and the hamza carriers. Exported because
+ *  `arabic-name-key.ts` builds on exactly this normalisation — one spelling policy, not two. */
+export function normalizeArabic(s: string): string {
   return s
     .replace(/[ً-ٰٟ]/g, "") // harakat/diacritics
     .replace(/ـ/g, "") // tatweel

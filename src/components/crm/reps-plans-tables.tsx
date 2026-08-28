@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
@@ -77,8 +78,10 @@ export function RepsPlansControls({
   geographyAvailable,
   lineOptions,
   month,
+  periodKey,
   regionOptions,
   repOptions,
+  weekOptions,
 }: {
   appliedLine: string | null;
   appliedRegion: string | null;
@@ -87,15 +90,25 @@ export function RepsPlansControls({
   geographyAvailable: boolean;
   lineOptions: Array<{ code: string; name: string }>;
   month: string;
+  periodKey: string;
   regionOptions: Array<{ code: string; name: string }>;
   repOptions: Array<{ repKey: string; repName: string }>;
+  weekOptions: Array<{ key: string; label: string; workingDays: number; started: boolean }>;
 }) {
   const router = useRouter();
+  const custom = periodKey.includes("..");
   const [draft, setDraft] = useState({
     line: appliedLine ?? "",
     month,
+    period: periodKey,
     region: appliedRegion ?? "",
     rep: appliedRepKey ?? "",
+  });
+  // The two ends of a custom window, edited independently — so "two weeks" is typed as two dates
+  // rather than assembled out of week buttons that only ever offer seven days at a time.
+  const [span, setSpan] = useState(() => {
+    const parts = custom ? periodKey.split("..") : [];
+    return { from: parts[0] ?? "", to: parts[1] ?? "" };
   });
 
   // Every filter moves TOGETHER. Pushing `?month=` on its own silently dropped the active rep on
@@ -103,22 +116,25 @@ export function RepsPlansControls({
   const push = (next: typeof draft) => {
     const params = new URLSearchParams();
     params.set("month", next.month);
+    if (next.period && next.period !== "month") params.set("period", next.period);
     if (next.line) params.set("line", next.line);
     if (next.region) params.set("region", next.region);
     if (next.rep) params.set("rep", next.rep);
     router.push(`${basePath}?${params.toString()}`);
   };
 
-  const active = Boolean(draft.line || draft.region || draft.rep);
+  const active = Boolean(draft.line || draft.region || draft.rep || (draft.period && draft.period !== "month"));
 
   return (
-    <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
+    <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
       <label className="space-y-1">
         <span className={LABEL_CLASS}>Month</span>
         <input
           className={SELECT_CLASS}
           onChange={(event) => {
-            const next = { ...draft, month: event.target.value };
+            // A new month invalidates whatever week was chosen — "week 3" of one month is not a
+            // window in another, and a custom span is anchored to real dates in the old one.
+            const next = { ...draft, month: event.target.value, period: "month" };
             setDraft(next);
             if (event.target.value) push(next);
           }}
@@ -126,6 +142,65 @@ export function RepsPlansControls({
           value={draft.month}
         />
       </label>
+
+      {/* THE WINDOW. Owner, 2026-08-28: the rate must be read over the period being looked at, not
+          over a whole month — a week's calls divided by a month's working days shows every rep
+          failing by a factor of four. Each week carries the number of days it would divide by,
+          because a 5-day block and a 3-day tail are not the same denominator and the reader should
+          not have to work that out. */}
+      <label className="space-y-1">
+        <span className={LABEL_CLASS}>Period</span>
+        <select
+          className={SELECT_CLASS}
+          onChange={(event) => {
+            const value = event.target.value;
+            if (value === "custom") {
+              setDraft({ ...draft, period: "custom" });
+              return;
+            }
+            const next = { ...draft, period: value };
+            setDraft(next);
+            push(next);
+          }}
+          value={custom || draft.period === "custom" ? "custom" : draft.period}
+        >
+          <option value="month">Whole month</option>
+          {weekOptions.map((option) => (
+            <option key={option.key} value={option.key}>
+              {option.started ? `${option.label} · ${option.workingDays} days` : `${option.label} · not started`}
+            </option>
+          ))}
+          <option value="custom">Custom dates</option>
+        </select>
+      </label>
+
+      {/* Shown only once Custom is chosen, so the common case stays one dropdown. Both dates must be
+          present and in order before anything is pushed — a half-typed range would otherwise reload
+          the board against a window the reader has not finished describing. */}
+      {custom || draft.period === "custom" ? (
+        <label className="space-y-1">
+          <span className={LABEL_CLASS}>From &amp; to</span>
+          <div className="flex gap-1">
+            {(["from", "to"] as const).map((end) => (
+              <input
+                className={SELECT_CLASS}
+                key={end}
+                onChange={(event) => {
+                  const nextSpan = { ...span, [end]: event.target.value };
+                  setSpan(nextSpan);
+                  if (nextSpan.from && nextSpan.to && nextSpan.from <= nextSpan.to) {
+                    const next = { ...draft, period: `${nextSpan.from}..${nextSpan.to}` };
+                    setDraft(next);
+                    push(next);
+                  }
+                }}
+                type="date"
+                value={span[end]}
+              />
+            ))}
+          </div>
+        </label>
+      ) : null}
 
       {/* LINE then REGION, in that order — the owner's own cascade. Region is narrowed by the line
           above it because Beni Suef and Fayoum sit in different regions depending on the line, so
@@ -203,8 +278,9 @@ export function RepsPlansControls({
           className="h-9 w-full border border-slate-200 bg-white px-3 text-xs font-black uppercase tracking-[0.1em] text-slate-500 hover:border-orange-400 hover:text-orange-600 disabled:opacity-40"
           disabled={!active}
           onClick={() => {
-            const cleared = { line: "", month: draft.month, region: "", rep: "" };
+            const cleared = { line: "", month: draft.month, period: "month", region: "", rep: "" };
             setDraft(cleared);
+            setSpan({ from: "", to: "" });
             push(cleared);
           }}
           type="button"
@@ -282,12 +358,24 @@ const REP_COLS = [
 ];
 
 export function RepsPlansRepTable({
+  appliedLine,
+  appliedRegion,
+  basePath,
   campaignLimit,
   geographyAvailable,
+  month,
   monthLabel,
+  periodKey,
   rows,
   scoredThrough,
 }: {
+  /** Carried into the drill-down so Back returns to the board the reader was actually reading. */
+  appliedLine: string | null;
+  appliedRegion: string | null;
+  basePath: string;
+  month: string;
+  /** The window in force, carried into the drill-down for exactly the same reason. */
+  periodKey: string;
   campaignLimit: number;
   /**
    * False when the organogram could not be read.
@@ -301,6 +389,24 @@ export function RepsPlansRepTable({
   rows: RepsPlansRepRow[];
   scoredThrough: string;
 }) {
+  /**
+   * The drill-down for one row: the visits this rate is made of.
+   *
+   * Keyed on the board's OWN `repKey`, url-encoded — "crm:2103" becomes "crm%3A2103". Deliberately
+   * not a second identity scheme keyed on hr id: 3 of the 93 people on this board in August had no
+   * resolved hr id at all, and a link that silently pointed at the wrong person — or at nobody —
+   * would be worse than no link.
+   */
+  const visitsHref = (row: RepsPlansRepRow): string => {
+    const query = new URLSearchParams({ month });
+    // The window travels WITH the link. Opening a rep from a one-week board and landing on his whole
+    // month is the same misreading the picker exists to prevent, one click further in.
+    if (periodKey && periodKey !== "month") query.set("period", periodKey);
+    if (appliedLine) query.set("line", appliedLine);
+    if (appliedRegion) query.set("region", appliedRegion);
+    return `${basePath}/${encodeURIComponent(row.repKey)}?${query.toString()}`;
+  };
+
   const table = useSortableTable(rows, {
     columns: REP_COLS,
     // Opens on the worst PM attainment, because PM is ten of the twelve calls a perfect day is made
@@ -425,7 +531,14 @@ export function RepsPlansRepTable({
                 </span>
               </span>
             }
-            title={cardTitle}
+            // Same drill-down as the desktop name cell. The card title is the only tap target a
+            // phone has for this row, so the link goes ON it rather than on a separate control that
+            // would cost a line of the card's scarcest space.
+            title={
+              <Link className="hover:text-orange-600 hover:underline" href={visitsHref(row)}>
+                {cardTitle}
+              </Link>
+            }
           >
             <PortalRecordFields
               fields={[
@@ -623,7 +736,14 @@ export function RepsPlansRepTable({
             <tbody className="divide-y divide-slate-100">
               {table.rows.map((row) => (
                 <tr className="whitespace-nowrap bg-white hover:bg-slate-50" key={row.repKey}>
-                  <td className="px-3 py-2 font-semibold text-slate-900">{row.repName}</td>
+                  {/* The name is the way IN. Every figure on this row is an aggregate, and the one
+                      question a manager asks of an aggregate is "made of what" — so the rep opens
+                      his own visits rather than the row being a dead end. */}
+                  <td className="px-3 py-2 font-semibold text-slate-900">
+                    <Link className="hover:text-orange-600 hover:underline" href={visitsHref(row)}>
+                      {row.repName}
+                    </Link>
+                  </td>
                   {/* Line · Region from the ORGANOGRAM, every tier — a DM, an RSM and an NSM each
                       resolve here exactly as a rep does. Someone with no seat is kept on the board
                       rather than filtered away (he is usually one of the zero-proved ones) and named

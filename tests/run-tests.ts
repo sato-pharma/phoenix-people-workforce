@@ -234,6 +234,10 @@ import { runDvPlannerDateCheckTests } from "./dv-planner-date-check.test.ts";
 import { runVisitsReportSyncTests } from "./visits-report-sync.test.ts";
 import { runCrmCallRateTests } from "./crm-call-rate.test.ts";
 import { runCrmRepsPlansTests } from "./crm-reps-plans.test.ts";
+import { runCrmRepVisitsTests } from "./crm-rep-visits.test.ts";
+import { runCrmRegionBrickSuggestTests } from "./crm-region-brick-suggest.test.ts";
+import { runCrmRepsPlansPeriodTests } from "./crm-reps-plans-period.test.ts";
+import { runCrmCampaignNoteTests } from "./crm-campaign-note.test.ts";
 import { runCrmCheckinMatchTests } from "./crm-checkin-match.test.ts";
 import { runCrmCheckinPageBoundaryTests } from "./crm-checkin-page-boundary.test.ts";
 import { runCrmVacationDurationTests } from "./crm-vacation-duration.test.ts";
@@ -1380,6 +1384,19 @@ await runTest("dv planner date check (confirmed/not-recorded/future/outside-rang
 await runTest("visits report sync (dedup + null-guard + delete-reconciliation + attendance/crm_save_date)", runVisitsReportSyncTests);
 await runTest("crm call rate (Sat-Wed denominator, AM 2 / PM 10 targets, campaign never lifts the verified rate)", runCrmCallRateTests);
 await runTest("crm reps plans board (live-month cap, company rate over days x reps, rep filter leaves totals alone)", runCrmRepsPlansTests);
+await runTest("crm rep visits drill-down (territory states, proof buckets, reconciles with the board rate)", runCrmRepVisitsTests);
+await runTest(
+  "crm region -> brick suggestion (Arabic name key + the reps' own area; Kit Kat, Beba, and the Dokki/Edku trap)",
+  runCrmRegionBrickSuggestTests,
+);
+await runTest(
+  "crm campaign note (doctor / speciality / clinic pulled apart; the hospital and the GB rows the owner named)",
+  runCrmCampaignNoteTests,
+);
+await runTest(
+  "crm reps plans period (a week's rate divides by the week's working days, never the month's)",
+  runCrmRepsPlansPeriodTests,
+);
 await runTest("crm checkin-match (agent+contact+day rule, crm_save_date tie-break)", runCrmCheckinMatchTests);
 await runTest("crm checkin page boundary (.gte cursor + id de-dupe across duplicate check_date)", runCrmCheckinPageBoundaryTests);
 await runTest("crm vacation duration (per-date collapse: AM+PM = 1 day, duplicated AM+AM = 0.5)", runCrmVacationDurationTests);
