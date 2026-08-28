@@ -65,7 +65,7 @@ const PHONE_DOUBLE_ZERO_EGYPT = "0020";
  * Whether a proposed value is ONE phone number rather than several run together.
  *
  * This gate exists because the confidence gate cannot catch this class at all. A CV whose contact
- * line reads "01060464699 & 01112872565" produces a perfectly HIGH-confidence extraction — the AI
+ * line reads "01234567890 & 01098765432" produces a perfectly HIGH-confidence extraction — the AI
  * is not wrong, it faithfully transcribed what the page said. The result is a 22-digit string that
  * is not a phone number.
  *

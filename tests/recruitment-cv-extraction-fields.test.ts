@@ -243,10 +243,10 @@ export function runRecruitmentCvExtractionFieldsTests() {
       phone: { confidence: "low", value: null },
       university: { confidence: "high", value: "MIU" },
     },
-    candidate({ email: "sender@example.com", hasMedicalRepExperience: false, phone: "01016585527", university: "Old University" }),
+    candidate({ email: "sender@example.com", hasMedicalRepExperience: false, phone: "01234567890", university: "Old University" }),
     medicalRep,
   );
-  assert.equal(seeded.phone.value, "01016585527", "an empty proposal falls back to what is already saved");
+  assert.equal(seeded.phone.value, "01234567890", "an empty proposal falls back to what is already saved");
   assert.equal(seeded.phone.confidence, "high", "a value taken from the record is not an AI guess — no low-confidence badge");
   assert.equal(seeded.email.value, "sender@example.com", "a field the CV never mentioned is still seeded from the record");
   assert.equal(seeded.university.value, "MIU", "a real proposal wins over the saved value — that is the point of reviewing");

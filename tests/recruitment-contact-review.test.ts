@@ -50,11 +50,11 @@ export function runRecruitmentContactReviewTests() {
   // --- proposeContactDetails: the happy path -----------------------------------------------------
   const both = proposeContactDetails({
     candidate: forwardedCandidate(),
-    fields: { email: high("mazen@example.com"), phone: high("01016585527") },
+    fields: { email: high("mazen@example.com"), phone: high("01234567890") },
     isCv: true,
   });
   assert.deepEqual(both.email, { confidence: "high", value: "mazen@example.com" });
-  assert.deepEqual(both.phone, { confidence: "high", value: "01016585527" });
+  assert.deepEqual(both.phone, { confidence: "high", value: "01234567890" });
   assert.equal(isEmptyContactProposal(both), false);
 
   // --- gate 1: an explicit not-a-CV proposes nothing ---------------------------------------------
@@ -62,7 +62,7 @@ export function runRecruitmentContactReviewTests() {
   // phone number. None of them is an applicant's.
   const notACv = proposeContactDetails({
     candidate: forwardedCandidate(),
-    fields: { email: high("sales@daftra.com"), phone: high("01016585527") },
+    fields: { email: high("sales@daftra.com"), phone: high("01234567890") },
     isCv: false,
   });
   assert.equal(isEmptyContactProposal(notACv), true, "is_cv === false proposes nothing at all");
@@ -71,34 +71,34 @@ export function runRecruitmentContactReviewTests() {
   // rules-only or OCR read. Failing closed on those would discard real applicants.
   const unjudged = proposeContactDetails({
     candidate: forwardedCandidate(),
-    fields: { email: high("mazen@example.com"), phone: high("01016585527") },
+    fields: { email: high("mazen@example.com"), phone: high("01234567890") },
     isCv: null,
   });
   assert.equal(unjudged.email?.value, "mazen@example.com", "an unjudged read is still proposed");
-  assert.equal(unjudged.phone?.value, "01016585527");
+  assert.equal(unjudged.phone?.value, "01234567890");
 
   // --- gate 2: only ever fills a BLANK column ----------------------------------------------------
   const alreadyHasEmail = proposeContactDetails({
     candidate: forwardedCandidate({ email: "typed.by.a.human@satopharma.com" }),
-    fields: { email: high("cv@example.com"), phone: high("01016585527") },
+    fields: { email: high("cv@example.com"), phone: high("01234567890") },
     isCv: true,
   });
   assert.equal(alreadyHasEmail.email, null, "a stored email is never overwritten by a proposal");
-  assert.equal(alreadyHasEmail.phone?.value, "01016585527", "the blank column is still offered");
+  assert.equal(alreadyHasEmail.phone?.value, "01234567890", "the blank column is still offered");
 
   const whitespaceCountsAsBlank = proposeContactDetails({
     candidate: forwardedCandidate({ phone: "   " }),
-    fields: { phone: high("01016585527") },
+    fields: { phone: high("01234567890") },
     isCv: true,
   });
-  assert.equal(whitespaceCountsAsBlank.phone?.value, "01016585527", "whitespace is not a real value");
+  assert.equal(whitespaceCountsAsBlank.phone?.value, "01234567890", "whitespace is not a real value");
 
   // --- gate 3: the value must be ONE address / ONE diallable number ------------------------------
   const runTogether = proposeContactDetails({
     candidate: forwardedCandidate(),
     fields: {
       email: high("ahmed@gmail.com / ahmed2@yahoo.com"),
-      phone: high("01060464699 & 01112872565"),
+      phone: high("01234567890 & 01098765432"),
     },
     isCv: true,
   });
@@ -134,11 +134,11 @@ export function runRecruitmentContactReviewTests() {
   // who can open the CV. It is bulk acceptance that restricts itself, below.
   const lowRead = proposeContactDetails({
     candidate: forwardedCandidate(),
-    fields: { email: low("maybe@example.com"), phone: low("01016585527") },
+    fields: { email: low("maybe@example.com"), phone: low("01234567890") },
     isCv: true,
   });
   assert.deepEqual(lowRead.email, { confidence: "low", value: "maybe@example.com" });
-  assert.deepEqual(lowRead.phone, { confidence: "low", value: "01016585527" });
+  assert.deepEqual(lowRead.phone, { confidence: "low", value: "01234567890" });
 
   // --- bulkAcceptableProposal --------------------------------------------------------------------
   assert.equal(
@@ -148,11 +148,11 @@ export function runRecruitmentContactReviewTests() {
   );
   const mixed = proposeContactDetails({
     candidate: forwardedCandidate(),
-    fields: { email: low("maybe@example.com"), phone: high("01016585527") },
+    fields: { email: low("maybe@example.com"), phone: high("01234567890") },
     isCv: true,
   });
   const bulk = bulkAcceptableProposal(mixed);
   assert.equal(bulk.email, null, "the low half is left for a human");
-  assert.deepEqual(bulk.phone, { confidence: "high", value: "01016585527" }, "the high half still goes");
+  assert.deepEqual(bulk.phone, { confidence: "high", value: "01234567890" }, "the high half still goes");
   assert.deepEqual(bulkAcceptableProposal(both), both, "an all-high proposal passes through whole");
 }

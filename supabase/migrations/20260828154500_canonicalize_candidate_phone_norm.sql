@@ -1,8 +1,8 @@
 -- Canonicalize ats_candidates.phone_norm for Egyptian mobiles.
 --
 -- WHY. phone_norm is the dedup key, and findMatchingCandidate compares it by exact string
--- equality. A CV carrying "01202645759" therefore never matched the WhatsApp record stamped
--- "201202645759" from Meta's wa_id — the same handset, two keys, so the same person was
+-- equality. A CV carrying "01234567890" therefore never matched the WhatsApp record stamped
+-- "201234567890" from Meta's wa_id — the same handset, two keys, so the same person was
 -- inserted twice. Meta cannot be asked to send the local form, so the international form is
 -- canonical and everything else folds onto it.
 --

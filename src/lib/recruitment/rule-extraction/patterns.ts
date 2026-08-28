@@ -54,20 +54,20 @@ export function findEmails(text: string): string[] {
 
 // Any run that could be a phone number: digits with the separators a CV puts between them. A single
 // regex that tries to validate at the same time is what produced the 79% hit rate the corpus
-// measured — real CVs write "+20 10 1082 3473", "(+2) 01012345678" and "0100 123 4567", and each
+// measured — real CVs write "+20 12 3456 7890", "(+2) 01012345678" and "0100 123 4567", and each
 // new layout needs another alternative. Scanning loosely and validating the DIGITS is both simpler
 // and strictly more complete.
 //
 // The separator class must NOT contain \s. It did once, and \s matches a NEWLINE: a CV whose phone
-// line is followed by an address ("01044971766\n3 El Salam, Giza") had the next line's leading "3"
+// line is followed by an address ("01234567890\n3 El Salam, Giza") had the next line's leading "3"
 // pulled into the number, making it 12 digits long and rejecting a perfectly valid mobile. Only
 // spaces that a human would type INSIDE a number belong here.
 const PHONE_CANDIDATE = /(?:\+|00)?\d[\d ().\- ]{7,24}\d/g;
 
 // The core of an Egyptian mobile — prefix + 8 digits — optionally carrying its country code. Used
 // to rescue numbers out of a run that failed to validate whole, which happens two ways in the
-// corpus: two numbers printed back to back ("01276131496-01014407346") and a country code written
-// as "(+02)" so the digits read "0201280120568".
+// corpus: two numbers printed back to back ("01234567890-01098765432") and a country code written
+// as "(+02)" so the digits read "0201234567890".
 const MOBILE_CORE = /(?:20)?0?1[0125]\d{8}/g;
 
 /** Egyptian mobile prefixes: 010 Vodafone, 011 Etisalat, 012 Orange, 015 WE. */
@@ -107,7 +107,7 @@ export function findEgyptianMobiles(text: string): string[] {
       continue;
     }
     // The run as a whole is not one number. Rescue every mobile hiding inside it rather than
-    // discarding the lot — "Phone: 01276131496-01014407346." is two real numbers, and a CV that
+    // discarding the lot — "Phone: 01234567890-01098765432." is two real numbers, and a CV that
     // prints its country code as "(+02)" is one real number wearing an extra digit.
     //
     // The rescue must ACCOUNT FOR THE WHOLE RUN, or any long digit string contains a "mobile":
