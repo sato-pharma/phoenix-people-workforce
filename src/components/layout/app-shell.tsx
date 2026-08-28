@@ -12,6 +12,7 @@ import {
 } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage, resolveViewerIdentityFromPage } from "@/lib/auth/server";
 import { formatHrIdForDisplay } from "@/lib/hr-id";
+import { loadPersonalLayout } from "@/lib/navigation/personal-layout-store";
 import { CommandPalette } from "@/components/layout/command-palette";
 import { DocumentTitleSync } from "@/components/layout/document-title-sync";
 import { RouteTransitionProvider } from "@/components/layout/route-transition-provider";
@@ -41,6 +42,12 @@ export async function AppShell({
   if (!access.loginId && !access.hrId) {
     redirect("/login");
   }
+
+  // This viewer's own sidebar arrangement. Never throws and returns null on any problem — a
+  // missing table (before the migration is applied), an unreadable row, a layout written by a
+  // future version — and null means the sidebar renders exactly as the code defines it. A cosmetic
+  // preference must never be able to break navigation for someone trying to do their job.
+  const personalLayout = await loadPersonalLayout(access.hrId);
 
   const viewer = showTopbar
     ? await resolveViewerIdentityFromPage(access)
@@ -81,6 +88,7 @@ export async function AppShell({
             isSystemAdministratorWorkspace={isSystemAdministratorWorkspace}
             navigationMode={resolvedNavigationMode}
             permissionLookup={permissionLookup}
+            personalLayout={personalLayout}
           />
           <div className="flex min-w-0 flex-1 flex-col">
             {showTopbar && (
@@ -88,6 +96,7 @@ export async function AppShell({
                 currentRole={access.role}
                 navigationMode={resolvedNavigationMode}
                 permissionLookup={permissionLookup}
+                personalLayout={personalLayout}
                 scope={access.scope}
                 source={access.source}
                 viewer={viewer}
