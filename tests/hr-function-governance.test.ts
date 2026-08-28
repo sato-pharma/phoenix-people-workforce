@@ -11,10 +11,13 @@ import {
   type HrFunctionKey,
 } from "../src/lib/auth/hr-functions.ts";
 import {
+  canAccess,
   normalizeRole,
   permissionMatrix,
   phoenixCompanyJobTitles,
   phoenixRoles,
+  scopeForRole,
+  type AccessContext,
   type PhoenixRole,
 } from "../src/lib/auth/permissions.ts";
 
@@ -68,7 +71,7 @@ const RETIRED_HR_ROLE_NAMES: readonly string[] = ["HR Specialist", "Talent Acqui
  */
 const BREACH_SEP = String.fromCharCode(10) + '  ';
 
-export function runHrFunctionGovernanceTests() {
+export async function runHrFunctionGovernanceTests() {
   const bundleNames = Object.keys(HR_ROLE_BUNDLES) as HrBundleName[];
 
   // --- Rule 1: a permission role is never a job title ------------------------------------------
@@ -289,4 +292,52 @@ export function runHrFunctionGovernanceTests() {
     const b = [...HR_ROLE_BUNDLES[other]].sort();
     assert.notDeepEqual(a, b, `"${first}" and "${other}" hold identical functions`);
   }
+
+  // --- Rule 9: every boundary is REFUSED BY THE GATE, not merely absent from a table -------------
+  // Rules 4 and 5 read the grants. This one asks canAccess — the function the route handlers and
+  // the page gates actually call — because a matrix entry is not the last word on access. canAccess
+  // short-circuits to true on `context.scope === "system"` before it consults any matrix, and it
+  // merges role_permission_overrides from the database on top of the composed one. Both seats
+  // resolve to scope "self" today, which is why the boundaries hold; that is a fact worth asserting
+  // rather than a note worth trusting, since scopeForRole falls through to a default and a future
+  // seat added to the wrong branch would open all 17 at once with no grant having changed.
+  const refusalFailures: string[] = [];
+  for (const name of bundleNames) {
+    const role = name as PhoenixRole;
+    const access = {
+      role,
+      scope: scopeForRole(role),
+      hrId: "HR-BOUNDARY-TEST",
+      source: "session",
+    } as AccessContext;
+
+    assert.notEqual(
+      access.scope,
+      "system",
+      `"${name}" resolves to scope "system", and canAccess returns true for that before it reads ` +
+        "any matrix — every job-description boundary below is open, whatever the grants say",
+    );
+
+    for (const boundary of HR_ROLE_BOUNDARIES) {
+      if (await canAccess(access, boundary.resource, boundary.action)) {
+        refusalFailures.push(
+          `${name}: canAccess allows ${boundary.resource}:${boundary.action} — ${boundary.why}`,
+        );
+      }
+    }
+
+    // The control. Without it a canAccess that returned false for everything — a broken import, a
+    // matrix that failed to load — would satisfy every assertion above by refusing the whole seat.
+    assert.ok(
+      await canAccess(access, "overview", "read"),
+      `"${name}" is refused overview:read, so canAccess is refusing everything and the boundary ` +
+        "checks above passed by accident rather than by boundary",
+    );
+  }
+  assert.deepEqual(
+    refusalFailures,
+    [],
+    `a job-description boundary is not actually refused at the gate:
+  ${refusalFailures.join(BREACH_SEP)}`,
+  );
 }
