@@ -47,6 +47,17 @@ const ANTI_INFECTIVE_SEATS = [
   { areaName: "Main Store", regionCode: "OT", regionName: "Others" },
 ];
 
+// Anti Infective's new Delta 3 district (au.line_area_map, forward-dated to 2026-09-01). The
+// picker has no as-of awareness, so these seats are already live in the model today even though
+// the sales/closing side of the split is not effective until September.
+const DELTA_3_SEATS = [
+  { areaName: "Ismailia", regionCode: "D3", regionName: "Delta (3)" },
+  { areaName: "Qalubeya", regionCode: "D3", regionName: "Delta (3)" },
+  { areaName: "Sharkia 1", regionCode: "D3", regionName: "Delta (3)" },
+  { areaName: "Sharkia 2", regionCode: "D3", regionName: "Delta (3)" },
+  { areaName: "Suez", regionCode: "D3", regionName: "Delta (3)" },
+];
+
 // CNS keeps Upper Egypt undivided — one district code for the whole region.
 const CNS_SEATS = [
   { areaName: "Minia 1", regionCode: "UE", regionName: "Upper Egypt" },
@@ -65,10 +76,13 @@ export function runWeeklyPlanRegionAreasTests() {
   assert.equal(canonicalPlanningRegionName("Upper Egypt 3"), "Upper Egypt");
   assert.equal(canonicalPlanningRegionName("upper egypt"), "Upper Egypt");
 
-  // Delta's numbers are NOT district suffixes — they are two separate approved regions and
+  // Delta's numbers are NOT district suffixes — they are separate approved regions and
   // must survive canonicalisation rather than collapsing the way Upper Egypt's do.
   assert.equal(canonicalPlanningRegionName("Delta (1)"), "Delta 1");
   assert.equal(canonicalPlanningRegionName("Delta (2)"), "Delta 2");
+  assert.equal(canonicalPlanningRegionName("Delta (3)"), "Delta 3");
+  assert.equal(canonicalPlanningRegionName("Delta 3"), "Delta 3");
+  assert.equal(canonicalPlanningRegionName("delta-3"), "Delta 3");
 
   assert.equal(canonicalPlanningRegionName("Alex-BHR"), "ALEX-BHR");
   assert.equal(canonicalPlanningRegionName("Cairo"), "Cairo");
@@ -80,7 +94,7 @@ export function runWeeklyPlanRegionAreasTests() {
   assert.equal(canonicalPlanningRegionName(""), null);
   assert.equal(canonicalPlanningRegionName(null), null);
 
-  assert.equal(APPROVED_PLANNING_REGIONS.length, 6, "the approved planning region list is six regions");
+  assert.equal(APPROVED_PLANNING_REGIONS.length, 7, "the approved planning region list is seven regions");
   assert.ok(
     !APPROVED_PLANNING_REGIONS.some((region) => /upper egypt \d/i.test(region)),
     "districts must fold into Upper Egypt, never be added to the approved list",
@@ -248,6 +262,14 @@ export function runWeeklyPlanRegionAreasTests() {
   // An unknown/blank own district also falls back to the whole region rather than nothing.
   assert.equal(planningAreaOptions(ANTI_INFECTIVE_SEATS, "Upper Egypt", null).length, 9);
   assert.equal(planningAreaOptions(ANTI_INFECTIVE_SEATS, "Upper Egypt", { regionCode: "ZZ" }).length, 9);
+
+  // Delta 3 must be selectable and return its own areas — the region this fix exists for. An
+  // Anti Infective NSM with no district of his own (a manager row) must not get an empty picker.
+  assert.deepEqual(
+    planningAreaOptions([...ANTI_INFECTIVE_SEATS, ...DELTA_3_SEATS], "Delta 3", { regionCode: "UE-1" }),
+    ["Ismailia", "Qalubeya", "Sharkia 1", "Sharkia 2", "Suez"],
+    "Delta 3 must offer its own areas, not silently canonicalise to null",
+  );
 
   // "Others" is not plannable under any region.
   for (const region of APPROVED_PLANNING_REGIONS) {
