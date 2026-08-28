@@ -38,6 +38,11 @@ import {
   type CallSession,
   type VisitForCallRate,
 } from "@/lib/crm/call-rate";
+import {
+  matchCampaignNote,
+  type CampaignContactMatch,
+  type KnownContactIndex,
+} from "@/lib/crm/campaign-contact-match";
 import { campaignHeadline, readCampaignNote, type CampaignNoteReading } from "@/lib/crm/campaign-note";
 import { classifyVisit, type VisitBucket } from "@/lib/crm/visit-types";
 import type { CheckinForMatch } from "@/lib/crm/checkin-match";
@@ -94,6 +99,15 @@ export type RepVisitRow = {
   partnerHrId: string | null;
   partnerName: string | null;
   comment: string | null;
+  /**
+   * Set only on a campaign row whose named doctor turned out to be on the registered list already.
+   *
+   * This is a READING, never an edit. The visit still has no `contactCrmId` and still counts
+   * exactly as it did before — nothing about the call rate moves. What it changes is what the
+   * screen is allowed to claim: without it, every campaign row is labelled "Prospect · not on his
+   * list", and for 3,126 of production's campaign visits that sentence is false.
+   */
+  knownContact: CampaignContactMatch | null;
 };
 
 /** The mirror columns this module needs, on top of the ones the rate already reads. */
@@ -180,6 +194,7 @@ export function toRepVisitRow<C extends CheckinForMatch>(
   checkinIndex: Map<string, C[]>,
   territoryIndex: CrmRegionTerritoryIndex,
   partnerNameByHrId?: ReadonlyMap<string, string>,
+  contactDirectory?: KnownContactIndex,
 ): RepVisitRow {
   const { label, bucket } = classifyVisit(visit.visit_type, visit.comment, visit.visit_type_description);
   const partnerHrId = text(visit.double_hr_id);
@@ -222,6 +237,11 @@ export function toRepVisitRow<C extends CheckinForMatch>(
       ? (partnerNameByHrId?.get(partnerHrId.toLowerCase()) ?? text(visit.double_name))
       : text(visit.double_name),
     comment: text(visit.comment),
+    // The doctor the rep named, looked up in his own registered list. Only a campaign row can carry
+    // this — a regular visit already HAS its contact, and re-deriving one from prose beside a real
+    // record would put a guess next to a fact. Null whenever the directory is empty, which is what
+    // every caller that does not load one gets, and is exactly today's behaviour.
+    knownContact: note && contactDirectory ? matchCampaignNote(note, text(visit.agent_hr_id), contactDirectory) : null,
   };
 }
 
@@ -246,6 +266,12 @@ export type RepVisitsSummary = {
   unmappedTerritory: number;
   /** Field-work rows the CRM left without any region at all. */
   noTerritory: number;
+  /**
+   * Campaign rows whose doctor is already on this rep's registered list — a coding mistake, not
+   * prospecting. Counted so the page can state the size of it instead of leaving the reader to
+   * spot the markers row by row.
+   */
+  campaignAlreadyKnown: number;
 };
 
 /**
@@ -273,6 +299,7 @@ export function summarizeRepVisits(rows: readonly RepVisitRow[]): RepVisitsSumma
     distinctRegions: 0,
     unmappedTerritory: 0,
     noTerritory: 0,
+    campaignAlreadyKnown: 0,
   };
   for (const row of rows) {
     if (!isFieldWork(row)) {
@@ -292,6 +319,10 @@ export function summarizeRepVisits(rows: readonly RepVisitRow[]): RepVisitsSumma
     else summary.unspecified += 1;
     if (row.territory.status === "unmapped") summary.unmappedTerritory += 1;
     else if (row.territory.status === "none") summary.noTerritory += 1;
+    // "own" only. A doctor on a COLLEAGUE's list is a territory question, not a mis-coded call, and
+    // counting the two together would put a number in front of the owner that mixes a mistake he
+    // can tell a rep to stop making with one he cannot.
+    if (row.knownContact?.scope === "own") summary.campaignAlreadyKnown += 1;
   }
   summary.distinctContacts = contacts.size;
   summary.distinctRegions = regions.size;
@@ -321,11 +352,21 @@ export function buildRepVisits<C extends CheckinForMatch>(
   options: {
     territoryIndex: CrmRegionTerritoryIndex;
     partnerNameByHrId?: ReadonlyMap<string, string>;
+    /** The rep's registered doctors. Omitted → no campaign row claims to know anyone. */
+    contactDirectory?: KnownContactIndex;
   },
 ): { rows: RepVisitRow[]; summary: RepVisitsSummary } {
   const checkinIndex = indexCheckinsByAgentContactDay(checkins);
   const rows = sortRepVisitRows(
-    visits.map((visit) => toRepVisitRow(visit, checkinIndex, options.territoryIndex, options.partnerNameByHrId)),
+    visits.map((visit) =>
+      toRepVisitRow(
+        visit,
+        checkinIndex,
+        options.territoryIndex,
+        options.partnerNameByHrId,
+        options.contactDirectory,
+      ),
+    ),
   );
   return { rows, summary: summarizeRepVisits(rows) };
 }
@@ -441,7 +482,18 @@ export function isProspectRow(row: RepVisitRow): boolean {
   // CAMPAIGN ONLY. Leave, meetings and training rows also arrive with no contact and often with a
   // comment ("Sales day", "Interviews"), and marking one of those "a doctor not on his list" would
   // invent a prospecting call out of a day off.
-  return row.bucket === "campaign" && !row.contactName && !row.contactCrmId && Boolean(row.comment?.trim());
+  //
+  // AND ONLY WHEN IT IS TRUE. `knownContact` means the doctor was found on a registered list, so
+  // "not on his list" is a false statement about him and the row says something else instead. This
+  // is the whole point of the match: 3,126 of production's campaign visits were labelled prospects
+  // while the rep was visiting that same doctor on his normal rounds.
+  return (
+    row.bucket === "campaign" &&
+    !row.contactName &&
+    !row.contactCrmId &&
+    !row.knownContact &&
+    Boolean(row.comment?.trim())
+  );
 }
 
 /**

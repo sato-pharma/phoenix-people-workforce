@@ -7,6 +7,7 @@
 // board that links to it.
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { buildKnownContactIndex, type KnownContactIndex } from "@/lib/crm/campaign-contact-match";
 import { collapseDuplicateVisitSubmissions, queryCheckins, queryVisits } from "@/lib/crm/reads";
 import {
   buildRepVisits,
@@ -169,6 +170,75 @@ export async function loadCrmMappingCoverage(): Promise<{ mappedRegions: number;
   }
 }
 
+/** Columns of a normal visit that describe WHO was seen. Nothing else is needed to build the list. */
+const CONTACT_DIRECTORY_COLUMNS = "agent_hr_id,contact_crm_id,contact_name,speciality";
+
+/**
+ * How far back a normal visit still counts as "this doctor is on his list".
+ *
+ * A year, because the question is whether the rep has a working relationship with this doctor, and
+ * a doctor seen once eighteen months ago is not one. It also keeps the read small: one rep's normal
+ * visits over twelve months is on the order of a thousand rows, against 89,010 for the whole
+ * company all-time — which is the read this window exists to avoid.
+ */
+const CONTACT_DIRECTORY_MONTHS = 12;
+
+function directoryWindowStart(dateTo: string): string {
+  const end = new Date(`${dateTo}T00:00:00Z`);
+  if (Number.isNaN(end.getTime())) return dateTo;
+  end.setUTCMonth(end.getUTCMonth() - CONTACT_DIRECTORY_MONTHS);
+  return end.toISOString().slice(0, 10);
+}
+
+/**
+ * The doctors this rep already visits normally, keyed by name.
+ *
+ * WHAT IT IS FOR. A campaign visit carries no contact record, so the screen calls it prospecting.
+ * For 3,126 of production's campaign visits that is wrong — the rep visits that same doctor on his
+ * normal rounds and simply coded this one call as a campaign. This index is what lets the screen
+ * say so instead of asserting a prospect.
+ *
+ * SCOPED TO THIS REP, DELIBERATELY. A further 2,716 campaign visits name a doctor on a COLLEAGUE's
+ * list, which is a territory question rather than a coding mistake and wants a different answer on
+ * screen. Detecting those needs the company-wide directory — 14,717 contacts behind an 89,010-row
+ * scan — which is a database object, not a page read. `buildKnownContactIndex` takes rows, so when
+ * that object exists this function changes and nothing downstream does.
+ *
+ * DISPLAY OVERLAY, NEVER LOAD-BEARING. Returns an empty index on any failure, which makes every
+ * campaign row read exactly as it does today. A directory that cannot be read must not take the
+ * drill-down down with it, and must never make a visit look like something it is not.
+ */
+export async function loadRepContactDirectory(
+  hrId: string | null,
+  dateTo: string,
+): Promise<KnownContactIndex> {
+  if (!hrId) return new Map();
+  try {
+    const rows = await queryVisits<{
+      agent_hr_id: string | null;
+      contact_crm_id: number | null;
+      contact_name: string | null;
+      speciality: string | null;
+    }>({
+      agentHrIdILike: hrId,
+      columns: CONTACT_DIRECTORY_COLUMNS,
+      dateFrom: directoryWindowStart(dateTo),
+      dateTo,
+      visitTypes: [0],
+    });
+    return buildKnownContactIndex(
+      rows.map((row) => ({
+        agentHrId: row.agent_hr_id,
+        contactCrmId: row.contact_crm_id == null ? null : String(row.contact_crm_id),
+        contactName: row.contact_name,
+        speciality: row.speciality,
+      })),
+    );
+  } catch {
+    return new Map();
+  }
+}
+
 export type RepVisitsInput = {
   dateFrom: string;
   dateTo: string;
@@ -195,7 +265,7 @@ export async function loadRepVisits(
   input: RepVisitsInput,
 ): Promise<{ rows: RepVisitRow[]; summary: RepVisitsSummary }> {
   const hrId = input.agentHrId?.trim() || null;
-  const [rawVisits, checkins, territoryIndex] = await Promise.all([
+  const [rawVisits, checkins, territoryIndex, contactDirectory] = await Promise.all([
     queryVisits<VisitForRepDrilldown & { double_crm_id: number | null }>({
       dateFrom: input.dateFrom,
       dateTo: input.dateTo,
@@ -206,6 +276,7 @@ export async function loadRepVisits(
     }),
     queryCheckins<CheckinRow>({ dateFrom: input.dateFrom, dateTo: input.dateTo, columns: CHECKIN_COLUMNS }),
     loadCrmRegionTerritoryIndex(),
+    loadRepContactDirectory(hrId, input.dateTo),
   ]);
 
   const collapsed = collapseDuplicateVisitSubmissions(rawVisits);
@@ -220,6 +291,7 @@ export async function loadRepVisits(
     input.agentCrmId != null ? checkins.filter((checkin) => checkin.agent_crm_id === input.agentCrmId) : checkins;
 
   return buildRepVisits(visits, scopedCheckins, {
+    contactDirectory,
     partnerNameByHrId: input.partnerNameByHrId,
     territoryIndex,
   });
