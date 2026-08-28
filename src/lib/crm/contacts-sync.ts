@@ -75,14 +75,21 @@ export type CrmContactSyncResult = {
  *
  * Measured 2026-08-28 with a one-shot probe against the real route: cron-job.org killed the
  * connection at 30.1s (`ms=30108`) with the job's own `requestTimeout` set to 300. The 30-second
- * limit is a PLATFORM cap, not a per-job setting — raising the setting is accepted by their API and
- * changes nothing. The dangerous half of that measurement is what the database showed afterwards:
- * 39 of 68 agents re-stamped, the rest untouched. The server does NOT quietly finish the work after
- * the client hangs up. A single nightly request would therefore report failure every night AND
- * leave the mirror half refreshed — the two outcomes this module exists to avoid.
+ * limit is a PLATFORM cap, not a per-job setting — raising it is accepted by their API, read back
+ * unchanged, and does nothing.
  *
- * The fix is to sweep a twelfth of the roster per request, twelve requests five minutes apart
- * inside one hour. Each tick is about 7 agents, roughly 14 seconds of vendor calls.
+ * THE WORK ITSELF STILL COMPLETES, so this is not a data-integrity fix and must not be described as
+ * one. The audit row this route writes LAST landed at 20:09:43 Cairo covering all 82 agents, ~70
+ * seconds after the client was killed. (A query taken at 20:09:02, mid-sweep, said "39 of 68
+ * re-stamped" and was briefly reported as proof of truncation — it was the run still in progress.
+ * Judge completion from the terminal artefact, never from row timestamps while the job may still
+ * be running.)
+ *
+ * Slicing is worth doing for the honest reasons: a job that reports `Failed (timeout)` every single
+ * night is one nobody reads, its response body is never visible, and finishing at all depends on a
+ * detached request outliving a container restart. So the sweep takes a twelfth of the roster per
+ * request, twelve requests five minutes apart inside one hour — measured on production at 7 agents
+ * and 8-10 seconds per tick.
  */
 export const CONTACT_SYNC_SLICE_COUNT = 12;
 
