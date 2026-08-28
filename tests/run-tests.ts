@@ -672,6 +672,7 @@ import { runClosingPeriodGateTests } from "./closing-period-gate.test.ts";
 import { runDesignTokensContractTests } from "./design-tokens-contract.test.ts";
 import { runNoEllipsisTruncationRatchetTests } from "./no-ellipsis-truncation-ratchet.test.ts";
 import { runBadgeToneContrastTests } from "./badge-tone-contrast.test.ts";
+import { runNavigationPageFindabilityRatchetTests } from "./navigation-page-findability-ratchet.test.ts";
 import { runEmployeeTemplateTeamDropdownTests } from "./employee-template-team-dropdown.test.ts";
 import { runSosMappingIntegrityTests } from "./sos-mapping-integrity.test.ts";
 import { runSosIngestionNoSilentZeroTests } from "./sos-ingestion-no-silent-zero.test.ts";
@@ -2027,6 +2028,7 @@ await runTest('CLOSING GOLDEN RULE (a month is never published during that month
 await runTest('design tokens contract (--phx- prefix, no globals.css collision, full dark coverage)', runDesignTokensContractTests);
 await runTest('no-ellipsis ratchet (UI truncation sites may fall, never rise)', runNoEllipsisTruncationRatchetTests);
 await runTest('Badge tone contrast (every tone meets WCAG AA for small text, both themes)', runBadgeToneContrastTests);
+await runTest('Navigation findability ratchet (a page with no link anywhere may fall, never rise)', runNavigationPageFindabilityRatchetTests);
 await runTest('SoS mapping integrity (alias edit replaces, exact customer key detects conflicts)', runSosMappingIntegrityTests);
 await runTest('SoS ingestion (an unreadable cell is rejected, never silently zeroed)', runSosIngestionNoSilentZeroTests);
 await runTest('analytics area scope v2 (reconciliation refuses area-scoped viewers, one active alias target)', runAnalyticsAreaScopeV2Tests);
