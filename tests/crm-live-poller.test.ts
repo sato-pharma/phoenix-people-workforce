@@ -5,6 +5,9 @@ import {
   DAY_TICK_SECONDS,
   FAST_TICK_SECONDS,
   NIGHT_TICK_SECONDS,
+  PARITY_SWEEP_EARLIEST_CAIRO_MINUTES,
+  PARITY_SWEEP_FAILURE_RETRY_GAP_MS,
+  PARITY_SWEEP_MIN_GAP_MS,
   PLAN_SYNC_FAILURE_RETRY_GAP_MS,
   PLAN_SYNC_MIN_GAP_MS,
   RECONCILE_FAILURE_RETRY_GAP_MS,
@@ -179,6 +182,8 @@ export function runCrmLivePollerTests() {
   const HOUR = 60 * 60 * 1000;
   const monday10amCairo = { cairoDayOfWeek: 1, minutesSinceMidnight: 10 * 60, nowMs: 100 * HOUR };
   const noHistory = {
+    lastParitySweepFailureMs: null,
+    lastParitySweepSuccessMs: null,
     lastPlanSyncFailureMs: null,
     lastPlanSyncSuccessMs: null,
     lastReconcileFailureMs: null,
@@ -190,11 +195,18 @@ export function runCrmLivePollerTests() {
   // nothing — otherwise the plan sync would legitimately claim the freed slot and the assertion
   // would be testing the ranking rather than the gap it was written for.
   const planJustRan = { lastPlanSyncSuccessMs: 100 * HOUR };
+  // Same reasoning for the parity sweep, which joined as the fourth job. It is ranked LAST, so it
+  // is the one that claims any slot the other three leave empty — which is every assertion below
+  // that expects null. Parking it keeps each of those testing its own gap instead of the ranking.
+  // The two values track the two clocks in this section (nowMs 100h for the weekday cases,
+  // 1000h for the Sunday reconcile ones); "parked" means it ran at that instant.
+  const parityParked = { lastParitySweepSuccessMs: 100 * HOUR };
+  const parityParkedSunday = { lastParitySweepSuccessMs: 1000 * HOUR };
   // No history at all → the rolling sync fires on the first working-day tick (post-deploy catch-up).
   assert.equal(resolveDueScheduledWork({ ...monday10amCairo, ...noHistory }), "rolling-sync");
   // A recent rolling run parks it until the 3h gap has passed; the boundary itself fires.
   assert.equal(
-    resolveDueScheduledWork({ ...monday10amCairo, ...noHistory, ...planJustRan, lastRollingSuccessMs: 100 * HOUR - ROLLING_SYNC_MIN_GAP_MS + 1 }),
+    resolveDueScheduledWork({ ...monday10amCairo, ...noHistory, ...planJustRan, ...parityParked, lastRollingSuccessMs: 100 * HOUR - ROLLING_SYNC_MIN_GAP_MS + 1 }),
     null,
     "inside the min gap → nothing due (a deploy restart must not immediately re-pull 10 days)",
   );
@@ -204,12 +216,12 @@ export function runCrmLivePollerTests() {
   );
   // Overnight (before 06:00 Cairo) the deep pull never runs — the 2-day probe owns the night.
   assert.equal(
-    resolveDueScheduledWork({ ...noHistory, cairoDayOfWeek: 1, minutesSinceMidnight: 5 * 60 + 59, nowMs: 100 * HOUR }),
+    resolveDueScheduledWork({ ...noHistory, ...parityParked, cairoDayOfWeek: 1, minutesSinceMidnight: 5 * 60 + 59, nowMs: 100 * HOUR }),
     null,
   );
   // A recent FAILURE backs off instead of hammering a sick vendor every 20s tick.
   assert.equal(
-    resolveDueScheduledWork({ ...monday10amCairo, ...noHistory, ...planJustRan, lastRollingFailureMs: 100 * HOUR - ROLLING_SYNC_FAILURE_RETRY_GAP_MS + 1 }),
+    resolveDueScheduledWork({ ...monday10amCairo, ...noHistory, ...planJustRan, ...parityParked, lastRollingFailureMs: 100 * HOUR - ROLLING_SYNC_FAILURE_RETRY_GAP_MS + 1 }),
     null,
   );
   assert.equal(
@@ -237,7 +249,7 @@ export function runCrmLivePollerTests() {
     "the weekly reconcile outranks the doctor lists too",
   );
   assert.equal(
-    resolveDueScheduledWork({ ...monday10amCairo, ...noHistory, ...rollingParked, lastPlanSyncSuccessMs: 100 * HOUR - PLAN_SYNC_MIN_GAP_MS + 1 }),
+    resolveDueScheduledWork({ ...monday10amCairo, ...noHistory, ...rollingParked, ...parityParked, lastPlanSyncSuccessMs: 100 * HOUR - PLAN_SYNC_MIN_GAP_MS + 1 }),
     null,
     "inside the hourly gap → nothing due, so a deploy restart cannot re-pull the whole month on boot",
   );
@@ -247,7 +259,7 @@ export function runCrmLivePollerTests() {
     "the hourly boundary itself fires",
   );
   assert.equal(
-    resolveDueScheduledWork({ ...noHistory, cairoDayOfWeek: 1, minutesSinceMidnight: 5 * 60 + 59, nowMs: 100 * HOUR, ...rollingParked }),
+    resolveDueScheduledWork({ ...noHistory, ...parityParked, cairoDayOfWeek: 1, minutesSinceMidnight: 5 * 60 + 59, nowMs: 100 * HOUR, ...rollingParked }),
     null,
     "05:59 Cairo — nobody edits a doctor list overnight, so the list sync keeps the night quiet too",
   );
@@ -257,7 +269,7 @@ export function runCrmLivePollerTests() {
     "06:00 Cairo is the first slot of the day",
   );
   assert.equal(
-    resolveDueScheduledWork({ ...monday10amCairo, ...noHistory, ...rollingParked, lastPlanSyncFailureMs: 100 * HOUR - PLAN_SYNC_FAILURE_RETRY_GAP_MS + 1 }),
+    resolveDueScheduledWork({ ...monday10amCairo, ...noHistory, ...rollingParked, ...parityParked, lastPlanSyncFailureMs: 100 * HOUR - PLAN_SYNC_FAILURE_RETRY_GAP_MS + 1 }),
     null,
     "a failed plan sync backs off half an hour rather than retrying every tick against a sick vendor",
   );
@@ -270,7 +282,7 @@ export function runCrmLivePollerTests() {
   const sunday5amCairo = { cairoDayOfWeek: 0, minutesSinceMidnight: 5 * 60, nowMs: 1000 * HOUR };
   assert.equal(resolveDueScheduledWork({ ...sunday5amCairo, ...noHistory }), "wide-reconcile");
   assert.equal(
-    resolveDueScheduledWork({ ...sunday5amCairo, ...noHistory, lastReconcileSuccessMs: 1000 * HOUR - RECONCILE_MIN_GAP_MS + 1 }),
+    resolveDueScheduledWork({ ...sunday5amCairo, ...noHistory, ...parityParkedSunday, lastReconcileSuccessMs: 1000 * HOUR - RECONCILE_MIN_GAP_MS + 1 }),
     null,
     "reconcile already ran this week and 05:00 is before the rolling window opens → nothing due",
   );
@@ -285,14 +297,88 @@ export function runCrmLivePollerTests() {
     "reconcile already ran this week → from 06:00 the slot falls back to a due rolling sync",
   );
   assert.equal(
-    resolveDueScheduledWork({ ...sunday5amCairo, cairoDayOfWeek: 0, minutesSinceMidnight: 3 * 60 + 59, ...noHistory }),
+    resolveDueScheduledWork({ ...sunday5amCairo, cairoDayOfWeek: 0, minutesSinceMidnight: 3 * 60 + 59, ...noHistory, ...parityParkedSunday }),
     null,
-    "Sunday before 04:00 Cairo is night — neither deep job runs",
+    "Sunday before 04:00 Cairo is night — neither deep VISIT job runs (the parity sweep's own 02:00 window is open by now, so it is parked here to keep this about the reconcile)",
   );
   assert.equal(
-    resolveDueScheduledWork({ ...sunday5amCairo, ...noHistory, lastReconcileFailureMs: 1000 * HOUR - RECONCILE_FAILURE_RETRY_GAP_MS + 1, lastRollingSuccessMs: 1000 * HOUR }),
+    resolveDueScheduledWork({ ...sunday5amCairo, ...noHistory, ...parityParkedSunday, lastReconcileFailureMs: 1000 * HOUR - RECONCILE_FAILURE_RETRY_GAP_MS + 1, lastRollingSuccessMs: 1000 * HOUR }),
     null,
     "a failed reconcile backs off a full hour and must not fall through to rolling within its gap",
+  );
+
+  // ── The daily full-history parity sweep ──────────────────────────────────────────────────────
+  //
+  // The fourth scheduled job, and RANKED LAST of the four deliberately. It re-proves SETTLED
+  // history, so it is the only one that loses nothing at all by waiting a tick — the other three
+  // feed today's attendance, today's doctor list, and payroll. Its cadence is the guarantee behind
+  // "the two modules never disagree": one 30-day window a day means every day of history is
+  // re-verified against the CRM roughly every 8 days, forever, instead of never past 120 days.
+  const otherJobsParked = {
+    lastPlanSyncSuccessMs: 100 * HOUR,
+    lastReconcileSuccessMs: 100 * HOUR,
+    lastRollingSuccessMs: 100 * HOUR,
+  };
+  assert.equal(
+    resolveDueScheduledWork({ ...monday10amCairo, ...noHistory, ...otherJobsParked }),
+    "parity-sweep",
+    "with the three live jobs parked, the sweep takes the slot — otherwise it would never run at all",
+  );
+  assert.equal(
+    resolveDueScheduledWork({ ...monday10amCairo, ...noHistory }),
+    "rolling-sync",
+    "all four due → the visits sync wins; re-proving old history must never displace today's data",
+  );
+  assert.equal(
+    resolveDueScheduledWork({ ...monday10amCairo, ...noHistory, ...otherJobsParked, lastPlanSyncSuccessMs: null }),
+    "plan-sync",
+    "even the doctor lists outrank it — the sweep is last of the four, not merely after the visit jobs",
+  );
+  // The CADENCE VALUES are pinned literally, exactly as the tick cadences are at the top of this
+  // file, and NOT derived from the constants below. An assertion written as
+  // `minutesSinceMidnight: PARITY_SWEEP_EARLIEST_CAIRO_MINUTES - 1` moves with the value it is
+  // supposed to be guarding: setting the constant to 0 leaves it asserting that minute -1 is too
+  // early, which is true of every possible schedule. Verified 2026-08-28 — that exact assertion
+  // passed against a deliberately broken constant, which is why these are literals.
+  assert.equal(PARITY_SWEEP_EARLIEST_CAIRO_MINUTES, 2 * 60, "02:00 Cairo — outside the working day, clear of the Sunday 04:00 reconcile");
+  assert.equal(PARITY_SWEEP_MIN_GAP_MS, 20 * HOUR, "once a DAY; 20h not 24h so the run drifts earlier rather than skipping a day on a late tick");
+  assert.equal(PARITY_SWEEP_FAILURE_RETRY_GAP_MS, 2 * HOUR, "a failing vendor gets 2h of quiet, not a retry every 20s tick");
+
+  const atMinute = (minutesSinceMidnight: number) => ({
+    ...noHistory,
+    ...otherJobsParked,
+    cairoDayOfWeek: 1,
+    minutesSinceMidnight,
+    nowMs: 100 * HOUR,
+  });
+  assert.equal(resolveDueScheduledWork(atMinute(119)), null, "01:59 Cairo is too early — nothing at all runs in that hour");
+  assert.equal(
+    resolveDueScheduledWork(atMinute(120)),
+    "parity-sweep",
+    "02:00 Cairo is the first slot, and the sweep owns the quiet hours the other three refuse",
+  );
+  // Once a day, not once a tick.
+  assert.equal(
+    resolveDueScheduledWork({ ...monday10amCairo, ...noHistory, ...otherJobsParked, lastParitySweepSuccessMs: 100 * HOUR - 20 * HOUR + 1 }),
+    null,
+    "inside the daily gap → nothing due, so a deploy restart cannot re-fetch a 30-day window on boot",
+  );
+  assert.equal(
+    resolveDueScheduledWork({ ...monday10amCairo, ...noHistory, ...otherJobsParked, lastParitySweepSuccessMs: 100 * HOUR - 20 * HOUR }),
+    "parity-sweep",
+    "the daily boundary itself fires",
+  );
+  // A failure backs off rather than retrying every tick. The sweep's failure mode is a vendor that
+  // cannot answer, and hammering it is what turns a slow morning into an outage.
+  assert.equal(
+    resolveDueScheduledWork({ ...monday10amCairo, ...noHistory, ...otherJobsParked, lastParitySweepFailureMs: 100 * HOUR - 2 * HOUR + 1 }),
+    null,
+    "a failed sweep waits out its back-off",
+  );
+  assert.equal(
+    resolveDueScheduledWork({ ...monday10amCairo, ...noHistory, ...otherJobsParked, lastParitySweepFailureMs: 100 * HOUR - 2 * HOUR }),
+    "parity-sweep",
+    "and recovers unattended once the back-off has passed",
   );
 
   // ── filterRowsToUpsert (the engine seam's safety helper) ─────────────────────────────────────

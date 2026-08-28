@@ -414,6 +414,26 @@ const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // condition — the condition that stops the sync deleting the 2,671 codes the owner's EPDA and
   // Ibn Sina vendor merges produced.
   "20260819220000_sync_retirement_must_not_undo_a_vendor_merge.sql",
+  // ── Applied to PRODUCTION and STAGING 2026-08-28 via MCP apply_migration, which stamps its own
+  // UTC clock rather than the filename — production recorded them as versions 20260828040959 and
+  // 20260828041322, so neither filename below will ever match either ledger.
+  //
+  // Applied BEFORE the code that writes them, deliberately and in this order: the sync-run
+  // `.update()` is what marks a run "success", so shipping code that writes
+  // blocked_pre_hire_attributions to a database without the column would make every sync report
+  // FAILED while having written its rows perfectly correctly.
+  //
+  // Verified live on production by direct catalog inspection, never from schema_migrations.
+  // The column: pg_attribute shows blocked_pre_hire_attributions as integer, attnotnull true,
+  // default 0, comment attached, sitting beside its blocked_post_exit_attributions counterpart —
+  // and 3 sync runs in the following 15 minutes all succeeded with it defaulting cleanly, proving
+  // the then-deployed code (which does not know the column exists) was unaffected.
+  // The table: pg_class shows ireports360_parity_windows with relrowsecurity true, 9 columns,
+  // primary key window_from, 1 policy, 2 indexes, service_role INSERT true, and both anon and
+  // authenticated SELECT false. PostgREST's schema cache was then confirmed to have picked it up,
+  // because a table the app still cannot see would leave the nightly sweep silently inert.
+  "20260828100000_crm_pre_hire_attribution_counter.sql",
+  "20260828101000_crm_parity_windows.sql",
 ]);
 
 type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };

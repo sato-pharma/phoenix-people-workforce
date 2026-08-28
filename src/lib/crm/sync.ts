@@ -17,6 +17,7 @@ import { getIReports360Config, isIReports360Configured } from "@/lib/crm/config"
 import { isPlausibleCheckinCoordinate, sanitizeCheckinCoordinates } from "@/lib/crm/checkin-coords";
 import { hasLocationIqKey, resolveCheckinAddress } from "@/lib/crm/checkin-geocode";
 import {
+  blockReasonFor,
   buildCrmIdentityMaps,
   getCrmIdentityResolutions,
   resolveEmployeeAttribution,
@@ -503,6 +504,12 @@ export async function syncIReports360Visits(input: {
    * full fetch still drives reconciliation, invalid-date counting, and post-exit detection. */
   onlyUpsertIds?: { checkinIds: ReadonlySet<number>; visitIds: ReadonlySet<number> };
 }): Promise<{
+  /** Visits whose CRM slot resolved to someone who had not yet joined on the visit date, so the
+   * pre-hire guard refused the attribution. This is the SAME account-handover as the post-exit
+   * counter below, seen from the other side: the PREVIOUS occupant's history trying to attach to
+   * the new joiner. >0 means those rows need an identity override pointing at whoever really did
+   * the work — until then they are honestly unattributed rather than silently miscredited. */
+  blockedPreHireAttributions: number;
   /** Visits whose CRM slot resolved to someone who had already left on the visit date, so the
    * post-exit guard refused the attribution. >0 means a slot was probably handed to a replacement
    * and needs an identity override — the recurrence signal for the invisible-work bug class. */
@@ -598,11 +605,19 @@ export async function syncIReports360Visits(input: {
     // shape and would try to write a non-existent column. A steady non-zero count here is the signal
     // that used to be missing entirely — the previous behaviour silently filed the new rep's work
     // under the leaver, where the departed-agent exclusion then hid it from every surface.
-    const blockedPostExitAttributions = visits.reduce((count, visit) => {
+    // Counted apart by REASON (see blockReasonFor): a post-exit block is somebody's current work
+    // going unattributed today and wants acting on now, while a pre-hire block is the previous
+    // occupant's history detaching from a new joiner — a backfill to reconcile. One shared counter
+    // would let a burst of old rows drown out a live problem.
+    let blockedPreHireAttributions = 0;
+    let blockedPostExitAttributions = 0;
+    for (const visit of visits) {
       const visitDay = (visit.visitDate ?? "").slice(0, 10) || null;
       const agent = resolveEmployeeAttribution(visit.agentID, visit.agentName, maps, visitDay);
-      return count + (agent.blockedHrId ? 1 : 0);
-    }, 0);
+      if (!agent.blockedHrId) continue;
+      if (blockReasonFor(agent.blockedHrId, visitDay, maps) === "pre_hire") blockedPreHireAttributions += 1;
+      else blockedPostExitAttributions += 1;
+    }
 
     // The upsert set may be narrowed to the live poller's changed-row delta; the deduped
     // full-fetch arrays above stay untouched because reconciliation below MUST see the whole
@@ -834,7 +849,9 @@ export async function syncIReports360Visits(input: {
         //
         // Requires migration 20260801130000, which MUST be applied first: this update is what marks
         // a run "success", so writing an absent column would make every sync look failed while
-        // having written its rows perfectly well.
+        // having written its rows perfectly well. The same ordering applies to the pre-hire counter
+        // below (migration 20260828100000) for exactly the same reason.
+        blocked_pre_hire_attributions: blockedPreHireAttributions,
         blocked_post_exit_attributions: blockedPostExitAttributions,
         completed_at: new Date().toISOString(),
         rows_deleted: rowsDeleted,
@@ -938,6 +955,7 @@ export async function syncIReports360Visits(input: {
       // the "we refused to delete >50% of the window, so the fetch was probably truncated"
       // tripwire, and checkinsFailed distinguishes "no check-ins today" from "check-ins broke".
       // Both were only visible to someone who happened to open /admin/crm.
+      blockedPreHireAttributions,
       blockedPostExitAttributions,
       checkinsFailed,
       checkinsFetched: checkins.length,

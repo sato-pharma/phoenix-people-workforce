@@ -23,6 +23,9 @@ function emptyMaps(): CrmIdentityMaps {
     hrIdByCrmId: new Map(),
     hrIdByCrmUsername: new Map(),
     hrIdByManualOverride: new Map(),
+    // Empty = nobody has a hire date, so the pre-hire half of the attribution guard never fires
+    // and these fixtures keep testing the row shape rather than the guard (own suite).
+    hireDateByHrId: new Map(),
     // Empty = nobody has a last working date, so the post-exit attribution guard never fires and
     // these fixtures keep testing the row shape rather than the guard (which has its own suite).
     lastWorkingDateByHrId: new Map(),

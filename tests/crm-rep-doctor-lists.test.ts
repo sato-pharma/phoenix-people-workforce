@@ -658,6 +658,9 @@ function identityMaps(): CrmIdentityMaps {
     hrIdByCrmId: new Map([["101", "PHX-101"]]),
     hrIdByCrmUsername: new Map(),
     hrIdByManualOverride: new Map(),
+    // Empty = nobody has a hire date either, so the pre-hire half of the guard cannot fire and
+    // these fixtures keep testing the plan-sync row shape rather than the guard.
+    hireDateByHrId: new Map(),
     lastWorkingDateByHrId: new Map(),
   };
 }

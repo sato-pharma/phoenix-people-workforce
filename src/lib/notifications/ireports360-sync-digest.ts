@@ -37,6 +37,10 @@ export type IReports360SyncNotifyInput =
         /** Visits the post-exit attribution guard refused: the CRM slot resolves to someone who had
          * already left on the visit date. Optional so an older caller still type-checks. */
         blockedPostExitAttributions?: number;
+        /** Visits the PRE-HIRE guard refused: the CRM slot resolves to someone who had not yet
+         * joined on the visit date — the other side of the same account handover. Optional so an
+         * older caller still type-checks. */
+        blockedPreHireAttributions?: number;
         /** Optional so an older caller still type-checks; see buildIReports360SyncMessage. */
         checkinsFailed?: boolean;
         checkinsFetched: number;
@@ -76,7 +80,8 @@ export function buildIReports360SyncMessage(input: IReports360SyncNotifyInput): 
     const checkinsBroken = input.result.checkinsFailed === true;
     const quietFetch = input.result.rowsFetched === 0;
     const postExitBlocked = input.result.blockedPostExitAttributions ?? 0;
-    const degraded = truncatedFetch || checkinsBroken || quietFetch || postExitBlocked > 0;
+    const preHireBlocked = input.result.blockedPreHireAttributions ?? 0;
+    const degraded = truncatedFetch || checkinsBroken || quietFetch || postExitBlocked > 0 || preHireBlocked > 0;
     lines.push(`${degraded ? "⚠️" : "✅"} iReports360 CRM Sync — ${label}${degraded ? " (with warnings)" : ""}`);
     lines.push(`Window: ${input.dateFrom} → ${input.dateTo}`);
     lines.push("");
@@ -100,6 +105,18 @@ export function buildIReports360SyncMessage(input: IReports360SyncNotifyInput): 
         "   That usually means the account was handed to a replacement. Map it on /admin/crm → Unmapped Agents,",
       );
       lines.push("   or the new rep's work stays invisible and can trigger a wrongful absence deduction.");
+    }
+    if (preHireBlocked > 0) {
+      lines.push(
+        `⚠️ ${preHireBlocked} visit(s) NOT attributed — dated BEFORE the resolved employee had joined.`,
+      );
+      lines.push(
+        "   The other side of the same account handover: this is the previous holder's history, which the",
+      );
+      lines.push(
+        "   CRM has relabelled with the new joiner's name. Map it on /admin/crm → Unmapped Agents so the work",
+      );
+      lines.push("   reaches whoever actually did it. Nobody is credited for days before they started.");
     }
     if (degraded) lines.push("");
     lines.push(`Visits fetched: ${input.result.rowsFetched}`);
