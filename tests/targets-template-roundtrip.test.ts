@@ -20,6 +20,7 @@ export async function runTargetsTemplateRoundtripTests(): Promise<void> {
   const areas = [
     { areaCode: "AB1", areaName: "Alex East", regionCode: "AB" },
     { areaCode: "D14", areaName: "Gharbia 1 (Tanta)", regionCode: "D1" },
+    { areaCode: "UE11", areaName: "Minia 1", regionCode: "UE-1" },
   ];
   const buffer = await generateTargetsTemplate({ lineLabel: "Pedia", products, areas, now: new Date(2026, 6, 1) });
 
@@ -37,6 +38,17 @@ export async function runTargetsTemplateRoundtripTests(): Promise<void> {
     [1, 2, 3, 4, 5, 6, 7, 8, 9].map((c) => ws!.getCell(3, c).value),
     ["Period", "Product Name", "Product Code", "Line", "Area Name", "Area Code", "Target Units", "Unit Price", "Target Value"],
     "column header must sit on row 3 (under the brand banner)",
+  );
+
+  // Areas reference sheet: the Region column must resolve a line-specific district split (Anti
+  // Infective's "UE-1") to its full name, not the raw code — REGION_LABELS has no "UE-1" entry,
+  // so this proves regionLabelFor reconstructs it from the "UE" family instead of falling through.
+  const areasWs = wb.getWorksheet("Areas (Pedia)");
+  assert.ok(areasWs, "Areas (Pedia) sheet present");
+  assert.deepEqual(
+    [2, 3, 4].map((r) => areasWs!.getCell(r, 3).value),
+    ["Alex-BHR", "Delta 1", "Upper Egypt 1"],
+    "UE-1 must resolve to 'Upper Egypt 1', not the raw code or a blank",
   );
 
   // Only the two example rows parse — the ~198 empty pre-wired formula rows are blank, not junk.
