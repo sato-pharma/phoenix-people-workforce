@@ -59,18 +59,33 @@ export async function runCandidatePositionSuggestionTests(): Promise<void> {
   // won on precision over eleven genuine Cairo seats and took 48 of the 81 pre-fills — a general
   // accountant in Shubra and a director of legal affairs among them.
   {
+    // NO TITLE is the case that exercises this. With a title the family filter removes the Cairo
+    // seat by another route entirely, so a rep CV here would pass whether the rule existed or not.
+    const untitled = suggestPositions({ address: "Shubra Misr, Cairo, Egypt" }, SEATS);
+    assert.equal(
+      untitled.confident,
+      null,
+      "a plain Cairo address must not pre-fill anything — writing Cairo says which governorate, not which seat",
+    );
+    // The Cairo seat may still appear among several — with no title at all, nothing rules it out —
+    // but it must never WIN, which is what naming an area does and naming a governorate must not.
+    assert.ok(
+      untitled.shortlist.length > 1,
+      "living in Cairo names a governorate, so every seat in it stays level — none is singled out",
+    );
+    assert.ok(
+      untitled.shortlist.every((entry) => entry.placeTier === "governorate"),
+      "and every one of them is reached as a governorate match, never as an area match",
+    );
+
     const rep = suggestPositions(
       { address: "Shubra Misr, Cairo, Egypt", currentJobTitle: "Senior Medical Representative" },
       SEATS,
     );
-    assert.equal(
-      rep.confident,
-      null,
-      "a plain Cairo address must not pre-fill anything — writing Cairo says which governorate, not which seat",
-    );
+    assert.equal(rep.confident, null, "and a Cairo medical rep is a shortlist at best — twelve seats share that governorate");
     assert.ok(
       !areasOf(rep.shortlist).some((label) => label.startsWith("Cairo ·")),
-      "and the district manager's Cairo seat must not appear for a medical representative at all",
+      "the district manager's Cairo seat must not appear for a medical representative at all",
     );
   }
 
@@ -92,8 +107,10 @@ export async function runCandidatePositionSuggestionTests(): Promise<void> {
   {
     const abroad = suggestPositions(
       {
+        // A title that DOES match a family, deliberately: an unrecognised one is silenced before
+        // the address is ever examined, and the case would then pass with the boundary rule gone.
         address: "C-183, New Bapunagar, Bhilwara, Rajasthan -311001",
-        currentJobTitle: "General Manager Sales",
+        currentJobTitle: "Senior Medical Representative",
       },
       SEATS,
     );
