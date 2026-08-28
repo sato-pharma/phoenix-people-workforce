@@ -28,7 +28,7 @@ function Shell({ title, icon: Icon, children }: { title: string; icon: typeof Ac
   return (
     <div className="overflow-hidden border border-slate-200">
       <div className="flex items-center justify-between bg-slate-900 px-5 py-3">
-        <h2 className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest text-slate-300">
+        <h2 className="flex items-center gap-2 text-phx-2xs font-bold uppercase tracking-widest text-slate-300">
           <Icon className="h-3.5 w-3.5 text-orange-400" />
           {title}
         </h2>
@@ -56,7 +56,7 @@ function Stat({
 }) {
   return (
     <div className="bg-white px-4 py-3">
-      <p className="text-[11px] font-medium uppercase tracking-wider text-slate-500 whitespace-nowrap">{label}</p>
+      <p className="text-phx-xs font-medium uppercase tracking-wider text-slate-500 whitespace-nowrap">{label}</p>
       <p className={`mt-1 text-xl font-bold whitespace-nowrap ${tone === "danger" ? "text-rose-600" : "text-slate-900"}`}>{value}</p>
       {sub ? <div className="mt-0.5">{sub}</div> : null}
     </div>
@@ -78,7 +78,7 @@ function Note({ children, tone = "info" }: { children: React.ReactNode; tone?: "
 function DeltaPts({ value, goodWhenUp = true }: { value: number | null; goodWhenUp?: boolean }) {
   if (value == null || value === 0) {
     return (
-      <span className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-400 whitespace-nowrap">
+      <span className="inline-flex items-center gap-1 text-phx-xs font-medium text-slate-400 whitespace-nowrap">
         <Minus className="h-3 w-3" /> vs last period
       </span>
     );
@@ -88,7 +88,7 @@ function DeltaPts({ value, goodWhenUp = true }: { value: number | null; goodWhen
   const tone = good ? "text-emerald-600" : "text-rose-600";
   const Icon = up ? ArrowUpRight : ArrowDownRight;
   return (
-    <span className={`inline-flex items-center gap-1 text-[11px] font-semibold whitespace-nowrap ${tone}`}>
+    <span className={`inline-flex items-center gap-1 text-phx-xs font-semibold whitespace-nowrap ${tone}`}>
       <Icon className="h-3 w-3" />
       {Math.abs(value)} pts vs last period
     </span>
@@ -99,7 +99,7 @@ export function MmSectionSkeleton({ title }: { title: string }) {
   return (
     <div className="overflow-hidden border border-slate-200">
       <div className="flex items-center justify-between bg-slate-900 px-5 py-3">
-        <h2 className="text-[10px] font-bold uppercase tracking-widest text-slate-300">{title}</h2>
+        <h2 className="text-phx-2xs font-bold uppercase tracking-widest text-slate-300">{title}</h2>
         <div className="h-1.5 w-12 bg-slate-700" />
       </div>
       <div className="grid grid-cols-1 gap-px bg-slate-200 sm:grid-cols-3">
@@ -152,7 +152,7 @@ export async function MmRoiSection({ access }: { access: AccessContext }) {
         <Stat
           label="ROI coverage"
           value={`${coveragePct}%`}
-          sub={trend.length >= 2 ? <DeltaPts value={deltaPts} goodWhenUp /> : <span className="text-[11px] text-slate-400 whitespace-nowrap">no prior period</span>}
+          sub={trend.length >= 2 ? <DeltaPts value={deltaPts} goodWhenUp /> : <span className="text-phx-xs text-slate-400 whitespace-nowrap">no prior period</span>}
         />
         <Stat label="Spend at risk" value={egp(s.spendAtRisk)} tone="danger" />
         <Stat label="Coverage gap" value={egp(s.coverageGap)} />
@@ -184,17 +184,17 @@ export async function MmFieldHealthSection({ access }: { access: AccessContext }
           label="Neglected reps"
           value={neglected == null ? "—" : String(neglected)}
           tone={neglected && neglected > 0 ? "danger" : "default"}
-          sub={<span className="inline-flex items-center gap-1 text-[11px] text-slate-400 whitespace-nowrap"><ShieldAlert className="h-3 w-3" /> no double-visit cover</span>}
+          sub={<span className="inline-flex items-center gap-1 text-phx-xs text-slate-400 whitespace-nowrap"><ShieldAlert className="h-3 w-3" /> no double-visit cover</span>}
         />
         <Stat
           label="Avg coaching score"
           value={avgCoaching}
-          sub={coaching ? <span className="inline-flex items-center gap-1 text-[11px] text-slate-400 whitespace-nowrap"><Stethoscope className="h-3 w-3" /> {coaching.coachingCount} reports</span> : undefined}
+          sub={coaching ? <span className="inline-flex items-center gap-1 text-phx-xs text-slate-400 whitespace-nowrap"><Stethoscope className="h-3 w-3" /> {coaching.coachingCount} reports</span> : undefined}
         />
         <Stat
           label="Mapped visits (mo)"
           value={mappedVisits == null ? "—" : String(mappedVisits)}
-          sub={<span className="inline-flex items-center gap-1 text-[11px] text-slate-400 whitespace-nowrap"><Target className="h-3 w-3" /> this month</span>}
+          sub={<span className="inline-flex items-center gap-1 text-phx-xs text-slate-400 whitespace-nowrap"><Target className="h-3 w-3" /> this month</span>}
         />
       </StatGrid>
     </Shell>
@@ -245,11 +245,11 @@ export async function LineSalesPacingSection({ access }: { access: AccessContext
         <Stat
           label="Latest month sales"
           value={egp(latest.salesValue)}
-          sub={momPct == null ? <span className="text-[11px] text-slate-400 whitespace-nowrap">no prior month</span> : <DeltaPts value={momPct} goodWhenUp />}
+          sub={momPct == null ? <span className="text-phx-xs text-slate-400 whitespace-nowrap">no prior month</span> : <DeltaPts value={momPct} goodWhenUp />}
         />
-        <Stat label="Published months" value={String(trend.length)} sub={<span className="text-[11px] text-slate-400 whitespace-nowrap">{monthly.line}</span>} />
+        <Stat label="Published months" value={String(trend.length)} sub={<span className="text-phx-xs text-slate-400 whitespace-nowrap">{monthly.line}</span>} />
         <div className="bg-white px-4 py-3">
-          <p className="text-[11px] font-medium uppercase tracking-wider text-slate-500 whitespace-nowrap">Trend</p>
+          <p className="text-phx-xs font-medium uppercase tracking-wider text-slate-500 whitespace-nowrap">Trend</p>
           <div className="mt-2 flex items-end gap-1.5" style={{ height: 40 }}>
             {trend.map((t, i) => (
               <div
@@ -287,7 +287,7 @@ export async function MmPeopleSection({ access }: { access: AccessContext }) {
           label="Open vacancies"
           value={String(summary.openVacancies)}
           tone={summary.openVacancies > 0 ? "danger" : "default"}
-          sub={<span className="inline-flex items-center gap-1 text-[11px] text-slate-400 whitespace-nowrap"><Building2 className="h-3 w-3" /> {summary.totalAreas} areas</span>}
+          sub={<span className="inline-flex items-center gap-1 text-phx-xs text-slate-400 whitespace-nowrap"><Building2 className="h-3 w-3" /> {summary.totalAreas} areas</span>}
         />
         <Stat
           label="DSM seats vacant"

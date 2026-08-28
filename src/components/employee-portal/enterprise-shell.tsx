@@ -115,7 +115,7 @@ export function EmployeePortalPageShell({
           <div className="relative flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
-                <span className="inline-flex items-center rounded-sm border border-orange-400/35 bg-orange-500/12 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.18em] text-orange-200">
+                <span className="inline-flex items-center rounded-sm border border-orange-400/35 bg-orange-500/12 px-2.5 py-1 text-phx-2xs font-black uppercase tracking-[0.18em] text-orange-200">
                   {badge ?? "Employee Portal"}
                 </span>
               </div>
@@ -128,15 +128,15 @@ export function EmployeePortalPageShell({
             </div>
             <div className="grid grid-cols-3 overflow-hidden rounded-sm border border-white/10 bg-white/[0.04] text-center lg:min-w-[300px]">
               <div className="border-r border-white/10 px-3 py-2.5">
-                <p className="text-[9px] font-black uppercase tracking-[0.16em] text-slate-400">Surface</p>
+                <p className="text-phx-3xs font-black uppercase tracking-[0.16em] text-slate-400">Surface</p>
                 <p className="mt-1 text-xs font-black text-slate-100">Portal</p>
               </div>
               <div className="border-r border-white/10 px-3 py-2.5">
-                <p className="text-[9px] font-black uppercase tracking-[0.16em] text-slate-400">Mode</p>
+                <p className="text-phx-3xs font-black uppercase tracking-[0.16em] text-slate-400">Mode</p>
                 <p className="mt-1 text-xs font-black text-orange-200">Employee</p>
               </div>
               <div className="px-3 py-2.5">
-                <p className="text-[9px] font-black uppercase tracking-[0.16em] text-slate-400">Status</p>
+                <p className="text-phx-3xs font-black uppercase tracking-[0.16em] text-slate-400">Status</p>
                 <p className="mt-1 text-xs font-black text-emerald-200">Ready</p>
               </div>
             </div>
@@ -169,7 +169,7 @@ export function EmployeePortalActionLink({
 }) {
   return (
     <Link
-      className="inline-flex min-w-0 items-center justify-center gap-1.5 rounded border border-slate-200/80 bg-white px-4 py-1.5 text-[11px] font-bold tracking-wide text-slate-600 shadow-[0_4px_12px_rgba(15,23,42,0.06)] transition duration-200 hover:-translate-y-px hover:border-orange-300/80 hover:bg-gradient-to-r hover:from-orange-50 hover:to-amber-50/60 hover:text-orange-700 hover:shadow-[0_8px_20px_rgba(249,115,22,0.12)]"
+      className="inline-flex min-w-0 items-center justify-center gap-1.5 rounded border border-slate-200/80 bg-white px-4 py-1.5 text-phx-xs font-bold tracking-wide text-slate-600 shadow-[0_4px_12px_rgba(15,23,42,0.06)] transition duration-200 hover:-translate-y-px hover:border-orange-300/80 hover:bg-gradient-to-r hover:from-orange-50 hover:to-amber-50/60 hover:text-orange-700 hover:shadow-[0_8px_20px_rgba(249,115,22,0.12)]"
       href={href}
     >
       <span className="min-w-0 whitespace-nowrap">{label}</span>

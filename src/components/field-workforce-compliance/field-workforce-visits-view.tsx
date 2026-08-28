@@ -189,7 +189,7 @@ export function FieldWorkforceVisitsView({
                       <td className="px-4 py-3 font-semibold text-slate-900">{visit.contactName || "—"}</td>
                       <td className="px-4 py-3">
                         <VisitKindBadge kind={visit.kind} />
-                        <div className="mt-0.5 text-[10px] text-slate-400">
+                        <div className="mt-0.5 text-phx-2xs text-slate-400">
                           {visit.visitTypeDescription ?? `type:${visit.visitType}`}
                           {visit.callType != null ? ` · ct:${visit.callType}` : ""}
                         </div>

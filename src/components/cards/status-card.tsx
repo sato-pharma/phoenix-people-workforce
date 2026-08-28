@@ -23,7 +23,7 @@ export function StatusCard({
       <div className="space-y-1">
         <p className="text-xs font-bold text-slate-500">{title}</p>
         <h3 className="text-2xl font-black text-slate-900">{value}</h3>
-        <p className="text-[11px] font-bold text-slate-400">{subtitle}</p>
+        <p className="text-phx-xs font-bold text-slate-400">{subtitle}</p>
       </div>
       <div className="relative h-16 w-16">
         <svg className="h-full w-full" viewBox="0 0 36 36">

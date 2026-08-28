@@ -22,12 +22,12 @@ function formatTime(value: string | null) {
 
 function ContactMatchBadge({ row }: { row: CrmIntegrityRow }) {
   if (row.contactMatchState === "exact_contact_match") {
-    return <span className="inline-flex w-fit items-center border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-700">Exact contact match</span>;
+    return <span className="inline-flex w-fit items-center border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-phx-2xs font-bold uppercase tracking-wide text-emerald-700">Exact contact match</span>;
   }
   if (row.contactMatchState === "nearest_different_contact") {
-    return <span className="inline-flex w-fit items-center border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-700">Different contact</span>;
+    return <span className="inline-flex w-fit items-center border border-amber-200 bg-amber-50 px-2 py-0.5 text-phx-2xs font-bold uppercase tracking-wide text-amber-700">Different contact</span>;
   }
-  return <span className="inline-flex w-fit items-center border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-500">No check-in</span>;
+  return <span className="inline-flex w-fit items-center border border-slate-200 bg-slate-50 px-2 py-0.5 text-phx-2xs font-bold uppercase tracking-wide text-slate-500">No check-in</span>;
 }
 
 function SaveLagBadge({ row }: { row: CrmIntegrityRow }) {
@@ -36,15 +36,15 @@ function SaveLagBadge({ row }: { row: CrmIntegrityRow }) {
   if (row.saveLagFlag === "next_day_or_later") {
     return (
       <span className="inline-flex w-fit flex-col gap-0.5">
-        <span className="inline-flex w-fit items-center border border-rose-200 bg-rose-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-rose-700">Saved later</span>
-        <span className="text-[11px] text-slate-500">{hours}</span>
+        <span className="inline-flex w-fit items-center border border-rose-200 bg-rose-50 px-2 py-0.5 text-phx-2xs font-bold uppercase tracking-wide text-rose-700">Saved later</span>
+        <span className="text-phx-xs text-slate-500">{hours}</span>
       </span>
     );
   }
   return (
     <span className="inline-flex w-fit flex-col gap-0.5">
-      <span className="inline-flex w-fit items-center border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-700">Same day</span>
-      <span className="text-[11px] text-slate-500">{hours}</span>
+      <span className="inline-flex w-fit items-center border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-phx-2xs font-bold uppercase tracking-wide text-emerald-700">Same day</span>
+      <span className="text-phx-xs text-slate-500">{hours}</span>
     </span>
   );
 }
@@ -58,18 +58,18 @@ function SpeedFeasibilityBadge({ row }: { row: CrmIntegrityRow }) {
   if (row.speedFeasibilityFlag === "impossible_speed") {
     return (
       <span className="inline-flex w-fit flex-col gap-0.5">
-        <span className="inline-flex w-fit items-center border border-rose-200 bg-rose-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-rose-700">Impossible speed</span>
-        <span className="text-[11px] text-slate-500">{detail}</span>
+        <span className="inline-flex w-fit items-center border border-rose-200 bg-rose-50 px-2 py-0.5 text-phx-2xs font-bold uppercase tracking-wide text-rose-700">Impossible speed</span>
+        <span className="text-phx-xs text-slate-500">{detail}</span>
       </span>
     );
   }
   if (row.speedFeasibilityFlag === "unknown") {
-    return <span className="inline-flex w-fit items-center border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-500">No prior check-in</span>;
+    return <span className="inline-flex w-fit items-center border border-slate-200 bg-slate-50 px-2 py-0.5 text-phx-2xs font-bold uppercase tracking-wide text-slate-500">No prior check-in</span>;
   }
   return (
     <span className="inline-flex w-fit flex-col gap-0.5">
-      <span className="inline-flex w-fit items-center border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-700">OK</span>
-      <span className="text-[11px] text-slate-500">{detail}</span>
+      <span className="inline-flex w-fit items-center border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-phx-2xs font-bold uppercase tracking-wide text-emerald-700">OK</span>
+      <span className="text-phx-xs text-slate-500">{detail}</span>
     </span>
   );
 }
@@ -119,15 +119,15 @@ export function CrmIntegrityWorkspace({
       ) : (
         <>
           <div className="flex flex-wrap items-end gap-3 border border-slate-200 bg-white px-4 py-3">
-            <label className="flex flex-col gap-1 text-[10px] font-bold uppercase tracking-wider text-slate-500">
+            <label className="flex flex-col gap-1 text-phx-2xs font-bold uppercase tracking-wider text-slate-500">
               From
               <input type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} className="h-9 border border-phx-line bg-white px-2 text-sm" />
             </label>
-            <label className="flex flex-col gap-1 text-[10px] font-bold uppercase tracking-wider text-slate-500">
+            <label className="flex flex-col gap-1 text-phx-2xs font-bold uppercase tracking-wider text-slate-500">
               To
               <input type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} className="h-9 border border-phx-line bg-white px-2 text-sm" />
             </label>
-            <label className="flex w-56 flex-col gap-1 text-[10px] font-bold uppercase tracking-wider text-slate-500">
+            <label className="flex w-56 flex-col gap-1 text-phx-2xs font-bold uppercase tracking-wider text-slate-500">
               Agent
               <SearchableSelect value={agent} onValueChange={setAgent} placeholder="All agents">
                 <option value="">All agents</option>
@@ -145,14 +145,14 @@ export function CrmIntegrityWorkspace({
             <table className="w-full min-w-[1600px] text-left text-sm">
               <thead className="bg-slate-900">
                 <tr>
-                  <th className="px-3 py-3 text-[10px] font-black uppercase tracking-wider text-slate-300">Date</th>
-                  <th className="px-3 py-3 text-[10px] font-black uppercase tracking-wider text-slate-300">Agent</th>
-                  <th className="px-3 py-3 text-[10px] font-black uppercase tracking-wider text-slate-300">Visit Contact</th>
-                  <th className="px-3 py-3 text-[10px] font-black uppercase tracking-wider text-slate-300">Contact Match</th>
-                  <th className="px-3 py-3 text-[10px] font-black uppercase tracking-wider text-slate-300">Check-in Contact</th>
-                  <th className="px-3 py-3 text-[10px] font-black uppercase tracking-wider text-slate-300">Check-in Time / GPS</th>
-                  <th className="px-3 py-3 text-[10px] font-black uppercase tracking-wider text-slate-300">Save Lag</th>
-                  <th className="px-3 py-3 text-[10px] font-black uppercase tracking-wider text-slate-300">Speed Feasibility</th>
+                  <th className="px-3 py-3 text-phx-2xs font-black uppercase tracking-wider text-slate-300">Date</th>
+                  <th className="px-3 py-3 text-phx-2xs font-black uppercase tracking-wider text-slate-300">Agent</th>
+                  <th className="px-3 py-3 text-phx-2xs font-black uppercase tracking-wider text-slate-300">Visit Contact</th>
+                  <th className="px-3 py-3 text-phx-2xs font-black uppercase tracking-wider text-slate-300">Contact Match</th>
+                  <th className="px-3 py-3 text-phx-2xs font-black uppercase tracking-wider text-slate-300">Check-in Contact</th>
+                  <th className="px-3 py-3 text-phx-2xs font-black uppercase tracking-wider text-slate-300">Check-in Time / GPS</th>
+                  <th className="px-3 py-3 text-phx-2xs font-black uppercase tracking-wider text-slate-300">Save Lag</th>
+                  <th className="px-3 py-3 text-phx-2xs font-black uppercase tracking-wider text-slate-300">Speed Feasibility</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-orange-100">
@@ -164,7 +164,7 @@ export function CrmIntegrityWorkspace({
                       <td className="whitespace-nowrap px-3 py-2.5">{formatDate(row.visitDate)}</td>
                       <td className="px-3 py-2.5">
                         <p className="font-medium text-slate-900">{row.agentName ?? "—"}</p>
-                        <p className={cn("text-[11px]", row.agentHrId ? "text-slate-400" : "text-rose-500")}>{row.agentHrId ?? "unmapped"}</p>
+                        <p className={cn("text-phx-xs", row.agentHrId ? "text-slate-400" : "text-rose-500")}>{row.agentHrId ?? "unmapped"}</p>
                       </td>
                       <td className="px-3 py-2.5">{row.contactName ?? row.customerName ?? "—"}</td>
                       <td className="px-3 py-2.5"><ContactMatchBadge row={row} /></td>
@@ -182,7 +182,7 @@ export function CrmIntegrityWorkspace({
                           <>
                             <p className="font-medium text-slate-900">{formatTime(row.checkinDate)}</p>
                             <p
-                              className="max-w-[220px] truncate text-[11px] text-slate-500"
+                              className="max-w-[220px] truncate text-phx-xs text-slate-500"
                               title={row.checkinLat != null && row.checkinLon != null ? `${row.checkinLat}, ${row.checkinLon}` : undefined}
                             >
                               {row.checkinAddress || (row.checkinLat != null && row.checkinLon != null ? `${row.checkinLat.toFixed(5)}, ${row.checkinLon.toFixed(5)}` : "—")}

@@ -70,9 +70,9 @@ function ActionRow({ action }: { action: DevAction }) {
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             <span className="font-medium text-slate-800">{action.title}</span>
-            <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${STATUS_STYLE[action.status]}`}>{action.status.replace("_", " ")}</span>
+            <span className={`rounded px-1.5 py-0.5 text-phx-2xs font-medium ${STATUS_STYLE[action.status]}`}>{action.status.replace("_", " ")}</span>
           </div>
-          <div className="text-[11px] text-slate-400">
+          <div className="text-phx-xs text-slate-400">
             {action.ownerHrId ? `Owner ${action.ownerName ?? action.ownerHrId}` : "No owner"}{action.dueDate ? ` · due ${action.dueDate}` : ""}
           </div>
         </div>
@@ -91,8 +91,8 @@ function ActionRow({ action }: { action: DevAction }) {
         placeholder="Follow-up outcome (e.g. 'objection handling improved on next DV')…"
         className="mt-2 w-full rounded border border-slate-200 px-3 py-1.5 text-sm"
       />
-      {saved && <p className="mt-1 text-[11px] text-emerald-600">Saved.</p>}
-      {error && <p className="mt-1 text-[11px] text-rose-600">{error}</p>}
+      {saved && <p className="mt-1 text-phx-xs text-emerald-600">Saved.</p>}
+      {error && <p className="mt-1 text-phx-xs text-rose-600">{error}</p>}
     </div>
   );
 }

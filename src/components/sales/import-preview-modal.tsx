@@ -43,7 +43,7 @@ function StatCard({ label, tone = "neutral", value }: { label: string; tone?: "g
           : "text-slate-900";
   return (
     <div className="rounded-xl border border-phx-line bg-phx-paper px-4 py-3">
-      <p className="text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-soft">{label}</p>
+      <p className="text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">{label}</p>
       <p className={`mt-1 text-xl font-black tabular-nums ${toneClass}`}>{value}</p>
     </div>
   );
@@ -135,7 +135,7 @@ function SuggestionsSection({ suggestions }: { suggestions: BrickSuggestionView[
       <div className="overflow-hidden rounded-lg border border-phx-line">
         <table className="w-full text-sm">
           <thead>
-            <tr className="bg-phx-paper text-left text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-soft">
+            <tr className="bg-phx-paper text-left text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">
               <th className="px-3 py-2">Customer</th>
               <th className="px-3 py-2">Suggested brick</th>
               <th className="px-3 py-2">Match</th>
@@ -297,7 +297,7 @@ export function ImportPreviewModal({ committing, onCancel, onConfirm, result }: 
               <div className="overflow-hidden rounded-lg border border-phx-line">
                 <table className="w-full text-sm">
                   <thead>
-                    <tr className="bg-phx-paper text-left text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-soft">
+                    <tr className="bg-phx-paper text-left text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">
                       <th className="px-3 py-2">Customer</th>
                       <th className="px-3 py-2">Stored brick</th>
                       <th className="px-3 py-2">Resolved brick</th>

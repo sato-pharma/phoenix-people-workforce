@@ -56,9 +56,9 @@ export function RadarChart({
               if (active && item && firstEntry) {
                 return (
                   <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-xl max-w-[200px]">
-                    <p className="text-[10px] font-black uppercase text-slate-400">{String(item?.[subjectKey] ?? "-")}</p>
+                    <p className="text-phx-2xs font-black uppercase text-slate-400">{String(item?.[subjectKey] ?? "-")}</p>
                     <p className="text-lg font-black text-slate-900">{Number(firstEntry.value ?? 0)}%</p>
-                    {item.desc && <p className="mt-1 text-[9px] font-medium text-slate-500 leading-tight">{item.desc}</p>}
+                    {item.desc && <p className="mt-1 text-phx-3xs font-medium text-slate-500 leading-tight">{item.desc}</p>}
                   </div>
                 );
               }

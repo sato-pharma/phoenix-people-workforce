@@ -52,7 +52,7 @@ export function DirectOrderSalesMonthControl({
 
   return (
     <div className="border-t border-[#eef1f3] px-4 py-3">
-      <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">Sales month (Finance)</p>
+      <p className="text-phx-2xs font-black uppercase tracking-wider text-slate-400">Sales month (Finance)</p>
 
       {!canEdit ? (
         <p className="mt-0.5 text-sm font-semibold text-slate-900">
@@ -90,7 +90,7 @@ export function DirectOrderSalesMonthControl({
               </button>
             ) : null}
           </div>
-          <p className="text-[11px] text-slate-500">
+          <p className="text-phx-xs text-slate-500">
             {isApproved
               ? "Changing this moves the sales out of the old month and into the new one."
               : "You can set this now — the sales land once the order is fully approved."}
@@ -98,8 +98,8 @@ export function DirectOrderSalesMonthControl({
         </div>
       )}
 
-      {error ? <p className="mt-1.5 text-[12px] font-semibold text-rose-600">{error}</p> : null}
-      {ok ? <p className="mt-1.5 text-[12px] font-semibold text-emerald-600">{ok}</p> : null}
+      {error ? <p className="mt-1.5 text-phx-sm font-semibold text-rose-600">{error}</p> : null}
+      {ok ? <p className="mt-1.5 text-phx-sm font-semibold text-emerald-600">{ok}</p> : null}
     </div>
   );
 }

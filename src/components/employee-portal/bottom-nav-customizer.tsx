@@ -38,10 +38,10 @@ export function BottomNavCustomizer({
   return (
     <Card className="rounded border border-slate-200 bg-white p-5 shadow-[0_1px_3px_rgba(15,23,42,0.06)] sm:p-6 lg:col-span-2">
       <div className="mb-1 flex flex-wrap items-center gap-2">
-        <span className="inline-flex rounded border border-orange-200 bg-orange-50 px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wider text-orange-600">
+        <span className="inline-flex rounded border border-orange-200 bg-orange-50 px-2.5 py-0.5 text-phx-xs font-semibold uppercase tracking-wider text-orange-600">
           Quick Navigation
         </span>
-        <span className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-400">
+        <span className="inline-flex items-center gap-1 text-phx-xs font-medium text-slate-400">
           <Smartphone className="h-3.5 w-3.5" />
           Pin shortcuts to your mobile bottom bar
         </span>
@@ -63,7 +63,7 @@ export function BottomNavCustomizer({
             >
               <Icon className="h-3.5 w-3.5" />
               {entry.fullLabel}
-              <span className="text-[9px] font-black uppercase tracking-wide text-slate-400">Always</span>
+              <span className="text-phx-3xs font-black uppercase tracking-wide text-slate-400">Always</span>
             </span>
           );
         })}

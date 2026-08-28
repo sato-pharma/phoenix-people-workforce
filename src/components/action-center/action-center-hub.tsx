@@ -132,7 +132,7 @@ function itemIsOverdue(item: ActionHubItem) {
 
 function ModuleBadge({ module }: { module: ActionHubModule }) {
   return (
-    <span className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.08em] ${MODULE_COLORS[module]}`}>
+    <span className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-phx-2xs font-bold uppercase tracking-[0.08em] ${MODULE_COLORS[module]}`}>
       <span className={`h-1.5 w-1.5 rounded-full ${MODULE_DOTS[module]}`} />
       {ACTION_HUB_MODULE_LABELS[module]}
     </span>
@@ -142,7 +142,7 @@ function ModuleBadge({ module }: { module: ActionHubModule }) {
 function UrgencyBadge({ urgency }: { urgency: string }) {
   if (urgency === "normal") return null;
   return (
-    <span className={`inline-flex items-center rounded-full border px-1.5 py-0.5 text-[10px] font-bold ${URGENCY_COLORS[urgency]}`}>
+    <span className={`inline-flex items-center rounded-full border px-1.5 py-0.5 text-phx-2xs font-bold ${URGENCY_COLORS[urgency]}`}>
       {urgency === "high" ? "Urgent" : "Low"}
     </span>
   );
@@ -156,7 +156,7 @@ function SlaBadge({ item }: { item: ActionHubItem }) {
   const daysLeft = threshold - age;
   if (overdue) {
     return (
-      <span className="inline-flex items-center gap-1 rounded-full border border-rose-200/80 bg-rose-50 px-1.5 py-0.5 text-[10px] font-bold text-rose-700">
+      <span className="inline-flex items-center gap-1 rounded-full border border-rose-200/80 bg-rose-50 px-1.5 py-0.5 text-phx-2xs font-bold text-rose-700">
         <span className="h-1 w-1 rounded-full bg-rose-500" />
         Overdue {age}d
       </span>
@@ -164,7 +164,7 @@ function SlaBadge({ item }: { item: ActionHubItem }) {
   }
   if (daysLeft <= 1) {
     return (
-      <span className="inline-flex items-center rounded-full border border-amber-200/80 bg-amber-50 px-1.5 py-0.5 text-[10px] font-bold text-amber-800">
+      <span className="inline-flex items-center rounded-full border border-amber-200/80 bg-amber-50 px-1.5 py-0.5 text-phx-2xs font-bold text-amber-800">
         {daysLeft === 0 ? "Due today" : "1d left"}
       </span>
     );
@@ -176,7 +176,7 @@ function DetailRow({ label, value }: { label: string; value: string | null | und
   if (!value) return null;
   return (
     <div className="flex flex-col gap-0.5">
-      <dt className="text-[11px] font-bold uppercase tracking-wide text-slate-500">{label}</dt>
+      <dt className="text-phx-xs font-bold uppercase tracking-wide text-slate-500">{label}</dt>
       <dd className="text-sm text-slate-800">{value}</dd>
     </div>
   );
@@ -186,25 +186,25 @@ function ApprovalTimeline({ steps }: { steps: LeaveDetail["approvalSteps"] }) {
   if (steps.length === 0) return null;
   return (
     <div className="mt-4 border-t border-slate-200 pt-4">
-      <p className="mb-3 text-[11px] font-black uppercase tracking-wide text-slate-500">Approval history</p>
+      <p className="mb-3 text-phx-xs font-black uppercase tracking-wide text-slate-500">Approval history</p>
       <div className="space-y-2">
         {steps.map((step) => (
           <div key={step.stepKey} className="flex flex-col gap-1 rounded-lg border border-slate-200 bg-white p-3">
             <div className="flex items-center gap-2">
               <span className={`h-2 w-2 shrink-0 rounded-full ${step.status === "approved" ? "bg-emerald-500" : step.status === "rejected" ? "bg-rose-500" : step.status === "pending" ? "bg-amber-400" : "bg-slate-300"}`} />
               <span className="text-xs font-bold text-slate-700">{step.genericStep.replace(/_/g, " ")}</span>
-              {step.approverName && <span className="text-[11px] text-slate-500">· {step.approverName}</span>}
-              <span className={`ml-auto text-[11px] font-black ${step.status === "approved" ? "text-emerald-700" : step.status === "rejected" ? "text-rose-700" : step.status === "pending" ? "text-amber-700" : "text-slate-500"}`}>
+              {step.approverName && <span className="text-phx-xs text-slate-500">· {step.approverName}</span>}
+              <span className={`ml-auto text-phx-xs font-black ${step.status === "approved" ? "text-emerald-700" : step.status === "rejected" ? "text-rose-700" : step.status === "pending" ? "text-amber-700" : "text-slate-500"}`}>
                 {step.status === "approved" ? "✓ approved" : step.status === "rejected" ? "✗ rejected" : step.status}
               </span>
               {step.decidedAt && (
-                <span className="text-[10px] text-slate-400">
+                <span className="text-phx-2xs text-slate-400">
                   {new Date(step.decidedAt).toLocaleDateString("en", { day: "2-digit", month: "short" })}
                 </span>
               )}
             </div>
             {step.decisionComment && (
-              <p className="mt-0.5 rounded bg-slate-50 px-2 py-1 text-[11px] italic text-slate-600">
+              <p className="mt-0.5 rounded bg-slate-50 px-2 py-1 text-phx-xs italic text-slate-600">
                 &ldquo;{step.decisionComment}&rdquo;
               </p>
             )}
@@ -227,7 +227,7 @@ function LeaveDetailView({ detail }: { detail: LeaveDetail }) {
         <DetailRow label="Balance before" value={`${Number(detail.balanceBeforeDays.toFixed(2))} days`} />
         {detail.slaAgeDays > 0 && (
           <div className="col-span-2">
-            <span className={`inline-flex rounded-full border px-2 py-0.5 text-[10px] font-bold ${detail.slaAgeDays >= 3 ? "border-rose-300 bg-rose-100 text-rose-800" : "border-amber-300 bg-amber-100 text-amber-900"}`}>
+            <span className={`inline-flex rounded-full border px-2 py-0.5 text-phx-2xs font-bold ${detail.slaAgeDays >= 3 ? "border-rose-300 bg-rose-100 text-rose-800" : "border-amber-300 bg-amber-100 text-amber-900"}`}>
               {detail.slaAgeDays} day{detail.slaAgeDays === 1 ? "" : "s"} since submission
             </span>
           </div>
@@ -247,19 +247,19 @@ function ResignationDetailView({ detail }: { detail: ResignationDetail }) {
       <DetailRow label="Line" value={detail.lineName} />
       {detail.reason && (
         <div className="col-span-2">
-          <dt className="mb-1 text-[11px] font-bold uppercase tracking-wide text-slate-500">Reason</dt>
+          <dt className="mb-1 text-phx-xs font-bold uppercase tracking-wide text-slate-500">Reason</dt>
           <dd className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">{detail.reason}</dd>
         </div>
       )}
       {detail.workflowNotes && (
         <div className="col-span-2">
-          <dt className="mb-1 text-[11px] font-bold uppercase tracking-wide text-slate-500">Notes</dt>
+          <dt className="mb-1 text-phx-xs font-bold uppercase tracking-wide text-slate-500">Notes</dt>
           <dd className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">{detail.workflowNotes}</dd>
         </div>
       )}
       {detail.rejectedReason && (
         <div className="col-span-2">
-          <dt className="mb-1 text-[11px] font-bold uppercase tracking-wide text-rose-600">Rejected reason</dt>
+          <dt className="mb-1 text-phx-xs font-bold uppercase tracking-wide text-rose-600">Rejected reason</dt>
           <dd className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">{detail.rejectedReason}</dd>
         </div>
       )}
@@ -304,7 +304,7 @@ function OutstationDetailView({ detail }: { detail: OutstationDetail }) {
       </div>
       {detail.notes && (
         <div className="col-span-2">
-          <dt className="mb-1 text-[11px] font-bold uppercase tracking-wide text-slate-500">Notes</dt>
+          <dt className="mb-1 text-phx-xs font-bold uppercase tracking-wide text-slate-500">Notes</dt>
           <dd className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">{detail.notes}</dd>
         </div>
       )}
@@ -339,13 +339,13 @@ function ContractRenewalDetailView({ detail }: { detail: ContractRenewalDetail }
       {detail.proposedEndDate && <DetailRow label="Proposed end" value={detail.proposedEndDate} />}
       {detail.workflowNotes && (
         <div className="col-span-2">
-          <dt className="mb-1 text-[11px] font-bold uppercase tracking-wide text-slate-500">Notes</dt>
+          <dt className="mb-1 text-phx-xs font-bold uppercase tracking-wide text-slate-500">Notes</dt>
           <dd className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">{detail.workflowNotes}</dd>
         </div>
       )}
       {detail.decisionReason && (
         <div className="col-span-2">
-          <dt className="mb-1 text-[11px] font-bold uppercase tracking-wide text-rose-600">Decision reason</dt>
+          <dt className="mb-1 text-phx-xs font-bold uppercase tracking-wide text-rose-600">Decision reason</dt>
           <dd className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">{detail.decisionReason}</dd>
         </div>
       )}
@@ -366,7 +366,7 @@ function EmployeeContextPanel({ data, loading }: { data: ContextData | null; loa
   return (
     <div className="space-y-5">
       <div>
-        <p className="mb-2.5 text-[11px] font-black uppercase tracking-wide text-slate-500">
+        <p className="mb-2.5 text-phx-xs font-black uppercase tracking-wide text-slate-500">
           Attendance · last 30 days
         </p>
         <div className="grid grid-cols-3 gap-2">
@@ -380,7 +380,7 @@ function EmployeeContextPanel({ data, loading }: { data: ContextData | null; loa
           ].map(({ label, value, cls }) => (
             <div key={label} className={`rounded-lg border p-2.5 text-center ${cls}`}>
               <p className="text-lg font-black">{value}</p>
-              <p className="text-[10px] font-bold uppercase">{label}</p>
+              <p className="text-phx-2xs font-bold uppercase">{label}</p>
             </div>
           ))}
         </div>
@@ -388,7 +388,7 @@ function EmployeeContextPanel({ data, loading }: { data: ContextData | null; loa
 
       {data.recentLeave.length > 0 && (
         <div>
-          <p className="mb-2 text-[11px] font-black uppercase tracking-wide text-slate-500">
+          <p className="mb-2 text-phx-xs font-black uppercase tracking-wide text-slate-500">
             Recent leave &nbsp;
             <span className="font-mono tracking-wider text-slate-400">
               {priorLeaveDecisions.map((d) => d === "approved" ? "✓" : d === "rejected" ? "✗" : "–").join(" ")}
@@ -412,7 +412,7 @@ function EmployeeContextPanel({ data, loading }: { data: ContextData | null; loa
 
       {data.recentExcuses.length > 0 && (
         <div>
-          <p className="mb-2 text-[11px] font-black uppercase tracking-wide text-slate-500">Recent excuses</p>
+          <p className="mb-2 text-phx-xs font-black uppercase tracking-wide text-slate-500">Recent excuses</p>
           <div className="space-y-1">
             {data.recentExcuses.map((e, i) => (
               <div key={i} className="flex items-center gap-2 text-xs text-slate-600">
@@ -452,7 +452,7 @@ function ShortcutsOverlay({ onClose }: { onClose: () => void }) {
             ].map(([key, desc]) => (
               <tr key={key} className="border-b border-slate-100 last:border-0">
                 <td className="py-2 pr-4">
-                  <kbd className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[11px] font-bold text-slate-700">{key}</kbd>
+                  <kbd className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-phx-xs font-bold text-slate-700">{key}</kbd>
                 </td>
                 <td className="py-2 text-xs text-slate-600">{desc}</td>
               </tr>
@@ -950,7 +950,7 @@ export function ActionCenterHub({ initialData, initialModule, initialId, callerR
             {canViewAs && managers && managers.length > 0 && (
               <div className="border-b border-[#E5EAF1] bg-slate-50/70 px-4 py-2.5">
                 {viewAsLoading ? (
-                  <p className="text-[11px] text-slate-400">Loading queue…</p>
+                  <p className="text-phx-xs text-slate-400">Loading queue…</p>
                 ) : (
                   <SearchableSelect
                     value={viewAsHrId ?? ""}
@@ -959,7 +959,7 @@ export function ActionCenterHub({ initialData, initialModule, initialId, callerR
                       setViewAsItems(null);
                       setSelectedId(null);
                     }}
-                    className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-medium text-slate-700 shadow-sm focus:border-orange-300 focus:outline-none focus:ring-2 focus:ring-orange-100"
+                    className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-phx-xs font-medium text-slate-700 shadow-sm focus:border-orange-300 focus:outline-none focus:ring-2 focus:ring-orange-100"
                   >
                     <option value="">My queue</option>
                     {managers.map((m) => (
@@ -968,7 +968,7 @@ export function ActionCenterHub({ initialData, initialModule, initialId, callerR
                   </SearchableSelect>
                 )}
                 {viewAsHrId && (
-                  <p className="mt-1 flex items-center gap-1 text-[10px] font-bold text-orange-600">
+                  <p className="mt-1 flex items-center gap-1 text-phx-2xs font-bold text-orange-600">
                     <span className="h-1 w-1 rounded-full bg-orange-500" />
                     Viewing {managers.find(m => m.hrId === viewAsHrId)?.name ?? viewAsHrId}&apos;s queue
                   </p>
@@ -979,10 +979,10 @@ export function ActionCenterHub({ initialData, initialModule, initialId, callerR
             {/* Rail header */}
             <div className="flex shrink-0 items-center justify-between gap-3 border-b border-[#E5EAF1] bg-gradient-to-b from-white to-slate-50/60 px-4 py-3">
               <div className="flex items-center gap-2">
-                <span className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">Queue</span>
-                <span className="inline-flex min-w-[1.5rem] items-center justify-center rounded-full bg-slate-900 px-2 py-0.5 text-[11px] font-black leading-none text-white">{stats.total}</span>
+                <span className="text-phx-xs font-black uppercase tracking-[0.16em] text-slate-500">Queue</span>
+                <span className="inline-flex min-w-[1.5rem] items-center justify-center rounded-full bg-slate-900 px-2 py-0.5 text-phx-xs font-black leading-none text-white">{stats.total}</span>
               </div>
-              <div className="flex items-center gap-3 text-[11px]">
+              <div className="flex items-center gap-3 text-phx-xs">
                 {stats.overdue > 0 && (
                   <span className="flex items-center gap-1 font-bold text-rose-600">
                     <span className="h-1.5 w-1.5 rounded-full bg-rose-500" />{stats.overdue} overdue
@@ -1008,14 +1008,14 @@ export function ActionCenterHub({ initialData, initialModule, initialId, callerR
                       const firstInModule = allItems.find((item) => mod === "all" || item.module === mod);
                       if (firstInModule) selectItem(firstInModule);
                     }}
-                    className={`flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[11px] font-bold transition-all ${
+                    className={`flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-phx-xs font-bold transition-all ${
                       active
                         ? "bg-slate-900 text-white shadow-[0_4px_12px_rgba(15,23,42,0.18)]"
                         : "text-slate-500 hover:bg-slate-100 hover:text-slate-800"
                     }`}
                   >
                     {mod === "all" ? "All" : ACTION_HUB_MODULE_LABELS[mod as ActionHubModule]}
-                    <span className={`inline-flex min-w-[1.1rem] items-center justify-center rounded-full px-1 py-0.5 text-[10px] font-black leading-none ${
+                    <span className={`inline-flex min-w-[1.1rem] items-center justify-center rounded-full px-1 py-0.5 text-phx-2xs font-black leading-none ${
                       active ? "bg-orange-500 text-white" : "bg-slate-200/80 text-slate-600"
                     }`}>
                       {count}
@@ -1034,7 +1034,7 @@ export function ActionCenterHub({ initialData, initialModule, initialId, callerR
                   <button
                     key={f}
                     onClick={() => setActiveFilter(f)}
-                    className={`rounded-full border px-3 py-1 text-[11px] font-bold transition-colors ${
+                    className={`rounded-full border px-3 py-1 text-phx-xs font-bold transition-colors ${
                       activeFilter === f
                         ? f === "overdue"
                           ? "border-rose-200 bg-rose-50 text-rose-700"
@@ -1083,7 +1083,7 @@ export function ActionCenterHub({ initialData, initialModule, initialId, callerR
                                 aria-checked={bulkSelected.has(item.id)}
                                 aria-label={`Select ${item.employeeName}`}
                                 tabIndex={0}
-                                className={`ml-auto flex h-4 w-4 shrink-0 items-center justify-center rounded border text-[10px] font-bold transition-colors ${
+                                className={`ml-auto flex h-4 w-4 shrink-0 items-center justify-center rounded border text-phx-2xs font-bold transition-colors ${
                                   bulkSelected.has(item.id)
                                     ? "border-orange-500 bg-orange-500 text-white"
                                     : "border-slate-300 bg-white text-transparent hover:border-orange-400"
@@ -1109,7 +1109,7 @@ export function ActionCenterHub({ initialData, initialModule, initialId, callerR
                             </button>
                           </div>
                           <p className="text-xs text-slate-500">{item.title}</p>
-                          <p className="mt-0.5 text-[11px] text-slate-400">
+                          <p className="mt-0.5 text-phx-xs text-slate-400">
                             {item.employeeHrId} · {item.statusLabel}
                           </p>
                         </div>
@@ -1157,7 +1157,7 @@ export function ActionCenterHub({ initialData, initialModule, initialId, callerR
             <div className="shrink-0 border-t border-slate-100 bg-slate-50 px-4 py-1.5">
               <button
                 onClick={() => setShowShortcuts(true)}
-                className="text-[11px] text-slate-400 hover:text-slate-600"
+                className="text-phx-xs text-slate-400 hover:text-slate-600"
               >
                 ? Keyboard shortcuts
               </button>
@@ -1172,7 +1172,7 @@ export function ActionCenterHub({ initialData, initialModule, initialId, callerR
                   <Inbox className="h-6 w-6" />
                 </div>
                 <p className="text-sm font-bold text-slate-500">{notice ?? "Select an item to review it"}</p>
-                <p className="text-xs text-slate-400">press <kbd className="rounded bg-slate-100 px-1 font-mono text-[10px] text-slate-500">j</kbd> / <kbd className="rounded bg-slate-100 px-1 font-mono text-[10px] text-slate-500">k</kbd> to navigate · <kbd className="rounded bg-slate-100 px-1 font-mono text-[10px] text-slate-500">?</kbd> for shortcuts</p>
+                <p className="text-xs text-slate-400">press <kbd className="rounded bg-slate-100 px-1 font-mono text-phx-2xs text-slate-500">j</kbd> / <kbd className="rounded bg-slate-100 px-1 font-mono text-phx-2xs text-slate-500">k</kbd> to navigate · <kbd className="rounded bg-slate-100 px-1 font-mono text-phx-2xs text-slate-500">?</kbd> for shortcuts</p>
               </div>
             ) : (
               <div>
@@ -1241,7 +1241,7 @@ export function ActionCenterHub({ initialData, initialModule, initialId, callerR
                       <div className="rounded-[14px] border border-[#E5EAF1] bg-[#FBFCFD] p-4">
                         <div className="mb-3 flex items-center gap-2">
                           <span className="h-1.5 w-1.5 rounded-full bg-orange-500" />
-                          <p className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-500">Decision</p>
+                          <p className="text-phx-2xs font-black uppercase tracking-[0.18em] text-slate-500">Decision</p>
                         </div>
                         {notice ? (
                           <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-bold text-emerald-800">

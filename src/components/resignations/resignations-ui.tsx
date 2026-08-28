@@ -35,7 +35,7 @@ export function RgHero({
     <section className="border border-slate-900 bg-slate-950 px-5 py-5 sm:px-6">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div className="min-w-0">
-          <span className="inline-flex items-center border border-orange-500/40 bg-orange-500/10 px-2.5 py-1 text-[9px] font-black uppercase tracking-[0.22em] text-orange-300">
+          <span className="inline-flex items-center border border-orange-500/40 bg-orange-500/10 px-2.5 py-1 text-phx-3xs font-black uppercase tracking-[0.22em] text-orange-300">
             {eyebrow}
           </span>
           <h1 className="mt-3 whitespace-nowrap text-2xl font-black tracking-tight text-white">
@@ -68,11 +68,11 @@ export function RgTile({ label, sub, tone = "slate", value }: {
 }) {
   return (
     <div className="border border-slate-200 bg-white px-4 py-3">
-      <p className="whitespace-nowrap text-[9px] font-black uppercase tracking-[0.16em] text-slate-400">
+      <p className="whitespace-nowrap text-phx-3xs font-black uppercase tracking-[0.16em] text-slate-400">
         {label}
       </p>
       <p className={`mt-2 text-2xl font-black leading-none ${toneText[tone]}`}>{value}</p>
-      <p className="mt-1.5 whitespace-nowrap text-[10px] font-bold uppercase tracking-[0.1em] text-slate-400">
+      <p className="mt-1.5 whitespace-nowrap text-phx-2xs font-bold uppercase tracking-[0.1em] text-slate-400">
         {sub}
       </p>
     </div>
@@ -89,7 +89,7 @@ export function RgPanel({ action, children, title }: {
   return (
     <section className="border border-slate-200 bg-white">
       <header className="flex items-center justify-between gap-3 bg-slate-950 px-4 py-2.5">
-        <h2 className="whitespace-nowrap text-[11px] font-black uppercase tracking-[0.16em] text-white">
+        <h2 className="whitespace-nowrap text-phx-xs font-black uppercase tracking-[0.16em] text-white">
           {title}
         </h2>
         {action}
@@ -113,7 +113,7 @@ export function RgTabs<T extends string>({ onChange, tabs, value }: {
         return (
           <button
             aria-selected={active}
-            className={`-mb-px whitespace-nowrap border-b-2 px-4 py-2.5 text-[11px] font-black uppercase tracking-[0.12em] transition ${
+            className={`-mb-px whitespace-nowrap border-b-2 px-4 py-2.5 text-phx-xs font-black uppercase tracking-[0.12em] transition ${
               active
                 ? "border-orange-500 text-slate-900"
                 : "border-transparent text-slate-400 hover:text-slate-700"
@@ -125,7 +125,7 @@ export function RgTabs<T extends string>({ onChange, tabs, value }: {
           >
             {tab.label}
             <span
-              className={`ml-2 px-1.5 py-0.5 text-[10px] font-black ${
+              className={`ml-2 px-1.5 py-0.5 text-phx-2xs font-black ${
                 active ? "bg-orange-500 text-white" : "bg-slate-100 text-slate-500"
               }`}
             >
@@ -154,7 +154,7 @@ export function RgBadge({ children, title, tone = "slate" }: {
 }) {
   return (
     <span
-      className={`inline-flex whitespace-nowrap border px-1.5 py-0.5 text-[10px] font-black uppercase tracking-[0.1em] ${badgeTone[tone]}`}
+      className={`inline-flex whitespace-nowrap border px-1.5 py-0.5 text-phx-2xs font-black uppercase tracking-[0.1em] ${badgeTone[tone]}`}
       title={title}
     >
       {children}
@@ -187,7 +187,7 @@ export function RgButton({
 }) {
   return (
     <button
-      className={`inline-flex h-7 items-center gap-1.5 whitespace-nowrap border px-2.5 text-[11px] font-bold transition disabled:cursor-not-allowed disabled:opacity-40 ${buttonKind[kind]}`}
+      className={`inline-flex h-7 items-center gap-1.5 whitespace-nowrap border px-2.5 text-phx-xs font-bold transition disabled:cursor-not-allowed disabled:opacity-40 ${buttonKind[kind]}`}
       disabled={disabled}
       onClick={onClick}
       title={title}
@@ -245,7 +245,7 @@ export function RgSelect({
 export function RgField({ children, label }: { children: ReactNode; label: string }) {
   return (
     <label className="block">
-      <span className="mb-1 block whitespace-nowrap text-[9px] font-black uppercase tracking-[0.14em] text-slate-400">
+      <span className="mb-1 block whitespace-nowrap text-phx-3xs font-black uppercase tracking-[0.14em] text-slate-400">
         {label}
       </span>
       {children}
@@ -271,7 +271,7 @@ export function RgTable({ children, head }: { children: ReactNode; head: ReactNo
 export function RgTh({ align = "left", children }: { align?: "left" | "right"; children: ReactNode }) {
   return (
     <th
-      className={`whitespace-nowrap px-3 py-2 text-[10px] font-black uppercase tracking-[0.12em] text-slate-200 ${
+      className={`whitespace-nowrap px-3 py-2 text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-200 ${
         align === "right" ? "text-right" : "text-left"
       }`}
     >
@@ -299,8 +299,8 @@ export function RgPerson({ hrId, meta = [], name }: {
 
   return (
     <span className="block whitespace-nowrap leading-tight">
-      <span className="block text-[13px] font-bold text-slate-900">{name}</span>
-      <span className="mt-0.5 block text-[10px] font-medium text-slate-400">
+      <span className="block text-phx-md font-bold text-slate-900">{name}</span>
+      <span className="mt-0.5 block text-phx-2xs font-medium text-slate-400">
         <span className="font-mono text-slate-500">{parts[0]}</span>
         {parts.slice(1).map((part) => (
           <span key={part}>
@@ -321,7 +321,7 @@ export function RgSplit({ covered, firstPart, secondPart }: {
 }) {
   if (covered) {
     return (
-      <span className="inline-flex whitespace-nowrap border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-black uppercase tracking-[0.1em] text-emerald-700">
+      <span className="inline-flex whitespace-nowrap border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-phx-2xs font-black uppercase tracking-[0.1em] text-emerald-700">
         Part 1 covers it
       </span>
     );
@@ -329,8 +329,8 @@ export function RgSplit({ covered, firstPart, secondPart }: {
 
   return (
     <span className="block whitespace-nowrap leading-tight">
-      <span className="block text-[11px] font-bold text-slate-900">Part 1 {firstPart}</span>
-      <span className="mt-0.5 block text-[10px] font-bold text-orange-700">Part 2 {secondPart}</span>
+      <span className="block text-phx-xs font-bold text-slate-900">Part 1 {firstPart}</span>
+      <span className="mt-0.5 block text-phx-2xs font-bold text-orange-700">Part 2 {secondPart}</span>
     </span>
   );
 }
@@ -354,14 +354,14 @@ export function RgPager({ onPage, page, pageSize, total }: {
 
   return (
     <div className="flex items-center justify-between border-t border-slate-100 px-3 py-2">
-      <span className="text-[10px] font-bold uppercase tracking-[0.1em] text-slate-400">
+      <span className="text-phx-2xs font-bold uppercase tracking-[0.1em] text-slate-400">
         {page * pageSize + 1}–{Math.min((page + 1) * pageSize, total)} of {total}
       </span>
       <div className="flex items-center gap-1">
         <RgButton disabled={page === 0} onClick={() => onPage(page - 1)}>
           Prev
         </RgButton>
-        <span className="px-2 text-[10px] font-bold text-slate-500">
+        <span className="px-2 text-phx-2xs font-bold text-slate-500">
           {page + 1} / {pages}
         </span>
         <RgButton disabled={page >= pages - 1} onClick={() => onPage(page + 1)}>
@@ -449,11 +449,11 @@ export function RgDialog({
         role="dialog"
       >
         <header className="shrink-0 bg-slate-950 px-4 py-3">
-          <p className="whitespace-nowrap text-[11px] font-black uppercase tracking-[0.16em] text-white">
+          <p className="whitespace-nowrap text-phx-xs font-black uppercase tracking-[0.16em] text-white">
             {title}
           </p>
           {subtitle ? (
-            <p className="mt-0.5 whitespace-nowrap text-[11px] text-slate-400">{subtitle}</p>
+            <p className="mt-0.5 whitespace-nowrap text-phx-xs text-slate-400">{subtitle}</p>
           ) : null}
         </header>
         <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">{children}</div>

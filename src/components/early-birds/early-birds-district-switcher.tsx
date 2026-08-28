@@ -25,7 +25,7 @@ export function EarlyBirdsDistrictSwitcher({
           <Link
             key={district.hrIdKey}
             href={`${basePath}?district=${encodeURIComponent(district.hrId)}`}
-            className={`whitespace-nowrap border px-2 py-1 text-[11px] font-bold ${
+            className={`whitespace-nowrap border px-2 py-1 text-phx-xs font-bold ${
               active
                 ? "border-orange-300 bg-orange-50 text-orange-700"
                 : "border-slate-200 bg-white text-slate-600 hover:border-orange-200 hover:text-orange-600"

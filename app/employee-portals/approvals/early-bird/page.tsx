@@ -45,10 +45,10 @@ export default async function EarlyBirdApprovalsPage() {
       {pending.map((candidate) => (
         <div key={candidate.snapshotId} className="overflow-hidden border border-slate-200 bg-white">
           <div className="flex items-center justify-between bg-slate-900 px-4 py-2.5 sm:px-5">
-            <h2 className="whitespace-nowrap text-[10px] font-bold uppercase tracking-widest text-slate-300">
+            <h2 className="whitespace-nowrap text-phx-2xs font-bold uppercase tracking-widest text-slate-300">
               {candidate.periodLabel}
             </h2>
-            <span className="whitespace-nowrap text-[10px] font-bold uppercase tracking-widest text-amber-300">
+            <span className="whitespace-nowrap text-phx-2xs font-bold uppercase tracking-widest text-amber-300">
               Rank {candidate.candidateRank}
             </span>
           </div>
@@ -63,7 +63,7 @@ export default async function EarlyBirdApprovalsPage() {
               <p className="whitespace-nowrap text-lg font-black text-slate-900" dir="auto">
                 {candidate.employeeName}
               </p>
-              <p className="whitespace-nowrap text-[11px] font-semibold uppercase tracking-wider text-slate-400" dir="auto">
+              <p className="whitespace-nowrap text-phx-xs font-semibold uppercase tracking-wider text-slate-400" dir="auto">
                 {candidate.areaName ?? "—"} · joined {formatHireDate(candidate.hireDate)}
               </p>
               <p className="mt-1 whitespace-nowrap text-xs font-semibold text-emerald-700">
@@ -72,7 +72,7 @@ export default async function EarlyBirdApprovalsPage() {
             </div>
             <span className="ml-auto shrink-0 whitespace-nowrap text-xl font-black tabular-nums text-slate-900">
               {formatPoints(candidate.totalScore)}
-              <span className="ml-1 text-[10px] font-bold uppercase text-slate-400">pts</span>
+              <span className="ml-1 text-phx-2xs font-bold uppercase text-slate-400">pts</span>
             </span>
           </div>
 
@@ -80,12 +80,12 @@ export default async function EarlyBirdApprovalsPage() {
             // Without this a third recommendation arrives with no explanation of why the first two
             // are gone.
             <div className="border-t border-slate-200 px-4 py-3 sm:px-5">
-              <p className="mb-1.5 text-[10px] font-black uppercase tracking-[0.14em] text-slate-400">
+              <p className="mb-1.5 text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-400">
                 Already rejected this fortnight
               </p>
               <div className="space-y-1">
                 {candidate.rejectedSoFar.map((entry) => (
-                  <p key={entry.name} className="text-[11px] text-slate-600" dir="auto">
+                  <p key={entry.name} className="text-phx-xs text-slate-600" dir="auto">
                     <span className="font-bold text-slate-800">{entry.name}</span>
                     {entry.reason ? ` — ${entry.reason}` : ""}
                   </p>
@@ -96,13 +96,13 @@ export default async function EarlyBirdApprovalsPage() {
 
           {candidate.runnersUp.length > 0 && (
             <div className="border-t border-slate-200 px-4 py-3 sm:px-5">
-              <p className="mb-1.5 text-[10px] font-black uppercase tracking-[0.14em] text-slate-400">
+              <p className="mb-1.5 text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-400">
                 Who you would be choosing over
               </p>
               <div className="divide-y divide-slate-100">
                 {candidate.runnersUp.map((runner) => (
                   <div key={runner.rank} className="flex items-center gap-3 py-1.5">
-                    <span className="w-5 text-[11px] font-black text-slate-300">{runner.rank}</span>
+                    <span className="w-5 text-phx-xs font-black text-slate-300">{runner.rank}</span>
                     <span className="whitespace-nowrap text-xs font-bold text-slate-900" dir="auto">
                       {runner.name}
                     </span>

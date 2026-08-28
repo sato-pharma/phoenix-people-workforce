@@ -72,7 +72,7 @@ export function MultiSelectFilter({
     <details className={cn("group relative", disabled && "pointer-events-none opacity-50", className)}>
       <summary className="flex h-[58px] cursor-pointer list-none items-center justify-between gap-3 rounded-[6px] border border-phx-line bg-white px-3 py-2 shadow-sm outline-none transition hover:border-phx-accent-line focus-visible:border-phx-accent-line [&::-webkit-details-marker]:hidden">
         <span className="min-w-0">
-          <span className="mb-1 flex items-center gap-1.5 text-[10px] font-black uppercase tracking-[0.14em] text-phx-ink-faint">
+          <span className="mb-1 flex items-center gap-1.5 text-phx-2xs font-black uppercase tracking-[0.14em] text-phx-ink-faint">
             {icon}
             {label}
           </span>
@@ -81,7 +81,7 @@ export function MultiSelectFilter({
             {count > 0 ? (
               <span
                 className={cn(
-                  "shrink-0 rounded-[3px] px-1 text-[9px] font-black uppercase tracking-wide text-white",
+                  "shrink-0 rounded-[3px] px-1 text-phx-3xs font-black uppercase tracking-wide text-white",
                   mode === "include" ? "bg-phx-accent" : "bg-phx-ink",
                 )}
               >
@@ -102,7 +102,7 @@ export function MultiSelectFilter({
               aria-label={`Include mode for ${label}`}
               onClick={() => onModeChange("include")}
               className={cn(
-                "rounded-[4px] px-2 py-1 text-[10px] font-black uppercase tracking-wide transition",
+                "rounded-[4px] px-2 py-1 text-phx-2xs font-black uppercase tracking-wide transition",
                 mode === "include" ? "bg-phx-accent text-white shadow-sm" : "text-phx-ink-soft hover:text-phx-ink",
               )}
             >
@@ -113,14 +113,14 @@ export function MultiSelectFilter({
               aria-label={`Exclude mode for ${label}`}
               onClick={() => onModeChange("exclude")}
               className={cn(
-                "rounded-[4px] px-2 py-1 text-[10px] font-black uppercase tracking-wide transition",
+                "rounded-[4px] px-2 py-1 text-phx-2xs font-black uppercase tracking-wide transition",
                 mode === "exclude" ? "bg-phx-ink text-white shadow-sm" : "text-phx-ink-soft hover:text-phx-ink",
               )}
             >
               Exclude
             </button>
           </div>
-          <div className="flex items-center gap-2 text-[11px] font-black">
+          <div className="flex items-center gap-2 text-phx-xs font-black">
             <button
               type="button"
               aria-label={`Select all ${label}`}

@@ -82,13 +82,13 @@ function AssessmentSection({
     <div className="rounded border border-slate-200 bg-white p-3">
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-semibold text-slate-700">{title}</h3>
-        {savedAt && <span className="rounded bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700">Submitted</span>}
+        {savedAt && <span className="rounded bg-emerald-50 px-2 py-0.5 text-phx-xs font-medium text-emerald-700">Submitted</span>}
       </div>
       <div className="mt-2 flex flex-wrap items-end gap-3">
         <label className="text-xs text-slate-500">Score ({scale.min}–{scale.max})
           <input type="number" min={scale.min} max={scale.max} step={1} value={score} onChange={(e) => setScore(e.target.value)} className="mt-1 block h-9 w-24 rounded border border-slate-200 px-2 text-sm" />
         </label>
-        {!scoreValid && <span className="text-[11px] text-amber-600">Whole number {scale.min}–{scale.max}, or blank.</span>}
+        {!scoreValid && <span className="text-phx-xs text-amber-600">Whole number {scale.min}–{scale.max}, or blank.</span>}
       </div>
       <textarea value={comments} onChange={(e) => setComments(e.target.value)} rows={2} placeholder="Comments (optional)…" className={`${area} mt-2`} />
       {canSeeConfidential && (

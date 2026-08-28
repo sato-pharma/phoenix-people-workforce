@@ -46,7 +46,7 @@ import type {
 // prop — only what gets drawn on screen is windowed. The rep table stays unpaginated; it holds one
 // row per rep (~100), nowhere near the doctor count.
 
-const REP_THEAD = "px-3 py-2.5 text-[10px] font-black uppercase tracking-[0.12em] text-white";
+const REP_THEAD = "px-3 py-2.5 text-phx-2xs font-black uppercase tracking-[0.12em] text-white";
 const DOCTOR_PAGE_SIZE = 25;
 
 /** What a rep with NO graded panel shows where a percentage would go. An em dash, never "0%" and
@@ -191,7 +191,7 @@ export function DoctorCoverageRepTable({ rows }: { rows: DoctorCoverageRepRow[] 
                       </div>
                     ) : (
                       <div className="flex items-center justify-end gap-2">
-                        <span className="text-right text-[11px] font-semibold text-slate-400">No assigned list</span>
+                        <span className="text-right text-phx-xs font-semibold text-slate-400">No assigned list</span>
                         <span className="min-w-[34px] text-right font-black text-slate-400">{NO_PANEL_MARKER}</span>
                       </div>
                     )}
@@ -256,7 +256,7 @@ function CoverageMeter({ hasPanel, pct }: { hasPanel: boolean; pct: number }) {
   if (!hasPanel) {
     return (
       <div className="flex items-center justify-end gap-2">
-        <span className="text-right text-[11px] font-semibold text-slate-400">No assigned list</span>
+        <span className="text-right text-phx-xs font-semibold text-slate-400">No assigned list</span>
         <span className="min-w-[34px] text-right font-black text-slate-400">{NO_PANEL_MARKER}</span>
       </div>
     );
@@ -320,7 +320,7 @@ export function DoctorCoverageDistrictTable({
               actions={
                 <button
                   aria-expanded={isOpen}
-                  className="flex items-center gap-1 border border-slate-200 px-2 py-1 text-[10px] font-black uppercase tracking-[0.1em] text-slate-600"
+                  className="flex items-center gap-1 border border-slate-200 px-2 py-1 text-phx-2xs font-black uppercase tracking-[0.1em] text-slate-600"
                   onClick={() => toggleOpen(row.managerKey)}
                   type="button"
                 >
@@ -380,7 +380,7 @@ export function DoctorCoverageDistrictTable({
                     team.map((rep) => (
                       <div className="flex items-center justify-between gap-3 py-2" key={rep.repKey}>
                         <span className="min-w-0 text-xs font-semibold text-slate-700">{rep.repName}</span>
-                        <span className="shrink-0 text-[11px] font-bold text-slate-500">
+                        <span className="shrink-0 text-phx-xs font-bold text-slate-500">
                           {rep.hasPanel ? `${rep.green} / ${rep.panelSize}` : "No assigned list"}
                         </span>
                         <span
@@ -430,7 +430,7 @@ export function DoctorCoverageDistrictTable({
                             <ChevronRight className="h-3.5 w-3.5 shrink-0 text-slate-400" />
                           )}
                           <span>{row.managerName}</span>
-                          <span className="text-[10px] font-bold uppercase tracking-[0.1em] text-slate-400">
+                          <span className="text-phx-2xs font-bold uppercase tracking-[0.1em] text-slate-400">
                             {row.title ?? "Role not recorded"}
                           </span>
                         </button>
@@ -480,20 +480,20 @@ export function DoctorCoverageDistrictTable({
 
       {regions.length > 0 ? (
         <div className="border-t border-slate-200 pt-3">
-          <p className="mb-2 text-[10px] font-black uppercase tracking-[0.12em] text-slate-400">
+          <p className="mb-2 text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400">
             Above the district line
           </p>
           <div className="divide-y divide-slate-100">
             {regions.map((row) => (
               <div className="flex flex-wrap items-center gap-x-4 gap-y-1 py-2" key={row.managerKey}>
                 <span className="min-w-52 text-xs font-semibold text-slate-800">{row.managerName}</span>
-                <span className="min-w-44 text-[11px] font-bold uppercase tracking-[0.08em] text-slate-400">
+                <span className="min-w-44 text-phx-xs font-bold uppercase tracking-[0.08em] text-slate-400">
                   {row.title ?? "Role not recorded"}
                 </span>
-                <span className="min-w-20 text-[11px] font-bold text-slate-500">
+                <span className="min-w-20 text-phx-xs font-bold text-slate-500">
                   {row.teamSize} {row.teamSize === 1 ? "rep" : "reps"}
                 </span>
-                <span className="min-w-28 text-[11px] font-bold text-slate-500">{row.panelSize} assigned</span>
+                <span className="min-w-28 text-phx-xs font-bold text-slate-500">{row.panelSize} assigned</span>
                 <span className="min-w-32 flex-1">
                   <CoverageMeter hasPanel={row.hasPanel} pct={row.coveragePct} />
                 </span>
@@ -531,7 +531,7 @@ const STATUS_BADGE: Record<DoctorCoverageStatus, string> = {
 
 function StatusBadge({ status }: { status: DoctorCoverageStatus }) {
   return (
-    <span className={`px-1.5 py-0.5 text-[10px] font-black uppercase tracking-[0.1em] ${STATUS_BADGE[status]}`}>
+    <span className={`px-1.5 py-0.5 text-phx-2xs font-black uppercase tracking-[0.1em] ${STATUS_BADGE[status]}`}>
       {STATUS_LABEL[status]}
     </span>
   );
@@ -606,7 +606,7 @@ export function DoctorCoverageDoctorTable({ month, rows }: { month: string; rows
 
   const chip = (value: StatusFilter, label: string, count: number) => (
     <button
-      className={`border px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.12em] ${
+      className={`border px-2.5 py-1 text-phx-2xs font-black uppercase tracking-[0.12em] ${
         statusFilter === value
           ? "border-slate-900 bg-slate-900 text-white"
           : "border-slate-200 bg-white text-slate-500 hover:border-orange-300 hover:text-orange-700"
@@ -698,7 +698,7 @@ export function DoctorCoverageDoctorTable({ month, rows }: { month: string; rows
                 <tr className="bg-white hover:bg-slate-50" key={row.contactCrmId}>
                   <td className="px-3 py-2 font-semibold text-slate-900">{row.contactName}</td>
                   <td className="px-3 py-2">
-                    <span className="border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[10px] font-bold text-slate-600">{row.gradeRaw}</span>
+                    <span className="border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-phx-2xs font-bold text-slate-600">{row.gradeRaw}</span>
                   </td>
                   <td className="px-3 py-2 text-slate-600">{row.speciality ?? "—"}</td>
                   <td className="whitespace-nowrap px-3 py-2 text-slate-700">{row.repName}</td>

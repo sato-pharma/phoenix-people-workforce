@@ -128,7 +128,7 @@ function Chip({ chip, isEditing, onEdit, onCommitEdit }: {
           per-role responsibilities, and a reviewer cannot check a value they can only see half of. */}
       <span className="min-w-0 flex-1 break-words">{chip.value || <span className="text-slate-400">(empty)</span>}</span>
       {chip.confidence === "low" ? (
-        <span className="shrink-0 rounded border border-amber-200 bg-amber-50 px-1 py-0.5 text-[10px] font-semibold text-amber-700">
+        <span className="shrink-0 rounded border border-amber-200 bg-amber-50 px-1 py-0.5 text-phx-2xs font-semibold text-amber-700">
           Check this
         </span>
       ) : null}
@@ -166,7 +166,7 @@ function BlockCard({
   const itemFields = field.itemFields ?? [];
   return (
     <div>
-      <p className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+      <p className="mb-1 text-phx-xs font-semibold uppercase tracking-wider text-slate-400">
         {field.label} <span className="text-slate-300">·</span> {entries.length}{" "}
         {entries.length === 1 ? "entry" : "entries"}
       </p>
@@ -195,7 +195,7 @@ function BlockCard({
                     )}
                   </div>
                   <button
-                    className="shrink-0 rounded border border-gray-200 px-1.5 py-0.5 text-[11px] text-slate-500 hover:border-rose-200 hover:text-rose-600"
+                    className="shrink-0 rounded border border-gray-200 px-1.5 py-0.5 text-phx-xs text-slate-500 hover:border-rose-200 hover:text-rose-600"
                     onClick={() => onRemove(field.key, index)}
                     type="button"
                   >
@@ -373,7 +373,7 @@ export function CvExtractionReviewBoard({
         {error ? <p className="text-xs text-rose-600">{error}</p> : null}
 
         <div>
-          <p className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-slate-400">Unassigned</p>
+          <p className="mb-1 text-phx-xs font-semibold uppercase tracking-wider text-slate-400">Unassigned</p>
           <DroppableArea className="flex min-h-[42px] flex-wrap gap-2 rounded-md border border-dashed border-gray-300 bg-white p-2" id={POOL_ID}>
             {poolChipKeys.length === 0 ? (
               <span className="px-1 py-1 text-xs text-slate-400">Nothing unassigned.</span>
@@ -393,7 +393,7 @@ export function CvExtractionReviewBoard({
 
         {sections.map((section) => (
           <div className="space-y-2" key={section.key}>
-            <p className="border-b border-slate-200 pb-1 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+            <p className="border-b border-slate-200 pb-1 text-phx-xs font-semibold uppercase tracking-wider text-slate-500">
               {section.label}
             </p>
 
@@ -402,7 +402,7 @@ export function CvExtractionReviewBoard({
                 const assignedChipKey = slotAssignment[field.key];
                 return (
                   <div key={field.key}>
-                    <p className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-slate-400">{field.label}</p>
+                    <p className="mb-1 text-phx-xs font-semibold uppercase tracking-wider text-slate-400">{field.label}</p>
                     <DroppableArea className="min-h-[42px] rounded-md border border-gray-200 bg-white p-1.5" id={slotId(field.key)}>
                       {assignedChipKey ? (
                         <Chip
@@ -421,7 +421,7 @@ export function CvExtractionReviewBoard({
 
               {section.bools.map((field) => (
                 <div key={field.key}>
-                  <p className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-slate-400">{field.label}</p>
+                  <p className="mb-1 text-phx-xs font-semibold uppercase tracking-wider text-slate-400">{field.label}</p>
                   <select
                     className="w-full rounded-md border border-gray-200 px-3 py-2 text-sm"
                     onChange={(event) =>

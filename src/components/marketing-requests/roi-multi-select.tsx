@@ -33,11 +33,11 @@ export function RoiMultiSelect({
     <details className="group relative">
       <summary className="flex h-[58px] cursor-pointer list-none items-center justify-between gap-3 rounded-[6px] border border-phx-line bg-white px-3 py-2 shadow-sm outline-none transition hover:border-phx-accent-line focus-visible:border-phx-accent-line [&::-webkit-details-marker]:hidden">
         <span className="min-w-0">
-          <span className="mb-1 flex items-center gap-1.5 text-[10px] font-black uppercase tracking-[0.14em] text-phx-ink-faint">{label}</span>
+          <span className="mb-1 flex items-center gap-1.5 text-phx-2xs font-black uppercase tracking-[0.14em] text-phx-ink-faint">{label}</span>
           <span className="flex items-center gap-1.5">
             <span className="block truncate text-sm font-black text-phx-ink">{summary}</span>
             {selected.length > 0 ? (
-              <span className="shrink-0 rounded-[3px] bg-phx-accent px-1 text-[9px] font-black uppercase tracking-wide text-white">incl</span>
+              <span className="shrink-0 rounded-[3px] bg-phx-accent px-1 text-phx-3xs font-black uppercase tracking-wide text-white">incl</span>
             ) : null}
           </span>
         </span>
@@ -45,7 +45,7 @@ export function RoiMultiSelect({
       </summary>
 
       <div className="absolute left-0 top-full z-30 mt-2 w-[min(320px,calc(100vw-2rem))] rounded-[6px] border border-phx-line bg-white shadow-lg">
-        <div className="flex items-center justify-end gap-2 border-b border-phx-line p-2 text-[11px] font-black">
+        <div className="flex items-center justify-end gap-2 border-b border-phx-line p-2 text-phx-xs font-black">
           <button type="button" aria-label={`Select all ${label}`} className="text-phx-ink-soft transition hover:text-phx-accent" onClick={() => onChange(options.map((option) => option.value))}>
             All
           </button>
@@ -86,7 +86,7 @@ export function RoiMultiSelect({
               <label key={option.value} className="flex cursor-pointer items-center gap-2 rounded-[4px] px-2 py-1.5 text-sm text-phx-ink transition hover:bg-phx-paper">
                 <input type="checkbox" aria-label={option.label} className="h-4 w-4 accent-phx-accent" checked={selectedSet.has(option.value)} onChange={() => toggle(option.value)} />
                 <span className="flex-1 truncate">{option.label}</span>
-                {typeof option.count === "number" ? <span className="shrink-0 text-[11px] font-bold text-phx-ink-faint">{option.count}</span> : null}
+                {typeof option.count === "number" ? <span className="shrink-0 text-phx-xs font-bold text-phx-ink-faint">{option.count}</span> : null}
               </label>
             ))
           )}

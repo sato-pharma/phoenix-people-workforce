@@ -195,16 +195,16 @@ export default async function EmployeePortalProfilePage() {
 
           <Card className="rounded border border-slate-200 bg-white p-5 shadow-[0_1px_3px_rgba(15,23,42,0.06)] sm:p-6">
             <div className="mb-4 flex items-center gap-2">
-              <span className="inline-flex rounded border border-orange-200 bg-orange-50 px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wider text-orange-600">
+              <span className="inline-flex rounded border border-orange-200 bg-orange-50 px-2.5 py-0.5 text-phx-xs font-semibold uppercase tracking-wider text-orange-600">
                 Identity
               </span>
-              <span className="text-[11px] font-medium text-slate-400">
+              <span className="text-phx-xs font-medium text-slate-400">
                 Phoenix employee record
               </span>
             </div>
             <dl className="grid gap-3 sm:grid-cols-2">
               <div className="min-w-0">
-                <dt className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                <dt className="text-phx-xs font-semibold uppercase tracking-wider text-slate-400">
                   Full name
                 </dt>
                 <dd className="mt-1 break-words text-sm font-bold text-slate-900">
@@ -212,7 +212,7 @@ export default async function EmployeePortalProfilePage() {
                 </dd>
               </div>
               <div className="min-w-0">
-                <dt className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                <dt className="text-phx-xs font-semibold uppercase tracking-wider text-slate-400">
                   HR ID
                 </dt>
                 <dd className="mt-1 flex items-center gap-2 break-words font-mono text-sm font-bold text-slate-900">
@@ -221,12 +221,12 @@ export default async function EmployeePortalProfilePage() {
                 </dd>
               </div>
               <div className="min-w-0 sm:col-span-2">
-                <dt className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                <dt className="text-phx-xs font-semibold uppercase tracking-wider text-slate-400">
                   Probation
                 </dt>
                 <dd className="mt-1">
                   <span
-                    className={`inline-flex items-center gap-1.5 rounded border px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.08em] ${probationTone(hrContract.probationStatus)}`}
+                    className={`inline-flex items-center gap-1.5 rounded border px-2.5 py-1 text-phx-xs font-semibold uppercase tracking-[0.08em] ${probationTone(hrContract.probationStatus)}`}
                   >
                     <Hourglass className="h-3 w-3" />
                     {hrContract.probationStatus}
@@ -238,10 +238,10 @@ export default async function EmployeePortalProfilePage() {
 
           <Card className="rounded border border-slate-200 bg-white p-5 shadow-[0_1px_3px_rgba(15,23,42,0.06)] sm:p-6">
             <div className="mb-4 flex items-center gap-2">
-              <span className="inline-flex rounded border border-orange-200 bg-orange-50 px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wider text-orange-600">
+              <span className="inline-flex rounded border border-orange-200 bg-orange-50 px-2.5 py-0.5 text-phx-xs font-semibold uppercase tracking-wider text-orange-600">
                 Employment
               </span>
-              <span className="text-[11px] font-medium text-slate-400">
+              <span className="text-phx-xs font-medium text-slate-400">
                 Contract and tenure
               </span>
             </div>
@@ -254,7 +254,7 @@ export default async function EmployeePortalProfilePage() {
                       <Icon className="h-3.5 w-3.5" />
                     </span>
                     <div className="min-w-0 flex-1">
-                      <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                      <p className="text-phx-xs font-semibold uppercase tracking-wider text-slate-400">
                         {row.label}
                       </p>
                       <p
@@ -271,10 +271,10 @@ export default async function EmployeePortalProfilePage() {
 
           <Card className="rounded border border-slate-200 bg-white p-5 shadow-[0_1px_3px_rgba(15,23,42,0.06)] sm:p-6 lg:col-span-2">
             <div className="mb-4 flex items-center gap-2">
-              <span className="inline-flex rounded border border-orange-200 bg-orange-50 px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wider text-orange-600">
+              <span className="inline-flex rounded border border-orange-200 bg-orange-50 px-2.5 py-0.5 text-phx-xs font-semibold uppercase tracking-wider text-orange-600">
                 Placement
               </span>
-              <span className="text-[11px] font-medium text-slate-400">
+              <span className="text-phx-xs font-medium text-slate-400">
                 Role, line, area, and reporting
               </span>
             </div>
@@ -283,7 +283,7 @@ export default async function EmployeePortalProfilePage() {
                 const Icon = row.icon;
                 return (
                   <div className="min-w-0" key={row.label}>
-                    <dt className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                    <dt className="flex items-center gap-2 text-phx-xs font-semibold uppercase tracking-wider text-slate-400">
                       <Icon className="h-3.5 w-3.5 text-slate-400" />
                       {row.label}
                     </dt>
@@ -299,7 +299,7 @@ export default async function EmployeePortalProfilePage() {
           <Card className="rounded border border-orange-100 bg-orange-50/40 p-5 shadow-[0_1px_3px_rgba(15,23,42,0.04)] sm:p-6 lg:col-span-2">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <div className="min-w-0">
-                <p className="text-[11px] font-semibold uppercase tracking-wider text-orange-600">
+                <p className="text-phx-xs font-semibold uppercase tracking-wider text-orange-600">
                   Need a correction?
                 </p>
                 <p className="mt-1 text-sm font-semibold text-slate-900">

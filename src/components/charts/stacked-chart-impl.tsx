@@ -89,8 +89,8 @@ export function StackedChart({
                 if (active && entry) {
                   return (
                     <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-xl">
-                      <p className="mb-1 text-[10px] font-black uppercase tracking-wider text-slate-400">{entry.name ?? "-"}</p>
-                      <p className="text-[11px] font-black text-slate-900">
+                      <p className="mb-1 text-phx-2xs font-black uppercase tracking-wider text-slate-400">{entry.name ?? "-"}</p>
+                      <p className="text-phx-xs font-black text-slate-900">
                         {tooltipPrefix}{Number(entry.value ?? 0).toLocaleString()}{tooltipSuffix}
                       </p>
                     </div>
@@ -103,9 +103,9 @@ export function StackedChart({
         </ResponsiveContainer>
         {centerLabel && (
           <div className="absolute inset-0 flex flex-col items-center justify-center text-center pointer-events-none">
-            <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">EGP</p>
+            <p className="text-phx-2xs font-black uppercase tracking-widest text-slate-400">EGP</p>
             <p className="text-lg font-black text-slate-900 leading-none">{centerLabel}</p>
-            <p className="text-[9px] font-bold text-slate-400 uppercase mt-1">{centerSub}</p>
+            <p className="text-phx-3xs font-bold text-slate-400 uppercase mt-1">{centerSub}</p>
           </div>
         )}
       </div>
@@ -124,9 +124,9 @@ export function StackedChart({
             >
               <div className="flex items-center gap-2">
                 <div className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: item.color }} />
-                <span className="text-[11px] font-bold text-slate-600 group-hover:text-slate-900">{item.name}</span>
+                <span className="text-phx-xs font-bold text-slate-600 group-hover:text-slate-900">{item.name}</span>
               </div>
-              <span className="text-[10px] font-black text-slate-400">
+              <span className="text-phx-2xs font-black text-slate-400">
                 {compactEGP(item.value).replace("EGP ", "")} {item.percent !== undefined && `(${item.percent}%)`}
               </span>
             </div>

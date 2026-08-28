@@ -72,7 +72,7 @@ function VisitTimeBadge({ source, value }: { source: VisitTimeSource; value: str
     <span className="inline-flex items-center gap-1.5">
       <span title={formatVendorLocal(value)}>{formatVendorTimeOnly(value)}</span>
       <span
-        className={`rounded px-1 py-0.5 text-[9px] font-bold uppercase tracking-wide ${
+        className={`rounded px-1 py-0.5 text-phx-3xs font-bold uppercase tracking-wide ${
           isGps ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-500"
         }`}
         title={isGps ? "Real GPS check-in time (on site)" : "Logged/save time — not GPS-verified; may be logged later"}
@@ -289,7 +289,7 @@ export function MyVisitsWorkspace({
               renderCard={(row) => <TeamVisitCard row={row} />}
               renderTable={() => (
                 <PortalDesktopTable minWidth="1040px">
-                  <thead className="bg-slate-50 text-[11px] font-black uppercase tracking-[0.12em] text-slate-500">
+                  <thead className="bg-slate-50 text-phx-xs font-black uppercase tracking-[0.12em] text-slate-500">
                     <tr>
                       <th className="px-4 py-3">Rep</th>
                       <th className="px-4 py-3">Date</th>
@@ -341,7 +341,7 @@ export function MyVisitsWorkspace({
               renderCard={(row) => <VisitCard row={row} />}
               renderTable={() => (
                 <PortalDesktopTable minWidth="980px">
-                  <thead className="bg-slate-50 text-[11px] font-black uppercase tracking-[0.12em] text-slate-500">
+                  <thead className="bg-slate-50 text-phx-xs font-black uppercase tracking-[0.12em] text-slate-500">
                     <tr>
                       <th className="px-4 py-3">Date</th>
                       <th className="px-4 py-3">Time</th>
@@ -396,7 +396,7 @@ export function MyVisitsWorkspace({
               renderCard={(row) => <DoubleVisitCard row={row} />}
               renderTable={() => (
                 <PortalDesktopTable minWidth="980px">
-                  <thead className="bg-slate-50 text-[11px] font-black uppercase tracking-[0.12em] text-slate-500">
+                  <thead className="bg-slate-50 text-phx-xs font-black uppercase tracking-[0.12em] text-slate-500">
                     <tr>
                       <th className="px-4 py-3">Date</th>
                       <th className="px-4 py-3">Time</th>
@@ -443,7 +443,7 @@ export function MyVisitsWorkspace({
               renderCard={(row) => <CheckinCard row={row} />}
               renderTable={() => (
                 <PortalDesktopTable minWidth="720px">
-                  <thead className="bg-slate-50 text-[11px] font-black uppercase tracking-[0.12em] text-slate-500">
+                  <thead className="bg-slate-50 text-phx-xs font-black uppercase tracking-[0.12em] text-slate-500">
                     <tr>
                       <th className="px-4 py-3">Date &amp; time</th>
                       <th className="px-4 py-3">Contact</th>

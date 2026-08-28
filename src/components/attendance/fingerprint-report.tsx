@@ -33,7 +33,7 @@ function DecisionToggle({ state, onChange }: { state: DecisionState; onChange: (
   const cfg = DECISION_CONFIG[state];
   return (
     <button
-      className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[11px] font-bold tracking-wide transition-colors ${cfg.className}`}
+      className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-phx-xs font-bold tracking-wide transition-colors ${cfg.className}`}
       type="button"
       onClick={() => onChange(cfg.next)}
     >
@@ -312,7 +312,7 @@ export function FingerprintReport({ initialData, initialError }: Props) {
         >
           <div className="phoenix-horizontal-scroll overflow-x-auto">
             <table className="min-w-[1180px] border-separate border-spacing-0 text-left">
-              <thead className="bg-slate-50 text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">
+              <thead className="bg-slate-50 text-phx-xs font-black uppercase tracking-[0.16em] text-slate-500">
                 <tr>
                   <th className="border-b border-r border-slate-200 px-4 py-3">Employee ID</th>
                   <th className="border-b border-r border-slate-200 px-4 py-3">Name</th>
@@ -372,7 +372,7 @@ export function FingerprintReport({ initialData, initialError }: Props) {
           onScroll={() => syncScroll("table")}
         >
           <table className="min-w-[2060px] table-fixed border-separate border-spacing-0 text-left">
-            <thead className="bg-slate-50 text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">
+            <thead className="bg-slate-50 text-phx-xs font-black uppercase tracking-[0.16em] text-slate-500">
               <tr>
                 {visibleColumns.map((column) => (
                   <th className={`whitespace-nowrap border-b border-r border-slate-200 px-4 py-3 ${stickyClass(column, "head")}`} key={column.key}>{column.label}</th>

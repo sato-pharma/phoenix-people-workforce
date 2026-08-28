@@ -103,11 +103,11 @@ export function CandidateFactsSummary({
 
   return (
     <div className={`rounded-md border border-slate-200 bg-white p-3 ${className ?? ""}`}>
-      <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Who this is</p>
+      <p className="text-phx-xs font-semibold uppercase tracking-wide text-slate-500">Who this is</p>
       <dl className={`mt-2 grid gap-x-6 gap-y-2 ${gridColumns}`}>
         {cells.map((cell) => (
           <div key={cell.label}>
-            <dt className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">{cell.label}</dt>
+            <dt className="text-phx-xs font-semibold uppercase tracking-wide text-slate-400">{cell.label}</dt>
             <dd
               className={`text-sm ${cell.unconfirmed ? "italic text-slate-500" : "font-medium text-slate-900"}`}
               title={
@@ -117,7 +117,7 @@ export function CandidateFactsSummary({
               {cell.value}
               {cell.unconfirmed ? " ?" : ""}
             </dd>
-            {cell.hint && !cell.unconfirmed ? <dd className="text-[11px] text-slate-500">{cell.hint}</dd> : null}
+            {cell.hint && !cell.unconfirmed ? <dd className="text-phx-xs text-slate-500">{cell.hint}</dd> : null}
           </div>
         ))}
       </dl>

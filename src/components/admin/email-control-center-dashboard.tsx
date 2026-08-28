@@ -109,7 +109,7 @@ export function EmailControlCenterDashboard({
           {moduleOptions.map((module) => (
             <button
               className={cn(
-                "rounded-full border px-3 py-1 text-[11px] font-black transition",
+                "rounded-full border px-3 py-1 text-phx-xs font-black transition",
                 moduleFilter === module ? "border-[#0B0B0B] bg-[#0B0B0B] text-white" : "border-phx-line bg-white text-phx-ink-2 hover:border-orange-300",
               )}
               key={module}
@@ -183,12 +183,12 @@ function ControlCenterRow({
         <div>
           <div className="flex flex-wrap items-center gap-2">
             <h4 className="text-sm font-black text-phx-ink">{item.label}</h4>
-            <span className="rounded-full border border-phx-line bg-phx-paper px-2 py-0.5 text-[9px] font-black uppercase tracking-wide text-phx-ink-faint">
+            <span className="rounded-full border border-phx-line bg-phx-paper px-2 py-0.5 text-phx-3xs font-black uppercase tracking-wide text-phx-ink-faint">
               {SOURCE_LABEL[item.sourceSystem]}
             </span>
           </div>
           <p className="mt-1 max-w-2xl text-xs text-phx-ink-soft">{item.description}</p>
-          <p className="mt-1 text-[11px] font-semibold text-phx-ink-faint">{item.recipientSummary.countLabel}</p>
+          <p className="mt-1 text-phx-xs font-semibold text-phx-ink-faint">{item.recipientSummary.countLabel}</p>
         </div>
 
         <div className="flex items-center gap-2">
@@ -202,14 +202,14 @@ function ControlCenterRow({
           </div>
           {(item.recipientSummary.kind === "roles" || item.recipientSummary.kind === "template_rules") && canMutate ? (
             <button
-              className="rounded-lg border border-phx-line bg-white px-3 py-2 text-[11px] font-black text-phx-ink transition hover:border-orange-300"
+              className="rounded-lg border border-phx-line bg-white px-3 py-2 text-phx-xs font-black text-phx-ink transition hover:border-orange-300"
               onClick={onToggleExpand}
               type="button"
             >
               {expanded ? "Close" : "Edit roles"}
             </button>
           ) : null}
-          <a className="inline-flex items-center gap-1 text-[11px] font-black text-phx-accent hover:underline" href={item.deepLinkHref}>
+          <a className="inline-flex items-center gap-1 text-phx-xs font-black text-phx-accent hover:underline" href={item.deepLinkHref}>
             Full editor <ExternalLink className="h-3 w-3" />
           </a>
         </div>
@@ -229,7 +229,7 @@ function ControlCenterRow({
       ) : null}
 
       {item.sourceSystem === "email_notifications" ? (
-        <p className="mt-3 text-[11px] text-phx-ink-faint">
+        <p className="mt-3 text-phx-xs text-phx-ink-faint">
           Recipient routing (who exactly, e.g. direct manager vs. selected job titles) is edited in the full editor — this row only
           controls whether it sends at all.
         </p>
@@ -249,7 +249,7 @@ function ControlCenterRow({
             selected={draftRoles}
           />
           <button
-            className="inline-flex h-[42px] items-center gap-1.5 rounded-lg bg-[#0B0B0B] px-4 text-[11px] font-black text-white transition hover:bg-[#1E293B] disabled:opacity-50"
+            className="inline-flex h-[42px] items-center gap-1.5 rounded-lg bg-[#0B0B0B] px-4 text-phx-xs font-black text-white transition hover:bg-[#1E293B] disabled:opacity-50"
             disabled={pending || !rolesDirty}
             onClick={() =>
               onSave(

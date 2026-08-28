@@ -40,10 +40,10 @@ import type {
 // the same way on 2026-08-21 and the two must stay identical; a 10-column table side-scrolling
 // inside a phone is what this replaces.
 
-const THEAD = "px-3 py-2.5 text-[10px] font-black uppercase tracking-[0.12em] text-white";
+const THEAD = "px-3 py-2.5 text-phx-2xs font-black uppercase tracking-[0.12em] text-white";
 const SELECT_CLASS =
   "h-9 w-full border border-slate-200 bg-white px-2 text-sm font-semibold text-slate-700 outline-none focus:border-orange-400";
-const LABEL_CLASS = "block text-[9px] font-black uppercase tracking-[0.16em] text-slate-400";
+const LABEL_CLASS = "block text-phx-3xs font-black uppercase tracking-[0.16em] text-slate-400";
 
 const STATUS_LABEL: Record<RepDoctorStatus, string> = {
   missed: "Never visited",
@@ -242,7 +242,7 @@ export function RepDoctorListsControls({
 
       <div className="flex flex-wrap items-center gap-3">
         <button
-          className="h-9 border border-slate-200 bg-slate-900 px-4 text-[11px] font-black uppercase tracking-[0.12em] text-white hover:bg-slate-700"
+          className="h-9 border border-slate-200 bg-slate-900 px-4 text-phx-xs font-black uppercase tracking-[0.12em] text-white hover:bg-slate-700"
           onClick={() => push(draft)}
           type="button"
         >
@@ -250,7 +250,7 @@ export function RepDoctorListsControls({
         </button>
         {active ? (
           <button
-            className="h-9 border border-slate-200 bg-white px-4 text-[11px] font-black uppercase tracking-[0.12em] text-slate-600 hover:border-orange-400"
+            className="h-9 border border-slate-200 bg-white px-4 text-phx-xs font-black uppercase tracking-[0.12em] text-slate-600 hover:border-orange-400"
             onClick={clearAll}
             type="button"
           >
@@ -258,7 +258,7 @@ export function RepDoctorListsControls({
           </button>
         ) : null}
         <button
-          className="inline-flex h-9 items-center gap-2 border border-slate-200 bg-white px-4 text-[11px] font-black uppercase tracking-[0.12em] text-slate-600 hover:border-orange-400 disabled:opacity-50"
+          className="inline-flex h-9 items-center gap-2 border border-slate-200 bg-white px-4 text-phx-xs font-black uppercase tracking-[0.12em] text-slate-600 hover:border-orange-400 disabled:opacity-50"
           disabled={syncing}
           onClick={refresh}
           type="button"
@@ -267,10 +267,10 @@ export function RepDoctorListsControls({
           {syncing ? "Pulling from CRM" : "Refresh from CRM"}
         </button>
         {syncMessage ? (
-          <span className="whitespace-nowrap text-[11px] font-semibold text-slate-500">{syncMessage}</span>
+          <span className="whitespace-nowrap text-phx-xs font-semibold text-slate-500">{syncMessage}</span>
         ) : null}
         {active ? (
-          <span className="whitespace-nowrap text-[11px] font-semibold text-amber-700">
+          <span className="whitespace-nowrap text-phx-xs font-semibold text-amber-700">
             Filtered — every figure below counts only the matching rows.
           </span>
         ) : null}
@@ -377,19 +377,19 @@ export function RepDoctorListsRepTable({ month, rows }: { month: string; rows: R
                 <span className="flex items-start gap-3">
                   <span className="flex flex-col items-end leading-tight">
                     <span className={`text-sm font-black ${coverageText(row.coveragePct)}`}>{row.coveragePct}%</span>
-                    <span className="whitespace-nowrap text-[8px] font-black uppercase tracking-[0.12em] text-slate-400">
+                    <span className="whitespace-nowrap text-phx-4xs font-black uppercase tracking-[0.12em] text-slate-400">
                       Coverage
                     </span>
                   </span>
                   <span className="flex flex-col items-end leading-tight">
                     <span className={`text-sm font-black ${frequencyText(row.frequencyPct)}`}>{row.frequencyPct}%</span>
-                    <span className="whitespace-nowrap text-[8px] font-black uppercase tracking-[0.12em] text-slate-400">
+                    <span className="whitespace-nowrap text-phx-4xs font-black uppercase tracking-[0.12em] text-slate-400">
                       Frequency
                     </span>
                   </span>
                 </span>
               ) : (
-                <span className="whitespace-nowrap text-[10px] font-bold uppercase tracking-[0.08em] text-slate-400">
+                <span className="whitespace-nowrap text-phx-2xs font-bold uppercase tracking-[0.08em] text-slate-400">
                   No plan
                 </span>
               )
@@ -485,7 +485,7 @@ export function RepDoctorListsRepTable({ month, rows }: { month: string; rows: R
                       </div>
                     ) : (
                       <div className="flex items-center justify-end">
-                        <span className="whitespace-nowrap text-right text-[10px] font-bold uppercase tracking-[0.08em] text-slate-400">
+                        <span className="whitespace-nowrap text-right text-phx-2xs font-bold uppercase tracking-[0.08em] text-slate-400">
                           No plan
                         </span>
                       </div>
@@ -506,7 +506,7 @@ export function RepDoctorListsRepTable({ month, rows }: { month: string; rows: R
                       </div>
                     ) : (
                       <div className="flex items-center justify-end">
-                        <span className="whitespace-nowrap text-right text-[10px] font-bold uppercase tracking-[0.08em] text-slate-400">
+                        <span className="whitespace-nowrap text-right text-phx-2xs font-bold uppercase tracking-[0.08em] text-slate-400">
                           No plan
                         </span>
                       </div>
@@ -642,7 +642,7 @@ export function RepDoctorListsDoctorTable({ month, rows }: { month: string; rows
             accent={STATUS_ACCENT[row.status]}
             meta={`${row.speciality ?? "Unspecified"} · ${KIND_LABEL[row.kind] ?? row.kind}`}
             status={
-              <span className={`text-[10px] font-black uppercase tracking-[0.1em] ${STATUS_TEXT[row.status]}`}>
+              <span className={`text-phx-2xs font-black uppercase tracking-[0.1em] ${STATUS_TEXT[row.status]}`}>
                 {STATUS_LABEL[row.status]}
               </span>
             }

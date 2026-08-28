@@ -143,7 +143,7 @@ function Metric({
   };
   return (
     <Card className={cn(panelClassName, "min-h-[104px] p-4", tones[tone])}>
-      <p className="text-[10px] font-black uppercase tracking-[0.18em] opacity-70">{label}</p>
+      <p className="text-phx-2xs font-black uppercase tracking-[0.18em] opacity-70">{label}</p>
       <p className="mt-2 break-words text-2xl font-black tracking-tight">{value}</p>
     </Card>
   );
@@ -933,7 +933,7 @@ function UploadStatusPanel({
                     : <Clock className="h-4 w-4 shrink-0 text-phx-ink-faint" />}
                   <div className="min-w-0">
                     <p className={cn("truncate text-xs font-black", done ? "text-emerald-800" : "text-phx-ink")}>{d.name}</p>
-                    <p className={cn("text-[11px] font-semibold", done ? "text-emerald-600" : "text-phx-ink-soft")}>{d.code} · {done ? "Validated ✓" : "Pending"}</p>
+                    <p className={cn("text-phx-xs font-semibold", done ? "text-emerald-600" : "text-phx-ink-soft")}>{d.code} · {done ? "Validated ✓" : "Pending"}</p>
                   </div>
                 </button>
               );
@@ -1280,7 +1280,7 @@ export function SalesImportWorkspace({ distributors, initialBatches, initialDash
             <div>
               <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-orange-200 bg-orange-50 px-3 py-1">
                 <Database className="h-3.5 w-3.5 text-orange-600" />
-                <span className="text-[11px] font-black uppercase tracking-[0.18em] text-orange-600">Source of Sales</span>
+                <span className="text-phx-xs font-black uppercase tracking-[0.18em] text-orange-600">Source of Sales</span>
               </div>
               <div className="flex items-center gap-3">
                 <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#0B0B0B] text-orange-400 shadow-[0_14px_30px_rgba(15,23,42,0.22)]">
@@ -1461,7 +1461,7 @@ export function SalesImportWorkspace({ distributors, initialBatches, initialDash
               <div className="border-b border-phx-line bg-phx-paper px-6 py-4">
                 <div className="mb-1 inline-flex items-center gap-2 rounded-full border border-orange-200 bg-orange-50 px-3 py-1">
                   <UploadCloud className="h-3 w-3 text-orange-600" />
-                  <span className="text-[10px] font-black uppercase tracking-[0.18em] text-orange-600">Upload Monthly Sheet</span>
+                  <span className="text-phx-2xs font-black uppercase tracking-[0.18em] text-orange-600">Upload Monthly Sheet</span>
                 </div>
                 <p className="mt-1 text-xs text-phx-ink-soft">Pick the distributor, attach its raw export, validate, then confirm — three steps, no surprises.</p>
               </div>

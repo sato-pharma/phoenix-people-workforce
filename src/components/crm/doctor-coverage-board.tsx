@@ -44,8 +44,8 @@ function Section({
     <div className="border-b border-slate-200 bg-white last:border-b-0">
       <div className="flex items-start justify-between gap-4 border-b border-slate-200 bg-slate-900 px-5 py-3.5">
         <div>
-          <h2 className="text-[11px] font-black uppercase tracking-[0.14em] text-white">{title}</h2>
-          {description ? <p className="mt-0.5 text-[10px] text-slate-400">{description}</p> : null}
+          <h2 className="text-phx-xs font-black uppercase tracking-[0.14em] text-white">{title}</h2>
+          {description ? <p className="mt-0.5 text-phx-2xs text-slate-400">{description}</p> : null}
         </div>
         {action}
       </div>
@@ -72,9 +72,9 @@ function Tile({
             : "text-slate-900";
   return (
     <div className="border border-slate-200 px-3 py-2.5">
-      <p className="text-[9px] font-black uppercase tracking-[0.14em] text-slate-400">{label}</p>
+      <p className="text-phx-3xs font-black uppercase tracking-[0.14em] text-slate-400">{label}</p>
       <p className={`text-lg font-black ${valueClass}`}>{value}</p>
-      {sub ? <p className="text-[10px] text-slate-400">{sub}</p> : null}
+      {sub ? <p className="text-phx-2xs text-slate-400">{sub}</p> : null}
     </div>
   );
 }
@@ -211,17 +211,17 @@ export function DoctorCoverageBoard({
           {emptyPanel ? null : (
             <div className="grid gap-5 lg:grid-cols-2">
               <div>
-                <p className="mb-2 text-[9px] font-black uppercase tracking-[0.16em] text-slate-400">Grade split</p>
+                <p className="mb-2 text-phx-3xs font-black uppercase tracking-[0.16em] text-slate-400">Grade split</p>
                 <div className="divide-y divide-slate-100 border border-slate-200">
                   {board.gradeSplit.map((grade) => (
                     <div className="flex items-center gap-3 px-3 py-2" key={grade.tier}>
-                      <span className="w-5 text-[11px] font-black text-slate-300">{grade.tier}</span>
+                      <span className="w-5 text-phx-xs font-black text-slate-300">{grade.tier}</span>
                       <span className="flex-1 text-sm font-medium text-slate-700">{grade.doctors} doctors</span>
                       <span className="w-24 text-right text-sm font-black text-emerald-700">{grade.covered} covered</span>
                     </div>
                   ))}
                 </div>
-                <p className="mb-2 mt-4 text-[9px] font-black uppercase tracking-[0.16em] text-slate-400">Coverage trend</p>
+                <p className="mb-2 mt-4 text-phx-3xs font-black uppercase tracking-[0.16em] text-slate-400">Coverage trend</p>
                 <div className="divide-y divide-slate-100 border border-slate-200">
                   {board.trend.map((point) => (
                     <div className="flex items-center gap-3 px-3 py-2" key={point.month}>
@@ -237,7 +237,7 @@ export function DoctorCoverageBoard({
               <div>
                 {/* Two lists, never one. A pharmacy is not a specialty, and ranking them together
                     put pharmacies above most real specialties (owner, 2026-08-08). */}
-                <p className="mb-2 text-[9px] font-black uppercase tracking-[0.16em] text-slate-400">
+                <p className="mb-2 text-phx-3xs font-black uppercase tracking-[0.16em] text-slate-400">
                   Specialty mix — doctors (SP)
                 </p>
                 <div className="divide-y divide-slate-100 border border-slate-200">
@@ -246,7 +246,7 @@ export function DoctorCoverageBoard({
                   ) : (
                     board.specialtyMix.map((specialty, index) => (
                       <div className="flex items-center gap-3 whitespace-nowrap px-3 py-2" key={specialty.label}>
-                        <span className="w-5 text-[11px] font-black text-slate-300">#{index + 1}</span>
+                        <span className="w-5 text-phx-xs font-black text-slate-300">#{index + 1}</span>
                         <span className="flex-1 text-sm font-medium text-slate-700">{specialty.label}</span>
                         <span className="w-14 text-right text-sm font-black text-slate-900">{specialty.doctors}</span>
                       </div>
@@ -254,7 +254,7 @@ export function DoctorCoverageBoard({
                   )}
                 </div>
 
-                <p className="mb-2 mt-4 text-[9px] font-black uppercase tracking-[0.16em] text-slate-400">
+                <p className="mb-2 mt-4 text-phx-3xs font-black uppercase tracking-[0.16em] text-slate-400">
                   Account mix — pharmacies, hospitals &amp; contracts (HCP)
                 </p>
                 <div className="divide-y divide-slate-100 border border-slate-200">
@@ -263,7 +263,7 @@ export function DoctorCoverageBoard({
                   ) : (
                     board.accountMix.map((account, index) => (
                       <div className="flex items-center gap-3 whitespace-nowrap px-3 py-2" key={account.label}>
-                        <span className="w-5 text-[11px] font-black text-slate-300">#{index + 1}</span>
+                        <span className="w-5 text-phx-xs font-black text-slate-300">#{index + 1}</span>
                         <span className="flex-1 text-sm font-medium text-slate-700">{account.label}</span>
                         <span className="w-14 text-right text-sm font-black text-slate-900">{account.doctors}</span>
                       </div>
@@ -314,9 +314,9 @@ export function DoctorCoverageBoard({
             <div className="divide-y divide-slate-100">
               {board.callList.map((doctor, index) => (
                 <div className="flex items-center gap-3 whitespace-nowrap px-5 py-2" key={doctor.contactCrmId}>
-                  <span className="w-6 text-[11px] font-black text-slate-300">#{index + 1}</span>
+                  <span className="w-6 text-phx-xs font-black text-slate-300">#{index + 1}</span>
                   <span
-                    className={`w-5 text-[11px] font-black ${
+                    className={`w-5 text-phx-xs font-black ${
                       doctor.gradeTier === "A" ? "text-rose-700" : doctor.gradeTier === "B" ? "text-amber-700" : "text-slate-400"
                     }`}
                   >

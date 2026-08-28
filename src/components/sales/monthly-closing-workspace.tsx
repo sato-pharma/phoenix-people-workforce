@@ -352,7 +352,7 @@ export function MonthlyClosingWorkspace({ canPublish = false, initialCoverage = 
         action={(
           <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
             <label className="flex flex-col gap-1 sm:w-44">
-              <span className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">Line</span>
+              <span className="text-phx-2xs font-bold uppercase tracking-[0.16em] text-slate-500">Line</span>
               <SearchableSelect
                 className={selectClassName}
                 disabled={isLoading || availableLines.length === 0}
@@ -369,7 +369,7 @@ export function MonthlyClosingWorkspace({ canPublish = false, initialCoverage = 
               </SearchableSelect>
             </label>
             <label className="flex flex-col gap-1">
-              <span className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">
+              <span className="text-phx-2xs font-bold uppercase tracking-[0.16em] text-slate-500">
                 {isMultiPeriod ? "Months" : "Month"}
               </span>
               <ClosingPeriodSelect

@@ -27,8 +27,8 @@ export function InsightCard({ title, insights, actionLabel, onAction, className 
               <Sparkles className="h-4 w-4" />
             </div>
             <div className="space-y-1">
-              <p className="text-[11px] font-black text-slate-900 leading-tight group-hover:text-orange-600 transition-colors">{n.l}</p>
-              <p className="text-[10px] font-bold text-slate-400">{n.s}</p>
+              <p className="text-phx-xs font-black text-slate-900 leading-tight group-hover:text-orange-600 transition-colors">{n.l}</p>
+              <p className="text-phx-2xs font-bold text-slate-400">{n.s}</p>
             </div>
           </div>
         ))}
@@ -36,7 +36,7 @@ export function InsightCard({ title, insights, actionLabel, onAction, className 
       {actionLabel && (
         <button 
           onClick={onAction}
-          className="mt-10 flex w-full items-center justify-center text-[10px] font-black text-orange-600 uppercase tracking-widest hover:underline"
+          className="mt-10 flex w-full items-center justify-center text-phx-2xs font-black text-orange-600 uppercase tracking-widest hover:underline"
         >
           {actionLabel}
         </button>

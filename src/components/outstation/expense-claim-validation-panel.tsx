@@ -105,21 +105,21 @@ export function ExpenseClaimValidationPanel({ requestId }: { requestId: number }
   return (
     <PanelSection title="Claim validation">
       {state.kind === "loading" ? (
-        <p className="flex items-center gap-2 text-[13px] text-slate-500">
+        <p className="flex items-center gap-2 text-phx-md text-slate-500">
           <Loader2 className="h-4 w-4 animate-spin" />
           Checking this claim against the day&apos;s CRM activity…
         </p>
       ) : null}
 
       {state.kind === "error" ? (
-        <p className="flex items-start gap-2 text-[13px] leading-relaxed text-slate-500">
+        <p className="flex items-start gap-2 text-phx-md leading-relaxed text-slate-500">
           <HelpCircle className="mt-0.5 h-4 w-4 shrink-0" />
           {state.message}
         </p>
       ) : null}
 
       {state.kind === "ready" && !state.data.available ? (
-        <p className="flex items-start gap-2 text-[13px] leading-relaxed text-slate-500">
+        <p className="flex items-start gap-2 text-phx-md leading-relaxed text-slate-500">
           <HelpCircle className="mt-0.5 h-4 w-4 shrink-0" />
           {state.data.reason}
         </p>
@@ -129,12 +129,12 @@ export function ExpenseClaimValidationPanel({ requestId }: { requestId: number }
         <div className="space-y-3">
           <div className="flex flex-wrap items-center gap-2">
             <span
-              className={`inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[10px] font-black uppercase tracking-wider ${VERDICT_STYLE[state.data.headline].chip}`}
+              className={`inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-phx-2xs font-black uppercase tracking-wider ${VERDICT_STYLE[state.data.headline].chip}`}
             >
               <ShieldCheck className="h-3.5 w-3.5" />
               {VERDICT_STYLE[state.data.headline].label}
             </span>
-            <p className="text-[13px] leading-relaxed text-slate-700">{state.data.summary}</p>
+            <p className="text-phx-md leading-relaxed text-slate-700">{state.data.summary}</p>
           </div>
 
           {/* Stacked cards, never a table. This panel renders inside a column that collapses on
@@ -147,21 +147,21 @@ export function ExpenseClaimValidationPanel({ requestId }: { requestId: number }
               >
                 <div className="flex flex-wrap items-center gap-2">
                   <VerdictIcon verdict={check.verdict} />
-                  <p className="text-[13px] font-bold text-slate-900">{check.title}</p>
+                  <p className="text-phx-md font-bold text-slate-900">{check.title}</p>
                   <span
-                    className={`rounded px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider ${VERDICT_STYLE[check.verdict].chip}`}
+                    className={`rounded px-1.5 py-0.5 text-phx-3xs font-bold uppercase tracking-wider ${VERDICT_STYLE[check.verdict].chip}`}
                   >
                     {VERDICT_STYLE[check.verdict].label}
                   </span>
                 </div>
 
-                <p className="mt-1.5 text-[13px] leading-relaxed text-slate-600">{check.detail}</p>
+                <p className="mt-1.5 text-phx-md leading-relaxed text-slate-600">{check.detail}</p>
 
                 {check.facts.length > 0 ? (
                   <dl className="mt-2 flex flex-wrap gap-x-4 gap-y-1">
                     {check.facts.map((fact) => (
                       <div className="flex items-baseline gap-1.5" key={`${check.id}-${fact.label}`}>
-                        <dt className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                        <dt className="text-phx-2xs font-bold uppercase tracking-wider text-slate-500">
                           {fact.label}
                         </dt>
                         <dd className="text-xs font-semibold text-slate-800">{fact.value}</dd>

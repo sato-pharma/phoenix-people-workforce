@@ -86,7 +86,7 @@ function NationalKeycards({ nsmNational }: { nsmNational: PortalHomeSnapshot["ns
         title="National Performance"
         right={
           nsmNational ? (
-            <span className="whitespace-nowrap text-[10px] font-bold uppercase tracking-widest text-slate-400">
+            <span className="whitespace-nowrap text-phx-2xs font-bold uppercase tracking-widest text-slate-400">
               {nsmNational.dsmCount} {nsmNational.dsmCount === 1 ? "district" : "districts"}
             </span>
           ) : undefined
@@ -142,7 +142,7 @@ export function NsmCommandCenter({ snapshot, access }: { snapshot: PortalHomeSna
 
       <DashboardsGrid items={DASHBOARDS} />
 
-      <div className="flex items-center gap-1.5 border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-[11px] font-semibold text-amber-700">
+      <div className="flex items-center gap-1.5 border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-phx-xs font-semibold text-amber-700">
         <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
         Incentives shown below are not yet confirmed by HR.
       </div>

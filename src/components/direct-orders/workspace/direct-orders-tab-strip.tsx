@@ -65,13 +65,13 @@ export function DirectOrdersTabStrip({
               href={key === "overview" ? basePath : `${basePath}?view=${key}`}
               role="tab"
               aria-selected={active}
-              className={`min-h-[40px] whitespace-nowrap px-3 py-1.5 text-[12px] font-black uppercase tracking-wide transition-colors ${control} ${
+              className={`min-h-[40px] whitespace-nowrap px-3 py-1.5 text-phx-sm font-black uppercase tracking-wide transition-colors ${control} ${
                 active ? "bg-slate-900 text-white" : "text-slate-500 hover:bg-slate-100"
               }`}
             >
               {TAB_LABEL[key]}
               {key === "needs-action" && needsActionCount > 0 ? (
-                <span className="ml-1.5 inline-flex min-w-[18px] justify-center rounded-full bg-orange-600 px-1 text-[10px] text-white">
+                <span className="ml-1.5 inline-flex min-w-[18px] justify-center rounded-full bg-orange-600 px-1 text-phx-2xs text-white">
                   {needsActionCount}
                 </span>
               ) : null}

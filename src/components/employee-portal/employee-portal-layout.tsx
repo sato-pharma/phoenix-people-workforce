@@ -548,8 +548,8 @@ function EmployeePortalMenu({
               <p
                 className={
                   isMobile
-                    ? "text-[10px] font-black uppercase tracking-[0.16em] text-[#1D2B42]"
-                    : "text-[9px] font-black uppercase tracking-[0.18em] text-[#344073]"
+                    ? "text-phx-2xs font-black uppercase tracking-[0.16em] text-[#1D2B42]"
+                    : "text-phx-3xs font-black uppercase tracking-[0.18em] text-[#344073]"
                 }
               >
                 {section.title}
@@ -567,7 +567,7 @@ function EmployeePortalMenu({
                   aria-current={active ? "page" : undefined}
                   key={item.label}
                   className={`group flex items-center gap-3 rounded px-4 py-2.5 ${
-                    isMobile ? "text-[13px] font-semibold duration-200" : "text-[12px] font-bold duration-150"
+                    isMobile ? "text-phx-md font-semibold duration-200" : "text-phx-sm font-bold duration-150"
                   } transition ${pending ? "bg-phx-accent-soft text-phx-accent-hover ring-1 ring-orange-200/80" : navItemClass(active)}`}
                   href={item.href}
                   onClick={(event) => handleNavigate(event, item.href)}
@@ -678,8 +678,8 @@ export function EmployeePortalTopNav({
           </button>
           <div className="flex min-w-0 flex-1 items-center lg:flex-none">
             <div className="min-w-0">
-              <p className="text-[8px] font-black uppercase tracking-[0.22em] text-orange-600 sm:text-[9px] sm:tracking-[0.26em]">Employee Portal</p>
-              <p className="whitespace-nowrap text-[10px] font-bold text-slate-500 sm:text-[11px]">{data.employee.roleLabel}</p>
+              <p className="text-phx-4xs font-black uppercase tracking-[0.22em] text-orange-600 sm:text-phx-3xs sm:tracking-[0.26em]">Employee Portal</p>
+              <p className="whitespace-nowrap text-phx-2xs font-bold text-slate-500 sm:text-phx-xs">{data.employee.roleLabel}</p>
             </div>
           </div>
 
@@ -729,7 +729,7 @@ export function EmployeePortalTopNav({
                       <item.icon className="h-4 w-4 shrink-0 text-orange-500" />
                       <span className="min-w-0">
                         <span className="block whitespace-nowrap text-sm font-bold text-slate-800">{item.label}</span>
-                        <span className="block whitespace-nowrap text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">{item.section}</span>
+                        <span className="block whitespace-nowrap text-phx-xs font-semibold uppercase tracking-[0.12em] text-slate-400">{item.section}</span>
                       </span>
                     </button>
                   ))
@@ -743,14 +743,14 @@ export function EmployeePortalTopNav({
           </div>
           <InAppNotificationsBell isAdminMode={false} />
           <InternalMessagesMenu isAdminMode={false} />
-          <div className="hidden items-center gap-1.5 rounded border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-semibold text-slate-500 lg:flex">
+          <div className="hidden items-center gap-1.5 rounded border border-slate-200 bg-white px-2.5 py-1.5 text-phx-xs font-semibold text-slate-500 lg:flex">
             <CalendarClock className="h-3 w-3 text-slate-400" />
             <span className="whitespace-nowrap">
               {new Date().toLocaleDateString("en-US", { day: "numeric", month: "short", timeZone: "Africa/Cairo", year: "numeric" })}
             </span>
           </div>
           {visibility.showMyPerformanceTab === false ? null : (
-            <div className="hidden items-center gap-1.5 rounded border border-orange-200 bg-orange-50 px-2.5 py-1.5 text-[11px] font-bold text-orange-700 lg:flex">
+            <div className="hidden items-center gap-1.5 rounded border border-orange-200 bg-orange-50 px-2.5 py-1.5 text-phx-xs font-bold text-orange-700 lg:flex">
               <span className="h-1.5 w-1.5 rounded-full bg-orange-500 ep-pulse-orange" />
               <Zap className="h-3 w-3" />
               <span className="whitespace-nowrap">Live Performance</span>
@@ -779,7 +779,7 @@ export function EmployeePortalTopNav({
                 <div className="border-b border-slate-100 px-3.5 py-2.5">
                   <p className="text-sm font-black text-slate-900">{data.employee.fullName}</p>
                   <p className="mt-0.5 text-xs font-semibold text-slate-500">{data.employee.roleLabel}</p>
-                  <p className="mt-0.5 font-mono text-[10px] font-bold uppercase tracking-[0.10em] text-orange-600">
+                  <p className="mt-0.5 font-mono text-phx-2xs font-bold uppercase tracking-[0.10em] text-orange-600">
                     {data.employee.hrId}
                   </p>
                 </div>
@@ -863,7 +863,7 @@ export function EmployeePortalTopNav({
               <Image alt="Phoenix" className="h-8 w-8 shrink-0 rounded object-cover" height={32} src={systemAssets.adminRailMark} width={32} />
               <div>
                 <p className="text-sm font-semibold text-slate-900">{data.employee.fullName}</p>
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-orange-600">{data.employee.roleLabel}</p>
+                <p className="text-phx-2xs font-semibold uppercase tracking-wider text-orange-600">{data.employee.roleLabel}</p>
               </div>
             </div>
           </div>
@@ -997,10 +997,10 @@ export function EmployeePortalSidebar({
                 width={32}
               />
               <div>
-                <div className="text-[11px] font-black leading-none tracking-[0.30em] text-[#25314A]">
+                <div className="text-phx-xs font-black leading-none tracking-[0.30em] text-[#25314A]">
                   PHOENIX
                 </div>
-                <div className="mt-1 text-[8px] font-black leading-none tracking-[0.34em] text-[#F05A1A]">
+                <div className="mt-1 text-phx-4xs font-black leading-none tracking-[0.34em] text-[#F05A1A]">
                   WORKFORCE
                 </div>
               </div>
@@ -1021,7 +1021,7 @@ export function EmployeePortalSidebar({
 
           <div className="mt-4 shrink-0 border-t border-[#E9EDF5] pt-3">
             <button
-              className="flex w-full items-center gap-3 rounded bg-[#FFF2EE] px-4 py-2.5 text-[12px] font-black text-[#F05A1A] transition hover:bg-[#FFE8DD]"
+              className="flex w-full items-center gap-3 rounded bg-[#FFF2EE] px-4 py-2.5 text-phx-sm font-black text-[#F05A1A] transition hover:bg-[#FFE8DD]"
               onClick={handleLogout}
               type="button"
             >

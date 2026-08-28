@@ -60,7 +60,7 @@ export function AdminProfileForm({ profile }: { profile: Profile }) {
   return (
     <div className="mx-auto min-h-screen max-w-[900px] space-y-8 p-6 lg:p-8">
       <div>
-        <p className="text-[11px] font-black uppercase tracking-[0.24em] text-phx-accent">Admin / Profile</p>
+        <p className="text-phx-xs font-black uppercase tracking-[0.24em] text-phx-accent">Admin / Profile</p>
         <h1 className="mt-2 text-3xl font-black tracking-tight text-phx-ink">My Profile</h1>
         <p className="mt-2 max-w-2xl text-sm leading-6 text-phx-ink-soft">
           View your account details and update your display name or email address.
@@ -87,7 +87,7 @@ export function AdminProfileForm({ profile }: { profile: Profile }) {
               { label: "Account created", value: formattedCreatedAt },
             ].map(({ label, value }) => (
               <div className="flex flex-col gap-0.5" key={label}>
-                <dt className="text-[10px] font-black uppercase tracking-[0.16em] text-phx-ink-soft">{label}</dt>
+                <dt className="text-phx-2xs font-black uppercase tracking-[0.16em] text-phx-ink-soft">{label}</dt>
                 <dd className="rounded-lg border border-phx-line bg-phx-paper px-3 py-2 font-mono text-sm font-semibold text-phx-ink">
                   {value}
                 </dd>
@@ -110,7 +110,7 @@ export function AdminProfileForm({ profile }: { profile: Profile }) {
 
           <form className="mt-4 space-y-4" onSubmit={handleSave}>
             <div className="space-y-1.5">
-              <label className="text-[10px] font-black uppercase tracking-[0.16em] text-phx-ink-soft" htmlFor="profile-name">
+              <label className="text-phx-2xs font-black uppercase tracking-[0.16em] text-phx-ink-soft" htmlFor="profile-name">
                 Display name
               </label>
               <Input
@@ -122,7 +122,7 @@ export function AdminProfileForm({ profile }: { profile: Profile }) {
             </div>
 
             <div className="space-y-1.5">
-              <label className="text-[10px] font-black uppercase tracking-[0.16em] text-phx-ink-soft" htmlFor="profile-email">
+              <label className="text-phx-2xs font-black uppercase tracking-[0.16em] text-phx-ink-soft" htmlFor="profile-email">
                 Email address
               </label>
               <Input

@@ -74,8 +74,8 @@ export function DirectOrderStatusPill({ status, salesMonth, variant = "solid" }:
 
   const base =
     variant === "ring"
-      ? "inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-black uppercase tracking-wide ring-1"
-      : "inline-block px-2 py-0.5 text-[10px] font-black uppercase tracking-wider";
+      ? "inline-flex items-center rounded-full px-2 py-0.5 text-phx-2xs font-black uppercase tracking-wide ring-1"
+      : "inline-block px-2 py-0.5 text-phx-2xs font-black uppercase tracking-wider";
 
   const fallback = variant === "ring" ? "bg-slate-50 text-slate-500 ring-slate-200" : "bg-slate-100 text-slate-600";
   const tone = awaitingFinance

@@ -196,9 +196,9 @@ function useOfflineQueue(onReplay: (payload: QueuedExcuseSubmission) => Promise<
 /* ═══════════════════════════════════════════════════════════════════ */
 
 const inputClass =
-  "h-10 w-full rounded-sm border border-slate-200 bg-white px-3 text-[13px] font-semibold text-slate-800 outline-none transition focus:border-orange-300 focus:ring-2 focus:ring-orange-100";
+  "h-10 w-full rounded-sm border border-slate-200 bg-white px-3 text-phx-md font-semibold text-slate-800 outline-none transition focus:border-orange-300 focus:ring-2 focus:ring-orange-100";
 
-const labelClass = "text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500";
+const labelClass = "text-phx-xs font-bold uppercase tracking-[0.12em] text-slate-500";
 
 /* ═══════════════════════════════════════════════════════════════════ */
 /* ─── Metric Card ──────────────────────────────────────────────────── */
@@ -252,13 +252,13 @@ function MetricCard({
 
   return (
     <div className={`rounded-sm border p-4 shadow-[0_1px_3px_rgba(15,23,42,0.04)] ${t.border} ${t.bg}`}>
-      <p className={`text-[10px] font-bold uppercase tracking-[0.12em] ${t.label}`}>
+      <p className={`text-phx-2xs font-bold uppercase tracking-[0.12em] ${t.label}`}>
         {label}
       </p>
       <p className={`mt-1.5 text-[1.75rem] font-extrabold leading-none tracking-[-0.04em] ${t.value}`}>
         {value}
       </p>
-      <p className="mt-2 text-[11px] font-medium leading-4 text-slate-500">{description}</p>
+      <p className="mt-2 text-phx-xs font-medium leading-4 text-slate-500">{description}</p>
     </div>
   );
 }
@@ -287,8 +287,8 @@ function UsageDistributionBar({
   return (
     <div className="rounded-sm border border-slate-200 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.04)]">
       <div className="flex items-center justify-between">
-        <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500">Monthly usage</p>
-        <p className="text-[11px] font-bold text-slate-400">{allowance} total</p>
+        <p className="text-phx-xs font-bold uppercase tracking-[0.12em] text-slate-500">Monthly usage</p>
+        <p className="text-phx-xs font-bold text-slate-400">{allowance} total</p>
       </div>
       <div className="mt-2.5 flex h-3 w-full overflow-hidden rounded-sm bg-slate-100">
         {approvedPct > 0 ? (
@@ -313,7 +313,7 @@ function UsageDistributionBar({
           />
         ) : null}
       </div>
-      <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[10px] font-bold uppercase tracking-[0.08em]">
+      <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-phx-2xs font-bold uppercase tracking-[0.08em]">
         <span className="flex items-center gap-1.5">
           <span className="inline-block h-2 w-2 rounded-sm bg-emerald-500" />
           <span className="text-emerald-700">Approved {approved}</span>
@@ -361,19 +361,19 @@ function MonthlyTrendSparkline({ requests }: { requests: EmployeeExcuseRequest[]
 
   return (
     <div className="rounded-sm border border-slate-200 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.04)]">
-      <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500">Monthly trend</p>
+      <p className="text-phx-xs font-bold uppercase tracking-[0.12em] text-slate-500">Monthly trend</p>
       <div className="mt-3 flex items-end justify-between gap-1">
         {buckets.map((b) => {
           const h = Math.max(4, (b.count / maxCount) * barMaxHeight);
           return (
             <div key={b.key} className="flex flex-1 flex-col items-center gap-1">
-              <span className="text-[10px] font-bold text-slate-700">{b.count}</span>
+              <span className="text-phx-2xs font-bold text-slate-700">{b.count}</span>
               <div
                 className="w-full rounded-sm bg-gradient-to-t from-orange-500 to-orange-300 transition-all duration-500"
                 style={{ height: `${h}px` }}
                 title={`${b.label}: ${b.count} excuses`}
               />
-              <span className="text-[9px] font-bold uppercase tracking-[0.06em] text-slate-400">{b.label}</span>
+              <span className="text-phx-3xs font-bold uppercase tracking-[0.06em] text-slate-400">{b.label}</span>
             </div>
           );
         })}
@@ -397,8 +397,8 @@ function ExcuseHistoryCard({
     <div className="rounded-sm border border-slate-200 bg-white p-3 shadow-[0_1px_3px_rgba(15,23,42,0.04)]">
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
-          <p className="text-[13px] font-bold text-slate-900">{typeLabel(request.excuseType)}</p>
-          <p className="mt-0.5 text-[11px] font-medium text-slate-500">
+          <p className="text-phx-md font-bold text-slate-900">{typeLabel(request.excuseType)}</p>
+          <p className="mt-0.5 text-phx-xs font-medium text-slate-500">
             {formatDate(request.excuseDate)} · {request.durationHours}h
           </p>
         </div>
@@ -409,27 +409,27 @@ function ExcuseHistoryCard({
 
       <div className="mt-2 grid grid-cols-2 gap-2">
         <div>
-          <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-slate-400">Manager</p>
-          <p className="mt-0.5 text-[12px] font-semibold text-slate-700">{request.managerName ?? "Not assigned"}</p>
+          <p className="text-phx-2xs font-bold uppercase tracking-[0.08em] text-slate-400">Manager</p>
+          <p className="mt-0.5 text-phx-sm font-semibold text-slate-700">{request.managerName ?? "Not assigned"}</p>
         </div>
         <div>
-          <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-slate-400">Submitted</p>
-          <p className="mt-0.5 text-[12px] font-semibold text-slate-700">{formatDateTime(request.createdAt)}</p>
+          <p className="text-phx-2xs font-bold uppercase tracking-[0.08em] text-slate-400">Submitted</p>
+          <p className="mt-0.5 text-phx-sm font-semibold text-slate-700">{formatDateTime(request.createdAt)}</p>
         </div>
       </div>
 
       {request.managerDecisionAt ? (
         <div className="mt-2 border-t border-slate-100 pt-2">
-          <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-slate-400">Decision</p>
-          <p className="mt-0.5 text-[11px] font-semibold text-slate-600">{formatDateTime(request.managerDecisionAt)}</p>
+          <p className="text-phx-2xs font-bold uppercase tracking-[0.08em] text-slate-400">Decision</p>
+          <p className="mt-0.5 text-phx-xs font-semibold text-slate-600">{formatDateTime(request.managerDecisionAt)}</p>
           {request.managerDecisionComment ? (
-            <p className="mt-0.5 text-[11px] font-medium leading-4 text-slate-500">{request.managerDecisionComment}</p>
+            <p className="mt-0.5 text-phx-xs font-medium leading-4 text-slate-500">{request.managerDecisionComment}</p>
           ) : null}
         </div>
       ) : null}
       {request.status === "returned_to_employee" ? (
         <button
-          className="mt-3 inline-flex h-8 items-center justify-center rounded-sm border border-orange-200 bg-orange-50 px-3 text-[11px] font-bold text-orange-700 transition hover:bg-orange-100"
+          className="mt-3 inline-flex h-8 items-center justify-center rounded-sm border border-orange-200 bg-orange-50 px-3 text-phx-xs font-bold text-orange-700 transition hover:bg-orange-100"
           onClick={() => onEditReturned(request)}
           type="button"
         >
@@ -663,7 +663,7 @@ function EmployeeExcusesWorkspaceInner({ initialData }: EmployeeExcusesWorkspace
 
       {/* ── Offline banner (#2) ───────────────────────────────── */}
       {!isOnline ? (
-        <div className="flex items-center gap-2 rounded-sm border border-amber-200 bg-amber-50 px-3 py-2.5 text-[13px] font-bold text-amber-800">
+        <div className="flex items-center gap-2 rounded-sm border border-amber-200 bg-amber-50 px-3 py-2.5 text-phx-md font-bold text-amber-800">
           <WifiOff className="h-4 w-4 shrink-0 text-amber-600" />
           <span>
             You are offline. Requests will be queued and sent automatically when you reconnect.
@@ -674,7 +674,7 @@ function EmployeeExcusesWorkspaceInner({ initialData }: EmployeeExcusesWorkspace
 
       {/* ── Optimistic success animation (#1) ─────────────────── */}
       {submitSuccess ? (
-        <div className="flex items-center gap-2.5 rounded-sm border border-emerald-200 bg-emerald-50 px-4 py-3 text-[13px] font-bold text-emerald-800 animate-in fade-in duration-300">
+        <div className="flex items-center gap-2.5 rounded-sm border border-emerald-200 bg-emerald-50 px-4 py-3 text-phx-md font-bold text-emerald-800 animate-in fade-in duration-300">
           <CheckCircle2 className="h-5 w-5 shrink-0 text-emerald-600" />
           <span>Excuse request submitted successfully. Switching to history...</span>
         </div>
@@ -727,7 +727,7 @@ function EmployeeExcusesWorkspaceInner({ initialData }: EmployeeExcusesWorkspace
           return (
             <button
               aria-selected={active}
-              className={`flex h-9 shrink-0 items-center gap-2 whitespace-nowrap rounded-sm px-3 text-[13px] font-bold transition ${
+              className={`flex h-9 shrink-0 items-center gap-2 whitespace-nowrap rounded-sm px-3 text-phx-md font-bold transition ${
                 active ? "bg-white text-orange-600 shadow-sm" : "text-slate-500 hover:bg-white/70 hover:text-slate-700"
               }`}
               key={tab.value}
@@ -737,7 +737,7 @@ function EmployeeExcusesWorkspaceInner({ initialData }: EmployeeExcusesWorkspace
             >
               {tab.label}
               {tab.count > 0 ? (
-                <span className={`inline-flex h-5 min-w-5 items-center justify-center rounded-sm px-1 text-[10px] font-bold ${
+                <span className={`inline-flex h-5 min-w-5 items-center justify-center rounded-sm px-1 text-phx-2xs font-bold ${
                   active ? "bg-orange-100 text-orange-700" : "bg-slate-200 text-slate-600"
                 }`}>
                   {tab.count}
@@ -756,9 +756,9 @@ function EmployeeExcusesWorkspaceInner({ initialData }: EmployeeExcusesWorkspace
           {activeTab === "request" ? (
             <div className="rounded-sm border border-slate-200 bg-white shadow-[0_1px_3px_rgba(15,23,42,0.04)]">
               <div className="border-b border-slate-100 px-4 py-3">
-                <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-orange-600">Simple workflow</p>
+                <p className="text-phx-xs font-bold uppercase tracking-[0.12em] text-orange-600">Simple workflow</p>
                 <h2 className="mt-1 text-base font-extrabold text-slate-900">Request a 2-hour excuse</h2>
-                <p className="mt-0.5 text-[12px] font-medium leading-5 text-slate-500">
+                <p className="mt-0.5 text-phx-sm font-medium leading-5 text-slate-500">
                   Choose the date and type. Your manager and HR receive the request for visibility.
                 </p>
               </div>
@@ -775,7 +775,7 @@ function EmployeeExcusesWorkspaceInner({ initialData }: EmployeeExcusesWorkspace
                     />
                     {/* Date validation warning (#3) */}
                     {dateWarning ? (
-                      <p className={`mt-1 text-[11px] font-bold ${dateWarning.kind === "error" ? "text-rose-600" : "text-amber-600"}`}>
+                      <p className={`mt-1 text-phx-xs font-bold ${dateWarning.kind === "error" ? "text-rose-600" : "text-amber-600"}`}>
                         {dateWarning.text}
                       </p>
                     ) : null}
@@ -797,7 +797,7 @@ function EmployeeExcusesWorkspaceInner({ initialData }: EmployeeExcusesWorkspace
 
                 {/* Message */}
                 {message ? (
-                  <div className={`flex items-start gap-2 rounded-sm border px-3 py-2.5 text-[12px] font-bold ${
+                  <div className={`flex items-start gap-2 rounded-sm border px-3 py-2.5 text-phx-sm font-bold ${
                     message.kind === "success"
                       ? "border-emerald-200 bg-emerald-50 text-emerald-700"
                       : "border-rose-200 bg-rose-50 text-rose-700"
@@ -812,7 +812,7 @@ function EmployeeExcusesWorkspaceInner({ initialData }: EmployeeExcusesWorkspace
                 {/* Submit button with optimistic states (#1) */}
                 <div className="flex items-center gap-3">
                   <button
-                    className={`inline-flex h-9 items-center justify-center gap-2 rounded-sm px-5 text-[12px] font-bold text-white shadow-sm transition disabled:cursor-not-allowed disabled:shadow-none ${
+                    className={`inline-flex h-9 items-center justify-center gap-2 rounded-sm px-5 text-phx-sm font-bold text-white shadow-sm transition disabled:cursor-not-allowed disabled:shadow-none ${
                       submitSuccess
                         ? "bg-emerald-600"
                         : "bg-orange-500 hover:bg-orange-600 disabled:bg-slate-300"
@@ -842,13 +842,13 @@ function EmployeeExcusesWorkspaceInner({ initialData }: EmployeeExcusesWorkspace
                   </button>
 
                   {workspace.monthly.remaining <= 0 && !resubmitRequestId ? (
-                    <p className="text-[11px] font-bold text-rose-600">
+                    <p className="text-phx-xs font-bold text-rose-600">
                       Monthly limit reached for {currentMonthLabel}.
                     </p>
                   ) : null}
                   {resubmitRequestId ? (
                     <button
-                      className="text-[11px] font-bold text-slate-500 underline-offset-2 hover:text-slate-800 hover:underline"
+                      className="text-phx-xs font-bold text-slate-500 underline-offset-2 hover:text-slate-800 hover:underline"
                       onClick={() => {
                         setResubmitRequestId(null);
                         setMessage(null);
@@ -869,17 +869,17 @@ function EmployeeExcusesWorkspaceInner({ initialData }: EmployeeExcusesWorkspace
               <div className="border-b border-slate-100 px-4 py-3">
                 <div className="flex flex-col gap-1.5 sm:flex-row sm:items-start sm:justify-between">
                   <div>
-                    <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-orange-600">Request history</p>
+                    <p className="text-phx-xs font-bold uppercase tracking-[0.12em] text-orange-600">Request history</p>
                     <h2 className="mt-1 text-base font-extrabold text-slate-900">Excuse requests</h2>
                   </div>
                   <div className="flex items-center gap-2">
-                    <Badge className="w-fit border border-slate-200 bg-slate-50 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-600">
+                    <Badge className="w-fit border border-slate-200 bg-slate-50 px-2.5 py-1 text-phx-2xs font-bold uppercase tracking-[0.12em] text-slate-600">
                       {filteredRequests.length === historyTotal
                         ? `${historyTotal} requests`
                         : `${filteredRequests.length} of ${historyTotal}`}
                     </Badge>
                     <button
-                      className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-slate-200 bg-white px-2.5 text-[10px] font-bold text-slate-600 transition hover:bg-slate-50 print:hidden"
+                      className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-slate-200 bg-white px-2.5 text-phx-2xs font-bold text-slate-600 transition hover:bg-slate-50 print:hidden"
                       onClick={() => window.print()}
                       title="Print history"
                       type="button"
@@ -896,7 +896,7 @@ function EmployeeExcusesWorkspaceInner({ initialData }: EmployeeExcusesWorkspace
                   <div className="relative">
                     <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
                     <Input
-                      className="rounded-sm pl-9 text-[12px]"
+                      className="rounded-sm pl-9 text-phx-sm"
                       placeholder="Search by date, type, status, manager..."
                       value={historySearch}
                       onChange={(event) => setHistorySearch(event.target.value)}
@@ -938,7 +938,7 @@ function EmployeeExcusesWorkspaceInner({ initialData }: EmployeeExcusesWorkspace
                       />
                     ) : null}
                   </div>
-                  <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1 text-[10px] font-bold uppercase tracking-[0.08em]">
+                  <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1 text-phx-2xs font-bold uppercase tracking-[0.08em]">
                     <span className="flex items-center gap-1.5">
                       <span className="inline-block h-2 w-2 rounded-sm bg-emerald-500" />
                       <span className="text-emerald-700">Approved {statusCounts.approved}</span>
@@ -961,8 +961,8 @@ function EmployeeExcusesWorkspaceInner({ initialData }: EmployeeExcusesWorkspace
 
               {/* Desktop table (md+) */}
               <div className="hidden md:block overflow-x-auto">
-                <table className="w-full border-collapse text-left text-[12px]">
-                  <thead className="bg-slate-50 text-[10px] font-bold uppercase tracking-[0.10em] text-slate-500">
+                <table className="w-full border-collapse text-left text-phx-sm">
+                  <thead className="bg-slate-50 text-phx-2xs font-bold uppercase tracking-[0.10em] text-slate-500">
                     <tr>
                       <th className="border-b border-r border-slate-100 px-3 py-2.5">Date</th>
                       <th className="border-b border-r border-slate-100 px-3 py-2.5">Type</th>
@@ -986,7 +986,7 @@ function EmployeeExcusesWorkspaceInner({ initialData }: EmployeeExcusesWorkspace
                           </Badge>
                         </td>
                         <td className="border-r border-slate-100 px-3 py-2.5 font-medium text-slate-600 whitespace-nowrap">{formatDateTime(request.createdAt)}</td>
-                        <td className="px-3 py-2.5 text-[11px]">
+                        <td className="px-3 py-2.5 text-phx-xs">
                           {request.managerDecisionAt ? (
                             <div>
                               <p className="font-medium text-slate-600">{formatDateTime(request.managerDecisionAt)}</p>
@@ -995,7 +995,7 @@ function EmployeeExcusesWorkspaceInner({ initialData }: EmployeeExcusesWorkspace
                               ) : null}
                               {request.status === "returned_to_employee" ? (
                                 <button
-                                  className="mt-2 inline-flex h-7 items-center justify-center rounded-sm border border-orange-200 bg-orange-50 px-2.5 text-[10px] font-bold text-orange-700 transition hover:bg-orange-100"
+                                  className="mt-2 inline-flex h-7 items-center justify-center rounded-sm border border-orange-200 bg-orange-50 px-2.5 text-phx-2xs font-bold text-orange-700 transition hover:bg-orange-100"
                                   onClick={() => editReturnedRequest(request)}
                                   type="button"
                                 >
@@ -1011,7 +1011,7 @@ function EmployeeExcusesWorkspaceInner({ initialData }: EmployeeExcusesWorkspace
                     ))}
                     {filteredRequests.length === 0 ? (
                       <tr>
-                        <td className="px-4 py-8 text-center text-[13px] font-medium text-slate-500" colSpan={7}>
+                        <td className="px-4 py-8 text-center text-phx-md font-medium text-slate-500" colSpan={7}>
                           {historySearch ? "No matching requests found." : "No excuse requests yet."}
                         </td>
                       </tr>
@@ -1025,7 +1025,7 @@ function EmployeeExcusesWorkspaceInner({ initialData }: EmployeeExcusesWorkspace
                 {filteredRequests.length === 0 ? (
                   <div className="rounded-sm border border-dashed border-slate-200 bg-slate-50 p-6 text-center">
                     <CalendarClock className="mx-auto h-6 w-6 text-slate-400" />
-                    <p className="mt-2 text-[13px] font-bold text-slate-600">
+                    <p className="mt-2 text-phx-md font-bold text-slate-600">
                       {historySearch ? "No matching requests found." : "No excuse requests yet."}
                     </p>
                   </div>
@@ -1046,32 +1046,32 @@ function EmployeeExcusesWorkspaceInner({ initialData }: EmployeeExcusesWorkspace
 
           {/* Profile card */}
           <div className="rounded-sm border border-slate-200 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.04)]">
-            <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-orange-600">Employee profile</p>
+            <p className="text-phx-xs font-bold uppercase tracking-[0.12em] text-orange-600">Employee profile</p>
             <h3 className="mt-1.5 text-base font-extrabold text-slate-900">{workspace.employee.fullName}</h3>
             <div className="mt-3 space-y-2">
               <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-                <span className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-400">HR ID</span>
-                <span className="text-[12px] font-bold text-slate-800">{workspace.employee.hrId}</span>
+                <span className="text-phx-xs font-bold uppercase tracking-[0.08em] text-slate-400">HR ID</span>
+                <span className="text-phx-sm font-bold text-slate-800">{workspace.employee.hrId}</span>
               </div>
               <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-                <span className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-400">Role</span>
-                <span className="text-[12px] font-semibold text-slate-700">{workspace.employee.roleLabel}</span>
+                <span className="text-phx-xs font-bold uppercase tracking-[0.08em] text-slate-400">Role</span>
+                <span className="text-phx-sm font-semibold text-slate-700">{workspace.employee.roleLabel}</span>
               </div>
               <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-                <span className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-400">Line</span>
-                <span className="text-[12px] font-semibold text-slate-700">{workspace.employee.lineName ?? "Head Office"}</span>
+                <span className="text-phx-xs font-bold uppercase tracking-[0.08em] text-slate-400">Line</span>
+                <span className="text-phx-sm font-semibold text-slate-700">{workspace.employee.lineName ?? "Head Office"}</span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-400">Manager</span>
-                <span className="text-[12px] font-semibold text-slate-700">{workspace.employee.managerName ?? "Not assigned"}</span>
+                <span className="text-phx-xs font-bold uppercase tracking-[0.08em] text-slate-400">Manager</span>
+                <span className="text-phx-sm font-semibold text-slate-700">{workspace.employee.managerName ?? "Not assigned"}</span>
               </div>
             </div>
           </div>
 
           {/* Policy info card */}
           <div className="rounded-sm border border-slate-200 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.04)]">
-            <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500">Excuse policy</p>
-            <div className="mt-2.5 space-y-2 text-[12px] leading-5 text-slate-600">
+            <p className="text-phx-xs font-bold uppercase tracking-[0.12em] text-slate-500">Excuse policy</p>
+            <div className="mt-2.5 space-y-2 text-phx-sm leading-5 text-slate-600">
               <div className="flex items-start gap-2">
                 <span className="mt-1.5 inline-block h-1.5 w-1.5 shrink-0 rounded-sm bg-orange-400" />
                 <span>Each excuse covers a 2-hour window (morning or afternoon).</span>

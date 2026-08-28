@@ -702,7 +702,7 @@ export function CandidateScreeningSession({
             invisible and reads as random — and the one thing a screener must never have to wonder
             is why they are being shown this person now. */}
         <span
-          className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-black uppercase tracking-wide ${bandChipClass[currentBand]}`}
+          className={`shrink-0 rounded px-1.5 py-0.5 text-phx-2xs font-black uppercase tracking-wide ${bandChipClass[currentBand]}`}
           title={screeningBandDescriptions[currentBand]}
         >
           {screeningBandLabels[currentBand]} · {bands[currentBand]}
@@ -728,7 +728,7 @@ export function CandidateScreeningSession({
         >
           <Sparkles className="h-3.5 w-3.5" />
           {freshRemaining} never read
-          <kbd className="text-[10px] font-normal opacity-70">U</kbd>
+          <kbd className="text-phx-2xs font-normal opacity-70">U</kbd>
         </button>
         {/* Full-width reading. Page variant only — the overlay already covers everything, so the
             control would be a lie there. */}
@@ -806,7 +806,7 @@ export function CandidateScreeningSession({
                   absence as "the feature is broken" rather than as an answer. */}
               {currentView ? (
                 <p
-                  className="mt-1.5 inline-flex items-center gap-1 rounded bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-700"
+                  className="mt-1.5 inline-flex items-center gap-1 rounded bg-amber-50 px-2 py-0.5 text-phx-xs font-semibold text-amber-700"
                   title={
                     currentView.viewCount > 1
                       ? `Opened ${currentView.viewCount} times — first on ${firstSeenLabel ?? "an earlier session"}`
@@ -820,13 +820,13 @@ export function CandidateScreeningSession({
                   {currentView.viewCount > 1 ? ` · ${currentView.viewCount}×` : ""}
                 </p>
               ) : (
-                <p className="mt-1.5 inline-flex items-center gap-1 rounded bg-sky-50 px-2 py-0.5 text-[11px] font-semibold text-sky-700">
+                <p className="mt-1.5 inline-flex items-center gap-1 rounded bg-sky-50 px-2 py-0.5 text-phx-xs font-semibold text-sky-700">
                   <Sparkles className="h-3 w-3" />
                   First time
                 </p>
               )}
               {existingStatus !== "new" && !thisDecision ? (
-                <p className="ml-1.5 mt-1.5 inline-flex rounded bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-600">
+                <p className="ml-1.5 mt-1.5 inline-flex rounded bg-slate-100 px-2 py-0.5 text-phx-xs font-semibold text-slate-600">
                   Already {candidateStatusLabels[existingStatus].toLowerCase()}
                 </p>
               ) : null}
@@ -865,12 +865,12 @@ export function CandidateScreeningSession({
               <div className="space-y-1.5 rounded-md border border-orange-200 bg-orange-50/70 p-2">
                 {/* What is already true, before offering to change it. */}
                 {sentNow ? (
-                  <p className="flex items-start gap-1.5 text-[11px] font-bold text-orange-800">
+                  <p className="flex items-start gap-1.5 text-phx-xs font-bold text-orange-800">
                     <Check className="mt-px h-3 w-3 shrink-0" />
                     <span>Sent to {sentNow}</span>
                   </p>
                 ) : priorSend ? (
-                  <p className="flex items-start gap-1.5 text-[11px] font-semibold text-orange-800">
+                  <p className="flex items-start gap-1.5 text-phx-xs font-semibold text-orange-800">
                     <Check className="mt-px h-3 w-3 shrink-0" />
                     {/* Name, seat, and Cairo time — never an HR_ID, never raw UTC. The seat is the
                         one frozen onto the row at send time, so a manager who has since moved area
@@ -933,7 +933,7 @@ export function CandidateScreeningSession({
                         number, which is the one thing this must not encourage. Shown only while the
                         suggestion is what the picker is actually holding. */}
                     {suggestion.confident && positionChoice === "" && suggestion.confident.reasons.length > 0 ? (
-                      <p className="text-[11px] leading-tight text-slate-600">
+                      <p className="text-phx-xs leading-tight text-slate-600">
                         {suggestion.confident.reasons.join(" · ")}
                       </p>
                     ) : null}
@@ -1004,7 +1004,7 @@ export function CandidateScreeningSession({
                     the recruiter would find out from the reply — so the covering is said here, in
                     the same quiet grey as the reasons above the picker. */}
                 {coveredPost && standInManagerName ? (
-                  <p className="text-[11px] leading-tight text-slate-600">
+                  <p className="text-phx-xs leading-tight text-slate-600">
                     {standInManagerName} is standing in — {coveredPost} has nobody in it.
                   </p>
                 ) : null}
@@ -1017,7 +1017,7 @@ export function CandidateScreeningSession({
                 onClick={() => void decide("shortlisted")}
                 type="button"
               >
-                <Check className="h-4 w-4" /> Shortlist <kbd className="text-[10px] font-normal opacity-70">S</kbd>
+                <Check className="h-4 w-4" /> Shortlist <kbd className="text-phx-2xs font-normal opacity-70">S</kbd>
               </button>
               <button
                 className="flex items-center justify-center gap-1.5 rounded-md bg-rose-600 px-3 py-2 text-sm font-bold text-white transition hover:bg-rose-700 disabled:opacity-50"
@@ -1025,7 +1025,7 @@ export function CandidateScreeningSession({
                 onClick={() => void decide("rejected")}
                 type="button"
               >
-                <X className="h-4 w-4" /> Reject <kbd className="text-[10px] font-normal opacity-70">R</kbd>
+                <X className="h-4 w-4" /> Reject <kbd className="text-phx-2xs font-normal opacity-70">R</kbd>
               </button>
             </div>
             <div className="flex items-center justify-between gap-2">

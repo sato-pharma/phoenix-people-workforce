@@ -114,7 +114,7 @@ export function TeamExpensesFilters({
     <div className={`grid gap-4 ${hideRequestType ? "xl:grid-cols-[1fr_1fr_auto]" : "xl:grid-cols-[1fr_1fr_1fr_auto]"}`}>
       <div>
         <label
-          className="mb-2 block text-[11px] font-semibold uppercase tracking-wider text-slate-400"
+          className="mb-2 block text-phx-xs font-semibold uppercase tracking-wider text-slate-400"
           htmlFor="team-expenses-dsm"
         >
           DSM
@@ -137,7 +137,7 @@ export function TeamExpensesFilters({
       {!hideRequestType ? (
         <div>
           <label
-            className="mb-2 block text-[11px] font-semibold uppercase tracking-wider text-slate-400"
+            className="mb-2 block text-phx-xs font-semibold uppercase tracking-wider text-slate-400"
             htmlFor="team-expenses-request-type"
           >
             Request Type
@@ -159,7 +159,7 @@ export function TeamExpensesFilters({
       ) : null}
 
       <div className="relative">
-        <span className="mb-2 block text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+        <span className="mb-2 block text-phx-xs font-semibold uppercase tracking-wider text-slate-400">
           Period
         </span>
         <button

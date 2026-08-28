@@ -29,7 +29,7 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 
 const fieldClassName =
   "h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-900 shadow-inner shadow-slate-100/60 outline-none transition focus:border-orange-300 focus:ring-2 focus:ring-orange-100";
-const labelClassName = "text-[11px] font-black uppercase tracking-[0.16em] text-slate-500";
+const labelClassName = "text-phx-xs font-black uppercase tracking-[0.16em] text-slate-500";
 const mutedPanelClassName = "rounded-xl border border-slate-200/90 bg-gradient-to-br from-white via-slate-50/70 to-white shadow-[0_12px_28px_rgba(15,23,42,0.06)]";
 const sectionTitleClassName = "text-sm font-black tracking-tight text-slate-950";
 
@@ -666,7 +666,7 @@ export function AttendancePoliciesManager({ canUpdate, initialData, initialError
                       value={form.flexMinutes}
                       onChange={(event) => setForm({ ...form, flexMinutes: event.target.value })}
                     />
-                    <p className="text-[11px] font-semibold text-slate-500">Arrival free past Scheduled Start (30 = free until 09:30).</p>
+                    <p className="text-phx-xs font-semibold text-slate-500">Arrival free past Scheduled Start (30 = free until 09:30).</p>
                   </label>
                   <label className="space-y-1.5">
                     <span className={labelClassName}>Required Minutes</span>
@@ -678,7 +678,7 @@ export function AttendancePoliciesManager({ canUpdate, initialData, initialError
                       value={form.requiredMinutes}
                       onChange={(event) => setForm({ ...form, requiredMinutes: event.target.value })}
                     />
-                    <p className="text-[11px] font-semibold text-slate-500">Minimum required presence (470 = 7h50m).</p>
+                    <p className="text-phx-xs font-semibold text-slate-500">Minimum required presence (470 = 7h50m).</p>
                   </label>
                   <label className="space-y-1.5">
                     <span className={labelClassName}>Half-Day Split</span>
@@ -690,7 +690,7 @@ export function AttendancePoliciesManager({ canUpdate, initialData, initialError
                       value={form.halfDaySplitMinutes}
                       onChange={(event) => setForm({ ...form, halfDaySplitMinutes: event.target.value })}
                     />
-                    <p className="text-[11px] font-semibold text-slate-500">Minute-of-day boundary for AM/PM half-day leave (780 = 13:00).</p>
+                    <p className="text-phx-xs font-semibold text-slate-500">Minute-of-day boundary for AM/PM half-day leave (780 = 13:00).</p>
                   </label>
                   <label className="space-y-1.5">
                     <span className={labelClassName}>Judged</span>
@@ -702,14 +702,14 @@ export function AttendancePoliciesManager({ canUpdate, initialData, initialError
                       <option value="every_working_day">Every working day</option>
                       <option value="office_days_only">Office days only (NSM/GPM/PM)</option>
                     </SearchableSelect>
-                    <p className="text-[11px] font-semibold text-slate-500">Office-days-only requires the plan to say office AND a punch that day.</p>
+                    <p className="text-phx-xs font-semibold text-slate-500">Office-days-only requires the plan to say office AND a punch that day.</p>
                   </label>
                 </div>
               </div>
             </div>
 
             <aside className="border-t border-slate-100 bg-gradient-to-br from-slate-950 via-slate-900 to-black p-5 text-white xl:border-l xl:border-t-0">
-              <div className="flex items-center gap-2 text-[11px] font-black uppercase tracking-[0.18em] text-orange-200">
+              <div className="flex items-center gap-2 text-phx-xs font-black uppercase tracking-[0.18em] text-orange-200">
                 <BadgeCheck className="h-4 w-4" />
                 Draft Snapshot
               </div>
@@ -721,20 +721,20 @@ export function AttendancePoliciesManager({ canUpdate, initialData, initialError
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div className="rounded-lg border border-white/10 bg-white/[0.06] p-3">
-                    <p className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-400">Shift</p>
+                    <p className="text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-400">Shift</p>
                     <p className="mt-1 text-sm font-black text-white">{form.scheduledStart} - {form.scheduledEnd}</p>
                   </div>
                   <div className="rounded-lg border border-white/10 bg-white/[0.06] p-3">
-                    <p className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-400">Grace</p>
+                    <p className="text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-400">Grace</p>
                     <p className="mt-1 text-sm font-black text-white">{form.graceMinutes || 0} minutes</p>
                   </div>
                 </div>
                 <div className="rounded-lg border border-white/10 bg-white/[0.06] p-3">
-                  <p className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-400">Workdays</p>
+                  <p className="text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-400">Workdays</p>
                   <p className="mt-1 text-sm font-black text-white">{formatAttendanceWorkingWeekdays(form.workingWeekdays)}</p>
                 </div>
                 <div className="rounded-lg border border-orange-400/25 bg-orange-500/10 p-3">
-                  <p className="text-[10px] font-black uppercase tracking-[0.14em] text-orange-200">Rules Drafted</p>
+                  <p className="text-phx-2xs font-black uppercase tracking-[0.14em] text-orange-200">Rules Drafted</p>
                   <p className="mt-1 text-2xl font-black text-white">{form.rules.length}</p>
                 </div>
               </div>
@@ -859,8 +859,8 @@ export function AttendancePoliciesManager({ canUpdate, initialData, initialError
                   <div className={`relative overflow-hidden rounded-xl border p-4 shadow-[0_12px_26px_rgba(15,23,42,0.06)] ${tone.surface}`} key={preview.label}>
                     <span className={`absolute inset-y-0 left-0 w-1 ${tone.accent}`} />
                     <div className="flex items-start justify-between gap-3">
-                      <p className="text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">{preview.label}</p>
-                      <span className={`rounded-full border px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] ${tone.badge}`}>{preview.status}</span>
+                      <p className="text-phx-xs font-black uppercase tracking-[0.14em] text-slate-500">{preview.label}</p>
+                      <span className={`rounded-full border px-2 py-1 text-phx-2xs font-black uppercase tracking-[0.12em] ${tone.badge}`}>{preview.status}</span>
                     </div>
                     <p className="mt-3 text-base font-black text-slate-950">{preview.time}</p>
                     <p className="mt-2 min-h-10 text-sm font-semibold leading-5 text-slate-700">{preview.result}</p>
@@ -889,7 +889,7 @@ export function AttendancePoliciesManager({ canUpdate, initialData, initialError
       >
         <div className="overflow-x-auto">
           <table className="min-w-full text-left">
-            <thead className="bg-slate-950 text-[11px] font-black uppercase tracking-[0.16em] text-slate-200">
+            <thead className="bg-slate-950 text-phx-xs font-black uppercase tracking-[0.16em] text-slate-200">
               <tr>
                 <th className="px-4 py-3">Policy</th>
                 <th className="px-4 py-3">Target</th>

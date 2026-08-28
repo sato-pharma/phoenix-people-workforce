@@ -104,9 +104,9 @@ const FIELD_CLASS =
   "h-11 w-full border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-900 outline-none transition focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20";
 // `pr-9` keeps the selected value clear of SearchableSelect's own search icon.
 const FILTER_CONTROL_CLASS = `${FIELD_CLASS} pr-9`;
-const MICRO_LABEL_CLASS = "mb-1.5 block text-[11px] font-black uppercase tracking-wide text-slate-500";
+const MICRO_LABEL_CLASS = "mb-1.5 block text-phx-xs font-black uppercase tracking-wide text-slate-500";
 const PANEL_CLASS = "border border-slate-200 bg-white shadow-sm";
-const KBD_CLASS = "border border-slate-300 bg-slate-50 px-1.5 py-0.5 font-mono text-[10px] font-bold text-slate-600";
+const KBD_CLASS = "border border-slate-300 bg-slate-50 px-1.5 py-0.5 font-mono text-phx-2xs font-bold text-slate-600";
 
 /**
  * How a trip's distance reads against the outstation distance floor.
@@ -727,7 +727,7 @@ export function ExpenseApprovalsWorkspace({
               {label}
               <span
                 className={cn(
-                  "hidden text-[11px] font-semibold sm:inline",
+                  "hidden text-phx-xs font-semibold sm:inline",
                   view === key ? "text-orange-100" : "text-slate-400",
                 )}
               >
@@ -772,7 +772,7 @@ export function ExpenseApprovalsWorkspace({
               {label}
               <span
                 className={cn(
-                  "inline-flex min-w-[1.5rem] items-center justify-center px-1.5 py-0.5 text-[10px] font-black leading-none",
+                  "inline-flex min-w-[1.5rem] items-center justify-center px-1.5 py-0.5 text-phx-2xs font-black leading-none",
                   tab === key ? "bg-orange-500 text-white" : "bg-slate-100 text-slate-500",
                 )}
               >
@@ -793,7 +793,7 @@ export function ExpenseApprovalsWorkspace({
             <Filter className="h-4 w-4 text-orange-500" />
             <span className="text-sm font-black tracking-tight text-slate-900">Filters</span>
             {activeFilterCount > 0 ? (
-              <span className="bg-orange-100 px-2 py-0.5 text-[11px] font-black text-orange-700">
+              <span className="bg-orange-100 px-2 py-0.5 text-phx-xs font-black text-orange-700">
                 {formatNumberValue(activeFilterCount)} active
               </span>
             ) : null}
@@ -865,7 +865,7 @@ export function ExpenseApprovalsWorkspace({
           </label>
         </div>
 
-        <p className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] font-semibold text-slate-400">
+        <p className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-phx-xs font-semibold text-slate-400">
           <span className="inline-flex items-center gap-1.5">
             <kbd className={KBD_CLASS}>/</kbd> search
           </span>
@@ -1057,19 +1057,19 @@ export function ExpenseApprovalsWorkspace({
                           <p className="truncate text-xs text-slate-500">
                             {record.tripId} · {record.location || record.to || "—"}
                           </p>
-                          <p className="mt-0.5 text-[11px] text-slate-400">{formatDateValue(record.date)}</p>
+                          <p className="mt-0.5 text-phx-xs text-slate-400">{formatDateValue(record.date)}</p>
                         </div>
                         <div className="shrink-0 text-right">
                           <p className="font-mono text-sm font-bold text-slate-900">{egp(decision.approvedAmount)}</p>
                           {adjusted ? (
-                            <p className="font-mono text-[10px] text-orange-600 line-through">{egp(record.total)}</p>
+                            <p className="font-mono text-phx-2xs text-orange-600 line-through">{egp(record.total)}</p>
                           ) : null}
                           {state === "approved" ? (
-                            <span className="mt-0.5 inline-flex items-center gap-1 text-[10px] font-black uppercase tracking-wide text-emerald-600">
+                            <span className="mt-0.5 inline-flex items-center gap-1 text-phx-2xs font-black uppercase tracking-wide text-emerald-600">
                               <CheckCircle2 className="h-3 w-3" /> Approved
                             </span>
                           ) : state === "rejected" ? (
-                            <span className="mt-0.5 inline-flex items-center gap-1 text-[10px] font-black uppercase tracking-wide text-rose-600">
+                            <span className="mt-0.5 inline-flex items-center gap-1 text-phx-2xs font-black uppercase tracking-wide text-rose-600">
                               <XCircle className="h-3 w-3" /> Rejected
                             </span>
                           ) : null}
@@ -1172,11 +1172,11 @@ function EmployeeSummaryPanel({
       <div className="flex flex-wrap items-center justify-between gap-3 bg-slate-900 px-5 py-3.5">
         <div className="flex items-center gap-2">
           <span aria-hidden className="h-4 w-1 bg-orange-500" />
-          <span className="text-[11px] font-black uppercase tracking-wide text-white">
+          <span className="text-phx-xs font-black uppercase tracking-wide text-white">
             {formatNumberValue(totals.employeeCount)} employees
           </span>
         </div>
-        <div className="flex flex-wrap items-center gap-x-5 gap-y-1 text-[11px] font-bold">
+        <div className="flex flex-wrap items-center gap-x-5 gap-y-1 text-phx-xs font-bold">
           <span className="text-amber-300">{formatNumberValue(totals.pendingCount)} pending</span>
           <span className="text-emerald-300">
             {formatNumberValue(totals.approvedCount)} approved · {egp(totals.approvedValue)}
@@ -1187,7 +1187,7 @@ function EmployeeSummaryPanel({
 
       {/* Column captions belong to the desktop layout only — on a phone each figure carries its own
           inline label instead, so a stacked card never leaves a bare number unexplained. */}
-      <div className="hidden items-center gap-3 border-b border-slate-200 bg-slate-50 px-4 py-2 text-[10px] font-black uppercase tracking-[0.12em] text-slate-400 sm:flex">
+      <div className="hidden items-center gap-3 border-b border-slate-200 bg-slate-50 px-4 py-2 text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400 sm:flex">
         <span className="w-4 shrink-0" />
         <span className="min-w-0 flex-1">Employee</span>
         <span className="w-20 shrink-0 text-right">Pending</span>
@@ -1220,25 +1220,25 @@ function EmployeeSummaryPanel({
                     <span className="block whitespace-nowrap text-sm font-bold text-slate-900">
                       {summary.employeeLabel}
                     </span>
-                    <span className="block text-[11px] text-slate-400">
+                    <span className="block text-phx-xs text-slate-400">
                       {formatNumberValue(summary.totalCount)} trips · {egp(summary.claimedTotal)} claimed
                     </span>
                   </span>
                 </span>
                 <span className="flex flex-wrap items-center gap-x-4 gap-y-1 pl-6 sm:contents sm:pl-0">
                   <span className="w-20 shrink-0 font-mono text-sm font-bold text-amber-600 sm:text-right">
-                    <span className="text-[10px] font-black uppercase text-slate-400 sm:hidden">Pending </span>
+                    <span className="text-phx-2xs font-black uppercase text-slate-400 sm:hidden">Pending </span>
                     {formatNumberValue(summary.pendingCount)}
                   </span>
                   <span className="w-24 shrink-0 font-mono text-sm font-bold text-emerald-600 sm:text-right">
-                    <span className="text-[10px] font-black uppercase text-slate-400 sm:hidden">Approved </span>
+                    <span className="text-phx-2xs font-black uppercase text-slate-400 sm:hidden">Approved </span>
                     {formatNumberValue(summary.approvedCount)}
                   </span>
                   <span className="w-28 shrink-0 font-mono text-sm font-bold text-slate-900 sm:text-right">
                     {egp(summary.approvedValue)}
                   </span>
                   <span className="w-20 shrink-0 font-mono text-sm font-bold text-rose-600 sm:text-right">
-                    <span className="text-[10px] font-black uppercase text-slate-400 sm:hidden">Rejected </span>
+                    <span className="text-phx-2xs font-black uppercase text-slate-400 sm:hidden">Rejected </span>
                     {formatNumberValue(summary.rejectedCount)}
                   </span>
                 </span>
@@ -1246,7 +1246,7 @@ function EmployeeSummaryPanel({
 
               {isOpen ? (
                 <div className="border-t border-slate-200 bg-slate-50/70 px-4 py-3">
-                  <p className="mb-2 text-[10px] font-black uppercase tracking-[0.12em] text-slate-400">
+                  <p className="mb-2 text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400">
                     Trips · distance and declared AM/PM workload
                   </p>
                   {/* Wide content scrolls inside its own box — a long destination must never move
@@ -1272,7 +1272,7 @@ function EmployeeSummaryPanel({
                           {/* Stacks into a card below `sm` and lays out as columns above it, so the
                               action button is never stranded off the side of a scrolling row. */}
                           <div className="flex min-w-0 flex-1 flex-col gap-1.5 px-3 py-2 sm:flex-row sm:items-center sm:gap-4">
-                            <span className="w-24 shrink-0 whitespace-nowrap text-[11px] text-slate-500">
+                            <span className="w-24 shrink-0 whitespace-nowrap text-phx-xs text-slate-500">
                               {formatDateValue(row.date)}
                             </span>
                             <span className="w-28 shrink-0 whitespace-nowrap font-mono text-xs text-slate-600">
@@ -1282,7 +1282,7 @@ function EmployeeSummaryPanel({
                               {row.destination || "—"}
                             </span>
                             <span className="w-32 shrink-0 whitespace-nowrap font-mono text-xs sm:text-right">
-                              <span className="text-[10px] font-black uppercase text-slate-400 sm:hidden">
+                              <span className="text-phx-2xs font-black uppercase text-slate-400 sm:hidden">
                                 Distance{" "}
                               </span>
                               {row.km ? (
@@ -1308,7 +1308,7 @@ function EmployeeSummaryPanel({
                             {/* Declared on the expense sheet — NOT the CRM evidence figure, which is
                                 a per-trip lookup and would be one request per row here. */}
                             <span className="w-32 shrink-0 whitespace-nowrap font-mono text-xs text-slate-700 sm:text-right">
-                              <span className="text-[10px] font-black uppercase text-slate-400 sm:hidden">
+                              <span className="text-phx-2xs font-black uppercase text-slate-400 sm:hidden">
                                 Declared{" "}
                               </span>
                               AM {formatNumberValue(row.amWorkload)} · PM {formatNumberValue(row.pmWorkload)}
@@ -1316,14 +1316,14 @@ function EmployeeSummaryPanel({
                             <span className="w-28 shrink-0 whitespace-nowrap font-mono text-xs font-bold text-slate-900 sm:text-right">
                               {egp(row.approvedAmount)}
                             </span>
-                            <span className="w-24 shrink-0 whitespace-nowrap font-mono text-[11px] text-slate-400 sm:text-right">
+                            <span className="w-24 shrink-0 whitespace-nowrap font-mono text-phx-xs text-slate-400 sm:text-right">
                               {isAdjustedAmount(row.approvedAmount, row.claimedTotal)
                                 ? `of ${egp(row.claimedTotal)}`
                                 : ""}
                             </span>
                             <span
                               className={cn(
-                                "w-20 shrink-0 whitespace-nowrap text-[10px] font-black uppercase tracking-wide sm:text-right",
+                                "w-20 shrink-0 whitespace-nowrap text-phx-2xs font-black uppercase tracking-wide sm:text-right",
                                 row.state === "approved"
                                   ? "text-emerald-600"
                                   : row.state === "rejected"
@@ -1336,7 +1336,7 @@ function EmployeeSummaryPanel({
                             <span className="w-32 shrink-0 sm:text-right">
                               {row.state === "pending" ? null : (
                                 <button
-                                  className="inline-flex items-center gap-1.5 border border-slate-300 bg-white px-2.5 py-1.5 text-[11px] font-bold text-slate-700 transition-colors hover:border-orange-300 hover:bg-orange-50 hover:text-orange-700"
+                                  className="inline-flex items-center gap-1.5 border border-slate-300 bg-white px-2.5 py-1.5 text-phx-xs font-bold text-slate-700 transition-colors hover:border-orange-300 hover:bg-orange-50 hover:text-orange-700"
                                   onClick={() => onUndo(row.tripId)}
                                   type="button"
                                 >
@@ -1420,7 +1420,7 @@ function SystemNoteRewriteControl({
     <>
       <div className="flex items-center gap-2">
         <button
-          className="inline-flex items-center gap-1.5 whitespace-nowrap border border-slate-300 bg-white px-2.5 py-1 text-[11px] font-bold text-slate-700 transition hover:border-orange-400 hover:text-orange-700 disabled:cursor-not-allowed disabled:opacity-50"
+          className="inline-flex items-center gap-1.5 whitespace-nowrap border border-slate-300 bg-white px-2.5 py-1 text-phx-xs font-bold text-slate-700 transition hover:border-orange-400 hover:text-orange-700 disabled:cursor-not-allowed disabled:opacity-50"
           disabled={disabled || busy || !value.trim()}
           onClick={() => void rewrite()}
           title="Rewrite this comment as a formal system note for the employee"
@@ -1431,7 +1431,7 @@ function SystemNoteRewriteControl({
         </button>
         {previous ? (
           <button
-            className="inline-flex items-center gap-1.5 whitespace-nowrap border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-bold text-slate-500 transition hover:text-slate-900"
+            className="inline-flex items-center gap-1.5 whitespace-nowrap border border-slate-200 bg-white px-2.5 py-1 text-phx-xs font-bold text-slate-500 transition hover:text-slate-900"
             onClick={() => {
               onChangeReason(previous);
               setPrevious(null);
@@ -1442,7 +1442,7 @@ function SystemNoteRewriteControl({
           </button>
         ) : null}
       </div>
-      {error ? <p className="mt-1 text-[11px] font-semibold text-rose-600">{error}</p> : null}
+      {error ? <p className="mt-1 text-phx-xs font-semibold text-rose-600">{error}</p> : null}
     </>
   );
 }
@@ -1487,7 +1487,7 @@ function ExpenseDecisionPanel({
         <div className="h-[3px] bg-gradient-to-r from-orange-400 via-orange-500 to-amber-200" />
         <div className="flex flex-wrap items-start justify-between gap-3 bg-gradient-to-br from-slate-900 via-slate-900 to-slate-800 px-5 py-4">
           <div className="min-w-0">
-            <p className="text-[10px] font-black uppercase tracking-[0.22em] text-orange-400">Trip under review</p>
+            <p className="text-phx-2xs font-black uppercase tracking-[0.22em] text-orange-400">Trip under review</p>
             <h2 className="mt-1 text-lg font-black tracking-tight text-white">{record.specialist || "Unassigned"}</h2>
             <p className="mt-0.5 font-mono text-xs text-slate-400">
               {record.hrId ? record.hrId : "HR ID not mapped"} · {record.tripId}
@@ -1511,7 +1511,7 @@ function ExpenseDecisionPanel({
           {/* Same distance floor flagged on the screen where the money is actually approved — a
               warning that only appears in the summary would be a gap exactly where it matters. */}
           <div>
-            <p className="text-[10px] font-black uppercase tracking-[0.12em] text-slate-400">Distance</p>
+            <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400">Distance</p>
             {record.km ? (
               (() => {
                 const flag = distanceFlag(record.km);
@@ -1529,7 +1529,7 @@ function ExpenseDecisionPanel({
                     {flag.label ? (
                       <p
                         className={cn(
-                          "mt-0.5 whitespace-nowrap text-[10px] font-bold",
+                          "mt-0.5 whitespace-nowrap text-phx-2xs font-bold",
                           flag.tone === "fail" ? "text-rose-600" : "text-amber-700",
                         )}
                       >
@@ -1544,7 +1544,7 @@ function ExpenseDecisionPanel({
             )}
           </div>
           <div className="col-span-2 sm:col-span-2">
-            <p className="text-[10px] font-black uppercase tracking-[0.12em] text-slate-400">Route</p>
+            <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400">Route</p>
             {/* Phoenix-submitted trips carry a full postal address here, not a city — one live row
                 is 95 characters. It must not wrap and must not be truncated, so the line scrolls
                 horizontally WITHIN this box; the page itself no longer moves. */}
@@ -1563,7 +1563,7 @@ function ExpenseDecisionPanel({
           {record.capturedLocation ? (
             <div className="col-span-2 border-t border-slate-200 pt-3 sm:col-span-4">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <p className="text-[10px] font-black uppercase tracking-[0.12em] text-slate-400">Captured geography</p>
+                <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400">Captured geography</p>
                 {record.capturedLocation.confidence ? (
                   <Badge variant={capturedLocationConfidenceTone(record.capturedLocation.confidence)}>
                     {record.capturedLocation.confidence}
@@ -1582,7 +1582,7 @@ function ExpenseDecisionPanel({
             </div>
           ) : null}
           <div className="col-span-2 border-t border-slate-200 pt-3 sm:col-span-4">
-            <p className="text-[10px] font-black uppercase tracking-[0.12em] text-slate-400">Cost breakdown</p>
+            <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400">Cost breakdown</p>
             <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 font-mono text-sm text-slate-700">
               <span>Travel <b className="text-slate-900">{egp(record.travelCost)}</b></span>
               <span>Meeting <b className="text-slate-900">{egp(record.meetingAmount)}</b></span>
@@ -1627,13 +1627,13 @@ function ExpenseDecisionPanel({
               computed by one function in payable.ts so the two can never disagree. */}
           <div className="flex flex-wrap items-end gap-3">
             <div>
-              <p className="text-[10px] font-black uppercase tracking-[0.12em] text-slate-400">Claimed</p>
+              <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400">Claimed</p>
               <p className="mt-1 font-mono text-lg font-bold text-slate-900">{egp(record.total)}</p>
             </div>
             <span aria-hidden className="mb-2 font-mono text-lg font-black text-slate-300">−</span>
             <div>
               <label
-                className="text-[10px] font-black uppercase tracking-[0.12em] text-orange-600"
+                className="text-phx-2xs font-black uppercase tracking-[0.12em] text-orange-600"
                 htmlFor={`deduct-${record.tripId}`}
               >
                 Deduction
@@ -1658,7 +1658,7 @@ function ExpenseDecisionPanel({
             </div>
             <span aria-hidden className="mb-2 font-mono text-lg font-black text-slate-300">=</span>
             <div>
-              <label className="text-[10px] font-black uppercase tracking-[0.12em] text-slate-400" htmlFor={`amt-${record.tripId}`}>
+              <label className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400" htmlFor={`amt-${record.tripId}`}>
                 Approved amount
               </label>
               <input
@@ -1688,7 +1688,7 @@ function ExpenseDecisionPanel({
           </div>
           <div className="mt-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <label className="text-[10px] font-black uppercase tracking-[0.12em] text-slate-400" htmlFor={`reason-${record.tripId}`}>
+              <label className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400" htmlFor={`reason-${record.tripId}`}>
                 Reason / comment{" "}
                 {adjusted ? (
                   <span className="text-rose-500">(required for a changed amount)</span>

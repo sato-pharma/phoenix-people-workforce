@@ -433,12 +433,12 @@ export function MarketingCoverageReportWorkspace({ isSuperAdmin }: { isSuperAdmi
             <div className="flex items-center gap-2">
               <SlidersHorizontal className="h-4 w-4 text-phx-accent" />
               <div>
-                <p className="text-[10px] font-black uppercase tracking-[0.16em] text-phx-accent">Coverage Report</p>
-                <h2 className="text-[15px] font-black tracking-tight text-phx-ink">Filter by hierarchy, geography or person</h2>
+                <p className="text-phx-2xs font-black uppercase tracking-[0.16em] text-phx-accent">Coverage Report</p>
+                <h2 className="text-phx-lg font-black tracking-tight text-phx-ink">Filter by hierarchy, geography or person</h2>
               </div>
             </div>
             {faceted ? (
-              <span className="inline-flex items-center gap-1.5 rounded-none border border-phx-line bg-phx-paper px-2.5 py-1 text-[11px] font-bold text-phx-ink-soft">
+              <span className="inline-flex items-center gap-1.5 rounded-none border border-phx-line bg-phx-paper px-2.5 py-1 text-phx-xs font-bold text-phx-ink-soft">
                 <Filter className="h-3 w-3" />
                 {faceted.matchedCount === faceted.totalCount
                   ? `${faceted.totalCount} request${faceted.totalCount === 1 ? "" : "s"} in scope`
@@ -449,9 +449,9 @@ export function MarketingCoverageReportWorkspace({ isSuperAdmin }: { isSuperAdmi
 
           <div className="p-4 sm:p-5">
             {optionsError ? (
-              <div className="rounded-none border border-amber-200 bg-amber-50 px-3.5 py-2.5 text-[13px] font-semibold text-amber-800">{optionsError}</div>
+              <div className="rounded-none border border-amber-200 bg-amber-50 px-3.5 py-2.5 text-phx-md font-semibold text-amber-800">{optionsError}</div>
             ) : !facets ? (
-              <div className="flex items-center gap-2 py-6 text-[13px] font-semibold text-phx-ink-soft">
+              <div className="flex items-center gap-2 py-6 text-phx-md font-semibold text-phx-ink-soft">
                 <LoadingSpinner /> Loading filters…
               </div>
             ) : (
@@ -480,7 +480,7 @@ export function MarketingCoverageReportWorkspace({ isSuperAdmin }: { isSuperAdmi
 
                   {durationDim?.render ? (
                     <div className="rounded-none border border-phx-line bg-white px-3 py-2 shadow-sm">
-                      <p className="mb-1 text-[10px] font-black uppercase tracking-[0.14em] text-phx-ink-faint">ROI duration (months)</p>
+                      <p className="mb-1 text-phx-2xs font-black uppercase tracking-[0.14em] text-phx-ink-faint">ROI duration (months)</p>
                       <div className="flex items-center gap-2">
                         <input
                           type="number"
@@ -507,20 +507,20 @@ export function MarketingCoverageReportWorkspace({ isSuperAdmin }: { isSuperAdmi
 
                   {payDateDim?.render ? (
                     <div className="rounded-none border border-phx-line bg-white px-3 py-2 shadow-sm">
-                      <p className="mb-1 text-[10px] font-black uppercase tracking-[0.14em] text-phx-ink-faint">Pay date</p>
+                      <p className="mb-1 text-phx-2xs font-black uppercase tracking-[0.14em] text-phx-ink-faint">Pay date</p>
                       <div className="flex items-center gap-2">
                         <input
                           type="date"
                           value={filters.payDateFrom ?? ""}
                           onChange={(event) => patchFilters({ payDateFrom: event.target.value || null })}
-                          className="h-8 w-full rounded-none border border-phx-line px-2 text-[12px] font-bold text-phx-ink outline-none focus:border-phx-accent-line"
+                          className="h-8 w-full rounded-none border border-phx-line px-2 text-phx-sm font-bold text-phx-ink outline-none focus:border-phx-accent-line"
                         />
                         <span className="text-phx-ink-faint">–</span>
                         <input
                           type="date"
                           value={filters.payDateTo ?? ""}
                           onChange={(event) => patchFilters({ payDateTo: event.target.value || null })}
-                          className="h-8 w-full rounded-none border border-phx-line px-2 text-[12px] font-bold text-phx-ink outline-none focus:border-phx-accent-line"
+                          className="h-8 w-full rounded-none border border-phx-line px-2 text-phx-sm font-bold text-phx-ink outline-none focus:border-phx-accent-line"
                         />
                       </div>
                     </div>
@@ -589,13 +589,13 @@ export function MarketingCoverageReportWorkspace({ isSuperAdmin }: { isSuperAdmi
                   if (chips.length === 0) return null;
                   return (
                     <div className="mt-3 flex flex-wrap items-center gap-2">
-                      <span className="text-[11px] font-bold uppercase tracking-wide text-phx-ink-faint">Active filters:</span>
+                      <span className="text-phx-xs font-bold uppercase tracking-wide text-phx-ink-faint">Active filters:</span>
                       {chips.map((chip) => (
                         <button
                           key={chip.key}
                           type="button"
                           onClick={chip.onClear}
-                          className="inline-flex items-center gap-1.5 rounded-none border border-phx-accent-line bg-orange-50 px-2 py-1 text-[11px] font-bold text-[#9A3412] transition hover:border-phx-accent hover:bg-orange-100"
+                          className="inline-flex items-center gap-1.5 rounded-none border border-phx-accent-line bg-orange-50 px-2 py-1 text-phx-xs font-bold text-[#9A3412] transition hover:border-phx-accent hover:bg-orange-100"
                         >
                           {chip.label}
                           <span aria-hidden="true" className="text-phx-accent-press">×</span>
@@ -612,9 +612,9 @@ export function MarketingCoverageReportWorkspace({ isSuperAdmin }: { isSuperAdmi
                   if (autoChips.length === 0) return null;
                   return (
                     <div className="mt-3 flex flex-wrap items-center gap-2">
-                      <span className="text-[11px] font-bold uppercase tracking-wide text-phx-ink-faint">Auto-applied:</span>
+                      <span className="text-phx-xs font-bold uppercase tracking-wide text-phx-ink-faint">Auto-applied:</span>
                       {autoChips.map(({ dim, label }) => (
-                        <span key={dim.key} className="inline-flex items-center gap-1 rounded-none border border-phx-line bg-phx-paper px-2 py-1 text-[11px] font-bold text-phx-ink-2">
+                        <span key={dim.key} className="inline-flex items-center gap-1 rounded-none border border-phx-line bg-phx-paper px-2 py-1 text-phx-xs font-bold text-phx-ink-2">
                           {dim.label}: {label}
                         </span>
                       ))}
@@ -623,7 +623,7 @@ export function MarketingCoverageReportWorkspace({ isSuperAdmin }: { isSuperAdmi
                 })()}
 
                 {restrictedDim?.render ? (
-                  <label className="mt-3 inline-flex cursor-pointer items-center gap-2 rounded-none border border-amber-200 bg-amber-50 px-3 py-1.5 text-[12px] font-bold text-amber-800">
+                  <label className="mt-3 inline-flex cursor-pointer items-center gap-2 rounded-none border border-amber-200 bg-amber-50 px-3 py-1.5 text-phx-sm font-bold text-amber-800">
                     <input
                       type="checkbox"
                       className="h-4 w-4 accent-phx-accent"
@@ -639,7 +639,7 @@ export function MarketingCoverageReportWorkspace({ isSuperAdmin }: { isSuperAdmi
                     type="button"
                     onClick={() => void runReport(filters)}
                     disabled={state === "loading" || !hasAnyFilter}
-                    className="inline-flex items-center gap-2 rounded-none bg-phx-accent px-4 py-2 text-[13px] font-black uppercase tracking-wide text-white shadow-sm transition hover:bg-phx-accent-hover disabled:opacity-60"
+                    className="inline-flex items-center gap-2 rounded-none bg-phx-accent px-4 py-2 text-phx-md font-black uppercase tracking-wide text-white shadow-sm transition hover:bg-phx-accent-hover disabled:opacity-60"
                   >
                     {state === "loading" ? <LoadingSpinner /> : <Filter className="h-3.5 w-3.5" />}
                     Apply Filters
@@ -651,19 +651,19 @@ export function MarketingCoverageReportWorkspace({ isSuperAdmin }: { isSuperAdmi
                       setReport(null);
                       setState("ready");
                     }}
-                    className="inline-flex items-center gap-2 rounded-none border border-phx-line bg-white px-3 py-2 text-[12px] font-bold text-phx-ink-soft transition hover:border-phx-accent-line hover:text-phx-accent"
+                    className="inline-flex items-center gap-2 rounded-none border border-phx-line bg-white px-3 py-2 text-phx-sm font-bold text-phx-ink-soft transition hover:border-phx-accent-line hover:text-phx-accent"
                   >
                     <RefreshCcw className="h-3.5 w-3.5" /> Reset
                   </button>
                   {!hasAnyFilter ? (
-                    <span className="text-[12px] font-medium text-phx-ink-faint">Choose at least one filter to run the report.</span>
+                    <span className="text-phx-sm font-medium text-phx-ink-faint">Choose at least one filter to run the report.</span>
                   ) : null}
                   {hasReport ? (
                     <button
                       type="button"
                       onClick={() => void downloadExport()}
                       disabled={exporting}
-                      className="inline-flex items-center gap-2 rounded-none border border-phx-ink bg-phx-ink px-3 py-2 text-[12px] font-black uppercase tracking-wide text-white transition hover:bg-black disabled:opacity-60"
+                      className="inline-flex items-center gap-2 rounded-none border border-phx-ink bg-phx-ink px-3 py-2 text-phx-sm font-black uppercase tracking-wide text-white transition hover:bg-black disabled:opacity-60"
                     >
                       {exporting ? <LoadingSpinner /> : <Download className="h-3.5 w-3.5" />} Export XLSX
                     </button>
@@ -671,11 +671,11 @@ export function MarketingCoverageReportWorkspace({ isSuperAdmin }: { isSuperAdmi
                 </div>
 
                 <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-phx-paper-2 pt-3">
-                  <span className="inline-flex items-center gap-1 text-[11px] font-black uppercase tracking-[0.12em] text-phx-ink-faint">
+                  <span className="inline-flex items-center gap-1 text-phx-xs font-black uppercase tracking-[0.12em] text-phx-ink-faint">
                     <Bookmark className="h-3.5 w-3.5" /> Presets
                   </span>
                   {presets.map((preset) => (
-                    <span key={preset.id} className="inline-flex items-center gap-1 rounded-none border border-phx-line bg-white pl-2 text-[12px] font-bold text-phx-ink-2">
+                    <span key={preset.id} className="inline-flex items-center gap-1 rounded-none border border-phx-line bg-white pl-2 text-phx-sm font-bold text-phx-ink-2">
                       {preset.isDefault ? <Star className="h-3 w-3 fill-phx-accent text-phx-accent" /> : null}
                       <button type="button" onClick={() => applyPreset(preset)} className="py-1 transition hover:text-phx-accent">{preset.name}</button>
                       <button type="button" aria-label={`Delete ${preset.name}`} onClick={() => void deletePreset(preset.id)} className="px-1.5 py-1 text-phx-line-strong transition hover:text-red-500">
@@ -683,20 +683,20 @@ export function MarketingCoverageReportWorkspace({ isSuperAdmin }: { isSuperAdmi
                       </button>
                     </span>
                   ))}
-                  {presets.length === 0 ? <span className="text-[11px] font-medium text-phx-ink-faint">No saved views yet.</span> : null}
+                  {presets.length === 0 ? <span className="text-phx-xs font-medium text-phx-ink-faint">No saved views yet.</span> : null}
                   <span className="ml-auto flex items-center gap-1.5">
                     <input
                       type="text"
                       value={presetName}
                       onChange={(event) => setPresetName(event.target.value)}
                       placeholder="Name this view…"
-                      className="h-8 w-40 rounded-none border border-phx-line px-2 text-[12px] font-medium text-phx-ink outline-none focus:border-phx-accent-line"
+                      className="h-8 w-40 rounded-none border border-phx-line px-2 text-phx-sm font-medium text-phx-ink outline-none focus:border-phx-accent-line"
                     />
                     <button
                       type="button"
                       onClick={() => void savePreset(false)}
                       disabled={savingPreset || !presetName.trim()}
-                      className="inline-flex h-8 items-center gap-1 rounded-none border border-phx-line bg-white px-2 text-[12px] font-bold text-phx-ink-soft transition hover:border-phx-accent-line hover:text-phx-accent disabled:opacity-40"
+                      className="inline-flex h-8 items-center gap-1 rounded-none border border-phx-line bg-white px-2 text-phx-sm font-bold text-phx-ink-soft transition hover:border-phx-accent-line hover:text-phx-accent disabled:opacity-40"
                     >
                       <Save className="h-3.5 w-3.5" /> Save
                     </button>
@@ -705,7 +705,7 @@ export function MarketingCoverageReportWorkspace({ isSuperAdmin }: { isSuperAdmi
                       onClick={() => void savePreset(true)}
                       disabled={savingPreset || !presetName.trim()}
                       title="Save as my default view"
-                      className="inline-flex h-8 items-center gap-1 rounded-none border border-phx-line bg-white px-2 text-[12px] font-bold text-phx-ink-soft transition hover:border-phx-accent-line hover:text-phx-accent disabled:opacity-40"
+                      className="inline-flex h-8 items-center gap-1 rounded-none border border-phx-line bg-white px-2 text-phx-sm font-bold text-phx-ink-soft transition hover:border-phx-accent-line hover:text-phx-accent disabled:opacity-40"
                     >
                       <Star className="h-3.5 w-3.5" /> Default
                     </button>
@@ -717,12 +717,12 @@ export function MarketingCoverageReportWorkspace({ isSuperAdmin }: { isSuperAdmi
         </section>
 
         {reportError ? (
-          <div className="rounded-none border border-rose-200 bg-rose-50 px-4 py-3 text-[13px] font-semibold text-rose-800">{reportError}</div>
+          <div className="rounded-none border border-rose-200 bg-rose-50 px-4 py-3 text-phx-md font-semibold text-rose-800">{reportError}</div>
         ) : null}
 
         {/* ── Freshness banner ─────────────────────────────────────────────── */}
         {kpi ? (
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] font-semibold text-phx-ink-soft">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-phx-sm font-semibold text-phx-ink-soft">
             <span className="flex items-center gap-1.5">
               <CalendarClock className="h-3.5 w-3.5 text-phx-ink-faint" />
               Sales data current through {formatPeriod(kpi.salesDataAsOf)}
@@ -742,7 +742,7 @@ export function MarketingCoverageReportWorkspace({ isSuperAdmin }: { isSuperAdmi
             live-RPC path — honest-zero convention: absent entirely otherwise, never a fabricated
             "everything's fine" line and never silent about a real degradation. */}
         {kpi && kpi.actualsDegraded.count > 0 ? (
-          <div className="flex w-full flex-wrap items-center gap-x-3 gap-y-1 rounded-none border border-amber-300 bg-amber-50 px-4 py-2.5 text-[13px] font-semibold text-amber-900">
+          <div className="flex w-full flex-wrap items-center gap-x-3 gap-y-1 rounded-none border border-amber-300 bg-amber-50 px-4 py-2.5 text-phx-md font-semibold text-amber-900">
             <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600" />
             <span>
               {kpi.actualsDegraded.count} request{kpi.actualsDegraded.count === 1 ? "" : "s"} used a slower
@@ -756,7 +756,7 @@ export function MarketingCoverageReportWorkspace({ isSuperAdmin }: { isSuperAdmi
           <button
             type="button"
             onClick={() => setExpandedRequestId(outlier.requestId)}
-            className="flex w-full flex-wrap items-center gap-x-3 gap-y-1 rounded-none border border-amber-300 bg-amber-50 px-4 py-2.5 text-left text-[13px] font-semibold text-amber-900 transition hover:border-amber-400 hover:bg-amber-100"
+            className="flex w-full flex-wrap items-center gap-x-3 gap-y-1 rounded-none border border-amber-300 bg-amber-50 px-4 py-2.5 text-left text-phx-md font-semibold text-amber-900 transition hover:border-amber-400 hover:bg-amber-100"
           >
             <Flame className="h-4 w-4 shrink-0 text-amber-600" />
             <span className="font-black uppercase tracking-wide text-amber-700">Highest spend, zero attributed sales:</span>
@@ -822,7 +822,7 @@ export function MarketingCoverageReportWorkspace({ isSuperAdmin }: { isSuperAdmi
         {report ? (
           <section className="overflow-hidden rounded-none border border-phx-line bg-white shadow-sm">
             <PortalResponsiveDataList
-              empty={<div className="px-4 py-10 text-center text-[13px] font-semibold text-phx-ink-soft">No requests match the applied filters.</div>}
+              empty={<div className="px-4 py-10 text-center text-phx-md font-semibold text-phx-ink-soft">No requests match the applied filters.</div>}
               getKey={(row) => row.requestId}
               items={sortedRows}
               renderCard={(row) => (
@@ -839,7 +839,7 @@ export function MarketingCoverageReportWorkspace({ isSuperAdmin }: { isSuperAdmi
               renderTable={() => (
                 <PortalDesktopTable minWidth="960px">
                   <thead>
-                    <tr className="border-b border-phx-line bg-slate-900 text-left text-[11px] font-black uppercase tracking-wide text-white">
+                    <tr className="border-b border-phx-line bg-slate-900 text-left text-phx-xs font-black uppercase tracking-wide text-white">
                       <th className="px-2 py-2.5">
                         <button type="button" onClick={() => toggleRequestSort("requestCode")} className="inline-flex items-center gap-1 font-black">Request {requestSortArrow("requestCode")}</button>
                       </th>
@@ -931,8 +931,8 @@ function CoverageBreakdownPanel({
     <section className="overflow-hidden rounded-none border border-phx-line bg-white shadow-sm">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-phx-line px-4 py-3 sm:px-5">
         <div>
-          <p className="text-[10px] font-black uppercase tracking-[0.16em] text-phx-accent">Coverage breakdown</p>
-          <h3 className="text-[14px] font-black tracking-tight text-phx-ink">Where is coverage failing?</h3>
+          <p className="text-phx-2xs font-black uppercase tracking-[0.16em] text-phx-accent">Coverage breakdown</p>
+          <h3 className="text-phx-base font-black tracking-tight text-phx-ink">Where is coverage failing?</h3>
         </div>
         <div className="flex flex-wrap gap-1.5">
           {BREAKDOWN_TABS.map((tab) => (
@@ -941,7 +941,7 @@ function CoverageBreakdownPanel({
               type="button"
               onClick={() => onDimensionChange(tab.key)}
               className={cn(
-                "rounded-none border px-3 py-1.5 text-[12px] font-bold uppercase tracking-wide transition",
+                "rounded-none border px-3 py-1.5 text-phx-sm font-bold uppercase tracking-wide transition",
                 dimension === tab.key
                   ? "border-phx-accent bg-phx-accent text-white"
                   : "border-phx-line bg-white text-phx-ink-soft hover:border-phx-accent-line hover:text-phx-accent",
@@ -956,7 +956,7 @@ function CoverageBreakdownPanel({
       <div>
         {dimension === "distributor" ? (
           <PortalResponsiveDataList
-            empty={<p className="px-4 py-6 text-center text-[13px] font-semibold text-phx-ink-soft">No distributor data for the current filter.</p>}
+            empty={<p className="px-4 py-6 text-center text-phx-md font-semibold text-phx-ink-soft">No distributor data for the current filter.</p>}
             getKey={(row) => row.distributorCode}
             items={distributorRollup}
             renderCard={(row) => (
@@ -985,7 +985,7 @@ function CoverageBreakdownPanel({
             renderTable={() => (
               <PortalDesktopTable minWidth="560px">
                 <thead>
-                  <tr className="border-b border-phx-line bg-slate-900 text-left text-[11px] font-black uppercase tracking-wide text-white">
+                  <tr className="border-b border-phx-line bg-slate-900 text-left text-phx-xs font-black uppercase tracking-wide text-white">
                     <th className="px-3 py-2.5">Distributor</th>
                     <th className="px-3 py-2.5 text-right">Requests</th>
                     <th className="px-3 py-2.5 text-right">Allocated cost</th>
@@ -1006,7 +1006,7 @@ function CoverageBreakdownPanel({
                     >
                       <td className="whitespace-nowrap px-3 py-2 font-bold text-slate-900">
                         {row.distributorName ?? row.distributorCode}
-                        <span className="ml-1.5 text-[11px] font-semibold text-slate-400">({row.distributorCode})</span>
+                        <span className="ml-1.5 text-phx-xs font-semibold text-slate-400">({row.distributorCode})</span>
                       </td>
                       <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-slate-700">{row.requestCount.toLocaleString("en-US")}</td>
                       <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-slate-700">{money(row.allocatedCost)}</td>
@@ -1019,7 +1019,7 @@ function CoverageBreakdownPanel({
           />
         ) : (
           <PortalResponsiveDataList
-            empty={<p className="px-4 py-6 text-center text-[13px] font-semibold text-phx-ink-soft">No data for the current filter.</p>}
+            empty={<p className="px-4 py-6 text-center text-phx-md font-semibold text-phx-ink-soft">No data for the current filter.</p>}
             getKey={(row) => row.key}
             items={dimensionRollup}
             renderCard={(row) => {
@@ -1062,7 +1062,7 @@ function CoverageBreakdownPanel({
             renderTable={() => (
               <PortalDesktopTable minWidth="720px">
                 <thead>
-                  <tr className="border-b border-phx-line bg-slate-900 text-left text-[11px] font-black uppercase tracking-wide text-white">
+                  <tr className="border-b border-phx-line bg-slate-900 text-left text-phx-xs font-black uppercase tracking-wide text-white">
                     <th className="px-3 py-2.5">{ROLLUP_DIMENSION_LABELS[dimension]}</th>
                     <th className="px-3 py-2.5 text-right">Requests</th>
                     <th className="px-3 py-2.5 text-right">Cost</th>
@@ -1115,9 +1115,9 @@ function CoverageBreakdownPanel({
 
       {trend.length > 0 ? (
         <div className="border-t border-phx-paper-2 px-4 py-3 sm:px-5">
-          <p className="mb-2 text-[11px] font-black uppercase tracking-wide text-phx-ink-faint">Trend by pay month</p>
+          <p className="mb-2 text-phx-xs font-black uppercase tracking-wide text-phx-ink-faint">Trend by pay month</p>
           <PortalResponsiveDataList
-            empty={<p className="text-[13px] font-semibold text-phx-ink-soft">No trend data for the current filter.</p>}
+            empty={<p className="text-phx-md font-semibold text-phx-ink-soft">No trend data for the current filter.</p>}
             getKey={(point) => point.month}
             items={trend}
             renderCard={(point) => (
@@ -1137,7 +1137,7 @@ function CoverageBreakdownPanel({
             renderTable={() => (
               <PortalDesktopTable minWidth="560px">
                 <thead>
-                  <tr className="text-left text-[11px] font-black uppercase tracking-wide text-slate-400">
+                  <tr className="text-left text-phx-xs font-black uppercase tracking-wide text-slate-400">
                     <th className="px-3 py-1.5">Month</th>
                     <th className="px-3 py-1.5 text-right">Requests</th>
                     <th className="px-3 py-1.5 text-right">Cost</th>
@@ -1240,21 +1240,21 @@ function PharmacyDrilldownPanel({
 
   if (loading) {
     return (
-      <div className="flex items-center gap-2 py-3 text-[13px] font-semibold text-slate-500">
+      <div className="flex items-center gap-2 py-3 text-phx-md font-semibold text-slate-500">
         <LoadingSpinner /> Loading target pharmacies…
       </div>
     );
   }
   if (error) {
-    return <div className="rounded-none border border-rose-200 bg-rose-50 px-3 py-2 text-[13px] font-semibold text-rose-700">{error}</div>;
+    return <div className="rounded-none border border-rose-200 bg-rose-50 px-3 py-2 text-phx-md font-semibold text-rose-700">{error}</div>;
   }
   if (!pharmacies || pharmacies.length === 0) {
-    return <p className="py-2 text-[13px] font-semibold text-slate-500">This request has no target pharmacy codes.</p>;
+    return <p className="py-2 text-phx-md font-semibold text-slate-500">This request has no target pharmacy codes.</p>;
   }
 
   return (
     <div className="space-y-1.5">
-      <p className="text-[11px] font-black uppercase tracking-wide text-slate-400">
+      <p className="text-phx-xs font-black uppercase tracking-wide text-slate-400">
         {pharmacies.length} target pharmac{pharmacies.length === 1 ? "y" : "ies"} — sales shown even at zero
       </p>
       {pharmacies.map((pharmacy) => {
@@ -1286,7 +1286,7 @@ function PharmacyDrilldownPanel({
                     target="_blank"
                     rel="noreferrer"
                     onClick={(event) => event.stopPropagation()}
-                    className="inline-flex items-center gap-1 whitespace-nowrap rounded-none border border-slate-300 px-2 py-1 text-[11px] font-bold text-slate-700 transition hover:border-phx-accent hover:text-phx-accent"
+                    className="inline-flex items-center gap-1 whitespace-nowrap rounded-none border border-slate-300 px-2 py-1 text-phx-xs font-bold text-slate-700 transition hover:border-phx-accent hover:text-phx-accent"
                   >
                     <ExternalLink className="h-3 w-3" /> Full sales history
                   </a>
@@ -1296,7 +1296,7 @@ function PharmacyDrilldownPanel({
             {pharmacyExpanded ? (
               <div className="border-t border-slate-200 bg-slate-50 px-3 py-2">
                 <PortalResponsiveDataList
-                  empty={<p className="py-1 text-[12px] font-medium text-slate-500">No matched sales in this window.</p>}
+                  empty={<p className="py-1 text-phx-sm font-medium text-slate-500">No matched sales in this window.</p>}
                   getKey={(sale, index) => `${sale.productCode}-${sale.invoicePeriod}-${index}`}
                   items={pharmacy.salesDetail}
                   renderCard={(sale) => (
@@ -1310,9 +1310,9 @@ function PharmacyDrilldownPanel({
                     </PortalRecordCard>
                   )}
                   renderTable={() => (
-                    <PortalDesktopTable className="text-[12px]" minWidth="480px">
+                    <PortalDesktopTable className="text-phx-sm" minWidth="480px">
                       <thead>
-                        <tr className="text-left text-[10px] font-black uppercase tracking-wide text-slate-400">
+                        <tr className="text-left text-phx-2xs font-black uppercase tracking-wide text-slate-400">
                           <th className="px-2 py-1">Product</th>
                           <th className="px-2 py-1">Month</th>
                           <th className="px-2 py-1 text-right">Qty</th>
@@ -1384,7 +1384,7 @@ function RequestAccordionRow({
         <td className="whitespace-nowrap px-2 py-2.5 text-slate-700">{row.customerName}</td>
         <td className="whitespace-nowrap px-2 py-2.5 text-slate-600">
           {STATUS_BADGE_CLASS[row.status] ? (
-            <span className={cn("inline-flex rounded-none border px-2 py-0.5 text-[11px] font-bold", STATUS_BADGE_CLASS[row.status])}>
+            <span className={cn("inline-flex rounded-none border px-2 py-0.5 text-phx-xs font-bold", STATUS_BADGE_CLASS[row.status])}>
               {STATUS_LABELS[row.status] ?? row.status}
             </span>
           ) : (
@@ -1397,7 +1397,7 @@ function RequestAccordionRow({
         <td className="whitespace-nowrap px-2 py-2.5 text-right tabular-nums font-semibold text-slate-900">{money(row.actualSalesValue)}</td>
         <td className="whitespace-nowrap px-2 py-2.5 text-right tabular-nums text-slate-700">{percent(row.actualCoverageRatio)}</td>
         <td className="whitespace-nowrap px-2 py-2.5">
-          <span className={cn("inline-flex rounded-none border px-2 py-0.5 text-[11px] font-bold", RESULT_BADGE_CLASS[row.resultStatus])}>
+          <span className={cn("inline-flex rounded-none border px-2 py-0.5 text-phx-xs font-bold", RESULT_BADGE_CLASS[row.resultStatus])}>
             {ROI_RESULT_STATUS_LABEL[row.resultStatus]}
           </span>
         </td>
@@ -1465,7 +1465,7 @@ function RequestAccordionCard({
         }
         status={
           <span className="inline-flex items-center gap-1.5">
-            <span className={cn("inline-flex whitespace-nowrap rounded-none border px-2 py-0.5 text-[11px] font-bold", RESULT_BADGE_CLASS[row.resultStatus])}>
+            <span className={cn("inline-flex whitespace-nowrap rounded-none border px-2 py-0.5 text-phx-xs font-bold", RESULT_BADGE_CLASS[row.resultStatus])}>
               {ROI_RESULT_STATUS_LABEL[row.resultStatus]}
             </span>
             <ChevronDown className={cn("h-4 w-4 shrink-0 text-slate-400 transition", expanded ? "rotate-180" : "")} />
@@ -1479,7 +1479,7 @@ function RequestAccordionCard({
             {
               label: "Status",
               value: STATUS_BADGE_CLASS[row.status] ? (
-                <span className={cn("inline-flex rounded-none border px-2 py-0.5 text-[11px] font-bold", STATUS_BADGE_CLASS[row.status])}>
+                <span className={cn("inline-flex rounded-none border px-2 py-0.5 text-phx-xs font-bold", STATUS_BADGE_CLASS[row.status])}>
                   {STATUS_LABELS[row.status] ?? row.status}
                 </span>
               ) : (

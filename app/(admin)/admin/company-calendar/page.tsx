@@ -62,7 +62,7 @@ export default async function AdminCompanyCalendarPage() {
       <div className="flex items-center gap-3 border-b border-border pb-5">
         <div className="h-12 w-1 shrink-0 bg-phx-accent" />
         <div>
-          <p className="mb-0.5 text-[10px] font-bold uppercase tracking-widest text-phx-accent">Company · Events</p>
+          <p className="mb-0.5 text-phx-2xs font-bold uppercase tracking-widest text-phx-accent">Company · Events</p>
           <h1 className="text-2xl font-bold leading-tight text-foreground">Events Calendar</h1>
           <p className="mt-0.5 whitespace-nowrap text-xs text-muted-foreground">
             Company and team events, public holidays, approved leave, plan days and team birthdays —

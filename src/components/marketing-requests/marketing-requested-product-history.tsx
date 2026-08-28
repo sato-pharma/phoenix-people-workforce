@@ -45,13 +45,13 @@ export function MarketingRequestedProductHistory({ requestId }: { requestId: str
 
   if (failed) {
     return (
-      <p className="text-[11px] font-bold text-slate-400">
+      <p className="text-phx-xs font-bold text-slate-400">
         Sales history for the requested products is unavailable right now.
       </p>
     );
   }
   if (!data) {
-    return <p className="text-[11px] font-bold text-slate-400">Loading requested-product history...</p>;
+    return <p className="text-phx-xs font-bold text-slate-400">Loading requested-product history...</p>;
   }
 
   const { requested } = data;
@@ -59,26 +59,26 @@ export function MarketingRequestedProductHistory({ requestId }: { requestId: str
 
   return (
     <div>
-      <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-slate-400">
+      <p className="text-phx-3xs font-bold uppercase tracking-[0.12em] text-slate-400">
         Requested products at this customer
       </p>
       {soldCount > 0 ? (
         <>
-          <p className="mt-0.5 text-[12px] font-black text-slate-950">
+          <p className="mt-0.5 text-phx-sm font-black text-slate-950">
             {soldCount} of {requested.productCount} sold here · {egp(requested.totalValue)}
           </p>
-          <p className="mt-1 text-[11px] font-semibold leading-5 text-slate-600">
+          <p className="mt-1 text-phx-xs font-semibold leading-5 text-slate-600">
             {requested.sold.map((row) => `${row.label} ${egp(row.value)}`).join(" · ")}
           </p>
         </>
       ) : (
-        <p className="mt-0.5 text-[12px] font-black text-rose-700">
+        <p className="mt-0.5 text-phx-sm font-black text-rose-700">
           None of the {requested.productCount} requested product{requested.productCount === 1 ? " has" : "s have"} ever
           sold at this customer
         </p>
       )}
       {requested.neverSold.length > 0 ? (
-        <p className="mt-1 text-[11px] font-semibold leading-5 text-amber-700">
+        <p className="mt-1 text-phx-xs font-semibold leading-5 text-amber-700">
           Never sold here: {requested.neverSold.join(", ")}
         </p>
       ) : null}

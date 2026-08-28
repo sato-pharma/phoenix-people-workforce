@@ -42,7 +42,7 @@ function Proposed({ confidence, value }: { confidence: "high" | "low"; value: st
     <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
       <span className="font-medium text-slate-800">{value}</span>
       {confidence === "low" ? (
-        <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-700">
+        <span className="rounded bg-amber-100 px-1.5 py-0.5 text-phx-2xs font-bold uppercase tracking-wide text-amber-700">
           Check
         </span>
       ) : null}
@@ -199,7 +199,7 @@ export function ContactReviewView({ rows: initialRows }: { rows: ContactReviewRo
                   <dl className="mt-2 space-y-1 text-xs">
                     {row.proposal.email ? (
                       <div className="flex items-baseline gap-2">
-                        <dt className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Email</dt>
+                        <dt className="text-phx-2xs font-bold uppercase tracking-wide text-slate-400">Email</dt>
                         <dd className="min-w-0 overflow-x-auto">
                           <Proposed confidence={row.proposal.email.confidence} value={row.proposal.email.value} />
                         </dd>
@@ -207,7 +207,7 @@ export function ContactReviewView({ rows: initialRows }: { rows: ContactReviewRo
                     ) : null}
                     {row.proposal.phone ? (
                       <div className="flex items-baseline gap-2">
-                        <dt className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Phone</dt>
+                        <dt className="text-phx-2xs font-bold uppercase tracking-wide text-slate-400">Phone</dt>
                         <dd className="min-w-0 overflow-x-auto">
                           <Proposed confidence={row.proposal.phone.confidence} value={row.proposal.phone.value} />
                         </dd>

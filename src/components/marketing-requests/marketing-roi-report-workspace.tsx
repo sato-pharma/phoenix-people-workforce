@@ -40,7 +40,7 @@ const STATUS_TONE: Record<SimpleRoiStatus, string> = {
 
 function StatusBadge({ status }: { status: SimpleRoiStatus }) {
   return (
-    <span className={cn("inline-flex items-center rounded-[4px] border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide", STATUS_TONE[status])}>
+    <span className={cn("inline-flex items-center rounded-[4px] border px-2 py-0.5 text-phx-2xs font-bold uppercase tracking-wide", STATUS_TONE[status])}>
       {SIMPLE_ROI_STATUS_LABEL[status]}
     </span>
   );
@@ -71,13 +71,13 @@ function RoiReportTable({
   selectedRequestId: string | null;
 }) {
   if (rows.length === 0) {
-    return <div className="px-4 py-8 text-center text-[13px] font-medium text-phx-ink-soft">No marketing requests found for this selection.</div>;
+    return <div className="px-4 py-8 text-center text-phx-md font-medium text-phx-ink-soft">No marketing requests found for this selection.</div>;
   }
 
   return (
     <div className="overflow-x-auto">
-      <table className="w-full min-w-[1100px] border-collapse text-left text-[12px]">
-        <thead className="bg-phx-ink text-[10px] font-black uppercase tracking-[0.1em] text-white">
+      <table className="w-full min-w-[1100px] border-collapse text-left text-phx-sm">
+        <thead className="bg-phx-ink text-phx-2xs font-black uppercase tracking-[0.1em] text-white">
           <tr>
             <th className="px-3 py-2.5">Request</th>
             <th className="px-3 py-2.5">{secondaryColumnLabel}</th>
@@ -105,13 +105,13 @@ function RoiReportTable({
               <td className="px-3 py-2.5 text-right font-bold text-phx-ink">{money(row.actualSalesValue)}</td>
               <td className="px-3 py-2.5 text-right font-bold text-phx-ink">{row.hasSalesData ? percent(row.actualCoverageRatio) : "—"}</td>
               <td className="px-3 py-2.5"><StatusBadge status={row.simpleStatus} /></td>
-              <td className="px-3 py-2.5 text-[11px] font-semibold text-phx-ink-soft">{ROI_MAIN_PROBLEM_LABEL[row.mainProblem]}</td>
-              <td className="px-3 py-2.5 text-[11px] font-semibold text-phx-ink-soft">{ROI_NEXT_ACTION_LABEL[row.nextAction]}</td>
+              <td className="px-3 py-2.5 text-phx-xs font-semibold text-phx-ink-soft">{ROI_MAIN_PROBLEM_LABEL[row.mainProblem]}</td>
+              <td className="px-3 py-2.5 text-phx-xs font-semibold text-phx-ink-soft">{ROI_NEXT_ACTION_LABEL[row.nextAction]}</td>
               <td className="px-2 py-2.5 text-right">
                 <button
                   type="button"
                   onClick={() => onSelectRow(row)}
-                  className="inline-flex items-center gap-1 rounded-[5px] border border-phx-line bg-white px-2 py-1 text-[11px] font-black text-phx-accent transition hover:border-phx-accent-line hover:bg-phx-accent-soft"
+                  className="inline-flex items-center gap-1 rounded-[5px] border border-phx-line bg-white px-2 py-1 text-phx-xs font-black text-phx-accent transition hover:border-phx-accent-line hover:bg-phx-accent-soft"
                 >
                   View details
                 </button>
@@ -152,14 +152,14 @@ function RequestDetailPanel({ row }: { row: RoiBusinessRow }) {
     <section className="overflow-hidden rounded-[6px] border border-phx-line bg-white shadow-sm">
       <div className="flex items-center justify-between border-b border-phx-line px-4 py-3">
         <div>
-          <p className="text-[10px] font-black uppercase tracking-[0.16em] text-phx-accent">Request details</p>
-          <h3 className="text-[14px] font-black tracking-tight text-phx-ink">{row.requestCode} · {row.customerName}</h3>
+          <p className="text-phx-2xs font-black uppercase tracking-[0.16em] text-phx-accent">Request details</p>
+          <h3 className="text-phx-base font-black tracking-tight text-phx-ink">{row.requestCode} · {row.customerName}</h3>
         </div>
         <a
           href={`/admin/marketing-requests/${row.requestId}/view-sales`}
           target="_blank"
           rel="noopener noreferrer"
-          className="inline-flex items-center gap-1 rounded-[5px] border border-phx-line bg-white px-2 py-1 text-[11px] font-black text-phx-accent transition hover:border-phx-accent-line hover:bg-phx-accent-soft"
+          className="inline-flex items-center gap-1 rounded-[5px] border border-phx-line bg-white px-2 py-1 text-phx-xs font-black text-phx-accent transition hover:border-phx-accent-line hover:bg-phx-accent-soft"
         >
           <ExternalLink className="h-3 w-3" /> View Sales
         </a>
@@ -178,23 +178,23 @@ function RequestDetailPanel({ row }: { row: RoiBusinessRow }) {
         </div>
 
         {loading ? (
-          <div className="flex items-center gap-2 px-1 py-4 text-[13px] font-semibold text-phx-ink-soft">
+          <div className="flex items-center gap-2 px-1 py-4 text-phx-md font-semibold text-phx-ink-soft">
             <LoadingSpinner /> Loading attribution details…
           </div>
         ) : error ? (
-          <div className="rounded-[6px] border border-amber-200 bg-amber-50 px-3.5 py-2.5 text-[13px] font-semibold text-amber-800">{error}</div>
+          <div className="rounded-[6px] border border-amber-200 bg-amber-50 px-3.5 py-2.5 text-phx-md font-semibold text-amber-800">{error}</div>
         ) : explain ? (
           <>
             {/* 2) Target setup */}
             <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
               <div className="rounded-[6px] border border-phx-line bg-phx-paper p-3">
-                <p className="mb-2 text-[11px] font-black uppercase tracking-[0.12em] text-phx-ink-faint">Target products</p>
+                <p className="mb-2 text-phx-xs font-black uppercase tracking-[0.12em] text-phx-ink-faint">Target products</p>
                 <div className="flex flex-wrap gap-1.5">
                   {explain.targetSetup.products.length === 0 ? (
-                    <span className="text-[12px] font-medium text-phx-ink-faint">No products.</span>
+                    <span className="text-phx-sm font-medium text-phx-ink-faint">No products.</span>
                   ) : (
                     explain.targetSetup.products.map((product) => (
-                      <span key={product.code} className="inline-flex items-center rounded-[5px] border border-phx-line bg-white px-2 py-0.5 text-[11px] font-bold text-phx-ink-2">
+                      <span key={product.code} className="inline-flex items-center rounded-[5px] border border-phx-line bg-white px-2 py-0.5 text-phx-xs font-bold text-phx-ink-2">
                         {product.name}
                       </span>
                     ))
@@ -202,13 +202,13 @@ function RequestDetailPanel({ row }: { row: RoiBusinessRow }) {
                 </div>
               </div>
               <div className="rounded-[6px] border border-phx-line bg-phx-paper p-3">
-                <p className="mb-2 text-[11px] font-black uppercase tracking-[0.12em] text-phx-ink-faint">Target pharmacies</p>
+                <p className="mb-2 text-phx-xs font-black uppercase tracking-[0.12em] text-phx-ink-faint">Target pharmacies</p>
                 <div className="flex flex-wrap gap-1.5">
                   {explain.targetSetup.pharmacies.length === 0 ? (
-                    <span className="text-[12px] font-medium text-phx-ink-faint">No pharmacy codes.</span>
+                    <span className="text-phx-sm font-medium text-phx-ink-faint">No pharmacy codes.</span>
                   ) : (
                     explain.targetSetup.pharmacies.map((pharmacy) => (
-                      <span key={pharmacy.code} className="inline-flex items-center rounded-[5px] border border-phx-line bg-white px-2 py-0.5 text-[11px] font-bold text-phx-ink-2">
+                      <span key={pharmacy.code} className="inline-flex items-center rounded-[5px] border border-phx-line bg-white px-2 py-0.5 text-phx-xs font-bold text-phx-ink-2">
                         {pharmacy.name}
                       </span>
                     ))
@@ -217,8 +217,8 @@ function RequestDetailPanel({ row }: { row: RoiBusinessRow }) {
               </div>
             </div>
 
-            <div className="rounded-[6px] border border-phx-line bg-phx-paper p-3 text-[12px]">
-              <p className="mb-1.5 text-[11px] font-black uppercase tracking-[0.12em] text-phx-ink-faint">ROI window</p>
+            <div className="rounded-[6px] border border-phx-line bg-phx-paper p-3 text-phx-sm">
+              <p className="mb-1.5 text-phx-xs font-black uppercase tracking-[0.12em] text-phx-ink-faint">ROI window</p>
               <p className="font-semibold text-phx-ink-2">
                 Validated: <span className="text-emerald-700">{explain.targetSetup.validatedPeriodsInWindow.join(", ") || "none"}</span>
                 {explain.targetSetup.pendingPeriodsInWindow.length > 0 ? (
@@ -231,13 +231,13 @@ function RequestDetailPanel({ row }: { row: RoiBusinessRow }) {
 
             {/* 3) Attributed sales ledger — collapsed by default; sos_row_id lives only here. */}
             <details className="overflow-hidden rounded-[6px] border border-phx-line">
-              <summary className="flex cursor-pointer list-none items-center justify-between bg-white px-3 py-2 text-[11px] font-black uppercase tracking-[0.12em] text-phx-ink">
+              <summary className="flex cursor-pointer list-none items-center justify-between bg-white px-3 py-2 text-phx-xs font-black uppercase tracking-[0.12em] text-phx-ink">
                 <span className="inline-flex items-center gap-1.5"><ChevronRight className="h-3.5 w-3.5 [details[open]_&]:hidden" /><ChevronDown className="hidden h-3.5 w-3.5 [details[open]_&]:inline" /> Explain ROI ledger (advanced)</span>
-                <span className="inline-flex items-center rounded-[5px] border border-phx-line bg-phx-paper px-2 py-0.5 text-[11px] font-bold text-phx-ink-soft">{explain.ledger.length} row{explain.ledger.length === 1 ? "" : "s"}</span>
+                <span className="inline-flex items-center rounded-[5px] border border-phx-line bg-phx-paper px-2 py-0.5 text-phx-xs font-bold text-phx-ink-soft">{explain.ledger.length} row{explain.ledger.length === 1 ? "" : "s"}</span>
               </summary>
               <div className="overflow-x-auto border-t border-phx-line">
-                <table className="w-full min-w-[820px] border-collapse text-left text-[12px]">
-                  <thead className="bg-phx-ink text-[10px] font-black uppercase tracking-[0.1em] text-white">
+                <table className="w-full min-w-[820px] border-collapse text-left text-phx-sm">
+                  <thead className="bg-phx-ink text-phx-2xs font-black uppercase tracking-[0.1em] text-white">
                     <tr>
                       <th className="px-3 py-2">SoS row</th>
                       <th className="px-3 py-2">Period</th>
@@ -250,7 +250,7 @@ function RequestDetailPanel({ row }: { row: RoiBusinessRow }) {
                   </thead>
                   <tbody className="bg-white">
                     {explain.ledger.length === 0 ? (
-                      <tr><td className="px-4 py-4 text-center text-[12px] font-medium text-phx-ink-soft" colSpan={7}>No attributed sales rows.</td></tr>
+                      <tr><td className="px-4 py-4 text-center text-phx-sm font-medium text-phx-ink-soft" colSpan={7}>No attributed sales rows.</td></tr>
                     ) : (
                       explain.ledger.map((ledgerRow) => (
                         <tr key={ledgerRow.ledgerKey} className="border-t border-[#FEE7D2]">
@@ -278,9 +278,9 @@ function RequestDetailPanel({ row }: { row: RoiBusinessRow }) {
 function SummaryStat({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
     <div className="rounded-[6px] border border-phx-line bg-white px-3 py-2.5">
-      <p className="text-[10px] font-black uppercase tracking-[0.12em] text-phx-ink-faint">{label}</p>
-      <p className="mt-1 text-[14px] font-black leading-none text-phx-ink">{value}</p>
-      {hint ? <p className="mt-1 truncate text-[11px] font-semibold text-phx-ink-faint" title={hint}>{hint}</p> : null}
+      <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-phx-ink-faint">{label}</p>
+      <p className="mt-1 text-phx-base font-black leading-none text-phx-ink">{value}</p>
+      {hint ? <p className="mt-1 truncate text-phx-xs font-semibold text-phx-ink-faint" title={hint}>{hint}</p> : null}
     </div>
   );
 }
@@ -291,15 +291,15 @@ function CohortTable({ entityLabel, title, hint, rows, showForecast }: { entityL
   return (
     <section className="overflow-hidden rounded-[6px] border border-phx-line bg-white shadow-sm">
       <div className="border-b border-phx-line px-4 py-2.5">
-        <h3 className="text-[13px] font-black text-phx-ink">{title}</h3>
-        <p className="text-[11px] font-medium text-phx-ink-soft">{hint}</p>
+        <h3 className="text-phx-md font-black text-phx-ink">{title}</h3>
+        <p className="text-phx-xs font-medium text-phx-ink-soft">{hint}</p>
       </div>
       {rows.length === 0 ? (
-        <div className="px-4 py-6 text-center text-[12px] font-medium text-phx-ink-faint">No data.</div>
+        <div className="px-4 py-6 text-center text-phx-sm font-medium text-phx-ink-faint">No data.</div>
       ) : (
         <div className="overflow-x-auto">
-          <table className="w-full border-collapse text-left text-[12px]">
-            <thead className="bg-phx-paper text-[10px] font-bold uppercase tracking-[0.08em] text-phx-ink-soft">
+          <table className="w-full border-collapse text-left text-phx-sm">
+            <thead className="bg-phx-paper text-phx-2xs font-bold uppercase tracking-[0.08em] text-phx-ink-soft">
               <tr>
                 <th className="px-3 py-2">{entityLabel}</th>
                 <th className="px-3 py-2 text-right">Reqs</th>
@@ -337,18 +337,18 @@ function CohortTable({ entityLabel, title, hint, rows, showForecast }: { entityL
 function PerformanceCohorts({ cohorts, loading, error }: { cohorts: RoiCohorts | null; loading: boolean; error: string | null }) {
   if (loading) {
     return (
-      <div className="flex items-center gap-2 rounded-[6px] border border-phx-line bg-white px-4 py-8 text-[13px] font-medium text-phx-ink-soft shadow-sm">
+      <div className="flex items-center gap-2 rounded-[6px] border border-phx-line bg-white px-4 py-8 text-phx-md font-medium text-phx-ink-soft shadow-sm">
         <LoadingSpinner /> Building performance cohorts…
       </div>
     );
   }
   if (error) {
-    return <div className="rounded-[6px] border border-amber-200 bg-amber-50 px-3.5 py-2.5 text-[13px] font-semibold text-amber-800">{error}</div>;
+    return <div className="rounded-[6px] border border-amber-200 bg-amber-50 px-3.5 py-2.5 text-phx-md font-semibold text-amber-800">{error}</div>;
   }
   if (!cohorts) return null;
   return (
     <div className="space-y-4">
-      <p className="rounded-[6px] border border-phx-line bg-phx-paper px-3.5 py-2 text-[11px] font-medium text-phx-ink-soft">
+      <p className="rounded-[6px] border border-phx-line bg-phx-paper px-3.5 py-2 text-phx-xs font-medium text-phx-ink-soft">
         ROI-weighted across every visible request. <b>Efficiency</b> = EGP returned per EGP spent · <b>Coverage</b> = actual ÷ required · <b>Forecast acc.</b> = actual ÷ forecast. Approver-role totals can exceed the whole — a request with several approvers counts under each.
       </p>
       <CohortTable entityLabel="Request type" title="By request type" hint="Which activity types actually return." rows={cohorts.byRequestType} showForecast />
@@ -429,7 +429,7 @@ export function MarketingRoiReportWorkspace() {
             type="button"
             onClick={() => switchTab("requester")}
             className={cn(
-              "inline-flex items-center gap-1.5 rounded-[5px] px-3 py-1.5 text-[12px] font-black transition",
+              "inline-flex items-center gap-1.5 rounded-[5px] px-3 py-1.5 text-phx-sm font-black transition",
               tab === "requester" ? "bg-phx-ink text-white" : "text-phx-ink-soft hover:bg-phx-paper",
             )}
           >
@@ -439,7 +439,7 @@ export function MarketingRoiReportWorkspace() {
             type="button"
             onClick={() => switchTab("customer")}
             className={cn(
-              "inline-flex items-center gap-1.5 rounded-[5px] px-3 py-1.5 text-[12px] font-black transition",
+              "inline-flex items-center gap-1.5 rounded-[5px] px-3 py-1.5 text-phx-sm font-black transition",
               tab === "customer" ? "bg-phx-ink text-white" : "text-phx-ink-soft hover:bg-phx-paper",
             )}
           >
@@ -449,7 +449,7 @@ export function MarketingRoiReportWorkspace() {
             type="button"
             onClick={() => switchTab("performance")}
             className={cn(
-              "inline-flex items-center gap-1.5 rounded-[5px] px-3 py-1.5 text-[12px] font-black transition",
+              "inline-flex items-center gap-1.5 rounded-[5px] px-3 py-1.5 text-phx-sm font-black transition",
               tab === "performance" ? "bg-phx-ink text-white" : "text-phx-ink-soft hover:bg-phx-paper",
             )}
           >
@@ -464,7 +464,7 @@ export function MarketingRoiReportWorkspace() {
         {/* Selector */}
         <div className="rounded-[6px] border border-phx-line bg-white p-3 shadow-sm">
           {tab === "requester" ? (
-            <label className="block text-[12px] font-bold text-phx-ink-2">
+            <label className="block text-phx-sm font-bold text-phx-ink-2">
               Requester
               <select
                 value={selectedRequesterHrId}
@@ -473,7 +473,7 @@ export function MarketingRoiReportWorkspace() {
                   void loadRows("requester", event.target.value);
                 }}
                 disabled={optionsLoading}
-                className="mt-1 block w-full max-w-md rounded-[5px] border border-phx-line bg-white px-2.5 py-2 text-[13px] font-semibold text-phx-ink"
+                className="mt-1 block w-full max-w-md rounded-[5px] border border-phx-line bg-white px-2.5 py-2 text-phx-md font-semibold text-phx-ink"
               >
                 <option value="">{optionsLoading ? "Loading requesters…" : "Select a requester…"}</option>
                 {options.requesters.map((requester) => (
@@ -484,7 +484,7 @@ export function MarketingRoiReportWorkspace() {
               </select>
             </label>
           ) : (
-            <label className="block text-[12px] font-bold text-phx-ink-2">
+            <label className="block text-phx-sm font-bold text-phx-ink-2">
               Customer
               <select
                 value={selectedCustomerName}
@@ -493,7 +493,7 @@ export function MarketingRoiReportWorkspace() {
                   void loadRows("customer", event.target.value);
                 }}
                 disabled={optionsLoading}
-                className="mt-1 block w-full max-w-md rounded-[5px] border border-phx-line bg-white px-2.5 py-2 text-[13px] font-semibold text-phx-ink"
+                className="mt-1 block w-full max-w-md rounded-[5px] border border-phx-line bg-white px-2.5 py-2 text-phx-md font-semibold text-phx-ink"
               >
                 <option value="">{optionsLoading ? "Loading customers…" : "Select a customer…"}</option>
                 {options.customers.map((customer) => (
@@ -509,13 +509,13 @@ export function MarketingRoiReportWorkspace() {
         {/* Results table */}
         <section className="overflow-hidden rounded-[6px] border border-phx-line bg-white shadow-sm">
           {rowsLoading ? (
-            <div className="flex items-center gap-2 px-4 py-8 text-[13px] font-medium text-phx-ink-soft">
+            <div className="flex items-center gap-2 px-4 py-8 text-phx-md font-medium text-phx-ink-soft">
               <LoadingSpinner /> Loading marketing requests…
             </div>
           ) : rowsError ? (
-            <div className="m-4 rounded-[6px] border border-amber-200 bg-amber-50 px-3.5 py-2.5 text-[13px] font-semibold text-amber-800">{rowsError}</div>
+            <div className="m-4 rounded-[6px] border border-amber-200 bg-amber-50 px-3.5 py-2.5 text-phx-md font-semibold text-amber-800">{rowsError}</div>
           ) : (!selectedRequesterHrId && tab === "requester") || (!selectedCustomerName && tab === "customer") ? (
-            <div className="px-4 py-8 text-center text-[13px] font-medium text-phx-ink-soft">
+            <div className="px-4 py-8 text-center text-phx-md font-medium text-phx-ink-soft">
               {tab === "requester" ? "Select a requester to see their marketing requests." : "Select a customer to see their marketing request history."}
             </div>
           ) : (

@@ -162,7 +162,7 @@ function NotificationPolicyCard({
           />
         )}
         <button
-          className="inline-flex h-[42px] items-center gap-1.5 rounded-lg bg-[#0B0B0B] px-4 text-[11px] font-black text-white transition hover:bg-[#1E293B] disabled:opacity-50"
+          className="inline-flex h-[42px] items-center gap-1.5 rounded-lg bg-[#0B0B0B] px-4 text-phx-xs font-black text-white transition hover:bg-[#1E293B] disabled:opacity-50"
           disabled={saving}
           onClick={onSave}
           type="button"

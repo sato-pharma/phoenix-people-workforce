@@ -29,18 +29,18 @@ function BreakdownTable({
   const max = Math.max(0, ...rows.map((row) => row.value));
   return (
     <div className="rounded-[6px] border border-phx-line bg-white">
-      <p className="border-b border-phx-line px-3 py-2 text-[11px] font-black uppercase tracking-[0.12em] text-phx-ink-soft">
+      <p className="border-b border-phx-line px-3 py-2 text-phx-xs font-black uppercase tracking-[0.12em] text-phx-ink-soft">
         {title}
       </p>
       {rows.length === 0 ? (
-        <p className="px-3 py-4 text-[12px] font-semibold text-phx-ink-faint">{emptyLabel}</p>
+        <p className="px-3 py-4 text-phx-sm font-semibold text-phx-ink-faint">{emptyLabel}</p>
       ) : (
         <ul className="divide-y divide-phx-paper-2">
           {rows.map((row) => (
             <li className="px-3 py-2" key={row.label}>
               <div className="flex items-center justify-between gap-3">
-                <span className="text-[12px] font-bold text-phx-ink">{row.label}</span>
-                <span className="shrink-0 text-[12px] font-black text-phx-ink">{egp(row.value)}</span>
+                <span className="text-phx-sm font-bold text-phx-ink">{row.label}</span>
+                <span className="shrink-0 text-phx-sm font-black text-phx-ink">{egp(row.value)}</span>
               </div>
               <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-phx-paper-2">
                 <div
@@ -98,7 +98,7 @@ export function MarketingSalesEvidencePanel({ requestId }: { requestId: string }
 
   if (loading) {
     return (
-      <div className="rounded-[8px] border border-phx-line bg-white px-4 py-3 text-[12px] font-bold text-phx-ink-soft">
+      <div className="rounded-[8px] border border-phx-line bg-white px-4 py-3 text-phx-sm font-bold text-phx-ink-soft">
         Loading sales evidence...
       </div>
     );
@@ -106,7 +106,7 @@ export function MarketingSalesEvidencePanel({ requestId }: { requestId: string }
 
   if (error || !data) {
     return (
-      <div className="rounded-[8px] border border-[#FED7AA] bg-phx-accent-soft px-4 py-3 text-[12px] font-bold text-[#9A3412]">
+      <div className="rounded-[8px] border border-[#FED7AA] bg-phx-accent-soft px-4 py-3 text-phx-sm font-bold text-[#9A3412]">
         {error ?? "Sales evidence is unavailable."}
       </div>
     );
@@ -120,11 +120,11 @@ export function MarketingSalesEvidencePanel({ requestId }: { requestId: string }
     <section className="space-y-3 rounded-[10px] border border-phx-line bg-phx-paper p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-[10px] font-black uppercase tracking-[0.14em] text-phx-ink-soft">Sales evidence</p>
-          <p className="mt-1 text-[15px] font-black text-phx-ink">{data.customerName}</p>
+          <p className="text-phx-2xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">Sales evidence</p>
+          <p className="mt-1 text-phx-lg font-black text-phx-ink">{data.customerName}</p>
         </div>
         <span
-          className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-black ${
+          className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-phx-xs font-black ${
             verdict.hasHistory ? "bg-[#DCFCE7] text-[#166534]" : "bg-[#FEF3C7] text-[#92400E]"
           }`}
         >
@@ -134,7 +134,7 @@ export function MarketingSalesEvidencePanel({ requestId }: { requestId: string }
       </div>
 
       {/* The verdict, in one sentence. */}
-      <p className="text-[13px] font-bold leading-6 text-phx-ink-2">
+      <p className="text-phx-md font-bold leading-6 text-phx-ink-2">
         {verdict.hasHistory ? (
           <>
             This customer sold <strong className="text-phx-ink">{egp(verdict.totalValue)}</strong> across{" "}
@@ -165,7 +165,7 @@ export function MarketingSalesEvidencePanel({ requestId }: { requestId: string }
           quantity, count, product name or value — saying how many or how much would defeat the
           lock this line exists to respect. */}
       {data.confidentialProductsWithheld ? (
-        <p className="text-[12px] font-semibold leading-5 text-phx-ink-soft">
+        <p className="text-phx-sm font-semibold leading-5 text-phx-ink-soft">
           Confidential products are excluded from these figures.
         </p>
       ) : null}
@@ -177,19 +177,19 @@ export function MarketingSalesEvidencePanel({ requestId }: { requestId: string }
           family, different SKUs, matched on CODE so a name never credits one to the other. This
           sits above the customer-wide figures because it is the number that decides the request. */}
       <div className="rounded-[6px] border border-phx-line bg-white p-3">
-        <p className="text-[10px] font-black uppercase tracking-[0.14em] text-phx-ink-soft">
+        <p className="text-phx-2xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">
           The {data.requested.productCount} product{data.requested.productCount === 1 ? "" : "s"} this request promotes
         </p>
         {data.requested.sold.length > 0 ? (
           <>
-            <p className="mt-1 text-[13px] font-bold leading-6 text-phx-ink-2">
+            <p className="mt-1 text-phx-md font-bold leading-6 text-phx-ink-2">
               <strong className="text-phx-ink">{data.requested.sold.length}</strong> of{" "}
               <strong className="text-phx-ink">{data.requested.productCount}</strong> have sold at this customer,
               totalling <strong className="text-phx-ink">{egp(data.requested.totalValue)}</strong>.
             </p>
             <ul className="mt-2 space-y-1">
               {data.requested.sold.map((row) => (
-                <li className="flex items-center justify-between gap-3 text-[12px]" key={row.label}>
+                <li className="flex items-center justify-between gap-3 text-phx-sm" key={row.label}>
                   <span className="font-bold text-phx-ink">{row.label}</span>
                   <span className="shrink-0 font-black text-[#166534]">{egp(row.value)}</span>
                 </li>
@@ -197,13 +197,13 @@ export function MarketingSalesEvidencePanel({ requestId }: { requestId: string }
             </ul>
           </>
         ) : (
-          <p className="mt-1 text-[13px] font-bold leading-6 text-[#B91C1C]">
+          <p className="mt-1 text-phx-md font-bold leading-6 text-[#B91C1C]">
             None of these products has ever sold at this customer. The forecast rests entirely on
             products it has never bought.
           </p>
         )}
         {data.requested.neverSold.length > 0 ? (
-          <p className="mt-2 rounded-[6px] border border-[#FED7AA] bg-phx-accent-soft px-3 py-2 text-[12px] font-bold leading-5 text-[#9A3412]">
+          <p className="mt-2 rounded-[6px] border border-[#FED7AA] bg-phx-accent-soft px-3 py-2 text-phx-sm font-bold leading-5 text-[#9A3412]">
             Never sold here: {data.requested.neverSold.join(", ")}
           </p>
         ) : null}
@@ -212,31 +212,31 @@ export function MarketingSalesEvidencePanel({ requestId }: { requestId: string }
       {/* The ask, next to what the history projects. */}
       <div className="grid gap-2 sm:grid-cols-3">
         <div className="rounded-[6px] border border-phx-line bg-white px-3 py-2">
-          <p className="text-[10px] font-black uppercase tracking-[0.12em] text-phx-ink-soft">Request cost</p>
-          <p className="mt-0.5 text-[15px] font-black text-phx-ink">{egp(ask.estimatedCost)}</p>
+          <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-phx-ink-soft">Request cost</p>
+          <p className="mt-0.5 text-phx-lg font-black text-phx-ink">{egp(ask.estimatedCost)}</p>
         </div>
         <div className="rounded-[6px] border border-phx-line bg-white px-3 py-2">
-          <p className="text-[10px] font-black uppercase tracking-[0.12em] text-phx-ink-soft">
+          <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-phx-ink-soft">
             Required return ({ask.roiDurationMonths}mo)
           </p>
-          <p className="mt-0.5 text-[15px] font-black text-phx-ink">{egp(ask.requiredRoiValue)}</p>
+          <p className="mt-0.5 text-phx-lg font-black text-phx-ink">{egp(ask.requiredRoiValue)}</p>
         </div>
         <div
           className={`rounded-[6px] border px-3 py-2 ${
             shortfall ? "border-[#FECACA] bg-[#FEF2F2]" : "border-[#BBF7D0] bg-[#F0FDF4]"
           }`}
         >
-          <p className="text-[10px] font-black uppercase tracking-[0.12em] text-phx-ink-soft">
+          <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-phx-ink-soft">
             History projects ({ask.roiDurationMonths}mo)
           </p>
-          <p className={`mt-0.5 text-[15px] font-black ${shortfall ? "text-[#B91C1C]" : "text-[#166534]"}`}>
+          <p className={`mt-0.5 text-phx-lg font-black ${shortfall ? "text-[#B91C1C]" : "text-[#166534]"}`}>
             {egp(verdict.projectedOverWindow)}
           </p>
         </div>
       </div>
 
       {shortfall ? (
-        <p className="flex items-start gap-2 rounded-[6px] border border-[#FECACA] bg-[#FEF2F2] px-3 py-2 text-[12px] font-bold leading-5 text-[#B91C1C]">
+        <p className="flex items-start gap-2 rounded-[6px] border border-[#FECACA] bg-[#FEF2F2] px-3 py-2 text-phx-sm font-bold leading-5 text-[#B91C1C]">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
           <span>
             At this customer&apos;s historical rate the request falls{" "}
@@ -250,7 +250,7 @@ export function MarketingSalesEvidencePanel({ requestId }: { requestId: string }
       {verdict.hasHistory ? (
         <>
           <button
-            className="inline-flex items-center gap-1.5 rounded-[6px] border border-phx-line bg-white px-3 py-2 text-[12px] font-black text-phx-ink transition hover:border-phx-accent-line hover:bg-phx-accent-soft"
+            className="inline-flex items-center gap-1.5 rounded-[6px] border border-phx-line bg-white px-3 py-2 text-phx-sm font-black text-phx-ink transition hover:border-phx-accent-line hover:bg-phx-accent-soft"
             onClick={() => setOpen((current) => !current)}
             type="button"
           >
@@ -261,14 +261,14 @@ export function MarketingSalesEvidencePanel({ requestId }: { requestId: string }
           {open ? (
             <div className="grid gap-3 lg:grid-cols-3">
               <div className="rounded-[6px] border border-phx-line bg-white">
-                <p className="border-b border-phx-line px-3 py-2 text-[11px] font-black uppercase tracking-[0.12em] text-phx-ink-soft">
+                <p className="border-b border-phx-line px-3 py-2 text-phx-xs font-black uppercase tracking-[0.12em] text-phx-ink-soft">
                   By month
                 </p>
                 <ul className="divide-y divide-phx-paper-2">
                   {data.byMonth.map((row) => (
                     <li className="flex items-center justify-between gap-3 px-3 py-2" key={row.period}>
-                      <span className="text-[12px] font-bold text-phx-ink">{monthLabel(row.period)}</span>
-                      <span className="shrink-0 text-[12px] font-black text-phx-ink">{egp(row.value)}</span>
+                      <span className="text-phx-sm font-bold text-phx-ink">{monthLabel(row.period)}</span>
+                      <span className="shrink-0 text-phx-sm font-black text-phx-ink">{egp(row.value)}</span>
                     </li>
                   ))}
                 </ul>

@@ -236,7 +236,7 @@ export function DirectOrderRequestDetail({
 
         {statusBanner ? (
           <div className={`border-b border-[#eef1f3] px-4 py-2.5 ${DIRECT_ORDER_STATUS_BANNER_CLASSES[statusBanner.tone].container}`}>
-            <p className={`text-[12px] font-bold ${DIRECT_ORDER_STATUS_BANNER_CLASSES[statusBanner.tone].text}`}>
+            <p className={`text-phx-sm font-bold ${DIRECT_ORDER_STATUS_BANNER_CLASSES[statusBanner.tone].text}`}>
               {statusBanner.message}
             </p>
           </div>
@@ -244,7 +244,7 @@ export function DirectOrderRequestDetail({
 
         {bonusOverCap ? (
           <div className="space-y-1 border-b border-[#eef1f3] bg-amber-50 px-4 py-2.5">
-            <p className="text-[12px] font-bold text-amber-900">
+            <p className="text-phx-sm font-bold text-amber-900">
               Over cap — this {request.dealType} exceeds its product cap. Flagged for your attention, not blocked.
             </p>
           </div>
@@ -255,7 +255,7 @@ export function DirectOrderRequestDetail({
             instruction, because the approver reading it is the one who can act on it. */}
         {missingManagementLine ? (
           <div className="space-y-1 border-b border-[#eef1f3] bg-rose-50 px-4 py-2.5">
-            <p className="text-[12px] font-bold text-rose-900">
+            <p className="text-phx-sm font-bold text-rose-900">
               No sales manager on this chain — it goes straight to the CEO. The requester had no manager on
               their HR record when this was submitted, so their National Sales Manager was never added.
               Flagged for your attention, not blocked — ask HR to set the manager before deciding.
@@ -358,7 +358,7 @@ export function DirectOrderRequestDetail({
 
         {fullFields.map((field) => (
           <dl key={field.label} className="mt-3 border-t border-[#eef1f3] pt-3">
-            <dt className="text-[10px] font-black uppercase tracking-wider text-slate-400">{field.label}</dt>
+            <dt className="text-phx-2xs font-black uppercase tracking-wider text-slate-400">{field.label}</dt>
             <dd className="mt-0.5 text-sm font-semibold text-slate-900">{field.value}</dd>
           </dl>
         ))}
@@ -418,7 +418,7 @@ export function DirectOrderRequestDetail({
                   src={pharmacyEvidence.photoUrl}
                 />
               ) : (
-                <p className="border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] font-semibold text-amber-800">
+                <p className="border border-amber-200 bg-amber-50 px-3 py-2 text-phx-sm font-semibold text-amber-800">
                   No photo on file for this claim.
                 </p>
               )}
@@ -428,7 +428,7 @@ export function DirectOrderRequestDetail({
               <EvidenceReading check={pharmacyEvidence.evidenceCheck} claimedName={pharmacyEvidence.claimedPharmacyName} />
               {pharmacyEvidence.capturedLatitude != null ? (
                 <a
-                  className="mt-1 block text-[11px] font-bold text-orange-600 underline"
+                  className="mt-1 block text-phx-xs font-bold text-orange-600 underline"
                   href={`https://www.google.com/maps?q=${pharmacyEvidence.capturedLatitude},${pharmacyEvidence.capturedLongitude}`}
                   target="_blank"
                   rel="noreferrer"
@@ -482,7 +482,7 @@ export function DirectOrderRequestDetail({
           <div className="hidden overflow-x-auto md:block">
             <table className="w-full border-collapse text-sm">
               <thead>
-                <tr className="border-b border-[#eef1f3] bg-slate-50 text-left text-[11px] font-black uppercase tracking-wider text-slate-500">
+                <tr className="border-b border-[#eef1f3] bg-slate-50 text-left text-phx-xs font-black uppercase tracking-wider text-slate-500">
                   <th className="whitespace-nowrap px-3 py-2">Field</th>
                   <th className="whitespace-nowrap px-3 py-2">Submitter entered</th>
                   <th className="whitespace-nowrap px-3 py-2">Master database says</th>
@@ -492,7 +492,7 @@ export function DirectOrderRequestDetail({
               <tbody>
                 {comparisonRows.map((row) => (
                   <tr key={row.label} className="border-b border-[#eef1f3]">
-                    <td className="whitespace-nowrap px-3 py-1.5 text-[11px] font-black uppercase tracking-wider text-slate-400">
+                    <td className="whitespace-nowrap px-3 py-1.5 text-phx-xs font-black uppercase tracking-wider text-slate-400">
                       {row.label}
                     </td>
                     <td className="px-3 py-1.5 font-semibold text-slate-900" dir="auto">
@@ -502,7 +502,7 @@ export function DirectOrderRequestDetail({
                       {row.master}
                     </td>
                     <td className="whitespace-nowrap px-3 py-1.5">
-                      <span className={`px-1.5 py-0.5 text-[10px] font-black uppercase tracking-wide ${VERDICT_TONE[row.verdict]}`}>
+                      <span className={`px-1.5 py-0.5 text-phx-2xs font-black uppercase tracking-wide ${VERDICT_TONE[row.verdict]}`}>
                         {VERDICT_LABEL[row.verdict]}
                       </span>
                     </td>
@@ -519,22 +519,22 @@ export function DirectOrderRequestDetail({
             {comparisonRows.map((row) => (
               <article key={row.label} className="block border border-phx-line p-3">
                 <div className="flex items-center justify-between gap-2">
-                  <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">{row.label}</p>
-                  <span className={`px-1.5 py-0.5 text-[10px] font-black uppercase tracking-wide ${VERDICT_TONE[row.verdict]}`}>
+                  <p className="text-phx-2xs font-black uppercase tracking-wider text-slate-400">{row.label}</p>
+                  <span className={`px-1.5 py-0.5 text-phx-2xs font-black uppercase tracking-wide ${VERDICT_TONE[row.verdict]}`}>
                     {VERDICT_LABEL[row.verdict]}
                   </span>
                 </div>
                 <p className="mt-1 break-words text-sm font-semibold text-slate-900" dir="auto">
                   Submitter: {row.declared}
                 </p>
-                <p className="mt-0.5 break-words text-[12px] text-slate-600" dir="auto">
+                <p className="mt-0.5 break-words text-phx-sm text-slate-600" dir="auto">
                   Master: {row.master}
                 </p>
               </article>
             ))}
           </div>
           <p
-            className={`mt-3 border px-3 py-2 text-[12px] font-bold ${
+            className={`mt-3 border px-3 py-2 text-phx-sm font-bold ${
               geographyCheck.brick.verdict === "mismatch" || geographyCheck.area.verdict === "mismatch"
                 ? "border-rose-300 bg-rose-50 text-rose-900"
                 : geographyCheck.address.verdict === "mismatch"
@@ -573,7 +573,7 @@ export function DirectOrderRequestDetail({
                     candidateMatch ? (
                       <span>
                         {candidateMatch.distributorName}
-                        <span className="ml-1 text-[11px] font-semibold text-amber-700">found, not linked</span>
+                        <span className="ml-1 text-phx-xs font-semibold text-amber-700">found, not linked</span>
                       </span>
                     ) : (
                       <span className="text-slate-400">Not provided</span>
@@ -586,7 +586,7 @@ export function DirectOrderRequestDetail({
                     candidateMatch ? (
                       <span>
                         {candidateMatch.customerCode}
-                        <span className="ml-1 text-[11px] font-semibold text-amber-700">found, not linked</span>
+                        <span className="ml-1 text-phx-xs font-semibold text-amber-700">found, not linked</span>
                       </span>
                     ) : (
                       <span className="text-slate-400">Not provided</span>
@@ -601,10 +601,10 @@ export function DirectOrderRequestDetail({
                   found", with two competing calls to action. */}
               {possibleDistributorMatches.length === 0 ? (
                 <div className="mt-2 border border-amber-200 bg-amber-50 px-3 py-2">
-                  <p className="text-[12px] font-bold text-amber-900">
+                  <p className="text-phx-sm font-bold text-amber-900">
                     No distributor customer code on file for this pharmacy.
                   </p>
-                  <p className="mt-0.5 text-[12px] text-amber-800">
+                  <p className="mt-0.5 text-phx-sm text-amber-800">
                     Nothing is missing from this screen — none was entered. Phoenix matches a
                     pharmacy&apos;s distributor sales on that code, so until one is added this
                     pharmacy&apos;s distributor sales cannot be linked to it. The direct order itself is
@@ -617,12 +617,12 @@ export function DirectOrderRequestDetail({
                 // therefore lead with the refusal, or it shows the reader a match the system plainly
                 // saw and says nothing about why it declined to act on it.
                 <div className="mt-2 border border-amber-300 bg-amber-50 px-3 py-2">
-                  <p className="text-[12px] font-black text-amber-900">
+                  <p className="text-phx-sm font-black text-amber-900">
                     This pharmacy&apos;s NAME is a real distributor customer code — and Phoenix did not
                     link it automatically.
                   </p>
                   {autoLinkRefusal ? (
-                    <p className="mt-0.5 text-[12px] text-amber-800">
+                    <p className="mt-0.5 text-phx-sm text-amber-800">
                       {describeDirectOrderAutoLinkRefusal(autoLinkRefusal)}
                     </p>
                   ) : null}
@@ -630,7 +630,7 @@ export function DirectOrderRequestDetail({
                     {possibleDistributorMatches.map((match) => (
                       <li
                         key={match.distributorCode}
-                        className="border border-amber-200 bg-white px-2 py-1 text-[12px] text-amber-900"
+                        className="border border-amber-200 bg-white px-2 py-1 text-phx-sm text-amber-900"
                         dir="auto"
                       >
                         {match.distributorName} · {match.customerCode} · {match.customerName}
@@ -648,7 +648,7 @@ export function DirectOrderRequestDetail({
                       </li>
                     ))}
                   </ul>
-                  <p className="mt-1 text-[11px] text-amber-700">
+                  <p className="mt-1 text-phx-xs text-amber-700">
                     Link the right one in Direct Orders → Pharmacy Registry to unlock this
                     pharmacy&apos;s retail sales history.
                   </p>
@@ -660,7 +660,7 @@ export function DirectOrderRequestDetail({
               <div className="mt-1.5 hidden overflow-x-auto md:block">
                 <table className="w-full border-collapse text-sm">
                   <thead>
-                    <tr className="border-b border-[#eef1f3] text-left text-[11px] font-black uppercase tracking-wider text-slate-500">
+                    <tr className="border-b border-[#eef1f3] text-left text-phx-xs font-black uppercase tracking-wider text-slate-500">
                       <th className="whitespace-nowrap px-2 py-1">Distributor</th>
                       <th className="whitespace-nowrap px-2 py-1">Distributor code</th>
                       <th className="whitespace-nowrap px-2 py-1">Customer code</th>
@@ -695,10 +695,10 @@ export function DirectOrderRequestDetail({
                     className="block border border-phx-line p-3"
                   >
                     <p className="text-sm font-black text-slate-900">{row.distributorName}</p>
-                    <p className="mt-0.5 text-[11px] text-slate-500">
+                    <p className="mt-0.5 text-phx-xs text-slate-500">
                       {row.distributorCode || "—"} · customer {row.customerCode}
                     </p>
-                    <dl className="mt-2 space-y-0.5 text-[12px]">
+                    <dl className="mt-2 space-y-0.5 text-phx-sm">
                       {(
                         [
                           ["Mapped brick", row.mappedBrickName],
@@ -725,7 +725,7 @@ export function DirectOrderRequestDetail({
           count. Matched on (distributor code + customer code) together, because a customer code
           alone is not unique across distributors. */}
       <PanelSection title="Retail sales — from the distributors">
-        <p className="mb-2 text-[11px] font-bold text-slate-500">
+        <p className="mb-2 text-phx-xs font-bold text-slate-500">
           all months on record
           {retailMatchedPairs > 0 ? ` · matched on ${retailMatchedPairs} distributor code${retailMatchedPairs === 1 ? "" : "s"}` : ""}
         </p>
@@ -733,7 +733,7 @@ export function DirectOrderRequestDetail({
             rule). Saying so matters: those products are ~81.5% of sales value, so a silently
             filtered table would read as "this pharmacy barely buys" when the opposite is true. */}
         {hiddenConfidentialCount > 0 ? (
-          <p className="mb-2 border border-slate-300 bg-slate-50 px-3 py-2 text-[12px] font-semibold text-slate-600">
+          <p className="mb-2 border border-slate-300 bg-slate-50 px-3 py-2 text-phx-sm font-semibold text-slate-600">
             {hiddenConfidentialCount} confidential product{hiddenConfidentialCount === 1 ? "" : "s"} hidden from this
             view. Figures below exclude {hiddenConfidentialCount === 1 ? "it" : "them"}.
           </p>
@@ -786,7 +786,7 @@ export function DirectOrderRequestDetail({
           <div className="hidden overflow-x-auto md:block">
             <table className="w-full border-collapse text-sm">
               <thead>
-                <tr className="border-b border-[#eef1f3] bg-slate-50 text-left text-[11px] font-black uppercase tracking-wider text-slate-500">
+                <tr className="border-b border-[#eef1f3] bg-slate-50 text-left text-phx-xs font-black uppercase tracking-wider text-slate-500">
                   <th className="sticky left-0 z-10 bg-slate-50 px-3 py-2">Product</th>
                   {salesMatrix.months.map((month) => (
                     <th key={month} className="whitespace-nowrap px-3 py-2 text-right">
@@ -811,11 +811,11 @@ export function DirectOrderRequestDetail({
                           <>
                             {cell.units.toLocaleString("en-US")}
                             {cell.bonus ? (
-                              <span className="ml-1 text-[10px] font-semibold text-slate-500">
+                              <span className="ml-1 text-phx-2xs font-semibold text-slate-500">
                                 +{cell.bonus.toLocaleString("en-US")}b
                               </span>
                             ) : null}
-                            <span className="block text-[10px] font-normal text-slate-400">
+                            <span className="block text-phx-2xs font-normal text-slate-400">
                               {cell.distributors.join(", ")}
                             </span>
                           </>
@@ -836,7 +836,7 @@ export function DirectOrderRequestDetail({
                   record, so the approver weighs THIS order against THAT total at a glance. */}
               <tfoot>
                 <tr className="bg-slate-50">
-                  <th scope="row" className="sticky left-0 z-10 whitespace-nowrap bg-slate-50 px-3 py-2 text-left text-[11px] font-black uppercase tracking-wider text-slate-500">
+                  <th scope="row" className="sticky left-0 z-10 whitespace-nowrap bg-slate-50 px-3 py-2 text-left text-phx-xs font-black uppercase tracking-wider text-slate-500">
                     Total units · {money(retailTotals.salesValue)} over {salesMatrix.months.length} month
                     {salesMatrix.months.length === 1 ? "" : "s"}
                   </th>
@@ -872,7 +872,7 @@ export function DirectOrderRequestDetail({
                     {product.totalUnits.toLocaleString("en-US")} units
                   </p>
                 </div>
-                <dl className="mt-2 space-y-0.5 text-[12px]">
+                <dl className="mt-2 space-y-0.5 text-phx-sm">
                   {product.cells.map((cell, index) =>
                     cell ? (
                       <div key={salesMatrix.months[index]} className="flex items-baseline justify-between gap-3">
@@ -889,7 +889,7 @@ export function DirectOrderRequestDetail({
               </article>
             ))}
             <article className="block border border-slate-300 bg-slate-50 p-3">
-              <p className="text-[10px] font-black uppercase tracking-wider text-slate-500">
+              <p className="text-phx-2xs font-black uppercase tracking-wider text-slate-500">
                 Total — {salesMatrix.products.length.toLocaleString("en-US")} product
                 {salesMatrix.products.length === 1 ? "" : "s"} over {salesMatrix.months.length} month
                 {salesMatrix.months.length === 1 ? "" : "s"}
@@ -907,7 +907,7 @@ export function DirectOrderRequestDetail({
                   on this page. An order worth more than everything the pharmacy has ever bought is
                   not necessarily wrong — it is never routine. */}
               {request.salesValue > retailTotals.salesValue ? (
-                <p className="mt-2 text-[12px] font-bold text-amber-700">
+                <p className="mt-2 text-phx-sm font-bold text-amber-700">
                   This single order is larger than everything this pharmacy has ever bought.
                 </p>
               ) : null}
@@ -920,7 +920,7 @@ export function DirectOrderRequestDetail({
       {/* DIRECT — what Phoenix booked from approved direct orders. The request being decided is
           excluded, so the baseline never contains the number under judgement. */}
       <PanelSection title="Direct sales — from Phoenix direct orders">
-        <p className="mb-2 text-[11px] font-bold text-slate-500">excludes this request</p>
+        <p className="mb-2 text-phx-xs font-bold text-slate-500">excludes this request</p>
         {pharmacyHistory.length === 0 ? (
           <p className="py-2 text-sm text-slate-500">
             No other direct orders recorded for this pharmacy yet — this is its first.
@@ -930,7 +930,7 @@ export function DirectOrderRequestDetail({
           <div className="hidden overflow-x-auto md:block">
             <table className="w-full min-w-[760px] border-collapse text-sm">
               <thead>
-                <tr className="border-b border-[#eef1f3] bg-slate-50 text-left text-[11px] font-black uppercase tracking-wider text-slate-500">
+                <tr className="border-b border-[#eef1f3] bg-slate-50 text-left text-phx-xs font-black uppercase tracking-wider text-slate-500">
                   <th className="whitespace-nowrap px-3 py-2">Month</th>
                   <th className="whitespace-nowrap px-3 py-2">Product</th>
                   {/* No Distributor column: a direct order carries no distributor of its own. This
@@ -948,7 +948,7 @@ export function DirectOrderRequestDetail({
                     <td className="whitespace-nowrap px-3 py-1.5 font-semibold text-slate-900">
                       {row.month}
                       {row.monthIsProvisional ? (
-                        <span className="ml-1.5 text-[10px] font-bold uppercase tracking-wide text-amber-700">
+                        <span className="ml-1.5 text-phx-2xs font-bold uppercase tracking-wide text-amber-700">
                           not final
                         </span>
                       ) : null}
@@ -971,7 +971,7 @@ export function DirectOrderRequestDetail({
               </tbody>
               <tfoot>
                 <tr className="bg-slate-50">
-                  <td colSpan={2} className="whitespace-nowrap px-3 py-2 text-[11px] font-black uppercase tracking-wider text-slate-500">
+                  <td colSpan={2} className="whitespace-nowrap px-3 py-2 text-phx-xs font-black uppercase tracking-wider text-slate-500">
                     Total
                   </td>
                   <td className="whitespace-nowrap px-3 py-2 text-right font-bold tabular-nums text-slate-700">
@@ -1000,7 +1000,7 @@ export function DirectOrderRequestDetail({
                 <p className="text-sm font-black text-slate-900">
                   {row.month}
                   {row.monthIsProvisional ? (
-                    <span className="ml-1.5 text-[10px] font-bold uppercase tracking-wide text-amber-700">
+                    <span className="ml-1.5 text-phx-2xs font-bold uppercase tracking-wide text-amber-700">
                       not final
                     </span>
                   ) : null}
@@ -1018,7 +1018,7 @@ export function DirectOrderRequestDetail({
               </article>
             ))}
             <article className="block border border-slate-300 bg-slate-50 p-3">
-              <p className="text-[10px] font-black uppercase tracking-wider text-slate-500">Total</p>
+              <p className="text-phx-2xs font-black uppercase tracking-wider text-slate-500">Total</p>
               <p className="mt-1 text-sm font-black tabular-nums text-slate-900">
                 {directTotals.orders.toLocaleString("en-US")} orders
                 <span className="ml-2">
@@ -1056,7 +1056,7 @@ export function DirectOrderRequestDetail({
                       fighting the name for the same one. */}
                   <span dir="auto" className="min-w-0 flex-1 text-sm font-semibold text-slate-800">
                     {step.sentence}
-                    <span className="block text-[11px] font-normal text-slate-400 md:ml-2 md:inline">{step.label}</span>
+                    <span className="block text-phx-xs font-normal text-slate-400 md:ml-2 md:inline">{step.label}</span>
                   </span>
                 </div>
                 {/* The decision record (spec D1): who, when — Cairo — and what they wrote. A rung
@@ -1067,12 +1067,12 @@ export function DirectOrderRequestDetail({
                   // eats 12% of a 390px screen in the one block that holds free Arabic text, so it
                   // is desktop-only; the comment's own border-l quote rule is the real visual tie.
                   <div className="mt-1 pl-0 md:pl-[42px]">
-                    <p className="text-[11px] text-slate-500">
+                    <p className="text-phx-xs text-slate-500">
                       {step.decidedByName ? <span className="font-bold text-slate-600">{step.decidedByName}</span> : null}
                       {step.decidedAt ? <span>{step.decidedByName ? " · " : ""}{cairoStamp(step.decidedAt)}</span> : null}
                     </p>
                     {step.decisionComment ? (
-                      <p className="mt-0.5 break-words border-l-2 border-slate-200 pl-2 text-[12px] italic text-slate-600" dir="auto">
+                      <p className="mt-0.5 break-words border-l-2 border-slate-200 pl-2 text-phx-sm italic text-slate-600" dir="auto">
                         “{step.decisionComment}”
                       </p>
                     ) : null}

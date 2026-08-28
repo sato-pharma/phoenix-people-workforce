@@ -27,15 +27,15 @@ function PharmacyCard({ pharmacy }: { pharmacy: TerritoryPharmacy }) {
     <li className="relative before:absolute before:-left-4 before:top-5 before:h-px before:w-4 before:bg-orange-200/80">
       <div className="rounded-lg border border-slate-200 bg-white px-3 py-2.5 shadow-[0_2px_10px_rgba(15,23,42,0.05)]">
         <div className="flex items-start justify-between gap-2">
-          <p className="min-w-0 break-words text-[12px] font-bold leading-tight text-slate-900">
+          <p className="min-w-0 break-words text-phx-sm font-bold leading-tight text-slate-900">
             {pharmacy.clientName}
           </p>
           <div className="flex shrink-0 items-center gap-2">
-            <span className="text-[11px] font-black tabular-nums text-slate-500">
+            <span className="text-phx-xs font-black tabular-nums text-slate-500">
               {formatEgp(pharmacy.totalValue)}
             </span>
             <button
-              className="rounded-md border border-slate-200 px-1.5 py-1 text-[10px] font-bold text-slate-500 transition hover:border-orange-300 hover:text-orange-600"
+              className="rounded-md border border-slate-200 px-1.5 py-1 text-phx-2xs font-bold text-slate-500 transition hover:border-orange-300 hover:text-orange-600"
               onClick={() => setShowTrend((value) => !value)}
               type="button"
             >
@@ -47,7 +47,7 @@ function PharmacyCard({ pharmacy }: { pharmacy: TerritoryPharmacy }) {
           {pharmacy.months.map((month) => (
             <span
               className={cn(
-                "rounded px-1.5 py-0.5 text-[9px] font-black",
+                "rounded px-1.5 py-0.5 text-phx-3xs font-black",
                 month.hasSales
                   ? "bg-orange-50 text-orange-700 ring-1 ring-orange-200"
                   : "bg-slate-50 text-slate-400 ring-1 ring-slate-200",
@@ -92,14 +92,14 @@ function BrickBranch({
             code/stats, which move to their own line below. Wraps rather than truncates. */}
         <span className="flex items-center gap-2">
           <ChevronRight className={cn("h-3.5 w-3.5 shrink-0 text-slate-400 transition-transform", open && "rotate-90 text-orange-500")} />
-          <span className="min-w-0 flex-1 break-words text-[12px] font-bold leading-snug text-slate-900">
+          <span className="min-w-0 flex-1 break-words text-phx-sm font-bold leading-snug text-slate-900">
             {brick.brickName}
           </span>
         </span>
         <span className="flex items-center justify-between gap-2 pl-[22px]">
-          <span className="shrink-0 text-[10px] font-mono font-semibold text-slate-400">{brick.brickId}</span>
+          <span className="shrink-0 text-phx-2xs font-mono font-semibold text-slate-400">{brick.brickId}</span>
           {pharmacies ? (
-            <span className="shrink-0 text-[10px] font-black tabular-nums text-slate-500">
+            <span className="shrink-0 text-phx-2xs font-black tabular-nums text-slate-500">
               {pharmacies.length} PHs · {formatEgp(total)}
             </span>
           ) : null}
@@ -108,9 +108,9 @@ function BrickBranch({
       {open ? (
         <ul className="ml-4 mt-2 space-y-2 border-l-2 border-orange-200/80 pl-4" role="group">
           {pharmacies === null ? (
-            <li className="py-1 text-[11px] font-semibold text-slate-400">Loading…</li>
+            <li className="py-1 text-phx-xs font-semibold text-slate-400">Loading…</li>
           ) : pharmacies.length === 0 ? (
-            <li className="py-1 text-[11px] font-semibold text-slate-400">No pharmacies with sales in your line here yet.</li>
+            <li className="py-1 text-phx-xs font-semibold text-slate-400">No pharmacies with sales in your line here yet.</li>
           ) : (
             pharmacies.map((pharmacy) => <PharmacyCard key={pharmacy.clientCode} pharmacy={pharmacy} />)
           )}
@@ -156,10 +156,10 @@ function BlockLane({
         type="button"
       >
         <span className="min-w-0 flex-1">
-          <span className="block text-[9px] font-black uppercase tracking-[0.14em] text-orange-300">Block</span>
-          <span className="block truncate text-[14px] font-black leading-snug">{block.blockCode}</span>
+          <span className="block text-phx-3xs font-black uppercase tracking-[0.14em] text-orange-300">Block</span>
+          <span className="block truncate text-phx-base font-black leading-snug">{block.blockCode}</span>
         </span>
-        <span className="shrink-0 text-right text-[10px] font-black tabular-nums text-white/80">
+        <span className="shrink-0 text-right text-phx-2xs font-black tabular-nums text-white/80">
           <span className="block">
             {bricks.length} brick{bricks.length === 1 ? "" : "s"}
             {blockPharmacyCount !== null ? ` · ${blockPharmacyCount} PHs` : ""}
@@ -255,12 +255,12 @@ function AreaRoot({
   return (
     <div className="flex flex-col items-center">
       <div className="min-w-[240px] max-w-md rounded-xl border border-slate-900 bg-gradient-to-br from-slate-800 to-slate-950 px-5 py-3.5 text-center text-white shadow-[0_16px_36px_rgba(15,23,42,0.35)]">
-        <div className="flex items-center justify-center gap-1.5 text-[10px] font-black uppercase tracking-[0.16em] text-orange-300">
+        <div className="flex items-center justify-center gap-1.5 text-phx-2xs font-black uppercase tracking-[0.16em] text-orange-300">
           <MapPin className="h-3.5 w-3.5" />
           Your area
         </div>
         <p className="mt-1 break-words text-sm font-bold leading-snug">{area.areaName}</p>
-        <p className="mt-1 text-[11px] font-semibold text-white/70">
+        <p className="mt-1 text-phx-xs font-semibold text-white/70">
           {state.status === "loading" ? (
             <span className="inline-flex items-center gap-1">
               <Loader2 className="h-3 w-3 animate-spin" /> Loading your territory…
@@ -335,10 +335,10 @@ function AreaLane({
       >
         <span className="flex items-center gap-2">
           <ChevronRight className={cn("h-3.5 w-3.5 shrink-0 text-orange-300 transition-transform", open && "rotate-90")} />
-          <span className="text-[9px] font-black uppercase tracking-[0.14em] text-orange-300">Area</span>
+          <span className="text-phx-3xs font-black uppercase tracking-[0.14em] text-orange-300">Area</span>
         </span>
-        <span className="break-words pl-[22px] text-[14px] font-black leading-snug">{area.areaName}</span>
-        <span className="pl-[22px] text-[10px] font-black tabular-nums text-white/80">
+        <span className="break-words pl-[22px] text-phx-base font-black leading-snug">{area.areaName}</span>
+        <span className="pl-[22px] text-phx-2xs font-black tabular-nums text-white/80">
           {blocks.length} block{blocks.length === 1 ? "" : "s"}
           {pharmacyCount !== null ? ` · ${pharmacyCount} PHs` : ""}
           {state.status === "loaded" ? (
@@ -353,11 +353,11 @@ function AreaLane({
       {open ? (
         <div className="px-3 py-3">
           {state.status === "loading" ? (
-            <p className="flex items-center gap-1 text-[11px] font-semibold text-slate-400">
+            <p className="flex items-center gap-1 text-phx-xs font-semibold text-slate-400">
               <Loader2 className="h-3 w-3 animate-spin" /> Loading this area…
             </p>
           ) : state.status === "error" ? (
-            <p className="text-[11px] font-semibold text-rose-500">{state.message}</p>
+            <p className="text-phx-xs font-semibold text-rose-500">{state.message}</p>
           ) : (
             <AreaBody blocks={blocks} bricks={bricks} pharmaciesByBrick={pharmaciesByBrick} />
           )}
@@ -388,12 +388,12 @@ function RegionRoot({
   return (
     <div className="flex flex-col items-center">
       <div className="min-w-[240px] max-w-md rounded-xl border border-slate-900 bg-gradient-to-br from-slate-800 to-slate-950 px-5 py-3.5 text-center text-white shadow-[0_16px_36px_rgba(15,23,42,0.35)]">
-        <div className="flex items-center justify-center gap-1.5 text-[10px] font-black uppercase tracking-[0.16em] text-orange-300">
+        <div className="flex items-center justify-center gap-1.5 text-phx-2xs font-black uppercase tracking-[0.16em] text-orange-300">
           <MapPin className="h-3.5 w-3.5" />
           Your region
         </div>
         <p className="mt-1 break-words text-sm font-bold leading-snug">{region.regionName}</p>
-        <p className="mt-1 text-[11px] font-semibold text-white/70">
+        <p className="mt-1 text-phx-xs font-semibold text-white/70">
           {areas.length} area{areas.length === 1 ? "" : "s"} — expand any to load its sales
         </p>
       </div>
@@ -454,10 +454,10 @@ function RegionLane({
       >
         <span className="flex items-center gap-2">
           <ChevronRight className={cn("h-4 w-4 shrink-0 text-orange-600 transition-transform", open && "rotate-90")} />
-          <span className="text-[10px] font-black uppercase tracking-[0.16em] text-orange-600">Region</span>
+          <span className="text-phx-2xs font-black uppercase tracking-[0.16em] text-orange-600">Region</span>
         </span>
-        <span className="break-words pl-6 text-[15px] font-black leading-snug">{region.regionName}</span>
-        <span className="pl-6 text-[10px] font-black tabular-nums text-slate-700">
+        <span className="break-words pl-6 text-phx-lg font-black leading-snug">{region.regionName}</span>
+        <span className="pl-6 text-phx-2xs font-black tabular-nums text-slate-700">
           {areas.length} area{areas.length === 1 ? "" : "s"}
         </span>
       </button>
@@ -506,7 +506,7 @@ function RegionsRoot({
   return (
     <div className="flex flex-col items-center">
       <div className="min-w-[240px] max-w-md rounded-xl border border-orange-200 bg-gradient-to-br from-orange-50 to-orange-100 px-5 py-3.5 text-center text-slate-900 shadow-[0_16px_36px_rgba(15,23,42,0.1)]">
-        <div className="flex items-center justify-center gap-1.5 text-[10px] font-black uppercase tracking-[0.16em] text-orange-600">
+        <div className="flex items-center justify-center gap-1.5 text-phx-2xs font-black uppercase tracking-[0.16em] text-orange-600">
           <MapPin className="h-3.5 w-3.5" />
           My regions
         </div>

@@ -150,7 +150,7 @@ function recommendationTone(value: string) {
 
 const panelClassName =
   "rounded-lg border border-phx-line bg-white/94 shadow-[0_1px_3px_rgba(15,23,42,0.06)] backdrop-blur";
-const adminTableHeaderClassName = "px-4 py-3 text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-soft";
+const adminTableHeaderClassName = "px-4 py-3 text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft";
 const stickyEmployeeHeaderClassName = `${adminTableHeaderClassName} sticky left-0 z-30 w-[260px] min-w-[260px] bg-phx-paper shadow-[10px_0_18px_rgba(15,23,42,0.06)]`;
 const stickyTripHeaderClassName = `${adminTableHeaderClassName} sticky left-[260px] z-30 w-[220px] min-w-[220px] bg-phx-paper shadow-[10px_0_18px_rgba(15,23,42,0.04)]`;
 const stickyEmployeeCellClassName = "sticky left-0 z-20 w-[260px] min-w-[260px] px-4 py-3 shadow-[10px_0_18px_rgba(15,23,42,0.05)]";
@@ -181,7 +181,7 @@ function Metric({
 }) {
   return (
     <Card className={`${panelClassName} p-4 transition-transform duration-200 hover:-translate-y-0.5`}>
-      <p className="text-[11px] font-black uppercase tracking-[0.16em] text-phx-ink-soft">{label}</p>
+      <p className="text-phx-xs font-black uppercase tracking-[0.16em] text-phx-ink-soft">{label}</p>
       <p className="mt-2 truncate text-lg font-black text-phx-ink">{value}</p>
     </Card>
   );
@@ -196,7 +196,7 @@ function Info({
 }) {
   return (
     <div className="rounded-[18px] border border-phx-line bg-phx-paper/85 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.75)]">
-      <p className="text-[11px] font-black uppercase tracking-[0.16em] text-phx-ink-soft">{label}</p>
+      <p className="text-phx-xs font-black uppercase tracking-[0.16em] text-phx-ink-soft">{label}</p>
       <p className="mt-2 text-sm font-semibold text-phx-ink">{value}</p>
     </div>
   );
@@ -321,7 +321,7 @@ function RequestDetailsModal({
             approval-detail-primitives so the two cannot drift apart. */}
         <div className="sticky top-0 z-10 flex flex-wrap items-start justify-between gap-3 bg-slate-900 px-5 py-4">
           <div className="min-w-0">
-            <p className="text-[10px] font-black uppercase tracking-[0.22em] text-orange-400">Trip under review</p>
+            <p className="text-phx-2xs font-black uppercase tracking-[0.22em] text-orange-400">Trip under review</p>
             <h2 className="mt-1 text-lg font-black tracking-tight text-white">
               {formatEmployeeDisplayName(request.employeeName) || "Unassigned"}
             </h2>
@@ -415,16 +415,16 @@ function RequestDetailsModal({
             </div>
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="rounded-md border border-phx-line bg-phx-paper px-4 py-3">
-                <p className="text-[11px] font-black uppercase tracking-[0.12em] text-phx-ink-soft">Fuel (round trip)</p>
+                <p className="text-phx-xs font-black uppercase tracking-[0.12em] text-phx-ink-soft">Fuel (round trip)</p>
                 <p className="mt-1 text-lg font-black text-phx-ink">{formatCurrency(request.fuelAmount)}</p>
-                <p className="mt-0.5 text-[11px] text-phx-ink-faint">
+                <p className="mt-0.5 text-phx-xs text-phx-ink-faint">
                   {formatKm(request.distanceFromResidenceKm)} &times; 2 &middot; {formatStatus(request.transportationType)}
                 </p>
               </div>
               <div className="rounded-md border border-phx-line bg-phx-paper px-4 py-3">
-                <p className="text-[11px] font-black uppercase tracking-[0.12em] text-phx-ink-soft">Allowance</p>
+                <p className="text-phx-xs font-black uppercase tracking-[0.12em] text-phx-ink-soft">Allowance</p>
                 <p className="mt-1 text-lg font-black text-phx-ink">{formatCurrency(request.allowanceAmount)}</p>
-                <p className="mt-0.5 text-[11px] text-phx-ink-faint">
+                <p className="mt-0.5 text-phx-xs text-phx-ink-faint">
                   {request.sameDayTrip
                     ? "Same-day trip"
                     : `${request.overnightDays} overnight ${request.overnightDays === 1 ? "night" : "nights"} + return day`}
@@ -505,7 +505,7 @@ function RequestDetailsModal({
               </div>
 
               <div className="mt-5 rounded-[18px] border border-phx-line bg-phx-paper/85 p-4">
-                <p className="text-[11px] font-black uppercase tracking-[0.16em] text-phx-ink-soft">Ticket attachments</p>
+                <p className="text-phx-xs font-black uppercase tracking-[0.16em] text-phx-ink-soft">Ticket attachments</p>
                 {request.ticketAttachmentMetadata.length > 0 ? (
                   <div className="mt-3 space-y-2">
                     {request.ticketAttachmentMetadata.map((attachment, index) => {
@@ -1002,7 +1002,7 @@ export function OutstationRequestsAdmin({
         >
           <div className="grid gap-4 p-4 sm:p-5 md:grid-cols-2 xl:grid-cols-4">
             <label className="block">
-              <span className="mb-1 block text-[11px] font-black uppercase tracking-[0.16em] text-phx-ink-soft">Search</span>
+              <span className="mb-1 block text-phx-xs font-black uppercase tracking-[0.16em] text-phx-ink-soft">Search</span>
               <div className="relative">
                 <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-phx-ink-faint" />
                 <Input
@@ -1015,7 +1015,7 @@ export function OutstationRequestsAdmin({
             </label>
 
             <label className="block">
-              <span className="mb-1 block text-[11px] font-black uppercase tracking-[0.16em] text-phx-ink-soft">Eligibility</span>
+              <span className="mb-1 block text-phx-xs font-black uppercase tracking-[0.16em] text-phx-ink-soft">Eligibility</span>
               <SearchableSelect
                 className="h-11 w-full rounded-md border border-[#DDE6F1] bg-white/95 px-3 text-sm font-semibold text-phx-ink shadow-sm focus:outline-none focus:ring-2 focus:ring-[#FED7AA]"
                 onChange={(event) => setEligibility(event.target.value)}
@@ -1029,7 +1029,7 @@ export function OutstationRequestsAdmin({
             </label>
 
             <label className="block">
-              <span className="mb-1 block text-[11px] font-black uppercase tracking-[0.16em] text-phx-ink-soft">Role</span>
+              <span className="mb-1 block text-phx-xs font-black uppercase tracking-[0.16em] text-phx-ink-soft">Role</span>
               <SearchableSelect
                 className="h-11 w-full rounded-md border border-[#DDE6F1] bg-white/95 px-3 text-sm font-semibold text-phx-ink shadow-sm focus:outline-none focus:ring-2 focus:ring-[#FED7AA]"
                 onChange={(event) => setRole(event.target.value)}
@@ -1045,7 +1045,7 @@ export function OutstationRequestsAdmin({
             </label>
 
             <label className="block">
-              <span className="mb-1 block text-[11px] font-black uppercase tracking-[0.16em] text-phx-ink-soft">Month</span>
+              <span className="mb-1 block text-phx-xs font-black uppercase tracking-[0.16em] text-phx-ink-soft">Month</span>
               <SearchableSelect
                 className="h-11 w-full rounded-md border border-[#DDE6F1] bg-white/95 px-3 text-sm font-semibold text-phx-ink shadow-sm focus:outline-none focus:ring-2 focus:ring-[#FED7AA]"
                 onChange={(event) => setMonth(event.target.value)}
@@ -1138,7 +1138,7 @@ export function OutstationRequestsAdmin({
 
             <div className="hidden max-h-[68vh] overflow-auto md:block">
               <table className="min-w-[1240px] w-full border-separate border-spacing-0 text-left text-sm">
-                <thead className="sticky top-0 z-40 bg-phx-paper text-[11px] uppercase tracking-[0.16em] text-phx-ink-soft">
+                <thead className="sticky top-0 z-40 bg-phx-paper text-phx-xs uppercase tracking-[0.16em] text-phx-ink-soft">
                   <tr>
                     <th className={stickyEmployeeHeaderClassName}>Employee</th>
                     <th className={stickyTripHeaderClassName}>Trip</th>
@@ -1183,7 +1183,7 @@ export function OutstationRequestsAdmin({
                         <td className="px-4 py-3 font-semibold text-phx-ink-soft">
                           {formatCurrency(request.claimedTotalAmount)}
                         </td>
-                        <td className={`px-4 py-3 text-[11px] font-black uppercase tracking-[0.14em] ${recommendationTone(request.approvalRecommendation)}`}>
+                        <td className={`px-4 py-3 text-phx-xs font-black uppercase tracking-[0.14em] ${recommendationTone(request.approvalRecommendation)}`}>
                           {formatStatus(request.approvalRecommendation)}
                         </td>
                         <td className="px-4 py-3">

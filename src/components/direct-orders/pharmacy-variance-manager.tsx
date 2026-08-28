@@ -42,7 +42,7 @@ export function PharmacyVarianceManager({ rows, canResolve }: { rows: PharmacyGe
       <div className="overflow-x-auto border border-slate-200">
         <table className="w-full min-w-[860px] border-collapse text-sm">
           <thead className="bg-slate-900 text-white">
-            <tr className="text-left text-[11px] font-black uppercase tracking-wider">
+            <tr className="text-left text-phx-xs font-black uppercase tracking-wider">
               <th className="px-3 py-2">Pharmacy</th>
               <th className="px-3 py-2">Submitted brick</th>
               <th className="px-3 py-2">System-mapped brick</th>
@@ -55,11 +55,11 @@ export function PharmacyVarianceManager({ rows, canResolve }: { rows: PharmacyGe
               <tr key={r.pharmacyId} className="border-b border-slate-100 align-top">
                 <td className="px-3 py-2">
                   <div className="font-semibold text-slate-800">{r.pharmacyName}</div>
-                  <div className="text-[11px] text-slate-400">{r.phoenixPharmacyCode}</div>
+                  <div className="text-phx-xs text-slate-400">{r.phoenixPharmacyCode}</div>
                 </td>
                 <td className="px-3 py-2">{r.submittedBrickName ?? "—"} <span className="text-slate-400">({r.submittedBrickId ?? "—"})</span></td>
                 <td className="px-3 py-2 font-semibold text-orange-700">{r.mappedBrickName ?? "—"} <span className="text-slate-400">({r.mappedBrickId ?? "—"})</span></td>
-                <td className="px-3 py-2 text-[12px] text-slate-600">
+                <td className="px-3 py-2 text-phx-sm text-slate-600">
                   {r.codes.map((c, i) => (
                     <div key={i}>{c.distributorName}: {c.customerCode} → {c.mappedBrickName ?? "unmapped"}</div>
                   ))}

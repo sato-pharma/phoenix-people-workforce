@@ -403,9 +403,9 @@ function MetricCard({
   return (
     <div className="relative bg-white p-3 sm:p-4" role="group" aria-label={`${label}: ${value}`}>
       <div className="absolute inset-y-0 left-0 w-[3px]" style={{ backgroundColor: accentColor ?? "#e2e8f0" }} />
-      <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">{label}</p>
+      <p className="text-phx-2xs font-semibold uppercase tracking-wider text-slate-400">{label}</p>
       <p className="mt-1 text-xl font-bold leading-tight text-slate-900 sm:text-2xl">{value}</p>
-      {sub ? <p className="mt-0.5 text-[11px] text-slate-500">{sub}</p> : null}
+      {sub ? <p className="mt-0.5 text-phx-xs text-slate-500">{sub}</p> : null}
     </div>
   );
 }
@@ -414,7 +414,7 @@ function ZoneDistributionBar({ data }: { data: { count: number; pct: number; zon
   if (data.length === 0) return null;
   return (
     <div className="space-y-2" role="region" aria-label="Performance zone distribution">
-      <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Zone distribution</p>
+      <p className="text-phx-2xs font-semibold uppercase tracking-wider text-slate-400">Zone distribution</p>
       <div className="flex h-2.5 overflow-hidden border border-slate-200">
         {data.map((d) => (
           <div
@@ -427,7 +427,7 @@ function ZoneDistributionBar({ data }: { data: { count: number; pct: number; zon
       </div>
       <div className="flex flex-wrap gap-x-4 gap-y-1">
         {data.map((d) => (
-          <span className="flex items-center gap-1.5 text-[11px] text-slate-600" key={d.zone}>
+          <span className="flex items-center gap-1.5 text-phx-xs text-slate-600" key={d.zone}>
             <span className="inline-block h-2 w-2" style={{ backgroundColor: zoneConfig[d.zone]?.color ?? "#94a3b8" }} />
             {zoneConfig[d.zone]?.label}: {d.count} <span className="text-slate-400">({d.pct}%)</span>
           </span>
@@ -453,7 +453,7 @@ function StatusDistributionBar({ counts, total }: { counts: Partial<Record<Coach
 
   return (
     <div className="space-y-2" role="region" aria-label="Report status breakdown">
-      <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Status breakdown</p>
+      <p className="text-phx-2xs font-semibold uppercase tracking-wider text-slate-400">Status breakdown</p>
       <div className="flex h-2.5 overflow-hidden border border-slate-200">
         {entries.map((s) => (
           <div
@@ -466,7 +466,7 @@ function StatusDistributionBar({ counts, total }: { counts: Partial<Record<Coach
       </div>
       <div className="flex flex-wrap gap-x-4 gap-y-1">
         {entries.map((s) => (
-          <span className="flex items-center gap-1.5 text-[11px] text-slate-600" key={s}>
+          <span className="flex items-center gap-1.5 text-phx-xs text-slate-600" key={s}>
             <span className="inline-block h-2 w-2" style={{ backgroundColor: statusBarColors[s] }} />
             {statusLabels[s]}: {counts[s]}
           </span>
@@ -477,18 +477,18 @@ function StatusDistributionBar({ counts, total }: { counts: Partial<Record<Coach
 }
 
 function ZoneBadge({ zone }: { zone: CoachingPerformanceZone | null }) {
-  if (!zone) return <span className="inline-flex border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] font-semibold text-slate-500">N/A</span>;
+  if (!zone) return <span className="inline-flex border border-slate-200 bg-slate-50 px-2 py-0.5 text-phx-xs font-semibold text-slate-500">N/A</span>;
   const cfg = zoneConfig[zone];
-  return <span className={cn("inline-flex border px-2 py-0.5 text-[11px] font-semibold", cfg.bg, cfg.border, cfg.text)}>{cfg.label}</span>;
+  return <span className={cn("inline-flex border px-2 py-0.5 text-phx-xs font-semibold", cfg.bg, cfg.border, cfg.text)}>{cfg.label}</span>;
 }
 
 function StatusBadge({ status }: { status: CoachingReportStatus }) {
-  return <span className={cn("inline-flex border px-2 py-0.5 text-[11px] font-semibold", statusColors[status])}>{statusLabels[status] ?? status}</span>;
+  return <span className={cn("inline-flex border px-2 py-0.5 text-phx-xs font-semibold", statusColors[status])}>{statusLabels[status] ?? status}</span>;
 }
 
 function AckBadge({ acknowledged }: { acknowledged: boolean }) {
   return (
-    <span className={cn("inline-flex items-center gap-1 border px-2 py-0.5 text-[11px] font-semibold", acknowledged ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-slate-200 bg-slate-50 text-slate-500")}>
+    <span className={cn("inline-flex items-center gap-1 border px-2 py-0.5 text-phx-xs font-semibold", acknowledged ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-slate-200 bg-slate-50 text-slate-500")}>
       {acknowledged ? <CheckCircle2 className="h-3 w-3" /> : <Clock className="h-3 w-3" />}
       {acknowledged ? "Ack'd" : "Pending"}
     </span>
@@ -563,7 +563,7 @@ function PeriodFilterPanel({
       >
         <Calendar className="h-3.5 w-3.5" />
         <span className="max-w-[200px] truncate">{label}</span>
-        {activeCount > 0 ? <span className="flex h-4.5 min-w-[18px] items-center justify-center bg-orange-600 px-1 text-[10px] font-bold text-white">{activeCount}</span> : null}
+        {activeCount > 0 ? <span className="flex h-4.5 min-w-[18px] items-center justify-center bg-orange-600 px-1 text-phx-2xs font-bold text-white">{activeCount}</span> : null}
         <ChevronDown className={cn("h-3.5 w-3.5 transition-transform", open && "rotate-180")} />
       </button>
       {open ? (
@@ -573,7 +573,7 @@ function PeriodFilterPanel({
             {presets.map((p) => (
               <button
                 key={p.label}
-                className="min-h-[44px] border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-semibold text-slate-600 transition hover:border-orange-300 hover:bg-orange-50 hover:text-orange-700 sm:min-h-0"
+                className="min-h-[44px] border border-slate-200 bg-slate-50 px-2.5 py-1 text-phx-xs font-semibold text-slate-600 transition hover:border-orange-300 hover:bg-orange-50 hover:text-orange-700 sm:min-h-0"
                 onClick={() => { p.fn(); setOpen(false); }}
                 type="button"
               >
@@ -584,14 +584,14 @@ function PeriodFilterPanel({
 
           <div className="space-y-3">
             <label className="block">
-              <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Year</span>
+              <span className="text-phx-2xs font-semibold uppercase tracking-wider text-slate-400">Year</span>
               <SearchableSelect className="mt-1 h-9 w-full border border-slate-200 bg-white px-2 text-sm font-medium text-slate-800 outline-none focus:border-orange-400 focus:ring-1 focus:ring-orange-200" onChange={(e) => onChange({ ...filter, year: e.target.value })} value={filter.year}>
                 <option value="">All years</option>
                 {years.map((y) => <option key={y} value={String(y)}>{y}</option>)}
               </SearchableSelect>
             </label>
             <label className="block">
-              <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Quarter</span>
+              <span className="text-phx-2xs font-semibold uppercase tracking-wider text-slate-400">Quarter</span>
               <SearchableSelect className="mt-1 h-9 w-full border border-slate-200 bg-white px-2 text-sm font-medium text-slate-800 outline-none focus:border-orange-400 focus:ring-1 focus:ring-orange-200" onChange={(e) => onChange({ ...filter, quarter: e.target.value })} value={filter.quarter}>
                 <option value="">All quarters</option>
                 <option value="1">Q1 (Jan–Mar)</option>
@@ -601,7 +601,7 @@ function PeriodFilterPanel({
               </SearchableSelect>
             </label>
             <label className="block">
-              <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Month</span>
+              <span className="text-phx-2xs font-semibold uppercase tracking-wider text-slate-400">Month</span>
               <SearchableSelect className="mt-1 h-9 w-full border border-slate-200 bg-white px-2 text-sm font-medium text-slate-800 outline-none focus:border-orange-400 focus:ring-1 focus:ring-orange-200" onChange={(e) => onChange({ ...filter, month: e.target.value })} value={filter.month}>
                 <option value="">All months</option>
                 {monthNames.map((name, i) => <option key={name} value={String(i + 1)}>{name}</option>)}
@@ -625,7 +625,7 @@ function ScoreTrendChart({ data, title }: { data: { avg: number; count: number; 
   return (
     <ErrorBoundaryChart title="Score trend">
       <div className="border border-slate-200 bg-white p-4" role="region" aria-label="Score trend chart">
-        <p className="mb-3 text-[10px] font-semibold uppercase tracking-wider text-slate-400">{title ?? "Monthly score trend"}</p>
+        <p className="mb-3 text-phx-2xs font-semibold uppercase tracking-wider text-slate-400">{title ?? "Monthly score trend"}</p>
         <div className="h-52">
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={data} margin={{ top: 4, right: 12, left: -16, bottom: 0 }}>
@@ -647,7 +647,7 @@ function RepComparisonChart({ data }: { data: { avg: number; name: string; fullN
   return (
     <ErrorBoundaryChart title="Rep comparison">
       <div className="border border-slate-200 bg-white p-4" role="region" aria-label="Rep score comparison chart">
-        <p className="mb-3 text-[10px] font-semibold uppercase tracking-wider text-slate-400">Rep avg. score comparison</p>
+        <p className="mb-3 text-phx-2xs font-semibold uppercase tracking-wider text-slate-400">Rep avg. score comparison</p>
         <div style={{ height: Math.max(data.length * 36 + 24, 120) }}>
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={data} layout="vertical" margin={{ top: 0, right: 12, left: 0, bottom: 0 }}>
@@ -674,7 +674,7 @@ function CoachingRadarChart({ data, wide = false }: { data: { dimension: string;
   return (
     <ErrorBoundaryChart title="Coaching quality radar">
       <div className="border border-slate-200 bg-white p-4" role="region" aria-label="Coaching quality radar chart">
-        <p className="mb-3 text-[10px] font-semibold uppercase tracking-wider text-slate-400">Coaching quality overview</p>
+        <p className="mb-3 text-phx-2xs font-semibold uppercase tracking-wider text-slate-400">Coaching quality overview</p>
         <div className={cn("grid gap-4", wide ? "md:grid-cols-2 md:items-center" : "")}>
           <div className="h-64">
             <ResponsiveContainer width="100%" height="100%">
@@ -691,7 +691,7 @@ function CoachingRadarChart({ data, wide = false }: { data: { dimension: string;
               {data.map((d) => (
                 <div key={d.dimension}>
                   <div className="flex items-center justify-between gap-3">
-                    <span className="whitespace-nowrap text-[11px] font-semibold text-slate-600">{d.dimension}</span>
+                    <span className="whitespace-nowrap text-phx-xs font-semibold text-slate-600">{d.dimension}</span>
                     <span className="whitespace-nowrap text-sm font-bold tabular-nums" style={{ color: getScoreColor(d.value) }}>{d.value.toFixed(1)}%</span>
                   </div>
                   <div className="mt-1.5 h-1.5 w-full overflow-hidden bg-slate-100">
@@ -810,7 +810,7 @@ function ReportsTable({
     row?.scrollIntoView({ block: "nearest", behavior: "smooth" });
   }, [focusedRow]);
 
-  const thCls = "border-b border-r border-slate-200 bg-slate-50 px-3 py-2.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400 last:border-r-0";
+  const thCls = "border-b border-r border-slate-200 bg-slate-50 px-3 py-2.5 text-phx-2xs font-semibold uppercase tracking-wider text-slate-400 last:border-r-0";
   const tdCls = "border-b border-r border-slate-100 px-3 py-2.5 last:border-r-0";
 
   return (
@@ -840,7 +840,7 @@ function ReportsTable({
               {isTeamMode ? (
                 <td className={tdCls}>
                   <p className="font-semibold text-slate-900">{formatEmployeeDisplayName(report.medicalRepName)}</p>
-                  <p className="text-[11px] text-slate-400">{report.medicalRepHrId}</p>
+                  <p className="text-phx-xs text-slate-400">{report.medicalRepHrId}</p>
                 </td>
               ) : null}
               <td className={cn(tdCls, "whitespace-nowrap text-slate-700")}>{formatDate(report.coachingDate)}</td>
@@ -850,7 +850,7 @@ function ReportsTable({
               <td className={tdCls}><StatusBadge status={report.status} /></td>
               <td className={tdCls}><AckBadge acknowledged={report.acknowledged} /></td>
               <td className={cn(tdCls, "text-center")}>
-                <Link className="inline-flex items-center gap-1 border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-semibold text-slate-700 hover:border-orange-300 hover:text-orange-600" href={`/employee-portals/coaching/${report.reportId}`}>
+                <Link className="inline-flex items-center gap-1 border border-slate-200 bg-white px-2.5 py-1.5 text-phx-xs font-semibold text-slate-700 hover:border-orange-300 hover:text-orange-600" href={`/employee-portals/coaching/${report.reportId}`}>
                   View <ArrowUpRight className="h-3 w-3" />
                 </Link>
               </td>
@@ -1069,7 +1069,7 @@ export function EmployeeCoachingList({ mode = "self", reports }: EmployeeCoachin
       ) : filtered.length > 0 ? (
         <div className="border border-slate-200 bg-white px-4 py-6 text-center">
           <p className="text-sm font-semibold text-slate-500">Not enough data for trend analysis</p>
-          <p className="mt-1 text-[11px] text-slate-400">Score trend charts require at least 2 scored reports across different periods.</p>
+          <p className="mt-1 text-phx-xs text-slate-400">Score trend charts require at least 2 scored reports across different periods.</p>
         </div>
       ) : null}
 

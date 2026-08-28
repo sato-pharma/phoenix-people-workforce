@@ -65,7 +65,7 @@ export function KPICard({ icon: Icon, label, value, delta, spark, tone = "orange
       <div className="p-4">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <p className="text-[10px] font-black uppercase tracking-[0.16em] text-phx-ink-soft">{label}</p>
+            <p className="text-phx-2xs font-black uppercase tracking-[0.16em] text-phx-ink-soft">{label}</p>
             <p className="mt-1 truncate text-2xl font-black text-phx-ink">{value}</p>
           </div>
           <span className={cn("flex h-10 w-10 shrink-0 items-center justify-center rounded-xl", toneStyle.icon)}>

@@ -109,7 +109,7 @@ const BAND_STYLES: Record<EngagementBand, string> = {
 function EngagementBadge({ band, score }: { band: EngagementBand; score: number }) {
   return (
     <span
-      className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-bold ${BAND_STYLES[band]}`}
+      className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-phx-xs font-bold ${BAND_STYLES[band]}`}
       title="Engagement = active time vs logged-in time, blended with modules and pages visited. Usage indicator, not a performance rating."
     >
       <span className="tabular-nums">{score}</span>
@@ -121,7 +121,7 @@ function EngagementBadge({ band, score }: { band: EngagementBand; score: number 
 function NoDataChip() {
   return (
     <span
-      className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-semibold text-slate-400"
+      className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-phx-xs font-semibold text-slate-400"
       title="No page-view activity recorded yet. Tracking only captures navigation going forward."
     >
       No data yet
@@ -210,7 +210,7 @@ function HeatmapCalendar({ sessions }: { sessions: { startedAt: string }[] }) {
 
   return (
     <div>
-      <p className="mb-2 text-[10px] font-bold uppercase tracking-wide text-phx-ink-faint">
+      <p className="mb-2 text-phx-2xs font-bold uppercase tracking-wide text-phx-ink-faint">
         Login frequency — last 3 months (Cairo)
       </p>
       <div className="overflow-x-auto">
@@ -218,14 +218,14 @@ function HeatmapCalendar({ sessions }: { sessions: { startedAt: string }[] }) {
           {/* Day labels */}
           <div className="flex flex-col gap-0.5 pr-1.5 pt-4">
             {WEEKDAY_LABELS.map((d) => (
-              <div key={d} className="h-3 text-[9px] leading-3 text-phx-ink-faint">{d}</div>
+              <div key={d} className="h-3 text-phx-3xs leading-3 text-phx-ink-faint">{d}</div>
             ))}
           </div>
           {/* Week columns */}
           {weeks.map((week, wi) => (
             <div key={wi} className="flex flex-col gap-0.5">
               {/* Month label on first day of month */}
-              <div className="h-3 text-[9px] leading-3 text-phx-ink-faint">
+              <div className="h-3 text-phx-3xs leading-3 text-phx-ink-faint">
                 {week[0].date.getDate() <= 7
                   ? week[0].date.toLocaleDateString("en-GB", { month: "short" })
                   : ""}
@@ -245,7 +245,7 @@ function HeatmapCalendar({ sessions }: { sessions: { startedAt: string }[] }) {
           ))}
         </div>
       </div>
-      <div className="mt-2 flex items-center gap-1.5 text-[10px] text-phx-ink-faint">
+      <div className="mt-2 flex items-center gap-1.5 text-phx-2xs text-phx-ink-faint">
         <span>Less</span>
         {["bg-slate-100", "bg-orange-200", "bg-orange-300", "bg-orange-400", "bg-orange-600"].map((c) => (
           <div key={c} className={`h-3 w-3 rounded-sm ${c}`} />
@@ -277,7 +277,7 @@ function TimeOfDayHeatmap({ hourlyHeatmap }: { hourlyHeatmap: number[][] }) {
         {/* Hour labels */}
         <div className="mb-1 flex gap-0.5 pl-10">
           {Array.from({ length: 24 }, (_, h) => (
-            <div key={h} className="w-5 text-center text-[8px] text-phx-ink-faint">
+            <div key={h} className="w-5 text-center text-phx-4xs text-phx-ink-faint">
               {HOUR_LABELS[Math.floor(h / 3)] && h % 3 === 0 ? HOUR_LABELS[h / 3] : ""}
             </div>
           ))}
@@ -285,7 +285,7 @@ function TimeOfDayHeatmap({ hourlyHeatmap }: { hourlyHeatmap: number[][] }) {
         {/* Rows */}
         {WEEKDAY_LABELS.map((day, wi) => (
           <div key={day} className="mb-0.5 flex items-center gap-0.5">
-            <div className="w-9 text-right text-[10px] text-phx-ink-soft">{day}</div>
+            <div className="w-9 text-right text-phx-2xs text-phx-ink-soft">{day}</div>
             <div className="ml-1 flex gap-0.5">
               {hourlyHeatmap[wi].map((count, h) => (
                 <div
@@ -298,7 +298,7 @@ function TimeOfDayHeatmap({ hourlyHeatmap }: { hourlyHeatmap: number[][] }) {
           </div>
         ))}
       </div>
-      <div className="mt-3 flex items-center gap-1.5 text-[10px] text-phx-ink-faint">
+      <div className="mt-3 flex items-center gap-1.5 text-phx-2xs text-phx-ink-faint">
         <span>Quiet</span>
         {["bg-slate-100", "bg-blue-100", "bg-blue-200", "bg-blue-400", "bg-blue-700"].map((c) => (
           <div key={c} className={`h-3 w-3 rounded-sm ${c}`} />
@@ -384,7 +384,7 @@ function ForceLogoutDialog({
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4">
       <div className="w-full max-w-sm rounded-[14px] bg-white shadow-2xl">
         <div className="border-b border-[#EEF2F7] px-5 py-4">
-          <p className="text-[10px] font-black uppercase tracking-[0.2em] text-rose-500">Force logout</p>
+          <p className="text-phx-2xs font-black uppercase tracking-[0.2em] text-rose-500">Force logout</p>
           <h3 className="mt-0.5 text-base font-black text-phx-ink">{name}</h3>
           <p className="mt-1 text-xs text-phx-ink-soft">
             All active sessions for this person will be immediately terminated. They will be asked to log in again on their next action.
@@ -392,7 +392,7 @@ function ForceLogoutDialog({
         </div>
         <div className="px-5 py-4 space-y-3">
           <label className="block">
-            <span className="text-[11px] font-bold uppercase tracking-wide text-phx-ink-soft">Reason (logged to audit trail)</span>
+            <span className="text-phx-xs font-bold uppercase tracking-wide text-phx-ink-soft">Reason (logged to audit trail)</span>
             <input
               type="text"
               value={reason}
@@ -703,7 +703,7 @@ export function ActivityControlDashboard({
                     <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
                     <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
                   </span>
-                  <span className="text-[11px] font-bold text-emerald-600 uppercase tracking-wide">Live</span>
+                  <span className="text-phx-xs font-bold text-emerald-600 uppercase tracking-wide">Live</span>
                 </div>
               }
             >
@@ -723,12 +723,12 @@ export function ActivityControlDashboard({
                         <tr key={`${user.key}-${user.startedAt}`}>
                           <td className="px-4 py-2">
                             <div className="flex items-center gap-2">
-                              <span className="flex h-7 w-7 items-center justify-center rounded-full bg-phx-ink text-[10px] font-bold text-white">
+                              <span className="flex h-7 w-7 items-center justify-center rounded-full bg-phx-ink text-phx-2xs font-bold text-white">
                                 {initialsFor(user.name)}
                               </span>
                               <div className="min-w-0">
                                 <p className="truncate font-semibold text-phx-ink">{user.name}</p>
-                                <p className="truncate text-[11px] text-phx-ink-soft">{user.role}</p>
+                                <p className="truncate text-phx-xs text-phx-ink-soft">{user.role}</p>
                               </div>
                             </div>
                           </td>
@@ -739,7 +739,7 @@ export function ActivityControlDashboard({
                               <button
                                 type="button"
                                 onClick={() => setForceLogoutTarget({ name: user.name, hrId: user.hrId! })}
-                                className="inline-flex items-center gap-1 rounded-full border border-rose-200 px-2.5 py-1 text-[11px] font-semibold text-rose-600 transition hover:bg-rose-50"
+                                className="inline-flex items-center gap-1 rounded-full border border-rose-200 px-2.5 py-1 text-phx-xs font-semibold text-rose-600 transition hover:bg-rose-50"
                                 title="Force logout this user"
                               >
                                 <ShieldOff className="h-3 w-3" /> Logout
@@ -760,7 +760,7 @@ export function ActivityControlDashboard({
                 <div className="border-t border-[#EEF2F7]">
                   <div className="flex items-center gap-2 px-5 py-2.5">
                     <Zap className="h-3.5 w-3.5 text-phx-accent" />
-                    <p className="text-[11px] font-bold uppercase tracking-wide text-phx-ink-soft">Recent navigation (last 15 min)</p>
+                    <p className="text-phx-xs font-bold uppercase tracking-wide text-phx-ink-soft">Recent navigation (last 15 min)</p>
                   </div>
                   <div className="divide-y divide-phx-paper">
                     {liveData.recentEvents.slice(0, 8).map((event, i) => (
@@ -771,7 +771,7 @@ export function ActivityControlDashboard({
                           <span className="text-xs text-phx-ink-soft">→</span>
                           <span className="truncate text-xs text-phx-ink-2">{event.moduleLabel}</span>
                         </div>
-                        <span className="ml-3 shrink-0 text-[11px] text-phx-ink-faint"><RelativeTime iso={event.occurredAtIso} /></span>
+                        <span className="ml-3 shrink-0 text-phx-xs text-phx-ink-faint"><RelativeTime iso={event.occurredAtIso} /></span>
                       </div>
                     ))}
                   </div>
@@ -849,7 +849,7 @@ export function ActivityControlDashboard({
                       <tr key={user.key}>
                         <td className="px-4 py-2">
                           <p className="font-semibold text-phx-ink">{user.name}</p>
-                          <p className="text-[11px] text-phx-ink-soft">{user.role}{user.team ? ` · ${user.team}` : ""}</p>
+                          <p className="text-phx-xs text-phx-ink-soft">{user.role}{user.team ? ` · ${user.team}` : ""}</p>
                         </td>
                         <td className="px-4 py-2 text-right tabular-nums text-phx-ink-2">{user.sessions}</td>
                         <td className="px-4 py-2 text-right tabular-nums text-phx-ink-2">{formatMinutes(user.sessionMinutes)}</td>
@@ -869,7 +869,7 @@ export function ActivityControlDashboard({
                             <button
                               type="button"
                               onClick={() => openTimeline(user)}
-                              className="inline-flex items-center gap-1 rounded-full border border-phx-line px-2.5 py-1 text-[11px] font-semibold text-phx-accent-press transition hover:bg-phx-accent-soft"
+                              className="inline-flex items-center gap-1 rounded-full border border-phx-line px-2.5 py-1 text-phx-xs font-semibold text-phx-accent-press transition hover:bg-phx-accent-soft"
                             >
                               <Eye className="h-3.5 w-3.5" /> Timeline
                             </button>
@@ -929,7 +929,7 @@ export function ActivityControlDashboard({
                           <tr key={row.key}>
                             <td className="px-4 py-2">
                               <p className="font-semibold text-phx-ink">{row.name}</p>
-                              <p className="text-[11px] text-phx-ink-soft">{row.role}</p>
+                              <p className="text-phx-xs text-phx-ink-soft">{row.role}</p>
                             </td>
                             <td className={`px-4 py-2 font-semibold capitalize ${ADOPTION_TONE[row.status]}`}>
                               {row.status === "never" ? "Never (90d)" : row.status}
@@ -967,7 +967,7 @@ export function ActivityControlDashboard({
                       <div className="min-w-0">
                         <p className="text-sm font-semibold text-phx-ink">{anomaly.identity.name}</p>
                         <p className="text-xs text-phx-ink-soft">{anomaly.detail}</p>
-                        <p className="text-[11px] text-phx-ink-faint">{formatDateTime(anomaly.occurredAt)}</p>
+                        <p className="text-phx-xs text-phx-ink-faint">{formatDateTime(anomaly.occurredAt)}</p>
                       </div>
                     </div>
                   ))}
@@ -989,7 +989,7 @@ export function ActivityControlDashboard({
           >
             <div className="sticky top-0 z-10 flex items-center justify-between border-b border-[#EEF2F7] bg-phx-ink px-5 py-4 text-white">
               <div>
-                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-orange-300">Activity timeline</p>
+                <p className="text-phx-2xs font-black uppercase tracking-[0.2em] text-orange-300">Activity timeline</p>
                 <h3 className="text-lg font-black">{selectedUser.name}</h3>
                 <p className="text-xs text-slate-300">{selectedUser.role}{selectedUser.team ? ` · ${selectedUser.team}` : ""} · last {rangeLabel.toLowerCase()}</p>
               </div>
@@ -998,7 +998,7 @@ export function ActivityControlDashboard({
                   <button
                     type="button"
                     onClick={() => setForceLogoutTarget({ name: selectedUser.name, hrId: selectedUser.hrId! })}
-                    className="inline-flex items-center gap-1.5 rounded-full border border-rose-400/30 bg-rose-500/20 px-3 py-1.5 text-[11px] font-bold text-rose-300 transition hover:bg-rose-500/30"
+                    className="inline-flex items-center gap-1.5 rounded-full border border-rose-400/30 bg-rose-500/20 px-3 py-1.5 text-phx-xs font-bold text-rose-300 transition hover:bg-rose-500/30"
                   >
                     <ShieldOff className="h-3.5 w-3.5" /> Force logout
                   </button>
@@ -1035,7 +1035,7 @@ export function ActivityControlDashboard({
                   {/* Engagement signal */}
                   <div className="flex items-center justify-between rounded-[12px] border border-phx-line bg-[#FBFCFD] px-4 py-3">
                     <div>
-                      <p className="text-[11px] font-bold uppercase tracking-wide text-phx-ink-faint">Engagement signal</p>
+                      <p className="text-phx-xs font-bold uppercase tracking-wide text-phx-ink-faint">Engagement signal</p>
                       <p className="text-xs text-phx-ink-soft">
                         {timeline.summary.pageViews > 0
                           ? `Active ${Math.round(timeline.summary.engagement.activeRatio * 100)}% of logged-in time · top module ${timeline.summary.topModule ?? "—"}`
@@ -1072,7 +1072,7 @@ export function ActivityControlDashboard({
                               {session.modules.map((module) => (
                                 <span
                                   key={module.label}
-                                  className="inline-flex items-center gap-1 rounded-full border border-[#FED7AA] bg-phx-accent-soft px-2.5 py-1 text-[11px] font-semibold text-[#9A3412]"
+                                  className="inline-flex items-center gap-1 rounded-full border border-[#FED7AA] bg-phx-accent-soft px-2.5 py-1 text-phx-xs font-semibold text-[#9A3412]"
                                 >
                                   {module.label}
                                   <span className="text-phx-accent-press/70">{formatMinutes(module.minutes)}</span>
@@ -1113,7 +1113,7 @@ export function ActivityControlDashboard({
 function SummaryTile({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-[12px] border border-phx-line bg-white px-3 py-2.5 text-center">
-      <p className="text-[10px] font-bold uppercase tracking-wide text-phx-ink-faint">{label}</p>
+      <p className="text-phx-2xs font-bold uppercase tracking-wide text-phx-ink-faint">{label}</p>
       <p className="text-lg font-black text-phx-ink">{value}</p>
     </div>
   );

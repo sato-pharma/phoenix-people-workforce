@@ -442,7 +442,7 @@ export function CvDatabaseManager({ rows }: { rows: CvLibraryRow[] }) {
             )}
             renderTable={() => (
               <PortalDesktopTable minWidth="1560px">
-                <thead className="bg-phx-paper text-[10px] font-black uppercase tracking-[0.16em] text-phx-ink-soft">
+                <thead className="bg-phx-paper text-phx-2xs font-black uppercase tracking-[0.16em] text-phx-ink-soft">
                   <tr>
                     <th className={headCellClassName}>Candidate</th>
                     <th className={headCellClassName}>CV received</th>

@@ -92,7 +92,7 @@ function HeadOfficeDayCellView({ cell, hrId }: { cell: HeadOfficeDayCell; hrId: 
 function LegendChip({ children, className, label }: { children: string; className: string; label: string }) {
   return (
     <div className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 shadow-sm">
-      <span className={cn("inline-flex h-7 min-w-7 items-center justify-center rounded-md border px-1.5 text-[11px] font-black", className)}>
+      <span className={cn("inline-flex h-7 min-w-7 items-center justify-center rounded-md border px-1.5 text-phx-xs font-black", className)}>
         {children}
       </span>
       {label}
@@ -125,7 +125,7 @@ function EmployeeAttendanceRow({ employee }: { employee: HeadOfficeAttendanceCal
             {employee.departmentName ? ` · ${employee.departmentName}` : employee.lineName ? ` · ${employee.lineName}` : ""}
           </p>
         </div>
-        <div className="flex items-center gap-3 text-[11px] font-bold">
+        <div className="flex items-center gap-3 text-phx-xs font-bold">
           <span className="text-emerald-700">{employee.presentDays} punched</span>
           <span className="text-rose-700">{employee.missingDays} missing</span>
         </div>
@@ -135,13 +135,13 @@ function EmployeeAttendanceRow({ employee }: { employee: HeadOfficeAttendanceCal
           {employee.timeline.map((cell) => (
             <div
               className={cn(
-                "rounded-md py-1 text-center text-[9px] font-black uppercase tracking-tight text-slate-500",
+                "rounded-md py-1 text-center text-phx-3xs font-black uppercase tracking-tight text-slate-500",
                 cell.status === "weekly_off" ? "bg-slate-100" : "",
                 cell.status === "holiday" ? "bg-amber-50 text-amber-700" : "",
               )}
               key={`${cell.dateIso}-header`}
             >
-              <span className="block text-[11px] leading-tight text-slate-900">{cell.dayNumber}</span>
+              <span className="block text-phx-xs leading-tight text-slate-900">{cell.dayNumber}</span>
               <span>{weekday(cell.dateIso)}</span>
             </div>
           ))}

@@ -481,7 +481,7 @@ export function MailboxMonitorDashboard({ initialMonitors }: { initialMonitors: 
                           <span className={cn("truncate text-sm", summary.seen ? "text-slate-600" : "font-semibold text-slate-900")}>
                             {summary.fromName || summary.fromAddress || "Unknown sender"}
                           </span>
-                          <span className="shrink-0 text-[11px] text-slate-400">{formatCairo(summary.date)}</span>
+                          <span className="shrink-0 text-phx-xs text-slate-400">{formatCairo(summary.date)}</span>
                         </div>
                         <div className="flex items-center gap-1.5">
                           {summary.hasAttachments ? <Paperclip className="h-3 w-3 shrink-0 text-slate-400" /> : null}

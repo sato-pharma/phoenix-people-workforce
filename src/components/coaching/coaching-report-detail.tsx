@@ -135,7 +135,7 @@ function StatTile({
     <div className="rounded-lg border border-phx-line bg-white px-4 py-3 shadow-sm">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="text-[10px] font-black uppercase tracking-[0.16em] text-phx-ink-soft">{label}</p>
+          <p className="text-phx-2xs font-black uppercase tracking-[0.16em] text-phx-ink-soft">{label}</p>
           <p className="mt-1 text-sm font-black text-phx-ink">{value}</p>
         </div>
         {icon ? <div className="text-phx-accent">{icon}</div> : null}
@@ -172,13 +172,13 @@ function ScoreItemNotes({ score }: { score: CoachingScoreItemRow | undefined }) 
     <div className="mt-3 grid gap-2 md:grid-cols-2">
       {area ? (
         <div className="rounded-md border border-orange-100 bg-orange-50/70 px-3 py-2.5">
-          <p className="text-[10px] font-black uppercase tracking-[0.14em] text-phx-accent-hover">Area to be Improved</p>
+          <p className="text-phx-2xs font-black uppercase tracking-[0.14em] text-phx-accent-hover">Area to be Improved</p>
           <p className="mt-1 whitespace-pre-wrap text-xs font-semibold leading-5 text-[#7C2D12]">{area}</p>
         </div>
       ) : null}
       {strength ? (
         <div className="rounded-md border border-emerald-100 bg-emerald-50/70 px-3 py-2.5">
-          <p className="text-[10px] font-black uppercase tracking-[0.14em] text-emerald-700">Strength Point</p>
+          <p className="text-phx-2xs font-black uppercase tracking-[0.14em] text-emerald-700">Strength Point</p>
           <p className="mt-1 whitespace-pre-wrap text-xs font-semibold leading-5 text-emerald-900">{strength}</p>
         </div>
       ) : null}
@@ -197,7 +197,7 @@ export function CoachingReportDetail({ detail }: CoachingReportDetailProps) {
       <Card className={cn(adminPanelClassName, "overflow-hidden p-0")}>
         <div className="grid gap-5 border-b border-phx-line bg-[linear-gradient(135deg,#FFFFFF_0%,#FFF7ED_58%,#F8FAFC_100%)] p-5 sm:p-6 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-end">
           <div>
-            <p className="text-[11px] font-black uppercase tracking-[0.18em] text-phx-accent">
+            <p className="text-phx-xs font-black uppercase tracking-[0.18em] text-phx-accent">
               {report.report_number}
             </p>
             <h2 className="mt-2 text-3xl font-black tracking-[-0.04em] text-phx-ink">

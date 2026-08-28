@@ -29,7 +29,7 @@ export const adminHeroAccentBarClassName =
 
 // Text + pill helpers (all readable on the near-black surface).
 export const adminHeroKickerClassName =
-  "inline-flex w-fit items-center gap-2 rounded-full border border-orange-400/40 bg-orange-500/15 px-3.5 py-1.5 text-[10px] font-black uppercase tracking-[0.24em] text-orange-100 shadow-[0_0_24px_rgba(249,115,22,0.25)]";
+  "inline-flex w-fit items-center gap-2 rounded-full border border-orange-400/40 bg-orange-500/15 px-3.5 py-1.5 text-phx-2xs font-black uppercase tracking-[0.24em] text-orange-100 shadow-[0_0_24px_rgba(249,115,22,0.25)]";
 export const adminHeroTitleClassName =
   "max-w-4xl text-[1.6rem] font-black tracking-[-0.04em] text-white sm:text-[1.9rem] lg:text-[2.1rem]";
 export const adminHeroDescriptionClassName =

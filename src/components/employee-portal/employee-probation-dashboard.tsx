@@ -71,7 +71,7 @@ const inputClassName =
   "w-full rounded border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700 outline-none transition focus:border-orange-300 focus:shadow-[0_0_0_3px_rgba(249,115,22,0.08)]";
 
 const labelClassName =
-  "text-[11px] font-semibold uppercase tracking-wider text-slate-400";
+  "text-phx-xs font-semibold uppercase tracking-wider text-slate-400";
 
 const cardShadow = "shadow-[0_1px_3px_rgba(15,23,42,0.08)]";
 
@@ -323,49 +323,49 @@ export function EmployeeProbationDashboard({
         <div className="grid grid-cols-2 divide-x divide-y divide-slate-100 lg:grid-cols-4">
           {/* Total */}
           <div className="border-l-2 border-l-orange-400 px-4 py-4">
-            <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+            <p className="text-phx-xs font-semibold uppercase tracking-wider text-slate-400">
               Total in Probation
             </p>
             <p className="mt-1 text-2xl font-bold text-slate-800">
               {summary.total}
             </p>
-            <p className="mt-0.5 text-[11px] text-slate-400">
+            <p className="mt-0.5 text-phx-xs text-slate-400">
               Matching current filters
             </p>
           </div>
           {/* Safe */}
           <div className="border-l-2 border-l-emerald-400 px-4 py-4">
-            <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+            <p className="text-phx-xs font-semibold uppercase tracking-wider text-slate-400">
               Safe Zone
             </p>
             <p className="mt-1 text-2xl font-bold text-slate-800">
               {summary.safe}
             </p>
-            <p className="mt-0.5 text-[11px] text-slate-400">
+            <p className="mt-0.5 text-phx-xs text-slate-400">
               More than 60 days remaining
             </p>
           </div>
           {/* Warning */}
           <div className="border-l-2 border-l-amber-400 px-4 py-4">
-            <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+            <p className="text-phx-xs font-semibold uppercase tracking-wider text-slate-400">
               Warning Zone
             </p>
             <p className="mt-1 text-2xl font-bold text-slate-800">
               {summary.warning}
             </p>
-            <p className="mt-0.5 text-[11px] text-slate-400">
+            <p className="mt-0.5 text-phx-xs text-slate-400">
               30 to 60 days remaining
             </p>
           </div>
           {/* Critical */}
           <div className="border-l-2 border-l-rose-400 px-4 py-4">
-            <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+            <p className="text-phx-xs font-semibold uppercase tracking-wider text-slate-400">
               Critical Zone
             </p>
             <p className="mt-1 text-2xl font-bold text-slate-800">
               {summary.critical}
             </p>
-            <p className="mt-0.5 text-[11px] text-slate-400">
+            <p className="mt-0.5 text-phx-xs text-slate-400">
               Less than 30 days remaining
             </p>
           </div>
@@ -377,7 +377,7 @@ export function EmployeeProbationDashboard({
         <Card className={`rounded border border-slate-100 p-4 sm:p-5 ${cardShadow}`}>
           <div className="mb-3">
             <h3 className="text-sm font-bold text-slate-800">Zone Distribution</h3>
-            <p className="mt-0.5 text-[11px] text-slate-400">
+            <p className="mt-0.5 text-phx-xs text-slate-400">
               Risk breakdown across probation employees
             </p>
           </div>
@@ -413,7 +413,7 @@ export function EmployeeProbationDashboard({
                   />
                 )}
               </div>
-              <div className="mt-2.5 flex flex-wrap gap-4 text-[11px] text-slate-500">
+              <div className="mt-2.5 flex flex-wrap gap-4 text-phx-xs text-slate-500">
                 <span className="inline-flex items-center gap-1.5">
                   <span className="inline-block h-2 w-2 rounded-sm bg-emerald-500" />
                   Safe {safePercent}%
@@ -430,7 +430,7 @@ export function EmployeeProbationDashboard({
             </>
           ) : (
             <div className="flex h-4 w-full items-center justify-center rounded bg-slate-100">
-              <span className="text-[10px] text-slate-400">No data</span>
+              <span className="text-phx-2xs text-slate-400">No data</span>
             </div>
           )}
         </Card>
@@ -455,10 +455,10 @@ export function EmployeeProbationDashboard({
       {/* ---- Filters ---- */}
       <Card className={`rounded border border-slate-100 p-4 sm:p-5 ${cardShadow}`}>
         <div className="mb-3 flex flex-wrap items-center gap-2">
-          <span className="inline-flex items-center rounded bg-orange-50 px-2 py-1 text-[11px] font-semibold uppercase tracking-wider text-orange-600">
+          <span className="inline-flex items-center rounded bg-orange-50 px-2 py-1 text-phx-xs font-semibold uppercase tracking-wider text-orange-600">
             Filters
           </span>
-          <span className="text-[11px] text-slate-400">
+          <span className="text-phx-xs text-slate-400">
             {filteredRows.length} of {rows.length} employees shown
           </span>
         </div>
@@ -613,7 +613,7 @@ export function EmployeeProbationDashboard({
                   "Actions",
                 ].map((col, idx, arr) => (
                   <th
-                    className={`px-3 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-400 sm:px-4 ${
+                    className={`px-3 py-3 text-phx-xs font-semibold uppercase tracking-wider text-slate-400 sm:px-4 ${
                       idx < arr.length - 1 ? "border-r border-slate-100" : ""
                     }`}
                     key={col}
@@ -648,7 +648,7 @@ export function EmployeeProbationDashboard({
                       {/* Employee */}
                       <td className="border-r border-slate-100 px-3 py-3 sm:px-4">
                         <p className="font-semibold text-slate-800">{row.full_name}</p>
-                        <p className="mt-0.5 text-[11px] text-slate-400">{row.hr_id}</p>
+                        <p className="mt-0.5 text-phx-xs text-slate-400">{row.hr_id}</p>
                         {row.dv_state && (
                           <div className="mt-1.5">
                             <DvCheckboxPanel
@@ -682,7 +682,7 @@ export function EmployeeProbationDashboard({
                       {/* Line / Area */}
                       <td className="border-r border-slate-100 px-3 py-3 sm:px-4">
                         <p className="text-slate-600">{row.line_name}</p>
-                        <p className="mt-0.5 text-[11px] text-slate-400">{row.area_name}</p>
+                        <p className="mt-0.5 text-phx-xs text-slate-400">{row.area_name}</p>
                       </td>
 
                       {/* Hired */}
@@ -716,7 +716,7 @@ export function EmployeeProbationDashboard({
                               style={{ width: `${progress}%` }}
                             />
                           </div>
-                          <p className="mt-1 text-[11px] text-slate-400">
+                          <p className="mt-1 text-phx-xs text-slate-400">
                             {progress}%
                           </p>
                         </div>
@@ -725,7 +725,7 @@ export function EmployeeProbationDashboard({
                       {/* Zone */}
                       <td className="border-r border-slate-100 px-3 py-3 sm:px-4">
                         <span
-                          className={`inline-flex items-center rounded px-2 py-0.5 text-[11px] font-semibold ${colors.light} ${colors.text}`}
+                          className={`inline-flex items-center rounded px-2 py-0.5 text-phx-xs font-semibold ${colors.light} ${colors.text}`}
                         >
                           {traffic === "safe" ? "Safe" : traffic === "warning" ? "Warning" : "Critical"}
                         </span>
@@ -734,7 +734,7 @@ export function EmployeeProbationDashboard({
                       {/* Review */}
                       <td className="border-r border-slate-100 px-3 py-3 sm:px-4">
                         <span
-                          className={`inline-flex items-center rounded px-2 py-0.5 text-[11px] font-semibold capitalize ${workflowBadgeColors(row.workflow?.status)}`}
+                          className={`inline-flex items-center rounded px-2 py-0.5 text-phx-xs font-semibold capitalize ${workflowBadgeColors(row.workflow?.status)}`}
                         >
                           {workflowStatusLabel(row.workflow?.status)}
                         </span>
@@ -745,7 +745,7 @@ export function EmployeeProbationDashboard({
                         <div className="flex flex-wrap gap-1.5">
                           {row.workflow && allowed.map((action) => (
                             <button
-                              className={`rounded px-2.5 py-1.5 text-[11px] font-semibold transition disabled:opacity-50 ${
+                              className={`rounded px-2.5 py-1.5 text-phx-xs font-semibold transition disabled:opacity-50 ${
                                 action === "terminate"
                                   ? "border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100"
                                   : action === "pass"
@@ -762,7 +762,7 @@ export function EmployeeProbationDashboard({
                           ))}
                           {canSubmitManagerFeedback && row.probation_id && (
                             <button
-                              className="rounded border border-orange-200 bg-orange-50 px-2.5 py-1.5 text-[11px] font-semibold text-orange-700 hover:bg-orange-100 transition"
+                              className="rounded border border-orange-200 bg-orange-50 px-2.5 py-1.5 text-phx-xs font-semibold text-orange-700 hover:bg-orange-100 transition"
                               onClick={() => setFeedbackEmployeeHrId(feedbackEmployeeHrId === row.hr_id ? null : row.hr_id)}
                               type="button"
                             >
@@ -770,7 +770,7 @@ export function EmployeeProbationDashboard({
                             </button>
                           )}
                           {!row.workflow && !canSubmitManagerFeedback && (
-                            <span className="text-[11px] text-slate-400">No review</span>
+                            <span className="text-phx-xs text-slate-400">No review</span>
                           )}
                         </div>
                       </td>
@@ -808,7 +808,7 @@ export function EmployeeProbationDashboard({
                       <p className="mt-0.5 text-xs text-slate-600">{row.job_title}</p>
                     </div>
                     <span
-                      className={`shrink-0 rounded px-2 py-0.5 text-[11px] font-semibold ${colors.light} ${colors.text}`}
+                      className={`shrink-0 rounded px-2 py-0.5 text-phx-xs font-semibold ${colors.light} ${colors.text}`}
                     >
                       {traffic === "safe" ? "Safe" : traffic === "warning" ? "Warning" : "Critical"}
                     </span>
@@ -816,13 +816,13 @@ export function EmployeeProbationDashboard({
 
                   {/* Metadata pills */}
                   <div className="mt-2 flex flex-wrap gap-1">
-                    <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-500">
+                    <span className="rounded bg-slate-100 px-1.5 py-0.5 text-phx-2xs text-slate-500">
                       {row.hr_id}
                     </span>
-                    <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-500">
+                    <span className="rounded bg-slate-100 px-1.5 py-0.5 text-phx-2xs text-slate-500">
                       {row.line_name}
                     </span>
-                    <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-500">
+                    <span className="rounded bg-slate-100 px-1.5 py-0.5 text-phx-2xs text-slate-500">
                       {row.area_name}
                     </span>
                   </div>
@@ -845,7 +845,7 @@ export function EmployeeProbationDashboard({
                   </div>
 
                   {/* Bottom metadata */}
-                  <div className="mt-2 flex justify-between text-[11px] text-slate-400">
+                  <div className="mt-2 flex justify-between text-phx-xs text-slate-400">
                     <span>Hired {formatDate(row.hire_date)}</span>
                     <span>Ends {formatDate(row.probation_end_date)}</span>
                     <span>{Math.max(0, row.days_remaining)}d left</span>
@@ -855,7 +855,7 @@ export function EmployeeProbationDashboard({
                   {/* Review + actions */}
                   <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
                     <span
-                      className={`inline-flex items-center rounded px-2 py-0.5 text-[10px] font-semibold capitalize ${workflowBadgeColors(row.workflow?.status)}`}
+                      className={`inline-flex items-center rounded px-2 py-0.5 text-phx-2xs font-semibold capitalize ${workflowBadgeColors(row.workflow?.status)}`}
                     >
                       {workflowStatusLabel(row.workflow?.status)}
                     </span>
@@ -863,7 +863,7 @@ export function EmployeeProbationDashboard({
                       <>
                         {allowed.map((action) => (
                           <button
-                            className={`rounded px-2 py-1 text-[10px] font-semibold transition disabled:opacity-50 ${
+                            className={`rounded px-2 py-1 text-phx-2xs font-semibold transition disabled:opacity-50 ${
                               action === "terminate"
                                 ? "border border-rose-200 bg-rose-50 text-rose-700"
                                 : action === "pass"
@@ -916,7 +916,7 @@ export function EmployeeProbationDashboard({
             <h3 className="text-sm font-bold text-slate-800">
               {actionLabel(selectedAction.action)}: {selectedAction.row.full_name}
             </h3>
-            <p className="mt-0.5 text-[11px] text-slate-400">
+            <p className="mt-0.5 text-phx-xs text-slate-400">
               {selectedAction.row.hr_id} | {workflowStatusLabel(selectedAction.row.workflow?.status)} | ends {formatDate(selectedAction.row.probation_end_date)}
             </p>
           </div>
@@ -962,7 +962,7 @@ export function EmployeeProbationDashboard({
 
             {selectedAction.action === "terminate" && (
               <label className="block lg:col-span-3">
-                <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-rose-600">
+                <span className="mb-1.5 block text-phx-xs font-semibold uppercase tracking-wider text-rose-600">
                   Type HR ID to confirm termination
                 </span>
                 <input

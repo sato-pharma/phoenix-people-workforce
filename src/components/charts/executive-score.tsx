@@ -33,15 +33,15 @@ function ScoreRing({ score }: { score: number }) {
       content={
         <div className="space-y-1">
           <p className="text-xs font-bold text-phx-ink">Executive Health Score</p>
-          <p className="text-[11px] text-phx-ink-soft">{pct.toFixed(0)} out of 100</p>
-          <p className="text-[11px] font-bold text-phx-accent">{pct >= 80 ? "Excellent" : pct >= 60 ? "Good" : "Needs attention"}</p>
+          <p className="text-phx-xs text-phx-ink-soft">{pct.toFixed(0)} out of 100</p>
+          <p className="text-phx-xs font-bold text-phx-accent">{pct >= 80 ? "Excellent" : pct >= 60 ? "Good" : "Needs attention"}</p>
         </div>
       }
     >
       <div className="relative mx-auto h-24 w-24 shrink-0 rounded-full sm:h-32 sm:w-32 md:h-36 md:w-36" style={{ background: `conic-gradient(#F97316 0 ${pct}%, #E2E8F0 ${pct}% 100%)` }}>
         <div className="absolute inset-3 flex flex-col items-center justify-center rounded-full bg-white shadow-inner sm:inset-4">
           <p className="text-2xl font-black text-phx-ink sm:text-3xl">{pct.toFixed(0)}</p>
-          <p className="text-[10px] font-black uppercase tracking-[0.18em] text-phx-ink-soft">Score</p>
+          <p className="text-phx-2xs font-black uppercase tracking-[0.18em] text-phx-ink-soft">Score</p>
         </div>
       </div>
     </PremiumTooltip>
@@ -87,8 +87,8 @@ export function ExecutiveScore({ data, moduleErrors, hoveredElement, onHover, lo
                 content={
                   <div className="space-y-1">
                     <p className="text-xs font-bold text-phx-ink">{metric.label}</p>
-                    <p className="text-[11px] text-phx-ink-soft">{formatPercent(metric.value)}</p>
-                    <p className="text-[10px] text-phx-ink-soft">{metric.description}</p>
+                    <p className="text-phx-xs text-phx-ink-soft">{formatPercent(metric.value)}</p>
+                    <p className="text-phx-2xs text-phx-ink-soft">{metric.description}</p>
                   </div>
                 }
                 key={metric.label}

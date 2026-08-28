@@ -65,9 +65,9 @@ const DATE_PRESETS = [
 type DatePreset = (typeof DATE_PRESETS)[number]["value"];
 
 const selectClass =
-  "h-10 w-full rounded-sm border border-slate-200 bg-white px-3 text-[13px] font-semibold text-slate-800 outline-none transition focus:border-orange-300 focus:ring-2 focus:ring-orange-100";
+  "h-10 w-full rounded-sm border border-slate-200 bg-white px-3 text-phx-md font-semibold text-slate-800 outline-none transition focus:border-orange-300 focus:ring-2 focus:ring-orange-100";
 
-const labelClass = "text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500";
+const labelClass = "text-phx-xs font-bold uppercase tracking-[0.12em] text-slate-500";
 
 const SOURCE_BADGE_CLASS: Record<CompanyVacationReportSource, string> = {
   "HR Approved": "border-emerald-200 bg-emerald-50 text-emerald-700",
@@ -171,7 +171,7 @@ function compareRows(
 /* ─── Badges ───────────────────────────────────────────────────────── */
 /* ═══════════════════════════════════════════════════════════════════ */
 
-const badgeBase = "inline-flex items-center whitespace-nowrap rounded-full border px-2.5 py-0.5 text-[11px]";
+const badgeBase = "inline-flex items-center whitespace-nowrap rounded-full border px-2.5 py-0.5 text-phx-xs";
 
 function SourceSystemBadge({ source }: { source: CompanyVacationReportSource }) {
   const system = companyVacationSourceSystem(source);
@@ -183,7 +183,7 @@ function SourceBadge({ source }: { source: CompanyVacationReportSource }) {
 }
 
 function HasBalanceBadge({ hasBalance }: { hasBalance: boolean | null }) {
-  if (hasBalance === null) return <span className="text-[11px] font-semibold text-slate-400">—</span>;
+  if (hasBalance === null) return <span className="text-phx-xs font-semibold text-slate-400">—</span>;
   return (
     <span
       className={cn(
@@ -222,9 +222,9 @@ function MetricCard({
 
   return (
     <div className={cn("rounded-sm border p-4 shadow-[0_1px_3px_rgba(15,23,42,0.04)]", toneMap.border, toneMap.bg)}>
-      <p className={cn("text-[10px] font-bold uppercase tracking-[0.12em]", toneMap.label)}>{label}</p>
+      <p className={cn("text-phx-2xs font-bold uppercase tracking-[0.12em]", toneMap.label)}>{label}</p>
       <p className={cn("mt-1.5 text-[1.75rem] font-extrabold leading-none tracking-[-0.04em]", toneMap.value)}>{value}</p>
-      <p className="mt-2 text-[11px] font-medium leading-4 text-slate-500">{description}</p>
+      <p className="mt-2 text-phx-xs font-medium leading-4 text-slate-500">{description}</p>
     </div>
   );
 }
@@ -288,7 +288,7 @@ function ApproveControl({
 
   if (state === "done") {
     return (
-      <span className="inline-flex items-center gap-1 whitespace-nowrap text-[11px] font-bold text-emerald-700">
+      <span className="inline-flex items-center gap-1 whitespace-nowrap text-phx-xs font-bold text-emerald-700">
         <Check className="h-3.5 w-3.5" /> Approved
       </span>
     );
@@ -318,7 +318,7 @@ function ApproveControl({
     <div className="flex flex-col items-start gap-1">
       <button
         className={cn(
-          "inline-flex items-center gap-1.5 whitespace-nowrap rounded-sm border px-2.5 py-1 text-[11px] font-bold transition",
+          "inline-flex items-center gap-1.5 whitespace-nowrap rounded-sm border px-2.5 py-1 text-phx-xs font-bold transition",
           state === "pending"
             ? "cursor-wait border-slate-200 bg-slate-100 text-slate-400"
             : "border-orange-200 bg-orange-50 text-orange-700 hover:bg-orange-100",
@@ -331,7 +331,7 @@ function ApproveControl({
         {state === "pending" ? "Approving…" : "Approve as real leave"}
       </button>
       {state === "error" && errorMessage ? (
-        <span className="max-w-[220px] text-[11px] font-semibold leading-4 text-rose-600">{errorMessage}</span>
+        <span className="max-w-[220px] text-phx-xs font-semibold leading-4 text-rose-600">{errorMessage}</span>
       ) : null}
     </div>
   );
@@ -360,9 +360,9 @@ function VacationRowCard({
     <div className="rounded-sm border border-slate-200 bg-white p-3 shadow-[0_1px_3px_rgba(15,23,42,0.04)]">
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
-          <p className="text-[13px] font-bold text-slate-900">{row.employeeName}</p>
-          <p className="mt-0.5 font-mono text-[11px] font-medium text-slate-500">{row.hrId}</p>
-          <p className="mt-0.5 text-[11px] font-medium text-slate-500">
+          <p className="text-phx-md font-bold text-slate-900">{row.employeeName}</p>
+          <p className="mt-0.5 font-mono text-phx-xs font-medium text-slate-500">{row.hrId}</p>
+          <p className="mt-0.5 text-phx-xs font-medium text-slate-500">
             {[row.jobTitle, row.lineName].filter(Boolean).join(" / ") || "—"}
           </p>
         </div>
@@ -377,31 +377,31 @@ function VacationRowCard({
 
       <div className="mt-2.5 grid grid-cols-3 gap-2">
         <div>
-          <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-slate-400">From</p>
-          <p className="mt-0.5 whitespace-nowrap text-[12px] font-semibold text-slate-700">{formatDate(row.startDate)}</p>
+          <p className="text-phx-2xs font-bold uppercase tracking-[0.08em] text-slate-400">From</p>
+          <p className="mt-0.5 whitespace-nowrap text-phx-sm font-semibold text-slate-700">{formatDate(row.startDate)}</p>
         </div>
         <div>
-          <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-slate-400">To</p>
-          <p className="mt-0.5 whitespace-nowrap text-[12px] font-semibold text-slate-700">{formatDate(row.endDate)}</p>
+          <p className="text-phx-2xs font-bold uppercase tracking-[0.08em] text-slate-400">To</p>
+          <p className="mt-0.5 whitespace-nowrap text-phx-sm font-semibold text-slate-700">{formatDate(row.endDate)}</p>
         </div>
         <div>
-          <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-slate-400">Days</p>
-          <p className="mt-0.5 text-[12px] font-extrabold text-slate-900">{formatDays(row.workingDays)}</p>
+          <p className="text-phx-2xs font-bold uppercase tracking-[0.08em] text-slate-400">Days</p>
+          <p className="mt-0.5 text-phx-sm font-extrabold text-slate-900">{formatDays(row.workingDays)}</p>
         </div>
       </div>
 
       <div className="mt-2 flex flex-wrap items-center gap-2">
-        <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-slate-400">Balance</p>
+        <p className="text-phx-2xs font-bold uppercase tracking-[0.08em] text-slate-400">Balance</p>
         <HasBalanceBadge hasBalance={row.hasBalance} />
         {row.balanceAfterDays != null ? (
-          <span className="whitespace-nowrap text-[12px] font-semibold text-slate-700">
+          <span className="whitespace-nowrap text-phx-sm font-semibold text-slate-700">
             <span className="text-slate-400">&rarr;</span> {formatDays(row.balanceAfterDays)} left
           </span>
         ) : null}
       </div>
 
       {row.detail ? (
-        <p className="mt-2 rounded-sm border border-slate-100 bg-slate-50/70 px-2.5 py-2 text-[11px] font-semibold leading-4 text-slate-700">
+        <p className="mt-2 rounded-sm border border-slate-100 bg-slate-50/70 px-2.5 py-2 text-phx-xs font-semibold leading-4 text-slate-700">
           {companyVacationLeaveTypeLabel(row.detail)}
         </p>
       ) : null}
@@ -580,9 +580,9 @@ export function CompanyVacationReportTable({
             type="button"
           >
             <SlidersHorizontal className="h-3.5 w-3.5 text-orange-500" />
-            <span className="whitespace-nowrap text-[13px] font-bold text-slate-800">Advanced Filters</span>
+            <span className="whitespace-nowrap text-phx-md font-bold text-slate-800">Advanced Filters</span>
             {activeFilterCount > 0 ? (
-              <span className="inline-flex items-center whitespace-nowrap rounded-full border border-orange-200 bg-orange-50 px-2 py-0.5 text-[10px] font-bold text-orange-700">
+              <span className="inline-flex items-center whitespace-nowrap rounded-full border border-orange-200 bg-orange-50 px-2 py-0.5 text-phx-2xs font-bold text-orange-700">
                 {activeFilterCount} active
               </span>
             ) : null}
@@ -594,7 +594,7 @@ export function CompanyVacationReportTable({
             {DATE_PRESETS.map((preset) => (
               <button
                 key={preset.value}
-                className="inline-flex h-8 items-center whitespace-nowrap rounded-sm border border-slate-200 bg-white px-2.5 text-[11px] font-bold text-slate-600 transition hover:border-orange-200 hover:bg-orange-50 hover:text-orange-700"
+                className="inline-flex h-8 items-center whitespace-nowrap rounded-sm border border-slate-200 bg-white px-2.5 text-phx-xs font-bold text-slate-600 transition hover:border-orange-200 hover:bg-orange-50 hover:text-orange-700"
                 onClick={() => applyPreset(preset.value)}
                 type="button"
               >
@@ -752,7 +752,7 @@ export function CompanyVacationReportTable({
             <div className="mt-4 flex flex-wrap items-center justify-end gap-2">
               {draftFilterCount > 0 ? (
                 <button
-                  className="inline-flex h-9 items-center whitespace-nowrap rounded-sm border border-slate-200 bg-white px-3 text-[12px] font-bold text-slate-600 transition hover:bg-slate-50"
+                  className="inline-flex h-9 items-center whitespace-nowrap rounded-sm border border-slate-200 bg-white px-3 text-phx-sm font-bold text-slate-600 transition hover:bg-slate-50"
                   onClick={() => setDraft(NO_COMPANY_VACATION_REPORT_FILTERS)}
                   type="button"
                 >
@@ -760,7 +760,7 @@ export function CompanyVacationReportTable({
                 </button>
               ) : null}
               <button
-                className="inline-flex h-9 items-center gap-2 whitespace-nowrap rounded-sm bg-orange-500 px-4 text-[12px] font-bold text-white transition hover:bg-orange-600 disabled:cursor-wait disabled:bg-orange-300"
+                className="inline-flex h-9 items-center gap-2 whitespace-nowrap rounded-sm bg-orange-500 px-4 text-phx-sm font-bold text-white transition hover:bg-orange-600 disabled:cursor-wait disabled:bg-orange-300"
                 disabled={pending}
                 onClick={applyDraft}
                 type="button"
@@ -780,7 +780,7 @@ export function CompanyVacationReportTable({
             <SlidersHorizontal className="h-5 w-5" />
           </div>
           <p className="mt-4 text-base font-extrabold tracking-tight text-slate-900">Nothing loaded yet</p>
-          <p className="mx-auto mt-2 max-w-xl text-[13px] font-medium leading-6 text-slate-500">
+          <p className="mx-auto mt-2 max-w-xl text-phx-md font-medium leading-6 text-slate-500">
             Pick a period and any filters above, then press <strong className="font-bold text-slate-700">Apply Filters</strong>.
             Only what you filter on appears here — this report never loads the whole company at once.
           </p>
@@ -788,7 +788,7 @@ export function CompanyVacationReportTable({
             {DATE_PRESETS.map((preset) => (
               <button
                 key={preset.value}
-                className="inline-flex h-9 items-center whitespace-nowrap rounded-sm border border-slate-200 bg-white px-3.5 text-[12px] font-bold text-slate-700 transition hover:border-orange-300 hover:bg-orange-50 hover:text-orange-700"
+                className="inline-flex h-9 items-center whitespace-nowrap rounded-sm border border-slate-200 bg-white px-3.5 text-phx-sm font-bold text-slate-700 transition hover:border-orange-300 hover:bg-orange-50 hover:text-orange-700"
                 onClick={() => applyPreset(preset.value)}
                 type="button"
               >
@@ -825,16 +825,16 @@ export function CompanyVacationReportTable({
 
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-sm border border-slate-200 bg-white px-4 py-3 shadow-[0_1px_3px_rgba(15,23,42,0.04)]">
             <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-              <span className="inline-flex items-center whitespace-nowrap rounded-sm border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-bold text-slate-700">
+              <span className="inline-flex items-center whitespace-nowrap rounded-sm border border-slate-200 bg-slate-50 px-2.5 py-1 text-phx-xs font-bold text-slate-700">
                 {formatDate(startDate)} &rarr; {formatDate(endDate)}
               </span>
               {appliedChips.length === 0 ? (
-                <span className="whitespace-nowrap text-[11px] font-semibold text-slate-400">Everyone in this period</span>
+                <span className="whitespace-nowrap text-phx-xs font-semibold text-slate-400">Everyone in this period</span>
               ) : (
                 appliedChips.map((chip) => (
                   <button
                     key={chip.key}
-                    className="inline-flex items-center gap-1 whitespace-nowrap rounded-sm border border-orange-200 bg-orange-50 px-2.5 py-1 text-[11px] font-bold text-orange-700 transition hover:bg-orange-100"
+                    className="inline-flex items-center gap-1 whitespace-nowrap rounded-sm border border-orange-200 bg-orange-50 px-2.5 py-1 text-phx-xs font-bold text-orange-700 transition hover:bg-orange-100"
                     onClick={() => removeFilter(chip.key)}
                     title="Remove this filter"
                     type="button"
@@ -847,7 +847,7 @@ export function CompanyVacationReportTable({
               {pending ? <Loader2 className="h-3.5 w-3.5 animate-spin text-orange-500" /> : null}
             </div>
             <a
-              className="inline-flex h-9 items-center gap-1.5 whitespace-nowrap rounded-sm bg-slate-900 px-3.5 text-[12px] font-bold text-white transition hover:bg-slate-800"
+              className="inline-flex h-9 items-center gap-1.5 whitespace-nowrap rounded-sm bg-slate-900 px-3.5 text-phx-sm font-bold text-white transition hover:bg-slate-800"
               href={exportHref}
             >
               <Download className="h-3.5 w-3.5" />
@@ -855,7 +855,7 @@ export function CompanyVacationReportTable({
             </a>
           </div>
 
-          <p className="rounded-sm border border-orange-200 bg-orange-50/70 px-4 py-2.5 text-[11px] font-medium leading-5 text-orange-900">
+          <p className="rounded-sm border border-orange-200 bg-orange-50/70 px-4 py-2.5 text-phx-xs font-medium leading-5 text-orange-900">
             <strong className="font-bold">Source</strong> says where the day came from.{" "}
             <strong className="font-bold">Phoenix</strong> — the employee submitted this leave request on this system, and the
             detail badge beside it says where that request stands. <strong className="font-bold">CRM</strong> — nobody submitted
@@ -883,7 +883,7 @@ export function CompanyVacationReportTable({
             {rows.length === 0 ? (
               <div className="px-6 py-14 text-center">
                 <p className="text-base font-extrabold tracking-tight text-slate-900">No leave matches this filter</p>
-                <p className="mx-auto mt-2 max-w-xl text-[13px] font-medium leading-6 text-slate-500">
+                <p className="mx-auto mt-2 max-w-xl text-phx-md font-medium leading-6 text-slate-500">
                   Nothing was submitted on Phoenix and nothing was recorded in the CRM for {formatDate(startDate)} &rarr;{" "}
                   {formatDate(endDate)}
                   {appliedChips.length > 0 ? ` with ${appliedChips.map((chip) => chip.label).join(" · ")}` : ""}. Widen the period
@@ -894,8 +894,8 @@ export function CompanyVacationReportTable({
               <>
                 {/* Desktop table (md+) */}
                 <div className="hidden overflow-x-auto md:block">
-                  <table className="w-full border-collapse text-left text-[12px]">
-                    <thead className="bg-slate-50 text-[10px] font-bold uppercase tracking-[0.10em] text-slate-500">
+                  <table className="w-full border-collapse text-left text-phx-sm">
+                    <thead className="bg-slate-50 text-phx-2xs font-bold uppercase tracking-[0.10em] text-slate-500">
                       <tr>
                         <SortableHeader active={sortKey === "employee"} direction={sortDirection} onSort={toggleSort} sortKey="employee">
                           Employee
@@ -928,11 +928,11 @@ export function CompanyVacationReportTable({
                         <tr key={`${rowKey(row)}-${index}`} className="bg-white align-top transition hover:bg-orange-50/30">
                           <td className="border-r border-slate-100 px-3 py-2.5">
                             <p className="whitespace-nowrap font-bold text-slate-900">{row.employeeName}</p>
-                            <p className="mt-0.5 whitespace-nowrap font-mono text-[10px] font-medium text-slate-400">{row.hrId}</p>
+                            <p className="mt-0.5 whitespace-nowrap font-mono text-phx-2xs font-medium text-slate-400">{row.hrId}</p>
                           </td>
                           <td className="border-r border-slate-100 px-3 py-2.5">
                             <p className="whitespace-nowrap font-semibold text-slate-800">{row.jobTitle ?? "—"}</p>
-                            <p className="mt-0.5 whitespace-nowrap text-[11px] font-medium text-slate-500">{row.lineName ?? "—"}</p>
+                            <p className="mt-0.5 whitespace-nowrap text-phx-xs font-medium text-slate-500">{row.lineName ?? "—"}</p>
                           </td>
                           <td className="border-r border-slate-100 px-3 py-2.5">
                             <SourceSystemBadge source={row.source} />
@@ -952,7 +952,7 @@ export function CompanyVacationReportTable({
                           <td className="whitespace-nowrap border-r border-slate-100 px-3 py-2.5">
                             <HasBalanceBadge hasBalance={row.hasBalance} />
                             {row.balanceAfterDays != null ? (
-                              <p className="mt-0.5 text-[11px] font-semibold text-slate-600">
+                              <p className="mt-0.5 text-phx-xs font-semibold text-slate-600">
                                 <span className="text-slate-400">&rarr;</span> {formatDays(row.balanceAfterDays)} left
                               </p>
                             ) : null}
@@ -968,7 +968,7 @@ export function CompanyVacationReportTable({
                               {isCrmSignalSource(row.source) ? (
                                 <ApproveControl onApprove={handleApprove} row={row} />
                               ) : (
-                                <span className="text-[11px] font-semibold text-slate-400">—</span>
+                                <span className="text-phx-xs font-semibold text-slate-400">—</span>
                               )}
                             </td>
                           ) : null}
@@ -991,25 +991,25 @@ export function CompanyVacationReportTable({
                 </div>
 
                 <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 bg-slate-50/60 px-4 py-2.5">
-                  <p className="text-[11px] font-semibold text-slate-500">
+                  <p className="text-phx-xs font-semibold text-slate-500">
                     Showing {safePage * PAGE_SIZE + 1}&ndash;{safePage * PAGE_SIZE + pageRows.length} of {rows.length} rows ·{" "}
                     {totals.employees} employees · {formatDays(totals.totalDays)} days · the export covers all {rows.length}
                   </p>
                   {pageCount > 1 ? (
                     <div className="flex items-center gap-2">
                       <button
-                        className="inline-flex h-8 items-center whitespace-nowrap rounded-sm border border-slate-200 bg-white px-3 text-[11px] font-bold text-slate-600 transition hover:bg-slate-50 disabled:opacity-40"
+                        className="inline-flex h-8 items-center whitespace-nowrap rounded-sm border border-slate-200 bg-white px-3 text-phx-xs font-bold text-slate-600 transition hover:bg-slate-50 disabled:opacity-40"
                         disabled={safePage === 0}
                         onClick={() => setPage(safePage - 1)}
                         type="button"
                       >
                         Previous
                       </button>
-                      <span className="whitespace-nowrap text-[11px] font-bold text-slate-500">
+                      <span className="whitespace-nowrap text-phx-xs font-bold text-slate-500">
                         Page {safePage + 1} of {pageCount}
                       </span>
                       <button
-                        className="inline-flex h-8 items-center whitespace-nowrap rounded-sm border border-slate-200 bg-white px-3 text-[11px] font-bold text-slate-600 transition hover:bg-slate-50 disabled:opacity-40"
+                        className="inline-flex h-8 items-center whitespace-nowrap rounded-sm border border-slate-200 bg-white px-3 text-phx-xs font-bold text-slate-600 transition hover:bg-slate-50 disabled:opacity-40"
                         disabled={safePage >= pageCount - 1}
                         onClick={() => setPage(safePage + 1)}
                         type="button"

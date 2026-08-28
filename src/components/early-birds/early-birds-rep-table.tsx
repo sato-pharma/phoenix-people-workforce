@@ -29,7 +29,7 @@ import { formatPercent, formatPoints, formatStartClock } from "./early-birds-for
 // "GPS-verified days" is a visible column on purpose: the ranking mixes GPS check-in times with
 // rep-controlled save times, and a competition that hides which is which is one reps learn to game.
 
-const TH = "px-3 py-2.5 text-left text-[10px] font-black uppercase tracking-[0.12em] text-white";
+const TH = "px-3 py-2.5 text-left text-phx-2xs font-black uppercase tracking-[0.12em] text-white";
 const TD = "whitespace-nowrap px-3 py-2 text-xs text-slate-700";
 
 const REASON_LABEL: Record<string, string> = {
@@ -63,7 +63,7 @@ export function EarlyBirdsRepTable({
       <SectionHead
         title="Every rep, in detail"
         right={
-          <span className="whitespace-nowrap text-[10px] font-bold uppercase tracking-widest text-slate-400">
+          <span className="whitespace-nowrap text-phx-2xs font-bold uppercase tracking-widest text-slate-400">
             {scores.length} rows
           </span>
         }
@@ -78,12 +78,12 @@ export function EarlyBirdsRepTable({
               return (
                 <div className="bg-white px-4 py-3" key={score.hrIdKey}>
               <div className="flex items-center gap-2">
-                <span className="text-[11px] font-black text-slate-400">{index + 1}</span>
+                <span className="text-phx-xs font-black text-slate-400">{index + 1}</span>
                 <p className="whitespace-nowrap text-sm font-bold text-slate-900" dir="auto">
                   {score.name}
                 </p>
                 <span
-                  className={`ml-auto rounded px-1 py-0.5 text-[9px] font-bold uppercase tracking-wide ${badge.className}`}
+                  className={`ml-auto rounded px-1 py-0.5 text-phx-3xs font-bold uppercase tracking-wide ${badge.className}`}
                   title={badge.title}
                 >
                   {badge.label}
@@ -100,13 +100,13 @@ export function EarlyBirdsRepTable({
                   ["Points", score.eligible ? formatPoints(score.totalScore) : "—"],
                 ].map(([label, value]) => (
                   <div key={label} className="border border-slate-200 px-2 py-1.5">
-                    <p className="whitespace-nowrap text-[9px] font-black uppercase tracking-wider text-slate-400">{label}</p>
+                    <p className="whitespace-nowrap text-phx-3xs font-black uppercase tracking-wider text-slate-400">{label}</p>
                     <p className="whitespace-nowrap text-xs font-bold tabular-nums text-slate-900">{value}</p>
                   </div>
                 ))}
               </div>
                   {!score.eligible && (
-                    <p className="mt-2 whitespace-nowrap text-[11px] font-semibold text-amber-700">
+                    <p className="mt-2 whitespace-nowrap text-phx-xs font-semibold text-amber-700">
                       {reasonText(score.ineligibleReasons)}
                     </p>
                   )}

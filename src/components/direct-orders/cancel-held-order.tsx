@@ -11,7 +11,7 @@ type Props = {
   salesValue: number;
 };
 
-const labelClass = "block text-[11px] font-black uppercase tracking-wider text-slate-500";
+const labelClass = "block text-phx-xs font-black uppercase tracking-wider text-slate-500";
 const inputClass =
   "mt-1 w-full border border-phx-line px-3 py-2 text-sm text-slate-900 outline-none focus:border-slate-400";
 
@@ -65,7 +65,7 @@ export function CancelHeldOrder({ requestId, productName, qty, salesValue }: Pro
   if (done) {
     return (
       <section className="border border-phx-line bg-white px-4 py-3">
-        <p className="text-[12px] font-bold text-slate-700">
+        <p className="text-phx-sm font-bold text-slate-700">
           Withdrawn. This request is now cancelled and no longer counts against your held total.
         </p>
       </section>
@@ -77,7 +77,7 @@ export function CancelHeldOrder({ requestId, productName, qty, salesValue }: Pro
       <div className="px-1">
         <button
           type="button"
-          className="text-[11px] font-bold text-slate-500 underline decoration-slate-300 underline-offset-2 hover:text-slate-700"
+          className="text-phx-xs font-bold text-slate-500 underline decoration-slate-300 underline-offset-2 hover:text-slate-700"
           onClick={() => setOpen(true)}
         >
           Raised this twice by mistake? Withdraw it
@@ -89,10 +89,10 @@ export function CancelHeldOrder({ requestId, productName, qty, salesValue }: Pro
   return (
     <section className="border border-phx-line bg-white">
       <header className="border-b border-phx-line bg-slate-900 px-4 py-2.5">
-        <h3 className="text-[11px] font-black uppercase tracking-[0.14em] text-white">Withdraw this request</h3>
+        <h3 className="text-phx-xs font-black uppercase tracking-[0.14em] text-white">Withdraw this request</h3>
       </header>
       <div className="space-y-3 px-4 py-4">
-        <p className="border border-amber-300 bg-amber-50 px-3 py-2 text-[12px] font-semibold text-amber-900">
+        <p className="border border-amber-300 bg-amber-50 px-3 py-2 text-phx-sm font-semibold text-amber-900">
           You are about to withdraw {productName} — {qty.toLocaleString("en-US")} units,{" "}
           {Math.round(salesValue).toLocaleString("en-US")} EGP. This cannot be undone, and the order will
           not reach an approver. If the pharmacy is real, validate it above instead — that keeps the sale.
@@ -114,13 +114,13 @@ export function CancelHeldOrder({ requestId, productName, qty, salesValue }: Pro
         </div>
 
         {error ? (
-          <p className="border border-rose-300 bg-rose-50 px-3 py-2 text-[12px] font-semibold text-rose-800">{error}</p>
+          <p className="border border-rose-300 bg-rose-50 px-3 py-2 text-phx-sm font-semibold text-rose-800">{error}</p>
         ) : null}
 
         <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
-            className="bg-slate-900 px-4 py-2 text-[11px] font-black uppercase tracking-wider text-white disabled:cursor-not-allowed disabled:bg-slate-300"
+            className="bg-slate-900 px-4 py-2 text-phx-xs font-black uppercase tracking-wider text-white disabled:cursor-not-allowed disabled:bg-slate-300"
             disabled={busy || !trimmed}
             onClick={submit}
           >
@@ -128,7 +128,7 @@ export function CancelHeldOrder({ requestId, productName, qty, salesValue }: Pro
           </button>
           <button
             type="button"
-            className="px-3 py-2 text-[11px] font-bold uppercase tracking-wider text-slate-500 hover:text-slate-700"
+            className="px-3 py-2 text-phx-xs font-bold uppercase tracking-wider text-slate-500 hover:text-slate-700"
             disabled={busy}
             onClick={() => {
               setOpen(false);
@@ -138,7 +138,7 @@ export function CancelHeldOrder({ requestId, productName, qty, salesValue }: Pro
             Keep it
           </button>
           {!trimmed ? (
-            <span className="text-[11px] font-semibold text-slate-400">A reason is required.</span>
+            <span className="text-phx-xs font-semibold text-slate-400">A reason is required.</span>
           ) : null}
         </div>
       </div>

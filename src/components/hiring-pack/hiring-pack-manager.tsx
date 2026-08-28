@@ -51,9 +51,9 @@ import { cn } from "@/lib/utils";
 const inputClassName =
   "h-10 rounded-xl border-phx-line bg-white/95 text-sm shadow-sm focus:border-phx-accent-line focus:ring-phx-accent/15";
 const labelClassName =
-  "mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-soft";
+  "mb-1.5 block text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft";
 const factLabelClassName =
-  "text-[10px] font-black uppercase tracking-[0.14em] text-phx-ink-faint";
+  "text-phx-2xs font-black uppercase tracking-[0.14em] text-phx-ink-faint";
 
 type FieldKind = "text" | "code" | "number" | "date";
 
@@ -779,7 +779,7 @@ function FieldGroup({
               value={form[field.key] ?? ""}
             />
             {field.hint ? (
-              <p className="mt-1 text-[11px] font-semibold text-phx-ink-faint">{field.hint}</p>
+              <p className="mt-1 text-phx-xs font-semibold text-phx-ink-faint">{field.hint}</p>
             ) : null}
           </div>
         ))}

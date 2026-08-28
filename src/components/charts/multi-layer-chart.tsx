@@ -73,7 +73,7 @@ export function MultiLayerChart({
               if (active && payload && payload.length) {
                 return (
                   <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-xl">
-                    <p className="mb-1 text-[10px] font-black uppercase tracking-wider text-slate-400">{label}</p>
+                    <p className="mb-1 text-phx-2xs font-black uppercase tracking-wider text-slate-400">{label}</p>
                     <div className="space-y-1.5">
                       {payload.map((entry, index) => {
                         const item = entry as MultiLayerTooltipEntry;
@@ -81,9 +81,9 @@ export function MultiLayerChart({
                         <div key={index} className="flex items-center justify-between gap-4">
                           <div className="flex items-center gap-2">
                             <div className="h-2 w-2 rounded-full" style={{ backgroundColor: item.color }} />
-                            <span className="text-[11px] font-bold text-slate-600">{item.name}:</span>
+                            <span className="text-phx-xs font-bold text-slate-600">{item.name}:</span>
                           </div>
-                          <span className="text-[11px] font-black text-slate-900">
+                          <span className="text-phx-xs font-black text-slate-900">
                             {Number(item.value ?? 0).toLocaleString()}{tooltipSuffix}
                           </span>
                         </div>

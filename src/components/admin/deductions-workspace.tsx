@@ -119,7 +119,7 @@ function HolidayBridgeCell({ row }: { row: CandidateApiRow }) {
   return (
     <span className="flex flex-col gap-0.5">
       {bridges.map((bridge) => (
-        <span className="whitespace-nowrap text-[11px] font-bold text-orange-700" key={`${bridge.date}:${bridge.adjacentTo}`}>
+        <span className="whitespace-nowrap text-phx-xs font-bold text-orange-700" key={`${bridge.date}:${bridge.adjacentTo}`}>
           {dayOfMonth(bridge.date)} {bridge.adjacentTo === "before" ? "before" : "after"} {bridge.holidayName}
         </span>
       ))}
@@ -290,16 +290,16 @@ function DeductionDaysEditor({
       {detected.length > 0 ? (
         <div className="space-y-2">
           <div className="flex flex-wrap items-center gap-3">
-            <p className="text-[11px] font-black uppercase tracking-[0.1em] text-slate-500">Days to deduct</p>
+            <p className="text-phx-xs font-black uppercase tracking-[0.1em] text-slate-500">Days to deduct</p>
             <button
-              className="whitespace-nowrap text-[10px] font-black uppercase tracking-[0.08em] text-slate-500 underline transition hover:text-orange-600"
+              className="whitespace-nowrap text-phx-2xs font-black uppercase tracking-[0.08em] text-slate-500 underline transition hover:text-orange-600"
               onClick={() => setAll(true)}
               type="button"
             >
               Select all
             </button>
             <button
-              className="whitespace-nowrap text-[10px] font-black uppercase tracking-[0.08em] text-slate-500 underline transition hover:text-orange-600"
+              className="whitespace-nowrap text-phx-2xs font-black uppercase tracking-[0.08em] text-slate-500 underline transition hover:text-orange-600"
               onClick={() => setAll(false)}
               type="button"
             >
@@ -317,7 +317,7 @@ function DeductionDaysEditor({
               {WEEKDAY_LABELS.map((label, index) => (
                 <div
                   className={[
-                    "px-1 pb-1 text-center text-[10px] font-black uppercase tracking-[0.06em]",
+                    "px-1 pb-1 text-center text-phx-2xs font-black uppercase tracking-[0.06em]",
                     index === FRIDAY_COLUMN ? "text-orange-500" : "text-slate-400",
                   ].join(" ")}
                   key={label}
@@ -369,7 +369,7 @@ function DeductionDaysEditor({
               on the job title (isFieldWorkforceWeeklyOff), so it is deliberately
               not tinted here rather than asserting a rule that is wrong for half
               the company. */}
-          <p className="whitespace-nowrap text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-400">
+          <p className="whitespace-nowrap text-phx-2xs font-semibold uppercase tracking-[0.08em] text-slate-400">
             Tickable days are the ones detected · greyed days were not flagged · Friday column tinted
           </p>
         </div>
@@ -381,7 +381,7 @@ function DeductionDaysEditor({
 
       <div className="flex flex-wrap items-end gap-4">
         <label className="flex flex-col gap-1">
-          <span className="whitespace-nowrap text-[11px] font-black uppercase tracking-[0.1em] text-slate-500">
+          <span className="whitespace-nowrap text-phx-xs font-black uppercase tracking-[0.1em] text-slate-500">
             {row.unit === "days" ? "Deduction quantity (days)" : "Deduction amount (EGP)"}
           </span>
           <input
@@ -399,7 +399,7 @@ function DeductionDaysEditor({
         </label>
 
         <div className="flex flex-col gap-1">
-          <span className="whitespace-nowrap text-[11px] font-black uppercase tracking-[0.1em] text-slate-500">
+          <span className="whitespace-nowrap text-phx-xs font-black uppercase tracking-[0.1em] text-slate-500">
             {row.unit === "days" ? "Amount" : "Detected"}
           </span>
           <p className="whitespace-nowrap py-1 text-sm font-black tabular-nums text-slate-900">
@@ -413,7 +413,7 @@ function DeductionDaysEditor({
 
         <div className="ml-auto flex flex-wrap items-center gap-1.5">
           <button
-            className="whitespace-nowrap bg-slate-900 px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.08em] text-white transition hover:bg-slate-700 disabled:opacity-50"
+            className="whitespace-nowrap bg-slate-900 px-3 py-1.5 text-phx-2xs font-black uppercase tracking-[0.08em] text-white transition hover:bg-slate-700 disabled:opacity-50"
             disabled={saving}
             onClick={save}
             type="button"
@@ -421,7 +421,7 @@ function DeductionDaysEditor({
             {saving ? "Saving…" : "Save days"}
           </button>
           <button
-            className="whitespace-nowrap px-2 py-1.5 text-[10px] font-black uppercase tracking-[0.08em] text-slate-500 transition hover:text-slate-800"
+            className="whitespace-nowrap px-2 py-1.5 text-phx-2xs font-black uppercase tracking-[0.08em] text-slate-500 transition hover:text-slate-800"
             disabled={saving}
             onClick={onClose}
             type="button"
@@ -432,7 +432,7 @@ function DeductionDaysEditor({
       </div>
 
       {manualQuantity && row.unit === "days" && parsedQuantity !== selected.length ? (
-        <p className="flex flex-wrap items-center gap-2 text-[11px] font-bold text-amber-800">
+        <p className="flex flex-wrap items-center gap-2 text-phx-xs font-bold text-amber-800">
           <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
           You typed {quantity} but {selected.length} day(s) are ticked — the typed number is what gets deducted.
           <button
@@ -447,18 +447,18 @@ function DeductionDaysEditor({
       ) : null}
 
       {selected.length === 0 && detected.length > 0 && parsedQuantity === 0 ? (
-        <p className="text-[11px] font-bold text-amber-800">
+        <p className="text-phx-xs font-bold text-amber-800">
           No days ticked — this publishes as 0.00 EGP. To drop the deduction entirely, decide it as “Do Not Take Action”.
         </p>
       ) : null}
 
       {overDetected ? (
-        <p className="text-[11px] font-bold text-red-700">
+        <p className="text-phx-xs font-bold text-red-700">
           Only {row.rawValue} day(s) were detected for this employee — you cannot deduct more than that.
         </p>
       ) : null}
 
-      {error ? <p className="text-[11px] font-semibold text-red-700">{error}</p> : null}
+      {error ? <p className="text-phx-xs font-semibold text-red-700">{error}</p> : null}
     </div>
   );
 }
@@ -549,7 +549,7 @@ function StatusBadge({ status }: { status: string | null }) {
             ? "bg-amber-100 text-amber-700"
             : "bg-sky-50 text-sky-700";
   return (
-    <span className={["whitespace-nowrap rounded-full px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.1em]", tone].join(" ")}>
+    <span className={["whitespace-nowrap rounded-full px-2 py-0.5 text-phx-2xs font-black uppercase tracking-[0.1em]", tone].join(" ")}>
       {label}
     </span>
   );
@@ -610,11 +610,11 @@ function CandidateDecideRow({
             placeholder="Decision reason"
             value={reason}
           />
-          {error ? <p className="text-[11px] font-semibold text-red-700">{error}</p> : null}
+          {error ? <p className="text-phx-xs font-semibold text-red-700">{error}</p> : null}
           <div className="flex flex-wrap gap-1.5">
             {DECISION_STATUSES.map((status) => (
               <button
-                className="rounded-sm bg-slate-900 px-2 py-1 text-[10px] font-black uppercase tracking-[0.08em] text-white transition hover:bg-slate-700 disabled:opacity-50"
+                className="rounded-sm bg-slate-900 px-2 py-1 text-phx-2xs font-black uppercase tracking-[0.08em] text-white transition hover:bg-slate-700 disabled:opacity-50"
                 disabled={submitting}
                 key={status}
                 onClick={() => decide(status)}
@@ -624,7 +624,7 @@ function CandidateDecideRow({
               </button>
             ))}
             <button
-              className="rounded-sm px-2 py-1 text-[10px] font-black uppercase tracking-[0.08em] text-slate-500"
+              className="rounded-sm px-2 py-1 text-phx-2xs font-black uppercase tracking-[0.08em] text-slate-500"
               disabled={submitting}
               onClick={() => setOpen(false)}
               type="button"
@@ -635,7 +635,7 @@ function CandidateDecideRow({
         </div>
       ) : (
         <button
-          className="rounded-sm border border-slate-300 px-2 py-1 text-[10px] font-black uppercase tracking-[0.08em] text-slate-700 transition hover:border-orange-400 hover:text-orange-600"
+          className="rounded-sm border border-slate-300 px-2 py-1 text-phx-2xs font-black uppercase tracking-[0.08em] text-slate-700 transition hover:border-orange-400 hover:text-orange-600"
           onClick={() => setOpen(true)}
           type="button"
         >
@@ -805,7 +805,7 @@ function AddManualDeduction({
   if (!open) {
     return (
       <button
-        className="inline-flex items-center gap-1.5 whitespace-nowrap border border-slate-300 bg-white px-2.5 py-1 text-[11px] font-black uppercase tracking-[0.08em] text-slate-700 transition hover:border-orange-400 hover:text-orange-600"
+        className="inline-flex items-center gap-1.5 whitespace-nowrap border border-slate-300 bg-white px-2.5 py-1 text-phx-xs font-black uppercase tracking-[0.08em] text-slate-700 transition hover:border-orange-400 hover:text-orange-600"
         onClick={() => setOpen(true)}
         type="button"
       >
@@ -819,7 +819,7 @@ function AddManualDeduction({
     <div className="w-full space-y-3 border border-orange-200 bg-orange-50/50 p-3">
       <div className="flex flex-wrap items-end gap-3">
         <label className="relative flex flex-col gap-1">
-          <span className="whitespace-nowrap text-[11px] font-black uppercase tracking-[0.1em] text-slate-500">
+          <span className="whitespace-nowrap text-phx-xs font-black uppercase tracking-[0.1em] text-slate-500">
             Employee
           </span>
           <input
@@ -842,10 +842,10 @@ function AddManualDeduction({
                   >
                     <span className="whitespace-nowrap text-xs font-bold text-slate-900">{match.name}</span>
                     {match.jobTitle ? (
-                      <span className="whitespace-nowrap text-[10px] text-slate-500">{match.jobTitle}</span>
+                      <span className="whitespace-nowrap text-phx-2xs text-slate-500">{match.jobTitle}</span>
                     ) : null}
                     {match.isFinalSettlement ? (
-                      <span className="whitespace-nowrap text-[10px] font-bold text-amber-700">
+                      <span className="whitespace-nowrap text-phx-2xs font-bold text-amber-700">
                         {`Left ${readableDate(match.lastWorkingDate) ?? "this month"} — final settlement`}
                       </span>
                     ) : null}
@@ -854,11 +854,11 @@ function AddManualDeduction({
               ))}
             </ul>
           ) : null}
-          {searching ? <span className="text-[10px] font-semibold text-slate-400">Searching…</span> : null}
+          {searching ? <span className="text-phx-2xs font-semibold text-slate-400">Searching…</span> : null}
         </label>
 
         <label className="flex flex-col gap-1">
-          <span className="whitespace-nowrap text-[11px] font-black uppercase tracking-[0.1em] text-slate-500">
+          <span className="whitespace-nowrap text-phx-xs font-black uppercase tracking-[0.1em] text-slate-500">
             Deduct by
           </span>
           <select
@@ -872,7 +872,7 @@ function AddManualDeduction({
         </label>
 
         <label className="flex flex-col gap-1">
-          <span className="whitespace-nowrap text-[11px] font-black uppercase tracking-[0.1em] text-slate-500">
+          <span className="whitespace-nowrap text-phx-xs font-black uppercase tracking-[0.1em] text-slate-500">
             {unit === "days" ? "Days" : "Amount"}
           </span>
           <input
@@ -887,7 +887,7 @@ function AddManualDeduction({
         </label>
 
         <div className="flex flex-col gap-1">
-          <span className="whitespace-nowrap text-[11px] font-black uppercase tracking-[0.1em] text-slate-500">
+          <span className="whitespace-nowrap text-phx-xs font-black uppercase tracking-[0.1em] text-slate-500">
             Amount
           </span>
           <p className="whitespace-nowrap py-1 text-sm font-black tabular-nums text-slate-900">
@@ -898,7 +898,7 @@ function AddManualDeduction({
 
       <div className="flex flex-wrap items-end gap-3">
         <label className="flex flex-1 flex-col gap-1">
-          <span className="whitespace-nowrap text-[11px] font-black uppercase tracking-[0.1em] text-slate-500">
+          <span className="whitespace-nowrap text-phx-xs font-black uppercase tracking-[0.1em] text-slate-500">
             Reason
           </span>
           <input
@@ -910,7 +910,7 @@ function AddManualDeduction({
         </label>
         <div className="flex items-center gap-1.5">
           <button
-            className="whitespace-nowrap bg-slate-900 px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.08em] text-white transition hover:bg-slate-700 disabled:opacity-50"
+            className="whitespace-nowrap bg-slate-900 px-3 py-1.5 text-phx-2xs font-black uppercase tracking-[0.08em] text-white transition hover:bg-slate-700 disabled:opacity-50"
             disabled={saving}
             onClick={submit}
             type="button"
@@ -918,7 +918,7 @@ function AddManualDeduction({
             {saving ? "Adding…" : "Add deduction"}
           </button>
           <button
-            className="whitespace-nowrap px-2 py-1.5 text-[10px] font-black uppercase tracking-[0.08em] text-slate-500 transition hover:text-slate-800"
+            className="whitespace-nowrap px-2 py-1.5 text-phx-2xs font-black uppercase tracking-[0.08em] text-slate-500 transition hover:text-slate-800"
             disabled={saving}
             onClick={() => setOpen(false)}
             type="button"
@@ -931,11 +931,11 @@ function AddManualDeduction({
       {/* A manual entry auto-approves on insert — there is nothing to decide
           about a number a human just typed — so the warning belongs here, before
           the click, not in a confirmation nobody reads. */}
-      <p className="whitespace-nowrap text-[11px] font-bold text-amber-800">
+      <p className="whitespace-nowrap text-phx-xs font-bold text-amber-800">
         This is added as “Approved for Payroll” immediately and will publish with the month.
       </p>
 
-      {error ? <p className="text-[11px] font-semibold text-red-700">{error}</p> : null}
+      {error ? <p className="text-phx-xs font-semibold text-red-700">{error}</p> : null}
     </div>
   );
 }
@@ -986,12 +986,12 @@ function CategoryTab({ category, monthKey, canDecide }: { category: DeductionsCa
         </h2>
         <div className="flex items-center gap-2">
           {!config.requiresApproval ? (
-            <span className="whitespace-nowrap rounded-full bg-orange-500/20 px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.1em] text-orange-300">
+            <span className="whitespace-nowrap rounded-full bg-orange-500/20 px-2 py-0.5 text-phx-2xs font-black uppercase tracking-[0.1em] text-orange-300">
               Mandatory unless cleared
             </span>
           ) : null}
           <a
-            className="inline-flex items-center gap-1.5 whitespace-nowrap border border-orange-500 bg-orange-500 px-2.5 py-1 text-[11px] font-black uppercase tracking-[0.08em] text-white transition hover:bg-orange-600"
+            className="inline-flex items-center gap-1.5 whitespace-nowrap border border-orange-500 bg-orange-500 px-2.5 py-1 text-phx-xs font-black uppercase tracking-[0.08em] text-white transition hover:bg-orange-600"
             download
             href={`/api/admin/deductions/export?category=${category}&monthKey=${monthKey}`}
           >
@@ -1027,7 +1027,7 @@ function CategoryTab({ category, monthKey, canDecide }: { category: DeductionsCa
           <div className="hidden overflow-hidden sm:block">
             <table className="w-full text-left text-sm">
               <thead>
-                <tr className="border-b border-slate-200 bg-slate-50 text-[11px] font-black uppercase tracking-[0.08em] text-slate-500">
+                <tr className="border-b border-slate-200 bg-slate-50 text-phx-xs font-black uppercase tracking-[0.08em] text-slate-500">
                   <th className="px-4 py-2">Employee</th>
                   <th className="whitespace-nowrap px-4 py-2">Hire date</th>
                   <th className="px-4 py-2">Days</th>
@@ -1091,7 +1091,7 @@ function CategoryTab({ category, monthKey, canDecide }: { category: DeductionsCa
                               a vacation day that also carried real work, for
                               instance — must not read like every other row. */}
                           {row.calculationStatus === "requires_review" ? (
-                            <span className="mr-1.5 whitespace-nowrap rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.08em] text-amber-800">
+                            <span className="mr-1.5 whitespace-nowrap rounded-full bg-amber-100 px-2 py-0.5 text-phx-2xs font-black uppercase tracking-[0.08em] text-amber-800">
                               Needs your review
                             </span>
                           ) : null}
@@ -1104,7 +1104,7 @@ function CategoryTab({ category, monthKey, canDecide }: { category: DeductionsCa
                           <td className="px-4 py-2.5">
                             <div className="flex flex-wrap items-center gap-1.5">
                               <button
-                                className="mt-1.5 whitespace-nowrap border border-slate-300 px-2 py-1 text-[10px] font-black uppercase tracking-[0.08em] text-slate-700 transition hover:border-orange-400 hover:text-orange-600"
+                                className="mt-1.5 whitespace-nowrap border border-slate-300 px-2 py-1 text-phx-2xs font-black uppercase tracking-[0.08em] text-slate-700 transition hover:border-orange-400 hover:text-orange-600"
                                 onClick={() => setEditingId(editingId === row.id ? null : row.id)}
                                 type="button"
                               >
@@ -1155,7 +1155,7 @@ function CategoryTab({ category, monthKey, canDecide }: { category: DeductionsCa
                   {row.reason ? <p className="mt-1 text-xs text-slate-600">{row.reason}</p> : null}
                   {canDecide ? (
                     <button
-                      className="mt-1.5 whitespace-nowrap border border-slate-300 px-2 py-1 text-[10px] font-black uppercase tracking-[0.08em] text-slate-700 transition hover:border-orange-400 hover:text-orange-600"
+                      className="mt-1.5 whitespace-nowrap border border-slate-300 px-2 py-1 text-phx-2xs font-black uppercase tracking-[0.08em] text-slate-700 transition hover:border-orange-400 hover:text-orange-600"
                       onClick={() => setEditingId(editingId === row.id ? null : row.id)}
                       type="button"
                     >
@@ -1234,7 +1234,7 @@ function PublicationPanel({ monthKey, canDecide }: { monthKey: string; canDecide
     <div className="border border-slate-200 bg-white p-4 shadow-sm sm:col-span-2 lg:col-span-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <p className="text-[11px] font-black uppercase tracking-[0.1em] text-slate-500">Publish status — {monthLabel(monthKey)}</p>
+          <p className="text-phx-xs font-black uppercase tracking-[0.1em] text-slate-500">Publish status — {monthLabel(monthKey)}</p>
           {loading ? (
             <p className="mt-1 text-sm font-semibold text-slate-500">Loading…</p>
           ) : active ? (
@@ -1248,7 +1248,7 @@ function PublicationPanel({ monthKey, canDecide }: { monthKey: string; canDecide
         </div>
         {canDecide ? (
           <button
-            className="whitespace-nowrap rounded-sm bg-slate-900 px-3 py-1.5 text-[11px] font-black uppercase tracking-[0.08em] text-white transition hover:bg-slate-700 disabled:opacity-50"
+            className="whitespace-nowrap rounded-sm bg-slate-900 px-3 py-1.5 text-phx-xs font-black uppercase tracking-[0.08em] text-white transition hover:bg-slate-700 disabled:opacity-50"
             disabled={publishing}
             onClick={publish}
             type="button"
@@ -1263,7 +1263,7 @@ function PublicationPanel({ monthKey, canDecide }: { monthKey: string; canDecide
         </p>
       ) : null}
       {publications && publications.length > 1 ? (
-        <p className="mt-2 text-[11px] text-slate-400">{publications.length - 1} prior publication(s) superseded — full history preserved for audit.</p>
+        <p className="mt-2 text-phx-xs text-slate-400">{publications.length - 1} prior publication(s) superseded — full history preserved for audit.</p>
       ) : null}
     </div>
   );
@@ -1307,12 +1307,12 @@ function OverviewTab({ monthKey, canDecide }: { monthKey: string; canDecide: boo
           approved, which will NOT be deducted. Showing a single combined figure
           is how HR ended up reading ~3x what publish would actually commit. */}
       <div className="border border-slate-900 bg-slate-900 p-4 shadow-sm sm:col-span-2">
-        <p className="text-[11px] font-black uppercase tracking-[0.1em] text-orange-400">Will publish</p>
+        <p className="text-phx-xs font-black uppercase tracking-[0.1em] text-orange-400">Will publish</p>
         <p className="mt-1 text-3xl font-black text-white">{money(summary.willPublishTotal)} EGP</p>
         <p className="mt-0.5 text-xs font-semibold text-slate-400">This is what pressing Publish commits.</p>
       </div>
       <div className="border border-amber-300 bg-amber-50 p-4 shadow-sm sm:col-span-2">
-        <p className="text-[11px] font-black uppercase tracking-[0.1em] text-amber-700">Pending — will NOT publish</p>
+        <p className="text-phx-xs font-black uppercase tracking-[0.1em] text-amber-700">Pending — will NOT publish</p>
         <p className="mt-1 text-3xl font-black text-amber-900">{money(summary.pendingTotal)} EGP</p>
         <p className="mt-0.5 text-xs font-semibold text-amber-700">
           Detected but awaiting your decision. Not deducted until approved.
@@ -1325,7 +1325,7 @@ function OverviewTab({ monthKey, canDecide }: { monthKey: string; canDecide: boo
         const pending = summary.pending[category];
         return (
           <div className="border border-slate-200 bg-white p-4 shadow-sm" key={category}>
-            <p className="text-[11px] font-black uppercase tracking-[0.1em] text-slate-500">{config.label}</p>
+            <p className="text-phx-xs font-black uppercase tracking-[0.1em] text-slate-500">{config.label}</p>
             <p className="mt-1 text-2xl font-black text-slate-900">{money(willPublish?.totalAmount ?? 0)}</p>
             <p className="mt-0.5 text-xs font-semibold text-slate-500">
               {willPublish?.candidateCount ?? 0} candidate(s) · {willPublish?.employeeCount ?? 0} employee(s)
@@ -1389,7 +1389,7 @@ function ByEmployeeTab({ monthKey }: { monthKey: string }) {
           value={employeeHrId}
         />
         <button
-          className="whitespace-nowrap rounded-sm bg-slate-900 px-3 py-1.5 text-[11px] font-black uppercase tracking-[0.08em] text-white transition hover:bg-slate-700"
+          className="whitespace-nowrap rounded-sm bg-slate-900 px-3 py-1.5 text-phx-xs font-black uppercase tracking-[0.08em] text-white transition hover:bg-slate-700"
           onClick={() => setQuery(employeeHrId)}
           type="button"
         >
@@ -1610,7 +1610,7 @@ function LeaverSettlementPanel({ monthKey }: { monthKey: string }) {
                     type="button"
                   >
                     <span className="whitespace-nowrap text-xs font-bold text-slate-900">{match.name}</span>
-                    <span className="whitespace-nowrap text-[10px] font-bold text-amber-700">
+                    <span className="whitespace-nowrap text-phx-2xs font-bold text-amber-700">
                       {`Left ${readableDate(match.lastWorkingDate) ?? "this month"}`}
                     </span>
                   </button>
@@ -1639,7 +1639,7 @@ function LeaverSettlementPanel({ monthKey }: { monthKey: string }) {
       {runs.length > 0 ? (
         <ul className="flex flex-col gap-0.5">
           {runs.map((run) => (
-            <li className="whitespace-nowrap text-[11px] font-semibold text-slate-600" key={run.key}>
+            <li className="whitespace-nowrap text-phx-xs font-semibold text-slate-600" key={run.key}>
               {`${run.label}: ${run.state === "done" ? `${run.created ?? 0} found` : run.state === "failed" ? (run.error ?? "failed") : run.state}`}
             </li>
           ))}
@@ -1762,7 +1762,7 @@ export function DeductionsWorkspace({
         </label>
         {canDecide ? (
           <button
-            className="ml-auto inline-flex items-center gap-1.5 rounded-sm bg-orange-500 px-3 py-1.5 text-[11px] font-black uppercase tracking-[0.08em] text-white transition hover:bg-orange-600 disabled:opacity-50"
+            className="ml-auto inline-flex items-center gap-1.5 rounded-sm bg-orange-500 px-3 py-1.5 text-phx-xs font-black uppercase tracking-[0.08em] text-white transition hover:bg-orange-600 disabled:opacity-50"
             disabled={collecting || !monthHasFinished}
             onClick={runCollection}
             type="button"
@@ -1839,7 +1839,7 @@ export function DeductionsWorkspace({
         {tabs.map((tab) => (
           <button
             className={[
-              "whitespace-nowrap rounded-t-sm px-3 py-2 text-[11px] font-black uppercase tracking-[0.08em] transition",
+              "whitespace-nowrap rounded-t-sm px-3 py-2 text-phx-xs font-black uppercase tracking-[0.08em] transition",
               activeTab === tab.key
                 ? "border border-b-0 border-slate-200 bg-white text-orange-600"
                 : "text-slate-500 hover:text-slate-800",

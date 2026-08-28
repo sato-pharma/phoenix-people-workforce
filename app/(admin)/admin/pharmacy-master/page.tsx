@@ -20,7 +20,7 @@ export default async function PharmacyMasterPage() {
       <div className="space-y-2">
         <p className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-700">Master Data</p>
         <h1 className="text-2xl font-bold tracking-tight text-slate-950">Pharmacy Master</h1>
-        <p className="max-w-3xl text-[13px] font-medium leading-6 text-slate-600">
+        <p className="max-w-3xl text-phx-md font-medium leading-6 text-slate-600">
           Read-only candidate review: pharmacies that may be the same physical location, recorded
           separately under different distributors. Nothing here merges, creates, or changes any
           record — every candidate needs human review before any action is taken.

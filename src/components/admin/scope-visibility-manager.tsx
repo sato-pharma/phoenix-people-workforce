@@ -103,7 +103,7 @@ function ProductMultiSelect({
           <div className="max-h-64 overflow-y-auto">
             {byLine.map(({ line, items }) => (
               <div key={line}>
-                <p className="sticky top-0 bg-slate-50 px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                <p className="sticky top-0 bg-slate-50 px-3 py-1 text-phx-2xs font-bold uppercase tracking-wider text-slate-400">
                   {line}
                 </p>
                 {items.map((p) => (
@@ -117,7 +117,7 @@ function ProductMultiSelect({
                       onChange={() => toggle(p.code)}
                       type="checkbox"
                     />
-                    <span className="w-14 shrink-0 font-mono text-[11px] text-slate-500">{p.code}</span>
+                    <span className="w-14 shrink-0 font-mono text-phx-xs text-slate-500">{p.code}</span>
                     <span className="text-slate-700">{p.name}</span>
                   </label>
                 ))}
@@ -130,7 +130,7 @@ function ProductMultiSelect({
           {selected.length > 0 && (
             <div className="border-t border-slate-100 px-3 py-1.5">
               <button
-                className="text-[11px] text-red-500 hover:underline"
+                className="text-phx-xs text-red-500 hover:underline"
                 onClick={() => onChange([])}
                 type="button"
               >
@@ -340,7 +340,7 @@ export function ScopeVisibilityManager({ initialData, initialError, initialProdu
         <div className="overflow-x-auto">
           <table className="min-w-full text-sm">
             <thead>
-              <tr className="border-b border-slate-100 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+              <tr className="border-b border-slate-100 text-left text-phx-xs font-semibold uppercase tracking-wider text-slate-400">
                 <th className="pb-2 pr-4">User</th>
                 <th className="pb-2 pr-4">Role</th>
                 <th className="pb-2 pr-4">Line Override</th>
@@ -356,7 +356,7 @@ export function ScopeVisibilityManager({ initialData, initialError, initialProdu
                   <tr key={row.loginId} className="align-top">
                     <td className="py-3 pr-4">
                       <p className="font-medium text-slate-900">{row.displayName ?? row.fullName ?? row.loginId}</p>
-                      <p className="text-[11px] text-slate-400">
+                      <p className="text-phx-xs text-slate-400">
                         {row.loginId}
                         {row.hrId ? ` · ${row.hrId}` : ""}
                       </p>
@@ -372,7 +372,7 @@ export function ScopeVisibilityManager({ initialData, initialError, initialProdu
                             {PRODUCT_LINES.map((line) => (
                               <button
                                 key={line}
-                                className={`rounded border px-2 py-0.5 text-[11px] font-semibold transition ${
+                                className={`rounded border px-2 py-0.5 text-phx-xs font-semibold transition ${
                                   editState.lineNames.includes(line)
                                     ? "border-orange-300 bg-orange-100 text-orange-700"
                                     : "border-slate-200 bg-slate-50 text-slate-500 hover:border-slate-300"
@@ -384,7 +384,7 @@ export function ScopeVisibilityManager({ initialData, initialError, initialProdu
                               </button>
                             ))}
                           </div>
-                          <p className="mt-1 text-[10px] text-slate-400">
+                          <p className="mt-1 text-phx-2xs text-slate-400">
                             Click to toggle. Empty = role default.
                           </p>
                         </td>
@@ -394,7 +394,7 @@ export function ScopeVisibilityManager({ initialData, initialError, initialProdu
                             products={initialProducts}
                             selected={editState.productCodes}
                           />
-                          <p className="mt-1 text-[10px] text-slate-400">Empty = no restriction.</p>
+                          <p className="mt-1 text-phx-2xs text-slate-400">Empty = no restriction.</p>
                         </td>
                         <td className="py-3 pr-4">
                           <select
@@ -441,7 +441,7 @@ export function ScopeVisibilityManager({ initialData, initialError, initialProdu
                             </Button>
                           </div>
                           {saveError ? (
-                            <p className="mt-1 text-[10px] text-red-600">{saveError}</p>
+                            <p className="mt-1 text-phx-2xs text-red-600">{saveError}</p>
                           ) : null}
                         </td>
                       </>
@@ -451,13 +451,13 @@ export function ScopeVisibilityManager({ initialData, initialError, initialProdu
                           {row.lineNames && row.lineNames.length > 0 ? (
                             <div className="flex flex-wrap gap-1">
                               {row.lineNames.map((line) => (
-                                <Badge key={line} className="text-[10px]" variant="neutral">
+                                <Badge key={line} className="text-phx-2xs" variant="neutral">
                                   {line}
                                 </Badge>
                               ))}
                             </div>
                           ) : (
-                            <span className="text-[11px] text-slate-400">role default</span>
+                            <span className="text-phx-xs text-slate-400">role default</span>
                           )}
                         </td>
                         <td className="py-3 pr-4">
@@ -465,25 +465,25 @@ export function ScopeVisibilityManager({ initialData, initialError, initialProdu
                             row.productCodes.length > 0 ? (
                               <div className="flex flex-wrap gap-1">
                                 {row.productCodes.map((code) => (
-                                  <Badge key={code} className="font-mono text-[10px]" variant="neutral">
+                                  <Badge key={code} className="font-mono text-phx-2xs" variant="neutral">
                                     {code}
                                   </Badge>
                                 ))}
                               </div>
                             ) : (
-                              <span className="text-[11px] text-red-500">sees nothing</span>
+                              <span className="text-phx-xs text-red-500">sees nothing</span>
                             )
                           ) : (
-                            <span className="text-[11px] text-slate-400">no restriction</span>
+                            <span className="text-phx-xs text-slate-400">no restriction</span>
                           )}
                         </td>
                         <td className="py-3 pr-4">
                           {row.salesScopeOverride ? (
-                            <Badge className="text-[10px]" variant="warning">
+                            <Badge className="text-phx-2xs" variant="warning">
                               {row.salesScopeOverride}
                             </Badge>
                           ) : (
-                            <span className="text-[11px] text-slate-400">role default</span>
+                            <span className="text-phx-xs text-slate-400">role default</span>
                           )}
                         </td>
                         <td className="py-3">

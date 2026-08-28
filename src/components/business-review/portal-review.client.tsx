@@ -114,7 +114,7 @@ const BAND_TEXT: Record<string, string> = {
 const Band = ({ band }: { band: string }) => (
   <span
     className={cn(
-      "inline-flex whitespace-nowrap rounded border px-1.5 py-0.5 text-[10px] font-black uppercase tracking-[0.08em]",
+      "inline-flex whitespace-nowrap rounded border px-1.5 py-0.5 text-phx-2xs font-black uppercase tracking-[0.08em]",
       BAND_STYLE[band] ?? BAND_STYLE["not-eligible"],
     )}
   >
@@ -124,7 +124,7 @@ const Band = ({ band }: { band: string }) => (
 const Tag = ({ children, tone }: { children: React.ReactNode; tone: "slate" | "rose" }) => (
   <span
     className={cn(
-      "inline-flex whitespace-nowrap rounded border px-1.5 py-0.5 text-[10px] font-black uppercase tracking-[0.08em]",
+      "inline-flex whitespace-nowrap rounded border px-1.5 py-0.5 text-phx-2xs font-black uppercase tracking-[0.08em]",
       tone === "rose" ? "border-rose-200 bg-rose-50 text-rose-700" : "border-slate-200 bg-slate-50 text-slate-500",
     )}
   >
@@ -132,14 +132,14 @@ const Tag = ({ children, tone }: { children: React.ReactNode; tone: "slate" | "r
   </span>
 );
 
-const TH = "whitespace-nowrap px-3 py-2.5 text-[10px] font-black uppercase tracking-[0.12em] text-slate-500";
+const TH = "whitespace-nowrap px-3 py-2.5 text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500";
 const THR = `${TH} text-right`;
 const TD = "whitespace-nowrap px-3 py-2.5 text-sm font-semibold text-slate-800";
 const TDR = `${TD} text-right tabular-nums`;
 const HEAD = "border-b border-slate-200 bg-slate-50/70";
 const ROW = "border-b border-slate-100 last:border-0";
 const FIELD = "rounded border border-slate-100 bg-slate-50 px-2.5 py-2";
-const FIELD_LABEL = "text-[10px] font-black uppercase tracking-[0.12em] text-slate-400";
+const FIELD_LABEL = "text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400";
 
 const TABS = [
   { id: "performance", label: "Performance" },
@@ -248,7 +248,7 @@ export function BusinessReviewPortal({
     <div className={cn(portalSubtlePanelClassName, "space-y-3 p-4")}>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div className="min-w-0">
-          <p className="text-[10px] font-black uppercase tracking-[0.18em] text-orange-600">My scope · read-only</p>
+          <p className="text-phx-2xs font-black uppercase tracking-[0.18em] text-orange-600">My scope · read-only</p>
           <h2 className="mt-1 text-lg font-black tracking-tight text-slate-950 sm:text-xl">{headline}</h2>
           <p className="mt-1 text-sm font-semibold text-slate-500">
             {scopeLabel} · {num(areas.length)} area{areas.length === 1 ? "" : "s"} · ≥90% earns
@@ -953,7 +953,7 @@ export function BusinessReviewPortal({
         </div>
       ) : null}
 
-      <p className="px-1 text-[11px] font-semibold leading-5 text-slate-400">
+      <p className="px-1 text-phx-xs font-semibold leading-5 text-slate-400">
         Territory resolved from the live organogram seat map (snapshot {mapGeneratedAt.slice(0, 10)}). Figures are the
         actuals for {reviewWindow.label} and are not restated when a seat changes hands, so an area shown as vacant for this
         window may have an occupant today.

@@ -22,7 +22,7 @@ export function SelectField({
   children: ReactNode;
 }) {
   return (
-    <label className="flex flex-col text-[11px] font-black uppercase tracking-wide text-slate-500">
+    <label className="flex flex-col text-phx-xs font-black uppercase tracking-wide text-slate-500">
       {label}
       <div className="relative mt-1">
         <select

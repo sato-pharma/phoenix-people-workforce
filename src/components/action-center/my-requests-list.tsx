@@ -80,10 +80,10 @@ export function MyRequestsList({ initialId, initialModule, items }: Props) {
         >
           <div className="min-w-0">
             <div className="mb-1.5 flex flex-wrap items-center gap-1.5">
-              <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500">
+              <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-phx-2xs font-bold uppercase tracking-[0.08em] text-slate-500">
                 {MY_REQUEST_MODULE_LABELS[item.module]}
               </span>
-              <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-bold ${TONE_CLASSES[item.statusTone]}`}>
+              <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-phx-2xs font-bold ${TONE_CLASSES[item.statusTone]}`}>
                 <span className={`h-1 w-1 rounded-full ${TONE_DOTS[item.statusTone]}`} />
                 {item.statusLabel}
               </span>
@@ -97,20 +97,20 @@ export function MyRequestsList({ initialId, initialModule, items }: Props) {
               ))}
             </div>
             {item.decisionNote && (
-              <p className="mt-1.5 rounded-r-md border-l-2 border-slate-300 bg-slate-50 px-2.5 py-1 text-[11px] italic text-slate-600">
+              <p className="mt-1.5 rounded-r-md border-l-2 border-slate-300 bg-slate-50 px-2.5 py-1 text-phx-xs italic text-slate-600">
                 &ldquo;{item.decisionNote}&rdquo;
               </p>
             )}
             {item.href && (
               <a
-                className="mt-2 inline-flex rounded-sm border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-bold text-slate-600 transition hover:bg-slate-50"
+                className="mt-2 inline-flex rounded-sm border border-slate-200 bg-white px-2.5 py-1 text-phx-xs font-bold text-slate-600 transition hover:bg-slate-50"
                 href={item.href}
               >
                 Open request
               </a>
             )}
           </div>
-          <div className="shrink-0 text-[11px] font-medium text-slate-400">
+          <div className="shrink-0 text-phx-xs font-medium text-slate-400">
             {new Date(item.submittedAt).toLocaleDateString("en", { day: "2-digit", month: "short", year: "numeric" })}
           </div>
         </div>

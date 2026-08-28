@@ -40,7 +40,7 @@ export function SortableTh({
   variant = "dark",
   className,
 }: SortableThProps) {
-  const lightBase = "px-4 py-3 text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-soft";
+  const lightBase = "px-4 py-3 text-phx-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft";
   const darkBase = "px-3 py-2";
   const base = variant === "light" ? lightBase : darkBase;
   const alignClass = align === "right" ? "text-right" : "text-left";

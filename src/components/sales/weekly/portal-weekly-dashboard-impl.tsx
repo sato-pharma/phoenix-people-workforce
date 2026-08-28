@@ -258,7 +258,7 @@ export function PortalWeeklyDashboard({ initialData, scope, initialComparison }:
         <div className="flex min-w-0 items-center gap-3">
           <span className="h-9 w-[3px] shrink-0 bg-orange-500" />
           <div className="min-w-0">
-            <p className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">Your scope</p>
+            <p className="text-phx-2xs font-black uppercase tracking-[0.18em] text-slate-400">Your scope</p>
             <p className="whitespace-nowrap text-sm font-black text-slate-900">{scope.scopeSummary}</p>
           </div>
         </div>
@@ -267,14 +267,14 @@ export function PortalWeeklyDashboard({ initialData, scope, initialComparison }:
             type="button"
             onClick={refresh}
             disabled={loading}
-            className="inline-flex items-center gap-1.5 rounded-sm border border-slate-200 bg-white px-2.5 py-1.5 text-[10px] font-black uppercase tracking-wide text-slate-700 transition hover:border-orange-300 hover:text-orange-600 disabled:opacity-50"
+            className="inline-flex items-center gap-1.5 rounded-sm border border-slate-200 bg-white px-2.5 py-1.5 text-phx-2xs font-black uppercase tracking-wide text-slate-700 transition hover:border-orange-300 hover:text-orange-600 disabled:opacity-50"
           >
             <RefreshCw className={`h-3 w-3 ${loading ? "animate-spin" : ""}`} />
             Sync now
           </button>
           {totalDistributors > 0 ? (
             <span
-              className={`hidden items-center gap-1.5 whitespace-nowrap rounded-sm border px-2.5 py-1 text-[10px] font-black uppercase tracking-wide sm:inline-flex ${
+              className={`hidden items-center gap-1.5 whitespace-nowrap rounded-sm border px-2.5 py-1 text-phx-2xs font-black uppercase tracking-wide sm:inline-flex ${
                 allUploaded
                   ? "border-emerald-200 bg-emerald-50 text-emerald-700"
                   : "border-amber-200 bg-amber-50 text-amber-700"
@@ -285,7 +285,7 @@ export function PortalWeeklyDashboard({ initialData, scope, initialComparison }:
             </span>
           ) : null}
           {loading ? (
-            <span className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wide text-orange-600">
+            <span className="flex items-center gap-1.5 text-phx-2xs font-bold uppercase tracking-wide text-orange-600">
               <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-orange-500" />
               Updating
             </span>
@@ -329,13 +329,13 @@ export function PortalWeeklyDashboard({ initialData, scope, initialComparison }:
                 <button
                   type="button"
                   onClick={resetFilters}
-                  className="inline-flex items-center gap-1.5 rounded-sm bg-white/10 px-2.5 py-1 text-[10px] font-black uppercase tracking-wide text-white transition hover:bg-orange-500"
+                  className="inline-flex items-center gap-1.5 rounded-sm bg-white/10 px-2.5 py-1 text-phx-2xs font-black uppercase tracking-wide text-white transition hover:bg-orange-500"
                 >
                   <RotateCcw className="h-3 w-3" />
                   Reset {activeFilterCount}
                 </button>
               ) : (
-                <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">No filters applied</span>
+                <span className="text-phx-2xs font-bold uppercase tracking-widest text-slate-400">No filters applied</span>
               )
             }
           >
@@ -527,7 +527,7 @@ function Section({
       <div className="flex items-center justify-between gap-3 rounded-t-sm border-b border-slate-800 bg-slate-900 px-4 py-2.5">
         <div className="flex items-center gap-2">
           <span className="h-3.5 w-[3px] bg-orange-500" />
-          <h2 className="whitespace-nowrap text-[10px] font-black uppercase tracking-[0.18em] text-slate-200">{title}</h2>
+          <h2 className="whitespace-nowrap text-phx-2xs font-black uppercase tracking-[0.18em] text-slate-200">{title}</h2>
         </div>
         {action ?? <span className="h-1.5 w-10 bg-orange-500/80" />}
       </div>
@@ -561,9 +561,9 @@ function StatTile({
           </span>
           {delta != null ? <DeltaPill delta={delta} /> : null}
         </div>
-        <p className="mt-2.5 whitespace-nowrap text-[10px] font-black uppercase tracking-[0.12em] text-slate-400">{label}</p>
+        <p className="mt-2.5 whitespace-nowrap text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400">{label}</p>
         <p className="mt-0.5 whitespace-nowrap text-lg font-black tabular-nums tracking-tight text-slate-900 sm:text-xl">{value}</p>
-        {sub ? <p className="mt-0.5 whitespace-nowrap text-[10px] font-semibold text-slate-400">{sub}</p> : null}
+        {sub ? <p className="mt-0.5 whitespace-nowrap text-phx-2xs font-semibold text-slate-400">{sub}</p> : null}
       </div>
     </div>
   );
@@ -574,7 +574,7 @@ function DeltaPill({ delta }: { delta: number }) {
   const Icon = up ? ArrowUpRight : ArrowDownRight;
   return (
     <span
-      className={`inline-flex items-center gap-0.5 rounded-sm px-1.5 py-0.5 text-[10px] font-black tabular-nums ${
+      className={`inline-flex items-center gap-0.5 rounded-sm px-1.5 py-0.5 text-phx-2xs font-black tabular-nums ${
         up ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700"
       }`}
     >
@@ -610,7 +610,7 @@ function MoverList({ title, tone, movers }: { title: string; tone: "up" | "down"
   if (movers.length === 0) return null;
   return (
     <div className="rounded-sm border border-slate-200 bg-white p-3">
-      <p className="mb-2 flex items-center gap-1.5 text-[10px] font-black uppercase tracking-[0.14em] text-slate-400">
+      <p className="mb-2 flex items-center gap-1.5 text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-400">
         {tone === "up" ? <ArrowUpRight className="h-3 w-3 text-emerald-600" /> : <ArrowDownRight className="h-3 w-3 text-rose-600" />}
         {title} · vs last month
       </p>
@@ -619,7 +619,7 @@ function MoverList({ title, tone, movers }: { title: string; tone: "up" | "down"
           <div key={mover.code} className="flex items-center justify-between gap-3">
             <span className="whitespace-nowrap text-xs font-bold text-slate-800">{mover.label}</span>
             <span className="flex shrink-0 items-center gap-2">
-              <span className="whitespace-nowrap text-[11px] tabular-nums text-slate-500">{formatEgp(mover.value)}</span>
+              <span className="whitespace-nowrap text-phx-xs tabular-nums text-slate-500">{formatEgp(mover.value)}</span>
               <DeltaPill delta={mover.deltaPct} />
             </span>
           </div>
@@ -645,7 +645,7 @@ function PremiumTooltip({
   const title = label ?? payload[0]?.payload?.label ?? payload[0]?.name ?? "";
   return (
     <div className="rounded-sm border border-slate-700 bg-slate-900 px-3 py-2 shadow-xl">
-      {title ? <p className="mb-0.5 text-[10px] font-black uppercase tracking-wide text-slate-400">{title}</p> : null}
+      {title ? <p className="mb-0.5 text-phx-2xs font-black uppercase tracking-wide text-slate-400">{title}</p> : null}
       {payload.map((entry, index) => (
         <p key={index} className="whitespace-nowrap text-xs font-black tabular-nums text-white">
           {valueOnly ? "" : `${entry.name}: `}
@@ -893,7 +893,7 @@ function WeeklyDetailSection({
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 bg-slate-900 px-4 py-2.5">
         <div className="flex items-center gap-2">
           <span className="h-3.5 w-[3px] bg-orange-500" />
-          <h2 className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-200">Breakdown</h2>
+          <h2 className="text-phx-2xs font-black uppercase tracking-[0.18em] text-slate-200">Breakdown</h2>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <div className="flex overflow-hidden rounded-sm border border-slate-700">
@@ -902,7 +902,7 @@ function WeeklyDetailSection({
                 key={tab.key}
                 type="button"
                 onClick={() => onViewChange(tab.key)}
-                className={`whitespace-nowrap px-2.5 py-1 text-[10px] font-black uppercase tracking-wide transition ${
+                className={`whitespace-nowrap px-2.5 py-1 text-phx-2xs font-black uppercase tracking-wide transition ${
                   view === tab.key ? "bg-orange-500 text-white" : "bg-slate-800 text-slate-300 hover:text-white"
                 }`}
               >
@@ -912,7 +912,7 @@ function WeeklyDetailSection({
           </div>
           <a
             href={`/api/employee-portals/weekly-sales/export?${exportQuery}`}
-            className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-slate-600 bg-white px-2.5 text-[10px] font-black uppercase tracking-wide text-slate-900 transition hover:border-orange-400 hover:text-orange-600"
+            className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-slate-600 bg-white px-2.5 text-phx-2xs font-black uppercase tracking-wide text-slate-900 transition hover:border-orange-400 hover:text-orange-600"
           >
             <Download className="h-3 w-3" />
             Export
@@ -927,7 +927,7 @@ function WeeklyDetailSection({
           <div className="hidden overflow-x-auto md:block">
             <table className="w-full text-left text-sm">
               <thead>
-                <tr className="border-b border-slate-200 bg-slate-50 text-[10px] uppercase tracking-[0.12em] text-slate-500">
+                <tr className="border-b border-slate-200 bg-slate-50 text-phx-2xs uppercase tracking-[0.12em] text-slate-500">
                   <th className="px-4 py-2.5 font-black">{viewLabel(view)}</th>
                   <th className="px-4 py-2.5 text-right font-black">Value</th>
                   <th className="px-4 py-2.5 text-right font-black">Units</th>
@@ -948,7 +948,7 @@ function WeeklyDetailSection({
                             background: "linear-gradient(90deg, #EA580C 0%, rgba(249,115,22,0.45) 62%, rgba(249,115,22,0.06) 100%)",
                           }}
                         />
-                        <span className="relative z-10 whitespace-nowrap pr-2 text-right text-[13px] font-black tabular-nums text-slate-900">
+                        <span className="relative z-10 whitespace-nowrap pr-2 text-right text-phx-md font-black tabular-nums text-slate-900">
                           {formatEgpFull(row.value)}
                         </span>
                       </div>
@@ -957,7 +957,7 @@ function WeeklyDetailSection({
                     <td className="whitespace-nowrap px-4 py-2.5 text-right tabular-nums font-semibold text-slate-600">{formatPct(row.share)}</td>
                     {showDelta ? (
                       <td className="whitespace-nowrap px-4 py-2.5 text-right">
-                        {row.deltaPct != null ? <DeltaPill delta={row.deltaPct} /> : <span className="text-[11px] text-slate-300">—</span>}
+                        {row.deltaPct != null ? <DeltaPill delta={row.deltaPct} /> : <span className="text-phx-xs text-slate-300">—</span>}
                       </td>
                     ) : null}
                   </tr>
@@ -992,7 +992,7 @@ function WeeklyDetailSection({
 function CardStat({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-sm border border-slate-100 bg-slate-50 px-2 py-1.5">
-      <p className="whitespace-nowrap text-[9px] font-black uppercase tracking-wide text-slate-400">{label}</p>
+      <p className="whitespace-nowrap text-phx-3xs font-black uppercase tracking-wide text-slate-400">{label}</p>
       <p className="whitespace-nowrap text-xs font-black tabular-nums text-slate-900">{value}</p>
     </div>
   );
@@ -1027,19 +1027,19 @@ function CompletenessTracker({ data }: { data: WeeklyDashboard }) {
       <div className="space-y-2 md:hidden">
         {data.distributors.map((dist) => (
           <div className="border border-slate-100 bg-white px-3 py-2.5" key={`m-${dist.code}`}>
-            <p className="text-[13px] font-semibold text-slate-800">{dist.name}</p>
+            <p className="text-phx-md font-semibold text-slate-800">{dist.name}</p>
             <div className="mt-2 space-y-1.5">
               {months.map((m) => {
                 const done = weeks.filter((w) => uploadedKeys.has(`${dist.code}-${m}-${w}`)).length;
                 return (
                   <div className="flex items-center justify-between gap-2" key={`m-${dist.code}-${m}`}>
-                    <span className="text-[11px] font-medium text-slate-500">{formatCycleMonth(m).slice(0, 3)}</span>
+                    <span className="text-phx-xs font-medium text-slate-500">{formatCycleMonth(m).slice(0, 3)}</span>
                     <div className="flex items-center gap-1">
                       {weeks.map((w) => {
                         const uploaded = uploadedKeys.has(`${dist.code}-${m}-${w}`);
                         return (
                           <span
-                            className={`inline-flex h-5 w-5 items-center justify-center rounded-sm text-[10px] font-black ${
+                            className={`inline-flex h-5 w-5 items-center justify-center rounded-sm text-phx-2xs font-black ${
                               uploaded ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-400"
                             }`}
                             key={w}
@@ -1049,7 +1049,7 @@ function CompletenessTracker({ data }: { data: WeeklyDashboard }) {
                           </span>
                         );
                       })}
-                      <span className="ml-1 text-[11px] font-bold text-slate-600 tabular-nums">{done}/4</span>
+                      <span className="ml-1 text-phx-xs font-bold text-slate-600 tabular-nums">{done}/4</span>
                     </div>
                   </div>
                 );
@@ -1063,7 +1063,7 @@ function CompletenessTracker({ data }: { data: WeeklyDashboard }) {
       <div className="hidden overflow-x-auto md:block">
         <table className="w-full text-left text-sm">
           <thead>
-            <tr className="border-b border-slate-200 text-[10px] uppercase tracking-wide text-slate-500">
+            <tr className="border-b border-slate-200 text-phx-2xs uppercase tracking-wide text-slate-500">
               <th className="whitespace-nowrap px-3 py-2 font-black">Distributor</th>
               {months.map((m) =>
                 weeks.map((w) => (
@@ -1085,7 +1085,7 @@ function CompletenessTracker({ data }: { data: WeeklyDashboard }) {
                     return (
                       <td key={key} className="px-2 py-2 text-center">
                         <span
-                          className={`inline-flex h-5 w-5 items-center justify-center rounded-sm text-[10px] font-black ${
+                          className={`inline-flex h-5 w-5 items-center justify-center rounded-sm text-phx-2xs font-black ${
                             uploaded ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-400"
                           }`}
                           title={uploaded ? "Uploaded" : "Pending"}
@@ -1101,7 +1101,7 @@ function CompletenessTracker({ data }: { data: WeeklyDashboard }) {
           </tbody>
         </table>
       </div>
-      <p className="mt-3 text-[11px] font-semibold text-slate-400">
+      <p className="mt-3 text-phx-xs font-semibold text-slate-400">
         Advisory only — based on validated batches. Green = uploaded; gray = not yet uploaded for that period.
       </p>
     </Section>

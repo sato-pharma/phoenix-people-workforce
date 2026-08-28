@@ -151,15 +151,15 @@ export function DeductionsPortalWorkspace({
     <div className="space-y-4">
       <div className="grid gap-3 sm:grid-cols-3">
         <Card className="rounded border border-slate-200 bg-white p-4 shadow-sm">
-          <p className="text-[11px] font-black uppercase tracking-[0.14em] text-slate-400">Rows</p>
+          <p className="text-phx-xs font-black uppercase tracking-[0.14em] text-slate-400">Rows</p>
           <p className="mt-2 text-2xl font-black text-slate-950">{formatNumber(totals.count)}</p>
         </Card>
         <Card className="rounded border border-slate-200 bg-white p-4 shadow-sm">
-          <p className="text-[11px] font-black uppercase tracking-[0.14em] text-slate-400">Applied Days</p>
+          <p className="text-phx-xs font-black uppercase tracking-[0.14em] text-slate-400">Applied Days</p>
           <p className="mt-2 text-2xl font-black text-slate-950">{formatNumber(totals.days)}</p>
         </Card>
         <Card className="rounded border border-slate-200 bg-white p-4 shadow-sm">
-          <p className="text-[11px] font-black uppercase tracking-[0.14em] text-slate-400">Applied Amount</p>
+          <p className="text-phx-xs font-black uppercase tracking-[0.14em] text-slate-400">Applied Amount</p>
           <p className="mt-2 text-2xl font-black text-slate-950">{formatMoney(totals.amount)}</p>
         </Card>
       </div>
@@ -222,7 +222,7 @@ export function DeductionsPortalWorkspace({
                       {candidateComments.map((comment) => (
                         <div className="rounded border border-slate-100 bg-slate-50 p-3 text-sm" key={comment.id}>
                           <p className="text-slate-700">{comment.body}</p>
-                          <p className="mt-1 text-[11px] font-semibold text-slate-400">
+                          <p className="mt-1 text-phx-xs font-semibold text-slate-400">
                             {formatDate(comment.createdAt)}
                           </p>
                         </div>

@@ -36,7 +36,7 @@ export function ManagerOutstationReview({
       <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-[0_1px_3px_rgba(15,23,42,0.08)] sm:p-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="min-w-0">
-            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+            <p className="text-phx-2xs font-bold uppercase tracking-wider text-slate-500">
               {submission.employeeName} · {submission.employeeHrId}
             </p>
             <h2 className="mt-1 text-lg font-black text-slate-900">{submission.destination}</h2>
@@ -103,14 +103,14 @@ export function ManagerOutstationReview({
               />
               <div className="min-w-0">
                 <p className="text-sm font-bold text-slate-900">{stage.label}</p>
-                <p className="text-[13px] text-slate-500">{stage.detail}</p>
+                <p className="text-phx-md text-slate-500">{stage.detail}</p>
               </div>
             </li>
           ))}
         </ol>
       </section>
 
-      <p className="rounded-md border border-slate-200 bg-slate-50 p-3 text-[13px] text-slate-500">
+      <p className="rounded-md border border-slate-200 bg-slate-50 p-3 text-phx-md text-slate-500">
         Read-only summary. Outstation claims auto-approve on submission — only a Super Admin can
         review, approve, or reject one afterward in the Expense Command Center.
       </p>

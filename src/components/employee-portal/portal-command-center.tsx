@@ -46,7 +46,7 @@ export function SectionShell({ title, children }: { title: string; children: Rea
   return (
     <div className="overflow-hidden border border-slate-200 bg-white">
       <div className="flex items-center justify-between border-b border-slate-800 bg-slate-900 px-4 py-2.5 sm:px-5 sm:py-3">
-        <h2 className="text-[10px] font-bold uppercase tracking-widest text-slate-300">{title}</h2>
+        <h2 className="text-phx-2xs font-bold uppercase tracking-widest text-slate-300">{title}</h2>
         <div className="h-1.5 w-12 bg-orange-500" />
       </div>
       <div className="bg-white p-3 sm:p-5">{children}</div>
@@ -70,7 +70,7 @@ function StatTile({
       </div>
       <div className="px-3 py-3 sm:px-4 sm:py-4">
         <p className="break-words text-xl font-bold text-slate-900 sm:text-2xl">{headline}</p>
-        <p className="mt-1 text-[10px] font-semibold uppercase tracking-widest text-slate-400">{sub}</p>
+        <p className="mt-1 text-phx-2xs font-semibold uppercase tracking-widest text-slate-400">{sub}</p>
       </div>
     </div>
   );
@@ -95,7 +95,7 @@ export function PremiumNavTile({
       className="group relative flex min-h-[52px] bg-white transition-colors hover:bg-orange-50 active:bg-orange-100 sm:min-h-[72px]"
     >
       {badge != null && badge > 0 && (
-        <span className="absolute right-2 top-2 flex h-5 min-w-[20px] items-center justify-center bg-orange-500 px-1 text-[9px] font-black text-white">
+        <span className="absolute right-2 top-2 flex h-5 min-w-[20px] items-center justify-center bg-orange-500 px-1 text-phx-3xs font-black text-white">
           {badge}
         </span>
       )}
@@ -105,7 +105,7 @@ export function PremiumNavTile({
           <Icon className="h-4 w-4 sm:h-[18px] sm:w-[18px]" />
         </div>
         <div className="min-w-0 flex-1">
-          <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500 transition-colors group-hover:text-orange-600">
+          <p className="text-phx-2xs font-bold uppercase tracking-[0.12em] text-slate-500 transition-colors group-hover:text-orange-600">
             {label}
           </p>
           <p className="mt-0.5 hidden text-sm font-semibold leading-snug text-slate-800 sm:block">{description}</p>
@@ -137,7 +137,7 @@ export function MarketingToolRow({
       </div>
       <div className="min-w-0 flex-1">
         <p className="text-sm font-semibold text-slate-900">{label}</p>
-        <p className="text-[11px] leading-snug text-slate-500">{sub}</p>
+        <p className="text-phx-xs leading-snug text-slate-500">{sub}</p>
       </div>
       <ArrowRight className="h-4 w-4 shrink-0 text-slate-400 transition-colors group-hover:text-orange-500" />
     </Link>
@@ -225,7 +225,7 @@ function IntelField({
     <div className={`flex min-w-0 flex-col gap-1 px-4 py-3 sm:px-7 sm:py-4 ${className}`}>
       <div className="flex items-center gap-1.5">
         <Icon className="h-3 w-3 shrink-0 text-[#f47b20]" />
-        <span className="text-[9px] font-black uppercase tracking-[0.18em] text-slate-500">{label}</span>
+        <span className="text-phx-3xs font-black uppercase tracking-[0.18em] text-slate-500">{label}</span>
       </div>
       <span className="whitespace-nowrap text-sm font-black text-white sm:text-base">{value}</span>
     </div>
@@ -280,7 +280,7 @@ export function PortalContextBar({ role, context }: { role: string; context: str
     <div className="flex items-center gap-3 border border-orange-200 bg-orange-50 px-4 py-3 sm:px-5 sm:py-3.5">
       <Layers className="h-4 w-4 shrink-0 text-orange-600" />
       <div className="min-w-0">
-        <p className="text-[10px] font-bold uppercase tracking-widest text-orange-500">{role}</p>
+        <p className="text-phx-2xs font-bold uppercase tracking-widest text-orange-500">{role}</p>
         <p className="whitespace-nowrap font-bold text-slate-900">{context}</p>
       </div>
     </div>
@@ -339,7 +339,7 @@ export function QuickActions({ actions }: { actions: QuickAction[] }) {
         <Link
           key={i}
           href={action.href}
-          className="flex min-h-[48px] min-w-0 items-center justify-center gap-2 border border-slate-200 bg-white px-3 py-3 text-xs font-bold uppercase tracking-wide text-slate-700 transition hover:border-orange-300 hover:bg-orange-50 hover:text-orange-700 sm:inline-flex sm:min-h-0 sm:px-4 sm:py-2.5 sm:text-[11px]"
+          className="flex min-h-[48px] min-w-0 items-center justify-center gap-2 border border-slate-200 bg-white px-3 py-3 text-xs font-bold uppercase tracking-wide text-slate-700 transition hover:border-orange-300 hover:bg-orange-50 hover:text-orange-700 sm:inline-flex sm:min-h-0 sm:px-4 sm:py-2.5 sm:text-phx-xs"
         >
           <action.icon className="h-4 w-4 shrink-0 sm:h-3.5 sm:w-3.5" />
           <span className="text-center leading-tight whitespace-normal sm:whitespace-nowrap">{action.label}</span>
@@ -359,7 +359,7 @@ export function SectionHead({ title, right }: { title: string; right?: React.Rea
       <div className="relative flex items-center justify-between px-4 py-2.5 sm:px-5 sm:py-3">
         <div className="flex items-center gap-2.5">
           <span className="h-4 w-[3px] bg-[#f47b20]" />
-          <h2 className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-300">{title}</h2>
+          <h2 className="text-phx-2xs font-black uppercase tracking-[0.18em] text-slate-300">{title}</h2>
         </div>
         {right}
       </div>
@@ -388,7 +388,7 @@ export function KeycardGrid({ cards }: { cards: Keycard[] }) {
             <span className="flex h-7 w-7 shrink-0 items-center justify-center bg-slate-900 text-white">
               <card.icon className="h-3.5 w-3.5" />
             </span>
-            <p className="truncate text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">{card.label}</p>
+            <p className="truncate text-phx-2xs font-bold uppercase tracking-[0.12em] text-slate-400">{card.label}</p>
           </div>
           {/* Values are computed (egpCompact, percentages) and can run long — wrap instead of the
               fixed-width nowrap this used to have, which let the grid's minmax(0,1fr) columns
@@ -396,7 +396,7 @@ export function KeycardGrid({ cards }: { cards: Keycard[] }) {
           <p className={`mt-3 break-words text-xl font-black leading-tight tabular-nums sm:text-2xl ${card.valueClass}`}>
             {card.value}
           </p>
-          <p className="truncate text-[11px] font-medium text-slate-500">{card.sub}</p>
+          <p className="truncate text-phx-xs font-medium text-slate-500">{card.sub}</p>
         </div>
       ))}
     </div>
@@ -478,7 +478,7 @@ export function RankingPanel({
     <div className="overflow-hidden border border-slate-200 bg-white">
       <SectionHead
         title={title}
-        right={<span className="whitespace-nowrap text-[10px] font-bold uppercase tracking-widest text-slate-400">{subtitle}</span>}
+        right={<span className="whitespace-nowrap text-phx-2xs font-bold uppercase tracking-widest text-slate-400">{subtitle}</span>}
       />
       {ranked.length === 0 ? (
         <p className="bg-white px-5 py-6 text-sm text-slate-500">No sales data synced for the current period yet.</p>
@@ -494,7 +494,7 @@ export function RankingPanel({
                 key={row.hrId || `${row.name}-${i}`}
                 className="flex items-center gap-3 border-b border-slate-100 px-3 py-2.5 last:border-b-0 sm:px-4"
               >
-                <span className={`flex h-6 w-6 shrink-0 items-center justify-center text-[11px] font-black ${rankChipClass(i)}`}>
+                <span className={`flex h-6 w-6 shrink-0 items-center justify-center text-phx-xs font-black ${rankChipClass(i)}`}>
                   {i + 1}
                 </span>
                 <div className="flex min-w-0 flex-1 items-center gap-2">
@@ -503,7 +503,7 @@ export function RankingPanel({
                     <p className="truncate text-sm font-semibold text-slate-800" title={row.name}>{row.name}</p>
                     {showManager && row.managerName ? (
                       <p
-                        className="truncate text-[10px] font-medium uppercase tracking-wide text-slate-400"
+                        className="truncate text-phx-2xs font-medium uppercase tracking-wide text-slate-400"
                         title={row.managerName}
                       >
                         {row.managerName}
@@ -520,7 +520,7 @@ export function RankingPanel({
                       </div>
                     </>
                   ) : (
-                    <p className="whitespace-nowrap text-right text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                    <p className="whitespace-nowrap text-right text-phx-2xs font-bold uppercase tracking-wide text-slate-400">
                       No target
                     </p>
                   )}
@@ -548,7 +548,7 @@ export function ActionStrip({ items }: { items: readonly ActionStripItem[] }) {
           className="group flex flex-col items-center justify-center gap-1 bg-white px-2 py-3 transition-colors hover:bg-orange-50 sm:flex-row sm:gap-2"
         >
           <a.icon className="h-4 w-4 shrink-0 text-orange-600" />
-          <span className="whitespace-nowrap text-[11px] font-bold uppercase tracking-wide text-slate-700 transition-colors group-hover:text-orange-700 sm:text-xs">
+          <span className="whitespace-nowrap text-phx-xs font-bold uppercase tracking-wide text-slate-700 transition-colors group-hover:text-orange-700 sm:text-xs">
             {a.label}
           </span>
         </Link>
@@ -761,9 +761,9 @@ function MedicalRepCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot })
             <>
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-3">
-                  <p className="text-[10px] font-bold uppercase text-slate-400">{thisMonth} | Field Achievement</p>
+                  <p className="text-phx-2xs font-bold uppercase text-slate-400">{thisMonth} | Field Achievement</p>
                   {achStatus && (
-                    <span className={`inline-flex items-center border px-2.5 py-0.5 text-[10px] font-bold uppercase ${achStatus.cls}`}>
+                    <span className={`inline-flex items-center border px-2.5 py-0.5 text-phx-2xs font-bold uppercase ${achStatus.cls}`}>
                       {achStatus.label}
                     </span>
                   )}
@@ -793,15 +793,15 @@ function MedicalRepCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot })
                 </div>
                 <div className="mt-3 grid grid-cols-2 gap-2 text-sm sm:max-w-xl sm:grid-cols-3">
                   <div className="border border-white/10 bg-white/5 px-3 py-2">
-                    <p className="text-[10px] font-bold uppercase text-slate-500">Sold</p>
+                    <p className="text-phx-2xs font-bold uppercase text-slate-500">Sold</p>
                     <p className="mt-1 font-black text-white">{egp(ach.salesValue)}</p>
                   </div>
                   <div className="border border-white/10 bg-white/5 px-3 py-2">
-                    <p className="text-[10px] font-bold uppercase text-slate-500">Target</p>
+                    <p className="text-phx-2xs font-bold uppercase text-slate-500">Target</p>
                     <p className="mt-1 font-black text-white">{egp(ach.targetValue)}</p>
                   </div>
                   <div className="col-span-2 border border-white/10 bg-white/5 px-3 py-2 sm:col-span-1">
-                    <p className="text-[10px] font-bold uppercase text-slate-500">Status</p>
+                    <p className="text-phx-2xs font-bold uppercase text-slate-500">Status</p>
                     <p className="mt-1 font-black text-white">{achStatus?.label ?? "Ready"}</p>
                   </div>
                 </div>
@@ -809,7 +809,7 @@ function MedicalRepCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot })
 
               <div className="flex flex-col justify-between border border-orange-500/30 bg-orange-500/10 p-4">
                 <div>
-                  <p className="text-[10px] font-bold uppercase text-orange-300">Next field move</p>
+                  <p className="text-phx-2xs font-bold uppercase text-orange-300">Next field move</p>
                   <p className="mt-2 text-lg font-black leading-snug text-white">
                     {pct >= 100 ? "Protect the over-target month." : pct >= 90 ? "Close the final target gap." : "Push the next high-value visit."}
                   </p>
@@ -819,7 +819,7 @@ function MedicalRepCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot })
                 </div>
                 <Link
                   href="/employee-portals/source-of-sales"
-                  className="mt-5 inline-flex items-center justify-center gap-2 border border-orange-400 bg-orange-500 px-4 py-2.5 text-[11px] font-black uppercase text-white transition hover:bg-orange-600"
+                  className="mt-5 inline-flex items-center justify-center gap-2 border border-orange-400 bg-orange-500 px-4 py-2.5 text-phx-xs font-black uppercase text-white transition hover:bg-orange-600"
                 >
                   Open sales dashboard <ArrowRight className="h-3.5 w-3.5" />
                 </Link>
@@ -832,7 +832,7 @@ function MedicalRepCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot })
                   <TrendingUp className="h-8 w-8 text-orange-400" />
                 </div>
                 <div className="min-w-0 flex-1">
-                  <p className="text-[10px] font-bold uppercase text-slate-400">{thisMonth} | Field Achievement</p>
+                  <p className="text-phx-2xs font-bold uppercase text-slate-400">{thisMonth} | Field Achievement</p>
                   <p className="mt-2 text-2xl font-black text-white">Sales upload pending</p>
                   <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-400">
                     Your monthly achievement will appear here once the current sales upload is available.
@@ -842,7 +842,7 @@ function MedicalRepCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot })
               <div className="flex items-end justify-start lg:justify-end">
                 <Link
                   href="/employee-portals/source-of-sales"
-                  className="inline-flex items-center justify-center gap-2 border border-orange-400 bg-orange-500 px-4 py-2.5 text-[11px] font-black uppercase text-white transition hover:bg-orange-600"
+                  className="inline-flex items-center justify-center gap-2 border border-orange-400 bg-orange-500 px-4 py-2.5 text-phx-xs font-black uppercase text-white transition hover:bg-orange-600"
                 >
                   View dashboard <ArrowRight className="h-3.5 w-3.5" />
                 </Link>
@@ -859,14 +859,14 @@ function MedicalRepCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot })
             <div className="border border-slate-200 bg-slate-50 p-3 sm:p-4">
               <div className="flex items-center gap-2">
                 <Target className="h-3.5 w-3.5 text-slate-400" />
-                <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Month Pace</p>
+                <p className="text-phx-2xs font-bold uppercase tracking-widest text-slate-400">Month Pace</p>
               </div>
               {pacingPct !== null ? (
                 <>
                   <p className={`mt-2 text-2xl font-black tabular-nums ${pacingPct >= 100 ? "text-emerald-600" : pacingPct >= 90 ? "text-amber-600" : "text-orange-500"}`}>
                     {pacingPct}%
                   </p>
-                  <p className="mt-0.5 text-[10px] font-semibold text-slate-400">projected end-of-month</p>
+                  <p className="mt-0.5 text-phx-2xs font-semibold text-slate-400">projected end-of-month</p>
                   {pacingVsActual !== null && (
                     <p className={`mt-1.5 text-xs font-bold ${pacingVsActual >= 0 ? "text-emerald-600" : "text-rose-500"}`}>
                       {pacingVsActual >= 0 ? `+${pacingVsActual}%` : `${pacingVsActual}%`} vs current
@@ -882,7 +882,7 @@ function MedicalRepCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot })
             <div className="border border-slate-200 bg-slate-50 p-3 sm:p-4">
               <div className="flex items-center gap-2">
                 <BarChart3 className="h-3.5 w-3.5 text-slate-400" />
-                <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Trend (4 Mo.)</p>
+                <p className="text-phx-2xs font-bold uppercase tracking-widest text-slate-400">Trend (4 Mo.)</p>
               </div>
               {monthlySalesTrend && monthlySalesTrend.length > 0 ? (
                 <div className="mt-3 flex items-end gap-1.5" style={{ height: 64 }}>
@@ -896,12 +896,12 @@ function MedicalRepCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot })
                     const mo = new Date(m.year, m.month - 1).toLocaleString("en-US", { month: "short" });
                     return (
                       <div key={`${m.year}-${m.month}`} className="flex flex-1 flex-col items-center justify-end gap-0.5">
-                        <p className="text-[9px] font-bold tabular-nums text-slate-500">{hasTarget ? `${m.achievementPercent}%` : "—"}</p>
+                        <p className="text-phx-3xs font-bold tabular-nums text-slate-500">{hasTarget ? `${m.achievementPercent}%` : "—"}</p>
                         <div
                           className={`w-full ${hasTarget ? bColor : "bg-slate-200"}`}
                           style={{ height: hasTarget ? `${barH}%` : "5%", minHeight: 4 }}
                         />
-                        <p className="text-[9px] font-semibold text-slate-400">{mo}</p>
+                        <p className="text-phx-3xs font-semibold text-slate-400">{mo}</p>
                       </div>
                     );
                   })}
@@ -915,21 +915,21 @@ function MedicalRepCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot })
             <div className="border border-slate-200 bg-slate-50 p-3 sm:p-4">
               <div className="flex items-center gap-2">
                 <Users className="h-3.5 w-3.5 text-slate-400" />
-                <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Double Visits</p>
+                <p className="text-phx-2xs font-bold uppercase tracking-widest text-slate-400">Double Visits</p>
               </div>
               {doubleVisitPulse ? (
                 <>
                   <div className="mt-2 grid grid-cols-2 gap-1.5">
                     <div>
                       <p className="text-xl font-black tabular-nums text-slate-900">{doubleVisitPulse.dvsThisMonth}</p>
-                      <p className="text-[9px] font-semibold uppercase text-slate-400">this month</p>
+                      <p className="text-phx-3xs font-semibold uppercase text-slate-400">this month</p>
                     </div>
                     <div>
                       <p className="text-xl font-black tabular-nums text-slate-900">{doubleVisitPulse.dvsLast90Days}</p>
-                      <p className="text-[9px] font-semibold uppercase text-slate-400">last 90 days</p>
+                      <p className="text-phx-3xs font-semibold uppercase text-slate-400">last 90 days</p>
                     </div>
                   </div>
-                  <p className="mt-2 text-[10px] font-semibold text-slate-400">
+                  <p className="mt-2 text-phx-2xs font-semibold text-slate-400">
                     {doubleVisitPulse.daysSinceLastDv === null
                       ? "No visits recorded"
                       : doubleVisitPulse.daysSinceLastDv === 0
@@ -958,7 +958,7 @@ function MedicalRepCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot })
               <p className="text-2xl font-bold text-slate-900">
                 {leaveEntitlementDays != null ? `${leaveEntitlementDays} days` : "-"}
               </p>
-              <p className="mt-1 text-[10px] font-semibold uppercase tracking-widest text-slate-400">annual leave entitlement</p>
+              <p className="mt-1 text-phx-2xs font-semibold uppercase tracking-widest text-slate-400">annual leave entitlement</p>
             </div>
           </Link>
 
@@ -971,7 +971,7 @@ function MedicalRepCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot })
                 <p className={`text-xl font-bold tracking-tight sm:text-2xl ${renewalUrgent ? "text-rose-700" : renewalWarning ? "text-amber-700" : "text-slate-900"}`}>
                   {daysUntilRenewal} days
                 </p>
-                <p className={`mt-1 text-[10px] font-semibold uppercase tracking-widest ${renewalUrgent ? "text-rose-400" : renewalWarning ? "text-amber-400" : "text-slate-400"}`}>
+                <p className={`mt-1 text-phx-2xs font-semibold uppercase tracking-widest ${renewalUrgent ? "text-rose-400" : renewalWarning ? "text-amber-400" : "text-slate-400"}`}>
                   until contract renewal
                 </p>
               </div>
@@ -983,7 +983,7 @@ function MedicalRepCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot })
               </div>
               <div className="bg-amber-50 px-3 py-3 sm:px-4 sm:py-4">
                 <p className="text-xl font-bold tracking-tight text-amber-700 sm:text-2xl">On Probation</p>
-                <p className="mt-1 text-[10px] font-semibold uppercase tracking-widest text-amber-400">
+                <p className="mt-1 text-phx-2xs font-semibold uppercase tracking-widest text-amber-400">
                   {serviceDuration || "in progress"}
                 </p>
               </div>
@@ -1000,7 +1000,7 @@ function MedicalRepCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot })
 
       <div className="overflow-hidden border border-slate-200">
         <div className="bg-slate-900 px-4 py-2.5 sm:px-5 sm:py-3">
-          <h2 className="text-[10px] font-bold uppercase tracking-widest text-slate-300">My Tools</h2>
+          <h2 className="text-phx-2xs font-bold uppercase tracking-widest text-slate-300">My Tools</h2>
         </div>
         <div className="grid grid-cols-2 gap-px bg-slate-200">
           <PremiumNavTile href="/employee-portals/coaching" icon={ClipboardCheck} label="My Coaching" description="View and track coaching reports" />
@@ -1104,7 +1104,7 @@ function StandardCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot }) {
       {ach && pct !== null && (
         <div className="overflow-hidden border border-slate-200">
           <div className="bg-slate-900 px-5 py-3">
-            <h2 className="text-[10px] font-bold uppercase tracking-widest text-slate-300">
+            <h2 className="text-phx-2xs font-bold uppercase tracking-widest text-slate-300">
               This Month | Achievement
             </h2>
           </div>
@@ -1129,7 +1129,7 @@ function StandardCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot }) {
 
       <div className="overflow-hidden border border-slate-200">
         <div className="flex items-center justify-between bg-slate-900 px-5 py-3">
-          <h2 className="text-[10px] font-bold uppercase tracking-widest text-slate-300">My Workspace</h2>
+          <h2 className="text-phx-2xs font-bold uppercase tracking-widest text-slate-300">My Workspace</h2>
           <div className="h-1.5 w-12 bg-orange-500" />
         </div>
         <div className="grid grid-cols-1 gap-px bg-slate-200 sm:grid-cols-2">

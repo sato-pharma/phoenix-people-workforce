@@ -53,7 +53,7 @@ const fieldInputClass = "h-9 border border-phx-line px-2 text-sm text-phx-ink ou
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <label className="flex flex-col gap-1">
-      <span className="text-[10px] font-black uppercase tracking-[0.12em] text-phx-ink-faint">{label}</span>
+      <span className="text-phx-2xs font-black uppercase tracking-[0.12em] text-phx-ink-faint">{label}</span>
       {children}
     </label>
   );
@@ -578,7 +578,7 @@ function MasterTab({
                               </Button>
                             </div>
                             {isRelocatingEdit ? (
-                              <p className="max-w-[220px] text-[10px] font-semibold leading-tight text-phx-ink-faint">
+                              <p className="max-w-[220px] text-phx-2xs font-semibold leading-tight text-phx-ink-faint">
                                 Creates a new brick ID in the target block and deactivates this one.
                               </p>
                             ) : null}
@@ -650,7 +650,7 @@ function ResultStat({ label, tone = "neutral", value }: { label: string; tone?: 
   };
   return (
     <div className={cn("rounded-2xl border p-4", tones[tone])}>
-      <p className="text-[10px] font-black uppercase tracking-[0.18em] opacity-70">{label}</p>
+      <p className="text-phx-2xs font-black uppercase tracking-[0.18em] opacity-70">{label}</p>
       <p className="mt-2 text-2xl font-black tracking-tight">{value}</p>
     </div>
   );
@@ -709,7 +709,7 @@ export function DatabaseMappingWorkspace({ initialError, initialHeaderGrid, init
             <div>
               <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-orange-200 bg-orange-50 px-3 py-1">
                 <Database className="h-3.5 w-3.5 text-orange-600" />
-                <span className="text-[11px] font-black uppercase tracking-[0.18em] text-orange-600">Source of Sales</span>
+                <span className="text-phx-xs font-black uppercase tracking-[0.18em] text-orange-600">Source of Sales</span>
               </div>
               <h1 className="text-3xl font-black tracking-tight text-slate-950">Database Mapping</h1>
               <p className="mt-1 max-w-3xl text-sm text-slate-500">

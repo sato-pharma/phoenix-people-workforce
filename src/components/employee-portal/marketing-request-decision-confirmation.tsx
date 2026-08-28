@@ -19,8 +19,8 @@ import { PharmacyLicenseEvidence } from "@/components/venues/pharmacy-license-ev
 function DetailField({ label, value }: { label: string; value: string | null | undefined }) {
   return (
     <div className="bg-slate-50 px-3 py-2.5">
-      <p className="text-[10px] uppercase tracking-wide text-slate-400">{label}</p>
-      <p className={`text-[13px] font-medium ${value ? "text-slate-950" : "text-slate-400"}`}>
+      <p className="text-phx-2xs uppercase tracking-wide text-slate-400">{label}</p>
+      <p className={`text-phx-md font-medium ${value ? "text-slate-950" : "text-slate-400"}`}>
         {value || "Not captured"}
       </p>
     </div>
@@ -158,7 +158,7 @@ export function MarketingRequestDecisionConfirmation({
     <section className="mx-auto w-full max-w-3xl px-4 py-8">
       <div className="border border-slate-200 bg-white">
         <div className="bg-slate-950 px-6 py-5">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-orange-400">Marketing · action required</p>
+          <p className="text-phx-xs font-semibold uppercase tracking-[0.18em] text-orange-400">Marketing · action required</p>
           <h1 className="mt-1 text-xl font-semibold text-white">Review marketing request</h1>
         </div>
 
@@ -168,7 +168,7 @@ export function MarketingRequestDecisionConfirmation({
               {initials(summary.requesterName)}
             </div>
             <div className="flex-1">
-              <p className="text-[15px] font-medium text-slate-950">{summary.requesterName}</p>
+              <p className="text-phx-lg font-medium text-slate-950">{summary.requesterName}</p>
               <p className="text-xs text-slate-500">
                 {summary.requesterHrId}
                 {summary.lineName ? ` · ${summary.lineName} line` : ""}
@@ -176,7 +176,7 @@ export function MarketingRequestDecisionConfirmation({
             </div>
             <div className="text-right">
               <p className="font-mono text-xs text-slate-700">{summary.requestCode}</p>
-              <span className="mt-1 inline-block bg-amber-100 px-2.5 py-1 text-[11px] font-medium text-amber-800">
+              <span className="mt-1 inline-block bg-amber-100 px-2.5 py-1 text-phx-xs font-medium text-amber-800">
                 Pending your approval
               </span>
             </div>
@@ -190,14 +190,14 @@ export function MarketingRequestDecisionConfirmation({
             <MarketingSalesEvidencePanel requestId={summary.requestId} />
           </div>
 
-          <p className="mt-4 text-[11px] font-semibold uppercase tracking-wider text-slate-400">What&apos;s being requested</p>
+          <p className="mt-4 text-phx-xs font-semibold uppercase tracking-wider text-slate-400">What&apos;s being requested</p>
           {summary.products.length > 0 ? (
             <>
               {/* Mobile: card list (tables are desktop-only) */}
               <div className="mt-2 space-y-2 md:hidden">
                 {summary.products.map((product, index) => (
                   <div className="border border-slate-200 bg-white px-3 py-2.5" key={`m-${product.name}-${index}`}>
-                    <p className="text-[13px] font-medium text-slate-950">{product.name}</p>
+                    <p className="text-phx-md font-medium text-slate-950">{product.name}</p>
                     <div className="mt-1.5 flex items-center justify-between text-xs">
                       <span className="text-slate-500">
                         Qty <span className="font-semibold text-slate-800">{product.quantity}</span>
@@ -233,22 +233,22 @@ export function MarketingRequestDecisionConfirmation({
 
           <div className="mt-4 grid grid-cols-2 gap-2">
             <div className="bg-slate-50 px-3 py-2.5">
-              <p className="text-[10px] uppercase tracking-wide text-slate-400">Estimated cost</p>
+              <p className="text-phx-2xs uppercase tracking-wide text-slate-400">Estimated cost</p>
               <p className="text-base font-medium text-slate-950">{egp(summary.estimatedCost)}</p>
             </div>
             <div className="bg-orange-50 px-3 py-2.5">
-              <p className="text-[10px] uppercase tracking-wide text-orange-700">
+              <p className="text-phx-2xs uppercase tracking-wide text-orange-700">
                 Required ROI{summary.roiDurationMonths ? ` · ${summary.roiDurationMonths} mo` : ""}
               </p>
               <p className="text-base font-medium text-orange-800">{egp(summary.requiredRoiValue)}</p>
             </div>
             <div className="bg-slate-50 px-3 py-2.5">
-              <p className="text-[10px] uppercase tracking-wide text-slate-400">Customer{summary.pharmacyCount ? ` · ${summary.pharmacyCount} pharmacy` : ""}</p>
-              <p className="whitespace-nowrap text-[13px] font-medium text-slate-950">{summary.customerName ?? "—"}</p>
+              <p className="text-phx-2xs uppercase tracking-wide text-slate-400">Customer{summary.pharmacyCount ? ` · ${summary.pharmacyCount} pharmacy` : ""}</p>
+              <p className="whitespace-nowrap text-phx-md font-medium text-slate-950">{summary.customerName ?? "—"}</p>
             </div>
             <div className="bg-slate-50 px-3 py-2.5">
-              <p className="text-[10px] uppercase tracking-wide text-slate-400">Pay date{summary.roiWindow ? ` · ROI ${summary.roiWindow}` : ""}</p>
-              <p className="text-[13px] font-medium text-slate-950">{summary.payDate}</p>
+              <p className="text-phx-2xs uppercase tracking-wide text-slate-400">Pay date{summary.roiWindow ? ` · ROI ${summary.roiWindow}` : ""}</p>
+              <p className="text-phx-md font-medium text-slate-950">{summary.payDate}</p>
             </div>
           </div>
 
@@ -257,7 +257,7 @@ export function MarketingRequestDecisionConfirmation({
               approver to commit real money on that. Every field below was captured at submission
               and simply never carried through. A field with no value says "Not captured" rather
               than rendering blank, so absent data never reads as a value of nothing. */}
-          <p className="mt-5 text-[11px] font-semibold uppercase tracking-wider text-slate-400">Customer detail</p>
+          <p className="mt-5 text-phx-xs font-semibold uppercase tracking-wider text-slate-400">Customer detail</p>
           <div className="mt-2 grid gap-2 sm:grid-cols-2">
             <DetailField label="Customer code" value={summary.customerCode} />
             <DetailField label="Customer name" value={summary.customerName} />
@@ -269,7 +269,7 @@ export function MarketingRequestDecisionConfirmation({
             <DetailField label="Governorate" value={summary.customerGovernorate} />
           </div>
           {summary.customerAddress ? (
-            <p className="mt-2 border border-slate-200 bg-white px-3 py-2 text-[12px] font-medium leading-5 text-slate-600">
+            <p className="mt-2 border border-slate-200 bg-white px-3 py-2 text-phx-sm font-medium leading-5 text-slate-600">
               {summary.customerAddress}
             </p>
           ) : null}
@@ -286,19 +286,19 @@ export function MarketingRequestDecisionConfirmation({
                 className="h-64 w-full bg-slate-50 object-contain"
                 src={summary.evidencePhotoUrl}
               />
-              <figcaption className="border-t border-emerald-200 px-3 py-1.5 text-[11px] font-semibold text-emerald-700">
+              <figcaption className="border-t border-emerald-200 px-3 py-1.5 text-phx-xs font-semibold text-emerald-700">
                 Live capture photo on file{summary.evidencePhotoName ? ` · ${summary.evidencePhotoName}` : ""}
               </figcaption>
             </figure>
           ) : summary.evidencePhotoName ? (
-            <p className="mt-2 text-[11px] font-semibold text-amber-700">
+            <p className="mt-2 text-phx-xs font-semibold text-amber-700">
               Live capture photo recorded as {summary.evidencePhotoName}, but no image was retained for this customer. Treat the premises as unverified.
             </p>
           ) : (
-            <p className="mt-2 text-[11px] font-semibold text-amber-700">No live capture photo on file for this customer.</p>
+            <p className="mt-2 text-phx-xs font-semibold text-amber-700">No live capture photo on file for this customer.</p>
           )}
 
-          <p className="mt-5 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+          <p className="mt-5 text-phx-xs font-semibold uppercase tracking-wider text-slate-400">
             Target pharmacies{summary.targetPharmacies.length ? ` · ${summary.targetPharmacies.length}` : ""}
           </p>
           {summary.targetPharmacies.length > 0 ? (
@@ -306,9 +306,9 @@ export function MarketingRequestDecisionConfirmation({
               {summary.targetPharmacies.map((pharmacy, index) => (
                 <div className="border border-slate-200 bg-white px-3 py-2.5" key={`${pharmacy.pharmacyCode}-${index}`}>
                   <div className="flex flex-wrap items-center justify-between gap-2">
-                    <p className="text-[13px] font-medium text-slate-950">{pharmacy.pharmacyName}</p>
+                    <p className="text-phx-md font-medium text-slate-950">{pharmacy.pharmacyName}</p>
                     <span
-                      className={`px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${
+                      className={`px-2 py-0.5 text-phx-2xs font-bold uppercase tracking-wide ${
                         pharmacy.referenceStatus === "matched"
                           ? "bg-emerald-100 text-emerald-800"
                           : "bg-amber-100 text-amber-800"
@@ -317,7 +317,7 @@ export function MarketingRequestDecisionConfirmation({
                       {pharmacy.referenceStatus}
                     </span>
                   </div>
-                  <p className="mt-1 text-[11px] font-semibold text-slate-500">
+                  <p className="mt-1 text-phx-xs font-semibold text-slate-500">
                     {pharmacy.distributorName} · vendor code {pharmacy.distributorPharmacyCode} · pharmacy {pharmacy.pharmacyCode}
                   </p>
                   {/* The pharmacy's own shop front. Captured and stored on the same rule as the
@@ -346,7 +346,7 @@ export function MarketingRequestDecisionConfirmation({
                       a licence exists to have a verdict about. */}
                   {pharmacy.licenseUrl ? (
                     <p
-                      className={`mt-1 text-[11px] font-bold ${
+                      className={`mt-1 text-phx-xs font-bold ${
                         pharmacy.licenseNameMatchesSign === false ? "text-rose-700" : "text-slate-600"
                       }`}
                     >
@@ -359,7 +359,7 @@ export function MarketingRequestDecisionConfirmation({
                     </p>
                   ) : null}
                   {pharmacy.notes ? (
-                    <p className="mt-1 text-[11px] font-medium text-slate-600">{pharmacy.notes}</p>
+                    <p className="mt-1 text-phx-xs font-medium text-slate-600">{pharmacy.notes}</p>
                   ) : null}
                 </div>
               ))}
@@ -370,7 +370,7 @@ export function MarketingRequestDecisionConfirmation({
             </p>
           )}
 
-          <p className="mt-5 text-[11px] font-semibold uppercase tracking-wider text-slate-400">Request detail</p>
+          <p className="mt-5 text-phx-xs font-semibold uppercase tracking-wider text-slate-400">Request detail</p>
           <div className="mt-2 grid gap-2 sm:grid-cols-2">
             <DetailField label="Request code" value={summary.requestCode} />
             <DetailField label="Request type" value={summary.requestType} />
@@ -391,8 +391,8 @@ export function MarketingRequestDecisionConfirmation({
           </div>
           {summary.notes ? (
             <>
-              <p className="mt-4 text-[11px] font-semibold uppercase tracking-wider text-slate-400">Requester notes</p>
-              <p className="mt-1 border border-slate-200 bg-white px-3 py-2 text-[12px] font-medium leading-5 text-slate-700">
+              <p className="mt-4 text-phx-xs font-semibold uppercase tracking-wider text-slate-400">Requester notes</p>
+              <p className="mt-1 border border-slate-200 bg-white px-3 py-2 text-phx-sm font-medium leading-5 text-slate-700">
                 {summary.notes}
               </p>
             </>
@@ -400,11 +400,11 @@ export function MarketingRequestDecisionConfirmation({
 
           {summary.chain.length > 0 ? (
             <>
-              <p className="mt-5 text-[11px] font-semibold uppercase tracking-wider text-slate-400">Approval progress</p>
+              <p className="mt-5 text-phx-xs font-semibold uppercase tracking-wider text-slate-400">Approval progress</p>
               <div className="mt-2 flex flex-wrap items-center gap-1">
                 {summary.chain.map((step, index) => (
                   <span key={`${step.stepName}-${index}`} className="flex items-center gap-1">
-                    <span className={`px-2.5 py-1 text-[11px] font-medium ${stepStateClasses(step)}`}>
+                    <span className={`px-2.5 py-1 text-phx-xs font-medium ${stepStateClasses(step)}`}>
                       {step.stepName}
                       {step.isCurrent ? " · you" : ""}
                     </span>
@@ -493,7 +493,7 @@ export function MarketingRequestDecisionConfirmation({
             </div>
 
             {needsReason ? (
-              <p className="mt-3 text-[11px] text-slate-500">
+              <p className="mt-3 text-phx-xs text-slate-500">
                 Returning sends it back to {summary.requesterName} to edit and resubmit — earlier approvals are kept.
               </p>
             ) : null}

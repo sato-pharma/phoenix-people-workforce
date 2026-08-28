@@ -45,20 +45,20 @@ export class WorkspaceErrorBoundary extends Component<Props, State> {
             <AlertTriangle className="h-5 w-5" />
           </div>
           <div>
-            <h3 className="text-[15px] font-bold text-slate-900">
+            <h3 className="text-phx-lg font-bold text-slate-900">
               {this.props.fallbackTitle ?? "Something went wrong"}
             </h3>
-            <p className="mt-1 max-w-md text-[13px] font-medium text-slate-600">
+            <p className="mt-1 max-w-md text-phx-md font-medium text-slate-600">
               This workspace encountered an unexpected error. Your data is safe. Try refreshing the section.
             </p>
             {this.state.error?.message && (
-              <p className="mt-2 text-[11px] font-mono text-rose-600/80">
+              <p className="mt-2 text-phx-xs font-mono text-rose-600/80">
                 {this.state.error.message.slice(0, 120)}
               </p>
             )}
           </div>
           <button
-            className="inline-flex h-9 items-center gap-2 rounded-sm border border-slate-200 bg-white px-4 text-[13px] font-bold text-slate-700 shadow-sm transition hover:bg-slate-50"
+            className="inline-flex h-9 items-center gap-2 rounded-sm border border-slate-200 bg-white px-4 text-phx-md font-bold text-slate-700 shadow-sm transition hover:bg-slate-50"
             onClick={() => this.setState({ error: null, hasError: false })}
             type="button"
           >

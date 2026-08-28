@@ -162,7 +162,7 @@ const fieldClass =
 // Same look as the candidate pool's filter labels (poolFilterLabelClass), but rendered as a plain
 // div/span rather than a <label>. SearchableSelect is a portalled combobox, not a native <select>,
 // so an implicit label would re-target the click and reopen the panel the user just dismissed.
-const requisitionFieldLabelClass = "text-[11px] font-semibold uppercase tracking-wide text-slate-500";
+const requisitionFieldLabelClass = "text-phx-xs font-semibold uppercase tracking-wide text-slate-500";
 
 /**
  * A labelled cell in the "Open a requisition" grid.
@@ -179,7 +179,7 @@ function RequisitionField({ hint, label, children }: { hint?: string; label: str
     <div className="flex flex-col gap-1">
       <span className={requisitionFieldLabelClass}>{label}</span>
       {children}
-      {hint ? <span className="text-[11px] text-slate-500">{hint}</span> : null}
+      {hint ? <span className="text-phx-xs text-slate-500">{hint}</span> : null}
     </div>
   );
 }
@@ -221,7 +221,7 @@ function StagePill({ children, tone }: { children: ReactNode; tone: BadgeTone })
   return (
     <span
       className={cn(
-        "inline-flex items-center px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
+        "inline-flex items-center px-1.5 py-0.5 text-phx-2xs font-semibold uppercase tracking-wide",
         badgeToneClassName[tone],
       )}
     >
@@ -634,7 +634,7 @@ function FinalSelectionCard({
                     <td className="px-2 py-1">{entry.candidate?.noticePeriod ?? "—"}</td>
                     <td className="px-2 py-1">
                       {entry.riskPreviouslyRejected ? (
-                        <span className="bg-orange-100 px-1.5 py-0.5 text-[10px] font-semibold text-orange-700">
+                        <span className="bg-orange-100 px-1.5 py-0.5 text-phx-2xs font-semibold text-orange-700">
                           Previously rejected
                         </span>
                       ) : (
@@ -2485,7 +2485,7 @@ function CandidateActionsControl({
         // Truncated, with the whole sentence on hover: the column is a fixed 220px, and a manager
         // with a long name must not be what pushes the table back into horizontal scroll.
         <div className="space-y-0.5">
-          <p className="truncate text-[11px] text-slate-500" title={`Sent to ${notified.name} on ${cairoDateTime(notified.sentAt)}`}>
+          <p className="truncate text-phx-xs text-slate-500" title={`Sent to ${notified.name} on ${cairoDateTime(notified.sentAt)}`}>
             Sent to {notified.name} on {cairoDateTime(notified.sentAt)}
           </p>
           {/* The seat, on its own line rather than appended to the one above — the cell is 220px
@@ -2493,7 +2493,7 @@ function CandidateActionsControl({
               is the SENT-TIME seat, not a live lookup: a manager who moves area next month did not
               retroactively move the CVs that were sent to their old one. */}
           {managerSeatLabel(notified) ? (
-            <p className="truncate text-[11px] font-medium text-slate-400" title={managerSeatLabel(notified)}>
+            <p className="truncate text-phx-xs font-medium text-slate-400" title={managerSeatLabel(notified)}>
               {managerSeatLabel(notified)}
             </p>
           ) : null}
@@ -2536,7 +2536,7 @@ function ManagerGroupHeading({
         {count} {count === 1 ? "CV" : "CVs"}
       </span>
       {lastSentAt ? (
-        <span className="text-[11px] font-medium text-slate-400">last sent {cairoDateTime(lastSentAt)}</span>
+        <span className="text-phx-xs font-medium text-slate-400">last sent {cairoDateTime(lastSentAt)}</span>
       ) : null}
     </div>
   );
@@ -2692,7 +2692,7 @@ function CandidatePoolCard({
                     : "Not stated"}
                 {/* The family, and only when it is not just the title again in capitals. */}
                 {roleFamily && !roleTitleAlreadySaysFamily ? (
-                  <div className="mt-0.5 text-[10px] font-black uppercase tracking-[0.06em] text-slate-400">
+                  <div className="mt-0.5 text-phx-2xs font-black uppercase tracking-[0.06em] text-slate-400">
                     {candidateRoleFamilyLabels[roleFamily]}
                   </div>
                 ) : null}
@@ -2727,7 +2727,7 @@ function CandidatePoolCard({
                         facts.governorate.confirmed,
                       )}
                       {facts.region ? (
-                        <div className="mt-0.5 text-[10px] font-semibold text-slate-500">
+                        <div className="mt-0.5 text-phx-2xs font-semibold text-slate-500">
                           {facts.governorate.value}
                         </div>
                       ) : null}
@@ -2833,7 +2833,7 @@ const poolExperienceFilterLabels: Record<PoolExperienceFilter, string> = {
 
 // Matches the filter panel on the CRM master table — same label case, same control border, same
 // focus ring. Sibling pages set the design identity here; this screen does not get its own look.
-const poolFilterLabelClass = "flex flex-col gap-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500";
+const poolFilterLabelClass = "flex flex-col gap-1 text-phx-xs font-semibold uppercase tracking-wide text-slate-500";
 const poolFilterSelectClass =
   "border border-slate-200 px-2 py-1.5 text-sm text-slate-800 focus:border-orange-400 focus:outline-none";
 
@@ -3868,7 +3868,7 @@ function CandidatesTab({
                             nearly every row, so it carried no information, and it cost a third
                             line of height on all 555 of them (75px → 59px without it). The stored
                             envelope is still the name's hover text, which is where it belongs. */}
-                        <div className="mt-0.5 truncate text-[11px] text-slate-500" title={contact || undefined}>
+                        <div className="mt-0.5 truncate text-phx-xs text-slate-500" title={contact || undefined}>
                           {contact || <span className="text-slate-300">No contact details</span>}
                         </div>
                       </td>
@@ -3917,7 +3917,7 @@ function CandidatesTab({
                             reads "Medical Representative" is another line that says nothing, which
                             is the exact fault this rebuild exists to fix. */}
                         {roleFamily && !roleTitleAlreadySaysFamily ? (
-                          <div className="mt-0.5 truncate text-[11px] font-semibold uppercase tracking-[0.06em] text-slate-400">
+                          <div className="mt-0.5 truncate text-phx-xs font-semibold uppercase tracking-[0.06em] text-slate-400">
                             {candidateRoleFamilyLabels[roleFamily]}
                           </div>
                         ) : null}
@@ -3962,7 +3962,7 @@ function CandidatesTab({
                           </span>
                         ) : null}
                         {facts.governorate ? (
-                          <div className="mt-0.5 truncate text-[11px] text-slate-500" title={facts.governorate.value}>
+                          <div className="mt-0.5 truncate text-phx-xs text-slate-500" title={facts.governorate.value}>
                             {facts.governorate.value}
                           </div>
                         ) : (
@@ -4042,7 +4042,7 @@ function CandidatesTab({
                           this cell's hover title, they are on the mobile card under "Their words",
                           and they are still what the search box matches. */}
                       <td
-                        className="whitespace-nowrap px-3 py-2.5 text-[11px] text-slate-600"
+                        className="whitespace-nowrap px-3 py-2.5 text-phx-xs text-slate-600"
                         title={candidate.sourceContext?.detailLines.join("\n") || undefined}
                       >
                         <div className="flex items-center gap-1.5">
@@ -4187,7 +4187,7 @@ function CandidatesTab({
               appliedFor.source === "stated" ? profile.candidate.appliedForEvidence : appliedFor.evidence;
             return (
               <div className="rounded-md border border-slate-200 bg-white p-3">
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Applying for</p>
+                <p className="text-phx-xs font-semibold uppercase tracking-wide text-slate-500">Applying for</p>
                 <p className="mt-1 text-sm font-medium text-slate-900">{appliedFor.text}</p>
                 {readFrom ? (
                   <p className="mt-1 text-xs text-slate-600">
@@ -4200,7 +4200,7 @@ function CandidatesTab({
 
           {profile.candidate.sourceContext && profile.candidate.sourceContext.detailLines.length > 0 ? (
             <div className="rounded-md border border-slate-200 bg-slate-50/60 p-3">
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+              <p className="text-phx-xs font-semibold uppercase tracking-wide text-slate-500">
                 {profile.candidate.sourceContext.channel === "email" ? "Email subject" : "First WhatsApp messages"}
               </p>
               <div className="mt-1 space-y-1">

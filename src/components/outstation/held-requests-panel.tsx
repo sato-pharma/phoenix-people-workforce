@@ -135,7 +135,7 @@ export function HeldRequestsPanel() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <AlertTriangle className="h-4 w-4 text-rose-600" />
-          <span className="rounded-md bg-rose-100 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-rose-700">
+          <span className="rounded-md bg-rose-100 px-2 py-1 text-phx-2xs font-bold uppercase tracking-wider text-rose-700">
             Held out of payroll
           </span>
         </div>
@@ -147,7 +147,7 @@ export function HeldRequestsPanel() {
           <RefreshCw className="h-3.5 w-3.5" /> Refresh list
         </button>
       </div>
-      <p className="mt-2 max-w-3xl text-[13px] leading-relaxed text-rose-900">
+      <p className="mt-2 max-w-3xl text-phx-md leading-relaxed text-rose-900">
         {requests.length} request{requests.length === 1 ? " is" : "s are"} waiting on evidence and
         cannot be added to payroll. The employee is not paid until each one clears. A request still
         awaiting approval is listed too — the same check will hold it the moment it is approved, so
@@ -156,7 +156,7 @@ export function HeldRequestsPanel() {
       </p>
 
       {notice ? (
-        <p className="mt-3 rounded-md border border-slate-200 bg-white px-3 py-2 text-[13px] text-slate-700">
+        <p className="mt-3 rounded-md border border-slate-200 bg-white px-3 py-2 text-phx-md text-slate-700">
           {notice}
         </p>
       ) : null}
@@ -174,12 +174,12 @@ export function HeldRequestsPanel() {
                   {formatDateValue(request.tripEndDate)}
                 </p>
               </div>
-              <span className="inline-flex shrink-0 items-center rounded-full bg-rose-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-rose-700 ring-1 ring-rose-200">
+              <span className="inline-flex shrink-0 items-center rounded-full bg-rose-50 px-2 py-0.5 text-phx-2xs font-bold uppercase tracking-wider text-rose-700 ring-1 ring-rose-200">
                 {BLOCKER_LABEL[request.blocker] ?? request.blocker}
               </span>
             </div>
 
-            <p className="mt-2 text-[13px] leading-relaxed text-slate-600">{request.message}</p>
+            <p className="mt-2 text-phx-md leading-relaxed text-slate-600">{request.message}</p>
 
             {/* The grab's own failure text. Shown verbatim so the admin decides from what actually
                 happened, not from a generic "it failed". */}
@@ -217,7 +217,7 @@ export function HeldRequestsPanel() {
                   )}
                   Ask him again for the photo
                 </button>
-                <p className="mt-1.5 text-[11px] font-semibold text-slate-500">
+                <p className="mt-1.5 text-phx-xs font-semibold text-slate-500">
                   Email and push. Once a day — pressing it twice today sends one message.
                 </p>
               </div>

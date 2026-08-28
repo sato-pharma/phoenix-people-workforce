@@ -63,14 +63,14 @@ export function DirectTrackingToggle({ requestId }: { requestId: string }) {
   return (
     <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-[6px] border border-phx-line bg-phx-paper px-3 py-2.5">
       <div className="min-w-0">
-        <p className="text-[11px] font-black uppercase tracking-[0.12em] text-phx-ink">Track direct-order sales</p>
-        <p className="mt-0.5 text-[11px] font-semibold text-phx-ink-soft">
+        <p className="text-phx-xs font-black uppercase tracking-[0.12em] text-phx-ink">Track direct-order sales</p>
+        <p className="mt-0.5 text-phx-xs font-semibold text-phx-ink-soft">
           Super Admin only — also credit approved Direct Order sales at this campaign&apos;s pharmacies to its ROI.
         </p>
-        {error ? <p className="mt-1 text-[11px] font-semibold text-[#DC2626]">{error}</p> : null}
+        {error ? <p className="mt-1 text-phx-xs font-semibold text-[#DC2626]">{error}</p> : null}
       </div>
       <div className="flex items-center gap-2">
-        <span className="text-[11px] font-bold text-phx-ink-2">{state.trackDirectSales ? "On" : "Off"}</span>
+        <span className="text-phx-xs font-bold text-phx-ink-2">{state.trackDirectSales ? "On" : "Off"}</span>
         <Switch
           checked={state.trackDirectSales}
           label="Track direct-order sales in ROI"

@@ -72,13 +72,13 @@ export function EarlyBirdsSyncButton() {
   return (
     <span className="inline-flex items-center gap-2">
       {justChecked && (
-        <span className="whitespace-nowrap text-[10px] font-bold uppercase tracking-widest text-emerald-600">
+        <span className="whitespace-nowrap text-phx-2xs font-bold uppercase tracking-widest text-emerald-600">
           Checked just now
         </span>
       )}
       <button
         aria-busy={busy}
-        className="inline-flex h-7 items-center gap-1.5 whitespace-nowrap border border-slate-300 bg-white px-2 text-[10px] font-bold uppercase tracking-wide text-slate-700 hover:border-orange-300 hover:text-orange-600 disabled:opacity-50"
+        className="inline-flex h-7 items-center gap-1.5 whitespace-nowrap border border-slate-300 bg-white px-2 text-phx-2xs font-bold uppercase tracking-wide text-slate-700 hover:border-orange-300 hover:text-orange-600 disabled:opacity-50"
         disabled={busy}
         onClick={run}
         type="button"

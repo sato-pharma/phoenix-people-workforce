@@ -19,7 +19,7 @@ export function PanelSection({ children, title }: { children: ReactNode; title: 
     <div className="border border-slate-200">
       <div className="flex items-center gap-2 bg-slate-900 px-4 py-2.5">
         <span aria-hidden className="h-4 w-1 bg-orange-500" />
-        <span className="text-[11px] font-black uppercase tracking-wide text-white">{title}</span>
+        <span className="text-phx-xs font-black uppercase tracking-wide text-white">{title}</span>
       </div>
       <div className="p-4">{children}</div>
     </div>
@@ -30,7 +30,7 @@ export function PanelSection({ children, title }: { children: ReactNode; title: 
 export function Fact({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <p className="text-[10px] font-black uppercase tracking-[0.12em] text-slate-400">{label}</p>
+      <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400">{label}</p>
       <p className="mt-0.5 whitespace-nowrap text-sm font-semibold text-slate-900">{value || "—"}</p>
     </div>
   );
@@ -44,7 +44,7 @@ export function Fact({ label, value }: { label: string; value: string }) {
 export function RouteFact({ from, to }: { from: string; to: string }) {
   return (
     <div className="col-span-2 sm:col-span-2">
-      <p className="text-[10px] font-black uppercase tracking-[0.12em] text-slate-400">Route</p>
+      <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400">Route</p>
       <div className="mt-0.5 -mx-1 overflow-x-auto px-1">
         <p className="flex w-max items-center gap-1.5 text-sm font-semibold text-slate-900">
           <span className="whitespace-nowrap">{from || "—"}</span>
@@ -76,7 +76,7 @@ export function CostBreakdownFact({
 }) {
   return (
     <div className="col-span-2 border-t border-slate-200 pt-3 sm:col-span-4">
-      <p className="text-[10px] font-black uppercase tracking-[0.12em] text-slate-400">Cost breakdown</p>
+      <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-400">Cost breakdown</p>
       <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 font-mono text-sm text-slate-700">
         <span>
           Travel <b className="text-slate-900">{formatCurrency(travel)}</b>

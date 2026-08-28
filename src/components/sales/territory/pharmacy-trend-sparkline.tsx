@@ -16,7 +16,7 @@ function TrendTooltip({ active, payload }: { active?: boolean; payload?: Array<{
   if (!active || !payload || !payload[0]) return null;
   const point = payload[0].payload;
   return (
-    <div className="rounded-md border border-slate-700 bg-slate-900 px-2.5 py-2 text-[11px] text-white shadow-lg">
+    <div className="rounded-md border border-slate-700 bg-slate-900 px-2.5 py-2 text-phx-xs text-white shadow-lg">
       <p className="font-bold text-orange-300">{point.period}</p>
       {point.products.length === 0 ? (
         <p className="mt-0.5 text-slate-300">No sales</p>

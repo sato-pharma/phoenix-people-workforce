@@ -129,6 +129,49 @@
   --color-phx-info: var(--phx-info);
   --color-phx-info-bg: var(--phx-info-bg);
   --color-phx-info-line: var(--phx-info-line);
+
+  /* ---------------------------------------------------------------------------
+   * TYPE SCALE — exposing the --phx-fs-* ladder that already exists.
+   *
+   * The app carries TWO incompatible size systems. Tailwind's named scale
+   * (text-xs .. text-7xl, 7,126 uses) sets font-size AND a paired line-height.
+   * Alongside it sit 4,856 arbitrary text-[Npx] classes, which set font-size
+   * and nothing else — so text-xs and text-[12px] are the same size and render
+   * differently. That is the type half of "the shell has drifted into many
+   * designs".
+   *
+   * A third system was declared and never connected: src/styles/tokens.css has
+   * carried --phx-fs-3xs .. --phx-fs-3xl since an earlier phase with ZERO uses
+   * anywhere in the repo, because a raw custom property generates no utility.
+   * These lines are what connect it. The ladder is NOT redefined here — each
+   * step reads its value from that one file, so the scale still has exactly one
+   * home.
+   *
+   * They are deliberately declared WITHOUT a --text-*--line-height companion,
+   * which is what keeps the swap visually inert: Tailwind only emits a
+   * line-height when that companion exists, so text-phx-xs compiles to
+   * `font-size: 11px` alone — what text-[11px] already did. Measured, not
+   * assumed; the proof is in the Phase 5 PR.
+   *
+   * Do NOT add a line-height here. The moment one appears, every one of the
+   * ~4,800 call sites silently changes leading at once.
+   *
+   * The named Tailwind scale is left alone. Reconciling the two is a design
+   * decision about how this product should read, not a rename, and it belongs
+   * in a change the owner has agreed to see.
+   * ------------------------------------------------------------------------- */
+  --text-phx-4xs: var(--phx-fs-4xs);
+  --text-phx-3xs: var(--phx-fs-3xs);
+  --text-phx-2xs: var(--phx-fs-2xs);
+  --text-phx-xs: var(--phx-fs-xs);
+  --text-phx-sm: var(--phx-fs-sm);
+  --text-phx-md: var(--phx-fs-md);
+  --text-phx-base: var(--phx-fs-base);
+  --text-phx-lg: var(--phx-fs-lg);
+  --text-phx-xl: var(--phx-fs-xl);
+  --text-phx-2xl: var(--phx-fs-2xl);
+  --text-phx-3xl: var(--phx-fs-3xl);
+
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);

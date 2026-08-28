@@ -114,7 +114,7 @@ export function CeoHeroIdentity({
         {/* ── Identity + greeting ───────────────────────────────────────────── */}
         <div className="min-w-0 flex-1">
           {/* Role label */}
-          <p className="text-[8px] font-black uppercase tracking-[0.32em] text-orange-300/80">
+          <p className="text-phx-4xs font-black uppercase tracking-[0.32em] text-orange-300/80">
             {roleLabel}
           </p>
 
@@ -131,7 +131,7 @@ export function CeoHeroIdentity({
 
           {/* Time-aware greeting + hidden note */}
           <div className="flex items-center gap-2.5">
-            <p className="text-[15px] font-semibold leading-snug text-slate-100">{greetLine}</p>
+            <p className="text-phx-lg font-semibold leading-snug text-slate-100">{greetLine}</p>
             {personal ? <CeoHiddenNote /> : null}
           </div>
 

@@ -49,7 +49,7 @@ function SortHeader<T extends string>({
         type="button"
         onClick={() => onSort(sortKey)}
         className={cn(
-          "inline-flex items-center gap-1 text-[10px] font-black uppercase tracking-wider transition-colors hover:text-orange-400",
+          "inline-flex items-center gap-1 text-phx-2xs font-black uppercase tracking-wider transition-colors hover:text-orange-400",
           isActive ? "text-orange-400" : "text-slate-300",
           align === "right" && "flex-row-reverse",
         )}
@@ -176,7 +176,7 @@ export function DoubleVisitDataIntegrityWorkspace({ report }: { report: DoubleVi
                 )}
               >
                 <p className="text-2xl font-black text-slate-900">{report.countsByType[type]}</p>
-                <p className="mt-1 text-[10px] font-semibold uppercase leading-tight tracking-wide text-slate-500">
+                <p className="mt-1 text-phx-2xs font-semibold uppercase leading-tight tracking-wide text-slate-500">
                   {ISSUE_TYPE_LABELS[type]}
                 </p>
               </button>
@@ -186,7 +186,7 @@ export function DoubleVisitDataIntegrityWorkspace({ report }: { report: DoubleVi
           {report.importSummaries.length > 0 && (
             <div className="overflow-hidden border border-slate-200 bg-white">
               <div className="bg-slate-900 px-5 py-3">
-                <h2 className="text-[10px] font-bold uppercase tracking-widest text-slate-300">
+                <h2 className="text-phx-2xs font-bold uppercase tracking-widest text-slate-300">
                   Imports With Dropped or Flagged Rows
                 </h2>
               </div>
@@ -195,11 +195,11 @@ export function DoubleVisitDataIntegrityWorkspace({ report }: { report: DoubleVi
                   <div key={importRow.id} className="flex flex-wrap items-center justify-between gap-3 px-5 py-3 text-sm">
                     <div>
                       <p className="font-semibold text-slate-900">{importRow.sourceFilename}</p>
-                      <p className="text-[11px] text-slate-500">
+                      <p className="text-phx-xs text-slate-500">
                         {formatDate(importRow.uploadedAt)} · {importRow.sourceType} · {importRow.status} · {importRow.totalRows} rows
                       </p>
                     </div>
-                    <div className="flex flex-wrap gap-3 text-[11px] font-bold uppercase tracking-wide">
+                    <div className="flex flex-wrap gap-3 text-phx-xs font-bold uppercase tracking-wide">
                       {importRow.duplicateWarningCount > 0 && (
                         <span className="text-amber-600">{importRow.duplicateWarningCount} duplicate rows dropped</span>
                       )}
@@ -261,18 +261,18 @@ export function DoubleVisitDataIntegrityWorkspace({ report }: { report: DoubleVi
                     <tr key={issue.id} className={index % 2 === 0 ? "bg-white" : "bg-orange-50/30"}>
                       <td className="whitespace-nowrap px-3 py-2.5">{formatDate(issue.activityDate)}</td>
                       <td className="px-3 py-2.5">
-                        <span className="inline-flex items-center gap-1.5 whitespace-nowrap bg-rose-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-rose-700">
+                        <span className="inline-flex items-center gap-1.5 whitespace-nowrap bg-rose-50 px-2 py-0.5 text-phx-2xs font-bold uppercase tracking-wide text-rose-700">
                           <AlertTriangle className="h-3 w-3" />
                           {ISSUE_TYPE_LABELS[issue.issueType]}
                         </span>
                       </td>
                       <td className="px-3 py-2.5">
                         <p className="font-medium text-slate-900">{issue.doubleVisitorName ?? "—"}</p>
-                        <p className="text-[11px] text-slate-400">{issue.doubleVisitorHrIdRaw ?? "no HR ID recorded"}</p>
+                        <p className="text-phx-xs text-slate-400">{issue.doubleVisitorHrIdRaw ?? "no HR ID recorded"}</p>
                       </td>
                       <td className="px-3 py-2.5">
                         <p className="font-medium text-slate-900">{issue.visitedName ?? "—"}</p>
-                        <p className="text-[11px] text-slate-400">{issue.visitedHrIdRaw ?? "no HR ID recorded"}</p>
+                        <p className="text-phx-xs text-slate-400">{issue.visitedHrIdRaw ?? "no HR ID recorded"}</p>
                       </td>
                       <td className="px-3 py-2.5">{issue.areaName ?? "—"}</td>
                       <td className="px-3 py-2.5">{issue.lineName ?? "—"}</td>

@@ -9,7 +9,7 @@ import {
 import { egp } from "@/components/outstation/expense-shared/formatters";
 import type { ExpenseSpenderRow } from "@/components/outstation/expense-shared/types";
 
-const HEAD_CELL = "border border-[#1E293B] px-3 py-2.5 text-[11px] font-black uppercase tracking-[0.08em]";
+const HEAD_CELL = "border border-[#1E293B] px-3 py-2.5 text-phx-xs font-black uppercase tracking-[0.08em]";
 const BODY_CELL = "border border-[#FCE7D2] px-3 py-2";
 
 /** The share bar is the one column that reads as well in a card as in a row, so both halves use it. */

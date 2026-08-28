@@ -150,7 +150,7 @@ const inputClass =
   "h-10 w-full border border-slate-300 bg-white px-3 text-sm text-slate-700 outline-none transition focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 disabled:bg-slate-50";
 
 const labelClass =
-  "text-[10px] font-bold uppercase tracking-wider text-slate-500";
+  "text-phx-2xs font-bold uppercase tracking-wider text-slate-500";
 
 /* ------------------------------------------------------------------ */
 /*  Color insight palette — degrading scale for chart bars            */
@@ -256,7 +256,7 @@ function StatusPill({ category }: { category: string }) {
   const styles = STATUS_PILL_STYLES[category] ?? STATUS_PILL_STYLES.Other;
   return (
     <span
-      className={`inline-flex items-center px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ring-1 ${styles}`}
+      className={`inline-flex items-center px-2 py-0.5 text-phx-2xs font-bold uppercase tracking-wider ring-1 ${styles}`}
     >
       {category}
     </span>
@@ -377,7 +377,7 @@ function chartTooltipStyle() {
 function EmptyState({ title, message }: { title: string; message: string }) {
   return (
     <div className="flex flex-col items-center justify-center gap-1 px-6 py-12 text-center">
-      <p className="text-[11px] font-semibold uppercase tracking-wider text-orange-600">
+      <p className="text-phx-xs font-semibold uppercase tracking-wider text-orange-600">
         {title}
       </p>
       <p className="text-sm text-slate-500">{message}</p>
@@ -468,7 +468,7 @@ function SmartPeriodFilter({
     return (
       <button
         aria-pressed={active}
-        className={`flex-1 whitespace-nowrap  px-2.5 py-1.5 text-[12px] font-semibold transition sm:flex-initial ${
+        className={`flex-1 whitespace-nowrap  px-2.5 py-1.5 text-phx-sm font-semibold transition sm:flex-initial ${
           active
             ? "bg-orange-500 text-white shadow-sm"
             : "text-slate-600 hover:bg-slate-100"
@@ -554,11 +554,11 @@ function StatCard({
       <p className={labelClass}>{label}</p>
       <p className="mt-1 text-xl font-bold text-slate-800">{value}</p>
       {helper && (
-        <p className="mt-1 text-[11px] leading-snug text-slate-500">{helper}</p>
+        <p className="mt-1 text-phx-xs leading-snug text-slate-500">{helper}</p>
       )}
       {showDelta && (
         <span
-          className={`mt-1.5 inline-block  px-1.5 py-0.5 text-[10px] font-bold ${
+          className={`mt-1.5 inline-block  px-1.5 py-0.5 text-phx-2xs font-bold ${
             isPositive ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700"
           }`}
         >
@@ -589,7 +589,7 @@ function AdminKeyCard({
     <div className={`border-l-2 ${accent} px-4 py-4`}>
       <p className={labelClass}>{label}</p>
       <p className="mt-1 text-xl font-bold text-slate-800">{value}</p>
-      <p className="mt-1 text-[11px] leading-snug text-slate-500">{helper}</p>
+      <p className="mt-1 text-phx-xs leading-snug text-slate-500">{helper}</p>
     </div>
   );
 }
@@ -615,9 +615,9 @@ function ChartCard({
     >
       <div className="mb-3 flex items-start justify-between gap-2">
         <div>
-          <h3 className="text-[13px] font-semibold text-slate-800">{title}</h3>
+          <h3 className="text-phx-md font-semibold text-slate-800">{title}</h3>
           {description && (
-            <p className="mt-0.5 text-[11px] text-slate-500">{description}</p>
+            <p className="mt-0.5 text-phx-xs text-slate-500">{description}</p>
           )}
         </div>
         {action}
@@ -659,11 +659,11 @@ function UnresolvedTripsPanel({ trips }: { trips: ExpenseRow[] }) {
     <Card className={`overflow-hidden border border-amber-200 p-0 ${cardShadow}`}>
       <div className="border-b border-amber-200 bg-amber-50/70 px-4 py-3">
         <h3 className="text-sm font-bold text-amber-900">Unresolved trips</h3>
-        <p className="mt-0.5 max-w-2xl text-[12px] text-amber-800">
+        <p className="mt-0.5 max-w-2xl text-phx-sm text-amber-800">
           These trips have no destination recorded, so they are kept out of every KPI, chart,
           and the map until a destination is added at the source. No location is ever guessed.
         </p>
-        <p className="mt-1 text-[12px] font-semibold text-amber-900">
+        <p className="mt-1 text-phx-sm font-semibold text-amber-900">
           {trips.length} trip{trips.length === 1 ? "" : "s"} · {formatMoney(total)} pending resolution
         </p>
       </div>
@@ -694,7 +694,7 @@ function UnresolvedTripsPanel({ trips }: { trips: ExpenseRow[] }) {
         )}
         renderTable={() => (
           <PortalDesktopTable minWidth="720px">
-            <thead className="border-b border-slate-200 bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
+            <thead className="border-b border-slate-200 bg-slate-50 text-phx-xs uppercase tracking-wide text-slate-500">
               <tr>
                 <th className="px-3 py-2 font-semibold">Trip</th>
                 <th className="px-3 py-2 font-semibold">Date</th>
@@ -709,7 +709,7 @@ function UnresolvedTripsPanel({ trips }: { trips: ExpenseRow[] }) {
             <tbody className="divide-y divide-slate-100">
               {trips.map((trip) => (
                 <tr className="hover:bg-slate-50" key={`${trip.tripId}-${trip.date}-unresolved`}>
-                  <td className="whitespace-nowrap px-3 py-2 font-mono text-[11px] font-bold text-slate-600">{trip.tripId || "N/A"}</td>
+                  <td className="whitespace-nowrap px-3 py-2 font-mono text-phx-xs font-bold text-slate-600">{trip.tripId || "N/A"}</td>
                   <td className="whitespace-nowrap px-3 py-2 text-slate-700">{formatDate(trip.date)}</td>
                   <td className="px-3 py-2 text-slate-800">{trip.ownerName || "Employee"}</td>
                   <td className="px-3 py-2 text-slate-700">{trip.requestType || "—"}</td>
@@ -1235,12 +1235,12 @@ export function PersonalExpenseWorkloadDashboard({
 
   const header = (field: SortField, title: string) => (
     <button
-      className="inline-flex items-center gap-1 text-left text-[10px] font-bold uppercase tracking-wider text-slate-200 transition hover:text-orange-400"
+      className="inline-flex items-center gap-1 text-left text-phx-2xs font-bold uppercase tracking-wider text-slate-200 transition hover:text-orange-400"
       onClick={() => onSort(field)}
       type="button"
     >
       <span>{title}</span>
-      <span className="text-[9px] opacity-60">
+      <span className="text-phx-3xs opacity-60">
         {searchSortField === field ? (searchSortDirection === "desc" ? "▼" : "▲") : "↕"}
       </span>
     </button>
@@ -1334,7 +1334,7 @@ export function PersonalExpenseWorkloadDashboard({
 
       {showHero && (
         <section className="relative overflow-hidden rounded border border-slate-800 bg-[linear-gradient(135deg,#070707_0%,#111827_52%,#2C1605_100%)] p-5 sm:p-6 lg:p-8">
-          <p className="text-[11px] font-semibold uppercase tracking-wider text-orange-300">
+          <p className="text-phx-xs font-semibold uppercase tracking-wider text-orange-300">
             EXPENSES
           </p>
           <h1 className="mt-2 text-2xl font-bold text-white sm:text-3xl">Expense Dashboard</h1>
@@ -1355,12 +1355,12 @@ export function PersonalExpenseWorkloadDashboard({
           </span>
           <div className="min-w-0">
             <p className="whitespace-nowrap text-sm font-bold text-slate-900">Submit a new outstation expense</p>
-            <p className="mt-0.5 text-[12px] text-slate-600">
+            <p className="mt-0.5 text-phx-sm text-slate-600">
               Start the guided trip submission. Captures location, distance, and allowance automatically.
             </p>
           </div>
         </div>
-        <span className="hidden flex-none items-center gap-2 rounded-full bg-orange-600 px-4 py-2 text-[12px] font-semibold text-white shadow-sm transition-colors group-hover:bg-orange-700 sm:inline-flex">
+        <span className="hidden flex-none items-center gap-2 rounded-full bg-orange-600 px-4 py-2 text-phx-sm font-semibold text-white shadow-sm transition-colors group-hover:bg-orange-700 sm:inline-flex">
           Start submission
           <ChevronRight className="h-4 w-4" />
         </span>
@@ -1386,7 +1386,7 @@ export function PersonalExpenseWorkloadDashboard({
         >
           Unresolved
           {unresolvedTrips.length > 0 && (
-            <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[11px] font-bold text-amber-700">
+            <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-phx-xs font-bold text-amber-700">
               {unresolvedTrips.length}
             </span>
           )}
@@ -1469,7 +1469,7 @@ export function PersonalExpenseWorkloadDashboard({
               <p className="mt-1 whitespace-nowrap text-sm font-bold text-slate-800">
                 {insights.top?.city ?? "—"}
               </p>
-              <p className="mt-0.5 text-[11px] text-slate-500">
+              <p className="mt-0.5 text-phx-xs text-slate-500">
                 {insights.top
                   ? `${insights.top.trips} trips · ${formatMoney(insights.top.total)}`
                   : "No data"}
@@ -1482,7 +1482,7 @@ export function PersonalExpenseWorkloadDashboard({
                   ? `${insights.outlier.tripId || "Trip"} → ${insights.outlier.toCity}`
                   : "—"}
               </p>
-              <p className="mt-0.5 text-[11px] text-rose-600">
+              <p className="mt-0.5 text-phx-xs text-rose-600">
                 {insights.outlier ? formatMoney(insights.outlier.total) : "No outliers detected"}
               </p>
             </div>
@@ -1491,7 +1491,7 @@ export function PersonalExpenseWorkloadDashboard({
               <p className="mt-1 text-sm font-bold text-slate-800">
                 {insights.costPerKm > 0 ? `${formatMoney(insights.costPerKm)}/km` : "—"}
               </p>
-              <p className="mt-0.5 text-[11px] text-slate-500">
+              <p className="mt-0.5 text-phx-xs text-slate-500">
                 Average spend per kilometer
               </p>
             </div>
@@ -1502,13 +1502,13 @@ export function PersonalExpenseWorkloadDashboard({
       {/* Filters Card */}
       <Card className={`overflow-hidden border border-slate-200 p-4 sm:p-5 print:hidden ${cardShadow}`}>
         <div className="mb-4 flex items-center justify-between gap-3">
-          <span className="inline-flex items-center gap-2 text-[11px] font-black uppercase tracking-wide text-slate-700">
+          <span className="inline-flex items-center gap-2 text-phx-xs font-black uppercase tracking-wide text-slate-700">
             <span className="h-4 w-1 bg-orange-500" />
             Filters
           </span>
           <button
             aria-label="Reset all expense filters"
-            className="inline-flex h-9 items-center gap-1.5 border border-slate-300 bg-white px-3 text-[12px] font-semibold text-slate-600 shadow-sm transition hover:border-orange-200 hover:text-orange-600"
+            className="inline-flex h-9 items-center gap-1.5 border border-slate-300 bg-white px-3 text-phx-sm font-semibold text-slate-600 shadow-sm transition hover:border-orange-200 hover:text-orange-600"
             onClick={resetFilters}
             type="button"
           >
@@ -1687,7 +1687,7 @@ export function PersonalExpenseWorkloadDashboard({
               </div>
             )}
           </div>
-          <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1.5 text-[11px]">
+          <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1.5 text-phx-xs">
             {categoryBreakdown.data.map((entry) => (
               <span className="inline-flex items-center gap-1.5 text-slate-600" key={entry.name}>
                 <span className="h-2 w-2 " style={{ backgroundColor: entry.color }} />
@@ -1713,7 +1713,7 @@ export function PersonalExpenseWorkloadDashboard({
                 const pct = total > 0 ? Math.round((status.value / total) * 100) : 0;
                 return (
                   <div key={status.name}>
-                    <div className="flex items-center justify-between text-[12px]">
+                    <div className="flex items-center justify-between text-phx-sm">
                       <span className="inline-flex items-center gap-2 font-medium text-slate-700">
                         <span className="h-2 w-2 " style={{ backgroundColor: status.color }} />
                         {status.name}
@@ -1742,7 +1742,7 @@ export function PersonalExpenseWorkloadDashboard({
         <ChartCard
           action={
             <button
-              className="border border-slate-300 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-600 transition hover:border-orange-200 hover:text-orange-600"
+              className="border border-slate-300 bg-white px-2.5 py-1 text-phx-xs font-semibold text-slate-600 transition hover:border-orange-200 hover:text-orange-600"
               onClick={() => setShowCostByTransportation((prev) => !prev)}
               type="button"
             >
@@ -1901,7 +1901,7 @@ export function PersonalExpenseWorkloadDashboard({
                 );
                 if (split.recorded === 0) return null;
                 return (
-                  <p className="border-b border-slate-200 pb-3 text-[11px] text-slate-500">
+                  <p className="border-b border-slate-200 pb-3 text-phx-xs text-slate-500">
                     <span className="font-bold uppercase tracking-[0.12em] text-slate-400">Visit mix</span>{" "}
                     Doctor {split.doctor.toLocaleString()} · Pharmacy {split.pharmacy.toLocaleString()} · Institution{" "}
                     {split.institution.toLocaleString()}{" "}
@@ -1942,7 +1942,7 @@ export function PersonalExpenseWorkloadDashboard({
             <span className="h-7 w-1 bg-orange-500" />
             <div>
               <h2 className="text-base font-bold text-slate-900 sm:text-lg">Where I&apos;ve travelled</h2>
-              <p className="text-[12px] text-slate-500">
+              <p className="text-phx-sm text-slate-500">
                 Each dot is a destination — colour shows your spend. Toggle All / Approved / Pending.
               </p>
             </div>
@@ -1958,7 +1958,7 @@ export function PersonalExpenseWorkloadDashboard({
           />
         </section>
       ) : personalMapUnmappedCount > 0 ? (
-        <section className="flex items-start gap-3 border border-slate-200 bg-slate-50 px-4 py-3 text-[12px] text-slate-600 print:hidden">
+        <section className="flex items-start gap-3 border border-slate-200 bg-slate-50 px-4 py-3 text-phx-sm text-slate-600 print:hidden">
           <MapPin className="mt-0.5 h-4 w-4 flex-none text-slate-400" />
           <div>
             <p className="font-semibold text-slate-700">No destinations to map yet</p>
@@ -1973,7 +1973,7 @@ export function PersonalExpenseWorkloadDashboard({
         <div className="flex items-start gap-3 border border-amber-200 bg-amber-50 px-4 py-3 print:hidden">
           <div className="mt-0.5 h-2 w-2 flex-none bg-amber-400" />
           <div>
-            <p className="text-[12px] font-bold text-amber-800">
+            <p className="text-phx-sm font-bold text-amber-800">
               {pendingCount} trip{pendingCount > 1 ? "s" : ""} pending HR approval
               {lastDecisionLabel ? (
                 <span className="ml-2 font-medium text-amber-700">
@@ -1981,7 +1981,7 @@ export function PersonalExpenseWorkloadDashboard({
                 </span>
               ) : null}
             </p>
-            <p className="mt-0.5 text-[11px] text-amber-700">
+            <p className="mt-0.5 text-phx-xs text-amber-700">
               These trips are in the approval queue and have not yet been confirmed for payroll inclusion.
             </p>
           </div>
@@ -1994,7 +1994,7 @@ export function PersonalExpenseWorkloadDashboard({
           <div className="flex items-center gap-2">
             <span className="h-7 w-1 bg-orange-500" />
             <div>
-              <span className="text-[11px] font-black uppercase tracking-wide text-slate-500">
+              <span className="text-phx-xs font-black uppercase tracking-wide text-slate-500">
                 Trip ledger
               </span>
               <h2 className="text-sm font-bold text-slate-800">Detailed Trip Table</h2>
@@ -2009,7 +2009,7 @@ export function PersonalExpenseWorkloadDashboard({
             >
               <button
                 aria-pressed={density === "comfortable"}
-                className={` px-2 py-1 text-[11px] font-semibold transition ${
+                className={` px-2 py-1 text-phx-xs font-semibold transition ${
                   density === "comfortable"
                     ? "bg-white text-slate-800 shadow-sm"
                     : "text-slate-500 hover:text-slate-700"
@@ -2021,7 +2021,7 @@ export function PersonalExpenseWorkloadDashboard({
               </button>
               <button
                 aria-pressed={density === "compact"}
-                className={` px-2 py-1 text-[11px] font-semibold transition ${
+                className={` px-2 py-1 text-phx-xs font-semibold transition ${
                   density === "compact"
                     ? "bg-white text-slate-800 shadow-sm"
                     : "text-slate-500 hover:text-slate-700"
@@ -2035,7 +2035,7 @@ export function PersonalExpenseWorkloadDashboard({
             {/* Excel export */}
             <button
               aria-label="Export my expenses to Excel"
-              className="inline-flex h-9 items-center gap-1.5 border border-slate-900 bg-slate-900 px-3 text-[12px] font-bold text-white shadow-sm transition hover:bg-slate-800 disabled:opacity-40 print:hidden"
+              className="inline-flex h-9 items-center gap-1.5 border border-slate-900 bg-slate-900 px-3 text-phx-sm font-bold text-white shadow-sm transition hover:bg-slate-800 disabled:opacity-40 print:hidden"
               disabled={sortedTrips.length === 0 || isExporting}
               onClick={() => {
                 void exportExcel();
@@ -2047,7 +2047,7 @@ export function PersonalExpenseWorkloadDashboard({
             </button>
             <button
               aria-label="Print expense report"
-              className="inline-flex h-9 items-center gap-1.5 border border-slate-300 bg-white px-3 text-[12px] font-semibold text-slate-600 shadow-sm transition hover:border-orange-200 hover:text-orange-600 print:hidden"
+              className="inline-flex h-9 items-center gap-1.5 border border-slate-300 bg-white px-3 text-phx-sm font-semibold text-slate-600 shadow-sm transition hover:border-orange-200 hover:text-orange-600 print:hidden"
               onClick={() => window.print()}
               type="button"
             >
@@ -2105,38 +2105,38 @@ export function PersonalExpenseWorkloadDashboard({
                           className="cursor-pointer transition hover:bg-orange-50/40"
                           onClick={() => setExpandedTripKey((prev) => prev === tripKey ? null : tripKey)}
                         >
-                          <td className={`whitespace-nowrap font-mono text-[11px] font-semibold text-slate-600 ${cellPaddingClass}`}>
+                          <td className={`whitespace-nowrap font-mono text-phx-xs font-semibold text-slate-600 ${cellPaddingClass}`}>
                             {trip.tripId || "N/A"}
                           </td>
-                          <td className={`max-w-[180px] whitespace-nowrap text-[12px] font-semibold text-slate-800 ${cellPaddingClass}`}>
+                          <td className={`max-w-[180px] whitespace-nowrap text-phx-sm font-semibold text-slate-800 ${cellPaddingClass}`}>
                             <span className="block whitespace-nowrap">{trip.ownerName || "Employee"}</span>
-                            <span className="block whitespace-nowrap font-mono text-[10px] font-semibold text-slate-400">{trip.hrId || "No HR ID"}</span>
+                            <span className="block whitespace-nowrap font-mono text-phx-2xs font-semibold text-slate-400">{trip.hrId || "No HR ID"}</span>
                           </td>
-                          <td className={`whitespace-nowrap text-[12px] text-slate-700 ${cellPaddingClass}`}>
+                          <td className={`whitespace-nowrap text-phx-sm text-slate-700 ${cellPaddingClass}`}>
                             {formatDate(trip.date)}
                           </td>
-                          <td className={`whitespace-nowrap text-[12px] text-slate-700 ${cellPaddingClass}`}>
+                          <td className={`whitespace-nowrap text-phx-sm text-slate-700 ${cellPaddingClass}`}>
                             {trip.requestType || "N/A"}
                           </td>
-                          <td className={`whitespace-nowrap text-[12px] font-semibold text-slate-800 ${cellPaddingClass}`}>
+                          <td className={`whitespace-nowrap text-phx-sm font-semibold text-slate-800 ${cellPaddingClass}`}>
                             {trip.fromCity || "Unknown"}
                           </td>
-                          <td className={`whitespace-nowrap text-[12px] font-semibold text-slate-800 ${cellPaddingClass}`}>
+                          <td className={`whitespace-nowrap text-phx-sm font-semibold text-slate-800 ${cellPaddingClass}`}>
                             {trip.toCity || "Unknown"}
                           </td>
-                          <td className={`whitespace-nowrap text-right text-[12px] font-bold text-slate-900 ${cellPaddingClass}`}>
+                          <td className={`whitespace-nowrap text-right text-phx-sm font-bold text-slate-900 ${cellPaddingClass}`}>
                             {formatMoney(trip.total)}
                           </td>
-                          <td className={`whitespace-nowrap text-right text-[12px] text-slate-700 ${cellPaddingClass}`}>
+                          <td className={`whitespace-nowrap text-right text-phx-sm text-slate-700 ${cellPaddingClass}`}>
                             {formatKm(trip.km)}
                           </td>
                           <td className={cellPaddingClass}>
                             <StatusPill category={category} />
                           </td>
-                          <td className={`whitespace-nowrap text-[12px] text-slate-700 ${cellPaddingClass}`}>
+                          <td className={`whitespace-nowrap text-phx-sm text-slate-700 ${cellPaddingClass}`}>
                             {trip.transportationType || "N/A"}
                           </td>
-                          <td className={`text-center text-[12px] text-slate-700 ${cellPaddingClass}`}>
+                          <td className={`text-center text-phx-sm text-slate-700 ${cellPaddingClass}`}>
                             {(() => {
                               const requestId = parseOutstationRequestId(trip.tripId);
                               const count = requestId != null ? ticketCountsByRequestId?.[requestId] : undefined;
@@ -2153,7 +2153,7 @@ export function PersonalExpenseWorkloadDashboard({
                           <tr>
                             <td className="border-b border-slate-200 p-0" colSpan={12}>
                               <div className="border-l-4 border-orange-400 bg-slate-50 px-4 py-4">
-                                <div className="grid gap-4 text-[12px] sm:grid-cols-2 lg:grid-cols-4">
+                                <div className="grid gap-4 text-phx-sm sm:grid-cols-2 lg:grid-cols-4">
                                   <div>
                                     <p className={labelClass}>Full Route</p>
                                     <p className="mt-1 font-semibold leading-snug text-slate-800">{trip.from || "N/A"}</p>
@@ -2262,15 +2262,15 @@ export function PersonalExpenseWorkloadDashboard({
               <tfoot className="border-t-2 border-slate-900">
                 <tr className="bg-slate-50">
                   <td
-                    className={`${cellPaddingClass} text-[10px] font-bold uppercase tracking-wider text-slate-500`}
+                    className={`${cellPaddingClass} text-phx-2xs font-bold uppercase tracking-wider text-slate-500`}
                     colSpan={6}
                   >
                     {pagedTrips.length > 0 ? `Page total · ${pagedTrips.length} trips` : "No records"}
                   </td>
-                  <td className={`${cellPaddingClass} text-right text-[12px] font-bold text-orange-600`}>
+                  <td className={`${cellPaddingClass} text-right text-phx-sm font-bold text-orange-600`}>
                     {formatMoney(pagedTrips.reduce((s, t) => s + t.total, 0))}
                   </td>
-                  <td className={`${cellPaddingClass} text-right text-[12px] font-semibold text-slate-700`}>
+                  <td className={`${cellPaddingClass} text-right text-phx-sm font-semibold text-slate-700`}>
                     {formatKm(pagedTrips.reduce((s, t) => s + t.km, 0))}
                   </td>
                   <td colSpan={4} />
@@ -2296,20 +2296,20 @@ export function PersonalExpenseWorkloadDashboard({
                     <div className="px-3 py-3 pl-4">
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0">
-                          <p className="whitespace-nowrap font-mono text-[11px] font-bold text-slate-600">
+                          <p className="whitespace-nowrap font-mono text-phx-xs font-bold text-slate-600">
                             {trip.tripId || "N/A"}
                           </p>
-                          <p className="mt-0.5 whitespace-nowrap text-[12px] font-bold text-slate-800">
+                          <p className="mt-0.5 whitespace-nowrap text-phx-sm font-bold text-slate-800">
                             {trip.ownerName || "Employee"}
                           </p>
-                          <p className="mt-0.5 text-[11px] text-slate-500">
+                          <p className="mt-0.5 text-phx-xs text-slate-500">
                             {trip.hrId ? `${trip.hrId} - ` : ""}{formatDate(trip.date)}
                             {trip.toDate ? ` → ${formatDate(trip.toDate)}` : ""}
                           </p>
                         </div>
                         <StatusPill category={category} />
                       </div>
-                      <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-slate-600">
+                      <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-phx-xs text-slate-600">
                         <span className=" bg-slate-100 px-1.5 py-0.5 font-semibold">
                           {trip.fromCity || "?"} → {trip.toCity || "?"}
                         </span>
@@ -2324,7 +2324,7 @@ export function PersonalExpenseWorkloadDashboard({
                           </span>
                         )}
                       </div>
-                      <div className="mt-2 grid grid-cols-3 gap-2 border-t border-slate-200 pt-2 text-[11px]">
+                      <div className="mt-2 grid grid-cols-3 gap-2 border-t border-slate-200 pt-2 text-phx-xs">
                         <div>
                           <p className="text-slate-500">Total</p>
                           <p className="font-bold text-slate-900">{formatMoney(trip.total)}</p>
@@ -2401,16 +2401,16 @@ export function PersonalExpenseWorkloadDashboard({
 
           {/* Pagination footer */}
           <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 bg-slate-50/60 px-3 py-2">
-            <p className="text-[11px] font-semibold text-slate-500">
+            <p className="text-phx-xs font-semibold text-slate-500">
               {sortedTrips.length === 0 ? "No records" : `Showing ${pageSummary}`}
             </p>
             <div className="flex items-center gap-3">
               {/* Page size selector — useful past ~200 records */}
-              <label className="flex items-center gap-1.5 text-[11px] text-slate-500 print:hidden">
+              <label className="flex items-center gap-1.5 text-phx-xs text-slate-500 print:hidden">
                 <span>Rows</span>
                 <SearchableSelect
                   aria-label="Rows per page"
-                  className="h-7 border border-slate-300 bg-white px-1.5 text-[11px] font-semibold text-slate-700 outline-none focus:border-orange-300"
+                  className="h-7 border border-slate-300 bg-white px-1.5 text-phx-xs font-semibold text-slate-700 outline-none focus:border-orange-300"
                   onChange={(event) => {
                     setPageSize(Number(event.target.value) as 10 | 25 | 50 | 100);
                     setPage(1);
@@ -2433,7 +2433,7 @@ export function PersonalExpenseWorkloadDashboard({
                 >
                   <ChevronLeft className="h-3.5 w-3.5" />
                 </button>
-                <span className="text-[11px] font-bold text-slate-700">
+                <span className="text-phx-xs font-bold text-slate-700">
                   {safePage} / {totalPages}
                 </span>
                 <button

@@ -55,25 +55,25 @@ function PlanActivityCard({ item }: { item: WeeklyPlanDetail["items"][number] })
     <div className="space-y-1">
       <div className={`rounded-md border px-2 py-1.5 ${color}`}>
         <div className="flex items-start justify-between gap-1.5">
-          <span className="text-[11px] font-bold leading-tight">{item.activityLabel}</span>
-          {item.timeLabel && <span className="shrink-0 text-[10px] font-semibold opacity-70">{item.timeLabel}</span>}
+          <span className="text-phx-xs font-bold leading-tight">{item.activityLabel}</span>
+          {item.timeLabel && <span className="shrink-0 text-phx-2xs font-semibold opacity-70">{item.timeLabel}</span>}
         </div>
-        {geo && <p className="mt-0.5 text-[10px] font-medium opacity-90">{geo}</p>}
-        {item.repName && <p className="text-[10px] opacity-80">with {item.repName}</p>}
-        {item.objective && <p className="mt-0.5 text-[10px] italic leading-snug opacity-75">{item.objective}</p>}
+        {geo && <p className="mt-0.5 text-phx-2xs font-medium opacity-90">{geo}</p>}
+        {item.repName && <p className="text-phx-2xs opacity-80">with {item.repName}</p>}
+        {item.objective && <p className="mt-0.5 text-phx-2xs italic leading-snug opacity-75">{item.objective}</p>}
       </div>
       {item.activityType === "Field" && item.visitDetails.length > 0 && (
         <div className="ml-1 space-y-1 border-l-2 border-sky-300 pl-2">
           {item.visitDetails.map((vd, idx) => (
             <div key={vd.id ?? idx} className="rounded border border-sky-200 bg-sky-50 px-2 py-1">
-              <p className="text-[10px] font-black text-sky-900">{vd.doctorName}</p>
-              <p className="text-[10px] font-semibold text-sky-700">
-                <span className="rounded-full bg-sky-200 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wide text-sky-800">
+              <p className="text-phx-2xs font-black text-sky-900">{vd.doctorName}</p>
+              <p className="text-phx-2xs font-semibold text-sky-700">
+                <span className="rounded-full bg-sky-200 px-1.5 py-0.5 text-phx-3xs font-black uppercase tracking-wide text-sky-800">
                   {vd.speciality}
                 </span>
                 {" · "}{vd.address}
               </p>
-              {vd.objective && <p className="mt-0.5 text-[10px] italic text-sky-600">{vd.objective}</p>}
+              {vd.objective && <p className="mt-0.5 text-phx-2xs italic text-sky-600">{vd.objective}</p>}
             </div>
           ))}
         </div>
@@ -110,12 +110,12 @@ export function WeeklyPlanCalendar({ detail }: { detail: WeeklyPlanDetail }) {
           <p className="text-sm font-black text-slate-900">
             {detail.planKind === "weekly" ? "Weekly plan" : "Monthly plan"} · {detail.periodKey}
           </p>
-          <p className="text-[11px] text-slate-500">
+          <p className="text-phx-xs text-slate-500">
             {rangeLabel} · {detail.itemCount} activit{detail.itemCount === 1 ? "y" : "ies"} ·{" "}
             {detail.stage === "manager" ? "Manager review" : "CEO approval"}
           </p>
           {(detail.employeeJobTitle || detail.managerName) && (
-            <p className="mt-0.5 text-[11px] text-slate-400">
+            <p className="mt-0.5 text-phx-xs text-slate-400">
               {detail.employeeJobTitle ? `Submitter: ${detail.employeeJobTitle}` : null}
               {detail.employeeJobTitle && detail.managerName ? " · " : null}
               {detail.managerName ? `Manager: ${detail.managerName}` : null}
@@ -124,7 +124,7 @@ export function WeeklyPlanCalendar({ detail }: { detail: WeeklyPlanDetail }) {
         </div>
         <a
           href={detail.reviewHref}
-          className="shrink-0 rounded border border-slate-300 bg-white px-2.5 py-1 text-[11px] font-bold text-slate-600 transition-colors hover:border-orange-300 hover:text-orange-600"
+          className="shrink-0 rounded border border-slate-300 bg-white px-2.5 py-1 text-phx-xs font-bold text-slate-600 transition-colors hover:border-orange-300 hover:text-orange-600"
         >
           Open in full planner ↗
         </a>
@@ -142,12 +142,12 @@ export function WeeklyPlanCalendar({ detail }: { detail: WeeklyPlanDetail }) {
             return (
               <div key={day} className="flex flex-col rounded-lg border border-slate-200 bg-white p-2">
                 <div className="mb-1.5 flex items-baseline justify-between border-b border-slate-100 pb-1">
-                  <span className="text-[11px] font-black uppercase tracking-wide text-slate-700">{parts.weekday}</span>
-                  <span className="text-[10px] font-bold text-slate-400">{parts.dayNumber} {parts.month}</span>
+                  <span className="text-phx-xs font-black uppercase tracking-wide text-slate-700">{parts.weekday}</span>
+                  <span className="text-phx-2xs font-bold text-slate-400">{parts.dayNumber} {parts.month}</span>
                 </div>
                 <div className="flex flex-col gap-1.5">
                   {dayItems.length === 0 ? (
-                    <p className="py-2 text-center text-[10px] text-slate-300">No activity</p>
+                    <p className="py-2 text-center text-phx-2xs text-slate-300">No activity</p>
                   ) : (
                     dayItems.map((item, idx) => <PlanActivityCard key={`${day}-${idx}`} item={item} />)
                   )}

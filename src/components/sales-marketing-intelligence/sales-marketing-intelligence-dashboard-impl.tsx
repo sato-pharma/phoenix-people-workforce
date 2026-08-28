@@ -113,7 +113,7 @@ function FilterSelect({
 }) {
   return (
     <label className="min-w-0 space-y-1">
-      <span className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-500">{label}</span>
+      <span className="text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-500">{label}</span>
       <select
         className="h-10 w-full min-w-0 rounded-md border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none transition focus:border-orange-300 focus:ring-2 focus:ring-orange-100"
         defaultValue={value}
@@ -158,7 +158,7 @@ function DashboardFilters({
       <FilterSelect label="ROI status" name="roiStatus" options={snapshot.filters.roiStatuses} value={selectedValue(filters.roiStatuses)} />
       <FilterSelect label="Attribution" name="attribution" options={snapshot.filters.attributionQualities} value={selectedValue(filters.attributionQualities)} />
       <label className="min-w-0 space-y-1">
-        <span className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-500">From</span>
+        <span className="text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-500">From</span>
         <input
           className="h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none transition focus:border-orange-300 focus:ring-2 focus:ring-orange-100"
           defaultValue={filters.fromMonth}
@@ -167,7 +167,7 @@ function DashboardFilters({
         />
       </label>
       <label className="min-w-0 space-y-1">
-        <span className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-500">To</span>
+        <span className="text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-500">To</span>
         <input
           className="h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none transition focus:border-orange-300 focus:ring-2 focus:ring-orange-100"
           defaultValue={filters.toMonth}
@@ -176,7 +176,7 @@ function DashboardFilters({
         />
       </label>
       <label className="min-w-0 space-y-1">
-        <span className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-500">Rows</span>
+        <span className="text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-500">Rows</span>
         <select
           className="h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none transition focus:border-orange-300 focus:ring-2 focus:ring-orange-100"
           defaultValue={String(filters.limit)}
@@ -188,7 +188,7 @@ function DashboardFilters({
         </select>
       </label>
       <label className="min-w-0 space-y-1 xl:col-span-2">
-        <span className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-500">Customer or request</span>
+        <span className="text-phx-2xs font-black uppercase tracking-[0.14em] text-slate-500">Customer or request</span>
         <span className="relative block">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
           <input
@@ -273,7 +273,7 @@ function RoiStatusBadge({ status }: { status: SalesMarketingRoiStatus }) {
   // ROI Tracking about the same request's verdict.
   const label = ROI_RESULT_STATUS_LABEL[status];
 
-  return <span className={cn("inline-flex rounded-sm border px-2 py-0.5 text-[10px] font-black uppercase tracking-wide", config)}>{label}</span>;
+  return <span className={cn("inline-flex rounded-sm border px-2 py-0.5 text-phx-2xs font-black uppercase tracking-wide", config)}>{label}</span>;
 }
 
 function AttributionBadge({ quality }: { quality: SalesMarketingAttributionQuality }) {
@@ -290,7 +290,7 @@ function AttributionBadge({ quality }: { quality: SalesMarketingAttributionQuali
     no_sales: "No sales",
   }[quality];
 
-  return <span className={cn("inline-flex rounded-sm border px-2 py-0.5 text-[10px] font-black uppercase tracking-wide", config)}>{label}</span>;
+  return <span className={cn("inline-flex rounded-sm border px-2 py-0.5 text-phx-2xs font-black uppercase tracking-wide", config)}>{label}</span>;
 }
 
 function ActionBadge({ action }: { action: SalesMarketingRecommendedAction }) {
@@ -307,7 +307,7 @@ function ActionBadge({ action }: { action: SalesMarketingRecommendedAction }) {
     monitor: "Monitor",
   }[action];
 
-  return <span className={cn("inline-flex rounded-sm border px-2 py-0.5 text-[10px] font-black uppercase tracking-wide", config)}>{label}</span>;
+  return <span className={cn("inline-flex rounded-sm border px-2 py-0.5 text-phx-2xs font-black uppercase tracking-wide", config)}>{label}</span>;
 }
 
 /** Mobile-card status badge for tables whose rows don't carry an explicit on_track/behind/no_data
@@ -318,7 +318,7 @@ function CoverageBadge({ coverage }: { coverage: number }) {
   return (
     <span
       className={cn(
-        "inline-flex rounded-sm border px-2 py-0.5 text-[10px] font-black uppercase tracking-wide",
+        "inline-flex rounded-sm border px-2 py-0.5 text-phx-2xs font-black uppercase tracking-wide",
         onTrack ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-rose-200 bg-rose-50 text-rose-700",
       )}
     >
@@ -354,15 +354,15 @@ function DecisionSummaryPanel({ snapshot }: { snapshot: SalesMarketingDashboardS
               <p className="truncate text-xs font-semibold text-slate-500">{topRisk.line ?? "Unassigned"}</p>
             </div>
             <div>
-              <p className="text-[10px] font-black uppercase tracking-[0.12em] text-slate-500">Required</p>
+              <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">Required</p>
               <p className="font-black text-slate-900">{money(topRisk.requiredRoiValue)}</p>
             </div>
             <div>
-              <p className="text-[10px] font-black uppercase tracking-[0.12em] text-slate-500">Actual</p>
+              <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">Actual</p>
               <p className="font-black text-emerald-700">{money(topRisk.actualSalesValue)}</p>
             </div>
             <div>
-              <p className="text-[10px] font-black uppercase tracking-[0.12em] text-slate-500">Gap</p>
+              <p className="text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">Gap</p>
               <p className="font-black text-amber-700">{money(topRisk.coverageGap)}</p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
@@ -432,8 +432,8 @@ function RoiComparisonTable({
         items={rows}
         renderCard={(row) => <RoiComparisonRowCard kind={kind} row={row} />}
         renderTable={() => (
-          <PortalDesktopTable className="text-[13px]" minWidth="1180px">
-            <thead className="bg-slate-50 text-[10px] font-black uppercase tracking-[0.12em] text-slate-500">
+          <PortalDesktopTable className="text-phx-md" minWidth="1180px">
+            <thead className="bg-slate-50 text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">
               <tr>
                 <th className="border-r border-slate-100 px-3 py-2.5">{kind === "product" ? "Product" : kind === "line" ? "Line" : "Segment"}</th>
                 {kind === "product" ? <th className="border-r border-slate-100 px-3 py-2.5">Line</th> : null}
@@ -517,8 +517,8 @@ function RequestReportTable({ rows }: { rows: SalesMarketingRequestRow[] }) {
         items={rows}
         renderCard={(row) => <RequestRowCard row={row} />}
         renderTable={() => (
-          <PortalDesktopTable className="text-[13px]" minWidth="1480px">
-            <thead className="bg-slate-50 text-[10px] font-black uppercase tracking-[0.12em] text-slate-500">
+          <PortalDesktopTable className="text-phx-md" minWidth="1480px">
+            <thead className="bg-slate-50 text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">
               <tr>
                 <th className="border-r border-slate-100 px-3 py-2.5">Request</th>
                 <th className="border-r border-slate-100 px-3 py-2.5">Customer</th>
@@ -541,7 +541,7 @@ function RequestReportTable({ rows }: { rows: SalesMarketingRequestRow[] }) {
                   <td className="border-r border-slate-100 px-3 py-2.5 font-mono text-xs font-black text-slate-900">{row.requestCode}</td>
                   <td className="border-r border-slate-100 px-3 py-2.5">
                     <p className="font-bold text-slate-800">{row.customerName}</p>
-                    {row.customerCode ? <p className="text-[11px] font-semibold text-slate-500">{row.customerCode}</p> : null}
+                    {row.customerCode ? <p className="text-phx-xs font-semibold text-slate-500">{row.customerCode}</p> : null}
                   </td>
                   <td className="border-r border-slate-100 px-3 py-2.5 font-semibold text-slate-600">{row.line ?? "-"}</td>
                   <td className="border-r border-slate-100 px-3 py-2.5 font-semibold text-slate-600">{row.payDate ?? row.payMonth ?? "-"}</td>
@@ -610,8 +610,8 @@ function CustomerImpactTable({ rows }: { rows: SalesMarketingCustomerImpactRow[]
         items={rows}
         renderCard={(row) => <CustomerImpactRowCard row={row} />}
         renderTable={() => (
-          <PortalDesktopTable className="text-[13px]" minWidth="1280px">
-            <thead className="bg-slate-50 text-[10px] font-black uppercase tracking-[0.12em] text-slate-500">
+          <PortalDesktopTable className="text-phx-md" minWidth="1280px">
+            <thead className="bg-slate-50 text-phx-2xs font-black uppercase tracking-[0.12em] text-slate-500">
               <tr>
                 <th className="border-r border-slate-100 px-3 py-2.5">Customer / Pharmacy</th>
                 <th className="border-r border-slate-100 px-3 py-2.5">Distributor</th>

@@ -88,16 +88,16 @@ export function PrivateCalendarDisputesWorkspace({
           {disputes.map((dispute) => (
             <div className="px-5 py-4" key={dispute.id}>
               <div className="flex flex-wrap items-center gap-2">
-                <span className="whitespace-nowrap font-mono text-[11px] font-semibold text-slate-500">{formatDate(dispute.disputeDate)}</span>
-                <span className="whitespace-nowrap rounded-sm bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-700">
+                <span className="whitespace-nowrap font-mono text-phx-xs font-semibold text-slate-500">{formatDate(dispute.disputeDate)}</span>
+                <span className="whitespace-nowrap rounded-sm bg-slate-100 px-2 py-0.5 text-phx-xs font-semibold text-slate-700">
                   {dispute.employeeName ?? dispute.employeeHrId} ({dispute.employeeHrId})
                 </span>
                 {dispute.itemSource ? (
-                  <span className="whitespace-nowrap rounded-sm bg-indigo-100 px-2 py-0.5 text-[11px] font-semibold text-indigo-700">
+                  <span className="whitespace-nowrap rounded-sm bg-indigo-100 px-2 py-0.5 text-phx-xs font-semibold text-indigo-700">
                     {dispute.itemSource}
                   </span>
                 ) : (
-                  <span className="whitespace-nowrap rounded-sm bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-500">
+                  <span className="whitespace-nowrap rounded-sm bg-slate-100 px-2 py-0.5 text-phx-xs font-semibold text-slate-500">
                     whole day
                   </span>
                 )}
@@ -105,15 +105,15 @@ export function PrivateCalendarDisputesWorkspace({
 
               <div className="mt-3 grid gap-3 md:grid-cols-3">
                 <div>
-                  <p className="text-[11px] font-black uppercase tracking-[0.1em] text-slate-400">Currently shown</p>
+                  <p className="text-phx-xs font-black uppercase tracking-[0.1em] text-slate-400">Currently shown</p>
                   <p className="mt-1 text-sm font-semibold text-slate-700">{dispute.displayedSummary}</p>
                 </div>
                 <div>
-                  <p className="text-[11px] font-black uppercase tracking-[0.1em] text-slate-400">Employee claim</p>
+                  <p className="text-phx-xs font-black uppercase tracking-[0.1em] text-slate-400">Employee claim</p>
                   <p className="mt-1 text-sm font-semibold text-slate-900">{dispute.claimText}</p>
                 </div>
                 <div>
-                  <p className="text-[11px] font-black uppercase tracking-[0.1em] text-slate-400">Where to verify</p>
+                  <p className="text-phx-xs font-black uppercase tracking-[0.1em] text-slate-400">Where to verify</p>
                   <p className="mt-1 text-sm font-semibold text-slate-900">{dispute.claimSourceText}</p>
                 </div>
               </div>

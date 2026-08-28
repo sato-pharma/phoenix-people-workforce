@@ -15,7 +15,7 @@ export function SlaAgeChip({ ageDays, module }: { ageDays: number; module: Appro
 
   if (tone === "overdue") {
     return (
-      <span className="inline-flex items-center gap-1 whitespace-nowrap rounded-full border border-rose-200/80 bg-rose-50 px-1.5 py-0.5 text-[10px] font-bold text-rose-700">
+      <span className="inline-flex items-center gap-1 whitespace-nowrap rounded-full border border-rose-200/80 bg-rose-50 px-1.5 py-0.5 text-phx-2xs font-bold text-rose-700">
         <span className="h-1 w-1 rounded-full bg-rose-500" />
         Overdue {ageDays}d
       </span>
@@ -23,7 +23,7 @@ export function SlaAgeChip({ ageDays, module }: { ageDays: number; module: Appro
   }
   if (tone === "due") {
     return (
-      <span className="whitespace-nowrap rounded-full border border-amber-200/80 bg-amber-50 px-1.5 py-0.5 text-[10px] font-bold text-amber-800">
+      <span className="whitespace-nowrap rounded-full border border-amber-200/80 bg-amber-50 px-1.5 py-0.5 text-phx-2xs font-bold text-amber-800">
         {daysLeft === 0 ? "Due today" : "1d left"}
       </span>
     );
@@ -46,5 +46,5 @@ export function SlaAgeBadge({ ageDays, module }: { ageDays: number; module: Appr
         ? "bg-amber-100 text-amber-900"
         : "bg-orange-500/90 text-white";
 
-  return <span className={`whitespace-nowrap rounded-full px-2 py-0.5 text-[10px] font-bold ${toneClass}`}>{label}</span>;
+  return <span className={`whitespace-nowrap rounded-full px-2 py-0.5 text-phx-2xs font-bold ${toneClass}`}>{label}</span>;
 }

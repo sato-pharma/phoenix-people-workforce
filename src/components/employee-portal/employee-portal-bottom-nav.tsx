@@ -66,7 +66,7 @@ export function EmployeePortalBottomNav({
             <li className="flex-1" key={`${item.label}-${item.href}`}>
               <Link
                 aria-current={active ? "page" : undefined}
-                className={`mx-0.5 flex h-[60px] min-w-0 flex-col items-center justify-center gap-0.5 rounded text-[10px] font-black transition-colors ${
+                className={`mx-0.5 flex h-[60px] min-w-0 flex-col items-center justify-center gap-0.5 rounded text-phx-2xs font-black transition-colors ${
                   active ? "bg-orange-50 text-orange-700 ring-1 ring-orange-100" : "text-slate-500 active:text-slate-700"
                 }`}
                 href={item.href}

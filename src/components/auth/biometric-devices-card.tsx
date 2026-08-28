@@ -182,10 +182,10 @@ export function BiometricDevicesCard() {
   return (
     <Card className="rounded border border-gray-200 bg-white p-5 shadow-[0_1px_3px_rgba(15,23,42,0.06)] sm:p-6">
       <div className="mb-4 flex items-center gap-2">
-        <span className="inline-flex rounded border border-orange-200 bg-orange-50 px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wider text-orange-600">
+        <span className="inline-flex rounded border border-orange-200 bg-orange-50 px-2.5 py-0.5 text-phx-xs font-semibold uppercase tracking-wider text-orange-600">
           Security
         </span>
-        <span className="text-[11px] font-medium text-slate-400">Biometric sign-in</span>
+        <span className="text-phx-xs font-medium text-slate-400">Biometric sign-in</span>
       </div>
 
       <p className="text-sm text-slate-600">
@@ -206,7 +206,7 @@ export function BiometricDevicesCard() {
                   <span className="block text-sm font-semibold text-slate-800">
                     {device.deviceLabel}
                   </span>
-                  <span className="block text-[11px] text-slate-500">
+                  <span className="block text-phx-xs text-slate-500">
                     Added {formatCairo(device.createdAt)} · Last used {formatCairo(device.lastUsedAt)}
                   </span>
                 </span>

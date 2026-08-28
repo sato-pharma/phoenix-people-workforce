@@ -120,7 +120,7 @@ export function SupportRequestsWorkspace({
       {error && (
         <div
           aria-live="polite"
-          className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-[12px] font-semibold text-rose-700"
+          className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-phx-sm font-semibold text-rose-700"
           role="status"
         >
           {error}
@@ -141,14 +141,14 @@ export function SupportRequestsWorkspace({
                     <h3 className="text-sm font-bold text-slate-900">{item.subject}</h3>
                     <Badge variant={STATUS_VARIANT[item.status]}>{item.status}</Badge>
                   </div>
-                  <p className="mt-0.5 text-[12px] text-slate-500">
+                  <p className="mt-0.5 text-phx-sm text-slate-500">
                     {item.employeeName} ({item.hrId}) · {item.category}
                     {item.subcategory ? ` / ${item.subcategory}` : ""} · {formatDate(item.createdAt)}
                   </p>
                 </div>
 
                 {canManage ? (
-                  <label className="flex items-center gap-2 text-[11px] font-semibold text-slate-500">
+                  <label className="flex items-center gap-2 text-phx-xs font-semibold text-slate-500">
                     <span className="hidden sm:inline">Status</span>
                     <SearchableSelect
                       aria-label={`Status for ${item.subject}`}
@@ -167,12 +167,12 @@ export function SupportRequestsWorkspace({
                 ) : null}
               </div>
 
-              <p className="whitespace-pre-wrap text-[13px] leading-relaxed text-slate-700">
+              <p className="whitespace-pre-wrap text-phx-md leading-relaxed text-slate-700">
                 {item.description}
               </p>
 
               {item.attachments.length > 0 && (
-                <p className="text-[11px] text-slate-500">
+                <p className="text-phx-xs text-slate-500">
                   {item.attachments.length} attachment{item.attachments.length === 1 ? "" : "s"}:{" "}
                   {item.attachments.map((file) => file.name).join(", ")}
                 </p>

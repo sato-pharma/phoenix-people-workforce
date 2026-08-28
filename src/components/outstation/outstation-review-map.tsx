@@ -299,7 +299,7 @@ export function OutstationReviewMap({
     return (
       <Card className="rounded-lg border border-gray-100 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.06)] sm:p-5">
         <p className="text-sm font-semibold text-slate-800">Map unavailable</p>
-        <p className="mt-1 text-[13px] text-slate-500">
+        <p className="mt-1 text-phx-md text-slate-500">
           NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY is missing from the environment.
         </p>
       </Card>
@@ -309,13 +309,13 @@ export function OutstationReviewMap({
   return (
     <Card className="rounded-lg border border-gray-100 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.06)] sm:p-5">
       <div className="mb-4">
-        <span className="rounded-md bg-orange-50 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-orange-600">
+        <span className="rounded-md bg-orange-50 px-2 py-1 text-phx-2xs font-bold uppercase tracking-wider text-orange-600">
           Route review
         </span>
         <h2 className="mt-2 text-base font-bold text-slate-800 sm:text-lg">
           Residence versus captured destination
         </h2>
-        <p className="mt-1 text-[13px] leading-relaxed text-slate-500">
+        <p className="mt-1 text-phx-md leading-relaxed text-slate-500">
           Calculation is based on the fastest available route. Alternative routes are shown for reference only.
         </p>
       </div>
@@ -325,10 +325,10 @@ export function OutstationReviewMap({
           {request ? (
             <div className="grid grid-cols-1 divide-x divide-y divide-gray-100 overflow-hidden rounded-md border border-gray-100 text-sm sm:grid-cols-3">
               <div className="border-l-2 border-l-emerald-400 px-3 py-3">
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                <p className="text-phx-2xs font-semibold uppercase tracking-wider text-slate-500">
                   Fastest time
                 </p>
-                <p className="mt-1 text-[13px] font-semibold text-slate-800">
+                <p className="mt-1 text-phx-md font-semibold text-slate-800">
                   {formatMinutes(
                     selectedRoute?.durationInTrafficMinutes ??
                       selectedRoute?.durationMinutes ??
@@ -337,18 +337,18 @@ export function OutstationReviewMap({
                 </p>
               </div>
               <div className="border-l-2 border-l-sky-400 px-3 py-3">
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                <p className="text-phx-2xs font-semibold uppercase tracking-wider text-slate-500">
                   Fastest distance
                 </p>
-                <p className="mt-1 text-[13px] font-semibold text-slate-800">
+                <p className="mt-1 text-phx-md font-semibold text-slate-800">
                   {formatDistance(selectedRoute?.distanceKm ?? request.distanceFromResidenceKm)}
                 </p>
               </div>
               <div className="border-l-2 border-l-amber-400 px-3 py-3">
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                <p className="text-phx-2xs font-semibold uppercase tracking-wider text-slate-500">
                   Routes found
                 </p>
-                <p className="mt-1 text-[13px] font-semibold text-slate-800">
+                <p className="mt-1 text-phx-md font-semibold text-slate-800">
                   {routeCount.toLocaleString()}
                 </p>
               </div>
@@ -359,12 +359,12 @@ export function OutstationReviewMap({
             ref={mapRef}
           />
           {!ready ? (
-            <p className="text-[13px] text-slate-500">Loading Google Maps...</p>
+            <p className="text-phx-md text-slate-500">Loading Google Maps...</p>
           ) : null}
-          {error ? <p className="text-[13px] text-amber-700">{error}</p> : null}
+          {error ? <p className="text-phx-md text-amber-700">{error}</p> : null}
         </div>
       ) : (
-        <div className="rounded-md border border-gray-100 bg-slate-50/60 px-3 py-3 text-[13px] text-slate-600">
+        <div className="rounded-md border border-gray-100 bg-slate-50/60 px-3 py-3 text-phx-md text-slate-600">
           Select a request with both residence and captured coordinates to review the route on the map.
         </div>
       )}

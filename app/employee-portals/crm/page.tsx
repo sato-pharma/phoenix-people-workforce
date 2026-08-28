@@ -102,7 +102,7 @@ async function PortalCrmContent({
   const tableKey = `${dataset}:${data.dateFrom}:${data.dateTo}:${data.page}:${data.pageSize}`;
   return (
     <div className="space-y-4">
-      <span className="inline-flex items-center gap-1.5 rounded border border-orange-200 bg-orange-50 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-orange-700">
+      <span className="inline-flex items-center gap-1.5 rounded border border-orange-200 bg-orange-50 px-2.5 py-1 text-phx-xs font-semibold uppercase tracking-[0.08em] text-orange-700">
         {scopeView.scopeSummary}
       </span>
       <CrmTabBar active={data.dataset} extraTabs={[]} />

@@ -194,14 +194,14 @@ export function NsmTeamExpensesDashboard({
               className={`min-w-0 border-l-2 ${statBorders[stat.label] ?? "border-l-slate-300"} bg-white px-3 py-3 sm:px-4 sm:py-4`}
               key={stat.label}
             >
-              <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+              <p className="text-phx-xs font-semibold uppercase tracking-wider text-slate-400">
                 {stat.label}
               </p>
               <p className="mt-1.5 break-words text-lg font-bold text-slate-900 sm:text-xl">
                 {stat.value}
               </p>
               {stat.helper ? (
-                <p className="mt-1 text-[11px] font-medium text-slate-400">{stat.helper}</p>
+                <p className="mt-1 text-phx-xs font-medium text-slate-400">{stat.helper}</p>
               ) : null}
             </div>
           ))}
@@ -340,7 +340,7 @@ export function NsmTeamExpensesDashboard({
                       <p className="break-words text-sm font-semibold leading-tight text-slate-900">
                         {formatEmployeeDisplayName(dsm.name)}
                       </p>
-                      <p className="mt-0.5 text-[10px] text-slate-400">
+                      <p className="mt-0.5 text-phx-2xs text-slate-400">
                         {dsm.hrId}{dsm.lineName ? ` · ${dsm.lineName}` : ""}
                       </p>
                     </div>
@@ -359,18 +359,18 @@ export function NsmTeamExpensesDashboard({
 
                   {/* Metadata pills */}
                   <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                    <span className="inline-flex items-center rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700">
+                    <span className="inline-flex items-center rounded bg-emerald-50 px-1.5 py-0.5 text-phx-2xs font-medium text-emerald-700">
                       Approved: {compactEgp(dsm.approvedAmount)}
                     </span>
                     {dsm.pendingAmount > 0 && (
-                      <span className="inline-flex items-center rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">
+                      <span className="inline-flex items-center rounded bg-amber-50 px-1.5 py-0.5 text-phx-2xs font-medium text-amber-700">
                         Pending: {compactEgp(dsm.pendingAmount)}
                       </span>
                     )}
-                    <span className="inline-flex items-center rounded bg-slate-50 px-1.5 py-0.5 text-[10px] font-medium text-slate-600">
+                    <span className="inline-flex items-center rounded bg-slate-50 px-1.5 py-0.5 text-phx-2xs font-medium text-slate-600">
                       {dsm.totalTrips} trips
                     </span>
-                    <span className="inline-flex items-center rounded bg-slate-50 px-1.5 py-0.5 text-[10px] font-medium text-slate-600">
+                    <span className="inline-flex items-center rounded bg-slate-50 px-1.5 py-0.5 text-phx-2xs font-medium text-slate-600">
                       Avg: {egp(dsm.avgCostPerTrip)}
                     </span>
                   </div>
@@ -399,18 +399,18 @@ export function NsmTeamExpensesDashboard({
                 <tr key={dsm.hrId} className="border-b border-slate-100 hover:bg-slate-50 transition-colors">
                   <td className="min-w-0 py-2.5 px-3 border-r border-slate-100">
                     <p className="break-words font-medium leading-tight text-slate-900">{formatEmployeeDisplayName(dsm.name)}</p>
-                    <p className="text-[10px] text-slate-400">{dsm.hrId}{dsm.lineName ? ` · ${dsm.lineName}` : ""}</p>
+                    <p className="text-phx-2xs text-slate-400">{dsm.hrId}{dsm.lineName ? ` · ${dsm.lineName}` : ""}</p>
                   </td>
                   <td className="py-2.5 px-3 text-right border-r border-slate-100 text-slate-700">
                     {dsm.totalTrips.toLocaleString()}
                   </td>
                   <td className="py-2.5 px-3 text-right border-r border-slate-100">
                     <p className="font-medium text-slate-900">{egp(dsm.approvedAmount)}</p>
-                    <p className="text-[10px] text-slate-400">{dsm.approvedTrips} trips</p>
+                    <p className="text-phx-2xs text-slate-400">{dsm.approvedTrips} trips</p>
                   </td>
                   <td className="py-2.5 px-3 text-right border-r border-slate-100">
                     <p className="font-medium text-slate-900">{egp(dsm.pendingAmount)}</p>
-                    <p className="text-[10px] text-slate-400">{dsm.pendingTrips} trips</p>
+                    <p className="text-phx-2xs text-slate-400">{dsm.pendingTrips} trips</p>
                   </td>
                   <td className="py-2.5 px-3 text-right border-r border-slate-100 text-slate-700">
                     {formatKm(dsm.totalDistance)}
@@ -460,7 +460,7 @@ export function NsmTeamExpensesDashboard({
                       <p className="break-words text-sm font-semibold leading-tight text-slate-900">
                         {expense.dsmName}
                       </p>
-                      <p className="mt-0.5 text-[10px] text-slate-400">
+                      <p className="mt-0.5 text-phx-2xs text-slate-400">
                         {formatDate(expense.date)} · Trip #{expense.tripId || "N/A"}
                       </p>
                     </div>
@@ -471,20 +471,20 @@ export function NsmTeamExpensesDashboard({
 
                   <div className="mt-2 flex flex-wrap items-center gap-1.5">
                     <span
-                      className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium"
+                      className="inline-flex items-center rounded px-1.5 py-0.5 text-phx-2xs font-medium"
                       style={{ backgroundColor: tone.background, color: tone.text }}
                     >
                       {EXPENSE_STATE_LABEL[state]}
                     </span>
-                    <span className="inline-flex items-center rounded bg-slate-50 px-1.5 py-0.5 text-[10px] font-medium text-slate-600">
+                    <span className="inline-flex items-center rounded bg-slate-50 px-1.5 py-0.5 text-phx-2xs font-medium text-slate-600">
                       {expense.requestType || "Other"}
                     </span>
-                    <span className="inline-flex items-center rounded bg-slate-50 px-1.5 py-0.5 text-[10px] font-medium text-slate-600">
+                    <span className="inline-flex items-center rounded bg-slate-50 px-1.5 py-0.5 text-phx-2xs font-medium text-slate-600">
                       {formatKm(expense.km)}
                     </span>
                   </div>
 
-                  <p className="mt-1.5 break-words text-[10px] text-slate-400">
+                  <p className="mt-1.5 break-words text-phx-2xs text-slate-400">
                     {formatRoute(expense.from, expense.to)}
                   </p>
                 </div>
@@ -519,7 +519,7 @@ export function NsmTeamExpensesDashboard({
                   >
                     <td className="min-w-0 py-2.5 px-3 border-r border-slate-100">
                       <p className="break-words font-medium leading-tight text-slate-900">{expense.dsmName}</p>
-                      <p className="text-[10px] text-slate-400">{expense.hrId ?? "N/A"}</p>
+                      <p className="text-phx-2xs text-slate-400">{expense.hrId ?? "N/A"}</p>
                     </td>
                     <td className="py-2.5 px-3 text-slate-700 border-r border-slate-100">
                       {expense.tripId || "N/A"}
@@ -541,7 +541,7 @@ export function NsmTeamExpensesDashboard({
                     </td>
                     <td className="py-2.5 px-3 text-center">
                       <span
-                        className="inline-flex rounded px-2 py-0.5 text-[11px] font-semibold"
+                        className="inline-flex rounded px-2 py-0.5 text-phx-xs font-semibold"
                         style={{
                           backgroundColor: stateTone[state].background,
                           color: stateTone[state].text,

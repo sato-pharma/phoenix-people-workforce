@@ -15,7 +15,7 @@ type Props = {
 function Row({ label, value }: { label: string; value: string | number | null | undefined }) {
   return (
     <div className="flex flex-col gap-0.5 border-b border-slate-100 py-2">
-      <dt className="text-[11px] font-bold uppercase tracking-wide text-slate-500">{label}</dt>
+      <dt className="text-phx-xs font-bold uppercase tracking-wide text-slate-500">{label}</dt>
       <dd className="text-sm font-semibold text-slate-900">{value === null || value === undefined || value === "" ? "—" : value}</dd>
     </div>
   );
@@ -63,7 +63,7 @@ export function VacationRequestDetail({ detail, backHref }: Props) {
       <div className="grid gap-4 lg:grid-cols-2">
         <section className="border border-phx-line bg-white">
           <header className="border-b border-phx-line bg-slate-900 px-4 py-2.5">
-            <h3 className="text-[11px] font-black uppercase tracking-[0.14em] text-white">Request details</h3>
+            <h3 className="text-phx-xs font-black uppercase tracking-[0.14em] text-white">Request details</h3>
           </header>
           <dl className="px-4 py-2">
             <Row label="Employee" value={`${r.employeeName} (${r.employeeHrId})`} />
@@ -81,7 +81,7 @@ export function VacationRequestDetail({ detail, backHref }: Props) {
           </dl>
           {detail.canReviewAttachments && (r.sickAttachmentObjectPath || r.compensatoryAttachmentObjectPath) ? (
             <div className="border-t border-slate-100 px-4 py-3">
-              <p className="mb-1.5 text-[11px] font-bold uppercase tracking-wide text-slate-500">Evidence</p>
+              <p className="mb-1.5 text-phx-xs font-bold uppercase tracking-wide text-slate-500">Evidence</p>
               <VacationAttachmentLinks canReviewAttachments={detail.canReviewAttachments} row={r} />
               {detail.canReviewEvidence ? (
                 <VacationEvidenceReviewActions

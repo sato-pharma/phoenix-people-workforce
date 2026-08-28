@@ -30,8 +30,8 @@ function MonthChips({ pharmacy }: { pharmacy: TerritoryPharmacy }) {
         <span
           className={
             month.hasSales
-              ? "rounded bg-orange-50 px-1.5 py-0.5 text-[9px] font-black text-orange-700 ring-1 ring-orange-200"
-              : "rounded bg-slate-50 px-1.5 py-0.5 text-[9px] font-black text-slate-400 ring-1 ring-slate-200"
+              ? "rounded bg-orange-50 px-1.5 py-0.5 text-phx-3xs font-black text-orange-700 ring-1 ring-orange-200"
+              : "rounded bg-slate-50 px-1.5 py-0.5 text-phx-3xs font-black text-slate-400 ring-1 ring-slate-200"
           }
           key={month.period}
           title={month.period}
@@ -53,7 +53,7 @@ function PharmacyRecord({ pharmacy }: { pharmacy: TerritoryPharmacy }) {
       title={pharmacy.clientName}
     >
       <button
-        className="text-[11px] font-bold text-orange-600 underline underline-offset-2"
+        className="text-phx-xs font-bold text-orange-600 underline underline-offset-2"
         onClick={() => setShowTrend((value) => !value)}
         type="button"
       >
@@ -75,11 +75,11 @@ function BrickDetails({ brick, pharmacies }: { brick: TerritoryBrickNode; pharma
       {/* Name gets its own full-width line and wraps instead of truncating — a two-line
           summary so the brick name is never squeezed out by the code/stats row below it. */}
       <summary className="flex cursor-pointer list-none flex-col gap-1 px-3 py-2.5">
-        <span className="break-words text-[12px] font-bold leading-snug text-slate-900">{brick.brickName}</span>
+        <span className="break-words text-phx-sm font-bold leading-snug text-slate-900">{brick.brickName}</span>
         <span className="flex items-center justify-between gap-2">
-          <span className="shrink-0 text-[10px] font-mono font-semibold text-slate-400">{brick.brickId}</span>
+          <span className="shrink-0 text-phx-2xs font-mono font-semibold text-slate-400">{brick.brickId}</span>
           {pharmacies ? (
-            <span className="shrink-0 text-right text-[10px] font-black tabular-nums text-slate-500">
+            <span className="shrink-0 text-right text-phx-2xs font-black tabular-nums text-slate-500">
               {pharmacies.length} PHs · {formatEgp(total)}
             </span>
           ) : null}
@@ -87,9 +87,9 @@ function BrickDetails({ brick, pharmacies }: { brick: TerritoryBrickNode; pharma
       </summary>
       <div className="space-y-2 border-t border-slate-100 px-3 pt-2">
         {pharmacies === null ? (
-          <p className="py-1 text-[11px] font-semibold text-slate-400">Loading…</p>
+          <p className="py-1 text-phx-xs font-semibold text-slate-400">Loading…</p>
         ) : pharmacies.length === 0 ? (
-          <p className="py-1 text-[11px] font-semibold text-slate-400">No pharmacies with sales in your line here yet.</p>
+          <p className="py-1 text-phx-xs font-semibold text-slate-400">No pharmacies with sales in your line here yet.</p>
         ) : (
           <PortalRecordFields
             fields={pharmacies.map((pharmacy) => ({
@@ -132,10 +132,10 @@ function BlockDetails({
     <details className="rounded-lg border border-slate-200 bg-white" open>
       <summary className="flex cursor-pointer list-none items-center justify-between gap-2 rounded-t-lg bg-gradient-to-br from-slate-800 to-slate-950 px-3 py-2.5 text-white">
         <span className="min-w-0 flex-1">
-          <span className="block text-[9px] font-black uppercase tracking-[0.14em] text-orange-300">Block</span>
-          <span className="block truncate text-[14px] font-black leading-snug">{block.blockCode}</span>
+          <span className="block text-phx-3xs font-black uppercase tracking-[0.14em] text-orange-300">Block</span>
+          <span className="block truncate text-phx-base font-black leading-snug">{block.blockCode}</span>
         </span>
-        <span className="shrink-0 text-right text-[10px] font-black tabular-nums text-white/80">
+        <span className="shrink-0 text-right text-phx-2xs font-black tabular-nums text-white/80">
           <span className="block">
             {bricks.length} brick{bricks.length === 1 ? "" : "s"}
             {blockPharmacyCount !== null ? ` · ${blockPharmacyCount} PHs` : ""}
@@ -211,9 +211,9 @@ function AreaSection({
   return (
     <div className="space-y-3">
       <div className="rounded-lg bg-gradient-to-br from-slate-800 to-slate-950 px-4 py-3 text-white">
-        <p className="text-[10px] font-black uppercase tracking-[0.16em] text-orange-300">Your area</p>
+        <p className="text-phx-2xs font-black uppercase tracking-[0.16em] text-orange-300">Your area</p>
         <p className="mt-0.5 text-base font-bold">{area.areaName}</p>
-        <p className="mt-1 text-[11px] font-semibold text-white/70">
+        <p className="mt-1 text-phx-xs font-semibold text-white/70">
           {state.status === "loading" && "Loading your territory…"}
           {state.status === "error" && <span className="text-rose-300">{state.message}</span>}
           {state.status === "loaded" && (
@@ -267,9 +267,9 @@ function AreaDetails({
       }}
     >
       <summary className="flex cursor-pointer list-none flex-col gap-1 rounded-t-lg bg-gradient-to-br from-slate-800 to-slate-950 px-3 py-2.5 text-white">
-        <span className="text-[9px] font-black uppercase tracking-[0.14em] text-orange-300">Area</span>
-        <span className="break-words text-[14px] font-black leading-snug">{area.areaName}</span>
-        <span className="text-[10px] font-black tabular-nums text-white/80">
+        <span className="text-phx-3xs font-black uppercase tracking-[0.14em] text-orange-300">Area</span>
+        <span className="break-words text-phx-base font-black leading-snug">{area.areaName}</span>
+        <span className="text-phx-2xs font-black tabular-nums text-white/80">
           {blocks.length} block{blocks.length === 1 ? "" : "s"}
           {pharmacyCount !== null ? ` · ${pharmacyCount} PHs` : ""}
           {state.status === "loaded" ? (
@@ -283,9 +283,9 @@ function AreaDetails({
       </summary>
       <div className="space-y-2 border-t border-slate-100 px-2.5 pt-2.5">
         {state.status === "idle" || state.status === "loading" ? (
-          <p className="text-[11px] font-semibold text-slate-400">Loading…</p>
+          <p className="text-phx-xs font-semibold text-slate-400">Loading…</p>
         ) : state.status === "error" ? (
-          <p className="text-[11px] font-semibold text-rose-500">{state.message}</p>
+          <p className="text-phx-xs font-semibold text-rose-500">{state.message}</p>
         ) : (
           <AreaBlocksList blocks={blocks} bricks={bricks} pharmaciesByBrick={pharmaciesByBrick} />
         )}
@@ -313,9 +313,9 @@ function RegionSection({
   return (
     <div className="space-y-3">
       <div className="rounded-lg bg-gradient-to-br from-slate-800 to-slate-950 px-4 py-3 text-white">
-        <p className="text-[10px] font-black uppercase tracking-[0.16em] text-orange-300">Your region</p>
+        <p className="text-phx-2xs font-black uppercase tracking-[0.16em] text-orange-300">Your region</p>
         <p className="mt-0.5 text-base font-bold">{region.regionName}</p>
-        <p className="mt-1 text-[11px] font-semibold text-white/70">
+        <p className="mt-1 text-phx-xs font-semibold text-white/70">
           {areas.length} area{areas.length === 1 ? "" : "s"} — tap any to load its sales
         </p>
       </div>
@@ -359,9 +359,9 @@ function RegionDetails({
   return (
     <details className="rounded-lg border border-slate-200 bg-white open:pb-2.5" open>
       <summary className="flex cursor-pointer list-none flex-col gap-1 rounded-t-lg bg-gradient-to-br from-orange-50 to-orange-100 px-4 py-3 text-slate-900">
-        <span className="text-[10px] font-black uppercase tracking-[0.16em] text-orange-600">Region</span>
-        <span className="break-words text-[15px] font-black leading-snug">{region.regionName}</span>
-        <span className="text-[10px] font-black tabular-nums text-slate-700">
+        <span className="text-phx-2xs font-black uppercase tracking-[0.16em] text-orange-600">Region</span>
+        <span className="break-words text-phx-lg font-black leading-snug">{region.regionName}</span>
+        <span className="text-phx-2xs font-black tabular-nums text-slate-700">
           {areas.length} area{areas.length === 1 ? "" : "s"}
         </span>
       </summary>
@@ -403,8 +403,8 @@ function RegionsSection({
   return (
     <div className="space-y-3">
       <div className="rounded-lg bg-gradient-to-br from-orange-50 to-orange-100 px-4 py-3 text-slate-900">
-        <p className="text-[10px] font-black uppercase tracking-[0.16em] text-orange-600">My regions</p>
-        <p className="mt-1 text-[11px] font-semibold text-slate-600">
+        <p className="text-phx-2xs font-black uppercase tracking-[0.16em] text-orange-600">My regions</p>
+        <p className="mt-1 text-phx-xs font-semibold text-slate-600">
           {regions.length} regions — tap any to see its areas
         </p>
       </div>

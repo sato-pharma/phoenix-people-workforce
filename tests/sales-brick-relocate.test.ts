@@ -143,9 +143,14 @@ export function runSalesBrickRelocateTests() {
     /\{isRelocatingEdit \? "Move" : "Save"\}/,
     "the save button only reads \"Move\" when the pending edit is a real relocate",
   );
+  // Styling-agnostic on purpose. This used to pin the hint's ENTIRE className, which meant
+  // every restyle broke an assertion that has nothing to do with styling — it broke once on
+  // the colour sweep (text-[#94A3B8]) and again on the type sweep (text-[10px]), neither of
+  // which could possibly affect when the hint appears. What this guards is the CONDITION and
+  // the words; the paragraph is allowed to look like anything.
   assert.match(
     uiSource,
-    /\{isRelocatingEdit \? \(\s*<p className="max-w-\[220px\] text-\[10px\] font-semibold leading-tight text-phx-ink-faint">\s*Creates a new brick ID in the target block and deactivates this one\./,
+    /\{isRelocatingEdit \? \(\s*<p[^>]*>\s*Creates a new brick ID in the target block and deactivates this one\./,
     "the relocate warning hint only shows for a real block move, not a pure brick_name rename",
   );
 }

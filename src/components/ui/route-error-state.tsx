@@ -38,7 +38,7 @@ export function RouteErrorState({
           <AlertTriangle className="h-7 w-7" />
         </div>
         <div className="space-y-2">
-          <p className="text-[10px] font-black uppercase tracking-[0.22em] text-rose-600">{eyebrow}</p>
+          <p className="text-phx-2xs font-black uppercase tracking-[0.22em] text-rose-600">{eyebrow}</p>
           <h2 className="text-2xl font-black tracking-tight text-slate-950">{title}</h2>
           <p className="text-sm leading-6 text-slate-600">{description}</p>
           {error?.digest ? (

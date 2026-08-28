@@ -63,7 +63,7 @@ export function CrmSyncStatusPanel({
   return (
     <div className="overflow-hidden border border-slate-200 bg-white">
       <div className="flex items-center justify-between bg-slate-900 px-5 py-3">
-        <h2 className="text-[10px] font-bold uppercase tracking-widest text-slate-300">Sync Status</h2>
+        <h2 className="text-phx-2xs font-bold uppercase tracking-widest text-slate-300">Sync Status</h2>
         <div className="h-1.5 w-12 bg-orange-500" />
       </div>
 
@@ -94,12 +94,12 @@ export function CrmSyncStatusPanel({
                     {" · "}
                     {formatDate(run.dateFrom)} – {formatDate(run.dateTo)}
                   </p>
-                  <p className="text-[11px] text-slate-500">
+                  <p className="text-phx-xs text-slate-500">
                     Started {formatDateTime(run.startedAt)}
                     {run.status !== "running" && ` · finished ${formatDateTime(run.completedAt)}`}
                   </p>
                   {run.status === "failed" && run.errorMessage && (
-                    <p className="mt-1 text-[11px] font-medium text-rose-600">{run.errorMessage}</p>
+                    <p className="mt-1 text-phx-xs font-medium text-rose-600">{run.errorMessage}</p>
                   )}
                 </div>
               </div>
@@ -117,11 +117,11 @@ export function CrmSyncStatusPanel({
       </div>
 
       <div className="flex flex-wrap items-end gap-3 border-t border-slate-100 bg-slate-50 px-5 py-3">
-        <label className="flex flex-col gap-1 text-[10px] font-bold uppercase tracking-wider text-slate-500">
+        <label className="flex flex-col gap-1 text-phx-2xs font-bold uppercase tracking-wider text-slate-500">
           Backfill from
           <input type="date" value={backfillFrom} onChange={(event) => setBackfillFrom(event.target.value)} className="h-9 border border-phx-line bg-white px-2 text-sm" />
         </label>
-        <label className="flex flex-col gap-1 text-[10px] font-bold uppercase tracking-wider text-slate-500">
+        <label className="flex flex-col gap-1 text-phx-2xs font-bold uppercase tracking-wider text-slate-500">
           to
           <input type="date" value={backfillTo} onChange={(event) => setBackfillTo(event.target.value)} className="h-9 border border-phx-line bg-white px-2 text-sm" />
         </label>

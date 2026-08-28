@@ -141,7 +141,7 @@ export function MarketingManagerCommandCenter({ snapshot, access }: { snapshot: 
 
       <div className="overflow-hidden border border-slate-200">
         <div className="bg-slate-900 px-5 py-3">
-          <h2 className="text-[10px] font-bold uppercase tracking-widest text-slate-300">Upcoming Pay Dates</h2>
+          <h2 className="text-phx-2xs font-bold uppercase tracking-widest text-slate-300">Upcoming Pay Dates</h2>
         </div>
         {mmOverview && mmOverview.upcoming.length > 0 ? (
           <div className="divide-y divide-slate-100 bg-white">
@@ -154,7 +154,7 @@ export function MarketingManagerCommandCenter({ snapshot, access }: { snapshot: 
                 <CalendarClock className="h-4 w-4 shrink-0 text-slate-400" />
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-semibold text-slate-900 whitespace-nowrap">{row.requestCode}</p>
-                  <p className="text-[11px] text-slate-500 whitespace-nowrap">
+                  <p className="text-phx-xs text-slate-500 whitespace-nowrap">
                     {new Date(row.payDate).toLocaleDateString("en-GB", {
                       day: "2-digit",
                       month: "short",
@@ -174,7 +174,7 @@ export function MarketingManagerCommandCenter({ snapshot, access }: { snapshot: 
 
       <div className="overflow-hidden border border-slate-200">
         <div className="flex items-center justify-between bg-slate-900 px-5 py-3">
-          <h2 className="text-[10px] font-bold uppercase tracking-widest text-slate-300">Commercial &amp; Field Intelligence</h2>
+          <h2 className="text-phx-2xs font-bold uppercase tracking-widest text-slate-300">Commercial &amp; Field Intelligence</h2>
           <div className="h-1.5 w-12 bg-orange-500" />
         </div>
         <div className="grid grid-cols-1 gap-px bg-slate-200 sm:grid-cols-2 lg:grid-cols-3">
@@ -189,7 +189,7 @@ export function MarketingManagerCommandCenter({ snapshot, access }: { snapshot: 
               </div>
               <div className="min-w-0">
                 <p className="text-sm font-semibold text-slate-800 whitespace-nowrap">{tile.label}</p>
-                <p className="text-[11px] text-slate-500 whitespace-nowrap">{tile.description}</p>
+                <p className="text-phx-xs text-slate-500 whitespace-nowrap">{tile.description}</p>
               </div>
             </Link>
           ))}
@@ -197,7 +197,7 @@ export function MarketingManagerCommandCenter({ snapshot, access }: { snapshot: 
       </div>
 
       {leaveEntitlementDays != null && totalPending === 0 && (
-        <p className="px-1 text-[11px] text-slate-400">{leaveEntitlementDays} leave days remaining this cycle.</p>
+        <p className="px-1 text-phx-xs text-slate-400">{leaveEntitlementDays} leave days remaining this cycle.</p>
       )}
     </div>
   );

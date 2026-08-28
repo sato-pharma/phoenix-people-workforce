@@ -79,7 +79,7 @@ export function ApprovalExceptionsDesk({ rows }: Props) {
 
   return (
     <div className="space-y-3">
-      <p className="px-1 text-[12px] leading-5 text-slate-500">
+      <p className="px-1 text-phx-sm leading-5 text-slate-500">
         {rows.length} {rows.length === 1 ? "order is" : "orders are"} waiting on an employee record that no longer
         exists. Re-addressing a rung does not approve anything — the order still needs the same approvals, from the
         same seats.
@@ -95,20 +95,20 @@ export function ApprovalExceptionsDesk({ rows }: Props) {
               <p className="truncate text-sm font-bold text-slate-900">
                 {row.productName} × {row.qty.toLocaleString("en-US")}
               </p>
-              <p className="truncate text-[11px] text-slate-500">
+              <p className="truncate text-phx-xs text-slate-500">
                 {row.requesterName} · {row.pharmacyName}
               </p>
             </div>
             <div className="text-right">
               <p className="text-sm font-black tabular-nums text-slate-950">{money(row.salesValue)}</p>
-              <p className="text-[11px] font-bold text-rose-600">
+              <p className="text-phx-xs font-bold text-rose-600">
                 stuck {row.daysStuck} {row.daysStuck === 1 ? "day" : "days"}
               </p>
             </div>
           </header>
 
           <div className="space-y-3 px-4 py-3">
-            <p className="text-[12px] leading-5 text-slate-600">
+            <p className="text-phx-sm leading-5 text-slate-600">
               Step {row.stepOrder} is addressed to{" "}
               <span className="font-black text-rose-700">{row.unresolvedApproverHrId}</span>, who is not in the
               employee directory. {/* The HR ID is shown rather than hidden: the record itself usually
@@ -123,7 +123,7 @@ export function ApprovalExceptionsDesk({ rows }: Props) {
 
             <div className="grid gap-3 sm:grid-cols-2">
               <label className="block">
-                <span className="block text-[11px] font-black uppercase tracking-wider text-slate-500">
+                <span className="block text-phx-xs font-black uppercase tracking-wider text-slate-500">
                   Re-address to (HR ID)
                 </span>
                 <input
@@ -135,13 +135,13 @@ export function ApprovalExceptionsDesk({ rows }: Props) {
                   className="mt-1 h-11 w-full border border-slate-300 px-3 text-sm focus:border-orange-500 focus:outline-none"
                 />
                 {row.suggestedApproverName ? (
-                  <span className="mt-1 block text-[11px] text-slate-500">
+                  <span className="mt-1 block text-phx-xs text-slate-500">
                     Today&apos;s directory says {row.requesterName} reports to {row.suggestedApproverName}
                     {row.suggestedApproverJobTitle ? ` (${row.suggestedApproverJobTitle})` : ""} — check before
                     confirming.
                   </span>
                 ) : (
-                  <span className="mt-1 block text-[11px] text-amber-700">
+                  <span className="mt-1 block text-phx-xs text-amber-700">
                     Today&apos;s directory cannot resolve a manager for {row.requesterName} either. The employee
                     record needs fixing as well as this order.
                   </span>
@@ -149,7 +149,7 @@ export function ApprovalExceptionsDesk({ rows }: Props) {
               </label>
 
               <label className="block">
-                <span className="block text-[11px] font-black uppercase tracking-wider text-slate-500">
+                <span className="block text-phx-xs font-black uppercase tracking-wider text-slate-500">
                   Reason (recorded)
                 </span>
                 <input
@@ -165,7 +165,7 @@ export function ApprovalExceptionsDesk({ rows }: Props) {
               type="button"
               disabled={busyId === row.stepId}
               onClick={() => repair(row)}
-              className="min-h-[44px] border border-slate-900 bg-slate-900 px-4 text-[12px] font-black text-white disabled:opacity-40"
+              className="min-h-[44px] border border-slate-900 bg-slate-900 px-4 text-phx-sm font-black text-white disabled:opacity-40"
             >
               {busyId === row.stepId ? "Re-addressing…" : "Re-address this rung"}
             </button>

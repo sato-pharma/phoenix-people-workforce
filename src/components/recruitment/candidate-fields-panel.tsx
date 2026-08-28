@@ -100,7 +100,7 @@ export function CandidateFieldsPanel({ candidate, schema }: { candidate: Candida
 
   return (
     <div className="space-y-4">
-      <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">On record</p>
+      <p className="text-phx-xs font-semibold uppercase tracking-wider text-slate-400">On record</p>
 
       {populated.length === 0 ? (
         <p className="text-sm text-slate-500">Nothing saved on this candidate yet.</p>
@@ -110,12 +110,12 @@ export function CandidateFieldsPanel({ candidate, schema }: { candidate: Candida
           if (rows.length === 0) return null;
           return (
             <div key={section.key} className="space-y-3">
-              <p className="border-b border-slate-200 pb-1 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+              <p className="border-b border-slate-200 pb-1 text-phx-xs font-semibold uppercase tracking-wider text-slate-500">
                 {section.label}
               </p>
               {rows.map(({ field, value }) => (
                 <div key={field.key}>
-                  <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">{field.label}</p>
+                  <p className="text-phx-xs font-semibold uppercase tracking-wider text-slate-400">{field.label}</p>
                   {field.type === "array" && Array.isArray(value) ? (
                     <BlockEntries entries={value} itemFields={field.itemFields ?? []} />
                   ) : (

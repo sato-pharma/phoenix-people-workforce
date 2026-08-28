@@ -152,7 +152,7 @@ export default async function MedRepsPerformancePage({
         <Card className="rounded-lg border border-gray-200 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.08)] sm:p-6 print:shadow-none print:break-inside-avoid">
           <div className="mb-4 grid gap-4 sm:mb-5 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
             <div className="min-w-0">
-              <span className="inline-flex rounded border border-orange-200 bg-orange-50 px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wider text-orange-600">
+              <span className="inline-flex rounded border border-orange-200 bg-orange-50 px-2.5 py-0.5 text-phx-xs font-semibold uppercase tracking-wider text-orange-600">
                 Medical Reps View
               </span>
               <h2 className="mt-3 break-words text-xl font-black tracking-tight text-slate-900 sm:text-2xl">
@@ -166,7 +166,7 @@ export default async function MedRepsPerformancePage({
             </div>
 
             <div className="w-full rounded-lg border border-gray-100 bg-gray-50 px-4 py-3 text-left sm:w-auto sm:text-right">
-              <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+              <p className="text-phx-xs font-semibold uppercase tracking-wider text-slate-400">
                 Line achievement
               </p>
               <p className={`mt-1 text-2xl font-bold ${achievementColor(teamAchievementPercent)}`}>
@@ -205,7 +205,7 @@ export default async function MedRepsPerformancePage({
                 className={`min-w-0 border-l-2 ${statBorders[stat.label] ?? "border-l-gray-300"} bg-white px-3 py-3 sm:px-4 sm:py-4`}
                 key={stat.label}
               >
-                <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                <p className="text-phx-xs font-semibold uppercase tracking-wider text-slate-400">
                   {stat.label}
                 </p>
                 <p className="mt-1.5 break-words text-lg font-bold text-slate-900 sm:text-xl">
@@ -258,7 +258,7 @@ export default async function MedRepsPerformancePage({
               />
             )}
           </div>
-          <div className="mt-2.5 flex flex-wrap gap-x-4 gap-y-1 text-[11px] font-medium text-slate-500">
+          <div className="mt-2.5 flex flex-wrap gap-x-4 gap-y-1 text-phx-xs font-medium text-slate-500">
             <span className="inline-flex items-center gap-1.5">
               <span className="inline-block h-2 w-2 rounded-sm bg-emerald-500" />
               {zoneExcellent} at 100%+
@@ -286,7 +286,7 @@ export default async function MedRepsPerformancePage({
                 <TrendingUp className="h-4.5 w-4.5 text-orange-400" />
               </div>
               <div className="min-w-0">
-                <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-orange-400">
+                <p className="text-phx-2xs font-bold uppercase tracking-[0.14em] text-orange-400">
                   Field Performance
                 </p>
                 <h3 className="break-words text-base font-black text-white sm:text-lg">
@@ -300,7 +300,7 @@ export default async function MedRepsPerformancePage({
                 <div className="flex items-center gap-2">
                   <Trophy className="h-3.5 w-3.5 shrink-0 text-amber-400" />
                   <div className="min-w-0 text-left">
-                    <p className="text-[9px] font-semibold uppercase tracking-wider text-slate-400">
+                    <p className="text-phx-3xs font-semibold uppercase tracking-wider text-slate-400">
                       Top rep
                     </p>
                     <p className="max-w-[9rem] truncate text-xs font-bold text-white">
@@ -313,7 +313,7 @@ export default async function MedRepsPerformancePage({
                 </div>
               )}
               <div className="text-right">
-                <p className="text-[9px] font-semibold uppercase tracking-wider text-slate-400">
+                <p className="text-phx-3xs font-semibold uppercase tracking-wider text-slate-400">
                   Line achievement
                 </p>
                 <p className={`text-sm font-black ${achievementColorOnDark(teamAchievementPercent)}`}>
@@ -321,7 +321,7 @@ export default async function MedRepsPerformancePage({
                 </p>
               </div>
               <div className="text-right">
-                <p className="text-[9px] font-semibold uppercase tracking-wider text-slate-400">
+                <p className="text-phx-3xs font-semibold uppercase tracking-wider text-slate-400">
                   Gap to target
                 </p>
                 <p className="text-sm font-black text-white">{egp(totalGap)}</p>
@@ -376,14 +376,14 @@ export default async function MedRepsPerformancePage({
 
                 <div className="mb-3 flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-2.5">
                   <div className="flex min-w-0 items-center gap-2.5">
-                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded bg-slate-900 text-[10px] font-bold text-white">
+                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded bg-slate-900 text-phx-2xs font-bold text-white">
                       <Users className="h-3.5 w-3.5" />
                     </span>
                     <div className="min-w-0">
                       <p className="break-words text-sm font-bold text-slate-900">
                         {formatEmployeeDisplayName(group.managerName)}
                       </p>
-                      <p className="text-[10px] font-medium text-slate-400">
+                      <p className="text-phx-2xs font-medium text-slate-400">
                         District Manager &middot; {group.members.length} medical reps
                       </p>
                     </div>
