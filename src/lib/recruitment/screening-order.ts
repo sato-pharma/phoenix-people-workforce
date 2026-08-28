@@ -54,7 +54,8 @@ export const screeningBandLabels: Record<ScreeningBand, string> = {
 
 /** One line each, shown to the screener so the order is never a mystery. */
 export const screeningBandDescriptions: Record<ScreeningBand, string> = {
-  field_force: "Medical reps, district managers, area and regional managers — the jobs Phoenix hires into the field.",
+  field_force:
+    "Medical reps, district managers, area and regional managers, national sales managers — the jobs Phoenix hires into the field.",
   pharma_adjacent: "Pharmacists and product managers — pharma people, but not a field-force job.",
   sales: "Sales and business development, with nothing on the CV saying pharma. The job is the same shape; the industry is not.",
   unknown: "No job title could be read off the CV, so only a person can judge these.",
@@ -68,6 +69,9 @@ const bandByFamily: Record<CandidateRoleFamily, ScreeningBand> = {
   finance: "unrelated",
   human_resources: "unrelated",
   medical_rep: "field_force",
+  // Field force, not `sales`: an NSM runs the field organisation. Before this family existed all 7
+  // of them fell through to the `sales` catch-all and sorted BELOW every medical rep.
+  national_sales_manager: "field_force",
   other: "unrelated",
   pharmacist: "pharma_adjacent",
   product_manager: "pharma_adjacent",

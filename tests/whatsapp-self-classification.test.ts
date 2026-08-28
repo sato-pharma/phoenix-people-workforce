@@ -5,8 +5,14 @@ import { candidateRoleFamilies } from "../src/lib/recruitment/candidate-role-fam
 import {
   areaMenu,
   classifyRowId,
+  classifySessionSteps,
+  cleanTypedJobTitle,
   jobTitleMenu,
+  jobTitleOtherPromptText,
+  jobTitleOtherTooLongText,
+  JOB_TITLE_OTHER_MAX,
   menuViolations,
+  offeredRoleMenuFamilies,
   parseClassifyRowId,
   regionMenu,
   WHATSAPP_LIST_MAX_ROWS,
@@ -103,14 +109,39 @@ export function runWhatsAppSelfClassificationTests() {
     );
   }
 
-  // ── The role menu offers every family, with "Other" last ──────────────────────────────────────
+  // ── The role menu offers the OWNER'S list, not every family ───────────────────────────────────
+  // This assertion used to read `roleMenu.rows.length === candidateRoleFamilies.length` — "every
+  // role family must be offered". That was correct until 2026-08-28, when the owner named the exact
+  // eight roles an applicant should see. Keeping it would have pinned the behaviour the change
+  // exists to replace, so it is inverted deliberately: the menu is a QUESTION PUT TO A PERSON, and
+  // the family list is an internal vocabulary that is allowed to be larger.
 
   const roleMenu = jobTitleMenu();
-  assert.equal(roleMenu.rows.length, candidateRoleFamilies.length, "every role family must be offered");
-  for (const family of candidateRoleFamilies) {
+  assert.deepEqual(
+    roleMenu.rows.map((row) => row.id),
+    [
+      "medical_rep",
+      "district_manager",
+      "area_regional_manager",
+      "product_manager",
+      "national_sales_manager",
+      "human_resources",
+      "finance",
+      "other",
+    ].map((family) => classifyRowId("job_title", family)),
+    "the role menu must offer exactly the owner's eight roles, in his order (stated 2026-08-28)",
+  );
+  for (const family of offeredRoleMenuFamilies) {
     assert.ok(
-      roleMenu.rows.some((row) => row.id === classifyRowId("job_title", family)),
-      `role family ${family} must be offered`,
+      (candidateRoleFamilies as readonly string[]).includes(family),
+      `offered role ${family} must be a real family, or a tapped answer lands outside the pool filter`,
+    );
+  }
+  // Not offered, and that is the point — someone applying for either types it under "Other".
+  for (const absent of ["sales", "pharmacist"] as const) {
+    assert.ok(
+      !roleMenu.rows.some((row) => row.id === classifyRowId("job_title", absent)),
+      `${absent} is deliberately not on the menu — do not "restore" it`,
     );
   }
   assert.equal(
@@ -118,6 +149,16 @@ export function runWhatsAppSelfClassificationTests() {
     classifyRowId("job_title", "other"),
     '"Other" must be last — offering it early invites it',
   );
+
+  // The applicant-facing wording the owner asked for, which differs from the pool's own labels.
+  const roleTitleById = new Map(roleMenu.rows.map((row) => [row.id, row.title]));
+  assert.equal(
+    roleTitleById.get(classifyRowId("job_title", "area_regional_manager")),
+    "Regional Manager",
+    "the applicant is asked for Regional Manager, not the pool's longer label",
+  );
+  assert.equal(roleTitleById.get(classifyRowId("job_title", "finance")), "Finance");
+  assert.equal(roleTitleById.get(classifyRowId("job_title", "national_sales_manager")), "National Sales Manager");
 
   // ── Row ids round-trip, and a foreign id is never mistaken for ours ───────────────────────────
 
@@ -174,4 +215,46 @@ export function runWhatsAppSelfClassificationTests() {
   });
   assert.equal(documentMessage[0].interactiveReplyId, null, "a CV document is not an interactive reply");
   assert.ok(documentMessage[0].document, "a CV document must still parse as a document");
+
+  // ── "Other" opens a typed question ────────────────────────────────────────────────────────────
+  // Owner's instruction 2026-08-28. The step vocabulary is pinned against the migration's CHECK
+  // constraint: the two are written in different languages and nothing else would catch a drift,
+  // and a step the database rejects dead-ends the applicant on question 1 with no error anyone sees.
+
+  assert.deepEqual(
+    [...classifySessionSteps],
+    ["job_title", "job_title_other", "region", "area", "done"],
+    "must match the CHECK constraint in 20260828071500_ats_whatsapp_classify_other_free_text.sql",
+  );
+  assert.equal(
+    parseClassifyRowId("phx:job_title_other:anything"),
+    null,
+    "job_title_other has no menu and no rows — an id claiming that step is not ours",
+  );
+
+  // The prompt says what to do and never cuts text with an ellipsis (the owner's standing rule).
+  for (const prompt of [jobTitleOtherPromptText(), jobTitleOtherTooLongText()]) {
+    assert.ok(prompt.trim().length > 0, "the prompt must say something");
+    assert.ok(!prompt.includes("…") && !prompt.includes("..."), "text is never cut with an ellipsis");
+  }
+  assert.ok(
+    jobTitleOtherTooLongText().includes(String(JOB_TITLE_OTHER_MAX)),
+    "the too-long nudge must name the limit, or the applicant cannot act on it",
+  );
+
+  // What a typed answer is worth keeping.
+  assert.equal(cleanTypedJobTitle("  Regulatory   Affairs  Specialist "), "Regulatory Affairs Specialist");
+  assert.equal(cleanTypedJobTitle(""), null, "an empty answer is not a job title");
+  assert.equal(cleanTypedJobTitle("   "), null, "whitespace is not a job title");
+  assert.equal(cleanTypedJobTitle(null), null);
+  assert.equal(
+    cleanTypedJobTitle("x".repeat(JOB_TITLE_OTHER_MAX + 1)),
+    null,
+    "a pasted paragraph is rejected rather than truncated — never cut text, and never store junk",
+  );
+  assert.equal(
+    cleanTypedJobTitle("x".repeat(JOB_TITLE_OTHER_MAX)),
+    "x".repeat(JOB_TITLE_OTHER_MAX),
+    "exactly at the limit is still a job title",
+  );
 }
