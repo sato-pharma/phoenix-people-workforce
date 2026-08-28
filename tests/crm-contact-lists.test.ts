@@ -375,7 +375,7 @@ export function runCrmContactListsTests() {
   // The `system` scope shortcut is the same one every other canAccess* helper in permissions.ts
   // carries; it admits the system-administrator workspace regardless of the role label it wears.
   assert.equal(canAccessDoctorList({ role: "Employee", scope: "system" }), true);
-  for (const role of ["Medical Rep", "Employee", "HR Specialist"] as const) {
+  for (const role of ["Medical Rep", "Employee", "HR Operations"] as const) {
     assert.equal(
       canAccessDoctorList({ role, scope: "company" }),
       false,

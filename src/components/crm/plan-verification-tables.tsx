@@ -414,6 +414,8 @@ const ENTRY_COLS = [
   { accessor: (r: PlanEntryRow) => r.grade, key: "grade", type: "string" as const },
   { accessor: (r: PlanEntryRow) => r.speciality, key: "speciality", type: "string" as const },
   { accessor: (r: PlanEntryRow) => r.region, key: "region", type: "string" as const },
+  // Sorting by address groups a day's calls by street, which is how a manager reads a route.
+  { accessor: (r: PlanEntryRow) => r.address, key: "address", type: "string" as const },
   { accessor: (r: PlanEntryRow) => r.frequency ?? 0, key: "frequency", type: "number" as const },
 ];
 
@@ -421,10 +423,18 @@ export function PlanDoctorsTable({ kind, plan, rows }: { kind: PlanKind; plan: P
   const table = useSortableTable(rows, {
     columns: ENTRY_COLS,
     initialSort: kind === "weekly" ? { dir: "asc", key: "planDate" } : { dir: "asc", key: "contactName" },
-    searchAccessors: [(r) => r.contactName, (r) => r.speciality ?? "", (r) => r.region ?? ""],
+    searchAccessors: [
+      (r) => r.contactName,
+      (r) => r.speciality ?? "",
+      (r) => r.region ?? "",
+      // Searchable because a manager checking a day's route asks it geographically — "is he really
+      // crossing the city twice on Tuesday" — and that question is asked of the address.
+      (r) => r.address ?? "",
+    ],
   });
 
   const exportRows = table.rows.map((row) => ({
+    address: row.address ?? "",
     ampm: row.ampm ?? "",
     day: row.planDate ?? "",
     doctor: row.contactName,
@@ -440,7 +450,7 @@ export function PlanDoctorsTable({ kind, plan, rows }: { kind: PlanKind; plan: P
         <TableSearchInput
           onChange={table.setQuery}
           onClear={table.clearQuery}
-          placeholder="Search doctor, specialty or locality…"
+          placeholder="Search doctor, specialty, locality or address…"
           value={table.query}
         />
         <ExportXlsxButton
@@ -453,6 +463,7 @@ export function PlanDoctorsTable({ kind, plan, rows }: { kind: PlanKind; plan: P
                   { key: "grade", label: "Grade" },
                   { key: "speciality", label: "Specialty" },
                   { key: "locality", label: "Locality" },
+                  { key: "address", label: "Address" },
                 ]
               : [
                   { key: "doctor", label: "Doctor" },
@@ -460,6 +471,7 @@ export function PlanDoctorsTable({ kind, plan, rows }: { kind: PlanKind; plan: P
                   { key: "grade", label: "Grade" },
                   { key: "speciality", label: "Specialty" },
                   { key: "locality", label: "Locality" },
+                  { key: "address", label: "Address" },
                 ]
           }
           rows={exportRows}
@@ -489,14 +501,18 @@ export function PlanDoctorsTable({ kind, plan, rows }: { kind: PlanKind; plan: P
                   ? [
                       { label: "Day", value: row.planDate ?? "—" },
                       { label: "AM/PM", value: row.ampm ?? "—" },
+                      { label: "Address", value: row.address ?? "Not recorded" },
                     ]
-                  : [{ label: "Planned calls", value: row.frequency == null ? "—" : String(row.frequency) }]
+                  : [
+                      { label: "Planned calls", value: row.frequency == null ? "—" : String(row.frequency) },
+                      { label: "Address", value: row.address ?? "Not recorded" },
+                    ]
               }
             />
           </PortalRecordCard>
         )}
         renderTable={() => (
-          <PortalDesktopTable className="text-xs" minWidth="980px">
+          <PortalDesktopTable className="text-xs" minWidth="1180px">
             <thead>
               <tr className="bg-slate-900 text-left">
                 {kind === "weekly" ? (
@@ -517,6 +533,7 @@ export function PlanDoctorsTable({ kind, plan, rows }: { kind: PlanKind; plan: P
                 <SortableTh className={THEAD} label="Grade" onSort={table.toggleSort} sort={table.sort} sortKey="grade" />
                 <SortableTh className={THEAD} label="Specialty" onSort={table.toggleSort} sort={table.sort} sortKey="speciality" />
                 <SortableTh className={THEAD} label="Locality" onSort={table.toggleSort} sort={table.sort} sortKey="region" />
+                <SortableTh className={THEAD} label="Address" onSort={table.toggleSort} sort={table.sort} sortKey="address" />
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -537,6 +554,10 @@ export function PlanDoctorsTable({ kind, plan, rows }: { kind: PlanKind; plan: P
                   <td className={`px-3 py-2 font-black ${gradeClass(row.grade)}`}>{row.grade ?? "—"}</td>
                   <td className="px-3 py-2 text-slate-600">{row.speciality ?? "Unspecified"}</td>
                   <td className="px-3 py-2 text-slate-400">{row.region ?? "—"}</td>
+                  {/* Same treatment as tab one: the address is long, genuinely needed, and never
+                      truncated or wrapped (owner's standing rule) — the table side-scrolls, which
+                      is what minWidth is for. */}
+                  <td className="px-3 py-2 text-slate-600">{row.address ?? "—"}</td>
                 </tr>
               ))}
             </tbody>

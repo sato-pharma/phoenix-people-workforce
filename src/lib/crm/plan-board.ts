@@ -28,6 +28,7 @@
  */
 
 import { CRM_PLAN_ENTRIES_TABLE } from "@/lib/crm/tables";
+import { getAgentContactList } from "@/lib/crm/contact-lists";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { PLAN_STATUS_NEW, type PlanKind } from "@/lib/crm/plan-verification";
 import { scopeAllowsAgent, type PlanVerificationScope } from "@/lib/crm/plan-verification-access";
@@ -70,6 +71,16 @@ export type PlanSummary = {
 };
 
 export type PlanEntryRow = {
+  /**
+   * Where the doctor is, taken from the rep's own assigned list — the SAME source tab one prints,
+   * so the two tabs can never disagree about one doctor. The plan itself carries no address: the
+   * vendor's plan payload has none, and the Reporting API has no contacts endpoint at all, so this
+   * is Phoenix's own mirror of the CRM web app's contact grid.
+   *
+   * Null on two different facts that must not be conflated in the UI: the doctor is not on the
+   * rep's current list, or he is and the CRM never recorded an address for him.
+   */
+  address: string | null;
   ampm: string | null;
   contactCrmId: number | null;
   contactName: string;
@@ -246,9 +257,36 @@ async function fetchSummaryRows(input: {
   return rows;
 }
 
+/**
+ * The address of every doctor on one rep's assigned list, keyed by CRM contact id.
+ *
+ * Read per AGENT rather than per contact id on purpose. The alternative — an `.in()` over the
+ * plan's contact ids — is the shape that returns `{ data: [], error: null }` once the URL grows
+ * long enough, and a plan can carry 120 doctors; an empty answer there would silently blank the
+ * address column on the largest plans, which are exactly the ones a manager most needs to read.
+ * One agent's list is a bounded paged read the Doctor List tab already performs.
+ *
+ * Never throws. An address is context beside the doctor's name, not the record itself — failing the
+ * whole plan because the contact mirror was unreachable would hide the plan a manager came to sign.
+ */
+async function addressesForAgent(agentCrmId: number | null): Promise<Map<number, string>> {
+  const byContactId = new Map<number, string>();
+  if (agentCrmId == null) return byContactId;
+  try {
+    for (const contact of await getAgentContactList(agentCrmId)) {
+      const address = contact.address?.trim();
+      if (address) byContactId.set(contact.contactCrmId, address);
+    }
+  } catch {
+    return new Map();
+  }
+  return byContactId;
+}
+
 /** The doctors on ONE plan, with the contact detail the summary query deliberately skips. */
-export async function getPlanEntries(crmPlanId: number): Promise<PlanEntryRow[]> {
+export async function getPlanEntries(crmPlanId: number, agentCrmId?: number | null): Promise<PlanEntryRow[]> {
   const supabase = getSupabaseAdmin();
+  const addresses = await addressesForAgent(agentCrmId ?? null);
   const rows: PlanEntryRow[] = [];
   let offset = 0;
   for (;;) {
@@ -275,6 +313,7 @@ export async function getPlanEntries(crmPlanId: number): Promise<PlanEntryRow[]>
     }>;
     for (const row of page) {
       rows.push({
+        address: row.contact_crm_id == null ? null : addresses.get(row.contact_crm_id) ?? null,
         ampm: row.ampm,
         contactCrmId: row.contact_crm_id,
         // A nameless contact is shown by its CRM id rather than as a blank cell — the owner's rule
@@ -451,7 +490,9 @@ export async function getPlanVerificationBoard(input: {
   const chosen = input.selectedPlanId
     ? (plans.find((plan) => plan.crmPlanId === input.selectedPlanId) ?? null)
     : null;
-  const selected = chosen ? { plan: chosen, rows: await getPlanEntries(chosen.crmPlanId) } : null;
+  // The agent id is passed so the doctors carry their addresses: the plan rows hold none, and the
+  // address lives on the rep's assigned list, which is keyed by agent.
+  const selected = chosen ? { plan: chosen, rows: await getPlanEntries(chosen.crmPlanId, chosen.agentCrmId) } : null;
 
   return { ...base, plans, selected };
 }
