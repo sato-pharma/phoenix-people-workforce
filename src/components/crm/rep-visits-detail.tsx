@@ -75,6 +75,29 @@ function contactText(row: RepVisitRow): string {
   return contactLabel(row);
 }
 
+/**
+ * The one sentence a campaign row's doctor line is allowed to say, in one place.
+ *
+ * Desktop, mobile and the export all read this, because the owner's standing rule is that an export
+ * must MATCH the screen — and because the three of them saying slightly different things about the
+ * same row is exactly how "Prospect · not on his list" survived on 3,126 visits where it was false.
+ *
+ * Returns null when the row carries a real CRM contact, which needs no explanation at all.
+ */
+function campaignContactNote(row: RepVisitRow): { text: string; tone: string } | null {
+  const match = row.knownContact;
+  if (match) {
+    // NAMED, not just flagged. "Already on his list" leaves the reader to go and find out who; the
+    // CRM's own spelling of the name is what lets them see at a glance why it matched, which matters
+    // most when it matched WRONGLY. Never an ellipsis, never a wrap — owner's standing rule.
+    return match.scope === "own"
+      ? { text: `Already his contact · ${match.contactName}`, tone: "text-orange-600" }
+      : { text: `On a colleague's list · ${match.contactName}`, tone: "text-violet-600" };
+  }
+  if (isProspectRow(row)) return { text: "Prospect · not on his list", tone: "text-amber-600" };
+  return null;
+}
+
 const VISIT_COLS = [
   { accessor: (r: RepVisitRow) => r.dateIso, defaultDir: "desc" as const, key: "dateIso", type: "string" as const },
   { accessor: (r: RepVisitRow) => sessionText(r), defaultDir: "asc" as const, key: "session", type: "string" as const },
@@ -100,13 +123,17 @@ function SummaryStrip({ summary }: { summary: RepVisitsSummary }) {
     { label: "Proved", tone: "text-emerald-700", value: summary.verified },
     { label: "No proof", tone: "text-rose-700", value: summary.unverified },
     { label: "Campaign", tone: "text-sky-700", value: summary.campaign },
+    // Of those campaign calls, the ones on a doctor he already visits normally. It sits beside
+    // "Campaign" because it is a SUBSET of it, and reading the two apart is the point: a rep with 40
+    // campaign calls and 2 of these is prospecting; one with 40 and 35 is mis-coding his day.
+    { label: "Already his", tone: "text-orange-600", value: summary.campaignAlreadyKnown },
     { label: "AM", tone: "text-slate-700", value: summary.am },
     { label: "PM", tone: "text-slate-700", value: summary.pm },
     { label: "Doctors", tone: "text-slate-700", value: summary.distinctContacts },
     { label: "Not field work", tone: "text-slate-400", value: summary.excluded },
   ];
   return (
-    <div className="grid grid-cols-2 gap-px border border-slate-200 bg-slate-200 sm:grid-cols-4 lg:grid-cols-8">
+    <div className="grid grid-cols-2 gap-px border border-slate-200 bg-slate-200 sm:grid-cols-3 lg:grid-cols-9">
       {cells.map((cell) => (
         <div className="bg-white px-3 py-2.5" key={cell.label}>
           <p className="text-[9px] font-black uppercase tracking-[0.16em] text-slate-400">{cell.label}</p>
@@ -143,6 +170,10 @@ export function RepVisitsDetail({
     initialSort: { dir: "desc", key: "dateIso" },
     searchAccessors: [
       (r) => contactText(r),
+      // So "already his" filters the list down to the mis-coded calls in one typed phrase, and the
+      // CRM's spelling of a matched doctor finds his campaign rows even though the row itself is
+      // labelled with the rep's own spelling.
+      (r) => campaignContactNote(r)?.text ?? "",
       (r) => r.customerName ?? "",
       (r) => r.speciality ?? "",
       (r) => territoryLabel(r),
@@ -156,6 +187,9 @@ export function RepVisitsDetail({
     // The id is exported beside the name because a spreadsheet is where someone reconciles against
     // the CRM, and a name alone cannot be matched back.
     contact_crm_id: row.contactCrmId ?? "",
+    // The same sentence the screen shows under the doctor's name — including the CRM's spelling of
+    // the matched name, because the spreadsheet is where somebody checks whether the match is right.
+    contact_status: campaignContactNote(row)?.text ?? "",
     crm_region: row.crmRegionName ?? "",
     crm_region_id: row.crmRegionId ?? "",
     customer: row.customerName ?? "",
@@ -214,6 +248,7 @@ export function RepVisitsDetail({
                 { key: "session", label: "AM / PM" },
                 { key: "contact", label: "Doctor" },
                 { key: "contact_crm_id", label: "CRM Contact ID" },
+                { key: "contact_status", label: "Contact Status" },
                 { key: "speciality", label: "Speciality" },
                 { key: "grade", label: "Grade" },
                 { key: "customer", label: "Clinic / Account" },
@@ -236,7 +271,9 @@ export function RepVisitsDetail({
             empty={<p className="px-3 py-6 text-center text-xs text-slate-400">No visits recorded in this period.</p>}
             getKey={(row, index) => `${row.visitCrmId ?? "row"}-${index}`}
             items={table.rows}
-            renderCard={(row) => (
+            renderCard={(row) => {
+              const note = campaignContactNote(row);
+              return (
               <PortalRecordCard
                 accent={
                   row.standing === "verified"
@@ -265,13 +302,13 @@ export function RepVisitsDetail({
                             value: <span className="font-semibold text-slate-500">CRM #{row.contactCrmId}</span>,
                           },
                         ]
-                      : isProspectRow(row)
+                      : note
                         ? [
                             {
                               label: "Doctor",
                               value: (
-                                <span className="font-black uppercase tracking-[0.1em] text-amber-600">
-                                  Prospect · not on his list
+                                <span className={`font-black uppercase tracking-[0.1em] ${note.tone}`}>
+                                  {note.text}
                                 </span>
                               ),
                             },
@@ -305,7 +342,8 @@ export function RepVisitsDetail({
                   ]}
                 />
               </PortalRecordCard>
-            )}
+              );
+            }}
             renderTable={() => (
               <PortalDesktopTable className="text-xs" minWidth="1500px">
                 <thead>
@@ -352,7 +390,9 @@ export function RepVisitsDetail({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {table.rows.map((row, index) => (
+                  {table.rows.map((row, index) => {
+                    const note = campaignContactNote(row);
+                    return (
                     <tr className="whitespace-nowrap bg-white hover:bg-slate-50" key={`${row.visitCrmId ?? "row"}-${index}`}>
                       <td className="px-3 py-2 font-semibold text-slate-900">{dayText(row.dateIso)}</td>
                       <td className="px-3 py-2 font-bold text-slate-500">{sessionText(row)}</td>
@@ -367,9 +407,9 @@ export function RepVisitsDetail({
                           <span className="font-semibold text-slate-900">{contactText(row)}</span>
                           {row.contactCrmId != null ? (
                             <span className="text-[10px] font-semibold text-slate-400">CRM #{row.contactCrmId}</span>
-                          ) : isProspectRow(row) ? (
-                            <span className="text-[10px] font-black uppercase tracking-[0.1em] text-amber-600">
-                              Prospect · not on his list
+                          ) : note ? (
+                            <span className={`text-[10px] font-black uppercase tracking-[0.1em] ${note.tone}`}>
+                              {note.text}
                             </span>
                           ) : null}
                         </span>
@@ -398,7 +438,8 @@ export function RepVisitsDetail({
                         {row.partnerName ?? <span className="text-slate-300">—</span>}
                       </td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </PortalDesktopTable>
             )}

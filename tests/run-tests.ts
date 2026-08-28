@@ -246,6 +246,7 @@ import { runCrmRepVisitsTests } from "./crm-rep-visits.test.ts";
 import { runCrmRegionBrickSuggestTests } from "./crm-region-brick-suggest.test.ts";
 import { runCrmRepsPlansPeriodTests } from "./crm-reps-plans-period.test.ts";
 import { runCrmCampaignNoteTests } from "./crm-campaign-note.test.ts";
+import { runCrmCampaignContactMatchTests } from "./crm-campaign-contact-match.test.ts";
 import { runCrmCheckinMatchTests } from "./crm-checkin-match.test.ts";
 import { runCrmCheckinPageBoundaryTests } from "./crm-checkin-page-boundary.test.ts";
 import { runCrmVacationDurationTests } from "./crm-vacation-duration.test.ts";
@@ -1424,6 +1425,10 @@ await runTest(
 await runTest(
   "crm campaign note (doctor / speciality / clinic pulled apart; the hospital and the GB rows the owner named)",
   runCrmCampaignNoteTests,
+);
+await runTest(
+  "crm campaign contact match (a campaign doctor already on the list stops being called a prospect)",
+  runCrmCampaignContactMatchTests,
 );
 await runTest(
   "crm reps plans period (a week's rate divides by the week's working days, never the month's)",
