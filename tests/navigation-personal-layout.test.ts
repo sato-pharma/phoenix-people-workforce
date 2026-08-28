@@ -810,7 +810,7 @@ export function runNavigationPersonalLayoutTests() {
   // The `sections` list is left alone on purpose: a row entry outranks a section entry, so the
   // section copy is inert while pinned, and is where the page returns to if it comes off the row.
   {
-    const before = layout({ sections: [{ id: "people", items: ["/admin/organogram"] }] });
+    const before = layout({ sections: [{ id: "people", label: "People", items: ["/admin/organogram"] }] });
     const next = pinHrefToUpperRow(before, "/admin/organogram");
     assert.deepEqual(next.sections, before.sections, "the section entry survives the pin");
     const rendered = applyPersonalLayout(gated, next);
