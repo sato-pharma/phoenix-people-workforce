@@ -48,7 +48,8 @@ const FORBIDDEN_ROLES = [
   "Marketing Manager",
   "Finance Manager",
   "Training Manager",
-  "Talent Acquisition",
+  "HR Advisory",
+  "HR Operations",
   "Manager",
   "CEO",
 ] as const;

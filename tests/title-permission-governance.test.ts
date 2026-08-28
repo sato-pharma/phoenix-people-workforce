@@ -65,7 +65,22 @@ export function runTitlePermissionGovernanceTests() {
   assert.notEqual(normalizeRole("R&D Manager"), "Manager");
   assert.ok((phoenixCompanyJobTitles as readonly string[]).includes("Research and Development Manager"));
   assert.equal(resolveEmployeeAccessRole({ jobTitle: "Talent Acquisition" }), "Employee");
-  assert.equal(normalizeRole("Talent Acquisition"), "Talent Acquisition");
+  // Both retired HR seats resolve DOWN to Employee, never sideways to a successor. Retiring a
+  // role removes it from the PhoenixRole union but not from the database: verified in production
+  // 2026-08-28, exactly one app_auth_users row and one user_access_profiles row still read
+  // "Talent Acquisition", and both belong to A-16 — is_active false, employment_status resigned.
+  // An alias pointing that string at HR Advisory reads as continuity and is really a privilege
+  // carry-forward, since normalizeRole is what a stale JWT's app_metadata passes through. The
+  // 2026-06 retirement of "HR Specialist" already set this precedent and it is followed here.
+  // The two new hires never reach this table — their role is written explicitly at provisioning.
+  assert.equal(normalizeRole("Talent Acquisition"), "Employee", "a retired seat must not carry its grants forward");
+  assert.equal(normalizeRole("talent acquisition"), "Employee", "case-insensitive, as stored values vary");
+  assert.equal(normalizeRole("TalentAcquisition"), "Employee", "and punctuation-insensitive, via the second alias table");
+  assert.equal(normalizeRole("HR Specialist"), "Employee", "the FIRST retired HR seat, demoted the same way in 2026-06");
+  // The successors are real union members, so they resolve to themselves rather than through any
+  // alias. If either is ever dropped from the union, this is what catches the silent fallback.
+  assert.equal(normalizeRole("HR Advisory"), "HR Advisory");
+  assert.equal(normalizeRole("HR Operations"), "HR Operations");
 
   // --- Rule 7 (titles list): low-privilege titles never gain elevated access. -
   for (const title of [

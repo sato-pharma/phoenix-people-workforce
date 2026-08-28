@@ -96,9 +96,9 @@ export async function runCvIntakeDigest6hTests() {
   assert.ok(nsmCc.includes("omar.anwar@satopharma.com"), "NSM always CCs omar.anwar");
   assert.ok(!nsmCc.includes("ceo@satopharma.com"), "NSM does NOT CC their manager");
 
-  const taCc = buildCcList("Talent Acquisition", "hr.manager@satopharma.com");
-  assert.ok(taCc.includes("omar.anwar@satopharma.com"), "TA always CCs omar.anwar");
-  assert.ok(!taCc.includes("hr.manager@satopharma.com"), "TA does not CC their manager (not DM/RM)");
+  const hrCc = buildCcList("HR Advisory", "hr.manager@satopharma.com");
+  assert.ok(hrCc.includes("omar.anwar@satopharma.com"), "HR Advisory always CCs omar.anwar");
+  assert.ok(!hrCc.includes("hr.manager@satopharma.com"), "HR Advisory does not CC their manager (not DM/RM)");
 
   const superAdminCc = buildCcList("Super Admin", null);
   assert.ok(superAdminCc.includes("omar.anwar@satopharma.com"), "Super Admin always CCs omar.anwar");

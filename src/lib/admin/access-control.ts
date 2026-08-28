@@ -536,8 +536,8 @@ export async function provisionEmployeeAccountForRecruiting(
   input: AccessUserMutation,
   actor: AccessActor,
 ) {
-  if (actor.role !== "Talent Acquisition") {
-    throw new Error("Forbidden: only Talent Acquisition can use this tool.");
+  if (actor.role !== "HR Advisory") {
+    throw new Error("Forbidden: only HR Advisory can use this tool.");
   }
   if (input.salesScopeOverride) {
     throw new Error("Forbidden: this tool cannot grant a sales scope override.");
@@ -899,8 +899,8 @@ export async function updateAccountActiveForRecruiting(
   actor: AccessActor,
   governanceReason?: string | null,
 ) {
-  if (actor.role !== "Talent Acquisition") {
-    throw new Error("Forbidden: only Talent Acquisition can use this tool.");
+  if (actor.role !== "HR Advisory") {
+    throw new Error("Forbidden: only HR Advisory can use this tool.");
   }
   return performUserStatusUpdate(loginId, isActive, actor, governanceReason);
 }

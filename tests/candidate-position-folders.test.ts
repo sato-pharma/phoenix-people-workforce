@@ -334,7 +334,7 @@ export async function runCandidatePositionFolderTests() {
     "picking a vacancy pre-selects the manager that vacancy reports to — the organogram already knows who owns the seat",
   );
 
-  // Both page twins must load it, or the picker exists for one shell only — and Talent Acquisition,
+  // Both page twins must load it, or the picker exists for one shell only — and HR Advisory,
   // the role that screens the most CVs, is the shell that would lose it.
   for (const page of [
     "app/(admin)/recruitment/screening/page.tsx",

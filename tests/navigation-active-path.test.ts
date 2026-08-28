@@ -135,7 +135,7 @@ export function runNavigationActivePathTests() {
   // ── roleAllowed ────────────────────────────────────────────────────────────
   assert.equal(roleAllowed("Super Admin", undefined), true);
   assert.equal(roleAllowed("Super Admin", ["Super Admin"]), true);
-  assert.equal(roleAllowed("Talent Acquisition", ["Super Admin"]), false);
+  assert.equal(roleAllowed("HR Advisory", ["Super Admin"]), false);
   assert.equal(roleAllowed(undefined, ["Super Admin"]), false);
 
   // ── roleNotExcluded ────────────────────────────────────────────────────────
@@ -161,10 +161,10 @@ export function runNavigationActivePathTests() {
     ["/admin/access"],
   );
 
-  // Talent Acquisition: access item (Super Admin only) filtered out of section a.
-  const talentAcquisition = getSections(sections, "admin", {}, "Talent Acquisition");
+  // HR Advisory: access item (Super Admin only) filtered out of section a.
+  const hrAdvisory = getSections(sections, "admin", {}, "HR Advisory");
   assert.deepEqual(
-    talentAcquisition[0].items.map((i) => i.href),
+    hrAdvisory[0].items.map((i) => i.href),
     ["/sales"],
   );
 
@@ -297,14 +297,34 @@ export function runNavigationActivePathTests() {
     "A-9 / Marketing Manager must not see admin authority modules or workspace/admin duplicates",
   );
 
-  const talentAcquisitionAdmin = adminHrefsFor("Talent Acquisition");
+  // The retired Talent Acquisition seat held all three of these at once. Its two
+  // successors do not, and asserting them separately is the point: a bundle that
+  // silently inherited the whole retired sidebar would pass a merged assertion and
+  // fail these. Recruitment belongs to HR Advisory; Leave Management to HR Operations;
+  // People Management is permission-gated, so both reach it through their own grants.
   assertIncludesAll(
-    talentAcquisitionAdmin,
-    ["/admin/people-management", "/admin/recruitment-hiring", "/leave-management"],
-    "Talent Acquisition must see HR-owned admin modules",
+    adminHrefsFor("HR Advisory"),
+    ["/admin/people-management", "/admin/recruitment-hiring"],
+    "HR Advisory must see the recruiting-side admin modules",
   );
-  assertExcludesAll(talentAcquisitionAdmin, ["/employees", "/payroll"], "Talent Acquisition must not see non-owned company modules");
-  assertExcludesAll(talentAcquisitionAdmin, systemAdministratorOnlyHrefs, "Talent Acquisition must not see system-administrator-only modules");
+  assert.ok(
+    !adminHrefsFor("HR Advisory").includes("/leave-management"),
+    "HR Advisory must NOT see Leave Management — approving leave is HR Operations' duty, and " +
+      "inheriting it here is exactly the wholesale-sidebar copy this split exists to prevent",
+  );
+  assertIncludesAll(
+    adminHrefsFor("HR Operations"),
+    ["/admin/people-management", "/leave-management"],
+    "HR Operations must see the records-and-time admin modules",
+  );
+  assert.ok(
+    !adminHrefsFor("HR Operations").includes("/admin/recruitment-hiring"),
+    "HR Operations must NOT see Recruitment & Hiring — it is HR Advisory's module",
+  );
+  for (const role of ["HR Advisory", "HR Operations"] as const) {
+    assertExcludesAll(adminHrefsFor(role), ["/employees", "/payroll"], `${role} must not see non-owned company modules`);
+    assertExcludesAll(adminHrefsFor(role), systemAdministratorOnlyHrefs, `${role} must not see system-administrator-only modules`);
+  }
 
   const financeAdmin = adminHrefsFor("Finance Manager");
   // /admin/payroll-management was his payroll-ownership row until the owner hid it later the same

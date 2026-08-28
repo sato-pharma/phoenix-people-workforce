@@ -27,7 +27,8 @@ const canonicalRoles = [
   "Training Manager",
   "Marketing Manager",
   "Finance Manager",
-  "Talent Acquisition",
+  "HR Advisory",
+  "HR Operations",
   "Manager",
   "CEO",
   "Super Admin",
@@ -192,7 +193,8 @@ function roleToCoarseRole(role: string | null) {
       return "company_reader";
     case "Finance Manager":
       return "finance";
-    case "Talent Acquisition":
+    case "HR Advisory":
+    case "HR Operations":
       return "hr";
     case "District Manager":
     case "Regional Manager":
@@ -217,7 +219,8 @@ function roleToScope(role: string | null) {
       return "COMPANY_READ";
     case "Finance Manager":
       return "FINANCE";
-    case "Talent Acquisition":
+    case "HR Advisory":
+    case "HR Operations":
       return "HR";
     case "District Manager":
     case "Manager":

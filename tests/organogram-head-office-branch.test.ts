@@ -67,7 +67,7 @@ export function runOrganogramHeadOfficeBranchTests() {
   ];
   const staff = [
     employee({ full_name: "Mahmoud Ibrahim", hr_id: "A-1", job_title: "Admin Assistant", manager_hr_id: "B-185" }),
-    employee({ full_name: "Youmna Kotb", hr_id: "A-16", job_title: "Talent Acquisition", manager_hr_id: "B-10" }),
+    employee({ full_name: "Youmna Kotb", hr_id: "A-16", job_title: "HR Advisory", manager_hr_id: "B-10" }),
   ];
   const rows = buildHeadOfficeOrganogramRows([...ceoDirects, ...staff], OPTIONS);
   assert.equal(
@@ -216,7 +216,7 @@ export function runOrganogramHeadOfficeBranchTests() {
   // Owner instruction 2026-08-25: "in the admin account and talent acquisition show the head
   // office organogram." Both must hold, or the branch above is built and then stripped.
   assert.equal(canAccessHeadOffice(ctx("Super Admin")), true, "the admin account");
-  assert.equal(canAccessHeadOffice(ctx("Talent Acquisition")), true, "…and Talent Acquisition");
+  assert.equal(canAccessHeadOffice(ctx("HR Advisory")), true, "…and HR Advisory");
   // The boundary still exists for everyone else who can open a company chart.
   assert.equal(canAccessHeadOffice(ctx("Marketing Manager")), false);
   assert.equal(canAccessHeadOffice(ctx("Training Manager")), false);

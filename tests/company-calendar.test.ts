@@ -14,7 +14,10 @@ import {
 export function runCompanyCalendarTests() {
   // Manage permission: admins + managers yes, plain staff no.
   assert.equal(canManageCompanyCalendar("Super Admin"), true);
-  assert.equal(canManageCompanyCalendar("Talent Acquisition"), false);
+  // Neither HR bundle manages the company calendar today. Whether HR Operations should — she owns
+  // attendance and holidays — is a Phase 3 grants decision, not something to widen inside a rename.
+  assert.equal(canManageCompanyCalendar("HR Advisory"), false);
+  assert.equal(canManageCompanyCalendar("HR Operations"), false);
   assert.equal(canManageCompanyCalendar("CEO"), true);
   assert.equal(canManageCompanyCalendar("National Sales Manager"), true);
   assert.equal(canManageCompanyCalendar("District Manager"), true);

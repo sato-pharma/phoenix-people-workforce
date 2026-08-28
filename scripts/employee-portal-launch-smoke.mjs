@@ -272,14 +272,28 @@ async function run() {
       },
     ]));
 
-    results.push(...await runForRole(browser, "Talent Acquisition", "A-16", [
-      {
-        expectedText: ["Access unavailable"],
-        forbiddenText: ["Application error", "Employee portal unavailable"],
-        label: "unauthorized admin fallback",
-        path: "/admin",
-      },
-    ]));
+    // The retired Talent Acquisition seat (A-16, resigned) was checked here as a PORTAL role that
+    // must be refused the admin shell. Its two successors are admin-shell roles, so the check is
+    // kept but its meaning has changed: admin-shell does not mean Super Admin. /admin is the Super
+    // Admin home and gates on `admin:read`, which neither bundle holds, so both are still refused
+    // there — while /workspace, where resolveLoginLandingPath sends them, must render.
+    // Rerunning this against A-16 would have proved nothing: with the retired role now failing
+    // closed to Employee, that hr_id no longer exercises an HR seat at all.
+    for (const [role, hrId] of [["HR Advisory", "PHASE23-HRA"], ["HR Operations", "PHASE23-HROPS"]]) {
+      results.push(...await runForRole(browser, role, hrId, [
+        {
+          expectedText: ["Access unavailable"],
+          forbiddenText: ["Application error", "Employee portal unavailable"],
+          label: `${role}: /admin stays Super Admin only`,
+          path: "/admin",
+        },
+        {
+          forbiddenText: ["Access unavailable", "Application error"],
+          label: `${role}: lands on the admin-shell workspace`,
+          path: "/workspace",
+        },
+      ]));
+    }
 
     results.push(...await runDirectRouteSweep(browser, "Employee", "PHASE23-EMP"));
     results.push(...await runDirectRouteSweep(browser, "National Sales Manager", "PHASE23-NSM"));

@@ -188,8 +188,6 @@ export const accessRegistry = [
 
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["GET", "POST", "PATCH"], pattern: "/api/admin/users/**", permission: [{ resource: "admin_access", action: "read" }, { resource: "user_admin", action: "update" }] }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["GET", "PATCH"], pattern: "/api/admin/permissions", permission: [{ resource: "admin_access", action: "read" }, { resource: "permission_admin", action: "update" }] }),
-  sessionApi({ audit: { classification: "access-read", required: true }, methods: ["GET"], pattern: "/api/admin/modules-control", permission: { resource: "module_control", action: "read" } }),
-  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["PATCH", "DELETE"], pattern: "/api/admin/modules-control", permission: { resource: "module_control", action: "update" } }),
   // PM product master: Super Admin writes, CEO/SFE Manager/Super Admin read — enforced
   // in-route by role (domain-helper), like the system-issues admin routes.
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["GET", "POST"], pattern: "/api/admin/pm-products", permission: null, guard: "domain-helper" }),
@@ -580,6 +578,17 @@ export const accessRegistry = [
   // (assertPharmacyMasterAccess); Super Admin + CEO only.
   sessionApi({ audit: { classification: "access-read", required: false }, methods: ["GET"], pattern: "/api/pharmacy-master/candidates", permission: null, guard: "domain-helper" }),
   sessionApi({ methods: allMethods, pattern: "/api/messages/**", permission: { resource: "communication", action: "read" }, guard: "domain-helper", csrfRequired: true }),
+  // Personal sidebar arrangement. `permission: null` is the honest declaration rather than a gap:
+  // there is no resource to gate on, because the route can only ever read or write the CALLER'S
+  // OWN row. The hr_id comes from the resolved session and is never accepted from the request, so
+  // there is no input by which one person could reach another's layout. Being signed in is the
+  // whole requirement, which is why the guard rejects on access.source rather than a role.
+  //
+  // Nothing stored here grants access to anything: a layout only reorders links the viewer was
+  // already permitted to see (applyPersonalLayout cannot emit an href absent from its gated input),
+  // so the worst a bad write can do is give that one person an inconvenient menu.
+  sessionApi({ methods: ["GET"], pattern: "/api/navigation/personal-layout", permission: null, guard: "domain-helper" }),
+  sessionApi({ audit: { classification: "mutation", required: false }, methods: ["PUT", "DELETE"], pattern: "/api/navigation/personal-layout", permission: null, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ methods: allMethods, pattern: "/api/notifications/in-app", permission: { resource: "employee_profile", action: "read" }, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ methods: ["GET"], pattern: "/api/notifications/settings", permission: { resource: "employee_profile", action: "read" } }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["PATCH"], pattern: "/api/notifications/settings", permission: { resource: "employee_profile", action: "update" } }),
@@ -924,7 +933,6 @@ export const accessRegistry = [
   sessionApi({ methods: ["GET"], pattern: "/api/action-center/managers", permission: { resource: "employees", action: "read" } }),
 
   { ...sessionApi({ methods: readOnly, pattern: "/admin/weekly-plans", permission: { resource: "weekly_plans", action: "read" } }), surface: "page" },
-  { ...sessionApi({ methods: readOnly, pattern: "/admin/modules-control", permission: { resource: "module_control", action: "read" } }), surface: "page" },
   { ...sessionApi({ methods: readOnly, pattern: "/admin/weekly-plans/calendar", permission: { resource: "weekly_plans", action: "read" } }), surface: "page" },
   { ...sessionApi({ methods: readOnly, pattern: "/admin/private-calendars", permission: { resource: "attendance", action: "read" }, guard: "domain-helper" }), surface: "page" },
   { ...sessionApi({ methods: readOnly, pattern: "/admin/marketing-requests/control", permission: null, guard: "domain-helper" }), surface: "page" },

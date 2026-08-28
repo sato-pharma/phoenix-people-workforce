@@ -57,7 +57,7 @@ export function runTargetsViewScopeTests() {
   }
   // Medical Rep excluded by owner decision; "Manager" is the Head-Office rung and owns no areas, so
   // it would resolve to an empty grid — a dead tab is worse than no tab.
-  for (const role of ["Medical Rep", "Manager", "Employee", "Product Manager", "Group Product Manager", "Marketing Manager", "SFE Manager", "CEO", "Super Admin", "Talent Acquisition"]) {
+  for (const role of ["Medical Rep", "Manager", "Employee", "Product Manager", "Group Product Manager", "Marketing Manager", "SFE Manager", "CEO", "Super Admin", "HR Advisory", "HR Operations"]) {
     assert.equal(isPortalTargetsRole(role), false, `${role} must NOT get the portal Targets view`);
   }
 

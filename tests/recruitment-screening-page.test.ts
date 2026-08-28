@@ -16,7 +16,7 @@ import { parseScreeningFilters, screeningHref } from "../src/lib/recruitment/scr
  *
  * THE PORTAL TWIN IS NOT OPTIONAL. `app/(admin)/layout.tsx` redirects portal-shell roles out of the
  * whole (admin) group before any page in it renders, so an admin-only screening route would be dead
- * for Talent Acquisition — the role that screens the most CVs. Every admin page in this module has
+ * for HR Advisory — the role that screens the most CVs. Every admin page in this module has
  * a twin under app/employee-portals/ for exactly this reason, and a link that points at the wrong
  * one bounces the user straight back out.
  *
@@ -41,7 +41,7 @@ export async function runRecruitmentScreeningPageTests() {
   assert.equal(
     screeningHref("/employee-portals/recruitment", { unseenOnly: true }),
     "/employee-portals/recruitment/screening?unseen=1",
-    "the portal twin's link, which is what Talent Acquisition must get",
+    "the portal twin's link, which is what HR Advisory must get",
   );
   assert.equal(
     screeningHref("/recruitment/"),
@@ -148,7 +148,7 @@ export async function runRecruitmentScreeningPageTests() {
   // ── 4 · The pool still links to it ────────────────────────────────────────
   //
   // A route nobody can find is the same as no route. The pool's link is shell-aware for the reason
-  // in section 3: a hard-coded /recruitment/screening in the portal bounces Talent Acquisition out.
+  // in section 3: a hard-coded /recruitment/screening in the portal bounces HR Advisory out.
   const workspaceSource = read("src/components/recruitment/recruitment-workspace.tsx");
   assert.match(
     workspaceSource,

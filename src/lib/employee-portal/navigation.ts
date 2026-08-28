@@ -309,7 +309,14 @@ export function resolveEmployeePortalNavVisibility(
   const isGroupProductManager = resolvedRole === "Group Product Manager";
   const isMarketingManager = resolvedRole === "Marketing Manager";
   const isA3Account = canonicalHrIdKey(viewerHrId) === "a-3";
-  const isTalentAcquisition = resolvedRole === "Talent Acquisition";
+  // The retired Talent Acquisition seat was the ONLY portal-mode HR/office role. Both successor
+  // bundles (HR Advisory, HR Operations) are ADMIN-shell roles — resolveNavigationMode never
+  // returns "employee-portal" for either — so no portal role is HR/office staff any more and this
+  // is empty by design. Kept as a named set rather than deleted so the field-employee carve-outs
+  // below still read as deliberate exclusions; the /hr namespace (Phase 2) is where these tools
+  // live for the new seats. Adding a portal-mode HR role here is the only thing that revives them.
+  const portalHrOfficeRoles = new Set<PhoenixRole>([]);
+  const isPortalHrOfficeStaff = portalHrOfficeRoles.has(resolvedRole);
   // The raw ACCESS role, not the job-title-derived one — see showActionsTab below.
   const isPlainEmployeeAccessRole = String(accessRole ?? "").trim().toLowerCase() === "employee";
   const isHeadOffice =
@@ -330,12 +337,12 @@ export function resolveEmployeePortalNavVisibility(
   const showMedRepsPerformanceTab = isNationalSalesManager;
   // Talent Acquisition is HR staff processing outstation expenses, not a field claimant —
   // she has no outstation expenses of her own, so both expense tabs stay hidden for her.
-  const showExpenseActionTab = !isMedicalRep && !isTalentAcquisition;
-  const showExpenseDashboardTab = !isMedicalRep && !isTalentAcquisition;
+  const showExpenseActionTab = !isMedicalRep && !isPortalHrOfficeStaff;
+  const showExpenseDashboardTab = !isMedicalRep && !isPortalHrOfficeStaff;
   // "My Visits" (CRM field visits) and Deductions are owner-requested exclusions for
   // Talent Acquisition specifically — she is HR/office staff, not a field employee.
-  const showMyVisitsTab = !isTalentAcquisition;
-  const showDeductionsTab = !isTalentAcquisition;
+  const showMyVisitsTab = !isPortalHrOfficeStaff;
+  const showDeductionsTab = !isPortalHrOfficeStaff;
   // Marketing Requests and Contact HR Support are full modules: their tabs are visible
   // without the launch flag. Marketing role checks still apply, so Marketing visibility
   // never extends to an unauthorized role. Contact HR Support is available to every
@@ -366,10 +373,9 @@ export function resolveEmployeePortalNavVisibility(
     "Manager",
     "Regional Manager",
     "District Manager",
-    "Talent Acquisition",
   ].includes(resolvedRole);
   const baseShowMyPerformanceTab = !hideMyPerformanceTab;
-  const baseShowIncentiveTab = !isTrainingManager && !isMarketingManager && !isTalentAcquisition;
+  const baseShowIncentiveTab = !isTrainingManager && !isMarketingManager && !isPortalHrOfficeStaff;
   // Product / Group Product Managers (and their line manager, Marketing Manager) get the
   // line/product-scoped Sales Intelligence analytics surfaces. Each page enforces its own
   // server-side scope; the sidebar visibility just mirrors that access.
@@ -400,7 +406,7 @@ export function resolveEmployeePortalNavVisibility(
         isGroupProductManager ||
         isMarketingManager ||
         isTrainingManager ||
-        isTalentAcquisition),
+        isPortalHrOfficeStaff),
     showExpenseActionTab: isA3Account ? false : showExpenseActionTab,
     showExpenseDashboardTab: isA3Account ? false : showExpenseDashboardTab,
     showIncentiveTab: isA3Account ? false : baseShowIncentiveTab,
@@ -429,11 +435,11 @@ export function resolveEmployeePortalNavVisibility(
       isProductManager ||
       isGroupProductManager ||
       isMarketingManager ||
-      isTalentAcquisition,
+      isPortalHrOfficeStaff,
     // Talent Acquisition keeps the read-only Planning Calendar (HO-scoped) but not the
     // Weekly/Monthly Plan submission page — owner-requested removal, 2026-07-25.
     showPlanningCalendarTab: isA3Account || showPlansTab,
-    showPlansTab: isA3Account || (showPlansTab && !isTalentAcquisition),
+    showPlansTab: isA3Account || (showPlansTab && !isPortalHrOfficeStaff),
     // Regional Manager included: canReadProbationEmployee already has an RM branch that walks the
     // full management subtree (probation/service.ts), so an RM sees every med rep under every DSM
     // in their region — the tab was the only thing missing.
@@ -444,12 +450,12 @@ export function resolveEmployeePortalNavVisibility(
       isProductManager ||
       isGroupProductManager ||
       isMarketingManager ||
-      isTalentAcquisition,
+      isPortalHrOfficeStaff,
     showSupportTab: true,
-    showRecruitmentHiringTab: isTalentAcquisition,
-    showPeopleManagementTab: isTalentAcquisition,
+    showRecruitmentHiringTab: isPortalHrOfficeStaff,
+    showPeopleManagementTab: isPortalHrOfficeStaff,
     showPrivateCalendarTab: true,
-    showAccountActivationTab: isTalentAcquisition,
+    showAccountActivationTab: isPortalHrOfficeStaff,
     showTeamCoachingTab,
     // Team Expenses was an NSM-only surface. It is retired from the portal nav:
     // the NSM's single expense destination is now the Expense Dashboard, whose
@@ -597,7 +603,7 @@ export function resolveEmployeePortalNavVisibility(
     showActionsTab:
       !isTrainingManager &&
       !isMedicalRep &&
-      !isTalentAcquisition &&
+      !isPortalHrOfficeStaff &&
       !(resolvedRole === "Employee" && isPlainEmployeeAccessRole),
     showMyVisitsTab,
     showDeductionsTab,

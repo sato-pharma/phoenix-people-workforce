@@ -15,11 +15,28 @@ export function normalizeEmail(value: string | null | undefined): string | null 
   return trimmed.length > 0 ? trimmed : null;
 }
 
+// An Egyptian mobile, in every form this pool actually stores it. The captured group is always the
+// 10 significant digits (1 + operator digit + 8 subscriber digits); everything before it is prefix:
+//   01xxxxxxxxx      local                        253 rows
+//   201xxxxxxxxx     canonical (Meta's wa_id)      61 rows — matches, returned unchanged
+//   00201xxxxxxxxx   international dialling prefix   7 rows
+//   2001xxxxxxxxx    +20 written before the local 0  5 rows — country code doubled
+// It deliberately does NOT match a bare 1xxxxxxxxx: with no 0 and no 20 there is nothing marking it
+// as Egyptian, and guessing there is how you merge two different people.
+const EGYPT_MOBILE = /^(?:00)?(?:(?:20)?0|20)(1\d{9})$/;
+
 export function normalizePhone(value: string | null | undefined): string | null {
-  // Keep digits only; drop a single leading Egyptian/international 00/0 noise but
-  // stay conservative — over-normalizing risks false-merging distinct people.
+  // Keep digits only, then fold the ONE ambiguity that actually splits this pool: an Egyptian mobile
+  // written locally and internationally is the same handset, and findMatchingCandidate compares by
+  // exact string equality — so without this fold a CV carrying "01202645759" never matches the
+  // WhatsApp record stamped "201202645759" from Meta's wa_id, and the same person is inserted twice.
+  // Canonical form is the international one, because that is the form Meta sends and cannot be
+  // asked to change. Every other shape is left exactly as-is on purpose: over-normalizing risks
+  // false-merging distinct people, which is far worse than a duplicate a human can merge.
   const digits = String(value ?? "").replace(/\D/g, "");
-  return digits.length > 0 ? digits : null;
+  if (digits.length === 0) return null;
+  const egyptianMobile = EGYPT_MOBILE.exec(digits);
+  return egyptianMobile ? `20${egyptianMobile[1]}` : digits;
 }
 
 export type CandidateMatchKeys = {

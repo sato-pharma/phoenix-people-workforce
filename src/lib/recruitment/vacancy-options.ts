@@ -15,8 +15,17 @@
 // screening page loads it server-side and passes the plain array down as a prop, the same way it
 // loads the manager list.
 
+import { canonicalHrIdKey, hrIdLookupKeys } from "@/lib/hr-id";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { logError } from "@/lib/observability/log";
+import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
 import { cleanPositionText } from "@/lib/recruitment/position-folder";
+import {
+  MANAGER_SEAT_COLUMNS,
+  resolveVacancyManager,
+  type ManagerSeatRow,
+  type ManagerStandIn,
+} from "@/lib/recruitment/vacancy-manager-escalation";
 import type { SentForPosition } from "@/lib/recruitment/types";
 
 /** One open seat, as a recruiter picks it. */
@@ -28,14 +37,24 @@ export type VacancyOption = {
   regionName: string | null;
   lineName: string | null;
   /**
-   * The manager this seat reports to, when the vacancy names one. Picking a vacancy pre-selects
-   * this person, which is the whole reason a recruiter should pick rather than type: the vacancy
-   * already knows who owns it, and choosing the wrong manager is how a CV lands somewhere nobody
-   * is looking. Null on a seat whose own manager is also vacant — "Vacant Cairo District Manager"
-   * is a real row in this table.
+   * The manager who receives a CV sent for this seat. Picking a vacancy pre-selects this person,
+   * which is the whole reason a recruiter should pick rather than type: the vacancy already knows
+   * who owns it, and choosing the wrong manager is how a CV lands somewhere nobody is looking.
+   *
+   * Usually the manager the vacancy itself names. Where that post is ITSELF vacant — "Vacant Cairo
+   * District Manager" is a real row in this table — it is instead whoever the organogram puts above
+   * it, and `standingInFor` says so. Null only when neither can be resolved, and the send then stays
+   * disabled rather than addressing a CV to nobody.
    */
   managerHrId: string | null;
   managerName: string | null;
+  /**
+   * The vacant post this manager is covering, named the way the vacancy or the organogram names it.
+   * Null in the ordinary case, where the manager is the seat's own manager and there is nothing to
+   * explain. Set, it is shown beside the send so a recruiter can see the CV is going a level up and
+   * why — routing silently would leave them to discover it in the reply.
+   */
+  standingInFor: string | null;
 };
 
 type VacancyRow = {
@@ -44,6 +63,7 @@ type VacancyRow = {
   region_name?: string | null;
   manager_hr_id?: string | null;
   manager_name?: string | null;
+  seat_id?: string | null;
   areas?: { name?: string | null } | Array<{ name?: string | null }> | null;
   lines?: { name?: string | null } | Array<{ name?: string | null }> | null;
 };
@@ -53,6 +73,112 @@ function embeddedName(value: VacancyRow["areas"] | VacancyRow["lines"]): string 
   const row = Array.isArray(value) ? value[0] : value;
   const name = String(row?.name ?? "").trim();
   return name.length > 0 ? name : null;
+}
+
+/**
+ * The organogram, for vacancies whose own manager post is empty.
+ *
+ * A failed read degrades to no escalation rather than throwing. The picker worked without this until
+ * today, and taking the whole screening page down because a view was slow would cost the recruiter
+ * every vacancy to fix one.
+ */
+async function loadManagerSeatRows(): Promise<ManagerSeatRow[]> {
+  const { data, error } = await getSupabaseAdmin().from("au_v_org_tree").select(MANAGER_SEAT_COLUMNS);
+  if (error) {
+    logError("Vacancy manager escalation could not read the org tree", {
+      error,
+      labels: { event: "vacancy_manager_escalation_tree_read_failed" },
+    });
+    return [];
+  }
+  return (data ?? []) as ManagerSeatRow[];
+}
+
+/**
+ * Real names for the stand-in managers, so a recruiter never reads a raw HR_ID.
+ *
+ * Looked up through `hrIdLookupKeys` rather than a bare `.eq`. The ids here cross tables that
+ * disagree about case — `employees` holds upper-case — and PostgREST matches case-sensitively, so an
+ * exact match on the wrong spelling returns no row and the stand-in silently loses their name. At
+ * most five ids reach this, one per vacant manager seat in production, which keeps the `in` filter
+ * far below the length at which it starts returning nothing at all.
+ */
+async function namesByHrId(hrIds: readonly string[]): Promise<Map<string, string>> {
+  const resolved = new Map<string, string>();
+  if (hrIds.length === 0) return resolved;
+
+  const { data, error } = await getSupabaseAdmin()
+    .from("employees")
+    .select("hr_id,full_name,nickname")
+    .in("hr_id", [...new Set(hrIds.flatMap((hrId) => hrIdLookupKeys(hrId)))]);
+  if (error || !data) return resolved;
+
+  const byCanonical = new Map<string, string>();
+  for (const row of data as Array<{ hr_id?: string | null; full_name?: string | null; nickname?: string | null }>) {
+    const key = canonicalHrIdKey(row.hr_id);
+    const fullName = String(row.full_name ?? "").trim();
+    if (!key || !fullName) continue;
+    byCanonical.set(key, resolveEmployeeDisplayName(fullName, row.nickname ?? null, row.hr_id ?? null));
+  }
+  for (const hrId of hrIds) {
+    const name = byCanonical.get(canonicalHrIdKey(hrId) ?? "");
+    if (name) resolved.set(hrId, name);
+  }
+  return resolved;
+}
+
+/**
+ * Fill in the manager on any seat whose own manager post is vacant.
+ *
+ * Costs nothing on a list where every vacancy names its manager: the organogram is read only once a
+ * vacancy is found without one. Measured in production 2026-08-28, exactly one of the 48 open
+ * vacancies is in that state.
+ *
+ * A vacancy that already names a manager is never touched. The organogram may well disagree with the
+ * row, but the row is the deliberate answer and quietly overruling it would move CVs away from the
+ * person somebody chose to put on it.
+ */
+async function withEscalatedManagers(
+  options: readonly VacancyOption[],
+  seatIdByVacancyId: Map<number, string | null>,
+): Promise<VacancyOption[]> {
+  const unmanaged = options.filter((option) => !option.managerHrId);
+  if (unmanaged.length === 0) return [...options];
+
+  const seatRows = await loadManagerSeatRows();
+  if (seatRows.length === 0) return [...options];
+
+  const standIns = new Map<number, ManagerStandIn>();
+  for (const option of unmanaged) {
+    const standIn = resolveVacancyManager(
+      {
+        lineName: option.lineName,
+        regionName: option.regionName,
+        seatId: seatIdByVacancyId.get(option.id) ?? null,
+      },
+      seatRows,
+    );
+    if (standIn) standIns.set(option.id, standIn);
+  }
+  if (standIns.size === 0) return [...options];
+
+  const names = await namesByHrId([...new Set([...standIns.values()].map((standIn) => standIn.hrId))]);
+
+  return options.map((option) => {
+    const standIn = standIns.get(option.id);
+    if (!standIn) return option;
+    return {
+      ...option,
+      managerHrId: standIn.hrId,
+      // Never the vacancy's own manager_name as a fallback here: that string names the EMPTY post,
+      // and leaving it beside a stand-in's HR_ID would read as though this person holds it. An
+      // unresolvable name degrades to none — the send picker carries the name either way.
+      managerName: names.get(standIn.hrId) ?? null,
+      // The vacancy's own wording first, where it has any. "Vacant Cairo District Manager" is what a
+      // person wrote for a person to read; the organogram's "PEDIA Cairo DM (VACANT)" is a label.
+      standingInFor: standIn.coveredSeatLabel ? option.managerName ?? standIn.coveredSeatLabel : null,
+    };
+  });
 }
 
 /**
@@ -68,7 +194,7 @@ function embeddedName(value: VacancyRow["areas"] | VacancyRow["lines"]): string 
 export async function listOpenVacancyOptions(): Promise<VacancyOption[]> {
   const { data, error } = await getSupabaseAdmin()
     .from("position_vacancies")
-    .select("id,job_title,region_name,manager_hr_id,manager_name,areas(name),lines(name)")
+    .select("id,job_title,region_name,manager_hr_id,manager_name,seat_id,areas(name),lines(name)")
     .eq("status", "open");
   if (error) {
     // 42P01 = the table is absent. Not possible in production, but a preview database built from a
@@ -78,7 +204,15 @@ export async function listOpenVacancyOptions(): Promise<VacancyOption[]> {
     throw error;
   }
 
-  return ((data ?? []) as VacancyRow[])
+  const rows = (data ?? []) as VacancyRow[];
+  // Kept beside the options rather than on them. The seat id is how the organogram is entered, not
+  // anything a recruiter reads, and putting a raw code on a type that crosses to the browser is how
+  // one ends up rendered.
+  const seatIdByVacancyId = new Map<number, string | null>(
+    rows.map((row) => [Number(row.id), String(row.seat_id ?? "").trim() || null]),
+  );
+
+  const options = rows
     .map((row) => ({
       areaName: embeddedName(row.areas),
       id: Number(row.id),
@@ -87,6 +221,7 @@ export async function listOpenVacancyOptions(): Promise<VacancyOption[]> {
       managerHrId: String(row.manager_hr_id ?? "").trim() || null,
       managerName: String(row.manager_name ?? "").trim() || null,
       regionName: String(row.region_name ?? "").trim() || null,
+      standingInFor: null as string | null,
     }))
     .filter((option) => Number.isFinite(option.id) && option.jobTitle.length > 0)
     .sort(
@@ -99,6 +234,8 @@ export async function listOpenVacancyOptions(): Promise<VacancyOption[]> {
         (left.lineName ?? "").localeCompare(right.lineName ?? "") ||
         left.jobTitle.localeCompare(right.jobTitle),
     );
+
+  return withEscalatedManagers(options, seatIdByVacancyId);
 }
 
 /**

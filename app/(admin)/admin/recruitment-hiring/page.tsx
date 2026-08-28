@@ -4,7 +4,7 @@ import { ArrowRight, BriefcaseBusiness } from "lucide-react";
 
 import { AdminPageHero } from "@/components/admin/admin-design-system";
 import { recruitmentHiringPageItems } from "@/config/system-navigation";
-import { getPermissionMatrix, permissionActions, permissionResources, resolveNavigationMode } from "@/lib/auth/permissions";
+import { getPermissionMatrix, isHrAuthorityRole, permissionActions, permissionResources, resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { permissionAllowed, roleAllowed, roleNotExcluded, type PermissionLookup } from "@/lib/navigation/active-path";
 
@@ -13,9 +13,10 @@ export const dynamic = "force-dynamic";
 export default async function RecruitmentHiringPage() {
   const access = await resolveAccessContextFromPage();
   if (resolveNavigationMode(access) === "employee-portal") redirect("/employee-portals");
-  // Every card here is gated to hrAuthorityNavigationRoles (Super Admin / Talent
-  // Acquisition) — match the sidebar button's own gate directly.
-  if (access.role !== "Super Admin" && access.role !== "Talent Acquisition") {
+  // Every card here is gated to hrAuthorityNavigationRoles — match the sidebar button's own gate
+  // directly, through the shared helper rather than a hand-written pair. The pair is what drifted
+  // when the role set last changed; isHrAuthorityRole and hrAuthorityNavigationRoles now move together.
+  if (!isHrAuthorityRole(access.role)) {
     redirect("/employee-portals");
   }
 

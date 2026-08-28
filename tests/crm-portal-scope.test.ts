@@ -28,7 +28,7 @@ export function runCrmPortalScopeTests() {
   for (const role of ["Medical Rep", "District Manager", "Regional Manager", "National Sales Manager"]) {
     assert.ok(isPortalCrmRole(role), `${role} must be a portal CRM role`);
   }
-  for (const role of ["Manager", "Employee", "CEO", "Super Admin", "SFE Manager", "Training Manager", "Marketing Manager", "Product Manager", "Group Product Manager", "Talent Acquisition"]) {
+  for (const role of ["Manager", "Employee", "CEO", "Super Admin", "SFE Manager", "Training Manager", "Marketing Manager", "Product Manager", "Group Product Manager", "HR Advisory", "HR Operations"]) {
     assert.ok(!isPortalCrmRole(role), `${role} must NOT be a portal CRM role`);
   }
   // The Head-Office "Manager" rung is the specific regression risk (isDistrictManager matches it).

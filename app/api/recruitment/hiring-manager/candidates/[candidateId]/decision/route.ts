@@ -60,7 +60,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ ca
     // A refusal without a reason tells Talent Acquisition nothing, and the point of pushing a CV out
     // of the pool is to get back something worth reading. "Yes" needs no explaining; "no" does.
     if (decision === "not_interested" && !note) {
-      return validationError("Add a short reason so Talent Acquisition knows why.");
+      return validationError("Add a short reason so the recruitment team knows why.");
     }
 
     if (!(await isCandidateSentToCaller(access, candidateId))) {

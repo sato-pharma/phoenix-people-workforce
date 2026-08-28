@@ -3,7 +3,6 @@ import { redirect } from "next/navigation";
 import { EmployeePortalChrome } from "@/components/employee-portal/employee-portal-layout";
 import { EmployeePortalEmptyState } from "@/components/employee-portal/enterprise-shell";
 import { employeeHasActiveDeviceMapping } from "@/lib/attendance/device-user-mapping";
-import { getEffectiveSidebarModuleIds } from "@/lib/admin/modules-control";
 import { assertPermission, type AccessContext } from "@/lib/auth/permissions";
 import { isForbiddenError } from "@/lib/auth/server";
 import { resolveEmployeePortalNavVisibility } from "@/lib/employee-portal/navigation";
@@ -41,12 +40,10 @@ export async function EmployeePortalServerShell({
 
   let data = null;
   let hasDeviceMapping = false;
-  let effectiveModuleIds: string[] | null = null;
   try {
-    [data, hasDeviceMapping, effectiveModuleIds] = await Promise.all([
+    [data, hasDeviceMapping] = await Promise.all([
       getEmployeePortalShellData(access),
       access.hrId ? employeeHasActiveDeviceMapping(access.hrId).catch(() => false) : Promise.resolve(false),
-      getEffectiveSidebarModuleIds(access, "employee-portal").catch(() => null),
     ]);
   } catch (error) {
     logPortalFailure(
@@ -78,7 +75,6 @@ export async function EmployeePortalServerShell({
     <EmployeePortalChrome
       data={data}
       disableSessionGuard={disableSessionGuard}
-      effectiveModuleIds={effectiveModuleIds}
       visibility={visibility}
     >
       {children}

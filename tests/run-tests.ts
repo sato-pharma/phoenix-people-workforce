@@ -15,13 +15,13 @@ import { runGcpMetricsTests } from "./gcp-metrics.test.ts";
 import { runWeeklySystemHealthDigestTests } from "./weekly-system-health-digest.test.ts";
 import { runMailboxComplianceMonitorTests } from "./mailbox-compliance-monitor.test.ts";
 import { runNavigationActivePathTests } from "./navigation-active-path.test.ts";
+import { runNavigationPersonalLayoutTests } from "./navigation-personal-layout.test.ts";
 import { runFinanceManagerSixModuleAccessTests } from "./finance-manager-six-module-access.test.ts";
 import { runSidebarLabelWidthTests } from "./sidebar-label-width.test.ts";
 import { runAutomatedPayrollPageWidthTests } from "./automated-payroll-page-width.test.ts";
 import { runWorkspaceSingleHeroTests } from "./workspace-single-hero.test.ts";
 import { runSidebarRoleScopedHeadingsTests } from "./sidebar-role-scoped-headings.test.ts";
 import { runSosProductMappingCheckTests } from "./sos-product-mapping-checks.test.ts";
-import { runModulesControlTests } from "./modules-control.test.ts";
 import { runIncentiveSchemeTests } from "./incentive-scheme.test.ts";
 import { runEmailNotificationTests } from "./email-notifications.test.ts";
 import { runEmailGovernanceTests } from "./email-governance.test.ts";
@@ -102,6 +102,8 @@ import { runProbationDomainMigrationReadinessTests } from "./probation-domain-mi
 import { runCrmIdentityTests } from "./crm-identity.test.ts";
 import { runCrmPostExitAttributionTests } from "./crm-post-exit-attribution.test.ts";
 import { runCrmPreHireAttributionTests } from "./crm-pre-hire-attribution.test.ts";
+import { runCrmPreHireMappingGuardTests } from "./crm-pre-hire-mapping-guard.test.ts";
+import { runCrmOverrideEmploymentScopeTests } from "./crm-override-employment-scope.test.ts";
 import { runCrmParitySweepTests } from "./crm-parity-sweep.test.ts";
 import { runCrmSyncRunColumnsTests } from "./crm-sync-run-columns.test.ts";
 import { runProbationDvSourceTests } from "./probation-dv-source.test.ts";
@@ -160,7 +162,10 @@ import { runRecruitmentManagerGroupingTests } from "./recruitment-manager-groupi
 import { runRecruitmentCandidateSeenTests } from "./recruitment-candidate-seen.test.ts";
 import { runRecruitmentScreeningPageTests } from "./recruitment-screening-page.test.ts";
 import { runCandidatePositionFolderTests } from "./candidate-position-folders.test.ts";
+import { runArabicPlaceMatchTests } from "./arabic-place-match.test.ts";
 import { runCandidatePositionSuggestionTests } from "./candidate-position-suggestion.test.ts";
+import { runRecruitmentStaleSendCheckTests } from "./recruitment-stale-send-check.test.ts";
+import { runVacancyManagerEscalationTests } from "./vacancy-manager-escalation.test.ts";
 import { runRecruitmentJobPostChannelTests } from "./recruitment-job-post-channels.test.ts";
 import { runRecruitmentHubPortalCoverageTests } from "./recruitment-hub-portal-coverage.test.ts";
 import { runRecruitmentPortalCvViewTests } from "./recruitment-portal-cv-view.test.ts";
@@ -239,6 +244,11 @@ import { runDvPlannerDateCheckTests } from "./dv-planner-date-check.test.ts";
 import { runVisitsReportSyncTests } from "./visits-report-sync.test.ts";
 import { runCrmCallRateTests } from "./crm-call-rate.test.ts";
 import { runCrmRepsPlansTests } from "./crm-reps-plans.test.ts";
+import { runCrmRepVisitsTests } from "./crm-rep-visits.test.ts";
+import { runCrmRegionBrickSuggestTests } from "./crm-region-brick-suggest.test.ts";
+import { runCrmRepsPlansPeriodTests } from "./crm-reps-plans-period.test.ts";
+import { runCrmCampaignNoteTests } from "./crm-campaign-note.test.ts";
+import { runCrmCampaignContactMatchTests } from "./crm-campaign-contact-match.test.ts";
 import { runCrmCheckinMatchTests } from "./crm-checkin-match.test.ts";
 import { runCrmCheckinPageBoundaryTests } from "./crm-checkin-page-boundary.test.ts";
 import { runCrmVacationDurationTests } from "./crm-vacation-duration.test.ts";
@@ -504,7 +514,6 @@ import { runEmployeePortalNavigationTests } from "./employee-portal-navigation.t
 import { runPortalNavActingDmUsesAppRoleTests } from "./portal-nav-acting-dm-uses-app-role.test.ts";
 import { runEmployeePortalBottomNavTests } from "./employee-portal-bottom-nav.test.ts";
 import { runEmployeePortalNavCatalogSyncTests } from "./employee-portal-nav-catalog-sync.test.ts";
-import { runEmployeePortalModuleCurationTests } from "./employee-portal-module-curation.test.ts";
 import { runCompanyCalendarTests } from "./company-calendar.test.ts";
 import { runPortalLoggingTests } from "./portal-logging.test.ts";
 import { runScopeBadgeTests } from "./scope-badge.test.ts";
@@ -512,6 +521,7 @@ import { runEmployeePortalPayslipSalaryTests } from "./employee-portal-payslip-s
 import { runAdminPayslipImageExportTests } from "./admin-payslip-image-export.test.ts";
 import { runEmployeePayrollEligibilityTests } from "./employee-payroll-eligibility.test.ts";
 import { runEmployeeAccessProvisioningTests } from "./employee-access-provisioning.test.ts";
+import { runHrFunctionGovernanceTests } from "./hr-function-governance.test.ts";
 import { runTitlePermissionGovernanceTests } from "./title-permission-governance.test.ts";
 import { runOrganogramHardeningTests } from "./organogram-hardening.test.ts";
 import { runVacancyReportOrganogramConsistencyTests } from "./vacancy-report-organogram-consistency.test.ts";
@@ -651,6 +661,7 @@ import { runSosBackfillEmptyBrickSentinelTests } from "./sos-backfill-empty-bric
 import { runSosSeatAttributionPeriodTests } from "./sos-seat-attribution-period.test.ts";
 import { runMonthlyClosingLockTests } from "./monthly-closing-lock.test.ts";
 import { runClosingPeriodGateTests } from "./closing-period-gate.test.ts";
+import { runEmployeeTemplateTeamDropdownTests } from "./employee-template-team-dropdown.test.ts";
 import { runSosMappingIntegrityTests } from "./sos-mapping-integrity.test.ts";
 import { runSosIngestionNoSilentZeroTests } from "./sos-ingestion-no-silent-zero.test.ts";
 import { runAnalyticsAreaScopeV2Tests } from "./analytics-area-scope-v2.test.ts";
@@ -899,6 +910,7 @@ import { runDeductionsCrmSingleMonthScanTests } from "./deductions-crm-single-mo
 import { runCrmDayMapPushdownTests } from "./crm-day-map-pushdown.test.ts";
 import { runSfeManagerNavDeadLinksTests } from "./sfe-manager-nav-dead-links.test.ts";
 import { runOrganogramNavLinkExistsTests } from "./organogram-nav-link-exists-for-every-role-that-can-open-it.test.ts";
+import { runEveryOfferedLinkOpensTests } from "./every-offered-link-opens.test.ts";
 import { runCrmHubCardReachabilityTests } from "./crm-hub-cards-are-reachable-by-the-roles-they-name.test.ts";
 import { runCrmDepartedExclusionHandoverTests } from "./crm-departed-exclusion-handover.test.ts";
 import { runOutstationArrivalPhotoCaptureReachableTests } from "./outstation-arrival-photo-capture-reachable.test.ts";
@@ -1035,6 +1047,10 @@ await runTest("gcp-metrics service health reader (availability/latency/instances
 await runTest("weekly system health digest", runWeeklySystemHealthDigestTests);
 await runTest("navigation active path", runNavigationActivePathTests);
 await runTest(
+  "navigation personal layout (a layout rearranges the gated set and can never introduce an href)",
+  runNavigationPersonalLayoutTests,
+);
+await runTest(
   "finance manager six-module access (sales scope + grant as one change, full closing workbook, organogram two-gate + head office, resignations read-only, line-scoped calendar, payslip document export)",
   runFinanceManagerSixModuleAccessTests,
 );
@@ -1049,7 +1065,6 @@ await runTest(
   "source-of-sales product mapping checks (duplicate item codes + zero-sales gaps)",
   runSosProductMappingCheckTests,
 );
-await runTest("modules control governance", runModulesControlTests);
 await runTest("incentive scheme", runIncentiveSchemeTests);
 await runTest("email notifications", runEmailNotificationTests);
 await runTest("notification confidence gate (checks + decision logic)", runNotificationConfidenceGateTests);
@@ -1151,6 +1166,8 @@ await runTest("probation domain migration readiness (Phase 1 schema + Phase 2 tr
 await runTest("crm identity waterfall (override>crm_id>unique username, no-guess) + double-visit predicate", runCrmIdentityTests);
 await runTest("crm post-exit attribution guard (work after an exit date is never filed under the leaver)", runCrmPostExitAttributionTests);
 await runTest("crm pre-hire attribution guard (nobody is credited with work dated before they joined)", runCrmPreHireAttributionTests);
+await runTest("crm pre-hire mapping guard (the Unmapped Agents screen refuses to create that miscredit)", runCrmPreHireMappingGuardTests);
+await runTest("crm override employment scope (one mapping credits both holders of a handed-over slot)", runCrmOverrideEmploymentScopeTests);
 await runTest("crm full-history parity sweep (windows, staleness, and the refuse-to-delete guard)", runCrmParitySweepTests);
 await runTest("crm sync-run columns (every persisted column exists in the schema)", runCrmSyncRunColumnsTests);
 await runTest("probation DV source definition (P3-T01 predicate + attribution + dedup key)", runProbationDvSourceTests);
@@ -1259,14 +1276,26 @@ await runTest(
   runCandidatePositionFolderTests,
 );
 await runTest(
+  "arabic place match (an English address naming an Arabic place: Box is not Bacos, George is not Girga)",
+  runArabicPlaceMatchTests,
+);
+await runTest(
   "recruitment position suggestion (the seat a CV is proposed for, and the four ways a place name lied)",
   runCandidatePositionSuggestionTests,
+);
+await runTest(
+  "vacancy manager escalation (when the seat's own manager post is vacant, climb to whoever is above it)",
+  runVacancyManagerEscalationTests,
+);
+await runTest(
+  "recruitment stale-send check (a slow manager is nudged; a manager who cannot answer strands the CV on day one)",
+  runRecruitmentStaleSendCheckTests,
 );
 await runTest(
   "recruitment advertising channels (the code round-trips from apply link to intake, or every CV loses its source)",
   runRecruitmentJobPostChannelTests,
 );
-await runTest("recruitment hub -> portal coverage (Talent Acquisition can reach every hub tool)", runRecruitmentHubPortalCoverageTests);
+await runTest("recruitment hub -> ADMIN-shell coverage (HR Advisory reaches every hub tool; the seven portal mirrors are offered to nobody)", runRecruitmentHubPortalCoverageTests);
 await runTest("recruitment portal \"View CV\" opens the viewer instead of downloading", runRecruitmentPortalCvViewTests);
 await runTest("recruitment inbound cv intake", runRecruitmentInboundCvIntakeTests);
 await runTest("recruitment intake finalize patch (a late throw must not erase the candidate it recorded)", runRecruitmentIntakeFinalizePatchTests);
@@ -1394,6 +1423,23 @@ await runTest("dv planner date check (confirmed/not-recorded/future/outside-rang
 await runTest("visits report sync (dedup + null-guard + delete-reconciliation + attendance/crm_save_date)", runVisitsReportSyncTests);
 await runTest("crm call rate (Sat-Wed denominator, AM 2 / PM 10 targets, campaign never lifts the verified rate)", runCrmCallRateTests);
 await runTest("crm reps plans board (live-month cap, company rate over days x reps, rep filter leaves totals alone)", runCrmRepsPlansTests);
+await runTest("crm rep visits drill-down (territory states, proof buckets, reconciles with the board rate)", runCrmRepVisitsTests);
+await runTest(
+  "crm region -> brick suggestion (Arabic name key + the reps' own area; Kit Kat, Beba, and the Dokki/Edku trap)",
+  runCrmRegionBrickSuggestTests,
+);
+await runTest(
+  "crm campaign note (doctor / speciality / clinic pulled apart; the hospital and the GB rows the owner named)",
+  runCrmCampaignNoteTests,
+);
+await runTest(
+  "crm campaign contact match (a campaign doctor already on the list stops being called a prospect)",
+  runCrmCampaignContactMatchTests,
+);
+await runTest(
+  "crm reps plans period (a week's rate divides by the week's working days, never the month's)",
+  runCrmRepsPlansPeriodTests,
+);
 await runTest("crm checkin-match (agent+contact+day rule, crm_save_date tie-break)", runCrmCheckinMatchTests);
 await runTest("crm checkin page boundary (.gte cursor + id de-dupe across duplicate check_date)", runCrmCheckinPageBoundaryTests);
 await runTest("crm vacation duration (per-date collapse: AM+PM = 1 day, duplicated AM+AM = 0.5)", runCrmVacationDurationTests);
@@ -1504,6 +1550,7 @@ await runTest("monthly closing comparison", runMonthlyClosingComparisonTests);
 await runTest("monthly closing export scope (filter reaches every sheet)", runMonthlyClosingExportScopeTests);
 await runTest("portal closing line choice (a requested line is honoured or refused, never swapped)", runPortalClosingLineChoiceTests);
 await runTest("closing organogram regions (areas follow the org chart, per line)", runClosingOrganogramRegionsTests);
+await runTest("employee template Area->Team dropdown (builder and Excel resolve the same range)", runEmployeeTemplateTeamDropdownTests);
 await runTest("direct channel", runDirectChannelTests);
 await runTest("direct orders land on their own area", runDirectOrdersLandOnTheirOwnAreaTests);
 await runTest("office pivot", runOfficePivotTests);
@@ -1724,7 +1771,6 @@ await runTest("employee portal navigation", runEmployeePortalNavigationTests);
 await runTest("portal nav acting DM follows app access role, not job title", runPortalNavActingDmUsesAppRoleTests);
 await runTest("employee portal bottom nav", runEmployeePortalBottomNavTests);
 await runTest("employee portal nav catalog sync (M12)", runEmployeePortalNavCatalogSyncTests);
-await runTest("employee portal module curation (Modules Control sidebar wiring)", runEmployeePortalModuleCurationTests);
 await runTest("company calendar", runCompanyCalendarTests);
 await runTest("portal logging", runPortalLoggingTests);
 await runTest("scope badge", runScopeBadgeTests);
@@ -1733,6 +1779,12 @@ await runTest("admin payslip image export", runAdminPayslipImageExportTests);
 await runTest("employee payroll eligibility", runEmployeePayrollEligibilityTests);
 await runTest("employee access provisioning", runEmployeeAccessProvisioningTests);
 await runTest("title permission governance", runTitlePermissionGovernanceTests);
+await runTest(
+  "HR function governance (a permission role is never a job title; the two retired HR seats fail "
+  + "closed to Employee; no bundle OR individual function breaches a job-description boundary; the "
+  + "matrix is composed from the catalogue rather than hand-edited; both seats keep a self-service floor)",
+  runHrFunctionGovernanceTests,
+);
 await runTest("organogram hardening", runOrganogramHardeningTests);
 await runTest("vacancy report / organogram consistency", runVacancyReportOrganogramConsistencyTests);
 await runTest("organogram godmode", runOrganogramGodmodeTests);
@@ -1765,7 +1817,7 @@ await runTest("resignations dashboard scope (unscoped-read fix)", runResignation
 await runTest("resignations Cairo-today (exit-date defaults resolve via Africa/Cairo)", runResignationsCairoTodayTests);
 await runTest("resignation submitted_by_hr_id FK (actor casing must not violate the employees FK; constraint errors are not 'schema missing')", runResignationSubmittedByFkTests);
 await runTest("resignation CRM identity release (a leaver releases crm_id for their successor but KEEPS crm_username so their own trailing visits stay attributable)", runResignationCrmIdentityReleaseTests);
-await runTest("probation feedback revival (coarse gate is probation:read, FK columns take the stored hr_id, Talent Acquisition resolves and is visible)", runProbationFeedbackRevivalTests);
+await runTest("probation feedback revival (coarse gate is probation:read, FK columns take the stored hr_id, both HR bundles resolve and are visible)", runProbationFeedbackRevivalTests);
 await runTest("access profile hr_id casing (admin-typed hr_id is normalised before it reaches the employees FK)", runAccessProfileHrIdCasingTests);
 await runTest("access governance hardening", runAccessGovernanceHardeningTests);
 await runTest("RLS authenticated-read revoke (M3)", runRlsAuthenticatedReadRevokeTests);
@@ -1860,7 +1912,7 @@ await runTest("activity tracking", runActivityTrackingTests);
 await runTest("activity manager view access (self + direct reports)", runActivityManagerViewAccessTests);
 await runTest("attendance self-scope", runAttendanceSelfScopeTests);
 await runTest("attendance exception notes (approving must not erase the requester's note)", runAttendanceExceptionNotesTests);
-await runTest("hiring documents access (Talent Acquisition company-wide bypass)", runHiringDocumentsAccessTests);
+await runTest("hiring documents access (HR seat company-wide bypass)", runHiringDocumentsAccessTests);
 await runTest("hiring document audit (every write names its actor, before-images read first)", runHiringDocumentsAuditTests);
 await runTest("hiring document capture (polish keeps colour, pages become one A4 PDF, paths never collide)", runHiringDocumentCaptureTests);
 await runTest("hiring document deadlines (a blur that changed nothing must not write, in both renders)", runHiringDocumentsDeadlineTests);
@@ -2432,6 +2484,18 @@ await runTest(
   + "the whole chart on request — but neither was listed on any sidebar entry, so there was no way to reach "
   + "it; the owner hit this on 2026-08-25 after the Head Office branch shipped)",
   runOrganogramNavLinkExistsTests,
+);
+
+await runTest(
+  "every link a role is OFFERED must OPEN for that role (the general form of the four single-page "
+  + "reachability tests around it, across BOTH shells: admin links via getSections, portal links via the "
+  + "nav registry's role-driven visibility flags, each resolved to its page file and checked against that "
+  + "page's own unconditional assertPermission / canAccess gate; the portal's flags are computed from role "
+  + "names and never consult the permission matrix, which is why it offered Talent Acquisition "
+  + "/employee-portals/probation while the matrix withheld probation:read — production logged 25 "
+  + "\"Forbidden: Talent Acquisition cannot read probation\" errors across 8 route variants on "
+  + "2026-07-25/26 before 41c24ede added the missing line)",
+  runEveryOfferedLinkOpensTests,
 );
 
 await runTest(

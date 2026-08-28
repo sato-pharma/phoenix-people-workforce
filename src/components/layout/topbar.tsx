@@ -9,6 +9,7 @@ import { COMMAND_PALETTE_EVENT } from "@/components/layout/command-palette";
 import { InAppNotificationsBell } from "@/components/layout/in-app-notifications-bell";
 import { InternalMessagesMenu } from "@/components/layout/internal-messages-menu";
 import { MobileSidebar } from "@/components/layout/sidebar";
+import type { PersonalNavigationLayout } from "@/lib/navigation/personal-layout";
 import { systemAssets, systemUiText } from "@/config/system-settings";
 import { logoutOneSignal } from "@/lib/notifications/onesignal-client";
 import { type AccessContext, type NavigationMode, type PhoenixRole } from "@/lib/auth/permissions";
@@ -19,15 +20,17 @@ import { useDismissOnOutsideInteraction } from "@/hooks/use-dismiss-on-outside-i
 export function Topbar({
   navigationMode = "admin",
   permissionLookup = {},
-  effectiveModuleIds,
   viewer,
   currentRole,
+  personalLayout = null,
   scope,
 }: {
   currentRole?: PhoenixRole;
-  effectiveModuleIds?: readonly string[] | null;
   navigationMode?: NavigationMode;
   permissionLookup?: PermissionLookup;
+  /** This viewer's own saved arrangement, resolved server-side in AppShell and handed to the
+   *  mobile drawer so the two sidebars never disagree about where a page lives. */
+  personalLayout?: PersonalNavigationLayout | null;
   scope?: AccessContext["scope"];
   source?: AccessContext["source"];
   viewer: ViewerIdentity;
@@ -57,10 +60,10 @@ export function Topbar({
         navigationMode={navigationMode}
         currentRole={currentRole}
         isSystemAdministratorWorkspace={scope === "system" || currentRole === "Super Admin"}
-        effectiveModuleIds={effectiveModuleIds}
         onClose={() => setMenuOpen(false)}
         open={menuOpen}
         permissionLookup={permissionLookup}
+        personalLayout={personalLayout}
       />
       <header className={`sticky top-0 z-20 px-3 py-3 backdrop-blur-xl sm:px-6 ${
         isAdminMode
