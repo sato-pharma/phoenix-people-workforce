@@ -100,6 +100,7 @@ import { runProbationDomainMigrationReadinessTests } from "./probation-domain-mi
 import { runCrmIdentityTests } from "./crm-identity.test.ts";
 import { runCrmPostExitAttributionTests } from "./crm-post-exit-attribution.test.ts";
 import { runCrmPreHireAttributionTests } from "./crm-pre-hire-attribution.test.ts";
+import { runCrmPreHireMappingGuardTests } from "./crm-pre-hire-mapping-guard.test.ts";
 import { runCrmParitySweepTests } from "./crm-parity-sweep.test.ts";
 import { runCrmSyncRunColumnsTests } from "./crm-sync-run-columns.test.ts";
 import { runProbationDvSourceTests } from "./probation-dv-source.test.ts";
@@ -1148,6 +1149,7 @@ await runTest("probation domain migration readiness (Phase 1 schema + Phase 2 tr
 await runTest("crm identity waterfall (override>crm_id>unique username, no-guess) + double-visit predicate", runCrmIdentityTests);
 await runTest("crm post-exit attribution guard (work after an exit date is never filed under the leaver)", runCrmPostExitAttributionTests);
 await runTest("crm pre-hire attribution guard (nobody is credited with work dated before they joined)", runCrmPreHireAttributionTests);
+await runTest("crm pre-hire mapping guard (the Unmapped Agents screen refuses to create that miscredit)", runCrmPreHireMappingGuardTests);
 await runTest("crm full-history parity sweep (windows, staleness, and the refuse-to-delete guard)", runCrmParitySweepTests);
 await runTest("crm sync-run columns (every persisted column exists in the schema)", runCrmSyncRunColumnsTests);
 await runTest("probation DV source definition (P3-T01 predicate + attribution + dedup key)", runProbationDvSourceTests);
