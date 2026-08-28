@@ -53,16 +53,27 @@ values
    false, 'ANTI_INFECTIVE Delta (3) DM', true, date '2026-08-28')
 on conflict (seat_id) do nothing;
 
--- Four new rep seats. Descriptive labels follow the 'AIF Fayoum rep' / 'AIF Beni Suef rep'
--- precedent for governorate-named areas, and the owner's rule that a name beats a raw code.
+-- Three new rep seats. With SEAT-AIF-REP-D24, which comes across from Delta (2) below, the
+-- district opens with the FOUR medical reps the owner specified on 2026-08-28:
+--
+--   AIF Qalubeya rep         D11
+--   AIF Sharkia 1 rep        D24
+--   AIF Sharkia 2 rep        D25
+--   AIF Suez & Ismailia rep  OT2 + OT9   <- ONE rep covers both governorates
+--
+-- Suez and Ismailia do NOT get a rep each. One seat serving two areas is an existing, supported
+-- shape: SEAT-PED-REP-GZ6 already serves pedia:GZ6 and pedia:UE9 the same way. The seat carries
+-- the primary area code (OT2) and both line_area_map rows point at it.
+--
+-- Descriptive labels follow the 'AIF Fayoum rep' / 'AIF Beni Suef rep' precedent for
+-- governorate-named areas, and the owner's rule that a name beats a raw code.
 insert into au.seats
   (seat_id, seat_tier, line_code, region_code, area_code, parent_seat_id,
    is_other_pseudo_dm, seat_label, is_active, effective_from)
 values
-  ('SEAT-AIF-REP-D11','REP','anti_infective','D3','D11','SEAT-AIF-DM-D3',false,'AIF Qalubeya rep', true,date '2026-08-28'),
-  ('SEAT-AIF-REP-D25','REP','anti_infective','D3','D25','SEAT-AIF-DM-D3',false,'AIF Sharkia 2 rep',true,date '2026-08-28'),
-  ('SEAT-AIF-REP-OT2','REP','anti_infective','D3','OT2','SEAT-AIF-DM-D3',false,'AIF Suez rep',     true,date '2026-08-28'),
-  ('SEAT-AIF-REP-OT9','REP','anti_infective','D3','OT9','SEAT-AIF-DM-D3',false,'AIF Ismailia rep', true,date '2026-08-28')
+  ('SEAT-AIF-REP-D11','REP','anti_infective','D3','D11','SEAT-AIF-DM-D3',false,'AIF Qalubeya rep',       true,date '2026-08-28'),
+  ('SEAT-AIF-REP-D25','REP','anti_infective','D3','D25','SEAT-AIF-DM-D3',false,'AIF Sharkia 2 rep',      true,date '2026-08-28'),
+  ('SEAT-AIF-REP-OT2','REP','anti_infective','D3','OT2','SEAT-AIF-DM-D3',false,'AIF Suez & Ismailia rep',true,date '2026-08-28')
 on conflict (seat_id) do nothing;
 
 -- Sharkia 1 already had a rep seat under Delta (2); it follows its area across, and loses
@@ -91,7 +102,9 @@ update au.line_area_map m
        area_state = 'vacant_will_hire',
        other_type = null,
        staffed_in_line_code = null,
-       rep_seat_id = 'SEAT-AIF-REP-' || m.area_code,
+       -- OT9 (Ismailia) shares OT2's seat; every other area has its own.
+       rep_seat_id = case when m.area_code = 'OT9' then 'SEAT-AIF-REP-OT2'
+                          else 'SEAT-AIF-REP-' || m.area_code end,
        notes = coalesce(nullif(m.notes, '') || ' | ', '')
                || 'Moved into the new Delta (3) district 2026-08-28'
  where m.line_code = 'anti_infective'
