@@ -432,8 +432,11 @@ export function CandidateScreeningSession({
    * Picking a vacancy pre-selects the manager that vacancy reports to. That is the point of picking
    * rather than typing: the organogram already knows who owns the seat, and choosing the wrong
    * manager is how a CV lands where nobody is looking. It only ever FILLS the manager, never clears
-   * one — a recruiter who deliberately picked the National Sales Manager keeps them, and a vacancy
-   * whose own manager seat is vacant (a real row here) changes nothing.
+   * one — a recruiter who deliberately picked the National Sales Manager keeps them.
+   *
+   * A vacancy whose own manager post is itself vacant now arrives carrying the person the organogram
+   * puts above it rather than carrying nobody, so it fills this picker like any other. What says so
+   * is `standingInFor`, shown under the send.
    */
   const choosePosition = useCallback(
     (value: string) => {
@@ -474,13 +477,17 @@ export function CandidateScreeningSession({
       ? ""
       : positionChoice || (suggestion.confident ? String(suggestion.confident.vacancy.id) : "");
 
+  /** The vacancy the send is actually against, for the one thing the picker's own label cannot say. */
+  const effectiveVacancy =
+    openVacancies.find((option) => String(option.id) === effectivePosition) ?? null;
+
   /**
    * The manager who will actually be sent to.
    *
    * A suggested position carries its own manager, the same way picking a vacancy by hand does — the
    * organogram already knows who owns the seat. Only ever fills an empty picker, and only with
-   * somebody who is actually in the list: a seat whose own manager post is vacant is a real row
-   * here, and it must leave the send disabled rather than address a CV to nobody.
+   * somebody who is actually in the list: an unresolvable manager must leave the send disabled
+   * rather than address a CV to nobody.
    */
   const suggestedManagerHrId =
     positionChoice === "" && suggestion.confident?.vacancy.managerHrId
@@ -489,6 +496,20 @@ export function CandidateScreeningSession({
   const effectiveManagerHrId =
     sendManagerHrId ||
     (hiringManagers.some((manager) => manager.hrId === suggestedManagerHrId) ? suggestedManagerHrId : "");
+
+  /**
+   * "So-and-so is standing in — that post has nobody in it."
+   *
+   * Shown only while the send is genuinely going to the stand-in the vacancy resolved to. A recruiter
+   * who overrides the manager by hand is not standing anybody in for anything, and the note would
+   * then be describing a route that is no longer being taken.
+   */
+  const coveredPost = effectiveVacancy?.standingInFor ?? null;
+  const standInManagerName =
+    coveredPost && effectiveManagerHrId === effectiveVacancy?.managerHrId
+      ? hiringManagers.find((manager) => manager.hrId === effectiveManagerHrId)?.name ??
+        effectiveVacancy.managerName
+      : null;
 
   const sendToManager = useCallback(async () => {
     if (!current || busy || !effectiveManagerHrId) return;
@@ -978,6 +999,15 @@ export function CandidateScreeningSession({
                     {sentNow || priorSend ? "Send again" : "Send"}
                   </button>
                 </div>
+                {/* WHY this manager, when the seat's own manager post is empty. The owner, 2026-08-28:
+                    "route him to the district manager's manager." Routing silently would work, and
+                    the recruiter would find out from the reply — so the covering is said here, in
+                    the same quiet grey as the reasons above the picker. */}
+                {coveredPost && standInManagerName ? (
+                  <p className="text-[11px] leading-tight text-slate-600">
+                    {standInManagerName} is standing in — {coveredPost} has nobody in it.
+                  </p>
+                ) : null}
               </div>
             ) : null}
             <div className="grid grid-cols-2 gap-2">
