@@ -3,6 +3,10 @@
 import * as React from "react";
 
 import {
+  PortalRecordCard,
+  PortalRecordFields,
+} from "@/components/employee-portal/portal-primitives";
+import {
   RgBadge,
   RgButton,
   RgDialog,
@@ -188,6 +192,64 @@ export function ResignationsWorkspace({ initialData, initialError, surface = "ad
     }
   }
 
+  /**
+   * The workflow controls, rendered by BOTH the desktop row and the mobile card.
+   *
+   * A plain function rather than a nested component on purpose: called as `recordControls(...)`
+   * it is inlined JSX, so it neither trips react/no-unstable-nested-components nor remounts the
+   * buttons on every parent render. Sharing it is the point — these buttons approve, complete and
+   * reject a real person's resignation, and two copies of them is how the phone half quietly ends
+   * up one action behind the desktop half.
+   */
+  function recordControls(record: ResignationRecord, rowBusy: boolean) {
+    if (tab === "history") {
+      return <span className="text-phx-xs text-slate-400">{resignationActorLabel(record)}</span>;
+    }
+    return (
+      <span className="inline-flex flex-wrap justify-end gap-1">
+        <RgButton
+          disabled={rowBusy}
+          onClick={() => {
+            setEditing(record);
+            setEditDates({
+              effectiveDate: record.effectiveDate,
+              submittedDate: record.submittedDate,
+            });
+          }}
+        >
+          Dates
+        </RgButton>
+        {record.status === "approved" ? (
+          <RgButton
+            disabled={rowBusy}
+            kind="primary"
+            onClick={() => void runAction(record, "complete")}
+          >
+            Complete
+          </RgButton>
+        ) : (
+          <RgButton
+            disabled={rowBusy}
+            kind="primary"
+            onClick={() => void runAction(record, "approve")}
+          >
+            Approve
+          </RgButton>
+        )}
+        <RgButton
+          disabled={rowBusy}
+          kind="danger"
+          onClick={() => {
+            setRejecting(record);
+            setRejectReason(record.rejectedReason ?? "");
+          }}
+        >
+          Reject
+        </RgButton>
+      </span>
+    );
+  }
+
   async function createResignation() {
     setBusy("create");
     setError(null);
@@ -349,6 +411,38 @@ export function ResignationsWorkspace({ initialData, initialError, surface = "ad
             <RgEmpty>No payroll candidates match this filter.</RgEmpty>
           ) : (
             <RgTable
+              cards={slice(candidateRows).map((candidate) => (
+                <PortalRecordCard
+                  key={candidate.id}
+                  meta={
+                    <span className="font-mono">
+                      {candidate.hrId || "No HR ID"}
+                    </span>
+                  }
+                  status={
+                    <RgBadge
+                      title={`System resignation candidate ID ${formatPayrollCandidateSystemId(candidate.id)} · ${candidate.sourceFileName ?? "unknown source"} row ${candidate.sourceRow ?? "-"} · no manual HR ID needed`}
+                    >
+                      {formatPayrollCandidateSystemId(candidate.id)}
+                    </RgBadge>
+                  }
+                  title={candidate.employeeName}
+                >
+                  <PortalRecordFields
+                    fields={[
+                      { label: "Line", value: candidate.lineName ?? "-" },
+                      { label: "Area", value: candidate.areaName ?? "-" },
+                      {
+                        label: "Last payout",
+                        value: formatPayoutMonth(
+                          candidate.lastPayoutMonth,
+                          candidate.lastPayoutYear,
+                        ),
+                      },
+                    ]}
+                  />
+                </PortalRecordCard>
+              ))}
               head={
                 <>
                   <RgTh>Employee</RgTh>
@@ -388,6 +482,58 @@ export function ResignationsWorkspace({ initialData, initialError, surface = "ad
           </RgEmpty>
         ) : (
           <RgTable
+            cards={slice(tab === "action" ? open : history).map((record) => {
+              const terminated = isTerminatedResignation(record);
+              return (
+                <PortalRecordCard
+                  accent={
+                    terminated || record.status === "rejected"
+                      ? "rose"
+                      : record.status === "approved"
+                        ? "emerald"
+                        : "slate"
+                  }
+                  actions={recordControls(record, busy === record.id)}
+                  key={record.id}
+                  meta={
+                    <span>
+                      <span className="font-mono">{record.employeeHrId || "No HR ID"}</span>
+                      {record.lineName ? ` · ${record.lineName}` : ""}
+                    </span>
+                  }
+                  status={
+                    <RgBadge>
+                      {terminated ? "Terminated" : resignationStatusLabel(record.status)}
+                    </RgBadge>
+                  }
+                  title={record.employeeName}
+                >
+                  <PortalRecordFields
+                    fields={[
+                      { label: "Effective", value: formatResignationDate(record.effectiveDate) },
+                      { label: "Base salary", value: formatEgp(record.settlement?.baseSalary) },
+                      {
+                        label: "Days paid",
+                        value: record.settlement ? record.settlement.daysWorked : "-",
+                      },
+                      { label: "Due this month", value: formatEgp(record.settlement?.total) },
+                      {
+                        label: "Split",
+                        value: record.settlement ? (
+                          <RgSplit
+                            covered={record.settlement.coveredByFirstPart}
+                            firstPart={formatEgp(record.settlement.firstPart)}
+                            secondPart={formatEgp(record.settlement.secondPart)}
+                          />
+                        ) : (
+                          "—"
+                        ),
+                      },
+                    ]}
+                  />
+                </PortalRecordCard>
+              );
+            })}
             head={
               <>
                 <RgTh>Employee</RgTh>
@@ -451,55 +597,7 @@ export function ResignationsWorkspace({ initialData, initialError, surface = "ad
                       <span className="text-slate-300">—</span>
                     )}
                   </RgTd>
-                  <RgTd className="text-right">
-                    {tab === "history" ? (
-                      <span className="text-phx-xs text-slate-400">
-                        {resignationActorLabel(record)}
-                      </span>
-                    ) : (
-                      <span className="inline-flex justify-end gap-1">
-                        <RgButton
-                          disabled={rowBusy}
-                          onClick={() => {
-                            setEditing(record);
-                            setEditDates({
-                              effectiveDate: record.effectiveDate,
-                              submittedDate: record.submittedDate,
-                            });
-                          }}
-                        >
-                          Dates
-                        </RgButton>
-                        {record.status === "approved" ? (
-                          <RgButton
-                            disabled={rowBusy}
-                            kind="primary"
-                            onClick={() => void runAction(record, "complete")}
-                          >
-                            Complete
-                          </RgButton>
-                        ) : (
-                          <RgButton
-                            disabled={rowBusy}
-                            kind="primary"
-                            onClick={() => void runAction(record, "approve")}
-                          >
-                            Approve
-                          </RgButton>
-                        )}
-                        <RgButton
-                          disabled={rowBusy}
-                          kind="danger"
-                          onClick={() => {
-                            setRejecting(record);
-                            setRejectReason(record.rejectedReason ?? "");
-                          }}
-                        >
-                          Reject
-                        </RgButton>
-                      </span>
-                    )}
-                  </RgTd>
+                  <RgTd className="text-right">{recordControls(record, rowBusy)}</RgTd>
                 </tr>
               );
             })}
