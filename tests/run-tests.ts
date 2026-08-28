@@ -158,6 +158,7 @@ import { runRecruitmentManagerGroupingTests } from "./recruitment-manager-groupi
 import { runRecruitmentCandidateSeenTests } from "./recruitment-candidate-seen.test.ts";
 import { runRecruitmentScreeningPageTests } from "./recruitment-screening-page.test.ts";
 import { runCandidatePositionFolderTests } from "./candidate-position-folders.test.ts";
+import { runArabicPlaceMatchTests } from "./arabic-place-match.test.ts";
 import { runCandidatePositionSuggestionTests } from "./candidate-position-suggestion.test.ts";
 import { runRecruitmentJobPostChannelTests } from "./recruitment-job-post-channels.test.ts";
 import { runRecruitmentHubPortalCoverageTests } from "./recruitment-hub-portal-coverage.test.ts";
@@ -1253,6 +1254,10 @@ await runTest(
 await runTest(
   "recruitment position folders (a CV is sent FOR a vacancy, and a manager's inbox folds into one page per position)",
   runCandidatePositionFolderTests,
+);
+await runTest(
+  "arabic place match (an English address naming an Arabic place: Box is not Bacos, George is not Girga)",
+  runArabicPlaceMatchTests,
 );
 await runTest(
   "recruitment position suggestion (the seat a CV is proposed for, and the four ways a place name lied)",
