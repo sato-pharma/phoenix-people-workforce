@@ -5,6 +5,7 @@ import {
   APPROVED_PLANNING_REGIONS,
   approvedRegionsForSeats,
   canonicalPlanningRegionName,
+  isSeatEffectiveOn,
   planningAreaBelongsToRegion,
   planningAreaOptions,
   planningAreasForRegion,
@@ -333,6 +334,44 @@ export function runWeeklyPlanRegionAreasTests() {
   ]);
   assert.deepEqual(planningAreasForRegion(roster, "Cairo", null), []);
 
+  // ------------------------------------------- 4b. forward-dated seat rows
+
+  // `effective_to is null` does NOT mean "in force today". The Anti Infective Delta (3) split
+  // was entered with effective_from = 2026-09-01 and appeared in the picker on 28 Aug, four days
+  // early. approvedRegionsForSeats derives the Region list from these same rows, so the one
+  // missing predicate leaked the split into the Area AND the Region dropdown at once.
+  assert.equal(isSeatEffectiveOn(null, "2026-08-28"), true, "no start date = always in force");
+  assert.equal(isSeatEffectiveOn("", "2026-08-28"), true, "blank start date = always in force");
+  assert.equal(isSeatEffectiveOn("  ", "2026-08-28"), true, "whitespace start date = always in force");
+  assert.equal(isSeatEffectiveOn("2026-07-01", "2026-08-28"), true, "a past start date is in force");
+  assert.equal(isSeatEffectiveOn("2026-08-28", "2026-08-28"), true, "in force on its own start date");
+  assert.equal(isSeatEffectiveOn("2026-09-01", "2026-08-28"), false, "a forward-dated row is NOT in force");
+
+  // The real 2026-08-28 shape: Delta 2 already live, Delta 3 dated forward to 1 Sep.
+  const splitSeats = [
+    { areaName: "Dakahlia 1", effectiveFrom: null, regionCode: "D2", regionName: "Delta (2)" },
+    { areaName: "Sharkia 1", effectiveFrom: "2026-09-01", regionCode: "D3", regionName: "Delta (3)" },
+    { areaName: "Suez", effectiveFrom: "2026-09-01", regionCode: "D3", regionName: "Delta (3)" },
+  ];
+  const inForceOn = (asOf: string) =>
+    splitSeats.filter((seat) => isSeatEffectiveOn(seat.effectiveFrom, asOf));
+
+  assert.deepEqual(
+    inForceOn("2026-08-28").map((seat) => seat.areaName),
+    ["Dakahlia 1"],
+    "on 28 Aug the Area picker must not offer Sharkia 1 or Suez",
+  );
+  assert.deepEqual(
+    approvedRegionsForSeats(inForceOn("2026-08-28")),
+    ["Delta 2"],
+    "on 28 Aug the Region picker must not offer Delta 3 either",
+  );
+  assert.deepEqual(
+    approvedRegionsForSeats(inForceOn("2026-09-01")),
+    ["Delta 2", "Delta 3"],
+    "on 1 Sep the split is in force and Delta 3 becomes selectable",
+  );
+
   // ---------------------------------------------------------------- 5. wiring
 
   const serviceSrc = readFileSync("src/lib/weekly-planning/service.ts", "utf8");
@@ -420,5 +459,20 @@ export function runWeeklyPlanRegionAreasTests() {
     serviceSrc,
     /planningAreaBelongsToRegion\(options\.planningSeats \?\? \[\], locationText, area\)/,
     "submitting must reject an area filed under a different region",
+  );
+
+  // The loader must actually apply the predicate — the pure function passing proves nothing
+  // if the query never reads the column or the loop never calls it.
+  assert.ok(
+    loaderSrc.includes("effective_from,effective_to"),
+    "the seat loader must select effective_from, not only effective_to",
+  );
+  assert.ok(
+    loaderSrc.includes("if (!isSeatEffectiveOn(row.effective_from, asOfDate)) continue;"),
+    "the seat loader must skip seat rows that are not in force yet",
+  );
+  assert.ok(
+    loaderSrc.includes("asOfDate: string = currentCairoDateOnlyIso()"),
+    "the loader's as-of date must default to Africa/Cairo today",
   );
 }
