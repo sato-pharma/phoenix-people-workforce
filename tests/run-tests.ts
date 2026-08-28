@@ -536,6 +536,7 @@ import { runEmployeeAccessProvisioningTests } from "./employee-access-provisioni
 import { runHrFunctionGovernanceTests } from "./hr-function-governance.test.ts";
 import { runHrClearanceRetentionTests } from "./hr-clearance-retention.test.ts";
 import { runHrCommandCenterTests } from "./hr-command-center.test.ts";
+import { runHrJobWorkbookTests } from "./hr-job-workbook.test.ts";
 import { runHrSeatRouteCoherenceTests } from "./hr-seat-route-coherence.test.ts";
 import { runTitlePermissionGovernanceTests } from "./title-permission-governance.test.ts";
 import { runOrganogramHardeningTests } from "./organogram-hardening.test.ts";
@@ -1833,6 +1834,11 @@ await runTest(
   "HR command centre (every tile on a seat's landing dashboard links to a row that seat is "
   + "offered, so no figure leads to a page it cannot open)",
   runHrCommandCenterTests,
+);
+await runTest(
+  "HR job workbook (all 66 responsibility lines from both job descriptions map to a real screen "
+  + "the seat is actually offered, none left blank, and the owner's own sentences stay verbatim)",
+  runHrJobWorkbookTests,
 );
 await runTest(
   "HR clearance & retention (both resources registered in the RUNTIME array as well as the union "
