@@ -2773,6 +2773,21 @@ export const crmPageItems: readonly AdminToolsPageItem[] = [
     description: "Each rep's assigned doctor list from the CRM plan, and which of those doctors they actually visited.",
     roles: ["Super Admin"],
   },
+  {
+    // SUPER ADMIN ONLY, same reasoning as Rep Doctor Lists directly above: it names every rep and
+    // prints how much of their reported work nothing can prove. The enforcing gate is
+    // canAccessRepsPlans (src/lib/crm/reps-plans-access.ts) plus crm_visits:read, both asked by the
+    // page; this list is UX only.
+    //
+    // Sits beside Rep Doctor Lists rather than under "Weekly / Monthly Plans" (/admin/weekly-plans,
+    // Phoenix's own planning module) because it scores the CRM's recorded visits, not Phoenix's plans.
+    href: "/admin/reps-plans",
+    icon: Gauge,
+    label: "Reps Plans",
+    description:
+      "The split call rate — two AM accounts and ten PM clinics per working day, reported twice: what each rep recorded, and what the check-ins prove.",
+    roles: ["Super Admin"],
+  },
 ] as const satisfies readonly AdminToolsPageItem[];
 
 // ── Pharmacovigilance hub (app/(admin)/admin/pharmacovigilance/page.tsx) ────────
