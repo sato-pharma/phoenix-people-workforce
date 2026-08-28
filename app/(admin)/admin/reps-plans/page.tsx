@@ -16,9 +16,10 @@ import { redirect } from "next/navigation";
 import { RepsPlansBoardView } from "@/components/crm/reps-plans-board";
 import { canAccess } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
-import { loadCallRateReport, loadRepNamesByHrId } from "@/lib/crm/call-rate-service";
+import { loadCallRateReport, loadJobTitlesByHrId, loadRepNamesByHrId } from "@/lib/crm/call-rate-service";
+import { loadOrgPlacementTree } from "@/lib/crm/org-placement-data";
 import { cairoTodayIso } from "@/lib/crm/dates";
-import { buildRepsPlansBoard, repsPlansRange, resolveRepsPlansMonth } from "@/lib/crm/reps-plans";
+import { buildRepsPlansBoard, repsPlansRange, repsPlansWeeks, resolveRepsPlansMonth } from "@/lib/crm/reps-plans";
 import { canAccessRepsPlans } from "@/lib/crm/reps-plans-access";
 
 export const runtime = "nodejs";
@@ -26,7 +27,11 @@ export const dynamic = "force-dynamic";
 
 type PageProps = {
   searchParams?: Promise<{
+    line?: string;
     month?: string;
+    /** `month` (default), `w1`…`w5`, or an explicit `YYYY-MM-DD..YYYY-MM-DD`. */
+    period?: string;
+    region?: string;
     rep?: string;
   }>;
 };
@@ -42,7 +47,11 @@ export default async function RepsPlansPage({ searchParams }: PageProps) {
   const params = await searchParams;
   const today = cairoTodayIso();
   const month = resolveRepsPlansMonth(params?.month, today);
-  const range = repsPlansRange(month, today);
+  // The window bounds the FETCH as well as the caption, so a week's rate is a week's calls over a
+  // week's working days. Owner, 2026-08-28: "if this is the plan of the first week, calculate the
+  // call rate on the first week only, not all the month."
+  const range = repsPlansRange(month, today, params?.period);
+  const weekOptions = repsPlansWeeks(month, today);
 
   // Data fetch and JSX stay separated (react-hooks/error-boundaries: JSX must not be constructed
   // inside try/catch). A data failure renders a plain explanation, never a crash page — and never a
@@ -53,16 +62,35 @@ export default async function RepsPlansPage({ searchParams }: PageProps) {
   // which is what this page showed before, so the worst case is the old behaviour and not a blank
   // screen. Only the visits are load-bearing.
   let repNameByHrId: ReadonlyMap<string, string> | undefined;
+  // Same directory, same cache, same "must not take the board down" posture: it names the people the
+  // SALES organogram has no seat for — head office, where the Product Managers sit. Without it those
+  // rows fall back to the marker, which is the old behaviour and not a blank screen.
+  let jobTitleByHrId: ReadonlyMap<string, string> | undefined;
   let loadError: string | null = null;
   try {
-    const [loadedReport, loadedNames] = await Promise.all([
+    const [loadedReport, loadedNames, loadedTitles] = await Promise.all([
       loadCallRateReport({ dateFrom: range.dateFrom, dateTo: range.dateTo }),
       loadRepNamesByHrId().catch(() => undefined),
+      loadJobTitlesByHrId().catch(() => undefined),
     ]);
     report = loadedReport;
     repNameByHrId = loadedNames;
+    jobTitleByHrId = loadedTitles;
   } catch (error) {
     loadError = error instanceof Error ? error.message : "CRM visit data is unavailable.";
+  }
+
+  // The ORGANOGRAM is a SEPARATE failure. It powers the line/region pickers and the tier each
+  // person is measured by, so losing it must not take the call rate down with it — the board falls
+  // back to month + rep and hides the two pickers rather than offering empty ones.
+  //
+  // au_v_org_tree, every tier. NOT a rep-only view: reading one is what once rendered 22 seated
+  // District Managers, NSMs and an RSM as holding no seat at all.
+  let tree: Awaited<ReturnType<typeof loadOrgPlacementTree>> | null = null;
+  try {
+    tree = await loadOrgPlacementTree();
+  } catch {
+    tree = null;
   }
 
   if (!report) {
@@ -75,10 +103,15 @@ export default async function RepsPlansPage({ searchParams }: PageProps) {
   }
 
   const board = buildRepsPlansBoard(report, {
+    geography: { line: params?.line ?? null, region: params?.region ?? null },
     isCurrentMonth: range.isCurrentMonth,
+    jobTitleByHrId,
     month,
+    range,
     repKey: params?.rep ?? null,
     repNameByHrId,
+    tree,
+    weekOptions,
   });
 
   return (

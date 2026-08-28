@@ -253,22 +253,59 @@ export function resolveEmployeeAttribution(
   maps: CrmIdentityMaps,
   visitDate?: string | null,
 ): CrmAttribution {
+  // Set when tier 1 matched a slot but the mapped person's own employment does not cover this date.
+  // Carried to the end as a FALLBACK: the automatic tiers get first refusal, and if none of them can
+  // answer, the admin's decision still stands. See the tier 1 comment below for why it is a fallback
+  // and not a block.
+  let overrideFallbackHrId: string | null = null;
+
   if (crmId != null) {
-    // Tier 1 — explicit admin decision. Not guarded by the post-exit date (see the doc comment
-    // above), but LABEL-SCOPED when the resolution stored the CRM label it was decided against:
-    // production slots 1102/1395/1399 each carry TWO different people's names in their history
-    // (a leaver's rows, then the replacement's after the account was handed over), so an
-    // unconditional override would let a wide reconcile re-stamp the OLD occupant's rows with
-    // the NEW occupant's hr id. A mismatched label therefore falls through to the automatic
-    // tiers, which resolve the old occupant correctly and carry the post-exit guard. A record
-    // with NO label (check-ins carry a crm_id only) keeps the unconditional behavior — the
-    // handover-accuracy risk lives in visit attribution, and blocking check-ins would strip the
-    // GPS overlay from every correctly-mapped slot.
+    // Tier 1 — explicit admin decision. LABEL-SCOPED when the resolution stored the CRM label it
+    // was decided against: production slots 1102/1395/1399 each carry TWO different people's names
+    // in their history (a leaver's rows, then the replacement's after the account was handed over),
+    // so an unconditional override would let a wide reconcile re-stamp the OLD occupant's rows with
+    // the NEW occupant's hr id. A mismatched label therefore falls through to the automatic tiers,
+    // which resolve the old occupant correctly. A record with NO label (check-ins carry a crm_id
+    // only) keeps the unconditional behavior — the handover-accuracy risk lives in visit
+    // attribution, and blocking check-ins would strip the GPS overlay from every mapped slot.
+    //
+    // EMPLOYMENT-SCOPED SINCE 2026-08-28 — BUT AS A YIELD, NOT A VETO. A mapping says "this CRM
+    // account belongs to X" and carries no time dimension, while a handed-over account belongs to
+    // two people in sequence; the vendor then relabels the whole history to the CURRENT holder, so
+    // both people's rows look identical. Slot 1391 is the worked example: 1,136 calls dated
+    // 2026-01-01..06-01 by the rep who left on 06-02, and 28 dated 07-20..08-27 by the rep who
+    // joined on 06-20, every one of them carrying the second rep's name. Mapping that slot to
+    // either person unconditionally miscredits the other's work.
+    //
+    // So when the record's date falls outside the mapped person's own employment, the override
+    // stands ASIDE and lets the automatic tiers try. If one of them resolves — meaning somebody
+    // whose crm_id or own label matches AND whose employment covers the date — that answer wins,
+    // and slot 1391's two halves land on their two owners from a single mapping. If none of them
+    // resolves, the override applies after all (see the fallback at the end of this function).
+    //
+    // THAT LAST CLAUSE IS NOT A SOFTENING, IT IS THE POINT. An override is a human's hand-verified
+    // decision and it is the intended way to record "this slot belongs to someone the roster does
+    // not link". If a date outside the roster's span could veto it outright, an admin answering
+    // this guard's own alert could save a mapping that silently did nothing — the decision would
+    // vanish with no error, and the rows would stay unattributed with no way to fix them. A
+    // mapping that cannot be defeated by a roster date, only SUPERSEDED by better evidence, keeps
+    // both properties: crm-post-exit-attribution (F) and crm-pre-hire-attribution (J) still pin
+    // that authority, and the handover case is still fixed.
+    //
+    // Measured across every mapped override in production on 2026-08-28 — all visits, agent and
+    // double side, mirroring isAttributableOn exactly: exactly ONE row sits outside its mapped
+    // person's employment span today. Slot 1536 -> B-164, one visit dated 2026-08-27, ten days
+    // after that employee's 2026-08-17 last working day, and neither automatic tier resolves it,
+    // so it keeps the override and its attribution is unchanged. Nothing in the current data moves
+    // at all; this path exists for slot 1391 and the handovers after it.
     const overridden = maps.hrIdByManualOverride.get(String(crmId));
     if (overridden) {
       const recordLabel = normalizeCrmName(name);
       if (!overridden.label || !recordLabel || overridden.label === recordLabel) {
-        return { blockedHrId: null, hrId: overridden.hrId };
+        if (isAttributableOn(overridden.hrId, visitDate, maps, name)) {
+          return { blockedHrId: null, hrId: overridden.hrId };
+        }
+        overrideFallbackHrId = overridden.hrId;
       }
     }
     // Tier 2 — employees.crm_id. This is the tier that misattributes a reused CRM slot.
@@ -281,7 +318,7 @@ export function resolveEmployeeAttribution(
     }
   }
   const key = normalizeCrmName(name);
-  if (!key) return { blockedHrId: null, hrId: null };
+  if (!key) return overrideFallback(overrideFallbackHrId);
   // Tier 3 — unique crm_username. The POST-EXIT half can only ever allow here: this tier resolved
   // BECAUSE the record's label is that employee's own label, which is exactly the condition the
   // post-exit check tests. That is the right answer rather than a loophole — a label matching a
@@ -295,9 +332,22 @@ export function resolveEmployeeAttribution(
   // largest being 931 real doctor calls dated up to 207 days before that employee joined. Only the
   // date can refuse them.
   const byName = maps.hrIdByCrmUsername.get(key);
-  if (!byName) return { blockedHrId: null, hrId: null };
+  if (!byName) return overrideFallback(overrideFallbackHrId);
+  // A tier that matched and was REFUSED ends the waterfall on its own block, and the override
+  // fallback deliberately does not rescue it. The two are different statements: "no automatic tier
+  // knows this slot" leaves the human decision as the only evidence there is, whereas "a tier knows
+  // exactly who this is and that person was not employed that day" is positive evidence that nobody
+  // eligible owns the row. Slot 1391's 06-03..06-19 gap is the case — the leaver had gone and the
+  // joiner had not started — and crediting it to either of them would invent work nobody did.
   if (!isAttributableOn(byName, visitDate, maps, name)) return { blockedHrId: byName, hrId: null };
   return { blockedHrId: null, hrId: byName };
+}
+
+/** No automatic tier answered. An employment-refused override is still the best evidence available,
+ * so it applies here rather than being silently discarded — and it is NOT reported as a block: a
+ * block means "somebody must decide this", and somebody already has. */
+function overrideFallback(overrideFallbackHrId: string | null): CrmAttribution {
+  return { blockedHrId: null, hrId: overrideFallbackHrId };
 }
 
 /** The waterfall's hr-id answer alone — the shape every existing caller expects. */

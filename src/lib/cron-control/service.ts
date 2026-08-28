@@ -1,7 +1,7 @@
 // Orchestration for the cron-control dashboard: validates job names against the GCP job-ID
 // format (not registry membership — see job-registry.ts), calls the GCP Cloud Scheduler REST
 // client for real, writes a REQUIRED audit log for every mutation (matching
-// src/lib/admin/modules-control.ts's bar for toggling production-affecting state), and merges
+// the bar for toggling production-affecting state), and merges
 // live GCP state with registry metadata into the shape the UI/API use. Every real job in the
 // project's scheduler is listed and controllable, whether or not the static registry recognizes
 // its name — the registry only supplies nicer labels, it never gates visibility or control.

@@ -23,7 +23,9 @@
 // Pure — no React, no database, no network — so the recruiter's screen and the tests fold the same
 // way and cannot drift apart. Same discipline as position-folder.ts.
 
+import { addressNamesPlace, addressWords, compileArabicPlace, type ArabicPlace } from "@/lib/geo/arabic-place-match";
 import { placeAliases } from "@/lib/geo/egypt-locations";
+import { NEIGHBOURHOOD_AREAS, NEIGHBOURHOOD_PLACES } from "@/lib/geo/neighbourhood-index-generated";
 import type { VacancyOption } from "@/lib/recruitment/vacancy-options";
 
 /** What the CV knows that bears on the question. A subset of Candidate, so tests need no fixture. */
@@ -41,7 +43,7 @@ export type SuggestionInput = {
  * rather than ranked: a shortlist mixing "the address says Nasr City" with "the address says Cairo"
  * reads as several equal options when only one of them was actually named.
  */
-export const PLACE_TIERS = ["none", "governorate", "area"] as const;
+export const PLACE_TIERS = ["none", "governorate", "neighbourhood", "area"] as const;
 export type PlaceTier = (typeof PLACE_TIERS)[number];
 
 export type PositionSuggestion = {
@@ -215,6 +217,63 @@ function addressNamesArea(haystack: string, areaName: string | null): boolean {
   return false;
 }
 
+/**
+ * The neighbourhoods each area covers, compiled so an English address can find an Arabic name.
+ *
+ * Built once at module load from the generated index — see
+ * scripts/generate-neighbourhood-index.ts for where the names come from and
+ * src/lib/geo/arabic-place-match.ts for how an English word is tested against one. Keyed on the
+ * area NAME rather than its code because that is what a vacancy carries, and because two areas of
+ * the same name on two different lines cover the same ground: a candidate living in Helmeyet
+ * El-Zeitoun is equally near both.
+ */
+const NEIGHBOURHOODS_BY_AREA = new Map<string, ArabicPlace[]>();
+for (const entry of NEIGHBOURHOOD_PLACES) {
+  const separator = entry.lastIndexOf("|");
+  if (separator <= 0) continue;
+  const place = compileArabicPlace(entry.slice(0, separator));
+  if (!place) continue;
+  for (const rawIndex of entry.slice(separator + 1).split(",")) {
+    const areaName = NEIGHBOURHOOD_AREAS[Number(rawIndex)];
+    if (!areaName) continue;
+    const areaKey = normalize(areaName);
+    const existing = NEIGHBOURHOODS_BY_AREA.get(areaKey);
+    if (existing) existing.push(place);
+    else NEIGHBOURHOODS_BY_AREA.set(areaKey, [place]);
+  }
+}
+
+/**
+ * Does this address name somewhere INSIDE this area, without naming the area itself?
+ *
+ * This is the rung that only exists because the two halves of the answer were written in different
+ * scripts. The bricks are the company's own map of Egypt and all 697 are in Arabic; every CV
+ * address is in English. So "Helmeyet El-Zeitoun" used to reach nothing but "Cairo" — a governorate
+ * covering a dozen open seats, which is silence.
+ *
+ * Reads the ADDRESS only, never the governorate column. A governorate is by definition not a
+ * neighbourhood, and letting "Cairo" into this check would hand a neighbourhood-grade answer to a
+ * CV that named no neighbourhood at all.
+ */
+function neighbourhoodMatchStrength(address: string | null | undefined, areaName: string | null): number {
+  if (!areaName) return 0;
+  const places = NEIGHBOURHOODS_BY_AREA.get(normalize(areaName));
+  if (!places || places.length === 0) return 0;
+  const text = String(address ?? "").trim();
+  if (!text) return 0;
+  const words = addressWords(text);
+  if (words.length === 0) return 0;
+  let strength = 0;
+  for (const place of places) {
+    // The count is how many words of the brick name the address satisfied, and it is the tie-break
+    // between two real places of the same name. "Dar Al-Salam, Sohag" matches both دار السلام, in
+    // Cairo, and دار السلام - سوهاج, in Sohag; the second reads three words of the address where
+    // the first reads two, and it is the one the candidate wrote down.
+    if (place.words.length > strength && addressNamesPlace(place, words)) strength = place.words.length;
+  }
+  return strength;
+}
+
 /** Which governorate an area sits in, read from its own name through the shared vocabulary. */
 function areaGovernorate(areaName: string | null): string | null {
   for (const token of areaTokens(areaName)) {
@@ -233,22 +292,46 @@ function areaGovernorate(areaName: string | null): string | null {
  * has areas and bricks and no governorate layer, so Cairo alone covers twelve open seats. Saying
  * "governorate" rather than pretending to more is the entire reason there are two tiers.
  */
-function placeTierFor(input: SuggestionInput, vacancy: VacancyOption): PlaceTier {
+type PlaceMatch = {
+  tier: PlaceTier;
+  /**
+   * How many words of a neighbourhood name the address satisfied. Zero at every other tier — it
+   * ranks seats WITHIN the neighbourhood rung and nowhere else.
+   */
+  strength: number;
+};
+
+function placeMatchFor(input: SuggestionInput, vacancy: VacancyOption): PlaceMatch {
   const address = normalize(input.address);
   const governorateText = normalize(input.governorate);
   const haystack = [address, governorateText].filter(Boolean).join(" ");
-  if (!haystack) return "none";
+  if (!haystack) return { strength: 0, tier: "none" };
 
-  if (addressNamesArea(haystack, vacancy.areaName)) return "area";
+  if (addressNamesArea(haystack, vacancy.areaName)) return { strength: 0, tier: "area" };
+
+  // A NEIGHBOURHOOD IS ITS OWN EVIDENCE, tested before the governorate and independently of it.
+  //
+  // It was not always. The first version of this matched Arabic to English by consonants alone, put
+  // a candidate in Karachi into a Gharbia seat and one in Nigeria into Sohag, and was then patched
+  // by refusing to trust the rung unless the governorate already agreed. That patch hid the
+  // symptom and kept the fault: "Post Office BOX" and باكوس, Bacos, were still the same word to it,
+  // and a CV naming a Cairo governorate would still have taken the wrong Cairo seat.
+  //
+  // The matcher now reads the vowels Arabic actually writes, so Box is not Bacos, George is not
+  // Girga and Matarya is not the airport. That is what makes this rung safe to stand alone — which
+  // matters, because a governorate gate would also have thrown away every candidate who named a
+  // neighbourhood and left the governorate column blank.
+  const strength = neighbourhoodMatchStrength(input.address, vacancy.areaName);
+  if (strength > 0) return { strength, tier: "neighbourhood" };
 
   // The governorate comes from whichever field names one, address first: it is the longer and more
   // specific string, and a governorate column reading "Cairo" beside an address reading
   // "Alexandria, Egypt (willing to relocate to Cairo if available Post)" is a real row on file.
   const candidateGovernorate = governorateOf(input.address) ?? governorateOf(input.governorate);
-  if (!candidateGovernorate) return "none";
+  if (!candidateGovernorate) return { strength: 0, tier: "none" };
   const seatGovernorate = areaGovernorate(vacancy.areaName);
-  if (seatGovernorate && seatGovernorate === candidateGovernorate) return "governorate";
-  return "none";
+  if (!seatGovernorate || seatGovernorate !== candidateGovernorate) return { strength: 0, tier: "none" };
+  return { strength: 0, tier: "governorate" };
 }
 
 // ── Job title ────────────────────────────────────────────────────────────────
@@ -349,6 +432,7 @@ function reasonsFor(input: SuggestionInput, tier: PlaceTier, family: string | nu
   const reasons: string[] = [];
   const where = String(input.address ?? "").trim() || String(input.governorate ?? "").trim();
   if (tier === "area" && where) reasons.push(`Address names this area — ${where}`);
+  else if (tier === "neighbourhood" && where) reasons.push(`Address names a neighbourhood of this area — ${where}`);
   else if (tier === "governorate" && where) reasons.push(`Lives in the same governorate — ${where}`);
 
   const title = String(input.currentJobTitle ?? "").trim();
@@ -361,7 +445,17 @@ function reasonsFor(input: SuggestionInput, tier: PlaceTier, family: string | nu
 
 // ── The answer ───────────────────────────────────────────────────────────────
 
-const TIER_RANK: Record<PlaceTier, number> = { area: 2, governorate: 1, none: 0 };
+/**
+ * The ranking, and the reason PLACE_TIERS is exported beside it.
+ *
+ * An exhaustive `Record<Union, X>` does NOT gate the build in this repository — next.config sets
+ * `typescript: { ignoreBuildErrors: true }`, so adding a tier and forgetting to rank it compiles,
+ * builds and deploys, and every seat at the new tier then sorts on `undefined`. That has happened
+ * here before, in a different Record, and it scattered 63 real candidates through a screening queue
+ * at random. Both are exported so a registered test can walk the union at RUNTIME and prove every
+ * member has a real number — see the position suggestion test.
+ */
+export const TIER_RANK: Record<PlaceTier, number> = { area: 3, neighbourhood: 2, governorate: 1, none: 0 };
 
 /**
  * Past this many equally-good seats, the honest answer is nothing.
@@ -372,6 +466,44 @@ const TIER_RANK: Record<PlaceTier, number> = { area: 2, governorate: 1, none: 0 
  * that up as help. The recruiter opens the full list instead, which is what they would have done.
  */
 const MAX_SHORTLIST = 5;
+
+/**
+ * A TIE-BREAK, NOT A GATE. Used only to choose between seats that are already tied, and it can
+ * never be the reason a candidate is told nothing.
+ *
+ * Two candidates on file land on a shortlist purely because one Arabic name is two places on the
+ * map: "Dayrout, Asyut" reaches Dayrout in Assiut and the other one in Beheira, and "Matarya"
+ * reaches Cairo and Dakahlia both, which is the behaviour the owner asked for. In each case the CV
+ * had already said which — "Asyut" is in the address itself, and the governorate column reads
+ * Dakahlia — so offering the second seat is offering something the candidate has contradicted.
+ *
+ * WHY THIS IS SAFE WHERE A GATE WAS NOT. An earlier version refused any neighbourhood match whose
+ * governorate disagreed, and measuring it showed that deleted 52 candidates' answers: plenty of CVs
+ * name a neighbourhood and leave the governorate blank, and plenty more state it wrongly — one
+ * address on file reads "Zagazig, sharkia" beside a governorate column saying Cairo. So the rule
+ * here narrows ONLY when some seats agree and others do not. If none agree the list is returned
+ * untouched, which is what keeps Bahteem — a Qalyubia address that this company serves from Cairo
+ * West, deliberately — pointing at the seat that actually covers it.
+ *
+ * It is also inert at the governorate tier by construction: every seat there matched BECAUSE its
+ * governorate is the stated one, so they all agree and nothing is dropped.
+ */
+function settleByGovernorate<T extends { vacancy: VacancyOption }>(
+  input: SuggestionInput,
+  survivors: readonly T[],
+): readonly T[] {
+  if (survivors.length < 2) return survivors;
+  // Address first, for the same reason placeMatchFor reads it first: it is the longer and more
+  // specific string, and it is where a candidate writes the truth when the column is wrong.
+  const stated = governorateOf(input.address) ?? governorateOf(input.governorate);
+  if (!stated) return survivors;
+  const agreeing = survivors.filter((entry) => areaGovernorate(entry.vacancy.areaName) === stated);
+  // NOTHING AGREES is the load-bearing half: without it a disagreeing governorate would empty the
+  // list, which is the gate this deliberately is not. EVERYTHING AGREES returns the same set either
+  // way and is here to say so plainly rather than to change an outcome.
+  if (agreeing.length === 0 || agreeing.length === survivors.length) return survivors;
+  return agreeing;
+}
 
 /**
  * Suggest which open seat a CV was sent for.
@@ -420,19 +552,29 @@ export function suggestPositions(
   // person on. Where the seat has a real area, the address still has to agree.
   if (eligible.length === 1 && areaGovernorate(eligible[0].areaName) === null) {
     const only = eligible[0];
-    const placeTier = placeTierFor(input, only);
+    const placeTier = placeMatchFor(input, only).tier;
     const suggestion = { placeTier, reasons: reasonsFor(input, placeTier, family), vacancy: only };
     return { confident: suggestion, shortlist: [suggestion] };
   }
 
-  const scored = eligible.map((vacancy) => ({ placeTier: placeTierFor(input, vacancy), vacancy }));
+  const scored = eligible.map((vacancy) => {
+    const match = placeMatchFor(input, vacancy);
+    return { placeTier: match.tier, strength: match.strength, vacancy };
+  });
   const best = scored.reduce((top, entry) => Math.max(top, TIER_RANK[entry.placeTier]), 0);
   // No place signal anywhere. A title alone cannot choose between 39 medical rep seats spread over
   // 20 governorates, and offering all 39 as a "shortlist" is just the picker again.
   if (best === 0) return { confident: null, shortlist: [] };
 
+  // Within the winning tier, the most specific reading of the address wins outright — see
+  // neighbourhoodMatchStrength for why "Dar Al-Salam, Sohag" is one seat and not two.
+  const bestStrength = scored.reduce(
+    (top, entry) => (TIER_RANK[entry.placeTier] === best ? Math.max(top, entry.strength) : top),
+    0,
+  );
+
   const survivors = scored
-    .filter((entry) => TIER_RANK[entry.placeTier] === best)
+    .filter((entry) => TIER_RANK[entry.placeTier] === best && entry.strength === bestStrength)
     .map((entry) => ({
       placeTier: entry.placeTier,
       reasons: reasonsFor(input, entry.placeTier, family),
@@ -445,10 +587,13 @@ export function suggestPositions(
         left.vacancy.jobTitle.localeCompare(right.vacancy.jobTitle),
     );
 
-  if (survivors.length > MAX_SHORTLIST) return { confident: null, shortlist: [] };
+  // Last, and only among seats that are otherwise equal: the governorate the CV itself states.
+  const settled = settleByGovernorate(input, survivors);
+
+  if (settled.length > MAX_SHORTLIST) return { confident: null, shortlist: [] };
 
   return {
-    confident: survivors.length === 1 ? survivors[0] : null,
-    shortlist: survivors,
+    confident: settled.length === 1 ? settled[0] : null,
+    shortlist: [...settled],
   };
 }

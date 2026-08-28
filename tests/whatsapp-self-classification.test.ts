@@ -25,6 +25,12 @@ import {
   WHATSAPP_LIST_MAX_ROWS,
   WHATSAPP_ROW_TITLE_MAX,
 } from "../src/lib/recruitment/inbound/whatsapp-classify-menus.ts";
+import {
+  areaPlaceHint,
+  areaPlaceHints,
+  regionPlaceHint,
+  regionPlaceHints,
+} from "../src/lib/recruitment/inbound/whatsapp-classify-place-hints.ts";
 import { parseWhatsAppWebhookPayload } from "../src/lib/recruitment/inbound/whatsapp-payload-parser.ts";
 
 // The active area names, verbatim from au.canonical_areas in production on 2026-08-28. Held here as
@@ -101,12 +107,30 @@ export function runWhatsAppSelfClassificationTests() {
   assert.ok(dokki, "the Dokki area must still be offered");
   assert.ok(dokki.title.length <= WHATSAPP_ROW_TITLE_MAX, "the shortened Dokki title must fit the row limit");
   assert.ok(!dokki.title.includes("…") && !dokki.title.includes("..."), "a title must never be cut with an ellipsis");
-  assert.equal(dokki.description, "Dokki - Mohandseen - Bolak", "the full area name must survive on the description line");
+  // UPDATED 2026-08-28 with the place hints. This pin used to read `=== "Dokki - Mohandseen - Bolak"`,
+  // i.e. the full name ALONE. The hint now shares the line, and the assertion is deliberately still
+  // an exact string: what has to be protected is that adding the hint did not evict the full name,
+  // which is the only place the shortened title's real words survive.
+  assert.ok(
+    dokki.description?.startsWith("Dokki - Mohandseen - Bolak"),
+    "the full area name must still LEAD the description line, ahead of any hint",
+  );
+  assert.equal(
+    dokki.description,
+    "Dokki - Mohandseen - Bolak (بولاق الدكرور · ناهيا · أرض اللواء)",
+    "the shortened row must carry the full name and its hint together",
+  );
 
-  // A name that already fits carries no duplicate description — the same words twice reads as a bug.
+  // A name that already fits does not repeat itself — the same words twice reads as a bug — so its
+  // description line is the HINT alone. (Before the hints existed this asserted `undefined`.)
   const fayoum = gizaMenu.rows.find((row) => row.id === classifyRowId("area", "Fayoum"));
   assert.ok(fayoum, "Fayoum must be offered");
-  assert.equal(fayoum.description, undefined, "a title that already fits must not repeat itself as a description");
+  assert.equal(
+    fayoum.description,
+    "(مدينة الفيوم · إبشواى · إطسا)",
+    "a title that already fits gives its whole description line to the bracketed place hint",
+  );
+  assert.ok(!fayoum.description?.includes("Fayoum"), "a fitting title must never repeat itself as a description");
 
   // ── The region menu must not offer a dead end ─────────────────────────────────────────────────
   // au.regions also holds UE-1 and UE-2, which have ZERO active areas. Offering either would walk
@@ -137,6 +161,68 @@ export function runWhatsAppSelfClassificationTests() {
   const regionRows = regionMenu().rows;
   const escapeRow = regionRows[regionRows.length - 1];
   assert.equal(escapeRow.id, classifyRowId("region", OTHER_ROW_VALUE), "the escape must be the LAST region row");
+
+  // ── The place hints — the second line that makes a region row answerable ──────────────────────
+  // Owner's instruction 2026-08-28: "Delta (1)" means nothing to an applicant, so each region and
+  // area row names the biggest places inside it. These assertions exist because a WRONG hint is
+  // worse than none: it actively routes someone to a district that will never call them.
+
+  // Every region we offer must explain itself. A new region appearing with no hint is exactly the
+  // bug the owner reported — an unlabelled "Delta (N)" that an applicant has to guess at. If a
+  // future region genuinely cannot be described yet, that is a deliberate decision and belongs
+  // here as an exception, not as a silent omission.
+  for (const code of candidateRegionCodes) {
+    const hint = regionPlaceHint(code);
+    assert.ok(hint, `region ${code} ("${candidateRegionLabels[code]}") has no place hint — an applicant cannot answer it`);
+    assert.ok(!hint.includes("…") && !hint.includes("..."), `the ${code} hint must never be cut with an ellipsis`);
+  }
+
+  // The hint reaches the row, and the escape row carries none — there is no place inside "not listed".
+  for (const row of regionRows) {
+    const parsed = parseClassifyRowId(row.id);
+    if (parsed?.value === OTHER_ROW_VALUE) {
+      assert.equal(row.description, undefined, "the not-listed escape has no places to name");
+      continue;
+    }
+    assert.equal(
+      row.description,
+      `(${regionPlaceHint(parsed?.value ?? "")})`,
+      `the ${parsed?.value} row must carry its hint, in brackets`,
+    );
+  }
+
+  // ── The hints follow the RECRUITMENT map, and #2509 moved four governorates ───────────────────
+  // Qalyubia, Sharqia, Suez and Ismailia became Delta (3) in `governorateRegions`. If a hint still
+  // named them under their old region, an applicant from Qalyubia would tap Delta (1) and be filed
+  // where the Delta (3) recruiter is not looking — which is the precise failure #2509 set out to
+  // fix. This is the pin that catches the next such move being made in only one of the two files.
+  assert.ok(regionPlaceHints.D3?.includes("القليوبية"), "Delta (3) must name Qalyubia — it is its biggest governorate");
+  assert.ok(regionPlaceHints.D3?.includes("الشرقية"), "Delta (3) must name Sharqia");
+  assert.ok(regionPlaceHints.D3?.includes("الإسماعيلية"), "Delta (3) must name Ismailia");
+  assert.ok(regionPlaceHints.D3?.includes("السويس"), "Delta (3) must name Suez — all four fit, so none is dropped");
+  assert.ok(!regionPlaceHints.D1?.includes("القليوبية"), "Qalyubia left Delta (1) in #2509 — its hint must not still claim it");
+  assert.ok(!regionPlaceHints.D2?.includes("الشرقية"), "Sharqia left Delta (2) in #2509 — its hint must not still claim it");
+  assert.ok(!regionPlaceHints.OT?.includes("الإسماعيلية"), "Ismailia left Others in #2509");
+  assert.ok(!regionPlaceHints.OT?.includes("السويس"), "Suez left Others in #2509");
+
+  // Every active area explains itself too, and the hint reaches the row.
+  for (const [regionCode, areas] of Object.entries(PRODUCTION_AREAS)) {
+    const menu = areaMenu(regionCode as (typeof candidateRegionCodes)[number], areas);
+    for (const name of areas) {
+      const hint = areaPlaceHint(name);
+      assert.ok(hint, `area "${name}" (${regionCode}) has no place hint`);
+      assert.ok(!hint.includes("…") && !hint.includes("..."), `the "${name}" hint must never be cut with an ellipsis`);
+      const row = menu.rows.find((candidate) => candidate.id === classifyRowId("area", name));
+      assert.ok(row?.description?.includes(`(${hint})`), `the "${name}" row must carry its hint, in brackets`);
+      assert.ok(!row?.description?.includes("…"), `the "${name}" description must never be cut with an ellipsis`);
+    }
+  }
+
+  // An unknown name is null, never a throw and never a wrong neighbour's hint. A renamed area
+  // silently showing some other area's towns is the one failure mode worse than showing nothing.
+  assert.equal(areaPlaceHint("An Area That Does Not Exist"), null, "an unknown area must return null");
+  assert.equal(regionPlaceHint("ZZ"), null, "an unknown region must return null");
+  assert.equal(Object.keys(areaPlaceHints).length, 49, "all 49 active areas carry a hint");
   assert.ok(
     (candidateRegionCodes as readonly string[]).includes("D3"),
     "Delta (3) is live and carries target in au.regions — an applicant must be able to choose it",

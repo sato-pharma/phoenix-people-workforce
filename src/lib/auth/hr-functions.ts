@@ -309,7 +309,6 @@ export const HR_ROLE_BOUNDARIES: readonly {
   { resource: "organogram", action: "update", why: "may not make organizational changes (hrbp + ops)" },
   { resource: "user_admin", action: "read", why: "role, scope and permission admin stays Super Admin" },
   { resource: "permission_admin", action: "read", why: "may not grant permissions (hrbp + ops)" },
-  { resource: "module_control", action: "read", why: "may not change what modules exist" },
   { resource: "workflow_registry", action: "read", why: "may not change approval chains" },
   { resource: "admin_access", action: "read", why: "may not reach the admin access console" },
   { resource: "system_cleanup", action: "read", why: "may not run destructive maintenance" },

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 
-import { suggestPositions } from "../src/lib/recruitment/position-suggestion.ts";
+import { PLACE_TIERS, suggestPositions, TIER_RANK } from "../src/lib/recruitment/position-suggestion.ts";
 import type { VacancyOption } from "../src/lib/recruitment/vacancy-options.ts";
 
 /**
@@ -323,5 +323,238 @@ export async function runCandidatePositionSuggestionTests(): Promise<void> {
     for (const label of ["Looks like this one", "Looks like one of these"]) {
       assert.ok(screen.includes(label), `the suggestion is offered in plain words: ${label}`);
     }
+  }
+
+  // ── 12. A neighbourhood is its own evidence ────────────────────────────────
+  // The bricks are this company's only fine-grained map of Egypt and all 697 are written in Arabic;
+  // every CV address is written in English. Until they could see each other, "Helmeyet El-Zeitoun"
+  // reached nothing finer than "Cairo" — a governorate covering twelve open seats, which is silence.
+  {
+    const maadi = suggestPositions(
+      { address: "Zahra Almaadi", currentJobTitle: "Medical Representative" },
+      SEATS,
+    );
+    assert.equal(
+      maadi.confident?.vacancy.areaName,
+      "Helwan-Maadi",
+      "Zahra El Maadi is in Helwan-Maadi, and the address never says so in as many words",
+    );
+    assert.equal(maadi.confident?.placeTier, "neighbourhood", "and it is reached at the neighbourhood tier");
+
+    const haram = suggestPositions(
+      { address: "El Haram, Giza", currentJobTitle: "Medical Representative" },
+      SEATS,
+    );
+    assert.equal(haram.confident?.vacancy.areaName, "Haram - Faisal", "El Haram names its own area");
+
+    // NO GOVERNORATE FIELD AT ALL. This is the case a governorate gate would have thrown away, and
+    // 52 of the 448 CVs on file are in exactly this state: an address, and nothing else.
+    const bare = suggestPositions(
+      { address: "Maadi", currentJobTitle: "Medical Representative", governorate: null },
+      SEATS,
+    );
+    assert.equal(
+      bare.confident?.vacancy.areaName,
+      "Helwan-Maadi",
+      "a neighbourhood answers on its own — requiring the governorate to agree first would delete this",
+    );
+  }
+
+  // ── 13. An address outside Egypt stays silent ──────────────────────────────
+  // All three were CONFIDENT pre-fills before the matcher learned to read vowels. Two of the three
+  // candidates live on another continent.
+  {
+    const foreign = [
+      "House R-397 Sector 15A/5 Bufferzone Karachi 75850 Karachi",
+      "A 2160, UGF, Green fields colony, Faridabad, Haryana 121002.",
+      "Post Office Box 5, Suma - Ahenkro",
+      "No 20, Eternity Drive, Off Elioparanwo Road, By Ada George Road",
+    ];
+    for (const address of foreign) {
+      const result = suggestPositions({ address, currentJobTitle: "Medical Representative" }, SEATS);
+      assert.equal(result.confident, null, `an address outside Egypt must pre-fill nothing: ${address}`);
+      assert.equal(result.shortlist.length, 0, `and must not shortlist anything either: ${address}`);
+    }
+  }
+
+  // ── 14. Two real places of one name ────────────────────────────────────────
+  // The brick table tells them apart by appending where the second one is: "المطريه" is in Cairo and
+  // "المطريه الدقهلية" is in Dakahlia. Read literally the bare spelling belongs to Cairo alone — but
+  // "Matarya" is all anybody writes, so a Dakahlia candidate was being pre-filled into a Cairo seat
+  // with no sign a second Matarya existed. Owner's decision, 2026-08-28: show both, recruiter picks.
+  {
+    const matarya = suggestPositions(
+      // NO governorate field, deliberately: with one, the governorate rung would supply Dakahlia 3
+      // anyway and this assertion would pass whether the widening existed or not.
+      { address: "Matarya", currentJobTitle: "Medical Representative", governorate: null },
+      SEATS,
+    );
+    assert.ok(
+      matarya.shortlist.some(
+        (entry) => entry.vacancy.areaName === "Dakahlia 3" && entry.placeTier === "neighbourhood",
+      ),
+      "the bare spelling must reach the Dakahlia Matarya as a NEIGHBOURHOOD, not only the Cairo one",
+    );
+
+    // AND THE FULLER SPELLING STILL WINS OUTRIGHT. Where the address names the qualifier too, the
+    // longer reading has consumed more of it and is the one the candidate wrote down.
+    const twoSalams: VacancyOption[] = [
+      { areaName: "Helwan-Maadi", id: 901, jobTitle: "Medical Representative", lineName: "Pedia", managerHrId: "m5", managerName: "Mahmoud Eldaly", regionName: "Giza" },
+      { areaName: "Sohag2", id: 902, jobTitle: "Medical Representative", lineName: "CNS", managerHrId: "m6", managerName: "Sally Saied Sedhom Mankrios Sedhom", regionName: "Upper Egypt" },
+    ];
+    const sohag = suggestPositions(
+      { address: "Dar Al-Salam, Sohag", currentJobTitle: "Medical Representative" },
+      twoSalams,
+    );
+    assert.equal(
+      sohag.confident?.vacancy.areaName,
+      "Sohag2",
+      "Dar El Salam Sohag reads three words of the address where the Cairo one reads two",
+    );
+  }
+
+  // ── 15. Every place tier has a rank, checked at RUNTIME ────────────────────
+  // An exhaustive Record does not gate the build here: next.config sets ignoreBuildErrors, so a new
+  // tier added without a rank compiles, builds and DEPLOYS, and every seat at that tier then sorts
+  // on undefined. That exact shape shipped once in this repository and scattered 63 real candidates
+  // through a screening queue at random, because NaN comparisons do not throw. So the union is
+  // walked here rather than trusted to the compiler.
+  {
+    for (const tier of PLACE_TIERS) {
+      const rank = TIER_RANK[tier];
+      assert.ok(
+        Number.isFinite(rank),
+        `place tier "${tier}" has no rank — every seat at that tier would sort on undefined`,
+      );
+    }
+    for (const key of Object.keys(TIER_RANK)) {
+      assert.ok(
+        (PLACE_TIERS as readonly string[]).includes(key),
+        `TIER_RANK ranks "${key}", which is not a place tier — a rename left it behind`,
+      );
+    }
+    assert.equal(
+      new Set(Object.values(TIER_RANK)).size,
+      PLACE_TIERS.length,
+      "two tiers sharing a rank would make the better of them lose ties silently",
+    );
+  }
+
+  // ── 16. The governorate breaks a tie, and never anything else ──────────────
+  // Measured on all 448 candidates: exactly TWO land on a shortlist because one Arabic name is two
+  // real places, and in both the CV had already said which one. "Dayrout, Asyut" writes the answer
+  // into the address; "Matarya" leaves the governorate column to say Dakahlia. Offering the second
+  // seat in either case offers something the candidate has contradicted.
+  //
+  // THE DANGEROUS VERSION OF THIS IS A GATE, AND IT IS NOT WHAT THIS IS. Refusing any neighbourhood
+  // match whose governorate disagrees deletes 52 candidates' answers, because a blank governorate
+  // column is ordinary and a wrong one is not rare. Every assertion below that says "unchanged" is
+  // guarding that difference.
+  {
+    const rep = (id: number, areaName: string, lineName: string): VacancyOption => ({
+      areaName,
+      id,
+      jobTitle: "Medical Representative",
+      lineName,
+      managerHrId: "m1",
+      managerName: "Ali Mohamed Ali Elsayed",
+      regionName: "R",
+    });
+
+    // A. Two real Dayrouts. The address itself names the governorate, so the Beheira seat goes.
+    const dayrout = suggestPositions(
+      { address: "Dayrout, Asyut", currentJobTitle: "Medical Representative", governorate: "Assiut" },
+      [rep(1, "Assuit 1", "Pedia"), rep(2, "Behira 2", "CNS")],
+    );
+    assert.equal(
+      dayrout.confident?.vacancy.areaName,
+      "Assuit 1",
+      "the address says Asyut, so the Beheira Dayrout is not a live option",
+    );
+    assert.equal(dayrout.shortlist.length, 1, "and it is no longer offered as a choice either");
+
+    // B. The two Matareyas. The address names neither governorate; the column names one.
+    const matarya = suggestPositions(
+      { address: "Matarya", currentJobTitle: "Medical Representative", governorate: "Dakahlia" },
+      [rep(1, "Cairo East 1", "Anti Infective"), rep(2, "Cairo East 1", "Pedia"), rep(3, "Dakahlia 3", "CNS")],
+    );
+    assert.equal(
+      matarya.confident?.vacancy.areaName,
+      "Dakahlia 3",
+      "the governorate column settles which Matarya this candidate lives in",
+    );
+
+    // C. AND WITHOUT THAT COLUMN, BOTH STILL STAND. This is the whole difference from a gate: no
+    // stated governorate is not a disagreeing one, and the owner's rule is that the recruiter picks.
+    const unstated = suggestPositions(
+      { address: "Matarya", currentJobTitle: "Medical Representative", governorate: null },
+      [rep(1, "Cairo East 1", "Anti Infective"), rep(2, "Cairo East 1", "Pedia"), rep(3, "Dakahlia 3", "CNS")],
+    );
+    assert.equal(unstated.confident, null, "with nothing to break the tie, nothing is pre-filled");
+    assert.ok(
+      areasOf(unstated.shortlist).includes("Dakahlia 3 · CNS"),
+      "and the Dakahlia Matarya is still on the list",
+    );
+
+    // D. WHEN NOTHING AGREES, NOTHING IS DROPPED. Bahteem is in Qalyubia and this company serves it
+    // from Cairo West — deliberately, per its own commercial map. A gate would delete the answer;
+    // the tie-break leaves it exactly as it found it.
+    const seats = [rep(1, "Cairo West", "CNS"), rep(2, "Cairo West", "Pedia")];
+    const bahteem = suggestPositions(
+      { address: "Bahteem ,sh.el khema, kaliobia", currentJobTitle: "Medical Representative", governorate: "Qalyubia" },
+      seats,
+    );
+    assert.equal(
+      bahteem.shortlist.length,
+      2,
+      "no seat agrees with Qalyubia, so the company's own map is left to stand",
+    );
+    assert.deepEqual(
+      areasOf(bahteem.shortlist),
+      ["Cairo West · CNS", "Cairo West · Pedia"],
+      "and the seats offered are unchanged, not narrowed to nothing",
+    );
+
+    // E. WHEN EVERYTHING AGREES, NOTHING IS DROPPED EITHER. Two seats in one area on two lines is
+    // the commonest shortlist there is — twelve of the fourteen — and no address can choose between
+    // a CNS seat and a Pedia one.
+    const zagazig = suggestPositions(
+      { address: "Zagazig, Sharkia", currentJobTitle: "Medical Representative", governorate: "Sharqia" },
+      [rep(1, "Sharkia 1", "Anti Infective"), rep(2, "Sharkia 1", "Pedia")],
+    );
+    assert.equal(zagazig.confident, null, "a product line is not something an address decides");
+    assert.equal(zagazig.shortlist.length, 2, "both seats stay on offer");
+
+    // F. THE GOVERNORATE TIER IS INERT BY CONSTRUCTION. Every seat there matched BECAUSE its
+    // governorate is the stated one, so they all agree and there is no tie to break. Sohag covers
+    // Sohag1 and Sohag2 and the CV said nothing finer.
+    const sohag = suggestPositions(
+      { governorate: "Sohag", currentJobTitle: "Medical Representative" },
+      [rep(1, "Sohag1", "Pedia"), rep(2, "Sohag2", "Anti Infective")],
+    );
+    assert.equal(sohag.shortlist.length, 2, "a governorate-tier shortlist cannot be narrowed by the governorate");
+    assert.equal(sohag.shortlist[0].placeTier, "governorate", "and it is still a governorate-tier answer");
+
+    // G. A SINGLE SURVIVOR IS NEVER TOUCHED, even when its governorate disagrees outright. Reaching
+    // here at all means the address named this area, and one seat is not a tie.
+    const lone = suggestPositions(
+      { address: "Bahteem", currentJobTitle: "Medical Representative", governorate: "Qalyubia" },
+      [rep(1, "Cairo West", "CNS")],
+    );
+    assert.equal(lone.confident?.vacancy.areaName, "Cairo West", "one seat is not a tie, so nothing is broken");
+
+    // H. THE ADDRESS OUTRANKS THE COLUMN, because the column is the half that is wrong. Four real
+    // addresses on file read "Zagazig, sharkia" beside a Governorate field saying Cairo — the CV
+    // wrote the truth in the longer string and the extraction filled the short one in badly. Here
+    // the column would send an Assiut candidate to Beheira.
+    const columnIsWrong = suggestPositions(
+      { address: "Dayrout, Asyut", currentJobTitle: "Medical Representative", governorate: "Beheira" },
+      [rep(1, "Assuit 1", "Pedia"), rep(2, "Behira 2", "CNS")],
+    );
+    assert.equal(
+      columnIsWrong.confident?.vacancy.areaName,
+      "Assuit 1",
+      "the governorate written INSIDE the address beats the one typed into the column",
+    );
   }
 }

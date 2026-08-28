@@ -10,6 +10,7 @@ import {
   type RepCallRate,
   type VisitForCallRate,
 } from "../src/lib/crm/call-rate.ts";
+import { buildOrgPlacementTree, type OrgTreeNode } from "../src/lib/crm/org-placement.ts";
 import {
   attainmentTone,
   buildRepsPlansBoard,
@@ -169,7 +170,10 @@ export function runCrmRepsPlansTests() {
     ]),
     { month: "2026-08", isCurrentMonth: false },
   );
-  assert.equal(twoReps.totals.reps, 2);
+  // No organogram passed here at all, deliberately: these cases predate it and pin how the board
+  // reads when nothing is known about anyone — everyone scored. That is the fallback the noTree
+  // case further down states explicitly.
+  assert.equal(twoReps.totals.reps, 2, "with no organogram to classify anyone, every rep is scored");
   assert.equal(twoReps.totals.am.verified, 40);
   assert.equal(twoReps.totals.am.verifiedRate, 2, "40 verified / (10 days x 2 reps) = 2.00, not 4.00");
   assert.equal(twoReps.totals.am.attainmentPct, 100);
@@ -227,6 +231,343 @@ export function runCrmRepsPlansTests() {
   assert.equal(empty.totals.campaignSharePct, 0);
   assert.equal(empty.reps.length, 0);
 
+  // ── the ORGANOGRAM, and the LINE -> REGION cascade ────────────────────────
+  // Built through the REAL buildOrgPlacementTree from `au_v_org_tree`-shaped rows, so these cases
+  // break if the resolution moves underneath the board.
+  //
+  // WHY THE WHOLE TREE AND NOT A REP SLICE. The first build of this filter resolved a person from
+  // `au_v_line_area_map.rep_seat_id`, a column that by definition holds REP seats and nothing else.
+  // Every District Manager, Acting DM, RSM and NSM fell straight through it and was rendered as
+  // holding NO SEAT — 22 seated managers on production, each told he was not in the org chart. The
+  // owner spotted it on sight, because he knows who his managers are. Hence Nabil and Sherif below:
+  // if either ever reads as unplaced again, this test is what says so.
+  //
+  // The fixture carries the four shapes that matter:
+  //   • a DM, who carries a cell of his OWN;
+  //   • an NSM and a CEO, who carry NONE and must resolve to what sits beneath them;
+  //   • `ai / giza`, a real territory with NOBODY in the seat — never offered as a filter, yet
+  //     genuinely part of the CEO's coverage;
+  //   • Dalia, whose HR id the organogram has no seat for, and Emad, who has no HR id at all. On
+  //     production that group is ~15 of 87 and almost every one is ZERO-PROVED, which is exactly
+  //     why a geography filter must not swallow them.
+  const CNS_DELTA = { lineCode: "cns", lineName: "CNS", regionCode: "delta", regionName: "Delta (1)" };
+  const CNS_GIZA = { lineCode: "cns", lineName: "CNS", regionCode: "giza", regionName: "Giza" };
+  const AI_DELTA = { lineCode: "ai", lineName: "Anti Infective", regionCode: "delta", regionName: "Delta (1)" };
+  const AI_GIZA = { lineCode: "ai", lineName: "Anti Infective", regionCode: "giza", regionName: "Giza" };
+
+  // `ancestors` excludes the seat; the fixture appends the seat itself, because that is what
+  // `au_v_org_tree.path` actually carries — verified on production, where the acting DM's path
+  // ends with her own seat id. A fixture that quietly disagrees with the view is a test that
+  // proves the wrong thing.
+  const seat = (
+    seatId: string,
+    seatTier: string,
+    occupantHrId: string | null,
+    ancestors: string[],
+    cell?: { lineCode: string; lineName: string; regionCode: string; regionName: string },
+  ): OrgTreeNode => ({
+    seatId,
+    path: [...ancestors, seatId],
+    seatTier,
+    occupantHrId,
+    lineCode: cell?.lineCode ?? null,
+    lineName: cell?.lineName ?? null,
+    regionCode: cell?.regionCode ?? null,
+    regionName: cell?.regionName ?? null,
+  });
+
+  const tree = buildOrgPlacementTree([
+    seat("CEO", "CEO", "AI-9000", []),
+    seat("NSM-CNS", "NSM", "AI-0100", ["CEO"]),
+    seat("DM-CNS-DELTA", "DM", "AI-0010", ["CEO", "NSM-CNS"], CNS_DELTA),
+    seat("S1", "REP", "AI-0001", ["CEO", "NSM-CNS", "DM-CNS-DELTA"], CNS_DELTA),
+    seat("S2", "REP", "AI-0002", ["CEO", "NSM-CNS"], CNS_GIZA),
+    seat("S3", "REP", "AI-0003", ["CEO"], AI_DELTA),
+    // Deliberately unfilled — a vacant territory.
+    seat("S4", "REP", null, ["CEO"], AI_GIZA),
+    // THE ACTING DM, production's one two-seat person: she holds the acting seat AND the rep seat
+    // under it. Listed second here so the ACTING_DM row is seen FIRST — the order that would leave
+    // her unscored if the rep seat did not win.
+    seat("ADM-AI-DELTA", "ACTING_DM", "AI-0020", ["CEO"], AI_DELTA),
+    seat("S5", "REP", "AI-0020", ["CEO", "ADM-AI-DELTA"], AI_DELTA),
+  ]);
+
+  // The index keys on the BARE lowercased HR id, not on a `hr:` board key. Handing one board's key
+  // shape to another matches nothing while looking perfectly correct, which is the trap recorded
+  // against these modules.
+  const cellsOf = (hrId: string) => tree.index.get(hrId)?.cells.map((c) => `${c.lineName} · ${c.regionName}`);
+  assert.deepEqual(cellsOf("ai-0001"), ["CNS · Delta (1)"], "a rep resolves to his own cell by lowercased HR id");
+  assert.equal(tree.index.has("AI-0001"), false, "the index is not keyed by the raw-case id");
+  assert.equal(tree.index.has("ai-0009"), false, "someone with no seat is absent, never an empty entry");
+
+  // THE REGRESSION. A District Manager holds a seat, a line and a region — he is not unplaced.
+  assert.deepEqual(cellsOf("ai-0010"), ["CNS · Delta (1)"], "a DM resolves exactly as a rep does");
+  assert.equal(tree.index.get("ai-0010")?.tierLabel, "District Manager", "and is named in words, never as a code");
+  assert.equal(tree.index.get("ai-0010")?.scored, false, "but the 2 AM / 10 PM target is not his");
+  assert.equal(tree.index.get("ai-0001")?.scored, true, "while it IS the medical rep's");
+
+  // A seat above the area layer carries no line or region of its own and takes what is beneath it.
+  // Getting this wrong is the same bug wearing a different hat: an NSM reading as unplaced.
+  assert.deepEqual(cellsOf("ai-0100"), ["CNS · Delta (1)", "CNS · Giza"], "an NSM covers his line's regions");
+  assert.deepEqual(
+    cellsOf("ai-9000"),
+    ["Anti Infective · Delta (1)", "Anti Infective · Giza", "CNS · Delta (1)", "CNS · Giza"],
+    "and the CEO covers everything under him, both lines",
+  );
+
+  // THE ACTING DM — production's one person on two seats, and the owner has ruled on her: acting
+  // authority is an app role, not a job title, and she STAYS a medical rep. So the REP seat wins
+  // and her call rate is still measured. Her ACTING_DM row is seen first above, which is exactly
+  // the order that would leave her unscored if this were decided by whichever row arrived first.
+  assert.equal(tree.index.get("ai-0020")?.scored, true, "an acting DM who also holds the rep seat is still scored");
+  assert.equal(tree.index.get("ai-0020")?.tierLabel, "Medical Rep", "and is named as what the owner says she is");
+  assert.deepEqual(cellsOf("ai-0020"), ["Anti Infective · Delta (1)"], "on the one territory both her seats sit in");
+
+  // A vacant territory is genuinely part of the CEO's coverage AND must never be offered as a
+  // filter: picking it could only ever produce an empty board.
+  assert.equal(
+    tree.cells.some((c) => c.lineCode === "ai" && c.regionCode === "giza"),
+    false,
+    "a territory with nobody in the seat is not offered in the cascade",
+  );
+
+  const geoReport = report(10, [
+    rep("Alia", 10, { verified: 20 }, { verified: 100 }, { agentCrmId: 1, agentHrId: "AI-0001" }),
+    rep("Basem", 10, { verified: 10 }, { verified: 50 }, { agentCrmId: 2, agentHrId: "AI-0002" }),
+    rep("Karim", 10, { verified: 0 }, { verified: 20 }, { agentCrmId: 3, agentHrId: "AI-0003" }),
+    // The acting DM, scored as the medical rep she still is.
+    rep("Nesma", 10, { verified: 10 }, { verified: 40 }, { agentCrmId: 20, agentHrId: "AI-0020" }),
+    // A District Manager and an NSM, both with real field activity. Listed, scored on nothing.
+    rep("Nabil", 10, { verified: 5 }, { verified: 5, campaign: 40 }, { agentCrmId: 10, agentHrId: "AI-0010" }),
+    rep("Sherif", 10, { verified: 1 }, { verified: 2 }, { agentCrmId: 100, agentHrId: "AI-0100" }),
+    // The two the filter must not swallow — no seat, and nothing proved.
+    rep("Dalia", 10, { verified: 0, campaign: 40 }, { verified: 0, campaign: 60 }, { agentCrmId: 4, agentHrId: "AI-0009" }),
+    rep("Emad", 10, { verified: 0, campaign: 30 }, { verified: 0, campaign: 30 }, { agentCrmId: 5 }),
+  ]);
+
+  // ── THE TREE MUST NEVER GO THROUGH THE DATA CACHE ─────────────────────────────────────────────
+  // Found by loading the page a SECOND time, and by nothing else. `unstable_cache` serializes what
+  // it stores, and the index is a Map — so caching the built tree worked on exactly the one render
+  // that filled the cache and then threw `index.get is not a function` on every render after it,
+  // for five minutes at a stretch, forever. Every test in this file calls buildOrgPlacementTree
+  // directly, where a Map is a Map, so none of them could ever have seen it.
+  //
+  // Two assertions, because either alone is escapable: the first states the fact about Maps that
+  // makes the rule necessary, the second holds the data module to it.
+  const throughTheCache = JSON.parse(JSON.stringify(tree)) as { index: unknown };
+  assert.equal(
+    typeof (throughTheCache.index as { get?: unknown }).get,
+    "undefined",
+    "a Map does not survive serialization — this is why the built tree can never be what unstable_cache stores",
+  );
+  const orgPlacementData = readFileSync("src/lib/crm/org-placement-data.ts", "utf8");
+  assert.ok(
+    /export async function loadOrgPlacementTree/.test(orgPlacementData) &&
+      !/export const loadOrgPlacementTree = unstable_cache/.test(orgPlacementData),
+    "the cache must hold the ROWS and the tree be rebuilt from them per call — wrapping loadOrgPlacementTree in unstable_cache puts a Map through the serializer and breaks the page on its second load",
+  );
+
+  // The HR directory, for the people the SALES organogram has no seat for. Dalia has a title;
+  // Emad has no hr id at all, so nothing can name him and he is the one honest use of the marker.
+  const jobTitles = new Map([["ai-0009", "Product Manager"]]);
+
+  // No geography picked: everyone is LISTED. Only the medical reps are counted.
+  const wide = buildRepsPlansBoard(geoReport, {
+    isCurrentMonth: false,
+    jobTitleByHrId: jobTitles,
+    month: "2026-08",
+    tree,
+  });
+  assert.equal(wide.reps.length, 8, "no geography filter lists every person");
+  assert.equal(wide.totals.reps, 4, "the tiles are the four MEDICAL REPS — the target is theirs");
+  assert.equal(wide.managersShown, 2, "and the board says how many managers are listed but unscored");
+  assert.equal(wide.unplacedShown, 2, "and how many hold no seat at all");
+  assert.equal(wide.geographyLabel, null);
+  assert.equal(wide.geographyAvailable, true);
+  assert.deepEqual(
+    wide.lineOptions.map((o) => o.name),
+    ["Anti Infective", "CNS"],
+    "lines are offered by NAME, never by code (owner's standing rule)",
+  );
+
+  // OWNER'S RULE, 2026-08-28, in his words: "the KPI is two AM, ten PM, for medical reps. Don't
+  // restrict the managers on AM and PM. Make their account appear, but not restrict them."
+  const nabil = wide.reps.find((r) => r.repName === "Nabil");
+  assert.ok(nabil, "the District Manager is on the board");
+  assert.equal(nabil.seatTierLabel, "District Manager", "shown as what he is");
+  assert.deepEqual(
+    nabil.territories.map((t) => `${t.lineName} · ${t.regionName}`),
+    ["CNS · Delta (1)"],
+    "with his own territory — NOT the 'no seat' marker that put 22 real managers outside the org chart",
+  );
+  assert.equal(nabil.scored, false, "and measured against no target");
+  assert.equal(nabil.am.verifiedRate, 0.5, "his real activity is still on the row — that is his account appearing");
+  // The proof he is outside the tiles rather than merely low in the list: 40 campaign calls, none of
+  // which reach the company figure. Dalia and Emad carry 160 more, equally excluded.
+  assert.equal(wide.totals.campaignCalls, 0, "a manager's activity never moves a number he is not measured by");
+  assert.equal(wide.totals.am.verifiedRate, 1, "40 verified AM / (10 days x 4 reps) = 1.00 — managers not in the divisor");
+  assert.equal(wide.totals.repsOnTarget, 1, "only Alia clears both targets");
+  assert.equal(
+    wide.reps.find((r) => r.repName === "Dalia")?.territories.length,
+    0,
+    "someone the organogram has no seat for carries no territory",
+  );
+  assert.equal(wide.reps.find((r) => r.repName === "Dalia")?.scored, false, "and is not scored on a target either");
+
+  // ── HEAD OFFICE IS NOT A FAULT ────────────────────────────────────────────────────────────────
+  // `au_v_org_tree` is the SALES seat model. Production's three Product Managers hold no seat in it
+  // and never will, so the first build's amber "Not in organogram" said of a Product Manager exactly
+  // what the owner had already objected to being said of his District Managers. The directory
+  // answers when the chart is silent — a LABEL only: he is still scored against nothing, because a
+  // free-text job title has no business deciding a KPI denominator.
+  const dalia = wide.reps.find((r) => r.repName === "Dalia");
+  assert.equal(dalia?.jobTitle, "Product Manager", "someone off the sales chart is named by his real HR job title");
+  assert.equal(dalia?.seatTierLabel, null, "the organogram still says nothing about him — the title is the fallback");
+  assert.equal(dalia?.scored, false, "and a job title never buys him a target");
+  const emad = wide.reps.find((r) => r.repName === "Emad");
+  assert.equal(emad?.jobTitle, null, "with no hr id there is nothing to look up, and the marker is then the truth");
+  // The seat OUTRANKS the directory for anyone on the chart: a stale HR title must never contradict
+  // the org chart the owner maintains himself.
+  const seatedTitles = buildRepsPlansBoard(geoReport, {
+    isCurrentMonth: false,
+    jobTitleByHrId: new Map([["ai-0010", "Senior Medical Rep"]]),
+    month: "2026-08",
+    tree,
+  });
+  assert.equal(
+    seatedTitles.reps.find((r) => r.repName === "Nabil")?.jobTitle,
+    null,
+    "a seated manager is his SEAT, never a job title that disagrees with the chart",
+  );
+
+  // THE TILES RECOMPUTE. This is the half that separates line/region from the rep filter above.
+  const cns = buildRepsPlansBoard(geoReport, {
+    geography: { line: "cns" },
+    isCurrentMonth: false,
+    month: "2026-08",
+    tree,
+  });
+  assert.equal(cns.appliedLine, "cns");
+  assert.equal(cns.geographyLabel, "CNS", "the label names the line, never its code");
+  assert.equal(cns.totals.reps, 2, "the tiles cover the two CNS reps only");
+  // 20 + 10 verified AM over (10 working days x 2 reps) = 1.50, where the unfiltered board reads 1.00.
+  assert.equal(cns.totals.am.verifiedRate, 1.5, "the AM tile is rescoped to the line");
+
+  // The managers are REACHED by the filter exactly as a rep is — the DM by his own cell, the NSM by
+  // what sits beneath him — and the unplaced survive it, listed and marked.
+  assert.deepEqual(
+    cns.reps.map((r) => r.repName).sort(),
+    ["Alia", "Basem", "Dalia", "Emad", "Nabil", "Sherif"],
+    "a line filter keeps its managers and the seatless people on the board",
+  );
+  assert.equal(cns.managersShown, 2, "both managers are listed outside the tiles");
+  assert.equal(cns.unplacedShown, 2, "as are both people with no seat");
+  assert.equal(
+    cns.reps.some((r) => r.repName === "Karim"),
+    false,
+    "while a rep seated on ANOTHER line is genuinely filtered out",
+  );
+  assert.equal(cns.totals.campaignCalls, 0, "and nobody unscored contributes to the line's rate");
+
+  // A manager on another line is filtered out like anyone else — being a manager is not a pass.
+  const ai = buildRepsPlansBoard(geoReport, {
+    geography: { line: "ai" },
+    isCurrentMonth: false,
+    month: "2026-08",
+    tree,
+  });
+  assert.deepEqual(
+    ai.reps.map((r) => r.repName).sort(),
+    ["Dalia", "Emad", "Karim", "Nesma"],
+    "the CNS DM and the CNS NSM are both out of an Anti Infective board, while the acting DM belongs to it",
+  );
+  assert.equal(ai.managersShown, 0);
+
+  // Region is narrowed BY THE LINE — the owner's order, and the one that avoids the dead end.
+  assert.deepEqual(
+    cns.regionOptions.map((o) => o.name),
+    ["Delta (1)", "Giza"],
+    "CNS offers both of its regions",
+  );
+  assert.deepEqual(
+    ai.regionOptions.map((o) => o.name),
+    ["Delta (1)"],
+    "Anti Infective offers only Delta — its Giza territory is VACANT, so offering it would resolve to nobody",
+  );
+  assert.deepEqual(
+    ai.lineOptions.map((o) => o.name),
+    ["Anti Infective", "CNS"],
+    "the top of the cascade is never narrowed from below",
+  );
+
+  // Both levels together.
+  const cnsDelta = buildRepsPlansBoard(geoReport, {
+    geography: { line: "cns", region: "delta" },
+    isCurrentMonth: false,
+    month: "2026-08",
+    tree,
+  });
+  assert.equal(cnsDelta.geographyLabel, "CNS · Delta (1)");
+  assert.equal(cnsDelta.totals.reps, 1, "one medical rep in CNS/Delta");
+  assert.equal(cnsDelta.totals.am.verifiedRate, 2, "20 verified / (10 x 1) = 2.00");
+  assert.deepEqual(
+    cnsDelta.reps.map((r) => r.repName).sort(),
+    ["Alia", "Dalia", "Emad", "Nabil", "Sherif"],
+    "his DM and his NSM belong to CNS/Delta as much as he does",
+  );
+
+  // A stale or hand-edited URL is PRUNED, never rejected — it keeps as much as still makes sense
+  // instead of dumping the viewer back to everything with no explanation.
+  const bogusLine = buildRepsPlansBoard(geoReport, {
+    geography: { line: "no-such-line", region: "delta" },
+    isCurrentMonth: false,
+    month: "2026-08",
+    tree,
+  });
+  assert.equal(bogusLine.appliedLine, null, "an unknown line is dropped");
+  assert.equal(bogusLine.appliedRegion, "delta", "while the region that IS real survives");
+  const impossiblePair = buildRepsPlansBoard(geoReport, {
+    geography: { line: "ai", region: "giza" },
+    isCurrentMonth: false,
+    month: "2026-08",
+    tree,
+  });
+  assert.equal(impossiblePair.appliedLine, "ai");
+  assert.equal(
+    impossiblePair.appliedRegion,
+    null,
+    "a region the chosen line does not reach is pruned rather than rendering an empty board",
+  );
+
+  // The rep picker follows what is on screen, so it can never offer a rep the board is not showing.
+  assert.deepEqual(
+    cnsDelta.repOptions.map((o) => o.repName),
+    ["Alia", "Dalia", "Emad", "Nabil", "Sherif"],
+    "the rep picker lists exactly the visible people",
+  );
+
+  // No organogram at all — the read failed, not "these people have no seat". The pickers are HIDDEN
+  // rather than rendered empty (an empty line picker reads as "this company has no lines"), and the
+  // board falls back to how it read before this feature existed: EVERYONE scored.
+  //
+  // The alternative is worse than it looks. Scoring only known reps when nothing is known scores
+  // nobody, so one Supabase blip empties every tile on the page and the KPI reads "—" with no
+  // explanation. A rule about whose target it is must not double as an outage.
+  const noTree = buildRepsPlansBoard(geoReport, {
+    geography: { line: "cns" },
+    isCurrentMonth: false,
+    month: "2026-08",
+    tree: null,
+  });
+  assert.equal(noTree.geographyAvailable, false);
+  assert.deepEqual(noTree.lineOptions, []);
+  assert.equal(noTree.appliedLine, null, "a line cannot be applied with no org model to resolve it");
+  assert.equal(noTree.reps.length, 8, "and the board still shows everyone");
+  assert.equal(noTree.totals.reps, 8, "all of them scored, exactly as the page read before the organogram was wired in");
+  assert.ok(noTree.totals.am.verifiedRate != null, "so the tiles still carry a number rather than blanking");
+  assert.equal(noTree.managersShown, 0, "nobody is called a manager on the strength of a chart that could not be read");
+  assert.equal(noTree.unplacedShown, 0, "and nobody is called unplaced by it either");
+
   // ── end to end, through the real computeCallRate ──────────────────────────
   // Proves the two modules connect: 2026-08-01 is a Saturday, so 08-01..08-05 is Sat/Sun/Mon/Tue/Wed
   // — five working days. One rep records 1 verified PM visit and 12 campaign calls on one day.
@@ -275,6 +616,58 @@ export function runCrmRepsPlansTests() {
   assert.equal(liveBoard.totals.repsOnTarget, 0);
   assert.equal(liveBoard.campaignLimit, 3, "the owner's daily campaign limit reaches the screen");
 
+  // ── The column is LINE · REGION, and it must never call itself "Territory" ────────────────────
+  //
+  // This is a collision two green PRs made between them, neither able to see it. #2491 shortened
+  // the mobile card title by moving the CRM handle's trailing bracket — "( Down-town / C )", an
+  // AREA and a line letter — down to the card's meta line, and the desktop Rep cell renders that
+  // same bracket inline. This branch then added a column of the ORG MODEL's line and region. Both
+  // merged clean; the result put the line on one row twice, once labelled "Territory" and once not.
+  //
+  // The data is right and stays. The LABEL is what was wrong, so the label is pinned: one word for
+  // one thing. The rep's CRM bracket is his area; this column is what the two pickers filter on.
+  const repsPlansTables = readFileSync("src/components/crm/reps-plans-tables.tsx", "utf8");
+  assert.ok(
+    repsPlansTables.includes("Line · Region"),
+    "the org-model column must be labelled Line · Region — the name of the two things it holds and the two pickers that filter it",
+  );
+  assert.ok(
+    !/>\s*Territory\s*</.test(repsPlansTables) && !/label: "Territory"/.test(repsPlansTables),
+    "and it must NOT be called Territory: the Rep column beside it already ends in the CRM handle's own territory bracket, so a second column of that name puts the line on the row twice under two names",
+  );
+  assert.ok(
+    !repsPlansTables.includes("No territory"),
+    "the marker follows the label — a person with no org seat reads Not in organogram, matching the note above the tiles, not a second sense of the word territory",
+  );
+  assert.ok(
+    repsPlansTables.includes("Not in organogram"),
+    "and the marker says WHERE the seat is missing from, because that is a gap in the org chart to close rather than a fault of the person on the row",
+  );
+
+  const repsPlansBoard = readFileSync("src/components/crm/reps-plans-board.tsx", "utf8");
+  // This pin used to demand the note say "Not in organogram", because that was what every seatless
+  // row rendered. It is re-aimed rather than re-stated: the SALES organogram has no marketing
+  // branch, so a Product Manager is off it BY DESIGN and now reads as his HR job title. The
+  // contract the pin exists to hold is unchanged — the note must describe what the table actually
+  // shows — so it now checks the fallback the table actually uses.
+  assert.ok(
+    repsPlansBoard.includes("HR job title"),
+    "the note above the tiles must name what a seatless row actually renders — now the person's HR job title, since 'not in organogram' is an accusation to make of somebody head office employs on purpose",
+  );
+  assert.ok(
+    !repsPlansBoard.includes(">Not in organogram<"),
+    "and it must not still promise a marker the table only reaches when the directory cannot name the person either",
+  );
+
+  // The column exists only when the organogram was actually read, so the prop has to reach the
+  // table. Dropping it in a merge would compile — and print "Not in organogram" against all 87 rows
+  // on the one day the read fails, which reads as the company having lost its org chart overnight.
+  assert.equal(
+    repsPlansBoard.split("geographyAvailable={board.geographyAvailable}").length - 1,
+    2,
+    "both the pickers and the table are told whether the organogram was readable",
+  );
+
   // ── the rep's NAME: the directory names the person, the CRM names the territory ────────────
   // Measured on the live August board before this fix: 84 of 87 rendered labels were CRM login
   // handles — "Adel.Srour ( Down-town / C )" — which is the standing rule against raw codes broken
@@ -289,33 +682,33 @@ export function runCrmRepsPlansTests() {
   ]);
 
   assert.equal(
-    toRepsPlansRow(rep("Adel.Srour ( Down-town / C )", 20, {}, {}, { agentHrId: "HR-1", agentCrmId: 11 }), directory)
+    toRepsPlansRow(rep("Adel.Srour ( Down-town / C )", 20, {}, {}, { agentHrId: "HR-1", agentCrmId: 11 }), null, directory)
       .repName,
     "Adel Mahmoud Srour ( Down-town / C )",
     "the person comes from the directory, the territory from the CRM — and the hr id matched across case",
   );
   assert.equal(
-    toRepsPlansRow(rep("Mervat.Fouad", 20, {}, {}, { agentHrId: "hr-3" }), directory).repName,
+    toRepsPlansRow(rep("Mervat.Fouad", 20, {}, {}, { agentHrId: "hr-3" }), null, directory).repName,
     "Mervat Fouad",
     "a CRM name with no trailing territory leaves just the real name — no empty brackets",
   );
   assert.equal(
-    toRepsPlansRow(rep("Sameh.Shaaban ( Tanta / B )", 20, {}, {}, { agentHrId: "HR-99" }), directory).repName,
+    toRepsPlansRow(rep("Sameh.Shaaban ( Tanta / B )", 20, {}, {}, { agentHrId: "HR-99" }), null, directory).repName,
     "Sameh.Shaaban ( Tanta / B )",
     "no directory row keeps the CRM name whole — a name is not the place to start throwing",
   );
   assert.equal(
-    toRepsPlansRow(rep("Mina.Farouk", 20, {}, {}, { agentCrmId: 44 }), directory).repName,
+    toRepsPlansRow(rep("Mina.Farouk", 20, {}, {}, { agentCrmId: 44 }), null, directory).repName,
     "Mina.Farouk",
     "an agent with no hr id has nothing to look up",
   );
   assert.equal(
-    toRepsPlansRow(rep("( Behira 2 / C )", 20, {}, {}, { agentHrId: "HR-1" }), directory).repName,
+    toRepsPlansRow(rep("( Behira 2 / C )", 20, {}, {}, { agentHrId: "HR-1" }), null, directory).repName,
     "Adel Mahmoud Srour ( Behira 2 / C )",
     "the pathological row — a CRM name that is a territory and NOTHING else — gets a person",
   );
   assert.equal(
-    toRepsPlansRow(rep("Ali (acting) Hassan", 20, {}, {}, { agentHrId: "HR-99" }), directory).repName,
+    toRepsPlansRow(rep("Ali (acting) Hassan", 20, {}, {}, { agentHrId: "HR-99" }), null, directory).repName,
     "Ali (acting) Hassan",
     "a bracket in the MIDDLE of a name is not a territory — the pattern is anchored at the end",
   );

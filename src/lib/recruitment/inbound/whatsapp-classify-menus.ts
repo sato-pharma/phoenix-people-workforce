@@ -22,6 +22,7 @@
 
 import { candidateRegionCodes, candidateRegionLabels, type CandidateRegionCode } from "@/lib/recruitment/candidate-region";
 import { candidateRoleFamilies, candidateRoleFamilyLabels, type CandidateRoleFamily } from "@/lib/recruitment/candidate-role-family";
+import { areaPlaceHint, regionPlaceHint } from "@/lib/recruitment/inbound/whatsapp-classify-place-hints";
 
 // ── Meta's interactive-message limits ────────────────────────────────────────────────────────────
 // From the Cloud API reference. They are enforced SERVER-SIDE: an over-long row title is a 400 for
@@ -135,13 +136,49 @@ const LONG_AREA_TITLES: Record<string, string> = {
   "Dokki - Mohandseen - Bolak": "Dokki - Mohandseen",
 };
 
-function rowFor(step: ClassifyStep, value: string, fullName: string, shortTitle?: string): ClassifyRow {
+/**
+ * One row. The second line carries, in order of precedence:
+ *
+ *   1. the FULL name, whenever the title had to be shortened to fit 24 characters — losing the real
+ *      name is not acceptable, so this always wins the space;
+ *   2. the place hint, naming the biggest places inside this region or area (owner's instruction
+ *      2026-08-28, see whatsapp-classify-place-hints.ts);
+ *   3. both, joined, when they fit together.
+ *
+ * The hint is DROPPED rather than cut when it does not fit. Text is never truncated here — that is
+ * the owner's standing rule, and a half-written town name is worse than no hint, because a name cut
+ * mid-word can read as a different place entirely.
+ */
+function rowFor(
+  step: ClassifyStep,
+  value: string,
+  fullName: string,
+  shortTitle?: string,
+  hint?: string | null,
+): ClassifyRow {
   const title = shortTitle ?? fullName;
-  // The description repeats the full name ONLY when the title is not already it — a second line
-  // saying the same words twice reads as a bug.
-  return title === fullName
-    ? { id: classifyRowId(step, value), title }
-    : { description: fullName.slice(0, WHATSAPP_ROW_DESCRIPTION_MAX), id: classifyRowId(step, value), title };
+  const needsFullName = title !== fullName;
+  const id = classifyRowId(step, value);
+
+  // Bracketed on the owner's explicit instruction, twice on 2026-08-28: "just add a bracket".
+  // The brackets are applied HERE, not stored in the hint data, so the data file stays a clean list
+  // of place names and this stays the only place that decides how a hint is presented.
+  const bracketed = hint ? `(${hint})` : null;
+
+  if (!needsFullName) {
+    // The description repeats the full name ONLY when the title is not already it — a second line
+    // saying the same words twice reads as a bug. So an unshortened title's line is the hint alone.
+    return bracketed && bracketed.length <= WHATSAPP_ROW_DESCRIPTION_MAX
+      ? { description: bracketed, id, title }
+      : { id, title };
+  }
+
+  const both = `${fullName} ${bracketed ?? ""}`;
+  const description =
+    bracketed && both.length <= WHATSAPP_ROW_DESCRIPTION_MAX
+      ? both
+      : fullName.slice(0, WHATSAPP_ROW_DESCRIPTION_MAX);
+  return { description, id, title };
 }
 
 // ── Question 1 — what are you applying for? ──────────────────────────────────────────────────────
@@ -284,7 +321,10 @@ export function regionMenu(): ClassifyMenu {
     body: "Which region would you like to work in?",
     buttonLabel: "Choose a region",
     rows: [
-      ...candidateRegionCodes.map((code) => rowFor("region", code, candidateRegionLabels[code])),
+      // The second line is what makes "Delta (1)" answerable by someone who has never worked here.
+      ...candidateRegionCodes.map((code) =>
+        rowFor("region", code, candidateRegionLabels[code], undefined, regionPlaceHint(code)),
+      ),
       // Worded "not listed" rather than "Other" on purpose: `OT` is already a real selling region
       // labelled "Others", and two rows reading Other/Others would be a coin flip for the applicant.
       rowFor("region", OTHER_ROW_VALUE, "My region is not listed"),
@@ -317,7 +357,7 @@ export function areaMenu(regionCode: CandidateRegionCode, areaNames: readonly st
     .map((name) => name.trim())
     .filter((name) => name.length > 0)
     .slice(0, WHATSAPP_LIST_MAX_ROWS - 1)
-    .map((name) => rowFor("area", name, name, LONG_AREA_TITLES[name]));
+    .map((name) => rowFor("area", name, name, LONG_AREA_TITLES[name], areaPlaceHint(name)));
   rows.push(rowFor("area", OTHER_ROW_VALUE, "My area is not listed"));
 
   return {

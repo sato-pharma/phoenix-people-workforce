@@ -25,7 +25,6 @@ import type {
 
 export type PermissionLookup = Partial<Record<`${PermissionResource}:${PermissionAction}`, boolean>>;
 type PermissionLookupKey = keyof PermissionLookup;
-export type ModuleIdLookup = readonly string[] | null | undefined;
 
 /**
  * Roles that keep the FLAT sidebar look built for the SFE Manager on 2026-08-02 (PR #1625):
@@ -52,9 +51,9 @@ export function usesFlatSidebar(role?: PhoenixRole) {
 
 /**
  * Resolve an item's DISPLAYED label for `role` — the per-role override from `labelByRole` if one
- * is set for this role, else the item's own canonical `label`. `moduleId` is derived from the
+ * is set for this role, else the item's own canonical `label`. The canonical label is what
  * canonical label alone, at config-build time (see `defaultModuleId` in system-navigation.ts), so
- * this never fragments one item into several moduleIds across roles.
+ * search and the command palette use, so a per-role override never fragments an item.
  */
 function resolveItemLabel(item: NavigationSectionItem, role?: PhoenixRole): string {
   const override = role && item.labelByRole?.[role];
@@ -86,11 +85,6 @@ export function roleNotExcluded(role: PhoenixRole | undefined, excludedRoles?: r
   return !role || !excludedRoles.includes(role);
 }
 
-export function moduleIdAllowed(moduleIds: ModuleIdLookup, item: NavigationSectionItem) {
-  if (!moduleIds) return true;
-  return moduleIds.includes(item.moduleId);
-}
-
 // Some hrefs are intentionally listed in more than one section with mutually-exclusive
 // role/excludedRoles gates (e.g. Organogram: CEO-only in Command Center, everyone-else
 // in People Management) so exactly one copy is visible to any given role. The system
@@ -116,7 +110,6 @@ export function getSections(
   mode: NavigationMode,
   lookup: PermissionLookup,
   role?: PhoenixRole,
-  moduleIds?: ModuleIdLookup,
   isSystemAdministratorWorkspace = false,
 ): NavigationSection[] {
   // The system-administrator workspace bypasses permission/role gating so Super Admin can reach
@@ -140,14 +133,13 @@ export function getSections(
             (item) =>
               permissionAllowed(lookup, item.permissions) &&
               roleAllowed(role, item.roles) &&
-              moduleIdAllowed(moduleIds, item) &&
               roleNotExcluded(role, item.excludedRoles),
           ),
         }))
         .filter((section) => section.items.length > 0);
 
   // Per-role item label overrides (`labelByRole`), resolved once here so every downstream
-  // consumer of getSections — sidebar, search, command palette, Modules Control catalog — agrees
+  // consumer of getSections — sidebar, search and the command palette — agrees
   // on what this role calls the item. Applied to the already-gated set: an item hidden from a
   // role never needs its label resolved for that role.
   const relabelled = gated.map((section) => ({
@@ -164,28 +156,8 @@ export function getSections(
     ? relabelled.map((section) => ({ ...section, label: "" }))
     : relabelled;
 
-  // When an explicit, ordered module list is supplied (a Modules Control assignment
-  // for this user/role/position/line), honor that order so admins can curate BOTH
-  // which items appear AND the sequence — items within a section, and the sections
-  // themselves (a section sorts by its earliest-ranked item). Without an assignment
-  // (moduleIds null/empty) the natural config order is preserved for everyone else.
   if (isSystemAdministratorWorkspace) {
     return visible.filter((section) => section.items.length > 0);
-  }
-
-  if (Array.isArray(moduleIds) && moduleIds.length > 0) {
-    const orderRank = new Map(moduleIds.map((moduleId, index) => [moduleId, index] as const));
-    const rankOf = (item: NavigationSectionItem) =>
-      orderRank.get(item.moduleId) ?? Number.MAX_SAFE_INTEGER;
-    return visible
-      .map((section) => ({
-        ...section,
-        items: [...section.items].sort((left, right) => rankOf(left) - rankOf(right)),
-      }))
-      .sort(
-        (left, right) =>
-          Math.min(...left.items.map(rankOf)) - Math.min(...right.items.map(rankOf)),
-      );
   }
 
   return visible;

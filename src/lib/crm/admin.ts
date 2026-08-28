@@ -136,14 +136,140 @@ export async function getUnmappedCrmIdentities(): Promise<UnmappedCrmIdentityRow
     .sort((a, b) => b.visitCount - a.visitCount);
 }
 
+/** One visit row as the pre-hire mapping check reads it: the record's own CRM label and its date. */
+export type MappingCandidateRow = { label: string | null; visitDate: string };
+
+/** What a refused mapping would have credited — enough to tell the admin exactly what is wrong. */
+export type PreHireMappingConflict = { count: number; earliest: string; latest: string };
+
+/**
+ * PRE-HIRE MAPPING GUARD — the pure decision core, split out so it is unit-testable without
+ * mocking Supabase (same reasoning as selectIdentitiesToPreserve in sync.ts).
+ *
+ * WHY THIS LIVES AT SAVE TIME AND NOT IN THE RESOLVER. resolveEmployeeAttribution's tier 1 is
+ * deliberately NOT guarded by the employment span — an explicit admin mapping is the intended way
+ * to say "this slot's history belongs to this person", including for historic rows, and it is the
+ * only route by which a blocked row can ever be reassigned to whoever really made it. Guarding it
+ * there would let a roster date veto the very correction an admin makes in response to the guard's
+ * own alert, leaving those rows permanently unfixable. tests/crm-pre-hire-attribution.test.ts
+ * section (J) pins that behaviour; this guard must not change it.
+ *
+ * So the fix is to make the bad mapping impossible to CREATE rather than to override it afterwards.
+ *
+ * THE INCIDENT (production, 2026-08-28). Three CRM accounts had been mapped this way — slots 1391,
+ * 1399 and 1102 — and between them credited 1,373 visits to people who had not yet joined, the
+ * largest being 1,136 real doctor calls filed under a rep who started 170 days after the earliest
+ * of them. Each was an account handed over from a leaver, which iReports360 relabels to the new
+ * holder, so the screen showed the new person's own name against every one of those rows and there
+ * was nothing on it to suggest the mapping was wrong.
+ *
+ * LABEL SCOPING MIRRORS THE RESOLVER, NOT THE STAMP. The two differ on one case: tier 1 credits a
+ * row that carries NO label at all (`!recordLabel`), while stampUnmappedVisitRows requires an exact
+ * label match and skips it. This counts the resolver's superset, because a refusal must cover every
+ * row the mapping would eventually credit — not merely the ones stamped the moment it is saved.
+ *
+ * A missing hire date never refuses anything: an unknown start is not evidence, exactly as
+ * isAttributableOn treats it.
+ */
+export function findPreHireMappingConflict(
+  rows: readonly MappingCandidateRow[],
+  input: { decisionLabel: string | null; hireDate: string | null },
+): PreHireMappingConflict | null {
+  if (!input.hireDate) return null;
+  const hireDay = input.hireDate.slice(0, 10);
+
+  let count = 0;
+  let earliest: string | null = null;
+  let latest: string | null = null;
+  for (const row of rows) {
+    const day = row.visitDate?.slice(0, 10);
+    if (!day || day >= hireDay) continue;
+    // Same three-way test as the resolver's tier 1: a decision with no label applies to the whole
+    // slot, and a row with no label of its own is claimed by whatever the slot is mapped to.
+    const rowLabel = normalizeCrmName(row.label);
+    if (input.decisionLabel && rowLabel && rowLabel !== input.decisionLabel) continue;
+    count += 1;
+    if (!earliest || day < earliest) earliest = day;
+    if (!latest || day > latest) latest = day;
+  }
+
+  if (count === 0 || !earliest || !latest) return null;
+  return { count, earliest, latest };
+}
+
+/** The sentence the admin sees. Written as prose naming the person and the dates, because the whole
+ *  failure mode is that the screen looked correct — "invalid mapping" would explain nothing. */
+export function preHireMappingRefusalMessage(input: {
+  conflict: PreHireMappingConflict;
+  employeeName: string;
+  hireDate: string;
+}): string {
+  const { count, earliest, latest } = input.conflict;
+  const visits = count === 1 ? "1 visit" : `${count} visits`;
+  const dates = earliest === latest ? `dated ${earliest}` : `dated between ${earliest} and ${latest}`;
+  return (
+    `${input.employeeName} joined on ${input.hireDate.slice(0, 10)}, but this CRM account carries ` +
+    `${visits} ${dates} — before that date. Mapping it would credit work that cannot be theirs. ` +
+    `This is what a handed-over CRM account looks like: iReports360 rewrites the previous holder's ` +
+    `rows with the new holder's name, so the account shows one name across its whole history. ` +
+    `Map the account to the person who actually held it, or correct the hiring date on the ` +
+    `employee record if that is what is wrong.`
+  );
+}
+
+/**
+ * Every visit row on one CRM account dated before `hireDate`, in the shape the pure check above
+ * reads. The date filter is pushed into SQL (it removes almost everything); the label test stays in
+ * JS because the vendor emits the same label with inconsistent internal whitespace, so a SQL
+ * equality filter would silently skip real rows — the same reason stampUnmappedVisitRows pages.
+ *
+ * Both roles are read: a mapping resolves the agent AND the double-visit partner, so a refusal that
+ * only looked at agent_crm_id would wave through the identical mistake made on a double visit.
+ */
+async function loadPreHireMappingCandidates(
+  supabase: ReturnType<typeof getSupabaseAdmin>,
+  input: { crmId: number; hireDate: string },
+): Promise<MappingCandidateRow[]> {
+  const rows: MappingCandidateRow[] = [];
+  const columns = [
+    { idColumn: "agent_crm_id", nameColumn: "agent_name" },
+    { idColumn: "double_crm_id", nameColumn: "double_name" },
+  ] as const;
+
+  for (const { idColumn, nameColumn } of columns) {
+    const pageSize = 1000;
+    let cursor: string | null = null;
+    for (;;) {
+      let query = supabase
+        .from(visitsTable)
+        .select(`id, visit_date, ${nameColumn}`)
+        .eq(idColumn, input.crmId)
+        .lt("visit_date", input.hireDate.slice(0, 10))
+        .order("id", { ascending: true })
+        .limit(pageSize);
+      if (cursor) query = query.gt("id", cursor);
+      const { data, error } = await query;
+      if (error) throw new Error(error.message);
+      const page = (data ?? []) as unknown as Array<{ id: string } & Record<string, string | null>>;
+      if (page.length === 0) break;
+      for (const row of page) rows.push({ label: row[nameColumn], visitDate: String(row.visit_date ?? "") });
+      if (page.length < pageSize) break;
+      cursor = page[page.length - 1].id;
+    }
+  }
+  return rows;
+}
+
 /**
  * Records an admin's decision for one unmapped CRM identity:
  * - "resigned": stores the decision only — the identity drops out of getUnmappedCrmIdentities,
  *   but its ireports360_visits rows stay unmapped forever, on purpose.
  * - "mapped": validates mappedHrId against the real employee roster (by canonical HR ID, not a
- *   raw string compare — casing/symbols vary), stamps it onto every currently-unmapped visit
- *   row for this crm_id immediately (so the Visit Log tab reflects it right away), and records
- *   it so future syncs resolve this identity too (see resolveEmployeeHrId's manual-override tier).
+ *   raw string compare — casing/symbols vary), REFUSES the mapping outright if it would credit
+ *   visits dated before that person joined (see findPreHireMappingConflict), stamps it onto every
+ *   currently-unmapped visit row for this crm_id immediately (so the Visit Log tab reflects it
+ *   right away), and records it so future syncs resolve this identity too (see
+ *   resolveEmployeeHrId's manual-override tier).
  * - "pending": explicitly resets to the default, no-decision state.
  */
 export async function setUnmappedCrmIdentityResolution(input: {
@@ -166,6 +292,26 @@ export async function setUnmappedCrmIdentityResolution(input: {
     if (!match) throw new Error(`No employee found with HR ID "${typed}".`);
     resolvedHrId = match.hrId;
     resolvedName = match.fullName;
+
+    // Refuse before anything is written. The upsert below and the stamp after it are separate
+    // statements with no transaction around them, so a check placed later could leave the decision
+    // recorded while the stamp was skipped — the half-applied state that is hardest to spot from
+    // the screen, because the mapping would look saved.
+    if (match.hireDate) {
+      const candidates = await loadPreHireMappingCandidates(supabase, {
+        crmId: input.crmId,
+        hireDate: match.hireDate,
+      });
+      const conflict = findPreHireMappingConflict(candidates, {
+        decisionLabel: normalizeCrmName(input.crmName),
+        hireDate: match.hireDate,
+      });
+      if (conflict) {
+        throw new Error(
+          preHireMappingRefusalMessage({ conflict, employeeName: match.fullName, hireDate: match.hireDate }),
+        );
+      }
+    }
   }
 
   const { error: upsertError } = await supabase.from(resolutionsTable).upsert(

@@ -12,14 +12,29 @@
 //   Giza         Beni Suef, Fayoum, Giza - Giza Centers, Dokki, Haram, Helwan-Maadi, Imbaba, October
 //   Cairo        Cairo East 1/2, Cairo West, Down town, Heliopolis, Nasr City
 //   Alex-BHR     Alex Center/East/West, Behira 1/2
-//   Delta (1)    Gharbia 1/2, Kafr El-Sheikh 1/2, Menoufia 1/2, Qalubeya
-//   Delta (2)    Dakahlia 1/2/3, Port said - Domiat, Sharkia 1/2
-//   Others       Aswan, Hurgada, Ismailia, Luxor, New Valley, North/South Sinai, Red Sea, Suez
+//   Delta (1)    Gharbia 1/2, Kafr El-Sheikh 1/2, Menoufia 1/2
+//   Delta (2)    Dakahlia 1/2/3, Port said - Domiat
+//   Delta (3)    Qalubeya, Sharkia 1/2, Suez, Ismailia
+//   Others       Aswan, Hurgada, Luxor, New Valley, North/South Sinai, Red Sea
 //
 // Owner decision 2026-08-24, asked directly: use the COMPANY regions, not plain geography. So
 // Beni Suef and Fayoum are Giza here and Aswan and Luxor are Others, exactly as they are everywhere
 // else in Phoenix — one vocabulary across the whole app beats a screen that quietly disagrees with
 // the Organogram about where Fayoum is.
+
+// DELTA (3) — the GOVERNORATES, 2026-08-28. A new Anti Infective district was opened — Qalubeya,
+// Sharkia 1/2, Suez and Ismailia — with a District Manager hired for 2026-09-01 and her reps still
+// to be recruited. The CODE joined the vocabulary below in the same day's work; this block is about
+// the MAP further down, which is the half a recruiter actually feels. A CV says "Sharkia", never
+// "Delta (3)", so until these five governorates were re-filed, filtering the pool on her district
+// returned nothing while her own candidates sat under Delta (1), Delta (2) and Others.
+//
+// This file moves FIRST, on purpose. The matching change to the SALES geography — repointing those
+// areas in au.line_area_map and au.canonical_areas — must wait until the August closing has been
+// published, because the closing resolves each area's region using TODAY's map (see AGENTS.md §4),
+// so moving them early would split a month of Anti Infective sales into a district that did not
+// own them. Recruitment touches neither sales nor the closing, so it is safe to be correct here
+// before the sales side catches up. Until it does, the two deliberately disagree about Sharkia.
 //
 // Held as a static reviewed map rather than a live query: the areas are named for SELLING territory
 // ("Dokki - Mohandseen - Bolak"), not for governorates, so deriving this at runtime would mean
@@ -95,25 +110,31 @@ const governorateRegions: Record<string, CandidateRegionCode> = {
   menoufia: "D1",
   monufia: "D1",
   menofia: "D1",
-  qalyubia: "D1",
-  "al qalyubia": "D1",
-  "el qalyubia": "D1",
-  qalubeya: "D1",
-  qaliubiya: "D1",
-  banha: "D1",
   // Delta (2)
   dakahlia: "D2",
   "el dakahlia": "D2",
   mansoura: "D2",
-  sharqia: "D2",
-  sharkia: "D2",
-  "el sharqia": "D2",
-  zagazig: "D2",
   damietta: "D2",
   domiat: "D2",
   dumyat: "D2",
   "port said": "D2",
   portsaid: "D2",
+  // Delta (3) — Qalubeya, Sharkia 1/2, Suez, Ismailia (district opened 2026-08-28)
+  qalyubia: "D3",
+  "al qalyubia": "D3",
+  "el qalyubia": "D3",
+  qalubeya: "D3",
+  qaliubiya: "D3",
+  banha: "D3",
+  sharqia: "D3",
+  sharkia: "D3",
+  "el sharqia": "D3",
+  zagazig: "D3",
+  suez: "D3",
+  "el suez": "D3",
+  ismailia: "D3",
+  ismailiya: "D3",
+  "el ismailia": "D3",
   // Upper Egypt
   assiut: "UE",
   asyut: "UE",
@@ -132,9 +153,6 @@ const governorateRegions: Record<string, CandidateRegionCode> = {
   aswan: "OT",
   luxor: "OT",
   uqsur: "OT",
-  suez: "OT",
-  ismailia: "OT",
-  ismailiya: "OT",
   "red sea": "OT",
   hurghada: "OT",
   hurgada: "OT",
