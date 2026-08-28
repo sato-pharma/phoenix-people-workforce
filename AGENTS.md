@@ -630,6 +630,23 @@ Phoenix business rules, and the index line at its cliff is the wrong place for t
 
 **Browser and dev-auth**
 
+- **A MINIMIZED window makes every browser reading LIE — check `document.visibilityState` FIRST.**
+  When Chrome is minimized or occluded the tab reads `hidden`, and Chrome throttles `setTimeout` to
+  ~**1 per second** and stops `requestAnimationFrame` **entirely** (measured **0** frames, not slow
+  ones) and stops compositing, so `Page.captureScreenshot` times out. **Both** browser surfaces here
+  report `hidden` — the claude-in-chrome tab and the Claude Browser pane. On 2026-08-28 that produced
+  four false diagnoses on one page in one session: "998ms per mouse move" (the timer throttle — the
+  same drag ran in **5 ms** through a `MessageChannel` yield), "the drag freezes the browser"
+  (nothing froze; `Runtime.evaluate` answered instantly throughout), "it reproduces on production so
+  it predates the branch" (same artifact), and "the page never hydrates" (real reading, wrong cause —
+  one screenshot forced a frame and it hydrated). **dnd-kit cannot run at all** when hidden: it
+  measures droppables inside rAF, so every drop is a no-op. **Plain `.click()` and `MessageChannel`
+  yields still work**, so click-driven UI IS verifiable and drag-driven UI is NOT — a standing reason
+  to give any drag a click equivalent. Two companions: `javascript_tool` does **not await a returned
+  promise** (stash to `localStorage` and read in a second call — **not** to an attribute of `<html>`,
+  which React reverts), and the extension's **isolated world** cannot see the React fiber expandos,
+  so every fiber-based hydration probe returns 0 regardless of truth — judge hydration by behaviour.
+  `a-minimized-window-makes-every-browser-test-lie`
 - **Click by TEXT — blind coordinate clicks once fired a real production collection run.**
   `blind-coordinate-clicks-fired-a-production-collection-run`
 - **Dev login is `GET /api/dev-auth?role=`** — it is header-only and the Browser pane cannot use it.
