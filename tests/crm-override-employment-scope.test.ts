@@ -28,21 +28,34 @@ function employee(overrides: Partial<EmployeeDirectoryRow> & { hrId: string }): 
  * mapping. The dates inside their tenure are theirs; the dates outside stand aside and let the
  * automatic tiers find the other occupant by name.
  *
- * IT YIELDS, IT DOES NOT LOSE. Where no automatic tier can answer either, the override applies
- * after all — section (C) is that assertion and it is the one that keeps this safe. An override is
- * a human's hand-verified decision, so a roster date must be able to SUPERSEDE it with better
- * evidence but never to veto it into nothing: a mapping that saved successfully and then silently
- * did nothing would be a worse failure than the miscredit being fixed here, because it leaves the
- * admin no way to tell and no way to fix it. crm-post-exit-attribution (F) and
- * crm-pre-hire-attribution (J) pin that authority from the other side and both still pass unchanged.
+ * AND WHERE NO AUTOMATIC TIER CAN ANSWER EITHER, THE ROW IS REFUSED — not credited to the mapped
+ * person anyway. Section (C) is that assertion. This shipped the other way on the morning of
+ * 2026-08-28, as a fallback: the reasoning was that a human's hand-verified decision must never be
+ * vetoed into nothing by a roster date. The production data answered it the same day. At 09:34:57
+ * Cairo the hourly sync re-credited 40 rows to people who had already left — 27 August
+ * public-holiday markers landing on four leavers whose retired accounts no automatic tier could
+ * resolve — every one of them cleared by hand an hour earlier, and every one straight back.
  *
- * ONE CASE IS NEITHER: a tier that matched and was REFUSED (section B). That is positive evidence
- * that nobody eligible owns the row, so it stays a block rather than falling back on the override.
+ * The owner's rule, given that afternoon: "you will see when he is hired and when he is resigned,
+ * and his area and his line. If matches, then credit him. If not matches, leave him." A mapping
+ * names a PERSON, never a period. It cannot answer for a day they were not employed, and "nothing
+ * else can answer either" is not a reason to let it.
  *
- * Measured across every mapped override in production on 2026-08-28, agent and double side, exactly
- * one row sits outside its mapped person's span: slot 1536 -> B-164, one visit dated 2026-08-27, ten
- * days past that employee's last working day. Neither automatic tier resolves it, so it keeps the
- * override. NO existing attribution moves — this path exists for slot 1391 and the handovers after it.
+ * WHAT KEEPS THAT SAFE IS THAT A REFUSAL IS REPORTED, NOT DISCARDED. The decision does not vanish:
+ * the row comes back as a block naming the mapped person, so it is never silent, and
+ * preserveResolvedIdentities cannot quietly restore the stale hr id the mapping was correcting. The
+ * pre-hire end of the same risk is covered where it belongs — setUnmappedCrmIdentityResolution
+ * REFUSES such a mapping at save time, loudly, before anything is written. Between them an admin
+ * cannot save a mapping that silently does nothing, which was the real fear behind the fallback.
+ *
+ * ONE CASE IS SEPARATE: a tier that matched and was REFUSED (section B). It blocks on its OWN
+ * person — the more specific answer — rather than on the override's.
+ *
+ * Measured across every mapped override in production on 2026-08-28, agent and double side: this
+ * change moves 9 rows across 7 retired slots, every one a public-holiday or meeting marker on a
+ * name-stripped account, and 0 real doctor visits. The two large groups are untouched because an
+ * automatic tier already answers them — slot 1391's 28 rows resolve to Soad Atef by her own label,
+ * and slot 1399's 24 (19 of them real calls) to Mohamed Yasser by his.
  */
 export function runCrmOverrideEmploymentScopeTests() {
   const LABEL = "Soad.Atef ( Cairo East 1 / A )";
@@ -99,34 +112,36 @@ export function runCrmOverrideEmploymentScopeTests() {
   assert.equal(gap.blockedHrId, "AI-0003", "the refusal is reported, so the sync counts and alerts on it");
   assert.equal(isSilentAttribution(gap), false, "a gap date is a decision, not an absence of information");
 
-  // ── (C) With NOTHING to yield to, the override still applies ────────────────────────────────
+  // ── (C) With NOTHING to yield to, the override is REFUSED — it does not credit anyway ───────
   //
   // Same slot, but no second occupant on the roster at all. The date sits outside the mapped
-  // person's span and no automatic tier has anything to say, so the human's decision is the only
-  // evidence in existence and it stands. This is the assertion that stops the employment scope
-  // above from turning into a veto: without it an admin could save a mapping from the Unmapped
-  // Agents screen, see no error, and have it do nothing at all — the same authority that
-  // crm-post-exit-attribution (F) and crm-pre-hire-attribution (J) pin from the other side.
+  // person's span and no automatic tier has anything to say. The row is still not hers: a mapping
+  // names a person, not a period, and 07-20 is seven weeks after she left. THIS IS THE ASSERTION
+  // THAT WAS INVERTED — it read "B-85" for one morning, and the hourly sync used it to re-credit 40
+  // rows to leavers before the day was out.
   const leaverOnly = buildCrmIdentityMaps([leaver], mappedToLeaver);
   const orphaned = resolveEmployeeAttribution(1391, LABEL, leaverOnly, "2026-07-20");
   assert.equal(
     orphaned.hrId,
-    "B-85",
-    "no automatic tier can answer, so the admin's decision is not discarded — a mapping is " +
-      "superseded by better evidence, never defeated by the absence of any",
-  );
-  assert.equal(
-    orphaned.blockedHrId,
     null,
-    "and it is not a block: a block means somebody must decide this, and somebody already has",
+    "outside her employment the mapping cannot credit her, even with nothing else to answer",
   );
-  assert.equal(isSilentAttribution(orphaned), false, "an attributed row is never silent");
+  // Reported, not discarded — the difference between refusing a decision and losing it. A silent
+  // null lets preserveResolvedIdentities restore the stale hr id this mapping exists to correct.
+  assert.equal(orphaned.blockedHrId, "B-85", "the refusal names the person it refused");
+  assert.equal(isSilentAttribution(orphaned), false, "a refusal is a decision, not an absence of information");
+  assert.equal(
+    orphaned.blockedByOverride,
+    true,
+    "and it is flagged as the SETTLED kind of block — somebody already recorded who owns this slot, " +
+      "so it must not be counted as a row still needing an identity override",
+  );
 
   // And with no label on the record at all (check-ins carry a crm_id only), the same holds.
   assert.equal(
     resolveEmployeeHrId(1391, null, leaverOnly, "2026-07-20"),
-    "B-85",
-    "a label-less record falls back on the override too — check-ins must keep their GPS overlay",
+    null,
+    "a label-less record is refused too — a check-in seven weeks past her exit is not her check-in",
   );
 
   // ── (D) An override with no employment dates behaves exactly as before ──────────────────────

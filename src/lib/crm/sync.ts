@@ -615,6 +615,13 @@ export async function syncIReports360Visits(input: {
       const visitDay = (visit.visitDate ?? "").slice(0, 10) || null;
       const agent = resolveEmployeeAttribution(visit.agentID, visit.agentName, maps, visitDay);
       if (!agent.blockedHrId) continue;
+      // A block from a REFUSED OVERRIDE is deliberately not counted here. Both counters mean "these
+      // rows need an identity override recorded", and drive the degraded digest below; a slot that
+      // already HAS one, refused only because this date falls outside that person's employment, has
+      // nothing left for anyone to do. Counting it would mark every sync degraded forever over rows
+      // no action can clear. Measured in production 2026-08-28: 9 such rows across 7 retired slots,
+      // every one a public-holiday or meeting marker on a name-stripped account, 0 real visits.
+      if (agent.blockedByOverride) continue;
       if (blockReasonFor(agent.blockedHrId, visitDay, maps) === "pre_hire") blockedPreHireAttributions += 1;
       else blockedPostExitAttributions += 1;
     }
