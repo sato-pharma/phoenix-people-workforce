@@ -527,6 +527,26 @@ production-ops guidance. They stay in the index.
   `railway-stdin-bom-trap`
 - **`railway ssh` JOINS argv and lands as ROOT** - the command you think you are quoting is not the
   command that runs. `railway-ssh-joins-argv-and-lands-as-root`
+- **`railway service source connect -e staging` REPOINTS PRODUCTION.** The git source is a
+  **service-level** setting shared by every environment of that service; `-e` only picks which
+  service instance to *look up*, which the CLI's own help says outright - *"Environment to use for
+  **resolving the service**"*. It does **not** behave like `railway variables -e staging`, and
+  assuming it did put an unmerged feature branch on the production domain at full traffic on
+  2026-08-28: one command, and `phoenix-hr.satopharma.com/api/healthz` returned
+  `revision: 24f736bc`. Staging served the identical SHA - **both environments moved together, and
+  the revert moved both back**, which is how the service-level scope was confirmed from the other
+  direction. **So a branch CANNOT be deployed to staging without also deploying it to production**,
+  and §7's "smoke-test on staging before a risky production deploy" cannot be done by repointing a
+  branch - that needs a separate Railway service. The damage is not the feature: that branch was
+  green on all four required checks and inert (0 rows in `sidebar_module_assignments`, all 16 roles
+  200). The damage is that production silently **rolled back two commits merged minutes earlier**
+  (#2508, #2509 - recruitment fixes). **A green branch is still the WRONG code when it is older than
+  `main`, and `healthz` saying `status: ok` hides that completely - read the `revision`.** One more
+  trap on the way out: `railway status --environment X --json` returns the whole project, so a
+  reader taking `environments.edges[0]` prints the same environment whatever `-e` says - staging and
+  production printed identical lines, which read as a parser bug and was nearly dismissed as one.
+  Resolve by `environments.edges[].node.name` and print the name.
+  `railway-service-source-connect-is-not-environment-scoped`
 
 **Cron and secrets**
 
