@@ -663,6 +663,7 @@ import { runSosBackfillEmptyBrickSentinelTests } from "./sos-backfill-empty-bric
 import { runSosSeatAttributionPeriodTests } from "./sos-seat-attribution-period.test.ts";
 import { runMonthlyClosingLockTests } from "./monthly-closing-lock.test.ts";
 import { runClosingPeriodGateTests } from "./closing-period-gate.test.ts";
+import { runDesignTokensContractTests } from "./design-tokens-contract.test.ts";
 import { runEmployeeTemplateTeamDropdownTests } from "./employee-template-team-dropdown.test.ts";
 import { runSosMappingIntegrityTests } from "./sos-mapping-integrity.test.ts";
 import { runSosIngestionNoSilentZeroTests } from "./sos-ingestion-no-silent-zero.test.ts";
@@ -2004,6 +2005,7 @@ await runTest("SoS backfill matches the empty-string brick sentinel, not just NU
 await runTest("SoS seat attribution (today's wiring, departed reps keep their credit)", runSosSeatAttributionPeriodTests);
 await runTest('Monthly closing lock (database triggers, not a disabled button)', runMonthlyClosingLockTests);
 await runTest('CLOSING GOLDEN RULE (a month is never published during that month, Cairo boundary)', runClosingPeriodGateTests);
+await runTest('design tokens contract (--phx- prefix, no globals.css collision, full dark coverage)', runDesignTokensContractTests);
 await runTest('SoS mapping integrity (alias edit replaces, exact customer key detects conflicts)', runSosMappingIntegrityTests);
 await runTest('SoS ingestion (an unreadable cell is rejected, never silently zeroed)', runSosIngestionNoSilentZeroTests);
 await runTest('analytics area scope v2 (reconciliation refuses area-scoped viewers, one active alias target)', runAnalyticsAreaScopeV2Tests);
