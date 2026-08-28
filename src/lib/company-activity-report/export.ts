@@ -1,8 +1,12 @@
-// Company Activity Report — premium XLSX export. Styling follows the established Phoenix export
-// identity (see src/lib/business-review/excel-export.ts, src/lib/attendance/monthly-summary-export.ts):
-// orange title band, slate column headers, hairline borders, zebra striping, banded signal cells.
-// Owner instruction, 2026-08-28: this workbook reaches the CEO, so it must read as premium and
-// professional — not merely correct.
+// Company Activity Report — premium XLSX export. This report reaches the CEO, Super Admin and SFE
+// Manager, so it follows the SAME "premium" identity as src/lib/sales/weekly/summary-workbook.ts
+// (the Weekly Summarized Report) — the one export in this codebase the owner iterated on until it
+// stopped reading as "decorated" and started reading as "designed": a dark-ink masthead instead of
+// a bright solid-color band, one narrow warm palette instead of a rainbow of saturated semantic
+// hues, hidden gridlines on every sheet, and zeros printed as an en-dash rather than a literal "0"
+// (per that file's own comment: "the loudest amateur tell in a report"). An earlier version of this
+// file instead matched src/lib/business-review/excel-export.ts's idiom — that is the routine
+// admin-table identity, a distinct and plainer tier this report does not belong to.
 //
 // Three sheets: Executive Summary (company-wide KPIs, aggregated verbatim from the same per-employee
 // rows the table below shows — so the headline numbers can never drift from the detail), Daily Detail
@@ -20,13 +24,30 @@ import type {
   CompanyActivityReport,
 } from "@/lib/company-activity-report/types";
 
-const ORANGE = "FFC2410C";
-const SLATE = "FF0F172A";
-const SOFT = "FFE2E8F0";
-const HAIR = "FFF1F5F9";
-const MUTED = "FF475569";
-const ZEBRA = "FFF8FAFC";
-const WHITE = "FFFFFFFF";
+// ── Palette ───────────────────────────────────────────────────────────────────
+// One warm family, deliberately narrow — the same argb values summary-workbook.ts uses, so a reader
+// who has seen one premium Phoenix export recognizes the other. ONE dark anchor (INK), one accent
+// used sparingly (ACCENT/ACCENT_TEXT), one good/bad pair for the few places a reader is genuinely
+// asking a yes/no question (GOOD/CLAY). Everything else is a quiet warm neutral, never a saturated
+// hue — a column of eleven different pastel outcome colors is exactly the "rainbow" the reference
+// file's own history describes rejecting.
+const INK = "FF14110F"; // near-black, warm — masthead and the frozen header row ONLY
+const INK_SOFT = "FF3D3733"; // body text
+const MUTED_WARM = "FF9A8F86"; // secondary / de-emphasized text on cream
+const MUTED_ON_INK = "FFB9AFA5"; // secondary text on the dark masthead
+const CREAM = "FFFDFBF7"; // page ground — never plain white
+const CREAM_ALT = "FFF9F5EF"; // alternating row tint, barely there
+const BONE = "FFEFE7DB"; // warm light ground for a cell that needs to stand off the page
+const HAIRLINE = "FFE4DBCE"; // the only rule colour used inside tables
+const ACCENT = "FFF97316"; // Phoenix orange — legible ON the dark masthead only
+const ACCENT_TEXT = "FFC2410C"; // the same accent, deepened for legibility on a light ground
+const CLAY = "FF7C2D12"; // the one real alarm colour — a working day with nothing recorded
+const GOOD = "FF15803D"; // the one positive signal — a clean employee row, zero flags
+const WARN = "FFB45309"; // between GOOD and CLAY — worth a glance, not yet an alarm
+
+/** Zeros print as an en-dash. A grid of literal 0s is the loudest amateur tell in a report — see
+ * summary-workbook.ts's own UNITS_DASH_FMT, which this mirrors exactly. */
+const COUNT_FMT = '#,##0;-#,##0;"–"';
 
 /** Every value CompanyActivityDayOutcome can take, listed by hand (not derived — the type is
  * erased at runtime) so a registered test can assert OUTCOME_LABEL/OUTCOME_FILL below stay
@@ -63,111 +84,133 @@ export const OUTCOME_LABEL: Record<CompanyActivityDayOutcome, string> = {
   future: "Future",
 };
 
+/** Four tiers, not eleven hues. Presence (worked/visited) reads as quiet ink-on-bone — no need to
+ * out-shout a "did the right thing" day. Settled/informational states (leave already resolved,
+ * CRM-observed leave, non-working days, no-signal/outage context) sit even quieter, on cream. The
+ * one thing genuinely undecided (a pending leave request) gets WARN. The one genuine alarm on a
+ * working day — nothing recorded at all — gets CLAY, same as summary-workbook.ts's "short of the
+ * number" colour. Conflict (below) overrides all of these regardless of outcome. */
 export const OUTCOME_FILL: Record<CompanyActivityDayOutcome, string> = {
-  office_present: "FFDCFCE7",
-  crm_field_visit: "FFDBEAFE",
-  crm_leave: "FFE0F2FE",
-  leave_approved: "FFE0F2FE",
-  leave_pending: "FFFEF9C3",
-  device_outage: "FFF1F5F9",
-  no_signal: "FFF1F5F9",
-  no_entry: "FFFEE2E2",
-  weekly_off: "FFF8FAFC",
-  holiday: "FFF8FAFC",
-  future: "FFFFFFFF",
+  office_present: BONE,
+  crm_field_visit: BONE,
+  crm_leave: CREAM_ALT,
+  leave_approved: CREAM_ALT,
+  leave_pending: BONE,
+  device_outage: CREAM_ALT,
+  no_signal: CREAM_ALT,
+  no_entry: "FFF3E0D6",
+  weekly_off: CREAM_ALT,
+  holiday: CREAM_ALT,
+  future: CREAM_ALT,
 };
 
-// The x-700 font partner for each OUTCOME_FILL x-100/50 fill — same Tailwind shade-pairing
-// convention as severityFont/achFont elsewhere in these exports, so the Outcome cell in Daily
-// Detail reads as a real badge (colored fill + matching bold text), not a fill with plain text.
+// The text partner for each OUTCOME_FILL — a colored fill with matching text reads as a real badge
+// rather than a fill with plain body text sitting on top of it.
 export const OUTCOME_FONT: Record<CompanyActivityDayOutcome, string> = {
-  office_present: "FF047857",
-  crm_field_visit: "FF1D4ED8",
-  crm_leave: "FF0369A1",
-  leave_approved: "FF0369A1",
-  leave_pending: "FFA16207",
-  device_outage: MUTED,
-  no_signal: MUTED,
-  no_entry: "FFBE123C",
-  weekly_off: MUTED,
-  holiday: MUTED,
-  future: MUTED,
+  office_present: INK_SOFT,
+  crm_field_visit: INK_SOFT,
+  crm_leave: MUTED_WARM,
+  leave_approved: MUTED_WARM,
+  leave_pending: WARN,
+  device_outage: MUTED_WARM,
+  no_signal: MUTED_WARM,
+  no_entry: CLAY,
+  weekly_off: MUTED_WARM,
+  holiday: MUTED_WARM,
+  future: MUTED_WARM,
 };
 
 /** Overrides the outcome's own fill — a conflict needs to stand out regardless of which outcome
- * won the day. Deliberately violet, not a shade of red: red is already this workbook's "count of
- * a bad thing" color (no_entry, severity banding), and a conflict is a different KIND of signal —
- * a data disagreement to review, not a failure — so it gets its own hue rather than one close
- * enough to no_entry's FFFEE2E2 to blur together on a quick read (owner feedback, 2026-08-28). */
-const CONFLICT_FILL = "FFEDE9FE";
-const CONFLICT_FONT = "FF6D28D9";
+ * won the day. It gets the workbook's own accent rather than a shade close enough to no_entry's
+ * CLAY to blur together on a quick read: a conflict is a data disagreement to review, not the same
+ * kind of failure as a silent gap (owner feedback, 2026-08-28). */
+const CONFLICT_FILL = "FFFDE7D3";
+const CONFLICT_FONT = ACCENT_TEXT;
 
 /** Severity banding for this report's own accuracy signals (No Entry / No Signal / Conflict day
- * counts) — same visual language as the achievement banding used elsewhere in the product, tuned
- * to "fewer is better" and to a PER-EMPLOYEE count, which is the scale at which these numbers are
- * actually actionable (see the comment on the Executive Summary KPI block below for why the
- * company-wide totals are deliberately NOT banded the same way). */
+ * counts) — the same GOOD/WARN/CLAY triad used everywhere else in this file, tuned to "fewer is
+ * better" and to a PER-EMPLOYEE count, which is the scale at which these numbers are actually
+ * actionable (see the comment on the Executive Summary KPI block below for why the company-wide
+ * totals are deliberately NOT banded the same way). */
 function severityFill(count: number): string {
-  if (count <= 0) return "FFD1FAE5"; // emerald — clean
-  if (count <= 2) return "FFFEF3C7"; // amber
-  return "FFFFE4E6"; // red
+  if (count <= 0) return "FFE7EFE0"; // warm sage — clean
+  if (count <= 2) return "FFF6EAD6"; // warm cream-amber
+  return "FFF3E0D6"; // warm blush-clay
 }
 function severityFont(count: number): string {
-  if (count <= 0) return "FF047857";
-  if (count <= 2) return "FFB45309";
-  return "FFBE123C";
+  if (count <= 0) return GOOD;
+  if (count <= 2) return WARN;
+  return CLAY;
 }
 
-/** Three-row banner shared by every sheet: bold white-on-orange title, italic muted subtitle, and
- * an optional bold-orange note — matches src/lib/business-review/excel-export.ts's titleBand
- * exactly so every export in the product reads as one visual family. Never writes row 4 — the
- * export route reserves that row on the data sheets to stamp the caller's active filter. */
-function titleBand(sheet: ExcelJS.Worksheet, ncols: number, title: string, subtitle: string, note?: string) {
+const rule = (color: string, style: "thin" | "medium" = "thin") => ({ color: { argb: color }, style });
+
+/**
+ * The sheet's masthead: a dark ink band across rows 1-3 — title, context, and a bottom accent rule
+ * carrying the note — mirroring summary-workbook.ts's premiumMasthead. Deliberately NOT a bright
+ * solid-orange band: that read as a colored banner slapped on a spreadsheet, not a designed cover.
+ *
+ * Fixed at exactly 3 rows on purpose: app/api/company-activity-report/export/route.ts stamps the
+ * active-filter note into row 4 as a blank spacer right after this masthead, and only when that
+ * cell is still empty. Growing this masthead past row 3 would silently swallow that stamp.
+ */
+function premiumMasthead(sheet: ExcelJS.Worksheet, ncols: number, title: string, subtitle: string, note?: string) {
+  const band = (row: number, height: number) => {
+    for (let c = 1; c <= ncols; c += 1) {
+      sheet.getCell(row, c).fill = { type: "pattern", pattern: "solid", fgColor: { argb: INK } };
+    }
+    sheet.getRow(row).height = height;
+  };
+
+  band(1, 30);
   sheet.mergeCells(1, 1, 1, ncols);
   const t = sheet.getCell(1, 1);
   t.value = title;
-  t.fill = { type: "pattern", pattern: "solid", fgColor: { argb: ORANGE } };
-  t.font = { bold: true, color: { argb: WHITE }, size: 16 };
+  t.font = { bold: true, color: { argb: "FFFFFFFF" }, name: "Calibri Light", size: 18 };
   t.alignment = { horizontal: "center", vertical: "middle" };
-  sheet.getRow(1).height = 32;
 
+  band(2, 16);
   sheet.mergeCells(2, 1, 2, ncols);
   const s = sheet.getCell(2, 1);
   s.value = subtitle;
-  s.font = { color: { argb: MUTED }, italic: true, size: 10 };
+  s.font = { color: { argb: MUTED_ON_INK }, italic: true, size: 10 };
   s.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
-  sheet.getRow(2).height = 18;
 
+  band(3, note ? 22 : 8);
   if (note) {
     sheet.mergeCells(3, 1, 3, ncols);
     const n = sheet.getCell(3, 1);
     n.value = note;
-    n.font = { bold: true, color: { argb: ORANGE }, italic: true, size: 9 };
+    n.font = { bold: true, color: { argb: ACCENT }, italic: true, size: 9 };
     n.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
-    sheet.getRow(3).height = 20;
+  }
+  for (let c = 1; c <= ncols; c += 1) {
+    sheet.getCell(3, c).border = { bottom: rule(ACCENT, "medium") };
   }
 }
 
-/** Slate header row with a frozen pane and an autoFilter anchored to it — matches
- * business-review's headerRow() exactly. Column widths are set separately (see autoFitColumns)
- * because this report auto-fits from actual content rather than guessing fixed widths. */
+/** Ink header row with a frozen pane, hidden gridlines, and an autoFilter anchored to it. Column
+ * widths are set separately (see autoFitColumns) because this report auto-fits from actual content
+ * rather than guessing fixed widths. */
 function tableHeaderRow(sheet: ExcelJS.Worksheet, rowIdx: number, headers: string[]) {
   const row = sheet.getRow(rowIdx);
   headers.forEach((label, i) => {
     const cell = row.getCell(i + 1);
     cell.value = label;
-    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: SLATE } };
-    cell.font = { bold: true, color: { argb: WHITE }, size: 10 };
+    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: INK } };
+    cell.font = { bold: true, color: { argb: "FFFFFFFF" }, size: 10 };
     cell.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
     cell.border = {
-      top: { style: "thin", color: { argb: SOFT } },
-      left: { style: "thin", color: { argb: SOFT } },
-      right: { style: "thin", color: { argb: SOFT } },
-      bottom: { style: "thin", color: { argb: SOFT } },
+      top: rule(INK),
+      left: rule(INK),
+      right: rule(INK),
+      bottom: rule(ACCENT, "medium"),
     };
   });
   row.height = 28;
-  sheet.views = [{ state: "frozen", ySplit: rowIdx }];
+  // Hidden gridlines everywhere — a visible grey Excel grid behind a colored report is what makes
+  // it read as a raw spreadsheet rather than a document, whatever the cell colors say.
+  sheet.views = [{ state: "frozen", ySplit: rowIdx, showGridLines: false }];
   sheet.autoFilter = { from: { row: rowIdx, column: 1 }, to: { row: rowIdx, column: headers.length } };
 }
 
@@ -211,12 +254,9 @@ function visitSummaryText(day: CompanyActivityDayRow): string {
  * blank row 5, frozen header row 6, zebra-striped rows with specific columns banded, autoWidth,
  * autoFilter.
  *
- * Zebra is the ROW's base fill; `bandColumns` overrides specific cells on top of it — same split
- * as business-review's bodyRow (zebra + achCols) and this file's own Executive Summary table
- * (zebra + the three severity-banded columns). Painting the WHOLE row in a semantic color (the
- * previous version of this function) buried every other column in solid color and had no zebra
- * at all — a wall of color, not the "premium" look this workbook is meant to match (owner
- * feedback, 2026-08-28).
+ * Every row carries a fill — CREAM or CREAM_ALT, alternating — never Excel's bare white default.
+ * `bandColumns` overrides specific cells on top of that ground, same split as summary-workbook.ts's
+ * own tables (a quiet warm ground, with color spent only where it means something).
  */
 function buildDataSheet<T>(input: {
   workbook: ExcelJS.Workbook;
@@ -229,9 +269,9 @@ function buildDataSheet<T>(input: {
   rowValues: (row: T) => Array<string | number>;
   bandColumns?: (row: T) => Array<{ col: number; fill: string; font: string }>;
 }): ExcelJS.Worksheet {
-  const sheet = input.workbook.addWorksheet(input.sheetName, { properties: { tabColor: { argb: ORANGE } } });
+  const sheet = input.workbook.addWorksheet(input.sheetName, { properties: { tabColor: { argb: ACCENT } } });
 
-  titleBand(sheet, input.headers.length, input.title, input.description, input.rangeLabel);
+  premiumMasthead(sheet, input.headers.length, input.title, input.description, input.rangeLabel);
   // Row 4 stays untouched (blank) — the export route stamps the active filter description there.
 
   const headerRowIndex = 6;
@@ -239,14 +279,15 @@ function buildDataSheet<T>(input: {
 
   input.rows.forEach((row, i) => {
     const excelRow = sheet.getRow(headerRowIndex + 1 + i);
-    const zebra = i % 2 === 1;
+    const ground = i % 2 === 1 ? CREAM_ALT : CREAM;
     input.rowValues(row).forEach((value, colIndex) => {
       const cell = excelRow.getCell(colIndex + 1);
       cell.value = value;
-      cell.font = { color: { argb: SLATE }, size: 10 };
+      cell.font = { color: { argb: INK_SOFT }, size: 10 };
       cell.alignment = { vertical: "middle", wrapText: true };
-      cell.border = { bottom: { style: "thin", color: { argb: HAIR } } };
-      if (zebra) cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: ZEBRA } };
+      cell.border = { bottom: rule(HAIRLINE) };
+      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: ground } };
+      if (typeof value === "number") cell.numFmt = COUNT_FMT;
     });
     for (const band of input.bandColumns?.(row) ?? []) {
       const cell = excelRow.getCell(band.col);
@@ -347,7 +388,7 @@ const EXECUTIVE_SUMMARY_SHEET_NAME = "Executive Summary";
  * is: a fixed per-employee threshold (e.g. "3+ conflict days is red") means nothing applied to a
  * company-wide sum across a whole roster, where almost any nonzero total would read as red — a
  * banded company total would be a confident-looking number that means nothing. The three
- * accuracy-flag KPIs are still visually marked (bold orange) as "pay attention to this", with the
+ * accuracy-flag KPIs are still visually marked (bold accent) as "pay attention to this", with the
  * real, meaningful banding reserved for where it is actionable: each employee's own count, below.
  */
 function addExecutiveSummarySheet(
@@ -355,10 +396,10 @@ function addExecutiveSummarySheet(
   report: CompanyActivityReport,
   rangeLabel: string,
 ): ExcelJS.Worksheet {
-  const sheet = workbook.addWorksheet(EXECUTIVE_SUMMARY_SHEET_NAME, { properties: { tabColor: { argb: ORANGE } } });
+  const sheet = workbook.addWorksheet(EXECUTIVE_SUMMARY_SHEET_NAME, { properties: { tabColor: { argb: ACCENT } } });
   const ncols = SUMMARY_HEADERS.length;
 
-  titleBand(
+  premiumMasthead(
     sheet,
     ncols,
     `${systemIdentity.appName} - Company Activity Report`,
@@ -377,17 +418,21 @@ function addExecutiveSummarySheet(
   // repeating it here read as cluttered and duplicative (owner feedback, 2026-08-28).
   let r = 6;
   const kpi = (label: string, value: number, sub: string, color?: string) => {
+    sheet.getRow(r).height = 18;
+    for (let c = 1; c <= ncols; c += 1) {
+      sheet.getCell(r, c).fill = { type: "pattern", pattern: "solid", fgColor: { argb: CREAM } };
+    }
     const l = sheet.getCell(r, 1);
     l.value = label;
-    l.font = { bold: true, color: { argb: MUTED }, size: 9 };
+    l.font = { bold: true, color: { argb: MUTED_WARM }, size: 9 };
     const v = sheet.getCell(r, 2);
     v.value = value;
-    v.numFmt = "#,##0";
-    v.font = { bold: true, color: { argb: color ?? SLATE }, size: 13 };
+    v.numFmt = COUNT_FMT;
+    v.font = { bold: true, color: { argb: color ?? INK_SOFT }, size: 13 };
     sheet.mergeCells(r, 4, r, ncols);
     const s = sheet.getCell(r, 4);
     s.value = sub;
-    s.font = { color: { argb: MUTED }, size: 9, italic: true };
+    s.font = { color: { argb: MUTED_WARM }, size: 9, italic: true };
     r += 1;
   };
 
@@ -404,28 +449,32 @@ function addExecutiveSummarySheet(
     total((s) => s.leaveApprovedDays) + total((s) => s.leavePendingDays),
     `${total((s) => s.leaveApprovedDays).toLocaleString("en-US")} approved/CRM · ${total((s) => s.leavePendingDays).toLocaleString("en-US")} pending`,
   );
-  kpi("No entry days", total((s) => s.noEntryDays), "working days with nothing recorded at all", ORANGE);
-  kpi("No signal days", total((s) => s.noSignalDays), "no device mapping and no CRM identity", ORANGE);
+  kpi("No entry days", total((s) => s.noEntryDays), "working days with nothing recorded at all", ACCENT_TEXT);
+  kpi("No signal days", total((s) => s.noSignalDays), "no device mapping and no CRM identity", ACCENT_TEXT);
   kpi(
     "Conflict days",
     total((s) => s.conflictDays),
     "presence evidence AND a leave signal on the same date — surfaced for review, never auto-resolved",
-    CONFLICT_FONT,
+    ACCENT_TEXT,
   );
   if (report.unmappedCrmVisitCount != null && report.unmappedCrmVisitCount > 0) {
     kpi(
       "Unmapped CRM visits",
       report.unmappedCrmVisitCount,
       "company-wide CRM attribution blind spot — not limited to this filter",
-      ORANGE,
+      ACCENT_TEXT,
     );
   }
+  // A single hairline under the whole KPI block closes it off from the table below.
+  for (let c = 1; c <= ncols; c += 1) sheet.getCell(r - 1, c).border = { bottom: rule(HAIRLINE) };
 
   r += 1;
   sheet.mergeCells(r, 1, r, ncols);
   const heading = sheet.getCell(r, 1);
   heading.value = "PER-EMPLOYEE BREAKDOWN";
-  heading.font = { bold: true, color: { argb: ORANGE }, size: 11 };
+  heading.font = { bold: true, color: { argb: ACCENT_TEXT }, size: 11 };
+  heading.fill = { type: "pattern", pattern: "solid", fgColor: { argb: CREAM } };
+  sheet.getRow(r).height = 20;
   r += 1;
 
   const headerRowIndex = r;
@@ -434,14 +483,15 @@ function addExecutiveSummarySheet(
 
   summaries.forEach((row, i) => {
     const excelRow = sheet.getRow(r);
-    const zebra = i % 2 === 1;
+    const ground = i % 2 === 1 ? CREAM_ALT : CREAM;
     summaryRowValues(row).forEach((value, colIndex) => {
       const cell = excelRow.getCell(colIndex + 1);
       cell.value = value;
-      cell.font = { color: { argb: SLATE }, size: 10 };
+      cell.font = { color: { argb: INK_SOFT }, size: 10 };
       cell.alignment = { vertical: "middle", wrapText: true };
-      cell.border = { bottom: { style: "thin", color: { argb: HAIR } } };
-      if (zebra) cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: ZEBRA } };
+      cell.border = { bottom: rule(HAIRLINE) };
+      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: ground } };
+      if (typeof value === "number") cell.numFmt = COUNT_FMT;
     });
     excelRow.height = 18;
 
@@ -467,11 +517,11 @@ function addExecutiveSummarySheet(
  * in the workbook — last on purpose, mirroring business-review's own Coverage & Sources sheet.
  */
 function addNotesSheet(workbook: ExcelJS.Workbook, report: CompanyActivityReport): ExcelJS.Worksheet {
-  const notes = workbook.addWorksheet("Notes & Legend", { properties: { tabColor: { argb: ORANGE } } });
+  const notes = workbook.addWorksheet("Notes & Legend", { properties: { tabColor: { argb: ACCENT } } });
   notes.getColumn(1).width = 32;
   notes.getColumn(2).width = 118;
 
-  titleBand(
+  premiumMasthead(
     notes,
     2,
     `${systemIdentity.appName} - Company Activity Report - Notes & Legend`,
@@ -490,7 +540,7 @@ function addNotesSheet(workbook: ExcelJS.Workbook, report: CompanyActivityReport
     ["Device Outage", "A company-wide fingerprint device/sync outage was detected for this date — no punch data is available for ANYONE that day, so an empty punch record here is not necessarily this employee's absence."],
     ["Conflict", "This day shows evidence of BOTH physical presence (an office punch or a real CRM field visit) AND a leave signal (CRM leave or a Phoenix leave request) covering the same date. Surfaced for review, never auto-resolved — this report exists to show what actually happened, not to make a payroll judgment."],
     ["Weekly Off / Holiday", "Not counted as a working day for the No Entry / No Signal tallies, but still listed in Daily Detail so the day-by-day picture is never missing a row."],
-    ["Severity banding (Executive Summary)", "No Entry / No Signal / Conflict Days in the per-employee table are banded green (0), amber (1-2), or red (3+) — a per-employee scale. The same totals at company level in the KPI block above are not banded the same way: a company-wide sum banded on a per-employee threshold would read as red almost regardless of the real distribution, which is why that block marks them in orange (attention) rather than a severity color."],
+    ["Severity banding (Executive Summary)", "No Entry / No Signal / Conflict Days in the per-employee table are banded green (0), amber (1-2), or red (3+) — a per-employee scale. The same totals at company level in the KPI block above are not banded the same way: a company-wide sum banded on a per-employee threshold would read as red almost regardless of the real distribution, which is why that block marks them in accent color (attention) rather than a severity color."],
     ["Data freshness", "The CRM (iReports360) mirror can lag live field activity by up to roughly two days — a just-elapsed date showing No Entry is not yet a confirmed gap."],
     ["Scope", "This report is NOT a payroll report. It exists for awareness and accuracy review only; it does not drive any deduction, incentive, or leave-balance calculation."],
     ["Unmapped CRM visits", report.unmappedCrmVisitCount == null
@@ -502,13 +552,14 @@ function addNotesSheet(workbook: ExcelJS.Workbook, report: CompanyActivityReport
   tableHeaderRow(notes, headerRowIndex, ["Term", "Meaning"]);
   rows.forEach(([term, meaning], i) => {
     const excelRow = notes.getRow(headerRowIndex + 1 + i);
+    const ground = i % 2 === 1 ? CREAM_ALT : CREAM;
     [term, meaning].forEach((value, colIndex) => {
       const cell = excelRow.getCell(colIndex + 1);
       cell.value = value;
-      cell.font = { color: { argb: SLATE }, size: 10 };
+      cell.font = { color: { argb: INK_SOFT }, size: 10 };
       cell.alignment = { vertical: "middle", wrapText: true };
-      cell.border = { bottom: { style: "thin", color: { argb: HAIR } } };
-      if (i % 2 === 1) cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: ZEBRA } };
+      cell.border = { bottom: rule(HAIRLINE) };
+      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: ground } };
     });
   });
 
