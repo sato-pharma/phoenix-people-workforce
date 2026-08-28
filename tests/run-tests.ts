@@ -370,6 +370,7 @@ import { runSosNormalizerPersistShapeTests } from "./sos-normalizer-persist-shap
 import { runSosImportTemplateTests } from "./sos-import-template.test.ts";
 import { runImportPreviewTests } from "./import-preview.test.ts";
 import { runImportsLineCanonicalizationTests } from "./imports-line-canonicalization.test.ts";
+import { runImportTeamBlankWarningTests } from "./import-team-blank-warning.test.ts";
 import { runDetectDistributorTests } from "./detect-distributor.test.ts";
 import { runDistributorDetectionHeaderRowTests } from "./distributor-detection-header-row.test.ts";
 import { runDistributorHeaderNormalizationTests } from "./sales-header-normalize.test.ts";
@@ -1624,6 +1625,7 @@ await runTest("sos normalizer persist shape", runSosNormalizerPersistShapeTests)
 await runTest("sos import template", runSosImportTemplateTests);
 await runTest("import preview diff", runImportPreviewTests);
 await runTest("imports line canonicalization (Anti Inf → Anti infective; no duplicate lines rows)", runImportsLineCanonicalizationTests);
+await runTest("employee import warns when an Area carries no Team (warn, never block)", runImportTeamBlankWarningTests);
 await runTest("detect distributor", runDetectDistributorTests);
 await runTest("detect distributor header-row pick (EG-BR regression)", runDistributorDetectionHeaderRowTests);
 await runTest("shared header normalization (Arabic + deep scan + all sheets)", runDistributorHeaderNormalizationTests);
