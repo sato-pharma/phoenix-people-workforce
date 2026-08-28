@@ -184,14 +184,21 @@ function DraggableRow({ href, label }: { href: string; label: string }) {
   return (
     <div
       ref={setNodeRef}
-      style={{ transform: CSS.Transform.toString(transform), transition }}
+      // `touchAction: "none"` is REQUIRED by dnd-kit's pointer sensor and it does not set it for you
+      // — it applies it only to the drag overlay (`baseStyles` in @dnd-kit/core). Without it a
+      // touchscreen pans the page instead of starting the drag, so the row simply never moves and
+      // the screen reads as "drag and drop is broken" while working perfectly with a mouse.
+      style={{ touchAction: "none", transform: CSS.Transform.toString(transform), transition }}
       className={`flex w-max min-w-full items-center gap-2 border border-slate-200 bg-white px-2.5 py-2 ${
-        isDragging ? "opacity-40" : "hover:border-slate-300"
+        isDragging ? "cursor-grabbing opacity-40" : "cursor-grab hover:border-slate-300"
       }`}
       {...attributes}
       {...listeners}
     >
-      <GripVertical className="h-3.5 w-3.5 shrink-0 cursor-grab text-slate-400" />
+      {/* The whole row is the drag handle, so the grab cursor belongs on the row. It used to sit on
+          this 14px icon alone, which said "drag me here" about the one part you are least likely to
+          aim at. */}
+      <GripVertical className="h-3.5 w-3.5 shrink-0 text-slate-400" />
       {/* Owner rule: never truncate with an ellipsis and never let a label wrap. The row grows
           instead, and the column scrolls sideways if it must. */}
       <span className="whitespace-nowrap text-phx-md font-medium text-slate-700">{label}</span>
