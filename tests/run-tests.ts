@@ -896,6 +896,7 @@ import { runDeductionsCrmSingleMonthScanTests } from "./deductions-crm-single-mo
 import { runCrmDayMapPushdownTests } from "./crm-day-map-pushdown.test.ts";
 import { runSfeManagerNavDeadLinksTests } from "./sfe-manager-nav-dead-links.test.ts";
 import { runOrganogramNavLinkExistsTests } from "./organogram-nav-link-exists-for-every-role-that-can-open-it.test.ts";
+import { runEveryOfferedLinkOpensTests } from "./every-offered-link-opens.test.ts";
 import { runCrmHubCardReachabilityTests } from "./crm-hub-cards-are-reachable-by-the-roles-they-name.test.ts";
 import { runCrmDepartedExclusionHandoverTests } from "./crm-departed-exclusion-handover.test.ts";
 import { runOutstationArrivalPhotoCaptureReachableTests } from "./outstation-arrival-photo-capture-reachable.test.ts";
@@ -2427,6 +2428,18 @@ await runTest(
   + "the whole chart on request — but neither was listed on any sidebar entry, so there was no way to reach "
   + "it; the owner hit this on 2026-08-25 after the Head Office branch shipped)",
   runOrganogramNavLinkExistsTests,
+);
+
+await runTest(
+  "every link a role is OFFERED must OPEN for that role (the general form of the four single-page "
+  + "reachability tests around it, across BOTH shells: admin links via getSections, portal links via the "
+  + "nav registry's role-driven visibility flags, each resolved to its page file and checked against that "
+  + "page's own unconditional assertPermission / canAccess gate; the portal's flags are computed from role "
+  + "names and never consult the permission matrix, which is why it offered Talent Acquisition "
+  + "/employee-portals/probation while the matrix withheld probation:read — production logged 25 "
+  + "\"Forbidden: Talent Acquisition cannot read probation\" errors across 8 route variants on "
+  + "2026-07-25/26 before 41c24ede added the missing line)",
+  runEveryOfferedLinkOpensTests,
 );
 
 await runTest(
