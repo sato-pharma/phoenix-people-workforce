@@ -41,7 +41,7 @@ export function FinancialMix({ data, loading = false }: FinancialMixProps) {
   if (loading) {
     return (
       <ChartCard>
-        <div className="h-64 animate-pulse bg-[#F8FAFC] rounded-lg" />
+        <div className="h-64 animate-pulse bg-phx-paper rounded-lg" />
       </ChartCard>
     );
   }
@@ -52,8 +52,8 @@ export function FinancialMix({ data, loading = false }: FinancialMixProps) {
       <div className="mt-6 grid gap-6 sm:grid-cols-[170px_minmax(0,1fr)]">
         <div className="relative mx-auto h-28 w-28 rounded-full sm:h-36 sm:w-36 md:h-40 md:w-40" style={{ background: `conic-gradient(${gradient})` }}>
           <div className="absolute inset-4 flex flex-col items-center justify-center rounded-full bg-white shadow-inner sm:inset-6">
-            <p className="text-lg font-black text-[#0F172A] sm:text-xl">{compactEGP(total).replace("EGP ", "")}</p>
-            <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[#64748B]">EGP</p>
+            <p className="text-lg font-black text-phx-ink sm:text-xl">{compactEGP(total).replace("EGP ", "")}</p>
+            <p className="text-[10px] font-black uppercase tracking-[0.18em] text-phx-ink-soft">EGP</p>
           </div>
         </div>
         <div className="space-y-3 self-center">
@@ -67,20 +67,20 @@ export function FinancialMix({ data, loading = false }: FinancialMixProps) {
               <PremiumTooltip
                 content={
                   <div className="space-y-1">
-                    <p className="text-xs font-bold text-[#0F172A]">{row.label}</p>
-                    <p className="text-[11px] text-[#64748B]">{compactEGP(row.value)}</p>
-                    <p className="text-[11px] font-bold text-[#F97316]">{percent}% of total</p>
-                    <p className="text-[10px] text-[#64748B]">{context}</p>
+                    <p className="text-xs font-bold text-phx-ink">{row.label}</p>
+                    <p className="text-[11px] text-phx-ink-soft">{compactEGP(row.value)}</p>
+                    <p className="text-[11px] font-bold text-phx-accent">{percent}% of total</p>
+                    <p className="text-[10px] text-phx-ink-soft">{context}</p>
                   </div>
                 }
                 key={row.label}
               >
                 <div className="flex items-center justify-between gap-3">
-                  <span className="flex items-center gap-2 text-sm font-bold text-[#0F172A]">
+                  <span className="flex items-center gap-2 text-sm font-bold text-phx-ink">
                     <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: row.color }} />
                     {row.label}
                   </span>
-                  <span className="text-xs font-black text-[#0F172A]">{compactEGP(row.value)}</span>
+                  <span className="text-xs font-black text-phx-ink">{compactEGP(row.value)}</span>
                 </div>
               </PremiumTooltip>
             );

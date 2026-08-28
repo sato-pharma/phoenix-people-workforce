@@ -147,12 +147,12 @@ export function OrganogramNodeDetailModal({ row, onClose }: Props) {
       <div
         aria-label={`Details — ${heading}`}
         aria-modal="true"
-        className="flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-lg border border-[#D8E0EA] bg-white shadow-[0_28px_90px_rgba(15,23,42,0.3)]"
+        className="flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-lg border border-phx-line bg-white shadow-[0_28px_90px_rgba(15,23,42,0.3)]"
         ref={dialogRef}
         role="dialog"
       >
         {/* Header */}
-        <div className="flex items-start justify-between gap-4 border-b border-[#E2E8F0] bg-gradient-to-br from-slate-800 to-slate-950 px-5 py-4 text-white">
+        <div className="flex items-start justify-between gap-4 border-b border-phx-line bg-gradient-to-br from-slate-800 to-slate-950 px-5 py-4 text-white">
           <div className="flex min-w-0 items-center gap-3">
             <span
               aria-hidden

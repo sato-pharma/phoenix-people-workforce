@@ -189,18 +189,18 @@ export function WeeklyBranchMappingManager({
     <div className="space-y-5 p-4 sm:p-6">
       <header>
         <div className="flex items-center gap-2">
-          <span className="h-2 w-2 rounded-full bg-[#F97316]" aria-hidden />
-          <span className="text-[11px] font-black uppercase tracking-[0.16em] text-[#F97316]">Weekly Sales</span>
+          <span className="h-2 w-2 rounded-full bg-phx-accent" aria-hidden />
+          <span className="text-[11px] font-black uppercase tracking-[0.16em] text-phx-accent">Weekly Sales</span>
         </div>
-        <h1 className="mt-1 text-xl font-black text-[#0F172A]">Branch Region Mapping</h1>
-        <p className="mt-1 text-sm font-medium text-[#64748B]">
+        <h1 className="mt-1 text-xl font-black text-phx-ink">Branch Region Mapping</h1>
+        <p className="mt-1 text-sm font-medium text-phx-ink-soft">
           Map each distributor branch / outlet to one official region. The weekly upload uses this to roll every
           distributor up into the same regions. Mark warehouses, platforms or tenders as excluded to keep them out of totals.
         </p>
-        <p className="mt-2 text-sm font-medium text-[#64748B]">
+        <p className="mt-2 text-sm font-medium text-phx-ink-soft">
           Under every branch is <span className="font-black text-[#9A3412]">how its name is read</span> and the exact split
           that follows: a depot serving several territories pays each of them an equal share, then divides that share evenly
-          again inside each one. Set <span className="font-black text-[#0F172A]">Area</span> to overrule the reading — a
+          again inside each one. Set <span className="font-black text-phx-ink">Area</span> to overrule the reading — a
           branch pinned to an area sends the whole of its value there and its name is no longer read.
         </p>
       </header>
@@ -214,12 +214,12 @@ export function WeeklyBranchMappingManager({
       {notice && <div className="border border-emerald-200 bg-emerald-50 p-3 text-sm font-semibold text-emerald-700">{notice}</div>}
 
       {/* Toolbar */}
-      <div className="flex flex-wrap items-center gap-2 rounded-[6px] border border-[#E2E8F0] bg-white p-3 shadow-sm">
+      <div className="flex flex-wrap items-center gap-2 rounded-[6px] border border-phx-line bg-white p-3 shadow-sm">
         {lockedDistributor ? null : (
           <>
-            <span className="text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">Distributor</span>
+            <span className="text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-soft">Distributor</span>
             <SearchableSelect
-              className="h-9 min-w-[14rem] border border-[#E2E8F0] bg-white px-2 text-sm font-bold text-[#0F172A] outline-none focus:border-[#FDBA74]"
+              className="h-9 min-w-[14rem] border border-phx-line bg-white px-2 text-sm font-bold text-phx-ink outline-none focus:border-phx-accent-line"
               disabled={busy}
               value={distributor}
               onChange={(event) => {
@@ -244,8 +244,8 @@ export function WeeklyBranchMappingManager({
                 key={type}
                 className={`h-9 border px-3 text-xs font-black uppercase tracking-wide transition ${
                   effectiveFileType === type
-                    ? "border-[#F97316] bg-[#FFF7ED] text-[#9A3412]"
-                    : "border-[#E2E8F0] bg-white text-[#64748B] hover:border-[#FDBA74]"
+                    ? "border-phx-accent bg-phx-accent-soft text-[#9A3412]"
+                    : "border-phx-line bg-white text-phx-ink-soft hover:border-phx-accent-line"
                 }`}
                 disabled={busy}
                 onClick={() => setFileType(type)}
@@ -259,13 +259,13 @@ export function WeeklyBranchMappingManager({
 
         <div className="ml-auto flex items-center gap-2">
           <a
-            className="inline-flex h-9 items-center gap-1 rounded-[6px] border border-[#E2E8F0] px-3 text-xs font-bold text-[#334155] transition hover:border-[#FDBA74]"
+            className="inline-flex h-9 items-center gap-1 rounded-[6px] border border-phx-line px-3 text-xs font-bold text-phx-ink-2 transition hover:border-phx-accent-line"
             href={templateHref}
           >
             <Download className="h-4 w-4" /> Template
           </a>
           <button
-            className="inline-flex h-9 items-center gap-1 rounded-[6px] border border-[#E2E8F0] px-3 text-xs font-bold text-[#334155] transition hover:border-[#FDBA74] disabled:opacity-60"
+            className="inline-flex h-9 items-center gap-1 rounded-[6px] border border-phx-line px-3 text-xs font-bold text-phx-ink-2 transition hover:border-phx-accent-line disabled:opacity-60"
             disabled={busy}
             onClick={() => fileInput.current?.click()}
             type="button"
@@ -277,10 +277,10 @@ export function WeeklyBranchMappingManager({
       </div>
 
       {/* Add row */}
-      <div className="flex flex-wrap items-end gap-2 rounded-[6px] border border-[#E2E8F0] bg-white p-3 shadow-sm">
+      <div className="flex flex-wrap items-end gap-2 rounded-[6px] border border-phx-line bg-white p-3 shadow-sm">
         <Field label={isStock ? "Location name" : "Branch name"}>
           <input
-            className="h-9 w-56 border border-[#E2E8F0] px-2 text-sm text-[#0F172A] outline-none focus:border-[#FDBA74]"
+            className="h-9 w-56 border border-phx-line px-2 text-sm text-phx-ink outline-none focus:border-phx-accent-line"
             disabled={busy}
             onChange={(event) => setDraft((prev) => ({ ...prev, branchName: event.target.value }))}
             value={draft.branchName}
@@ -289,7 +289,7 @@ export function WeeklyBranchMappingManager({
         {isStock ? (
           <Field label="Column #">
             <input
-              className="h-9 w-24 border border-[#E2E8F0] px-2 text-sm text-[#0F172A] outline-none focus:border-[#FDBA74]"
+              className="h-9 w-24 border border-phx-line px-2 text-sm text-phx-ink outline-none focus:border-phx-accent-line"
               disabled={busy}
               inputMode="numeric"
               onChange={(event) => setDraft((prev) => ({ ...prev, columnIndex: event.target.value }))}
@@ -299,7 +299,7 @@ export function WeeklyBranchMappingManager({
         ) : (
           <Field label="Branch code (key)">
             <input
-              className="h-9 w-40 border border-[#E2E8F0] px-2 text-sm text-[#0F172A] outline-none focus:border-[#FDBA74]"
+              className="h-9 w-40 border border-phx-line px-2 text-sm text-phx-ink outline-none focus:border-phx-accent-line"
               disabled={busy}
               onChange={(event) => setDraft((prev) => ({ ...prev, branchCode: event.target.value }))}
               value={draft.branchCode}
@@ -308,7 +308,7 @@ export function WeeklyBranchMappingManager({
         )}
         <Field label="Region">
           <SearchableSelect
-            className="h-9 w-44 border border-[#E2E8F0] bg-white px-2 text-sm font-semibold text-[#0F172A] outline-none focus:border-[#FDBA74] disabled:opacity-60"
+            className="h-9 w-44 border border-phx-line bg-white px-2 text-sm font-semibold text-phx-ink outline-none focus:border-phx-accent-line disabled:opacity-60"
             disabled={busy || draft.excluded}
             onChange={(event) => setDraft((prev) => ({ ...prev, regionCode: event.target.value }))}
             value={draft.regionCode}
@@ -323,7 +323,7 @@ export function WeeklyBranchMappingManager({
         </Field>
         <Field label="Area (optional)">
           <SearchableSelect
-            className="h-9 w-48 border border-[#E2E8F0] bg-white px-2 text-sm font-semibold text-[#0F172A] outline-none focus:border-[#FDBA74] disabled:opacity-60"
+            className="h-9 w-48 border border-phx-line bg-white px-2 text-sm font-semibold text-phx-ink outline-none focus:border-phx-accent-line disabled:opacity-60"
             disabled={busy || draft.excluded || !draft.regionCode}
             onChange={(event) => setDraft((prev) => ({ ...prev, areaCode: event.target.value }))}
             value={draft.areaCode}
@@ -336,7 +336,7 @@ export function WeeklyBranchMappingManager({
             ))}
           </SearchableSelect>
         </Field>
-        <label className="flex h-9 items-center gap-1 text-xs font-bold text-[#64748B]">
+        <label className="flex h-9 items-center gap-1 text-xs font-bold text-phx-ink-soft">
           <input
             checked={draft.excluded}
             disabled={busy}
@@ -346,7 +346,7 @@ export function WeeklyBranchMappingManager({
           Exclude
         </label>
         <button
-          className="inline-flex h-9 items-center gap-1 rounded-[6px] bg-[#F97316] px-4 text-sm font-black text-white transition hover:bg-[#EA6A0C] disabled:opacity-60"
+          className="inline-flex h-9 items-center gap-1 rounded-[6px] bg-phx-accent px-4 text-sm font-black text-white transition hover:bg-[#EA6A0C] disabled:opacity-60"
           disabled={busy}
           onClick={addDraft}
           type="button"
@@ -356,7 +356,7 @@ export function WeeklyBranchMappingManager({
       </div>
 
       {/* Table */}
-      <div className="overflow-x-auto rounded-[6px] border border-[#E2E8F0] bg-white shadow-sm">
+      <div className="overflow-x-auto rounded-[6px] border border-phx-line bg-white shadow-sm">
         <table className="w-full text-sm">
           <thead className="bg-[#020617] text-left text-[11px] font-black uppercase tracking-wide text-white">
             <tr>
@@ -372,19 +372,19 @@ export function WeeklyBranchMappingManager({
           <tbody>
             {rows.length === 0 && (
               <tr>
-                <td className="px-3 py-4 text-center text-[#94A3B8]" colSpan={isStock ? 7 : 6}>
+                <td className="px-3 py-4 text-center text-phx-ink-faint" colSpan={isStock ? 7 : 6}>
                   No branches mapped yet — add one above or upload the template.
                 </td>
               </tr>
             )}
             {rows.map((row) => [
               <tr className="border-t border-[#FFE8D6] align-middle" key={row.id}>
-                <td className="px-3 py-2 font-semibold text-[#0F172A]">{row.branchHeaderRaw || row.rawBranch}</td>
-                <td className="px-3 py-2 text-[#64748B]">{row.rawBranch}</td>
-                {isStock && <td className="px-3 py-2 text-[#64748B]">{row.branchColumnIndex ?? "—"}</td>}
+                <td className="px-3 py-2 font-semibold text-phx-ink">{row.branchHeaderRaw || row.rawBranch}</td>
+                <td className="px-3 py-2 text-phx-ink-soft">{row.rawBranch}</td>
+                {isStock && <td className="px-3 py-2 text-phx-ink-soft">{row.branchColumnIndex ?? "—"}</td>}
                 <td className="px-3 py-2">
                   <SearchableSelect
-                    className="h-8 w-44 border border-[#E2E8F0] bg-white px-2 text-sm font-semibold text-[#0F172A] outline-none focus:border-[#FDBA74] disabled:opacity-50"
+                    className="h-8 w-44 border border-phx-line bg-white px-2 text-sm font-semibold text-phx-ink outline-none focus:border-phx-accent-line disabled:opacity-50"
                     disabled={busy || row.excluded}
                     onChange={(event) => void saveRow(row, { regionCode: event.target.value })}
                     value={row.regionCode}
@@ -399,7 +399,7 @@ export function WeeklyBranchMappingManager({
                 </td>
                 <td className="px-3 py-2">
                   <SearchableSelect
-                    className="h-8 w-48 border border-[#E2E8F0] bg-white px-2 text-sm font-semibold text-[#0F172A] outline-none focus:border-[#FDBA74] disabled:opacity-50"
+                    className="h-8 w-48 border border-phx-line bg-white px-2 text-sm font-semibold text-phx-ink outline-none focus:border-phx-accent-line disabled:opacity-50"
                     disabled={busy || row.excluded || !row.regionCode}
                     onChange={(event) => void saveRow(row, { areaCode: event.target.value })}
                     value={row.areaCode ?? ""}
@@ -422,7 +422,7 @@ export function WeeklyBranchMappingManager({
                 </td>
                 <td className="px-3 py-2 text-right">
                   <button
-                    className="inline-flex items-center gap-1 border border-[#E2E8F0] px-2 py-1 text-xs font-bold text-[#B91C1C] transition hover:border-[#FCA5A5]"
+                    className="inline-flex items-center gap-1 border border-phx-line px-2 py-1 text-xs font-bold text-[#B91C1C] transition hover:border-[#FCA5A5]"
                     disabled={busy}
                     onClick={() => void mutate({ action: "delete", id: row.id })}
                     type="button"
@@ -455,11 +455,11 @@ function SplitBand({ columns, split }: { columns: number; split: WeeklyBranchSpl
     <tr className="bg-[#FFFBF7]">
       <td className="px-3 pb-2.5 pt-0" colSpan={columns}>
         <div className="flex flex-col gap-1.5">
-          <span className="whitespace-nowrap text-[11px] font-semibold text-[#94A3B8]">{split.note}</span>
+          <span className="whitespace-nowrap text-[11px] font-semibold text-phx-ink-faint">{split.note}</span>
           {split.arithmetic.map((entry) => (
             <div className="flex flex-wrap items-center gap-1.5" key={entry.lines.join("|")}>
               {showsLineLabels && (
-                <span className="whitespace-nowrap text-[10px] font-black uppercase tracking-[0.12em] text-[#94A3B8]">
+                <span className="whitespace-nowrap text-[10px] font-black uppercase tracking-[0.12em] text-phx-ink-faint">
                   {entry.lines.join(" + ")}
                 </span>
               )}
@@ -468,7 +468,7 @@ function SplitBand({ columns, split }: { columns: number; split: WeeklyBranchSpl
                   className="whitespace-nowrap rounded-full border border-[#FFD8B4] bg-white px-2 py-0.5 text-[11px] font-bold text-[#9A3412]"
                   key={share.areaCode}
                 >
-                  {share.areaName} <span className="text-[#C2410C]">{share.percentLabel}</span>
+                  {share.areaName} <span className="text-phx-accent-press">{share.percentLabel}</span>
                 </span>
               ))}
             </div>
@@ -482,7 +482,7 @@ function SplitBand({ columns, split }: { columns: number; split: WeeklyBranchSpl
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <label className="flex flex-col gap-1">
-      <span className="text-[10px] font-black uppercase tracking-[0.12em] text-[#94A3B8]">{label}</span>
+      <span className="text-[10px] font-black uppercase tracking-[0.12em] text-phx-ink-faint">{label}</span>
       {children}
     </label>
   );

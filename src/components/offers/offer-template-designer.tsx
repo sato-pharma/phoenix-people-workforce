@@ -416,7 +416,7 @@ export function OfferTemplateDesigner({
         <label className="mt-6 inline-flex items-center gap-2 text-sm font-semibold text-slate-700" htmlFor={id}>
           <input
             checked={Boolean(value)}
-            className="h-4 w-4 rounded border-[#D8E0EA]"
+            className="h-4 w-4 rounded border-phx-line"
             disabled={!canManage}
             id={id}
             onChange={(event) => onChange(event.target.checked)}
@@ -609,7 +609,7 @@ export function OfferTemplateDesigner({
                 </label>
                 <div className="flex items-center gap-2">
                   <input
-                    className="h-10 w-12 shrink-0 cursor-pointer rounded-lg border border-[#D8E0EA] bg-white p-1"
+                    className="h-10 w-12 shrink-0 cursor-pointer rounded-lg border border-phx-line bg-white p-1"
                     disabled={!canManage}
                     id={`theme-${token.key}`}
                     onChange={(event) => setTheme((current) => ({ ...current, [token.key]: event.target.value }))}
@@ -669,7 +669,7 @@ export function OfferTemplateDesigner({
                     {OFFER_PLACEHOLDERS.filter((placeholder) => placeholder.group === group).map(
                       (placeholder) => (
                         <button
-                          className="rounded-lg border border-transparent px-2 py-1 text-left transition hover:border-[#D8E0EA] hover:bg-slate-50"
+                          className="rounded-lg border border-transparent px-2 py-1 text-left transition hover:border-phx-line hover:bg-slate-50"
                           key={placeholder.key}
                           onClick={() => void insertPlaceholder(placeholder.key)}
                           title={placeholder.note}
@@ -678,7 +678,7 @@ export function OfferTemplateDesigner({
                           <span className="block whitespace-nowrap font-mono text-[12px] font-bold text-[#B45309]">
                             {`{{${placeholder.key}}}`}
                           </span>
-                          <span className="block whitespace-nowrap text-[11px] text-[#94A3B8]">
+                          <span className="block whitespace-nowrap text-[11px] text-phx-ink-faint">
                             {placeholder.label}
                             {SAMPLE_TOKENS[placeholder.key] ? ` · ${SAMPLE_TOKENS[placeholder.key]}` : ""}
                           </span>
@@ -703,7 +703,7 @@ export function OfferTemplateDesigner({
                 <div
                   className={cn(
                     "flex items-center gap-2 rounded-xl border px-3 py-2 transition",
-                    isSelected ? "border-[#FDBA74] bg-orange-50/60 shadow-sm" : "border-[#D8E0EA] bg-white hover:bg-slate-50",
+                    isSelected ? "border-phx-accent-line bg-orange-50/60 shadow-sm" : "border-phx-line bg-white hover:bg-slate-50",
                   )}
                   key={block.id}
                 >
@@ -713,7 +713,7 @@ export function OfferTemplateDesigner({
                     type="button"
                   >
                     <span className="block whitespace-nowrap text-sm font-bold text-slate-900">{def.label}</span>
-                    <span className="block whitespace-nowrap text-[11px] text-[#94A3B8]">
+                    <span className="block whitespace-nowrap text-[11px] text-phx-ink-faint">
                       {index + 1} of {blocks.length}
                     </span>
                   </button>
@@ -805,9 +805,9 @@ export function OfferTemplateDesigner({
                     <p className={offerLabelClassName}>{list.label}</p>
                     <div className="flex flex-col gap-3">
                       {rows.map((row, rowIndex) => (
-                        <div className="rounded-xl border border-[#D8E0EA] bg-slate-50/60 p-3" key={`${list.key}-${rowIndex}`}>
+                        <div className="rounded-xl border border-phx-line bg-slate-50/60 p-3" key={`${list.key}-${rowIndex}`}>
                           <div className="mb-2 flex items-center justify-between">
-                            <span className="text-[11px] font-black uppercase tracking-[0.14em] text-[#94A3B8]">
+                            <span className="text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-faint">
                               {list.itemLabel} {rowIndex + 1}
                             </span>
                             <div className="flex gap-1">
@@ -882,7 +882,7 @@ export function OfferTemplateDesigner({
             <div className="max-h-[760px] overflow-auto bg-slate-100 p-4">
               {previewHtml ? (
                 <iframe
-                  className="mx-auto block w-full max-w-[860px] rounded-xl border border-[#D8E0EA] bg-white shadow-lg"
+                  className="mx-auto block w-full max-w-[860px] rounded-xl border border-phx-line bg-white shadow-lg"
                   height={940}
                   sandbox=""
                   srcDoc={previewHtml}

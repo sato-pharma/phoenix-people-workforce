@@ -23,7 +23,7 @@ type CustomerRow = {
 type ImportBlockedRow = { key: string; reason: string; row: number };
 type ImportResult = { blockedRows: ImportBlockedRow[]; inserted: number; skipped: number; totalRead: number; updated: number };
 
-const filterSelect = "h-9 rounded-lg border border-[#D8E0EA] bg-white px-2 text-xs font-semibold text-[#0F172A] outline-none focus:border-[#FDBA74] focus:ring-2 focus:ring-[#F97316]/15";
+const filterSelect = "h-9 rounded-lg border border-phx-line bg-white px-2 text-xs font-semibold text-phx-ink outline-none focus:border-phx-accent-line focus:ring-2 focus:ring-phx-accent/15";
 const PAGE = 100;
 
 export function DatabaseValidationTab({ headerGrid }: { headerGrid: HeaderGrid }) {
@@ -120,9 +120,9 @@ export function DatabaseValidationTab({ headerGrid }: { headerGrid: HeaderGrid }
         <div className="overflow-x-auto p-4 md:p-5">
           <table className="w-full border-collapse text-xs">
             <thead>
-              <tr className="bg-[#0B0B0B] text-[#F1F5F9]">
+              <tr className="bg-[#0B0B0B] text-phx-paper-2">
                 <th className="whitespace-nowrap px-3 py-2 text-left">Distributor</th>
-                {headerGrid.columns.map((c) => <th className="whitespace-nowrap border-l border-[#F97316]/25 px-3 py-2 text-left" key={c.key}>{c.label}</th>)}
+                {headerGrid.columns.map((c) => <th className="whitespace-nowrap border-l border-phx-accent/25 px-3 py-2 text-left" key={c.key}>{c.label}</th>)}
               </tr>
             </thead>
             <tbody>
@@ -197,11 +197,11 @@ export function DatabaseValidationTab({ headerGrid }: { headerGrid: HeaderGrid }
             <p className="text-sm text-slate-400">No customers mapped for this distributor yet.</p>
           ) : customers.length > 0 ? (
             <>
-              <div className="overflow-x-auto border border-[#E2E8F0]">
+              <div className="overflow-x-auto border border-phx-line">
                 <table className="w-full text-xs">
                   <thead>
-                    <tr className="bg-[#0B0B0B] text-[#F1F5F9]">
-                      {["Distributor", "Customer code", "Customer name", "Address", "Brick ID", "Area", "Region"].map((h) => <th className="whitespace-nowrap border-l border-[#F97316]/25 px-3 py-2 text-left" key={h}>{h}</th>)}
+                    <tr className="bg-[#0B0B0B] text-phx-paper-2">
+                      {["Distributor", "Customer code", "Customer name", "Address", "Brick ID", "Area", "Region"].map((h) => <th className="whitespace-nowrap border-l border-phx-accent/25 px-3 py-2 text-left" key={h}>{h}</th>)}
                     </tr>
                   </thead>
                   <tbody>
@@ -223,9 +223,9 @@ export function DatabaseValidationTab({ headerGrid }: { headerGrid: HeaderGrid }
                 <span>{customers.length.toLocaleString()} customer{customers.length === 1 ? "" : "s"}</span>
                 {pages > 1 ? (
                   <div className="flex items-center gap-2">
-                    <button className="border border-[#D8E0EA] px-2 py-1 font-semibold disabled:opacity-40" disabled={page === 0} onClick={() => setPage((p) => Math.max(0, p - 1))} type="button">Prev</button>
+                    <button className="border border-phx-line px-2 py-1 font-semibold disabled:opacity-40" disabled={page === 0} onClick={() => setPage((p) => Math.max(0, p - 1))} type="button">Prev</button>
                     <span>Page {page + 1} / {pages}</span>
-                    <button className="border border-[#D8E0EA] px-2 py-1 font-semibold disabled:opacity-40" disabled={page >= pages - 1} onClick={() => setPage((p) => Math.min(pages - 1, p + 1))} type="button">Next</button>
+                    <button className="border border-phx-line px-2 py-1 font-semibold disabled:opacity-40" disabled={page >= pages - 1} onClick={() => setPage((p) => Math.min(pages - 1, p + 1))} type="button">Next</button>
                   </div>
                 ) : null}
               </div>

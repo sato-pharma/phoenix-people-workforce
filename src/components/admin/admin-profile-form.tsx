@@ -60,23 +60,23 @@ export function AdminProfileForm({ profile }: { profile: Profile }) {
   return (
     <div className="mx-auto min-h-screen max-w-[900px] space-y-8 p-6 lg:p-8">
       <div>
-        <p className="text-[11px] font-black uppercase tracking-[0.24em] text-[#F97316]">Admin / Profile</p>
-        <h1 className="mt-2 text-3xl font-black tracking-tight text-[#0F172A]">My Profile</h1>
-        <p className="mt-2 max-w-2xl text-sm leading-6 text-[#64748B]">
+        <p className="text-[11px] font-black uppercase tracking-[0.24em] text-phx-accent">Admin / Profile</p>
+        <h1 className="mt-2 text-3xl font-black tracking-tight text-phx-ink">My Profile</h1>
+        <p className="mt-2 max-w-2xl text-sm leading-6 text-phx-ink-soft">
           View your account details and update your display name or email address.
         </p>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-[1fr_1fr]">
         {/* Read-only account info */}
-        <Card className="rounded-2xl border border-[#E2E8F0] bg-white shadow-[0_8px_20px_rgba(15,23,42,0.04)]">
-          <div className="flex items-center gap-3 border-b border-[#E2E8F0] pb-4">
-            <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-[#F97316]/10">
-              <UserCog className="h-5 w-5 text-[#F97316]" />
+        <Card className="rounded-2xl border border-phx-line bg-white shadow-[0_8px_20px_rgba(15,23,42,0.04)]">
+          <div className="flex items-center gap-3 border-b border-phx-line pb-4">
+            <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-phx-accent/10">
+              <UserCog className="h-5 w-5 text-phx-accent" />
             </div>
             <div>
-              <h2 className="font-bold text-[#0F172A]">Account Details</h2>
-              <p className="text-xs text-[#64748B]">Read-only system fields</p>
+              <h2 className="font-bold text-phx-ink">Account Details</h2>
+              <p className="text-xs text-phx-ink-soft">Read-only system fields</p>
             </div>
           </div>
           <dl className="mt-4 space-y-4">
@@ -87,8 +87,8 @@ export function AdminProfileForm({ profile }: { profile: Profile }) {
               { label: "Account created", value: formattedCreatedAt },
             ].map(({ label, value }) => (
               <div className="flex flex-col gap-0.5" key={label}>
-                <dt className="text-[10px] font-black uppercase tracking-[0.16em] text-[#64748B]">{label}</dt>
-                <dd className="rounded-lg border border-[#E2E8F0] bg-[#F8FAFC] px-3 py-2 font-mono text-sm font-semibold text-[#0F172A]">
+                <dt className="text-[10px] font-black uppercase tracking-[0.16em] text-phx-ink-soft">{label}</dt>
+                <dd className="rounded-lg border border-phx-line bg-phx-paper px-3 py-2 font-mono text-sm font-semibold text-phx-ink">
                   {value}
                 </dd>
               </div>
@@ -97,20 +97,20 @@ export function AdminProfileForm({ profile }: { profile: Profile }) {
         </Card>
 
         {/* Editable fields */}
-        <Card className="rounded-2xl border border-[#E2E8F0] bg-white shadow-[0_8px_20px_rgba(15,23,42,0.04)]">
-          <div className="flex items-center gap-3 border-b border-[#E2E8F0] pb-4">
-            <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-[#F97316]/10">
-              <KeyRound className="h-5 w-5 text-[#F97316]" />
+        <Card className="rounded-2xl border border-phx-line bg-white shadow-[0_8px_20px_rgba(15,23,42,0.04)]">
+          <div className="flex items-center gap-3 border-b border-phx-line pb-4">
+            <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-phx-accent/10">
+              <KeyRound className="h-5 w-5 text-phx-accent" />
             </div>
             <div>
-              <h2 className="font-bold text-[#0F172A]">Edit Profile</h2>
-              <p className="text-xs text-[#64748B]">Update your name and email address</p>
+              <h2 className="font-bold text-phx-ink">Edit Profile</h2>
+              <p className="text-xs text-phx-ink-soft">Update your name and email address</p>
             </div>
           </div>
 
           <form className="mt-4 space-y-4" onSubmit={handleSave}>
             <div className="space-y-1.5">
-              <label className="text-[10px] font-black uppercase tracking-[0.16em] text-[#64748B]" htmlFor="profile-name">
+              <label className="text-[10px] font-black uppercase tracking-[0.16em] text-phx-ink-soft" htmlFor="profile-name">
                 Display name
               </label>
               <Input
@@ -122,7 +122,7 @@ export function AdminProfileForm({ profile }: { profile: Profile }) {
             </div>
 
             <div className="space-y-1.5">
-              <label className="text-[10px] font-black uppercase tracking-[0.16em] text-[#64748B]" htmlFor="profile-email">
+              <label className="text-[10px] font-black uppercase tracking-[0.16em] text-phx-ink-soft" htmlFor="profile-email">
                 Email address
               </label>
               <Input

@@ -642,19 +642,19 @@ export function EmailTemplateManager({
         <AdminPageHero
           actions={
             <>
-              <Button className="gap-2 rounded-xl border border-[#CBD5E1] bg-white px-4 py-2.5 font-black text-[#0F172A]" disabled={isPending || aiBusy} onClick={validateDraft} type="button" variant="secondary">
+              <Button className="gap-2 rounded-xl border border-phx-line-strong bg-white px-4 py-2.5 font-black text-phx-ink" disabled={isPending || aiBusy} onClick={validateDraft} type="button" variant="secondary">
                 <Eye className="h-4 w-4" />
                 Backend Preview
               </Button>
-              <Button className="gap-2 rounded-xl border border-[#CBD5E1] bg-white px-4 py-2.5 font-black text-[#0F172A]" disabled={isPending || aiBusy} onClick={() => saveTemplate("save")} type="button" variant="secondary">
+              <Button className="gap-2 rounded-xl border border-phx-line-strong bg-white px-4 py-2.5 font-black text-phx-ink" disabled={isPending || aiBusy} onClick={() => saveTemplate("save")} type="button" variant="secondary">
                 <Save className="h-4 w-4" />
                 Save Changes
               </Button>
-              <Button className="gap-2 rounded-xl bg-[#F97316] px-4 py-2.5 font-black text-white" disabled={isPending || aiBusy || !canPublish} onClick={() => saveTemplate("publish")} type="button">
+              <Button className="gap-2 rounded-xl bg-phx-accent px-4 py-2.5 font-black text-white" disabled={isPending || aiBusy || !canPublish} onClick={() => saveTemplate("publish")} type="button">
                 <Send className="h-4 w-4" />
                 Publish
               </Button>
-              <Button className="gap-2 rounded-xl border border-[#CBD5E1] bg-white px-4 py-2.5 font-black text-[#0F172A]" onClick={toggleCustomVariablesPanel} type="button" variant="secondary">
+              <Button className="gap-2 rounded-xl border border-phx-line-strong bg-white px-4 py-2.5 font-black text-phx-ink" onClick={toggleCustomVariablesPanel} type="button" variant="secondary">
                 <Sparkles className="h-4 w-4" />
                 Custom Variables
               </Button>
@@ -679,9 +679,9 @@ export function EmailTemplateManager({
         {showCustomVariables ? (
           <Card className={cn(adminPanelClassName, "space-y-4 p-5")}>
             <div>
-              <p className="text-xs font-black uppercase tracking-[0.18em] text-[#C2410C]">Custom Variables</p>
-              <h2 className="mt-1 text-lg font-black text-[#0F172A]">Add a new {"{{token}}"} without touching code</h2>
-              <p className="mt-1 text-sm leading-6 text-[#64748B]">
+              <p className="text-xs font-black uppercase tracking-[0.18em] text-phx-accent-press">Custom Variables</p>
+              <h2 className="mt-1 text-lg font-black text-phx-ink">Add a new {"{{token}}"} without touching code</h2>
+              <p className="mt-1 text-sm leading-6 text-phx-ink-soft">
                 Bind a new variable to an approved employee field. It becomes usable as a chip in every template&apos;s editor immediately.
                 Salary, national ID, bank, insurance and personal contact fields are never offered — they can never be turned into an email variable.
               </p>
@@ -705,7 +705,7 @@ export function EmailTemplateManager({
               </Field>
               <Field label="Employee field">
                 <select
-                  className="h-10 w-full rounded-xl border border-[#CBD5E1] bg-white px-3 text-sm font-bold text-[#0F172A]"
+                  className="h-10 w-full rounded-xl border border-phx-line-strong bg-white px-3 text-sm font-bold text-phx-ink"
                   onChange={(event) => setNewVariableSourceColumn(event.target.value)}
                   value={newVariableSourceColumn}
                 >
@@ -719,7 +719,7 @@ export function EmailTemplateManager({
                 <Input onChange={(event) => setNewVariableToken(event.target.value)} placeholder="teamName" value={newVariableToken} />
               </Field>
               <div className="flex items-end">
-                <Button className="h-10 w-full rounded-xl bg-[#0F172A] text-white" disabled={customVariableBusy} onClick={saveCustomVariable} type="button">
+                <Button className="h-10 w-full rounded-xl bg-phx-ink text-white" disabled={customVariableBusy} onClick={saveCustomVariable} type="button">
                   Add Variable
                 </Button>
               </div>
@@ -727,10 +727,10 @@ export function EmailTemplateManager({
             {customVariables.length > 0 ? (
               <div className="grid gap-2">
                 {customVariables.map((variable) => (
-                  <div className="flex items-center justify-between gap-3 rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] px-4 py-3" key={variable.token}>
+                  <div className="flex items-center justify-between gap-3 rounded-xl border border-phx-line bg-phx-paper px-4 py-3" key={variable.token}>
                     <div>
-                      <span className="font-black text-[#0F172A]">{`{{${variable.token}}}`}</span>
-                      <span className="ml-2 text-sm font-bold text-[#64748B]">{variable.label} — {variable.sourceColumn}</span>
+                      <span className="font-black text-phx-ink">{`{{${variable.token}}}`}</span>
+                      <span className="ml-2 text-sm font-bold text-phx-ink-soft">{variable.label} — {variable.sourceColumn}</span>
                       {!variable.sourceAllowed ? <span className="ml-2 text-xs font-black text-[#991B1B]">Invalid field, will not resolve</span> : null}
                     </div>
                     <Button className="rounded-lg border border-[#FCA5A5] bg-white px-3 py-1.5 text-xs font-black text-[#991B1B]" disabled={customVariableBusy} onClick={() => deleteCustomVariableRow(variable.token)} type="button" variant="secondary">
@@ -740,7 +740,7 @@ export function EmailTemplateManager({
                 ))}
               </div>
             ) : (
-              <p className="text-sm font-bold text-[#94A3B8]">No custom variables yet.</p>
+              <p className="text-sm font-bold text-phx-ink-faint">No custom variables yet.</p>
             )}
           </Card>
         ) : null}
@@ -751,7 +751,7 @@ export function EmailTemplateManager({
               <button
                 className={cn(
                   "rounded-lg border px-3 py-3 text-left text-sm font-black",
-                  step === index ? "border-[#F97316] bg-[#FFF7ED] text-[#9A3412]" : "border-[#E2E8F0] bg-white text-[#334155]",
+                  step === index ? "border-phx-accent bg-phx-accent-soft text-[#9A3412]" : "border-phx-line bg-white text-phx-ink-2",
                 )}
                 key={label}
                 onClick={() => {
@@ -774,7 +774,7 @@ export function EmailTemplateManager({
                   <button
                     className={cn(
                       "rounded-full border px-3 py-2 text-xs font-black",
-                      categoryFilter === category ? "border-[#F97316] bg-[#FFF7ED] text-[#9A3412]" : "border-[#E2E8F0] bg-white text-[#334155]",
+                      categoryFilter === category ? "border-phx-accent bg-phx-accent-soft text-[#9A3412]" : "border-phx-line bg-white text-phx-ink-2",
                     )}
                     key={category}
                     onClick={() => setCategoryFilter(category)}
@@ -789,39 +789,39 @@ export function EmailTemplateManager({
             {groupedTemplates.map((group) => (
               <div key={group.category}>
                 <div className="mb-2 flex items-baseline gap-2">
-                  <h3 className="text-sm font-black uppercase tracking-[0.14em] text-[#0F172A]">{group.category}</h3>
-                  <span className="text-xs font-bold text-[#64748B]">({group.templates.length})</span>
+                  <h3 className="text-sm font-black uppercase tracking-[0.14em] text-phx-ink">{group.category}</h3>
+                  <span className="text-xs font-bold text-phx-ink-soft">({group.templates.length})</span>
                 </div>
                 <div className="grid gap-4 lg:grid-cols-3">
                 {group.templates.map((template) => {
-                  const healthTone = template.health.status === "good" ? "bg-[#DCFCE7] text-[#166534]" : template.health.status === "broken" ? "bg-[#FEE2E2] text-[#991B1B]" : "bg-[#FFF7ED] text-[#9A3412]";
+                  const healthTone = template.health.status === "good" ? "bg-[#DCFCE7] text-[#166534]" : template.health.status === "broken" ? "bg-[#FEE2E2] text-[#991B1B]" : "bg-phx-accent-soft text-[#9A3412]";
                   return (
                     <Card className={cn(adminPanelClassName, "p-5")} key={template.templateKey}>
                       <div className="flex items-start justify-between gap-3">
                         <div>
-                          <h2 className="text-lg font-black text-[#0F172A]">{template.templateName}</h2>
-                          <p className="mt-2 text-sm leading-6 text-[#64748B]">{template.description}</p>
+                          <h2 className="text-lg font-black text-phx-ink">{template.templateName}</h2>
+                          <p className="mt-2 text-sm leading-6 text-phx-ink-soft">{template.description}</p>
                         </div>
                         <span className={cn("rounded-full px-2.5 py-1 text-xs font-black", healthTone)}>
                           {template.health.label} {template.health.score}%
                         </span>
                       </div>
-                      <div className="mt-4 grid gap-2 text-xs font-bold text-[#64748B]">
+                      <div className="mt-4 grid gap-2 text-xs font-bold text-phx-ink-soft">
                         <span>{publicationLabel(template.publicationState)}</span>
                         {template.health.issues[0] ? <span className="text-[#9A3412]">{template.health.issues[0].message}</span> : <span className="text-[#166534]">Ready for admin review.</span>}
                       </div>
-                      <div className={cn("mt-4 flex items-center gap-2 rounded-lg px-3 py-2", template.sentCount > 0 ? "bg-[#F0FDF4]" : "bg-[#F8FAFC]")}>
-                        <Send className={cn("h-3.5 w-3.5", template.sentCount > 0 ? "text-[#166534]" : "text-[#94A3B8]")} />
-                        <span className={cn("text-xs font-black", template.sentCount > 0 ? "text-[#166534]" : "text-[#64748B]")}>
+                      <div className={cn("mt-4 flex items-center gap-2 rounded-lg px-3 py-2", template.sentCount > 0 ? "bg-[#F0FDF4]" : "bg-phx-paper")}>
+                        <Send className={cn("h-3.5 w-3.5", template.sentCount > 0 ? "text-[#166534]" : "text-phx-ink-faint")} />
+                        <span className={cn("text-xs font-black", template.sentCount > 0 ? "text-[#166534]" : "text-phx-ink-soft")}>
                           {template.sentCount.toLocaleString()} fired
                         </span>
                         {template.lastSentAt ? (
-                          <span className="text-xs font-bold text-[#94A3B8]">· last {new Date(template.lastSentAt).toLocaleDateString("en-GB", { timeZone: PHOENIX_BUSINESS_TIME_ZONE })}</span>
+                          <span className="text-xs font-bold text-phx-ink-faint">· last {new Date(template.lastSentAt).toLocaleDateString("en-GB", { timeZone: PHOENIX_BUSINESS_TIME_ZONE })}</span>
                         ) : null}
                       </div>
                       <div className="mt-4 flex items-center justify-between gap-3">
-                        <span className="text-xs font-bold text-[#64748B]">Updated {new Date(template.updatedAt).toLocaleDateString("en-GB", { timeZone: PHOENIX_BUSINESS_TIME_ZONE })}</span>
-                        <Button className="rounded-xl bg-[#0F172A] text-white" onClick={() => selectTemplate(template)} type="button">
+                        <span className="text-xs font-bold text-phx-ink-soft">Updated {new Date(template.updatedAt).toLocaleDateString("en-GB", { timeZone: PHOENIX_BUSINESS_TIME_ZONE })}</span>
+                        <Button className="rounded-xl bg-phx-ink text-white" onClick={() => selectTemplate(template)} type="button">
                           Edit
                         </Button>
                       </div>
@@ -840,9 +840,9 @@ export function EmailTemplateManager({
             <Card className={cn(adminPanelClassName, "space-y-4 p-5")}>
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
-                  <p className="text-xs font-black uppercase tracking-[0.18em] text-[#C2410C]">Edit Content</p>
-                  <h2 className="mt-1 text-xl font-black text-[#0F172A]">{draft.templateName}</h2>
-                  <p className="mt-1 text-sm font-bold text-[#64748B]">{draft.category} - {publicationLabel(draft.publicationState)}</p>
+                  <p className="text-xs font-black uppercase tracking-[0.18em] text-phx-accent-press">Edit Content</p>
+                  <h2 className="mt-1 text-xl font-black text-phx-ink">{draft.templateName}</h2>
+                  <p className="mt-1 text-sm font-bold text-phx-ink-soft">{draft.category} - {publicationLabel(draft.publicationState)}</p>
                 </div>
                 <div className="flex flex-wrap items-center justify-end gap-2">
                   <div className="flex items-center gap-2 rounded-full border border-[#BBF7D0] bg-[#F0FDF4] px-3 py-2">
@@ -851,11 +851,11 @@ export function EmailTemplateManager({
                       {draft.sentCount.toLocaleString()} fired{draft.lastSentAt ? ` · last ${new Date(draft.lastSentAt).toLocaleDateString("en-GB", { timeZone: PHOENIX_BUSINESS_TIME_ZONE })}` : ""}
                     </span>
                   </div>
-                  <div className="flex items-center gap-3 rounded-full border border-[#E2E8F0] bg-[#F8FAFC] px-3 py-2">
-                    <span className="text-xs font-bold text-[#475569]">{draft.isActive ? "Active" : "Inactive"}</span>
+                  <div className="flex items-center gap-3 rounded-full border border-phx-line bg-phx-paper px-3 py-2">
+                    <span className="text-xs font-bold text-phx-ink-2">{draft.isActive ? "Active" : "Inactive"}</span>
                     <Switch checked={draft.isActive} label="Template active status" onChange={(checked) => updateDraft("isActive", checked)} />
                   </div>
-                  <Button className="h-10 gap-2 rounded-xl border border-[#CBD5E1] bg-white px-3 text-xs font-black text-[#0F172A]" disabled={isPending || aiBusy} onClick={() => saveTemplate("save")} type="button" variant="secondary">
+                  <Button className="h-10 gap-2 rounded-xl border border-phx-line-strong bg-white px-3 text-xs font-black text-phx-ink" disabled={isPending || aiBusy} onClick={() => saveTemplate("save")} type="button" variant="secondary">
                     <Save className="h-4 w-4" />
                     Save Changes
                   </Button>
@@ -863,10 +863,10 @@ export function EmailTemplateManager({
               </div>
               <div className={cn(adminSoftPanelClassName, "p-4")}>
                 <div className="flex items-center gap-2">
-                  <Sparkles className="h-4 w-4 text-[#C2410C]" />
-                  <p className="text-xs font-black uppercase tracking-[0.18em] text-[#C2410C]">AI Assist</p>
+                  <Sparkles className="h-4 w-4 text-phx-accent-press" />
+                  <p className="text-xs font-black uppercase tracking-[0.18em] text-phx-accent-press">AI Assist</p>
                 </div>
-                <p className="mt-1 text-sm leading-6 text-[#64748B]">
+                <p className="mt-1 text-sm leading-6 text-phx-ink-soft">
                   Describe what you want in English or Arabic. The AI writes it with the correct variables, and the backend still validates everything before any send.
                 </p>
                 <div className="mt-3 flex flex-col gap-2 md:flex-row">
@@ -878,7 +878,7 @@ export function EmailTemplateManager({
                     placeholder='e.g. "Write a warm Eid greeting to all employees" or any Arabic instruction'
                     value={aiInstruction}
                   />
-                  <Button className="shrink-0 bg-[#0F172A] text-white" disabled={aiBusy || isPending} onClick={() => void runAiAssist()} type="button">
+                  <Button className="shrink-0 bg-phx-ink text-white" disabled={aiBusy || isPending} onClick={() => void runAiAssist()} type="button">
                     <Sparkles className="mr-2 h-4 w-4" />
                     {aiBusy ? "Thinking..." : "Draft with AI"}
                   </Button>
@@ -886,7 +886,7 @@ export function EmailTemplateManager({
                 <div className="mt-2 flex flex-wrap gap-2">
                   {["Translate to Arabic", "Make it shorter", "More formal", "More friendly"].map((quickAction) => (
                     <button
-                      className="border border-[#E2E8F0] bg-white px-2.5 py-1 text-xs font-bold text-[#334155] hover:border-[#FED7AA] hover:bg-[#FFF7ED] disabled:opacity-50"
+                      className="border border-phx-line bg-white px-2.5 py-1 text-xs font-bold text-phx-ink-2 hover:border-[#FED7AA] hover:bg-phx-accent-soft disabled:opacity-50"
                       disabled={aiBusy || isPending}
                       key={quickAction}
                       onClick={() => void runAiAssist(quickAction)}
@@ -897,14 +897,14 @@ export function EmailTemplateManager({
                   ))}
                 </div>
               </div>
-              <div className="border border-[#E2E8F0]">
+              <div className="border border-phx-line">
                 <div className="bg-[#070b12] px-6 py-5">
                   <div className="flex items-center gap-2">
                     <span className="text-[11px] font-black uppercase tracking-[0.24em] text-[#FB923C]">{systemIdentity.appName} HR System</span>
                     <LockedHint label="Brand line shared by every system email." />
                   </div>
                   <input
-                    className="mt-2 w-full border-0 bg-transparent text-[25px] font-black leading-tight text-white outline-none placeholder:text-[#64748B]"
+                    className="mt-2 w-full border-0 bg-transparent text-[25px] font-black leading-tight text-white outline-none placeholder:text-phx-ink-soft"
                     onChange={(event) => updateDraft("subject", event.target.value)}
                     onDragOver={(event) => event.preventDefault()}
                     onDrop={(event) => dropVariable(event, "subject")}
@@ -915,7 +915,7 @@ export function EmailTemplateManager({
                     value={draft.subject}
                   />
                   <input
-                    className="mt-2 w-full border-0 bg-transparent text-sm text-[#DBEAFE] outline-none placeholder:text-[#475569]"
+                    className="mt-2 w-full border-0 bg-transparent text-sm text-[#DBEAFE] outline-none placeholder:text-phx-ink-2"
                     onChange={(event) => updateDraft("previewText", event.target.value)}
                     onDragOver={(event) => event.preventDefault()}
                     onDrop={(event) => dropVariable(event, "previewText")}
@@ -925,12 +925,12 @@ export function EmailTemplateManager({
                     title="Shown under the title in the dark header, and as the inbox preview snippet. Leave empty to use the standard line."
                     value={draft.previewText}
                   />
-                  <div className="mt-4 h-[3px] w-24 bg-gradient-to-r from-[#FB923C] via-[#F97316] to-[#FED7AA]" />
+                  <div className="mt-4 h-[3px] w-24 bg-gradient-to-r from-[#FB923C] via-phx-accent to-[#FED7AA]" />
                 </div>
                 <div className="bg-white">
                   <div className="px-5 pt-4" style={{ fontFamily: "Arial, Helvetica, sans-serif" }}>
                     <input
-                      className="w-full border-0 bg-transparent text-[15px] font-bold text-[#111827] outline-none placeholder:text-[#94A3B8]"
+                      className="w-full border-0 bg-transparent text-[15px] font-bold text-[#111827] outline-none placeholder:text-phx-ink-faint"
                       onChange={(event) => updateDraft("greeting", event.target.value)}
                       onDragOver={(event) => event.preventDefault()}
                       onDrop={(event) => dropVariable(event, "greeting")}
@@ -949,7 +949,7 @@ export function EmailTemplateManager({
                   />
                   <div className="px-5 py-3" style={{ fontFamily: "Arial, Helvetica, sans-serif" }}>
                     <input
-                      className="w-full border-0 bg-transparent text-[15px] text-[#111827] outline-none placeholder:text-[#94A3B8]"
+                      className="w-full border-0 bg-transparent text-[15px] text-[#111827] outline-none placeholder:text-phx-ink-faint"
                       onChange={(event) => updateDraft("closingText", event.target.value)}
                       onDragOver={(event) => event.preventDefault()}
                       onDrop={(event) => dropVariable(event, "closingText")}
@@ -958,28 +958,28 @@ export function EmailTemplateManager({
                       value={draft.closingText}
                     />
                   </div>
-                  <div className="mx-5 mb-4 flex items-start justify-between gap-3 border-l-4 border-[#FB923C] bg-[#FFF7ED] px-4 py-3">
+                  <div className="mx-5 mb-4 flex items-start justify-between gap-3 border-l-4 border-[#FB923C] bg-phx-accent-soft px-4 py-3">
                     <span className="text-[13px] font-semibold leading-relaxed text-[#9A3412]" style={{ fontFamily: "Arial, Helvetica, sans-serif" }}>{phoenixEmailAutoGeneratedNote}</span>
                     <LockedHint label="System note shared by every system email." />
                   </div>
-                  <div className="border-t border-[#E2E8F0] px-5 py-4" style={{ fontFamily: "Arial, Helvetica, sans-serif" }}>
-                    <p className="text-sm font-black text-[#0F172A]">Best regards,</p>
-                    <p className="mt-1 flex items-center gap-2 text-sm font-black text-[#0F172A]">
+                  <div className="border-t border-phx-line px-5 py-4" style={{ fontFamily: "Arial, Helvetica, sans-serif" }}>
+                    <p className="text-sm font-black text-phx-ink">Best regards,</p>
+                    <p className="mt-1 flex items-center gap-2 text-sm font-black text-phx-ink">
                       {systemIdentity.hrSignatureName}
                       <LockedHint label="HR signature name shared by every system email." />
                     </p>
-                    <p className="mt-2 text-xs font-bold text-[#94A3B8]">The Phoenix HR signature image is attached here automatically.</p>
+                    <p className="mt-2 text-xs font-bold text-phx-ink-faint">The Phoenix HR signature image is attached here automatically.</p>
                   </div>
                 </div>
               </div>
               <details className={cn(adminSoftPanelClassName, "p-4")}>
-                <summary className="cursor-pointer text-sm font-black text-[#0F172A]">More settings (internal name, plain text copy)</summary>
+                <summary className="cursor-pointer text-sm font-black text-phx-ink">More settings (internal name, plain text copy)</summary>
                 <div className="mt-4 grid gap-3 md:grid-cols-2">
                   <Field label="Friendly email name"><Input value={draft.templateName} onChange={(event) => updateDraft("templateName", event.target.value)} /></Field>
                 </div>
                 <div className="mt-3">
                   <Field label="Plain text copy (generated automatically from the email body)">
-                    <textarea className="min-h-[96px] w-full border border-[#E2E8F0] bg-[#F8FAFC] px-3 py-2 text-sm leading-6 text-[#64748B]" readOnly value={htmlToPlainText(draft.bodyHtml)} />
+                    <textarea className="min-h-[96px] w-full border border-phx-line bg-phx-paper px-3 py-2 text-sm leading-6 text-phx-ink-soft" readOnly value={htmlToPlainText(draft.bodyHtml)} />
                   </Field>
                 </div>
               </details>
@@ -992,8 +992,8 @@ export function EmailTemplateManager({
           <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_420px]">
             <Card className={cn(adminPanelClassName, "space-y-5 p-5")}>
               <div>
-                <p className="text-xs font-black uppercase tracking-[0.18em] text-[#C2410C]">Choose Recipients</p>
-                <h2 className="mt-1 text-xl font-black text-[#0F172A]">Simple recipient presets</h2>
+                <p className="text-xs font-black uppercase tracking-[0.18em] text-phx-accent-press">Choose Recipients</p>
+                <h2 className="mt-1 text-xl font-black text-phx-ink">Simple recipient presets</h2>
               </div>
               <div className={cn(adminSoftPanelClassName, "grid gap-3 p-4 md:grid-cols-3")}>
                 <RecipientRoleFlow label="TO" roles={draft.rules.toRoles} />
@@ -1003,14 +1003,14 @@ export function EmailTemplateManager({
               <div className="grid gap-4 lg:grid-cols-3">
                 {(["toRoles", "ccRoles", "bccRoles"] as const).map((channel) => (
                   <div className={cn(adminSoftPanelClassName, "p-4")} key={channel}>
-                    <p className="text-sm font-black text-[#0F172A]">{channel === "toRoles" ? "TO" : channel === "ccRoles" ? "CC" : "BCC"}</p>
+                    <p className="text-sm font-black text-phx-ink">{channel === "toRoles" ? "TO" : channel === "ccRoles" ? "CC" : "BCC"}</p>
                     <div className="mt-3 space-y-2">
                       {(presets.length > 0 ? presets : Object.keys(presetRoles).map((key) => ({ description: key, key, label: key.replace(/_/g, " "), role: presetRoles[key] }))).map((preset) => (
-                        <label className="flex items-start gap-2 rounded-lg px-2 py-2 text-sm text-[#334155] hover:bg-[#FFF7ED]" key={`${channel}-${preset.key}`}>
-                          <input checked={presetChecked(channel, preset.key)} className="mt-1 h-4 w-4 accent-[#F97316]" onChange={() => togglePreset(channel, preset.key)} type="checkbox" />
+                        <label className="flex items-start gap-2 rounded-lg px-2 py-2 text-sm text-phx-ink-2 hover:bg-phx-accent-soft" key={`${channel}-${preset.key}`}>
+                          <input checked={presetChecked(channel, preset.key)} className="mt-1 h-4 w-4 accent-phx-accent" onChange={() => togglePreset(channel, preset.key)} type="checkbox" />
                           <span>
                             <span className="block font-black">{preset.label}</span>
-                            <span className="text-xs leading-5 text-[#64748B]">{preset.description}</span>
+                            <span className="text-xs leading-5 text-phx-ink-soft">{preset.description}</span>
                           </span>
                         </label>
                       ))}
@@ -1019,26 +1019,26 @@ export function EmailTemplateManager({
                 ))}
               </div>
               <details className={cn(adminSoftPanelClassName, "p-4")}>
-                <summary className="cursor-pointer text-sm font-black text-[#0F172A]">Advanced settings for Super Admins</summary>
+                <summary className="cursor-pointer text-sm font-black text-phx-ink">Advanced settings for Super Admins</summary>
                 <div className="mt-4 grid gap-3 lg:grid-cols-3">
-                  <Field label="Static TO emails"><textarea className="min-h-[88px] w-full rounded-xl border border-[#CBD5E1] px-3 py-2 text-sm" value={emailText(draft.rules.toStaticEmails)} onChange={(event) => updateRules("toStaticEmails", parseLines(event.target.value))} /></Field>
-                  <Field label="Static CC emails"><textarea className="min-h-[88px] w-full rounded-xl border border-[#CBD5E1] px-3 py-2 text-sm" value={emailText(draft.rules.ccStaticEmails)} onChange={(event) => updateRules("ccStaticEmails", parseLines(event.target.value))} /></Field>
-                  <Field label="Static BCC emails"><textarea className="min-h-[88px] w-full rounded-xl border border-[#CBD5E1] px-3 py-2 text-sm" value={emailText(draft.rules.bccStaticEmails)} onChange={(event) => updateRules("bccStaticEmails", parseLines(event.target.value))} /></Field>
+                  <Field label="Static TO emails"><textarea className="min-h-[88px] w-full rounded-xl border border-phx-line-strong px-3 py-2 text-sm" value={emailText(draft.rules.toStaticEmails)} onChange={(event) => updateRules("toStaticEmails", parseLines(event.target.value))} /></Field>
+                  <Field label="Static CC emails"><textarea className="min-h-[88px] w-full rounded-xl border border-phx-line-strong px-3 py-2 text-sm" value={emailText(draft.rules.ccStaticEmails)} onChange={(event) => updateRules("ccStaticEmails", parseLines(event.target.value))} /></Field>
+                  <Field label="Static BCC emails"><textarea className="min-h-[88px] w-full rounded-xl border border-phx-line-strong px-3 py-2 text-sm" value={emailText(draft.rules.bccStaticEmails)} onChange={(event) => updateRules("bccStaticEmails", parseLines(event.target.value))} /></Field>
                 </div>
                 <div className="mt-3 grid gap-3 md:grid-cols-2">
-                  <Field label="Target lines"><select className="min-h-[112px] w-full rounded-xl border border-[#CBD5E1] bg-white px-3 py-2 text-sm" multiple value={draft.rules.targetLines} onChange={(event) => updateRules("targetLines", Array.from(event.currentTarget.selectedOptions).map((option) => option.value))}>{initialRoutingOptions.lines.map((line) => <option key={line} value={line}>{line}</option>)}</select></Field>
-                  <Field label="Target titles"><select className="min-h-[112px] w-full rounded-xl border border-[#CBD5E1] bg-white px-3 py-2 text-sm" multiple value={draft.rules.targetTitles} onChange={(event) => updateRules("targetTitles", Array.from(event.currentTarget.selectedOptions).map((option) => option.value))}>{initialRoutingOptions.titles.map((title) => <option key={title} value={title}>{title}</option>)}</select></Field>
+                  <Field label="Target lines"><select className="min-h-[112px] w-full rounded-xl border border-phx-line-strong bg-white px-3 py-2 text-sm" multiple value={draft.rules.targetLines} onChange={(event) => updateRules("targetLines", Array.from(event.currentTarget.selectedOptions).map((option) => option.value))}>{initialRoutingOptions.lines.map((line) => <option key={line} value={line}>{line}</option>)}</select></Field>
+                  <Field label="Target titles"><select className="min-h-[112px] w-full rounded-xl border border-phx-line-strong bg-white px-3 py-2 text-sm" multiple value={draft.rules.targetTitles} onChange={(event) => updateRules("targetTitles", Array.from(event.currentTarget.selectedOptions).map((option) => option.value))}>{initialRoutingOptions.titles.map((title) => <option key={title} value={title}>{title}</option>)}</select></Field>
                 </div>
               </details>
             </Card>
             <Card className={cn(adminPanelClassName, "space-y-4 p-5")}>
-              <p className="text-xs font-black uppercase tracking-[0.18em] text-[#C2410C]">Visual recipient preview</p>
+              <p className="text-xs font-black uppercase tracking-[0.18em] text-phx-accent-press">Visual recipient preview</p>
               <div className="grid gap-3 md:grid-cols-2">
                 <Field label="Sample employee HR ID"><Input value={sampleEmployeeHrId} onChange={(event) => setSampleEmployeeHrId(event.target.value)} placeholder="PHX-1024" /></Field>
                 <Field label="Candidate email"><Input value={sampleCandidateEmail} onChange={(event) => setSampleCandidateEmail(event.target.value)} placeholder="candidate@example.com" /></Field>
               </div>
-              <Button className="w-full rounded-xl bg-[#0F172A] text-white" disabled={isPending || aiBusy} onClick={validateDraft} type="button">Resolve with backend</Button>
-              {validation ? <RecipientPreview validation={validation} /> : <p className="text-sm leading-6 text-[#64748B]">Run backend resolution to see the exact TO, CC, and BCC recipients.</p>}
+              <Button className="w-full rounded-xl bg-phx-ink text-white" disabled={isPending || aiBusy} onClick={validateDraft} type="button">Resolve with backend</Button>
+              {validation ? <RecipientPreview validation={validation} /> : <p className="text-sm leading-6 text-phx-ink-soft">Run backend resolution to see the exact TO, CC, and BCC recipients.</p>}
             </Card>
           </div>
         ) : null}
@@ -1048,60 +1048,60 @@ export function EmailTemplateManager({
             <Card className={cn(adminPanelClassName, "space-y-4 p-5")}>
               <div className="flex flex-wrap items-end justify-between gap-3">
                 <div>
-                  <p className="text-xs font-black uppercase tracking-[0.18em] text-[#C2410C]">Review & Publish</p>
-                  <h2 className="mt-1 text-xl font-black text-[#0F172A]">{validation?.preview.subject ?? draft.subject}</h2>
+                  <p className="text-xs font-black uppercase tracking-[0.18em] text-phx-accent-press">Review & Publish</p>
+                  <h2 className="mt-1 text-xl font-black text-phx-ink">{validation?.preview.subject ?? draft.subject}</h2>
                 </div>
-                <Button className="rounded-xl bg-[#0F172A] text-white" disabled={isPending || aiBusy} onClick={validateDraft} type="button">Run backend review</Button>
+                <Button className="rounded-xl bg-phx-ink text-white" disabled={isPending || aiBusy} onClick={validateDraft} type="button">Run backend review</Button>
               </div>
               {issues.length > 0 ? (
                 <div className="space-y-2">
                   {issues.map((issue) => (
-                    <div className={cn("rounded-xl border px-3 py-2 text-sm font-semibold", issue.severity === "error" ? "border-[#FCA5A5] bg-[#FEF2F2] text-[#B91C1C]" : "border-[#FED7AA] bg-[#FFF7ED] text-[#9A3412]")} key={`${issue.field}-${issue.message}`}>
+                    <div className={cn("rounded-xl border px-3 py-2 text-sm font-semibold", issue.severity === "error" ? "border-[#FCA5A5] bg-[#FEF2F2] text-[#B91C1C]" : "border-[#FED7AA] bg-phx-accent-soft text-[#9A3412]")} key={`${issue.field}-${issue.message}`}>
                       {issue.message}
                     </div>
                   ))}
                 </div>
               ) : null}
-              <div className="overflow-hidden rounded-xl border border-[#CBD5E1] bg-white">
-                {validation?.preview.html ? <iframe className="h-[620px] w-full bg-white" sandbox="" srcDoc={validation.preview.html} title="Backend email preview" /> : <div className="flex h-[620px] items-center justify-center px-6 text-center text-sm text-[#64748B]">Run backend review to render the final email.</div>}
+              <div className="overflow-hidden rounded-xl border border-phx-line-strong bg-white">
+                {validation?.preview.html ? <iframe className="h-[620px] w-full bg-white" sandbox="" srcDoc={validation.preview.html} title="Backend email preview" /> : <div className="flex h-[620px] items-center justify-center px-6 text-center text-sm text-phx-ink-soft">Run backend review to render the final email.</div>}
               </div>
             </Card>
             <aside className="space-y-5">
               <Card className={cn(adminPanelClassName, "space-y-4 p-5")}>
-                <Field label="Publish reason"><textarea className="min-h-[96px] w-full rounded-xl border border-[#CBD5E1] px-3 py-3 text-sm" value={changeReason} onChange={(event) => setChangeReason(event.target.value)} placeholder="Example: Simplified leave approval wording for HR audit clarity." /></Field>
-                <div className={cn(adminSoftPanelClassName, "space-y-2 p-3 text-sm font-semibold text-[#475569]")}>
-                  <p className="font-black text-[#0F172A]">Draft / Published</p>
+                <Field label="Publish reason"><textarea className="min-h-[96px] w-full rounded-xl border border-phx-line-strong px-3 py-3 text-sm" value={changeReason} onChange={(event) => setChangeReason(event.target.value)} placeholder="Example: Simplified leave approval wording for HR audit clarity." /></Field>
+                <div className={cn(adminSoftPanelClassName, "space-y-2 p-3 text-sm font-semibold text-phx-ink-2")}>
+                  <p className="font-black text-phx-ink">Draft / Published</p>
                   <p>{publicationLabel(draft.publicationState)}</p>
                   <p>Automated emails continue using the published version until this draft is published.</p>
                 </div>
                 <div className="grid gap-2">
-                  <Button className="rounded-xl border border-[#CBD5E1] bg-white text-[#0F172A]" disabled={isPending || aiBusy} onClick={() => saveTemplate("draft")} type="button" variant="secondary"><Save className="mr-2 h-4 w-4" />Save Draft</Button>
-                  <Button className="rounded-xl bg-[#F97316] text-white" disabled={!canPublish || isPending || aiBusy} onClick={() => saveTemplate("publish")} type="button"><Send className="mr-2 h-4 w-4" />Publish</Button>
+                  <Button className="rounded-xl border border-phx-line-strong bg-white text-phx-ink" disabled={isPending || aiBusy} onClick={() => saveTemplate("draft")} type="button" variant="secondary"><Save className="mr-2 h-4 w-4" />Save Draft</Button>
+                  <Button className="rounded-xl bg-phx-accent text-white" disabled={!canPublish || isPending || aiBusy} onClick={() => saveTemplate("publish")} type="button"><Send className="mr-2 h-4 w-4" />Publish</Button>
                 </div>
                 <div className="grid gap-2">
                   <Field label="Send test to"><Input type="email" value={testEmail} onChange={(event) => setTestEmail(event.target.value)} placeholder="admin@satopharma.com" /></Field>
-                  <Button className="rounded-xl border border-[#CBD5E1] bg-white text-[#0F172A]" onClick={sendTestEmail} type="button" variant="secondary">Send Test</Button>
+                  <Button className="rounded-xl border border-phx-line-strong bg-white text-phx-ink" onClick={sendTestEmail} type="button" variant="secondary">Send Test</Button>
                 </div>
               </Card>
               <Card className={cn(adminPanelClassName, "space-y-4 p-5")}>
                 <div className="flex items-center justify-between gap-3">
-                  <p className="text-xs font-black uppercase tracking-[0.18em] text-[#C2410C]">Restore</p>
-                  <Button className="rounded-xl border border-[#CBD5E1] bg-white text-[#0F172A]" onClick={loadHistory} type="button" variant="secondary"><History className="mr-2 h-4 w-4" />Load</Button>
+                  <p className="text-xs font-black uppercase tracking-[0.18em] text-phx-accent-press">Restore</p>
+                  <Button className="rounded-xl border border-phx-line-strong bg-white text-phx-ink" onClick={loadHistory} type="button" variant="secondary"><History className="mr-2 h-4 w-4" />Load</Button>
                 </div>
                 <Field label="Restore reason"><Input value={restoreReason} onChange={(event) => setRestoreReason(event.target.value)} placeholder="Reason required before restore" /></Field>
                 <div className="max-h-[320px] space-y-2 overflow-auto">
                   {history.length > 0 ? history.map((entry) => (
-                    <div className="rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] p-3" key={entry.versionNumber}>
+                    <div className="rounded-xl border border-phx-line bg-phx-paper p-3" key={entry.versionNumber}>
                       <div className="flex items-start justify-between gap-3">
                         <div>
-                          <p className="text-sm font-black text-[#0F172A]">Version {entry.versionNumber} - {entry.action}</p>
-                          <p className="mt-1 text-xs font-semibold text-[#64748B]">{new Date(entry.changedAt).toLocaleString("en-GB", { timeZone: PHOENIX_BUSINESS_TIME_ZONE })}</p>
-                          {entry.reason ? <p className="mt-2 text-xs leading-5 text-[#475569]">{entry.reason}</p> : null}
+                          <p className="text-sm font-black text-phx-ink">Version {entry.versionNumber} - {entry.action}</p>
+                          <p className="mt-1 text-xs font-semibold text-phx-ink-soft">{new Date(entry.changedAt).toLocaleString("en-GB", { timeZone: PHOENIX_BUSINESS_TIME_ZONE })}</p>
+                          {entry.reason ? <p className="mt-2 text-xs leading-5 text-phx-ink-2">{entry.reason}</p> : null}
                         </div>
-                        <Button className="h-9 rounded-xl border border-[#CBD5E1] bg-white text-[#0F172A]" onClick={() => restoreTemplate(entry.versionNumber)} type="button" variant="secondary"><RotateCcw className="h-4 w-4" /></Button>
+                        <Button className="h-9 rounded-xl border border-phx-line-strong bg-white text-phx-ink" onClick={() => restoreTemplate(entry.versionNumber)} type="button" variant="secondary"><RotateCcw className="h-4 w-4" /></Button>
                       </div>
                     </div>
-                  )) : <p className="text-sm leading-6 text-[#64748B]">Load history to restore an older backend snapshot.</p>}
+                  )) : <p className="text-sm leading-6 text-phx-ink-soft">Load history to restore an older backend snapshot.</p>}
                 </div>
               </Card>
             </aside>
@@ -1109,8 +1109,8 @@ export function EmailTemplateManager({
         ) : null}
 
         <div className="flex justify-between">
-          <Button className="rounded-xl border border-[#CBD5E1] bg-white text-[#0F172A]" disabled={step === 0} onClick={() => setStep((current) => Math.max(0, current - 1))} type="button" variant="secondary"><ChevronLeft className="mr-2 h-4 w-4" />Back</Button>
-          <Button className="rounded-xl bg-[#0F172A] text-white" disabled={step === steps.length - 1} onClick={() => {
+          <Button className="rounded-xl border border-phx-line-strong bg-white text-phx-ink" disabled={step === 0} onClick={() => setStep((current) => Math.max(0, current - 1))} type="button" variant="secondary"><ChevronLeft className="mr-2 h-4 w-4" />Back</Button>
+          <Button className="rounded-xl bg-phx-ink text-white" disabled={step === steps.length - 1} onClick={() => {
             loadDesignerMetadata();
             setStep((current) => Math.min(steps.length - 1, current + 1));
           }} type="button">Next<ChevronRight className="ml-2 h-4 w-4" /></Button>
@@ -1123,7 +1123,7 @@ export function EmailTemplateManager({
 function Field({ children, label }: { children: ReactNode; label: string }) {
   return (
     <label className="block">
-      <span className="mb-1.5 block text-xs font-black uppercase tracking-[0.14em] text-[#64748B]">{label}</span>
+      <span className="mb-1.5 block text-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">{label}</span>
       {children}
     </label>
   );
@@ -1138,14 +1138,14 @@ function publicationLabel(value: string) {
 
 function RecipientRoleFlow({ label, roles }: { label: string; roles: EmailTemplateRecipientRole[] }) {
   return (
-    <div className="rounded-xl border border-[#E2E8F0] bg-white p-3">
-      <p className="text-xs font-black uppercase tracking-[0.14em] text-[#64748B]">{label}</p>
+    <div className="rounded-xl border border-phx-line bg-white p-3">
+      <p className="text-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">{label}</p>
       <div className="mt-2 flex flex-wrap gap-2">
         {roles.length > 0 ? roles.map((role) => (
-          <span className="rounded-full bg-[#F8FAFC] px-2.5 py-1 text-xs font-black text-[#0F172A]" key={`${label}-${role}`}>
+          <span className="rounded-full bg-phx-paper px-2.5 py-1 text-xs font-black text-phx-ink" key={`${label}-${role}`}>
             {role.replace(/_/g, " ")}
           </span>
-        )) : <span className="text-sm font-semibold text-[#94A3B8]">No preset selected.</span>}
+        )) : <span className="text-sm font-semibold text-phx-ink-faint">No preset selected.</span>}
       </div>
     </div>
   );
@@ -1162,7 +1162,7 @@ const activeFieldLabels: Record<string, string> = {
 function LockedHint({ label }: { label: string }) {
   return (
     <span
-      className="inline-flex shrink-0 items-center text-[#94A3B8]"
+      className="inline-flex shrink-0 items-center text-phx-ink-faint"
       title={`${label} Locked here - ask to change it globally for all emails.`}
     >
       <Lock className="h-3 w-3" />
@@ -1187,18 +1187,18 @@ function VariablePanel({
   return (
     <Card className={cn(adminPanelClassName, "space-y-4 p-5")}>
       <div>
-        <p className="text-xs font-black uppercase tracking-[0.18em] text-[#C2410C]">Variables</p>
-        <p className="mt-1 text-sm leading-6 text-[#64748B]">Click a chip to drop it where you are writing. It is filled with real data on every send.</p>
-        <p className="mt-1 text-xs font-bold text-[#64748B]">Inserting into: {activeFieldLabels[activeField] ?? activeField}</p>
+        <p className="text-xs font-black uppercase tracking-[0.18em] text-phx-accent-press">Variables</p>
+        <p className="mt-1 text-sm leading-6 text-phx-ink-soft">Click a chip to drop it where you are writing. It is filled with real data on every send.</p>
+        <p className="mt-1 text-xs font-bold text-phx-ink-soft">Inserting into: {activeFieldLabels[activeField] ?? activeField}</p>
       </div>
       <div className="max-h-[640px] space-y-4 overflow-auto pr-1">
         {Object.entries(grouped).map(([category, items]) => (
           <div key={category}>
-            <p className="mb-2 text-xs font-black uppercase tracking-[0.14em] text-[#64748B]">{category}</p>
+            <p className="mb-2 text-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">{category}</p>
             <div className="flex flex-wrap gap-2">
               {items.map((variable) => (
                 <button
-                  className="rounded-full border border-[#FED7AA] bg-[#FFF7ED] px-3 py-1.5 text-xs font-black text-[#C2410C]"
+                  className="rounded-full border border-[#FED7AA] bg-phx-accent-soft px-3 py-1.5 text-xs font-black text-phx-accent-press"
                   draggable
                   key={variable.token}
                   onClick={() => onInsert(variable.token)}
@@ -1225,7 +1225,7 @@ function RecipientPreview({ validation }: { validation: ValidationState }) {
         <RecipientList label="CC" recipients={validation.simulation.cc} />
         <RecipientList label="BCC" recipients={validation.simulation.bcc} />
       </div>
-      <p className="text-xs font-bold text-[#64748B]">
+      <p className="text-xs font-bold text-phx-ink-soft">
         {validation.simulation.diagnostics.finalRecipientCount} final recipient(s). {validation.duplicateRecipientsRemoved} duplicate(s) removed by backend.
       </p>
     </div>
@@ -1234,15 +1234,15 @@ function RecipientPreview({ validation }: { validation: ValidationState }) {
 
 function RecipientList({ label, recipients }: { label: string; recipients: SimulationRecipient[] }) {
   return (
-    <div className="rounded-xl border border-[#E2E8F0] bg-white p-3">
-      <p className="text-xs font-black uppercase tracking-[0.14em] text-[#64748B]">{label} ({recipients.length})</p>
+    <div className="rounded-xl border border-phx-line bg-white p-3">
+      <p className="text-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">{label} ({recipients.length})</p>
       <div className="mt-2 space-y-2">
         {recipients.length > 0 ? recipients.map((recipient) => (
-          <div className="min-w-0 rounded-lg bg-[#F8FAFC] px-2.5 py-2" key={`${label}-${recipient.email}`}>
-            <p className="truncate text-sm font-bold text-[#0F172A]">{recipient.email}</p>
-            {recipient.name ? <p className="truncate text-xs font-semibold text-[#64748B]">{recipient.name}</p> : null}
+          <div className="min-w-0 rounded-lg bg-phx-paper px-2.5 py-2" key={`${label}-${recipient.email}`}>
+            <p className="truncate text-sm font-bold text-phx-ink">{recipient.email}</p>
+            {recipient.name ? <p className="truncate text-xs font-semibold text-phx-ink-soft">{recipient.name}</p> : null}
           </div>
-        )) : <p className="text-sm font-semibold text-[#94A3B8]">No recipients resolved.</p>}
+        )) : <p className="text-sm font-semibold text-phx-ink-faint">No recipients resolved.</p>}
       </div>
     </div>
   );

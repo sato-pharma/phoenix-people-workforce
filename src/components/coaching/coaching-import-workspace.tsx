@@ -126,14 +126,14 @@ export function CoachingImportWorkspace() {
         />
         <div className="p-5 sm:p-6">
           <label
-            className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-[#CBD5E1] bg-[#F8FAFC] px-6 py-10 text-center transition hover:border-[#FDBA74] hover:bg-[#FFF7ED]"
+            className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-phx-line-strong bg-phx-paper px-6 py-10 text-center transition hover:border-phx-accent-line hover:bg-phx-accent-soft"
             htmlFor="coaching-import-file"
           >
-            <UploadCloud className="h-8 w-8 text-[#F97316]" />
-            <span className="text-sm font-black text-[#0F172A]">
+            <UploadCloud className="h-8 w-8 text-phx-accent" />
+            <span className="text-sm font-black text-phx-ink">
               {file ? file.name : "Click to choose an .xlsx coaching workbook"}
             </span>
-            <span className="text-xs font-semibold text-[#64748B]">Max 10MB · the first sheet is read</span>
+            <span className="text-xs font-semibold text-phx-ink-soft">Max 10MB · the first sheet is read</span>
             <input
               accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
               className="hidden"
@@ -145,7 +145,7 @@ export function CoachingImportWorkspace() {
           </label>
 
           {busy === "previewing" ? (
-            <p className="mt-4 flex items-center gap-2 text-sm font-semibold text-[#64748B]">
+            <p className="mt-4 flex items-center gap-2 text-sm font-semibold text-phx-ink-soft">
               <Loader2 className="h-4 w-4 animate-spin" /> Reading workbook…
             </p>
           ) : null}
@@ -166,7 +166,7 @@ export function CoachingImportWorkspace() {
           <AdminSectionHeader
             action={
               <button
-                className="inline-flex items-center justify-center gap-2 rounded-full bg-[#F97316] px-5 py-2.5 text-sm font-black text-white shadow-[0_18px_42px_rgba(249,115,22,0.22)] transition hover:bg-[#EA580C] disabled:cursor-not-allowed disabled:opacity-50"
+                className="inline-flex items-center justify-center gap-2 rounded-full bg-phx-accent px-5 py-2.5 text-sm font-black text-white shadow-[0_18px_42px_rgba(249,115,22,0.22)] transition hover:bg-phx-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
                 disabled={busy !== "idle" || totals.matched + totals.archived === 0 || Boolean(result)}
                 onClick={() => void runCommit()}
                 type="button"
@@ -191,8 +191,8 @@ export function CoachingImportWorkspace() {
                 className={cn(
                   "rounded-full border px-4 py-1.5 text-xs font-black transition",
                   tab === key
-                    ? "border-[#F97316] bg-[#F97316] text-white"
-                    : "border-[#D8E0EA] bg-white text-[#475569] hover:border-[#FDBA74]",
+                    ? "border-phx-accent bg-phx-accent text-white"
+                    : "border-phx-line bg-white text-phx-ink-2 hover:border-phx-accent-line",
                 )}
                 key={key}
                 onClick={() => setTab(key)}
@@ -216,13 +216,13 @@ export function CoachingImportWorkspace() {
 
 function PreviewTable({ rows, tab }: { rows: CoachingImportClassifiedRow[]; tab: TabKey }) {
   if (rows.length === 0) {
-    return <p className="text-sm font-semibold text-[#64748B]">No rows in this group.</p>;
+    return <p className="text-sm font-semibold text-phx-ink-soft">No rows in this group.</p>;
   }
 
   return (
-    <div className="overflow-x-auto rounded-[12px] border border-[#E2E8F0]">
+    <div className="overflow-x-auto rounded-[12px] border border-phx-line">
       <table className="min-w-[920px] w-full border-collapse text-left">
-        <thead className="bg-[#0F172A] text-[11px] font-black uppercase tracking-[0.12em] text-white">
+        <thead className="bg-phx-ink text-[11px] font-black uppercase tracking-[0.12em] text-white">
           <tr>
             <th className="px-4 py-3">Row</th>
             <th className="px-4 py-3">Rep</th>
@@ -239,24 +239,24 @@ function PreviewTable({ rows, tab }: { rows: CoachingImportClassifiedRow[]; tab:
             const sum = scoreSum(row.scores);
             return (
               <tr className="border-t border-[#FCE7D2] bg-white text-sm hover:bg-[#FFFBF7]" key={row.rowNumber}>
-                <td className="px-4 py-3 font-bold text-[#64748B]">{row.rowNumber}</td>
-                <td className="px-4 py-3 font-bold text-[#0F172A]">{row.repName ?? row.sourceName}</td>
-                <td className="px-4 py-3 text-[#475569]">{row.territory ?? "—"}</td>
-                <td className="px-4 py-3 text-[#475569]">{row.claimedHrId ?? "—"}</td>
-                <td className="px-4 py-3 text-[#475569]">
+                <td className="px-4 py-3 font-bold text-phx-ink-soft">{row.rowNumber}</td>
+                <td className="px-4 py-3 font-bold text-phx-ink">{row.repName ?? row.sourceName}</td>
+                <td className="px-4 py-3 text-phx-ink-2">{row.territory ?? "—"}</td>
+                <td className="px-4 py-3 text-phx-ink-2">{row.claimedHrId ?? "—"}</td>
+                <td className="px-4 py-3 text-phx-ink-2">
                   {row.coachingDate ?? <span className="text-rose-600">{row.coachingDateRaw || "missing"}</span>}
                   {row.dateCorrected ? (
-                    <span className="ml-1.5 inline-flex items-center rounded-full bg-[#FFF7ED] px-1.5 py-0.5 text-[10px] font-bold text-[#C2410C]" title={`Auto-adjusted from ${row.coachingDateRaw} (day/month swapped to day-first)`}>
+                    <span className="ml-1.5 inline-flex items-center rounded-full bg-phx-accent-soft px-1.5 py-0.5 text-[10px] font-bold text-phx-accent-press" title={`Auto-adjusted from ${row.coachingDateRaw} (day/month swapped to day-first)`}>
                       adjusted
                     </span>
                   ) : null}
                 </td>
-                <td className="px-4 py-3 font-black text-[#0F172A]">
+                <td className="px-4 py-3 font-black text-phx-ink">
                   {Object.keys(row.scores).length === 20 ? sum : <span className="text-rose-600">{sum} (incomplete)</span>}
                 </td>
                 {tab === "matched" ? (
-                  <td className="px-4 py-3 text-[#475569]">
-                    {row.resolvedName ?? "—"} <span className="text-[#94A3B8]">({row.resolvedHrId})</span>
+                  <td className="px-4 py-3 text-phx-ink-2">
+                    {row.resolvedName ?? "—"} <span className="text-phx-ink-faint">({row.resolvedHrId})</span>
                   </td>
                 ) : null}
                 {tab !== "matched" ? (

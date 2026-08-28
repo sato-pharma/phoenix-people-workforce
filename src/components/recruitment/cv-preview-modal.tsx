@@ -405,11 +405,11 @@ export function CvPreviewModal({ fileName, mimeType, downloadUrl, onClose, sideP
         role="dialog"
         aria-modal="true"
         aria-label={`Preview — ${fileName}`}
-        className={`flex h-[85vh] w-full flex-col overflow-hidden rounded-lg border border-[#D8E0EA] bg-white shadow-[0_28px_90px_rgba(15,23,42,0.3)] ${
+        className={`flex h-[85vh] w-full flex-col overflow-hidden rounded-lg border border-phx-line bg-white shadow-[0_28px_90px_rgba(15,23,42,0.3)] ${
           sidePanel ? "max-w-6xl" : "max-w-3xl"
         }`}
       >
-        <div className="flex items-center justify-between gap-4 border-b border-[#E2E8F0] px-5 py-3">
+        <div className="flex items-center justify-between gap-4 border-b border-phx-line px-5 py-3">
           <p className="truncate text-sm font-semibold text-slate-900">{fileName}</p>
           <div className="flex items-center gap-3">
             <a
@@ -422,7 +422,7 @@ export function CvPreviewModal({ fileName, mimeType, downloadUrl, onClose, sideP
             </a>
             <button
               aria-label="Close"
-              className="rounded-md p-1 text-[#64748B] transition hover:bg-[#F1F5F9] hover:text-slate-900"
+              className="rounded-md p-1 text-phx-ink-soft transition hover:bg-phx-paper-2 hover:text-slate-900"
               onClick={onClose}
               type="button"
             >
@@ -433,7 +433,7 @@ export function CvPreviewModal({ fileName, mimeType, downloadUrl, onClose, sideP
 
         {sidePanel ? (
           <div className="flex flex-1 flex-col overflow-hidden lg:flex-row">
-            <div className="flex-1 overflow-auto bg-slate-50 lg:border-r lg:border-[#E2E8F0]">{documentBody}</div>
+            <div className="flex-1 overflow-auto bg-slate-50 lg:border-r lg:border-phx-line">{documentBody}</div>
             <div className="w-full shrink-0 overflow-auto p-5 lg:w-[360px]">{sidePanel}</div>
           </div>
         ) : (

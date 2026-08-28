@@ -67,7 +67,7 @@ export function ExpenseLeaderboards({
           // now would introduce a sideways scroll on a narrow desktop that never had one.
           <PortalDesktopTable className="border-collapse" minWidth="0px">
             <thead>
-              <tr className="bg-[#0F172A] text-white">
+              <tr className="bg-phx-ink text-white">
                 <th className={`${HEAD_CELL} text-left`}>#</th>
                 <th className={`${HEAD_CELL} text-left`}>Employee</th>
                 <th className={`${HEAD_CELL} text-right`}>Trips</th>
@@ -79,7 +79,7 @@ export function ExpenseLeaderboards({
               {topSpenders.map((row, index) => (
                 <tr
                   key={row.hrId}
-                  className="cursor-pointer bg-white hover:bg-[#FFF7ED]"
+                  className="cursor-pointer bg-white hover:bg-phx-accent-soft"
                   onClick={() => onSelectEmployee?.(row.hrId)}
                 >
                   <td className={`${BODY_CELL} font-black text-slate-400`}>{index + 1}</td>

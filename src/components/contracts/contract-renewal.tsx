@@ -47,13 +47,13 @@ const ALL = "__all__";
 const today = new Date();
 
 const selectClassName =
-  "h-10 w-full rounded-xl border border-[#D8E0EA] bg-white/95 px-3 text-sm font-semibold text-[#0F172A] shadow-[0_10px_24px_rgba(15,23,42,0.06)] outline-none transition focus:border-[#94A3B8] focus:ring-2 focus:ring-[#CBD5E1]/40";
+  "h-10 w-full rounded-xl border border-phx-line bg-white/95 px-3 text-sm font-semibold text-phx-ink shadow-[0_10px_24px_rgba(15,23,42,0.06)] outline-none transition focus:border-phx-ink-faint focus:ring-2 focus:ring-phx-line-strong/40";
 
 const panelClassName =
   "rounded-[20px] border border-slate-200/80 bg-white shadow-[0_16px_44px_rgba(15,23,42,0.06)]";
 
 const tableCellClassName = "px-2 py-1.5 text-xs text-text-secondary";
-const tableHeaderClassName = "px-2.5 py-2 text-[10px] font-black uppercase tracking-[0.14em] text-[#64748B]";
+const tableHeaderClassName = "px-2.5 py-2 text-[10px] font-black uppercase tracking-[0.14em] text-phx-ink-soft";
 
 function ContractsPageShell({ children }: { children: React.ReactNode }) {
   return (
@@ -268,8 +268,8 @@ export function ContractRenewal({ initialData, initialError }: Props) {
       <Card className={`${panelClassName} p-4`}>
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h2 className="text-base font-black tracking-[-0.03em] text-[#0F172A]">Renewal Calendar</h2>
-            <p className="mt-1 text-sm text-[#64748B]">
+            <h2 className="text-base font-black tracking-[-0.03em] text-phx-ink">Renewal Calendar</h2>
+            <p className="mt-1 text-sm text-phx-ink-soft">
               Daily renewal density for {MONTHS.find((m) => m.value === selectedMonth)?.label} {selectedYear}
             </p>
           </div>
@@ -285,10 +285,10 @@ export function ContractRenewal({ initialData, initialError }: Props) {
               <div
                 key={day}
                 title={`Day ${day}: ${count} renewal${count !== 1 ? "s" : ""}`}
-                className="flex flex-col items-center justify-center rounded-xl border border-[#E2E8F0] bg-slate-50 py-2 shadow-[0_8px_22px_rgba(15,23,42,0.04)]"
+                className="flex flex-col items-center justify-center rounded-xl border border-phx-line bg-slate-50 py-2 shadow-[0_8px_22px_rgba(15,23,42,0.04)]"
                 style={{ backgroundColor: count > 0 ? `rgba(56, 189, 248, ${intensity * 0.26})` : undefined }}
               >
-                <span className="text-xs font-mono text-[#64748B]">{day}</span>
+                <span className="text-xs font-mono text-phx-ink-soft">{day}</span>
                 {count > 0 && <span className="text-xs font-bold text-[#0284C7]">{count}</span>}
               </div>
             );
@@ -313,7 +313,7 @@ export function ContractRenewal({ initialData, initialError }: Props) {
         >
         <div className="grid gap-2 p-3 xl:grid-cols-6">
           <label className="block">
-            <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">Month</span>
+            <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-soft">Month</span>
             <SearchableSelect
               className={selectClassName}
               value={selectedMonth}
@@ -327,7 +327,7 @@ export function ContractRenewal({ initialData, initialError }: Props) {
             </SearchableSelect>
           </label>
           <label className="block">
-            <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">Year</span>
+            <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-soft">Year</span>
             <SearchableSelect
               className={selectClassName}
               value={selectedYear}
@@ -342,16 +342,16 @@ export function ContractRenewal({ initialData, initialError }: Props) {
           </label>
           <label className="relative block">
             <span className="sr-only">Search renewals</span>
-            <Search className="pointer-events-none absolute left-3 top-9 h-4 w-4 text-[#64748B]" />
+            <Search className="pointer-events-none absolute left-3 top-9 h-4 w-4 text-phx-ink-soft" />
             <Input
-              className="h-10 rounded-xl border-[#D8E0EA] bg-white/95 pl-9 shadow-[0_10px_24px_rgba(15,23,42,0.06)]"
+              className="h-10 rounded-xl border-phx-line bg-white/95 pl-9 shadow-[0_10px_24px_rgba(15,23,42,0.06)]"
               placeholder="Search name or HR ID"
               value={search}
               onChange={(event) => setSearch(event.target.value)}
             />
           </label>
           <label className="block">
-            <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">Line</span>
+            <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-soft">Line</span>
             <SearchableSelect
               className={selectClassName}
               value={lineFilter}
@@ -366,7 +366,7 @@ export function ContractRenewal({ initialData, initialError }: Props) {
             </SearchableSelect>
           </label>
           <label className="block">
-            <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">Area</span>
+            <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-soft">Area</span>
             <SearchableSelect
               className={selectClassName}
               value={areaFilter}
@@ -448,7 +448,7 @@ export function ContractRenewal({ initialData, initialError }: Props) {
                   ))}
                 </tr>
               </thead>
-              <tbody className="divide-y divide-[#E2E8F0]">
+              <tbody className="divide-y divide-phx-line">
                 {filtered.map((row, index) => {
                   const days = daysUntilDate(row.contract_renewal_date);
                   const isUrgent = days >= 0 && days <= 7;

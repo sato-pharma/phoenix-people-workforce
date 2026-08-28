@@ -143,15 +143,15 @@ function SectionCard({
   children: React.ReactNode;
 }) {
   return (
-    <section className="overflow-hidden rounded-[14px] border border-[#E2E8F0] bg-white shadow-[0_8px_22px_rgba(15,23,42,0.04)]">
+    <section className="overflow-hidden rounded-[14px] border border-phx-line bg-white shadow-[0_8px_22px_rgba(15,23,42,0.04)]">
       <div className="flex flex-col gap-3 border-b border-[#EEF2F7] px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-2.5">
-          <span className="flex h-8 w-8 items-center justify-center rounded-[8px] bg-[#FFF4EA] text-[#EA580C]">
+          <span className="flex h-8 w-8 items-center justify-center rounded-[8px] bg-[#FFF4EA] text-phx-accent-hover">
             {icon}
           </span>
           <div>
-            <h2 className="text-sm font-black tracking-tight text-[#0F172A]">{title}</h2>
-            {description ? <p className="text-xs text-[#64748B]">{description}</p> : null}
+            <h2 className="text-sm font-black tracking-tight text-phx-ink">{title}</h2>
+            {description ? <p className="text-xs text-phx-ink-soft">{description}</p> : null}
           </div>
         </div>
         {action ? <div className="shrink-0">{action}</div> : null}
@@ -210,7 +210,7 @@ function HeatmapCalendar({ sessions }: { sessions: { startedAt: string }[] }) {
 
   return (
     <div>
-      <p className="mb-2 text-[10px] font-bold uppercase tracking-wide text-[#94A3B8]">
+      <p className="mb-2 text-[10px] font-bold uppercase tracking-wide text-phx-ink-faint">
         Login frequency — last 3 months (Cairo)
       </p>
       <div className="overflow-x-auto">
@@ -218,14 +218,14 @@ function HeatmapCalendar({ sessions }: { sessions: { startedAt: string }[] }) {
           {/* Day labels */}
           <div className="flex flex-col gap-0.5 pr-1.5 pt-4">
             {WEEKDAY_LABELS.map((d) => (
-              <div key={d} className="h-3 text-[9px] leading-3 text-[#94A3B8]">{d}</div>
+              <div key={d} className="h-3 text-[9px] leading-3 text-phx-ink-faint">{d}</div>
             ))}
           </div>
           {/* Week columns */}
           {weeks.map((week, wi) => (
             <div key={wi} className="flex flex-col gap-0.5">
               {/* Month label on first day of month */}
-              <div className="h-3 text-[9px] leading-3 text-[#94A3B8]">
+              <div className="h-3 text-[9px] leading-3 text-phx-ink-faint">
                 {week[0].date.getDate() <= 7
                   ? week[0].date.toLocaleDateString("en-GB", { month: "short" })
                   : ""}
@@ -245,7 +245,7 @@ function HeatmapCalendar({ sessions }: { sessions: { startedAt: string }[] }) {
           ))}
         </div>
       </div>
-      <div className="mt-2 flex items-center gap-1.5 text-[10px] text-[#94A3B8]">
+      <div className="mt-2 flex items-center gap-1.5 text-[10px] text-phx-ink-faint">
         <span>Less</span>
         {["bg-slate-100", "bg-orange-200", "bg-orange-300", "bg-orange-400", "bg-orange-600"].map((c) => (
           <div key={c} className={`h-3 w-3 rounded-sm ${c}`} />
@@ -277,7 +277,7 @@ function TimeOfDayHeatmap({ hourlyHeatmap }: { hourlyHeatmap: number[][] }) {
         {/* Hour labels */}
         <div className="mb-1 flex gap-0.5 pl-10">
           {Array.from({ length: 24 }, (_, h) => (
-            <div key={h} className="w-5 text-center text-[8px] text-[#94A3B8]">
+            <div key={h} className="w-5 text-center text-[8px] text-phx-ink-faint">
               {HOUR_LABELS[Math.floor(h / 3)] && h % 3 === 0 ? HOUR_LABELS[h / 3] : ""}
             </div>
           ))}
@@ -285,7 +285,7 @@ function TimeOfDayHeatmap({ hourlyHeatmap }: { hourlyHeatmap: number[][] }) {
         {/* Rows */}
         {WEEKDAY_LABELS.map((day, wi) => (
           <div key={day} className="mb-0.5 flex items-center gap-0.5">
-            <div className="w-9 text-right text-[10px] text-[#64748B]">{day}</div>
+            <div className="w-9 text-right text-[10px] text-phx-ink-soft">{day}</div>
             <div className="ml-1 flex gap-0.5">
               {hourlyHeatmap[wi].map((count, h) => (
                 <div
@@ -298,7 +298,7 @@ function TimeOfDayHeatmap({ hourlyHeatmap }: { hourlyHeatmap: number[][] }) {
           </div>
         ))}
       </div>
-      <div className="mt-3 flex items-center gap-1.5 text-[10px] text-[#94A3B8]">
+      <div className="mt-3 flex items-center gap-1.5 text-[10px] text-phx-ink-faint">
         <span>Quiet</span>
         {["bg-slate-100", "bg-blue-100", "bg-blue-200", "bg-blue-400", "bg-blue-700"].map((c) => (
           <div key={c} className={`h-3 w-3 rounded-sm ${c}`} />
@@ -316,7 +316,7 @@ function RoleBenchmarksTable({ benchmarks }: { benchmarks: RoleBenchmark[] }) {
   const maxActive = Math.max(1, ...benchmarks.map((b) => b.avgActiveMinutes));
 
   if (!benchmarks.length) {
-    return <p className="px-5 py-8 text-center text-sm text-[#94A3B8]">No data yet.</p>;
+    return <p className="px-5 py-8 text-center text-sm text-phx-ink-faint">No data yet.</p>;
   }
 
   return (
@@ -333,15 +333,15 @@ function RoleBenchmarksTable({ benchmarks }: { benchmarks: RoleBenchmark[] }) {
         </thead>
         <tbody>
           {benchmarks.map((b) => (
-            <tr key={b.role} className="border-t border-[#F1F5F9]">
-              <td className="px-4 py-2 font-semibold text-[#0F172A]">{b.role}</td>
-              <td className="px-4 py-2 text-right tabular-nums text-[#334155]">{b.userCount}</td>
-              <td className="px-4 py-2 text-right tabular-nums text-[#334155]">{formatMinutes(b.avgSessionMinutes)}</td>
-              <td className="px-4 py-2 text-right tabular-nums font-semibold text-[#0F172A]">{formatMinutes(b.avgActiveMinutes)}</td>
-              <td className="px-4 py-2 text-right tabular-nums text-[#334155] w-12">{b.avgEngagementScore > 0 ? b.avgEngagementScore : "—"}</td>
+            <tr key={b.role} className="border-t border-phx-paper-2">
+              <td className="px-4 py-2 font-semibold text-phx-ink">{b.role}</td>
+              <td className="px-4 py-2 text-right tabular-nums text-phx-ink-2">{b.userCount}</td>
+              <td className="px-4 py-2 text-right tabular-nums text-phx-ink-2">{formatMinutes(b.avgSessionMinutes)}</td>
+              <td className="px-4 py-2 text-right tabular-nums font-semibold text-phx-ink">{formatMinutes(b.avgActiveMinutes)}</td>
+              <td className="px-4 py-2 text-right tabular-nums text-phx-ink-2 w-12">{b.avgEngagementScore > 0 ? b.avgEngagementScore : "—"}</td>
               <td className="px-4 py-2 w-28">
                 {b.avgEngagementScore > 0 ? (
-                  <div className="relative h-2 w-full overflow-hidden rounded-full bg-[#F1F5F9]">
+                  <div className="relative h-2 w-full overflow-hidden rounded-full bg-phx-paper-2">
                     <div
                       className={`h-full rounded-full ${
                         b.avgEngagementScore >= 66
@@ -354,8 +354,8 @@ function RoleBenchmarksTable({ benchmarks }: { benchmarks: RoleBenchmark[] }) {
                     />
                   </div>
                 ) : null}
-                <div className="h-2 w-full overflow-hidden rounded-full bg-[#F1F5F9]" style={{ display: b.avgEngagementScore > 0 ? "none" : "block" }}>
-                  <div className="h-full w-full rounded-full bg-[#F97316]" style={{ width: `${(b.avgActiveMinutes / maxActive) * 100}%` }} />
+                <div className="h-2 w-full overflow-hidden rounded-full bg-phx-paper-2" style={{ display: b.avgEngagementScore > 0 ? "none" : "block" }}>
+                  <div className="h-full w-full rounded-full bg-phx-accent" style={{ width: `${(b.avgActiveMinutes / maxActive) * 100}%` }} />
                 </div>
               </td>
             </tr>
@@ -385,19 +385,19 @@ function ForceLogoutDialog({
       <div className="w-full max-w-sm rounded-[14px] bg-white shadow-2xl">
         <div className="border-b border-[#EEF2F7] px-5 py-4">
           <p className="text-[10px] font-black uppercase tracking-[0.2em] text-rose-500">Force logout</p>
-          <h3 className="mt-0.5 text-base font-black text-[#0F172A]">{name}</h3>
-          <p className="mt-1 text-xs text-[#64748B]">
+          <h3 className="mt-0.5 text-base font-black text-phx-ink">{name}</h3>
+          <p className="mt-1 text-xs text-phx-ink-soft">
             All active sessions for this person will be immediately terminated. They will be asked to log in again on their next action.
           </p>
         </div>
         <div className="px-5 py-4 space-y-3">
           <label className="block">
-            <span className="text-[11px] font-bold uppercase tracking-wide text-[#64748B]">Reason (logged to audit trail)</span>
+            <span className="text-[11px] font-bold uppercase tracking-wide text-phx-ink-soft">Reason (logged to audit trail)</span>
             <input
               type="text"
               value={reason}
               onChange={(e) => setReason(e.target.value)}
-              className="mt-1 w-full rounded-[8px] border border-[#E2E8F0] px-3 py-2 text-sm text-[#0F172A] outline-none focus:border-[#F97316] focus:ring-1 focus:ring-[#F97316]"
+              className="mt-1 w-full rounded-[8px] border border-phx-line px-3 py-2 text-sm text-phx-ink outline-none focus:border-phx-accent focus:ring-1 focus:ring-phx-accent"
             />
           </label>
           <div className="flex gap-2">
@@ -405,7 +405,7 @@ function ForceLogoutDialog({
               type="button"
               onClick={onCancel}
               disabled={isPending}
-              className="flex-1 rounded-[8px] border border-[#E2E8F0] py-2 text-sm font-semibold text-[#64748B] transition hover:bg-slate-50 disabled:opacity-50"
+              className="flex-1 rounded-[8px] border border-phx-line py-2 text-sm font-semibold text-phx-ink-soft transition hover:bg-slate-50 disabled:opacity-50"
             >
               Cancel
             </button>
@@ -563,7 +563,7 @@ export function ActivityControlDashboard({
             type="button"
             onClick={() => changeRange(option.days)}
             className={`rounded-full px-3 py-1.5 text-xs font-semibold transition ${
-              option.days === days ? "bg-[#F97316] text-white" : "text-slate-200 hover:text-white"
+              option.days === days ? "bg-phx-accent text-white" : "text-slate-200 hover:text-white"
             }`}
           >
             {option.label}
@@ -572,7 +572,7 @@ export function ActivityControlDashboard({
       </div>
       <a
         href={`/api/admin/activity/export?days=${days}`}
-        className="inline-flex items-center gap-2 rounded-full bg-[#F97316] px-4 py-2 text-sm font-semibold text-white shadow-[0_8px_20px_rgba(249,115,22,0.32)] transition hover:bg-[#EA580C]"
+        className="inline-flex items-center gap-2 rounded-full bg-phx-accent px-4 py-2 text-sm font-semibold text-white shadow-[0_8px_20px_rgba(249,115,22,0.32)] transition hover:bg-phx-accent-hover"
       >
         <Download className="h-4 w-4" />
         Export
@@ -723,17 +723,17 @@ export function ActivityControlDashboard({
                         <tr key={`${user.key}-${user.startedAt}`}>
                           <td className="px-4 py-2">
                             <div className="flex items-center gap-2">
-                              <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[#0F172A] text-[10px] font-bold text-white">
+                              <span className="flex h-7 w-7 items-center justify-center rounded-full bg-phx-ink text-[10px] font-bold text-white">
                                 {initialsFor(user.name)}
                               </span>
                               <div className="min-w-0">
-                                <p className="truncate font-semibold text-[#0F172A]">{user.name}</p>
-                                <p className="truncate text-[11px] text-[#64748B]">{user.role}</p>
+                                <p className="truncate font-semibold text-phx-ink">{user.name}</p>
+                                <p className="truncate text-[11px] text-phx-ink-soft">{user.role}</p>
                               </div>
                             </div>
                           </td>
-                          <td className="px-4 py-2 text-[#334155]">{user.currentModule ?? "—"}</td>
-                          <td className="px-4 py-2 text-right text-[#64748B]"><RelativeTime iso={user.lastSeenAt} /></td>
+                          <td className="px-4 py-2 text-phx-ink-2">{user.currentModule ?? "—"}</td>
+                          <td className="px-4 py-2 text-right text-phx-ink-soft"><RelativeTime iso={user.lastSeenAt} /></td>
                           <td className="px-4 py-2 text-right">
                             {user.hrId ? (
                               <button
@@ -752,26 +752,26 @@ export function ActivityControlDashboard({
                   </table>
                 </div>
               ) : (
-                <p className="px-5 py-8 text-center text-sm text-[#94A3B8]">No one is online right now.</p>
+                <p className="px-5 py-8 text-center text-sm text-phx-ink-faint">No one is online right now.</p>
               )}
 
               {/* Recent navigation events */}
               {liveData?.recentEvents.length ? (
                 <div className="border-t border-[#EEF2F7]">
                   <div className="flex items-center gap-2 px-5 py-2.5">
-                    <Zap className="h-3.5 w-3.5 text-[#F97316]" />
-                    <p className="text-[11px] font-bold uppercase tracking-wide text-[#64748B]">Recent navigation (last 15 min)</p>
+                    <Zap className="h-3.5 w-3.5 text-phx-accent" />
+                    <p className="text-[11px] font-bold uppercase tracking-wide text-phx-ink-soft">Recent navigation (last 15 min)</p>
                   </div>
-                  <div className="divide-y divide-[#F8FAFC]">
+                  <div className="divide-y divide-phx-paper">
                     {liveData.recentEvents.slice(0, 8).map((event, i) => (
                       <div key={i} className="flex items-center justify-between px-5 py-1.5">
                         <div className="flex items-center gap-2 min-w-0">
-                          <span className="h-1.5 w-1.5 rounded-full bg-[#F97316] shrink-0" />
-                          <span className="truncate text-xs text-[#0F172A] font-semibold">{event.name}</span>
-                          <span className="text-xs text-[#64748B]">→</span>
-                          <span className="truncate text-xs text-[#334155]">{event.moduleLabel}</span>
+                          <span className="h-1.5 w-1.5 rounded-full bg-phx-accent shrink-0" />
+                          <span className="truncate text-xs text-phx-ink font-semibold">{event.name}</span>
+                          <span className="text-xs text-phx-ink-soft">→</span>
+                          <span className="truncate text-xs text-phx-ink-2">{event.moduleLabel}</span>
                         </div>
-                        <span className="ml-3 shrink-0 text-[11px] text-[#94A3B8]"><RelativeTime iso={event.occurredAtIso} /></span>
+                        <span className="ml-3 shrink-0 text-[11px] text-phx-ink-faint"><RelativeTime iso={event.occurredAtIso} /></span>
                       </div>
                     ))}
                   </div>
@@ -790,14 +790,14 @@ export function ActivityControlDashboard({
                   {overview.modulePopularity.slice(0, 10).map((module) => (
                     <div key={module.key} className="space-y-1">
                       <div className="flex items-center justify-between text-xs">
-                        <span className="font-semibold text-[#0F172A]">{module.label}</span>
-                        <span className="tabular-nums text-[#64748B]">
+                        <span className="font-semibold text-phx-ink">{module.label}</span>
+                        <span className="tabular-nums text-phx-ink-soft">
                           {formatMinutes(module.activeMinutes)} · {module.distinctUsers} user{module.distinctUsers === 1 ? "" : "s"}
                         </span>
                       </div>
-                      <div className="h-2 overflow-hidden rounded-full bg-[#F1F5F9]">
+                      <div className="h-2 overflow-hidden rounded-full bg-phx-paper-2">
                         <div
-                          className="h-full rounded-full bg-gradient-to-r from-[#F97316] to-[#FB923C]"
+                          className="h-full rounded-full bg-gradient-to-r from-phx-accent to-[#FB923C]"
                           style={{ width: `${Math.max(2, Math.min(100, module.sharePct))}%` }}
                         />
                       </div>
@@ -805,7 +805,7 @@ export function ActivityControlDashboard({
                   ))}
                 </div>
               ) : (
-                <p className="px-5 py-8 text-center text-sm text-[#94A3B8]">
+                <p className="px-5 py-8 text-center text-sm text-phx-ink-faint">
                   No page activity recorded yet. Data appears as people navigate the system.
                 </p>
               )}
@@ -848,14 +848,14 @@ export function ActivityControlDashboard({
                     {overview.topUsers.map((user) => (
                       <tr key={user.key}>
                         <td className="px-4 py-2">
-                          <p className="font-semibold text-[#0F172A]">{user.name}</p>
-                          <p className="text-[11px] text-[#64748B]">{user.role}{user.team ? ` · ${user.team}` : ""}</p>
+                          <p className="font-semibold text-phx-ink">{user.name}</p>
+                          <p className="text-[11px] text-phx-ink-soft">{user.role}{user.team ? ` · ${user.team}` : ""}</p>
                         </td>
-                        <td className="px-4 py-2 text-right tabular-nums text-[#334155]">{user.sessions}</td>
-                        <td className="px-4 py-2 text-right tabular-nums text-[#334155]">{formatMinutes(user.sessionMinutes)}</td>
-                        <td className="px-4 py-2 text-right tabular-nums font-semibold text-[#0F172A]">{user.pageViews > 0 ? formatMinutes(user.activeMinutes) : "—"}</td>
-                        <td className="px-4 py-2 text-right tabular-nums text-[#334155]">{user.distinctModules}</td>
-                        <td className="px-4 py-2 text-[#334155]">{user.topModule ?? "—"}</td>
+                        <td className="px-4 py-2 text-right tabular-nums text-phx-ink-2">{user.sessions}</td>
+                        <td className="px-4 py-2 text-right tabular-nums text-phx-ink-2">{formatMinutes(user.sessionMinutes)}</td>
+                        <td className="px-4 py-2 text-right tabular-nums font-semibold text-phx-ink">{user.pageViews > 0 ? formatMinutes(user.activeMinutes) : "—"}</td>
+                        <td className="px-4 py-2 text-right tabular-nums text-phx-ink-2">{user.distinctModules}</td>
+                        <td className="px-4 py-2 text-phx-ink-2">{user.topModule ?? "—"}</td>
                         <td className="px-4 py-2 text-center">
                           {user.pageViews > 0 ? (
                             <EngagementBadge band={user.engagement.band} score={user.engagement.score} />
@@ -863,13 +863,13 @@ export function ActivityControlDashboard({
                             <NoDataChip />
                           )}
                         </td>
-                        <td className="px-4 py-2 text-right text-[#64748B]"><RelativeTime iso={user.lastSeenAt} /></td>
+                        <td className="px-4 py-2 text-right text-phx-ink-soft"><RelativeTime iso={user.lastSeenAt} /></td>
                         <td className="px-4 py-2 text-right">
                           {user.hrId ? (
                             <button
                               type="button"
                               onClick={() => openTimeline(user)}
-                              className="inline-flex items-center gap-1 rounded-full border border-[#E2E8F0] px-2.5 py-1 text-[11px] font-semibold text-[#C2410C] transition hover:bg-[#FFF7ED]"
+                              className="inline-flex items-center gap-1 rounded-full border border-phx-line px-2.5 py-1 text-[11px] font-semibold text-phx-accent-press transition hover:bg-phx-accent-soft"
                             >
                               <Eye className="h-3.5 w-3.5" /> Timeline
                             </button>
@@ -881,7 +881,7 @@ export function ActivityControlDashboard({
                 </table>
               </div>
             ) : (
-              <p className="px-5 py-8 text-center text-sm text-[#94A3B8]">No user activity in this window yet.</p>
+              <p className="px-5 py-8 text-center text-sm text-phx-ink-faint">No user activity in this window yet.</p>
             )}
             <div className="border-t border-[#EEF2F7] px-5 py-3">
               <AdminCallout tone="neutral">
@@ -928,13 +928,13 @@ export function ActivityControlDashboard({
                         .map((row) => (
                           <tr key={row.key}>
                             <td className="px-4 py-2">
-                              <p className="font-semibold text-[#0F172A]">{row.name}</p>
-                              <p className="text-[11px] text-[#64748B]">{row.role}</p>
+                              <p className="font-semibold text-phx-ink">{row.name}</p>
+                              <p className="text-[11px] text-phx-ink-soft">{row.role}</p>
                             </td>
                             <td className={`px-4 py-2 font-semibold capitalize ${ADOPTION_TONE[row.status]}`}>
                               {row.status === "never" ? "Never (90d)" : row.status}
                             </td>
-                            <td className="px-4 py-2 text-right text-[#64748B]">
+                            <td className="px-4 py-2 text-right text-phx-ink-soft">
                               <RelativeTime iso={row.lastSeenAt} />
                             </td>
                           </tr>
@@ -943,7 +943,7 @@ export function ActivityControlDashboard({
                   </table>
                 </div>
               ) : (
-                <p className="px-5 py-8 text-center text-sm text-[#94A3B8]">Every account has been active recently. 🎉</p>
+                <p className="px-5 py-8 text-center text-sm text-phx-ink-faint">Every account has been active recently. 🎉</p>
               )}
             </SectionCard>
 
@@ -965,15 +965,15 @@ export function ActivityControlDashboard({
                         <TriangleAlert className="h-3.5 w-3.5" />
                       </span>
                       <div className="min-w-0">
-                        <p className="text-sm font-semibold text-[#0F172A]">{anomaly.identity.name}</p>
-                        <p className="text-xs text-[#64748B]">{anomaly.detail}</p>
-                        <p className="text-[11px] text-[#94A3B8]">{formatDateTime(anomaly.occurredAt)}</p>
+                        <p className="text-sm font-semibold text-phx-ink">{anomaly.identity.name}</p>
+                        <p className="text-xs text-phx-ink-soft">{anomaly.detail}</p>
+                        <p className="text-[11px] text-phx-ink-faint">{formatDateTime(anomaly.occurredAt)}</p>
                       </div>
                     </div>
                   ))}
                 </div>
               ) : (
-                <p className="px-5 py-8 text-center text-sm text-[#94A3B8]">No anomalies detected in this window.</p>
+                <p className="px-5 py-8 text-center text-sm text-phx-ink-faint">No anomalies detected in this window.</p>
               )}
             </SectionCard>
           </div>
@@ -987,7 +987,7 @@ export function ActivityControlDashboard({
             className="h-full w-full max-w-xl overflow-auto bg-white shadow-2xl"
             onClick={(event) => event.stopPropagation()}
           >
-            <div className="sticky top-0 z-10 flex items-center justify-between border-b border-[#EEF2F7] bg-[#0F172A] px-5 py-4 text-white">
+            <div className="sticky top-0 z-10 flex items-center justify-between border-b border-[#EEF2F7] bg-phx-ink px-5 py-4 text-white">
               <div>
                 <p className="text-[10px] font-black uppercase tracking-[0.2em] text-orange-300">Activity timeline</p>
                 <h3 className="text-lg font-black">{selectedUser.name}</h3>
@@ -1015,7 +1015,7 @@ export function ActivityControlDashboard({
 
             <div className="space-y-4 p-5">
               {timelineLoading ? (
-                <div className="flex items-center justify-center gap-2 py-16 text-sm text-[#64748B]">
+                <div className="flex items-center justify-center gap-2 py-16 text-sm text-phx-ink-soft">
                   <Loader2 className="h-5 w-5 animate-spin" /> Loading timeline…
                 </div>
               ) : timelineError ? (
@@ -1033,10 +1033,10 @@ export function ActivityControlDashboard({
                   </div>
 
                   {/* Engagement signal */}
-                  <div className="flex items-center justify-between rounded-[12px] border border-[#E2E8F0] bg-[#FBFCFD] px-4 py-3">
+                  <div className="flex items-center justify-between rounded-[12px] border border-phx-line bg-[#FBFCFD] px-4 py-3">
                     <div>
-                      <p className="text-[11px] font-bold uppercase tracking-wide text-[#94A3B8]">Engagement signal</p>
-                      <p className="text-xs text-[#64748B]">
+                      <p className="text-[11px] font-bold uppercase tracking-wide text-phx-ink-faint">Engagement signal</p>
+                      <p className="text-xs text-phx-ink-soft">
                         {timeline.summary.pageViews > 0
                           ? `Active ${Math.round(timeline.summary.engagement.activeRatio * 100)}% of logged-in time · top module ${timeline.summary.topModule ?? "—"}`
                           : "No page-view activity recorded yet — it appears here as they navigate the system."}
@@ -1050,20 +1050,20 @@ export function ActivityControlDashboard({
                   </div>
 
                   {/* Login heatmap calendar */}
-                  <div className="rounded-[12px] border border-[#E2E8F0] bg-[#FBFCFD] px-4 py-3">
+                  <div className="rounded-[12px] border border-phx-line bg-[#FBFCFD] px-4 py-3">
                     <HeatmapCalendar sessions={timeline.sessions} />
                   </div>
 
                   {timeline.sessions.length ? (
                     <div className="space-y-3">
                       {timeline.sessions.map((session, index) => (
-                        <div key={session.sessionId ?? `loose-${index}`} className="rounded-[12px] border border-[#E2E8F0]">
+                        <div key={session.sessionId ?? `loose-${index}`} className="rounded-[12px] border border-phx-line">
                           <div className="flex items-center justify-between border-b border-[#EEF2F7] px-4 py-2.5">
                             <div className="flex items-center gap-2 text-sm">
-                              <Clock3 className="h-4 w-4 text-[#EA580C]" />
-                              <span className="font-semibold text-[#0F172A]">{formatDateTime(session.startedAt)}</span>
+                              <Clock3 className="h-4 w-4 text-phx-accent-hover" />
+                              <span className="font-semibold text-phx-ink">{formatDateTime(session.startedAt)}</span>
                             </div>
-                            <span className="text-xs text-[#64748B]">
+                            <span className="text-xs text-phx-ink-soft">
                               {formatMinutes(session.durationMinutes)} session · {formatMinutes(session.activeMinutes)} active · {session.endedReason}
                             </span>
                           </div>
@@ -1072,21 +1072,21 @@ export function ActivityControlDashboard({
                               {session.modules.map((module) => (
                                 <span
                                   key={module.label}
-                                  className="inline-flex items-center gap-1 rounded-full border border-[#FED7AA] bg-[#FFF7ED] px-2.5 py-1 text-[11px] font-semibold text-[#9A3412]"
+                                  className="inline-flex items-center gap-1 rounded-full border border-[#FED7AA] bg-phx-accent-soft px-2.5 py-1 text-[11px] font-semibold text-[#9A3412]"
                                 >
                                   {module.label}
-                                  <span className="text-[#C2410C]/70">{formatMinutes(module.minutes)}</span>
+                                  <span className="text-phx-accent-press/70">{formatMinutes(module.minutes)}</span>
                                 </span>
                               ))}
                             </div>
                           ) : (
-                            <p className="px-4 py-3 text-xs text-[#94A3B8]">No page views recorded for this session.</p>
+                            <p className="px-4 py-3 text-xs text-phx-ink-faint">No page views recorded for this session.</p>
                           )}
                         </div>
                       ))}
                     </div>
                   ) : (
-                    <p className="py-8 text-center text-sm text-[#94A3B8]">
+                    <p className="py-8 text-center text-sm text-phx-ink-faint">
                       No detailed page activity yet for this person. Sessions appear here as they navigate the system.
                     </p>
                   )}
@@ -1112,9 +1112,9 @@ export function ActivityControlDashboard({
 
 function SummaryTile({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-[12px] border border-[#E2E8F0] bg-white px-3 py-2.5 text-center">
-      <p className="text-[10px] font-bold uppercase tracking-wide text-[#94A3B8]">{label}</p>
-      <p className="text-lg font-black text-[#0F172A]">{value}</p>
+    <div className="rounded-[12px] border border-phx-line bg-white px-3 py-2.5 text-center">
+      <p className="text-[10px] font-bold uppercase tracking-wide text-phx-ink-faint">{label}</p>
+      <p className="text-lg font-black text-phx-ink">{value}</p>
     </div>
   );
 }

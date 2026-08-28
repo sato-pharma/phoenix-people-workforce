@@ -70,19 +70,19 @@ export function MultiSelectFilter({
 
   return (
     <details className={cn("group relative", disabled && "pointer-events-none opacity-50", className)}>
-      <summary className="flex h-[58px] cursor-pointer list-none items-center justify-between gap-3 rounded-[6px] border border-[#E2E8F0] bg-white px-3 py-2 shadow-sm outline-none transition hover:border-[#FDBA74] focus-visible:border-[#FDBA74] [&::-webkit-details-marker]:hidden">
+      <summary className="flex h-[58px] cursor-pointer list-none items-center justify-between gap-3 rounded-[6px] border border-phx-line bg-white px-3 py-2 shadow-sm outline-none transition hover:border-phx-accent-line focus-visible:border-phx-accent-line [&::-webkit-details-marker]:hidden">
         <span className="min-w-0">
-          <span className="mb-1 flex items-center gap-1.5 text-[10px] font-black uppercase tracking-[0.14em] text-[#94A3B8]">
+          <span className="mb-1 flex items-center gap-1.5 text-[10px] font-black uppercase tracking-[0.14em] text-phx-ink-faint">
             {icon}
             {label}
           </span>
           <span className="flex items-center gap-1.5">
-            <span className="block truncate text-sm font-black text-[#0F172A]">{summary}</span>
+            <span className="block truncate text-sm font-black text-phx-ink">{summary}</span>
             {count > 0 ? (
               <span
                 className={cn(
                   "shrink-0 rounded-[3px] px-1 text-[9px] font-black uppercase tracking-wide text-white",
-                  mode === "include" ? "bg-[#F97316]" : "bg-[#0F172A]",
+                  mode === "include" ? "bg-phx-accent" : "bg-phx-ink",
                 )}
               >
                 {mode === "include" ? "incl" : "excl"}
@@ -90,20 +90,20 @@ export function MultiSelectFilter({
             ) : null}
           </span>
         </span>
-        <ChevronDown className="h-4 w-4 shrink-0 text-[#94A3B8] transition group-open:rotate-180" />
+        <ChevronDown className="h-4 w-4 shrink-0 text-phx-ink-faint transition group-open:rotate-180" />
       </summary>
 
-      <div className="absolute left-0 top-full z-50 mt-2 w-[min(320px,calc(100vw-2rem))] rounded-[6px] border border-[#E2E8F0] bg-white shadow-lg">
+      <div className="absolute left-0 top-full z-50 mt-2 w-[min(320px,calc(100vw-2rem))] rounded-[6px] border border-phx-line bg-white shadow-lg">
         {/* Mode toggle + bulk actions */}
-        <div className="flex items-center justify-between gap-2 border-b border-[#E2E8F0] p-2">
-          <div className="flex items-center rounded-[5px] border border-[#E2E8F0] bg-[#F8FAFC] p-0.5">
+        <div className="flex items-center justify-between gap-2 border-b border-phx-line p-2">
+          <div className="flex items-center rounded-[5px] border border-phx-line bg-phx-paper p-0.5">
             <button
               type="button"
               aria-label={`Include mode for ${label}`}
               onClick={() => onModeChange("include")}
               className={cn(
                 "rounded-[4px] px-2 py-1 text-[10px] font-black uppercase tracking-wide transition",
-                mode === "include" ? "bg-[#F97316] text-white shadow-sm" : "text-[#64748B] hover:text-[#0F172A]",
+                mode === "include" ? "bg-phx-accent text-white shadow-sm" : "text-phx-ink-soft hover:text-phx-ink",
               )}
             >
               Include
@@ -114,7 +114,7 @@ export function MultiSelectFilter({
               onClick={() => onModeChange("exclude")}
               className={cn(
                 "rounded-[4px] px-2 py-1 text-[10px] font-black uppercase tracking-wide transition",
-                mode === "exclude" ? "bg-[#0F172A] text-white shadow-sm" : "text-[#64748B] hover:text-[#0F172A]",
+                mode === "exclude" ? "bg-phx-ink text-white shadow-sm" : "text-phx-ink-soft hover:text-phx-ink",
               )}
             >
               Exclude
@@ -124,7 +124,7 @@ export function MultiSelectFilter({
             <button
               type="button"
               aria-label={`Select all ${label}`}
-              className="text-[#64748B] transition hover:text-[#F97316]"
+              className="text-phx-ink-soft transition hover:text-phx-accent"
               // "All" must mean "show every row," which is mode-dependent: in include mode that
               // means selecting every code (include + all codes = keep everything); in exclude
               // mode selecting every code would mean "exclude everything" (show ZERO rows) — the
@@ -134,11 +134,11 @@ export function MultiSelectFilter({
             >
               All
             </button>
-            <span className="text-[#E2E8F0]">|</span>
+            <span className="text-phx-line">|</span>
             <button
               type="button"
               aria-label={`Clear ${label} selection`}
-              className="text-[#64748B] transition hover:text-[#F97316] disabled:opacity-40"
+              className="text-phx-ink-soft transition hover:text-phx-accent disabled:opacity-40"
               disabled={count === 0}
               onClick={() => onSelectedChange([])}
             >
@@ -148,23 +148,23 @@ export function MultiSelectFilter({
         </div>
 
         {searchable ? (
-          <div className="border-b border-[#E2E8F0] p-2">
+          <div className="border-b border-phx-line p-2">
             <div className="relative">
-              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[#94A3B8]" />
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-phx-ink-faint" />
               <input
                 type="text"
                 aria-label={searchPlaceholder ?? `Search ${label.toLowerCase()}`}
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
                 placeholder={searchPlaceholder ?? `Search ${label.toLowerCase()}…`}
-                className="h-8 w-full rounded-[5px] border border-[#E2E8F0] bg-white pl-8 pr-7 text-sm font-medium text-[#0F172A] outline-none transition focus:border-[#FDBA74] focus:ring-2 focus:ring-[#F97316]/10"
+                className="h-8 w-full rounded-[5px] border border-phx-line bg-white pl-8 pr-7 text-sm font-medium text-phx-ink outline-none transition focus:border-phx-accent-line focus:ring-2 focus:ring-phx-accent/10"
               />
               {query ? (
                 <button
                   type="button"
                   aria-label="Clear search"
                   onClick={() => setQuery("")}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-[#94A3B8] transition hover:text-[#F97316]"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-phx-ink-faint transition hover:text-phx-accent"
                 >
                   <X className="h-3.5 w-3.5" />
                 </button>
@@ -175,19 +175,19 @@ export function MultiSelectFilter({
 
         <div className="max-h-64 space-y-0.5 overflow-y-auto p-2">
           {visibleOptions.length === 0 ? (
-            <p className="px-2 py-3 text-center text-xs font-semibold text-[#94A3B8]">
+            <p className="px-2 py-3 text-center text-xs font-semibold text-phx-ink-faint">
               {options.length === 0 ? "No options." : "No matches."}
             </p>
           ) : (
             visibleOptions.map((option) => (
               <label
                 key={option.code}
-                className="flex cursor-pointer items-center gap-2 rounded-[4px] px-2 py-1.5 text-sm text-[#0F172A] transition hover:bg-[#F8FAFC]"
+                className="flex cursor-pointer items-center gap-2 rounded-[4px] px-2 py-1.5 text-sm text-phx-ink transition hover:bg-phx-paper"
               >
                 <input
                   type="checkbox"
                   aria-label={option.label}
-                  className="h-4 w-4 accent-[#F97316]"
+                  className="h-4 w-4 accent-phx-accent"
                   checked={selectedSet.has(option.code)}
                   onChange={() => onSelectedChange(toggle(selected, option.code))}
                 />

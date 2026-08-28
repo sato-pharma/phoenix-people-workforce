@@ -521,7 +521,7 @@ export function ClosingMatrixTable({
 
       {/* Top horizontal scrollbar (synced proxy) */}
       <div
-        className="overflow-x-auto overflow-y-hidden border-x border-t border-[#E2E8F0]"
+        className="overflow-x-auto overflow-y-hidden border-x border-t border-phx-line"
         onScroll={() => syncScroll(topRef.current, bodyRef.current)}
         ref={topRef}
         style={{ height: 14 }}
@@ -530,7 +530,7 @@ export function ClosingMatrixTable({
       </div>
 
       <div
-        className="max-h-[72vh] overflow-auto border border-[#E2E8F0]"
+        className="max-h-[72vh] overflow-auto border border-phx-line"
         onScroll={() => syncScroll(bodyRef.current, topRef.current)}
         ref={bodyRef}
       >
@@ -675,8 +675,8 @@ export function ClosingMatrixTable({
 
             {matrix.companyTotal ? (
               <tr className="bg-[#0B0B0B]">
-                <td className={`${STICKY1} whitespace-nowrap bg-[#0B0B0B] px-3 py-3 font-black uppercase tracking-wide text-[#FDBA74]`}>TOT</td>
-                <td className={`${STICKY2} whitespace-nowrap bg-[#0B0B0B] px-3 py-3 font-black text-[#FDBA74]`} style={{ left: COL.area }}>Grand Total (incl. Direct)</td>
+                <td className={`${STICKY1} whitespace-nowrap bg-[#0B0B0B] px-3 py-3 font-black uppercase tracking-wide text-phx-accent`}>TOT</td>
+                <td className={`${STICKY2} whitespace-nowrap bg-[#0B0B0B] px-3 py-3 font-black text-phx-accent`} style={{ left: COL.area }}>Grand Total (incl. Direct)</td>
                 {columnGroups.map((group, gi) => (
                   <Fragment key={gi}>
                     {group.indices.map((idx) => (

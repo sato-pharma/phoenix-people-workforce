@@ -271,15 +271,15 @@ export function WeeklyDashboardView({ initial, initialError }: { initial: Weekly
 
   return (
     <div className="space-y-4 p-4 sm:p-6">
-      <header className="rounded-[6px] border border-[#E2E8F0] bg-white px-4 py-3 shadow-sm">
+      <header className="rounded-[6px] border border-phx-line bg-white px-4 py-3 shadow-sm">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
-            <div className="mb-1 flex items-center gap-2 text-[11px] font-black uppercase tracking-[0.14em] text-[#94A3B8]">
-              <span className="h-2 w-2 rounded-full bg-[#F97316]" />
+            <div className="mb-1 flex items-center gap-2 text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-faint">
+              <span className="h-2 w-2 rounded-full bg-phx-accent" />
               Weekly Sales
             </div>
-            <h1 className="text-xl font-black text-[#0F172A]">Weekly Sales Dashboard</h1>
-            <p className="mt-1 text-sm font-medium text-[#64748B]">
+            <h1 className="text-xl font-black text-phx-ink">Weekly Sales Dashboard</h1>
+            <p className="mt-1 text-sm font-medium text-phx-ink-soft">
               Consolidated by region, product, branch, and distributor. Stock shown as units only.
             </p>
           </div>
@@ -288,7 +288,7 @@ export function WeeklyDashboardView({ initial, initialError }: { initial: Weekly
               type="button"
               onClick={handleExport}
               disabled={downloading || loading}
-              className="flex items-center gap-1.5 rounded-[6px] border border-[#F97316] bg-[#F97316] px-3 py-2 text-sm font-black text-white shadow-sm transition-opacity hover:opacity-90 disabled:opacity-60"
+              className="flex items-center gap-1.5 rounded-[6px] border border-phx-accent bg-phx-accent px-3 py-2 text-sm font-black text-white shadow-sm transition-opacity hover:opacity-90 disabled:opacity-60"
               title="Download Excel report with current filters applied"
             >
               {downloading ? (
@@ -304,7 +304,7 @@ export function WeeklyDashboardView({ initial, initialError }: { initial: Weekly
               type="button"
               onClick={handleSummaryExport}
               disabled={downloadingSummary || loading}
-              className="flex items-center gap-1.5 rounded-[6px] border border-[#F97316] bg-white px-3 py-2 text-sm font-black text-[#EA580C] shadow-sm transition-colors hover:bg-[#FFF7ED] disabled:opacity-60"
+              className="flex items-center gap-1.5 rounded-[6px] border border-phx-accent bg-white px-3 py-2 text-sm font-black text-phx-accent-hover shadow-sm transition-colors hover:bg-phx-accent-soft disabled:opacity-60"
               title="Download the 5-tab management summary: weekly by branch and manager, month-to-date, year-to-date, and low-sales branches holding stock"
             >
               {downloadingSummary ? (
@@ -318,8 +318,8 @@ export function WeeklyDashboardView({ initial, initialError }: { initial: Weekly
         </div>
       </header>
 
-      <div className="rounded-[6px] border border-[#E2E8F0] bg-white p-2 shadow-sm">
-        <div className="mb-2 flex items-center justify-between px-1 text-[11px] font-black uppercase tracking-[0.14em] text-[#94A3B8]">
+      <div className="rounded-[6px] border border-phx-line bg-white p-2 shadow-sm">
+        <div className="mb-2 flex items-center justify-between px-1 text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-faint">
           <span className="flex items-center gap-1.5">
             <Filter className="h-3.5 w-3.5" />
             Filters
@@ -328,12 +328,12 @@ export function WeeklyDashboardView({ initial, initialError }: { initial: Weekly
               screen. A faint "Updating" was too easy to miss, so a stale unfiltered total read as
               "the period filter did nothing" — make the pending state unmissable instead. */}
           {loading ? (
-            <span className="flex items-center gap-1.5 rounded-[4px] bg-[#F97316] px-2 py-0.5 text-white">
+            <span className="flex items-center gap-1.5 rounded-[4px] bg-phx-accent px-2 py-0.5 text-white">
               <Loader2 className="h-3 w-3 animate-spin" />
               Updating…
             </span>
           ) : (
-            <span className="text-[#64748B]">Ready</span>
+            <span className="text-phx-ink-soft">Ready</span>
           )}
         </div>
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
@@ -421,7 +421,7 @@ export function WeeklyDashboardView({ initial, initialError }: { initial: Weekly
           weekly (the owner's golden rule) and is out of scope until a line is named — and it is far
           too big a number to leave out silently. */}
       {data.trackedScope?.active && (
-        <p className="text-xs font-semibold text-[#64748B]">{data.trackedScope.note}</p>
+        <p className="text-xs font-semibold text-phx-ink-soft">{data.trackedScope.note}</p>
       )}
 
       {error && (
@@ -432,7 +432,7 @@ export function WeeklyDashboardView({ initial, initialError }: { initial: Weekly
       )}
 
       {noData ? (
-        <div className="rounded-[6px] border border-dashed border-[#CBD5E1] bg-white p-8 text-center text-sm font-semibold text-[#64748B] shadow-sm">
+        <div className="rounded-[6px] border border-dashed border-phx-line-strong bg-white p-8 text-center text-sm font-semibold text-phx-ink-soft shadow-sm">
           No validated weekly uploads yet. Upload a weekly file from <span className="font-black">Weekly Sales Upload</span>.
         </div>
       ) : (
@@ -484,10 +484,10 @@ function DeltaPct({ value }: { value: number }) {
 function WeekComparisonTable({ rows }: { rows: WeeklyDashboard["weekComparison"] }) {
   if (!rows || rows.length === 0) return null;
   return (
-    <section className="overflow-hidden rounded-[6px] border border-[#E2E8F0] bg-white shadow-sm">
-      <div className="border-b border-[#E2E8F0] px-4 py-3">
-        <h2 className="text-sm font-black uppercase tracking-[0.12em] text-[#0F172A]">Week-by-week comparison</h2>
-        <p className="mt-0.5 text-xs font-medium text-[#64748B]">
+    <section className="overflow-hidden rounded-[6px] border border-phx-line bg-white shadow-sm">
+      <div className="border-b border-phx-line px-4 py-3">
+        <h2 className="text-sm font-black uppercase tracking-[0.12em] text-phx-ink">Week-by-week comparison</h2>
+        <p className="mt-0.5 text-xs font-medium text-phx-ink-soft">
           Real sales per week — each week minus the previous week of its month (W2−W1, W3−W2, …). Stock is the
           week&apos;s snapshot, never subtracted.
         </p>
@@ -508,10 +508,10 @@ function WeekComparisonTable({ rows }: { rows: WeeklyDashboard["weekComparison"]
           <tbody>
             {rows.map((row) => (
               <tr className="border-t border-[#FFE8D6]" key={`${row.cycleMonth}-${row.weekNumber}`}>
-                <td className="px-3 py-2 font-semibold text-[#0F172A]">{monthLabelClient(row.cycleMonth)}</td>
+                <td className="px-3 py-2 font-semibold text-phx-ink">{monthLabelClient(row.cycleMonth)}</td>
                 <td className="px-3 py-2">
                   <span className="inline-flex items-center gap-1">
-                    <span className="inline-flex items-center rounded bg-[#FFF7ED] px-2 py-0.5 text-[11px] font-black text-[#9A3412]">
+                    <span className="inline-flex items-center rounded bg-phx-accent-soft px-2 py-0.5 text-[11px] font-black text-[#9A3412]">
                       W{row.weekNumber}
                     </span>
                     {row.spansGap ? (
@@ -524,16 +524,16 @@ function WeekComparisonTable({ rows }: { rows: WeeklyDashboard["weekComparison"]
                     ) : null}
                   </span>
                 </td>
-                <td className="px-3 py-2 text-[#64748B] tabular-nums">{row.weekStart ?? "—"}</td>
-                <td className="px-3 py-2 text-right font-bold tabular-nums text-[#0F172A]">
-                  {row.salesValue == null ? <span className="text-[#94A3B8]">—</span> : money(row.salesValue)}
+                <td className="px-3 py-2 text-phx-ink-soft tabular-nums">{row.weekStart ?? "—"}</td>
+                <td className="px-3 py-2 text-right font-bold tabular-nums text-phx-ink">
+                  {row.salesValue == null ? <span className="text-phx-ink-faint">—</span> : money(row.salesValue)}
                 </td>
-                <td className="px-3 py-2 text-right tabular-nums text-[#334155]">
-                  {row.salesUnits == null ? <span className="text-[#94A3B8]">—</span> : num(row.salesUnits)}
+                <td className="px-3 py-2 text-right tabular-nums text-phx-ink-2">
+                  {row.salesUnits == null ? <span className="text-phx-ink-faint">—</span> : num(row.salesUnits)}
                 </td>
-                <td className="px-3 py-2 text-right tabular-nums text-[#334155]">{num(row.stockUnits)}</td>
+                <td className="px-3 py-2 text-right tabular-nums text-phx-ink-2">{num(row.stockUnits)}</td>
                 <td className="px-3 py-2 text-right tabular-nums">
-                  {row.deltaValuePct == null ? <span className="text-[#94A3B8]">—</span> : <DeltaPct value={row.deltaValuePct} />}
+                  {row.deltaValuePct == null ? <span className="text-phx-ink-faint">—</span> : <DeltaPct value={row.deltaValuePct} />}
                 </td>
               </tr>
             ))}
@@ -560,13 +560,13 @@ function Kpi({
   format?: (value: number) => string;
 }) {
   return (
-    <div className="rounded-[6px] border border-[#E2E8F0] bg-white p-3 shadow-sm">
-      <div className="flex items-center gap-2 text-[11px] font-black uppercase tracking-wide text-[#94A3B8]">
-        <span className="flex h-7 w-7 items-center justify-center rounded-[5px] border border-[#E2E8F0] bg-[#F8FAFC] text-[#64748B]">{icon}</span>
+    <div className="rounded-[6px] border border-phx-line bg-white p-3 shadow-sm">
+      <div className="flex items-center gap-2 text-[11px] font-black uppercase tracking-wide text-phx-ink-faint">
+        <span className="flex h-7 w-7 items-center justify-center rounded-[5px] border border-phx-line bg-phx-paper text-phx-ink-soft">{icon}</span>
         {label}
       </div>
-      <div className="mt-2 text-lg font-black tabular-nums text-[#0F172A]">{value}</div>
-      {delta ? <DeltaLabel delta={delta} format={format} /> : sub ? <div className="mt-0.5 text-[11px] font-bold text-[#94A3B8]">{sub}</div> : null}
+      <div className="mt-2 text-lg font-black tabular-nums text-phx-ink">{value}</div>
+      {delta ? <DeltaLabel delta={delta} format={format} /> : sub ? <div className="mt-0.5 text-[11px] font-bold text-phx-ink-faint">{sub}</div> : null}
     </div>
   );
 }
@@ -574,18 +574,18 @@ function Kpi({
 function DeltaLabel({ delta, format }: { delta: WeeklyDelta; format?: (value: number) => string }) {
   if (delta.prior == null) {
     return (
-      <div className="mt-0.5 flex items-center gap-1 text-[11px] font-bold text-[#94A3B8]">
+      <div className="mt-0.5 flex items-center gap-1 text-[11px] font-bold text-phx-ink-faint">
         <Minus className="h-3 w-3" /> no prior week
       </div>
     );
   }
   const up = (delta.pct ?? 0) >= 0;
-  const tone = delta.pct == null ? "text-[#94A3B8]" : up ? "text-emerald-600" : "text-rose-600";
+  const tone = delta.pct == null ? "text-phx-ink-faint" : up ? "text-emerald-600" : "text-rose-600";
   return (
     <div className={`mt-0.5 flex items-center gap-1 text-[11px] font-bold ${tone}`}>
       {delta.pct == null ? <Minus className="h-3 w-3" /> : up ? <ArrowUpRight className="h-3 w-3" /> : <ArrowDownRight className="h-3 w-3" />}
       {delta.pct == null ? "-" : pct(delta.pct)}
-      <span className="font-medium text-[#94A3B8]">vs {format ? format(delta.prior) : delta.prior}</span>
+      <span className="font-medium text-phx-ink-faint">vs {format ? format(delta.prior) : delta.prior}</span>
     </div>
   );
 }
@@ -613,10 +613,10 @@ function ChartPanel({
   title: string;
 }) {
   return (
-    <div className="overflow-hidden rounded-[6px] border border-[#E2E8F0] bg-white shadow-sm">
-      <div className="flex items-center justify-between gap-3 border-b border-[#E2E8F0] bg-[#F8FAFC] px-3 py-2">
-        <span className="text-xs font-black uppercase tracking-wide text-[#64748B]">{title}</span>
-        {meta ? <span className="text-[10px] font-black uppercase tracking-wide text-[#94A3B8]">{meta}</span> : null}
+    <div className="overflow-hidden rounded-[6px] border border-phx-line bg-white shadow-sm">
+      <div className="flex items-center justify-between gap-3 border-b border-phx-line bg-phx-paper px-3 py-2">
+        <span className="text-xs font-black uppercase tracking-wide text-phx-ink-soft">{title}</span>
+        {meta ? <span className="text-[10px] font-black uppercase tracking-wide text-phx-ink-faint">{meta}</span> : null}
       </div>
       {children}
     </div>
@@ -625,7 +625,7 @@ function ChartPanel({
 
 function EmptyChart({ label }: { label: string }) {
   return (
-    <div className="flex h-[260px] items-center justify-center px-4 text-center text-sm font-semibold text-[#94A3B8]">
+    <div className="flex h-[260px] items-center justify-center px-4 text-center text-sm font-semibold text-phx-ink-faint">
       {label}
     </div>
   );
@@ -682,11 +682,11 @@ function ProductMixChart({ rows }: { rows: WeeklyRanked[] }) {
           <div className="flex flex-col justify-center gap-2">
             {chartRows.map((row, index) => (
               <div className="flex items-center justify-between gap-2 text-xs" key={row.code}>
-                <span className="flex min-w-0 items-center gap-2 font-bold text-[#334155]">
+                <span className="flex min-w-0 items-center gap-2 font-bold text-phx-ink-2">
                   <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: CHART_COLORS[index % CHART_COLORS.length] }} />
                   <span className="truncate">{row.name}</span>
                 </span>
-                <span className="shrink-0 tabular-nums font-black text-[#0F172A]">{compactNumber(row.salesValue)}</span>
+                <span className="shrink-0 tabular-nums font-black text-phx-ink">{compactNumber(row.salesValue)}</span>
               </div>
             ))}
           </div>
@@ -774,7 +774,7 @@ function RankTable({
   });
   const max = visibleMax(table.rows, (row) => row.salesValue);
   return (
-    <section className={cn("overflow-hidden rounded-[6px] border border-[#E2E8F0] bg-white shadow-sm", className)}>
+    <section className={cn("overflow-hidden rounded-[6px] border border-phx-line bg-white shadow-sm", className)}>
       <PanelTitle
         count={table.visible}
         total={table.total}
@@ -798,17 +798,17 @@ function RankTable({
           <tbody>
             {table.rows.length === 0 && <TableNoResults colSpan={5} filtered={table.isFiltered} />}
             {table.rows.map((row) => (
-              <tr className="border-t border-[#F1F5F9] transition hover:bg-[#FFF7ED]" key={row.code}>
+              <tr className="border-t border-phx-paper-2 transition hover:bg-phx-accent-soft" key={row.code}>
                 <td className="px-3 py-2">
-                  <div className="font-semibold text-[#0F172A]">{row.name}</div>
-                  <div className="mt-1 h-1 w-full rounded-full bg-[#F1F5F9]">
-                    <div className="h-1 rounded-full bg-[#F97316]" style={{ width: `${Math.max(2, (row.salesValue / max) * 100)}%` }} />
+                  <div className="font-semibold text-phx-ink">{row.name}</div>
+                  <div className="mt-1 h-1 w-full rounded-full bg-phx-paper-2">
+                    <div className="h-1 rounded-full bg-phx-accent" style={{ width: `${Math.max(2, (row.salesValue / max) * 100)}%` }} />
                   </div>
                 </td>
-                <td className="px-3 py-2 text-right tabular-nums font-bold text-[#0F172A]">{money(row.salesValue)}</td>
-                <td className="px-3 py-2 text-right tabular-nums text-[#334155]">{num(row.salesUnits)}</td>
-                <td className="px-3 py-2 text-right tabular-nums text-[#334155]">{num(row.stockUnits)}</td>
-                <td className="px-3 py-2 text-right tabular-nums text-[#64748B]">{(row.share * 100).toFixed(1)}%</td>
+                <td className="px-3 py-2 text-right tabular-nums font-bold text-phx-ink">{money(row.salesValue)}</td>
+                <td className="px-3 py-2 text-right tabular-nums text-phx-ink-2">{num(row.salesUnits)}</td>
+                <td className="px-3 py-2 text-right tabular-nums text-phx-ink-2">{num(row.stockUnits)}</td>
+                <td className="px-3 py-2 text-right tabular-nums text-phx-ink-soft">{(row.share * 100).toFixed(1)}%</td>
               </tr>
             ))}
           </tbody>
@@ -834,7 +834,7 @@ function BranchComparisonTable({ rows }: { rows: WeeklyBranchComparisonRow[] }) 
   });
   const max = visibleMax(table.rows, (row) => row.salesValue);
   return (
-    <section className="overflow-hidden rounded-[6px] border border-[#E2E8F0] bg-white shadow-sm">
+    <section className="overflow-hidden rounded-[6px] border border-phx-line bg-white shadow-sm">
       <PanelTitle
         count={table.visible}
         total={table.total}
@@ -859,18 +859,18 @@ function BranchComparisonTable({ rows }: { rows: WeeklyBranchComparisonRow[] }) 
           <tbody>
             {table.rows.length === 0 && <TableNoResults colSpan={6} filtered={table.isFiltered} label="branch rows" />}
             {table.rows.map((row) => (
-              <tr className="border-t border-[#F1F5F9] transition hover:bg-[#FFF7ED]" key={row.code}>
+              <tr className="border-t border-phx-paper-2 transition hover:bg-phx-accent-soft" key={row.code}>
                 <td className="px-3 py-2">
-                  <div className="font-semibold text-[#0F172A]">{row.name}</div>
-                  <div className="mt-1 h-1 w-full rounded-full bg-[#F1F5F9]">
-                    <div className="h-1 rounded-full bg-[#F97316]" style={{ width: `${Math.max(2, (row.salesValue / max) * 100)}%` }} />
+                  <div className="font-semibold text-phx-ink">{row.name}</div>
+                  <div className="mt-1 h-1 w-full rounded-full bg-phx-paper-2">
+                    <div className="h-1 rounded-full bg-phx-accent" style={{ width: `${Math.max(2, (row.salesValue / max) * 100)}%` }} />
                   </div>
                 </td>
-                <td className="px-3 py-2 font-semibold text-[#334155]">{row.regionName}</td>
-                <td className="px-3 py-2 text-right tabular-nums font-bold text-[#0F172A]">{money(row.salesValue)}</td>
-                <td className="px-3 py-2 text-right tabular-nums text-[#334155]">{num(row.salesUnits)}</td>
-                <td className="px-3 py-2 text-right tabular-nums text-[#334155]">{num(row.stockUnits)}</td>
-                <td className="px-3 py-2 text-right tabular-nums text-[#64748B]">{(row.share * 100).toFixed(1)}%</td>
+                <td className="px-3 py-2 font-semibold text-phx-ink-2">{row.regionName}</td>
+                <td className="px-3 py-2 text-right tabular-nums font-bold text-phx-ink">{money(row.salesValue)}</td>
+                <td className="px-3 py-2 text-right tabular-nums text-phx-ink-2">{num(row.salesUnits)}</td>
+                <td className="px-3 py-2 text-right tabular-nums text-phx-ink-2">{num(row.stockUnits)}</td>
+                <td className="px-3 py-2 text-right tabular-nums text-phx-ink-soft">{(row.share * 100).toFixed(1)}%</td>
               </tr>
             ))}
           </tbody>
@@ -894,19 +894,19 @@ function ZeroStockTable({ rows, totalStock }: { rows: WeeklyBranchRow[]; totalSt
   const max = visibleMax(table.rows, (row) => row.stockUnits);
   const shownStock = table.isFiltered ? table.rows.reduce((total, row) => total + row.stockUnits, 0) : totalStock;
   return (
-    <section className="overflow-hidden rounded-[6px] border border-[#E2E8F0] bg-white shadow-sm">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#E2E8F0] bg-[#F8FAFC] px-3 py-2">
+    <section className="overflow-hidden rounded-[6px] border border-phx-line bg-white shadow-sm">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-phx-line bg-phx-paper px-3 py-2">
         <div>
-          <div className="text-xs font-black uppercase tracking-wide text-[#64748B]">Stock on hand watchlist</div>
-          <div className="text-[11px] font-bold text-[#94A3B8]">Zero sales branches</div>
+          <div className="text-xs font-black uppercase tracking-wide text-phx-ink-soft">Stock on hand watchlist</div>
+          <div className="text-[11px] font-bold text-phx-ink-faint">Zero sales branches</div>
         </div>
         <div className="flex items-center gap-2">
           <div className="w-40 sm:w-48">
             <TableSearchInput value={table.query} onChange={table.setQuery} onClear={table.clearQuery} placeholder="Filter branches…" />
           </div>
           <div className="text-right">
-            <div className="text-sm font-black tabular-nums text-[#0F172A]">{num(shownStock)}</div>
-            <div className="text-[10px] font-black uppercase tracking-wide text-[#94A3B8]">
+            <div className="text-sm font-black tabular-nums text-phx-ink">{num(shownStock)}</div>
+            <div className="text-[10px] font-black uppercase tracking-wide text-phx-ink-faint">
               {table.isFiltered && table.visible !== table.total ? `${table.visible} / ${table.total}` : table.visible} rows
             </div>
           </div>
@@ -924,15 +924,15 @@ function ZeroStockTable({ rows, totalStock }: { rows: WeeklyBranchRow[]; totalSt
           <tbody>
             {table.rows.length === 0 && <TableNoResults colSpan={3} filtered={table.isFiltered} label="stock-on-hand branches with zero sales" />}
             {table.rows.map((branch) => (
-              <tr className="border-t border-[#F1F5F9] transition hover:bg-[#FFF7ED]" key={`${branch.branchCode}-${branch.regionName}`}>
+              <tr className="border-t border-phx-paper-2 transition hover:bg-phx-accent-soft" key={`${branch.branchCode}-${branch.regionName}`}>
                 <td className="px-3 py-2">
-                  <div className="font-semibold text-[#0F172A]">{branch.branchName}</div>
-                  <div className="mt-1 h-1.5 w-full rounded-full bg-[#F1F5F9]">
-                    <div className="h-1.5 rounded-full bg-[#F97316]" style={{ width: `${Math.max(4, (branch.stockUnits / max) * 100)}%` }} />
+                  <div className="font-semibold text-phx-ink">{branch.branchName}</div>
+                  <div className="mt-1 h-1.5 w-full rounded-full bg-phx-paper-2">
+                    <div className="h-1.5 rounded-full bg-phx-accent" style={{ width: `${Math.max(4, (branch.stockUnits / max) * 100)}%` }} />
                   </div>
                 </td>
-                <td className="px-3 py-2 text-[#334155]">{branch.regionName}</td>
-                <td className="px-3 py-2 text-right tabular-nums font-bold text-[#334155]">{num(branch.stockUnits)}</td>
+                <td className="px-3 py-2 text-phx-ink-2">{branch.regionName}</td>
+                <td className="px-3 py-2 text-right tabular-nums font-bold text-phx-ink-2">{num(branch.stockUnits)}</td>
               </tr>
             ))}
           </tbody>
@@ -957,11 +957,11 @@ function PanelTitle({
 }) {
   const showSplit = filtered && typeof total === "number" && total !== count;
   return (
-    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#E2E8F0] bg-[#F8FAFC] px-3 py-2">
-      <span className="text-xs font-black uppercase tracking-wide text-[#64748B]">{title}</span>
+    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-phx-line bg-phx-paper px-3 py-2">
+      <span className="text-xs font-black uppercase tracking-wide text-phx-ink-soft">{title}</span>
       <div className="flex items-center gap-2">
         {actions ? <div className="w-40 sm:w-48">{actions}</div> : null}
-        <span className="shrink-0 rounded-[4px] border border-[#E2E8F0] bg-white px-2 py-1 text-[10px] font-black uppercase tracking-wide text-[#94A3B8]">
+        <span className="shrink-0 rounded-[4px] border border-phx-line bg-white px-2 py-1 text-[10px] font-black uppercase tracking-wide text-phx-ink-faint">
           {showSplit ? `${count} / ${total}` : count} rows
         </span>
       </div>
@@ -1067,20 +1067,20 @@ function TrendTooltip({
   const up = (datum.wow ?? 0) >= 0;
 
   return (
-    <div className="pointer-events-none min-w-[200px] max-w-[270px] rounded-[6px] border border-[#E2E8F0] bg-white px-3 py-2.5 shadow-[0_8px_24px_-8px_rgba(15,23,42,0.25)]">
+    <div className="pointer-events-none min-w-[200px] max-w-[270px] rounded-[6px] border border-phx-line bg-white px-3 py-2.5 shadow-[0_8px_24px_-8px_rgba(15,23,42,0.25)]">
       <div className="flex items-center justify-between gap-3">
-        <span className="flex items-center gap-1.5 text-[11px] font-bold tabular-nums text-[#64748B]">
+        <span className="flex items-center gap-1.5 text-[11px] font-bold tabular-nums text-phx-ink-soft">
           <span className="inline-block h-2 w-2 rounded-full" style={{ background: color }} />
           {datum.label}
         </span>
         {datum.selected && (
-          <span className="rounded-[4px] bg-[#FFF7ED] px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wide text-[#EA580C]">
+          <span className="rounded-[4px] bg-phx-accent-soft px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wide text-phx-accent-hover">
             Selected
           </span>
         )}
       </div>
       <div className="mt-1.5 flex items-center justify-between gap-3">
-        <span className="text-lg font-black tabular-nums text-[#0F172A]">{money(datum.total)}</span>
+        <span className="text-lg font-black tabular-nums text-phx-ink">{money(datum.total)}</span>
         {datum.wow !== null && (
           <span
             className={cn(
@@ -1093,18 +1093,18 @@ function TrendTooltip({
           </span>
         )}
       </div>
-      {datum.wow !== null && <div className="mt-0.5 text-[10px] font-bold text-[#94A3B8]">vs previous week</div>}
+      {datum.wow !== null && <div className="mt-0.5 text-[10px] font-bold text-phx-ink-faint">vs previous week</div>}
       {top.length > 0 && (
-        <div className="mt-2 space-y-1 border-t border-[#F1F5F9] pt-2">
+        <div className="mt-2 space-y-1 border-t border-phx-paper-2 pt-2">
           {top.map((row) => {
             const share = datum.total > 0 ? row.salesValue / datum.total : 0;
             return (
               <div className="flex items-center justify-between gap-3" key={row.distributorCode}>
                 <span className="flex min-w-0 items-center gap-1.5">
                   <span className="inline-block h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: color, opacity: 0.45 }} />
-                  <span className="truncate text-[10px] font-bold text-[#64748B]">{row.distributorName || row.distributorCode}</span>
+                  <span className="truncate text-[10px] font-bold text-phx-ink-soft">{row.distributorName || row.distributorCode}</span>
                 </span>
-                <span className="shrink-0 text-[10px] font-black tabular-nums text-[#334155]">
+                <span className="shrink-0 text-[10px] font-black tabular-nums text-phx-ink-2">
                   {(share * 100).toFixed(0)}% · {compactEgp(row.salesValue)}
                 </span>
               </div>
@@ -1112,8 +1112,8 @@ function TrendTooltip({
           })}
           {rest.length > 0 && (
             <div className="flex items-center justify-between gap-3">
-              <span className="text-[10px] font-bold text-[#94A3B8]">+{rest.length} more</span>
-              <span className="shrink-0 text-[10px] font-black tabular-nums text-[#94A3B8]">{compactEgp(restValue)}</span>
+              <span className="text-[10px] font-bold text-phx-ink-faint">+{rest.length} more</span>
+              <span className="shrink-0 text-[10px] font-black tabular-nums text-phx-ink-faint">{compactEgp(restValue)}</span>
             </div>
           )}
         </div>
@@ -1183,15 +1183,15 @@ function TrendStrip({ trend, selected }: { trend: WeeklyDashboard["trend"]; sele
   // vanishing silently, so the user knows the section exists and why it is empty.
   if (trend.length < 2) {
     return (
-      <section className="w-full overflow-hidden rounded-[6px] border border-[#E2E8F0] bg-white shadow-sm">
-        <div className="flex items-center gap-1.5 border-b border-[#E2E8F0] bg-[#F8FAFC] px-4 py-3">
-          <span className="inline-block h-1.5 w-1.5 rounded-full bg-[#F97316]" />
-          <span className="text-xs font-black uppercase tracking-wide text-[#64748B]">Weekly sales-value trend</span>
-          <span className="ml-2 text-[11px] font-semibold text-[#94A3B8]">
+      <section className="w-full overflow-hidden rounded-[6px] border border-phx-line bg-white shadow-sm">
+        <div className="flex items-center gap-1.5 border-b border-phx-line bg-phx-paper px-4 py-3">
+          <span className="inline-block h-1.5 w-1.5 rounded-full bg-phx-accent" />
+          <span className="text-xs font-black uppercase tracking-wide text-phx-ink-soft">Weekly sales-value trend</span>
+          <span className="ml-2 text-[11px] font-semibold text-phx-ink-faint">
             {trend.length === 0 ? "No data for current filter" : "1 week — need at least 2 to draw a trend"}
           </span>
         </div>
-        <div className="flex h-20 items-center justify-center text-[11px] font-medium text-[#CBD5E1]">
+        <div className="flex h-20 items-center justify-center text-[11px] font-medium text-phx-line-strong">
           {trend.length === 0
             ? "No weekly sales data matches the current filter selection."
             : "Upload a second week or clear filters to display the trend chart."}
@@ -1204,21 +1204,21 @@ function TrendStrip({ trend, selected }: { trend: WeeklyDashboard["trend"]; sele
   const labelByWeekStart = new Map(chartData.map((d) => [d.weekStart, d.label]));
 
   return (
-    <section className="w-full overflow-hidden rounded-[6px] border border-[#E2E8F0] bg-white shadow-sm">
-      <div className="flex flex-wrap items-start justify-between gap-4 border-b border-[#E2E8F0] bg-[#F8FAFC] px-4 py-3">
+    <section className="w-full overflow-hidden rounded-[6px] border border-phx-line bg-white shadow-sm">
+      <div className="flex flex-wrap items-start justify-between gap-4 border-b border-phx-line bg-phx-paper px-4 py-3">
         <div>
-          <div className="flex items-center gap-1.5 text-xs font-black uppercase tracking-wide text-[#64748B]">
-            <span className="inline-block h-1.5 w-1.5 rounded-full bg-[#F97316]" />
+          <div className="flex items-center gap-1.5 text-xs font-black uppercase tracking-wide text-phx-ink-soft">
+            <span className="inline-block h-1.5 w-1.5 rounded-full bg-phx-accent" />
             Weekly sales-value trend
           </div>
           <div className="mt-1 flex items-center gap-2.5">
-            <span className="text-[11px] font-bold text-[#94A3B8]">{trend.length} weeks</span>
+            <span className="text-[11px] font-bold text-phx-ink-faint">{trend.length} weeks</span>
             {multiYear && (
-              <span className="flex items-center gap-2 border-l border-[#E2E8F0] pl-2.5">
+              <span className="flex items-center gap-2 border-l border-phx-line pl-2.5">
                 {years.map((year) => (
                   <span className="flex items-center gap-1" key={year}>
                     <span className="inline-block h-1.5 w-3 rounded-full" style={{ background: trendYearColor(year) }} />
-                    <span className="text-[10px] font-bold tabular-nums text-[#94A3B8]">{year}</span>
+                    <span className="text-[10px] font-bold tabular-nums text-phx-ink-faint">{year}</span>
                   </span>
                 ))}
               </span>
@@ -1227,14 +1227,14 @@ function TrendStrip({ trend, selected }: { trend: WeeklyDashboard["trend"]; sele
         </div>
         <div className="flex flex-wrap items-center gap-3 text-right">
           <div>
-            <div className="text-[10px] font-black uppercase tracking-wide text-[#64748B]">Average</div>
-            <div className="text-sm font-black tabular-nums text-[#334155]">{money(meta.average)}</div>
+            <div className="text-[10px] font-black uppercase tracking-wide text-phx-ink-soft">Average</div>
+            <div className="text-sm font-black tabular-nums text-phx-ink-2">{money(meta.average)}</div>
           </div>
-          <div className="border-l border-[#E2E8F0] pl-3">
-            <div className="text-[10px] font-black uppercase tracking-wide text-[#EA580C]">
+          <div className="border-l border-phx-line pl-3">
+            <div className="text-[10px] font-black uppercase tracking-wide text-phx-accent-hover">
               {meta.selectedCount > 1 ? `${meta.selectedCount} selected weeks` : "Highlighted week"}
             </div>
-            <div className="text-lg font-black tabular-nums text-[#0F172A]">{money(meta.highlightTotal)}</div>
+            <div className="text-lg font-black tabular-nums text-phx-ink">{money(meta.highlightTotal)}</div>
           </div>
         </div>
       </div>

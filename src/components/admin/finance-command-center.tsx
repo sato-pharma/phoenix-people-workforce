@@ -287,7 +287,7 @@ function FinanceOwnerBanner() {
         />
         <span
           aria-hidden="true"
-          className="hidden h-1 w-1 rotate-45 bg-[#F97316] shadow-[0_0_10px_rgba(249,115,22,0.9)] sm:block"
+          className="hidden h-1 w-1 rotate-45 bg-phx-accent shadow-[0_0_10px_rgba(249,115,22,0.9)] sm:block"
         />
 
         {/* `fcc-nameplate` (app/globals.css) is the gold foil + travelling highlight; it already
@@ -300,7 +300,7 @@ function FinanceOwnerBanner() {
 
         <span
           aria-hidden="true"
-          className="hidden h-1 w-1 rotate-45 bg-[#F97316] shadow-[0_0_10px_rgba(249,115,22,0.9)] sm:block"
+          className="hidden h-1 w-1 rotate-45 bg-phx-accent shadow-[0_0_10px_rgba(249,115,22,0.9)] sm:block"
         />
         <span
           aria-hidden="true"

@@ -15,8 +15,8 @@ export function AnalyticsKpiCard({ label, value, subValue, growth, prefix, class
   const growthSign = growth == null ? null : growth > 0 ? "up" : growth < 0 ? "down" : "flat";
 
   return (
-    <div className={`border border-border border-l-4 border-l-[#F97316] bg-card flex flex-col overflow-hidden ${className ?? ""}`}>
-      <div className="bg-[#0F172A] px-3 py-1.5">
+    <div className={`border border-border border-l-4 border-l-phx-accent bg-card flex flex-col overflow-hidden ${className ?? ""}`}>
+      <div className="bg-phx-ink px-3 py-1.5">
         <p className="text-[10px] text-white/70 uppercase tracking-widest font-semibold truncate">{label}</p>
       </div>
       <div className="px-4 py-3 flex flex-col gap-1.5 flex-1">

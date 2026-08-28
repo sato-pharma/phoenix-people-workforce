@@ -49,7 +49,7 @@ export function RepCountersTable({ data }: Props) {
     // keeps hitting: "zero validation requests" read as reps ignoring the process, when in fact
     // they had never been shown a button.
     return (
-      <section className="border border-[#e4e9ec] bg-white px-4 py-8 text-center">
+      <section className="border border-phx-line bg-white px-4 py-8 text-center">
         <p className="text-sm font-bold text-slate-600">{emptyReason}</p>
         <p className="mt-1 text-[12px] text-slate-400">
           Counters appear here as soon as a direct order is held or expires.
@@ -80,8 +80,8 @@ export function RepCountersTable({ data }: Props) {
   );
 
   return (
-    <section className="border border-[#e4e9ec] bg-white">
-      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-[#e4e9ec] bg-slate-900 px-4 py-2.5">
+    <section className="border border-phx-line bg-white">
+      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-phx-line bg-slate-900 px-4 py-2.5">
         <h3 className="text-[11px] font-black uppercase tracking-[0.14em] text-white">
           Per-rep counters — {rows.length} {rows.length === 1 ? "person" : "people"}
         </h3>
@@ -95,7 +95,7 @@ export function RepCountersTable({ data }: Props) {
       <div className="hidden overflow-x-auto md:block">
         <table className="w-full text-left text-sm">
           <thead>
-            <tr className="border-b border-[#e4e9ec] text-[11px] font-black uppercase tracking-wider text-slate-500">
+            <tr className="border-b border-phx-line text-[11px] font-black uppercase tracking-wider text-slate-500">
               <th className="px-3 py-2">Rep</th>
               <th className="px-3 py-2">Area</th>
               <th className="px-3 py-2">Held</th>
@@ -142,7 +142,7 @@ export function RepCountersTable({ data }: Props) {
             ))}
           </tbody>
           <tfoot>
-            <tr className="border-t border-[#e4e9ec] bg-slate-50 text-[12px] font-black text-slate-900">
+            <tr className="border-t border-phx-line bg-slate-50 text-[12px] font-black text-slate-900">
               <td className="px-3 py-2 uppercase tracking-wider">Total</td>
               <td className="px-3 py-2" />
               <td className="px-3 py-2">{totals.held}</td>
@@ -167,7 +167,7 @@ export function RepCountersTable({ data }: Props) {
       {/* Mobile: cards. The owner's rule is that mobile never gets a table. */}
       <div className="space-y-2 p-3 md:hidden">
         {rows.map((row) => (
-          <article key={row.hrId} className="block border border-[#e4e9ec] p-3">
+          <article key={row.hrId} className="block border border-phx-line p-3">
             <p className="text-sm font-black text-slate-900">{row.name}</p>
             <p className="text-[11px] text-slate-500">
               {row.role}

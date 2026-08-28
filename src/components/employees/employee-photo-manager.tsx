@@ -96,7 +96,7 @@ export function EmployeePhotoManager({ hrId, fullName }: { hrId: string; fullNam
   }
 
   return (
-    <div className="flex items-center gap-4 rounded border border-[#E2E8F0] bg-[#F8FAFC] p-4">
+    <div className="flex items-center gap-4 rounded border border-phx-line bg-phx-paper p-4">
       <div className="relative flex h-[72px] w-[72px] shrink-0 items-center justify-center overflow-hidden rounded border border-orange-100 bg-white shadow-sm">
         {displaySrc ? (
           // Same reason as the portal editor: a 72px hard crop is not enough to check a photo
@@ -119,8 +119,8 @@ export function EmployeePhotoManager({ hrId, fullName }: { hrId: string; fullNam
       </div>
 
       <div className="min-w-0 flex-1">
-        <p className="text-sm font-bold text-[#0F172A]">Profile photo</p>
-        <p className="mt-0.5 text-xs text-[#64748B]">JPG, PNG, or WebP, up to 5&nbsp;MB. Updates everywhere.</p>
+        <p className="text-sm font-bold text-phx-ink">Profile photo</p>
+        <p className="mt-0.5 text-xs text-phx-ink-soft">JPG, PNG, or WebP, up to 5&nbsp;MB. Updates everywhere.</p>
         <div className="mt-2.5 flex flex-wrap items-center gap-2">
           <button
             className="inline-flex items-center gap-2 rounded bg-orange-500 px-3 py-1.5 text-xs font-bold uppercase tracking-[0.06em] text-white shadow-sm transition-colors hover:bg-orange-600 disabled:cursor-not-allowed disabled:opacity-60"
@@ -133,7 +133,7 @@ export function EmployeePhotoManager({ hrId, fullName }: { hrId: string; fullNam
           </button>
           {hasVisiblePhoto ? (
             <button
-              className="inline-flex items-center gap-2 rounded border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold uppercase tracking-[0.06em] text-[#64748B] shadow-sm transition-colors hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600 disabled:cursor-not-allowed disabled:opacity-60"
+              className="inline-flex items-center gap-2 rounded border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold uppercase tracking-[0.06em] text-phx-ink-soft shadow-sm transition-colors hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600 disabled:cursor-not-allowed disabled:opacity-60"
               disabled={busy}
               onClick={handleRemove}
               type="button"

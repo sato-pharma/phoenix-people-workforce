@@ -501,7 +501,7 @@ export function SosDashboard({
               type="button"
               onClick={() => void handleExport()}
               disabled={downloading || loading || !hasData}
-              className="inline-flex items-center gap-1.5 rounded-[6px] border border-[#F97316] bg-[#F97316] px-3.5 py-2 text-sm font-black text-white shadow-sm transition-opacity hover:opacity-90 disabled:opacity-50"
+              className="inline-flex items-center gap-1.5 rounded-[6px] border border-phx-accent bg-phx-accent px-3.5 py-2 text-sm font-black text-white shadow-sm transition-opacity hover:opacity-90 disabled:opacity-50"
               title="Download the full BI workbook with the current filters applied (CEO / Super Admin)"
             >
               {downloading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
@@ -628,7 +628,7 @@ export function SosDashboard({
           <label className="mt-3 inline-flex cursor-pointer items-center gap-2 rounded-[5px] border border-amber-200 bg-amber-50 px-3 py-1.5 text-[12px] font-bold text-amber-800 transition hover:border-amber-300">
             <input
               type="checkbox"
-              className="h-4 w-4 accent-[#F97316]"
+              className="h-4 w-4 accent-phx-accent"
               checked={revealRestricted}
               onChange={(event) => setRevealRestricted(event.target.checked)}
             />

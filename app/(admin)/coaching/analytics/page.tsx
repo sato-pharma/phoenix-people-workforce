@@ -84,7 +84,7 @@ export default async function CoachingAnalyticsPage() {
         actions={
             <div className="flex flex-wrap gap-2">
               <Link
-                className="inline-flex items-center justify-center gap-2 rounded-full border border-[#CBD5E1] bg-white px-5 py-2.5 text-sm font-black text-[#0F172A] shadow-sm transition hover:border-[#F97316]/50 hover:text-[#F97316]"
+                className="inline-flex items-center justify-center gap-2 rounded-full border border-phx-line-strong bg-white px-5 py-2.5 text-sm font-black text-phx-ink shadow-sm transition hover:border-phx-accent/50 hover:text-phx-accent"
                 href="/coaching"
               >
                 <ClipboardCheck className="h-4 w-4" />
@@ -92,7 +92,7 @@ export default async function CoachingAnalyticsPage() {
               </Link>
               {canCreate ? (
                 <Link
-                  className="inline-flex items-center justify-center gap-2 rounded-full bg-[#F97316] px-5 py-2.5 text-sm font-black text-white shadow-[0_18px_42px_rgba(249,115,22,0.22)] transition hover:bg-[#EA580C]"
+                  className="inline-flex items-center justify-center gap-2 rounded-full bg-phx-accent px-5 py-2.5 text-sm font-black text-white shadow-[0_18px_42px_rgba(249,115,22,0.22)] transition hover:bg-phx-accent-hover"
                   href="/coaching/new"
                 >
                   <Plus className="h-4 w-4" />

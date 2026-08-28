@@ -20,7 +20,7 @@ type Props = {
 };
 
 const PAGE = 50;
-const panel = "rounded-2xl border border-[#D8E0EA] bg-white/95 shadow-[0_8px_22px_rgba(15,23,42,0.06)]";
+const panel = "rounded-2xl border border-phx-line bg-white/95 shadow-[0_8px_22px_rgba(15,23,42,0.06)]";
 const headRow = "sticky top-0 bg-[#020617] text-left text-[11px] font-black uppercase tracking-[0.12em] text-white";
 
 async function readJson<T>(res: Response): Promise<T> {
@@ -28,7 +28,7 @@ async function readJson<T>(res: Response): Promise<T> {
   try { return JSON.parse(text) as T; } catch { return { success: false, error: text } as unknown as T; }
 }
 
-const bulkBtn = "inline-flex h-9 items-center gap-1.5 rounded-[6px] border border-[#E2E8F0] bg-white px-3 text-xs font-bold text-[#334155] transition hover:border-[#FDBA74] disabled:opacity-60";
+const bulkBtn = "inline-flex h-9 items-center gap-1.5 rounded-[6px] border border-phx-line bg-white px-3 text-xs font-bold text-phx-ink-2 transition hover:border-phx-accent-line disabled:opacity-60";
 
 // Bulk XLSX bar (download the template — pre-filled with the current mappings, so it doubles as the
 // export — then upload the filled sheet). Wired to the existing /api/sales/monthly-import/*-mapping
@@ -75,8 +75,8 @@ function MappingBulkBar({ templateHref, templateLabel, uploadUrl, uploadFields, 
   }
 
   return (
-    <div className="flex flex-wrap items-center gap-2 rounded-[6px] border border-dashed border-[#E2E8F0] bg-[#FCFDFE] px-3 py-2">
-      <span className="text-[11px] font-black uppercase tracking-[0.12em] text-[#94A3B8]">Bulk XLSX</span>
+    <div className="flex flex-wrap items-center gap-2 rounded-[6px] border border-dashed border-phx-line bg-[#FCFDFE] px-3 py-2">
+      <span className="text-[11px] font-black uppercase tracking-[0.12em] text-phx-ink-faint">Bulk XLSX</span>
       <a className={bulkBtn} href={templateHref}><Download className="h-4 w-4" /> {templateLabel}</a>
       <button className={bulkBtn} disabled={busy} onClick={() => fileRef.current?.click()} type="button">
         {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />} Import filled .xlsx
@@ -145,20 +145,20 @@ function CustomersTab({ distributorCode, bricks }: { distributorCode: string; br
     <div className="space-y-3 p-4">
       <div className="flex flex-wrap items-center gap-2">
         <input
-          className="h-9 w-64 rounded-[6px] border border-[#E2E8F0] px-3 text-sm outline-none focus:border-[#FDBA74]"
+          className="h-9 w-64 rounded-[6px] border border-phx-line px-3 text-sm outline-none focus:border-phx-accent-line"
           onChange={(e) => setSearch(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter") void load(0, search, sourceFilter); }}
           placeholder="Search code / name / address"
           value={search}
         />
         <Button className="h-9" onClick={() => void load(0, search, sourceFilter)} type="button" variant="secondary">Search</Button>
-        <span className="text-xs text-[#64748B]">{total.toLocaleString()} mapped</span>
+        <span className="text-xs text-phx-ink-soft">{total.toLocaleString()} mapped</span>
         <span className="ml-2 inline-flex items-center gap-1">
           {SOURCE_FILTERS.map((f) => (
             <button
               className={cn(
                 "h-7 rounded-full border px-2.5 text-[11px] font-bold transition",
-                sourceFilter === f.key ? "border-[#F97316] bg-[#FFF3E8] text-[#C2410C]" : "border-[#E2E8F0] bg-white text-[#64748B] hover:border-[#FDBA74]",
+                sourceFilter === f.key ? "border-phx-accent bg-[#FFF3E8] text-phx-accent-press" : "border-phx-line bg-white text-phx-ink-soft hover:border-phx-accent-line",
               )}
               key={f.key || "all"}
               onClick={() => { setSourceFilter(f.key); void load(0, search, f.key); }}
@@ -166,7 +166,7 @@ function CustomersTab({ distributorCode, bricks }: { distributorCode: string; br
             >{f.label}</button>
           ))}
         </span>
-        {loading ? <Loader2 className="h-4 w-4 animate-spin text-[#F97316]" /> : null}
+        {loading ? <Loader2 className="h-4 w-4 animate-spin text-phx-accent" /> : null}
       </div>
 
       <MappingBulkBar
@@ -179,7 +179,7 @@ function CustomersTab({ distributorCode, bricks }: { distributorCode: string; br
 
       {error ? <AdminCallout tone="danger"><span>{error}</span></AdminCallout> : null}
 
-      <div className="overflow-auto rounded-xl border border-[#E2E8F0]">
+      <div className="overflow-auto rounded-xl border border-phx-line">
         <table className="w-full text-sm">
           <thead className={headRow}><tr>
             <th className="px-3 py-2">Customer</th><th className="px-3 py-2">Brick</th><th className="px-3 py-2 text-right">Actions</th>
@@ -188,12 +188,12 @@ function CustomersTab({ distributorCode, bricks }: { distributorCode: string; br
             {/* add row */}
             <tr className="border-b border-[#FFE8D6] bg-[#FFFBF5]">
               <td className="px-3 py-2">
-                <input className="mb-1 h-8 w-40 rounded border border-[#E2E8F0] px-2 text-xs" onChange={(e) => setAddCode(e.target.value)} placeholder="customer code" value={addCode} />
-                <input className="h-8 w-48 rounded border border-[#E2E8F0] px-2 text-xs" onChange={(e) => setAddName(e.target.value)} placeholder="name (optional)" value={addName} />
+                <input className="mb-1 h-8 w-40 rounded border border-phx-line px-2 text-xs" onChange={(e) => setAddCode(e.target.value)} placeholder="customer code" value={addCode} />
+                <input className="h-8 w-48 rounded border border-phx-line px-2 text-xs" onChange={(e) => setAddName(e.target.value)} placeholder="name (optional)" value={addName} />
               </td>
               <td className="px-3 py-2"><div className="w-56"><MappingCombobox onChange={setAddBrick} options={brickOptions} placeholder="brick (B10…)" value={addBrick} /></div></td>
               <td className="px-3 py-2 text-right">
-                <Button className="h-8 gap-1 bg-[#F97316] font-black text-white hover:bg-[#EA6A0C]" disabled={busyKey === "add" || !addCode.trim() || !addBrick}
+                <Button className="h-8 gap-1 bg-phx-accent font-black text-white hover:bg-[#EA6A0C]" disabled={busyKey === "add" || !addCode.trim() || !addBrick}
                   onClick={async () => { if (await post({ action: "upsert", distributorCode, customerCode: addCode.trim(), customerName: addName.trim(), brickId: addBrick }, "add")) { setAddCode(""); setAddName(""); setAddBrick(""); void load(offset, search, sourceFilter); } }}
                   type="button">{busyKey === "add" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}Add</Button>
               </td>
@@ -204,8 +204,8 @@ function CustomersTab({ distributorCode, bricks }: { distributorCode: string; br
               return (
                 <tr className="border-b border-[#FFE8D6]" key={r.customerCode}>
                   <td className="px-3 py-2">
-                    <span className="block font-semibold text-[#0F172A]">{r.customerName || r.customerCode}</span>
-                    <span className="block font-mono text-xs text-[#64748B]">{r.customerCode}{r.address ? ` · ${r.address}` : ""}</span>
+                    <span className="block font-semibold text-phx-ink">{r.customerName || r.customerCode}</span>
+                    <span className="block font-mono text-xs text-phx-ink-soft">{r.customerCode}{r.address ? ` · ${r.address}` : ""}</span>
                     {r.source === "auto" ? (
                       <span className="mt-0.5 inline-flex items-center gap-1 rounded-full border border-violet-200 bg-violet-50 px-1.5 py-0.5 text-[10px] font-bold text-violet-700">
                         AUTO{typeof r.confidence === "number" ? ` · ${r.confidence}%` : ""}
@@ -216,7 +216,7 @@ function CustomersTab({ distributorCode, bricks }: { distributorCode: string; br
                   <td className="px-3 py-2">
                     <div className="flex items-center justify-end gap-1.5">
                       {dirty ? (
-                        <Button className="h-8 gap-1 bg-[#0B0B0B] font-black text-white hover:bg-[#F97316]" disabled={busyKey === r.customerCode}
+                        <Button className="h-8 gap-1 bg-[#0B0B0B] font-black text-white hover:bg-phx-accent" disabled={busyKey === r.customerCode}
                           onClick={async () => { if (await post({ action: "upsert", distributorCode, customerCode: r.customerCode, customerName: r.customerName, address: r.address, brickId: editing }, r.customerCode)) void load(offset, search, sourceFilter); }}
                           type="button">{busyKey === r.customerCode ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}Save</Button>
                       ) : null}
@@ -228,12 +228,12 @@ function CustomersTab({ distributorCode, bricks }: { distributorCode: string; br
                 </tr>
               );
             })}
-            {rows.length === 0 && !loading ? <tr><td className="px-3 py-6 text-center text-xs text-[#64748B]" colSpan={3}>No customer mappings yet.</td></tr> : null}
+            {rows.length === 0 && !loading ? <tr><td className="px-3 py-6 text-center text-xs text-phx-ink-soft" colSpan={3}>No customer mappings yet.</td></tr> : null}
           </tbody>
         </table>
       </div>
 
-      <div className="flex items-center justify-between text-xs text-[#64748B]">
+      <div className="flex items-center justify-between text-xs text-phx-ink-soft">
         <span>Showing {rows.length ? offset + 1 : 0}–{offset + rows.length} of {total.toLocaleString()}</span>
         <div className="flex gap-2">
           <Button className="h-8" disabled={offset === 0 || loading} onClick={() => void load(Math.max(0, offset - PAGE), search, sourceFilter)} type="button" variant="secondary">Prev</Button>
@@ -282,7 +282,7 @@ function AliasTab({ distributorCode, kind, options, codeLabel }: { distributorCo
 
   return (
     <div className="space-y-3 p-4">
-      <div className="flex items-center gap-2 text-xs text-[#64748B]">{rows.length} mapped {loading ? <Loader2 className="h-4 w-4 animate-spin text-[#F97316]" /> : null}</div>
+      <div className="flex items-center gap-2 text-xs text-phx-ink-soft">{rows.length} mapped {loading ? <Loader2 className="h-4 w-4 animate-spin text-phx-accent" /> : null}</div>
       <MappingBulkBar
         onImported={() => void load()}
         templateHref={kind === "product"
@@ -293,23 +293,23 @@ function AliasTab({ distributorCode, kind, options, codeLabel }: { distributorCo
         uploadUrl={kind === "product" ? "/api/sales/monthly-import/product-mapping" : "/api/sales/monthly-import/territory-mapping"}
       />
       {error ? <AdminCallout tone="danger"><span>{error}</span></AdminCallout> : null}
-      <div className="overflow-auto rounded-xl border border-[#E2E8F0]">
+      <div className="overflow-auto rounded-xl border border-phx-line">
         <table className="w-full text-sm">
           <thead className={headRow}><tr><th className="px-3 py-2">Raw {kind === "product" ? "item" : "territory"}</th><th className="px-3 py-2">Phoenix {codeLabel}</th><th className="px-3 py-2 text-right">Actions</th></tr></thead>
           <tbody>
             <tr className="border-b border-[#FFE8D6] bg-[#FFFBF5]">
-              <td className="px-3 py-2"><input className="h-8 w-56 rounded border border-[#E2E8F0] px-2 text-xs" onChange={(e) => setAddRaw(e.target.value)} placeholder={kind === "product" ? "item code or name" : "area text"} value={addRaw} /></td>
+              <td className="px-3 py-2"><input className="h-8 w-56 rounded border border-phx-line px-2 text-xs" onChange={(e) => setAddRaw(e.target.value)} placeholder={kind === "product" ? "item code or name" : "area text"} value={addRaw} /></td>
               <td className="px-3 py-2"><div className="w-56"><MappingCombobox onChange={setAddCode} options={options} placeholder={codeLabel} value={addCode} /></div></td>
               <td className="px-3 py-2 text-right">
-                <Button className="h-8 gap-1 bg-[#F97316] font-black text-white hover:bg-[#EA6A0C]" disabled={busyKey === "add" || !addRaw.trim() || !addCode}
+                <Button className="h-8 gap-1 bg-phx-accent font-black text-white hover:bg-[#EA6A0C]" disabled={busyKey === "add" || !addRaw.trim() || !addCode}
                   onClick={async () => { if (await post({ action: "upsert", distributorCode, raw: addRaw.trim(), code: addCode }, "add")) { setAddRaw(""); setAddCode(""); void load(); } }}
                   type="button">{busyKey === "add" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}Add</Button>
               </td>
             </tr>
             {rows.map((r) => (
               <tr className="border-b border-[#FFE8D6]" key={`${r.normalizedAlias}-${r.code}`}>
-                <td className="px-3 py-2 font-semibold text-[#0F172A]">{r.alias || r.normalizedAlias}</td>
-                <td className="px-3 py-2 font-mono text-xs text-[#0F172A]">{r.code}</td>
+                <td className="px-3 py-2 font-semibold text-phx-ink">{r.alias || r.normalizedAlias}</td>
+                <td className="px-3 py-2 font-mono text-xs text-phx-ink">{r.code}</td>
                 <td className="px-3 py-2 text-right">
                   <Button className="h-8 gap-1 border border-rose-200 text-rose-600 hover:bg-rose-50" disabled={busyKey === r.normalizedAlias}
                     onClick={async () => { if (confirm(`Delete mapping "${r.alias || r.normalizedAlias}"?`) && await post({ action: "delete", distributorCode, normalizedAlias: r.normalizedAlias, code: r.code }, r.normalizedAlias)) void load(); }}
@@ -317,7 +317,7 @@ function AliasTab({ distributorCode, kind, options, codeLabel }: { distributorCo
                 </td>
               </tr>
             ))}
-            {rows.length === 0 && !loading ? <tr><td className="px-3 py-6 text-center text-xs text-[#64748B]" colSpan={3}>No mappings yet.</td></tr> : null}
+            {rows.length === 0 && !loading ? <tr><td className="px-3 py-6 text-center text-xs text-phx-ink-soft" colSpan={3}>No mappings yet.</td></tr> : null}
           </tbody>
         </table>
       </div>
@@ -328,7 +328,7 @@ function AliasTab({ distributorCode, kind, options, codeLabel }: { distributorCo
 function TabButton({ active, onClick, children }: { active: boolean; onClick: () => void; children: ReactNode }) {
   return (
     <button
-      className={cn("rounded-[6px] px-3.5 py-1.5 text-sm font-black transition", active ? "bg-[#0B0B0B] text-white" : "text-[#0F172A] hover:bg-[#FFF7ED]")}
+      className={cn("rounded-[6px] px-3.5 py-1.5 text-sm font-black transition", active ? "bg-[#0B0B0B] text-white" : "text-phx-ink hover:bg-phx-accent-soft")}
       onClick={onClick}
       type="button"
     >{children}</button>
@@ -343,10 +343,10 @@ function DistributorMapping({ selected, products, bricks }: { selected: SalesDis
 
   return (
     <Card className={cn(panel, "overflow-hidden p-0")}>
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#E2E8F0] bg-gradient-to-b from-white to-slate-50/50 px-4 py-3">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-phx-line bg-gradient-to-b from-white to-slate-50/50 px-4 py-3">
         <div>
-          <h2 className="text-lg font-black tracking-tight text-slate-900">{selected.name} <span className="font-mono text-sm text-[#94A3B8]">{selected.code}</span></h2>
-          <p className="text-xs text-[#64748B]">Edits here are live everywhere immediately — upload, normalizer, missing data.</p>
+          <h2 className="text-lg font-black tracking-tight text-slate-900">{selected.name} <span className="font-mono text-sm text-phx-ink-faint">{selected.code}</span></h2>
+          <p className="text-xs text-phx-ink-soft">Edits here are live everywhere immediately — upload, normalizer, missing data.</p>
         </div>
         <div className="flex gap-1.5">
           <TabButton active={cadence === "monthly"} onClick={() => setCadence("monthly")}>Monthly</TabButton>
@@ -356,7 +356,7 @@ function DistributorMapping({ selected, products, bricks }: { selected: SalesDis
 
       {cadence === "monthly" ? (
         <div>
-          <div className="flex gap-1.5 border-b border-[#E2E8F0] px-4 py-2">
+          <div className="flex gap-1.5 border-b border-phx-line px-4 py-2">
             <TabButton active={tab === "customers"} onClick={() => setTab("customers")}>Customers</TabButton>
             <TabButton active={tab === "products"} onClick={() => setTab("products")}>Products</TabButton>
             <TabButton active={tab === "territories"} onClick={() => setTab("territories")}>Territories</TabButton>
@@ -367,7 +367,7 @@ function DistributorMapping({ selected, products, bricks }: { selected: SalesDis
         </div>
       ) : (
         <div>
-          <div className="flex gap-1.5 border-b border-[#E2E8F0] px-4 py-2">
+          <div className="flex gap-1.5 border-b border-phx-line px-4 py-2">
             <TabButton active={weeklyTab === "products"} onClick={() => setWeeklyTab("products")}>Product Aliases</TabButton>
             <TabButton active={weeklyTab === "branches"} onClick={() => setWeeklyTab("branches")}>Branch → Region</TabButton>
           </div>
@@ -390,11 +390,11 @@ export function MappingDatabaseWorkspace({ distributors, products, bricks }: Pro
       {/* Header styled to match /sales/weekly exactly — same content as before, just re-skinned. */}
       <header>
         <div className="flex items-center gap-2">
-          <span aria-hidden className="h-2 w-2 rounded-full bg-[#F97316]" />
-          <span className="text-[11px] font-black uppercase tracking-[0.16em] text-[#F97316]">Sales · One connected module</span>
+          <span aria-hidden className="h-2 w-2 rounded-full bg-phx-accent" />
+          <span className="text-[11px] font-black uppercase tracking-[0.16em] text-phx-accent">Sales · One connected module</span>
         </div>
-        <h1 className="mt-1 text-xl font-black text-[#0F172A]">Mapping Database</h1>
-        <p className="mt-1 text-sm font-medium text-[#64748B]">
+        <h1 className="mt-1 text-xl font-black text-phx-ink">Mapping Database</h1>
+        <p className="mt-1 text-sm font-medium text-phx-ink-soft">
           The single source of truth for every distributor&apos;s mappings. Edit one row at a time, or bulk
           import/export with the XLSX template — changes are live across upload, normalizer and missing-data
           instantly.

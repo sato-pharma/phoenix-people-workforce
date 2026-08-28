@@ -483,7 +483,7 @@ export const EmailBodyEditor = forwardRef<EmailBodyEditorHandle, Props>(function
   ].filter((action) => !hiddenActions?.includes(action.label));
 
   return (
-    <div className="border-y border-[#E2E8F0]">
+    <div className="border-y border-phx-line">
       <style>{`
         .phx-email-editor { font-family: Arial, Helvetica, sans-serif; }
         .phx-email-editor:empty::before { color: #94A3B8; content: attr(data-placeholder); }
@@ -503,10 +503,10 @@ export const EmailBodyEditor = forwardRef<EmailBodyEditorHandle, Props>(function
           margin: 0 1px; padding: 1px 7px; white-space: nowrap;
         }
       `}</style>
-      <div className="flex flex-wrap items-center gap-1 border-b border-[#E2E8F0] bg-[#F8FAFC] px-3 py-2">
+      <div className="flex flex-wrap items-center gap-1 border-b border-phx-line bg-phx-paper px-3 py-2">
         <SearchableSelect
           aria-label="Font"
-          className="h-8 max-w-[110px] border border-[#E2E8F0] bg-white px-1 text-xs font-bold text-[#334155]"
+          className="h-8 max-w-[110px] border border-phx-line bg-white px-1 text-xs font-bold text-phx-ink-2"
           defaultValue="Arial"
           onChange={(event) => runCommand("fontName", event.target.value)}
           title="Font (Tahoma and Segoe UI render Arabic best)"
@@ -521,7 +521,7 @@ export const EmailBodyEditor = forwardRef<EmailBodyEditorHandle, Props>(function
         </SearchableSelect>
         <SearchableSelect
           aria-label="Font size"
-          className="h-8 border border-[#E2E8F0] bg-white px-1 text-xs font-bold text-[#334155]"
+          className="h-8 border border-phx-line bg-white px-1 text-xs font-bold text-phx-ink-2"
           defaultValue="3"
           onChange={(event) => {
             runCommand("fontSize", event.target.value);
@@ -536,7 +536,7 @@ export const EmailBodyEditor = forwardRef<EmailBodyEditorHandle, Props>(function
         </SearchableSelect>
         <SearchableSelect
           aria-label="Line spacing"
-          className="h-8 border border-[#E2E8F0] bg-white px-1 text-xs font-bold text-[#334155]"
+          className="h-8 border border-phx-line bg-white px-1 text-xs font-bold text-phx-ink-2"
           defaultValue=""
           onChange={(event) => {
             const value = event.target.value;
@@ -555,7 +555,7 @@ export const EmailBodyEditor = forwardRef<EmailBodyEditorHandle, Props>(function
         </SearchableSelect>
         <SearchableSelect
           aria-label="Letter spacing"
-          className="h-8 border border-[#E2E8F0] bg-white px-1 text-xs font-bold text-[#334155]"
+          className="h-8 border border-phx-line bg-white px-1 text-xs font-bold text-phx-ink-2"
           defaultValue=""
           onChange={(event) => {
             const value = event.target.value;
@@ -574,7 +574,7 @@ export const EmailBodyEditor = forwardRef<EmailBodyEditorHandle, Props>(function
         </SearchableSelect>
         <button
           aria-label="Right-to-left paragraph (Arabic)"
-          className="flex h-8 items-center justify-center border border-transparent px-1.5 text-xs font-black text-[#334155] hover:border-[#FED7AA] hover:bg-[#FFF7ED] hover:text-[#C2410C]"
+          className="flex h-8 items-center justify-center border border-transparent px-1.5 text-xs font-black text-phx-ink-2 hover:border-[#FED7AA] hover:bg-phx-accent-soft hover:text-phx-accent-press"
           onClick={() => applyToSelectedBlocks((block) => block.setAttribute("dir", "rtl"))}
           onMouseDown={(event) => event.preventDefault()}
           title="Right-to-left paragraph (Arabic)"
@@ -584,7 +584,7 @@ export const EmailBodyEditor = forwardRef<EmailBodyEditorHandle, Props>(function
         </button>
         <button
           aria-label="Left-to-right paragraph (English)"
-          className="flex h-8 items-center justify-center border border-transparent px-1.5 text-[10px] font-black text-[#334155] hover:border-[#FED7AA] hover:bg-[#FFF7ED] hover:text-[#C2410C]"
+          className="flex h-8 items-center justify-center border border-transparent px-1.5 text-[10px] font-black text-phx-ink-2 hover:border-[#FED7AA] hover:bg-phx-accent-soft hover:text-phx-accent-press"
           onClick={() => applyToSelectedBlocks((block) => block.setAttribute("dir", "ltr"))}
           onMouseDown={(event) => event.preventDefault()}
           title="Left-to-right paragraph (English)"
@@ -592,8 +592,8 @@ export const EmailBodyEditor = forwardRef<EmailBodyEditorHandle, Props>(function
         >
           LTR
         </button>
-        <label className="flex h-8 w-8 cursor-pointer items-center justify-center border border-transparent hover:border-[#FED7AA] hover:bg-[#FFF7ED]" title="Text color">
-          <span className="text-xs font-black text-[#334155]">A</span>
+        <label className="flex h-8 w-8 cursor-pointer items-center justify-center border border-transparent hover:border-[#FED7AA] hover:bg-phx-accent-soft" title="Text color">
+          <span className="text-xs font-black text-phx-ink-2">A</span>
           <input
             aria-label="Text color"
             className="h-3 w-3 cursor-pointer border-0 bg-transparent p-0"
@@ -601,8 +601,8 @@ export const EmailBodyEditor = forwardRef<EmailBodyEditorHandle, Props>(function
             type="color"
           />
         </label>
-        <label className="flex h-8 w-8 cursor-pointer items-center justify-center border border-transparent hover:border-[#FED7AA] hover:bg-[#FFF7ED]" title="Highlight color">
-          <span className="bg-[#FDE68A] px-0.5 text-xs font-black text-[#334155]">A</span>
+        <label className="flex h-8 w-8 cursor-pointer items-center justify-center border border-transparent hover:border-[#FED7AA] hover:bg-phx-accent-soft" title="Highlight color">
+          <span className="bg-[#FDE68A] px-0.5 text-xs font-black text-phx-ink-2">A</span>
           <input
             aria-label="Highlight color"
             className="h-3 w-3 cursor-pointer border-0 bg-transparent p-0"
@@ -614,7 +614,7 @@ export const EmailBodyEditor = forwardRef<EmailBodyEditorHandle, Props>(function
         {actions.map((action) => (
           <button
             aria-label={action.label}
-            className="flex h-8 w-8 items-center justify-center border border-transparent text-[#334155] hover:border-[#FED7AA] hover:bg-[#FFF7ED] hover:text-[#C2410C]"
+            className="flex h-8 w-8 items-center justify-center border border-transparent text-phx-ink-2 hover:border-[#FED7AA] hover:bg-phx-accent-soft hover:text-phx-accent-press"
             key={action.label}
             onClick={action.run}
             onMouseDown={(event) => event.preventDefault()}
@@ -624,7 +624,7 @@ export const EmailBodyEditor = forwardRef<EmailBodyEditorHandle, Props>(function
             <action.icon className="h-4 w-4" />
           </button>
         ))}
-        <span className="ml-auto hidden text-xs font-bold text-[#94A3B8] xl:block">
+        <span className="ml-auto hidden text-xs font-bold text-phx-ink-faint xl:block">
           Write here like Gmail - check the Preview for the exact employee view.
         </span>
       </div>

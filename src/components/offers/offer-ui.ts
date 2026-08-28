@@ -13,15 +13,15 @@
 export type OfferSenderInfo = { from: string; isConfigured: boolean; replyTo: string };
 
 export const offerInputClassName =
-  "h-10 w-full rounded-xl border border-[#D8E0EA] bg-white/95 px-3 text-sm text-slate-900 shadow-sm outline-none transition focus:border-[#FDBA74] focus:ring-2 focus:ring-[#F97316]/15";
+  "h-10 w-full rounded-xl border border-phx-line bg-white/95 px-3 text-sm text-slate-900 shadow-sm outline-none transition focus:border-phx-accent-line focus:ring-2 focus:ring-phx-accent/15";
 
 export const offerTextareaClassName =
-  "w-full rounded-xl border border-[#D8E0EA] bg-white/95 px-3 py-2 text-sm leading-6 text-slate-900 shadow-sm outline-none transition focus:border-[#FDBA74] focus:ring-2 focus:ring-[#F97316]/15";
+  "w-full rounded-xl border border-phx-line bg-white/95 px-3 py-2 text-sm leading-6 text-slate-900 shadow-sm outline-none transition focus:border-phx-accent-line focus:ring-2 focus:ring-phx-accent/15";
 
 export const offerLabelClassName =
-  "mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]";
+  "mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-soft";
 
-export const offerHintClassName = "mt-1 text-[11px] leading-4 text-[#94A3B8]";
+export const offerHintClassName = "mt-1 text-[11px] leading-4 text-phx-ink-faint";
 
 /** Money as HR reads it — thousands separated, no decimals, never truncated. */
 export function offerMoney(value: number): string {

@@ -277,7 +277,7 @@ export function MarketingOverviewDashboard({
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full border-collapse text-left text-[13px]">
-              <thead className="bg-[#0F172A] text-[10px] font-bold uppercase tracking-[0.12em] text-white">
+              <thead className="bg-phx-ink text-[10px] font-bold uppercase tracking-[0.12em] text-white">
                 <tr>
                   <th className="px-4 py-3">Request</th>
                   <th className="px-4 py-3">Customer</th>

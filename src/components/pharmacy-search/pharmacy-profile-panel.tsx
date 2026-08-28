@@ -247,7 +247,7 @@ export function PharmacyProfilePanel({
           <div className="flex shrink-0 flex-wrap gap-2">
             {profile.googleMapsUrl ? (
               <a
-                className="inline-flex items-center gap-1.5 whitespace-nowrap rounded border border-[#D8E0EA] bg-white px-3 py-2 text-xs font-black text-[#0F172A] transition hover:border-[#FDBA74] hover:text-[#F97316]"
+                className="inline-flex items-center gap-1.5 whitespace-nowrap rounded border border-phx-line bg-white px-3 py-2 text-xs font-black text-phx-ink transition hover:border-phx-accent-line hover:text-phx-accent"
                 href={profile.googleMapsUrl}
                 rel="noreferrer noopener"
                 target="_blank"

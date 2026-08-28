@@ -62,12 +62,12 @@ export function MappingCombobox({ values, onChange, suggestions = [], placeholde
     <div className="relative" ref={wrapperRef}>
       <div
         className={cn(
-          "flex min-h-9 w-full flex-wrap items-center gap-1 border border-[#E2E8F0] bg-white px-2 py-1.5 text-sm",
+          "flex min-h-9 w-full flex-wrap items-center gap-1 border border-phx-line bg-white px-2 py-1.5 text-sm",
           disabled && "opacity-50",
         )}
       >
         {values.map((value) => (
-          <span key={value} className="inline-flex items-center gap-1 bg-[#0F172A] px-2 py-0.5 text-[11px] font-semibold text-white">
+          <span key={value} className="inline-flex items-center gap-1 bg-phx-ink px-2 py-0.5 text-[11px] font-semibold text-white">
             {value}
             {!disabled ? (
               <button type="button" aria-label={`Remove ${value}`} className="text-white/70 hover:text-white" onClick={() => remove(value)}>
@@ -79,7 +79,7 @@ export function MappingCombobox({ values, onChange, suggestions = [], placeholde
         {!disabled ? (
           <input
             aria-label={ariaLabel}
-            className="min-w-[6rem] flex-1 border-0 bg-transparent px-1 text-sm text-[#0F172A] outline-none"
+            className="min-w-[6rem] flex-1 border-0 bg-transparent px-1 text-sm text-phx-ink outline-none"
             placeholder={values.length === 0 ? (placeholder ?? "Add a column…") : ""}
             value={query}
             onChange={(event) => {
@@ -103,11 +103,11 @@ export function MappingCombobox({ values, onChange, suggestions = [], placeholde
       </div>
 
       {open && !disabled && (filtered.length > 0 || query.trim()) ? (
-        <div className="absolute z-[1000] mt-1 max-h-56 w-full overflow-auto border border-[#E2E8F0] bg-white shadow-lg">
+        <div className="absolute z-[1000] mt-1 max-h-56 w-full overflow-auto border border-phx-line bg-white shadow-lg">
           {query.trim() ? (
             <button
               type="button"
-              className="block w-full border-b border-[#F1F5F9] px-3 py-2 text-left text-sm text-[#0F172A] hover:bg-[#FFF7ED] hover:text-[#F97316]"
+              className="block w-full border-b border-phx-paper-2 px-3 py-2 text-left text-sm text-phx-ink hover:bg-phx-accent-soft hover:text-phx-accent"
               onMouseDown={(event) => {
                 event.preventDefault();
                 add(query);
@@ -120,7 +120,7 @@ export function MappingCombobox({ values, onChange, suggestions = [], placeholde
             <button
               key={s}
               type="button"
-              className="block w-full border-b border-[#F1F5F9] px-3 py-2 text-left text-sm last:border-b-0 hover:bg-[#F8FAFC]"
+              className="block w-full border-b border-phx-paper-2 px-3 py-2 text-left text-sm last:border-b-0 hover:bg-phx-paper"
               onMouseDown={(event) => {
                 event.preventDefault();
                 add(s);

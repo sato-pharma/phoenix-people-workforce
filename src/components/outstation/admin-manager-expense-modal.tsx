@@ -78,11 +78,11 @@ function formatEgp(value: number) {
 const SESSION_TOKEN = Math.random().toString(36).slice(2);
 
 const panelClassName =
-  "rounded-lg border border-[#D8E0EA] bg-white/94 shadow-[0_1px_3px_rgba(15,23,42,0.06)] backdrop-blur";
+  "rounded-lg border border-phx-line bg-white/94 shadow-[0_1px_3px_rgba(15,23,42,0.06)] backdrop-blur";
 
 function FieldLabel({ children }: { children: React.ReactNode }) {
   return (
-    <span className="mb-1 block text-[11px] font-black uppercase tracking-[0.16em] text-[#64748B]">
+    <span className="mb-1 block text-[11px] font-black uppercase tracking-[0.16em] text-phx-ink-soft">
       {children}
     </span>
   );
@@ -94,7 +94,7 @@ function InputField({
 }: React.InputHTMLAttributes<HTMLInputElement> & { className?: string }) {
   return (
     <input
-      className={`h-11 w-full rounded-md border border-[#DDE6F1] bg-white/95 px-3 text-sm font-semibold text-[#0F172A] shadow-sm placeholder:font-normal placeholder:text-[#94A3B8] focus:border-[#F97316] focus:outline-none focus:ring-2 focus:ring-[#FED7AA] disabled:opacity-60 ${className ?? ""}`}
+      className={`h-11 w-full rounded-md border border-[#DDE6F1] bg-white/95 px-3 text-sm font-semibold text-phx-ink shadow-sm placeholder:font-normal placeholder:text-phx-ink-faint focus:border-phx-accent focus:outline-none focus:ring-2 focus:ring-[#FED7AA] disabled:opacity-60 ${className ?? ""}`}
       {...props}
     />
   );
@@ -106,7 +106,7 @@ function SelectField({
 }: React.SelectHTMLAttributes<HTMLSelectElement> & { children: React.ReactNode }) {
   return (
     <SearchableSelect
-      className="h-11 w-full rounded-md border border-[#DDE6F1] bg-white/95 px-3 text-sm font-semibold text-[#0F172A] shadow-sm focus:border-[#F97316] focus:outline-none focus:ring-2 focus:ring-[#FED7AA] disabled:opacity-60"
+      className="h-11 w-full rounded-md border border-[#DDE6F1] bg-white/95 px-3 text-sm font-semibold text-phx-ink shadow-sm focus:border-phx-accent focus:outline-none focus:ring-2 focus:ring-[#FED7AA] disabled:opacity-60"
       {...props}
     >
       {children}
@@ -529,24 +529,24 @@ export function AdminManagerExpenseModal({
 
   return createPortal(
     <div className="fixed inset-0 z-[200] flex items-start justify-center overflow-y-auto bg-[#020617]/65 p-4 backdrop-blur-sm">
-      <div className="w-full max-w-3xl rounded-lg border border-[#D8E0EA] bg-white shadow-[0_28px_90px_rgba(15,23,42,0.3)]">
+      <div className="w-full max-w-3xl rounded-lg border border-phx-line bg-white shadow-[0_28px_90px_rgba(15,23,42,0.3)]">
         {/* Header */}
-        <div className="flex items-start justify-between gap-4 border-b border-[#E2E8F0] bg-white/98 px-6 py-5">
+        <div className="flex items-start justify-between gap-4 border-b border-phx-line bg-white/98 px-6 py-5">
           <div>
-            <span className="inline-flex rounded-full border border-[#FED7AA] bg-[#FFF7ED] px-3 py-1 text-xs font-black uppercase tracking-[0.14em] text-[#EA580C]">
+            <span className="inline-flex rounded-full border border-[#FED7AA] bg-phx-accent-soft px-3 py-1 text-xs font-black uppercase tracking-[0.14em] text-phx-accent-hover">
               Manual outstation expense - Admin
             </span>
-            <h2 className="mt-2 text-xl font-black text-[#0F172A]">
+            <h2 className="mt-2 text-xl font-black text-phx-ink">
               {isEdit ? "Edit outstation expense" : "Add manual outstation expense"}
             </h2>
             {(targetName ?? request?.employeeName) ? (
-              <p className="mt-1 text-sm font-semibold text-[#64748B]">
+              <p className="mt-1 text-sm font-semibold text-phx-ink-soft">
                 {targetName ?? request?.employeeName} &mdash; {employeeHrId}
               </p>
             ) : null}
           </div>
           <button
-            className="shrink-0 rounded-xl border border-[#E2E8F0] bg-white p-2 text-[#64748B] hover:bg-[#F8FAFC]"
+            className="shrink-0 rounded-xl border border-phx-line bg-white p-2 text-phx-ink-soft hover:bg-phx-paper"
             onClick={onClose}
             type="button"
           >
@@ -574,8 +574,8 @@ export function AdminManagerExpenseModal({
                 value={employeeHrId}
               />
               {employeeLookup.status === "loading" ? (
-                <div className="mt-2 flex items-center gap-2 text-xs font-semibold text-[#64748B]">
-                  <Loader2 className="h-3.5 w-3.5 animate-spin text-[#F97316]" />
+                <div className="mt-2 flex items-center gap-2 text-xs font-semibold text-phx-ink-soft">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin text-phx-accent" />
                   Looking up employee...
                 </div>
               ) : employeeLookup.status === "found" && employeeLookup.isActive ? (
@@ -589,8 +589,8 @@ export function AdminManagerExpenseModal({
                   ) : null}
                 </div>
               ) : employeeLookup.status === "found" && !employeeLookup.isActive ? (
-                <div className="mt-2 flex items-center gap-2 rounded-md border border-[#FED7AA] bg-[#FFF7ED] px-3 py-2 text-xs font-black text-[#9A3412]">
-                  <AlertCircle className="h-4 w-4 shrink-0 text-[#EA580C]" />
+                <div className="mt-2 flex items-center gap-2 rounded-md border border-[#FED7AA] bg-phx-accent-soft px-3 py-2 text-xs font-black text-[#9A3412]">
+                  <AlertCircle className="h-4 w-4 shrink-0 text-phx-accent-hover" />
                   Found — but not currently active: {employeeLookup.name}
                   {employeeLookup.jobTitle ? (
                     <span className="font-semibold text-[#9A3412]/70">
@@ -609,7 +609,7 @@ export function AdminManagerExpenseModal({
                   {employeeLookup.message}
                 </div>
               ) : (
-                <p className="mt-1 text-xs text-[#64748B]">
+                <p className="mt-1 text-xs text-phx-ink-soft">
                   Enter the HR ID of the employee — their name will appear automatically.
                 </p>
               )}
@@ -634,8 +634,8 @@ export function AdminManagerExpenseModal({
             ) : null}
 
             {resolvingPlace ? (
-              <div className="mt-2 flex items-center gap-2 text-xs font-semibold text-[#64748B]">
-                <Loader2 className="h-4 w-4 animate-spin text-[#F97316]" />
+              <div className="mt-2 flex items-center gap-2 text-xs font-semibold text-phx-ink-soft">
+                <Loader2 className="h-4 w-4 animate-spin text-phx-accent" />
                 Resolving place details...
               </div>
             ) : destination ? (
@@ -647,15 +647,15 @@ export function AdminManagerExpenseModal({
                     {destination.country ? ` · ${destination.country}` : ""}
                   </div>
                 ) : null}
-                <p className="text-[11px] text-[#94A3B8]">
+                <p className="text-[11px] text-phx-ink-faint">
                   {destination.latitude.toFixed(5)}, {destination.longitude.toFixed(5)}
                 </p>
               </div>
             ) : null}
 
             {destinationIsRegion && destination && !resolvingPlace ? (
-              <div className="mt-2 flex items-start gap-2 rounded-md border border-[#FED7AA] bg-[#FFF7ED] px-3 py-2 text-xs text-[#9A3412]">
-                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-[#EA580C]" />
+              <div className="mt-2 flex items-start gap-2 rounded-md border border-[#FED7AA] bg-phx-accent-soft px-3 py-2 text-xs text-[#9A3412]">
+                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-phx-accent-hover" />
                 <span>
                   <span className="font-black">This is a governorate, not a specific place.</span>{" "}
                   Distance is measured to its map centre, which can be far from the town you mean.
@@ -668,10 +668,10 @@ export function AdminManagerExpenseModal({
           {/* Distance — Maps result panel (informational) + always-editable input */}
           {calculatingDistance ? (
             <div className={`${panelClassName} flex items-center gap-3 p-4`}>
-              <Loader2 className="h-5 w-5 animate-spin text-[#F97316]" />
+              <Loader2 className="h-5 w-5 animate-spin text-phx-accent" />
               <div>
-                <p className="text-sm font-black text-[#0F172A]">Calculating road distance...</p>
-                <p className="text-xs text-[#64748B]">Using Google Maps Routes API</p>
+                <p className="text-sm font-black text-phx-ink">Calculating road distance...</p>
+                <p className="text-xs text-phx-ink-soft">Using Google Maps Routes API</p>
               </div>
             </div>
           ) : (
@@ -687,17 +687,17 @@ export function AdminManagerExpenseModal({
               ) : distanceResult ? (
                 <div className={`${panelClassName} p-4`}>
                   <div className="mb-3 flex items-center gap-2">
-                    <Route className="h-4 w-4 text-[#F97316]" />
-                    <p className="text-xs font-black uppercase tracking-[0.14em] text-[#64748B]">
+                    <Route className="h-4 w-4 text-phx-accent" />
+                    <p className="text-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">
                       Road distance &middot; Google Maps
                     </p>
                   </div>
                   <div className="grid gap-3 sm:grid-cols-2">
-                    <div className="rounded-xl bg-[#FFF7ED] px-4 py-3 text-center">
-                      <p className="text-2xl font-black text-[#EA580C]">
+                    <div className="rounded-xl bg-phx-accent-soft px-4 py-3 text-center">
+                      <p className="text-2xl font-black text-phx-accent-hover">
                         {distanceResult.distanceKm.toFixed(1)} km
                       </p>
-                      <p className="text-[11px] font-black uppercase tracking-[0.12em] text-[#EA580C]/70">
+                      <p className="text-[11px] font-black uppercase tracking-[0.12em] text-phx-accent-hover/70">
                         Distance
                       </p>
                     </div>
@@ -713,7 +713,7 @@ export function AdminManagerExpenseModal({
                     ) : null}
                   </div>
                   {distanceResult.fromLabel ? (
-                    <div className="mt-3 flex items-start gap-2 text-xs text-[#64748B]">
+                    <div className="mt-3 flex items-start gap-2 text-xs text-phx-ink-soft">
                       <Navigation className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                       <p>
                         <span className="font-black">From:</span>{" "}
@@ -738,7 +738,7 @@ export function AdminManagerExpenseModal({
                   value={manualDistanceKm}
                 />
                 {!distanceResult && !distanceError && !destination ? (
-                  <p className="mt-1 text-xs text-[#64748B]">
+                  <p className="mt-1 text-xs text-phx-ink-soft">
                     Select a destination and Google Maps will fill this automatically.
                   </p>
                 ) : null}
@@ -814,7 +814,7 @@ export function AdminManagerExpenseModal({
                 type="number"
                 value={ticketCost}
               />
-              <p className="mt-1 text-xs text-[#64748B]">
+              <p className="mt-1 text-xs text-phx-ink-soft">
                 The allowance is added on top of this ticket cost.
               </p>
             </div>
@@ -867,7 +867,7 @@ export function AdminManagerExpenseModal({
                 value={pmWorkload}
               />
             </div>
-            <p className="sm:col-span-2 text-xs font-semibold text-[#64748B]">
+            <p className="sm:col-span-2 text-xs font-semibold text-phx-ink-soft">
               AM/PM workload is resolved automatically from the official published Double Visit Analytics snapshot after saving.
             </p>
           </div>
@@ -883,7 +883,7 @@ export function AdminManagerExpenseModal({
               type="number"
               value={claimedAmount}
             />
-            <p className="mt-1 text-xs text-[#64748B]">
+            <p className="mt-1 text-xs text-phx-ink-soft">
               Leave this blank unless you are overriding the payout. Anything typed here{" "}
               <span className="font-black text-[#9A3412]">replaces</span> the calculated total &mdash;
               it is not added to it.
@@ -894,7 +894,7 @@ export function AdminManagerExpenseModal({
           {calcPreview ? (
             <div className={`${panelClassName} p-4`}>
               <div className="mb-3 flex items-center justify-between gap-2">
-                <p className="text-xs font-black uppercase tracking-[0.14em] text-[#64748B]">
+                <p className="text-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">
                   Calculation preview
                 </p>
                 {calcPreview.eligibilityStatus === "not_eligible" ? (
@@ -904,40 +904,40 @@ export function AdminManagerExpenseModal({
                 ) : null}
               </div>
               <div className="grid gap-3 sm:grid-cols-2">
-                <div className="rounded-md bg-[#F8FAFC] px-3 py-2.5">
-                  <p className="text-[10px] font-black uppercase tracking-[0.12em] text-[#64748B]">
+                <div className="rounded-md bg-phx-paper px-3 py-2.5">
+                  <p className="text-[10px] font-black uppercase tracking-[0.12em] text-phx-ink-soft">
                     {isTicketBased ? "Ticket cost" : "Fuel (round trip)"}
                   </p>
-                  <p className="mt-0.5 text-sm font-black text-[#0F172A]">
+                  <p className="mt-0.5 text-sm font-black text-phx-ink">
                     {formatEgp(isTicketBased ? calcPreview.ticketAmount : calcPreview.fuelAmount)}
                   </p>
                 </div>
-                <div className="rounded-md bg-[#F8FAFC] px-3 py-2.5">
-                  <p className="text-[10px] font-black uppercase tracking-[0.12em] text-[#64748B]">
+                <div className="rounded-md bg-phx-paper px-3 py-2.5">
+                  <p className="text-[10px] font-black uppercase tracking-[0.12em] text-phx-ink-soft">
                     Allowance
                   </p>
-                  <p className="mt-0.5 text-sm font-black text-[#0F172A]">
+                  <p className="mt-0.5 text-sm font-black text-phx-ink">
                     {formatEgp(calcPreview.allowanceAmount)}
                   </p>
                 </div>
               </div>
-              <div className="mt-3 flex items-center justify-between rounded-md bg-[#FFF7ED] px-3 py-2.5">
-                <p className="text-[10px] font-black uppercase tracking-[0.12em] text-[#EA580C]">
+              <div className="mt-3 flex items-center justify-between rounded-md bg-phx-accent-soft px-3 py-2.5">
+                <p className="text-[10px] font-black uppercase tracking-[0.12em] text-phx-accent-hover">
                   {isTicketBased ? "Ticket + allowance" : "Fuel + allowance"} = total
                 </p>
-                <p className="text-sm font-black text-[#EA580C]">
+                <p className="text-sm font-black text-phx-accent-hover">
                   {formatEgp(calcPreview.expectedTotalAmount)}
                 </p>
               </div>
               {calcPreview.allowanceBreakdown.rows.length > 0 ? (
-                <ul className="mt-3 space-y-1 border-t border-[#E2E8F0] pt-3">
+                <ul className="mt-3 space-y-1 border-t border-phx-line pt-3">
                   {calcPreview.allowanceBreakdown.rows.map((row, index) => (
                     <li
-                      className="flex items-center justify-between text-xs text-[#475569]"
+                      className="flex items-center justify-between text-xs text-phx-ink-2"
                       key={`${row.type}-${index}`}
                     >
                       <span className="font-semibold">{row.label}</span>
-                      <span className="font-black text-[#0F172A]">{formatEgp(row.amount)}</span>
+                      <span className="font-black text-phx-ink">{formatEgp(row.amount)}</span>
                     </li>
                   ))}
                 </ul>
@@ -955,7 +955,7 @@ export function AdminManagerExpenseModal({
           <div>
             <FieldLabel>Notes</FieldLabel>
             <textarea
-              className="w-full rounded-md border border-[#DDE6F1] bg-white/95 px-3 py-2.5 text-sm font-semibold text-[#0F172A] shadow-sm placeholder:font-normal placeholder:text-[#94A3B8] focus:border-[#F97316] focus:outline-none focus:ring-2 focus:ring-[#FED7AA]"
+              className="w-full rounded-md border border-[#DDE6F1] bg-white/95 px-3 py-2.5 text-sm font-semibold text-phx-ink shadow-sm placeholder:font-normal placeholder:text-phx-ink-faint focus:border-phx-accent focus:outline-none focus:ring-2 focus:ring-[#FED7AA]"
               onChange={(e) => setNotes(e.target.value)}
               placeholder="Optional notes for this expense"
               rows={3}
@@ -972,16 +972,16 @@ export function AdminManagerExpenseModal({
           ) : null}
 
           {/* Actions */}
-          <div className="flex flex-col-reverse gap-3 border-t border-[#E2E8F0] pt-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-col-reverse gap-3 border-t border-phx-line pt-4 sm:flex-row sm:items-center sm:justify-between">
             <button
-              className="rounded-xl border border-[#E2E8F0] bg-white px-4 py-2.5 text-sm font-black text-[#64748B] hover:bg-[#F8FAFC]"
+              className="rounded-xl border border-phx-line bg-white px-4 py-2.5 text-sm font-black text-phx-ink-soft hover:bg-phx-paper"
               onClick={onClose}
               type="button"
             >
               Cancel
             </button>
             <Button
-              className="gap-2 rounded-xl bg-[#EA580C] px-6 py-2.5 text-sm font-black text-white hover:bg-[#C2410C] disabled:opacity-60"
+              className="gap-2 rounded-xl bg-phx-accent-hover px-6 py-2.5 text-sm font-black text-white hover:bg-phx-accent-press disabled:opacity-60"
               disabled={!canSubmit}
               type="submit"
             >

@@ -242,9 +242,9 @@ function ReportSection({
 }) {
   return (
     <section>
-      <div className="mb-3 flex flex-wrap items-end justify-between gap-x-4 gap-y-1 border-b-2 border-[#0F172A] pb-1.5">
-        <h2 className="text-[12px] font-black uppercase tracking-[0.1em] text-[#0F172A]">{title}</h2>
-        {hint ? <span className="text-[11px] font-semibold text-[#94A3B8]">{hint}</span> : null}
+      <div className="mb-3 flex flex-wrap items-end justify-between gap-x-4 gap-y-1 border-b-2 border-phx-ink pb-1.5">
+        <h2 className="text-[12px] font-black uppercase tracking-[0.1em] text-phx-ink">{title}</h2>
+        {hint ? <span className="text-[11px] font-semibold text-phx-ink-faint">{hint}</span> : null}
         {action ? <div className="ml-auto">{action}</div> : null}
       </div>
       {children}
@@ -266,7 +266,7 @@ function CoverageRateBar({ rate }: { rate: number }) {
       <div className="h-2 w-full min-w-[64px] bg-[#EEF2F7]">
         <div className="h-full bg-[#10B981]" style={{ width: `${Math.min(100, Math.max(0, rate))}%` }} />
       </div>
-      <span className="w-12 shrink-0 whitespace-nowrap text-right text-xs font-black tabular-nums text-[#0F172A]">{formatPercent(rate)}</span>
+      <span className="w-12 shrink-0 whitespace-nowrap text-right text-xs font-black tabular-nums text-phx-ink">{formatPercent(rate)}</span>
     </div>
   );
 }
@@ -275,7 +275,7 @@ function CoverageRateBar({ rate }: { rate: number }) {
 function QuarterTrend({ data }: { data: { label: string; value: number }[] }) {
   if (data.length === 0) {
     return (
-      <div className="flex h-[150px] items-center justify-center border border-dashed border-[#CBD5E1] bg-[#F8FAFC] text-sm font-semibold text-[#64748B]">
+      <div className="flex h-[150px] items-center justify-center border border-dashed border-phx-line-strong bg-phx-paper text-sm font-semibold text-phx-ink-soft">
         No quarterly trend is available yet.
       </div>
     );
@@ -313,7 +313,7 @@ function QuarterTrend({ data }: { data: { label: string; value: number }[] }) {
           );
         })}
       </svg>
-      <div className="mt-1.5 flex justify-between text-[11px] font-bold text-[#94A3B8]">
+      <div className="mt-1.5 flex justify-between text-[11px] font-bold text-phx-ink-faint">
         {data.map((point) => (
           <span className="whitespace-nowrap" key={point.label}>
             {point.label} · {formatNumber(point.value, 0)}
@@ -328,22 +328,22 @@ function QuarterTrend({ data }: { data: { label: string; value: number }[] }) {
 function ZoneDistribution({ data }: { data: { color: string; key: string; label: string; value: number }[] }) {
   const total = data.reduce((sum, item) => sum + item.value, 0);
   if (total === 0) {
-    return <p className="text-sm font-semibold text-[#64748B]">No scored reports available for this scope.</p>;
+    return <p className="text-sm font-semibold text-phx-ink-soft">No scored reports available for this scope.</p>;
   }
   return (
     <div className="space-y-2.5">
-      <div className="flex h-3 w-full overflow-hidden border border-[#E2E8F0]">
+      <div className="flex h-3 w-full overflow-hidden border border-phx-line">
         {data.map((item) => (
           <div key={item.key} style={{ background: item.color, width: `${(item.value / total) * 100}%` }} title={`${item.label}: ${item.value}`} />
         ))}
       </div>
       <div className="flex flex-wrap gap-x-5 gap-y-1.5">
         {data.map((item) => (
-          <span className="inline-flex items-center gap-1.5 text-[11px] font-bold text-[#64748B]" key={item.key}>
+          <span className="inline-flex items-center gap-1.5 text-[11px] font-bold text-phx-ink-soft" key={item.key}>
             <span className="inline-block h-2.5 w-2.5" style={{ background: item.color }} />
             {item.label}
-            <span className="font-black tabular-nums text-[#0F172A]">{item.value}</span>
-            <span className="text-[#94A3B8]">({Math.round((item.value / total) * 100)}%)</span>
+            <span className="font-black tabular-nums text-phx-ink">{item.value}</span>
+            <span className="text-phx-ink-faint">({Math.round((item.value / total) * 100)}%)</span>
           </span>
         ))}
       </div>
@@ -354,9 +354,9 @@ function ZoneDistribution({ data }: { data: { color: string; key: string; label:
 function StatCell({ helper, label, value }: { helper: string; label: string; value: string }) {
   return (
     <div className="bg-white px-4 py-3.5 text-center">
-      <p className="text-[9px] font-black uppercase tracking-[0.14em] text-[#94A3B8]">{label}</p>
-      <p className="mt-1.5 text-2xl font-black tracking-[-0.03em] text-[#0F172A]">{value}</p>
-      <p className="mt-1 text-[11px] font-semibold text-[#94A3B8]">{helper}</p>
+      <p className="text-[9px] font-black uppercase tracking-[0.14em] text-phx-ink-faint">{label}</p>
+      <p className="mt-1.5 text-2xl font-black tracking-[-0.03em] text-phx-ink">{value}</p>
+      <p className="mt-1 text-[11px] font-semibold text-phx-ink-faint">{helper}</p>
     </div>
   );
 }
@@ -374,9 +374,9 @@ function SelectField({
 }) {
   return (
     <label className="block">
-      <span className="text-[10px] font-black uppercase tracking-[0.14em] text-[#64748B]">{label}</span>
+      <span className="text-[10px] font-black uppercase tracking-[0.14em] text-phx-ink-soft">{label}</span>
       <SearchableSelect
-        className="mt-1.5 h-9 w-full border border-[#CBD5E1] bg-white px-3 text-sm font-semibold text-[#0F172A] outline-none transition focus:border-[#F97316] focus:ring-2 focus:ring-[#F97316]/20"
+        className="mt-1.5 h-9 w-full border border-phx-line-strong bg-white px-3 text-sm font-semibold text-phx-ink outline-none transition focus:border-phx-accent focus:ring-2 focus:ring-phx-accent/20"
         onChange={(event) => onChange(event.target.value)}
         value={value}
       >
@@ -406,7 +406,7 @@ function FilterInput({
   return (
     <input
       aria-label={ariaLabel}
-      className="h-8 w-full min-w-0 border border-[#CBD5E1] bg-white px-2.5 text-xs font-bold text-[#0F172A] outline-none transition placeholder:text-[#94A3B8] focus:border-[#F97316] focus:ring-2 focus:ring-[#F97316]/20"
+      className="h-8 w-full min-w-0 border border-phx-line-strong bg-white px-2.5 text-xs font-bold text-phx-ink outline-none transition placeholder:text-phx-ink-faint focus:border-phx-accent focus:ring-2 focus:ring-phx-accent/20"
       onChange={(event) => onChange(event.target.value)}
       placeholder={placeholder}
       type="search"
@@ -429,7 +429,7 @@ function FilterSelect({
   return (
     <select
       aria-label={ariaLabel}
-      className="h-8 w-full min-w-0 border border-[#CBD5E1] bg-white px-2 text-xs font-bold text-[#0F172A] outline-none transition focus:border-[#F97316] focus:ring-2 focus:ring-[#F97316]/20"
+      className="h-8 w-full min-w-0 border border-phx-line-strong bg-white px-2 text-xs font-bold text-phx-ink outline-none transition focus:border-phx-accent focus:ring-2 focus:ring-phx-accent/20"
       onChange={(event) => onChange(event.target.value)}
       value={value}
     >
@@ -446,7 +446,7 @@ function FilterSelect({
 function TableToolbar({ children }: { children: ReactNode }) {
   return (
     <div className="mb-2 flex flex-wrap items-center gap-2">
-      <span className="inline-flex items-center gap-1.5 text-[10px] font-black uppercase tracking-[0.12em] text-[#94A3B8]">
+      <span className="inline-flex items-center gap-1.5 text-[10px] font-black uppercase tracking-[0.12em] text-phx-ink-faint">
         <Search className="h-3.5 w-3.5" />
         Filter
       </span>
@@ -459,7 +459,7 @@ function TableToolbar({ children }: { children: ReactNode }) {
  * replaces both the mobile card list and the desktop table together when empty. */
 function TableEmptyNotice({ children }: { children: ReactNode }) {
   return (
-    <div className="border border-dashed border-[#CBD5E1] bg-[#F8FAFC] px-3 py-7 text-center text-sm font-semibold text-[#64748B]">
+    <div className="border border-dashed border-phx-line-strong bg-phx-paper px-3 py-7 text-center text-sm font-semibold text-phx-ink-soft">
       {children}
     </div>
   );
@@ -614,7 +614,7 @@ function SkillIndexCard({ row }: { row: CategoryAverageRow }) {
         <div className="h-2 w-full bg-[#EEF2F7]">
           <div className="h-full" style={{ background: scoreZoneColor(row.value), width: `${Math.min(100, row.value)}%` }} />
         </div>
-        <span className="shrink-0 whitespace-nowrap text-right text-sm font-black tabular-nums text-[#0F172A]">{formatPercent(row.value)}</span>
+        <span className="shrink-0 whitespace-nowrap text-right text-sm font-black tabular-nums text-phx-ink">{formatPercent(row.value)}</span>
       </div>
     </PortalRecordCard>
   );
@@ -645,7 +645,7 @@ function RepDetailCard({ coachingReportBase, row }: { coachingReportBase: string
       accent={bandAccent(band)}
       actions={
         <Link
-          className="inline-flex w-full items-center justify-center gap-1.5 border border-[#CBD5E1] bg-white px-3 py-2 text-xs font-black text-[#0F172A] transition hover:border-[#F97316]/60 hover:text-[#F97316]"
+          className="inline-flex w-full items-center justify-center gap-1.5 border border-phx-line-strong bg-white px-3 py-2 text-xs font-black text-phx-ink transition hover:border-phx-accent/60 hover:text-phx-accent"
           href={`${coachingReportBase}/${row.latestReportId}`}
         >
           View Latest Report
@@ -754,8 +754,8 @@ function CoverageTables({ comparison }: { comparison: CoachingTrainingManagerCom
                 <tbody>
                   {filteredAreaBreakdown.map((row) => (
                     <tr className="bg-white text-sm hover:bg-[#FFFBF7]" key={`${row.areaId ?? "none"}-${row.label}`}>
-                      <td className="whitespace-nowrap px-3 py-3 font-black text-[#0F172A]">{row.areaName || "Not assigned"}</td>
-                      <td className="px-2 py-3 text-center font-bold tabular-nums text-[#475569]">{formatNumber(row.totalReps)}</td>
+                      <td className="whitespace-nowrap px-3 py-3 font-black text-phx-ink">{row.areaName || "Not assigned"}</td>
+                      <td className="px-2 py-3 text-center font-bold tabular-nums text-phx-ink-2">{formatNumber(row.totalReps)}</td>
                       <td className="px-2 py-3 text-center font-black tabular-nums text-emerald-700">{formatNumber(row.coachedCount)}</td>
                       <td className="px-2 py-3 text-center font-black tabular-nums text-orange-700">{formatNumber(row.uncoachedCount)}</td>
                       <td className="px-3 py-3"><CoverageRateBar rate={row.coachedRate} /></td>
@@ -827,19 +827,19 @@ function CoverageTables({ comparison }: { comparison: CoachingTrainingManagerCom
                   {filteredComparisonRows.map((row) => (
                     <tr className="bg-white text-sm hover:bg-[#FFFBF7]" key={row.hrId}>
                       <td className="px-3 py-3">
-                        <p className="whitespace-nowrap font-black text-[#0F172A]">{row.medicalRepName}</p>
-                        <p className="whitespace-nowrap font-mono text-[11px] font-bold text-[#94A3B8]">{row.hrId}</p>
+                        <p className="whitespace-nowrap font-black text-phx-ink">{row.medicalRepName}</p>
+                        <p className="whitespace-nowrap font-mono text-[11px] font-bold text-phx-ink-faint">{row.hrId}</p>
                       </td>
                       <td className="px-2 py-3 text-center">
                         <span className={cn("inline-flex whitespace-nowrap border px-2 py-0.5 text-[11px] font-black", coverageStatusClassName(row.status))}>
                           {coverageStatusLabel(row.status)}
                         </span>
                       </td>
-                      <td className="whitespace-nowrap px-2 py-3 text-[13px] font-semibold text-[#475569]">{formatDate(row.hireDate)}</td>
-                      <td className="whitespace-nowrap px-2 py-3 font-semibold text-[#0F172A]">{row.areaName || "Not assigned"}</td>
+                      <td className="whitespace-nowrap px-2 py-3 text-[13px] font-semibold text-phx-ink-2">{formatDate(row.hireDate)}</td>
+                      <td className="whitespace-nowrap px-2 py-3 font-semibold text-phx-ink">{row.areaName || "Not assigned"}</td>
                       <td className="px-2 py-3">
-                        <p className="whitespace-nowrap font-semibold text-[#0F172A]">{row.lineName || "Not assigned"}</p>
-                        <p className="whitespace-nowrap text-[11px] font-bold text-[#94A3B8]">{row.teamName || "No team"}</p>
+                        <p className="whitespace-nowrap font-semibold text-phx-ink">{row.lineName || "Not assigned"}</p>
+                        <p className="whitespace-nowrap text-[11px] font-bold text-phx-ink-faint">{row.teamName || "No team"}</p>
                       </td>
                     </tr>
                   ))}
@@ -938,13 +938,13 @@ export function CoachingAnalyticsDashboard({
   return (
     <div className="space-y-7">
       {/* Filters */}
-      <Card className="border border-[#D8E0EA] bg-white p-4 sm:p-5">
-        <div className="mb-4 flex flex-wrap items-end justify-between gap-x-4 gap-y-1 border-b-2 border-[#0F172A] pb-1.5">
-          <h2 className="text-[12px] font-black uppercase tracking-[0.1em] text-[#0F172A]">Filters</h2>
+      <Card className="border border-phx-line bg-white p-4 sm:p-5">
+        <div className="mb-4 flex flex-wrap items-end justify-between gap-x-4 gap-y-1 border-b-2 border-phx-ink pb-1.5">
+          <h2 className="text-[12px] font-black uppercase tracking-[0.1em] text-phx-ink">Filters</h2>
           {error ? (
             <span className="border border-rose-200 bg-rose-50 px-3 py-1 text-xs font-black text-rose-700">{error}</span>
           ) : (
-            <span className="text-[11px] font-semibold text-[#94A3B8]">Server-side coaching scope stays enforced</span>
+            <span className="text-[11px] font-semibold text-phx-ink-faint">Server-side coaching scope stays enforced</span>
           )}
         </div>
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
@@ -967,7 +967,7 @@ export function CoachingAnalyticsDashboard({
         </div>
         <div className="mt-4 flex flex-wrap gap-2">
           <button
-            className="inline-flex items-center justify-center gap-2 bg-[#0F172A] px-5 py-2 text-sm font-black text-white transition hover:bg-[#F97316] disabled:cursor-not-allowed disabled:opacity-60"
+            className="inline-flex items-center justify-center gap-2 bg-phx-ink px-5 py-2 text-sm font-black text-white transition hover:bg-phx-accent disabled:cursor-not-allowed disabled:opacity-60"
             disabled={isLoading}
             onClick={applyFilters}
             type="button"
@@ -976,7 +976,7 @@ export function CoachingAnalyticsDashboard({
             Apply Filters
           </button>
           <button
-            className="inline-flex items-center justify-center gap-2 border border-[#CBD5E1] bg-white px-5 py-2 text-sm font-black text-[#0F172A] transition hover:border-[#F97316]/60 hover:text-[#F97316] disabled:cursor-not-allowed disabled:opacity-60"
+            className="inline-flex items-center justify-center gap-2 border border-phx-line-strong bg-white px-5 py-2 text-sm font-black text-phx-ink transition hover:border-phx-accent/60 hover:text-phx-accent disabled:cursor-not-allowed disabled:opacity-60"
             disabled={isLoading}
             onClick={resetFilters}
             type="button"
@@ -989,7 +989,7 @@ export function CoachingAnalyticsDashboard({
 
       {/* Executive summary strip */}
       <ReportSection title="Executive Summary" hint={`${formatNumber(data.reports.length)} reports in scope`}>
-        <div className="grid grid-cols-2 gap-px border border-[#E2E8F0] bg-[#E2E8F0] sm:grid-cols-3 lg:grid-cols-6">
+        <div className="grid grid-cols-2 gap-px border border-phx-line bg-phx-line sm:grid-cols-3 lg:grid-cols-6">
           <StatCell helper={`${formatNumber(comparison.coachedCount)} of ${formatNumber(comparison.totalMedicalReps)} reps`} label="Coverage" value={formatPercent(comparison.coachedRate)} />
           <StatCell helper="no report yet" label="Not Coached" value={formatNumber(comparison.uncoachedCount)} />
           <StatCell helper={`of ${formatNumber(comparison.totalMedicalReps)} active`} label="Coached" value={formatNumber(comparison.coachedCount)} />
@@ -997,22 +997,22 @@ export function CoachingAnalyticsDashboard({
           <StatCell helper="highest in scope" label="Best Score" value={formatPercent(data.analytics.bestScore)} />
           <StatCell helper={`${formatNumber(acknowledgedCount)} of ${formatNumber(completed.length)}`} label="Ack Rate" value={formatPercent(acknowledgmentRate)} />
         </div>
-        <div className="mt-4 border border-[#E2E8F0] bg-white p-4">
-          <p className="mb-2.5 text-[10px] font-black uppercase tracking-[0.14em] text-[#94A3B8]">Performance Zone Distribution</p>
+        <div className="mt-4 border border-phx-line bg-white p-4">
+          <p className="mb-2.5 text-[10px] font-black uppercase tracking-[0.14em] text-phx-ink-faint">Performance Zone Distribution</p>
           <ZoneDistribution data={zoneData} />
         </div>
       </ReportSection>
 
       {data.reports.length === 0 ? (
-        <Card className="border border-[#D8E0EA] bg-white p-6">
-          <div className="border border-dashed border-[#CBD5E1] bg-[#F8FAFC] p-8 text-center">
-            <h3 className="text-xl font-black tracking-[-0.03em] text-[#0F172A]">No coaching analytics are available yet.</h3>
-            <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-[#64748B]">
+        <Card className="border border-phx-line bg-white p-6">
+          <div className="border border-dashed border-phx-line-strong bg-phx-paper p-8 text-center">
+            <h3 className="text-xl font-black tracking-[-0.03em] text-phx-ink">No coaching analytics are available yet.</h3>
+            <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-phx-ink-soft">
               Score analytics, coverage, and per-rep development will appear here once coaching reports are submitted and scored for this scope.
             </p>
             {canCreate ? (
               <Link
-                className="mt-5 inline-flex items-center justify-center gap-2 bg-[#F97316] px-5 py-2 text-sm font-black text-white transition hover:bg-[#EA580C]"
+                className="mt-5 inline-flex items-center justify-center gap-2 bg-phx-accent px-5 py-2 text-sm font-black text-white transition hover:bg-phx-accent-hover"
                 href={createHref}
               >
                 <Plus className="h-4 w-4" />
@@ -1045,14 +1045,14 @@ export function CoachingAnalyticsDashboard({
                       <tbody>
                         {categoryAverages.map((row) => (
                           <tr className="bg-white text-sm hover:bg-[#FFFBF7]" key={row.label}>
-                            <td className="px-3 py-3 font-black text-[#0F172A]">{row.label}</td>
-                            <td className="px-2 py-3 text-center font-bold tabular-nums text-[#475569]">{formatNumber(row.reportCount)}</td>
+                            <td className="px-3 py-3 font-black text-phx-ink">{row.label}</td>
+                            <td className="px-2 py-3 text-center font-bold tabular-nums text-phx-ink-2">{formatNumber(row.reportCount)}</td>
                             <td className="px-2 py-3">
                               <div className="flex items-center justify-center gap-2">
                                 <div className="h-2 w-full min-w-[60px] max-w-[120px] bg-[#EEF2F7]">
                                   <div className="h-full" style={{ background: scoreZoneColor(row.value), width: `${Math.min(100, row.value)}%` }} />
                                 </div>
-                                <span className="w-12 shrink-0 whitespace-nowrap text-right font-black tabular-nums text-[#0F172A]">{formatPercent(row.value)}</span>
+                                <span className="w-12 shrink-0 whitespace-nowrap text-right font-black tabular-nums text-phx-ink">{formatPercent(row.value)}</span>
                               </div>
                             </td>
                             <td className="px-3 py-3 text-center"><Band band={scoreBand(row.value)} /></td>
@@ -1066,11 +1066,11 @@ export function CoachingAnalyticsDashboard({
             </ReportSection>
 
             <ReportSection title="Average Score by Quarter" hint="completed reports">
-              <div className="border border-[#E2E8F0] bg-white p-4">
+              <div className="border border-phx-line bg-white p-4">
                 <QuarterTrend data={quarterTrend} />
               </div>
               {coverageInsight ? (
-                <p className="mt-3 border-l-2 border-[#F97316] pl-3 text-[13px] leading-6 text-[#475569]">{coverageInsight}</p>
+                <p className="mt-3 border-l-2 border-phx-accent pl-3 text-[13px] leading-6 text-phx-ink-2">{coverageInsight}</p>
               ) : null}
             </ReportSection>
           </div>
@@ -1101,10 +1101,10 @@ export function CoachingAnalyticsDashboard({
                       <tbody>
                         {scoreItemRows.map((row) => (
                           <tr className="bg-white text-sm hover:bg-[#FFFBF7]" key={row.scoreItemKey}>
-                            <td className="px-3 py-3 font-bold text-[#0F172A]">{row.scoreItemLabel}</td>
-                            <td className="whitespace-nowrap px-3 py-3 text-[13px] font-semibold text-[#64748B]">{row.parameterLabel}</td>
-                            <td className="px-2 py-3 text-center font-bold tabular-nums text-[#475569]">{formatNumber(row.reportCount)}</td>
-                            <td className="px-2 py-3 text-center font-black tabular-nums text-[#0F172A]">{formatPercent(row.averagePercent)}</td>
+                            <td className="px-3 py-3 font-bold text-phx-ink">{row.scoreItemLabel}</td>
+                            <td className="whitespace-nowrap px-3 py-3 text-[13px] font-semibold text-phx-ink-soft">{row.parameterLabel}</td>
+                            <td className="px-2 py-3 text-center font-bold tabular-nums text-phx-ink-2">{formatNumber(row.reportCount)}</td>
+                            <td className="px-2 py-3 text-center font-black tabular-nums text-phx-ink">{formatPercent(row.averagePercent)}</td>
                             <td className="px-3 py-3 text-center"><Band band={scoreBand(row.averagePercent)} /></td>
                           </tr>
                         ))}
@@ -1144,19 +1144,19 @@ export function CoachingAnalyticsDashboard({
                       <tr className="bg-white text-sm hover:bg-[#FFFBF7]" key={`${row.hrId}-${row.lastCoachingDate ?? "none"}`}>
                         <td className="px-3 py-3">
                           <Link
-                            className="block outline-none transition hover:text-[#F97316] focus-visible:ring-2 focus-visible:ring-[#F97316]/30"
+                            className="block outline-none transition hover:text-phx-accent focus-visible:ring-2 focus-visible:ring-phx-accent/30"
                             href={`${coachingReportBase}/${row.latestReportId}`}
                           >
-                            <p className="whitespace-nowrap font-black text-[#0F172A]">{row.medicalRep}</p>
-                            <p className="whitespace-nowrap font-mono text-[11px] font-bold text-[#94A3B8]">{row.hrId}</p>
+                            <p className="whitespace-nowrap font-black text-phx-ink">{row.medicalRep}</p>
+                            <p className="whitespace-nowrap font-mono text-[11px] font-bold text-phx-ink-faint">{row.hrId}</p>
                           </Link>
                         </td>
-                        <td className="whitespace-nowrap px-2 py-3 text-[13px] font-semibold text-[#475569]">{row.areaName || "Not assigned"}</td>
-                        <td className="whitespace-nowrap px-2 py-3 text-[13px] font-semibold text-[#475569]">{row.lineName || "Not assigned"}</td>
-                        <td className="px-2 py-3 text-center font-bold tabular-nums text-[#475569]">{formatNumber(row.coachingCount)}</td>
-                        <td className="px-2 py-3 text-center tabular-nums text-[#64748B]">{formatPercent(row.firstScore)}</td>
-                        <td className="px-2 py-3 text-center font-black tabular-nums text-[#0F172A]">{formatPercent(row.averageScore)}</td>
-                        <td className="px-2 py-3 text-center tabular-nums text-[#0F172A]">{formatPercent(row.latestScore)}</td>
+                        <td className="whitespace-nowrap px-2 py-3 text-[13px] font-semibold text-phx-ink-2">{row.areaName || "Not assigned"}</td>
+                        <td className="whitespace-nowrap px-2 py-3 text-[13px] font-semibold text-phx-ink-2">{row.lineName || "Not assigned"}</td>
+                        <td className="px-2 py-3 text-center font-bold tabular-nums text-phx-ink-2">{formatNumber(row.coachingCount)}</td>
+                        <td className="px-2 py-3 text-center tabular-nums text-phx-ink-soft">{formatPercent(row.firstScore)}</td>
+                        <td className="px-2 py-3 text-center font-black tabular-nums text-phx-ink">{formatPercent(row.averageScore)}</td>
+                        <td className="px-2 py-3 text-center tabular-nums text-phx-ink">{formatPercent(row.latestScore)}</td>
                         <td className="px-2 py-3 text-center">
                           <span
                             className={cn(
@@ -1168,7 +1168,7 @@ export function CoachingAnalyticsDashboard({
                           </span>
                         </td>
                         <td className="px-3 py-3 text-center" title={zoneLabel(row.latestZone)}><Band band={zoneBand(row.latestZone)} /></td>
-                        <td className="whitespace-nowrap px-2 py-3 text-center text-[13px] text-[#475569]">{formatDate(row.lastCoachingDate)}</td>
+                        <td className="whitespace-nowrap px-2 py-3 text-center text-[13px] text-phx-ink-2">{formatDate(row.lastCoachingDate)}</td>
                       </tr>
                     ))}
                   </tbody>

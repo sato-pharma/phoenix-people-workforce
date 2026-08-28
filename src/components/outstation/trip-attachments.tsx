@@ -94,7 +94,7 @@ export function TripAttachments({ tripId }: { tripId: string }) {
     <div className="flex flex-wrap gap-3">
       {items.map((item) => (
         <a
-          className="group block w-40 overflow-hidden rounded-lg border border-[#e4e9ec] bg-white transition-colors hover:border-orange-400"
+          className="group block w-40 overflow-hidden rounded-lg border border-phx-line bg-white transition-colors hover:border-orange-400"
           href={item.url}
           key={item.key}
           rel="noopener noreferrer"

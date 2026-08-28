@@ -173,9 +173,9 @@ function SelectField({
 }) {
   return (
     <label className="block">
-      <span className="text-[11px] font-black uppercase tracking-[0.16em] text-[#64748B]">{label}</span>
+      <span className="text-[11px] font-black uppercase tracking-[0.16em] text-phx-ink-soft">{label}</span>
       <SearchableSelect
-        className="mt-2 h-10 w-full rounded-xl border border-[#CBD5E1] bg-white px-3 text-sm font-semibold text-[#0F172A] shadow-sm outline-none transition focus:border-[#F97316] focus:ring-2 focus:ring-[#F97316]/20 disabled:cursor-not-allowed disabled:bg-[#F8FAFC] disabled:text-[#94A3B8]"
+        className="mt-2 h-10 w-full rounded-xl border border-phx-line-strong bg-white px-3 text-sm font-semibold text-phx-ink shadow-sm outline-none transition focus:border-phx-accent focus:ring-2 focus:ring-phx-accent/20 disabled:cursor-not-allowed disabled:bg-phx-paper disabled:text-phx-ink-faint"
         disabled={disabled}
         onChange={(event) => onChange(event.target.value)}
         value={value}
@@ -426,18 +426,18 @@ export function CoachingReportsCenter({
               value={filters.year}
             />
             <label className="block">
-              <span className="text-[11px] font-black uppercase tracking-[0.16em] text-[#64748B]">Date From</span>
+              <span className="text-[11px] font-black uppercase tracking-[0.16em] text-phx-ink-soft">Date From</span>
               <Input
-                className="mt-2 rounded-xl border-[#CBD5E1] bg-white font-semibold"
+                className="mt-2 rounded-xl border-phx-line-strong bg-white font-semibold"
                 onChange={(event) => updateFilter("dateFrom", event.target.value)}
                 type="date"
                 value={filters.dateFrom}
               />
             </label>
             <label className="block">
-              <span className="text-[11px] font-black uppercase tracking-[0.16em] text-[#64748B]">Date To</span>
+              <span className="text-[11px] font-black uppercase tracking-[0.16em] text-phx-ink-soft">Date To</span>
               <Input
-                className="mt-2 rounded-xl border-[#CBD5E1] bg-white font-semibold"
+                className="mt-2 rounded-xl border-phx-line-strong bg-white font-semibold"
                 onChange={(event) => updateFilter("dateTo", event.target.value)}
                 type="date"
                 value={filters.dateTo}
@@ -447,7 +447,7 @@ export function CoachingReportsCenter({
 
           <div className="mt-5 flex flex-wrap gap-2">
             <button
-              className="inline-flex items-center justify-center gap-2 rounded-full bg-[#0F172A] px-5 py-2.5 text-sm font-black text-white shadow-[0_18px_40px_rgba(15,23,42,0.16)] transition hover:bg-[#F97316] disabled:cursor-not-allowed disabled:opacity-60"
+              className="inline-flex items-center justify-center gap-2 rounded-full bg-phx-ink px-5 py-2.5 text-sm font-black text-white shadow-[0_18px_40px_rgba(15,23,42,0.16)] transition hover:bg-phx-accent disabled:cursor-not-allowed disabled:opacity-60"
               disabled={isLoading}
               onClick={applyFilters}
               type="button"
@@ -456,7 +456,7 @@ export function CoachingReportsCenter({
               Apply Filters
             </button>
             <button
-              className="inline-flex items-center justify-center gap-2 rounded-full border border-[#CBD5E1] bg-white px-5 py-2.5 text-sm font-black text-[#0F172A] shadow-sm transition hover:border-[#F97316]/50 hover:text-[#F97316] disabled:cursor-not-allowed disabled:opacity-60"
+              className="inline-flex items-center justify-center gap-2 rounded-full border border-phx-line-strong bg-white px-5 py-2.5 text-sm font-black text-phx-ink shadow-sm transition hover:border-phx-accent/50 hover:text-phx-accent disabled:cursor-not-allowed disabled:opacity-60"
               disabled={isLoading}
               onClick={resetFilters}
               type="button"
@@ -469,13 +469,13 @@ export function CoachingReportsCenter({
       </Card>
 
       <Card className={cn(adminPanelClassName, "overflow-hidden p-0")}>
-        <div className="flex flex-wrap items-center justify-between gap-4 border-b border-[#E2E8F0] px-5 py-4 sm:px-6">
+        <div className="flex flex-wrap items-center justify-between gap-4 border-b border-phx-line px-5 py-4 sm:px-6">
           <div>
-            <p className="text-[11px] font-black uppercase tracking-[0.18em] text-[#F97316]">Reports</p>
-            <h2 className="mt-1 text-xl font-black tracking-[-0.03em] text-[#0F172A]">
+            <p className="text-[11px] font-black uppercase tracking-[0.18em] text-phx-accent">Reports</p>
+            <h2 className="mt-1 text-xl font-black tracking-[-0.03em] text-phx-ink">
               Coaching reports center
             </h2>
-            <p className="mt-1 text-sm leading-6 text-[#64748B]">
+            <p className="mt-1 text-sm leading-6 text-phx-ink-soft">
               {reports.length} report{reports.length === 1 ? "" : "s"} in the current view.
             </p>
           </div>
@@ -487,7 +487,7 @@ export function CoachingReportsCenter({
             ) : null}
             {canExport ? (
               <button
-                className="inline-flex items-center justify-center gap-2 rounded-full border border-[#CBD5E1] bg-white px-4 py-2 text-sm font-black text-[#0F172A] shadow-sm transition hover:border-[#F97316]/50 hover:text-[#F97316] disabled:cursor-not-allowed disabled:opacity-60"
+                className="inline-flex items-center justify-center gap-2 rounded-full border border-phx-line-strong bg-white px-4 py-2 text-sm font-black text-phx-ink shadow-sm transition hover:border-phx-accent/50 hover:text-phx-accent disabled:cursor-not-allowed disabled:opacity-60"
                 disabled={isExporting}
                 onClick={exportExcel}
                 type="button"
@@ -498,7 +498,7 @@ export function CoachingReportsCenter({
             ) : null}
             {canCreate ? (
               <Link
-                className="inline-flex items-center justify-center gap-2 rounded-full bg-[#F97316] px-4 py-2 text-sm font-black text-white shadow-[0_14px_34px_rgba(249,115,22,0.20)] transition hover:bg-[#EA580C]"
+                className="inline-flex items-center justify-center gap-2 rounded-full bg-phx-accent px-4 py-2 text-sm font-black text-white shadow-[0_14px_34px_rgba(249,115,22,0.20)] transition hover:bg-phx-accent-hover"
                 href={createHref}
               >
                 <Plus className="h-4 w-4" />
@@ -510,19 +510,19 @@ export function CoachingReportsCenter({
 
         {reports.length === 0 ? (
           <div className="p-6">
-            <div className="rounded-lg border border-dashed border-[#CBD5E1] bg-[#F8FAFC] p-8 text-center">
-              <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-md bg-white text-[#F97316] shadow-sm ring-1 ring-[#E2E8F0]">
+            <div className="rounded-lg border border-dashed border-phx-line-strong bg-phx-paper p-8 text-center">
+              <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-md bg-white text-phx-accent shadow-sm ring-1 ring-phx-line">
                 <Filter className="h-6 w-6" />
               </div>
-              <h3 className="mt-4 text-xl font-black tracking-[-0.03em] text-[#0F172A]">
+              <h3 className="mt-4 text-xl font-black tracking-[-0.03em] text-phx-ink">
                 No coaching reports found.
               </h3>
-              <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-[#64748B]">
+              <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-phx-ink-soft">
                 Try adjusting the filters or create a new coaching report if you are authorized to do so.
               </p>
               {canCreate ? (
                 <Link
-                  className="mt-5 inline-flex items-center justify-center gap-2 rounded-full bg-[#F97316] px-5 py-2.5 text-sm font-black text-white shadow-[0_18px_42px_rgba(249,115,22,0.22)] transition hover:bg-[#EA580C]"
+                  className="mt-5 inline-flex items-center justify-center gap-2 rounded-full bg-phx-accent px-5 py-2.5 text-sm font-black text-white shadow-[0_18px_42px_rgba(249,115,22,0.22)] transition hover:bg-phx-accent-hover"
                   href={createHref}
                 >
                   <Plus className="h-4 w-4" />
@@ -535,8 +535,8 @@ export function CoachingReportsCenter({
           <>
           <div className="hidden overflow-x-auto md:block">
             <table className="w-full border-collapse text-left">
-              <thead className="bg-[#F8FAFC]">
-                <tr className="border-b border-[#E2E8F0] text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">
+              <thead className="bg-phx-paper">
+                <tr className="border-b border-phx-line text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-soft">
                   <th className="px-4 py-3">Report #</th>
                   <th className="px-4 py-3">Medical Rep</th>
                   <th className="px-4 py-3">Coach</th>
@@ -551,22 +551,22 @@ export function CoachingReportsCenter({
               </thead>
               <tbody>
                 {pageReports.map((report) => (
-                  <tr className="border-b border-[#E2E8F0] bg-white text-sm last:border-b-0 hover:bg-[#FFFBF7]" key={report.reportId}>
+                  <tr className="border-b border-phx-line bg-white text-sm last:border-b-0 hover:bg-[#FFFBF7]" key={report.reportId}>
                     <td className="px-4 py-3">
-                      <span className="font-black text-[#0F172A]">{report.reportNumber}</span>
+                      <span className="font-black text-phx-ink">{report.reportNumber}</span>
                     </td>
                     <td className="px-4 py-3">
-                      <div className="font-semibold text-[#0F172A]">{formatEmployeeDisplayName(report.medicalRepName)}</div>
-                      <div className="font-mono text-[11px] text-[#94A3B8]">{report.medicalRepHrId}</div>
+                      <div className="font-semibold text-phx-ink">{formatEmployeeDisplayName(report.medicalRepName)}</div>
+                      <div className="font-mono text-[11px] text-phx-ink-faint">{report.medicalRepHrId}</div>
                     </td>
-                    <td className="px-4 py-3 font-semibold text-[#0F172A]">{formatEmployeeDisplayName(report.coachName)}</td>
-                    <td className="px-4 py-3 text-xs text-[#475569]">
+                    <td className="px-4 py-3 font-semibold text-phx-ink">{formatEmployeeDisplayName(report.coachName)}</td>
+                    <td className="px-4 py-3 text-xs text-phx-ink-2">
                       <div>{report.lineName || "—"}</div>
-                      {report.areaName ? <div className="text-[#94A3B8]">{report.areaName}</div> : null}
-                      {report.teamName ? <div className="text-[#94A3B8]">{report.teamName}</div> : null}
+                      {report.areaName ? <div className="text-phx-ink-faint">{report.areaName}</div> : null}
+                      {report.teamName ? <div className="text-phx-ink-faint">{report.teamName}</div> : null}
                     </td>
-                    <td className="px-4 py-3 text-[#475569]">{formatDate(report.coachingDate)}</td>
-                    <td className="px-4 py-3 font-black text-[#0F172A]">{formatPercent(report.finalScorePercent)}</td>
+                    <td className="px-4 py-3 text-phx-ink-2">{formatDate(report.coachingDate)}</td>
+                    <td className="px-4 py-3 font-black text-phx-ink">{formatPercent(report.finalScorePercent)}</td>
                     <td className="px-4 py-3">
                       <Badge className={zoneClassName(report.performanceZone)}>{zoneLabel(report.performanceZone)}</Badge>
                     </td>
@@ -580,7 +580,7 @@ export function CoachingReportsCenter({
                     </td>
                     <td className="px-4 py-3">
                       <Link
-                        className="inline-flex items-center gap-2 border border-[#CBD5E1] bg-white px-3 py-1.5 text-xs font-black text-[#0F172A] shadow-sm transition hover:border-[#F97316]/50 hover:text-[#F97316]"
+                        className="inline-flex items-center gap-2 border border-phx-line-strong bg-white px-3 py-1.5 text-xs font-black text-phx-ink shadow-sm transition hover:border-phx-accent/50 hover:text-phx-accent"
                         href={detailHrefFor(detailHrefBase, report.reportId)}
                       >
                         View
@@ -595,27 +595,27 @@ export function CoachingReportsCenter({
 
           <div className="space-y-3 p-4 md:hidden">
             {pageReports.map((report) => (
-              <div className="border border-[#E2E8F0] bg-white p-4 shadow-sm" key={`${report.reportId}-mobile`}>
+              <div className="border border-phx-line bg-white p-4 shadow-sm" key={`${report.reportId}-mobile`}>
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
-                    <p className="font-black text-[#0F172A]">{report.reportNumber}</p>
-                    <p className="mt-1 truncate font-semibold text-[#0F172A]">{formatEmployeeDisplayName(report.medicalRepName)}</p>
-                    <p className="font-mono text-[11px] text-[#94A3B8]">{report.medicalRepHrId}</p>
+                    <p className="font-black text-phx-ink">{report.reportNumber}</p>
+                    <p className="mt-1 truncate font-semibold text-phx-ink">{formatEmployeeDisplayName(report.medicalRepName)}</p>
+                    <p className="font-mono text-[11px] text-phx-ink-faint">{report.medicalRepHrId}</p>
                   </div>
                   <Badge className={statusClassName(report.status)}>{statusLabel(report.status)}</Badge>
                 </div>
                 <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
-                  <p className="text-[#64748B]">
-                    Coach: <span className="font-bold text-[#0F172A]">{formatEmployeeDisplayName(report.coachName)}</span>
+                  <p className="text-phx-ink-soft">
+                    Coach: <span className="font-bold text-phx-ink">{formatEmployeeDisplayName(report.coachName)}</span>
                   </p>
-                  <p className="text-[#64748B]">
-                    Date: <span className="font-bold text-[#0F172A]">{formatDate(report.coachingDate)}</span>
+                  <p className="text-phx-ink-soft">
+                    Date: <span className="font-bold text-phx-ink">{formatDate(report.coachingDate)}</span>
                   </p>
-                  <p className="text-[#64748B]">
-                    Score: <span className="font-bold text-[#0F172A]">{formatPercent(report.finalScorePercent)}</span>
+                  <p className="text-phx-ink-soft">
+                    Score: <span className="font-bold text-phx-ink">{formatPercent(report.finalScorePercent)}</span>
                   </p>
-                  <p className="text-[#64748B]">
-                    Org: <span className="font-bold text-[#0F172A]">{report.lineName || "—"}</span>
+                  <p className="text-phx-ink-soft">
+                    Org: <span className="font-bold text-phx-ink">{report.lineName || "—"}</span>
                   </p>
                 </div>
                 <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
@@ -626,7 +626,7 @@ export function CoachingReportsCenter({
                     </Badge>
                   </div>
                   <Link
-                    className="inline-flex items-center gap-2 border border-[#CBD5E1] bg-white px-3 py-1.5 text-xs font-black text-[#0F172A] shadow-sm transition hover:border-[#F97316]/50 hover:text-[#F97316]"
+                    className="inline-flex items-center gap-2 border border-phx-line-strong bg-white px-3 py-1.5 text-xs font-black text-phx-ink shadow-sm transition hover:border-phx-accent/50 hover:text-phx-accent"
                     href={detailHrefFor(detailHrefBase, report.reportId)}
                   >
                     View

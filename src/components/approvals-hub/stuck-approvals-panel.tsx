@@ -56,7 +56,7 @@ function ReassignRow(props: {
   }
 
   return (
-    <div className="border border-[#e4e9ec] bg-white px-4 py-3">
+    <div className="border border-phx-line bg-white px-4 py-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="min-w-0">
           <p className="truncate text-sm font-bold text-slate-900">{props.primary}</p>
@@ -98,8 +98,8 @@ function ReassignRow(props: {
 
 function Section(props: { title: string; count: number; children: ReactNode }) {
   return (
-    <section className="border border-[#e4e9ec] bg-white">
-      <header className="flex items-center justify-between border-b border-[#e4e9ec] bg-slate-900 px-4 py-2.5">
+    <section className="border border-phx-line bg-white">
+      <header className="flex items-center justify-between border-b border-phx-line bg-slate-900 px-4 py-2.5">
         <h3 className="text-[11px] font-black uppercase tracking-[0.14em] text-white">{props.title}</h3>
         <span className="text-[11px] font-bold text-slate-300">{props.count}</span>
       </header>
@@ -112,7 +112,7 @@ export function StuckApprovalsPanel({ weeklyPlans, excuses, managerOptions }: St
   const empty = weeklyPlans.length === 0 && excuses.length === 0;
   if (empty) {
     return (
-      <section className="border border-[#e4e9ec] bg-white px-4 py-8 text-center">
+      <section className="border border-phx-line bg-white px-4 py-8 text-center">
         <p className="text-sm font-bold text-slate-900">No stuck approvals.</p>
         <p className="mt-1 text-xs text-slate-500">
           Every pending plan and excuse currently has an active approver. This surface fills in

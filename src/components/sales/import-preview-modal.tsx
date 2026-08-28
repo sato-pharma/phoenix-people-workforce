@@ -42,23 +42,23 @@ function StatCard({ label, tone = "neutral", value }: { label: string; tone?: "g
           ? "text-red-600"
           : "text-slate-900";
   return (
-    <div className="rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] px-4 py-3">
-      <p className="text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">{label}</p>
+    <div className="rounded-xl border border-phx-line bg-phx-paper px-4 py-3">
+      <p className="text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-soft">{label}</p>
       <p className={`mt-1 text-xl font-black tabular-nums ${toneClass}`}>{value}</p>
     </div>
   );
 }
 
 function ChipList({ items, more }: { items: string[]; more: number }) {
-  if (items.length === 0) return <p className="text-sm text-[#64748B]">None.</p>;
+  if (items.length === 0) return <p className="text-sm text-phx-ink-soft">None.</p>;
   return (
     <div className="flex flex-wrap gap-1.5">
       {items.map((item) => (
-        <span key={item} className="rounded-md border border-[#E2E8F0] bg-white px-2 py-0.5 text-xs font-medium text-[#0F172A]">
+        <span key={item} className="rounded-md border border-phx-line bg-white px-2 py-0.5 text-xs font-medium text-phx-ink">
           {item}
         </span>
       ))}
-      {more > 0 ? <span className="rounded-md bg-[#F1F5F9] px-2 py-0.5 text-xs font-semibold text-[#64748B]">+{formatNumber(more)} more</span> : null}
+      {more > 0 ? <span className="rounded-md bg-phx-paper-2 px-2 py-0.5 text-xs font-semibold text-phx-ink-soft">+{formatNumber(more)} more</span> : null}
     </div>
   );
 }
@@ -113,13 +113,13 @@ function SuggestionsSection({ suggestions }: { suggestions: BrickSuggestionView[
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between gap-3">
-        <p className="flex items-center gap-1.5 text-xs font-black uppercase tracking-[0.14em] text-[#64748B]">
-          <Sparkles className="h-3.5 w-3.5 text-[#F97316]" />
+        <p className="flex items-center gap-1.5 text-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">
+          <Sparkles className="h-3.5 w-3.5 text-phx-accent" />
           Suggested mappings ({formatNumber(suggestions.length)})
         </p>
         {pendingHigh.length > 0 ? (
           <Button
-            className="h-8 gap-1.5 rounded-lg bg-[#0B0B0B] text-xs font-black text-white hover:bg-[#F97316]"
+            className="h-8 gap-1.5 rounded-lg bg-[#0B0B0B] text-xs font-black text-white hover:bg-phx-accent"
             disabled={busy}
             onClick={acceptAllHigh}
             type="button"
@@ -129,13 +129,13 @@ function SuggestionsSection({ suggestions }: { suggestions: BrickSuggestionView[
           </Button>
         ) : null}
       </div>
-      <p className="text-xs text-[#64748B]">
+      <p className="text-xs text-phx-ink-soft">
         Matched to an already-mapped customer with the same name (or name + address). Accepting writes to the mapping sheet — re-run Preview to see them resolve.
       </p>
-      <div className="overflow-hidden rounded-lg border border-[#E2E8F0]">
+      <div className="overflow-hidden rounded-lg border border-phx-line">
         <table className="w-full text-sm">
           <thead>
-            <tr className="bg-[#F8FAFC] text-left text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">
+            <tr className="bg-phx-paper text-left text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-soft">
               <th className="px-3 py-2">Customer</th>
               <th className="px-3 py-2">Suggested brick</th>
               <th className="px-3 py-2">Match</th>
@@ -149,12 +149,12 @@ function SuggestionsSection({ suggestions }: { suggestions: BrickSuggestionView[
               return (
                 <tr key={rowKey} className="border-t border-[#EEF2F7]">
                   <td className="px-3 py-1.5">
-                    <span className="font-semibold text-[#0F172A]">{s.customerCode}</span>
-                    {s.customerName ? <span className="block max-w-[160px] truncate text-xs text-[#64748B]">{s.customerName}</span> : null}
+                    <span className="font-semibold text-phx-ink">{s.customerCode}</span>
+                    {s.customerName ? <span className="block max-w-[160px] truncate text-xs text-phx-ink-soft">{s.customerName}</span> : null}
                   </td>
                   <td className="px-3 py-1.5">
-                    <span className="font-medium text-[#0F172A]">{s.brickName}</span>
-                    <span className="block text-xs text-[#94A3B8]">from {s.sourceDistributorCode}</span>
+                    <span className="font-medium text-phx-ink">{s.brickName}</span>
+                    <span className="block text-xs text-phx-ink-faint">from {s.sourceDistributorCode}</span>
                   </td>
                   <td className="px-3 py-1.5">
                     <Badge variant={s.confidence === "high" ? "success" : "neutral"}>
@@ -219,26 +219,26 @@ export function ImportPreviewModal({ committing, onCancel, onConfirm, result }: 
       <div
         aria-labelledby="preview-modal-title"
         aria-modal="true"
-        className="my-6 w-full max-w-2xl rounded-lg border border-[#D8E0EA] bg-white shadow-[0_28px_90px_rgba(15,23,42,0.3)]"
+        className="my-6 w-full max-w-2xl rounded-lg border border-phx-line bg-white shadow-[0_28px_90px_rgba(15,23,42,0.3)]"
         ref={containerRef}
         role="dialog"
         tabIndex={-1}
       >
         {/* Header */}
-        <div className="flex items-start justify-between gap-4 border-b border-[#E2E8F0] px-6 py-5">
+        <div className="flex items-start justify-between gap-4 border-b border-phx-line px-6 py-5">
           <div>
             <div className="flex items-center gap-2">
               <h2 className="text-lg font-black tracking-tight text-slate-950" id="preview-modal-title">Review import</h2>
               <Badge variant={blocked ? "danger" : "success"}>{blocked ? "blocked" : "ready"}</Badge>
             </div>
-            <p className="mt-1 text-sm text-[#64748B]">
+            <p className="mt-1 text-sm text-phx-ink-soft">
               {distributorLabel}
               {result.period ? ` · ${result.period}` : ""} · {result.sheetName}
             </p>
           </div>
           <button
             aria-label="Close"
-            className="rounded-md p-1 text-[#64748B] transition hover:bg-[#F1F5F9] hover:text-slate-900"
+            className="rounded-md p-1 text-phx-ink-soft transition hover:bg-phx-paper-2 hover:text-slate-900"
             onClick={onCancel}
             type="button"
           >
@@ -277,7 +277,7 @@ export function ImportPreviewModal({ committing, onCancel, onConfirm, result }: 
 
           {diff && diff.newCustomers > 0 ? (
             <div className="space-y-1.5">
-              <p className="text-xs font-black uppercase tracking-[0.14em] text-[#64748B]">New customers (need mapping)</p>
+              <p className="text-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">New customers (need mapping)</p>
               <ChipList items={diff.newCustomerCodes} more={newMore} />
             </div>
           ) : null}
@@ -286,18 +286,18 @@ export function ImportPreviewModal({ committing, onCancel, onConfirm, result }: 
 
           {diff && diff.unmappedProductsCount > 0 ? (
             <div className="space-y-1.5">
-              <p className="text-xs font-black uppercase tracking-[0.14em] text-[#64748B]">Unmapped products</p>
+              <p className="text-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">Unmapped products</p>
               <ChipList items={diff.unmappedProducts} more={productMore} />
             </div>
           ) : null}
 
           {diff && diff.brickDriftSamples.length > 0 ? (
             <div className="space-y-1.5">
-              <p className="text-xs font-black uppercase tracking-[0.14em] text-[#64748B]">Brick drift — resolved brick ≠ stored mapping</p>
-              <div className="overflow-hidden rounded-lg border border-[#E2E8F0]">
+              <p className="text-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">Brick drift — resolved brick ≠ stored mapping</p>
+              <div className="overflow-hidden rounded-lg border border-phx-line">
                 <table className="w-full text-sm">
                   <thead>
-                    <tr className="bg-[#F8FAFC] text-left text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">
+                    <tr className="bg-phx-paper text-left text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-soft">
                       <th className="px-3 py-2">Customer</th>
                       <th className="px-3 py-2">Stored brick</th>
                       <th className="px-3 py-2">Resolved brick</th>
@@ -306,8 +306,8 @@ export function ImportPreviewModal({ committing, onCancel, onConfirm, result }: 
                   <tbody>
                     {diff.brickDriftSamples.map((row) => (
                       <tr key={row.customerCode} className="border-t border-[#EEF2F7]">
-                        <td className="px-3 py-1.5 font-medium text-[#0F172A]">{row.customerCode}</td>
-                        <td className="px-3 py-1.5 text-[#64748B]">{row.mappedBrickId}</td>
+                        <td className="px-3 py-1.5 font-medium text-phx-ink">{row.customerCode}</td>
+                        <td className="px-3 py-1.5 text-phx-ink-soft">{row.mappedBrickId}</td>
                         <td className="px-3 py-1.5 text-orange-600">{row.resolvedBrickId}</td>
                       </tr>
                     ))}
@@ -319,12 +319,12 @@ export function ImportPreviewModal({ committing, onCancel, onConfirm, result }: 
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-end gap-3 border-t border-[#E2E8F0] px-6 py-4">
+        <div className="flex items-center justify-end gap-3 border-t border-phx-line px-6 py-4">
           <Button className="h-10 rounded-xl" disabled={committing} onClick={onCancel} type="button" variant="secondary">
             Cancel
           </Button>
           <Button
-            className="h-10 gap-2 rounded-xl bg-[#0B0B0B] font-black text-white transition hover:bg-[#F97316] disabled:opacity-50"
+            className="h-10 gap-2 rounded-xl bg-[#0B0B0B] font-black text-white transition hover:bg-phx-accent disabled:opacity-50"
             disabled={blocked || committing}
             onClick={onConfirm}
             type="button"

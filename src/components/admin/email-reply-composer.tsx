@@ -425,11 +425,11 @@ export function EmailReplyComposer() {
         <AdminPageHero
           actions={
             <>
-              <Button className="h-11 rounded-xl border border-[#D8E0EA] bg-white px-4 text-[#0F172A]" disabled={busy} onClick={backendPreview} type="button" variant="secondary">
+              <Button className="h-11 rounded-xl border border-phx-line bg-white px-4 text-phx-ink" disabled={busy} onClick={backendPreview} type="button" variant="secondary">
                 <Eye className="mr-2 h-4 w-4" />
                 Preview &amp; Check
               </Button>
-              <Button className="h-11 rounded-xl bg-[#F97316] px-4 text-white" disabled={busy || policyIssues.length > 0 || !preview} onClick={sendEmail} type="button">
+              <Button className="h-11 rounded-xl bg-phx-accent px-4 text-white" disabled={busy || policyIssues.length > 0 || !preview} onClick={sendEmail} type="button">
                 {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
                 Send Email
               </Button>
@@ -456,7 +456,7 @@ export function EmailReplyComposer() {
           <Card className={cn(adminPanelClassName, "overflow-hidden p-0")}>
             <div className="flex items-center justify-between bg-[#070b12] px-5 py-3.5">
               <p className="text-sm font-black text-white">New HR Email</p>
-              <p className="text-xs font-bold text-[#94A3B8]">From: {form.senderName}</p>
+              <p className="text-xs font-bold text-phx-ink-faint">From: {form.senderName}</p>
             </div>
 
             <div className="border-b border-[#E8EDF3] px-5">
@@ -464,9 +464,9 @@ export function EmailReplyComposer() {
                 chips={form.toSelections}
                 employees={options?.employeeOptions ?? []}
                 extras={
-                  <div className="flex shrink-0 gap-2 text-xs font-black text-[#64748B]">
-                    {!showCc ? <button className="hover:text-[#0F172A]" onClick={() => setShowCc(true)} type="button">Cc</button> : null}
-                    {!showBcc ? <button className="hover:text-[#0F172A]" onClick={() => setShowBcc(true)} type="button">Bcc</button> : null}
+                  <div className="flex shrink-0 gap-2 text-xs font-black text-phx-ink-soft">
+                    {!showCc ? <button className="hover:text-phx-ink" onClick={() => setShowCc(true)} type="button">Cc</button> : null}
+                    {!showBcc ? <button className="hover:text-phx-ink" onClick={() => setShowBcc(true)} type="button">Bcc</button> : null}
                   </div>
                 }
                 groups={options?.groups ?? []}
@@ -501,13 +501,13 @@ export function EmailReplyComposer() {
 
             <div className="flex items-center gap-3 border-b border-[#E8EDF3] px-5 py-1.5">
               <input
-                className="h-10 w-full border-0 bg-transparent text-[15px] font-black text-[#0F172A] outline-none placeholder:font-semibold placeholder:text-[#94A3B8]"
+                className="h-10 w-full border-0 bg-transparent text-[15px] font-black text-phx-ink outline-none placeholder:font-semibold placeholder:text-phx-ink-faint"
                 onChange={(event) => updateField("subject", event.target.value)}
                 placeholder="Subject"
                 value={form.subject}
               />
               <SearchableSelect
-                className="h-9 shrink-0 rounded-lg border border-[#E2E8F0] bg-white px-2 text-xs font-black text-[#334155]"
+                className="h-9 shrink-0 rounded-lg border border-phx-line bg-white px-2 text-xs font-black text-phx-ink-2"
                 onChange={(event) => void applyTemplate(event.target.value)}
                 value={form.templateKey}
               >
@@ -519,21 +519,21 @@ export function EmailReplyComposer() {
             </div>
 
             <div className="flex flex-wrap items-center gap-3 border-b border-[#E8EDF3] px-5 py-2 text-sm">
-              <span className="text-xs font-black uppercase tracking-[0.14em] text-[#64748B]">Greeting</span>
-              <span className="font-semibold text-[#334155]">Dear</span>
+              <span className="text-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">Greeting</span>
+              <span className="font-semibold text-phx-ink-2">Dear</span>
               <input
-                className="h-8 w-48 rounded-lg border border-[#E2E8F0] bg-white px-2 text-sm font-bold text-[#0F172A] outline-none placeholder:text-[#94A3B8] focus:border-[#FDBA74]"
+                className="h-8 w-48 rounded-lg border border-phx-line bg-white px-2 text-sm font-bold text-phx-ink outline-none placeholder:text-phx-ink-faint focus:border-phx-accent-line"
                 onChange={(event) => updateField("recipientName", event.target.value)}
                 placeholder="auto from recipient"
                 value={form.recipientName}
               />
-              <span className="font-semibold text-[#334155]">,</span>
+              <span className="font-semibold text-phx-ink-2">,</span>
             </div>
 
             <div className="border-b border-[#E8EDF3] bg-[#FFFBF7] px-5 py-3">
               <div className="flex items-center gap-2">
-                <Sparkles className="h-4 w-4 text-[#C2410C]" />
-                <p className="text-xs font-black uppercase tracking-[0.18em] text-[#C2410C]">AI Assist</p>
+                <Sparkles className="h-4 w-4 text-phx-accent-press" />
+                <p className="text-xs font-black uppercase tracking-[0.18em] text-phx-accent-press">AI Assist</p>
               </div>
               <div className="mt-2 flex flex-col gap-2 md:flex-row">
                 <Input
@@ -544,7 +544,7 @@ export function EmailReplyComposer() {
                   placeholder='e.g. "Reply that the vacation request is approved starting Sunday" or any Arabic instruction'
                   value={aiInstruction}
                 />
-                <Button className="shrink-0 bg-[#0F172A] text-white" disabled={busy} onClick={() => void runAiAssist()} type="button">
+                <Button className="shrink-0 bg-phx-ink text-white" disabled={busy} onClick={() => void runAiAssist()} type="button">
                   <Sparkles className="mr-2 h-4 w-4" />
                   {aiBusy ? "Thinking..." : "Draft with AI"}
                 </Button>
@@ -552,7 +552,7 @@ export function EmailReplyComposer() {
               <div className="mt-2 flex flex-wrap gap-2">
                 {["Translate to Arabic", "Make it shorter", "More formal", "More friendly"].map((quickAction) => (
                   <button
-                    className="border border-[#E2E8F0] bg-white px-2.5 py-1 text-xs font-bold text-[#334155] hover:border-[#FED7AA] hover:bg-[#FFF7ED] disabled:opacity-50"
+                    className="border border-phx-line bg-white px-2.5 py-1 text-xs font-bold text-phx-ink-2 hover:border-[#FED7AA] hover:bg-phx-accent-soft disabled:opacity-50"
                     disabled={busy}
                     key={quickAction}
                     onClick={() => void runAiAssist(quickAction)}
@@ -577,7 +577,7 @@ export function EmailReplyComposer() {
               <div className="border-t border-[#E8EDF3] px-5 py-3">
                 <Field label="External recipient justification">
                   <textarea
-                    className="min-h-[80px] w-full rounded-xl border border-[#D8E0EA] px-3 py-2.5 text-sm"
+                    className="min-h-[80px] w-full rounded-xl border border-phx-line px-3 py-2.5 text-sm"
                     onChange={(event) => updateField("externalJustification", event.target.value)}
                     placeholder="Example: Candidate offer communication approved by HR."
                     value={form.externalJustification}
@@ -586,20 +586,20 @@ export function EmailReplyComposer() {
               </div>
             ) : null}
 
-            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[#E8EDF3] bg-[#F8FAFC] px-5 py-3">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[#E8EDF3] bg-phx-paper px-5 py-3">
               <div className="flex flex-wrap items-center gap-2">
-                <Button className="h-10 rounded-xl bg-[#F97316] px-4 text-white" disabled={busy || policyIssues.length > 0 || !preview} onClick={sendEmail} type="button">
+                <Button className="h-10 rounded-xl bg-phx-accent px-4 text-white" disabled={busy || policyIssues.length > 0 || !preview} onClick={sendEmail} type="button">
                   {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
                   Send
                 </Button>
-                <Button className="h-10 rounded-xl border border-[#D8E0EA] bg-white px-3 text-[#0F172A]" disabled={busy} onClick={backendPreview} type="button" variant="secondary">
+                <Button className="h-10 rounded-xl border border-phx-line bg-white px-3 text-phx-ink" disabled={busy} onClick={backendPreview} type="button" variant="secondary">
                   <Eye className="mr-2 h-4 w-4" />
                   Preview &amp; Check
                 </Button>
-                {!preview ? <span className="text-xs font-bold text-[#94A3B8]">Preview is required before sending.</span> : null}
+                {!preview ? <span className="text-xs font-bold text-phx-ink-faint">Preview is required before sending.</span> : null}
               </div>
               <div className="flex flex-wrap items-center gap-1.5">
-                <span className="mr-1 text-xs font-black uppercase tracking-[0.14em] text-[#64748B]">Tone</span>
+                <span className="mr-1 text-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">Tone</span>
                 {(options?.tones ?? [
                   { label: "Formal", value: "professional" as PhoenixHrEmailTone },
                   { label: "Friendly", value: "warm" as PhoenixHrEmailTone },
@@ -609,7 +609,7 @@ export function EmailReplyComposer() {
                   <button
                     className={cn(
                       "rounded-full border px-3 py-1.5 text-xs font-black",
-                      form.tone === tone.value ? "border-[#FDBA74] bg-[#FFF7ED] text-[#9A3412]" : "border-[#E2E8F0] bg-white text-[#334155]",
+                      form.tone === tone.value ? "border-phx-accent-line bg-phx-accent-soft text-[#9A3412]" : "border-phx-line bg-white text-phx-ink-2",
                     )}
                     key={tone.value}
                     onClick={() => updateField("tone", tone.value)}
@@ -622,13 +622,13 @@ export function EmailReplyComposer() {
             </div>
 
             <details className="border-t border-[#E8EDF3] px-5 py-3">
-              <summary className="cursor-pointer text-xs font-black uppercase tracking-[0.14em] text-[#64748B]">
+              <summary className="cursor-pointer text-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">
                 More options - sender name &amp; raw email lists
               </summary>
               <div className="mt-3 grid gap-3 md:grid-cols-2">
                 <Field label="Sender name">
                   <input
-                    className="h-10 w-full rounded-xl border border-[#D8E0EA] bg-white px-3 text-sm font-semibold text-[#0F172A]"
+                    className="h-10 w-full rounded-xl border border-phx-line bg-white px-3 text-sm font-semibold text-phx-ink"
                     onChange={(event) => updateField("senderName", event.target.value)}
                     value={form.senderName}
                   />
@@ -644,14 +644,14 @@ export function EmailReplyComposer() {
 
           <div className="space-y-5">
             <Card className={cn(adminPanelClassName, "space-y-3 p-5")}>
-              <p className="text-xs font-black uppercase tracking-[0.18em] text-[#C2410C]">Variables</p>
+              <p className="text-xs font-black uppercase tracking-[0.18em] text-phx-accent-press">Variables</p>
               {variablesAvailable ? (
                 <>
-                  <p className="text-xs leading-5 text-[#64748B]">Click to insert at the cursor. The backend fills values from the first selected employee.</p>
+                  <p className="text-xs leading-5 text-phx-ink-soft">Click to insert at the cursor. The backend fills values from the first selected employee.</p>
                   <div className="flex max-h-[260px] flex-wrap gap-2 overflow-auto">
                     {(options?.variables ?? []).map((variable) => (
                       <button
-                        className="rounded-full border border-[#FED7AA] bg-[#FFF7ED] px-3 py-1.5 text-xs font-black text-[#C2410C]"
+                        className="rounded-full border border-[#FED7AA] bg-phx-accent-soft px-3 py-1.5 text-xs font-black text-phx-accent-press"
                         key={variable.token}
                         onClick={() => insertVariable(variable.token)}
                         title={`Stores {{${variable.token}}}. Example: ${variable.sampleValue}`}
@@ -663,7 +663,7 @@ export function EmailReplyComposer() {
                   </div>
                 </>
               ) : (
-                <p className="text-sm leading-6 text-[#64748B]">Choose an employee recipient first so the backend can fill variable values.</p>
+                <p className="text-sm leading-6 text-phx-ink-soft">Choose an employee recipient first so the backend can fill variable values.</p>
               )}
             </Card>
             <PreviewChecklist preview={preview} />
@@ -674,7 +674,7 @@ export function EmailReplyComposer() {
           <Card className={cn(adminPanelClassName, "overflow-hidden p-0")}>
             <AdminSectionHeader
               action={
-                <Button className="rounded-xl border border-[#D8E0EA] bg-white text-[#0F172A]" onClick={() => void copyRichEmail()} type="button" variant="secondary">
+                <Button className="rounded-xl border border-phx-line bg-white text-phx-ink" onClick={() => void copyRichEmail()} type="button" variant="secondary">
                   {copied ? <Check className="mr-2 h-4 w-4" /> : <Copy className="mr-2 h-4 w-4" />}
                   Copy
                 </Button>
@@ -683,7 +683,7 @@ export function EmailReplyComposer() {
               title="Final preview"
             />
             <div className="bg-[#EEF2F7] p-4">
-              <iframe className="h-[680px] w-full rounded-xl border border-[#CBD5E1] bg-white" sandbox="" srcDoc={preview.html} title="Backend email preview" />
+              <iframe className="h-[680px] w-full rounded-xl border border-phx-line-strong bg-white" sandbox="" srcDoc={preview.html} title="Backend email preview" />
             </div>
           </Card>
         ) : null}
@@ -779,18 +779,18 @@ function RecipientRow({
   }
 
   return (
-    <div className="relative flex min-h-[46px] flex-wrap items-center gap-1.5 border-b border-[#F1F5F9] py-2 last:border-b-0">
-      <span className="w-8 shrink-0 text-xs font-black uppercase tracking-[0.14em] text-[#64748B]" id={`${listId}-label`}>{label}</span>
+    <div className="relative flex min-h-[46px] flex-wrap items-center gap-1.5 border-b border-phx-paper-2 py-2 last:border-b-0">
+      <span className="w-8 shrink-0 text-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft" id={`${listId}-label`}>{label}</span>
       {chips.map((selection, index) => (
         <span
           className={cn(
             "inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-black",
-            selection.type === "group" ? "border-[#C7D2FE] bg-[#EEF2FF] text-[#3730A3]" : "border-[#CBD5E1] bg-white text-[#0F172A]",
+            selection.type === "group" ? "border-[#C7D2FE] bg-[#EEF2FF] text-[#3730A3]" : "border-phx-line-strong bg-white text-phx-ink",
           )}
           key={`${label}-${index}`}
         >
           {selectionDisplayLabel(selection)}
-          <button aria-label={`Remove ${selectionDisplayLabel(selection)}`} className="text-[#94A3B8] hover:text-[#DC2626]" onClick={() => onRemove(index)} type="button">
+          <button aria-label={`Remove ${selectionDisplayLabel(selection)}`} className="text-phx-ink-faint hover:text-[#DC2626]" onClick={() => onRemove(index)} type="button">
             <X className="h-3 w-3" />
           </button>
         </span>
@@ -800,7 +800,7 @@ function RecipientRow({
         aria-controls={listId}
         aria-expanded={showDropdown}
         aria-labelledby={`${listId}-label`}
-        className="h-8 min-w-[180px] flex-1 border-0 bg-transparent text-sm font-semibold text-[#0F172A] outline-none placeholder:text-[#94A3B8]"
+        className="h-8 min-w-[180px] flex-1 border-0 bg-transparent text-sm font-semibold text-phx-ink outline-none placeholder:text-phx-ink-faint"
         onBlur={() => {
           blurTimerRef.current = window.setTimeout(() => setFocused(false), 150);
         }}
@@ -842,14 +842,14 @@ function RecipientRow({
       />
       {extras}
       {showDropdown ? (
-        <div className="absolute left-8 top-full z-20 mt-1 w-[min(420px,90%)] overflow-hidden rounded-xl border border-[#E2E8F0] bg-white shadow-lg" id={listId} role="listbox">
+        <div className="absolute left-8 top-full z-20 mt-1 w-[min(420px,90%)] overflow-hidden rounded-xl border border-phx-line bg-white shadow-lg" id={listId} role="listbox">
           {suggestions.map((suggestion, index) => (
             <button
               aria-selected={index === clampedActiveIndex}
               className={cn(
                 "block w-full px-3 py-2 text-left",
-                suggestion.kind === "group" ? "hover:bg-[#EEF2FF]" : suggestion.kind === "email" ? "hover:bg-[#F0FDF4]" : "hover:bg-[#FFF7ED]",
-                index === clampedActiveIndex ? "bg-[#F8FAFC]" : "",
+                suggestion.kind === "group" ? "hover:bg-[#EEF2FF]" : suggestion.kind === "email" ? "hover:bg-[#F0FDF4]" : "hover:bg-phx-accent-soft",
+                index === clampedActiveIndex ? "bg-phx-paper" : "",
               )}
               id={`${listId}-option-${index}`}
               key={`${suggestion.kind}-${suggestion.title}`}
@@ -860,15 +860,15 @@ function RecipientRow({
             >
               <span className={cn(
                 "block text-sm font-black",
-                suggestion.kind === "group" ? "text-[#3730A3]" : suggestion.kind === "email" ? "text-[#166534]" : "text-[#0F172A]",
+                suggestion.kind === "group" ? "text-[#3730A3]" : suggestion.kind === "email" ? "text-[#166534]" : "text-phx-ink",
               )}>
                 {suggestion.title}
               </span>
-              <span className="block text-xs text-[#64748B]">{suggestion.description}</span>
+              <span className="block text-xs text-phx-ink-soft">{suggestion.description}</span>
             </button>
           ))}
           {suggestions.length === 0 ? (
-            <p className="px-3 py-2 text-sm text-[#94A3B8]">No matches. Type a full email address to add it directly.</p>
+            <p className="px-3 py-2 text-sm text-phx-ink-faint">No matches. Type a full email address to add it directly.</p>
           ) : null}
         </div>
       ) : null}
@@ -879,7 +879,7 @@ function RecipientRow({
 function Field({ children, label }: { children: ReactNode; label: string }) {
   return (
     <label className="block">
-      <span className="mb-1.5 block text-xs font-black uppercase tracking-[0.14em] text-[#64748B]">{label}</span>
+      <span className="mb-1.5 block text-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">{label}</span>
       {children}
     </label>
   );
@@ -889,7 +889,7 @@ function RawEmailField({ label, onChange, value }: { label: string; onChange: (v
   return (
     <Field label={label}>
       <textarea
-        className="min-h-[72px] w-full rounded-xl border border-[#D8E0EA] bg-white px-3 py-2 text-sm text-[#0F172A]"
+        className="min-h-[72px] w-full rounded-xl border border-phx-line bg-white px-3 py-2 text-sm text-phx-ink"
         onChange={(event) => onChange(event.target.value)}
         placeholder="email@satopharma.com"
         value={value}
@@ -901,7 +901,7 @@ function RawEmailField({ label, onChange, value }: { label: string; onChange: (v
 function PreviewChecklist({ preview }: { preview: PreviewState | null }) {
   return (
     <Card className={cn(adminPanelClassName, "space-y-4 p-5")}>
-      <p className="text-xs font-black uppercase tracking-[0.18em] text-[#C2410C]">Backend checks</p>
+      <p className="text-xs font-black uppercase tracking-[0.18em] text-phx-accent-press">Backend checks</p>
       {preview ? (
         <>
           <div className={cn(adminSoftPanelClassName, "grid gap-3 p-3 md:grid-cols-2")}>
@@ -909,7 +909,7 @@ function PreviewChecklist({ preview }: { preview: PreviewState | null }) {
             <Metric label="External" value={String(preview.recipientPolicy.externalRecipients.length)} />
           </div>
           {preview.warnings.length > 0 ? preview.warnings.map((warning) => (
-            <div className="rounded-xl border border-[#FED7AA] bg-[#FFF7ED] px-3 py-2 text-sm font-semibold text-[#9A3412]" key={warning}>
+            <div className="rounded-xl border border-[#FED7AA] bg-phx-accent-soft px-3 py-2 text-sm font-semibold text-[#9A3412]" key={warning}>
               <AlertTriangle className="mr-1 inline h-3.5 w-3.5" />
               {warning}
             </div>
@@ -919,7 +919,7 @@ function PreviewChecklist({ preview }: { preview: PreviewState | null }) {
           <RecipientBucket label="BCC" recipients={preview.recipients.bcc} />
         </>
       ) : (
-        <p className="text-sm leading-6 text-[#64748B]">
+        <p className="text-sm leading-6 text-phx-ink-soft">
           Run <strong>Preview &amp; Check</strong> to resolve recipients, validate the policy, and render the final email exactly as it will be sent.
         </p>
       )}
@@ -929,9 +929,9 @@ function PreviewChecklist({ preview }: { preview: PreviewState | null }) {
 
 function Metric({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-xl border border-[#E2E8F0] bg-white p-3">
-      <p className="text-xs font-black uppercase tracking-[0.14em] text-[#64748B]">{label}</p>
-      <p className="mt-1 text-lg font-black text-[#0F172A]">{value}</p>
+    <div className="rounded-xl border border-phx-line bg-white p-3">
+      <p className="text-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">{label}</p>
+      <p className="mt-1 text-lg font-black text-phx-ink">{value}</p>
     </div>
   );
 }
@@ -940,7 +940,7 @@ function DeliveryAnalyticsPanel({ analytics }: { analytics: ComposerOptions["ana
   if (!analytics) return null;
   return (
     <details className="group">
-      <summary className="flex cursor-pointer items-center gap-2 text-xs font-black uppercase tracking-[0.14em] text-[#64748B]">
+      <summary className="flex cursor-pointer items-center gap-2 text-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">
         <ChevronDown className="h-4 w-4 transition group-open:rotate-180" />
         Delivery analytics - last 30 days
       </summary>
@@ -953,11 +953,11 @@ function DeliveryAnalyticsPanel({ analytics }: { analytics: ComposerOptions["ana
         </div>
         <div className="mt-4 grid gap-2 lg:grid-cols-4">
           {analytics.recentManualSends.length > 0 ? analytics.recentManualSends.slice(0, 4).map((send, index) => (
-            <div className="rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] p-3" key={`${send.createdAt ?? index}-${send.subject}`}>
-              <p className="truncate text-sm font-black text-[#0F172A]">{send.subject}</p>
-              <p className="mt-1 text-xs font-bold text-[#64748B]">{send.status} - {send.totalRecipients} recipient(s)</p>
+            <div className="rounded-xl border border-phx-line bg-phx-paper p-3" key={`${send.createdAt ?? index}-${send.subject}`}>
+              <p className="truncate text-sm font-black text-phx-ink">{send.subject}</p>
+              <p className="mt-1 text-xs font-bold text-phx-ink-soft">{send.status} - {send.totalRecipients} recipient(s)</p>
             </div>
-          )) : <p className="text-sm font-semibold text-[#64748B]">No manual sends recorded in the last 30 days.</p>}
+          )) : <p className="text-sm font-semibold text-phx-ink-soft">No manual sends recorded in the last 30 days.</p>}
         </div>
       </Card>
     </details>
@@ -967,13 +967,13 @@ function DeliveryAnalyticsPanel({ analytics }: { analytics: ComposerOptions["ana
 function RecipientBucket({ label, recipients }: { label: string; recipients: Array<{ email: string; label: string; source: string }> }) {
   if (recipients.length === 0) return null;
   return (
-    <div className="rounded-xl border border-[#E2E8F0] bg-white p-3">
-      <p className="text-xs font-black uppercase tracking-[0.14em] text-[#64748B]">{label} ({recipients.length})</p>
+    <div className="rounded-xl border border-phx-line bg-white p-3">
+      <p className="text-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">{label} ({recipients.length})</p>
       <div className="mt-2 space-y-2">
         {recipients.map((recipient) => (
-          <div className="rounded-lg bg-[#F8FAFC] px-2.5 py-2" key={`${label}-${recipient.email}`}>
-            <p className="truncate text-sm font-bold text-[#0F172A]">{recipient.email}</p>
-            <p className="truncate text-xs font-semibold text-[#64748B]">{recipient.source}</p>
+          <div className="rounded-lg bg-phx-paper px-2.5 py-2" key={`${label}-${recipient.email}`}>
+            <p className="truncate text-sm font-bold text-phx-ink">{recipient.email}</p>
+            <p className="truncate text-xs font-semibold text-phx-ink-soft">{recipient.source}</p>
           </div>
         ))}
       </div>

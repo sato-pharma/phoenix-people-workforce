@@ -17,18 +17,18 @@ type EditableRule = OutstationPolicyRule;
 
 const MANAGED_ROLE_ORDER = ["District Manager", "National Sales Manager"] as const;
 const panelClassName =
-  "rounded-[28px] border border-[#D8E0EA] bg-white/94 shadow-[0_18px_46px_rgba(15,23,42,0.08)] backdrop-blur";
+  "rounded-[28px] border border-phx-line bg-white/94 shadow-[0_18px_46px_rgba(15,23,42,0.08)] backdrop-blur";
 
 function OutstationPolicyShell({ children }: { children: ReactNode }) {
   return (
-    <div className="relative isolate min-h-[calc(100vh-8rem)] overflow-hidden rounded-[34px] border border-[#D8E0EA] bg-[radial-gradient(circle_at_top_left,rgba(249,115,22,0.16),transparent_32%),linear-gradient(135deg,#FFF9F3_0%,#FFFFFF_44%,#F7FAFC_100%)] p-4 shadow-[0_24px_70px_rgba(15,23,42,0.1)] sm:p-6">
+    <div className="relative isolate min-h-[calc(100vh-8rem)] overflow-hidden rounded-[34px] border border-phx-line bg-[radial-gradient(circle_at_top_left,rgba(249,115,22,0.16),transparent_32%),linear-gradient(135deg,#FFF9F3_0%,#FFFFFF_44%,#F7FAFC_100%)] p-4 shadow-[0_24px_70px_rgba(15,23,42,0.1)] sm:p-6">
       <div
         aria-hidden="true"
-        className="pointer-events-none absolute -right-24 -top-28 h-72 w-72 rounded-full bg-[#F97316]/12 blur-3xl"
+        className="pointer-events-none absolute -right-24 -top-28 h-72 w-72 rounded-full bg-phx-accent/12 blur-3xl"
       />
       <div
         aria-hidden="true"
-        className="pointer-events-none absolute bottom-10 left-1/4 h-64 w-64 rounded-full bg-[#0F172A]/6 blur-3xl"
+        className="pointer-events-none absolute bottom-10 left-1/4 h-64 w-64 rounded-full bg-phx-ink/6 blur-3xl"
       />
       <div className="relative z-10 space-y-6">{children}</div>
     </div>
@@ -148,8 +148,8 @@ export function OutstationPolicyAdmin({
           title="Configure outstation policy rules"
         />
         <AdminCallout tone="neutral">
-          <Settings2 className="mt-0.5 h-5 w-5 text-[#EA580C]" />
-          <p className="font-semibold text-[#334155]">No policy rows were loaded from the data source.</p>
+          <Settings2 className="mt-0.5 h-5 w-5 text-phx-accent-hover" />
+          <p className="font-semibold text-phx-ink-2">No policy rows were loaded from the data source.</p>
         </AdminCallout>
       </OutstationPolicyShell>
     );
@@ -200,18 +200,18 @@ export function OutstationPolicyAdmin({
             <div className="relative overflow-hidden border-b border-[#1F2937] bg-[radial-gradient(circle_at_top_right,rgba(249,115,22,0.24),transparent_34%),linear-gradient(135deg,#080B10_0%,#111827_58%,#24150D_100%)] px-5 py-5 text-white">
               <div
                 aria-hidden="true"
-                className="pointer-events-none absolute -right-16 -top-20 h-44 w-44 rounded-full bg-[#F97316]/20 blur-3xl"
+                className="pointer-events-none absolute -right-16 -top-20 h-44 w-44 rounded-full bg-phx-accent/20 blur-3xl"
               />
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div className="relative z-10 flex min-w-0 items-start gap-3">
-                  <span className="mt-0.5 flex h-10 w-10 items-center justify-center rounded-2xl bg-[#F97316]/16 text-[#FDBA74] ring-1 ring-[#F97316]/30">
+                  <span className="mt-0.5 flex h-10 w-10 items-center justify-center rounded-2xl bg-phx-accent/16 text-phx-accent ring-1 ring-phx-accent/30">
                     <Settings2 className="h-4 w-4" />
                   </span>
                   <div className="min-w-0">
                     <h2 className="truncate text-lg font-black tracking-[-0.02em] text-white">
                       {rule.roleName}
                     </h2>
-                    <p className="mt-1 text-sm leading-6 text-[#CBD5E1]">{policyDescription(rule.roleName)}</p>
+                    <p className="mt-1 text-sm leading-6 text-phx-line-strong">{policyDescription(rule.roleName)}</p>
                   </div>
                 </div>
                 <div className="relative z-10">
@@ -223,7 +223,7 @@ export function OutstationPolicyAdmin({
             <div className="grid gap-4 p-5 sm:grid-cols-2">
               <Field label="Minimum Distance (KM)">
                 <Input
-                  className="h-11 rounded-2xl border-[#DDE6F1] bg-white text-[#0F172A] shadow-sm focus:border-[#FDBA74] focus-visible:outline-none"
+                  className="h-11 rounded-2xl border-[#DDE6F1] bg-white text-phx-ink shadow-sm focus:border-phx-accent-line focus-visible:outline-none"
                   onChange={(event) => updateRule(index, { minimumDistanceKm: Number(event.target.value) })}
                   type="number"
                   value={rule.minimumDistanceKm}
@@ -232,7 +232,7 @@ export function OutstationPolicyAdmin({
 
               <Field label="Fuel Rate Per KM">
                 <Input
-                  className="h-11 rounded-2xl border-[#DDE6F1] bg-white text-[#0F172A] shadow-sm focus:border-[#FDBA74] focus-visible:outline-none"
+                  className="h-11 rounded-2xl border-[#DDE6F1] bg-white text-phx-ink shadow-sm focus:border-phx-accent-line focus-visible:outline-none"
                   onChange={(event) => updateRule(index, { fuelRatePerKm: Number(event.target.value) })}
                   step="0.1"
                   type="number"
@@ -242,7 +242,7 @@ export function OutstationPolicyAdmin({
 
               <Field label="Same Day Allowance">
                 <Input
-                  className="h-11 rounded-2xl border-[#DDE6F1] bg-white text-[#0F172A] shadow-sm focus:border-[#FDBA74] focus-visible:outline-none"
+                  className="h-11 rounded-2xl border-[#DDE6F1] bg-white text-phx-ink shadow-sm focus:border-phx-accent-line focus-visible:outline-none"
                   onChange={(event) => updateRule(index, { sameDayAllowance: Number(event.target.value) })}
                   type="number"
                   value={rule.sameDayAllowance}
@@ -251,7 +251,7 @@ export function OutstationPolicyAdmin({
 
               <Field label="Overnight Allowance">
                 <Input
-                  className="h-11 rounded-2xl border-[#DDE6F1] bg-white text-[#0F172A] shadow-sm focus:border-[#FDBA74] focus-visible:outline-none"
+                  className="h-11 rounded-2xl border-[#DDE6F1] bg-white text-phx-ink shadow-sm focus:border-phx-accent-line focus-visible:outline-none"
                   onChange={(event) => updateRule(index, { overnightAllowance: Number(event.target.value) })}
                   type="number"
                   value={rule.overnightAllowance}
@@ -260,7 +260,7 @@ export function OutstationPolicyAdmin({
 
               <Field label="Return Day Allowance">
                 <Input
-                  className="h-11 rounded-2xl border-[#DDE6F1] bg-white text-[#0F172A] shadow-sm focus:border-[#FDBA74] focus-visible:outline-none"
+                  className="h-11 rounded-2xl border-[#DDE6F1] bg-white text-phx-ink shadow-sm focus:border-phx-accent-line focus-visible:outline-none"
                   onChange={(event) => updateRule(index, { returnDayAllowance: Number(event.target.value) })}
                   type="number"
                   value={rule.returnDayAllowance}
@@ -269,7 +269,7 @@ export function OutstationPolicyAdmin({
 
               <Field label="GPS Accuracy Threshold (m)">
                 <Input
-                  className="h-11 rounded-2xl border-[#DDE6F1] bg-white text-[#0F172A] shadow-sm focus:border-[#FDBA74] focus-visible:outline-none"
+                  className="h-11 rounded-2xl border-[#DDE6F1] bg-white text-phx-ink shadow-sm focus:border-phx-accent-line focus-visible:outline-none"
                   onChange={(event) =>
                     updateRule(index, { gpsAccuracyThresholdMeters: Number(event.target.value) })
                   }
@@ -280,7 +280,7 @@ export function OutstationPolicyAdmin({
 
               <Field label="Max Offline Delay (hours)">
                 <Input
-                  className="h-11 rounded-2xl border-[#DDE6F1] bg-white text-[#0F172A] shadow-sm focus:border-[#FDBA74] focus-visible:outline-none"
+                  className="h-11 rounded-2xl border-[#DDE6F1] bg-white text-phx-ink shadow-sm focus:border-phx-accent-line focus-visible:outline-none"
                   onChange={(event) => updateRule(index, { maxOfflineSyncDelayHours: Number(event.target.value) })}
                   type="number"
                   value={rule.maxOfflineSyncDelayHours}
@@ -288,26 +288,26 @@ export function OutstationPolicyAdmin({
               </Field>
 
               <Field label="Ticket attachment">
-                <label className="flex h-11 items-center gap-3 rounded-2xl border border-[#DDE6F1] bg-[#F8FAFC]/85 px-3 text-sm shadow-sm">
+                <label className="flex h-11 items-center gap-3 rounded-2xl border border-[#DDE6F1] bg-phx-paper/85 px-3 text-sm shadow-sm">
                   <input
                     checked={rule.requiresTicketAttachment}
                     className="h-4 w-4"
                     onChange={(event) => updateRule(index, { requiresTicketAttachment: event.target.checked })}
                     type="checkbox"
                   />
-                  <span className="font-semibold text-[#0F172A]">Require ticket attachment</span>
+                  <span className="font-semibold text-phx-ink">Require ticket attachment</span>
                 </label>
               </Field>
 
               <Field label="Rule status">
-                <label className="flex h-11 items-center gap-3 rounded-2xl border border-[#DDE6F1] bg-[#F8FAFC]/85 px-3 text-sm shadow-sm">
+                <label className="flex h-11 items-center gap-3 rounded-2xl border border-[#DDE6F1] bg-phx-paper/85 px-3 text-sm shadow-sm">
                   <input
                     checked={rule.active}
                     className="h-4 w-4"
                     onChange={(event) => updateRule(index, { active: event.target.checked })}
                     type="checkbox"
                   />
-                  <span className="font-semibold text-[#0F172A]">Apply this rule</span>
+                  <span className="font-semibold text-phx-ink">Apply this rule</span>
                 </label>
               </Field>
             </div>
@@ -319,13 +319,13 @@ export function OutstationPolicyAdmin({
         <Card className={`${panelClassName} p-5`}>
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <p className="text-xs font-black uppercase tracking-[0.16em] text-[#EA580C]">Save policy</p>
-              <h3 className="mt-1 text-lg font-black tracking-[-0.03em] text-[#0F172A]">Publish updates</h3>
-              <p className="mt-1 text-sm text-[#64748B]">Persist edits so new rules are used for eligibility and allowance calculations.</p>
+              <p className="text-xs font-black uppercase tracking-[0.16em] text-phx-accent-hover">Save policy</p>
+              <h3 className="mt-1 text-lg font-black tracking-[-0.03em] text-phx-ink">Publish updates</h3>
+              <p className="mt-1 text-sm text-phx-ink-soft">Persist edits so new rules are used for eligibility and allowance calculations.</p>
             </div>
             <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
               <Button
-                className="rounded-2xl bg-[#F97316] px-4 py-2.5 font-semibold text-white shadow-[0_14px_30px_rgba(249,115,22,0.22)] hover:bg-[#EA580C]"
+                className="rounded-2xl bg-phx-accent px-4 py-2.5 font-semibold text-white shadow-[0_14px_30px_rgba(249,115,22,0.22)] hover:bg-phx-accent-hover"
                 disabled={saving}
                 onClick={savePolicies}
                 type="button"
@@ -333,7 +333,7 @@ export function OutstationPolicyAdmin({
                 <Save className="h-4 w-4" />
                 {saving ? "Saving..." : "Save Policy"}
               </Button>
-              {message ? <span className="text-sm font-semibold text-[#334155]">{message}</span> : null}
+              {message ? <span className="text-sm font-semibold text-phx-ink-2">{message}</span> : null}
             </div>
           </div>
         </Card>
@@ -354,9 +354,9 @@ function MetricBlock({
 }) {
   return (
     <Card className={`${panelClassName} p-4 transition-transform duration-200 hover:-translate-y-0.5`}>
-      <p className="text-[11px] font-black uppercase tracking-[0.16em] text-[#64748B]">{label}</p>
-      <p className="mt-2 truncate text-2xl font-black text-[#0F172A]">{value}</p>
-      <p className="mt-2 text-xs text-[#64748B]">{description}</p>
+      <p className="text-[11px] font-black uppercase tracking-[0.16em] text-phx-ink-soft">{label}</p>
+      <p className="mt-2 truncate text-2xl font-black text-phx-ink">{value}</p>
+      <p className="mt-2 text-xs text-phx-ink-soft">{description}</p>
     </Card>
   );
 }
@@ -370,7 +370,7 @@ function Field({
 }) {
   return (
     <label className="block">
-      <span className="mb-1 block text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">{label}</span>
+      <span className="mb-1 block text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-soft">{label}</span>
       {children}
     </label>
   );

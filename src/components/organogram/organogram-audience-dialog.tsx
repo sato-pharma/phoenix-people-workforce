@@ -87,10 +87,10 @@ function FacetChip({
     <button
       aria-pressed={active}
       className={cn(
-        "inline-flex h-7 shrink-0 items-center gap-1 whitespace-nowrap border px-2.5 text-[11px] font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F97316]/40",
+        "inline-flex h-7 shrink-0 items-center gap-1 whitespace-nowrap border px-2.5 text-[11px] font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-phx-accent/40",
         active
-          ? "border-[#F97316] bg-[#FFF7ED] text-[#C2410C]"
-          : "border-[#D8E0EA] bg-white text-slate-600 hover:border-[#FDBA74] hover:text-[#F97316]",
+          ? "border-phx-accent bg-phx-accent-soft text-phx-accent-press"
+          : "border-phx-line bg-white text-slate-600 hover:border-phx-accent-line hover:text-phx-accent",
       )}
       onClick={onToggle}
       type="button"
@@ -198,12 +198,12 @@ export function OrganogramAudienceDialog({ onClose, rows, scopeLabel }: Props) {
       <div
         aria-label={`Select people — ${scopeLabel}`}
         aria-modal="true"
-        className="flex max-h-[90vh] w-full max-w-6xl flex-col overflow-hidden rounded-lg border border-[#D8E0EA] bg-white shadow-[0_28px_90px_rgba(15,23,42,0.3)]"
+        className="flex max-h-[90vh] w-full max-w-6xl flex-col overflow-hidden rounded-lg border border-phx-line bg-white shadow-[0_28px_90px_rgba(15,23,42,0.3)]"
         ref={dialogRef}
         role="dialog"
       >
         {/* Header */}
-        <div className="flex items-start justify-between gap-4 border-b border-[#E2E8F0] bg-gradient-to-br from-slate-800 to-slate-950 px-5 py-4 text-white">
+        <div className="flex items-start justify-between gap-4 border-b border-phx-line bg-gradient-to-br from-slate-800 to-slate-950 px-5 py-4 text-white">
           <div className="flex min-w-0 items-center gap-3">
             <span
               aria-hidden
@@ -230,7 +230,7 @@ export function OrganogramAudienceDialog({ onClose, rows, scopeLabel }: Props) {
 
         {/* Filters — one horizontally scrolling chip row per facet, so a long area list
             never wraps into a wall and never truncates a name. */}
-        <div className="space-y-2 border-b border-[#E2E8F0] bg-slate-50/70 px-5 py-3">
+        <div className="space-y-2 border-b border-phx-line bg-slate-50/70 px-5 py-3">
           {ORGANOGRAM_AUDIENCE_FACETS.map((facet) => {
             const values = options[facet];
             if (values.length === 0) return null;
@@ -256,7 +256,7 @@ export function OrganogramAudienceDialog({ onClose, rows, scopeLabel }: Props) {
           <div className="flex flex-wrap items-center gap-2 pt-1">
             <input
               aria-label="Search people"
-              className="h-8 min-w-0 flex-1 border border-[#D8E0EA] bg-white px-2.5 text-xs font-medium text-slate-800 placeholder:text-slate-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F97316]/40"
+              className="h-8 min-w-0 flex-1 border border-phx-line bg-white px-2.5 text-xs font-medium text-slate-800 placeholder:text-slate-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-phx-accent/40"
               onChange={(event) =>
                 setFilters((previous) => ({ ...previous, search: event.target.value }))
               }
@@ -264,10 +264,10 @@ export function OrganogramAudienceDialog({ onClose, rows, scopeLabel }: Props) {
               type="search"
               value={filters.search}
             />
-            <label className="inline-flex h-8 shrink-0 cursor-pointer items-center gap-1.5 whitespace-nowrap border border-[#D8E0EA] bg-white px-2.5 text-[11px] font-bold text-slate-600">
+            <label className="inline-flex h-8 shrink-0 cursor-pointer items-center gap-1.5 whitespace-nowrap border border-phx-line bg-white px-2.5 text-[11px] font-bold text-slate-600">
               <input
                 checked={filters.includeOpenSeats}
-                className="h-3.5 w-3.5 accent-[#F97316]"
+                className="h-3.5 w-3.5 accent-phx-accent"
                 onChange={(event) =>
                   setFilters((previous) => ({
                     ...previous,
@@ -279,14 +279,14 @@ export function OrganogramAudienceDialog({ onClose, rows, scopeLabel }: Props) {
               Include open seats
             </label>
             <button
-              className="inline-flex h-8 shrink-0 items-center whitespace-nowrap border border-[#D8E0EA] bg-white px-2.5 text-[11px] font-bold text-slate-600 transition hover:border-[#FDBA74] hover:text-[#F97316]"
+              className="inline-flex h-8 shrink-0 items-center whitespace-nowrap border border-phx-line bg-white px-2.5 text-[11px] font-bold text-slate-600 transition hover:border-phx-accent-line hover:text-phx-accent"
               onClick={selectAllFiltered}
               type="button"
             >
               Tick all {filtered.length}
             </button>
             <button
-              className="inline-flex h-8 shrink-0 items-center whitespace-nowrap border border-[#D8E0EA] bg-white px-2.5 text-[11px] font-bold text-slate-600 transition hover:border-[#FDBA74] hover:text-[#F97316]"
+              className="inline-flex h-8 shrink-0 items-center whitespace-nowrap border border-phx-line bg-white px-2.5 text-[11px] font-bold text-slate-600 transition hover:border-phx-accent-line hover:text-phx-accent"
               onClick={clearAll}
               type="button"
             >
@@ -306,7 +306,7 @@ export function OrganogramAudienceDialog({ onClose, rows, scopeLabel }: Props) {
               {/* Desktop */}
               <table className="hidden w-full border-collapse text-left md:table">
                 <thead className="sticky top-0 z-10 bg-white">
-                  <tr className="border-b border-[#E2E8F0]">
+                  <tr className="border-b border-phx-line">
                     {["", "Name", "Role", "Area", "Work Email"].map((label, index) => (
                       <th
                         className="whitespace-nowrap px-3 py-2 text-[10px] font-black uppercase tracking-[0.12em] text-slate-400"
@@ -326,8 +326,8 @@ export function OrganogramAudienceDialog({ onClose, rows, scopeLabel }: Props) {
                     return (
                       <tr
                         className={cn(
-                          "border-b border-slate-100 transition hover:bg-[#FFF7ED]",
-                          selectedKeys.has(key) ? "bg-[#FFF7ED]" : "",
+                          "border-b border-slate-100 transition hover:bg-phx-accent-soft",
+                          selectedKeys.has(key) ? "bg-phx-accent-soft" : "",
                         )}
                         key={key}
                       >
@@ -335,7 +335,7 @@ export function OrganogramAudienceDialog({ onClose, rows, scopeLabel }: Props) {
                           <input
                             aria-label={`Select ${organogramAudienceName(row)}`}
                             checked={selectedKeys.has(key)}
-                            className="h-3.5 w-3.5 accent-[#F97316]"
+                            className="h-3.5 w-3.5 accent-phx-accent"
                             onChange={() => toggleRow(key)}
                             type="checkbox"
                           />
@@ -375,12 +375,12 @@ export function OrganogramAudienceDialog({ onClose, rows, scopeLabel }: Props) {
                       <label
                         className={cn(
                           "flex cursor-pointer items-start gap-3 px-4 py-3",
-                          selectedKeys.has(key) ? "bg-[#FFF7ED]" : "",
+                          selectedKeys.has(key) ? "bg-phx-accent-soft" : "",
                         )}
                       >
                         <input
                           checked={selectedKeys.has(key)}
-                          className="mt-0.5 h-4 w-4 shrink-0 accent-[#F97316]"
+                          className="mt-0.5 h-4 w-4 shrink-0 accent-phx-accent"
                           onChange={() => toggleRow(key)}
                           type="checkbox"
                         />
@@ -415,7 +415,7 @@ export function OrganogramAudienceDialog({ onClose, rows, scopeLabel }: Props) {
         </div>
 
         {/* Actions */}
-        <div className="space-y-2 border-t border-[#E2E8F0] bg-slate-50/70 px-5 py-3">
+        <div className="space-y-2 border-t border-phx-line bg-slate-50/70 px-5 py-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <p className="whitespace-nowrap text-[11px] font-bold text-slate-500">
               {usingTicks
@@ -434,10 +434,10 @@ export function OrganogramAudienceDialog({ onClose, rows, scopeLabel }: Props) {
               />
               <button
                 className={cn(
-                  "inline-flex h-9 items-center gap-2 whitespace-nowrap border px-3 text-xs font-bold shadow-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F97316]/40 disabled:opacity-50",
+                  "inline-flex h-9 items-center gap-2 whitespace-nowrap border px-3 text-xs font-bold shadow-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-phx-accent/40 disabled:opacity-50",
                   copySucceeded
                     ? "border-emerald-500 bg-emerald-50 text-emerald-700"
-                    : "border-[#F97316] bg-[#F97316] text-white hover:bg-[#EA580C]",
+                    : "border-phx-accent bg-phx-accent text-white hover:bg-phx-accent-hover",
                 )}
                 disabled={emails.length === 0 || copying}
                 onClick={handleCopy}

@@ -29,8 +29,8 @@ const KIND_ICON: Record<ReferenceGapKind, LucideIcon> = {
   distributor: Truck,
 };
 
-const tableHeaderClassName = "px-4 py-3 text-xs font-black uppercase tracking-[0.14em] text-[#64748B]";
-const cellClassName = "px-4 py-2.5 align-top text-[#475569]";
+const tableHeaderClassName = "px-4 py-3 text-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft";
+const cellClassName = "px-4 py-2.5 align-top text-phx-ink-2";
 
 function joinCapped(values: string[], cap = 6): string {
   if (values.length === 0) return "—";
@@ -73,10 +73,10 @@ function MonthlyMissing({ data, loadError }: { data: SalesReferenceGaps | null; 
                   <th className={tableHeaderClassName}>Distributors</th>
                   <th className={tableHeaderClassName}>Periods</th>
                 </tr></thead>
-                <tbody className="divide-y divide-[#E2E8F0]">
+                <tbody className="divide-y divide-phx-line">
                   {group.gaps.map((gap) => (
                     <tr key={gap.code}>
-                      <td className="px-4 py-2.5 font-semibold text-[#0F172A]">{gap.code}</td>
+                      <td className="px-4 py-2.5 font-semibold text-phx-ink">{gap.code}</td>
                       <td className={`${cellClassName} text-right tabular-nums`}>{formatNumber(gap.affectedRows)}</td>
                       <td className={cellClassName}>{joinCapped(gap.distributors)}</td>
                       <td className={cellClassName}>{joinCapped(gap.periods)}</td>

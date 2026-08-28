@@ -281,7 +281,7 @@ function SfeDepartmentBanner() {
         <h2 className="bg-[linear-gradient(180deg,#FFFFFF_0%,#FFE7CF_60%,#F8B56B_100%)] bg-clip-text text-sm font-black uppercase tracking-[0.14em] text-transparent">
           SFE Department
         </h2>
-        <span aria-hidden="true" className="h-1 w-1 rotate-45 bg-[#F97316]" />
+        <span aria-hidden="true" className="h-1 w-1 rotate-45 bg-phx-accent" />
         <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#F8B56B]">
           Where Your Achievement Belongs
         </p>

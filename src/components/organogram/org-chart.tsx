@@ -1054,10 +1054,10 @@ export function OrgChartTree({
       {/* Whole-tree controls + structure export */}
       {hasContent ? (
         <div className="flex flex-wrap items-center justify-end gap-2 print:hidden">
-          <div className="inline-flex h-9 items-center gap-0.5 border border-[#D8E0EA] bg-white px-1 text-[#0F172A] shadow-sm">
+          <div className="inline-flex h-9 items-center gap-0.5 border border-phx-line bg-white px-1 text-phx-ink shadow-sm">
             <button
               aria-label="Zoom out"
-              className="inline-flex h-7 w-7 items-center justify-center text-slate-500 transition hover:text-[#F97316] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F97316]/40 disabled:cursor-not-allowed disabled:opacity-30"
+              className="inline-flex h-7 w-7 items-center justify-center text-slate-500 transition hover:text-phx-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-phx-accent/40 disabled:cursor-not-allowed disabled:opacity-30"
               disabled={zoom <= MIN_ZOOM}
               onClick={zoomOut}
               type="button"
@@ -1066,7 +1066,7 @@ export function OrgChartTree({
             </button>
             <button
               aria-label="Reset zoom to 100%"
-              className="min-w-[3.5rem] px-1 text-center text-xs font-bold tabular-nums text-slate-500 transition hover:text-[#F97316] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F97316]/40"
+              className="min-w-[3.5rem] px-1 text-center text-xs font-bold tabular-nums text-slate-500 transition hover:text-phx-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-phx-accent/40"
               onClick={resetZoom}
               type="button"
             >
@@ -1074,7 +1074,7 @@ export function OrgChartTree({
             </button>
             <button
               aria-label="Zoom in"
-              className="inline-flex h-7 w-7 items-center justify-center text-slate-500 transition hover:text-[#F97316] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F97316]/40 disabled:cursor-not-allowed disabled:opacity-30"
+              className="inline-flex h-7 w-7 items-center justify-center text-slate-500 transition hover:text-phx-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-phx-accent/40 disabled:cursor-not-allowed disabled:opacity-30"
               disabled={zoom >= MAX_ZOOM}
               onClick={zoomIn}
               type="button"
@@ -1083,21 +1083,21 @@ export function OrgChartTree({
             </button>
           </div>
           <button
-            className="inline-flex h-9 items-center gap-1 border border-[#D8E0EA] bg-white px-3 text-xs font-bold text-[#0F172A] shadow-sm transition hover:border-[#FDBA74] hover:text-[#F97316] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F97316]/40"
+            className="inline-flex h-9 items-center gap-1 border border-phx-line bg-white px-3 text-xs font-bold text-phx-ink shadow-sm transition hover:border-phx-accent-line hover:text-phx-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-phx-accent/40"
             onClick={() => setCollapsedKeys(new Set())}
             type="button"
           >
             Expand all
           </button>
           <button
-            className="inline-flex h-9 items-center gap-1 border border-[#D8E0EA] bg-white px-3 text-xs font-bold text-[#0F172A] shadow-sm transition hover:border-[#FDBA74] hover:text-[#F97316] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F97316]/40"
+            className="inline-flex h-9 items-center gap-1 border border-phx-line bg-white px-3 text-xs font-bold text-phx-ink shadow-sm transition hover:border-phx-accent-line hover:text-phx-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-phx-accent/40"
             onClick={() => setCollapsedKeys(new Set(collapsibleLaneKeys))}
             type="button"
           >
             Collapse all
           </button>
           <button
-            className="inline-flex h-9 items-center gap-1.5 border border-[#D8E0EA] bg-white px-3 text-xs font-bold text-[#0F172A] shadow-sm transition hover:border-[#FDBA74] hover:text-[#F97316] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F97316]/40"
+            className="inline-flex h-9 items-center gap-1.5 border border-phx-line bg-white px-3 text-xs font-bold text-phx-ink shadow-sm transition hover:border-phx-accent-line hover:text-phx-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-phx-accent/40"
             onClick={handlePrint}
             type="button"
           >
@@ -1105,7 +1105,7 @@ export function OrgChartTree({
             Print
           </button>
           <button
-            className="inline-flex h-9 items-center gap-1.5 border border-[#D8E0EA] bg-white px-3 text-xs font-bold text-[#0F172A] shadow-sm transition hover:border-[#FDBA74] hover:text-[#F97316] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F97316]/40 disabled:opacity-50"
+            className="inline-flex h-9 items-center gap-1.5 border border-phx-line bg-white px-3 text-xs font-bold text-phx-ink shadow-sm transition hover:border-phx-accent-line hover:text-phx-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-phx-accent/40 disabled:opacity-50"
             disabled={isExportingPng}
             onClick={handleExportPng}
             type="button"
@@ -1126,7 +1126,7 @@ export function OrgChartTree({
             title={`Organogram — ${resolvedLineName}`}
           />
           <button
-            className="inline-flex h-9 items-center gap-1.5 whitespace-nowrap border border-[#F97316] bg-[#F97316] px-3 text-xs font-bold text-white shadow-sm transition hover:bg-[#EA580C] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F97316]/40"
+            className="inline-flex h-9 items-center gap-1.5 whitespace-nowrap border border-phx-accent bg-phx-accent px-3 text-xs font-bold text-white shadow-sm transition hover:bg-phx-accent-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-phx-accent/40"
             onClick={() => setAudienceOpen(true)}
             type="button"
           >

@@ -568,7 +568,7 @@ function EmployeePortalMenu({
                   key={item.label}
                   className={`group flex items-center gap-3 rounded px-4 py-2.5 ${
                     isMobile ? "text-[13px] font-semibold duration-200" : "text-[12px] font-bold duration-150"
-                  } transition ${pending ? "bg-[#FFF7ED] text-[#EA580C] ring-1 ring-orange-200/80" : navItemClass(active)}`}
+                  } transition ${pending ? "bg-phx-accent-soft text-phx-accent-hover ring-1 ring-orange-200/80" : navItemClass(active)}`}
                   href={item.href}
                   onClick={(event) => handleNavigate(event, item.href)}
                   prefetch
@@ -576,7 +576,7 @@ function EmployeePortalMenu({
                   <item.icon
                     className={`${
                       isMobile ? "h-4 w-4" : "h-[15px] w-[15px] stroke-[2.1]"
-                    } shrink-0 transition ${pending ? "text-[#EA580C]" : navIconClass(active)}`}
+                    } shrink-0 transition ${pending ? "text-phx-accent-hover" : navIconClass(active)}`}
                   />
                   <span>{item.label}</span>
                   {item.navBadge === "approvals-hub-pending" ? <NavBadge src="/api/approvals-hub/pending-count" /> : null}

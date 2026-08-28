@@ -222,15 +222,15 @@ function FilterSelect({
   onChange: (next: string) => void;
 }) {
   return (
-    <label className="flex h-[58px] cursor-pointer flex-col justify-center rounded-[6px] border border-[#E2E8F0] bg-white px-3 py-2 shadow-sm transition focus-within:border-[#FDBA74] hover:border-[#FDBA74]">
-      <span className="mb-1 flex items-center gap-1.5 text-[10px] font-black uppercase tracking-[0.14em] text-[#94A3B8]">
+    <label className="flex h-[58px] cursor-pointer flex-col justify-center rounded-[6px] border border-phx-line bg-white px-3 py-2 shadow-sm transition focus-within:border-phx-accent-line hover:border-phx-accent-line">
+      <span className="mb-1 flex items-center gap-1.5 text-[10px] font-black uppercase tracking-[0.14em] text-phx-ink-faint">
         {icon}
         {label}
       </span>
       <select
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className="w-full truncate bg-transparent text-sm font-black text-[#0F172A] outline-none"
+        className="w-full truncate bg-transparent text-sm font-black text-phx-ink outline-none"
       >
         <option value="">All</option>
         {options.map((option) => (
@@ -525,7 +525,7 @@ export function MonthlySalesDashboard({
             type="button"
             onClick={() => void handleExport()}
             disabled={downloading || loading || !hasData}
-            className="inline-flex items-center gap-1.5 rounded-[6px] border border-[#F97316] bg-[#F97316] px-3.5 py-2 text-sm font-black text-white shadow-sm transition-opacity hover:opacity-90 disabled:opacity-50"
+            className="inline-flex items-center gap-1.5 rounded-[6px] border border-phx-accent bg-phx-accent px-3.5 py-2 text-sm font-black text-white shadow-sm transition-opacity hover:opacity-90 disabled:opacity-50"
             title="Download a detailed multi-sheet Excel workbook with the current filters applied"
           >
             {downloading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}

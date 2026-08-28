@@ -142,9 +142,9 @@ export function WeeklySalesByDistributorDashboard({
   return (
     <div className="p-6 max-w-7xl mx-auto space-y-5">
       <div className="flex items-center gap-3 border-b border-border pb-5">
-        <div className="w-1 h-12 bg-[#F97316] shrink-0" />
+        <div className="w-1 h-12 bg-phx-accent shrink-0" />
         <div>
-          <p className="text-[10px] font-bold uppercase tracking-widest text-[#F97316] mb-0.5">Weekly</p>
+          <p className="text-[10px] font-bold uppercase tracking-widest text-phx-accent mb-0.5">Weekly</p>
           <h1 className="text-2xl font-bold text-foreground leading-tight">Weekly — By Distributor</h1>
           <p className="text-xs text-muted-foreground mt-0.5">
             Aggregated sell-out and stock position ranked by distributor performance.

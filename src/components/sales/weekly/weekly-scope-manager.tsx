@@ -56,8 +56,8 @@ export function WeeklyScopeManager({
   return (
     <div className="space-y-5 p-4 sm:p-6">
       <header>
-        <h1 className="text-xl font-black text-[#0F172A]">Weekly Sales — Product Access</h1>
-        <p className="mt-1 text-sm font-medium text-[#64748B]">
+        <h1 className="text-xl font-black text-phx-ink">Weekly Sales — Product Access</h1>
+        <p className="mt-1 text-sm font-medium text-phx-ink-soft">
           Choose which products each Product / Group Product / Marketing Manager can see in the weekly
           dashboard. They see only their assigned products; sales-field roles stay scoped by region/line.
         </p>
@@ -71,10 +71,10 @@ export function WeeklyScopeManager({
       )}
 
       {/* Add a person who has no scope yet */}
-      <div className="flex flex-wrap items-center gap-2 border border-[#E2E8F0] bg-white p-3">
-        <span className="text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">Add product owner</span>
+      <div className="flex flex-wrap items-center gap-2 border border-phx-line bg-white p-3">
+        <span className="text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-soft">Add product owner</span>
         <SearchableSelect
-          className="h-9 min-w-[16rem] border border-[#E2E8F0] bg-white px-2 text-sm font-bold text-[#0F172A] outline-none focus:border-[#FDBA74]"
+          className="h-9 min-w-[16rem] border border-phx-line bg-white px-2 text-sm font-bold text-phx-ink outline-none focus:border-phx-accent-line"
           disabled={busy}
           value=""
           onChange={(event) => {
@@ -92,9 +92,9 @@ export function WeeklyScopeManager({
       </div>
 
       {/* Current assignments */}
-      <div className="overflow-x-auto border border-[#E2E8F0] bg-white">
+      <div className="overflow-x-auto border border-phx-line bg-white">
         <table className="w-full text-sm">
-          <thead className="bg-[#F8FAFC] text-left text-[11px] font-black uppercase tracking-wide text-[#64748B]">
+          <thead className="bg-phx-paper text-left text-[11px] font-black uppercase tracking-wide text-phx-ink-soft">
             <tr>
               <th className="px-3 py-2">Person</th>
               <th className="px-3 py-2">Role</th>
@@ -105,7 +105,7 @@ export function WeeklyScopeManager({
           <tbody>
             {data.assignments.length === 0 && (
               <tr>
-                <td className="px-3 py-4 text-center text-[#94A3B8]" colSpan={4}>
+                <td className="px-3 py-4 text-center text-phx-ink-faint" colSpan={4}>
                   No product owners assigned yet.
                 </td>
               </tr>
@@ -153,17 +153,17 @@ function AssignmentRow({
 }) {
   const nameByCode = useMemo(() => new Map(products.map((p) => [p.code, p.name])), [products]);
   return (
-    <tr className="border-t border-[#F1F5F9] align-top">
+    <tr className="border-t border-phx-paper-2 align-top">
       <td className="px-3 py-2">
-        <div className="font-bold text-[#0F172A]">{assignment.name}</div>
-        <div className="text-[11px] font-medium text-[#94A3B8]">{assignment.hrId}</div>
+        <div className="font-bold text-phx-ink">{assignment.name}</div>
+        <div className="text-[11px] font-medium text-phx-ink-faint">{assignment.hrId}</div>
       </td>
-      <td className="px-3 py-2 text-[#334155]">{assignment.role}</td>
+      <td className="px-3 py-2 text-phx-ink-2">{assignment.role}</td>
       <td className="px-3 py-2">
         <div className="flex flex-wrap gap-1">
-          {assignment.productCodes.length === 0 && <span className="text-[#94A3B8]">— none —</span>}
+          {assignment.productCodes.length === 0 && <span className="text-phx-ink-faint">— none —</span>}
           {assignment.productCodes.map((code) => (
-            <span key={code} className="inline-flex items-center bg-[#F1F5F9] px-2 py-0.5 text-[11px] font-bold text-[#334155]">
+            <span key={code} className="inline-flex items-center bg-phx-paper-2 px-2 py-0.5 text-[11px] font-bold text-phx-ink-2">
               {nameByCode.get(code) ?? code}
             </span>
           ))}
@@ -171,7 +171,7 @@ function AssignmentRow({
       </td>
       <td className="px-3 py-2 text-right">
         <button
-          className="inline-flex items-center gap-1 border border-[#E2E8F0] px-2 py-1 text-xs font-bold text-[#334155] transition hover:border-[#FDBA74]"
+          className="inline-flex items-center gap-1 border border-phx-line px-2 py-1 text-xs font-bold text-phx-ink-2 transition hover:border-phx-accent-line"
           onClick={onEdit}
           type="button"
         >
@@ -218,27 +218,27 @@ function EditDrawer({
         className="flex h-full w-full max-w-md flex-col bg-white shadow-xl"
         onMouseDown={(event) => event.stopPropagation()}
       >
-        <div className="flex items-center justify-between border-b border-[#E2E8F0] px-4 py-3">
+        <div className="flex items-center justify-between border-b border-phx-line px-4 py-3">
           <div>
-            <div className="text-sm font-black text-[#0F172A]">{person.name}</div>
-            <div className="text-[11px] font-medium text-[#94A3B8]">{person.role} · {person.hrId}</div>
+            <div className="text-sm font-black text-phx-ink">{person.name}</div>
+            <div className="text-[11px] font-medium text-phx-ink-faint">{person.role} · {person.hrId}</div>
           </div>
-          <button className="text-[#94A3B8] transition hover:text-[#0F172A]" onClick={onClose} type="button">
+          <button className="text-phx-ink-faint transition hover:text-phx-ink" onClick={onClose} type="button">
             <X className="h-5 w-5" />
           </button>
         </div>
 
-        <div className="border-b border-[#E2E8F0] p-3">
-          <div className="flex items-center gap-2 border border-[#E2E8F0] px-2">
-            <Search className="h-4 w-4 text-[#94A3B8]" />
+        <div className="border-b border-phx-line p-3">
+          <div className="flex items-center gap-2 border border-phx-line px-2">
+            <Search className="h-4 w-4 text-phx-ink-faint" />
             <input
-              className="h-9 w-full text-sm text-[#0F172A] outline-none"
+              className="h-9 w-full text-sm text-phx-ink outline-none"
               onChange={(event) => setQuery(event.target.value)}
               placeholder="Search products…"
               value={query}
             />
           </div>
-          <div className="mt-2 flex items-center justify-between text-[11px] font-bold text-[#64748B]">
+          <div className="mt-2 flex items-center justify-between text-[11px] font-bold text-phx-ink-soft">
             <span>{selected.size} selected</span>
             <div className="flex gap-2">
               <button className="underline" onClick={() => setSelected(new Set(products.map((p) => p.code)))} type="button">
@@ -256,24 +256,24 @@ function EditDrawer({
             const checked = selected.has(product.code);
             return (
               <button
-                className={`flex w-full items-center gap-2 px-2 py-1.5 text-left text-sm ${checked ? "bg-[#FFF7ED]" : "hover:bg-[#F8FAFC]"}`}
+                className={`flex w-full items-center gap-2 px-2 py-1.5 text-left text-sm ${checked ? "bg-phx-accent-soft" : "hover:bg-phx-paper"}`}
                 key={product.code}
                 onClick={() => toggle(product.code)}
                 type="button"
               >
-                <span className={`flex h-4 w-4 items-center justify-center border ${checked ? "border-[#F97316] bg-[#F97316] text-white" : "border-[#CBD5E1]"}`}>
+                <span className={`flex h-4 w-4 items-center justify-center border ${checked ? "border-phx-accent bg-phx-accent text-white" : "border-phx-line-strong"}`}>
                   {checked && <Check className="h-3 w-3" />}
                 </span>
-                <span className="font-semibold text-[#0F172A]">{product.name}</span>
-                <span className="ml-auto text-[11px] font-medium text-[#94A3B8]">{product.code}</span>
+                <span className="font-semibold text-phx-ink">{product.name}</span>
+                <span className="ml-auto text-[11px] font-medium text-phx-ink-faint">{product.code}</span>
               </button>
             );
           })}
         </div>
 
-        <div className="flex items-center gap-2 border-t border-[#E2E8F0] p-3">
+        <div className="flex items-center gap-2 border-t border-phx-line p-3">
           <button
-            className="inline-flex h-10 items-center gap-2 bg-[#F97316] px-4 text-sm font-black text-white transition hover:bg-[#EA6A0C] disabled:opacity-60"
+            className="inline-flex h-10 items-center gap-2 bg-phx-accent px-4 text-sm font-black text-white transition hover:bg-[#EA6A0C] disabled:opacity-60"
             disabled={busy}
             onClick={() => onSave([...selected])}
             type="button"
@@ -281,7 +281,7 @@ function EditDrawer({
             {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
             Save access
           </button>
-          <button className="h-10 px-3 text-sm font-bold text-[#64748B]" onClick={onClose} type="button">
+          <button className="h-10 px-3 text-sm font-bold text-phx-ink-soft" onClick={onClose} type="button">
             Cancel
           </button>
         </div>

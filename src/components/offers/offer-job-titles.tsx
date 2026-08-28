@@ -183,11 +183,11 @@ export function OfferJobTitleCatalogue({
           <table className="w-full min-w-[900px] text-sm">
             <thead>
               <tr className="border-b border-slate-200/80 bg-slate-50/60 text-left">
-                <th className="px-5 py-3 text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">Title</th>
-                <th className="px-5 py-3 text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">Reports to</th>
-                <th className="px-5 py-3 text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">Contract</th>
-                <th className="px-5 py-3 text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">Letter design</th>
-                <th className="px-5 py-3 text-right text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">
+                <th className="px-5 py-3 text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-soft">Title</th>
+                <th className="px-5 py-3 text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-soft">Reports to</th>
+                <th className="px-5 py-3 text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-soft">Contract</th>
+                <th className="px-5 py-3 text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-soft">Letter design</th>
+                <th className="px-5 py-3 text-right text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-soft">
                   Cost of living (EGP)
                 </th>
                 <th className="px-5 py-3" />
@@ -265,7 +265,7 @@ export function OfferJobTitleCatalogue({
 
         <div className="flex flex-col gap-3 px-5 py-5 md:hidden">
           {jobTitles.map((row) => (
-            <div className="rounded-2xl border border-[#D8E0EA] bg-white p-4 shadow-sm" key={row.id}>
+            <div className="rounded-2xl border border-phx-line bg-white p-4 shadow-sm" key={row.id}>
               <p className="text-sm font-black text-slate-900">{row.title}</p>
               <p className="mt-1 text-xs text-slate-500">
                 Reports to {row.reportsTo || "—"} · {row.contractTerm || "—"}

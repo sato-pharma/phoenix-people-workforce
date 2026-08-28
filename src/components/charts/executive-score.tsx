@@ -32,16 +32,16 @@ function ScoreRing({ score }: { score: number }) {
     <PremiumTooltip
       content={
         <div className="space-y-1">
-          <p className="text-xs font-bold text-[#0F172A]">Executive Health Score</p>
-          <p className="text-[11px] text-[#64748B]">{pct.toFixed(0)} out of 100</p>
-          <p className="text-[11px] font-bold text-[#F97316]">{pct >= 80 ? "Excellent" : pct >= 60 ? "Good" : "Needs attention"}</p>
+          <p className="text-xs font-bold text-phx-ink">Executive Health Score</p>
+          <p className="text-[11px] text-phx-ink-soft">{pct.toFixed(0)} out of 100</p>
+          <p className="text-[11px] font-bold text-phx-accent">{pct >= 80 ? "Excellent" : pct >= 60 ? "Good" : "Needs attention"}</p>
         </div>
       }
     >
       <div className="relative mx-auto h-24 w-24 shrink-0 rounded-full sm:h-32 sm:w-32 md:h-36 md:w-36" style={{ background: `conic-gradient(#F97316 0 ${pct}%, #E2E8F0 ${pct}% 100%)` }}>
         <div className="absolute inset-3 flex flex-col items-center justify-center rounded-full bg-white shadow-inner sm:inset-4">
-          <p className="text-2xl font-black text-[#0F172A] sm:text-3xl">{pct.toFixed(0)}</p>
-          <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[#64748B]">Score</p>
+          <p className="text-2xl font-black text-phx-ink sm:text-3xl">{pct.toFixed(0)}</p>
+          <p className="text-[10px] font-black uppercase tracking-[0.18em] text-phx-ink-soft">Score</p>
         </div>
       </div>
     </PremiumTooltip>
@@ -69,7 +69,7 @@ export function ExecutiveScore({ data, moduleErrors, hoveredElement, onHover, lo
   if (loading) {
     return (
       <ChartCard>
-        <div className="h-64 animate-pulse bg-[#F8FAFC] rounded-lg" />
+        <div className="h-64 animate-pulse bg-phx-paper rounded-lg" />
       </ChartCard>
     );
   }
@@ -86,20 +86,20 @@ export function ExecutiveScore({ data, moduleErrors, hoveredElement, onHover, lo
               <PremiumTooltip
                 content={
                   <div className="space-y-1">
-                    <p className="text-xs font-bold text-[#0F172A]">{metric.label}</p>
-                    <p className="text-[11px] text-[#64748B]">{formatPercent(metric.value)}</p>
-                    <p className="text-[10px] text-[#64748B]">{metric.description}</p>
+                    <p className="text-xs font-bold text-phx-ink">{metric.label}</p>
+                    <p className="text-[11px] text-phx-ink-soft">{formatPercent(metric.value)}</p>
+                    <p className="text-[10px] text-phx-ink-soft">{metric.description}</p>
                   </div>
                 }
                 key={metric.label}
               >
                 <div 
-                  className={cn("flex items-center justify-between gap-4 transition", isHovered && "bg-[#F8FAFC] px-2 py-1 rounded-lg")}
+                  className={cn("flex items-center justify-between gap-4 transition", isHovered && "bg-phx-paper px-2 py-1 rounded-lg")}
                   onMouseEnter={() => onHover(`metric-${metric.label}`)}
                   onMouseLeave={() => onHover(null)}
                 >
-                  <p className={cn("text-sm font-black", isHovered ? "text-[#F97316]" : "text-[#0F172A]")}>{metric.label}</p>
-                  <p className="text-xs font-black text-[#64748B]">{formatPercent(metric.value)}</p>
+                  <p className={cn("text-sm font-black", isHovered ? "text-phx-accent" : "text-phx-ink")}>{metric.label}</p>
+                  <p className="text-xs font-black text-phx-ink-soft">{formatPercent(metric.value)}</p>
                 </div>
               </PremiumTooltip>
             );

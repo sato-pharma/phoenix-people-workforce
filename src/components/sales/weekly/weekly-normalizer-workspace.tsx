@@ -476,9 +476,9 @@ export function WeeklyNormalizerWorkspace({
               </div>
 
               {tab === "coded" ? (
-                <div className="overflow-x-auto border border-[#E2E8F0]">
+                <div className="overflow-x-auto border border-phx-line">
                   <table className="w-full text-sm">
-                    <thead className="bg-[#0B0B0B] text-[#F1F5F9]"><tr>{["Item code", "Product ID", "Product", "Line", "Branch", "Region", "Area", "Net units", "Stock", "Value"].map((h) => <th className="whitespace-nowrap px-3 py-2 text-left" key={h}>{h}</th>)}</tr></thead>
+                    <thead className="bg-[#0B0B0B] text-phx-paper-2"><tr>{["Item code", "Product ID", "Product", "Line", "Branch", "Region", "Area", "Net units", "Stock", "Value"].map((h) => <th className="whitespace-nowrap px-3 py-2 text-left" key={h}>{h}</th>)}</tr></thead>
                     <tbody>
                       {preview.sampleCoded.map((r, i) => (
                         <tr className={cn("transition-colors hover:bg-orange-50/50", i % 2 && "bg-slate-50/60")} key={`${r.itemCode}|${r.branchCode}|${i}`}>
@@ -524,7 +524,7 @@ export function WeeklyNormalizerWorkspace({
                   </div>
 
                   {preview.unknownProducts.length > 0 ? (
-                    <div className="overflow-x-auto border border-[#E2E8F0]">
+                    <div className="overflow-x-auto border border-phx-line">
                       <p className="flex items-center gap-2 bg-slate-900 px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-white"><span aria-hidden="true" className="h-3.5 w-1 bg-orange-500" />Unknown products ({preview.unknownProducts.length})</p>
                       <table className="w-full text-sm">
                         <thead className="bg-slate-100"><tr>{["Raw code", "Raw name", "Rows", "Net units", "Phoenix product", "Confidence"].map((h) => <th className="whitespace-nowrap px-3 py-2 text-left font-semibold text-slate-600" key={h}>{h}</th>)}</tr></thead>
@@ -549,7 +549,7 @@ export function WeeklyNormalizerWorkspace({
                   ) : null}
 
                   {preview.unknownBranches.length > 0 ? (
-                    <div className="overflow-x-auto border border-[#E2E8F0]">
+                    <div className="overflow-x-auto border border-phx-line">
                       <p className="flex items-center gap-2 bg-slate-900 px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-white"><span aria-hidden="true" className="h-3.5 w-1 shrink-0 bg-orange-500" />Unknown branches ({preview.unknownBranches.length}) — a branch is a distributor depot, so the Area is optional: leave it blank to keep the branch region-only</p>
                       <table className="w-full text-sm">
                         <thead className="bg-slate-100"><tr>{["Branch", "Name", "Side", "Col", "Rows", "Net units", "Phoenix region", "Area (optional)", "Confidence"].map((h) => <th className="whitespace-nowrap px-3 py-2 text-left font-semibold text-slate-600" key={h}>{h}</th>)}</tr></thead>
@@ -608,7 +608,7 @@ export function WeeklyNormalizerWorkspace({
                   ) : null}
 
                   {preview.excludedItems.length > 0 ? (
-                    <div className="overflow-x-auto border border-[#E2E8F0]">
+                    <div className="overflow-x-auto border border-phx-line">
                       <p className="flex items-center gap-2 bg-slate-700 px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-white"><span aria-hidden="true" className="h-3.5 w-1 bg-slate-300" />Held out on purpose ({preview.excludedItems.length}) — mapped to IGNORE, counted here so nothing is dropped silently</p>
                       <table className="w-full text-sm">
                         <thead className="bg-slate-100"><tr>{["Item code", "Item name", "Rows", "Net units", "Stock"].map((h) => <th className="whitespace-nowrap px-3 py-2 text-left font-semibold text-slate-600" key={h}>{h}</th>)}</tr></thead>
@@ -628,7 +628,7 @@ export function WeeklyNormalizerWorkspace({
                   ) : null}
 
                   {preview.excludedBranches.length > 0 ? (
-                    <div className="overflow-x-auto border border-[#E2E8F0]">
+                    <div className="overflow-x-auto border border-phx-line">
                       <p className="flex items-center gap-2 bg-slate-700 px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-white"><span aria-hidden="true" className="h-3.5 w-1 bg-slate-300" />Branches held out on purpose ({preview.excludedBranches.length}) — mapped to Exclude, counted here so nothing is dropped silently</p>
                       <table className="w-full text-sm">
                         <thead className="bg-slate-100"><tr>{["Branch", "Branch name", "Rows", "Net units", "Stock"].map((h) => <th className="whitespace-nowrap px-3 py-2 text-left font-semibold text-slate-600" key={h}>{h}</th>)}</tr></thead>

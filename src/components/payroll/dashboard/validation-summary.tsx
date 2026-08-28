@@ -163,10 +163,10 @@ export function ValidationSummary({ result }: { result: SalaryValidationResult }
     <Card className={`${panelClassName} p-5`}>
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="text-base font-bold text-[#0F172A]">
+          <h2 className="text-base font-bold text-phx-ink">
             Salary Upload Validation
           </h2>
-          <p className="mt-1 text-sm text-[#64748B]">
+          <p className="mt-1 text-sm text-phx-ink-soft">
             {payrollPeriodLabel(
               result.payrollPeriod.month,
               result.payrollPeriod.year,
@@ -187,17 +187,17 @@ export function ValidationSummary({ result }: { result: SalaryValidationResult }
           ["Warnings", payrollWarningRows],
           ["Failed", result.failedRows],
         ].map(([label, value]) => (
-          <div className="rounded-[22px] border border-[#E2E8F0] bg-[#FCFDFE] p-4" key={label}>
-            <p className="text-[10px] font-black uppercase tracking-[0.16em] text-[#64748B]">{label}</p>
-            <p className="mt-2 text-2xl font-black tracking-[-0.03em] text-[#0F172A]">{value}</p>
+          <div className="rounded-[22px] border border-phx-line bg-[#FCFDFE] p-4" key={label}>
+            <p className="text-[10px] font-black uppercase tracking-[0.16em] text-phx-ink-soft">{label}</p>
+            <p className="mt-2 text-2xl font-black tracking-[-0.03em] text-phx-ink">{value}</p>
           </div>
         ))}
       </div>
 
       {resignationAlarmCount > 0 && (
-        <div className="mt-4 rounded-[22px] border border-[#FDBA74] bg-[#FFF7ED] p-4">
+        <div className="mt-4 rounded-[22px] border border-phx-accent-line bg-phx-accent-soft p-4">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#FFEDD5] text-[#C2410C]">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#FFEDD5] text-phx-accent-press">
               <AlertTriangle className="h-5 w-5" aria-hidden="true" />
             </div>
             <div className="min-w-0 flex-1">
@@ -229,26 +229,26 @@ export function ValidationSummary({ result }: { result: SalaryValidationResult }
         </div>
       )}
 
-      <div className="mt-4 overflow-hidden rounded-[24px] border border-[#E2E8F0]">
-        <div className="border-b border-[#E2E8F0] bg-[#F8FAFC] px-4 py-3">
-          <p className="text-xs font-black uppercase tracking-[0.16em] text-[#64748B]">
+      <div className="mt-4 overflow-hidden rounded-[24px] border border-phx-line">
+        <div className="border-b border-phx-line bg-phx-paper px-4 py-3">
+          <p className="text-xs font-black uppercase tracking-[0.16em] text-phx-ink-soft">
             Validation Totals
           </p>
-          <p className="mt-1 text-xs text-[#64748B]">
+          <p className="mt-1 text-xs text-phx-ink-soft">
             Calculated from all importable payroll rows. Missing-directory HR IDs remain included.
           </p>
         </div>
-        <div className="grid divide-y divide-[#E2E8F0] lg:grid-cols-3 lg:divide-x lg:divide-y-0">
+        <div className="grid divide-y divide-phx-line lg:grid-cols-3 lg:divide-x lg:divide-y-0">
           {totalSections.map((section) => (
             <div className="p-4" key={section.title}>
-              <p className="mb-3 text-[11px] font-black uppercase tracking-[0.14em] text-[#0F172A]">
+              <p className="mb-3 text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink">
                 {section.title}
               </p>
               <dl className="space-y-2">
                 {section.items.map(([label, value]) => (
                   <div className="flex items-center justify-between gap-3 text-sm" key={label}>
-                    <dt className="text-[#64748B]">{label}</dt>
-                    <dd className="font-mono font-semibold text-[#0F172A]">{formatEGP(value)}</dd>
+                    <dt className="text-phx-ink-soft">{label}</dt>
+                    <dd className="font-mono font-semibold text-phx-ink">{formatEGP(value)}</dd>
                   </div>
                 ))}
               </dl>
@@ -283,14 +283,14 @@ export function ValidationSummary({ result }: { result: SalaryValidationResult }
       </div>
 
       {issuePreview.length > 0 && (
-        <div className="mt-4 overflow-hidden rounded-[24px] border border-[#E2E8F0]">
+        <div className="mt-4 overflow-hidden rounded-[24px] border border-phx-line">
           <div className="overflow-x-auto">
           <table className="w-full min-w-[760px] text-left text-sm">
             <thead>
-              <tr className="border-b border-[#E2E8F0] bg-[#F8FAFC]">
+              <tr className="border-b border-phx-line bg-phx-paper">
                 {["Row", "HR ID", "Column", "Type", "Message"].map((column) => (
                   <th
-                    className="px-3 py-3 font-medium text-[#64748B]"
+                    className="px-3 py-3 font-medium text-phx-ink-soft"
                     key={column}
                   >
                     {column}
@@ -301,13 +301,13 @@ export function ValidationSummary({ result }: { result: SalaryValidationResult }
             <tbody className="divide-y divide-border">
               {issuePreview.map((issue, index) => (
                 <tr key={`${issue.row}-${issue.code}-${index}`}>
-                  <td className="px-3 py-3 font-mono text-xs text-[#64748B]">
+                  <td className="px-3 py-3 font-mono text-xs text-phx-ink-soft">
                     {issue.row}
                   </td>
-                  <td className="px-3 py-3 font-mono text-xs text-[#64748B]">
+                  <td className="px-3 py-3 font-mono text-xs text-phx-ink-soft">
                     {issue.hrId ?? "-"}
                   </td>
-                  <td className="px-3 py-3 text-[#64748B]">
+                  <td className="px-3 py-3 text-phx-ink-soft">
                     {issue.column ?? "-"}
                   </td>
                   <td className="px-3 py-3">
@@ -319,7 +319,7 @@ export function ValidationSummary({ result }: { result: SalaryValidationResult }
                       {issue.code}
                     </Badge>
                   </td>
-                  <td className="px-3 py-3 text-[#0F172A]">{issue.message}</td>
+                  <td className="px-3 py-3 text-phx-ink">{issue.message}</td>
                 </tr>
               ))}
             </tbody>

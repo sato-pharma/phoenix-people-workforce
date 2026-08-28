@@ -360,8 +360,8 @@ export function PharmacyValidationCapture({
   const labelClass = "block text-[11px] font-black uppercase tracking-wider text-slate-500";
 
   return (
-    <section className="border border-[#e4e9ec] bg-white">
-      <header className="border-b border-[#e4e9ec] bg-slate-900 px-4 py-2.5">
+    <section className="border border-phx-line bg-white">
+      <header className="border-b border-phx-line bg-slate-900 px-4 py-2.5">
         <h3 className="text-[11px] font-black uppercase tracking-[0.14em] text-white">Validate this pharmacy</h3>
       </header>
       <div className="space-y-3 px-4 py-4">

@@ -69,7 +69,7 @@ export function PremiumTooltip({
       {isVisible && (
         <div
           className={cn(
-            "z-50 w-[min(18rem,calc(100vw-1.5rem))] rounded-2xl border border-[#E2E8F0] bg-white p-4 shadow-[0_8px_20px_rgba(15,23,42,0.12)] pointer-events-none",
+            "z-50 w-[min(18rem,calc(100vw-1.5rem))] rounded-2xl border border-phx-line bg-white p-4 shadow-[0_8px_20px_rgba(15,23,42,0.12)] pointer-events-none",
             placement === "top"
               ? "absolute bottom-full left-1/2 mb-2 -translate-x-1/2"
               : "fixed",

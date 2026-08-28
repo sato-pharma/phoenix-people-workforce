@@ -56,7 +56,7 @@ function TemplateToolbar({ onImported }: { onImported: (summary: ImportSummary) 
     <div className="flex flex-wrap items-center gap-2 border border-slate-200 bg-white px-4 py-3">
       <a
         href="/api/admin/crm/customer-mapping/template"
-        className="inline-flex h-9 items-center gap-2 border border-[#D8E0EA] bg-white px-3 text-xs font-bold text-[#0F172A] shadow-sm transition hover:border-[#FDBA74] hover:text-[#F97316]"
+        className="inline-flex h-9 items-center gap-2 border border-phx-line bg-white px-3 text-xs font-bold text-phx-ink shadow-sm transition hover:border-phx-accent-line hover:text-phx-accent"
       >
         <Download className="h-3.5 w-3.5" />
         Download Template
@@ -65,7 +65,7 @@ function TemplateToolbar({ onImported }: { onImported: (summary: ImportSummary) 
         type="button"
         onClick={() => fileInputRef.current?.click()}
         disabled={uploading}
-        className="inline-flex h-9 items-center gap-2 border border-[#D8E0EA] bg-white px-3 text-xs font-bold text-[#0F172A] shadow-sm transition hover:border-[#FDBA74] hover:text-[#F97316] disabled:opacity-50"
+        className="inline-flex h-9 items-center gap-2 border border-phx-line bg-white px-3 text-xs font-bold text-phx-ink shadow-sm transition hover:border-phx-accent-line hover:text-phx-accent disabled:opacity-50"
       >
         {uploading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}
         Upload Mapping
@@ -148,7 +148,7 @@ function ResolutionCell({
             setAction(event.target.value as CrmCustomerResolutionAction);
             setError(null);
           }}
-          className="h-8 border border-[#D8E0EA] bg-white px-2 text-xs text-slate-700"
+          className="h-8 border border-phx-line bg-white px-2 text-xs text-slate-700"
         >
           {RESOLUTION_OPTIONS.map((option) => (
             <option key={option.value} value={option.value}>{option.label}</option>
@@ -160,14 +160,14 @@ function ResolutionCell({
             value={brickIdInput}
             onChange={(event) => setBrickIdInput(event.target.value)}
             placeholder="e.g. B100-11"
-            className="h-8 w-28 border border-[#D8E0EA] bg-white px-2 text-xs text-slate-800"
+            className="h-8 w-28 border border-phx-line bg-white px-2 text-xs text-slate-800"
           />
         )}
         <button
           type="button"
           onClick={save}
           disabled={saving}
-          className="inline-flex h-8 items-center gap-1.5 border border-[#D8E0EA] bg-white px-2.5 text-xs font-bold text-[#0F172A] shadow-sm transition hover:border-[#FDBA74] hover:text-[#F97316] disabled:opacity-50"
+          className="inline-flex h-8 items-center gap-1.5 border border-phx-line bg-white px-2.5 text-xs font-bold text-phx-ink shadow-sm transition hover:border-phx-accent-line hover:text-phx-accent disabled:opacity-50"
         >
           {saving && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
           Save
@@ -261,7 +261,7 @@ export function CrmCustomerMappingPanel({
             value={search}
             onChange={(event) => setSearch(event.target.value)}
             placeholder="Search by CRM contact name or ID…"
-            className="h-9 w-full border border-[#D8E0EA] bg-white pl-8 pr-2 text-sm text-slate-800"
+            className="h-9 w-full border border-phx-line bg-white pl-8 pr-2 text-sm text-slate-800"
           />
         </div>
       </div>
@@ -293,7 +293,7 @@ export function CrmCustomerMappingPanel({
                   <button
                     type="button"
                     onClick={() => viewInVisits(customer)}
-                    className="h-8 border border-[#D8E0EA] bg-white px-2.5 text-xs font-bold text-[#0F172A] shadow-sm transition hover:border-[#FDBA74] hover:text-[#F97316]"
+                    className="h-8 border border-phx-line bg-white px-2.5 text-xs font-bold text-phx-ink shadow-sm transition hover:border-phx-accent-line hover:text-phx-accent"
                   >
                     View in Visits
                   </button>
@@ -339,7 +339,7 @@ export function CrmCustomerMappingPanel({
                       <button
                         type="button"
                         onClick={() => viewInVisits(customer)}
-                        className="h-8 border border-[#D8E0EA] bg-white px-2.5 text-xs font-bold text-[#0F172A] shadow-sm transition hover:border-[#FDBA74] hover:text-[#F97316]"
+                        className="h-8 border border-phx-line bg-white px-2.5 text-xs font-bold text-phx-ink shadow-sm transition hover:border-phx-accent-line hover:text-phx-accent"
                       >
                         View in Visits
                       </button>

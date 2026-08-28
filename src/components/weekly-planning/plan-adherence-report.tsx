@@ -214,8 +214,8 @@ export function PlanAdherenceReport({ score }: { score: PlanAdherenceScore }) {
   const swaps = score.items.filter((item) => item.verdict === "wrong_partner");
 
   return (
-    <section className="border border-[#e4e9ec] bg-white">
-      <header className="flex flex-wrap items-center justify-between gap-2 border-b border-[#e4e9ec] bg-slate-900 px-4 py-2.5">
+    <section className="border border-phx-line bg-white">
+      <header className="flex flex-wrap items-center justify-between gap-2 border-b border-phx-line bg-slate-900 px-4 py-2.5">
         <h3 className="text-[11px] font-black uppercase tracking-[0.14em] text-white">Did the plan hold up</h3>
         {score.measurable ? (
           <span className="whitespace-nowrap text-[11px] font-bold text-white/70">
@@ -339,12 +339,12 @@ export function PlanAdherenceHistoryPanel({
   emptyLabel?: string;
 }) {
   if (history.entries.length === 0) {
-    return <p className="border border-[#e4e9ec] bg-white px-4 py-8 text-center text-sm text-slate-500">{emptyLabel}</p>;
+    return <p className="border border-phx-line bg-white px-4 py-8 text-center text-sm text-slate-500">{emptyLabel}</p>;
   }
 
   return (
-    <section className="border border-[#e4e9ec] bg-white">
-      <header className="flex flex-wrap items-center justify-between gap-2 border-b border-[#e4e9ec] bg-slate-900 px-4 py-2.5">
+    <section className="border border-phx-line bg-white">
+      <header className="flex flex-wrap items-center justify-between gap-2 border-b border-phx-line bg-slate-900 px-4 py-2.5">
         <h3 className="text-[11px] font-black uppercase tracking-[0.14em] text-white">Plan score history</h3>
         <span className="whitespace-nowrap text-[11px] font-bold text-white/70">
           {history.averagePct == null

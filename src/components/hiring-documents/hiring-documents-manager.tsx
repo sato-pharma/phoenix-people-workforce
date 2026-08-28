@@ -50,12 +50,12 @@ type ActiveTab = "documents" | "capture" | "control";
 
 const allValue = "__all__";
 const tableHeaderClassName =
-  "border-b border-[#E2E8F0] bg-[#FFF7ED]/80 px-3 py-3 text-left text-[10px] font-black uppercase tracking-[0.16em] text-[#64748B]";
-const tableCellClassName = "border-b border-[#E2E8F0] px-3 py-4 align-top";
+  "border-b border-phx-line bg-phx-accent-soft/80 px-3 py-3 text-left text-[10px] font-black uppercase tracking-[0.16em] text-phx-ink-soft";
+const tableCellClassName = "border-b border-phx-line px-3 py-4 align-top";
 const inputClassName =
-  "h-10 rounded-xl border-[#D8E0EA] bg-white/95 text-sm shadow-sm focus:border-[#FDBA74] focus:ring-[#F97316]/15";
+  "h-10 rounded-xl border-phx-line bg-white/95 text-sm shadow-sm focus:border-phx-accent-line focus:ring-phx-accent/15";
 const selectClassName =
-  "h-10 w-full rounded-xl border border-[#D8E0EA] bg-white/95 px-3 text-sm font-semibold text-[#0F172A] shadow-sm outline-none focus:border-[#FDBA74] focus:ring-2 focus:ring-[#F97316]/15";
+  "h-10 w-full rounded-xl border border-phx-line bg-white/95 px-3 text-sm font-semibold text-phx-ink shadow-sm outline-none focus:border-phx-accent-line focus:ring-2 focus:ring-phx-accent/15";
 
 function formatDate(value: string | null | undefined) {
   if (!value) return "-";
@@ -391,7 +391,7 @@ export function HiringDocumentsManager({ canManage, initialData, initialError }:
   }
 
   return (
-    <div className="relative overflow-hidden rounded-[34px] border border-[#D8E0EA] bg-[#F8FAFC] p-4 shadow-[0_24px_70px_rgba(15,23,42,0.1)] sm:p-6">
+    <div className="relative overflow-hidden rounded-[34px] border border-phx-line bg-phx-paper p-4 shadow-[0_24px_70px_rgba(15,23,42,0.1)] sm:p-6">
       <div className="relative space-y-6">
         <AdminPageHero
           actions={
@@ -443,7 +443,7 @@ export function HiringDocumentsManager({ canManage, initialData, initialError }:
           <AdminStatCard description="Missing documents with due date today or earlier." icon={<AlertTriangle className="h-5 w-5" />} label="Due" value={data?.summary.dueDocuments ?? 0} tone="orange" />
         </div>
 
-        <div className="flex flex-wrap gap-2 rounded-2xl border border-[#E2E8F0] bg-white p-2 shadow-sm">
+        <div className="flex flex-wrap gap-2 rounded-2xl border border-phx-line bg-white p-2 shadow-sm">
           <Button
             className="h-10 rounded-xl"
             onClick={() => setActiveTab("documents")}
@@ -522,8 +522,8 @@ export function HiringDocumentsManager({ canManage, initialData, initialError }:
                 </div>
                 <div className="grid gap-3 p-4 lg:grid-cols-3">
                   <label className="relative block">
-                    <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">Search</span>
-                    <Search className="pointer-events-none absolute left-3 top-10 h-4 w-4 text-[#64748B]" />
+                    <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-soft">Search</span>
+                    <Search className="pointer-events-none absolute left-3 top-10 h-4 w-4 text-phx-ink-soft" />
                     <Input
                     className={`${inputClassName} pl-9`}
                     onChange={(event) => setQuery(event.target.value)}
@@ -532,14 +532,14 @@ export function HiringDocumentsManager({ canManage, initialData, initialError }:
                   />
                 </label>
                 <label className="block">
-                  <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">Line</span>
+                  <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-soft">Line</span>
                   <SearchableSelect className={selectClassName} onChange={(event) => setLineFilter(event.target.value)} value={lineFilter}>
                     <option value={allValue}>All lines</option>
                     {lineOptions.map((line) => <option key={line} value={line}>{line}</option>)}
                   </SearchableSelect>
                 </label>
                 <label className="block">
-                  <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">Employee Status</span>
+                  <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-soft">Employee Status</span>
                   <SearchableSelect className={selectClassName} onChange={(event) => setStatusFilter(event.target.value)} value={statusFilter}>
                     <option value={allValue}>All statuses</option>
                     {statusOptions.map((status) => <option key={status} value={status}>{employmentStatusLabel(status)}</option>)}
@@ -547,16 +547,16 @@ export function HiringDocumentsManager({ canManage, initialData, initialError }:
                 </label>
               </div>
               {advancedOpen ? (
-                <div className="grid gap-3 border-t border-[#E2E8F0] bg-white/80 p-4 lg:grid-cols-3">
+                <div className="grid gap-3 border-t border-phx-line bg-white/80 p-4 lg:grid-cols-3">
                   <label className="block">
-                    <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">Manager</span>
+                    <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-soft">Manager</span>
                     <SearchableSelect className={selectClassName} onChange={(event) => setManagerFilter(event.target.value)} value={managerFilter}>
                       <option value={allValue}>All managers</option>
                       {managerOptions.map((manager) => <option key={manager} value={manager}>{manager}</option>)}
                     </SearchableSelect>
                   </label>
                   <label className="block">
-                    <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">Job Title</span>
+                    <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-soft">Job Title</span>
                     <SearchableSelect className={selectClassName} onChange={(event) => setJobTitleFilter(event.target.value)} value={jobTitleFilter}>
                       <option value={allValue}>All job titles</option>
                       {jobTitleOptions.map((title) => <option key={title} value={title}>{title}</option>)}
@@ -564,17 +564,17 @@ export function HiringDocumentsManager({ canManage, initialData, initialError }:
                   </label>
                   <label className="grid grid-cols-2 gap-2">
                     <div className="space-y-1.5">
-                      <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">Hire Date From</span>
+                      <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-soft">Hire Date From</span>
                       <Input className={inputClassName} onChange={(event) => setHireDateFrom(event.target.value)} type="date" value={hireDateFrom} />
                     </div>
                     <div className="space-y-1.5">
-                      <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">Hire Date To</span>
+                      <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-soft">Hire Date To</span>
                       <Input className={inputClassName} onChange={(event) => setHireDateTo(event.target.value)} type="date" value={hireDateTo} />
                     </div>
                   </label>
                   <label className="grid grid-cols-2 gap-2">
                     <div className="space-y-1.5">
-                      <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">Completion Min %</span>
+                      <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-soft">Completion Min %</span>
                       <Input
                         className={inputClassName}
                         onChange={(event) => setCompletionMin(event.target.value)}
@@ -585,7 +585,7 @@ export function HiringDocumentsManager({ canManage, initialData, initialError }:
                       />
                     </div>
                     <div className="space-y-1.5">
-                      <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">Completion Max %</span>
+                      <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-soft">Completion Max %</span>
                       <Input
                         className={inputClassName}
                         onChange={(event) => setCompletionMax(event.target.value)}
@@ -601,10 +601,10 @@ export function HiringDocumentsManager({ canManage, initialData, initialError }:
             </AdminTableShell>
 
             {/* Desktop: full document-completion matrix, unchanged, with its synced dual scrollbar. */}
-            <Card className="hidden overflow-hidden rounded-2xl border border-[#D8E0EA] bg-white p-0 shadow-[0_20px_48px_rgba(15,23,42,0.1)] md:block">
+            <Card className="hidden overflow-hidden rounded-2xl border border-phx-line bg-white p-0 shadow-[0_20px_48px_rgba(15,23,42,0.1)] md:block">
               <div
                 ref={topScrollRef}
-                className="overflow-x-auto overflow-y-hidden border-b border-[#E2E8F0] bg-white px-2"
+                className="overflow-x-auto overflow-y-hidden border-b border-phx-line bg-white px-2"
                 style={{ width: "100%" }}
               >
                 <div aria-hidden className="h-4" style={{ minWidth: tableScrollWidth }} />
@@ -613,7 +613,7 @@ export function HiringDocumentsManager({ canManage, initialData, initialError }:
                 <table className="min-w-[1180px] text-sm">
                   <thead>
                     <tr>
-                      <th className={`${tableHeaderClassName} sticky left-0 z-20 min-w-[280px] bg-[#FFF7ED]`}>Employee</th>
+                      <th className={`${tableHeaderClassName} sticky left-0 z-20 min-w-[280px] bg-phx-accent-soft`}>Employee</th>
                       <th className={`${tableHeaderClassName} min-w-[120px]`}>Line</th>
                       <th className={`${tableHeaderClassName} min-w-[130px]`}>Hiring Date</th>
                       <th className={`${tableHeaderClassName} min-w-[190px]`}>Manager</th>
@@ -626,17 +626,17 @@ export function HiringDocumentsManager({ canManage, initialData, initialError }:
                   <tbody>
                     {filteredEmployees.length === 0 ? (
                       <tr>
-                        <td className="px-3 py-12 text-center text-sm text-[#64748B]" colSpan={5 + documents.length}>
+                        <td className="px-3 py-12 text-center text-sm text-phx-ink-soft" colSpan={5 + documents.length}>
                           No employees match the current filters.
                         </td>
                       </tr>
                     ) : (
                       filteredEmployees.map((employee, index) => (
-                        <tr className="hover:bg-[#FFF7ED]/40" key={`${employee.hrId}-${index}`}>
+                        <tr className="hover:bg-phx-accent-soft/40" key={`${employee.hrId}-${index}`}>
                           <td className={`${tableCellClassName} sticky left-0 z-10 w-[280px] bg-white`}>
-                            <p className="font-bold text-[#0F172A]">{employee.fullName}</p>
-                            <p className="mt-1 font-mono text-xs text-[#64748B]">{employee.hrId}</p>
-                            <p className="mt-1 text-xs text-[#64748B]">{employee.jobTitle ?? "-"}</p>
+                            <p className="font-bold text-phx-ink">{employee.fullName}</p>
+                            <p className="mt-1 font-mono text-xs text-phx-ink-soft">{employee.hrId}</p>
+                            <p className="mt-1 text-xs text-phx-ink-soft">{employee.jobTitle ?? "-"}</p>
                             <div className="mt-2 flex items-center gap-2">
                               {statusBadge(employee.employmentStatus)}
                               <Badge variant="neutral">{employeeCompletion(employee, documents)}%</Badge>
@@ -645,8 +645,8 @@ export function HiringDocumentsManager({ canManage, initialData, initialError }:
                           <td className={tableCellClassName}>{employee.lineName ?? "-"}</td>
                           <td className={tableCellClassName}>{formatDate(employee.hireDate)}</td>
                           <td className={tableCellClassName}>
-                            <p className="font-medium text-[#0F172A]">{employee.managerName ?? "-"}</p>
-                            <p className="mt-1 font-mono text-xs text-[#64748B]">{employee.managerHrId ?? ""}</p>
+                            <p className="font-medium text-phx-ink">{employee.managerName ?? "-"}</p>
+                            <p className="mt-1 font-mono text-xs text-phx-ink-soft">{employee.managerHrId ?? ""}</p>
                           </td>
                           {documents.map((document) => {
                             const entry = employee.documents[document.id];
@@ -703,7 +703,7 @@ export function HiringDocumentsManager({ canManage, initialData, initialError }:
                                   ) : null}
                                   {status === "missing" ? (
                                     <label className="block">
-                                      <span className="mb-1 block text-[10px] font-black uppercase tracking-[0.12em] text-[#64748B]">Deadline</span>
+                                      <span className="mb-1 block text-[10px] font-black uppercase tracking-[0.12em] text-phx-ink-soft">Deadline</span>
                                       <Input
                                         className="h-9 rounded-lg border-[#FCA5A5] text-xs"
                                         disabled={!canManage || busy}
@@ -750,7 +750,7 @@ export function HiringDocumentsManager({ canManage, initialData, initialError }:
                           })}
                           <td className={tableCellClassName}>
                             <textarea
-                              className="min-h-24 w-full resize-y rounded-xl border border-[#D8E0EA] bg-white px-3 py-2 text-sm text-[#0F172A] shadow-sm outline-none focus:border-[#FDBA74] focus:ring-2 focus:ring-[#F97316]/15"
+                              className="min-h-24 w-full resize-y rounded-xl border border-phx-line bg-white px-3 py-2 text-sm text-phx-ink shadow-sm outline-none focus:border-phx-accent-line focus:ring-2 focus:ring-phx-accent/15"
                               disabled={!canManage || busyKey === `${employee.hrId}:notes`}
                               onBlur={(event) => {
                                 const currentValue = event.target.value;
@@ -772,9 +772,9 @@ export function HiringDocumentsManager({ canManage, initialData, initialError }:
             {/* Mobile: one card per employee, name/HR ID as the title, and a compact
                 submitted/missing checklist (one row per document type) as the body,
                 instead of forcing the 10+ column matrix into a cramped card. */}
-            <Card className="divide-y divide-[#E2E8F0] rounded-2xl border border-[#D8E0EA] bg-white p-0 shadow-[0_20px_48px_rgba(15,23,42,0.1)] md:hidden">
+            <Card className="divide-y divide-phx-line rounded-2xl border border-phx-line bg-white p-0 shadow-[0_20px_48px_rgba(15,23,42,0.1)] md:hidden">
               {filteredEmployees.length === 0 ? (
-                <div className="px-4 py-12 text-center text-sm text-[#64748B]">
+                <div className="px-4 py-12 text-center text-sm text-phx-ink-soft">
                   No employees match the current filters.
                 </div>
               ) : (
@@ -788,9 +788,9 @@ export function HiringDocumentsManager({ canManage, initialData, initialError }:
                     <div className="px-4 py-4" key={`${employee.hrId}-${index}-mobile`}>
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
-                          <p className="text-sm font-black text-[#0F172A]">{employee.fullName}</p>
-                          <p className="mt-0.5 font-mono text-xs text-[#64748B]">{employee.hrId}</p>
-                          <p className="mt-0.5 text-xs text-[#64748B]">{employee.jobTitle ?? "-"}</p>
+                          <p className="text-sm font-black text-phx-ink">{employee.fullName}</p>
+                          <p className="mt-0.5 font-mono text-xs text-phx-ink-soft">{employee.hrId}</p>
+                          <p className="mt-0.5 text-xs text-phx-ink-soft">{employee.jobTitle ?? "-"}</p>
                         </div>
                         <div className="flex shrink-0 flex-col items-end gap-1.5">
                           {statusBadge(employee.employmentStatus)}
@@ -799,20 +799,20 @@ export function HiringDocumentsManager({ canManage, initialData, initialError }:
                       </div>
 
                       <dl className="mt-3 grid grid-cols-2 gap-2">
-                        <div className="rounded-lg border border-[#E2E8F0] bg-[#F8FAFC] px-2.5 py-2">
-                          <dt className="text-[10px] font-black uppercase tracking-[0.12em] text-[#94A3B8]">Line</dt>
-                          <dd className="mt-0.5 truncate text-xs font-bold text-[#0F172A]">{employee.lineName ?? "-"}</dd>
+                        <div className="rounded-lg border border-phx-line bg-phx-paper px-2.5 py-2">
+                          <dt className="text-[10px] font-black uppercase tracking-[0.12em] text-phx-ink-faint">Line</dt>
+                          <dd className="mt-0.5 truncate text-xs font-bold text-phx-ink">{employee.lineName ?? "-"}</dd>
                         </div>
-                        <div className="rounded-lg border border-[#E2E8F0] bg-[#F8FAFC] px-2.5 py-2">
-                          <dt className="text-[10px] font-black uppercase tracking-[0.12em] text-[#94A3B8]">Hiring Date</dt>
-                          <dd className="mt-0.5 truncate text-xs font-bold text-[#0F172A]">{formatDate(employee.hireDate)}</dd>
+                        <div className="rounded-lg border border-phx-line bg-phx-paper px-2.5 py-2">
+                          <dt className="text-[10px] font-black uppercase tracking-[0.12em] text-phx-ink-faint">Hiring Date</dt>
+                          <dd className="mt-0.5 truncate text-xs font-bold text-phx-ink">{formatDate(employee.hireDate)}</dd>
                         </div>
-                        <div className="col-span-2 rounded-lg border border-[#E2E8F0] bg-[#F8FAFC] px-2.5 py-2">
-                          <dt className="text-[10px] font-black uppercase tracking-[0.12em] text-[#94A3B8]">Manager</dt>
-                          <dd className="mt-0.5 break-words text-xs font-bold text-[#0F172A]">
+                        <div className="col-span-2 rounded-lg border border-phx-line bg-phx-paper px-2.5 py-2">
+                          <dt className="text-[10px] font-black uppercase tracking-[0.12em] text-phx-ink-faint">Manager</dt>
+                          <dd className="mt-0.5 break-words text-xs font-bold text-phx-ink">
                             {employee.managerName ?? "-"}
                             {employee.managerHrId ? (
-                              <span className="ml-1.5 font-mono text-[10px] font-normal text-[#94A3B8]">
+                              <span className="ml-1.5 font-mono text-[10px] font-normal text-phx-ink-faint">
                                 {employee.managerHrId}
                               </span>
                             ) : null}
@@ -821,12 +821,12 @@ export function HiringDocumentsManager({ canManage, initialData, initialError }:
                       </dl>
 
                       <div className="mt-3">
-                        <p className="mb-1.5 text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">
+                        <p className="mb-1.5 text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-soft">
                           Documents ({submittedCount}/{documents.length} submitted)
                         </p>
-                        <div className="divide-y divide-[#E2E8F0] rounded-xl border border-[#E2E8F0]">
+                        <div className="divide-y divide-phx-line rounded-xl border border-phx-line">
                           {documents.length === 0 ? (
-                            <div className="px-3 py-3 text-xs text-[#64748B]">No hiring documents configured.</div>
+                            <div className="px-3 py-3 text-xs text-phx-ink-soft">No hiring documents configured.</div>
                           ) : (
                             documents.map((document) => {
                               const entry = employee.documents[document.id];
@@ -837,7 +837,7 @@ export function HiringDocumentsManager({ canManage, initialData, initialError }:
                               return (
                                 <div className="px-3 py-2.5" key={`${employee.hrId}:${document.id}:mobile`}>
                                   <div className="flex items-center justify-between gap-2">
-                                    <p className="min-w-0 pr-2 text-xs font-bold text-[#0F172A]">{document.name}</p>
+                                    <p className="min-w-0 pr-2 text-xs font-bold text-phx-ink">{document.name}</p>
                                     {documentStatusBadge(status)}
                                   </div>
                                   <div className="mt-2 flex items-center gap-2">
@@ -879,7 +879,7 @@ export function HiringDocumentsManager({ canManage, initialData, initialError }:
                                   ) : null}
                                   {status === "missing" ? (
                                     <label className="mt-2 block">
-                                      <span className="mb-1 block text-[10px] font-black uppercase tracking-[0.12em] text-[#64748B]">Deadline</span>
+                                      <span className="mb-1 block text-[10px] font-black uppercase tracking-[0.12em] text-phx-ink-soft">Deadline</span>
                                       <Input
                                         className="h-9 rounded-lg border-[#FCA5A5] text-xs"
                                         disabled={!canManage || busy}
@@ -928,9 +928,9 @@ export function HiringDocumentsManager({ canManage, initialData, initialError }:
                       </div>
 
                       <div className="mt-3">
-                        <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">Notes</span>
+                        <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-soft">Notes</span>
                         <textarea
-                          className="min-h-20 w-full resize-y rounded-xl border border-[#D8E0EA] bg-white px-3 py-2 text-sm text-[#0F172A] shadow-sm outline-none focus:border-[#FDBA74] focus:ring-2 focus:ring-[#F97316]/15"
+                          className="min-h-20 w-full resize-y rounded-xl border border-phx-line bg-white px-3 py-2 text-sm text-phx-ink shadow-sm outline-none focus:border-phx-accent-line focus:ring-2 focus:ring-phx-accent/15"
                           disabled={!canManage || busyKey === `${employee.hrId}:notes`}
                           onBlur={(event) => {
                             const currentValue = event.target.value;
@@ -954,7 +954,7 @@ export function HiringDocumentsManager({ canManage, initialData, initialError }:
           >
             <div className="grid gap-3 p-4 lg:grid-cols-[1fr_1fr_auto]">
               <label className="block">
-                <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">Document Name</span>
+                <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-soft">Document Name</span>
                 <Input
                   className={inputClassName}
                   disabled={!canManage}
@@ -964,7 +964,7 @@ export function HiringDocumentsManager({ canManage, initialData, initialError }:
                 />
               </label>
               <label className="block">
-                <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">Description</span>
+                <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-soft">Description</span>
                 <Input
                   className={inputClassName}
                   disabled={!canManage}
@@ -997,13 +997,13 @@ export function HiringDocumentsManager({ canManage, initialData, initialError }:
                 <tbody>
                   {documents.length === 0 ? (
                     <tr>
-                      <td className="px-3 py-10 text-center text-sm text-[#64748B]" colSpan={4}>
+                      <td className="px-3 py-10 text-center text-sm text-phx-ink-soft" colSpan={4}>
                         No hiring documents are configured yet.
                       </td>
                     </tr>
                   ) : (
                     documents.map((document) => (
-                      <tr className="hover:bg-[#FFF7ED]/40" key={document.id}>
+                      <tr className="hover:bg-phx-accent-soft/40" key={document.id}>
                         {/* The name, and not the row's UUID underneath it. That id was printed
                             under all ten document names — "b748745e-b674-479e-915d-d01f4c84dcd4"
                             below "National ID copy" — and it is a primary key: nothing on this
@@ -1011,7 +1011,7 @@ export function HiringDocumentsManager({ canManage, initialData, initialError }:
                             carries it in the closure. Names are unique here, so it disambiguates
                             nothing either. */}
                         <td className={tableCellClassName}>
-                          <p className="font-bold text-[#0F172A]">{document.name}</p>
+                          <p className="font-bold text-phx-ink">{document.name}</p>
                         </td>
                         <td className={tableCellClassName}>{document.description ?? "-"}</td>
                         <td className={tableCellClassName}>{document.displayOrder}</td>
@@ -1034,9 +1034,9 @@ export function HiringDocumentsManager({ canManage, initialData, initialError }:
             </PortalDesktopTable>
 
             {/* Mobile: one card per configured document (name as title, order as a badge). */}
-            <div className="divide-y divide-[#E2E8F0] rounded-xl border border-[#E2E8F0] md:hidden">
+            <div className="divide-y divide-phx-line rounded-xl border border-phx-line md:hidden">
               {documents.length === 0 ? (
-                <div className="px-4 py-10 text-center text-sm text-[#64748B]">
+                <div className="px-4 py-10 text-center text-sm text-phx-ink-soft">
                   No hiring documents are configured yet.
                 </div>
               ) : (
@@ -1044,12 +1044,12 @@ export function HiringDocumentsManager({ canManage, initialData, initialError }:
                   <div className="px-4 py-3.5" key={`${document.id}-mobile`}>
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
-                        <p className="font-bold text-[#0F172A]">{document.name}</p>
+                        <p className="font-bold text-phx-ink">{document.name}</p>
                       </div>
                       <Badge variant="neutral">Order {document.displayOrder}</Badge>
                     </div>
                     {document.description ? (
-                      <p className="mt-2 text-xs text-[#64748B]">{document.description}</p>
+                      <p className="mt-2 text-xs text-phx-ink-soft">{document.description}</p>
                     ) : null}
                     <div className="mt-3">
                       <Button
