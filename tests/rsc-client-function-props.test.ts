@@ -191,18 +191,162 @@ function readOpeningTag(text: string, start: number): string {
   return text.slice(start);
 }
 
-/** Props in an opening tag whose value is a function literal. */
-function functionValuedProps(openingTag: string): string[] {
-  const found: string[] = [];
-  const patterns = [
-    // name={(a, b) => …}   name={a => …}   name={async () => …}
-    /\s([A-Za-z][\w]*)=\{\s*(?:async\s+)?(?:\([^()]*\)|[A-Za-z_$][\w$]*)\s*=>/g,
-    // name={function …}
-    /\s([A-Za-z][\w]*)=\{\s*(?:async\s+)?function\b/g,
-  ];
-  for (const pattern of patterns) {
-    for (const match of openingTag.matchAll(pattern)) found.push(match[1]);
+/**
+ * Index of `needle` in `text` at nesting depth 0 and outside quotes, or -1.
+ * The depth check happens BEFORE the bracket is counted, so the closing bracket of a
+ * group is correctly seen at the depth it closes — without that, `(a) || (b)` reads as
+ * one parenthesised expression and gets unwrapped into nonsense.
+ */
+function indexAtTopLevel(text: string, needle: string): number {
+  let depth = 0;
+  let quote: string | null = null;
+
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index];
+
+    if (quote) {
+      if (char === quote && text[index - 1] !== "\\") quote = null;
+      continue;
+    }
+    if (char === '"' || char === "'" || char === "`") {
+      quote = char;
+      continue;
+    }
+    if (depth === 0 && text.startsWith(needle, index)) return index;
+    if (char === "(" || char === "[" || char === "{") depth += 1;
+    else if (char === ")" || char === "]" || char === "}") depth -= 1;
   }
+
+  return -1;
+}
+
+/** The balanced `{…}` value a prop is given, without its braces, or null if it never closes. */
+function readBracedValue(tag: string, openBraceIndex: number): string | null {
+  let depth = 0;
+  let quote: string | null = null;
+
+  for (let index = openBraceIndex; index < tag.length; index += 1) {
+    const char = tag[index];
+
+    if (quote) {
+      if (char === quote && tag[index - 1] !== "\\") quote = null;
+      continue;
+    }
+    if (char === '"' || char === "'" || char === "`") {
+      quote = char;
+      continue;
+    }
+    if (char === "{" || char === "(" || char === "[") depth += 1;
+    else if (char === ")" || char === "]") depth -= 1;
+    else if (char === "}") {
+      depth -= 1;
+      if (depth === 0) return tag.slice(openBraceIndex + 1, index);
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Strip the wrappers that hide a function from a naive `={(a) => …}` match: enclosing
+ * parentheses, and a trailing `as T` / `satisfies T`.
+ *
+ * This is not a hypothetical evasion. It is what a session reaches for the moment the
+ * compiler objects to the prop's type, and it defeated the FIRST attempt to reproduce the
+ * plan-approvals crash on 2026-08-28: written as `planHref={((planId) => …) as never}` the
+ * check stayed green, so the break-it step wrongly read as "the guard does not fire". React
+ * serialises none of these any better than the bare literal — a cast changes the type, not
+ * the value.
+ */
+function unwrapValue(expression: string): string {
+  let current = expression.trim();
+
+  for (;;) {
+    const before = current;
+
+    for (const keyword of [" as ", " satisfies "]) {
+      const at = indexAtTopLevel(current, keyword);
+      if (at !== -1) current = current.slice(0, at).trim();
+    }
+
+    if (current.startsWith("(") && current.endsWith(")")) {
+      const inner = current.slice(1, -1);
+      // Only when those two really are a matching pair, so `(a) || (b)` survives intact.
+      if (indexAtTopLevel(inner, ")") === -1) current = inner.trim();
+    }
+
+    if (current === before) return current;
+  }
+}
+
+/** Does this already-unwrapped expression begin a function literal? */
+function isFunctionLiteral(expression: string): boolean {
+  const body = expression.replace(/^async\s+/, "").trim();
+  if (/^function\b/.test(body)) return true;
+  // `id => …` — a single parameter needs no parentheses.
+  if (/^[A-Za-z_$][\w$]*\s*=>/.test(body)) return true;
+  // `(…) => …`, including `({ a }: { a: () => void }): T => …`, where the parameter list
+  // and the return type both contain their own arrows and parens. The old
+  // `\([^()]*\)` could not survive a single nested paren.
+  if (!body.startsWith("(")) return false;
+  return indexAtTopLevel(body, "=>") !== -1;
+}
+
+/**
+ * Names this module declares as functions.
+ *
+ * A function REFERENCE crosses the boundary exactly as fatally as a literal —
+ * `<ClientThing onSave={handleSave} />` serialises no better than `onSave={() => …}` — and
+ * the original check saw only literals, so the most ordinary spelling of the bug was the
+ * one it could not see.
+ *
+ * Deliberately conservative in two ways, because a false positive here turns the required
+ * `validate` job red for everyone: only a name THIS file proves to be a function counts (an
+ * imported one never does), and a Server Action is excluded, since `"use server"` is the one
+ * legal way to hand a function across and it announces itself in the declaration.
+ */
+function locallyDeclaredFunctions(text: string): Set<string> {
+  const names = new Set<string>();
+  // A Server Action's directive is the FIRST statement of its body, so look exactly there.
+  // A flat "next N characters" window is NOT good enough: it reads forward past the end of
+  // this declaration into the next one, so a single Server Action anywhere below would
+  // exempt every ordinary function above it. That is a bug this file's own self-checks
+  // caught on the first run.
+  const isServerAction = (at: number) => {
+    const brace = text.indexOf("{", at);
+    if (brace === -1) return false;
+    return /^\s*["']use server["']/.test(text.slice(brace + 1, brace + 60));
+  };
+
+  for (const match of text.matchAll(
+    /(?:^|\n)\s*(?:export\s+)?(?:default\s+)?(?:async\s+)?function\s+([A-Za-z_$][\w$]*)/g,
+  )) {
+    if (!isServerAction(match.index)) names.add(match[1]);
+  }
+
+  for (const match of text.matchAll(
+    /(?:^|\n)\s*(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*(?::[^=\n]*)?=\s*([^\n]*)/g,
+  )) {
+    if (isFunctionLiteral(unwrapValue(match[2])) && !isServerAction(match.index)) names.add(match[1]);
+  }
+
+  return names;
+}
+
+/** Props in an opening tag whose value is a function — literal, wrapped, or a local reference. */
+function functionValuedProps(openingTag: string, localFunctions: Set<string>): string[] {
+  const found: string[] = [];
+
+  for (const match of openingTag.matchAll(/\s([A-Za-z][\w]*)=\{/g)) {
+    const raw = readBracedValue(openingTag, match.index + match[0].length - 1);
+    if (raw === null) continue;
+    // An inline Server Action is legal, and says so in its own body.
+    if (/["']use server["']/.test(raw)) continue;
+
+    const value = unwrapValue(raw);
+    if (isFunctionLiteral(value) || localFunctions.has(value)) found.push(match[1]);
+  }
+
   return [...new Set(found)];
 }
 
@@ -246,7 +390,74 @@ function serverRenderedModules(files: SourceFile[], byPath: Map<string, SourceFi
   return reached;
 }
 
+/**
+ * The detector's own checks, on synthetic tags rather than on the repo.
+ *
+ * The repo-wide sweep below is a NEGATIVE assertion — it passes when it finds nothing — so it
+ * reports exactly the same green whether the detector works or has quietly stopped matching
+ * anything at all. Every shape here is therefore stated twice: what must be caught, and what
+ * must NOT be, because a false positive turns the required `validate` job red for everyone.
+ */
+function assertDetectorRecognisesEvasions() {
+  const props = (tag: string, locals: string[] = []) => functionValuedProps(tag, new Set(locals));
+
+  // ── Must be caught: React serialises none of these.
+  assert.deepEqual(props("<X href={(id) => go(id)} />"), ["href"], "the plain arrow literal the guard was originally built for");
+  assert.deepEqual(
+    props("<X href={((id) => go(id)) as never} />"),
+    ["href"],
+    'a function behind a type assertion must be caught — this is the gap: on 2026-08-28 the plan-approvals crash was "reproduced" as `{((planId) => …) as never}`, the check stayed green, and that read as the guard not firing. A cast changes the type, not the value',
+  );
+  assert.deepEqual(props("<X href={((id) => go(id))} />"), ["href"], "a redundantly parenthesised arrow is still an arrow");
+  assert.deepEqual(props("<X href={((id) => go(id)) satisfies Foo} />"), ["href"], "`satisfies` hides a function exactly as `as` does");
+  assert.deepEqual(props("<X f={async () => go()} />"), ["f"], "an async arrow");
+  assert.deepEqual(props("<X f={function () { return 1; }} />"), ["f"], "a function expression");
+  assert.deepEqual(
+    props("<X render={({ a }: { a: () => void }) => a} />"),
+    ["render"],
+    "a parameter list containing its own parens — the old `\\([^()]*\\)` could not survive one level of nesting",
+  );
+  assert.deepEqual(
+    props("<X onSave={handleSave} />", ["handleSave"]),
+    ["onSave"],
+    "a function REFERENCE crosses the boundary exactly as fatally as a literal, and is the more ordinary spelling of the bug",
+  );
+
+  // ── Must NOT be caught: each of these is legal, and flagging one blocks every merge.
+  assert.deepEqual(props("<X title={label} />"), [], "an ordinary value prop");
+  assert.deepEqual(props("<X count={items.length} />"), [], "a property access");
+  assert.deepEqual(props("<X data={rows.map((r) => r.id)} />"), [], "an arrow passed to `.map` — the PROP is the resulting array, not a function");
+  assert.deepEqual(props("<X style={{ color: 'red' }} />"), [], "an object literal");
+  assert.deepEqual(props("<X flag={(a) || (b)} />"), [], "two parenthesised operands are not one parenthesised function");
+  assert.deepEqual(props("<X action={saveThing} />"), [], "an IMPORTED name is never assumed to be a function — only what this file proves");
+  assert.deepEqual(
+    props('<X action={async () => { "use server"; await save(); }} />'),
+    [],
+    'an inline Server Action is the one legal way to hand a function across, and it announces itself',
+  );
+
+  // ── The reference check depends on reading declarations correctly.
+  const declared = locallyDeclaredFunctions(
+    [
+      "function handleSave() {}",
+      "const renderRow = (row) => row.id;",
+      "const makeThing = function () {};",
+      "const label = 'Total';",
+      "const total = items.reduce((sum, n) => sum + n, 0);",
+      'async function saveIt() { "use server"; }',
+    ].join("\n"),
+  );
+  assert.ok(declared.has("handleSave"), "a function declaration is a function");
+  assert.ok(declared.has("renderRow"), "a const arrow is a function");
+  assert.ok(declared.has("makeThing"), "a const function expression is a function");
+  assert.ok(!declared.has("label"), "a string constant is not a function");
+  assert.ok(!declared.has("total"), "a reduce RESULT is a number, even though an arrow appears on the line");
+  assert.ok(!declared.has("saveIt"), "a Server Action is excluded — passing one is legal");
+}
+
 export function runRscClientFunctionPropTests() {
+  assertDetectorRecognisesEvasions();
+
   const files = collectSourceFiles();
   assert.ok(files.length > 500, `expected the src/app scan to find plenty of files, found ${files.length}`);
 
@@ -300,11 +511,13 @@ export function runRscClientFunctionPropTests() {
       }
     }
 
+    const localFunctions = locallyDeclaredFunctions(file.text);
+
     for (const [component, source] of clientComponents) {
       const tagPattern = new RegExp(`<${component}(?=[\\s/>])`, "g");
       for (const match of file.text.matchAll(tagPattern)) {
         const openingTag = readOpeningTag(file.text, match.index);
-        const functionProps = functionValuedProps(openingTag);
+        const functionProps = functionValuedProps(openingTag, localFunctions);
         if (functionProps.length === 0) continue;
 
         const line = file.text.slice(0, match.index).split("\n").length;
