@@ -1444,7 +1444,16 @@ const hrNavigationSectionSeeds = [
     id: "hr-payroll",
     items: [
       { href: "/hr/admin/payroll-management", icon: FileSpreadsheet, label: "Payroll Management", permissions: [{ resource: "payroll" }, { resource: "payslips" }, { resource: "deductions", action: "read" }] },
-      { href: "/hr/admin/deductions", icon: ReceiptText, label: "Deductions", permissions: [{ resource: "deductions", action: "read" }] },
+      // NO "Deductions" row here, deliberately. app/(admin)/admin/deductions/page.tsx gates on a
+      // hard-coded `VIEW_ROLES = {Super Admin, CEO}` — a role set, not a permission — and redirects
+      // everyone else to /employee-portals. This catalogue serves `hrNamespaceRoles`, which is the
+      // two HR seats and nobody else, so the page admits none of its readers and the row could only
+      // ever be a dead link. It WAS one: offered on `deductions:read`, which HR Operations holds (it
+      // is what opens Deductions Governance and Payroll Management for her, both of which really do
+      // render), so the link appeared and the page refused it. Widening VIEW_ROLES is the owner's
+      // call — he set that boundary by role on 2026-08-11 and his note in that file makes the point
+      // this row got wrong: hidden is not revoked. Deductions Governance below stays, because its
+      // page gates on the permission it advertises.
       { href: "/hr/admin/deductions-governance", icon: ShieldCheck, label: "Deductions Governance", permissions: [{ resource: "deductions", action: "read" }] },
     ],
     label: "Payroll",
