@@ -83,6 +83,8 @@ import { pickDeliverableEmail } from "@/lib/email/email-safety";
 import { getEmployeeDirectory, type EmployeeDirectoryData, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { resolveJobFunctionRole } from "@/lib/employees/job-function";
 import { hrIdLookupKeys } from "@/lib/hr-id";
+import type { PlanAdherenceScore } from "@/lib/weekly-planning/plan-adherence";
+import { loadPlanAdherenceForPlans } from "@/lib/weekly-planning/plan-adherence-data";
 import { getConfirmedNationalHolidays } from "@/lib/vacation/national-holidays";
 import { createSystemNotification, type NotificationDeliveryStatus } from "@/lib/notifications/system";
 import { logError } from "@/lib/observability/log";
@@ -296,6 +298,16 @@ export type EmployeePlanComment = {
 };
 
 export type EmployeePlan = {
+  /**
+   * How closely this plan matched what the CRM recorded — undefined when nobody scored it.
+   *
+   * Populated by getEmployeePlansWorkspace for the VIEWER'S OWN plans only, and left undefined for
+   * everyone else's. That bound is deliberate and is not a silent cap: the workspace can hold up to
+   * WORKSPACE_PLAN_LIMIT plans across a whole team, and scoring all of them would mean one CRM
+   * evidence read per distinct owner on every page load. An approver who wants a subordinate's
+   * score opens the plan in the approvals hub, which scores any single plan on demand.
+   */
+  adherence?: PlanAdherenceScore | null;
   acknowledgements: Array<{
     acknowledgedAt: string;
     comment: string | null;
@@ -1882,11 +1894,26 @@ export async function getEmployeePlansWorkspace(access: AccessContext): Promise<
     const cappedRows = loadedRows.slice(0, WORKSPACE_PLAN_LIMIT);
     const viewerScope = resolvePlanViewerScope(access, directory.employees);
     const visible = cappedRows.filter((plan) => canViewPlan(access, employee, plan, viewerScope));
-    const plans = visible.map(mapPlan).map((plan) => ({
+    const mapped = visible.map(mapPlan).map((plan) => ({
       ...plan,
       employeeDisplayName: directoryByHrId.get(normalizeHrId(plan.employeeHrId))?.displayName || plan.employeeName,
       managerDisplayName: directoryByHrId.get(normalizeHrId(plan.managerHrId))?.displayName || plan.managerName,
     }));
+    // The viewer's own plans carry their adherence score, so he sees it on the plan itself and not
+    // only after opening the approvals hub. Scoped to his plans — see EmployeePlan.adherence for why
+    // — and never load-bearing: a CRM failure leaves the field undefined and the list renders as before.
+    const ownPlanIds = employee?.hrId
+      ? mapped
+          .filter((plan) => normalizeHrId(plan.employeeHrId) === normalizeHrId(employee.hrId))
+          .map((plan) => plan.id)
+      : [];
+    const adherenceById = ownPlanIds.length > 0
+      ? await loadPlanAdherenceForPlans(ownPlanIds).catch(() => new Map<string, PlanAdherenceScore>())
+      : new Map<string, PlanAdherenceScore>();
+    const plans = mapped.map((plan) => {
+      const adherence = adherenceById.get(plan.id);
+      return adherence ? { ...plan, adherence } : plan;
+    });
     return {
       canAcknowledgeHr,
       canSubmitPlans,

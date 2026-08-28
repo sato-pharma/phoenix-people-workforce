@@ -264,6 +264,18 @@ export function runPlanAdherenceTests(): void {
   assert.match(service, /const adherence = await loadPlanAdherence\(id\);/, "getPlanApprovalDetail computes it");
   assert.match(detail, /<PlanAdherenceBadge score=\{detail\.adherence\}/, "the plan header shows the score");
 
+  // ...and on the plan LIST too, not only once a plan is opened. "On every plan its score" is where
+  // the owner started, and the planner is the screen a manager actually lives in.
+  const planner = readFileSync("src/lib/weekly-planning/service.ts", "utf8");
+  const plannerUi = readFileSync("src/components/employee-portal/plans-workspace.tsx", "utf8");
+  assert.match(planner, /adherence\?: PlanAdherenceScore \| null;/, "EmployeePlan carries the score");
+  assert.match(
+    planner,
+    /await loadPlanAdherenceForPlans\(ownPlanIds\)/,
+    "the planner scores the viewer's own plans in ONE batched read, not one per plan",
+  );
+  assert.match(plannerUi, /<PlanAdherenceBadge score=\{p\.adherence\}/, "and the plan row renders it");
+
   // 2. Where the mismatch is — the same page, not a number with nowhere to go.
   assert.match(detail, /<PlanAdherenceReport score=\{detail\.adherence\}/, "the plan page shows the breakdown");
 
@@ -272,7 +284,7 @@ export function runPlanAdherenceTests(): void {
   assert.match(commandCenter, /<PlanAdherenceDashboardCard/, "the dashboard renders the card");
   assert.match(
     commandCenter,
-    /planHref=\{\(planId\) => `\/employee-portals\/approvals\/plan\/\$\{encodeURIComponent\(planId\)\}`\}/,
+    /planBaseHref="\/employee-portals\/approvals\/plan"/,
     "and the card links THROUGH to the plan that produced the number — the owner's whole point",
   );
 
@@ -285,5 +297,33 @@ export function runPlanAdherenceTests(): void {
     /\.\.\.\(showScoreHistoryTab \? \[\{ key: "score-history"/,
     "so Vacation and Excuse — which share this workspace and have nothing to score — never render it",
   );
-  assert.match(planBody, /scoreHistoryPlanHref=/, "and a history row links back to its own plan");
+  assert.match(
+    planBody,
+    /scoreHistoryPlanBaseHref=\{data\.planDetailBaseHref\}/,
+    "and a history row links back to its own plan",
+  );
+
+  // 5. Those links are built from a BASE STRING, never a `(planId) => href` callback.
+  //
+  // This is not style. `plan-approvals-body.tsx` is a server component and ApprovalsWorkspace is a
+  // client one, so a function prop cannot be serialised and the page 500s at render — the crash
+  // that took out Doctor Coverage, and the way this feature first went red in CI. The repo-wide RSC
+  // boundary test catches the server->client case; this pin also catches the two call sites that
+  // are server->server today and would start crossing the boundary the moment someone adds
+  // "use client" to a parent.
+  const report = readFileSync("src/components/weekly-planning/plan-adherence-report.tsx", "utf8");
+  assert.ok(
+    !/planHref/.test(report),
+    "no adherence surface takes a link-building FUNCTION — a function prop cannot cross into a client component",
+  );
+  for (const [label, source] of [
+    ["the portal dashboard", commandCenter],
+    ["the approvals hub", planBody],
+    ["the approvals workspace", workspace],
+  ] as const) {
+    assert.ok(
+      !/planHref=\{|scoreHistoryPlanHref=\{/.test(source),
+      `${label} passes a base path, not a callback`,
+    );
+  }
 }

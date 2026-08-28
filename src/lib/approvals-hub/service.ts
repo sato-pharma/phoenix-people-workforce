@@ -25,7 +25,7 @@ import { listWeeklyPlanManagerGapRecords, type WeeklyPlanManagerGapRecord } from
 import { listExcuseManagerGapRecords, type ExcuseManagerGapRecord } from "@/lib/excuses/drift-check";
 import { resolveJobFunctionRole } from "@/lib/employees/job-function";
 import { resolveApproverPlanStage } from "@/lib/weekly-planning/service";
-import type { PlanAdherenceScore } from "@/lib/weekly-planning/plan-adherence";
+import type { PlanAdherenceHistory, PlanAdherenceScore } from "@/lib/weekly-planning/plan-adherence";
 import { loadPlanAdherence, loadPlanAdherenceHistory } from "@/lib/weekly-planning/plan-adherence-data";
 import type { EmployeePlanKind, EmployeePlanStatus } from "@/lib/weekly-planning/plan-v1";
 import { isDistrictManagerPlanTitle } from "@/lib/weekly-planning/plan-v1";

@@ -32,7 +32,7 @@ export function PlanApprovalsBody({ data }: { data: PlanWorkspaceData }) {
       secondaryCompanyRequestsExportTitle="District Manager Plans"
       secondaryCompanyRequestsEmptyLabel="No District Manager plans have been submitted yet."
       scoreHistory={data.scoreHistory}
-      scoreHistoryPlanHref={(planId) => `${data.planDetailBaseHref}/${planId}`}
+      scoreHistoryPlanBaseHref={data.planDetailBaseHref}
     />
   );
 }

@@ -1178,7 +1178,7 @@ export function PortalCommandCenter({ snapshot, access }: { snapshot: PortalHome
     <div className="space-y-4">
       <PlanAdherenceDashboardCard
         adherence={snapshot.planAdherence}
-        planHref={(planId) => `/employee-portals/approvals/plan/${encodeURIComponent(planId)}`}
+        planBaseHref="/employee-portals/approvals/plan"
       />
       {roleCenter}
     </div>

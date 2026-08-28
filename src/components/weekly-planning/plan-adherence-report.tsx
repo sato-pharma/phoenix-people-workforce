@@ -45,6 +45,19 @@ function dayLabel(dateIso: string | null): string {
 }
 
 /**
+ * Link building takes a BASE STRING, never a `(planId) => href` callback.
+ *
+ * A callback reads more flexible and is why this file first went red: `plan-approvals-body.tsx` is
+ * a server component and `ApprovalsWorkspace` is a client one, so the function could not be
+ * serialised and the page 500s at render with "Functions cannot be passed directly to Client
+ * Components" — the same crash that took out Doctor Coverage. A string crosses that boundary
+ * safely from anywhere, so no future call site can reintroduce it.
+ */
+function planDetailHref(baseHref: string, planId: string): string {
+  return `${baseHref.replace(/\/+$/, "")}/${encodeURIComponent(planId)}`;
+}
+
+/**
  * The score as a chip, for a plan row or a page header.
  *
  * Renders "Not measured" rather than a number when the plan held nothing the CRM can confirm —
@@ -94,14 +107,14 @@ export function PlanAdherenceBadge({
  */
 export function PlanAdherenceDashboardCard({
   adherence,
-  planHref,
+  planBaseHref,
 }: {
   adherence: {
     averagePct: number | null;
     latest: { checkable: number; kept: number; measurable: boolean; periodKey: string; planId: string; scorePct: number | null } | null;
     measuredPeriods: number;
   };
-  planHref: (planId: string) => string;
+  planBaseHref: string;
 }) {
   const latest = adherence.latest;
   if (!latest) return null;
@@ -113,7 +126,7 @@ export function PlanAdherenceDashboardCard({
 
   return (
     <Link
-      href={planHref(latest.planId)}
+      href={planDetailHref(planBaseHref, latest.planId)}
       className="group relative block overflow-hidden border border-slate-200 bg-white px-4 py-4 transition-colors hover:border-orange-300 hover:bg-orange-50/40 sm:px-5 sm:py-5"
     >
       <span className="absolute inset-x-0 top-0 h-[3px] bg-[#f47b20]" />
@@ -139,7 +152,10 @@ export function PlanAdherenceDashboardCard({
       >
         {headline}
       </p>
-      <p className="truncate text-[11px] font-medium text-slate-500">{sub}</p>
+      {/* whitespace-nowrap, never `truncate`: Tailwind's truncate IS an ellipsis, and text is never
+          ellipsised in this product. The longest this line gets is
+          "2026-W34 · nothing in it the CRM can check", which fits the card at 375px. */}
+      <p className="whitespace-nowrap text-[11px] font-medium text-slate-500">{sub}</p>
       <p className="mt-1 whitespace-nowrap text-[11px] font-bold text-orange-600 group-hover:text-orange-700">
         See where the plan and the CRM disagree →
       </p>
@@ -275,11 +291,11 @@ export function PlanAdherenceReport({ score }: { score: PlanAdherenceScore }) {
  */
 export function PlanAdherenceHistoryPanel({
   history,
-  planHref,
+  planBaseHref,
   emptyLabel = "No scored plans yet.",
 }: {
   history: PlanAdherenceHistory;
-  planHref?: (planId: string) => string;
+  planBaseHref?: string | null;
   emptyLabel?: string;
 }) {
   if (history.entries.length === 0) {
@@ -310,8 +326,8 @@ export function PlanAdherenceHistoryPanel({
           return (
             <li key={entry.planId} className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-4 py-2.5 last:border-b-0">
               <div className="flex flex-wrap items-center gap-2">
-                {planHref ? (
-                  <Link href={planHref(entry.planId)} className="flex flex-wrap items-center gap-2 hover:text-orange-700">
+                {planBaseHref ? (
+                  <Link href={planDetailHref(planBaseHref, entry.planId)} className="flex flex-wrap items-center gap-2 hover:text-orange-700">
                     {label}
                   </Link>
                 ) : (

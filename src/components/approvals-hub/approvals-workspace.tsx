@@ -76,7 +76,9 @@ type Props = {
   // is shared with Vacation and Excuse, and neither has anything to score: an unconditional tab
   // here would appear on all three pages and be empty on two of them.
   scoreHistory?: PlanAdherenceHistory | null;
-  scoreHistoryPlanHref?: (planId: string) => string;
+  // A base path, not a `(planId) => href` builder: this is a client component, so a function prop
+  // handed in from the server page cannot be serialised and the page 500s at render.
+  scoreHistoryPlanBaseHref?: string | null;
 };
 
 function Card({ card, readOnly, slaModule }: { card: PendingCard; readOnly?: boolean; slaModule: ApprovalsSlaModule }) {
@@ -123,7 +125,7 @@ export function ApprovalsWorkspace({
   secondaryCompanyRequestsExportTitle,
   secondaryCompanyRequestsEmptyLabel,
   scoreHistory,
-  scoreHistoryPlanHref,
+  scoreHistoryPlanBaseHref,
 }: Props) {
   type TabKey =
     | "pending"
@@ -218,7 +220,7 @@ export function ApprovalsWorkspace({
       ) : tab === "score-history" ? (
         <PlanAdherenceHistoryPanel
           history={scoreHistory ?? { averagePct: null, entries: [], measuredPeriods: 0, totalCheckable: 0, totalKept: 0 }}
-          planHref={scoreHistoryPlanHref}
+          planBaseHref={scoreHistoryPlanBaseHref}
           emptyLabel="None of your plans has been scored yet."
         />
       ) : tab === "approval-scope" ? (
