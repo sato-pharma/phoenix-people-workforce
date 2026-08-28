@@ -246,6 +246,15 @@ export const accessRegistry = [
   // own existing update functions rather than a new mechanism of its own.
   sessionApi({ audit: { classification: "access-read", required: true }, methods: readOnly, pattern: "/api/admin/email-control-center", permission: null, guard: "domain-helper" }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["PATCH"], pattern: "/api/admin/email-control-center/**", permission: null, guard: "domain-helper", csrfRequired: true }),
+  // Mailbox compliance monitor — the most sensitive read surface in the app (an admin reading an
+  // employee's company mailbox). Super Admin only, enforced by the mailbox_monitor hard boundary in
+  // permissions.ts. Every method is audited; each live IMAP read also writes mailbox_monitor_access_log.
+  sessionApi({ audit: { classification: "access-read", required: true }, methods: ["GET"], pattern: "/api/admin/mailbox-monitor", permission: { resource: "mailbox_monitor", action: "read" } }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/admin/mailbox-monitor", permission: { resource: "mailbox_monitor", action: "update" }, csrfRequired: true }),
+  sessionApi({ audit: { classification: "access-read", required: true }, methods: ["GET"], pattern: "/api/admin/mailbox-monitor/:id", permission: { resource: "mailbox_monitor", action: "read" } }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["PATCH", "DELETE"], pattern: "/api/admin/mailbox-monitor/:id", permission: { resource: "mailbox_monitor", action: "update" }, csrfRequired: true }),
+  sessionApi({ audit: { classification: "access-read", required: true }, methods: ["GET"], pattern: "/api/admin/mailbox-monitor/:id/messages", permission: { resource: "mailbox_monitor", action: "read" } }),
+  sessionApi({ audit: { classification: "access-read", required: true }, methods: ["GET"], pattern: "/api/admin/mailbox-monitor/:id/message", permission: { resource: "mailbox_monitor", action: "read" } }),
   sessionApi({ methods: allMethods, pattern: "/api/admin/workflow-control/**", permission: { resource: "workflow_registry", action: "update" }, guard: "domain-helper" }),
   sessionApi({ methods: allMethods, pattern: "/api/admin/workflow-registry/**", permission: { resource: "workflow_registry", action: "update" } }),
   sessionApi({ methods: allMethods, pattern: "/api/admin/email-templates/**", permission: { resource: "communication", action: "read" } }),

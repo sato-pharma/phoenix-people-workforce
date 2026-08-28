@@ -70,6 +70,7 @@ function isEmail(value: string): boolean {
 
 function rowToMonitor(row: MonitorRow, employeeName: string | null): MailboxMonitor {
   return {
+    id: row.id,
     createdAt: row.created_at,
     createdBy: row.created_by,
     displayLabel: row.display_label,

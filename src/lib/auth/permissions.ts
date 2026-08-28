@@ -553,6 +553,7 @@ const defaultPermissionMatrix: PermissionMap = {
     resignations: allActions,
     permission_admin: allActions,
     module_control: allActions,
+    mailbox_monitor: allActions,
     workflow_registry: allActions,
     sales: allActions,
     direct_orders: allActions,
