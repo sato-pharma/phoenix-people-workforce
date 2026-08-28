@@ -1,5 +1,5 @@
 import { RepsPlansControls, RepsPlansRepTable } from "@/components/crm/reps-plans-tables";
-import type { RepsPlansBoard } from "@/lib/crm/reps-plans";
+import { attainmentTone, riskTone, shareTone, type RepsPlansBoard } from "@/lib/crm/reps-plans";
 
 // Server half of Reps Plans. The Section/Tile vocabulary is copied verbatim from
 // rep-doctor-lists-board.tsx, its neighbour in the same shell — flat borders, slate-900 header bar,
@@ -78,15 +78,17 @@ function rate(value: number | null): string {
   return value == null ? "—" : value.toFixed(2);
 }
 
-function pct(value: number | null): string {
-  return value == null ? "—" : `${value}%`;
+/**
+ * Counts on this board run to five figures — 14,224 calls in one August. Bare digits are the
+ * owner's "human-readable" rule broken in the smallest possible way, and every sibling CRM board
+ * already groups them, so this matches them rather than inventing a format.
+ */
+function count(value: number): string {
+  return value.toLocaleString();
 }
 
-function attainmentTone(value: number | null): "emerald" | "amber" | "rose" | undefined {
-  if (value == null) return undefined;
-  if (value >= 100) return "emerald";
-  if (value >= 70) return "amber";
-  return "rose";
+function pct(value: number | null): string {
+  return value == null ? "—" : `${value}%`;
 }
 
 export function RepsPlansBoardView({ basePath, board }: { basePath: string; board: RepsPlansBoard }) {
@@ -149,11 +151,11 @@ export function RepsPlansBoardView({ basePath, board }: { basePath: string; boar
             />
             <Tile
               label="Reps on both"
-              sub={`of ${totals.reps} with field work`}
-              tone={totals.repsOnTarget > 0 ? "emerald" : "rose"}
-              value={String(totals.repsOnTarget)}
+              sub={`of ${count(totals.reps)} with field work`}
+              tone={shareTone(totals.reps > 0 ? (totals.repsOnTarget / totals.reps) * 100 : null)}
+              value={count(totals.repsOnTarget)}
             />
-            <Tile label="Working days" sub="Sat · Sun · Mon · Tue · Wed" value={String(board.workingDays)} />
+            <Tile label="Working days" sub="Sat · Sun · Mon · Tue · Wed" value={count(board.workingDays)} />
           </div>
 
           {/* Row two: what the numbers above are made of. Three proof buckets, never summed back
@@ -162,37 +164,37 @@ export function RepsPlansBoardView({ basePath, board }: { basePath: string; boar
             <Tile
               label="Calls reported"
               sub="every field row in the period"
-              value={String(totals.am.reported + totals.pm.reported + totals.unspecified)}
+              value={count(totals.am.reported + totals.pm.reported + totals.unspecified)}
             />
             <Tile
               label="Proved"
               sub="visit + GPS check-in, same doctor"
               tone="emerald"
-              value={String(totals.am.verified + totals.pm.verified)}
+              value={count(totals.am.verified + totals.pm.verified)}
             />
             <Tile
               label="No check-in"
               sub="real doctor, nothing to confirm it"
               tone="amber"
-              value={String(totals.am.unverified + totals.pm.unverified)}
+              value={count(totals.am.unverified + totals.pm.unverified)}
             />
             <Tile
               label="Campaign"
               sub={`${totals.campaignSharePct}% of all field work`}
               tone="sky"
-              value={String(totals.campaignCalls)}
+              value={count(totals.campaignCalls)}
             />
             <Tile
               label="Unproven"
               sub="share of reported calls with no proof"
-              tone={totals.unprovenPct != null && totals.unprovenPct >= 25 ? "rose" : "emerald"}
+              tone={riskTone(totals.unprovenPct)}
               value={pct(totals.unprovenPct)}
             />
             <Tile
               label={`Days over ${board.campaignLimit}`}
-              sub={`${totals.repsWithFlaggedDays} reps · ${totals.campaignOnlyDays} days with no proof at all`}
+              sub={`${count(totals.repsWithFlaggedDays)} reps · ${count(totals.campaignOnlyDays)} days with no proof at all`}
               tone={totals.flaggedDays > 0 ? "rose" : "emerald"}
-              value={String(totals.flaggedDays)}
+              value={count(totals.flaggedDays)}
             />
           </div>
 
