@@ -162,6 +162,7 @@ import { runRecruitmentScreeningPageTests } from "./recruitment-screening-page.t
 import { runCandidatePositionFolderTests } from "./candidate-position-folders.test.ts";
 import { runArabicPlaceMatchTests } from "./arabic-place-match.test.ts";
 import { runCandidatePositionSuggestionTests } from "./candidate-position-suggestion.test.ts";
+import { runVacancyManagerEscalationTests } from "./vacancy-manager-escalation.test.ts";
 import { runRecruitmentJobPostChannelTests } from "./recruitment-job-post-channels.test.ts";
 import { runRecruitmentHubPortalCoverageTests } from "./recruitment-hub-portal-coverage.test.ts";
 import { runRecruitmentPortalCvViewTests } from "./recruitment-portal-cv-view.test.ts";
@@ -1271,6 +1272,10 @@ await runTest(
 await runTest(
   "recruitment position suggestion (the seat a CV is proposed for, and the four ways a place name lied)",
   runCandidatePositionSuggestionTests,
+);
+await runTest(
+  "vacancy manager escalation (when the seat's own manager post is vacant, climb to whoever is above it)",
+  runVacancyManagerEscalationTests,
 );
 await runTest(
   "recruitment advertising channels (the code round-trips from apply link to intake, or every CV loses its source)",

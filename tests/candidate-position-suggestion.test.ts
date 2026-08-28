@@ -32,21 +32,21 @@ import type { VacancyOption } from "../src/lib/recruitment/vacancy-options.ts";
  * differing only by line, which is why even a perfect address match there cannot pre-fill one.
  */
 const SEATS: VacancyOption[] = [
-  { areaName: "Cairo", id: 348, jobTitle: "District Sales Manager", lineName: "Pedia", managerHrId: "m1", managerName: "Ali Mohamed Ali Elsayed", regionName: "Cairo" },
-  { areaName: "Egypt", id: 360, jobTitle: "National Sales Manager", lineName: "Anti Infective", managerHrId: "m2", managerName: "Anwar Gaweesh", regionName: "Egypt" },
-  { areaName: "Delta (2)", id: 356, jobTitle: "District Sales Manager", lineName: "Pedia", managerHrId: "m3", managerName: "Hany Saad Mohamed Omar", regionName: "Delta (2)" },
-  { areaName: "Nasr City", id: 298, jobTitle: "Medical Representative", lineName: "Anti Infective", managerHrId: "m4", managerName: "Momen Abdelhady Mohamed Shehata", regionName: "Cairo" },
-  { areaName: "Nasr City", id: 330, jobTitle: "Medical Representative", lineName: "Pedia", managerHrId: "m1", managerName: "Ali Mohamed Ali Elsayed", regionName: "Cairo" },
-  { areaName: "Heliopolis", id: 297, jobTitle: "Medical Representative", lineName: "Anti Infective", managerHrId: "m4", managerName: "Momen Abdelhady Mohamed Shehata", regionName: "Cairo" },
+  { areaName: "Cairo", id: 348, jobTitle: "District Sales Manager", lineName: "Pedia", managerHrId: "m1", managerName: "Ali Mohamed Ali Elsayed", regionName: "Cairo", standingInFor: null },
+  { areaName: "Egypt", id: 360, jobTitle: "National Sales Manager", lineName: "Anti Infective", managerHrId: "m2", managerName: "Anwar Gaweesh", regionName: "Egypt", standingInFor: null },
+  { areaName: "Delta (2)", id: 356, jobTitle: "District Sales Manager", lineName: "Pedia", managerHrId: "m3", managerName: "Hany Saad Mohamed Omar", regionName: "Delta (2)", standingInFor: null },
+  { areaName: "Nasr City", id: 298, jobTitle: "Medical Representative", lineName: "Anti Infective", managerHrId: "m4", managerName: "Momen Abdelhady Mohamed Shehata", regionName: "Cairo", standingInFor: null },
+  { areaName: "Nasr City", id: 330, jobTitle: "Medical Representative", lineName: "Pedia", managerHrId: "m1", managerName: "Ali Mohamed Ali Elsayed", regionName: "Cairo", standingInFor: null },
+  { areaName: "Heliopolis", id: 297, jobTitle: "Medical Representative", lineName: "Anti Infective", managerHrId: "m4", managerName: "Momen Abdelhady Mohamed Shehata", regionName: "Cairo", standingInFor: null },
   // Helwan-Maadi's sales REGION is called Giza, but the governorate its name resolves to is Cairo.
   // Region and governorate are different things in this company and neither implies the other.
-  { areaName: "Haram - Faisal", id: 3, jobTitle: "Medical Representative", lineName: "Anti Infective", managerHrId: "m5", managerName: "Mahmoud Eldaly", regionName: "Giza" },
-  { areaName: "Helwan-Maadi", id: 261, jobTitle: "Medical Representative", lineName: "Anti Infective", managerHrId: "m5", managerName: "Mahmoud Eldaly", regionName: "Giza" },
-  { areaName: "Kafr El-Sheikh 1", id: 301, jobTitle: "Medical Representative", lineName: "Pedia", managerHrId: "m3", managerName: "Hany Saad Mohamed Omar", regionName: "Alex-BHR" },
-  { areaName: "Dakahlia 3", id: 323, jobTitle: "Medical Representative", lineName: "CNS", managerHrId: "m6", managerName: "Sally Saied Sedhom Mankrios Sedhom", regionName: "Delta (2)" },
-  { areaName: "Gharbia 1 (Tanta)", id: 353, jobTitle: "Medical Representative", lineName: "Anti Infective", managerHrId: "m7", managerName: "Dina Hamdy Fadel Mohamed Bdair", regionName: "Delta (1)" },
-  { areaName: "Fayoum", id: 316, jobTitle: "Medical Representative", lineName: "Pedia", managerHrId: "m8", managerName: "Taha Mohamed Taha Elsayed AboElftouh", regionName: "Giza" },
-  { areaName: "Head office", id: 354, jobTitle: "Talent Acquisition", lineName: "Head Office", managerHrId: "m9", managerName: "Omar Anwar Ibrahim Ahmed Gawish", regionName: "Head office" },
+  { areaName: "Haram - Faisal", id: 3, jobTitle: "Medical Representative", lineName: "Anti Infective", managerHrId: "m5", managerName: "Mahmoud Eldaly", regionName: "Giza", standingInFor: null },
+  { areaName: "Helwan-Maadi", id: 261, jobTitle: "Medical Representative", lineName: "Anti Infective", managerHrId: "m5", managerName: "Mahmoud Eldaly", regionName: "Giza", standingInFor: null },
+  { areaName: "Kafr El-Sheikh 1", id: 301, jobTitle: "Medical Representative", lineName: "Pedia", managerHrId: "m3", managerName: "Hany Saad Mohamed Omar", regionName: "Alex-BHR", standingInFor: null },
+  { areaName: "Dakahlia 3", id: 323, jobTitle: "Medical Representative", lineName: "CNS", managerHrId: "m6", managerName: "Sally Saied Sedhom Mankrios Sedhom", regionName: "Delta (2)", standingInFor: null },
+  { areaName: "Gharbia 1 (Tanta)", id: 353, jobTitle: "Medical Representative", lineName: "Anti Infective", managerHrId: "m7", managerName: "Dina Hamdy Fadel Mohamed Bdair", regionName: "Delta (1)", standingInFor: null },
+  { areaName: "Fayoum", id: 316, jobTitle: "Medical Representative", lineName: "Pedia", managerHrId: "m8", managerName: "Taha Mohamed Taha Elsayed AboElftouh", regionName: "Giza", standingInFor: null },
+  { areaName: "Head office", id: 354, jobTitle: "Talent Acquisition", lineName: "Head Office", managerHrId: "m9", managerName: "Omar Anwar Ibrahim Ahmed Gawish", regionName: "Head office", standingInFor: null },
 ];
 
 const areasOf = (list: ReadonlyArray<{ vacancy: VacancyOption }>): string[] =>
@@ -399,8 +399,8 @@ export async function runCandidatePositionSuggestionTests(): Promise<void> {
     // AND THE FULLER SPELLING STILL WINS OUTRIGHT. Where the address names the qualifier too, the
     // longer reading has consumed more of it and is the one the candidate wrote down.
     const twoSalams: VacancyOption[] = [
-      { areaName: "Helwan-Maadi", id: 901, jobTitle: "Medical Representative", lineName: "Pedia", managerHrId: "m5", managerName: "Mahmoud Eldaly", regionName: "Giza" },
-      { areaName: "Sohag2", id: 902, jobTitle: "Medical Representative", lineName: "CNS", managerHrId: "m6", managerName: "Sally Saied Sedhom Mankrios Sedhom", regionName: "Upper Egypt" },
+      { areaName: "Helwan-Maadi", id: 901, jobTitle: "Medical Representative", lineName: "Pedia", managerHrId: "m5", managerName: "Mahmoud Eldaly", regionName: "Giza", standingInFor: null },
+      { areaName: "Sohag2", id: 902, jobTitle: "Medical Representative", lineName: "CNS", managerHrId: "m6", managerName: "Sally Saied Sedhom Mankrios Sedhom", regionName: "Upper Egypt", standingInFor: null },
     ];
     const sohag = suggestPositions(
       { address: "Dar Al-Salam, Sohag", currentJobTitle: "Medical Representative" },
@@ -459,6 +459,7 @@ export async function runCandidatePositionSuggestionTests(): Promise<void> {
       managerHrId: "m1",
       managerName: "Ali Mohamed Ali Elsayed",
       regionName: "R",
+      standingInFor: null,
     });
 
     // A. Two real Dayrouts. The address itself names the governorate, so the Beheira seat goes.
