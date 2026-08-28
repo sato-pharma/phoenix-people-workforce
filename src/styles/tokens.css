@@ -1,9 +1,49 @@
+/* =============================================================================
+   Phoenix design tokens
+   =============================================================================
+
+   TWO GROUPS LIVE IN THIS FILE.
+
+   1. LEGACY (--phoenix-primary, --bg, --text, --success, ...). These are wired
+      into tailwind.config.ts and app/globals.css's @theme inline block, so they
+      are live today. Their VALUES ARE UNCHANGED by this file's expansion — the
+      new system sits alongside rather than replacing them, so adding it moves
+      no pixel. Phase 3 re-points these at the --phx- values below, one at a
+      time, with a browser check each time.
+
+   2. THE --phx- SYSTEM. The real design system: warm neutrals, Phoenix orange,
+      two line weights, semantic triples, a radius scale, a type scale, spacing,
+      motion, and the tokens behind the signature devices. Nothing consumes
+      these yet. That is deliberate — this file can be reviewed on its own and
+      cannot break a page.
+
+   THE ONE RULE THAT MATTERS HERE — READ BEFORE ADDING A TOKEN.
+
+   app/globals.css imports this file FIRST and then defines its own :root, so
+   any name it also uses wins the cascade and the value written here is silently
+   dead. That was a real bug: --border and --card were defined in both files and
+   neither value here ever rendered (fixed in #2527). globals.css currently owns
+   these 32 names — never define a bare one of them in this file:
+
+     --accent --accent-foreground --background --border --card --card-foreground
+     --chart-1 --chart-2 --chart-3 --chart-4 --chart-5 --destructive --foreground
+     --input --muted --muted-foreground --popover --popover-foreground --primary
+     --primary-foreground --radius --ring --secondary --secondary-foreground
+     --sidebar --sidebar-accent --sidebar-accent-foreground --sidebar-border
+     --sidebar-foreground --sidebar-primary --sidebar-primary-foreground
+     --sidebar-ring
+
+   The --phx- prefix exists to make that collision impossible. Keep it on every
+   new token, including ones that look safe today — globals.css grows too.
+   ========================================================================== */
+
 :root {
-  /* PRIMARY */
+  /* ---------------------------------------------------------------- LEGACY
+     Live today. Values unchanged. Phase 3 re-points these at --phx- values. */
+
   --phoenix-primary: #f97316;
   --phoenix-primary-hover: #ea580c;
 
-  /* LIGHT MODE */
   --bg: #ffffff;
   --bg-soft: #f8fafc;
   --bg-muted: #f1f5f9;
@@ -11,19 +51,189 @@
   --text: #0f172a;
   --text-secondary: #475569;
 
-  /* --border and --card are deliberately NOT defined here.
-     app/globals.css imports this file FIRST and then redefines both in its own
-     :root and .dark blocks, so globals.css wins the cascade and anything set
-     here never renders. The live values are oklch, in app/globals.css.
-     Set them there, not here — a value added back here is silently dead. */
-
-  /* SEMANTIC */
   --success: #22c55e;
   --warning: #f59e0b;
   --danger: #ef4444;
+
+  /* --border and --card are deliberately NOT defined here — app/globals.css
+     owns both. See the header. A value added back here is silently dead. */
+
+  /* ================================================================= SURFACES
+     Warm, not blue-grey. A pure neutral reads as unconsidered; these carry a
+     slight bias toward the orange so the ground and the accent belong to the
+     same family. --phx-paper is the page; --phx-surface is what sits on it. */
+
+  --phx-paper: #f7f6f3;
+  --phx-paper-2: #f1efea;
+  --phx-surface: #ffffff;
+  --phx-surface-2: #fbfaf8;
+
+  /* ====================================================================== INK
+     Never #000. Four steps: body, secondary, meta, disabled. */
+
+  --phx-ink: #0d1015;
+  --phx-ink-2: #383d45;
+  --phx-ink-soft: #6b7078;
+  --phx-ink-faint: #9aa0a8;
+
+  /* ==================================================================== LINES
+     Two weights, deliberately. A border-first layout needs a quiet hairline for
+     structure and a stronger rule for emphasis; one weight cannot do both. */
+
+  --phx-line: #e0dcd4;
+  --phx-line-strong: #c9c4ba;
+
+  /* =================================================================== ACCENT
+     Phoenix orange, unchanged from --phoenix-primary. -soft and -line are the
+     tint pair for badges, active rows and callouts. */
+
+  --phx-accent: #f97316;
+  --phx-accent-hover: #ea580c;
+  --phx-accent-press: #c2410c;
+  --phx-accent-soft: #fff2e8;
+  --phx-accent-line: #fbcfa8;
+  --phx-accent-ink: #ffffff;
+
+  /* ================================================================= SEMANTIC
+     Triples, not single colours. A status pill needs a foreground, a background
+     and a border that agree; without the pair every pill gets hand-painted. */
+
+  --phx-ok: #0f7a52;
+  --phx-ok-bg: #edf7f2;
+  --phx-ok-line: #bfe0d0;
+
+  --phx-warn: #9a5b00;
+  --phx-warn-bg: #fff6e8;
+  --phx-warn-line: #f2d7a6;
+
+  --phx-danger: #b3251d;
+  --phx-danger-bg: #fdf1ef;
+  --phx-danger-line: #f2c6c1;
+
+  --phx-info: #0b6a9c;
+  --phx-info-bg: #eef6fb;
+  --phx-info-line: #bedcee;
+
+  /* =================================================================== RADIUS
+     Lands on 4px. The reference prototype ended at 0 (fully square), which is
+     too severe for dense HR tables — 4px is its intermediate step and the one
+     to keep. --phx-radius is the default for cards, inputs and buttons. */
+
+  --phx-radius-xs: 2px;
+  --phx-radius-sm: 3px;
+  --phx-radius: 4px;
+  --phx-radius-lg: 6px;
+  --phx-radius-xl: 10px;
+  --phx-radius-pill: 999px;
+
+  /* =================================================================== SHADOW
+     Warm-tinted and soft. Used sparingly — structure comes from lines, not from
+     floating cards. Reach for --phx-line before reaching for a shadow. */
+
+  --phx-shadow-xs: 0 1px 2px rgba(13, 16, 21, 0.04);
+  --phx-shadow-sm: 0 2px 8px rgba(13, 16, 21, 0.05);
+  --phx-shadow: 0 8px 24px rgba(13, 16, 21, 0.06);
+  --phx-shadow-lg: 0 16px 46px rgba(13, 16, 21, 0.08);
+
+  /* ==================================================================== TYPE
+     The scale covers what the app actually uses. Today 14 different sizes are
+     in play across 238 admin pages, six of them arbitrary pixel values
+     (text-[11px] alone appears 1,962 times), which means there is no scale at
+     all. These ten replace them. The small end is real: dense tables genuinely
+     need 10px and 11px, so they are in the scale rather than left arbitrary. */
+
+  --phx-fs-3xs: 9px;
+  --phx-fs-2xs: 10px;
+  --phx-fs-xs: 11px;
+  --phx-fs-sm: 12px;
+  --phx-fs-md: 13px;
+  --phx-fs-base: 14px;
+  --phx-fs-lg: 16px;
+  --phx-fs-xl: 20px;
+  --phx-fs-2xl: 26px;
+  --phx-fs-3xl: 34px;
+
+  --phx-lh-tight: 1.2;
+  --phx-lh-snug: 1.35;
+  --phx-lh: 1.5;
+
+  /* --phx-track-label is the signature micro-label treatment: uppercase, small,
+     letter-spaced. It is what makes an eyebrow read as a label and not as text. */
+  --phx-track-label: 0.08em;
+  --phx-track-tight: -0.01em;
+
+  --phx-fw-normal: 400;
+  --phx-fw-medium: 500;
+  --phx-fw-semibold: 600;
+  --phx-fw-bold: 700;
+
+  /* ================================================================== SPACING
+     4px base. */
+
+  --phx-space-1: 4px;
+  --phx-space-2: 8px;
+  --phx-space-3: 12px;
+  --phx-space-4: 16px;
+  --phx-space-5: 20px;
+  --phx-space-6: 24px;
+  --phx-space-7: 32px;
+  --phx-space-8: 40px;
+  --phx-space-9: 48px;
+  --phx-space-10: 64px;
+
+  /* =================================================================== MOTION
+     ONE easing curve for the whole app. Two would already be inconsistency. */
+
+  --phx-ease: cubic-bezier(0.2, 0.72, 0.2, 1);
+  --phx-dur-fast: 120ms;
+  --phx-dur: 180ms;
+  --phx-dur-slow: 260ms;
+
+  /* ==================================================================== FOCUS
+     Keyboard focus needs a visible state on every interactive element. */
+
+  --phx-focus-ring: color-mix(in srgb, var(--phx-accent) 32%, transparent);
+  --phx-focus-width: 2px;
+
+  /* ================================================================ SIGNATURE
+     The inset left stripe that marks the active item — used instead of a filled
+     background, so an active row stays readable. */
+
+  --phx-stripe-width: 3px;
+
+  /* =================================================================== LAYOUT */
+
+  --phx-max: 1680px;
+
+  /* ===================================================================== FONT
+     These hold TODAY's stacks verbatim, so defining them changes nothing. None
+     is webfont-backed, which is why the typeface still varies by machine (Aptos
+     on Windows with Office, Segoe UI Variable without it, something else on
+     macOS). Choosing and shipping a real face is a visible change and belongs
+     with the Phase 3 wiring, where it gets checked in a browser. */
+
+  --phx-font-ui:
+    "Aptos", "Segoe UI Variable Display", "Segoe UI Variable Text", "Segoe UI", "Inter",
+    "Helvetica Neue", Arial, sans-serif;
+  --phx-font-mono:
+    "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
+    "Courier New", monospace;
+  --phx-font-display: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
 }
 
+/* =============================================================================
+   DARK
+   Every --phx- token that carries a colour is redefined here. A token defined
+   only in :root renders the light value on a dark ground, which is the classic
+   unreadable-theme bug. Sizes, spacing, radii, motion and fonts do not change
+   between themes and are deliberately NOT repeated.
+
+   The dark ground is warm too, not blue-black, so it stays in the same family
+   as the light theme rather than reading as a different product.
+   ========================================================================== */
+
 .dark {
+  /* LEGACY — values unchanged. */
   --bg: #020617;
   --bg-soft: #0b1220;
   --bg-muted: #111827;
@@ -32,4 +242,52 @@
   --text-secondary: #9ca3af;
 
   /* --border and --card: see the note in :root above. */
+
+  /* SURFACES */
+  --phx-paper: #0e1014;
+  --phx-paper-2: #14161b;
+  --phx-surface: #181b21;
+  --phx-surface-2: #1e2229;
+
+  /* INK — warm off-white, not pure white. */
+  --phx-ink: #eceae6;
+  --phx-ink-2: #b4b1ab;
+  --phx-ink-soft: #8a8781;
+  --phx-ink-faint: #63615c;
+
+  /* LINES */
+  --phx-line: #2a2d34;
+  --phx-line-strong: #3d414a;
+
+  /* ACCENT — the orange holds on a dark ground; the tint pair does not, so
+     -soft and -line are rebuilt rather than inverted. */
+  --phx-accent: #fb8534;
+  --phx-accent-hover: #fd9a55;
+  --phx-accent-press: #e8701f;
+  --phx-accent-soft: #2b1a0d;
+  --phx-accent-line: #5c3618;
+  --phx-accent-ink: #1a0e05;
+
+  /* SEMANTIC — lifted foregrounds for contrast, deepened backgrounds. */
+  --phx-ok: #4cc99a;
+  --phx-ok-bg: #0e211a;
+  --phx-ok-line: #1e4a3a;
+
+  --phx-warn: #e3a54f;
+  --phx-warn-bg: #241a09;
+  --phx-warn-line: #4d3714;
+
+  --phx-danger: #f0827a;
+  --phx-danger-bg: #251110;
+  --phx-danger-line: #542623;
+
+  --phx-info: #5cb4e6;
+  --phx-info-bg: #0c1d28;
+  --phx-info-line: #1d4257;
+
+  /* SHADOW — deeper on a dark ground, or it disappears. */
+  --phx-shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --phx-shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.36);
+  --phx-shadow: 0 8px 24px rgba(0, 0, 0, 0.44);
+  --phx-shadow-lg: 0 16px 46px rgba(0, 0, 0, 0.52);
 }
