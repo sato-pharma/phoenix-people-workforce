@@ -91,6 +91,22 @@ const REGION_LABELS: Record<string, string> = {
   AB: "Alex-BHR", CA: "Cairo", D1: "Delta 1", D2: "Delta 2", GZ: "Giza", UE: "Upper Egypt", OT: "Others",
 };
 
+/**
+ * A region code's display name, including a line-specific district split (Anti Infective's
+ * `UE-1`/`UE-2` Upper Egypt districts) that REGION_LABELS has no entry for. Strips the trailing
+ * `-<digits>` to find the family's label and reattaches the district number ("UE-1" -> "Upper
+ * Egypt 1"), rather than hardcoding every split code by hand — a future line-specific split adds
+ * no new entry here, the same way it needs none in `au_v_line_area_map`.
+ */
+function regionLabelFor(regionCode: string): string {
+  const district = /^([A-Z]+)-(\d+)$/.exec(regionCode);
+  if (district) {
+    const familyLabel = REGION_LABELS[district[1]];
+    if (familyLabel) return `${familyLabel} ${district[2]}`;
+  }
+  return REGION_LABELS[regionCode] ?? regionCode;
+}
+
 /** Months dropdown: current month + the next 17 (built from a caller-supplied "now"). */
 function buildMonths(now: Date): string[] {
   const out: string[] = [];
@@ -261,7 +277,7 @@ export async function generateTargetsTemplate(opts?: {
     wb.addWorksheet(areaSheetName),
     ["Area Name", "Area Code", "Region"],
     [28, 12, 14],
-    areas.map((a) => [a.areaName, a.areaCode, a.regionCode ? REGION_LABELS[a.regionCode] ?? a.regionCode : ""]),
+    areas.map((a) => [a.areaName, a.areaCode, a.regionCode ? regionLabelFor(a.regionCode) : ""]),
     [undefined, undefined, undefined],
   );
   const listsWs = wb.addWorksheet(listsSheetName);
