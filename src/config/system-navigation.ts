@@ -1418,6 +1418,12 @@ const hrNavigationSectionSeeds = [
   {
     id: "hr-people",
     items: [
+      // Gated on `update`, not `read`, ON PURPOSE. The page behind it renders the full editing UI
+      // unconditionally - EmployeeManagement takes no capability props - so offering it on `read`
+      // would hand HR Advisory Save buttons the API then refuses. HR Operations holds
+      // create/update/import here, and nine lines of her job description are done on this screen;
+      // until this row existed she held the grant with no way to reach the page.
+      { href: "/hr/employees", icon: UsersRound, label: "Employee Directory", permissions: [{ resource: "employees", action: "update" }] },
       { href: "/hr/employee-360", icon: IdCard, label: "Employee 360", permissions: [{ resource: "employee_profile", action: "read" }] },
       { href: "/hr/organogram", icon: Network, label: "Organogram", permissions: [{ resource: "organogram" }] },
       { href: "/hr/probation", icon: Hourglass, label: "Probation", permissions: [{ resource: "probation" }] },
@@ -2603,7 +2609,11 @@ export const peopleManagementPageItems: readonly AdminToolsPageItem[] = [
     label: "Employees",
     description: "Full employee directory and records.",
     permissions: [{ resource: "employees" }],
-    roles: ["Super Admin"],
+    // HR Operations added alongside the Super Admin: she holds employees create/update/import, and
+    // nine responsibilities of her job description are carried out on this screen. HR Advisory is
+    // deliberately NOT here - she is read/export only, and the page ships an editing UI that takes
+    // no capability props, so admitting her would show Save buttons the API refuses.
+    roles: ["Super Admin", "HR Operations"],
   },
   // Organogram/Probation moved to direct sidebar links — see the
   // people-management section in adminNavigationSectionSeeds above.
