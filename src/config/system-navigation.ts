@@ -31,6 +31,7 @@ import {
   Landmark,
   Package,
   LayoutDashboard,
+  LayoutGrid,
   LifeBuoy,
   Mail,
   MailCheck,
@@ -1735,6 +1736,18 @@ export const masterDataPageItems: readonly AdminToolsPageItem[] = [
 ] as const satisfies readonly AdminToolsPageItem[];
 
 export const adminToolsPageItems: readonly AdminToolsPageItem[] = [
+  // Where Modules Control used to sit, which is where it will be looked for — but it is the
+  // opposite kind of tool. Modules Control decided what OTHER people saw; this edits only the
+  // sidebar of whoever opens it. Super Admin only for now, matching the owner's framing ("I mean
+  // in my own account"); the route itself is per-caller, so widening this row later is a one-line
+  // change that grants nothing new.
+  {
+    href: "/admin/sidebar-layout",
+    icon: LayoutGrid,
+    label: "Sidebar Layout",
+    description: "Drag any page into any module, or up into the top strip. Changes your own sidebar only.",
+    roles: ["Super Admin"],
+  },
   {
     href: "/admin/monitoring",
     icon: Radar,
