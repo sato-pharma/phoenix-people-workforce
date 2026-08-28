@@ -5,7 +5,7 @@ import { AdminPageHero } from "@/components/admin/admin-design-system";
 import { MailboxMonitorDashboard } from "@/components/admin/mailbox-monitor-dashboard";
 import { assertPermission } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
-import { listMonitors } from "@/lib/mailbox-monitor/service";
+import { listImportableMailboxes, listMonitors } from "@/lib/mailbox-monitor/service";
 
 export const dynamic = "force-dynamic";
 
@@ -21,7 +21,7 @@ export default async function MailboxMonitorPage() {
     redirect("/admin");
   }
 
-  const monitors = await listMonitors();
+  const [monitors, importable] = await Promise.all([listMonitors(), listImportableMailboxes()]);
 
   return (
     <div className="min-h-[calc(100vh-7rem)] rounded-[32px] border border-phx-line bg-[radial-gradient(circle_at_top_left,rgba(249,115,22,0.12),transparent_30%),linear-gradient(180deg,#F8FAFC_0%,#EEF3F8_100%)] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.9)] sm:p-6 xl:p-8">
@@ -33,7 +33,7 @@ export default async function MailboxMonitorPage() {
           title="Mailbox Compliance Monitor"
         />
 
-        <MailboxMonitorDashboard initialMonitors={monitors} />
+        <MailboxMonitorDashboard initialImportable={importable} initialMonitors={monitors} />
       </div>
     </div>
   );

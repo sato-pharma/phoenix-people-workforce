@@ -2,7 +2,13 @@ import { NextResponse, type NextRequest } from "next/server";
 
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
-import { addMonitor, listMonitors, MailboxMonitorError } from "@/lib/mailbox-monitor/service";
+import {
+  addMonitor,
+  importConfiguredMailboxes,
+  listImportableMailboxes,
+  listMonitors,
+  MailboxMonitorError,
+} from "@/lib/mailbox-monitor/service";
 import { assertApiRateLimit, isApiRateLimitError, rateLimitIdentity } from "@/lib/security/api-rate-limit";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
@@ -17,8 +23,8 @@ export async function GET(request: NextRequest) {
   try {
     const access = await resolveAccessContext(request);
     await assertPermission(access, "mailbox_monitor", "read");
-    const monitors = await listMonitors();
-    return NextResponse.json({ monitors });
+    const [monitors, importable] = await Promise.all([listMonitors(), listImportableMailboxes()]);
+    return NextResponse.json({ importable, monitors });
   } catch (error) {
     if (isForbiddenError(error)) return NextResponse.json({ message: (error as Error).message }, { status: 403 });
     return NextResponse.json(
@@ -29,6 +35,9 @@ export async function GET(request: NextRequest) {
 }
 
 type AddBody = {
+  // When true, ignore the fields below and import every already-configured company mailbox
+  // (careers@ / hr@) that is not yet monitored, reusing the credential Phoenix already holds.
+  importConfigured?: unknown;
   emailAddress?: unknown;
   appPassword?: unknown;
   employeeHrId?: unknown;
@@ -54,6 +63,14 @@ export async function POST(request: NextRequest) {
     });
 
     const body = (await request.json().catch(() => ({}))) as AddBody;
+
+    // Import path: no password crosses the wire — the credential already lives in the server's
+    // environment. Same permission, CSRF and rate limit as a manual add.
+    if (body.importConfigured === true) {
+      const result = await importConfiguredMailboxes(access.hrId ?? access.loginId ?? null);
+      return NextResponse.json({ ...result, ok: true });
+    }
+
     const monitor = await addMonitor(
       {
         appPassword: typeof body.appPassword === "string" ? body.appPassword : "",

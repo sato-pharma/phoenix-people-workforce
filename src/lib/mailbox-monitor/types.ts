@@ -41,6 +41,23 @@ export type AddMailboxMonitorInput = {
   imapSecure?: boolean;
 };
 
+/**
+ * A company mailbox Phoenix ALREADY holds working credentials for (the recruitment intake inboxes
+ * in RECRUITMENT_EMAIL_INBOXES_JSON) that is not yet monitored. Carries the address and label only
+ * — never the password — so it is safe to send to the browser as an "available to import" row.
+ */
+export type ImportableMailbox = {
+  emailAddress: string;
+  label: string;
+};
+
+/** The outcome of importing the already-configured mailboxes. */
+export type ImportConfiguredResult = {
+  imported: MailboxMonitor[];
+  skipped: number;
+  failures: Array<{ emailAddress: string; error: string }>;
+};
+
 /** One IMAP folder/mailbox path. */
 export type MailboxFolder = {
   path: string;
