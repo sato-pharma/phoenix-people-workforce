@@ -282,4 +282,38 @@ export async function runCandidatePositionSuggestionTests(): Promise<void> {
     assert.match(source, /from "@\/lib\/geo\/egypt-locations"/,
       "and must reuse the shared Egypt vocabulary rather than carry a second copy of it");
   }
+
+  // ── 11. The screen suggests, and never says who suggested ──────────────────
+  {
+    const screen = readFileSync(
+      path.join(process.cwd(), "src/components/recruitment/candidate-screening-session.tsx"),
+      "utf8",
+    );
+
+    // What actually gets SENT must be the effective value, not the raw picker state. The whole
+    // point of a pre-filled suggestion is that it is what leaves when nobody changes it, and a send
+    // path still reading `positionChoice` would post an empty position on every suggested send —
+    // silently, and looking exactly like the old behaviour.
+    assert.match(screen, /vacancyId: Number\(effectivePosition\)/,
+      "the send posts the position that is actually showing, not the untouched picker state");
+    assert.match(screen, /managerHrId: effectiveManagerHrId/,
+      "and the manager the suggestion filled in, or the send goes nowhere");
+    assert.match(screen, /disabled=\{busy \|\| !effectiveManagerHrId\}/,
+      "and the button unlocks on the suggested manager too, or a suggestion cannot be acted on");
+
+    // A recruiter must be able to say no. With "" meaning both "untouched" and "none", choosing the
+    // blank option handed the suggestion straight back and there was no way to refuse it.
+    assert.match(screen, /value=\{NO_POSITION\}>No position/,
+      "there is an explicit way to send with no position at all");
+
+    // STANDING OWNER RULE: assistive inference is invisible to users. No screen may name it.
+    const visibleText = screen.match(/>[^<>{}]{4,}</g) ?? [];
+    for (const chunk of visibleText) {
+      assert.doesNotMatch(chunk, /AI|artificial intelligence|machine learning|GPT|automatically detected|we think|our system (thinks|suggests)/i,
+        `no visible label may name the machinery: ${chunk.trim()}`);
+    }
+    for (const label of ["Looks like this one", "Looks like one of these"]) {
+      assert.ok(screen.includes(label), `the suggestion is offered in plain words: ${label}`);
+    }
+  }
 }
