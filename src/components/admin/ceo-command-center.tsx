@@ -12,7 +12,6 @@ import {
   ClipboardCheck,
   Fingerprint,
   HeartPulse,
-  LayoutDashboard,
   MapPinned,
   Megaphone,
   ShieldCheck,
@@ -742,13 +741,13 @@ export function CeoCommandCenter({
             sub="Open company med-rep performance"
             href="/admin/field-sales/med-reps-performance"
           />
-          <QuickLinkCard
-            title="Sales Analytics"
-            icon={<LayoutDashboard className="h-3.5 w-3.5" />}
-            headline="SoS, closing & weekly BI in one hub"
-            sub="Open the Sales Analytics hub"
-            href="/admin/analytics"
-          />
+          {/*
+            "Sales Analytics" (/admin/analytics) removed by ruling 11 — "no analytics module, no
+            sales analytics". This was the CEO's last shortcut into that hub; the SFE Manager's
+            equivalent in ceo-phase-b.tsx went in the same change. The Source of Sales and Med-Rep
+            Performance cards around it still open their own dashboards directly, so no number the
+            CEO reads from this page moved — only the hub door closed.
+          */}
           <QuickLinkCard
             title="Double-Visit Intelligence"
             icon={<MapPinned className="h-3.5 w-3.5" />}

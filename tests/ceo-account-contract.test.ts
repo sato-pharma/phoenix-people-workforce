@@ -88,14 +88,20 @@ export async function runCeoAccountContractTests() {
   }
 
   // Owner, 2026-08-11: the "Sales Analytics" hub row (/admin/analytics) was restricted to
-  // Super Admin only in the sidebar. CEO keeps working access to the pages underneath it —
-  // via direct URL and via the dashboard shortcuts in ceo-phase-b.tsx / ceo-sos-tables.tsx
-  // (asserted below) — only the sidebar door closed, so this gets its own assertion rather
-  // than sitting in ceoAllowedReadOnlyRoutes or either blocked list.
+  // Super Admin only in the sidebar, so the CEO's sidebar never carried it.
+  //
+  // Ruling 11 then removed the module outright — "no analytics module, no sales analytics" — so
+  // /admin/analytics is now in NO role's sidebar, and the CEO's own "Sales Analytics" quick-link
+  // card in ceo-command-center.tsx went with it. The comment here used to say the CEO kept access
+  // "via the dashboard shortcuts in ceo-phase-b.tsx"; that is no longer true of the hub itself.
+  // What he keeps is the DATA, not the hub: the Source of Sales and Med-Rep Performance cards on
+  // his command center open their dashboards directly, and ceo-sos-tables.tsx still links
+  // /admin/analytics/monthly-closing. The pages under the hub also still answer by direct URL —
+  // nothing was deleted or re-gated, only delisted.
   assert.equal(
     visibleAdminHrefs.includes("/admin/analytics"),
     false,
-    "CEO sidebar must not expose /admin/analytics — restricted to Super Admin only, 2026-08-11",
+    "CEO sidebar must not expose /admin/analytics — module delisted by ruling 11",
   );
 
   for (const href of ceoBlockedHighRiskRoutes) {

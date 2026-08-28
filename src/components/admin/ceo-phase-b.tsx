@@ -818,7 +818,11 @@ const SFE_NAV_ITEMS = [
   { href: "/admin/analytics/monthly-closing",        icon: BarChart3,    label: "Source of Sales",    sub: "Monthly distributor data" },
   { href: "/sales/weekly/dashboard",                 icon: Activity,     label: "Weekly Sales",       sub: "Weekly trends & targets" },
   { href: "/sales/targets",                          icon: Target,       label: "Targets",            sub: "Line & area target setting" },
-  { href: "/admin/analytics",                        icon: BarChart3,    label: "Sales Analytics",    sub: "SoS, closing & weekly BI" },
+  // "Sales Analytics" (/admin/analytics) removed by ruling 11 — "no analytics module, no sales
+  // analytics". This was the SFE Manager's shortcut into that hub; the CEO's equivalent card in
+  // ceo-command-center.tsx went in the same change. The "Source of Sales" row at the top of this
+  // list still opens /admin/analytics/monthly-closing, so the closing data he actually works from
+  // is untouched — only the hub door closed.
   { href: "/admin/double-visit-analytics",           icon: UserCheck,    label: "Double Visit",       sub: "Manager coverage intelligence" },
   { href: "/coaching/analytics",                     icon: ShieldCheck,  label: "Coaching",           sub: "Rep performance & KPIs" },
   { href: "/employee-360",                           icon: Users,        label: "Employee 360",       sub: "Field-force performance profile" },
