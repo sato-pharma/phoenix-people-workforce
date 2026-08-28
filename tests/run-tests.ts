@@ -13,6 +13,7 @@ import { runErrorMonitorAiRedactTests } from "./error-monitor-ai-redact.test.ts"
 import { runErrorMonitorUserAttemptsTests } from "./error-monitor-user-attempts.test.ts";
 import { runGcpMetricsTests } from "./gcp-metrics.test.ts";
 import { runWeeklySystemHealthDigestTests } from "./weekly-system-health-digest.test.ts";
+import { runMailboxComplianceMonitorTests } from "./mailbox-compliance-monitor.test.ts";
 import { runNavigationActivePathTests } from "./navigation-active-path.test.ts";
 import { runNavigationPersonalLayoutTests } from "./navigation-personal-layout.test.ts";
 import { runFinanceManagerSixModuleAccessTests } from "./finance-manager-six-module-access.test.ts";
@@ -2973,6 +2974,12 @@ await runTest(
   "notification drain health alert (a drain that attempts nothing while work is due is reported "
     + "unhealthy, while an idle, busy, or unprobeable drain stays silent)",
   runNotificationDrainHealthAlertTests,
+);
+
+await runTest(
+  "mailbox compliance monitor (app-password seal round-trips and detects tampering, and the "
+    + "mailbox_monitor resource plus every route is locked to Super Admin, audited, and CSRF-guarded)",
+  runMailboxComplianceMonitorTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);

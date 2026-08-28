@@ -1755,6 +1755,14 @@ export const adminToolsPageItems: readonly AdminToolsPageItem[] = [
     roles: ["Super Admin", "CEO"],
   },
   {
+    href: "/admin/mailbox-monitor",
+    icon: ShieldCheck,
+    label: "Mailbox Compliance Monitor",
+    description: "Read company mailboxes over a read-only connection for compliance oversight. Opening a message never marks it read for the owner. Super Admin only.",
+    permissions: [{ resource: "mailbox_monitor", action: "read" }],
+    roles: ["Super Admin"],
+  },
+  {
     href: "/admin/notification-confidence",
     icon: ShieldAlert,
     label: "Notification Confidence Center",
