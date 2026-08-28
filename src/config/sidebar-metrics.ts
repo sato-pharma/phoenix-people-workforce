@@ -185,8 +185,16 @@ export function labelBudgetPx({
 const LABEL_FONT_FAMILY =
   'font-family:"Aptos","Segoe UI Variable Display","Segoe UI Variable Text","Segoe UI","Inter","Helvetica Neue",Arial,sans-serif';
 
-/** Admin label span: 13px / 600 / tracking -0.01em, in the app's resolved sans stack. */
-export const LABEL_FONT_CSS = `font-size:13px;font-weight:600;letter-spacing:-0.01em;${LABEL_FONT_FAMILY}`;
+/**
+ * Admin label span: 13px / 700 / tracking -0.01em, in the app's resolved sans stack.
+ *
+ * Read off src/components/layout/sidebar.tsx — `text-phx-md font-bold tracking-[-0.01em]`, where
+ * --phx-fs-md is 13px and Tailwind's `font-bold` is 700. This read 600 from #1999 until 2026-08-28
+ * while the span has rendered bold since 2026-06-02, so every admin label was measured lighter than
+ * it ships and the budget check was correspondingly generous. Nothing caught it because nothing tied
+ * the model to the component; tests/sidebar-label-font-sync.test.ts now does.
+ */
+export const LABEL_FONT_CSS = `font-size:13px;font-weight:700;letter-spacing:-0.01em;${LABEL_FONT_FAMILY}`;
 
 /**
  * Portal desktop label span: `text-phx-sm font-bold`, no tracking class. Smaller AND heavier than

@@ -1384,6 +1384,16 @@ const hrNavigationSectionSeeds = [
   {
     id: "hr-overview",
     items: [
+      // The seat's landing page, and deliberately FIRST — `resolveLandingPathForRole` sends both
+      // HR roles here on sign-in, so the sidebar's first row is the page they are already on.
+      //
+      // NO `permissions` entry, and that is not an oversight. The page is composed from the
+      // viewer's own function bundle, so the only people it can render for are the two roles this
+      // whole catalogue serves; its gate is `hrBundleForRole`, the same lookup that decides their
+      // permissions. A permission here would be a second, weaker statement of that — and the kind
+      // that drifts (see the Deductions note under Payroll, where a row's grant and its page's
+      // real gate disagreed, so the link rendered and the page refused it).
+      { href: "/hr/admin/hr-command-center", icon: Gauge, label: "HR Overview" },
       { href: "/hr/workspace", icon: LayoutDashboard, label: "My Workspace" },
     ],
     label: "Overview",
