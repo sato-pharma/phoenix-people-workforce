@@ -15,6 +15,7 @@ import {
   pruneCoverageSelection,
   repsMatching,
   resolveCoverageSelection,
+  restrictCoverageFilterTree,
 } from "@/lib/crm/coverage-filters";
 import { loadCoverageFilterTree } from "@/lib/crm/coverage-filters-data";
 import { getDoctorCoverageScope } from "@/lib/crm/doctor-coverage-scope";
@@ -52,7 +53,13 @@ export default async function BrickCoveragePage({ searchParams }: PageProps) {
   });
   let loadError: string | null = null;
   try {
-    tree = await loadCoverageFilterTree();
+    // Narrowed to THIS viewer — the tree is read company-wide and cached under one key, and both
+    // coverage boards share it, so the same picker that offered Doctor Coverage every region, line,
+    // area and rep name in the company offered them here too.
+    tree = restrictCoverageFilterTree(
+      await loadCoverageFilterTree(),
+      scope.kind === "agents" ? scope.agentHrIds : null,
+    );
     // A bookmarked or hand-edited URL can pair codes that do not go together; pruning keeps what
     // still makes sense rather than rendering a self-contradictory empty board.
     territory = pruneCoverageSelection(tree, territory);

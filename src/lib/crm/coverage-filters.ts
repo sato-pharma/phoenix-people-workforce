@@ -220,6 +220,76 @@ export function buildCoverageFilterTree({
   };
 }
 
+/**
+ * Narrow a company-wide tree to the reps this viewer is actually allowed to see.
+ *
+ * WHY THIS EXISTS. `loadCoverageFilterTree` reads the whole org once and caches it under a single
+ * key for everybody — the right shape for a cache, and the wrong thing to hand a picker. Passed
+ * straight through, the filter bar offered EVERY region, line, area and rep NAME to whoever opened
+ * the board: a Medical Rep scoped to his own panel saw all ~73 reps by name in a dropdown, and a
+ * District Manager scoped to eight reps could pick any region in the country.
+ *
+ * The board's DATA was never wide — `getSfeDoctorCoverage` applies the access scope itself, and the
+ * territory filter is intersected after it — so the leak was the roster and the dead end, not the
+ * numbers. That dead end is the worse half in daily use: picking somebody else's region returned an
+ * empty board, which on a coverage board reads as "that team covered nobody" rather than "you were
+ * never allowed to look there". Preventing exactly that reading is what the cell model at the top
+ * of this file is for; a picker wider than the scope defeats it.
+ *
+ * `allowedHrIds` of `null` means a company-scoped viewer — no restriction at all.
+ *
+ * Restriction is by SEAT, derived from the reps who survive: a cell whose seat nobody in scope
+ * fills can never produce a rep this viewer may see, so offering it would be one more dead end.
+ * Vacancies keep the region+line adjacency rule {@link vacanciesMatching} already uses — a gap
+ * standing next to work the viewer owns is his business; one in another region is not.
+ */
+export function restrictCoverageFilterTree(
+  tree: CoverageFilterTree,
+  allowedHrIds: readonly string[] | null,
+): CoverageFilterTree {
+  if (!allowedHrIds) return tree;
+
+  const allowed = new Set(allowedHrIds.map((hrId) => clean(hrId).toLowerCase()).filter(Boolean));
+  const reps = tree.reps.filter((rep) => allowed.has(rep.hrId.trim().toLowerCase()));
+  const seatIds = new Set(reps.map((rep) => rep.seatId));
+  const cells = tree.cells.filter((cell) => seatIds.has(cell.seatId));
+
+  // Region → lines, compared field by field rather than through a joined key, for the same reason
+  // `vacanciesMatching` does it: any separator character could in principle appear inside a code,
+  // and a collision would surface a gap from somewhere the viewer cannot see.
+  const linesByRegion = new Map<string, Set<string>>();
+  for (const cell of cells) {
+    let lines = linesByRegion.get(cell.regionCode);
+    if (!lines) {
+      lines = new Set<string>();
+      linesByRegion.set(cell.regionCode, lines);
+    }
+    lines.add(cell.lineCode);
+  }
+  const vacancies = tree.vacancies.filter((vacancy) => linesByRegion.get(vacancy.regionCode)?.has(vacancy.lineCode));
+
+  // Names are kept for everything still reachable, vacancies included — the same rule the full tree
+  // follows, so a hand-typed URL inside the viewer's own territory still resolves to a name.
+  const placed = [...cells, ...vacancies];
+  const offered = (
+    options: CoverageFilterOption[],
+    pick: (cell: CoverageFilterCell) => string,
+  ): CoverageFilterOption[] => {
+    const codes = new Set(placed.map(pick));
+    return options.filter((option) => codes.has(option.code));
+  };
+
+  return {
+    areas: offered(tree.areas, (cell) => cell.areaCode),
+    cells,
+    droppedRows: tree.droppedRows,
+    lines: offered(tree.lines, (cell) => cell.lineCode),
+    regions: offered(tree.regions, (cell) => cell.regionCode),
+    reps,
+    vacancies,
+  };
+}
+
 /** Does this cell satisfy every geography level that is selected? */
 const cellMatches = (cell: CoverageFilterCell, selection: CoverageFilterSelection): boolean =>
   (!selection.region || cell.regionCode === selection.region) &&

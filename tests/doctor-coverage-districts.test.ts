@@ -208,18 +208,22 @@ export function runDoctorCoverageDistrictTests() {
     ],
     MONTH,
     {
+      // Shaped like production: the CEO sits above the National Sales Manager. That matters — a
+      // tree truncated at the NSM would make HIM the root, and the root is dropped as the company.
       orgByHrId: org({
+        aa: { managerHrId: null, title: "Ceo" },
         "d-1": { managerHrId: "n-1", title: "District Sales Manager" },
         "d-2": { managerHrId: "n-1", title: "District Sales Manager" },
         "m-1": { managerHrId: "d-1", title: "Medical Representative" },
         "m-2": { managerHrId: "d-2", title: "Medical Representative" },
-        "n-1": { managerHrId: null, title: "National Sales Manager" },
+        "n-1": { managerHrId: "aa", title: "National Sales Manager" },
       }),
       planRows: [
         plan({ agent_crm_id: 100, agent_hr_id: "M-1", contact_crm_id: 501 }),
         plan({ agent_crm_id: 200, agent_hr_id: "M-2", contact_crm_id: 601 }),
       ],
       repNameByHrId: new Map([
+        ["aa", "Anwar Gaweesh"],
         ["d-1", "District One"],
         ["d-2", "District Two"],
         ["m-1", "Rep One"],
@@ -229,7 +233,7 @@ export function runDoctorCoverageDistrictTests() {
     },
   );
   const national = twoLevels.managers.find((row) => row.hrId === "n-1");
-  assert.equal(twoLevels.managers.length, 3, "two districts and the level above them");
+  assert.equal(twoLevels.managers.length, 3, "two districts and the level above them — the CEO above THAT is the company, and gets no row");
   assert.equal(national?.isDistrict, false, "a manager with other managers beneath him is a region, not a district");
   assert.equal(
     twoLevels.managers.filter((row) => row.isDistrict).length,
@@ -452,6 +456,73 @@ export function runDoctorCoverageDistrictTests() {
     "and he must never be counted as a rep waiting on a list either",
   );
 
+  // ── THE COMPANY IS NOT A DISTRICT, AND A VIEWER IS NOT SHOWN HIS OWN NUMBERS TWICE ───────────
+  //
+  // Owner, 2026-08-28, on opening the board: "I see the CEO have assigned visits appeared in the
+  // district manager page… He never assigned to visits."
+  //
+  // The walk gives a row to every ancestor, so it reached the top of the tree — in production the
+  // CEO (`AA`), whom all three National Sales Managers report to — and handed him whatever the
+  // board was scoped to as though it were his own assigned doctor list.
+  const LADDER = {
+    orgByHrId: org({
+      aa: { managerHrId: null, title: "Ceo" },
+      "n-1": { managerHrId: "aa", title: "National Sales Manager" },
+      "d-1": { managerHrId: "n-1", title: "District Sales Manager" },
+      "m-1": { managerHrId: "d-1", title: "Medical Representative" },
+      "m-2": { managerHrId: "d-1", title: "Medical Representative" },
+    }),
+    planRows: [
+      plan({ agent_crm_id: 100, agent_hr_id: "M-1", contact_crm_id: 501 }),
+      plan({ agent_crm_id: 200, agent_hr_id: "M-2", contact_crm_id: 601 }),
+    ],
+    repNameByHrId: new Map([
+      ["aa", "Anwar Gaweesh"],
+      ["n-1", "Nabil National"],
+      ["d-1", "Dalia District"],
+      ["m-1", "Rep One"],
+      ["m-2", "Rep Two"],
+    ]),
+  };
+  const LADDER_VISITS = [
+    visit({ agent_crm_id: 100, agent_hr_id: "M-1", contact_crm_id: 501 }),
+    visit({ agent_crm_id: 200, agent_hr_id: "M-2", agent_name: "Rep Two", contact_crm_id: 601 }),
+  ];
+
+  const companyView = buildDoctorCoverageBoard(LADDER_VISITS, MONTH, LADDER);
+  assert.ok(
+    !companyView.managers.some((row) => row.hrId === "aa"),
+    "THE HEADLINE: the top of the reporting tree gets NO manager row — the CEO has never held an assigned doctor list, and the board already states the company in its totals",
+  );
+  assert.deepEqual(
+    [...companyView.managers.map((row) => row.hrId)].sort(),
+    ["d-1", "n-1"],
+    "the district and the National Sales Manager above it stay real rows — only the company root is dropped, and structurally, never by job title",
+  );
+
+  // A SCOPED viewer gets no row for anyone above his own seat. His board holds only his own reps,
+  // so such a row can only be his own numbers under somebody else's name — and it states something
+  // false about a person who manages more reps than this viewer is allowed to see.
+  const asDistrictManager = buildDoctorCoverageBoard(LADDER_VISITS, MONTH, { ...LADDER, viewerHrId: "D-1" });
+  assert.deepEqual(
+    asDistrictManager.managers.map((row) => row.hrId),
+    ["d-1"],
+    "a District Manager sees his OWN district and nothing above it — not his National Sales Manager, and not the CEO",
+  );
+  assert.equal(
+    asDistrictManager.managers[0]?.panelSize,
+    2,
+    "and his own district row is unchanged — the walk stops AT the viewer, not before him",
+  );
+  // Upper-cased and padded on purpose: an hr id arrives from the session in its own casing while the
+  // org tree is keyed lower-cased. One mismatched character would silently mean "the viewer is
+  // nowhere in this tree", the walk would climb to the top again, and the CEO row would come back.
+  assert.deepEqual(
+    buildDoctorCoverageBoard(LADDER_VISITS, MONTH, { ...LADDER, viewerHrId: "  D-1  " }).managers.map((r) => r.hrId),
+    ["d-1"],
+    "the viewer's hr id is matched case- and whitespace-insensitively, like every other key read out of the org tree",
+  );
+
   // ── Source contracts ─────────────────────────────────────────────────────────────────────────
   const serviceSource = readFileSync("src/lib/crm/sfe-doctor-coverage.ts", "utf8");
   assert.match(
@@ -472,6 +543,20 @@ export function runDoctorCoverageDistrictTests() {
     /r\.hasPanel \? r\.coveragePct : null/,
     "a row with no panel must sort as MISSING, not as 0 — the hook sinks a missing value in both directions, and a plain 0 puts every rep with no list back at the top of a worst-first table",
   );
+
+  // Both twins must hand the service the viewer's identity, or the walk silently climbs to the top
+  // again for every scoped seat. The page is the only place that holds an AccessContext, so a
+  // missing argument here cannot be caught anywhere downstream.
+  for (const page of [
+    "app/(admin)/admin/doctor-coverage/page.tsx",
+    "app/employee-portals/doctor-coverage/page.tsx",
+  ]) {
+    assert.match(
+      readFileSync(page, "utf8"),
+      /viewerHrId:\s*access\.hrId/,
+      `${page} must pass the viewer's own hr id — from the live AccessContext, never from a search param`,
+    );
+  }
 
   const boardSource = readFileSync("src/components/crm/doctor-coverage-board.tsx", "utf8");
   assert.match(boardSource, /title="Coverage by district"/, "the board must carry a district section");

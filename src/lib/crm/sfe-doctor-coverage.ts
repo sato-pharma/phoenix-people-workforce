@@ -255,8 +255,9 @@ export type DoctorCoverageManagerRow = {
   /**
    * True when no OTHER manager row sits beneath this one — i.e. this row's team is reps, not
    * districts. Structural, so it stays correct if the org gains or loses a layer. The National
-   * Sales Managers, the Regional Manager and the CEO come back false and belong in a second,
-   * smaller group: their rows are real, but they are regions rather than districts.
+   * Sales Managers and the Regional Manager come back false and belong in a second, smaller group:
+   * their rows are real, but they are regions rather than districts. The CEO is NOT among them —
+   * the top of the tree is the company, and it gets no manager row at all (see the walk).
    */
   isDistrict: boolean;
   /** repKey-shaped (`hr:<id>`), so a district can travel in a URL exactly like a rep does. */
@@ -720,6 +721,11 @@ export function buildDoctorCoverageBoard(
      * old visit-derived panel he could not appear at all, so the gap never arose. */
     repNameByHrId?: ReadonlyMap<string, string>;
     scopeLabel?: string;
+    /** The signed-in viewer's own hr id, so the district walk can stop at his seat instead of
+     * climbing past it. Absent means "no viewer" — the fixture path, and the company-scoped seats
+     * (Super Admin, CEO, SFE Manager, Marketing Manager) who sit outside the sales tree entirely
+     * and are meant to see every level of it. */
+    viewerHrId?: string | null;
   },
 ): SfeDoctorCoverageBoard {
   const norms = options.norms ?? DEFAULT_DOCTOR_COVERAGE_NORMS;
@@ -1197,6 +1203,11 @@ export function buildDoctorCoverageBoard(
   // depth. That gives districts, and above them the regions and the company — all real rows, told
   // apart by `isDistrict` rather than by a hard-coded level.
   const orgByHrId = options.orgByHrId;
+  // Lower-cased on the same rule as every other key read out of this map: it is compared against
+  // `manager_hr_id` values that were lower-cased when the tree was built, and a single upper-cased
+  // character would silently mean "the viewer is nowhere in this tree" — the walk would run to the
+  // top again and the CEO row would quietly come back.
+  const viewerHrId = options.viewerHrId?.trim().toLowerCase() || null;
   /** manager hr id -> the repKeys rolled into that manager, at any depth. */
   const subtreeByManager = new Map<string, Set<string>>();
   /** manager hr id -> the OTHER managers sitting beneath him. Empty = he is a district.
@@ -1217,7 +1228,7 @@ export function buildDoctorCoverageBoard(
       // than disappearing: 5 such agents were on the August 2026 board, and they look like real
       // reps whose HR record simply lags their CRM account.
       if (!rep.agentHrId) continue;
-      /** This rep's managers, closest first — the whole chain up to the top of the tree. */
+      /** This rep's managers, closest first — up to the VIEWER, or to the top of the tree. */
       const chain: string[] = [];
       const seen = new Set<string>([rep.agentHrId]);
       let cursor = orgByHrId.get(rep.agentHrId)?.managerHrId ?? null;
@@ -1225,6 +1236,12 @@ export function buildDoctorCoverageBoard(
         if (seen.has(cursor)) break;
         seen.add(cursor);
         chain.push(cursor);
+        // STOP AT THE VIEWER. Everything above him is scoped out of this board already, so a row for
+        // his own manager could only ever be the viewer's own numbers under somebody else's name —
+        // it says nothing new and it states something false about a person who has more reps than
+        // this. A District Manager opening the board was getting exactly that: his eight reps'
+        // panel presented as his National Sales Manager's, and again as the CEO's.
+        if (viewerHrId && cursor === viewerHrId) break;
         cursor = orgByHrId.get(cursor)?.managerHrId ?? null;
       }
       for (let level = 0; level < chain.length; level += 1) {
@@ -1266,6 +1283,31 @@ export function buildDoctorCoverageBoard(
         subtreeByManager.set(rep.agentHrId, new Set());
         if (!managersBeneath.has(rep.agentHrId)) managersBeneath.set(rep.agentHrId, new Set());
       }
+    }
+
+    // ── THE COMPANY IS NOT A DISTRICT, AND NOT A REGION EITHER ──────────────────────────────────
+    //
+    // The walk gives a row to every ancestor, and the last ancestor is always the top of the tree —
+    // in production that is the CEO (`AA`), whom all three National Sales Managers report to. That
+    // produced a manager row named for a person who has never held an assigned doctor list,
+    // carrying whatever the board happened to be scoped to as if it were his panel. Owner,
+    // 2026-08-28: "the CEO ... He never assigned to visits." The board already states the company
+    // in its totals; naming a person as its manager adds nothing and says something untrue.
+    //
+    // Recognised STRUCTURALLY, exactly like `isDistrict`, so it stays correct if the org gains or
+    // loses a layer — never by job title, which is free text and misspelt often enough to hide 9 of
+    // 27 District Managers from a title search. The root is the node with nobody above it AND other
+    // managers below it. BOTH halves are load-bearing, and production says why: 19 employees carry
+    // a blank `manager_hr_id`, of whom exactly ONE is active — the CEO. The other 18 are departed
+    // or placeholder rows, including four District Sales Managers, and a rep still pointing at one
+    // of them puts a blank-managered DISTRICT into this walk. He has no managers beneath him, so he
+    // keeps his row; only a node that is both rootless and has managers under it is the company.
+    for (const managerHrId of [...subtreeByManager.keys()]) {
+      const hasManagerAbove = Boolean(orgByHrId.get(managerHrId)?.managerHrId);
+      const hasManagersBeneath = (managersBeneath.get(managerHrId)?.size ?? 0) > 0;
+      if (hasManagerAbove || !hasManagersBeneath) continue;
+      subtreeByManager.delete(managerHrId);
+      managersBeneath.delete(managerHrId);
     }
   }
   /** repKeys that are managers — removed from the rep table, because their row is their district. */
@@ -1560,6 +1602,10 @@ export async function getSfeDoctorCoverage(input: {
   filters?: DoctorCoverageFilters;
   month?: string;
   scope: DoctorCoverageScope;
+  /** The signed-in viewer's own hr id, from the live AccessContext and never from client input.
+   * Used for ONE thing: stopping the district walk at his own seat, so he is not shown his own
+   * numbers a second and third time under his manager's and the CEO's names. */
+  viewerHrId?: string | null;
 }): Promise<SfeDoctorCoverageBoard> {
   if (input.scope.kind === "none") {
     // Defence in depth. Both pages check this first and render an explanation; reaching here means
@@ -1653,5 +1699,9 @@ export async function getSfeDoctorCoverage(input: {
     planRows: livePlanRows,
     repNameByHrId,
     scopeLabel: input.scope.label,
+    // Only for a SCOPED viewer. A company-scoped seat (Super Admin, CEO, SFE Manager, Marketing
+    // Manager) is meant to see every level of the tree, and passing an hr id that happened to
+    // collide with a node in it would silently truncate the ladder for them.
+    viewerHrId: input.scope.kind === "agents" ? input.viewerHrId : null,
   });
 }

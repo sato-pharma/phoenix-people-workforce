@@ -227,8 +227,14 @@ export function DoctorCoverageRepTable({ rows }: { rows: DoctorCoverageRepRow[] 
 // breath: one screen where you can open a district and see the reps inside it.
 //
 // Two groups, told apart STRUCTURALLY by `isDistrict` rather than by job title. The districts get
-// the full sortable table; the three National Sales Managers, the Regional Manager and the CEO get
-// a compact strip underneath, because expanding one of those would just redraw the rep table.
+// the full sortable table; the National Sales Managers and the Regional Manager get a compact strip
+// underneath, because expanding one of those would just redraw the rep table.
+//
+// The CEO used to sit in that strip and no longer does. He is the top of the reporting tree, so the
+// walk reached him from every rep and gave him a row carrying whatever the board was scoped to as
+// though it were his own assigned doctor list. Owner, 2026-08-28: "the CEO ... He never assigned to
+// visits." He is dropped structurally in sfe-doctor-coverage.ts, and a scoped viewer no longer gets
+// rows for anyone above his own seat either.
 
 const DISTRICT_COLS = [
   {
