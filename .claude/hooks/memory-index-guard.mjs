@@ -97,7 +97,8 @@ const context = [
   "MEMORY INDEX BUDGET (AGENTS.md 2.2)",
   detail,
   "The index is displacement-only: before adding a hook line, retire a resolved one or relocate it "
-    + "into AGENTS.md 2.1/2.3, which auto-load in full and have no cliff.",
+    + "into AGENTS.md, which auto-loads in full and has no cliff. Route by KIND of fact: a session "
+    + "or tooling trap to 2.1, a production or approval hook to 2.3, an owner product rule to 4.",
 ].join("\n");
 
 const result = {
