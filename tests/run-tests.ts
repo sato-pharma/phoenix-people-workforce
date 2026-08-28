@@ -163,6 +163,7 @@ import { runRecruitmentScreeningPageTests } from "./recruitment-screening-page.t
 import { runCandidatePositionFolderTests } from "./candidate-position-folders.test.ts";
 import { runArabicPlaceMatchTests } from "./arabic-place-match.test.ts";
 import { runCandidatePositionSuggestionTests } from "./candidate-position-suggestion.test.ts";
+import { runRecruitmentStaleSendCheckTests } from "./recruitment-stale-send-check.test.ts";
 import { runVacancyManagerEscalationTests } from "./vacancy-manager-escalation.test.ts";
 import { runRecruitmentJobPostChannelTests } from "./recruitment-job-post-channels.test.ts";
 import { runRecruitmentHubPortalCoverageTests } from "./recruitment-hub-portal-coverage.test.ts";
@@ -1284,6 +1285,10 @@ await runTest(
 await runTest(
   "vacancy manager escalation (when the seat's own manager post is vacant, climb to whoever is above it)",
   runVacancyManagerEscalationTests,
+);
+await runTest(
+  "recruitment stale-send check (a slow manager is nudged; a manager who cannot answer strands the CV on day one)",
+  runRecruitmentStaleSendCheckTests,
 );
 await runTest(
   "recruitment advertising channels (the code round-trips from apply link to intake, or every CV loses its source)",
