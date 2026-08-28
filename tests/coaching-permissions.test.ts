@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+
+import { permissionMatrix, type PhoenixRole } from "../src/lib/auth/permissions.ts";
 import { readFileSync } from "node:fs";
 
 const permissionsSource = readFileSync(
@@ -27,9 +29,25 @@ function assertCoachingPermission(role: string, expected: string) {
   );
 }
 
-function assertNoCoachingManagementPermission(role: string) {
-  const coachingLine = roleBlock(role).match(/coaching: \[[^\]]*\]|coaching: allActions/)?.[0] ?? "";
-  assert.doesNotMatch(coachingLine, /create|update|delete|approve|export|allActions/, `${role} must not manage coaching reports`);
+/**
+ * Asserts against the COMPOSED matrix rather than the source text.
+ *
+ * The other helpers here scrape permissions.ts for a literal `"Role": { ... }` block, which works
+ * only while every role's grants are written out by hand. The two HR bundles are composed from
+ * hr-functions.ts (`hrBundleGrants("HR Advisory")`), so no literal block exists for them and the
+ * scraper returns null — reported, correctly, as "permission block must exist". Reading the matrix
+ * is what this assertion actually meant all along, and it survives a role whose grants are built
+ * rather than typed. The scrapers above are left alone: for a hand-written role they additionally
+ * pin the FORMATTING, which is what catches a silent widening in review.
+ */
+function assertNoCoachingManagementPermission(role: PhoenixRole) {
+  const actions = permissionMatrix[role].coaching ?? [];
+  for (const forbidden of ["create", "update", "delete", "approve", "export"] as const) {
+    assert.ok(
+      !actions.includes(forbidden),
+      `${role} must not manage coaching reports — holds coaching:${forbidden}`,
+    );
+  }
 }
 
 export function runCoachingPermissionTests() {
@@ -57,7 +75,8 @@ export function runCoachingPermissionTests() {
   // Product managers are coaches: they create AND update/submit their own coaching reports.
   assertCoachingPermission("Product Manager", '"read", "create", "update"');
   assertCoachingPermission("Group Product Manager", '"read", "create", "update"');
-  assertNoCoachingManagementPermission("Talent Acquisition");
+  assertNoCoachingManagementPermission("HR Advisory");
+  assertNoCoachingManagementPermission("HR Operations");
   for (const role of [
     "District Manager",
     "Regional Manager",

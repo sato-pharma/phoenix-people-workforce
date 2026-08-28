@@ -54,14 +54,14 @@ async function sendJson(url: string, method: "POST" | "PATCH", body: unknown): P
 const stageLabels: Record<string, { label: string; tone: string }> = {
   application_rejected: { label: "Not qualified", tone: "border-rose-200 bg-rose-50 text-rose-700" },
   application_withdrawn: { label: "Withdrawn", tone: "border-slate-200 bg-slate-100 text-slate-500" },
-  final_selection: { label: "Final selection (Talent Acquisition)", tone: "border-emerald-200 bg-emerald-50 text-emerald-700" },
+  final_selection: { label: "Final selection (recruitment)", tone: "border-emerald-200 bg-emerald-50 text-emerald-700" },
   hired: { label: "Hired", tone: "border-emerald-200 bg-emerald-50 text-emerald-700" },
   hiring_manager_interview: { label: "Ready for your interview", tone: "border-amber-200 bg-amber-50 text-amber-700" },
-  manager_interview_completed: { label: "Passed to Talent Acquisition", tone: "border-emerald-200 bg-emerald-50 text-emerald-700" },
+  manager_interview_completed: { label: "Passed to recruitment", tone: "border-emerald-200 bg-emerald-50 text-emerald-700" },
 };
 
 function stageBadge(stage: string) {
-  return stageLabels[stage] ?? { label: "With Talent Acquisition", tone: "border-slate-200 bg-slate-50 text-slate-500" };
+  return stageLabels[stage] ?? { label: "With recruitment", tone: "border-slate-200 bg-slate-50 text-slate-500" };
 }
 
 function formatYesNo(value: boolean | null | undefined) {
@@ -408,7 +408,7 @@ function SentCandidateCard({ candidate: initial }: { candidate: Candidate }) {
 
   const answer = async (decision: HiringManagerDecision) => {
     if (decision === "not_interested" && !note.trim()) {
-      setError("Add a short reason so Talent Acquisition knows why.");
+      setError("Add a short reason so the recruitment team knows why.");
       return;
     }
     setBusy(true);
@@ -478,7 +478,7 @@ function SentCandidateCard({ candidate: initial }: { candidate: Candidate }) {
             className="w-full rounded-md border border-gray-200 px-3 py-2 text-sm"
             maxLength={CANDIDATE_STATUS_NOTE_MAX_LENGTH}
             onChange={(event) => setNote(event.target.value)}
-            placeholder="A short note for Talent Acquisition (required if you are not interested)"
+            placeholder="A short note for the recruitment team (required if you are not interested)"
             rows={2}
             value={note}
           />
@@ -532,7 +532,7 @@ export function RecruitmentCandidatesPortal({ initialApplications, initialSentTo
       <Card className="rounded-lg border border-gray-200 bg-white p-10 text-center shadow-[0_1px_3px_rgba(15,23,42,0.08)]">
         <p className="text-base font-semibold text-slate-700">No candidates yet</p>
         <p className="mt-1 text-sm text-slate-400">
-          CVs that Talent Acquisition sends you, and candidates assigned to your open positions, will appear here.
+          CVs the recruitment team sends you, and candidates assigned to your open positions, will appear here.
         </p>
       </Card>
     );
@@ -547,7 +547,7 @@ export function RecruitmentCandidatesPortal({ initialApplications, initialSentTo
         <section className="space-y-4">
           <div>
             <h2 className="text-sm font-semibold text-slate-900">Sent to you</h2>
-            <p className="text-xs text-slate-500">CVs Talent Acquisition asked you to look at.</p>
+            <p className="text-xs text-slate-500">CVs the recruitment team asked you to look at.</p>
           </div>
           {/* ── One folder per position ───────────────────────────────────────────────────────
               The owner, 2026-08-28: "he goes to a folder called Nasr City Medical Reps ... he can

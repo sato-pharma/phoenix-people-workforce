@@ -14,7 +14,7 @@ import type { AccessContext } from "../src/lib/auth/permissions.ts";
  *
  * ## The bug this pins
  *
- * Two PRs granted Talent Acquisition the Head Office branch — #2408 built the branch (the AU
+ * Two PRs granted HR Advisory the Head Office branch — #2408 built the branch (the AU
  * seat model has zero Head Office seats, so it had never existed for anyone) and put her in
  * `canAccessHeadOffice`, #2410 added navigation entries. She still saw only the four sales
  * lines, because neither PR touched the thing that actually decides what the chart draws.
@@ -155,7 +155,7 @@ export function runOrganogramLinePickerHeadOfficeTests() {
   // showHeadOfficeLine = isCompanyScoped && canAccessHeadOffice. Both halves matter: the
   // second alone would offer the branch to a line-scoped viewer holding chain context, and
   // the first alone would offer it to every company role including the ones it is stripped for.
-  for (const role of ["Super Admin", "CEO", "Talent Acquisition", "Finance Manager"]) {
+  for (const role of ["Super Admin", "CEO", "HR Advisory", "Finance Manager"]) {
     assert.equal(canAccessCompanyOrganogram(ctx(role)), true, `${role} opens a company chart`);
     assert.equal(canAccessHeadOffice(ctx(role)), true, `${role} is cleared for Head Office`);
   }

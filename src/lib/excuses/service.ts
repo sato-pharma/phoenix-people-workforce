@@ -391,7 +391,7 @@ function resolveHrNotificationRecipients(directory: EmployeeDirectoryData): Empl
 
 function isHrVisibilityActor(directory: EmployeeDirectoryData, access: AccessContext) {
   const role = normalizeRole(access.role);
-  if (role === "Super Admin" || role === "CEO" || role === "Talent Acquisition") {
+  if (role === "Super Admin" || role === "CEO" || role === "HR Operations") {
     return true;
   }
   const employee = findCurrentEmployee(directory, access);

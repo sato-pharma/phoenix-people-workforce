@@ -3,6 +3,7 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 
 import { resolveLandingPathForRole } from "../src/lib/auth/landing.ts";
+import { createAccessContext, resolveNavigationMode } from "../src/lib/auth/permissions.ts";
 import {
   resolveEmployeePortalNavVisibility,
   shouldShowEmployeePortalMarketingQuickAction,
@@ -295,7 +296,7 @@ export function runEmployeePortalNavigationTests() {
       `${role} should see Territory Management (page admits it via PORTAL_TERRITORY_MANAGEMENT_ROLES)`,
     );
   }
-  for (const role of ["Medical Rep", "Manager", "Employee", "Product Manager", "Talent Acquisition"]) {
+  for (const role of ["Medical Rep", "Manager", "Employee", "Product Manager", "the retired HR seat"]) {
     assert.equal(
       resolveEmployeePortalNavVisibility(role).showTerritoryManagementTab,
       false,
@@ -331,7 +332,7 @@ export function runEmployeePortalNavigationTests() {
       `${role} should see the ROI Tracker link (assertEmployeePortalMarketingPageAccess admits it)`,
     );
   }
-  for (const role of ["Employee", "Training Manager", "Talent Acquisition"]) {
+  for (const role of ["Employee", "Training Manager", "the retired HR seat"]) {
     assert.equal(
       resolveEmployeePortalNavVisibility(role).showMarketingRoiTrackingTab,
       false,
@@ -348,7 +349,7 @@ export function runEmployeePortalNavigationTests() {
       `${role} should see the scoped CRM Master link`,
     );
   }
-  for (const role of ["Manager", "Employee", "Product Manager", "Marketing Manager", "Talent Acquisition"]) {
+  for (const role of ["Manager", "Employee", "Product Manager", "Marketing Manager", "the retired HR seat"]) {
     assert.equal(
       resolveEmployeePortalNavVisibility(role).showCrmMasterTab,
       false,
@@ -371,19 +372,28 @@ export function runEmployeePortalNavigationTests() {
   assert.equal(a3Account.showReportItTab, true, "A-3 should see Report It");
   assert.equal(a3Account.showReportItDashboardTab, false, "A-3 Reports Dashboard is merged into the single Report It tab (no separate dashboard tab needed)");
 
-  // Owner-requested 2026-07-25: Talent Acquisition keeps the read-only, HO-scoped
-  // Planning Calendar but loses the Weekly/Monthly Plan submission tab (showPlansTab
-  // split from showPlanningCalendarTab specifically for this role).
-  const talentAcquisitionNav = resolveEmployeePortalNavVisibility("Talent Acquisition");
-  assert.equal(talentAcquisitionNav.showPlansTab, false, "Talent Acquisition should not see the Weekly / Monthly Plan tab");
-  assert.equal(talentAcquisitionNav.showPlanningCalendarTab, true, "Talent Acquisition should still see the Planning Calendar tab");
-  assert.equal(talentAcquisitionNav.showPrivateCalendarTab, true, "Talent Acquisition should see Private Calendar");
+  // The showPlansTab / showPlanningCalendarTab split was made on 2026-07-25 for the Talent
+  // Acquisition seat specifically: she read the Planning Calendar but submitted no plan of her
+  // own. That seat was retired on 2026-08-28 and both successors are ADMIN-shell roles, so this
+  // function is never called for either of them and no portal role exercises the split any more.
+  // The split itself is kept — A-3 above still depends on it — but the role-specific assertions
+  // are gone rather than renamed, because renaming them would assert portal behaviour for a role
+  // that can never reach the portal, which passes for the wrong reason and reads as coverage.
+  for (const retired of ["HR Advisory", "HR Operations"] as const) {
+    assert.notEqual(
+      resolveNavigationMode(createAccessContext({ hrId: "HR-1", role: retired })),
+      "employee-portal",
+      `${retired} is an admin-shell role — if this ever flips, the portal nav flags below need a` +
+        " deliberate answer for it, and resolveEmployeePortalNavVisibility works from role NAMES" +
+        " rather than the permission matrix, so it will not answer on its own",
+    );
+  }
 
-  // 2026-08-01 owner decision: Private Calendar is now shown to EVERY portal role, not just
-  // Talent Acquisition. It is self-scoped (each employee sees only their own recognized activity),
+  // 2026-08-01 owner decision: Private Calendar is shown to EVERY portal role, not just the seat
+  // it was first built for. It is self-scoped (each employee sees only their own recognized activity),
   // the page has no role gate, and every role holds the employee_profile:read + attendance:read
   // that getPrivateCalendarWorkspace asserts. Prove the widening for a field role and a manager
-  // rung so a revert to the old TA-only gate fails here.
+  // rung so a revert to the old single-role gate fails here.
   assert.equal(
     resolveEmployeePortalNavVisibility("Medical Rep").showPrivateCalendarTab,
     true,

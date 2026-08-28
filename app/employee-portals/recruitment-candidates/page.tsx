@@ -22,7 +22,7 @@ export default async function EmployeePortalRecruitmentCandidatesPage() {
   if (!(await canAccess(access, "hiring_interviews", "read"))) {
     return (
       <EmployeePortalEmptyState
-        message="Candidate review is available for roles that own a hiring seat (District Manager and other line/area managers) once Talent Acquisition sends them a CV or assigns a candidate to one of their open positions."
+        message="Candidate review is available for roles that own a hiring seat (District Manager and other line/area managers) once the recruitment team sends them a CV or assigns a candidate to one of their open positions."
         title="Candidates Unavailable"
       />
     );
@@ -47,7 +47,7 @@ export default async function EmployeePortalRecruitmentCandidatesPage() {
   return (
     <EmployeePortalPageShell
       badge="Hiring"
-      description="CVs sent to you by Talent Acquisition, and candidates assigned to your open positions — read the CV, answer, and record your interview outcome."
+      description="CVs sent to you by the recruitment team, and candidates assigned to your open positions — read the CV, answer, and record your interview outcome."
       title="My Candidates"
     >
       <RecruitmentCandidatesPortal initialApplications={myCandidates} initialSentToMe={sentToMe} />

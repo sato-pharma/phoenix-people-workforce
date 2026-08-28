@@ -40,12 +40,12 @@ import { simulateWorkflow } from "../src/lib/workflow-control/simulator.ts";
 export function runWorkflowControlTests() {
   // ---------------------------------------------------------------------------
   // Access control: HR governance only = Super Admin. The HR Manager (B-10)
-  // holds the Super Admin role and is covered. A-16 / Talent Acquisition is excluded.
+  // holds the Super Admin role and is covered. Neither HR bundle is granted it.
   // ---------------------------------------------------------------------------
   assert.equal(canAccessWorkflowControlCenter({ role: "Super Admin", hrId: "B-10" }), true, "HR Manager (B-10, Super Admin) can access");
   assert.equal(canAccessWorkflowControlCenter({ role: "Super Admin", hrId: null }), true, "Super Admin can access");
-  assert.equal(canAccessWorkflowControlCenter({ role: "Talent Acquisition", hrId: "A-16" }), false, "A-16 (Talent Acquisition) is NOT granted access");
-  for (const role of ["Medical Rep", "District Manager", "National Sales Manager", "Training Manager", "Finance Manager", "CEO", "Talent Acquisition", "Employee"] as const) {
+  assert.equal(canAccessWorkflowControlCenter({ role: "HR Advisory", hrId: "A-16" }), false, "HR Advisory is NOT granted workflow control");
+  for (const role of ["Medical Rep", "District Manager", "National Sales Manager", "Training Manager", "Finance Manager", "CEO", "HR Advisory", "HR Operations", "Employee"] as const) {
     assert.equal(canAccessWorkflowControlCenter({ role, hrId: "X-1" }), false, `${role} must NOT access workflow control`);
   }
 
@@ -330,7 +330,7 @@ export function runWorkflowControlTests() {
   // ===========================================================================
   assert.equal(WORKFLOW_CONTROL_DRAFT_EDITOR_ENABLED, true, "Phase 2A draft editor flag is ON");
   assert.equal(canUseWorkflowDraftEditor({ role: "Super Admin", hrId: "B-10" }), true, "Super Admin can use the draft editor");
-  assert.equal(canUseWorkflowDraftEditor({ role: "Talent Acquisition", hrId: "A-16" }), false, "A-16 cannot use the draft editor");
+  assert.equal(canUseWorkflowDraftEditor({ role: "HR Advisory", hrId: "A-16" }), false, "HR Advisory cannot use the draft editor");
   for (const role of ["CEO", "Finance Manager", "National Sales Manager", "Medical Rep", "Training Manager", "Employee"] as const) {
     assert.equal(canUseWorkflowDraftEditor({ role, hrId: "X-1" }), false, `${role} cannot use the draft editor`);
   }

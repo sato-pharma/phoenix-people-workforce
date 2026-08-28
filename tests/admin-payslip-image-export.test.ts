@@ -51,7 +51,7 @@ export function runAdminPayslipImageExportTests() {
     false,
     "The CEO reads the Payslips Center but must NOT export the payslip document.",
   );
-  for (const role of ["Financial Advisor", "Talent Acquisition", "SFE Manager", "Employee", "Medical Rep"] as const) {
+  for (const role of ["Financial Advisor", "HR Advisory", "HR Operations", "SFE Manager", "Employee", "Medical Rep"] as const) {
     assert.equal(canExportPayslipDocument({ role }), false, `${role} must not export payslip documents.`);
   }
 

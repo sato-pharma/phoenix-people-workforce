@@ -18,10 +18,14 @@ export default async function EmployeePortalAccountActivationPage() {
   if (resolveNavigationMode(access) !== "employee-portal") {
     redirect("/overview");
   }
-  if (access.role !== "Talent Acquisition" || !(await canAccess(access, "account_activation", "read"))) {
+  // NOTE (2026-08-28): HR Advisory holds account_activation but is an ADMIN-shell role, so the
+  // navigation-mode redirect above returns before this line ever runs. This page has no reachable
+  // holder until the /hr namespace (Phase 2) gives it an admin-shell home. Granted-but-unreachable
+  // is the one shape tests/every-offered-link-opens.test.ts cannot see, so it is written down here.
+  if (access.role !== "HR Advisory" || !(await canAccess(access, "account_activation", "read"))) {
     return (
       <EmployeePortalEmptyState
-        message="Account activation is available to Talent Acquisition only."
+        message="Account activation is available to HR Advisory only."
         title="Account Activation Unavailable"
       />
     );

@@ -98,9 +98,11 @@ export default async function EmployeePortalProbationPage({
     access.role === "Product Manager" ||
     access.role === "Group Product Manager" ||
     access.role === "Manager" ||
-    // Owner-requested 2026-07-24: she submits feedback alongside HR (Super Admin), not
-    // instead of it — case decisions (pass/terminate) stay isProbationAdministrator-only.
-    access.role === "Talent Acquisition";
+    // The retired Talent Acquisition seat sat here (owner-requested 2026-07-24) because she was a
+    // PORTAL role. Both successor bundles hold probation:read and submit feedback the same way, but
+    // they are ADMIN-shell roles and reach app/(admin)/probation, so they do not belong in this
+    // portal-side list. Case decisions (pass/terminate) stay isProbationAdministrator-only either way.
+    false;
 
   const canManageDvCheckboxes = access.role === "Super Admin";
 

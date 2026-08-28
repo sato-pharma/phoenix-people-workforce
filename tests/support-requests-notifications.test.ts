@@ -28,7 +28,7 @@ export function runSupportRequestsNotificationsTests() {
   // ── HR notification wired on ticket creation ───────────────────────────────────────
   assert.match(service, /createSystemNotification/, "support service must use the unified notification engine");
   assert.match(service, /async function resolveHrSupportRecipients/, "HR recipient resolver must exist");
-  assert.match(service, /\.in\("role", \["Talent Acquisition", "Super Admin"\]\)/, "HR audience must include Talent Acquisition + Super Admin accounts");
+  assert.match(service, /\.in\("role", \["HR Advisory", "HR Operations", "Super Admin"\]\)/, "HR audience must include both HR bundles + Super Admin accounts");
   assert.match(service, /descriptive only and must not grant HR inbox authority/, "job titles must not grant HR support inbox authority");
   assert.doesNotMatch(service, /HR Manager|Admin HR/i, "HR support inbox authority must not be derived from HR-titled employees");
   assert.match(service, /async function notifyHrOfSupportRequest/, "support service must alert HR on creation");

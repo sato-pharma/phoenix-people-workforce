@@ -805,11 +805,25 @@ html:has(.admin-shell) {
    PARENT, so a control that is deliberately larger keeps its size and only the ones
    below the zoom threshold move. Phones only (<=767px); desktop keeps its density,
    which the owner's "desktop shows full tables, mobile gets cards" rule depends on.
-   Checkbox and radio are excluded: they render no text and iOS never zooms for them. */
+   Checkbox and radio are excluded: they render no text and iOS never zooms for them.
+
+   EVERY SHELL, not just the portal (2026-08-28). This rule shipped scoped to
+   `.employee-portal-shell` alone, because the portal is where the field force reported it.
+   `.admin-shell` was left with no floor at all — it was the single `max-width: 767px` block
+   in this stylesheet — so the identical iOS zoom-and-stay-zoomed defect was live on every
+   admin page on a phone, unreported only because the admin shell's users are mostly at a
+   desk. Found while planning the two new HR accounts, which the owner placed on the admin
+   shell: without this they would have shipped with the exact bug the portal was fixed for.
+   The lesson had already been generalised once (from one textarea to the whole portal) and
+   still stopped one shell short. Any shell added later belongs on this list on its first
+   day — the cost of forgetting is invisible on a desk and constant on a phone. */
 @media (max-width: 767px) {
   .employee-portal-shell input:not([type="checkbox"]):not([type="radio"]),
   .employee-portal-shell select,
-  .employee-portal-shell textarea {
+  .employee-portal-shell textarea,
+  .admin-shell input:not([type="checkbox"]):not([type="radio"]),
+  .admin-shell select,
+  .admin-shell textarea {
     font-size: max(16px, 1em);
   }
 }

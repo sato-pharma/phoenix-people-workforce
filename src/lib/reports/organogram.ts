@@ -73,7 +73,8 @@ export function canAccessHeadOffice(access: AccessContext) {
     // isSalaryRedactedForViewer blanks the money figures for her own manager chain and the
     // named seniors, and the node-detail route applies it (app/api/reports/organogram/
     // employee/[hrId]/route.ts).
-    access.role === "Talent Acquisition" ||
+    access.role === "HR Advisory" ||
+    access.role === "HR Operations" ||
     access.scope === "system"
   );
 }
@@ -126,7 +127,8 @@ export function canAccessCompanyOrganogram(access: AccessContext) {
     access.role === "CEO" ||
     access.role === "Marketing Manager" ||
     access.role === "Training Manager" ||
-    access.role === "Talent Acquisition" ||
+    access.role === "HR Advisory" ||
+    access.role === "HR Operations" ||
     // Added 2026-08-02 on owner instruction, alongside organogram:read in the matrix. The page
     // has TWO gates: the matrix grant admits him past the first, and without this he fell to the
     // final `redirect("/employee-portals")` — granted on paper, still bounced in practice.
@@ -161,7 +163,8 @@ export function canViewOrganogramSensitiveFields(access: AccessContext) {
     access.role === "Super Admin" ||
     access.role === "CEO" ||
     access.role === "Finance Manager" ||
-    access.role === "Talent Acquisition"
+    access.role === "HR Advisory" ||
+    access.role === "HR Operations"
   );
 }
 
@@ -199,7 +202,7 @@ export function isLineScopedOrganogramRole(access: AccessContext) {
 // explicit OR below is redundant but kept — it documents that vacancies visibility for her
 // must never regress even if organogram scope changes again independently in the future.
 export function canAccessCompanyVacancies(access: AccessContext) {
-  return canAccessCompanyOrganogram(access) || access.role === "Talent Acquisition";
+  return canAccessCompanyOrganogram(access) || access.role === "HR Advisory" || access.role === "HR Operations";
 }
 
 // District Manager sees only vacancies reporting directly to them (their own team's open

@@ -64,7 +64,7 @@ export function runDoctorCoverageScopeTests() {
   assert.equal(doctorCoverageScopeBasisForRole("District Manager"), "team");
   assert.equal(doctorCoverageScopeBasisForRole("Medical Rep"), "self");
   assert.equal(
-    doctorCoverageScopeBasisForRole("Talent Acquisition"),
+    doctorCoverageScopeBasisForRole("HR Advisory"),
     null,
     "an unlisted role resolves to no basis — the default must be no access, never company-wide",
   );
@@ -143,7 +143,7 @@ export function runDoctorCoverageScopeTests() {
 
   // An override must never rescue a role with no access, nor widen a team-scoped viewer.
   assert.equal(
-    scopeWithOverride({ nsm1: [1, 2, 3] }, "Talent Acquisition").kind,
+    scopeWithOverride({ nsm1: [1, 2, 3] }, "HR Advisory").kind,
     "none",
     "a line override cannot grant access to a role that has none — the role check runs first",
   );

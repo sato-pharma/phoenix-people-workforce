@@ -30,12 +30,12 @@ import {
  * Measured against production on 2026-08-15, before any of this:
  *
  *   • A pushed candidate reached a manager's phone with a link to /employee-portals/cv-database,
- *     which answers a District Manager with "available to Talent Acquisition and Super Admin only".
+ *     which answers a District Manager with "available to HR Advisory and Super Admin only".
  *     The entire flow ended on a locked door, for exactly the people it was built to reach.
  *   • A manager had no way to answer. 226 candidates, 1 interview ever.
  *   • 3 of the 10 candidates carrying a stated nationality were not Egyptian, against a standing
  *     Egyptian-nationals-only hiring rule that appeared nowhere on screen.
- *   • 628 "new CV" deliveries reached 3 Talent Acquisition reviewers in 30 days — one per CV.
+ *   • 628 "new CV" deliveries reached 3 HR Advisory reviewers in 30 days — one per CV.
  */
 
 function read(relativePath: string): string {
@@ -115,7 +115,7 @@ export async function runRecruitmentManagerInboxTests() {
 
   const decisionRoute = read("app/api/recruitment/hiring-manager/candidates/[candidateId]/decision/route.ts");
   // The permission resource is the whole reason a District Manager can reach any of this.
-  // `candidates` is hard-boundary-locked to Super Admin / Talent Acquisition and can never be
+  // `candidates` is hard-boundary-locked to Super Admin / HR Advisory and can never be
   // granted to a DM — not scoped, not by override. `hiring_interviews` is the narrow resource that
   // exists for precisely this.
   assert.match(
@@ -138,7 +138,7 @@ export async function runRecruitmentManagerInboxTests() {
   assert.match(
     decisionRoute,
     /decision === "not_interested" && !note[\s\S]{0,200}?validationError\(/,
-    "a refusal with no reason tells Talent Acquisition nothing, which defeats the point of asking",
+    "a refusal with no reason tells HR Advisory nothing, which defeats the point of asking",
   );
 
   // ── 3 · The alert points at a door the manager can open ─────────────────────

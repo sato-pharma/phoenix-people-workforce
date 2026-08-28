@@ -86,7 +86,7 @@ export async function runResignationScopeCheckTests() {
   // (input.employeeHrId), not from the URL, and until 2026-08-02 had no scope check at all —
   // it could not even perform one, because `access` was narrowed to the role and carried no
   // hrId. That was survivable only because resignations:create was held solely by Super Admin
-  // and Talent Acquisition, whom canSeeEmployee passes company-wide anyway; widening that
+  // and HR Advisory, whom canSeeEmployee passes company-wide anyway; widening that
   // grant to Employee/Medical Rep/manager roles without this guard would have let any account
   // submit a resignation for any other employee.
   assert.match(

@@ -1043,7 +1043,9 @@ function StandardCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot }) {
   // showActionsTab) and no outstation expenses of her own, so both quick-access surfaces
   // are dropped here too, matching the sidebar. Every other StandardCommandCenter role
   // (Employee, Manager, Training Manager, …) is unaffected.
-  const isTalentAcquisition = role === "Talent Acquisition";
+  // See navigation.ts: no portal-mode role is HR/office staff since the Talent Acquisition seat
+  // was retired on 2026-08-28. Both successor bundles are admin-shell roles.
+  const isPortalHrOfficeStaff = new Set<string>([]).has(role);
 
   return (
     <div className="mx-auto w-full space-y-3 sm:space-y-5" dir="auto">
@@ -1064,7 +1066,7 @@ function StandardCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot }) {
                 },
               ]
             : []),
-          ...(isTalentAcquisition
+          ...(isPortalHrOfficeStaff
             ? []
             : [
                 {
@@ -1089,12 +1091,12 @@ function StandardCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot }) {
       <QuickActions
         actions={[
           { href: "/employee-portals/vacation-request", icon: CalendarDays, label: "Request Leave" },
-          ...(isTalentAcquisition ? [] : [{ href: "/employee-portals/plans", icon: ClipboardCheck, label: "My Plans" }]),
-          ...(isTalentAcquisition ? [] : [{ href: "/employee-portals/expenses", icon: ReceiptText, label: "My Expenses" }]),
+          ...(isPortalHrOfficeStaff ? [] : [{ href: "/employee-portals/plans", icon: ClipboardCheck, label: "My Plans" }]),
+          ...(isPortalHrOfficeStaff ? [] : [{ href: "/employee-portals/expenses", icon: ReceiptText, label: "My Expenses" }]),
           { href: "/employee-portals/report-it", icon: Activity, label: "Report It" },
         ]}
       />
-      {!isTalentAcquisition && totalPending > 0 && (
+      {!isPortalHrOfficeStaff && totalPending > 0 && (
         <PendingActions pendingVacationCount={pendingVacationCount} pendingExcuseCount={pendingExcuseCount} plansAwaitingApproval={plansCount} />
       )}
 
@@ -1130,23 +1132,23 @@ function StandardCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot }) {
           <div className="h-1.5 w-12 bg-orange-500" />
         </div>
         <div className="grid grid-cols-1 gap-px bg-slate-200 sm:grid-cols-2">
-          {/* Talent Acquisition holds no `coaching` grant, so this tile landed her on the
+          {/* The retired Talent Acquisition seat held no `coaching` grant, so this tile landed her on the
               "not authorized to view coaching reports" dead end. Guarded like its two
               neighbours below, which were already hidden from her. */}
-          {!isTalentAcquisition && (
+          {!isPortalHrOfficeStaff && (
             <PremiumNavTile href="/employee-portals/coaching" icon={ClipboardCheck} label="My Coaching" description="Field coaching reports and history" />
           )}
-          {!isTalentAcquisition && (
+          {!isPortalHrOfficeStaff && (
             <PremiumNavTile href="/employee-portals/plans" icon={CalendarDays} label="My Plans" description="Weekly and monthly field activity" />
           )}
-          {!isTalentAcquisition && (
+          {!isPortalHrOfficeStaff && (
             <PremiumNavTile href="/employee-portals/expenses" icon={ReceiptText} label="My Expenses" description="Outstation expense tracker" />
           )}
           <PremiumNavTile href="/employee-portals/payslips" icon={Wallet} label="My Payslips" description="View and download salary slips" />
         </div>
       </div>
 
-      {!isTalentAcquisition && totalPending > 0 ? (
+      {!isPortalHrOfficeStaff && totalPending > 0 ? (
         <PendingActions pendingVacationCount={pendingVacationCount} pendingExcuseCount={pendingExcuseCount} plansAwaitingApproval={plansCount} />
       ) : (
         <div className="flex items-center gap-3 border border-emerald-200 bg-emerald-50 px-4 py-3 sm:px-5 sm:py-4">

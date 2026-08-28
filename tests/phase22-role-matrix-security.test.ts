@@ -26,7 +26,7 @@ export async function runPhase22RoleMatrixSecurityTests() {
   const permissionsSource = readFileSync("src/lib/auth/permissions.ts", "utf8");
 
   assert.match(phase22Smoke, /Super Admin/);
-  assert.match(phase22Smoke, /Talent Acquisition/);
+  assert.match(phase22Smoke, /HR Advisory/);
   assert.match(phase22Smoke, /Finance Manager/);
   assert.match(phase22Smoke, /Marketing Manager/);
   assert.match(phase22Smoke, /CEO/);
@@ -54,7 +54,7 @@ export async function runPhase22RoleMatrixSecurityTests() {
   const employee = createAccessContext({ hrId: "E-1", role: "Employee" });
   const medicalRep = createAccessContext({ hrId: "MR-1", role: "Medical Rep" });
   const districtManager = createAccessContext({ hrId: "DSM-1", role: "District Manager" });
-  const talentAcquisition = createAccessContext({ hrId: "A-16", role: "Talent Acquisition" });
+  const hrAdvisory = createAccessContext({ hrId: "A-16", role: "HR Advisory" });
   const financeManager = createAccessContext({ hrId: "FIN-1", role: "Finance Manager" });
   const marketingManager = createAccessContext({ hrId: "A-9", role: "Marketing Manager" });
   const superAdmin = createAccessContext({ hrId: "SA-1", role: "Super Admin" });
@@ -110,44 +110,63 @@ export async function runPhase22RoleMatrixSecurityTests() {
     true,
     "the seat-continuity marker keeps a mid-replacement report visible to the stand-in DM",
   );
-  assert.equal(talentAcquisition.scope, "self");
-  // Owner-requested 2026-07-24: Talent Acquisition moved from the admin shell to the
-  // employee portal (portalNavigationRoles in permissions.ts). Scope stays "self" —
-  // her broader company-wide visibility is granted via targeted per-feature carve-outs
-  // (canSeeEmployee, canAccessCompanyOrganogram, canAccessCompanyVacancies, etc.), not a
-  // scope change, so payroll/sales access must stay exactly as narrow as before.
-  assert.equal(resolveNavigationMode(talentAcquisition), "employee-portal");
-  assert.equal(await canAccess(talentAcquisition, "employee_profile", "read"), true);
-  assert.equal(await canAccess(talentAcquisition, "employee_profile", "update"), true);
-  assert.equal(await canAccess(talentAcquisition, "recruitment", "create"), true);
-  assert.equal(await canAccess(talentAcquisition, "candidates", "read"), true);
-  assert.equal(await canAccess(talentAcquisition, "employee_documents", "update"), true);
-  // "create" was a same-day fix (2026-07-25) — the Request Leave page's
-  // getVacationRequestPageData asserts leave:create, and the original grant
-  // (read/update/export) omitted it, making the page unreachable.
-  assert.equal(await canAccess(talentAcquisition, "leave", "create"), true);
-  assert.equal(await canAccess(talentAcquisition, "leave", "update"), true);
-  assert.equal(await canAccess(talentAcquisition, "support_requests", "read"), true);
-  assert.equal(await canAccess(talentAcquisition, "support_requests", "update"), true);
-  assert.equal(await canAccess(talentAcquisition, "support_requests", "export"), true);
-  // Owner-requested 2026-07-25: Private Calendar (self-scoped — isPrivateCalendarGlobalViewer
-  // does not include this role) and the read-only, Head-Office-scoped Planning Calendar.
-  assert.equal(await canAccess(talentAcquisition, "attendance", "read"), true);
-  assert.equal(await canAccess(talentAcquisition, "weekly_plans", "read"), true);
-  assert.equal(await canAccess(talentAcquisition, "weekly_plans", "create"), false);
-  // Owner-requested 2026-07-24: full manage rights on the employee directory, matching
-  // Super Admin's action set — the hard boundary in hardBoundaryAllowedActions was
-  // relaxed to include Talent Acquisition specifically for this resource only.
-  assert.equal(await canAccess(talentAcquisition, "employees", "read"), true);
+  assert.equal(hrAdvisory.scope, "self");
+  const hrOperations = createAccessContext({ hrId: "A-17", role: "HR Operations" });
 
-  // Owner-requested 2026-07-25: even with full employee-directory read access,
-  // Talent Acquisition must not see real salary figures for a named set of
-  // senior employees (her own manager chain + a handful of other seniors).
-  assert.equal(isSalaryRedactedForViewer(talentAcquisition, "B-10"), true, "her direct manager (HR Manager) is redacted");
-  assert.equal(isSalaryRedactedForViewer(talentAcquisition, "AA"), true, "the CEO is redacted");
-  assert.equal(isSalaryRedactedForViewer(talentAcquisition, "A-12"), true, "a named NSM is redacted");
-  assert.equal(isSalaryRedactedForViewer(talentAcquisition, "A-16"), false, "her own record is not redacted");
-  assert.equal(isSalaryRedactedForViewer(superAdmin, "B-10"), false, "the redaction is Talent-Acquisition-specific, not global");
+  // ── The shell moved (owner, 2026-08-28) ─────────────────────────────────────────────────────
+  // The retired HR Advisory seat was moved OUT of the admin shell on 2026-07-24 and into
+  // the employee portal; its two successors are back on the admin shell. Scope stays "self" for
+  // both — their company-wide visibility comes from targeted per-feature carve-outs
+  // (canSeeEmployee, canAccessCompanyOrganogram, canAccessCompanyVacancies), never a scope change,
+  // so payroll and sales access stay exactly as narrow as before. Asserting the scope AND the
+  // shell together is what catches a future "just give her company scope" shortcut.
+  for (const seat of [hrAdvisory, hrOperations]) {
+    assert.equal(seat.scope, "self", "an HR seat's AccessScope stays self — carve-outs, never scope");
+    assert.equal(resolveNavigationMode(seat), "admin");
+    assert.equal(await canAccess(seat, "employee_profile", "read"), true);
+    assert.equal(await canAccess(seat, "employee_profile", "update"), true);
+    // The self-service floor (HR_SEAT_SELF_SERVICE in hr-functions.ts). Composing a seat purely
+    // from HR functions produced one that could administer everyone's leave and payslip and not
+    // reach her own; /payslips throws an uncaught Forbidden rather than rendering an empty state.
+    assert.equal(await canAccess(seat, "leave", "create"), true, "she must be able to request her own vacation");
+    assert.equal(await canAccess(seat, "payslips", "read"), true, "she must be able to open her own payslip");
+    assert.equal(await canAccess(seat, "attendance", "read"), true);
+    assert.equal(await canAccess(seat, "employees", "read"), true);
+    assert.equal(await canAccess(seat, "support_requests", "read"), true);
+    assert.equal(await canAccess(seat, "support_requests", "update"), true);
+    assert.equal(await canAccess(seat, "support_requests", "export"), true);
+  }
+
+  // ── What SEPARATES them ─────────────────────────────────────────────────────────────────────
+  // The retired seat held every one of these at once. If a future change collapses the two
+  // bundles back into one HR role, this block is what fails — which is the entire reason the
+  // owner asked for a function catalogue rather than a second monolithic role name.
+  assert.equal(await canAccess(hrAdvisory, "recruitment", "create"), true, "recruiting is HR Advisory's function");
+  assert.equal(await canAccess(hrOperations, "recruitment", "create"), false, "…and only hers");
+  assert.equal(await canAccess(hrAdvisory, "candidates", "read"), true);
+  assert.equal(await canAccess(hrOperations, "candidates", "read"), false, "HR Operations holds no candidate PII");
+  assert.equal(await canAccess(hrAdvisory, "employee_documents", "update"), true, "Contract & Form 1 is hers to fill");
+  assert.equal(await canAccess(hrOperations, "leave", "update"), true, "approving leave is HR Operations' function");
+  assert.equal(await canAccess(hrAdvisory, "leave", "update"), false, "…and only hers");
+  assert.equal(await canAccess(hrOperations, "contracts", "update"), true, "the records half");
+  assert.equal(await canAccess(hrAdvisory, "contracts", "update"), false);
+  // Owner-requested 2026-07-25 on the retired seat: the read-only Planning Calendar, no submission.
+  // It follows workforce_insight, so HR Advisory keeps it and HR Operations never had a reason for it.
+  assert.equal(await canAccess(hrAdvisory, "weekly_plans", "read"), true);
+  assert.equal(await canAccess(hrAdvisory, "weekly_plans", "create"), false, "reading where the field force will be is not submitting a plan");
+  assert.equal(await canAccess(hrOperations, "weekly_plans", "read"), false);
+
+  // ── Salary redaction, inherited by both seats ───────────────────────────────────────────────
+  // Owner-requested 2026-07-25 on the retired seat: even with full employee-directory read
+  // access, an HR seat must not see real salary figures for a named set of senior employees (her
+  // own manager chain plus a handful of other seniors). The list is HR_SEAT_SALARY_REDACTED_HR_IDS
+  // in permissions.ts — a property of the SEAT, not of the retired title, so it carries to both.
+  assert.equal(isSalaryRedactedForViewer(hrOperations, "B-10"), true, "the redaction covers both HR bundles, not just the recruiting one");
+  assert.equal(isSalaryRedactedForViewer(hrAdvisory, "B-10"), true, "her direct manager (HR Manager) is redacted");
+  assert.equal(isSalaryRedactedForViewer(hrAdvisory, "AA"), true, "the CEO is redacted");
+  assert.equal(isSalaryRedactedForViewer(hrAdvisory, "A-12"), true, "a named NSM is redacted");
+  assert.equal(isSalaryRedactedForViewer(hrAdvisory, "A-16"), false, "her own record is not redacted");
+  assert.equal(isSalaryRedactedForViewer(superAdmin, "B-10"), false, "the redaction is HR-seat-specific, not global");
 
   function salaryRow(hrId: string): EmployeeDirectoryRow {
     return {
@@ -170,11 +189,11 @@ export async function runPhase22RoleMatrixSecurityTests() {
     lookups: { managers: [] },
     summary: {},
   } as unknown as EmployeeDirectoryData;
-  const filteredForTalentAcquisition = filterEmployeeDirectoryForAccess(directory, talentAcquisition);
+  const filteredForTalentAcquisition = filterEmployeeDirectoryForAccess(directory, hrAdvisory);
   const redactedManager = filteredForTalentAcquisition.employees.find((row) => row.hrId === "B-10")!;
   const ownRow = filteredForTalentAcquisition.employees.find((row) => row.hrId === "A-16")!;
-  assert.equal(redactedManager.baseSalary, null, "B-10's baseSalary is blanked for Talent Acquisition");
-  assert.equal(redactedManager.grossSalary, null, "B-10's grossSalary is blanked for Talent Acquisition");
+  assert.equal(redactedManager.baseSalary, null, "B-10's baseSalary is blanked for HR Advisory");
+  assert.equal(redactedManager.grossSalary, null, "B-10's grossSalary is blanked for HR Advisory");
   assert.deepEqual(redactedManager.salaryDetails, null, "B-10's flexible salary details are blanked too");
   assert.equal(ownRow.baseSalary, 10000, "her own salary is untouched by the redaction");
   const filteredForSuperAdmin = filterEmployeeDirectoryForAccess(directory, superAdmin);
@@ -184,7 +203,7 @@ export async function runPhase22RoleMatrixSecurityTests() {
     "Super Admin still sees B-10's real salary — redaction does not mutate the underlying data",
   );
 
-  // Read-side redaction alone is dangerous: Talent Acquisition's edit form for a
+  // Read-side redaction alone is dangerous: HR Advisory's edit form for a
   // redacted employee necessarily carries blanked salary values, so saving ANY
   // unrelated field change would upsert nulls over the real figures unless the
   // write path re-splices the current DB values in first. Regression-guard that
@@ -195,10 +214,10 @@ export async function runPhase22RoleMatrixSecurityTests() {
     /isSalaryRedactedForViewer\(access, payload\.employee\.hrId\)/,
     "employees API POST must re-check isSalaryRedactedForViewer before upsertEmployee, or a blanked read becomes a destructive write",
   );
-  assert.equal(await canAccess(talentAcquisition, "admin", "read"), false);
-  assert.equal(await canAccess(talentAcquisition, "admin_access", "read"), false);
-  assert.equal(await canAccess(talentAcquisition, "permission_admin", "read"), false);
-  assert.equal(await canAccess(talentAcquisition, "user_admin", "read"), false);
+  assert.equal(await canAccess(hrAdvisory, "admin", "read"), false);
+  assert.equal(await canAccess(hrAdvisory, "admin_access", "read"), false);
+  assert.equal(await canAccess(hrAdvisory, "permission_admin", "read"), false);
+  assert.equal(await canAccess(hrAdvisory, "user_admin", "read"), false);
 
   assert.equal(await canAccess(superAdmin, "employees", "read"), true);
   assert.equal(await canAccess(superAdmin, "employees", "update"), true);
@@ -258,7 +277,7 @@ export async function runPhase22RoleMatrixSecurityTests() {
   assert.equal(await canAccess(ceo, "probation", "update"), false, "CEO must not update probation workflow");
   assert.equal(await canAccess(ceo, "probation", "approve"), false, "CEO must not approve probation decisions");
 
-  const hrAuthorityRoles = new Set<PhoenixRole>(["Super Admin", "Talent Acquisition"]);
+  const hrAuthorityRoles = new Set<PhoenixRole>(["Super Admin", "HR Advisory", "HR Operations"]);
   for (const role of phoenixRoles) {
     const context = createAccessContext({ hrId: `ROLE-${role}`, role });
     assert.equal(await canAccess(context, "support_requests", "create"), true, `${role} can submit HR support requests`);

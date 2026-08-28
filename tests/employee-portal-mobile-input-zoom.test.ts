@@ -32,6 +32,7 @@ import { readFileSync } from "node:fs";
 
 const GLOBALS = "../app/globals.css";
 const PORTAL_LAYOUT = "../src/components/employee-portal/employee-portal-layout.tsx";
+const ADMIN_SHELL_ROOT = "../src/components/layout/app-shell.tsx";
 const ROOT_LAYOUT = "../app/layout.tsx";
 
 /** iOS Safari's documented zoom threshold. Below this it zooms; at or above it does not. */
@@ -107,17 +108,27 @@ export function runEmployeePortalMobileInputZoomTests() {
       "deliberately set larger, which turns a mobile fix into a mobile regression somewhere else",
   );
 
-  // ── It covers all three control types ──────────────────────────────────────
+  // ── It covers all three control types, in EVERY shell ──────────────────────
   // <select> and <textarea> zoom exactly as <input> does. The submit form uses all three —
   // Product and Deal are selects, the approver note is a textarea — so covering only <input>
   // would leave a rep zoomed by the second field on the screen that prompted this.
-  for (const control of ["input", "select", "textarea"]) {
-    assert.match(
-      block,
-      new RegExp(`\\.employee-portal-shell ${control}\\b`),
-      `<${control}> triggers the same iOS focus-zoom as the others and must carry the same floor — ` +
-        `the Direct Orders submit form uses all three`,
-    );
+  //
+  // Both shells, because until 2026-08-28 this rule named `.employee-portal-shell` alone and was
+  // the ONLY max-width:767px block in globals.css — so `.admin-shell` had no floor whatsoever and
+  // the identical defect was live on every admin page on a phone, unreported only because those
+  // users are usually at a desk. It surfaced while planning the two new HR accounts, which the
+  // owner placed on the admin shell: without the floor they would have shipped carrying the exact
+  // bug the portal was fixed for. A shell added later (an HR shell is planned) must be added here
+  // on its first day — a missing floor is invisible on a desk and constant on a phone.
+  for (const shell of ["employee-portal-shell", "admin-shell"]) {
+    for (const control of ["input", "select", "textarea"]) {
+      assert.match(
+        block,
+        new RegExp(`\\.${shell} ${control}\\b`),
+        `<${control}> inside .${shell} triggers the same iOS focus-zoom as every other control and ` +
+          `must carry the same 16px floor`,
+      );
+    }
   }
   // Checkbox and radio render no text and never trigger the zoom; excluding them keeps the rule
   // from touching controls whose box size is drawn from font-size in some browsers.
@@ -139,6 +150,18 @@ export function runEmployeePortalMobileInputZoomTests() {
     "the portal chrome root must still carry `employee-portal-shell` — every rule in globals.css's " +
       "portal section, including the 16px floor, selects on that class and silently matches nothing " +
       "without it",
+  );
+
+  // Same link for the admin shell, which the two HR accounts sit on. The class is applied inside a
+  // template literal on the admin branch of the shell root, so it is matched on `admin-shell ` with
+  // the trailing space that precedes the interpolated background class — renaming or dropping it
+  // would leave every assertion above green while every admin control on a phone went back to 14px
+  // and iOS resumed zooming on each focus.
+  assert.match(
+    read(ADMIN_SHELL_ROOT),
+    /admin-shell \$\{/,
+    "the admin chrome root must still carry `admin-shell` — the square-corner rules, the table " +
+      "styling and the 16px mobile floor all select on that class and silently match nothing without it",
   );
 
   // ── The viewport is NOT the fix ────────────────────────────────────────────

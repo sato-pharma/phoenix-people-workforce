@@ -7,7 +7,8 @@ type PhoenixRole =
   | "Medical Rep"
   | "District Manager"
   | "Finance Manager"
-  | "Talent Acquisition"
+  | "HR Advisory"
+  | "HR Operations"
   | "CEO"
   | "Super Admin";
 
@@ -35,7 +36,8 @@ const blockedProductionRef = "ozucdzovmcqvepbozvqf";
 
 const roles: PhoenixRole[] = [
   "Super Admin",
-  "Talent Acquisition",
+  "HR Advisory",
+  "HR Operations",
   "Finance Manager",
   "CEO",
   "District Manager",
@@ -63,7 +65,22 @@ const expectedByRole: Record<PhoenixRole, {
     isSuperAdmin: true,
     scope: "SUPER_ADMIN",
   },
-  "Talent Acquisition": {
+  // Both HR seats, and both expected to be IDENTICAL here. The application-layer split gives HR
+  // Advisory recruiting and HR Operations personnel records, but neither is a legacy DB role and
+  // private.phx_current_scope() returns SELF for both, so canManageEmployees stays FALSE even for
+  // the seat that maintains employee records - that authority is application-scoped, enforced by
+  // assertPermission, and never by RLS. Asserting both is what catches someone "fixing" that.
+  "HR Advisory": {
+    accessRole: "employee",
+    canManageEmployees: false,
+    canManagePayroll: false,
+    isCompanyReader: false,
+    isFinance: false,
+    isHr: false,
+    isSuperAdmin: false,
+    scope: "SELF",
+  },
+  "HR Operations": {
     accessRole: "employee",
     canManageEmployees: false,
     canManagePayroll: false,

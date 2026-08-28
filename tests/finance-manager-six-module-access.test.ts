@@ -142,15 +142,19 @@ export async function runFinanceManagerSixModuleAccessTests() {
       "guard against the two functions being collapsed into one",
   );
   assert.equal(canAccessCompanyOrganogram(ctx("SFE Manager")), true, "…while still holding the company view");
-  // Talent Acquisition WAS a second negative control here. The owner granted her Head Office on
-  // 2026-08-25 (she recruits for it, and already browses the whole employee directory), so she is
-  // now a positive. The SFE Manager pair above is what still guards the scope-collapse shortcut.
-  assert.equal(
-    canAccessHeadOffice(ctx("Talent Acquisition")),
-    true,
-    "owner decision 2026-08-25 — she recruits for Head Office; the SFE Manager above remains the " +
-      "negative control that would fail if these two functions were collapsed into a scope check",
-  );
+  // The retired Talent Acquisition seat WAS a second negative control here. The owner granted her
+  // Head Office on 2026-08-25 (she recruits for it, and already browses the whole employee
+  // directory), so it became a positive. That decision belongs to the DUTY, not the seat name, so
+  // it carries to both successor bundles: HR Advisory recruits for Head Office, and HR Operations
+  // holds its records. The SFE Manager pair above still guards the scope-collapse shortcut.
+  for (const role of ["HR Advisory", "HR Operations"] as const) {
+    assert.equal(
+      canAccessHeadOffice(ctx(role)),
+      true,
+      `owner decision 2026-08-25, inherited by ${role} — the SFE Manager above remains the negative ` +
+        "control that would fail if these two functions were collapsed into a scope check",
+    );
+  }
 
   // ── 6. Resignations: read, and only read ─────────────────────────────────────────────────────
   assert.equal(await canAccess(fm, "resignations", "read"), true, "company-wide via isCompanyResignationReader");
@@ -183,7 +187,7 @@ export async function runFinanceManagerSixModuleAccessTests() {
     "the CEO reads the Payslips Center but must NOT carry the document out — this is the assertion " +
       "that fires if the predicate is widened to 'anyone who can open the page'",
   );
-  for (const role of ["Financial Advisor", "Talent Acquisition", "SFE Manager", "Employee"] as const) {
+  for (const role of ["Financial Advisor", "HR Advisory", "HR Operations", "SFE Manager", "Employee"] as const) {
     assert.equal(canExportPayslipDocument({ role }), false, `${role} must not export payslip documents`);
   }
 

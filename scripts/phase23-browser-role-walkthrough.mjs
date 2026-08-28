@@ -164,9 +164,23 @@ async function run() {
         { type: "page", label: "admin command center access", path: "/admin", expectedText: ["Command Center"], expectedUrlIncludes: "/admin" },
         { type: "page", label: "users access admin access", path: "/admin/access", expectedText: ["Users", "Access"], expectedUrlIncludes: "/admin/access" },
       ]],
-      ["Talent Acquisition", "A-16", "/employee-portals", [
+      // The retired Talent Acquisition seat was driven here as A-16, a PORTAL-shell role whose
+      // /admin visit was expected to land back on /employee-portals. Its two successors are
+      // ADMIN-shell roles (owner, 2026-08-28), so the premise is inverted rather than renamed:
+      // admin-shell is not Super Admin. /admin gates on `admin:read`, which neither bundle holds,
+      // so the Command Center must still not render - but where they land instead is
+      // /workspace, not the portal. Asserting only the forbidden half keeps this honest about
+      // what the walkthrough can actually prove without pinning a redirect target it does not own.
+      ["HR Advisory", "PHASE23-HRA", "/workspace", [
+        { type: "page", label: "workspace landing", path: "/workspace", expectedText: ["Workspace"], forbiddenText: ["Access unavailable"] },
         { type: "page", label: "recruitment workspace access", path: "/recruitment", expectedText: ["Recruitment"], expectedUrlIncludes: "/recruitment" },
-        { type: "page", label: "admin dashboard denied", path: "/admin", expectedText: ["EMPLOYEE PORTAL"], expectedUrlIncludes: "/employee-portals", forbiddenText: ["COMMAND CENTER"] },
+        { type: "page", label: "command center denied", path: "/admin", forbiddenText: ["COMMAND CENTER"] },
+      ]],
+      ["HR Operations", "PHASE23-HROPS", "/workspace", [
+        { type: "page", label: "workspace landing", path: "/workspace", expectedText: ["Workspace"], forbiddenText: ["Access unavailable"] },
+        { type: "page", label: "leave management access", path: "/leave-management", expectedText: ["Leave"], expectedUrlIncludes: "/leave-management" },
+        { type: "page", label: "recruitment denied - it is HR Advisory's function", path: "/recruitment", forbiddenText: ["Candidate Pool"] },
+        { type: "page", label: "command center denied", path: "/admin", forbiddenText: ["COMMAND CENTER"] },
       ]],
       ["Finance Manager", "PHASE23-FIN", "/employee-portals", [
         { type: "page", label: "payroll admin visibility", path: "/payroll", expectedText: ["Payroll"], expectedUrlIncludes: "/payroll" },

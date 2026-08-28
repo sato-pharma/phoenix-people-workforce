@@ -21,7 +21,8 @@ export function runPhase24RealAuthRlsApiSmokeTests() {
 
   for (const role of [
     "Super Admin",
-    "Talent Acquisition",
+    "HR Advisory",
+    "HR Operations",
     "Finance Manager",
     "CEO",
     "District Manager",

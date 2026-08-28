@@ -136,7 +136,7 @@ export async function mergeCandidates(
   // read gate. It is deliberately NOT Super Admin only: duplicates are Talent Acquisition's daily
   // problem, and a merge nobody with the problem can run is a merge that never happens.
   if (!canReviewCandidateContacts(access)) {
-    throw new Error("Forbidden: only Super Admin and Talent Acquisition can merge candidate records.");
+    throw new Error("Forbidden: only Super Admin and HR Advisory can merge candidate records.");
   }
 
   const survivorId = String(input.survivorId ?? "").trim();

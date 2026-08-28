@@ -38,7 +38,15 @@ const EXPECTED: Record<string, { roles: string[]; enabled: boolean }> = {
   // audience: Super Admin + Talent Acquisition — deliberately NOT the CEO and NOT
   // the leaver's manager chain. Enabled on purpose: resignation notifications had
   // been silently dropping every message for seven weeks before this landed.
-  resignation_workflow_alert: { roles: ["Super Admin", "Talent Acquisition"], enabled: true },
+  // Owner-set 2026-08-09 as ["Super Admin", "Talent Acquisition"]. That seat retired 2026-08-28
+  // and its resignations grant went to HR Operations, not HR Advisory — resignations:update is
+  // in the people_records function, which only HR Operations holds — so she inherits the audience.
+  // This is a DEFAULT: production carries a stored notification_role_policies row (verified
+  // 2026-08-28, exactly one, still reading ["Super Admin","Talent Acquisition"] with the old name
+  // inside its description too), and the stored row WINS over this constant. The migration in
+  // this PR rewrites both columns; until it is applied, changing this line alone changes nothing
+  // in production, which is precisely the drift this guard exists to make visible.
+  resignation_workflow_alert: { roles: ["Super Admin", "HR Operations"], enabled: true },
   // 15th key, added 2026-08-09. Oversight audience for a completed employee import; the
   // admin who ran the import is notified in addition to these roles, from the route itself.
   employee_import_alert: { roles: ["Super Admin"], enabled: true },

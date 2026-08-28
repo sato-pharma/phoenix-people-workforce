@@ -8,12 +8,12 @@ import { readFileSync } from "node:fs";
 // independent things each blocked it on their own:
 //
 //   1. POST /api/probation/feedback asserted probation:update. The Feedback button renders for 8
-//      roles (DM, RM, NSM, TM, PM, GPM, Manager, Talent Acquisition) and every one of them holds
+//      roles (DM, RM, NSM, TM, PM, GPM, Manager, the HR seats) and every one of them holds
 //      probation:["read"]; `update` is Super Admin-only, and Super Admin is not shown the button.
 //   2. employee_hr_id / submitter_hr_id / commenter_hr_id are NOT NULL FKs to employees.hr_id
 //      (stored uppercase), but the code wrote normalizeHrId(...) — lowercased — so every insert
 //      would have died on 23503, exactly like the resignation submitted_by_hr_id bug.
-//   3. resolveSubmitterRole did not recognise Talent Acquisition, and the DB CHECK constraint
+//   3. resolveSubmitterRole did not recognise the HR seats, and the DB CHECK constraint
 //      pinned submitter_role to dm/nsm/tm/pm_gpm.
 
 export function runProbationFeedbackRevivalTests() {
@@ -59,7 +59,7 @@ export function runProbationFeedbackRevivalTests() {
     "no FK column may be written from the lowercased caller id — employees.hr_id is case-sensitive",
   );
 
-  // (3) Talent Acquisition resolves to a submitter role, and the DB accepts it.
+  // (3) the HR seats resolves to a submitter role, and the DB accepts it.
   assert.match(
     service,
     /export type FeedbackSubmitterRole = "dm" \| "nsm" \| "tm" \| "pm_gpm" \| "ta";/,
@@ -67,12 +67,12 @@ export function runProbationFeedbackRevivalTests() {
   );
   assert.match(
     service,
-    /appRole === "Talent Acquisition"\) return \{ role: "ta", isOnceOnly: true \}/,
-    "resolveSubmitterRole must map Talent Acquisition to the ta submitter role",
+    /appRole === "HR Advisory" \|\| appRole === "HR Operations"\) return \{ role: "ta", isOnceOnly: true \}/,
+    "resolveSubmitterRole must map the HR seats to the ta submitter role",
   );
   assert.match(
     service,
-    /ta: "Talent Acquisition",/,
+    /ta: "HR",/,
     "SUBMITTER_ROLE_LABELS must label ta so the HR notification names her role",
   );
 

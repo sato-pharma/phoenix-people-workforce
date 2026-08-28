@@ -84,7 +84,7 @@ function findItem(
 
 export function runOrganogramNodeDetailPrivacyTests() {
   // ---- The allowlist: exactly HR / Finance / executive / system see everything ----
-  for (const role of ["Super Admin", "CEO", "Finance Manager", "Talent Acquisition"]) {
+  for (const role of ["Super Admin", "CEO", "Finance Manager", "HR Advisory"]) {
     assert.equal(
       canViewOrganogramSensitiveFields(access(role)),
       true,

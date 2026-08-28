@@ -82,7 +82,7 @@ export function runWeeklyPlanVisibilityTests() {
     "the departed manager's own hr_id still resolves the report via the seat-continuity marker",
   );
 
-  // -- 4. Training Manager / Talent Acquisition: company-wide, independent of any
+  // -- 4. Training Manager / HR Advisory: company-wide, independent of any
   //    chain relationship (matches the existing Calendar-tab grant for these roles).
   const noChainScope = resolvePlanViewerScope({ hrId: "TM-1", role: "Training Manager" }, unrelated);
   assert.equal(
@@ -90,11 +90,11 @@ export function runWeeklyPlanVisibilityTests() {
     true,
     "Training Manager sees a completely unrelated employee's plan — company-wide, not chain-based",
   );
-  const taScope = resolvePlanViewerScope({ hrId: "TA-1", role: "Talent Acquisition" }, unrelated);
+  const hrScope = resolvePlanViewerScope({ hrId: "TA-1", role: "HR Advisory" }, unrelated);
   assert.equal(
-    isPlanOwnerWithinViewerManagementChain("UNREL-1", taScope),
+    isPlanOwnerWithinViewerManagementChain("UNREL-1", hrScope),
     true,
-    "Talent Acquisition sees a completely unrelated employee's plan — company-wide, not chain-based",
+    "HR Advisory sees a completely unrelated employee's plan — company-wide, not chain-based",
   );
 
   // -- 5. A role with no reports gains nothing extra: hierarchyReportHrIds is empty

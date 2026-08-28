@@ -40,10 +40,10 @@ export function runHiringDocumentsAccessTests() {
     },
   };
 
-  const taContext: AccessContext = { hrId: "TA-1", loginId: "TA-1", role: "Talent Acquisition", scope: "self", source: "session" };
+  const taContext: AccessContext = { hrId: "TA-1", loginId: "TA-1", role: "HR Advisory", scope: "self", source: "session" };
   const taFiltered = filterHiringDocumentsForAccess(dashboard, taContext);
-  assert.equal(taFiltered.employees.length, 2, "Talent Acquisition sees every employee, not just her own scoped subset");
-  assert.deepEqual(taFiltered, dashboard, "Talent Acquisition gets the dashboard back unchanged (company-wide bypass)");
+  assert.equal(taFiltered.employees.length, 2, "HR Advisory sees every employee, not just her own scoped subset");
+  assert.deepEqual(taFiltered, dashboard, "HR Advisory gets the dashboard back unchanged (company-wide bypass)");
 
   // Regression guard: an ordinary role without HR authority is still scoped to self-only.
   const repContext: AccessContext = { hrId: "MR-1", loginId: "MR-1", role: "Medical Rep", scope: "self", source: "session" };

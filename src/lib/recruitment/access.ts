@@ -31,11 +31,11 @@ export function hiringManagerInterviewType(role: PhoenixRole): InterviewType {
 }
 
 // Roles that manage the pipeline end to end.
-export const recruitmentManageRoles: readonly PhoenixRole[] = ["Super Admin", "Talent Acquisition"];
+export const recruitmentManageRoles: readonly PhoenixRole[] = ["Super Admin", "HR Advisory"];
 // Roles that may read every requisition/application (managers see only their own).
 export const recruitmentGlobalReadRoles: readonly PhoenixRole[] = [
   "Super Admin",
-  "Talent Acquisition",
+  "HR Advisory",
   "CEO",
 ];
 

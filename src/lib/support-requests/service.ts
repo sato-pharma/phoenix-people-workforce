@@ -59,7 +59,7 @@ async function resolveHrSupportRecipients(): Promise<HrRecipient[]> {
   const { data: authRows, error: authError } = await supabase
     .from("app_auth_users")
     .select("login_id,hr_id,role,auth_email,is_active")
-    .in("role", ["Talent Acquisition", "Super Admin"])
+    .in("role", ["HR Advisory", "HR Operations", "Super Admin"])
     .eq("is_active", true);
   if (authError) throw authError;
 

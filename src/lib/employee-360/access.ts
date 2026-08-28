@@ -37,7 +37,7 @@ import {
 const COMPANY_360_ROLES = new Set<PhoenixRole>(["CEO", "SFE Manager", "Super Admin"]);
 
 /** Roles restricted to Medical Reps only (+ self), company-wide — no line/hierarchy scope. */
-const MEDICAL_REP_ONLY_360_ROLES = new Set<PhoenixRole>(["Training Manager", "Talent Acquisition"]);
+const MEDICAL_REP_ONLY_360_ROLES = new Set<PhoenixRole>(["Training Manager", "HR Advisory", "HR Operations"]);
 
 /**
  * Employees removed from Employee 360 entirely (owner-requested, 2026-07-30).

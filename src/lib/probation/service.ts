@@ -152,7 +152,8 @@ export function canViewAllProbation(access: Pick<AccessContext, "role" | "scope"
     isProbationAdministrator(access) ||
     access.role === "Training Manager" ||
     access.role === "Marketing Manager" ||
-    access.role === "Talent Acquisition"
+    access.role === "HR Advisory" ||
+    access.role === "HR Operations"
   );
 }
 

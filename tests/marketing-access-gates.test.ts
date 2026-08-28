@@ -29,13 +29,14 @@ const NON_SUPER_ADMIN_ROLES = [
   "Marketing Manager",
   "Finance Manager",
   "Training Manager",
-  "Talent Acquisition",
+  "HR Advisory",
+  "HR Operations",
   "Manager",
 ] as const;
 
 /** Roles in neither marketingCreatorRoles nor companyMarketingRoles. "Employee" is what a guest
  *  (unauthenticated) context carries, so it stands in for the anonymous caller. */
-const NON_MARKETING_ROLES = ["Employee", "Training Manager", "Talent Acquisition", "Manager"] as const;
+const NON_MARKETING_ROLES = ["Employee", "Training Manager", "HR Advisory", "HR Operations", "Manager"] as const;
 
 const SOME_REQUEST_ID = "00000000-0000-0000-0000-000000000001";
 

@@ -23,7 +23,7 @@ export function runEmployeeAccessProvisioningTests() {
     "Admin Assistant",
     "Admin Assist",
     "HR Manager",
-    "Talent Acquisition",
+    "HR Advisory",
     "R&D Manager",
     "Research and Development Manager",
     "Finance Manager",
@@ -79,7 +79,7 @@ export function runEmployeeAccessProvisioningTests() {
     "Super Admin",
     "Sfe Manager",
     "SFE Manager",
-    "Talent Acquisition",
+    "HR Advisory",
     "Finance Manager",
     "Marketing Manager",
     "Training Manager",
@@ -125,7 +125,15 @@ export function runEmployeeAccessProvisioningTests() {
     "Marketing Manager",
     "Office Co-ordinator",
     "Regulatory Affairs",
+    // TITLES, not roles — the distinction this whole file exists to hold. "Talent Acquisition" and
+    // "Office Co-ordinator" are the two seats retired on 2026-08-28; they stay in the title list
+    // because employees HELD them and a historical record must still resolve, while neither is a
+    // PhoenixRole any more. The two new titles sit beside them, and both provision as Employee
+    // exactly like every other non-field-force title: a job title has never been a permission
+    // source here, which is the mistake being corrected — twice now, after "HR Specialist".
     "Talent Acquisition",
+    "HR Business Partner",
+    "HR Operations Coordinator",
     "Finance Manager",
     "CEO",
     "HR Manager",
@@ -160,32 +168,32 @@ export function runEmployeeAccessProvisioningTests() {
   assert.match(accessControlSource, /from\("user_access_profiles"\)/);
   assert.match(accessControlSource, /provisionSupabaseAuthIdentity/);
 
-  // ── Talent Acquisition can finish a hire (2026-08-04) ────────────────────────────────
+  // ── HR Advisory can finish a hire (2026-08-04) ────────────────────────────────
   // Adding an employee always tried to create their login through upsertAccessUser, whose
   // Super-Admin-only gate threw for every other role. The error was caught and rendered as a
   // note, so CN-0006 and PD-0007 were created with no way to sign in and nobody was told.
-  const talentAcquisition = permissionMatrix["Talent Acquisition"];
+  const hrAdvisory = permissionMatrix["HR Advisory"];
 
   assert.ok(
-    talentAcquisition.recruitment?.includes("approve"),
-    "Talent Acquisition must be able to mark an application hired (POST /api/recruitment/applications/[id]/convert asserts recruitment:approve)",
+    hrAdvisory.recruitment?.includes("approve"),
+    "HR Advisory must be able to mark an application hired (POST /api/recruitment/applications/[id]/convert asserts recruitment:approve)",
   );
   assert.ok(
-    !talentAcquisition.recruitment?.includes("delete"),
-    "Talent Acquisition must still NOT delete applications or requisitions",
+    !hrAdvisory.recruitment?.includes("delete"),
+    "HR Advisory must still NOT delete applications or requisitions",
   );
 
   // The widened grants must not have leaked into user administration: creating a login goes
   // through the narrow create-only entry point below, never the Users & Access surface.
   for (const resource of ["user_admin", "admin_access", "permission_admin"] as const) {
     assert.equal(
-      talentAcquisition[resource]?.length ?? 0,
+      hrAdvisory[resource]?.length ?? 0,
       0,
-      `Talent Acquisition must hold no ${resource} permission`,
+      `HR Advisory must hold no ${resource} permission`,
     );
   }
 
-  // The provisioning path routes a Talent Acquisition actor to the narrow entry point and
+  // The provisioning path routes a HR Advisory actor to the narrow entry point and
   // leaves Super Admin on the original one.
   assert.match(provisioningSource, /provisionEmployeeAccountForRecruiting/);
   assert.match(accessControlSource, /export async function provisionEmployeeAccountForRecruiting/);
@@ -203,19 +211,19 @@ export function runEmployeeAccessProvisioningTests() {
     "provisionEmployeeAccountForRecruiting must refuse a sales scope override",
   );
 
-  // The rank boundary is what actually stops Talent Acquisition creating a privileged
+  // The rank boundary is what actually stops HR Advisory creating a privileged
   // account: assertActorMayManageUser rejects any target whose rank is >= the actor's.
-  const talentAcquisitionRank = getRolePrivilegeRank("Talent Acquisition");
-  for (const blockedRole of ["Super Admin", "CEO", "Finance Manager", "Talent Acquisition"] as const) {
+  const hrAdvisoryRank = getRolePrivilegeRank("HR Advisory");
+  for (const blockedRole of ["Super Admin", "CEO", "Finance Manager", "HR Advisory"] as const) {
     assert.ok(
-      getRolePrivilegeRank(blockedRole) >= talentAcquisitionRank,
-      `${blockedRole} must rank at or above Talent Acquisition so provisioning refuses it`,
+      getRolePrivilegeRank(blockedRole) >= hrAdvisoryRank,
+      `${blockedRole} must rank at or above HR Advisory so provisioning refuses it`,
     );
   }
   for (const allowedRole of ["Employee", "Medical Rep", "District Manager"] as const) {
     assert.ok(
-      getRolePrivilegeRank(allowedRole) < talentAcquisitionRank,
-      `${allowedRole} must rank below Talent Acquisition so a new hire can be provisioned`,
+      getRolePrivilegeRank(allowedRole) < hrAdvisoryRank,
+      `${allowedRole} must rank below HR Advisory so a new hire can be provisioned`,
     );
   }
 }

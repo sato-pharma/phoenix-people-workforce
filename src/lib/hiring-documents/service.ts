@@ -556,7 +556,7 @@ export function filterHiringDocumentsForAccess(
   // (isCompanyResignationReader, isCompanyContractReader, canSeeAllRecruitment) — without
   // it here she'd fall through to canSeeHrScopedRecord's self-only default and see only
   // her own employee row instead of the company-wide new-hire document checklist.
-  if (access.scope === "system" || access.role === "Super Admin" || access.role === "Talent Acquisition") {
+  if (access.scope === "system" || access.role === "Super Admin" || access.role === "HR Advisory") {
     return dashboard;
   }
 
@@ -606,7 +606,7 @@ const HIRING_DOCUMENT_FILE_COLUMNS =
  * entry points here.
  */
 async function assertCanReachEmployeeDocuments(access: AccessContext, employeeHrId: string) {
-  if (access.scope === "system" || access.role === "Super Admin" || access.role === "Talent Acquisition") {
+  if (access.scope === "system" || access.role === "Super Admin" || access.role === "HR Advisory") {
     return;
   }
 

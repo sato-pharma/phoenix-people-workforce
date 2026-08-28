@@ -132,7 +132,7 @@ export async function runRecruitmentCandidatePoolTableTests() {
   // ── 7 · The duplicate flag reaches the desktop row too ──────────────────────
   //
   // 132 of the 555 production rows share a person with another row. The flag existed on the data
-  // and on the mobile card, but the desktop table — the surface Talent Acquisition actually works
+  // and on the mobile card, but the desktop table — the surface HR Advisory actually works
   // in — never showed it.
   const duplicateSites = workspace.match(/possibleDuplicate/g) ?? [];
   assert.ok(
