@@ -738,6 +738,15 @@ something real. The 2026-08-27 pass freed 320 bytes with all counts identical (1
 append re-breaks it the same silent way. When compression is exhausted, move guidance HERE rather
 than deleting a hook. That is what §2.1 did in August, and what this section is.
 
+**"Here" is three places, not one, and the SessionStart hook now names all three.** Route by KIND of
+fact: an agent-operating trap to §2.1, a production or approval hook to §2.3, an **owner product
+rule to §4** — which is where 2026-08-28's two relocations went, eight marketing-validation hooks
+into §4.1 (#2565) and seven owner product rules into §4 itself (#2566). Filing an owner rule among
+the session traps is not merely untidy: §2.1 is the section a session skims for shell and git
+behaviour, so a payroll or export rule parked there is read by nobody who needs it. The hook said
+"2.1/2.3" for its first day and would have sent exactly those seven to the wrong section;
+`tests/session-start-memory-index-guard.test.ts` now pins all three routes.
+
 **Trim BEFORE the cliff, and relocate rather than compress once the levers are gone.** Measured
 2026-08-27 evening at **23,937 bytes - 463 bytes of headroom**, so not yet over, but every
 punctuation lever the passes above used was already spent: **zero** trailing whitespace, **zero**

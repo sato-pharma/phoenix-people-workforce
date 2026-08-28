@@ -111,6 +111,19 @@ export function runSessionStartMemoryIndexGuardTests() {
       "it must tell the session what to do about it — displace, not merely that the file is big",
     );
     assert.match(
+      contextOf(over.out),
+      /Route by KIND of fact/,
+      "displacing is not enough — it must say WHERE, or the session picks a section by guesswork",
+    );
+    // §4 is the one that gets left out. The first version of this hook named only 2.1/2.3, the two
+    // session-trap sections — so an OWNER PRODUCT RULE, which is what #2566 relocated seven of, had
+    // no home in the guidance and would have been filed among the tooling traps.
+    assert.match(
+      contextOf(over.out),
+      /an owner product rule to 4\./,
+      "an owner product rule belongs in §4, not among the session traps in §2.1",
+    );
+    assert.match(
       over.out?.systemMessage ?? "",
       /23463 bytes/,
       "the human is interrupted with the figure when action is due",
