@@ -273,9 +273,14 @@ export async function runRecruitmentScreeningPageTests() {
   // keeps its original box and the scroll container either clips the last page or leaves a screen
   // of empty grey under it. zoom reflows, so the container is simply the right size.
   assert.match(viewer, /style=\{\{ zoom \}\}/, "the fit must be applied with CSS zoom, which reflows");
+  // The pin must match a real STYLE, never prose. The component explains at length why it does NOT
+  // use transform, and the first cut of this pin read that explanation as the violation it warns
+  // against — it turned the required `validate` job red on its own head, 2026-08-27. A CSS value in
+  // a JS style object is always a string, so the opening quote is exactly what separates a usage
+  // from a sentence about one. Do not loosen this back to a bare string search.
   assert.doesNotMatch(
     viewer,
-    /transform: `?scale\(/,
+    /transform:\s*[`"']scale\(/,
     "transform: scale does not reflow — it scales the picture and leaves the scroll box the wrong size",
   );
   // Fit only ever SHRINKS. A pane wider than the page would otherwise blow a PDF's raster up into a
