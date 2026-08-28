@@ -14,7 +14,7 @@ import "./globals.css";
 // first in --phx-font-ui; the owner reverted that on 2026-08-28 because Inter renders
 // optically larger than the Aptos it displaced — same font-size, a far bigger x-height
 // (~0.73em against ~0.50em) and wider advances — so the shell read as bigger and bolder
-// and sidebar labels that used to fit began hitting `truncate`. The whole app's optical
+// and sidebar labels that used to fit began clipping to an ellipsis. The app's optical
 // size moved, not just the rail; the rail is only where a hard width budget made it
 // visible. Do NOT re-add a UI webfont without size-matching it to Aptos first
 // (`size-adjust` on the @font-face) and re-running `pnpm run ui:measure-sidebar-labels`,
