@@ -530,6 +530,7 @@ import { runAdminPayslipImageExportTests } from "./admin-payslip-image-export.te
 import { runEmployeePayrollEligibilityTests } from "./employee-payroll-eligibility.test.ts";
 import { runEmployeeAccessProvisioningTests } from "./employee-access-provisioning.test.ts";
 import { runHrFunctionGovernanceTests } from "./hr-function-governance.test.ts";
+import { runHrClearanceRetentionTests } from "./hr-clearance-retention.test.ts";
 import { runHrCommandCenterTests } from "./hr-command-center.test.ts";
 import { runHrSeatRouteCoherenceTests } from "./hr-seat-route-coherence.test.ts";
 import { runTitlePermissionGovernanceTests } from "./title-permission-governance.test.ts";
@@ -1823,6 +1824,12 @@ await runTest(
   "HR command centre (every tile on a seat's landing dashboard links to a row that seat is "
   + "offered, so no figure leads to a page it cannot open)",
   runHrCommandCenterTests,
+);
+await runTest(
+  "HR clearance & retention (both resources registered in the RUNTIME array as well as the union "
+  + "- the sidebar lookup fails open on a key it has never seen - and the two seats' grants do "
+  + "not cross: clearance is HR Operations', retention is HR Advisory's)",
+  runHrClearanceRetentionTests,
 );
 await runTest("organogram hardening", runOrganogramHardeningTests);
 await runTest("vacancy report / organogram consistency", runVacancyReportOrganogramConsistencyTests);

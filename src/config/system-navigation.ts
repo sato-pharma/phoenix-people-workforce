@@ -1413,6 +1413,16 @@ const hrNavigationSectionSeeds = [
       { href: "/hr/probation", icon: Hourglass, label: "Probation", permissions: [{ resource: "probation" }] },
       { href: "/hr/contracts", icon: CalendarClock, label: "Contract Renewal", permissions: [{ resource: "contracts" }] },
       { href: "/hr/resignations", icon: FileSpreadsheet, label: "Resignations", permissions: [{ resource: "resignations" }] },
+      // The offboarding arc, in the order it actually happens: the departure is recorded, the
+      // stations are cleared, the conversation is captured. Each row advertises the permission its
+      // page really gates on - the Deductions note under Payroll is what happens when they drift.
+      //
+      // Only ONE of these two ever renders for a given seat, by design. Clearance is in
+      // people_records (HR Operations); Retention is in engagement_retention (HR Advisory). The
+      // sidebar does not enforce that - the route handler does - but the split is the reason a
+      // reader of this file should not "helpfully" grant both to both.
+      { href: "/hr/clearance", icon: ClipboardCheck, label: "Clearance", permissions: [{ resource: "clearance" }] },
+      { href: "/hr/retention", icon: HeartPulse, label: "Retention Register", permissions: [{ resource: "retention" }] },
       { href: "/hr/reports/vacancies", icon: BriefcaseBusiness, label: "Vacancies Report", permissions: [{ resource: "vacancies" }] },
       { href: "/hr/admin/support-requests", icon: LifeBuoy, label: "HR Support Requests", permissions: [{ resource: "support_requests" }] },
     ],
@@ -2593,6 +2603,20 @@ export const peopleManagementPageItems: readonly AdminToolsPageItem[] = [
     // that kept "Archived ROI Tracking" and "/admin/deductions" one keystroke away after their hubs
     // were hidden.
     excludedRoles: ["Finance Manager"],
+  },
+  {
+    href: "/clearance",
+    icon: ClipboardCheck,
+    label: "Clearance & Offboarding",
+    description: "Every station a leaver has to clear, and the final settlement release.",
+    permissions: [{ resource: "clearance" }],
+  },
+  {
+    href: "/retention",
+    icon: HeartPulse,
+    label: "Retention Register",
+    description: "Stay discussions and exit interviews, summarised into themes.",
+    permissions: [{ resource: "retention" }],
   },
   {
     href: "/admin/weekly-plans",
