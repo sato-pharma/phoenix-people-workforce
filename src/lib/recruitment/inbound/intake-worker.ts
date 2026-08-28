@@ -14,6 +14,7 @@ import { logError, logWarning } from "@/lib/observability/log";
 import { formatCoveringMessage } from "@/lib/recruitment/candidate-source-context";
 import { clearWhatsAppMessages, sweepOldWhatsAppMessages } from "@/lib/recruitment/inbound/whatsapp-message-buffer";
 import { downloadWhatsAppMedia, WhatsAppMediaTooLargeError } from "@/lib/recruitment/inbound/whatsapp-media";
+import { applyPendingClassification } from "@/lib/recruitment/inbound/whatsapp-classify-session";
 import { isWhatsAppAutoReplyEnabled, sendWhatsAppCvAcknowledgement } from "@/lib/recruitment/inbound/whatsapp-reply";
 import { fetchAndParseEmailMessagesByUid } from "@/lib/recruitment/inbound/email-poller";
 import { fetchCvFromUrl } from "@/lib/recruitment/inbound/cv-link";
@@ -71,6 +72,9 @@ async function processWhatsAppRow(payload: WhatsAppQueuePayload): Promise<Inboun
     forwarded: payload.forwarded,
     from: payload.from,
     historical: payload.historical === true,
+    // A queued row is always a CV document, never a tap on a menu — interactive replies are handled
+    // in the webhook and never enqueued.
+    interactiveReplyId: null,
     messageType: payload.messageType,
     text: null,
     wamid: payload.wamid,
@@ -102,6 +106,14 @@ async function processWhatsAppRow(payload: WhatsAppQueuePayload): Promise<Inboun
   // candidate, so a later CV from the same number doesn't re-inherit stale context.
   if (!isImport && (result.outcome === "candidate_created" || result.outcome === "candidate_matched")) {
     await clearWhatsAppMessages(payload.from).catch(() => {});
+  }
+
+  // The applicant can finish tapping their three answers before the CV finishes processing — the
+  // conversation runs in seconds, the worker runs on a cron tick. When that happens the answers are
+  // already stored against their number with no candidate to write them to, so they are applied
+  // here, the moment the candidate exists. Best-effort and flag-gated.
+  if (!isImport && result.candidateId && (result.outcome === "candidate_created" || result.outcome === "candidate_matched")) {
+    await applyPendingClassification({ candidateId: result.candidateId, waId: payload.from }).catch(() => {});
   }
 
   // Acknowledge a genuinely NEW direct applicant (flag-gated; strict no-op when off). Never on an

@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { logError, logWarning } from "@/lib/observability/log";
 import { assembleWhatsAppSourceContext, MAX_WHATSAPP_SOURCE_MESSAGES } from "@/lib/recruitment/candidate-source-context";
 import { enqueueInbound } from "@/lib/recruitment/inbound/intake-queue";
+import { handleClassifyReply, startClassification } from "@/lib/recruitment/inbound/whatsapp-classify-session";
 import { bufferWhatsAppMessage, takeRecentWhatsAppMessages } from "@/lib/recruitment/inbound/whatsapp-message-buffer";
 import {
   isWhatsAppImportSender,
@@ -19,6 +20,14 @@ export const dynamic = "force-dynamic";
 // Meta-block risk. The durable worker (intake-worker.ts, phoenix-inbound-intake cron) does the
 // download + extraction + candidate creation, with retries. 60s is ample headroom for enqueue-only.
 export const maxDuration = 60;
+
+// At most this many self-classification prompts per webhook DELIVERY. Each prompt is one Graph API
+// call inside the request, and this file exists to ack fast — a payload carrying many CVs must not
+// turn into many serial round trips. A bulk forward is already excluded before any network call
+// (startClassification skips forwarded and import senders), so this is a bound on the tail case,
+// not a limit anyone reaches in normal traffic. Anything over the budget is simply not asked; the
+// CV itself is unaffected because it was already enqueued.
+const MAX_CLASSIFY_PROMPTS_PER_DELIVERY = 3;
 
 // Meta's one-time webhook verification handshake — dormant (403s) until WHATSAPP_WEBHOOK_VERIFY_TOKEN
 // is configured and the same value is entered into the Meta App dashboard's webhook config.
@@ -70,6 +79,7 @@ export async function POST(request: Request) {
   const messages = parseWhatsAppWebhookPayload(payload);
   const importSenders = parseWhatsAppImportSenders(process.env.RECRUITMENT_WHATSAPP_IMPORT_SENDERS);
   const outcomes: Array<{ wamid: string; outcome: string }> = [];
+  let classifyPromptsSent = 0;
 
   // (The text-buffer retention sweep runs on the inbound-intake cron tick now, not here — keeping
   // the webhook's work minimal so it acks even faster.)
@@ -78,6 +88,25 @@ export async function POST(request: Request) {
   // the enqueue is idempotent on the wamid, so a Meta retry of the whole payload is safe.
   for (const message of messages) {
     try {
+      // A tap on one of our own interactive menus. Handled before anything else: it carries no text
+      // and no document, so it would otherwise fall through to "ignored" and the applicant's answer
+      // would be dropped silently. Never throws — a failed answer must not fail the delivery.
+      if (message.interactiveReplyId && !message.historical) {
+        const replyOutcome = await handleClassifyReply({
+          phoneNumberId: message.deliveredToPhoneNumberId,
+          rowId: message.interactiveReplyId,
+          waId: message.from,
+        }).catch((replyError) => {
+          logError("WhatsApp classification reply handling threw", {
+            error: replyError,
+            labels: { event: "whatsapp_classify_reply_threw", wamid: message.wamid },
+          });
+          return "no_session" as const;
+        });
+        outcomes.push({ outcome: `classify_${replyOutcome}`, wamid: message.wamid });
+        continue;
+      }
+
       // A plain text message is buffered so its first few lines can be shown next to the candidate
       // once their CV document arrives. Buffering is best-effort — never fail the message over it.
       // A history replay is excluded: those lines were typed weeks ago, and letting them into the
@@ -137,6 +166,21 @@ export async function POST(request: Request) {
         providerMessageId: message.wamid,
         source: "whatsapp_webhook",
       });
+      // Ask the applicant what they are applying for. Only on a genuinely new CV: a duplicate is a
+      // Meta retry of something already handled, and re-prompting would ask the same person the
+      // same question twice.
+      if (enqueued && classifyPromptsSent < MAX_CLASSIFY_PROMPTS_PER_DELIVERY) {
+        const classifyOutcome = await startClassification({
+          cvWamid: message.wamid,
+          forwarded: message.forwarded,
+          historical: message.historical,
+          isImportSender: isImport,
+          phoneNumberId: message.deliveredToPhoneNumberId,
+          waId: message.from,
+        });
+        if (classifyOutcome === "asked") classifyPromptsSent += 1;
+      }
+
       outcomes.push({ outcome: enqueued ? "enqueued" : "duplicate", wamid: message.wamid });
     } catch (error) {
       // A failed enqueue is the only thing that could lose a message now. Log it loudly; returning
