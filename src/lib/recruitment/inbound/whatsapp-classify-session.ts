@@ -20,9 +20,12 @@ import { recruitmentDb, textOrNull } from "@/lib/recruitment/db";
 import {
   areaMenu,
   classifyThankYouText,
+  cleanTypedJobTitle,
   isOfferedRegion,
   isOfferedRoleFamily,
   jobTitleMenu,
+  jobTitleOtherPromptText,
+  jobTitleOtherTooLongText,
   parseClassifyRowId,
   regionMenu,
   type ClassifyMenu,
@@ -47,6 +50,8 @@ type SessionRow = {
   phone_number_id: string | null;
   step: string;
   job_title_family: string | null;
+  /** What they typed after choosing "Other". Null for every other answer. */
+  job_title_other_text: string | null;
   region_code: string | null;
   area_name: string | null;
   last_prompt_wamid: string | null;
@@ -54,7 +59,24 @@ type SessionRow = {
 };
 
 const SESSION_COLUMNS =
-  "id,wa_id,phone_number_id,step,job_title_family,region_code,area_name,last_prompt_wamid,applied_candidate_id";
+  "id,wa_id,phone_number_id,step,job_title_family,job_title_other_text,region_code,area_name,last_prompt_wamid,applied_candidate_id";
+
+/**
+ * The role as it should be READ BACK — their typed words when they chose "Other", otherwise the
+ * family's label. One function so the thank-you message, the owner's Telegram mirror and the
+ * candidate record can never disagree about what someone said they were applying for.
+ */
+export function sessionRoleLabel(session: {
+  job_title_family: string | null;
+  job_title_other_text: string | null;
+}): string | null {
+  if (session.job_title_family === "other" && session.job_title_other_text) {
+    return session.job_title_other_text;
+  }
+  return session.job_title_family
+    ? candidateRoleFamilyLabels[session.job_title_family as CandidateRoleFamily]
+    : null;
+}
 
 // ── Areas, read live ─────────────────────────────────────────────────────────────────────────────
 // Areas are the one layer of this vocabulary that genuinely moves as the org changes, so they are
@@ -126,6 +148,38 @@ async function sendStep(
   await supabase
     .from(SESSIONS_TABLE)
     .update({ last_prompt_wamid: result.wamid, step: menu.step, updated_at: new Date().toISOString() })
+    .eq("id", session.id);
+  return true;
+}
+
+/**
+ * Sends a plain-text question — the "Other" follow-up, which has nothing to tap.
+ *
+ * Same window handling as `sendStep`: if the applicant has gone quiet for 24 hours Meta rejects it
+ * and the conversation is closed rather than left open, because an open row blocks a future CV from
+ * starting a fresh one. Deliberately no paid template chase.
+ *
+ * Unlike `sendStep` this does NOT write the step — the caller has already parked the session on
+ * `job_title_other`, and it must stay there even if this prompt fails to reach them, so a typed
+ * answer that arrives anyway is still understood.
+ */
+async function sendPromptText(
+  session: Pick<SessionRow, "id" | "wa_id" | "phone_number_id">,
+  text: string,
+): Promise<boolean> {
+  const result = await sendWhatsAppText({
+    phoneNumberId: session.phone_number_id,
+    text,
+    toWaId: session.wa_id,
+  });
+  if (!result.ok) {
+    if (result.reason === "window_closed") await closeSession(session.id, "window_closed");
+    return false;
+  }
+  const supabase = recruitmentDb();
+  await supabase
+    .from(SESSIONS_TABLE)
+    .update({ last_prompt_wamid: result.wamid, updated_at: new Date().toISOString() })
     .eq("id", session.id);
   return true;
 }
@@ -220,6 +274,7 @@ export type ClassifyReplyOutcome =
   | "out_of_step"
   | "unknown_value"
   | "no_areas"
+  | "asked_other"
   | "advanced"
   | "completed";
 
@@ -256,6 +311,22 @@ export async function handleClassifyReply(input: {
 
     if (parsed.step === "job_title") {
       if (!isOfferedRoleFamily(parsed.value)) return "unknown_value";
+
+      // "Other" is the one answer a list cannot finish. Owner's instruction 2026-08-28: let them
+      // type it. The conversation parks on `job_title_other` and the NEXT plain text message this
+      // sender writes becomes their job title — see handleClassifyText.
+      if (parsed.value === "other") {
+        await supabase
+          .from(SESSIONS_TABLE)
+          .update({ job_title_family: "other", step: "job_title_other", updated_at: nowIso })
+          .eq("id", session.id);
+        await sendPromptText(
+          { ...session, phone_number_id: session.phone_number_id ?? input.phoneNumberId },
+          jobTitleOtherPromptText(),
+        );
+        return "asked_other";
+      }
+
       await supabase
         .from(SESSIONS_TABLE)
         .update({ job_title_family: parsed.value, step: "region", updated_at: nowIso })
@@ -310,12 +381,74 @@ export async function handleClassifyReply(input: {
   }
 }
 
+// ── Handling a TYPED answer ──────────────────────────────────────────────────────────────────────
+
+export type ClassifyTextOutcome =
+  | "disabled"
+  | "no_session"
+  | "not_awaiting_text"
+  | "unusable_text"
+  | "advanced";
+
+/**
+ * Takes a plain text message as the answer to "Other", then carries on to question 2.
+ *
+ * ONLY acts when the sender's open conversation is parked on `job_title_other`. Every other inbound
+ * text — a greeting, a note attached to a CV, anything at all — returns `not_awaiting_text` and is
+ * left alone for the caller to buffer as CV context, which is what it was before this existed.
+ * That narrowness is the whole safety property: this must never swallow a message that was not an
+ * answer to a question we asked.
+ */
+export async function handleClassifyText(input: {
+  waId: string;
+  phoneNumberId: string | null;
+  text: string;
+}): Promise<ClassifyTextOutcome> {
+  if (!isWhatsAppClassifyEnabled()) return "disabled";
+
+  try {
+    const supabase = recruitmentDb();
+    const { data: sessionRow } = await supabase
+      .from(SESSIONS_TABLE)
+      .select(SESSION_COLUMNS)
+      .eq("wa_id", input.waId)
+      .is("completed_at", null)
+      .maybeSingle();
+    if (!sessionRow) return "no_session";
+    const session = sessionRow as SessionRow;
+    if (session.step !== "job_title_other") return "not_awaiting_text";
+
+    const withPhone = { ...session, phone_number_id: session.phone_number_id ?? input.phoneNumberId };
+    const typed = cleanTypedJobTitle(input.text);
+
+    // Too long to be a job title. Say so and stay on the same step rather than recording a
+    // paragraph in the column a hiring manager reads. The nudge is free: we are inside the window
+    // they opened by messaging us.
+    if (!typed) {
+      await sendPromptText(withPhone, jobTitleOtherTooLongText());
+      return "unusable_text";
+    }
+
+    const nowIso = new Date().toISOString();
+    await supabase
+      .from(SESSIONS_TABLE)
+      .update({ job_title_other_text: typed, step: "region", updated_at: nowIso })
+      .eq("id", session.id);
+    await sendStep(withPhone, regionMenu());
+    return "advanced";
+  } catch (error) {
+    logError("WhatsApp classification failed to handle a typed answer", {
+      error,
+      labels: { event: "whatsapp_classify_text_failed" },
+    });
+    return "no_session";
+  }
+}
+
 // ── Finishing: confirm to the applicant, then write to the candidate ─────────────────────────────
 
 async function finishSession(session: SessionRow, fallbackPhoneNumberId: string | null): Promise<void> {
-  const roleLabel = session.job_title_family
-    ? candidateRoleFamilyLabels[session.job_title_family as CandidateRoleFamily]
-    : null;
+  const roleLabel = sessionRoleLabel(session);
   const regionLabel = session.region_code
     ? candidateRegionLabels[session.region_code as CandidateRegionCode]
     : null;
@@ -402,9 +535,11 @@ async function writeClassification(candidateId: string, session: SessionRow): Pr
   // its column untouched rather than blanking whatever is already on the record — writing an
   // optional field unconditionally is a silent erase.
   const payload: Record<string, unknown> = { preferences_declared_at: nowIso };
-  if (session.job_title_family) {
-    payload.applied_for_job_title = candidateRoleFamilyLabels[session.job_title_family as CandidateRoleFamily];
-  }
+  // Their typed words when they chose "Other", the family's label otherwise. `sessionRoleLabel` is
+  // the single place that decision is made, so the thank-you message, the owner's Telegram mirror
+  // and this column can never disagree about what the applicant said.
+  const roleLabel = sessionRoleLabel(session);
+  if (roleLabel) payload.applied_for_job_title = roleLabel;
   if (session.region_code) payload.preferred_region_code = session.region_code;
   if (session.area_name) payload.preferred_area_name = session.area_name;
 
