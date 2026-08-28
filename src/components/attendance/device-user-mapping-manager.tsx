@@ -419,7 +419,7 @@ export function DeviceUserMappingManager({ agentIsRemotelyReachable, canUpdate, 
               </span>
             )}
             <a
-              className="inline-flex items-center justify-center gap-2 rounded-lg border border-white/20 bg-white/10 px-4 py-2 text-sm font-medium text-slate-100 backdrop-blur transition hover:border-[#FDBA74] hover:bg-white/[0.16] hover:text-white"
+              className="inline-flex items-center justify-center gap-2 rounded-lg border border-white/20 bg-white/10 px-4 py-2 text-sm font-medium text-slate-100 backdrop-blur transition hover:border-phx-accent-line hover:bg-white/[0.16] hover:text-white"
               href="/api/attendance/device-user-mappings/template"
             >
                 <Download className="h-4 w-4" />

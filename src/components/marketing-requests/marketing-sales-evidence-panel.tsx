@@ -28,23 +28,23 @@ function BreakdownTable({
 }) {
   const max = Math.max(0, ...rows.map((row) => row.value));
   return (
-    <div className="rounded-[6px] border border-[#E2E8F0] bg-white">
-      <p className="border-b border-[#E2E8F0] px-3 py-2 text-[11px] font-black uppercase tracking-[0.12em] text-[#64748B]">
+    <div className="rounded-[6px] border border-phx-line bg-white">
+      <p className="border-b border-phx-line px-3 py-2 text-[11px] font-black uppercase tracking-[0.12em] text-phx-ink-soft">
         {title}
       </p>
       {rows.length === 0 ? (
-        <p className="px-3 py-4 text-[12px] font-semibold text-[#94A3B8]">{emptyLabel}</p>
+        <p className="px-3 py-4 text-[12px] font-semibold text-phx-ink-faint">{emptyLabel}</p>
       ) : (
-        <ul className="divide-y divide-[#F1F5F9]">
+        <ul className="divide-y divide-phx-paper-2">
           {rows.map((row) => (
             <li className="px-3 py-2" key={row.label}>
               <div className="flex items-center justify-between gap-3">
-                <span className="text-[12px] font-bold text-[#0F172A]">{row.label}</span>
-                <span className="shrink-0 text-[12px] font-black text-[#0F172A]">{egp(row.value)}</span>
+                <span className="text-[12px] font-bold text-phx-ink">{row.label}</span>
+                <span className="shrink-0 text-[12px] font-black text-phx-ink">{egp(row.value)}</span>
               </div>
-              <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-[#F1F5F9]">
+              <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-phx-paper-2">
                 <div
-                  className="h-full rounded-full bg-[#FDBA74]"
+                  className="h-full rounded-full bg-phx-accent-line"
                   style={{ width: max > 0 ? `${Math.max(3, (row.value / max) * 100)}%` : "0%" }}
                 />
               </div>
@@ -98,7 +98,7 @@ export function MarketingSalesEvidencePanel({ requestId }: { requestId: string }
 
   if (loading) {
     return (
-      <div className="rounded-[8px] border border-[#E2E8F0] bg-white px-4 py-3 text-[12px] font-bold text-[#64748B]">
+      <div className="rounded-[8px] border border-phx-line bg-white px-4 py-3 text-[12px] font-bold text-phx-ink-soft">
         Loading sales evidence...
       </div>
     );
@@ -106,7 +106,7 @@ export function MarketingSalesEvidencePanel({ requestId }: { requestId: string }
 
   if (error || !data) {
     return (
-      <div className="rounded-[8px] border border-[#FED7AA] bg-[#FFF7ED] px-4 py-3 text-[12px] font-bold text-[#9A3412]">
+      <div className="rounded-[8px] border border-[#FED7AA] bg-phx-accent-soft px-4 py-3 text-[12px] font-bold text-[#9A3412]">
         {error ?? "Sales evidence is unavailable."}
       </div>
     );
@@ -117,11 +117,11 @@ export function MarketingSalesEvidencePanel({ requestId }: { requestId: string }
   const underTarget = ask.roiStatus === "under_target";
 
   return (
-    <section className="space-y-3 rounded-[10px] border border-[#E2E8F0] bg-[#F8FAFC] p-4">
+    <section className="space-y-3 rounded-[10px] border border-phx-line bg-phx-paper p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-[10px] font-black uppercase tracking-[0.14em] text-[#64748B]">Sales evidence</p>
-          <p className="mt-1 text-[15px] font-black text-[#0F172A]">{data.customerName}</p>
+          <p className="text-[10px] font-black uppercase tracking-[0.14em] text-phx-ink-soft">Sales evidence</p>
+          <p className="mt-1 text-[15px] font-black text-phx-ink">{data.customerName}</p>
         </div>
         <span
           className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-black ${
@@ -134,15 +134,15 @@ export function MarketingSalesEvidencePanel({ requestId }: { requestId: string }
       </div>
 
       {/* The verdict, in one sentence. */}
-      <p className="text-[13px] font-bold leading-6 text-[#334155]">
+      <p className="text-[13px] font-bold leading-6 text-phx-ink-2">
         {verdict.hasHistory ? (
           <>
-            This customer sold <strong className="text-[#0F172A]">{egp(verdict.totalValue)}</strong> across{" "}
-            <strong className="text-[#0F172A]">{verdict.activeMonths}</strong>{" "}
+            This customer sold <strong className="text-phx-ink">{egp(verdict.totalValue)}</strong> across{" "}
+            <strong className="text-phx-ink">{verdict.activeMonths}</strong>{" "}
             {verdict.activeMonths === 1 ? "month" : "months"}, {verdict.productCount}{" "}
             {verdict.productCount === 1 ? "product" : "products"} and {verdict.distributorCount}{" "}
             {verdict.distributorCount === 1 ? "distributor" : "distributors"} — about{" "}
-            <strong className="text-[#0F172A]">{egp(verdict.monthlyRunRate)}</strong> per active month.
+            <strong className="text-phx-ink">{egp(verdict.monthlyRunRate)}</strong> per active month.
           </>
         ) : data.matchedPharmacyCodes.length === 0 ? (
           <>
@@ -165,7 +165,7 @@ export function MarketingSalesEvidencePanel({ requestId }: { requestId: string }
           quantity, count, product name or value — saying how many or how much would defeat the
           lock this line exists to respect. */}
       {data.confidentialProductsWithheld ? (
-        <p className="text-[12px] font-semibold leading-5 text-[#64748B]">
+        <p className="text-[12px] font-semibold leading-5 text-phx-ink-soft">
           Confidential products are excluded from these figures.
         </p>
       ) : null}
@@ -176,21 +176,21 @@ export function MarketingSalesEvidencePanel({ requestId }: { requestId: string }
           once, for EGP 79. It buys Tebofortine 40mg; the request promotes Forte 80 and 120. Same
           family, different SKUs, matched on CODE so a name never credits one to the other. This
           sits above the customer-wide figures because it is the number that decides the request. */}
-      <div className="rounded-[6px] border border-[#E2E8F0] bg-white p-3">
-        <p className="text-[10px] font-black uppercase tracking-[0.14em] text-[#64748B]">
+      <div className="rounded-[6px] border border-phx-line bg-white p-3">
+        <p className="text-[10px] font-black uppercase tracking-[0.14em] text-phx-ink-soft">
           The {data.requested.productCount} product{data.requested.productCount === 1 ? "" : "s"} this request promotes
         </p>
         {data.requested.sold.length > 0 ? (
           <>
-            <p className="mt-1 text-[13px] font-bold leading-6 text-[#334155]">
-              <strong className="text-[#0F172A]">{data.requested.sold.length}</strong> of{" "}
-              <strong className="text-[#0F172A]">{data.requested.productCount}</strong> have sold at this customer,
-              totalling <strong className="text-[#0F172A]">{egp(data.requested.totalValue)}</strong>.
+            <p className="mt-1 text-[13px] font-bold leading-6 text-phx-ink-2">
+              <strong className="text-phx-ink">{data.requested.sold.length}</strong> of{" "}
+              <strong className="text-phx-ink">{data.requested.productCount}</strong> have sold at this customer,
+              totalling <strong className="text-phx-ink">{egp(data.requested.totalValue)}</strong>.
             </p>
             <ul className="mt-2 space-y-1">
               {data.requested.sold.map((row) => (
                 <li className="flex items-center justify-between gap-3 text-[12px]" key={row.label}>
-                  <span className="font-bold text-[#0F172A]">{row.label}</span>
+                  <span className="font-bold text-phx-ink">{row.label}</span>
                   <span className="shrink-0 font-black text-[#166534]">{egp(row.value)}</span>
                 </li>
               ))}
@@ -203,7 +203,7 @@ export function MarketingSalesEvidencePanel({ requestId }: { requestId: string }
           </p>
         )}
         {data.requested.neverSold.length > 0 ? (
-          <p className="mt-2 rounded-[6px] border border-[#FED7AA] bg-[#FFF7ED] px-3 py-2 text-[12px] font-bold leading-5 text-[#9A3412]">
+          <p className="mt-2 rounded-[6px] border border-[#FED7AA] bg-phx-accent-soft px-3 py-2 text-[12px] font-bold leading-5 text-[#9A3412]">
             Never sold here: {data.requested.neverSold.join(", ")}
           </p>
         ) : null}
@@ -211,22 +211,22 @@ export function MarketingSalesEvidencePanel({ requestId }: { requestId: string }
 
       {/* The ask, next to what the history projects. */}
       <div className="grid gap-2 sm:grid-cols-3">
-        <div className="rounded-[6px] border border-[#E2E8F0] bg-white px-3 py-2">
-          <p className="text-[10px] font-black uppercase tracking-[0.12em] text-[#64748B]">Request cost</p>
-          <p className="mt-0.5 text-[15px] font-black text-[#0F172A]">{egp(ask.estimatedCost)}</p>
+        <div className="rounded-[6px] border border-phx-line bg-white px-3 py-2">
+          <p className="text-[10px] font-black uppercase tracking-[0.12em] text-phx-ink-soft">Request cost</p>
+          <p className="mt-0.5 text-[15px] font-black text-phx-ink">{egp(ask.estimatedCost)}</p>
         </div>
-        <div className="rounded-[6px] border border-[#E2E8F0] bg-white px-3 py-2">
-          <p className="text-[10px] font-black uppercase tracking-[0.12em] text-[#64748B]">
+        <div className="rounded-[6px] border border-phx-line bg-white px-3 py-2">
+          <p className="text-[10px] font-black uppercase tracking-[0.12em] text-phx-ink-soft">
             Required return ({ask.roiDurationMonths}mo)
           </p>
-          <p className="mt-0.5 text-[15px] font-black text-[#0F172A]">{egp(ask.requiredRoiValue)}</p>
+          <p className="mt-0.5 text-[15px] font-black text-phx-ink">{egp(ask.requiredRoiValue)}</p>
         </div>
         <div
           className={`rounded-[6px] border px-3 py-2 ${
             shortfall ? "border-[#FECACA] bg-[#FEF2F2]" : "border-[#BBF7D0] bg-[#F0FDF4]"
           }`}
         >
-          <p className="text-[10px] font-black uppercase tracking-[0.12em] text-[#64748B]">
+          <p className="text-[10px] font-black uppercase tracking-[0.12em] text-phx-ink-soft">
             History projects ({ask.roiDurationMonths}mo)
           </p>
           <p className={`mt-0.5 text-[15px] font-black ${shortfall ? "text-[#B91C1C]" : "text-[#166534]"}`}>
@@ -250,7 +250,7 @@ export function MarketingSalesEvidencePanel({ requestId }: { requestId: string }
       {verdict.hasHistory ? (
         <>
           <button
-            className="inline-flex items-center gap-1.5 rounded-[6px] border border-[#E2E8F0] bg-white px-3 py-2 text-[12px] font-black text-[#0F172A] transition hover:border-[#FDBA74] hover:bg-[#FFF7ED]"
+            className="inline-flex items-center gap-1.5 rounded-[6px] border border-phx-line bg-white px-3 py-2 text-[12px] font-black text-phx-ink transition hover:border-phx-accent-line hover:bg-phx-accent-soft"
             onClick={() => setOpen((current) => !current)}
             type="button"
           >
@@ -260,15 +260,15 @@ export function MarketingSalesEvidencePanel({ requestId }: { requestId: string }
 
           {open ? (
             <div className="grid gap-3 lg:grid-cols-3">
-              <div className="rounded-[6px] border border-[#E2E8F0] bg-white">
-                <p className="border-b border-[#E2E8F0] px-3 py-2 text-[11px] font-black uppercase tracking-[0.12em] text-[#64748B]">
+              <div className="rounded-[6px] border border-phx-line bg-white">
+                <p className="border-b border-phx-line px-3 py-2 text-[11px] font-black uppercase tracking-[0.12em] text-phx-ink-soft">
                   By month
                 </p>
-                <ul className="divide-y divide-[#F1F5F9]">
+                <ul className="divide-y divide-phx-paper-2">
                   {data.byMonth.map((row) => (
                     <li className="flex items-center justify-between gap-3 px-3 py-2" key={row.period}>
-                      <span className="text-[12px] font-bold text-[#0F172A]">{monthLabel(row.period)}</span>
-                      <span className="shrink-0 text-[12px] font-black text-[#0F172A]">{egp(row.value)}</span>
+                      <span className="text-[12px] font-bold text-phx-ink">{monthLabel(row.period)}</span>
+                      <span className="shrink-0 text-[12px] font-black text-phx-ink">{egp(row.value)}</span>
                     </li>
                   ))}
                 </ul>

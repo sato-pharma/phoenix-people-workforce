@@ -19,7 +19,7 @@ export function ExpenseExportButton({
   return (
     <a
       href={href}
-      className="inline-flex items-center gap-2 rounded-full bg-[#F97316] px-4 py-2 text-xs font-bold uppercase tracking-[0.12em] text-white shadow-[0_8px_20px_rgba(249,115,22,0.3)] transition-colors hover:bg-[#EA580C]"
+      className="inline-flex items-center gap-2 rounded-full bg-phx-accent px-4 py-2 text-xs font-bold uppercase tracking-[0.12em] text-white shadow-[0_8px_20px_rgba(249,115,22,0.3)] transition-colors hover:bg-phx-accent-hover"
     >
       <Download className="h-4 w-4" /> Export XLSX
     </a>

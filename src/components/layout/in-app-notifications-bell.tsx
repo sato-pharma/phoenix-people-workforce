@@ -137,13 +137,13 @@ export function InAppNotificationsBell({ isAdminMode }: { isAdminMode: boolean }
   }
 
   const panelText = {
-    border: isAdminMode ? "border-[#333333]" : "border-[#E2E8F0]",
+    border: isAdminMode ? "border-[#333333]" : "border-phx-line",
     bg: isAdminMode ? "bg-[#050505]" : "bg-white",
-    title: isAdminMode ? "text-white" : "text-[#0F172A]",
-    muted: isAdminMode ? "text-[#94A3B8]" : "text-[#64748B]",
-    body: isAdminMode ? "text-[#CBD5E1]" : "text-[#475569]",
-    rowHover: isAdminMode ? "hover:bg-[#111111]" : "hover:bg-[#F8FAFC]",
-    chip: isAdminMode ? "bg-[#111111] text-[#CBD5E1]" : "bg-[#F8FAFC] text-[#475569]",
+    title: isAdminMode ? "text-white" : "text-phx-ink",
+    muted: isAdminMode ? "text-phx-ink-faint" : "text-phx-ink-soft",
+    body: isAdminMode ? "text-phx-line-strong" : "text-phx-ink-2",
+    rowHover: isAdminMode ? "hover:bg-[#111111]" : "hover:bg-phx-paper",
+    chip: isAdminMode ? "bg-[#111111] text-phx-line-strong" : "bg-phx-paper text-phx-ink-2",
     skeleton: isAdminMode ? "bg-[#1a1a1a]" : "bg-[#EEF2F7]",
   };
 
@@ -155,7 +155,7 @@ export function InAppNotificationsBell({ isAdminMode }: { isAdminMode: boolean }
           "relative inline-flex h-9 w-9 items-center justify-center rounded",
           isAdminMode
             ? "text-[#D4DDE8] hover:bg-[#1a1a1a] hover:text-[#F8B56B]"
-            : "text-[#64748B] hover:bg-[#F8FAFC] hover:text-[#0F172A]",
+            : "text-phx-ink-soft hover:bg-phx-paper hover:text-phx-ink",
         )}
         onClick={() => setOpen((current) => !current)}
         type="button"
@@ -164,7 +164,7 @@ export function InAppNotificationsBell({ isAdminMode }: { isAdminMode: boolean }
         {unreadCount > 0 ? (
           <span
             aria-label={`${unreadCount} unread notification${unreadCount === 1 ? "" : "s"}`}
-            className="nav-badge-alarm absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-[#F97316] ring-2 ring-white"
+            className="nav-badge-alarm absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-phx-accent ring-2 ring-white"
             role="status"
           />
         ) : null}
@@ -190,47 +190,47 @@ export function InAppNotificationsBell({ isAdminMode }: { isAdminMode: boolean }
                   className={cn(
                     "inline-flex h-7 w-7 items-center justify-center rounded-lg border transition disabled:opacity-40",
                     panelText.border,
-                    isAdminMode ? "hover:bg-[#111111]" : "hover:bg-[#F8FAFC]",
+                    isAdminMode ? "hover:bg-[#111111]" : "hover:bg-phx-paper",
                   )}
                   disabled={unreadCount === 0}
                   onClick={() => void markAllRead()}
                   type="button"
                 >
-                  <CheckCheck className={cn("h-4 w-4", isAdminMode ? "text-[#64748B]" : "text-[#94A3B8]")} />
+                  <CheckCheck className={cn("h-4 w-4", isAdminMode ? "text-phx-ink-soft" : "text-phx-ink-faint")} />
                 </button>
                 <button
                   aria-label="Clear all notifications"
                   className={cn(
                     "inline-flex h-7 w-7 items-center justify-center rounded-lg border transition disabled:opacity-40",
                     panelText.border,
-                    isAdminMode ? "hover:bg-[#111111]" : "hover:bg-[#F8FAFC]",
+                    isAdminMode ? "hover:bg-[#111111]" : "hover:bg-phx-paper",
                   )}
                   disabled={!hasNotifications}
                   onClick={() => void clearAll()}
                   type="button"
                 >
-                  <Trash2 className={cn("h-4 w-4", isAdminMode ? "text-[#64748B]" : "text-[#94A3B8]")} />
+                  <Trash2 className={cn("h-4 w-4", isAdminMode ? "text-phx-ink-soft" : "text-phx-ink-faint")} />
                 </button>
                 <button
                   aria-label="Refresh notifications"
                   className={cn(
                     "inline-flex h-7 w-7 items-center justify-center rounded-lg border transition",
                     panelText.border,
-                    isAdminMode ? "hover:bg-[#111111]" : "hover:bg-[#F8FAFC]",
+                    isAdminMode ? "hover:bg-[#111111]" : "hover:bg-phx-paper",
                   )}
                   onClick={() => void loadNotifications()}
                   type="button"
                 >
                   {loading ? (
-                    <Loader2 className={cn("h-4 w-4 animate-spin", isAdminMode ? "text-[#F8B56B]" : "text-[#F97316]")} />
+                    <Loader2 className={cn("h-4 w-4 animate-spin", isAdminMode ? "text-[#F8B56B]" : "text-phx-accent")} />
                   ) : (
-                    <RefreshCw className={cn("h-4 w-4", isAdminMode ? "text-[#64748B]" : "text-[#94A3B8]")} />
+                    <RefreshCw className={cn("h-4 w-4", isAdminMode ? "text-phx-ink-soft" : "text-phx-ink-faint")} />
                   )}
                 </button>
               </div>
             </div>
             {actionRequiredCount > 0 ? (
-              <span className="mt-2 inline-flex items-center gap-1 rounded-full bg-[#FFF7ED] px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.12em] text-[#C2410C]">
+              <span className="mt-2 inline-flex items-center gap-1 rounded-full bg-phx-accent-soft px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.12em] text-phx-accent-press">
                 {actionRequiredCount} action{actionRequiredCount === 1 ? "" : "s"} required
               </span>
             ) : null}
@@ -277,7 +277,7 @@ export function InAppNotificationsBell({ isAdminMode }: { isAdminMode: boolean }
                   className={cn(
                     "mt-3 inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-bold transition",
                     panelText.border,
-                    isAdminMode ? "text-[#F8B56B] hover:bg-[#111111]" : "text-[#C2410C] hover:bg-[#FFF7ED]",
+                    isAdminMode ? "text-[#F8B56B] hover:bg-[#111111]" : "text-phx-accent-press hover:bg-phx-accent-soft",
                   )}
                   onClick={() => void loadNotifications()}
                   type="button"
@@ -298,7 +298,7 @@ export function InAppNotificationsBell({ isAdminMode }: { isAdminMode: boolean }
                 const content = (
                   <div className={cn("rounded-lg px-3 py-2.5 transition", panelText.rowHover, notification.isRead ? "opacity-70" : "")}>
                     <div className="flex items-start gap-2.5">
-                      <span className={cn("mt-1.5 h-2 w-2 shrink-0 rounded-full", notification.isRead ? "bg-slate-300" : "bg-[#F97316]")} />
+                      <span className={cn("mt-1.5 h-2 w-2 shrink-0 rounded-full", notification.isRead ? "bg-slate-300" : "bg-phx-accent")} />
                       <div className="min-w-0 flex-1">
                         <div className="flex items-start justify-between gap-2">
                           {notification.primaryText ? (
@@ -328,7 +328,7 @@ export function InAppNotificationsBell({ isAdminMode }: { isAdminMode: boolean }
                                 )}
                                 key={`${notification.id}-${detail.label}`}
                               >
-                                <span className="shrink-0 font-black uppercase tracking-[0.10em] text-[#F97316]">
+                                <span className="shrink-0 font-black uppercase tracking-[0.10em] text-phx-accent">
                                   {detail.label}
                                 </span>
                                 <span className="min-w-0 truncate font-semibold">{detail.value}</span>
@@ -337,7 +337,7 @@ export function InAppNotificationsBell({ isAdminMode }: { isAdminMode: boolean }
                           </div>
                         ) : null}
                         <div className="mt-2 flex flex-wrap items-center gap-2">
-                          <span className="rounded bg-[#FFF7ED] px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.12em] text-[#C2410C]">
+                          <span className="rounded bg-phx-accent-soft px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.12em] text-phx-accent-press">
                             {notification.category.replace(/_/g, " ")}
                           </span>
                           {notification.priority ? (

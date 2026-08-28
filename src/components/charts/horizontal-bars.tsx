@@ -32,7 +32,7 @@ export function HorizontalBars({ rows, title, valueKind = "money", loading = fal
         <SectionHeader icon={BarChart3} title={title} />
         <div className="mt-5 space-y-3">
           {[...Array(5)].map((_, i) => (
-            <div key={i} className="h-12 animate-pulse bg-[#F8FAFC] rounded-lg" />
+            <div key={i} className="h-12 animate-pulse bg-phx-paper rounded-lg" />
           ))}
         </div>
       </ChartCard>
@@ -47,26 +47,26 @@ export function HorizontalBars({ rows, title, valueKind = "money", loading = fal
           <PremiumTooltip
             content={
               <div className="space-y-1">
-                <p className="text-xs font-bold text-[#0F172A]">{row.label}</p>
-                <p className="text-[11px] text-[#64748B]">{valueKind === "money" ? compactEGP(row.value) : formatNumber(row.value)}</p>
-                {row.meta && <p className="text-[10px] text-[#64748B]">{row.meta}</p>}
-                <p className="text-[11px] font-bold text-[#F97316]">{((row.value / max) * 100).toFixed(1)}% of max</p>
+                <p className="text-xs font-bold text-phx-ink">{row.label}</p>
+                <p className="text-[11px] text-phx-ink-soft">{valueKind === "money" ? compactEGP(row.value) : formatNumber(row.value)}</p>
+                {row.meta && <p className="text-[10px] text-phx-ink-soft">{row.meta}</p>}
+                <p className="text-[11px] font-bold text-phx-accent">{((row.value / max) * 100).toFixed(1)}% of max</p>
               </div>
             }
             key={row.label}
           >
             <div className="grid grid-cols-[20px_minmax(0,1fr)_56px] items-center gap-2 sm:grid-cols-[24px_minmax(0,1fr)_64px] sm:gap-3 md:grid-cols-[26px_minmax(0,1fr)_92px]">
-              <span className="flex h-5 w-5 items-center justify-center rounded-md bg-[#F8FAFC] text-[10px] font-black text-[#64748B] sm:h-6 sm:w-6 sm:text-xs">{index + 1}</span>
+              <span className="flex h-5 w-5 items-center justify-center rounded-md bg-phx-paper text-[10px] font-black text-phx-ink-soft sm:h-6 sm:w-6 sm:text-xs">{index + 1}</span>
               <div className="min-w-0">
                 <div className="mb-1 flex items-center justify-between gap-3">
-                  <p className="truncate text-xs font-black text-[#0F172A] sm:text-sm">{row.label}</p>
-                  {row.meta && <p className="hidden shrink-0 text-[10px] font-bold text-[#64748B] sm:text-[11px] sm:block">{row.meta}</p>}
+                  <p className="truncate text-xs font-black text-phx-ink sm:text-sm">{row.label}</p>
+                  {row.meta && <p className="hidden shrink-0 text-[10px] font-bold text-phx-ink-soft sm:text-[11px] sm:block">{row.meta}</p>}
                 </div>
-                <div className="h-1.5 rounded-full bg-[#F8FAFC] sm:h-2">
+                <div className="h-1.5 rounded-full bg-phx-paper sm:h-2">
                   <div className="h-full rounded-full bg-gradient-to-r from-orange-500 to-orange-300" style={{ width: `${Math.max((row.value / max) * 100, 4)}%` }} />
                 </div>
               </div>
-              <p className="truncate text-right text-[10px] font-black text-[#0F172A] sm:text-[11px] md:text-xs">{valueKind === "money" ? compactEGP(row.value).replace("EGP ", "") : formatNumber(row.value)}</p>
+              <p className="truncate text-right text-[10px] font-black text-phx-ink sm:text-[11px] md:text-xs">{valueKind === "money" ? compactEGP(row.value).replace("EGP ", "") : formatNumber(row.value)}</p>
             </div>
           </PremiumTooltip>
         ))}

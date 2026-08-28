@@ -9,8 +9,8 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 
 
 const inputClass =
-  "w-full rounded-lg border border-[#E2E8F0] bg-white px-3 py-2 text-sm text-[#0F172A] outline-none focus:border-[#F97316]";
-const labelClass = "text-[11px] font-black uppercase tracking-[0.10em] text-[#64748B]";
+  "w-full rounded-lg border border-phx-line bg-white px-3 py-2 text-sm text-phx-ink outline-none focus:border-phx-accent";
+const labelClass = "text-[11px] font-black uppercase tracking-[0.10em] text-phx-ink-soft";
 
 /**
  * Read-only workflow simulator with domain + subflow selection. Runs entirely
@@ -55,9 +55,9 @@ export function WorkflowSimulatorPanel({
   }
 
   return (
-    <div className="rounded-xl border border-[#E2E8F0] bg-white p-4 shadow-sm">
-      <p className="text-sm font-black text-[#0F172A]">Simulate: {domainName}</p>
-      <p className="mt-0.5 text-xs text-[#64748B]">Read-only — no request is created and nothing is written.</p>
+    <div className="rounded-xl border border-phx-line bg-white p-4 shadow-sm">
+      <p className="text-sm font-black text-phx-ink">Simulate: {domainName}</p>
+      <p className="mt-0.5 text-xs text-phx-ink-soft">Read-only — no request is created and nothing is written.</p>
 
       <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
         <label className="block sm:col-span-2">
@@ -99,12 +99,12 @@ export function WorkflowSimulatorPanel({
         </label>
         <label className="flex items-center gap-2 pt-5">
           <input type="checkbox" checked={hrAvailable} onChange={(e) => setHrAvailable(e.target.checked)} />
-          <span className="text-xs font-semibold text-[#334155]">HR Manager recipient exists</span>
+          <span className="text-xs font-semibold text-phx-ink-2">HR Manager recipient exists</span>
         </label>
       </div>
 
       <button
-        className="mt-4 inline-flex items-center gap-2 rounded-lg bg-[#F97316] px-4 py-2 text-sm font-black text-white transition hover:bg-[#EA580C]"
+        className="mt-4 inline-flex items-center gap-2 rounded-lg bg-phx-accent px-4 py-2 text-sm font-black text-white transition hover:bg-phx-accent-hover"
         onClick={run}
         type="button"
       >
@@ -113,17 +113,17 @@ export function WorkflowSimulatorPanel({
       </button>
 
       {result ? (
-        <div className="mt-4 border-t border-[#E2E8F0] pt-4">
-          <p className="mb-3 text-[12px] text-[#475569]">
-            <span className="font-black uppercase tracking-[0.10em] text-[#94A3B8]">Simulating</span>{" "}
-            <span className="font-bold text-[#0F172A]">{result.domainName}</span>
+        <div className="mt-4 border-t border-phx-line pt-4">
+          <p className="mb-3 text-[12px] text-phx-ink-2">
+            <span className="font-black uppercase tracking-[0.10em] text-phx-ink-faint">Simulating</span>{" "}
+            <span className="font-bold text-phx-ink">{result.domainName}</span>
             {" → "}
-            <span className="font-bold text-[#0F172A]">{result.subflowName}</span>
+            <span className="font-bold text-phx-ink">{result.subflowName}</span>
           </p>
 
           {result.warnings.length ? (
-            <div className="mb-3 rounded-lg border border-[#FED7AA] bg-[#FFF7ED] px-3 py-2">
-              <p className="flex items-center gap-1.5 text-[11px] font-black uppercase tracking-[0.10em] text-[#C2410C]">
+            <div className="mb-3 rounded-lg border border-[#FED7AA] bg-phx-accent-soft px-3 py-2">
+              <p className="flex items-center gap-1.5 text-[11px] font-black uppercase tracking-[0.10em] text-phx-accent-press">
                 <AlertTriangle className="h-3.5 w-3.5" /> Warnings
               </p>
               <ul className="mt-1 space-y-0.5">
@@ -135,31 +135,31 @@ export function WorkflowSimulatorPanel({
           ) : null}
 
           {result.routePath.length ? (
-            <p className="mb-3 text-[12px] text-[#475569]">
-              <span className="font-black uppercase tracking-[0.10em] text-[#94A3B8]">Route path</span>{" "}
+            <p className="mb-3 text-[12px] text-phx-ink-2">
+              <span className="font-black uppercase tracking-[0.10em] text-phx-ink-faint">Route path</span>{" "}
               {result.routePath.join(" → ")}
             </p>
           ) : null}
 
           <ol className="space-y-2">
             {result.steps.map((step) => (
-              <li key={step.id} className="rounded-lg bg-[#F8FAFC] px-3 py-2">
-                <p className="text-[13px] font-bold text-[#0F172A]">
+              <li key={step.id} className="rounded-lg bg-phx-paper px-3 py-2">
+                <p className="text-[13px] font-bold text-phx-ink">
                   Step {step.index + 1}: {step.name}{" "}
-                  <span className="font-semibold text-[#64748B]">→ routes to {step.routesTo}</span>
+                  <span className="font-semibold text-phx-ink-soft">→ routes to {step.routesTo}</span>
                 </p>
-                <p className="text-[12px] text-[#475569]">Status produced: {step.statusProduced}</p>
+                <p className="text-[12px] text-phx-ink-2">Status produced: {step.statusProduced}</p>
                 {step.actionRequiredRecipients.length ? (
                   <p className="text-[12px] text-[#B91C1C]">Action required: {step.actionRequiredRecipients.join(", ")}</p>
                 ) : null}
                 {step.fyiRecipients.length ? (
-                  <p className="text-[12px] text-[#475569]">FYI: {step.fyiRecipients.join(", ")}</p>
+                  <p className="text-[12px] text-phx-ink-2">FYI: {step.fyiRecipients.join(", ")}</p>
                 ) : null}
                 {step.notificationRecipients.length ? (
-                  <p className="text-[12px] text-[#475569]">In-app: {step.notificationRecipients.join(", ")}</p>
+                  <p className="text-[12px] text-phx-ink-2">In-app: {step.notificationRecipients.join(", ")}</p>
                 ) : null}
                 {step.emailRecipients.length ? (
-                  <p className="text-[12px] text-[#475569]">Emails: {step.emailRecipients.join(", ")}</p>
+                  <p className="text-[12px] text-phx-ink-2">Emails: {step.emailRecipients.join(", ")}</p>
                 ) : null}
                 {step.notificationGap ? (
                   <p className="text-[12px] font-semibold text-[#B91C1C]">Notification gap: not implemented yet</p>
@@ -168,16 +168,16 @@ export function WorkflowSimulatorPanel({
             ))}
           </ol>
 
-          <p className="mt-3 text-[13px] font-black text-[#0F172A]">
-            Final status: <span className="text-[#C2410C]">{result.finalStatus}</span>
+          <p className="mt-3 text-[13px] font-black text-phx-ink">
+            Final status: <span className="text-phx-accent-press">{result.finalStatus}</span>
           </p>
 
           {result.sideEffects.length ? (
             <div className="mt-3">
-              <p className="text-[10px] font-black uppercase tracking-[0.10em] text-[#94A3B8]">Side effects</p>
+              <p className="text-[10px] font-black uppercase tracking-[0.10em] text-phx-ink-faint">Side effects</p>
               <ul className="mt-1 list-disc space-y-0.5 pl-5">
                 {result.sideEffects.map((effect) => (
-                  <li key={effect} className="text-[12px] leading-5 text-[#475569]">{effect}</li>
+                  <li key={effect} className="text-[12px] leading-5 text-phx-ink-2">{effect}</li>
                 ))}
               </ul>
             </div>

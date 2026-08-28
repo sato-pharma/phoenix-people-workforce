@@ -79,7 +79,7 @@ export function OverviewDashboard({ data: initialData }: { data: OverviewDashboa
 
   if (isRefreshing) {
     return (
-      <PageContainer className="bg-[#F8FAFC] min-h-screen pb-12 flex items-center justify-center">
+      <PageContainer className="bg-phx-paper min-h-screen pb-12 flex items-center justify-center">
         <div className="text-center space-y-4">
           <RefreshCw className="h-12 w-12 text-orange-500 animate-spin mx-auto" />
           <p className="text-slate-500 font-bold uppercase tracking-widest text-sm">Synchronizing Admin Data...</p>
@@ -89,7 +89,7 @@ export function OverviewDashboard({ data: initialData }: { data: OverviewDashboa
   }
 
   return (
-    <PageContainer className="bg-[#F8FAFC] min-h-screen pb-12">
+    <PageContainer className="bg-phx-paper min-h-screen pb-12">
       <div className="mx-auto max-w-[1600px] space-y-6">
         
         {/* Admin Header Filters */}

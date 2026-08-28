@@ -14,7 +14,7 @@ function TrendTooltip({ active, payload }: { active?: boolean; payload?: Array<{
   return (
     <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-lg">
       <p className="text-xs font-black uppercase tracking-[0.14em] text-slate-500">{datum.label}</p>
-      <p className="mt-1 text-sm font-black text-[#C2410C]">{egp(datum.amount)}</p>
+      <p className="mt-1 text-sm font-black text-phx-accent-press">{egp(datum.amount)}</p>
       <p className="text-xs text-slate-500">
         {datum.rows.toLocaleString()} trip{datum.rows === 1 ? "" : "s"}
       </p>
@@ -34,7 +34,7 @@ export function ExpenseTrendChart({ trend }: { trend: PayrollExpenseTrendPoint[]
     data.length > 0 ? data.reduce((sum, point) => sum + point.amount, 0) / data.length : 0;
 
   return (
-    <div className="overflow-hidden rounded-[18px] border border-[#D8E0EA] bg-white shadow-[0_18px_46px_rgba(15,23,42,0.08)]">
+    <div className="overflow-hidden rounded-[18px] border border-phx-line bg-white shadow-[0_18px_46px_rgba(15,23,42,0.08)]">
       <div className="flex items-center gap-2.5 border-b border-slate-200/80 bg-gradient-to-b from-white to-slate-50/50 px-5 py-4">
         <span className="h-2 w-2 rounded-full bg-gradient-to-r from-orange-500 to-amber-400 shadow-[0_0_8px_rgba(249,115,22,0.5)]" />
         <div>

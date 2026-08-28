@@ -32,7 +32,7 @@ const FIELDS: { key: ProfileFieldKey; label: string; hint?: string }[] = [
 ];
 
 const NEW = "__new__";
-const card = "rounded-[6px] border border-[#E2E8F0] bg-white shadow-sm";
+const card = "rounded-[6px] border border-phx-line bg-white shadow-sm";
 
 type Draft = {
   distributorCode: string;
@@ -161,64 +161,64 @@ export function DistributorProfileEditor({ initialProfiles }: { initialProfiles:
       <Card className={cn(card, "space-y-4 p-5")}>
         <div className="flex flex-wrap items-end gap-3">
           <label className="flex flex-col gap-1">
-            <span className="text-[10px] font-black uppercase tracking-[0.12em] text-[#94A3B8]">Distributor</span>
-            <select className="h-9 min-w-64 rounded-[6px] border border-[#E2E8F0] px-2 text-sm" onChange={(e) => pick(e.target.value)} value={selected}>
+            <span className="text-[10px] font-black uppercase tracking-[0.12em] text-phx-ink-faint">Distributor</span>
+            <select className="h-9 min-w-64 rounded-[6px] border border-phx-line px-2 text-sm" onChange={(e) => pick(e.target.value)} value={selected}>
               {profiles.map((p) => (
                 <option key={p.distributorCode} value={p.distributorCode}>{p.distributorName} ({p.distributorCode}){p.isCustom ? " · edited" : ""}</option>
               ))}
               <option value={NEW}>➕ New distributor…</option>
             </select>
           </label>
-          {current?.isCustom ? <span className="mb-1.5 inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-0.5 text-[11px] font-bold text-amber-800">Overridden in-app</span> : !isNew ? <span className="mb-1.5 inline-flex items-center gap-1 rounded-full border border-[#E2E8F0] bg-[#FCFDFE] px-2.5 py-0.5 text-[11px] font-bold text-[#64748B]">Built-in</span> : null}
+          {current?.isCustom ? <span className="mb-1.5 inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-0.5 text-[11px] font-bold text-amber-800">Overridden in-app</span> : !isNew ? <span className="mb-1.5 inline-flex items-center gap-1 rounded-full border border-phx-line bg-[#FCFDFE] px-2.5 py-0.5 text-[11px] font-bold text-phx-ink-soft">Built-in</span> : null}
         </div>
 
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
           <label className="flex flex-col gap-1">
-            <span className="text-[10px] font-black uppercase tracking-[0.12em] text-[#94A3B8]">Code</span>
-            <input className="h-9 rounded-[6px] border border-[#E2E8F0] px-2 text-sm font-mono disabled:bg-[#F1F5F9]" disabled={!isNew} onChange={(e) => setDraft((d) => ({ ...d, distributorCode: e.target.value.toUpperCase() }))} placeholder="e.g. NEW-DIST" value={draft.distributorCode} />
+            <span className="text-[10px] font-black uppercase tracking-[0.12em] text-phx-ink-faint">Code</span>
+            <input className="h-9 rounded-[6px] border border-phx-line px-2 text-sm font-mono disabled:bg-phx-paper-2" disabled={!isNew} onChange={(e) => setDraft((d) => ({ ...d, distributorCode: e.target.value.toUpperCase() }))} placeholder="e.g. NEW-DIST" value={draft.distributorCode} />
           </label>
           <label className="flex flex-col gap-1">
-            <span className="text-[10px] font-black uppercase tracking-[0.12em] text-[#94A3B8]">Name</span>
-            <input className="h-9 rounded-[6px] border border-[#E2E8F0] px-2 text-sm" onChange={(e) => setDraft((d) => ({ ...d, distributorName: e.target.value }))} value={draft.distributorName} />
+            <span className="text-[10px] font-black uppercase tracking-[0.12em] text-phx-ink-faint">Name</span>
+            <input className="h-9 rounded-[6px] border border-phx-line px-2 text-sm" onChange={(e) => setDraft((d) => ({ ...d, distributorName: e.target.value }))} value={draft.distributorName} />
           </label>
           <label className="flex flex-col gap-1">
-            <span className="text-[10px] font-black uppercase tracking-[0.12em] text-[#94A3B8]">Value source</span>
-            <select className="h-9 rounded-[6px] border border-[#E2E8F0] px-2 text-sm" onChange={(e) => setDraft((d) => ({ ...d, valueSource: e.target.value === "sheet" ? "sheet" : "recompute" }))} value={draft.valueSource}>
+            <span className="text-[10px] font-black uppercase tracking-[0.12em] text-phx-ink-faint">Value source</span>
+            <select className="h-9 rounded-[6px] border border-phx-line px-2 text-sm" onChange={(e) => setDraft((d) => ({ ...d, valueSource: e.target.value === "sheet" ? "sheet" : "recompute" }))} value={draft.valueSource}>
               <option value="recompute">recompute (qty × master price)</option>
               <option value="sheet">sheet (value column)</option>
             </select>
           </label>
         </div>
 
-        <label className="flex items-center gap-2 text-sm font-semibold text-[#0F172A]">
-          <input checked={draft.regionOnly} className="h-4 w-4 accent-[#F97316]" onChange={(e) => setDraft((d) => ({ ...d, regionOnly: e.target.checked }))} type="checkbox" />
+        <label className="flex items-center gap-2 text-sm font-semibold text-phx-ink">
+          <input checked={draft.regionOnly} className="h-4 w-4 accent-phx-accent" onChange={(e) => setDraft((d) => ({ ...d, regionOnly: e.target.checked }))} type="checkbox" />
           Region-only (resolving to region/area without a brick is expected)
         </label>
 
-        <div className="rounded-[6px] border border-dashed border-[#CBD5E1] bg-[#FCFDFE] p-3">
+        <div className="rounded-[6px] border border-dashed border-phx-line-strong bg-[#FCFDFE] p-3">
           <div className="flex flex-wrap items-end gap-3">
             <label className="flex flex-col gap-1">
-              <span className="text-[10px] font-black uppercase tracking-[0.12em] text-[#94A3B8]">Sample file (.xlsx)</span>
+              <span className="text-[10px] font-black uppercase tracking-[0.12em] text-phx-ink-faint">Sample file (.xlsx)</span>
               <input accept=".xlsx" className="text-xs" onChange={(e) => setPreviewFile(e.target.files?.[0] ?? null)} type="file" />
             </label>
-            <button className="inline-flex h-9 items-center gap-2 rounded-[6px] border border-[#E2E8F0] bg-white px-4 text-sm font-black text-[#0F172A] transition hover:border-[#F97316] disabled:opacity-60" disabled={previewing || !previewFile} onClick={() => void runPreview()} type="button">
+            <button className="inline-flex h-9 items-center gap-2 rounded-[6px] border border-phx-line bg-white px-4 text-sm font-black text-phx-ink transition hover:border-phx-accent disabled:opacity-60" disabled={previewing || !previewFile} onClick={() => void runPreview()} type="button">
               {previewing ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileSearch className="h-4 w-4" />}
               Check aliases against file
             </button>
           </div>
-          <p className="mt-2 text-[11px] text-[#94A3B8]">Reads your sample file&rsquo;s header row and flags, per field, whether any of your aliases is found. The file is not stored.</p>
+          <p className="mt-2 text-[11px] text-phx-ink-faint">Reads your sample file&rsquo;s header row and flags, per field, whether any of your aliases is found. The file is not stored.</p>
           {previewError ? <p className="mt-1 text-[11px] font-semibold text-amber-700">{previewError}</p> : null}
         </div>
 
-        <div className="rounded-[6px] border border-[#E2E8F0]">
+        <div className="rounded-[6px] border border-phx-line">
           <div className="bg-[#020617] px-3 py-2 text-xs font-black uppercase tracking-wide text-white">Column aliases — comma-separated header titles the file may use</div>
-          <div className="grid grid-cols-1 gap-px bg-[#E2E8F0] sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-px bg-phx-line sm:grid-cols-2">
             {FIELDS.map((f) => {
               const obs = preview[f.key];
               return (
               <label className="flex flex-col gap-1 bg-white px-3 py-2" key={f.key}>
-                <span className="text-[11px] font-bold text-[#475569]">{f.label}</span>
-                <input className="h-8 rounded-[6px] border border-[#E2E8F0] px-2 text-xs font-mono" onChange={(e) => setField(f.key, e.target.value)} placeholder="—" value={draft.fields[f.key]} />
+                <span className="text-[11px] font-bold text-phx-ink-2">{f.label}</span>
+                <input className="h-8 rounded-[6px] border border-phx-line px-2 text-xs font-mono" onChange={(e) => setField(f.key, e.target.value)} placeholder="—" value={draft.fields[f.key]} />
                 {obs && obs.status !== "empty" ? (
                   obs.status === "found"
                     ? <span className="truncate text-[10px] font-semibold text-emerald-700" title={obs.foundAlias ?? ""}>✓ found &ldquo;{obs.foundAlias}&rdquo; in file</span>
@@ -234,18 +234,18 @@ export function DistributorProfileEditor({ initialProfiles }: { initialProfiles:
         {msg ? <AdminCallout tone="success"><CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" /><span>{msg}</span></AdminCallout> : null}
 
         <div className="flex flex-wrap items-center gap-3">
-          <button className="inline-flex h-10 items-center gap-2 rounded-[6px] bg-[#F97316] px-5 text-sm font-black text-white transition hover:bg-[#EA6A0C] disabled:bg-[#CBD5E1]" disabled={busy !== null} onClick={() => void save()} type="button">
+          <button className="inline-flex h-10 items-center gap-2 rounded-[6px] bg-phx-accent px-5 text-sm font-black text-white transition hover:bg-[#EA6A0C] disabled:bg-phx-line-strong" disabled={busy !== null} onClick={() => void save()} type="button">
             {busy === "save" ? <Loader2 className="h-4 w-4 animate-spin" /> : isNew ? <Plus className="h-4 w-4" /> : <Save className="h-4 w-4" />}
             {isNew ? "Create distributor mapping" : "Save mapping"}
           </button>
           {!isNew && current?.isCustom ? (
-            <button className="inline-flex h-10 items-center gap-2 rounded-[6px] border border-[#E2E8F0] bg-white px-4 text-sm font-black text-[#0F172A] transition hover:border-[#F97316] disabled:opacity-60" disabled={busy !== null} onClick={() => void reset()} type="button">
+            <button className="inline-flex h-10 items-center gap-2 rounded-[6px] border border-phx-line bg-white px-4 text-sm font-black text-phx-ink transition hover:border-phx-accent disabled:opacity-60" disabled={busy !== null} onClick={() => void reset()} type="button">
               {busy === "reset" ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />}
               Reset to built-in
             </button>
           ) : null}
         </div>
-        <p className="text-xs text-[#94A3B8]">Required to save: a Product Code or Name, a Quantity, and a location (Customer Code, Area/Territory, or Brick ID). &ldquo;sheet&rdquo; value source also needs a Value column.</p>
+        <p className="text-xs text-phx-ink-faint">Required to save: a Product Code or Name, a Quantity, and a location (Customer Code, Area/Territory, or Brick ID). &ldquo;sheet&rdquo; value source also needs a Value column.</p>
 
         <MappingAuditHistory distributorCode={isNew ? null : draft.distributorCode} entityType="distributor_profile" />
       </Card>

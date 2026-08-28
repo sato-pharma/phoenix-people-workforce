@@ -305,7 +305,7 @@ export function MonthlyClosingWorkspace({ canPublish = false, initialCoverage = 
 
   if (initialError && !matrix) {
     return (
-      <div className="min-h-[calc(100vh-7rem)] rounded-[32px] border border-[#E2E8F0] bg-[#F8FAFC] p-5 sm:p-6 xl:p-8">
+      <div className="min-h-[calc(100vh-7rem)] rounded-[32px] border border-phx-line bg-phx-paper p-5 sm:p-6 xl:p-8">
         <AdminCallout tone="danger">
           <AlertTriangle className="h-4 w-4" />
           <p>{initialError}</p>
@@ -315,7 +315,7 @@ export function MonthlyClosingWorkspace({ canPublish = false, initialCoverage = 
   }
 
   const selectClassName =
-    "h-11 w-full rounded-2xl border border-[#D8E0EA] bg-[#F8FAFC] px-3.5 text-sm font-semibold text-[#0F172A] outline-none transition focus:border-[#FDBA74] focus:ring-4 focus:ring-[#F97316]/10 disabled:opacity-60";
+    "h-11 w-full rounded-2xl border border-phx-line bg-phx-paper px-3.5 text-sm font-semibold text-phx-ink outline-none transition focus:border-phx-accent-line focus:ring-4 focus:ring-phx-accent/10 disabled:opacity-60";
 
   return (
     <div className="min-h-[calc(100vh-7rem)] space-y-7">
@@ -492,7 +492,7 @@ export function MonthlyClosingWorkspace({ canPublish = false, initialCoverage = 
                   className={cn(
                     "inline-flex items-center gap-2 border-b-2 px-4 py-2.5 text-sm font-bold transition",
                     tab === entry.key
-                      ? "border-[#F97316] text-[#0B0B0B]"
+                      ? "border-phx-accent text-[#0B0B0B]"
                       : "border-transparent text-slate-500 hover:text-slate-800",
                   )}
                   key={entry.key}
@@ -517,7 +517,7 @@ export function MonthlyClosingWorkspace({ canPublish = false, initialCoverage = 
                   />
                   <button
                     className={cn(
-                      "inline-flex h-10 shrink-0 items-center gap-2 border border-[#0B0B0B] bg-[#0B0B0B] px-4 text-sm font-bold text-white transition hover:bg-[#F97316] disabled:opacity-50",
+                      "inline-flex h-10 shrink-0 items-center gap-2 border border-[#0B0B0B] bg-[#0B0B0B] px-4 text-sm font-bold text-white transition hover:bg-phx-accent disabled:opacity-50",
                     )}
                     disabled={isExporting || isMultiPeriod || filteredMatrix.columns.length === 0}
                     onClick={() => void handleExport()}

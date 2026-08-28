@@ -228,19 +228,19 @@ export function EmailNotificationCenter({
 
       <Card className={cn(adminPanelClassName, "flex flex-col gap-3 p-4 md:flex-row md:items-center md:justify-between")}>
         <div className="flex items-start gap-3">
-          <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#FFF7ED] text-[#C2410C]">
+          <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-phx-accent-soft text-phx-accent-press">
             <PencilLine className="h-4 w-4" />
           </span>
           <div>
-            <p className="text-sm font-black text-[#0F172A]">Email wording lives in Email Templates</p>
-            <p className="mt-1 text-sm leading-6 text-[#64748B]">
+            <p className="text-sm font-black text-phx-ink">Email wording lives in Email Templates</p>
+            <p className="mt-1 text-sm leading-6 text-phx-ink-soft">
               This page controls only <strong>whether</strong> each email sends and <strong>who</strong> receives it.
               To edit the actual subject and content, open the Email Templates editor.
             </p>
           </div>
         </div>
         <Link
-          className="inline-flex h-11 shrink-0 items-center justify-center rounded-xl bg-[#0F172A] px-4 text-sm font-black text-white hover:bg-[#1E293B]"
+          className="inline-flex h-11 shrink-0 items-center justify-center rounded-xl bg-phx-ink px-4 text-sm font-black text-white hover:bg-[#1E293B]"
           href="/admin/email-templates"
         >
           Open Email Templates
@@ -248,7 +248,7 @@ export function EmailNotificationCenter({
       </Card>
 
       {!outboxStats.available ? (
-        <div className="rounded-[16px] border border-[#FED7AA] bg-[#FFF7ED] px-4 py-3 text-sm font-bold text-[#9A3412]">
+        <div className="rounded-[16px] border border-[#FED7AA] bg-phx-accent-soft px-4 py-3 text-sm font-bold text-[#9A3412]">
           Outbox statistics are unavailable — the notification outbox table is not deployed yet. Run the latest Supabase migration to see live counts.
         </div>
       ) : null}
@@ -281,7 +281,7 @@ export function EmailNotificationCenter({
       </div>
 
       {message ? (
-        <div className="rounded-[16px] border border-[#FED7AA] bg-[#FFF7ED] px-4 py-3 text-sm font-bold text-[#9A3412]">
+        <div className="rounded-[16px] border border-[#FED7AA] bg-phx-accent-soft px-4 py-3 text-sm font-bold text-[#9A3412]">
           {message}
         </div>
       ) : null}
@@ -291,31 +291,31 @@ export function EmailNotificationCenter({
           description="Enable only the workflow emails you want and select recipient logic for each type."
           title="Routing Policies"
         />
-        <div className="divide-y divide-[#E2E8F0]">
+        <div className="divide-y divide-phx-line">
           {policies.map((policy) => (
             <div className="space-y-4 bg-white p-4" key={policy.type}>
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <div className="flex items-center gap-2">
-                    <span className="text-base font-black text-[#0F172A]">{policy.label}</span>
+                    <span className="text-base font-black text-phx-ink">{policy.label}</span>
                     <span
                       className={cn(
                         "rounded-full px-2 py-1 text-[10px] font-black uppercase tracking-[0.14em]",
                         policy.enabled
                           ? "bg-[#DCFCE7] text-[#166534]"
-                          : "bg-[#F1F5F9] text-[#64748B]",
+                          : "bg-phx-paper-2 text-phx-ink-soft",
                       )}
                     >
                       {policy.enabled ? "Enabled" : "Paused"}
                     </span>
                   </div>
-                  <p className="mt-1 text-sm leading-6 text-[#64748B]">{policy.description}</p>
+                  <p className="mt-1 text-sm leading-6 text-phx-ink-soft">{policy.description}</p>
                 </div>
               </div>
 
               <div className="grid gap-3 md:grid-cols-[1fr_auto] md:items-start">
                 <div>
-                  <span className="mb-2 block text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">
+                  <span className="mb-2 block text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-soft">
                     Recipient logic
                   </span>
                   <div className="grid gap-2 sm:grid-cols-2">
@@ -324,20 +324,20 @@ export function EmailNotificationCenter({
                         className={cn(
                           "flex cursor-pointer items-start gap-2 rounded-xl border px-3 py-2 text-sm transition",
                           policy.recipientModes.includes(option.value)
-                            ? "border-[#FDBA74] bg-[#FFF7ED] text-[#9A3412]"
-                            : "border-[#E2E8F0] bg-white text-[#0F172A]",
+                            ? "border-phx-accent-line bg-phx-accent-soft text-[#9A3412]"
+                            : "border-phx-line bg-white text-phx-ink",
                         )}
                         key={option.value}
                       >
                         <input
                           checked={policy.recipientModes.includes(option.value)}
-                          className="mt-1 h-4 w-4 accent-[#F97316]"
+                          className="mt-1 h-4 w-4 accent-phx-accent"
                           onChange={(event) => toggleMode(policy, option.value, event.target.checked)}
                           type="checkbox"
                         />
                         <span>
                           <span className="block font-black">{option.label}</span>
-                          <span className="block text-xs font-semibold leading-5 text-[#64748B]">
+                          <span className="block text-xs font-semibold leading-5 text-phx-ink-soft">
                             {option.description}
                           </span>
                         </span>
@@ -346,7 +346,7 @@ export function EmailNotificationCenter({
                   </div>
                 </div>
                 <Button
-                  className="h-11 rounded-xl bg-[#F97316] px-4 text-white hover:bg-[#EA580C]"
+                  className="h-11 rounded-xl bg-phx-accent px-4 text-white hover:bg-phx-accent-hover"
                   disabled={savingType === policy.type}
                   onClick={() => void savePolicy(policy)}
                 >
@@ -356,19 +356,19 @@ export function EmailNotificationCenter({
               </div>
 
               <div className="flex flex-wrap items-center gap-3">
-                <label className="inline-flex items-center gap-2 text-sm font-bold text-[#0F172A]">
+                <label className="inline-flex items-center gap-2 text-sm font-bold text-phx-ink">
                   <input
                     checked={policy.enabled}
-                    className="h-4 w-4 accent-[#F97316]"
+                    className="h-4 w-4 accent-phx-accent"
                     onChange={(event) => updatePolicy(policy.type, { enabled: event.target.checked })}
                     type="checkbox"
                   />
                   Allow Resend delivery
                 </label>
-                <label className="inline-flex items-center gap-2 text-sm font-bold text-[#0F172A]">
+                <label className="inline-flex items-center gap-2 text-sm font-bold text-phx-ink">
                   <input
                     checked={policy.includeHrInbox}
-                    className="h-4 w-4 accent-[#F97316]"
+                    className="h-4 w-4 accent-phx-accent"
                     onChange={(event) => updatePolicy(policy.type, { includeHrInbox: event.target.checked })}
                     type="checkbox"
                   />
@@ -377,44 +377,44 @@ export function EmailNotificationCenter({
               </div>
 
               <div className="grid gap-3 lg:grid-cols-2">
-                <div className="rounded-[16px] border border-[#E2E8F0] bg-[#F8FAFC] p-3">
-                  <p className="text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">
+                <div className="rounded-[16px] border border-phx-line bg-phx-paper p-3">
+                  <p className="text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-soft">
                     Company titles
                   </p>
                   <div className="mt-3 max-h-44 space-y-2 overflow-auto pr-1">
                     {routingOptions.titles.length ? routingOptions.titles.map((title) => (
-                      <label className="flex items-center gap-2 text-sm font-bold text-[#0F172A]" key={title}>
+                      <label className="flex items-center gap-2 text-sm font-bold text-phx-ink" key={title}>
                         <input
                           checked={policy.targetTitles.includes(title)}
-                          className="h-4 w-4 accent-[#F97316]"
+                          className="h-4 w-4 accent-phx-accent"
                           onChange={(event) => toggleTextValue(policy, "targetTitles", title, event.target.checked)}
                           type="checkbox"
                         />
                         {title}
                       </label>
                     )) : (
-                      <p className="text-xs font-bold text-[#64748B]">No employee titles found yet.</p>
+                      <p className="text-xs font-bold text-phx-ink-soft">No employee titles found yet.</p>
                     )}
                   </div>
                 </div>
 
-                <div className="rounded-[16px] border border-[#E2E8F0] bg-[#F8FAFC] p-3">
-                  <p className="text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">
+                <div className="rounded-[16px] border border-phx-line bg-phx-paper p-3">
+                  <p className="text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-soft">
                     Lines
                   </p>
                   <div className="mt-3 max-h-44 space-y-2 overflow-auto pr-1">
                     {routingOptions.lines.length ? routingOptions.lines.map((line) => (
-                      <label className="flex items-center gap-2 text-sm font-bold text-[#0F172A]" key={line}>
+                      <label className="flex items-center gap-2 text-sm font-bold text-phx-ink" key={line}>
                         <input
                           checked={policy.targetLines.includes(line)}
-                          className="h-4 w-4 accent-[#F97316]"
+                          className="h-4 w-4 accent-phx-accent"
                           onChange={(event) => toggleTextValue(policy, "targetLines", line, event.target.checked)}
                           type="checkbox"
                         />
                         {line}
                       </label>
                     )) : (
-                      <p className="text-xs font-bold text-[#64748B]">No company lines found yet.</p>
+                      <p className="text-xs font-bold text-phx-ink-soft">No company lines found yet.</p>
                     )}
                   </div>
                 </div>

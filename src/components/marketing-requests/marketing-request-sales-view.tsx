@@ -45,33 +45,33 @@ const STATUS_LABELS: Record<string, string> = {
 };
 
 function StatCard({ label, value, hint, accent = "slate" }: { label: string; value: string; hint?: string; accent?: "slate" | "orange" | "green" | "sky" }) {
-  const border = { slate: "border-l-slate-500", orange: "border-l-[#F97316]", green: "border-l-emerald-500", sky: "border-l-sky-500" }[accent];
+  const border = { slate: "border-l-slate-500", orange: "border-l-phx-accent", green: "border-l-emerald-500", sky: "border-l-sky-500" }[accent];
   return (
-    <div className={cn("rounded-[6px] border border-[#E2E8F0] border-l-[3px] bg-white px-3.5 py-3 shadow-sm", border)}>
-      <p className="text-[10px] font-black uppercase tracking-[0.14em] text-[#94A3B8]">{label}</p>
-      <p className="mt-1.5 text-[22px] font-black leading-none text-[#0F172A]">{value}</p>
-      {hint ? <p className="mt-1 text-[11px] font-semibold text-[#94A3B8]">{hint}</p> : null}
+    <div className={cn("rounded-[6px] border border-phx-line border-l-[3px] bg-white px-3.5 py-3 shadow-sm", border)}>
+      <p className="text-[10px] font-black uppercase tracking-[0.14em] text-phx-ink-faint">{label}</p>
+      <p className="mt-1.5 text-[22px] font-black leading-none text-phx-ink">{value}</p>
+      {hint ? <p className="mt-1 text-[11px] font-semibold text-phx-ink-faint">{hint}</p> : null}
     </div>
   );
 }
 
 function AggregateTable({ title, rows, max }: { title: string; rows: MarketingRoiViewSalesAggregate[]; max: number }) {
   return (
-    <section className="overflow-hidden rounded-[6px] border border-[#E2E8F0] bg-white shadow-sm">
-      <div className="border-b border-[#E2E8F0] px-4 py-2.5">
-        <h3 className="text-[12px] font-black uppercase tracking-[0.12em] text-[#0F172A]">{title}</h3>
+    <section className="overflow-hidden rounded-[6px] border border-phx-line bg-white shadow-sm">
+      <div className="border-b border-phx-line px-4 py-2.5">
+        <h3 className="text-[12px] font-black uppercase tracking-[0.12em] text-phx-ink">{title}</h3>
       </div>
       <div className="max-h-72 overflow-y-auto">
         {rows.length === 0 ? (
-          <p className="px-4 py-4 text-[12px] font-medium text-[#94A3B8]">No matched sales.</p>
+          <p className="px-4 py-4 text-[12px] font-medium text-phx-ink-faint">No matched sales.</p>
         ) : (
           rows.map((row) => (
-            <div key={row.key} className="flex items-center gap-2 border-b border-[#F1F5F9] px-4 py-2 last:border-b-0">
-              <span className="min-w-0 flex-1 truncate text-[12px] font-semibold text-[#334155]" title={row.label}>{row.label}</span>
-              <div className="h-1.5 w-24 shrink-0 overflow-hidden rounded-full bg-[#F1F5F9]">
-                <div className="h-full rounded-full bg-[#F97316]" style={{ width: `${max > 0 ? Math.max(3, Math.round((row.value / max) * 100)) : 0}%` }} />
+            <div key={row.key} className="flex items-center gap-2 border-b border-phx-paper-2 px-4 py-2 last:border-b-0">
+              <span className="min-w-0 flex-1 truncate text-[12px] font-semibold text-phx-ink-2" title={row.label}>{row.label}</span>
+              <div className="h-1.5 w-24 shrink-0 overflow-hidden rounded-full bg-phx-paper-2">
+                <div className="h-full rounded-full bg-phx-accent" style={{ width: `${max > 0 ? Math.max(3, Math.round((row.value / max) * 100)) : 0}%` }} />
               </div>
-              <span className="w-20 shrink-0 text-right text-[12px] font-bold text-[#0F172A]">{money(row.value)}</span>
+              <span className="w-20 shrink-0 text-right text-[12px] font-bold text-phx-ink">{money(row.value)}</span>
             </div>
           ))
         )}
@@ -188,7 +188,7 @@ export function MarketingRequestSalesView({ requestId, viewSalesBasePath }: { re
     <WorkspaceErrorBoundary fallbackTitle="View Sales error">
       <div className="space-y-4" dir="auto">
         {loading && !data ? (
-          <div className="flex items-center gap-2 rounded-[6px] border border-[#E2E8F0] bg-white px-4 py-8 text-[13px] font-semibold text-[#64748B] shadow-sm">
+          <div className="flex items-center gap-2 rounded-[6px] border border-phx-line bg-white px-4 py-8 text-[13px] font-semibold text-phx-ink-soft shadow-sm">
             <LoadingSpinner /> Loading sales for this request…
           </div>
         ) : error ? (
@@ -196,12 +196,12 @@ export function MarketingRequestSalesView({ requestId, viewSalesBasePath }: { re
         ) : data ? (
           <>
             {/* Context */}
-            <section className="rounded-[6px] border border-[#E2E8F0] bg-white p-4 shadow-sm sm:p-5">
+            <section className="rounded-[6px] border border-phx-line bg-white p-4 shadow-sm sm:p-5">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
-                  <p className="text-[10px] font-black uppercase tracking-[0.16em] text-[#F97316]">View Sales · {data.context.requestCode}</p>
-                  <h2 className="mt-1 text-lg font-black tracking-tight text-[#0F172A]">{data.context.customerName}</h2>
-                  <p className="mt-1 text-[12px] font-semibold text-[#64748B]">
+                  <p className="text-[10px] font-black uppercase tracking-[0.16em] text-phx-accent">View Sales · {data.context.requestCode}</p>
+                  <h2 className="mt-1 text-lg font-black tracking-tight text-phx-ink">{data.context.customerName}</h2>
+                  <p className="mt-1 text-[12px] font-semibold text-phx-ink-soft">
                     {data.context.requesterName ?? data.context.requesterHrId}
                     {data.context.line ? ` · ${data.context.line}` : ""}
                     {data.context.requestTypeName ? ` · ${data.context.requestTypeName}` : ""}
@@ -209,10 +209,10 @@ export function MarketingRequestSalesView({ requestId, viewSalesBasePath }: { re
                   </p>
                 </div>
                 <div className="flex flex-col items-end gap-1 text-right">
-                  <span className="inline-flex items-center gap-1 rounded-[5px] border border-[#E2E8F0] bg-[#F8FAFC] px-2.5 py-1 text-[11px] font-bold text-[#64748B]">
+                  <span className="inline-flex items-center gap-1 rounded-[5px] border border-phx-line bg-phx-paper px-2.5 py-1 text-[11px] font-bold text-phx-ink-soft">
                     <CalendarRange className="h-3 w-3" /> ROI window {data.context.roiWindowLabel ?? "—"}
                   </span>
-                  <span className="text-[11px] font-semibold text-[#94A3B8]">Sales data as of {data.salesDataAsOf ?? "n/a"}</span>
+                  <span className="text-[11px] font-semibold text-phx-ink-faint">Sales data as of {data.salesDataAsOf ?? "n/a"}</span>
                 </div>
               </div>
 
@@ -224,43 +224,43 @@ export function MarketingRequestSalesView({ requestId, viewSalesBasePath }: { re
                 <StatCard accent="slate" label="Matched rows" value={units(data.totals.rows)} hint={`${units(data.totals.units)} units`} />
               </div>
               {data.context.products.length > 0 ? (
-                <p className="mt-3 text-[11px] font-semibold text-[#94A3B8]">
-                  Promoted products: <span className="text-[#475569]">{data.context.products.map((product) => product.name).join(", ")}</span>
+                <p className="mt-3 text-[11px] font-semibold text-phx-ink-faint">
+                  Promoted products: <span className="text-phx-ink-2">{data.context.products.map((product) => product.name).join(", ")}</span>
                 </p>
               ) : null}
               <DirectTrackingToggle requestId={requestId} />
             </section>
 
             {/* Range controls */}
-            <section className="flex flex-wrap items-end gap-3 rounded-[6px] border border-[#E2E8F0] bg-white px-4 py-3 shadow-sm">
-              <div className="flex items-center gap-1.5 text-[11px] font-black uppercase tracking-[0.12em] text-[#94A3B8]">
+            <section className="flex flex-wrap items-end gap-3 rounded-[6px] border border-phx-line bg-white px-4 py-3 shadow-sm">
+              <div className="flex items-center gap-1.5 text-[11px] font-black uppercase tracking-[0.12em] text-phx-ink-faint">
                 <CalendarRange className="h-3.5 w-3.5" /> Period range
                 {data.range.isCustom ? (
-                  <span className="rounded-[3px] bg-[#F97316] px-1 text-[9px] text-white">custom</span>
+                  <span className="rounded-[3px] bg-phx-accent px-1 text-[9px] text-white">custom</span>
                 ) : (
-                  <span className="rounded-[3px] bg-[#0F172A] px-1 text-[9px] text-white">ROI window</span>
+                  <span className="rounded-[3px] bg-phx-ink px-1 text-[9px] text-white">ROI window</span>
                 )}
               </div>
               <label className="flex flex-col gap-1">
-                <span className="text-[10px] font-bold uppercase tracking-wide text-[#94A3B8]">From</span>
-                <input type="month" value={from} onChange={(event) => setFrom(event.target.value)} className="h-8 rounded-[5px] border border-[#E2E8F0] px-2 text-[12px] font-bold text-[#0F172A] outline-none focus:border-[#FDBA74]" />
+                <span className="text-[10px] font-bold uppercase tracking-wide text-phx-ink-faint">From</span>
+                <input type="month" value={from} onChange={(event) => setFrom(event.target.value)} className="h-8 rounded-[5px] border border-phx-line px-2 text-[12px] font-bold text-phx-ink outline-none focus:border-phx-accent-line" />
               </label>
               <label className="flex flex-col gap-1">
-                <span className="text-[10px] font-bold uppercase tracking-wide text-[#94A3B8]">To</span>
-                <input type="month" value={to} onChange={(event) => setTo(event.target.value)} className="h-8 rounded-[5px] border border-[#E2E8F0] px-2 text-[12px] font-bold text-[#0F172A] outline-none focus:border-[#FDBA74]" />
+                <span className="text-[10px] font-bold uppercase tracking-wide text-phx-ink-faint">To</span>
+                <input type="month" value={to} onChange={(event) => setTo(event.target.value)} className="h-8 rounded-[5px] border border-phx-line px-2 text-[12px] font-bold text-phx-ink outline-none focus:border-phx-accent-line" />
               </label>
               <button
                 type="button"
                 onClick={() => void load(from, to)}
                 disabled={loading}
-                className="inline-flex h-8 items-center gap-1.5 rounded-[6px] bg-[#F97316] px-3 text-[12px] font-black uppercase tracking-wide text-white transition hover:bg-[#EA580C] disabled:opacity-60"
+                className="inline-flex h-8 items-center gap-1.5 rounded-[6px] bg-phx-accent px-3 text-[12px] font-black uppercase tracking-wide text-white transition hover:bg-phx-accent-hover disabled:opacity-60"
               >
                 {loading ? <LoadingSpinner /> : <Target className="h-3.5 w-3.5" />} Apply range
               </button>
               <button
                 type="button"
                 onClick={() => { setFrom(""); setTo(""); void load("", ""); }}
-                className="inline-flex h-8 items-center gap-1.5 rounded-[6px] border border-[#E2E8F0] bg-white px-3 text-[12px] font-bold text-[#64748B] transition hover:border-[#FDBA74] hover:text-[#F97316]"
+                className="inline-flex h-8 items-center gap-1.5 rounded-[6px] border border-phx-line bg-white px-3 text-[12px] font-bold text-phx-ink-soft transition hover:border-phx-accent-line hover:text-phx-accent"
               >
                 <RefreshCcw className="h-3.5 w-3.5" /> Reset to ROI window
               </button>
@@ -268,7 +268,7 @@ export function MarketingRequestSalesView({ requestId, viewSalesBasePath }: { re
                 type="button"
                 onClick={() => void downloadExport()}
                 disabled={exporting}
-                className="ml-auto inline-flex h-8 items-center gap-1.5 rounded-[6px] border border-[#0F172A] bg-[#0F172A] px-3 text-[12px] font-black uppercase tracking-wide text-white transition hover:bg-black disabled:opacity-60"
+                className="ml-auto inline-flex h-8 items-center gap-1.5 rounded-[6px] border border-phx-ink bg-phx-ink px-3 text-[12px] font-black uppercase tracking-wide text-white transition hover:bg-black disabled:opacity-60"
               >
                 {exporting ? <LoadingSpinner /> : <Download className="h-3.5 w-3.5" />} Export XLSX
               </button>
@@ -282,10 +282,10 @@ export function MarketingRequestSalesView({ requestId, viewSalesBasePath }: { re
             </div>
 
             {/* Detail rows */}
-            <section className="overflow-hidden rounded-[6px] border border-[#E2E8F0] bg-white shadow-sm">
-              <div className="flex items-center justify-between border-b border-[#E2E8F0] px-4 py-3">
-                <h3 className="text-[13px] font-black uppercase tracking-[0.12em] text-[#0F172A]">Matched sales rows</h3>
-                <span className="inline-flex items-center rounded-[5px] border border-[#E2E8F0] bg-[#F8FAFC] px-2.5 py-1 text-[11px] font-bold text-[#64748B]">{data.rows.length} row{data.rows.length === 1 ? "" : "s"}</span>
+            <section className="overflow-hidden rounded-[6px] border border-phx-line bg-white shadow-sm">
+              <div className="flex items-center justify-between border-b border-phx-line px-4 py-3">
+                <h3 className="text-[13px] font-black uppercase tracking-[0.12em] text-phx-ink">Matched sales rows</h3>
+                <span className="inline-flex items-center rounded-[5px] border border-phx-line bg-phx-paper px-2.5 py-1 text-[11px] font-bold text-phx-ink-soft">{data.rows.length} row{data.rows.length === 1 ? "" : "s"}</span>
               </div>
               <PortalResponsiveDataList
                 items={sortedRows}
@@ -301,7 +301,7 @@ export function MarketingRequestSalesView({ requestId, viewSalesBasePath }: { re
                     title={row.productName}
                     meta={`${row.invoicePeriod} · ${row.distributorName}`}
                     status={
-                      <span className="whitespace-nowrap text-sm font-black text-[#0F172A]">
+                      <span className="whitespace-nowrap text-sm font-black text-phx-ink">
                         {money(row.value)} EGP
                       </span>
                     }
@@ -317,7 +317,7 @@ export function MarketingRequestSalesView({ requestId, viewSalesBasePath }: { re
                 )}
                 renderTable={() => (
                   <PortalDesktopTable className="text-[13px]" minWidth="920px">
-                    <thead className="bg-[#0F172A] text-[10px] font-black uppercase tracking-[0.12em] text-white">
+                    <thead className="bg-phx-ink text-[10px] font-black uppercase tracking-[0.12em] text-white">
                       <tr>
                         <th className="px-3 py-2.5">
                           <button type="button" onClick={() => toggleSort("invoicePeriod")} className="inline-flex items-center gap-1 font-black">Period {sortArrow("invoicePeriod")}</button>
@@ -345,13 +345,13 @@ export function MarketingRequestSalesView({ requestId, viewSalesBasePath }: { re
                     <tbody>
                       {sortedRows.map((row, index) => (
                         <tr key={`${row.customerCode}-${row.productCode}-${row.invoicePeriod}-${index}`} className="border-t border-[#FEE7D2]">
-                          <td className="px-3 py-2 font-mono text-[12px] font-bold text-[#0F172A]">{row.invoicePeriod}</td>
-                          <td className="px-3 py-2 font-medium text-[#64748B]">{row.distributorName}</td>
-                          <td className="px-3 py-2 font-semibold text-[#334155]">{row.productName}</td>
-                          <td className="px-3 py-2 font-mono text-[12px] text-[#64748B]">{row.customerCode}</td>
-                          <td className="px-3 py-2 font-medium text-[#64748B]">{row.customerName ?? "—"}</td>
-                          <td className="px-3 py-2 text-right font-semibold text-[#475569]">{units(row.qty)}</td>
-                          <td className="px-3 py-2 text-right font-bold text-[#0F172A]">{money(row.value)}</td>
+                          <td className="px-3 py-2 font-mono text-[12px] font-bold text-phx-ink">{row.invoicePeriod}</td>
+                          <td className="px-3 py-2 font-medium text-phx-ink-soft">{row.distributorName}</td>
+                          <td className="px-3 py-2 font-semibold text-phx-ink-2">{row.productName}</td>
+                          <td className="px-3 py-2 font-mono text-[12px] text-phx-ink-soft">{row.customerCode}</td>
+                          <td className="px-3 py-2 font-medium text-phx-ink-soft">{row.customerName ?? "—"}</td>
+                          <td className="px-3 py-2 text-right font-semibold text-phx-ink-2">{units(row.qty)}</td>
+                          <td className="px-3 py-2 text-right font-bold text-phx-ink">{money(row.value)}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -362,24 +362,24 @@ export function MarketingRequestSalesView({ requestId, viewSalesBasePath }: { re
 
             {/* Reverse lookup */}
             {data.reverseLookup.length > 0 ? (
-              <section className="overflow-hidden rounded-[6px] border border-[#E2E8F0] bg-white shadow-sm">
-                <div className="flex items-center gap-2 border-b border-[#E2E8F0] px-4 py-3">
-                  <ArrowLeftRight className="h-3.5 w-3.5 text-[#F97316]" />
-                  <h3 className="text-[13px] font-black uppercase tracking-[0.12em] text-[#0F172A]">Other requests targeting these pharmacies</h3>
+              <section className="overflow-hidden rounded-[6px] border border-phx-line bg-white shadow-sm">
+                <div className="flex items-center gap-2 border-b border-phx-line px-4 py-3">
+                  <ArrowLeftRight className="h-3.5 w-3.5 text-phx-accent" />
+                  <h3 className="text-[13px] font-black uppercase tracking-[0.12em] text-phx-ink">Other requests targeting these pharmacies</h3>
                 </div>
-                <div className="divide-y divide-[#F1F5F9]">
+                <div className="divide-y divide-phx-paper-2">
                   {data.reverseLookup.map((row) => (
                     <div key={row.requestId} className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5">
                       <div className="min-w-0">
-                        <span className="font-mono text-[12px] font-bold text-[#0F172A]">{row.requestCode}</span>
-                        <span className="ml-2 text-[12px] font-semibold text-[#64748B]">{row.requesterName ?? ""}</span>
-                        <span className="ml-2 text-[11px] font-medium text-[#94A3B8]">{STATUS_LABELS[row.status] ?? row.status} · {row.sharedPharmacyCodes.length} shared pharmacy{row.sharedPharmacyCodes.length === 1 ? "" : "s"}</span>
+                        <span className="font-mono text-[12px] font-bold text-phx-ink">{row.requestCode}</span>
+                        <span className="ml-2 text-[12px] font-semibold text-phx-ink-soft">{row.requesterName ?? ""}</span>
+                        <span className="ml-2 text-[11px] font-medium text-phx-ink-faint">{STATUS_LABELS[row.status] ?? row.status} · {row.sharedPharmacyCodes.length} shared pharmacy{row.sharedPharmacyCodes.length === 1 ? "" : "s"}</span>
                       </div>
                       <a
                         href={`${viewSalesBasePath}/marketing-requests/${row.requestId}/view-sales`}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1 rounded-[5px] border border-[#E2E8F0] bg-white px-2 py-1 text-[11px] font-black text-[#F97316] transition hover:border-[#FDBA74] hover:bg-[#FFF7ED]"
+                        className="inline-flex items-center gap-1 rounded-[5px] border border-phx-line bg-white px-2 py-1 text-[11px] font-black text-phx-accent transition hover:border-phx-accent-line hover:bg-phx-accent-soft"
                       >
                         <ExternalLink className="h-3 w-3" /> View Sales
                       </a>

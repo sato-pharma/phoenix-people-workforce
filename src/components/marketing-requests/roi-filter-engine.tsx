@@ -139,23 +139,23 @@ function KpiCard({
     green: "border-l-emerald-500",
     amber: "border-l-amber-500",
     sky: "border-l-sky-500",
-    orange: "border-l-[#F97316]",
+    orange: "border-l-phx-accent",
   }[accent];
   const iconColor = {
     slate: "text-slate-600",
     green: "text-emerald-600",
     amber: "text-amber-600",
     sky: "text-sky-600",
-    orange: "text-[#F97316]",
+    orange: "text-phx-accent",
   }[accent];
   return (
-    <div className={cn("rounded-[6px] border border-[#E2E8F0] border-l-[3px] bg-white px-3.5 py-3 shadow-sm", border)}>
+    <div className={cn("rounded-[6px] border border-phx-line border-l-[3px] bg-white px-3.5 py-3 shadow-sm", border)}>
       <div className="flex items-center gap-2">
         <Icon className={cn("h-3.5 w-3.5 shrink-0", iconColor)} />
-        <p className="text-[10px] font-black uppercase tracking-[0.14em] text-[#94A3B8]">{label}</p>
+        <p className="text-[10px] font-black uppercase tracking-[0.14em] text-phx-ink-faint">{label}</p>
       </div>
-      <p className="mt-1.5 text-[22px] font-black leading-none text-[#0F172A]">{value}</p>
-      {hint ? <p className="mt-1 text-[11px] font-semibold text-[#94A3B8]">{hint}</p> : null}
+      <p className="mt-1.5 text-[22px] font-black leading-none text-phx-ink">{value}</p>
+      {hint ? <p className="mt-1 text-[11px] font-semibold text-phx-ink-faint">{hint}</p> : null}
     </div>
   );
 }
@@ -403,17 +403,17 @@ export function MarketingRoiFilterEngine({ viewSalesBasePath }: { viewSalesBaseP
     <WorkspaceErrorBoundary fallbackTitle="ROI tracking error">
       <div className="space-y-4" dir="auto">
         {/* ── Filter Engine ─────────────────────────────────────────────────── */}
-        <section className="rounded-[6px] border border-[#E2E8F0] bg-white shadow-sm">
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#E2E8F0] px-4 py-3 sm:px-5">
+        <section className="rounded-[6px] border border-phx-line bg-white shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-phx-line px-4 py-3 sm:px-5">
             <div className="flex items-center gap-2">
-              <SlidersHorizontal className="h-4 w-4 text-[#F97316]" />
+              <SlidersHorizontal className="h-4 w-4 text-phx-accent" />
               <div>
-                <p className="text-[10px] font-black uppercase tracking-[0.16em] text-[#F97316]">Filter Engine</p>
-                <h2 className="text-[15px] font-black tracking-tight text-[#0F172A]">Build your ROI report</h2>
+                <p className="text-[10px] font-black uppercase tracking-[0.16em] text-phx-accent">Filter Engine</p>
+                <h2 className="text-[15px] font-black tracking-tight text-phx-ink">Build your ROI report</h2>
               </div>
             </div>
             {faceted ? (
-              <span className="inline-flex items-center gap-1.5 rounded-[5px] border border-[#E2E8F0] bg-[#F8FAFC] px-2.5 py-1 text-[11px] font-bold text-[#64748B]">
+              <span className="inline-flex items-center gap-1.5 rounded-[5px] border border-phx-line bg-phx-paper px-2.5 py-1 text-[11px] font-bold text-phx-ink-soft">
                 <Filter className="h-3 w-3" />
                 {faceted.matchedCount === faceted.totalCount
                   ? `${faceted.totalCount} request${faceted.totalCount === 1 ? "" : "s"} in scope`
@@ -426,7 +426,7 @@ export function MarketingRoiFilterEngine({ viewSalesBasePath }: { viewSalesBaseP
             {optionsError ? (
               <div className="rounded-[6px] border border-amber-200 bg-amber-50 px-3.5 py-2.5 text-[13px] font-semibold text-amber-800">{optionsError}</div>
             ) : !facets ? (
-              <div className="flex items-center gap-2 py-6 text-[13px] font-semibold text-[#64748B]">
+              <div className="flex items-center gap-2 py-6 text-[13px] font-semibold text-phx-ink-soft">
                 <LoadingSpinner /> Loading filters…
               </div>
             ) : (
@@ -456,8 +456,8 @@ export function MarketingRoiFilterEngine({ viewSalesBasePath }: { viewSalesBaseP
 
                   {/* ROI duration range */}
                   {durationDim?.render ? (
-                    <div className="rounded-[6px] border border-[#E2E8F0] bg-white px-3 py-2 shadow-sm">
-                      <p className="mb-1 text-[10px] font-black uppercase tracking-[0.14em] text-[#94A3B8]">ROI duration (months)</p>
+                    <div className="rounded-[6px] border border-phx-line bg-white px-3 py-2 shadow-sm">
+                      <p className="mb-1 text-[10px] font-black uppercase tracking-[0.14em] text-phx-ink-faint">ROI duration (months)</p>
                       <div className="flex items-center gap-2">
                         <input
                           type="number"
@@ -466,9 +466,9 @@ export function MarketingRoiFilterEngine({ viewSalesBasePath }: { viewSalesBaseP
                           placeholder={String(durationDim.min ?? "")}
                           value={filters.durationMin ?? ""}
                           onChange={(event) => patchFilters({ durationMin: event.target.value === "" ? null : Number(event.target.value) })}
-                          className="h-8 w-full rounded-[5px] border border-[#E2E8F0] px-2 text-sm font-bold text-[#0F172A] outline-none focus:border-[#FDBA74]"
+                          className="h-8 w-full rounded-[5px] border border-phx-line px-2 text-sm font-bold text-phx-ink outline-none focus:border-phx-accent-line"
                         />
-                        <span className="text-[#94A3B8]">–</span>
+                        <span className="text-phx-ink-faint">–</span>
                         <input
                           type="number"
                           min={durationDim.min}
@@ -476,7 +476,7 @@ export function MarketingRoiFilterEngine({ viewSalesBasePath }: { viewSalesBaseP
                           placeholder={String(durationDim.max ?? "")}
                           value={filters.durationMax ?? ""}
                           onChange={(event) => patchFilters({ durationMax: event.target.value === "" ? null : Number(event.target.value) })}
-                          className="h-8 w-full rounded-[5px] border border-[#E2E8F0] px-2 text-sm font-bold text-[#0F172A] outline-none focus:border-[#FDBA74]"
+                          className="h-8 w-full rounded-[5px] border border-phx-line px-2 text-sm font-bold text-phx-ink outline-none focus:border-phx-accent-line"
                         />
                       </div>
                     </div>
@@ -484,21 +484,21 @@ export function MarketingRoiFilterEngine({ viewSalesBasePath }: { viewSalesBaseP
 
                   {/* Pay date range */}
                   {payDateDim?.render ? (
-                    <div className="rounded-[6px] border border-[#E2E8F0] bg-white px-3 py-2 shadow-sm">
-                      <p className="mb-1 text-[10px] font-black uppercase tracking-[0.14em] text-[#94A3B8]">Pay date</p>
+                    <div className="rounded-[6px] border border-phx-line bg-white px-3 py-2 shadow-sm">
+                      <p className="mb-1 text-[10px] font-black uppercase tracking-[0.14em] text-phx-ink-faint">Pay date</p>
                       <div className="flex items-center gap-2">
                         <input
                           type="date"
                           value={filters.payDateFrom ?? ""}
                           onChange={(event) => patchFilters({ payDateFrom: event.target.value || null })}
-                          className="h-8 w-full rounded-[5px] border border-[#E2E8F0] px-2 text-[12px] font-bold text-[#0F172A] outline-none focus:border-[#FDBA74]"
+                          className="h-8 w-full rounded-[5px] border border-phx-line px-2 text-[12px] font-bold text-phx-ink outline-none focus:border-phx-accent-line"
                         />
-                        <span className="text-[#94A3B8]">–</span>
+                        <span className="text-phx-ink-faint">–</span>
                         <input
                           type="date"
                           value={filters.payDateTo ?? ""}
                           onChange={(event) => patchFilters({ payDateTo: event.target.value || null })}
-                          className="h-8 w-full rounded-[5px] border border-[#E2E8F0] px-2 text-[12px] font-bold text-[#0F172A] outline-none focus:border-[#FDBA74]"
+                          className="h-8 w-full rounded-[5px] border border-phx-line px-2 text-[12px] font-bold text-phx-ink outline-none focus:border-phx-accent-line"
                         />
                       </div>
                     </div>
@@ -518,9 +518,9 @@ export function MarketingRoiFilterEngine({ viewSalesBasePath }: { viewSalesBaseP
                   if (autoChips.length === 0) return null;
                   return (
                     <div className="mt-3 flex flex-wrap items-center gap-2">
-                      <span className="text-[11px] font-bold uppercase tracking-wide text-[#94A3B8]">Auto-applied:</span>
+                      <span className="text-[11px] font-bold uppercase tracking-wide text-phx-ink-faint">Auto-applied:</span>
                       {autoChips.map(({ dim, label }) => (
-                        <span key={dim.key} className="inline-flex items-center gap-1 rounded-[4px] border border-[#E2E8F0] bg-[#F8FAFC] px-2 py-1 text-[11px] font-bold text-[#475569]">
+                        <span key={dim.key} className="inline-flex items-center gap-1 rounded-[4px] border border-phx-line bg-phx-paper px-2 py-1 text-[11px] font-bold text-phx-ink-2">
                           {dim.label}: {label}
                         </span>
                       ))}
@@ -533,7 +533,7 @@ export function MarketingRoiFilterEngine({ viewSalesBasePath }: { viewSalesBaseP
                   <label className="mt-3 inline-flex cursor-pointer items-center gap-2 rounded-[5px] border border-amber-200 bg-amber-50 px-3 py-1.5 text-[12px] font-bold text-amber-800">
                     <input
                       type="checkbox"
-                      className="h-4 w-4 accent-[#F97316]"
+                      className="h-4 w-4 accent-phx-accent"
                       checked={filters.includeRestricted}
                       onChange={(event) => startFilterTransition(() => setFilters((prev) => ({ ...prev, includeRestricted: event.target.checked })))}
                     />
@@ -546,7 +546,7 @@ export function MarketingRoiFilterEngine({ viewSalesBasePath }: { viewSalesBaseP
                     type="button"
                     onClick={() => void runReport(filters)}
                     disabled={state === "loading" || !roiFilterStateHasAny(filters)}
-                    className="inline-flex items-center gap-2 rounded-[6px] bg-[#F97316] px-4 py-2 text-[13px] font-black uppercase tracking-wide text-white shadow-sm transition hover:bg-[#EA580C] disabled:opacity-60"
+                    className="inline-flex items-center gap-2 rounded-[6px] bg-phx-accent px-4 py-2 text-[13px] font-black uppercase tracking-wide text-white shadow-sm transition hover:bg-phx-accent-hover disabled:opacity-60"
                   >
                     {state === "loading" ? <LoadingSpinner /> : <Filter className="h-3.5 w-3.5" />}
                     Apply Filters
@@ -559,12 +559,12 @@ export function MarketingRoiFilterEngine({ viewSalesBasePath }: { viewSalesBaseP
                       setState("ready");
                       window.history.replaceState(null, "", window.location.pathname);
                     }}
-                    className="inline-flex items-center gap-2 rounded-[6px] border border-[#E2E8F0] bg-white px-3 py-2 text-[12px] font-bold text-[#64748B] transition hover:border-[#FDBA74] hover:text-[#F97316]"
+                    className="inline-flex items-center gap-2 rounded-[6px] border border-phx-line bg-white px-3 py-2 text-[12px] font-bold text-phx-ink-soft transition hover:border-phx-accent-line hover:text-phx-accent"
                   >
                     <RefreshCcw className="h-3.5 w-3.5" /> Reset
                   </button>
                   {!roiFilterStateHasAny(filters) ? (
-                    <span className="text-[12px] font-medium text-[#94A3B8]">Choose at least one filter to run the report.</span>
+                    <span className="text-[12px] font-medium text-phx-ink-faint">Choose at least one filter to run the report.</span>
                   ) : null}
                   {hasReport ? (
                     <>
@@ -572,14 +572,14 @@ export function MarketingRoiFilterEngine({ viewSalesBasePath }: { viewSalesBaseP
                         type="button"
                         onClick={() => void downloadExport()}
                         disabled={exporting}
-                        className="inline-flex items-center gap-2 rounded-[6px] border border-[#0F172A] bg-[#0F172A] px-3 py-2 text-[12px] font-black uppercase tracking-wide text-white transition hover:bg-black disabled:opacity-60"
+                        className="inline-flex items-center gap-2 rounded-[6px] border border-phx-ink bg-phx-ink px-3 py-2 text-[12px] font-black uppercase tracking-wide text-white transition hover:bg-black disabled:opacity-60"
                       >
                         {exporting ? <LoadingSpinner /> : <Download className="h-3.5 w-3.5" />} Export XLSX
                       </button>
                       <button
                         type="button"
                         onClick={() => void copyShareLink()}
-                        className="inline-flex items-center gap-2 rounded-[6px] border border-[#E2E8F0] bg-white px-3 py-2 text-[12px] font-bold text-[#64748B] transition hover:border-[#FDBA74] hover:text-[#F97316]"
+                        className="inline-flex items-center gap-2 rounded-[6px] border border-phx-line bg-white px-3 py-2 text-[12px] font-bold text-phx-ink-soft transition hover:border-phx-accent-line hover:text-phx-accent"
                       >
                         <Link2 className="h-3.5 w-3.5" /> {copied ? "Copied!" : "Copy share link"}
                       </button>
@@ -588,33 +588,33 @@ export function MarketingRoiFilterEngine({ viewSalesBasePath }: { viewSalesBaseP
                 </div>
 
                 {/* Saved presets */}
-                <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-[#F1F5F9] pt-3">
-                  <span className="inline-flex items-center gap-1 text-[11px] font-black uppercase tracking-[0.12em] text-[#94A3B8]">
+                <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-phx-paper-2 pt-3">
+                  <span className="inline-flex items-center gap-1 text-[11px] font-black uppercase tracking-[0.12em] text-phx-ink-faint">
                     <Bookmark className="h-3.5 w-3.5" /> Presets
                   </span>
                   {presets.map((preset) => (
-                    <span key={preset.id} className="inline-flex items-center gap-1 rounded-[5px] border border-[#E2E8F0] bg-white pl-2 text-[12px] font-bold text-[#475569]">
-                      {preset.isDefault ? <Star className="h-3 w-3 fill-[#F97316] text-[#F97316]" /> : null}
-                      <button type="button" onClick={() => applyPreset(preset)} className="py-1 transition hover:text-[#F97316]">{preset.name}</button>
-                      <button type="button" aria-label={`Delete ${preset.name}`} onClick={() => void deletePreset(preset.id)} className="px-1.5 py-1 text-[#CBD5E1] transition hover:text-red-500">
+                    <span key={preset.id} className="inline-flex items-center gap-1 rounded-[5px] border border-phx-line bg-white pl-2 text-[12px] font-bold text-phx-ink-2">
+                      {preset.isDefault ? <Star className="h-3 w-3 fill-phx-accent text-phx-accent" /> : null}
+                      <button type="button" onClick={() => applyPreset(preset)} className="py-1 transition hover:text-phx-accent">{preset.name}</button>
+                      <button type="button" aria-label={`Delete ${preset.name}`} onClick={() => void deletePreset(preset.id)} className="px-1.5 py-1 text-phx-line-strong transition hover:text-red-500">
                         <Trash2 className="h-3 w-3" />
                       </button>
                     </span>
                   ))}
-                  {presets.length === 0 ? <span className="text-[11px] font-medium text-[#94A3B8]">No saved views yet.</span> : null}
+                  {presets.length === 0 ? <span className="text-[11px] font-medium text-phx-ink-faint">No saved views yet.</span> : null}
                   <span className="ml-auto flex items-center gap-1.5">
                     <input
                       type="text"
                       value={presetName}
                       onChange={(event) => setPresetName(event.target.value)}
                       placeholder="Name this view…"
-                      className="h-8 w-40 rounded-[5px] border border-[#E2E8F0] px-2 text-[12px] font-medium text-[#0F172A] outline-none focus:border-[#FDBA74]"
+                      className="h-8 w-40 rounded-[5px] border border-phx-line px-2 text-[12px] font-medium text-phx-ink outline-none focus:border-phx-accent-line"
                     />
                     <button
                       type="button"
                       onClick={() => void savePreset(false)}
                       disabled={savingPreset || !presetName.trim()}
-                      className="inline-flex h-8 items-center gap-1 rounded-[5px] border border-[#E2E8F0] bg-white px-2 text-[12px] font-bold text-[#64748B] transition hover:border-[#FDBA74] hover:text-[#F97316] disabled:opacity-40"
+                      className="inline-flex h-8 items-center gap-1 rounded-[5px] border border-phx-line bg-white px-2 text-[12px] font-bold text-phx-ink-soft transition hover:border-phx-accent-line hover:text-phx-accent disabled:opacity-40"
                     >
                       <Save className="h-3.5 w-3.5" /> Save
                     </button>
@@ -623,7 +623,7 @@ export function MarketingRoiFilterEngine({ viewSalesBasePath }: { viewSalesBaseP
                       onClick={() => void savePreset(true)}
                       disabled={savingPreset || !presetName.trim()}
                       title="Save as my default view"
-                      className="inline-flex h-8 items-center gap-1 rounded-[5px] border border-[#E2E8F0] bg-white px-2 text-[12px] font-bold text-[#64748B] transition hover:border-[#FDBA74] hover:text-[#F97316] disabled:opacity-40"
+                      className="inline-flex h-8 items-center gap-1 rounded-[5px] border border-phx-line bg-white px-2 text-[12px] font-bold text-phx-ink-soft transition hover:border-phx-accent-line hover:text-phx-accent disabled:opacity-40"
                     >
                       <Star className="h-3.5 w-3.5" /> Default
                     </button>
@@ -642,10 +642,10 @@ export function MarketingRoiFilterEngine({ viewSalesBasePath }: { viewSalesBaseP
         {hasReport && report ? <ReportView key={report.generatedAtIso} report={report} viewSalesBasePath={viewSalesBasePath} /> : null}
 
         {state === "ready" && facets ? (
-          <div className="rounded-[6px] border border-dashed border-[#E2E8F0] bg-[#F8FAFC] px-4 py-10 text-center">
-            <Filter className="mx-auto h-6 w-6 text-[#CBD5E1]" />
-            <p className="mt-2 text-[13px] font-bold text-[#64748B]">Choose your filters and press “Apply Filters”.</p>
-            <p className="mt-1 text-[12px] font-medium text-[#94A3B8]">Nothing loads until you apply — so the report is fast and scoped to exactly what you ask for.</p>
+          <div className="rounded-[6px] border border-dashed border-phx-line bg-phx-paper px-4 py-10 text-center">
+            <Filter className="mx-auto h-6 w-6 text-phx-line-strong" />
+            <p className="mt-2 text-[13px] font-bold text-phx-ink-soft">Choose your filters and press “Apply Filters”.</p>
+            <p className="mt-1 text-[12px] font-medium text-phx-ink-faint">Nothing loads until you apply — so the report is fast and scoped to exactly what you ask for.</p>
           </div>
         ) : null}
       </div>
@@ -754,7 +754,7 @@ function ReportView({ report, viewSalesBasePath }: { report: MarketingRoiReport;
 
       {/* trust signals */}
       <div className="flex flex-wrap items-center gap-2 text-[11px] font-bold">
-        <span className="inline-flex items-center gap-1 rounded-[4px] border border-[#E2E8F0] bg-white px-2 py-1 text-[#475569]">
+        <span className="inline-flex items-center gap-1 rounded-[4px] border border-phx-line bg-white px-2 py-1 text-phx-ink-2">
           Sales data as of {kpi.salesDataAsOf ?? "n/a"}
         </span>
         {kpi.pendingValue > 0 ? (
@@ -769,20 +769,20 @@ function ReportView({ report, viewSalesBasePath }: { report: MarketingRoiReport;
           </span>
         ) : null}
         {kpi.restrictedExcludedCount > 0 ? (
-          <span className="inline-flex items-center gap-1 rounded-[4px] border border-[#E2E8F0] bg-[#F8FAFC] px-2 py-1 text-[#64748B]">
+          <span className="inline-flex items-center gap-1 rounded-[4px] border border-phx-line bg-phx-paper px-2 py-1 text-phx-ink-soft">
             {kpi.restrictedExcludedCount} request(s) with confidential products excluded
           </span>
         ) : null}
       </div>
 
       {/* results table */}
-      <section className="overflow-hidden rounded-[6px] border border-[#E2E8F0] bg-white shadow-sm">
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#E2E8F0] px-4 py-3 sm:px-5">
+      <section className="overflow-hidden rounded-[6px] border border-phx-line bg-white shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-phx-line px-4 py-3 sm:px-5">
           <div>
-            <p className="text-[10px] font-black uppercase tracking-[0.16em] text-[#F97316]">ROI Report</p>
-            <h3 className="text-[15px] font-black tracking-tight text-[#0F172A]">Actual vs required return</h3>
+            <p className="text-[10px] font-black uppercase tracking-[0.16em] text-phx-accent">ROI Report</p>
+            <h3 className="text-[15px] font-black tracking-tight text-phx-ink">Actual vs required return</h3>
           </div>
-          <span className="inline-flex max-w-full flex-wrap items-center gap-x-1 rounded-[5px] border border-[#E2E8F0] bg-[#F8FAFC] px-2.5 py-1 text-[11px] font-bold text-[#64748B]">
+          <span className="inline-flex max-w-full flex-wrap items-center gap-x-1 rounded-[5px] border border-phx-line bg-phx-paper px-2.5 py-1 text-[11px] font-bold text-phx-ink-soft">
             <span>{pageSummary}</span>
             {rows.length > 0 ? <span>| Page {currentPage} of {totalPages} | {ROI_ROWS_PER_PAGE} per page</span> : null}
             {sort ? <span>| Sort: {sortKeyLabel} ({sort.direction === "asc" ? "Asc" : "Desc"})</span> : null}
@@ -790,7 +790,7 @@ function ReportView({ report, viewSalesBasePath }: { report: MarketingRoiReport;
         </div>
         <div className="md:hidden">
           {rows.length === 0 ? (
-            <div className="px-4 py-6 text-center text-[13px] font-medium text-[#64748B]">
+            <div className="px-4 py-6 text-center text-[13px] font-medium text-phx-ink-soft">
               No requests match these filters.
             </div>
           ) : (
@@ -810,7 +810,7 @@ function ReportView({ report, viewSalesBasePath }: { report: MarketingRoiReport;
               <col className="w-[10%]" />
               <col className="w-[7%]" />
             </colgroup>
-            <thead className="bg-[#0F172A] text-[10px] font-black uppercase tracking-[0.12em] text-white">
+            <thead className="bg-phx-ink text-[10px] font-black uppercase tracking-[0.12em] text-white">
               <tr>
                 <th className="px-3 py-2.5">
                   <div className="flex flex-col items-start gap-1">
@@ -868,7 +868,7 @@ function ReportView({ report, viewSalesBasePath }: { report: MarketingRoiReport;
             <tbody className="bg-white">
               {rows.length === 0 ? (
                 <tr>
-                  <td className="px-4 py-6 text-center text-[13px] font-medium text-[#64748B]" colSpan={7}>
+                  <td className="px-4 py-6 text-center text-[13px] font-medium text-phx-ink-soft" colSpan={7}>
                     No requests match these filters.
                   </td>
                 </tr>
@@ -879,10 +879,10 @@ function ReportView({ report, viewSalesBasePath }: { report: MarketingRoiReport;
           </table>
         </div>
         {rows.length > 0 ? (
-          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-[#E2E8F0] bg-[#F8FAFC] px-4 py-3 text-[12px] font-bold text-[#64748B] sm:px-5">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-phx-line bg-phx-paper px-4 py-3 text-[12px] font-bold text-phx-ink-soft sm:px-5">
             <span>{pageSummary}</span>
             <div className="flex items-center gap-2">
-              <span className="hidden text-[11px] font-black uppercase tracking-[0.12em] text-[#94A3B8] sm:inline">
+              <span className="hidden text-[11px] font-black uppercase tracking-[0.12em] text-phx-ink-faint sm:inline">
                 Page {currentPage} / {totalPages}
               </span>
               <button
@@ -890,7 +890,7 @@ function ReportView({ report, viewSalesBasePath }: { report: MarketingRoiReport;
                 aria-label="Previous page"
                 onClick={() => goToPage(currentPage - 1)}
                 disabled={currentPage === 1}
-                className="inline-flex h-8 w-8 items-center justify-center rounded-[5px] border border-[#E2E8F0] bg-white text-[#64748B] transition hover:border-[#FDBA74] hover:text-[#F97316] disabled:cursor-not-allowed disabled:opacity-40"
+                className="inline-flex h-8 w-8 items-center justify-center rounded-[5px] border border-phx-line bg-white text-phx-ink-soft transition hover:border-phx-accent-line hover:text-phx-accent disabled:cursor-not-allowed disabled:opacity-40"
               >
                 <ChevronLeft className="h-4 w-4" />
               </button>
@@ -899,7 +899,7 @@ function ReportView({ report, viewSalesBasePath }: { report: MarketingRoiReport;
                 aria-label="Next page"
                 onClick={() => goToPage(currentPage + 1)}
                 disabled={currentPage === totalPages}
-                className="inline-flex h-8 w-8 items-center justify-center rounded-[5px] border border-[#E2E8F0] bg-white text-[#64748B] transition hover:border-[#FDBA74] hover:text-[#F97316] disabled:cursor-not-allowed disabled:opacity-40"
+                className="inline-flex h-8 w-8 items-center justify-center rounded-[5px] border border-phx-line bg-white text-phx-ink-soft transition hover:border-phx-accent-line hover:text-phx-accent disabled:cursor-not-allowed disabled:opacity-40"
               >
                 <ChevronRight className="h-4 w-4" />
               </button>
@@ -939,7 +939,7 @@ function ViewSalesAction({
       rel="noopener noreferrer"
       title="View sales"
       className={cn(
-        "inline-flex items-center gap-1 rounded-[5px] border border-[#E2E8F0] bg-white text-[11px] font-black text-[#F97316] transition hover:border-[#FDBA74] hover:bg-[#FFF7ED]",
+        "inline-flex items-center gap-1 rounded-[5px] border border-phx-line bg-white text-[11px] font-black text-phx-accent transition hover:border-phx-accent-line hover:bg-phx-accent-soft",
         compact ? "h-8 w-8 justify-center p-0 lg:w-auto lg:px-2" : "px-2 py-1",
       )}
     >
@@ -953,44 +953,44 @@ const ReportRow = React.memo(function ReportRow({ row, viewSalesBasePath }: { ro
   return (
     <tr className="border-t border-[#FEE7D2] align-top">
       <td className="px-3 py-3">
-        <p className="truncate font-mono text-[12px] font-bold text-[#0F172A]" title={row.requestCode}>
+        <p className="truncate font-mono text-[12px] font-bold text-phx-ink" title={row.requestCode}>
           {row.requestCode}
         </p>
-        <p className="mt-1 break-words text-[11px] font-semibold leading-4 text-[#64748B]">
+        <p className="mt-1 break-words text-[11px] font-semibold leading-4 text-phx-ink-soft">
           {row.requesterName ?? row.requesterHrId}
         </p>
       </td>
       <td className="px-3 py-3">
-        <p className="break-words font-semibold leading-5 text-[#334155]" title={row.customerName}>
+        <p className="break-words font-semibold leading-5 text-phx-ink-2" title={row.customerName}>
           {row.customerName}
         </p>
-        <p className="mt-1 break-words text-[11px] font-bold uppercase tracking-[0.08em] text-[#94A3B8]">
+        <p className="mt-1 break-words text-[11px] font-bold uppercase tracking-[0.08em] text-phx-ink-faint">
           {row.line ?? "No line"}
         </p>
       </td>
       <td className="px-3 py-3">
-        <p className="break-words font-semibold text-[#475569]">{STATUS_LABELS[row.status] ?? row.status}</p>
-        <p className="mt-1 break-words text-[11px] font-medium text-[#94A3B8]">{row.roiWindow ?? "No window"}</p>
+        <p className="break-words font-semibold text-phx-ink-2">{STATUS_LABELS[row.status] ?? row.status}</p>
+        <p className="mt-1 break-words text-[11px] font-medium text-phx-ink-faint">{row.roiWindow ?? "No window"}</p>
       </td>
       <td className="px-3 py-3 text-right">
         <div className="space-y-1">
-          <p className="text-[10px] font-black uppercase tracking-[0.12em] text-[#94A3B8]">Required (target)</p>
-          <p className="font-semibold text-[#475569]">{money(row.requiredRoiValue)}</p>
-          <p className="text-[10px] font-black uppercase tracking-[0.12em] text-[#94A3B8]">Expected (forecast)</p>
-          <p className="font-medium text-[#64748B]">{money(row.expectedRoiValue)}</p>
-          <p className="text-[10px] font-black uppercase tracking-[0.12em] text-[#94A3B8]">Actual</p>
-          <p className="font-bold text-[#0F172A]">{money(row.actualSalesValue)}</p>
+          <p className="text-[10px] font-black uppercase tracking-[0.12em] text-phx-ink-faint">Required (target)</p>
+          <p className="font-semibold text-phx-ink-2">{money(row.requiredRoiValue)}</p>
+          <p className="text-[10px] font-black uppercase tracking-[0.12em] text-phx-ink-faint">Expected (forecast)</p>
+          <p className="font-medium text-phx-ink-soft">{money(row.expectedRoiValue)}</p>
+          <p className="text-[10px] font-black uppercase tracking-[0.12em] text-phx-ink-faint">Actual</p>
+          <p className="font-bold text-phx-ink">{money(row.actualSalesValue)}</p>
         </div>
       </td>
       <td className="px-3 py-3 text-right">
-        <p className="text-[10px] font-black uppercase tracking-[0.12em] text-[#94A3B8]">Actual</p>
-        <p className="font-bold text-[#0F172A]">{row.hasSalesData ? percent(row.actualCoverageRatio) : "No attributed sales"}</p>
-        <p className="mt-1 text-[10px] font-black uppercase tracking-[0.12em] text-[#94A3B8]">Forecast</p>
-        <p className="font-medium text-[#64748B]">{percent(row.forecastCoverageRatio)}</p>
+        <p className="text-[10px] font-black uppercase tracking-[0.12em] text-phx-ink-faint">Actual</p>
+        <p className="font-bold text-phx-ink">{row.hasSalesData ? percent(row.actualCoverageRatio) : "No attributed sales"}</p>
+        <p className="mt-1 text-[10px] font-black uppercase tracking-[0.12em] text-phx-ink-faint">Forecast</p>
+        <p className="font-medium text-phx-ink-soft">{percent(row.forecastCoverageRatio)}</p>
         {row.dataCoverage !== "complete" ? (
           <p className="mt-1 break-words text-[10px] font-bold leading-4 text-amber-600">{ROI_DATA_COVERAGE_LABEL[row.dataCoverage]}</p>
         ) : null}
-        {row.attributionGapReason ? <p className="mt-1 break-words text-[10px] font-medium leading-4 text-[#94A3B8]">{row.attributionGapReason}</p> : null}
+        {row.attributionGapReason ? <p className="mt-1 break-words text-[10px] font-medium leading-4 text-phx-ink-faint">{row.attributionGapReason}</p> : null}
       </td>
       <td className="px-3 py-2.5">
         <ResultStatusBadge row={row} />
@@ -1004,53 +1004,53 @@ const ReportRow = React.memo(function ReportRow({ row, viewSalesBasePath }: { ro
 
 const ReportCard = React.memo(function ReportCard({ row, viewSalesBasePath }: { row: MarketingRoiReportRow; viewSalesBasePath: string }) {
   return (
-    <article className="rounded-[6px] border border-[#E2E8F0] bg-white p-3 shadow-sm">
+    <article className="rounded-[6px] border border-phx-line bg-white p-3 shadow-sm">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="truncate font-mono text-[12px] font-bold text-[#0F172A]" title={row.requestCode}>
+          <p className="truncate font-mono text-[12px] font-bold text-phx-ink" title={row.requestCode}>
             {row.requestCode}
           </p>
-          <h4 className="mt-1 break-words text-[13px] font-black leading-5 text-[#334155]">{row.customerName}</h4>
-          <p className="mt-1 break-words text-[11px] font-semibold text-[#64748B]">{row.requesterName ?? row.requesterHrId}</p>
+          <h4 className="mt-1 break-words text-[13px] font-black leading-5 text-phx-ink-2">{row.customerName}</h4>
+          <p className="mt-1 break-words text-[11px] font-semibold text-phx-ink-soft">{row.requesterName ?? row.requesterHrId}</p>
         </div>
         <ResultStatusBadge row={row} />
       </div>
 
       <div className="mt-3 grid grid-cols-2 gap-2 text-[12px]">
-        <div className="rounded-[5px] bg-[#F8FAFC] px-2.5 py-2">
-          <p className="text-[10px] font-black uppercase tracking-[0.12em] text-[#94A3B8]">Required (target)</p>
-          <p className="mt-0.5 font-bold text-[#334155]">{money(row.requiredRoiValue)}</p>
+        <div className="rounded-[5px] bg-phx-paper px-2.5 py-2">
+          <p className="text-[10px] font-black uppercase tracking-[0.12em] text-phx-ink-faint">Required (target)</p>
+          <p className="mt-0.5 font-bold text-phx-ink-2">{money(row.requiredRoiValue)}</p>
         </div>
-        <div className="rounded-[5px] bg-[#F8FAFC] px-2.5 py-2">
-          <p className="text-[10px] font-black uppercase tracking-[0.12em] text-[#94A3B8]">Expected (forecast)</p>
-          <p className="mt-0.5 font-bold text-[#64748B]">{money(row.expectedRoiValue)}</p>
+        <div className="rounded-[5px] bg-phx-paper px-2.5 py-2">
+          <p className="text-[10px] font-black uppercase tracking-[0.12em] text-phx-ink-faint">Expected (forecast)</p>
+          <p className="mt-0.5 font-bold text-phx-ink-soft">{money(row.expectedRoiValue)}</p>
         </div>
-        <div className="rounded-[5px] bg-[#F8FAFC] px-2.5 py-2">
-          <p className="text-[10px] font-black uppercase tracking-[0.12em] text-[#94A3B8]">Actual sales</p>
-          <p className="mt-0.5 font-bold text-[#0F172A]">{money(row.actualSalesValue)}</p>
+        <div className="rounded-[5px] bg-phx-paper px-2.5 py-2">
+          <p className="text-[10px] font-black uppercase tracking-[0.12em] text-phx-ink-faint">Actual sales</p>
+          <p className="mt-0.5 font-bold text-phx-ink">{money(row.actualSalesValue)}</p>
         </div>
-        <div className="rounded-[5px] bg-[#F8FAFC] px-2.5 py-2">
-          <p className="text-[10px] font-black uppercase tracking-[0.12em] text-[#94A3B8]">Actual coverage</p>
-          <p className="mt-0.5 font-bold text-[#0F172A]">{row.hasSalesData ? percent(row.actualCoverageRatio) : "No attributed sales"}</p>
-          <p className="mt-0.5 text-[10px] font-bold text-[#94A3B8]">Forecast {percent(row.forecastCoverageRatio)}</p>
+        <div className="rounded-[5px] bg-phx-paper px-2.5 py-2">
+          <p className="text-[10px] font-black uppercase tracking-[0.12em] text-phx-ink-faint">Actual coverage</p>
+          <p className="mt-0.5 font-bold text-phx-ink">{row.hasSalesData ? percent(row.actualCoverageRatio) : "No attributed sales"}</p>
+          <p className="mt-0.5 text-[10px] font-bold text-phx-ink-faint">Forecast {percent(row.forecastCoverageRatio)}</p>
         </div>
-        <div className="rounded-[5px] bg-[#F8FAFC] px-2.5 py-2">
-          <p className="text-[10px] font-black uppercase tracking-[0.12em] text-[#94A3B8]">Window</p>
-          <p className="mt-0.5 break-words font-bold text-[#64748B]">{row.roiWindow ?? "No window"}</p>
+        <div className="rounded-[5px] bg-phx-paper px-2.5 py-2">
+          <p className="text-[10px] font-black uppercase tracking-[0.12em] text-phx-ink-faint">Window</p>
+          <p className="mt-0.5 break-words font-bold text-phx-ink-soft">{row.roiWindow ?? "No window"}</p>
         </div>
-        <div className="rounded-[5px] bg-[#F8FAFC] px-2.5 py-2">
-          <p className="text-[10px] font-black uppercase tracking-[0.12em] text-[#94A3B8]">Data coverage</p>
-          <p className={cn("mt-0.5 break-words font-bold", row.dataCoverage === "complete" ? "text-[#64748B]" : "text-amber-600")}>{ROI_DATA_COVERAGE_LABEL[row.dataCoverage]}</p>
+        <div className="rounded-[5px] bg-phx-paper px-2.5 py-2">
+          <p className="text-[10px] font-black uppercase tracking-[0.12em] text-phx-ink-faint">Data coverage</p>
+          <p className={cn("mt-0.5 break-words font-bold", row.dataCoverage === "complete" ? "text-phx-ink-soft" : "text-amber-600")}>{ROI_DATA_COVERAGE_LABEL[row.dataCoverage]}</p>
         </div>
       </div>
 
       <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
-        <p className="break-words text-[11px] font-semibold text-[#64748B]">
+        <p className="break-words text-[11px] font-semibold text-phx-ink-soft">
           {(STATUS_LABELS[row.status] ?? row.status)} / {row.line ?? "No line"}
         </p>
         <ViewSalesAction row={row} viewSalesBasePath={viewSalesBasePath} />
       </div>
-      {row.attributionGapReason ? <p className="mt-2 break-words text-[11px] font-medium leading-4 text-[#94A3B8]">{row.attributionGapReason}</p> : null}
+      {row.attributionGapReason ? <p className="mt-2 break-words text-[11px] font-medium leading-4 text-phx-ink-faint">{row.attributionGapReason}</p> : null}
     </article>
   );
 });

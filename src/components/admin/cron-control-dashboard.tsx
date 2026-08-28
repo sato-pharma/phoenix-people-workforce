@@ -97,7 +97,7 @@ export function CronControlDashboard({
   return (
     <div className="space-y-5">
       <DriftBanner />
-      <p className="text-xs font-semibold text-[#64748B]">
+      <p className="text-xs font-semibold text-phx-ink-soft">
         Showing all {listing.jobs.length} live job{listing.jobs.length === 1 ? "" : "s"} from GCP Cloud Scheduler as of{" "}
         {formatDate(listing.fetchedAt)} — this list is never filtered to a static subset; any job that exists in the project&apos;s
         scheduler appears here.
@@ -141,10 +141,10 @@ function NotConfiguredBanner({ error }: { error: string }) {
 
 function DriftBanner() {
   return (
-    <div className="flex items-start gap-2.5 rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] px-4 py-3 text-xs text-[#64748B]">
+    <div className="flex items-start gap-2.5 rounded-xl border border-phx-line bg-phx-paper px-4 py-3 text-xs text-phx-ink-soft">
       <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
       <span>
-        This is the live control plane — <code className="rounded bg-[#E2E8F0] px-1 py-0.5 font-mono">scripts/setup-gcp-cron.sh</code> is a
+        This is the live control plane — <code className="rounded bg-phx-line px-1 py-0.5 font-mono">scripts/setup-gcp-cron.sh</code> is a
         manual bootstrap script and does not track changes made here. If you edit a schedule, update the script&apos;s flags by hand so a future
         re-bootstrap doesn&apos;t silently revert it.
       </span>
@@ -161,7 +161,7 @@ const STATE_STYLES: Record<string, string> = {
 const OUTCOME_STYLES: Record<string, string> = {
   SUCCESS: "text-emerald-600",
   FAILED: "text-rose-600",
-  UNKNOWN: "text-[#64748B]",
+  UNKNOWN: "text-phx-ink-soft",
 };
 
 function JobCard({
@@ -184,11 +184,11 @@ function JobCard({
   const isPaused = job.state === "PAUSED";
 
   return (
-    <div className="rounded-2xl border border-[#E2E8F0] bg-white p-5 shadow-[0_10px_28px_rgba(15,23,42,0.06)]">
+    <div className="rounded-2xl border border-phx-line bg-white p-5 shadow-[0_10px_28px_rgba(15,23,42,0.06)]">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <div className="flex flex-wrap items-center gap-2.5">
-            <h3 className="text-base font-black text-[#0F172A]">{job.label}</h3>
+            <h3 className="text-base font-black text-phx-ink">{job.label}</h3>
             <span className={`rounded-full border px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wide ${STATE_STYLES[job.state] ?? "border-slate-200 bg-slate-50 text-slate-600"}`}>
               {job.state}
             </span>
@@ -198,17 +198,17 @@ function JobCard({
               </span>
             ) : null}
           </div>
-          <p className="mt-1 max-w-2xl text-sm text-[#64748B]">{job.description}</p>
-          <p className="mt-1 font-mono text-xs text-[#94A3B8]">
+          <p className="mt-1 max-w-2xl text-sm text-phx-ink-soft">{job.description}</p>
+          <p className="mt-1 font-mono text-xs text-phx-ink-faint">
             {job.route ? <>{job.route} · </> : null}
-            <span className="text-[#64748B]">{job.schedule}</span> ({job.timeZone})
+            <span className="text-phx-ink-soft">{job.schedule}</span> ({job.timeZone})
           </p>
         </div>
 
         {canMutate ? (
           <div className="flex flex-wrap items-center gap-2">
             <button
-              className="inline-flex items-center gap-1.5 rounded-lg border border-[#E2E8F0] bg-white px-3 py-1.5 text-[11px] font-black text-[#0F172A] transition hover:border-orange-300 hover:text-orange-700 disabled:opacity-50"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-phx-line bg-white px-3 py-1.5 text-[11px] font-black text-phx-ink transition hover:border-orange-300 hover:text-orange-700 disabled:opacity-50"
               disabled={pending}
               onClick={() => onMutate("run")}
               type="button"
@@ -217,7 +217,7 @@ function JobCard({
               Run now
             </button>
             <button
-              className="inline-flex items-center gap-1.5 rounded-lg border border-[#E2E8F0] bg-white px-3 py-1.5 text-[11px] font-black text-[#0F172A] transition hover:border-orange-300 hover:text-orange-700 disabled:opacity-50"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-phx-line bg-white px-3 py-1.5 text-[11px] font-black text-phx-ink transition hover:border-orange-300 hover:text-orange-700 disabled:opacity-50"
               disabled={pending}
               onClick={() => onMutate(isPaused ? "resume" : "pause")}
               type="button"
@@ -238,15 +238,15 @@ function JobCard({
         ) : null}
       </div>
 
-      <div className="mt-4 grid grid-cols-2 gap-4 border-t border-[#F1F5F9] pt-3 text-xs text-[#64748B] sm:grid-cols-3">
+      <div className="mt-4 grid grid-cols-2 gap-4 border-t border-phx-paper-2 pt-3 text-xs text-phx-ink-soft sm:grid-cols-3">
         <div>
-          <div className="font-black uppercase tracking-wide text-[#94A3B8]">Last attempt</div>
+          <div className="font-black uppercase tracking-wide text-phx-ink-faint">Last attempt</div>
           <div className={job.lastAttemptOutcome ? OUTCOME_STYLES[job.lastAttemptOutcome] : ""}>
             {job.lastAttemptTime ? formatDate(job.lastAttemptTime) : "—"} {job.lastAttemptOutcome ? `(${job.lastAttemptOutcome})` : ""}
           </div>
         </div>
         <div>
-          <div className="font-black uppercase tracking-wide text-[#94A3B8]">Next scheduled</div>
+          <div className="font-black uppercase tracking-wide text-phx-ink-faint">Next scheduled</div>
           <div>{job.nextScheduleTime ? formatDate(job.nextScheduleTime) : "—"}</div>
         </div>
       </div>
@@ -341,12 +341,12 @@ function SchedulePanel({
   }
 
   return (
-    <div className="mt-4 rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] p-4">
+    <div className="mt-4 rounded-xl border border-phx-line bg-phx-paper p-4">
       <div className="mb-3 flex flex-wrap items-center gap-1.5">
-        <span className="mr-1 text-[11px] font-black uppercase tracking-wide text-[#94A3B8]">Quick pick:</span>
+        <span className="mr-1 text-[11px] font-black uppercase tracking-wide text-phx-ink-faint">Quick pick:</span>
         {SCHEDULE_PRESETS.map((preset) => (
           <button
-            className="rounded-full border border-[#E2E8F0] bg-white px-2.5 py-1 text-[11px] font-bold text-[#475569] transition hover:border-orange-300 hover:text-orange-700"
+            className="rounded-full border border-phx-line bg-white px-2.5 py-1 text-[11px] font-bold text-phx-ink-2 transition hover:border-orange-300 hover:text-orange-700"
             key={preset.label}
             onClick={() => setCronExpression(preset.cronExpression)}
             type="button"
@@ -357,19 +357,19 @@ function SchedulePanel({
       </div>
       <div className="grid gap-3 sm:grid-cols-[1fr_auto]">
         <div className="grid gap-3 sm:grid-cols-2">
-          <label className="text-xs font-black text-[#64748B]">
+          <label className="text-xs font-black text-phx-ink-soft">
             Cron expression
             <input
-              className="mt-1 w-full rounded-lg border border-[#E2E8F0] bg-white px-3 py-2 font-mono text-sm text-[#0F172A]"
+              className="mt-1 w-full rounded-lg border border-phx-line bg-white px-3 py-2 font-mono text-sm text-phx-ink"
               onChange={(event) => setCronExpression(event.target.value)}
               type="text"
               value={cronExpression}
             />
           </label>
-          <label className="text-xs font-black text-[#64748B]">
+          <label className="text-xs font-black text-phx-ink-soft">
             Time zone (IANA)
             <input
-              className="mt-1 w-full rounded-lg border border-[#E2E8F0] bg-white px-3 py-2 font-mono text-sm text-[#0F172A]"
+              className="mt-1 w-full rounded-lg border border-phx-line bg-white px-3 py-2 font-mono text-sm text-phx-ink"
               onChange={(event) => setTimeZone(event.target.value)}
               type="text"
               value={timeZone}
@@ -378,7 +378,7 @@ function SchedulePanel({
         </div>
         <div className="flex items-end gap-2">
           <button
-            className="inline-flex items-center gap-1.5 rounded-lg border border-[#E2E8F0] bg-white px-3 py-2 text-[11px] font-black text-[#0F172A] transition hover:border-orange-300 hover:text-orange-700 disabled:opacity-50"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-phx-line bg-white px-3 py-2 text-[11px] font-black text-phx-ink transition hover:border-orange-300 hover:text-orange-700 disabled:opacity-50"
             disabled={previewing || !cronExpression || !timeZone}
             onClick={() => handlePreview()}
             type="button"
@@ -388,14 +388,14 @@ function SchedulePanel({
           </button>
         </div>
       </div>
-      <p className="mt-1.5 text-[11px] text-[#94A3B8]">Auto-previews as you type — this button just forces an immediate check.</p>
+      <p className="mt-1.5 text-[11px] text-phx-ink-faint">Auto-previews as you type — this button just forces an immediate check.</p>
 
       {preview ? (
-        <div className="mt-3 rounded-lg border border-[#E2E8F0] bg-white p-3 text-xs">
+        <div className="mt-3 rounded-lg border border-phx-line bg-white p-3 text-xs">
           {preview.valid ? (
             <>
-              <div className="font-black text-[#0F172A]">Next 5 runs:</div>
-              <ul className="mt-1 space-y-0.5 font-mono text-[#475569]">
+              <div className="font-black text-phx-ink">Next 5 runs:</div>
+              <ul className="mt-1 space-y-0.5 font-mono text-phx-ink-2">
                 {preview.nextRuns.map((run) => (
                   <li key={run}>{formatDate(run)}</li>
                 ))}
@@ -417,7 +417,7 @@ function SchedulePanel({
       ) : null}
 
       <div className="mt-3 flex items-center justify-end gap-2">
-        <button className="rounded-lg px-3 py-1.5 text-[11px] font-black text-[#64748B] hover:text-[#0F172A]" onClick={onCancel} type="button">
+        <button className="rounded-lg px-3 py-1.5 text-[11px] font-black text-phx-ink-soft hover:text-phx-ink" onClick={onCancel} type="button">
           Cancel
         </button>
         <button

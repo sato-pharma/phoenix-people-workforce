@@ -56,9 +56,9 @@ const scanModeOptions = [
   },
 ] as const;
 
-const panelLabelClassName = "mb-1 block text-[10px] font-black uppercase tracking-[0.12em] text-[#64748B]";
+const panelLabelClassName = "mb-1 block text-[10px] font-black uppercase tracking-[0.12em] text-phx-ink-soft";
 const selectClassName =
-  "h-10 w-full rounded-xl border border-[#D8E0EA] bg-white/95 px-3 text-sm font-semibold text-[#0F172A] shadow-sm outline-none focus:border-[#FDBA74] focus:ring-2 focus:ring-[#F97316]/15";
+  "h-10 w-full rounded-xl border border-phx-line bg-white/95 px-3 text-sm font-semibold text-phx-ink shadow-sm outline-none focus:border-phx-accent-line focus:ring-2 focus:ring-phx-accent/15";
 
 function formatSize(bytes: number) {
   if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
@@ -309,7 +309,7 @@ export function HiringDocumentCapture({
         </AdminCallout>
       ) : null}
 
-      <Card className="space-y-4 rounded-2xl border border-[#E2E8F0] bg-white p-4 shadow-sm">
+      <Card className="space-y-4 rounded-2xl border border-phx-line bg-white p-4 shadow-sm">
         <div className="grid gap-3 sm:grid-cols-2">
           <label className="block">
             <span className={panelLabelClassName}>Employee</span>
@@ -344,8 +344,8 @@ export function HiringDocumentCapture({
         </div>
 
         {selectedEmployee ? (
-          <div className="rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] p-3">
-            <p className="text-[10px] font-black uppercase tracking-[0.12em] text-[#64748B]">
+          <div className="rounded-xl border border-phx-line bg-phx-paper p-3">
+            <p className="text-[10px] font-black uppercase tracking-[0.12em] text-phx-ink-soft">
               Still outstanding for {selectedEmployee.fullName}
             </p>
             <div className="mt-2 overflow-x-auto">
@@ -382,10 +382,10 @@ export function HiringDocumentCapture({
       </Card>
 
       {/* ── Scan with the camera ──────────────────────────────────────────────────────────── */}
-      <Card className="space-y-4 rounded-2xl border border-[#E2E8F0] bg-white p-4 shadow-sm">
+      <Card className="space-y-4 rounded-2xl border border-phx-line bg-white p-4 shadow-sm">
         <div>
-          <h3 className="text-sm font-black uppercase tracking-[0.12em] text-[#0F172A]">Scan with the camera</h3>
-          <p className="mt-1 text-sm text-[#64748B]">
+          <h3 className="text-sm font-black uppercase tracking-[0.12em] text-phx-ink">Scan with the camera</h3>
+          <p className="mt-1 text-sm text-phx-ink-soft">
             Photograph each page. Phoenix straightens the orientation, lifts the contrast, and saves every page as one
             PDF.
           </p>
@@ -396,15 +396,15 @@ export function HiringDocumentCapture({
             <button
               className={`rounded-xl border p-3 text-left transition ${
                 scanMode === option.value
-                  ? "border-[#F97316] bg-[#FFF7ED] shadow-sm"
-                  : "border-[#D8E0EA] bg-white hover:border-[#FDBA74]"
+                  ? "border-phx-accent bg-phx-accent-soft shadow-sm"
+                  : "border-phx-line bg-white hover:border-phx-accent-line"
               }`}
               key={option.value}
               onClick={() => setScanMode(option.value)}
               type="button"
             >
-              <span className="block text-sm font-bold text-[#0F172A]">{option.label}</span>
-              <span className="mt-1 block text-xs text-[#64748B]">{option.description}</span>
+              <span className="block text-sm font-bold text-phx-ink">{option.label}</span>
+              <span className="mt-1 block text-xs text-phx-ink-soft">{option.description}</span>
             </button>
           ))}
         </div>
@@ -454,12 +454,12 @@ export function HiringDocumentCapture({
           <div className="space-y-3">
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
               {stagedPages.map((page, index) => (
-                <div className="relative overflow-hidden rounded-xl border border-[#E2E8F0] bg-[#F8FAFC]" key={page.id}>
+                <div className="relative overflow-hidden rounded-xl border border-phx-line bg-phx-paper" key={page.id}>
                   {/* A staged page is a local object URL, never a remote asset, so next/image would
                       add a loader for nothing. */}
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img alt={`Page ${index + 1}`} className="h-32 w-full object-cover" src={page.previewUrl} />
-                  <span className="absolute left-2 top-2 rounded-lg bg-[#0F172A]/80 px-2 py-0.5 text-[10px] font-black text-white">
+                  <span className="absolute left-2 top-2 rounded-lg bg-phx-ink/80 px-2 py-0.5 text-[10px] font-black text-white">
                     Page {index + 1}
                   </span>
                   <button
@@ -491,10 +491,10 @@ export function HiringDocumentCapture({
       </Card>
 
       {/* ── Upload a file as it is ────────────────────────────────────────────────────────── */}
-      <Card className="space-y-3 rounded-2xl border border-[#E2E8F0] bg-white p-4 shadow-sm">
+      <Card className="space-y-3 rounded-2xl border border-phx-line bg-white p-4 shadow-sm">
         <div>
-          <h3 className="text-sm font-black uppercase tracking-[0.12em] text-[#0F172A]">Upload a file as it is</h3>
-          <p className="mt-1 text-sm text-[#64748B]">
+          <h3 className="text-sm font-black uppercase tracking-[0.12em] text-phx-ink">Upload a file as it is</h3>
+          <p className="mt-1 text-sm text-phx-ink-soft">
             For a PDF that came off the office scanner, or a picture that already looks right. Nothing is changed — the
             file is stored exactly as it arrives. PDF, JPG, PNG or WEBP, up to 15 MB each.
           </p>
@@ -523,26 +523,26 @@ export function HiringDocumentCapture({
       </Card>
 
       {/* ── What is already on file ───────────────────────────────────────────────────────── */}
-      <Card className="space-y-3 rounded-2xl border border-[#E2E8F0] bg-white p-4 shadow-sm">
+      <Card className="space-y-3 rounded-2xl border border-phx-line bg-white p-4 shadow-sm">
         <div className="flex items-center justify-between gap-3">
-          <h3 className="text-sm font-black uppercase tracking-[0.12em] text-[#0F172A]">On file</h3>
-          {isLoadingFiles ? <Loader2 className="h-4 w-4 animate-spin text-[#64748B]" /> : null}
+          <h3 className="text-sm font-black uppercase tracking-[0.12em] text-phx-ink">On file</h3>
+          {isLoadingFiles ? <Loader2 className="h-4 w-4 animate-spin text-phx-ink-soft" /> : null}
         </div>
 
         {!employeeHrId || !documentId ? (
-          <p className="text-sm text-[#64748B]">Choose an employee and a document to see what has been filed.</p>
+          <p className="text-sm text-phx-ink-soft">Choose an employee and a document to see what has been filed.</p>
         ) : files.length === 0 ? (
-          <p className="text-sm text-[#64748B]">Nothing has been scanned or uploaded for this document yet.</p>
+          <p className="text-sm text-phx-ink-soft">Nothing has been scanned or uploaded for this document yet.</p>
         ) : (
           <ul className="space-y-2">
             {files.map((file) => (
               <li
-                className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] px-3 py-2"
+                className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-phx-line bg-phx-paper px-3 py-2"
                 key={file.id}
               >
                 <div className="min-w-0 overflow-x-auto">
-                  <p className="whitespace-nowrap text-sm font-semibold text-[#0F172A]">{file.fileName}</p>
-                  <p className="mt-0.5 whitespace-nowrap text-xs text-[#64748B]">
+                  <p className="whitespace-nowrap text-sm font-semibold text-phx-ink">{file.fileName}</p>
+                  <p className="mt-0.5 whitespace-nowrap text-xs text-phx-ink-soft">
                     {formatUploadedAt(file.uploadedAt)} · {formatSize(file.sizeBytes)}
                     {file.pageCount ? ` · ${file.pageCount} ${file.pageCount === 1 ? "page" : "pages"}` : ""}
                     {file.uploadedByName ? ` · ${file.uploadedByName}` : ""}

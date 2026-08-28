@@ -36,7 +36,7 @@ type Props = {
 };
 
 const STAGE_STYLE: Record<BulkSlotStage, { dot: string; card: string; text: string; label: string }> = {
-  idle: { dot: "bg-[#CBD5E1]", card: "border-[#E2E8F0] bg-white hover:border-[#F97316]", text: "text-[#64748B]", label: "Not started" },
+  idle: { dot: "bg-phx-line-strong", card: "border-phx-line bg-white hover:border-phx-accent", text: "text-phx-ink-soft", label: "Not started" },
   working: { dot: "bg-amber-400 animate-pulse", card: "border-amber-300 bg-amber-50/60", text: "text-amber-700", label: "In progress" },
   rejected: { dot: "bg-rose-500", card: "border-rose-300 bg-rose-50/60", text: "text-rose-700", label: "Rejected" },
   ready: { dot: "bg-emerald-500", card: "border-emerald-300 bg-emerald-50/60", text: "text-emerald-700", label: "Ready" },
@@ -153,14 +153,14 @@ export function BulkImportWorkspace({ distributors, summaries, productOptions, b
   return (
     <div className="space-y-4">
       {/* Shared month for this bulk session */}
-      <Card className="space-y-2 rounded-[6px] border border-[#E2E8F0] bg-white p-4">
-        <span className="text-[10px] font-black uppercase tracking-[0.12em] text-[#94A3B8]">Month for this bulk import</span>
+      <Card className="space-y-2 rounded-[6px] border border-phx-line bg-white p-4">
+        <span className="text-[10px] font-black uppercase tracking-[0.12em] text-phx-ink-faint">Month for this bulk import</span>
         <div className="flex gap-2">
-          <select className="h-10 rounded-[6px] border border-[#E2E8F0] bg-white px-3 text-sm font-bold" onChange={(e) => applyPeriod(e.target.value, periodYear)} value={periodMonth}>
+          <select className="h-10 rounded-[6px] border border-phx-line bg-white px-3 text-sm font-bold" onChange={(e) => applyPeriod(e.target.value, periodYear)} value={periodMonth}>
             <option value="">Month</option>
             {MONTHS.map((m, i) => <option key={m} value={String(i + 1).padStart(2, "0")}>{m}</option>)}
           </select>
-          <select className="h-10 rounded-[6px] border border-[#E2E8F0] bg-white px-3 text-sm font-bold" onChange={(e) => applyPeriod(periodMonth, e.target.value)} value={periodYear}>
+          <select className="h-10 rounded-[6px] border border-phx-line bg-white px-3 text-sm font-bold" onChange={(e) => applyPeriod(periodMonth, e.target.value)} value={periodYear}>
             <option value="">Year</option>
             {UPLOAD_YEARS.map((y) => <option key={y} value={String(y)}>{y}</option>)}
           </select>
@@ -169,12 +169,12 @@ export function BulkImportWorkspace({ distributors, summaries, productOptions, b
       </Card>
 
       {/* Horizontal distributor grid */}
-      <Card className="space-y-3 rounded-[6px] border border-[#E2E8F0] bg-white p-4">
+      <Card className="space-y-3 rounded-[6px] border border-phx-line bg-white p-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <span className="text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">Distributors ({filtered.length})</span>
+          <span className="text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-soft">Distributors ({filtered.length})</span>
           <div className="relative w-56">
-            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[#94A3B8]" />
-            <input className="h-9 w-full rounded-[6px] border border-[#E2E8F0] bg-white pl-8 pr-2 text-sm outline-none focus:border-[#FDBA74]" onChange={(e) => setQuery(e.target.value)} placeholder="Search distributor" value={query} />
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-phx-ink-faint" />
+            <input className="h-9 w-full rounded-[6px] border border-phx-line bg-white pl-8 pr-2 text-sm outline-none focus:border-phx-accent-line" onChange={(e) => setQuery(e.target.value)} placeholder="Search distributor" value={query} />
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -189,7 +189,7 @@ export function BulkImportWorkspace({ distributors, summaries, productOptions, b
                 className={cn(
                   "flex min-w-[168px] flex-col gap-1 rounded-[6px] border px-3 py-2 text-left transition",
                   style.card,
-                  active && "ring-2 ring-[#0F172A] ring-offset-1",
+                  active && "ring-2 ring-phx-ink ring-offset-1",
                   !period && "cursor-not-allowed opacity-60",
                 )}
                 disabled={!period}
@@ -198,17 +198,17 @@ export function BulkImportWorkspace({ distributors, summaries, productOptions, b
               >
                 <div className="flex items-center gap-1.5">
                   <span aria-hidden className={cn("h-2 w-2 shrink-0 rounded-full", style.dot)} />
-                  <span className="truncate text-xs font-black text-[#0F172A]">{d.name}</span>
+                  <span className="truncate text-xs font-black text-phx-ink">{d.name}</span>
                 </div>
-                <span className="font-mono text-[10px] text-[#94A3B8]">{d.code}</span>
+                <span className="font-mono text-[10px] text-phx-ink-faint">{d.code}</span>
                 <span className={cn("text-[10px] font-bold", style.text)}>{style.label}</span>
                 {status?.reconciliation ? (
-                  <span className="text-[10px] font-medium text-[#64748B]">{num(status.reconciliation.rowsCoded)} rows · {money(status.reconciliation.totalValue)}</span>
+                  <span className="text-[10px] font-medium text-phx-ink-soft">{num(status.reconciliation.rowsCoded)} rows · {money(status.reconciliation.totalValue)}</span>
                 ) : null}
               </button>
             );
           })}
-          {filtered.length === 0 ? <p className="px-2 py-3 text-xs text-[#64748B]">No distributors match.</p> : null}
+          {filtered.length === 0 ? <p className="px-2 py-3 text-xs text-phx-ink-soft">No distributors match.</p> : null}
         </div>
       </Card>
 
@@ -221,11 +221,11 @@ export function BulkImportWorkspace({ distributors, summaries, productOptions, b
         const isActive = activeCode === code;
         return (
           <div className={cn(!isActive && "hidden")} key={code}>
-            <Card className="space-y-3 rounded-[6px] border border-[#E2E8F0] bg-white p-5">
+            <Card className="space-y-3 rounded-[6px] border border-phx-line bg-white p-5">
               <div className="flex items-center justify-between gap-3">
-                <h3 className="text-base font-black tracking-tight text-slate-950">{distributor.name} <span className="font-mono text-sm text-[#94A3B8]">{distributor.code}</span></h3>
+                <h3 className="text-base font-black tracking-tight text-slate-950">{distributor.name} <span className="font-mono text-sm text-phx-ink-faint">{distributor.code}</span></h3>
                 <div className="flex items-center gap-2">
-                  <button className="inline-flex h-8 items-center gap-1.5 rounded-[6px] border border-[#E2E8F0] px-2.5 text-xs font-bold text-[#64748B] transition hover:bg-[#F8FAFC]" onClick={() => setActiveCode(null)} type="button">
+                  <button className="inline-flex h-8 items-center gap-1.5 rounded-[6px] border border-phx-line px-2.5 text-xs font-bold text-phx-ink-soft transition hover:bg-phx-paper" onClick={() => setActiveCode(null)} type="button">
                     <ChevronDown className="h-3.5 w-3.5" /> Collapse
                   </button>
                   <button className="inline-flex h-8 items-center gap-1.5 rounded-[6px] border border-[#FCA5A5] px-2.5 text-xs font-bold text-rose-700 transition hover:bg-rose-50" onClick={() => removeCard(code)} type="button">
@@ -252,7 +252,7 @@ export function BulkImportWorkspace({ distributors, summaries, productOptions, b
 
       {/* Strict validation — per distributor + consolidated — then Confirm & Import All */}
       {touchedCodes.length > 0 ? (
-        <Card className="space-y-4 rounded-[6px] border border-[#E2E8F0] bg-white p-5">
+        <Card className="space-y-4 rounded-[6px] border border-phx-line bg-white p-5">
           <div className="flex flex-wrap items-center gap-2">
             <h3 className="text-base font-black tracking-tight text-slate-950">Confirm & Import All</h3>
             {blockingCodes.length > 0 ? (
@@ -274,9 +274,9 @@ export function BulkImportWorkspace({ distributors, summaries, productOptions, b
             </div>
           ) : null}
 
-          <div className="flex flex-wrap items-center gap-3 border-t border-[#E2E8F0] pt-4">
+          <div className="flex flex-wrap items-center gap-3 border-t border-phx-line pt-4">
             <button
-              className="inline-flex h-10 items-center gap-2 rounded-[6px] bg-[#F97316] px-5 text-sm font-black text-white transition hover:bg-[#EA6A0C] disabled:cursor-not-allowed disabled:bg-[#CBD5E1]"
+              className="inline-flex h-10 items-center gap-2 rounded-[6px] bg-phx-accent px-5 text-sm font-black text-white transition hover:bg-[#EA6A0C] disabled:cursor-not-allowed disabled:bg-phx-line-strong"
               disabled={!canConfirmAll || confirmBusy}
               onClick={() => void confirmAll()}
               type="button"
@@ -287,7 +287,7 @@ export function BulkImportWorkspace({ distributors, summaries, productOptions, b
             {blockingCodes.length > 0 ? (
               <span className="inline-flex items-center gap-1 text-xs font-semibold text-amber-700"><XCircle className="h-3.5 w-3.5" /> Open and resolve, or remove: {blockingCodes.map((c) => monthly.find((d) => d.code === c)?.name ?? c).join(", ")}</span>
             ) : (
-              <span className="text-xs font-medium text-[#64748B]">Each distributor imports through its own strict validation — this just confirms all of them at once.</span>
+              <span className="text-xs font-medium text-phx-ink-soft">Each distributor imports through its own strict validation — this just confirms all of them at once.</span>
             )}
           </div>
         </Card>

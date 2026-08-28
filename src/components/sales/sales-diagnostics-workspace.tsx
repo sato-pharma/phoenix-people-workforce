@@ -32,7 +32,7 @@ type AnalyzeResult =
 type Diag = { detection: Detection; chosenDistributor: string | null; profileSummary: ProfileSummary | null; analyze: AnalyzeResult | null };
 type Resp = { success: boolean; data?: Diag; error?: string };
 
-const panel = "rounded-2xl border border-[#D8E0EA] bg-white/95 shadow-[0_8px_22px_rgba(15,23,42,0.06)]";
+const panel = "rounded-2xl border border-phx-line bg-white/95 shadow-[0_8px_22px_rgba(15,23,42,0.06)]";
 
 async function readJson<T>(res: Response): Promise<T> {
   const text = await res.text();
@@ -75,17 +75,17 @@ export function SalesDiagnosticsWorkspace({ distributors }: Props) {
       <Card className={cn(panel, "space-y-3 p-5")}>
         <div className="flex flex-wrap items-end gap-2">
           <label className="flex flex-col gap-1">
-            <span className="text-[10px] font-black uppercase tracking-[0.12em] text-[#94A3B8]">Force distributor (optional)</span>
+            <span className="text-[10px] font-black uppercase tracking-[0.12em] text-phx-ink-faint">Force distributor (optional)</span>
             <div className="w-56"><SearchableSelect onValueChange={setOverride} placeholder="auto-detect" value={override}>
               <option value="">Auto-detect</option>
               {distributors.map((d) => <option key={d.code} value={d.code}>{d.name} ({d.code})</option>)}
             </SearchableSelect></div>
           </label>
-          <Button className="h-9 gap-2 bg-[#0B0B0B] font-black text-white hover:bg-[#F97316]" onClick={() => fileRef.current?.click()} type="button">
+          <Button className="h-9 gap-2 bg-[#0B0B0B] font-black text-white hover:bg-phx-accent" onClick={() => fileRef.current?.click()} type="button">
             <FileText className="h-4 w-4" />{file ? file.name.slice(0, 28) : "Choose file"}
           </Button>
           <input accept=".xlsx" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) { setFile(f); setResult(null); } }} ref={fileRef} type="file" />
-          <Button className="h-9 gap-2 bg-[#F97316] font-black text-white hover:bg-[#EA6A0C]" disabled={!file || busy} onClick={() => void run()} type="button">
+          <Button className="h-9 gap-2 bg-phx-accent font-black text-white hover:bg-[#EA6A0C]" disabled={!file || busy} onClick={() => void run()} type="button">
             {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Stethoscope className="h-4 w-4" />}Diagnose
           </Button>
         </div>
@@ -95,7 +95,7 @@ export function SalesDiagnosticsWorkspace({ distributors }: Props) {
       {result ? (
         <Card className={cn(panel, "space-y-4 p-5")}>
           <div>
-            <h3 className="text-sm font-black uppercase tracking-[0.14em] text-[#64748B]">Detection</h3>
+            <h3 className="text-sm font-black uppercase tracking-[0.14em] text-phx-ink-soft">Detection</h3>
             <p className="mt-1 text-sm">
               {result.detection.best
                 ? <>Best match: <b>{result.detection.best.distributorName}</b> ({result.detection.best.distributorCode}) · confidence <b className={result.detection.confidence === "high" ? "text-emerald-600" : "text-amber-600"}>{result.detection.confidence}</b>{result.detection.ambiguous ? " · ambiguous" : ""}</>
@@ -105,15 +105,15 @@ export function SalesDiagnosticsWorkspace({ distributors }: Props) {
             {result.detection.matches.length > 1 ? (
               <div className="mt-2 flex flex-wrap gap-2 text-xs">
                 {result.detection.matches.slice(0, 5).map((m) => (
-                  <span className="rounded-full border border-[#E2E8F0] bg-[#FCFDFE] px-3 py-1 text-[#0F172A]" key={m.distributorCode}>{m.distributorCode}: {m.matchedRequired}/{m.requiredTotal} req</span>
+                  <span className="rounded-full border border-phx-line bg-[#FCFDFE] px-3 py-1 text-phx-ink" key={m.distributorCode}>{m.distributorCode}: {m.matchedRequired}/{m.requiredTotal} req</span>
                 ))}
               </div>
             ) : null}
           </div>
 
           {result.profileSummary ? (
-            <div className="rounded-xl border border-[#E2E8F0] p-3 text-xs text-[#64748B]">
-              <span className="font-bold text-[#0F172A]">Profile used:</span> product [{result.profileSummary.productColumns.join(", ") || "—"}] · qty [{result.profileSummary.quantityColumns.join(", ") || "—"}] · date [{result.profileSummary.dateColumns.join(", ") || "—"}] · customer [{result.profileSummary.customerCodeColumns.join(", ") || "—"}] · value {result.profileSummary.valueSource}
+            <div className="rounded-xl border border-phx-line p-3 text-xs text-phx-ink-soft">
+              <span className="font-bold text-phx-ink">Profile used:</span> product [{result.profileSummary.productColumns.join(", ") || "—"}] · qty [{result.profileSummary.quantityColumns.join(", ") || "—"}] · date [{result.profileSummary.dateColumns.join(", ") || "—"}] · customer [{result.profileSummary.customerCodeColumns.join(", ") || "—"}] · value {result.profileSummary.valueSource}
             </div>
           ) : null}
 
@@ -125,23 +125,23 @@ export function SalesDiagnosticsWorkspace({ distributors }: Props) {
             <div className="space-y-2">
               <div className="flex flex-wrap gap-2 text-xs font-bold">
                 <span className="rounded-full border border-[#BBF7D0] bg-[#F0FDF4] px-3 py-1 text-[#166534]">{analyze.reconciliation.rowsRead ? Math.round((analyze.reconciliation.rowsCoded / analyze.reconciliation.rowsRead) * 100) : 0}% recognized</span>
-                <span className="rounded-full border border-[#E2E8F0] bg-[#FCFDFE] px-3 py-1 text-[#0F172A]">{analyze.reconciliation.rowsRead} rows</span>
-                <span className="rounded-full border border-[#E2E8F0] bg-[#FCFDFE] px-3 py-1 text-[#0F172A]">qty {analyze.reconciliation.totalQty.toLocaleString()}</span>
-                <span className="rounded-full border border-[#E2E8F0] bg-[#FCFDFE] px-3 py-1 text-[#0F172A]">value {Math.round(analyze.reconciliation.totalValue).toLocaleString()}</span>
+                <span className="rounded-full border border-phx-line bg-[#FCFDFE] px-3 py-1 text-phx-ink">{analyze.reconciliation.rowsRead} rows</span>
+                <span className="rounded-full border border-phx-line bg-[#FCFDFE] px-3 py-1 text-phx-ink">qty {analyze.reconciliation.totalQty.toLocaleString()}</span>
+                <span className="rounded-full border border-phx-line bg-[#FCFDFE] px-3 py-1 text-phx-ink">value {Math.round(analyze.reconciliation.totalValue).toLocaleString()}</span>
                 {unknowns > 0 ? <span className="rounded-full border border-rose-200 bg-rose-50 px-3 py-1 text-rose-700">{unknowns} unmapped</span> : null}
               </div>
               {unknowns > 0 ? (
-                <AdminCallout tone="warning"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" /><span>{unknowns} unmapped item(s) would block import. Fix them in <Link className="font-semibold text-[#C2410C] underline" href="/sales/mapping-database">Mapping Database</Link>.</span></AdminCallout>
+                <AdminCallout tone="warning"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" /><span>{unknowns} unmapped item(s) would block import. Fix them in <Link className="font-semibold text-phx-accent-press underline" href="/sales/mapping-database">Mapping Database</Link>.</span></AdminCallout>
               ) : (
                 <AdminCallout tone="success"><CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" /><span>Fully recognized — this file would import cleanly{analyze.needsPeriod ? " (pick a period — no date column)" : ""}.</span></AdminCallout>
               )}
               {analyze.validation ? (
-                <div className="rounded-xl border border-[#E2E8F0] p-3">
+                <div className="rounded-xl border border-phx-line p-3">
                   <div className="flex items-center gap-2 text-xs font-bold">
-                    <span className="uppercase tracking-[0.12em] text-[#64748B]">Strict checks</span>
+                    <span className="uppercase tracking-[0.12em] text-phx-ink-soft">Strict checks</span>
                     <span className="ml-auto flex gap-2">
-                      <span className={cn("rounded-full border px-2 py-0.5", analyze.validation.errorCount > 0 ? "border-rose-200 bg-rose-50 text-rose-700" : "border-[#E2E8F0] bg-[#FCFDFE] text-[#64748B]")}>{analyze.validation.errorCount} error</span>
-                      <span className={cn("rounded-full border px-2 py-0.5", analyze.validation.warningCount > 0 ? "border-amber-200 bg-amber-50 text-amber-800" : "border-[#E2E8F0] bg-[#FCFDFE] text-[#64748B]")}>{analyze.validation.warningCount} warning</span>
+                      <span className={cn("rounded-full border px-2 py-0.5", analyze.validation.errorCount > 0 ? "border-rose-200 bg-rose-50 text-rose-700" : "border-phx-line bg-[#FCFDFE] text-phx-ink-soft")}>{analyze.validation.errorCount} error</span>
+                      <span className={cn("rounded-full border px-2 py-0.5", analyze.validation.warningCount > 0 ? "border-amber-200 bg-amber-50 text-amber-800" : "border-phx-line bg-[#FCFDFE] text-phx-ink-soft")}>{analyze.validation.warningCount} warning</span>
                     </span>
                   </div>
                   {analyze.validation.findings.filter((f) => f.severity !== "info").length > 0 ? (
@@ -149,7 +149,7 @@ export function SalesDiagnosticsWorkspace({ distributors }: Props) {
                       {analyze.validation.findings.filter((f) => f.severity !== "info").map((f) => (
                         <li className="text-xs" key={f.code}>
                           <span className={cn("font-bold", f.severity === "error" ? "text-rose-700" : "text-amber-800")}>{f.title}</span>
-                          <span className="text-[#64748B]"> — {f.detail}</span>
+                          <span className="text-phx-ink-soft"> — {f.detail}</span>
                         </li>
                       ))}
                     </ul>

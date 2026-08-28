@@ -17,10 +17,10 @@ export function AppShellLoading({
   // those constants because Tailwind only emits the arbitrary values it can literally see.
   const skeletonAsideClassName = isAdminMode
     ? "w-[292px] border-[#1a1a1a] bg-[#000000]"
-    : "w-[324px] border-[#E2E8F0] bg-white";
+    : "w-[324px] border-phx-line bg-white";
 
   return (
-    <div className={`min-h-screen text-[#0F172A] ${isAdminMode ? `admin-shell ${adminShellBackgroundClassName}` : "bg-[#F8FAFC]"}`}>
+    <div className={`min-h-screen text-phx-ink ${isAdminMode ? `admin-shell ${adminShellBackgroundClassName}` : "bg-phx-paper"}`}>
       <div className="flex min-h-screen">
         <aside
           aria-label="Loading navigation"

@@ -128,7 +128,7 @@ function AmPmBar({ am, pm }: { am: number; pm: number }) {
   const amPct = total > 0 ? (am / total) * 100 : 0;
   return (
     <div className="flex h-2 w-full overflow-hidden bg-slate-100" title={`AM ${am} · PM ${pm}`}>
-      <div className="h-2 bg-[#F97316]" style={{ width: `${amPct}%` }} />
+      <div className="h-2 bg-phx-accent" style={{ width: `${amPct}%` }} />
       <div className="h-2 bg-slate-400" style={{ width: `${100 - amPct}%` }} />
     </div>
   );
@@ -193,7 +193,7 @@ function RoleFilterBar({
           key={option}
           type="button"
           onClick={() => onChange(option)}
-          className={["px-3.5 py-2 text-xs font-black uppercase", value === option ? "bg-[#F97316] text-white" : "bg-white text-slate-500 hover:bg-slate-50"].join(" ")}
+          className={["px-3.5 py-2 text-xs font-black uppercase", value === option ? "bg-phx-accent text-white" : "bg-white text-slate-500 hover:bg-slate-50"].join(" ")}
         >
           {option === "ALL" ? "All Roles" : option}
         </button>
@@ -220,7 +220,7 @@ function SortHeader({
   const active = sortKey === field;
   return (
     <th className={`px-3 py-3 ${align === "right" ? "text-right" : "text-left"}`}>
-      <button type="button" onClick={() => onSort(field)} className={`inline-flex items-center gap-1 ${active ? "text-[#F97316]" : ""}`}>
+      <button type="button" onClick={() => onSort(field)} className={`inline-flex items-center gap-1 ${active ? "text-phx-accent" : ""}`}>
         {label}
         {active ? (sortDir === "asc" ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />) : null}
       </button>
@@ -541,7 +541,7 @@ function RoleRollupCard({ rollup, active, onClick }: { active: boolean; onClick:
       onClick={onClick}
       className={[
         "rounded border bg-white p-4 text-left shadow-sm transition-colors hover:bg-slate-50",
-        active ? "border-l-2 border-l-[#F97316] border-slate-200 bg-orange-50" : "border-slate-200",
+        active ? "border-l-2 border-l-phx-accent border-slate-200 bg-orange-50" : "border-slate-200",
       ].join(" ")}
     >
       <div className="flex items-center justify-between gap-2">
@@ -598,7 +598,7 @@ function LeaderboardCard({
     >
       <div className="flex items-center gap-2">
         <div className="relative h-2 flex-1 bg-slate-100">
-          <div className="absolute inset-y-0 left-0 bg-[#F97316]" style={{ width: `${maxDvs ? (row.totalDvs / maxDvs) * 100 : 0}%` }} />
+          <div className="absolute inset-y-0 left-0 bg-phx-accent" style={{ width: `${maxDvs ? (row.totalDvs / maxDvs) * 100 : 0}%` }} />
         </div>
         <span className="whitespace-nowrap text-sm font-black tabular-nums text-slate-950">{row.totalDvs} DVs</span>
       </div>
@@ -660,7 +660,7 @@ function MrBreakdownCard({
     >
       <div className="flex flex-wrap items-center gap-2">
         <div className="relative h-2 flex-1 bg-slate-100">
-          <div className="absolute inset-y-0 left-0 bg-[#F97316]" style={{ width: `${maxVisits ? (row.visits / maxVisits) * 100 : 0}%` }} />
+          <div className="absolute inset-y-0 left-0 bg-phx-accent" style={{ width: `${maxVisits ? (row.visits / maxVisits) * 100 : 0}%` }} />
         </div>
         <span className="whitespace-nowrap text-sm font-black tabular-nums text-slate-950">{row.visits} visits</span>
         {overFocused ? (
@@ -990,7 +990,7 @@ export function DoubleVisitAnalyticsWorkspace({
             onClick={() => setActiveTab(id)}
             className={[
               "flex items-center gap-2 whitespace-nowrap px-5 py-3 text-sm font-bold transition-colors",
-              activeTab === id ? "border-b-2 border-[#F97316] bg-orange-50 text-slate-950" : "text-slate-500 hover:bg-slate-50 hover:text-slate-700",
+              activeTab === id ? "border-b-2 border-phx-accent bg-orange-50 text-slate-950" : "text-slate-500 hover:bg-slate-50 hover:text-slate-700",
             ].join(" ")}
           >
             <Icon className="h-4 w-4" /> {label}
@@ -1007,7 +1007,7 @@ export function DoubleVisitAnalyticsWorkspace({
                 key={p}
                 type="button"
                 onClick={() => setPeriodFilter(p)}
-                className={["px-4 py-2 text-xs font-black uppercase", periodFilter === p ? "bg-[#F97316] text-white" : "bg-white text-slate-500 hover:bg-slate-50"].join(" ")}
+                className={["px-4 py-2 text-xs font-black uppercase", periodFilter === p ? "bg-phx-accent text-white" : "bg-white text-slate-500 hover:bg-slate-50"].join(" ")}
               >
                 {p === "ALL" ? "All Periods" : p}
               </button>
@@ -1083,7 +1083,7 @@ export function DoubleVisitAnalyticsWorkspace({
             {executiveSummary && executiveSummary.insights.length > 0 && (
               <Card className="rounded border border-slate-200 bg-white p-0 shadow-sm">
                 <div className="border-b border-slate-100 px-5 py-4">
-                  <h2 className="flex items-center gap-2 text-lg font-black text-slate-950"><Sparkles className="h-5 w-5 text-[#F97316]" /> What the report found</h2>
+                  <h2 className="flex items-center gap-2 text-lg font-black text-slate-950"><Sparkles className="h-5 w-5 text-phx-accent" /> What the report found</h2>
                   <p className="text-sm text-slate-500">Auto-generated findings from this snapshot.</p>
                 </div>
                 <div className="divide-y divide-slate-100">
@@ -1179,7 +1179,7 @@ export function DoubleVisitAnalyticsWorkspace({
                           <td className="px-3 py-2.5">
                             <div className="flex items-center gap-2">
                               <div className="relative h-2 w-16 bg-slate-100">
-                                <div className="absolute inset-y-0 left-0 bg-[#F97316]" style={{ width: `${leaderboardMaxDvs ? (row.totalDvs / leaderboardMaxDvs) * 100 : 0}%` }} />
+                                <div className="absolute inset-y-0 left-0 bg-phx-accent" style={{ width: `${leaderboardMaxDvs ? (row.totalDvs / leaderboardMaxDvs) * 100 : 0}%` }} />
                               </div>
                               <span className="text-sm font-black tabular-nums text-slate-950">{row.totalDvs}</span>
                             </div>
@@ -1221,7 +1221,7 @@ export function DoubleVisitAnalyticsWorkspace({
                     <div key={row.label} className="grid grid-cols-[1fr_100px_80px] items-center gap-3 rounded border border-slate-100 px-3 py-2">
                       <span className="truncate text-sm font-semibold text-slate-800">{row.label}</span>
                       <div className="relative h-2 rounded bg-slate-100">
-                        <div className="absolute left-0 top-0 h-2 rounded bg-[#F97316]" style={{ width: `${Math.min(100, row.coveragePercent ?? 0)}%` }} />
+                        <div className="absolute left-0 top-0 h-2 rounded bg-phx-accent" style={{ width: `${Math.min(100, row.coveragePercent ?? 0)}%` }} />
                       </div>
                       <span className="text-right text-sm font-bold text-slate-700">{row.coveragePercent ?? 0}%</span>
                     </div>
@@ -1237,7 +1237,7 @@ export function DoubleVisitAnalyticsWorkspace({
                     <div key={row.label} className="grid grid-cols-[1fr_100px_80px] items-center gap-3 rounded border border-slate-100 px-3 py-2">
                       <span className="truncate text-sm font-semibold text-slate-800">{row.label}</span>
                       <div className="relative h-2 rounded bg-slate-100">
-                        <div className="absolute left-0 top-0 h-2 rounded bg-[#F97316]" style={{ width: `${Math.min(100, row.coveragePercent ?? 0)}%` }} />
+                        <div className="absolute left-0 top-0 h-2 rounded bg-phx-accent" style={{ width: `${Math.min(100, row.coveragePercent ?? 0)}%` }} />
                       </div>
                       <span className="text-right text-sm font-bold text-slate-700">{row.coveragePercent ?? 0}%</span>
                     </div>
@@ -1272,7 +1272,7 @@ export function DoubleVisitAnalyticsWorkspace({
                   onClick={() => setSelectedManagerKey(selectedManagerKey === mKey ? "" : mKey)}
                   className={[
                     "w-full border-t border-slate-100 px-4 py-3 text-left transition-colors hover:bg-slate-50",
-                    selectedManagerKey === mKey ? "bg-orange-50 border-l-2 border-l-[#F97316]" : "",
+                    selectedManagerKey === mKey ? "bg-orange-50 border-l-2 border-l-phx-accent" : "",
                   ].join(" ")}
                 >
                   <div className="flex items-center justify-between gap-2">
@@ -1403,7 +1403,7 @@ export function DoubleVisitAnalyticsWorkspace({
                                 <td className="px-3 py-2.5">
                                   <div className="flex items-center gap-2">
                                     <div className="relative h-2 w-20 bg-slate-100">
-                                      <div className="absolute inset-y-0 left-0 bg-[#F97316]" style={{ width: `${managerProfile.maxVisits ? (row.visits / managerProfile.maxVisits) * 100 : 0}%` }} />
+                                      <div className="absolute inset-y-0 left-0 bg-phx-accent" style={{ width: `${managerProfile.maxVisits ? (row.visits / managerProfile.maxVisits) * 100 : 0}%` }} />
                                     </div>
                                     <span className="text-sm font-black tabular-nums text-slate-950">{row.visits}</span>
                                     {managerProfile.overFocusedKeys.has(row.key) && (

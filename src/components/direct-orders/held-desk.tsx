@@ -142,7 +142,7 @@ export function HeldDesk({ rows }: Props) {
 
   if (rows.length === 0) {
     return (
-      <section className="border border-[#e4e9ec] bg-white px-4 py-8 text-center">
+      <section className="border border-phx-line bg-white px-4 py-8 text-center">
         <p className="text-sm font-bold text-slate-600">No held direct orders.</p>
         <p className="mt-1 text-[12px] text-slate-400">
           Every submitted request is on a pharmacy the master database recognises.
@@ -152,8 +152,8 @@ export function HeldDesk({ rows }: Props) {
   }
 
   return (
-    <section className="border border-[#e4e9ec] bg-white">
-      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-[#e4e9ec] bg-slate-900 px-4 py-2.5">
+    <section className="border border-phx-line bg-white">
+      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-phx-line bg-slate-900 px-4 py-2.5">
         <h3 className="text-[11px] font-black uppercase tracking-[0.14em] text-white">
           Held requests — {rows.length}
         </h3>
@@ -174,7 +174,7 @@ export function HeldDesk({ rows }: Props) {
       <div className="hidden overflow-x-auto md:block">
         <table className="w-full text-left text-sm">
           <thead>
-            <tr className="border-b border-[#e4e9ec] text-[11px] font-black uppercase tracking-wider text-slate-500">
+            <tr className="border-b border-phx-line text-[11px] font-black uppercase tracking-wider text-slate-500">
               <th className="px-3 py-2">
                 <input type="checkbox" checked={allSelected} onChange={toggleAll} aria-label="Select all held requests" />
               </th>
@@ -226,7 +226,7 @@ export function HeldDesk({ rows }: Props) {
       {/* Mobile: cards, never a squeezed table. */}
       <div className="space-y-2 p-3 md:hidden">
         {rows.map((row) => (
-          <label key={row.id} className="block border border-[#e4e9ec] p-3">
+          <label key={row.id} className="block border border-phx-line p-3">
             <div className="flex items-start justify-between gap-2">
               <div>
                 <p className="text-sm font-black text-slate-900">{row.requesterName}</p>
@@ -258,7 +258,7 @@ export function HeldDesk({ rows }: Props) {
 
           Cards on both breakpoints, deliberately: this is a decision surface, not a data table,
           and the reason box has to sit beside the button that requires it. */}
-      <div className="space-y-3 border-t border-[#e4e9ec] p-3">
+      <div className="space-y-3 border-t border-phx-line p-3">
         <p className="text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">
           Decide — {pharmacies.length} pharmac{pharmacies.length === 1 ? "y" : "ies"}
         </p>
@@ -267,7 +267,7 @@ export function HeldDesk({ rows }: Props) {
           const reason = reasons[head.pharmacyId] ?? "";
           const orderCount = pharmacyRows.length;
           return (
-            <article key={head.pharmacyId} className="border border-[#e4e9ec] p-3">
+            <article key={head.pharmacyId} className="border border-phx-line p-3">
               <div className="flex flex-wrap items-start justify-between gap-2">
                 <div className="min-w-0">
                   <p className="text-sm font-black text-slate-900" dir="auto">

@@ -99,7 +99,7 @@ export function ClosingCorrectionsView({ initialData, initialError }: Props) {
           <label className="flex flex-col gap-1 sm:w-44">
             <span className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">Month</span>
             <SearchableSelect
-              className="h-11 w-full rounded-2xl border border-[#D8E0EA] bg-[#F8FAFC] px-3.5 text-sm font-semibold text-[#0F172A] outline-none transition focus:border-[#FDBA74] focus:ring-4 focus:ring-[#F97316]/10 disabled:opacity-60"
+              className="h-11 w-full rounded-2xl border border-phx-line bg-phx-paper px-3.5 text-sm font-semibold text-phx-ink outline-none transition focus:border-phx-accent-line focus:ring-4 focus:ring-phx-accent/10 disabled:opacity-60"
               disabled={isPending || availablePeriods.length === 0}
               onChange={(event) => switchPeriod(event.target.value)}
               value={period}

@@ -47,7 +47,7 @@ export function CoachingReportSubmitAction({ reportId }: { reportId: string }) {
   return (
     <div className="flex flex-col items-end gap-1.5">
       <button
-        className="inline-flex items-center justify-center gap-2 rounded-full bg-[#F97316] px-5 py-2.5 text-sm font-black text-white shadow-[0_18px_42px_rgba(249,115,22,0.22)] transition hover:bg-[#EA580C] disabled:cursor-not-allowed disabled:opacity-60"
+        className="inline-flex items-center justify-center gap-2 rounded-full bg-phx-accent px-5 py-2.5 text-sm font-black text-white shadow-[0_18px_42px_rgba(249,115,22,0.22)] transition hover:bg-phx-accent-hover disabled:cursor-not-allowed disabled:opacity-60"
         disabled={isSubmitting}
         onClick={() => void handleSubmit()}
         type="button"

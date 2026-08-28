@@ -78,7 +78,7 @@ export function OffersManager({
   const draftCount = offers.length - sentCount;
 
   return (
-    <div className="relative overflow-hidden rounded-[34px] border border-[#D8E0EA] bg-[#F8FAFC] p-4 shadow-[0_24px_70px_rgba(15,23,42,0.1)] sm:p-6">
+    <div className="relative overflow-hidden rounded-[34px] border border-phx-line bg-phx-paper p-4 shadow-[0_24px_70px_rgba(15,23,42,0.1)] sm:p-6">
       <div className="flex flex-col gap-5">
         <AdminPageHero
           badges={
@@ -125,7 +125,7 @@ export function OffersManager({
 
         <div
           aria-label="Job offer sections"
-          className="flex flex-wrap gap-1 rounded-2xl border border-[#D8E0EA] bg-white/95 p-1 shadow-sm"
+          className="flex flex-wrap gap-1 rounded-2xl border border-phx-line bg-white/95 p-1 shadow-sm"
           role="tablist"
         >
           {TABS.map((entry) => {
@@ -137,7 +137,7 @@ export function OffersManager({
                   "inline-flex items-center gap-2 whitespace-nowrap rounded-xl px-4 py-2.5 text-sm font-bold transition-all",
                   active
                     ? "bg-gradient-to-r from-orange-500 to-amber-400 text-white shadow-[0_8px_20px_rgba(249,115,22,0.28)]"
-                    : "text-[#64748B] hover:bg-slate-100 hover:text-slate-900",
+                    : "text-phx-ink-soft hover:bg-slate-100 hover:text-slate-900",
                 )}
                 key={entry.value}
                 onClick={() => setTab(entry.value)}

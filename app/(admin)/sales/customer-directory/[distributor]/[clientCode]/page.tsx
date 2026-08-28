@@ -41,7 +41,7 @@ export default async function CustomerDetailPage({ params }: PageProps) {
 
   const backLink = (
     <Link
-      className="inline-flex items-center gap-2 border border-[#D8E0EA] bg-white px-3 py-2 text-sm font-bold text-[#0F172A] transition hover:border-[#FDBA74] hover:text-[#F97316]"
+      className="inline-flex items-center gap-2 border border-phx-line bg-white px-3 py-2 text-sm font-bold text-phx-ink transition hover:border-phx-accent-line hover:text-phx-accent"
       href="/sales/customer-directory"
     >
       <ArrowLeft className="h-4 w-4" />
@@ -95,10 +95,10 @@ export default async function CustomerDetailPage({ params }: PageProps) {
                 <th className={`${headerCell} text-right`}>Value</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-[#E2E8F0]">
+            <tbody className="divide-y divide-phx-line">
               {detail.productTotals.map((product) => (
                 <tr className="text-slate-600" key={product.productCode}>
-                  <td className="px-3 py-2.5 font-semibold text-[#0F172A]">{product.productName} <span className="text-xs text-slate-400">{product.productCode}</span></td>
+                  <td className="px-3 py-2.5 font-semibold text-phx-ink">{product.productName} <span className="text-xs text-slate-400">{product.productCode}</span></td>
                   <td className="px-3 py-2.5">{product.officialLine}</td>
                   <td className="px-3 py-2.5 text-right tabular-nums">{formatNumber(product.totalUnits)}</td>
                   <td className="px-3 py-2.5 text-right tabular-nums">{formatCurrency(product.totalValue)}</td>
@@ -127,11 +127,11 @@ export default async function CustomerDetailPage({ params }: PageProps) {
                 <th className={`${headerCell} text-right`}>Value</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-[#E2E8F0]">
+            <tbody className="divide-y divide-phx-line">
               {detail.lines.map((line, index) => (
                 <tr className="text-slate-600" key={`${line.invoicePeriod}:${line.productCode}:${index}`}>
                   <td className="whitespace-nowrap px-3 py-2.5">{line.invoicePeriod ?? "—"}</td>
-                  <td className="px-3 py-2.5 font-semibold text-[#0F172A]">{line.productName} <span className="text-xs text-slate-400">{line.productCode}</span></td>
+                  <td className="px-3 py-2.5 font-semibold text-phx-ink">{line.productName} <span className="text-xs text-slate-400">{line.productCode}</span></td>
                   <td className="px-3 py-2.5">{line.officialLine}</td>
                   <td className="whitespace-nowrap px-3 py-2.5">{line.brickId}</td>
                   <td className="px-3 py-2.5 text-right tabular-nums">{formatNumber(line.qty)}</td>

@@ -15,7 +15,7 @@ export function AnalyticsSection({
 }) {
   return (
     <div className="border border-border">
-      <div className="bg-[#0F172A] text-white px-4 py-2.5 flex items-center justify-between">
+      <div className="bg-phx-ink text-white px-4 py-2.5 flex items-center justify-between">
         <span className="text-xs font-bold uppercase tracking-widest">{title}</span>
         {count != null && <span className="text-xs text-white/40">{count.toLocaleString("en-EG")} rows</span>}
       </div>

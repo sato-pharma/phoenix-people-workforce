@@ -91,10 +91,10 @@ export function PayrollWorkflowPanel({
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <div className="flex flex-wrap items-center gap-2">
-            <h2 className="text-base font-bold text-[#0F172A]">Payroll Payment Stage</h2>
+            <h2 className="text-base font-bold text-phx-ink">Payroll Payment Stage</h2>
             {statusBadge(batch.status)}
           </div>
-          <p className="mt-1 text-sm text-[#64748B]">
+          <p className="mt-1 text-sm text-phx-ink-soft">
             {payrollPeriodLabel(batch.month, batch.year)} · Part 1 {batch.part1PaidAt ? `paid ${formatDateTimeValue(batch.part1PaidAt)}` : "not paid yet"}
           </p>
         </div>
@@ -104,7 +104,7 @@ export function PayrollWorkflowPanel({
               className={cn(
                 "h-9 rounded-xl px-3 py-2 text-xs",
                 item.tone === "danger" && "border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100",
-                item.tone === "primary" && "bg-[#F97316] text-white hover:bg-[#EA580C]",
+                item.tone === "primary" && "bg-phx-accent text-white hover:bg-phx-accent-hover",
               )}
               disabled={Boolean(busyAction)}
               key={item.action}
@@ -133,13 +133,13 @@ export function PayrollWorkflowPanel({
             <div
               className={cn(
                 "rounded-2xl border px-3 py-2 text-xs font-semibold",
-                complete ? "border-orange-200 bg-orange-50 text-orange-800" : "border-[#E2E8F0] bg-[#F8FAFC] text-[#64748B]",
+                complete ? "border-orange-200 bg-orange-50 text-orange-800" : "border-phx-line bg-phx-paper text-phx-ink-soft",
                 current && "ring-2 ring-orange-300",
               )}
               key={stage}
             >
               <div className="flex items-center gap-2">
-                {complete ? <CheckCircle className="h-3.5 w-3.5" /> : <span className="h-2 w-2 rounded-full bg-[#CBD5E1]" />}
+                {complete ? <CheckCircle className="h-3.5 w-3.5" /> : <span className="h-2 w-2 rounded-full bg-phx-line-strong" />}
                 <span>{payrollStageLabel(stage)}</span>
               </div>
             </div>
@@ -157,7 +157,7 @@ export function PayrollGovernanceAlerts({ flags }: { flags: SalaryFlag[] }) {
     <Card className={`${panelClassName} p-5`}>
       <div className="mb-3 flex items-center gap-2">
         <AlertTriangle className="h-4 w-4 text-warning" />
-        <h2 className="text-base font-bold text-[#0F172A]">
+        <h2 className="text-base font-bold text-phx-ink">
           Payroll Alerts ({flags.length})
         </h2>
       </div>
@@ -209,9 +209,9 @@ export function PayrollResignationCandidatesBanner({
   const candidateNoun = total === 1 ? "a resignation candidate" : "resignation candidates";
 
   return (
-    <Card className={`${panelClassName} border-[#FDBA74] bg-[#FFF7ED] p-5`}>
+    <Card className={`${panelClassName} border-phx-accent-line bg-phx-accent-soft p-5`}>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#FFEDD5] text-[#C2410C]">
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#FFEDD5] text-phx-accent-press">
           <AlertTriangle className="h-5 w-5" aria-hidden="true" />
         </div>
         <div className="min-w-0 flex-1">
@@ -241,7 +241,7 @@ export function PayrollResignationCandidatesBanner({
             </div>
           )}
           <Link
-            className="mt-3 inline-flex items-center gap-1 text-sm font-semibold text-[#C2410C] underline underline-offset-2 hover:text-[#9A3412]"
+            className="mt-3 inline-flex items-center gap-1 text-sm font-semibold text-phx-accent-press underline underline-offset-2 hover:text-[#9A3412]"
             href="/resignations"
           >
             View in resignation report

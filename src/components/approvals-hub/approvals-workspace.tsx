@@ -85,7 +85,7 @@ function Card({ card, readOnly, slaModule }: { card: PendingCard; readOnly?: boo
   return (
     <Link
       href={card.href}
-      className="flex items-center justify-between gap-3 border border-[#e4e9ec] bg-white px-4 py-3 transition-colors hover:border-orange-400 hover:bg-orange-50/40"
+      className="flex items-center justify-between gap-3 border border-phx-line bg-white px-4 py-3 transition-colors hover:border-orange-400 hover:bg-orange-50/40"
     >
       <div className="min-w-0">
         <p className="truncate text-sm font-bold text-slate-900">{card.employeeName}</p>
@@ -158,7 +158,7 @@ export function ApprovalsWorkspace({
 
   return (
     <div className="space-y-5">
-      <div className="flex gap-1 overflow-x-auto border-b border-[#e4e9ec]">
+      <div className="flex gap-1 overflow-x-auto border-b border-phx-line">
         {tabs.map(({ key, label, count, icon: Icon }) => (
           <button
             key={key}
@@ -186,7 +186,7 @@ export function ApprovalsWorkspace({
       {tab === "pending" ? (
         <div className="space-y-6">
           {sections.every((s) => s.cards.length === 0) ? (
-            <p className="border border-[#e4e9ec] bg-white px-4 py-8 text-center text-sm text-slate-500">
+            <p className="border border-phx-line bg-white px-4 py-8 text-center text-sm text-slate-500">
               Nothing waiting on you right now.
             </p>
           ) : (

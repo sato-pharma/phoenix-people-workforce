@@ -31,7 +31,7 @@ export function PlanRequestDetail({ detail, backHref }: Props) {
         <Link href={backHref} className="inline-flex items-center gap-1.5 text-sm font-bold text-orange-600 hover:text-orange-700">
           <ArrowLeft className="h-4 w-4" /> Back to list
         </Link>
-        <p className="border border-[#e4e9ec] bg-white px-4 py-6 text-sm text-slate-600">
+        <p className="border border-phx-line bg-white px-4 py-6 text-sm text-slate-600">
           This plan could not be found, or you do not have access to it.
         </p>
       </div>
@@ -46,7 +46,7 @@ export function PlanRequestDetail({ detail, backHref }: Props) {
         <ArrowLeft className="h-4 w-4" /> Back to list
       </Link>
 
-      <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-[#e4e9ec] pb-3">
+      <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-phx-line pb-3">
         <div>
           <h2 className="text-lg font-black text-slate-900">{detail.employeeName}</h2>
           <p className="text-sm text-slate-600">
@@ -87,8 +87,8 @@ export function PlanRequestDetail({ detail, backHref }: Props) {
 
       <div className="grid gap-4 lg:grid-cols-3">
         <div className="space-y-4">
-          <section className="border border-[#e4e9ec] bg-white">
-            <header className="border-b border-[#e4e9ec] bg-slate-900 px-4 py-2.5">
+          <section className="border border-phx-line bg-white">
+            <header className="border-b border-phx-line bg-slate-900 px-4 py-2.5">
               <h3 className="text-[11px] font-black uppercase tracking-[0.14em] text-white">Plan details</h3>
             </header>
             <dl className="px-4 py-2">
@@ -130,8 +130,8 @@ export function PlanRequestDetail({ detail, backHref }: Props) {
           ) : null}
         </div>
 
-        <section className="border border-[#e4e9ec] bg-white lg:col-span-2">
-          <header className="border-b border-[#e4e9ec] bg-slate-900 px-4 py-2.5">
+        <section className="border border-phx-line bg-white lg:col-span-2">
+          <header className="border-b border-phx-line bg-slate-900 px-4 py-2.5">
             <h3 className="text-[11px] font-black uppercase tracking-[0.14em] text-white">Planned activities</h3>
           </header>
           <div className="px-4 py-4">

@@ -22,14 +22,14 @@ import { WorkflowDraftEditor } from "./workflow-draft-editor";
 
 const RISK_BADGE: Record<WorkflowControlRisk, string> = {
   Low: "bg-[#ECFDF5] text-[#047857]",
-  Medium: "bg-[#FFF7ED] text-[#C2410C]",
+  Medium: "bg-phx-accent-soft text-phx-accent-press",
   High: "bg-[#FEF2F2] text-[#B91C1C]",
 };
 
 const STATUS_BADGE: Record<WorkflowControlStatus, string> = {
   Active: "bg-[#ECFDF5] text-[#047857]",
-  Draft: "bg-[#FFF7ED] text-[#C2410C]",
-  "Read-only map": "bg-[#F1F5F9] text-[#475569]",
+  Draft: "bg-phx-accent-soft text-phx-accent-press",
+  "Read-only map": "bg-phx-paper-2 text-phx-ink-2",
   "Partially implemented": "bg-[#FFFBEB] text-[#B45309]",
   "Not implemented": "bg-[#FEF2F2] text-[#B91C1C]",
 };
@@ -68,15 +68,15 @@ export function WorkflowControlCenter({
   return (
     <div className="mx-auto w-full max-w-6xl px-4 py-6">
       <div className="flex flex-col gap-1">
-        <h1 className="text-xl font-black text-[#0F172A]">Workflow Control Center</h1>
-        <p className="text-sm text-[#64748B]">
+        <h1 className="text-xl font-black text-phx-ink">Workflow Control Center</h1>
+        <p className="text-sm text-phx-ink-soft">
           A business-friendly map and read-only simulator for every Phoenix workflow domain.
         </p>
       </div>
 
       {/* Governance warning */}
-      <div className="mt-4 flex items-start gap-2 rounded-xl border border-[#FED7AA] bg-[#FFF7ED] px-4 py-3">
-        <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-[#C2410C]" />
+      <div className="mt-4 flex items-start gap-2 rounded-xl border border-[#FED7AA] bg-phx-accent-soft px-4 py-3">
+        <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-phx-accent-press" />
         <p className="text-[13px] leading-5 text-[#9A3412]">
           <span className="font-black">Phase 1 is a read-only workflow map and simulator.</span> It does not change
           production workflow behavior, approval logic, notifications, or data.
@@ -84,11 +84,11 @@ export function WorkflowControlCenter({
       </div>
 
       {/* Tabs */}
-      <div className="mt-5 flex items-center gap-2 border-b border-[#E2E8F0]">
+      <div className="mt-5 flex items-center gap-2 border-b border-phx-line">
         <button
           className={cn(
             "inline-flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm font-bold transition",
-            tab === "center" ? "border-[#F97316] text-[#0F172A]" : "border-transparent text-[#64748B] hover:text-[#0F172A]",
+            tab === "center" ? "border-phx-accent text-phx-ink" : "border-transparent text-phx-ink-soft hover:text-phx-ink",
           )}
           onClick={() => setTab("center")}
           type="button"
@@ -98,7 +98,7 @@ export function WorkflowControlCenter({
         <button
           className={cn(
             "inline-flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm font-bold transition",
-            tab === "registry" ? "border-[#F97316] text-[#0F172A]" : "border-transparent text-[#64748B] hover:text-[#0F172A]",
+            tab === "registry" ? "border-phx-accent text-phx-ink" : "border-transparent text-phx-ink-soft hover:text-phx-ink",
           )}
           onClick={() => setTab("registry")}
           type="button"
@@ -120,18 +120,18 @@ export function WorkflowControlCenter({
                   key={domain.key}
                   className={cn(
                     "rounded-xl border p-4 text-left transition",
-                    active ? "border-[#F97316] bg-[#FFF7ED]" : "border-[#E2E8F0] bg-white hover:border-[#CBD5E1]",
+                    active ? "border-phx-accent bg-phx-accent-soft" : "border-phx-line bg-white hover:border-phx-line-strong",
                   )}
                   onClick={() => selectDomain(domain)}
                   type="button"
                 >
                   <div className="flex items-start justify-between gap-2">
-                    <p className="text-sm font-black text-[#0F172A]">{domain.name}</p>
+                    <p className="text-sm font-black text-phx-ink">{domain.name}</p>
                     <span className={cn("shrink-0 rounded-full px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.08em]", RISK_BADGE[domain.riskLevel])}>
                       {domain.riskLevel}
                     </span>
                   </div>
-                  <p className="mt-1 text-[12px] leading-5 text-[#64748B]">{domain.summary}</p>
+                  <p className="mt-1 text-[12px] leading-5 text-phx-ink-soft">{domain.summary}</p>
                   <div className="mt-2 flex flex-wrap items-center gap-1.5">
                     <span className={cn("rounded px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.08em]", STATUS_BADGE[domain.status])}>
                       {domain.status}
@@ -146,16 +146,16 @@ export function WorkflowControlCenter({
                         Beta
                       </span>
                     ) : null}
-                    <span className="rounded bg-[#F1F5F9] px-2 py-0.5 text-[10px] font-bold text-[#475569]">
+                    <span className="rounded bg-phx-paper-2 px-2 py-0.5 text-[10px] font-bold text-phx-ink-2">
                       {domain.subflows.length} subflows
                     </span>
-                    <span className="rounded bg-[#F1F5F9] px-2 py-0.5 text-[10px] font-bold text-[#475569]">
+                    <span className="rounded bg-phx-paper-2 px-2 py-0.5 text-[10px] font-bold text-phx-ink-2">
                       {domainStepCount(domain)} steps
                     </span>
-                    <span className="rounded bg-[#F1F5F9] px-2 py-0.5 text-[10px] font-bold text-[#475569]">
+                    <span className="rounded bg-phx-paper-2 px-2 py-0.5 text-[10px] font-bold text-phx-ink-2">
                       {domain.modulesAffected.length} modules
                     </span>
-                    <span className="rounded bg-[#F1F5F9] px-2 py-0.5 text-[10px] font-bold text-[#475569]">
+                    <span className="rounded bg-phx-paper-2 px-2 py-0.5 text-[10px] font-bold text-phx-ink-2">
                       {domainNotificationCount(domain)} in-app · {domainEmailCount(domain)} email
                     </span>
                     {domainHasNotificationGap(domain) ? (
@@ -164,7 +164,7 @@ export function WorkflowControlCenter({
                       </span>
                     ) : null}
                     {domainGaps(domain).length ? (
-                      <span className="rounded bg-[#FFF7ED] px-2 py-0.5 text-[10px] font-bold text-[#C2410C]">
+                      <span className="rounded bg-phx-accent-soft px-2 py-0.5 text-[10px] font-bold text-phx-accent-press">
                         {domainGaps(domain).length} open gap{domainGaps(domain).length === 1 ? "" : "s"}
                       </span>
                     ) : null}
@@ -178,15 +178,15 @@ export function WorkflowControlCenter({
             <div className="mt-6">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
-                  <h2 className="text-lg font-black text-[#0F172A]">{selectedDomain.name}</h2>
-                  <p className="text-xs text-[#64748B]">{selectedDomain.summary}</p>
+                  <h2 className="text-lg font-black text-phx-ink">{selectedDomain.name}</h2>
+                  <p className="text-xs text-phx-ink-soft">{selectedDomain.summary}</p>
                 </div>
                 <button
                   className={cn(
                     "inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-bold transition",
                     canDraftEdit
-                      ? "border-[#F97316] bg-[#FFF7ED] text-[#C2410C] hover:bg-[#FFEDD5]"
-                      : "border-[#E2E8F0] bg-white text-[#64748B] hover:bg-[#F8FAFC]",
+                      ? "border-phx-accent bg-phx-accent-soft text-phx-accent-press hover:bg-[#FFEDD5]"
+                      : "border-phx-line bg-white text-phx-ink-soft hover:bg-phx-paper",
                   )}
                   onClick={() => (canDraftEdit ? setDraftEditorOpen(true) : setEditPanelOpen((v) => !v))}
                   type="button"
@@ -226,15 +226,15 @@ export function WorkflowControlCenter({
               ) : null}
 
               {editPanelOpen ? (
-                <div className="mt-3 flex items-start gap-2 rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] px-4 py-3">
-                  <Info className="mt-0.5 h-4 w-4 shrink-0 text-[#64748B]" />
+                <div className="mt-3 flex items-start gap-2 rounded-xl border border-phx-line bg-phx-paper px-4 py-3">
+                  <Info className="mt-0.5 h-4 w-4 shrink-0 text-phx-ink-soft" />
                   {canEdit ? (
-                    <p className="text-[13px] leading-5 text-[#475569]">Editing is enabled for your role.</p>
+                    <p className="text-[13px] leading-5 text-phx-ink-2">Editing is enabled for your role.</p>
                   ) : (
                     <div className="min-w-0">
-                      <p className="text-[13px] font-black text-[#0F172A]">Workflow editing is locked in Phase 1</p>
-                      <p className="mt-0.5 text-[12px] leading-5 text-[#475569]">This view is read-only — editing is coming in Phase 2.</p>
-                      <ul className="mt-1 list-disc space-y-0.5 pl-5 text-[12px] leading-5 text-[#475569]">
+                      <p className="text-[13px] font-black text-phx-ink">Workflow editing is locked in Phase 1</p>
+                      <p className="mt-0.5 text-[12px] leading-5 text-phx-ink-2">This view is read-only — editing is coming in Phase 2.</p>
+                      <ul className="mt-1 list-disc space-y-0.5 pl-5 text-[12px] leading-5 text-phx-ink-2">
                         <li>Phase 2 will support <span className="font-bold">draft → edit → publish → rollback</span> with versioning.</li>
                         <li>Runtime workflow execution is <span className="font-bold">not changed</span> in Phase 1.</li>
                         <li>Admins <span className="font-bold">cannot accidentally change live workflow behavior</span> from this read-only view.</li>
@@ -252,8 +252,8 @@ export function WorkflowControlCenter({
                     className={cn(
                       "rounded-full border px-3 py-1 text-xs font-bold transition",
                       subflow.key === selectedSubflow.key
-                        ? "border-[#F97316] bg-[#FFF7ED] text-[#C2410C]"
-                        : "border-[#E2E8F0] bg-white text-[#64748B] hover:border-[#CBD5E1]",
+                        ? "border-phx-accent bg-phx-accent-soft text-phx-accent-press"
+                        : "border-phx-line bg-white text-phx-ink-soft hover:border-phx-line-strong",
                     )}
                     onClick={() => setSelectedSubflowKey(subflow.key)}
                     type="button"
@@ -278,13 +278,13 @@ export function WorkflowControlCenter({
 
               <div className="mt-4 grid grid-cols-1 gap-5 lg:grid-cols-2">
                 <div>
-                  <p className="mb-2 text-[11px] font-black uppercase tracking-[0.10em] text-[#94A3B8]">
+                  <p className="mb-2 text-[11px] font-black uppercase tracking-[0.10em] text-phx-ink-faint">
                     {selectedSubflow.name} — map
                   </p>
                   <WorkflowMap steps={selectedSubflow.steps} />
                 </div>
                 <div>
-                  <p className="mb-2 text-[11px] font-black uppercase tracking-[0.10em] text-[#94A3B8]">Simulator</p>
+                  <p className="mb-2 text-[11px] font-black uppercase tracking-[0.10em] text-phx-ink-faint">Simulator</p>
                   <WorkflowSimulatorPanel
                     key={`sim-${selectedDomain.key}-${selectedSubflow.key}`}
                     domainKey={selectedDomain.key}

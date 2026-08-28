@@ -40,7 +40,7 @@ export function SortableTh({
   variant = "dark",
   className,
 }: SortableThProps) {
-  const lightBase = "px-4 py-3 text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]";
+  const lightBase = "px-4 py-3 text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-soft";
   const darkBase = "px-3 py-2";
   const base = variant === "light" ? lightBase : darkBase;
   const alignClass = align === "right" ? "text-right" : "text-left";
@@ -51,7 +51,7 @@ export function SortableTh({
   }
 
   const active = sort?.key === sortKey;
-  const activeColor = variant === "light" ? "text-[#F97316]" : "text-[#FDBA74]";
+  const activeColor = variant === "light" ? "text-phx-accent" : "text-phx-accent";
 
   return (
     <th
@@ -103,14 +103,14 @@ export function TableSearchInput({
 }: TableSearchInputProps) {
   return (
     <div className={cn("relative", className)}>
-      <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[#94A3B8]" />
+      <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-phx-ink-faint" />
       <input
         type="text"
         value={value}
         onChange={(event) => onChange(event.target.value)}
         placeholder={placeholder}
         className={cn(
-          "w-full border border-[#D8E0EA] bg-white pl-8 pr-7 text-sm font-medium text-[#0F172A] outline-none transition focus:border-[#FDBA74] focus:ring-2 focus:ring-[#F97316]/10",
+          "w-full border border-phx-line bg-white pl-8 pr-7 text-sm font-medium text-phx-ink outline-none transition focus:border-phx-accent-line focus:ring-2 focus:ring-phx-accent/10",
           size === "sm" ? "h-8" : "h-10",
         )}
       />
@@ -119,7 +119,7 @@ export function TableSearchInput({
           type="button"
           aria-label="Clear search"
           onClick={onClear}
-          className="absolute right-2 top-1/2 -translate-y-1/2 text-[#94A3B8] transition hover:text-[#F97316]"
+          className="absolute right-2 top-1/2 -translate-y-1/2 text-phx-ink-faint transition hover:text-phx-accent"
         >
           <X className="h-3.5 w-3.5" />
         </button>
@@ -138,7 +138,7 @@ type TableNoResultsProps = {
 export function TableNoResults({ colSpan, filtered, label = "rows" }: TableNoResultsProps) {
   return (
     <tr>
-      <td className="px-3 py-5 text-center text-[#94A3B8]" colSpan={colSpan}>
+      <td className="px-3 py-5 text-center text-phx-ink-faint" colSpan={colSpan}>
         {filtered ? `No ${label} match your search.` : `No ${label}.`}
       </td>
     </tr>

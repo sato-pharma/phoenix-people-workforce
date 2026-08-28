@@ -428,17 +428,17 @@ export function MarketingCoverageReportWorkspace({ isSuperAdmin }: { isSuperAdmi
     <WorkspaceErrorBoundary fallbackTitle="Marketing Coverage Report error">
       <div className="space-y-5" dir="auto">
         {/* ── Filters ───────────────────────────────────────────────────────── */}
-        <section className="rounded-none border border-[#E2E8F0] bg-white shadow-sm">
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#E2E8F0] px-4 py-3 sm:px-5">
+        <section className="rounded-none border border-phx-line bg-white shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-phx-line px-4 py-3 sm:px-5">
             <div className="flex items-center gap-2">
-              <SlidersHorizontal className="h-4 w-4 text-[#F97316]" />
+              <SlidersHorizontal className="h-4 w-4 text-phx-accent" />
               <div>
-                <p className="text-[10px] font-black uppercase tracking-[0.16em] text-[#F97316]">Coverage Report</p>
-                <h2 className="text-[15px] font-black tracking-tight text-[#0F172A]">Filter by hierarchy, geography or person</h2>
+                <p className="text-[10px] font-black uppercase tracking-[0.16em] text-phx-accent">Coverage Report</p>
+                <h2 className="text-[15px] font-black tracking-tight text-phx-ink">Filter by hierarchy, geography or person</h2>
               </div>
             </div>
             {faceted ? (
-              <span className="inline-flex items-center gap-1.5 rounded-none border border-[#E2E8F0] bg-[#F8FAFC] px-2.5 py-1 text-[11px] font-bold text-[#64748B]">
+              <span className="inline-flex items-center gap-1.5 rounded-none border border-phx-line bg-phx-paper px-2.5 py-1 text-[11px] font-bold text-phx-ink-soft">
                 <Filter className="h-3 w-3" />
                 {faceted.matchedCount === faceted.totalCount
                   ? `${faceted.totalCount} request${faceted.totalCount === 1 ? "" : "s"} in scope`
@@ -451,7 +451,7 @@ export function MarketingCoverageReportWorkspace({ isSuperAdmin }: { isSuperAdmi
             {optionsError ? (
               <div className="rounded-none border border-amber-200 bg-amber-50 px-3.5 py-2.5 text-[13px] font-semibold text-amber-800">{optionsError}</div>
             ) : !facets ? (
-              <div className="flex items-center gap-2 py-6 text-[13px] font-semibold text-[#64748B]">
+              <div className="flex items-center gap-2 py-6 text-[13px] font-semibold text-phx-ink-soft">
                 <LoadingSpinner /> Loading filters…
               </div>
             ) : (
@@ -479,8 +479,8 @@ export function MarketingCoverageReportWorkspace({ isSuperAdmin }: { isSuperAdmi
                   />
 
                   {durationDim?.render ? (
-                    <div className="rounded-none border border-[#E2E8F0] bg-white px-3 py-2 shadow-sm">
-                      <p className="mb-1 text-[10px] font-black uppercase tracking-[0.14em] text-[#94A3B8]">ROI duration (months)</p>
+                    <div className="rounded-none border border-phx-line bg-white px-3 py-2 shadow-sm">
+                      <p className="mb-1 text-[10px] font-black uppercase tracking-[0.14em] text-phx-ink-faint">ROI duration (months)</p>
                       <div className="flex items-center gap-2">
                         <input
                           type="number"
@@ -489,9 +489,9 @@ export function MarketingCoverageReportWorkspace({ isSuperAdmin }: { isSuperAdmi
                           placeholder={String(durationDim.min ?? "")}
                           value={filters.durationMin ?? ""}
                           onChange={(event) => patchFilters({ durationMin: event.target.value === "" ? null : Number(event.target.value) })}
-                          className="h-8 w-full rounded-none border border-[#E2E8F0] px-2 text-sm font-bold text-[#0F172A] outline-none focus:border-[#FDBA74]"
+                          className="h-8 w-full rounded-none border border-phx-line px-2 text-sm font-bold text-phx-ink outline-none focus:border-phx-accent-line"
                         />
-                        <span className="text-[#94A3B8]">–</span>
+                        <span className="text-phx-ink-faint">–</span>
                         <input
                           type="number"
                           min={durationDim.min}
@@ -499,28 +499,28 @@ export function MarketingCoverageReportWorkspace({ isSuperAdmin }: { isSuperAdmi
                           placeholder={String(durationDim.max ?? "")}
                           value={filters.durationMax ?? ""}
                           onChange={(event) => patchFilters({ durationMax: event.target.value === "" ? null : Number(event.target.value) })}
-                          className="h-8 w-full rounded-none border border-[#E2E8F0] px-2 text-sm font-bold text-[#0F172A] outline-none focus:border-[#FDBA74]"
+                          className="h-8 w-full rounded-none border border-phx-line px-2 text-sm font-bold text-phx-ink outline-none focus:border-phx-accent-line"
                         />
                       </div>
                     </div>
                   ) : null}
 
                   {payDateDim?.render ? (
-                    <div className="rounded-none border border-[#E2E8F0] bg-white px-3 py-2 shadow-sm">
-                      <p className="mb-1 text-[10px] font-black uppercase tracking-[0.14em] text-[#94A3B8]">Pay date</p>
+                    <div className="rounded-none border border-phx-line bg-white px-3 py-2 shadow-sm">
+                      <p className="mb-1 text-[10px] font-black uppercase tracking-[0.14em] text-phx-ink-faint">Pay date</p>
                       <div className="flex items-center gap-2">
                         <input
                           type="date"
                           value={filters.payDateFrom ?? ""}
                           onChange={(event) => patchFilters({ payDateFrom: event.target.value || null })}
-                          className="h-8 w-full rounded-none border border-[#E2E8F0] px-2 text-[12px] font-bold text-[#0F172A] outline-none focus:border-[#FDBA74]"
+                          className="h-8 w-full rounded-none border border-phx-line px-2 text-[12px] font-bold text-phx-ink outline-none focus:border-phx-accent-line"
                         />
-                        <span className="text-[#94A3B8]">–</span>
+                        <span className="text-phx-ink-faint">–</span>
                         <input
                           type="date"
                           value={filters.payDateTo ?? ""}
                           onChange={(event) => patchFilters({ payDateTo: event.target.value || null })}
-                          className="h-8 w-full rounded-none border border-[#E2E8F0] px-2 text-[12px] font-bold text-[#0F172A] outline-none focus:border-[#FDBA74]"
+                          className="h-8 w-full rounded-none border border-phx-line px-2 text-[12px] font-bold text-phx-ink outline-none focus:border-phx-accent-line"
                         />
                       </div>
                     </div>
@@ -589,16 +589,16 @@ export function MarketingCoverageReportWorkspace({ isSuperAdmin }: { isSuperAdmi
                   if (chips.length === 0) return null;
                   return (
                     <div className="mt-3 flex flex-wrap items-center gap-2">
-                      <span className="text-[11px] font-bold uppercase tracking-wide text-[#94A3B8]">Active filters:</span>
+                      <span className="text-[11px] font-bold uppercase tracking-wide text-phx-ink-faint">Active filters:</span>
                       {chips.map((chip) => (
                         <button
                           key={chip.key}
                           type="button"
                           onClick={chip.onClear}
-                          className="inline-flex items-center gap-1.5 rounded-none border border-[#FDBA74] bg-orange-50 px-2 py-1 text-[11px] font-bold text-[#9A3412] transition hover:border-[#F97316] hover:bg-orange-100"
+                          className="inline-flex items-center gap-1.5 rounded-none border border-phx-accent-line bg-orange-50 px-2 py-1 text-[11px] font-bold text-[#9A3412] transition hover:border-phx-accent hover:bg-orange-100"
                         >
                           {chip.label}
-                          <span aria-hidden="true" className="text-[#C2410C]">×</span>
+                          <span aria-hidden="true" className="text-phx-accent-press">×</span>
                         </button>
                       ))}
                     </div>
@@ -612,9 +612,9 @@ export function MarketingCoverageReportWorkspace({ isSuperAdmin }: { isSuperAdmi
                   if (autoChips.length === 0) return null;
                   return (
                     <div className="mt-3 flex flex-wrap items-center gap-2">
-                      <span className="text-[11px] font-bold uppercase tracking-wide text-[#94A3B8]">Auto-applied:</span>
+                      <span className="text-[11px] font-bold uppercase tracking-wide text-phx-ink-faint">Auto-applied:</span>
                       {autoChips.map(({ dim, label }) => (
-                        <span key={dim.key} className="inline-flex items-center gap-1 rounded-none border border-[#E2E8F0] bg-[#F8FAFC] px-2 py-1 text-[11px] font-bold text-[#475569]">
+                        <span key={dim.key} className="inline-flex items-center gap-1 rounded-none border border-phx-line bg-phx-paper px-2 py-1 text-[11px] font-bold text-phx-ink-2">
                           {dim.label}: {label}
                         </span>
                       ))}
@@ -626,7 +626,7 @@ export function MarketingCoverageReportWorkspace({ isSuperAdmin }: { isSuperAdmi
                   <label className="mt-3 inline-flex cursor-pointer items-center gap-2 rounded-none border border-amber-200 bg-amber-50 px-3 py-1.5 text-[12px] font-bold text-amber-800">
                     <input
                       type="checkbox"
-                      className="h-4 w-4 accent-[#F97316]"
+                      className="h-4 w-4 accent-phx-accent"
                       checked={filters.includeRestricted}
                       onChange={(event) => startFilterTransition(() => setFilters((prev) => ({ ...prev, includeRestricted: event.target.checked })))}
                     />
@@ -639,7 +639,7 @@ export function MarketingCoverageReportWorkspace({ isSuperAdmin }: { isSuperAdmi
                     type="button"
                     onClick={() => void runReport(filters)}
                     disabled={state === "loading" || !hasAnyFilter}
-                    className="inline-flex items-center gap-2 rounded-none bg-[#F97316] px-4 py-2 text-[13px] font-black uppercase tracking-wide text-white shadow-sm transition hover:bg-[#EA580C] disabled:opacity-60"
+                    className="inline-flex items-center gap-2 rounded-none bg-phx-accent px-4 py-2 text-[13px] font-black uppercase tracking-wide text-white shadow-sm transition hover:bg-phx-accent-hover disabled:opacity-60"
                   >
                     {state === "loading" ? <LoadingSpinner /> : <Filter className="h-3.5 w-3.5" />}
                     Apply Filters
@@ -651,52 +651,52 @@ export function MarketingCoverageReportWorkspace({ isSuperAdmin }: { isSuperAdmi
                       setReport(null);
                       setState("ready");
                     }}
-                    className="inline-flex items-center gap-2 rounded-none border border-[#E2E8F0] bg-white px-3 py-2 text-[12px] font-bold text-[#64748B] transition hover:border-[#FDBA74] hover:text-[#F97316]"
+                    className="inline-flex items-center gap-2 rounded-none border border-phx-line bg-white px-3 py-2 text-[12px] font-bold text-phx-ink-soft transition hover:border-phx-accent-line hover:text-phx-accent"
                   >
                     <RefreshCcw className="h-3.5 w-3.5" /> Reset
                   </button>
                   {!hasAnyFilter ? (
-                    <span className="text-[12px] font-medium text-[#94A3B8]">Choose at least one filter to run the report.</span>
+                    <span className="text-[12px] font-medium text-phx-ink-faint">Choose at least one filter to run the report.</span>
                   ) : null}
                   {hasReport ? (
                     <button
                       type="button"
                       onClick={() => void downloadExport()}
                       disabled={exporting}
-                      className="inline-flex items-center gap-2 rounded-none border border-[#0F172A] bg-[#0F172A] px-3 py-2 text-[12px] font-black uppercase tracking-wide text-white transition hover:bg-black disabled:opacity-60"
+                      className="inline-flex items-center gap-2 rounded-none border border-phx-ink bg-phx-ink px-3 py-2 text-[12px] font-black uppercase tracking-wide text-white transition hover:bg-black disabled:opacity-60"
                     >
                       {exporting ? <LoadingSpinner /> : <Download className="h-3.5 w-3.5" />} Export XLSX
                     </button>
                   ) : null}
                 </div>
 
-                <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-[#F1F5F9] pt-3">
-                  <span className="inline-flex items-center gap-1 text-[11px] font-black uppercase tracking-[0.12em] text-[#94A3B8]">
+                <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-phx-paper-2 pt-3">
+                  <span className="inline-flex items-center gap-1 text-[11px] font-black uppercase tracking-[0.12em] text-phx-ink-faint">
                     <Bookmark className="h-3.5 w-3.5" /> Presets
                   </span>
                   {presets.map((preset) => (
-                    <span key={preset.id} className="inline-flex items-center gap-1 rounded-none border border-[#E2E8F0] bg-white pl-2 text-[12px] font-bold text-[#475569]">
-                      {preset.isDefault ? <Star className="h-3 w-3 fill-[#F97316] text-[#F97316]" /> : null}
-                      <button type="button" onClick={() => applyPreset(preset)} className="py-1 transition hover:text-[#F97316]">{preset.name}</button>
-                      <button type="button" aria-label={`Delete ${preset.name}`} onClick={() => void deletePreset(preset.id)} className="px-1.5 py-1 text-[#CBD5E1] transition hover:text-red-500">
+                    <span key={preset.id} className="inline-flex items-center gap-1 rounded-none border border-phx-line bg-white pl-2 text-[12px] font-bold text-phx-ink-2">
+                      {preset.isDefault ? <Star className="h-3 w-3 fill-phx-accent text-phx-accent" /> : null}
+                      <button type="button" onClick={() => applyPreset(preset)} className="py-1 transition hover:text-phx-accent">{preset.name}</button>
+                      <button type="button" aria-label={`Delete ${preset.name}`} onClick={() => void deletePreset(preset.id)} className="px-1.5 py-1 text-phx-line-strong transition hover:text-red-500">
                         <Trash2 className="h-3 w-3" />
                       </button>
                     </span>
                   ))}
-                  {presets.length === 0 ? <span className="text-[11px] font-medium text-[#94A3B8]">No saved views yet.</span> : null}
+                  {presets.length === 0 ? <span className="text-[11px] font-medium text-phx-ink-faint">No saved views yet.</span> : null}
                   <span className="ml-auto flex items-center gap-1.5">
                     <input
                       type="text"
                       value={presetName}
                       onChange={(event) => setPresetName(event.target.value)}
                       placeholder="Name this view…"
-                      className="h-8 w-40 rounded-none border border-[#E2E8F0] px-2 text-[12px] font-medium text-[#0F172A] outline-none focus:border-[#FDBA74]"
+                      className="h-8 w-40 rounded-none border border-phx-line px-2 text-[12px] font-medium text-phx-ink outline-none focus:border-phx-accent-line"
                     />
                     <button
                       type="button"
                       onClick={() => void savePreset(false)}
                       disabled={savingPreset || !presetName.trim()}
-                      className="inline-flex h-8 items-center gap-1 rounded-none border border-[#E2E8F0] bg-white px-2 text-[12px] font-bold text-[#64748B] transition hover:border-[#FDBA74] hover:text-[#F97316] disabled:opacity-40"
+                      className="inline-flex h-8 items-center gap-1 rounded-none border border-phx-line bg-white px-2 text-[12px] font-bold text-phx-ink-soft transition hover:border-phx-accent-line hover:text-phx-accent disabled:opacity-40"
                     >
                       <Save className="h-3.5 w-3.5" /> Save
                     </button>
@@ -705,7 +705,7 @@ export function MarketingCoverageReportWorkspace({ isSuperAdmin }: { isSuperAdmi
                       onClick={() => void savePreset(true)}
                       disabled={savingPreset || !presetName.trim()}
                       title="Save as my default view"
-                      className="inline-flex h-8 items-center gap-1 rounded-none border border-[#E2E8F0] bg-white px-2 text-[12px] font-bold text-[#64748B] transition hover:border-[#FDBA74] hover:text-[#F97316] disabled:opacity-40"
+                      className="inline-flex h-8 items-center gap-1 rounded-none border border-phx-line bg-white px-2 text-[12px] font-bold text-phx-ink-soft transition hover:border-phx-accent-line hover:text-phx-accent disabled:opacity-40"
                     >
                       <Star className="h-3.5 w-3.5" /> Default
                     </button>
@@ -722,14 +722,14 @@ export function MarketingCoverageReportWorkspace({ isSuperAdmin }: { isSuperAdmi
 
         {/* ── Freshness banner ─────────────────────────────────────────────── */}
         {kpi ? (
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] font-semibold text-[#64748B]">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] font-semibold text-phx-ink-soft">
             <span className="flex items-center gap-1.5">
-              <CalendarClock className="h-3.5 w-3.5 text-[#94A3B8]" />
+              <CalendarClock className="h-3.5 w-3.5 text-phx-ink-faint" />
               Sales data current through {formatPeriod(kpi.salesDataAsOf)}
             </span>
             {facets?.lastExport ? (
               <span className="flex items-center gap-1.5">
-                <Download className="h-3.5 w-3.5 text-[#94A3B8]" />
+                <Download className="h-3.5 w-3.5 text-phx-ink-faint" />
                 Last exported by {facets.lastExport.exportedByName} on {formatExportTimestamp(facets.lastExport.exportedAt)}
               </span>
             ) : null}
@@ -771,7 +771,7 @@ export function MarketingCoverageReportWorkspace({ isSuperAdmin }: { isSuperAdmi
             src/components/layout/topbar.tsx:58) so context never scrolls away; z-10 keeps
             it under the topbar, and the opaque background stops table rows showing through. */}
         {kpi ? (
-          <section className="sticky top-[68px] z-10 grid grid-cols-1 gap-3 bg-[#F8FAFC] py-2 sm:top-20 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+          <section className="sticky top-[68px] z-10 grid grid-cols-1 gap-3 bg-phx-paper py-2 sm:top-20 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
             <CoverageKpiCard tone="slate" icon={<PackageSearch className="h-5 w-5" />} label="Requests" value={kpi.requestCount.toLocaleString("en-US")} />
             <CoverageKpiCard tone="orange" icon={<CircleDollarSign className="h-5 w-5" />} label="Total cost (EGP)" value={money(kpi.totalEstimatedCost)} />
             <CoverageKpiCard tone="orange" icon={<Target className="h-5 w-5" />} label="Required ROI (EGP)" value={money(kpi.totalRequiredRoi)} />
@@ -820,9 +820,9 @@ export function MarketingCoverageReportWorkspace({ isSuperAdmin }: { isSuperAdmi
 
         {/* ── Collapsible request list ─────────────────────────────────────── */}
         {report ? (
-          <section className="overflow-hidden rounded-none border border-[#E2E8F0] bg-white shadow-sm">
+          <section className="overflow-hidden rounded-none border border-phx-line bg-white shadow-sm">
             <PortalResponsiveDataList
-              empty={<div className="px-4 py-10 text-center text-[13px] font-semibold text-[#64748B]">No requests match the applied filters.</div>}
+              empty={<div className="px-4 py-10 text-center text-[13px] font-semibold text-phx-ink-soft">No requests match the applied filters.</div>}
               getKey={(row) => row.requestId}
               items={sortedRows}
               renderCard={(row) => (
@@ -839,7 +839,7 @@ export function MarketingCoverageReportWorkspace({ isSuperAdmin }: { isSuperAdmi
               renderTable={() => (
                 <PortalDesktopTable minWidth="960px">
                   <thead>
-                    <tr className="border-b border-[#E2E8F0] bg-slate-900 text-left text-[11px] font-black uppercase tracking-wide text-white">
+                    <tr className="border-b border-phx-line bg-slate-900 text-left text-[11px] font-black uppercase tracking-wide text-white">
                       <th className="px-2 py-2.5">
                         <button type="button" onClick={() => toggleRequestSort("requestCode")} className="inline-flex items-center gap-1 font-black">Request {requestSortArrow("requestCode")}</button>
                       </th>
@@ -928,11 +928,11 @@ function CoverageBreakdownPanel({
   onFilterDimension: (key: MarketingCoverageFilterKey, values: string[]) => void;
 }) {
   return (
-    <section className="overflow-hidden rounded-none border border-[#E2E8F0] bg-white shadow-sm">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#E2E8F0] px-4 py-3 sm:px-5">
+    <section className="overflow-hidden rounded-none border border-phx-line bg-white shadow-sm">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-phx-line px-4 py-3 sm:px-5">
         <div>
-          <p className="text-[10px] font-black uppercase tracking-[0.16em] text-[#F97316]">Coverage breakdown</p>
-          <h3 className="text-[14px] font-black tracking-tight text-[#0F172A]">Where is coverage failing?</h3>
+          <p className="text-[10px] font-black uppercase tracking-[0.16em] text-phx-accent">Coverage breakdown</p>
+          <h3 className="text-[14px] font-black tracking-tight text-phx-ink">Where is coverage failing?</h3>
         </div>
         <div className="flex flex-wrap gap-1.5">
           {BREAKDOWN_TABS.map((tab) => (
@@ -943,8 +943,8 @@ function CoverageBreakdownPanel({
               className={cn(
                 "rounded-none border px-3 py-1.5 text-[12px] font-bold uppercase tracking-wide transition",
                 dimension === tab.key
-                  ? "border-[#F97316] bg-[#F97316] text-white"
-                  : "border-[#E2E8F0] bg-white text-[#64748B] hover:border-[#FDBA74] hover:text-[#F97316]",
+                  ? "border-phx-accent bg-phx-accent text-white"
+                  : "border-phx-line bg-white text-phx-ink-soft hover:border-phx-accent-line hover:text-phx-accent",
               )}
             >
               {tab.label}
@@ -956,7 +956,7 @@ function CoverageBreakdownPanel({
       <div>
         {dimension === "distributor" ? (
           <PortalResponsiveDataList
-            empty={<p className="px-4 py-6 text-center text-[13px] font-semibold text-[#64748B]">No distributor data for the current filter.</p>}
+            empty={<p className="px-4 py-6 text-center text-[13px] font-semibold text-phx-ink-soft">No distributor data for the current filter.</p>}
             getKey={(row) => row.distributorCode}
             items={distributorRollup}
             renderCard={(row) => (
@@ -985,7 +985,7 @@ function CoverageBreakdownPanel({
             renderTable={() => (
               <PortalDesktopTable minWidth="560px">
                 <thead>
-                  <tr className="border-b border-[#E2E8F0] bg-slate-900 text-left text-[11px] font-black uppercase tracking-wide text-white">
+                  <tr className="border-b border-phx-line bg-slate-900 text-left text-[11px] font-black uppercase tracking-wide text-white">
                     <th className="px-3 py-2.5">Distributor</th>
                     <th className="px-3 py-2.5 text-right">Requests</th>
                     <th className="px-3 py-2.5 text-right">Allocated cost</th>
@@ -1002,7 +1002,7 @@ function CoverageBreakdownPanel({
                       onKeyDown={(event) => {
                         if (event.key === "Enter" || event.key === " ") onFilterDimension("distributor", [row.distributorCode]);
                       }}
-                      className="cursor-pointer border-b border-[#F1F5F9] transition hover:bg-orange-50/40"
+                      className="cursor-pointer border-b border-phx-paper-2 transition hover:bg-orange-50/40"
                     >
                       <td className="whitespace-nowrap px-3 py-2 font-bold text-slate-900">
                         {row.distributorName ?? row.distributorCode}
@@ -1019,7 +1019,7 @@ function CoverageBreakdownPanel({
           />
         ) : (
           <PortalResponsiveDataList
-            empty={<p className="px-4 py-6 text-center text-[13px] font-semibold text-[#64748B]">No data for the current filter.</p>}
+            empty={<p className="px-4 py-6 text-center text-[13px] font-semibold text-phx-ink-soft">No data for the current filter.</p>}
             getKey={(row) => row.key}
             items={dimensionRollup}
             renderCard={(row) => {
@@ -1062,7 +1062,7 @@ function CoverageBreakdownPanel({
             renderTable={() => (
               <PortalDesktopTable minWidth="720px">
                 <thead>
-                  <tr className="border-b border-[#E2E8F0] bg-slate-900 text-left text-[11px] font-black uppercase tracking-wide text-white">
+                  <tr className="border-b border-phx-line bg-slate-900 text-left text-[11px] font-black uppercase tracking-wide text-white">
                     <th className="px-3 py-2.5">{ROLLUP_DIMENSION_LABELS[dimension]}</th>
                     <th className="px-3 py-2.5 text-right">Requests</th>
                     <th className="px-3 py-2.5 text-right">Cost</th>
@@ -1092,7 +1092,7 @@ function CoverageBreakdownPanel({
                             : undefined
                         }
                         className={cn(
-                          "border-b border-[#F1F5F9] transition",
+                          "border-b border-phx-paper-2 transition",
                           filterable ? "cursor-pointer hover:bg-orange-50/40" : "opacity-70",
                         )}
                       >
@@ -1114,10 +1114,10 @@ function CoverageBreakdownPanel({
       </div>
 
       {trend.length > 0 ? (
-        <div className="border-t border-[#F1F5F9] px-4 py-3 sm:px-5">
-          <p className="mb-2 text-[11px] font-black uppercase tracking-wide text-[#94A3B8]">Trend by pay month</p>
+        <div className="border-t border-phx-paper-2 px-4 py-3 sm:px-5">
+          <p className="mb-2 text-[11px] font-black uppercase tracking-wide text-phx-ink-faint">Trend by pay month</p>
           <PortalResponsiveDataList
-            empty={<p className="text-[13px] font-semibold text-[#64748B]">No trend data for the current filter.</p>}
+            empty={<p className="text-[13px] font-semibold text-phx-ink-soft">No trend data for the current filter.</p>}
             getKey={(point) => point.month}
             items={trend}
             renderCard={(point) => (
@@ -1147,7 +1147,7 @@ function CoverageBreakdownPanel({
                 </thead>
                 <tbody>
                   {trend.map((point) => (
-                    <tr key={point.month} className="border-t border-[#F1F5F9]">
+                    <tr key={point.month} className="border-t border-phx-paper-2">
                       <td className="whitespace-nowrap px-3 py-1.5 font-bold text-slate-900">{point.month}</td>
                       <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums text-slate-700">{point.requestCount.toLocaleString("en-US")}</td>
                       <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums text-slate-700">{money(point.totalCost)}</td>
@@ -1286,7 +1286,7 @@ function PharmacyDrilldownPanel({
                     target="_blank"
                     rel="noreferrer"
                     onClick={(event) => event.stopPropagation()}
-                    className="inline-flex items-center gap-1 whitespace-nowrap rounded-none border border-slate-300 px-2 py-1 text-[11px] font-bold text-slate-700 transition hover:border-[#F97316] hover:text-[#F97316]"
+                    className="inline-flex items-center gap-1 whitespace-nowrap rounded-none border border-slate-300 px-2 py-1 text-[11px] font-bold text-slate-700 transition hover:border-phx-accent hover:text-phx-accent"
                   >
                     <ExternalLink className="h-3 w-3" /> Full sales history
                   </a>

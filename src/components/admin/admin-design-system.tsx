@@ -335,7 +335,7 @@ export function AdminTableShell({
 
 export function AdminLinkHint({ children }: { children: ReactNode }) {
   return (
-    <span className="inline-flex items-center gap-1 text-xs font-semibold text-[#C2410C]">
+    <span className="inline-flex items-center gap-1 text-xs font-semibold text-phx-accent-press">
       {children}
       <ArrowUpRight className="h-3.5 w-3.5" />
     </span>

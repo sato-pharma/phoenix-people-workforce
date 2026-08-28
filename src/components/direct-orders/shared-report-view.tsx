@@ -77,8 +77,8 @@ export function SharedDirectOrderReport({ token }: Props) {
 
   if (!rows) {
     return (
-      <section className="mx-auto max-w-md border border-[#e4e9ec] bg-white">
-        <header className="border-b border-[#e4e9ec] bg-slate-900 px-4 py-3">
+      <section className="mx-auto max-w-md border border-phx-line bg-white">
+        <header className="border-b border-phx-line bg-slate-900 px-4 py-3">
           <p className="text-[11px] font-black uppercase tracking-[0.14em] text-orange-400">Phoenix</p>
           <h1 className="text-base font-black text-white">Direct Orders Report</h1>
         </header>
@@ -111,8 +111,8 @@ export function SharedDirectOrderReport({ token }: Props) {
   const total = rows.reduce((sum, r) => sum + (Number(r.salesValue) || 0), 0);
 
   return (
-    <section className="border border-[#e4e9ec] bg-white">
-      <header className="flex flex-wrap items-center justify-between gap-2 border-b border-[#e4e9ec] bg-slate-900 px-4 py-3">
+    <section className="border border-phx-line bg-white">
+      <header className="flex flex-wrap items-center justify-between gap-2 border-b border-phx-line bg-slate-900 px-4 py-3">
         <div>
           <p className="text-[11px] font-black uppercase tracking-[0.14em] text-orange-400">Phoenix</p>
           <h1 className="text-base font-black text-white">{label ?? "Direct Orders Report"}</h1>

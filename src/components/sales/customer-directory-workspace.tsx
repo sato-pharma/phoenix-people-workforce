@@ -142,7 +142,7 @@ export function CustomerDirectoryWorkspace({ initialError, initialResult, option
 
   if (initialError && !result) {
     return (
-      <div className="min-h-[calc(100vh-7rem)] rounded-[32px] border border-[#E2E8F0] bg-[#F8FAFC] p-5 sm:p-6 xl:p-8">
+      <div className="min-h-[calc(100vh-7rem)] rounded-[32px] border border-phx-line bg-phx-paper p-5 sm:p-6 xl:p-8">
         <AdminCallout tone="danger">
           <AlertTriangle className="h-4 w-4" />
           <p>{initialError}</p>
@@ -178,7 +178,7 @@ export function CustomerDirectoryWorkspace({ initialError, initialResult, option
       <AdminTableShell
         action={(
           <button
-            className="inline-flex h-10 items-center gap-2 border border-[#0B0B0B] bg-[#0B0B0B] px-4 text-sm font-bold text-white transition hover:bg-[#F97316] disabled:opacity-50"
+            className="inline-flex h-10 items-center gap-2 border border-[#0B0B0B] bg-[#0B0B0B] px-4 text-sm font-bold text-white transition hover:bg-phx-accent disabled:opacity-50"
             disabled={isExporting || isLoading || customers.length === 0}
             onClick={() => void handleExport()}
             type="button"
@@ -224,7 +224,7 @@ export function CustomerDirectoryWorkspace({ initialError, initialResult, option
                 </div>
               </div>
             </div>
-            <div className="overflow-hidden border border-[#E2E8F0]">
+            <div className="overflow-hidden border border-phx-line">
               <table className="w-full min-w-[1100px] text-sm">
                 <thead className="bg-[#0B0B0B] text-slate-100">
                   <tr>
@@ -240,7 +240,7 @@ export function CustomerDirectoryWorkspace({ initialError, initialResult, option
                     <th className={headerCell}></th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-[#E2E8F0]">
+                <tbody className="divide-y divide-phx-line">
                   {isLoading ? (
                     <tr>
                       <td className="px-3 py-6 text-center text-slate-400" colSpan={10}>
@@ -260,7 +260,7 @@ export function CustomerDirectoryWorkspace({ initialError, initialResult, option
                       <tr className="transition-colors hover:bg-orange-50/50" key={`${row.distributorCode}:${row.clientCode}`}>
                         <td className="px-3 py-2.5">
                           <Link className="block" href={customerHref(row)}>
-                            <span className="block font-semibold text-[#0F172A] hover:text-[#F97316]">{row.clientName || "—"}</span>
+                            <span className="block font-semibold text-phx-ink hover:text-phx-accent">{row.clientName || "—"}</span>
                             <span className="block text-xs text-slate-400">{row.clientCode}</span>
                           </Link>
                         </td>
@@ -273,7 +273,7 @@ export function CustomerDirectoryWorkspace({ initialError, initialResult, option
                         <td className="whitespace-nowrap px-3 py-2.5 text-right tabular-nums font-semibold text-slate-900">{formatNumber(row.totalUnits)}</td>
                         <td className="whitespace-nowrap px-3 py-2.5 text-right tabular-nums font-semibold text-slate-900">{formatCurrency(row.totalValue)}</td>
                         <td className="px-3 py-2.5">
-                          <Link className="inline-flex items-center gap-1 border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-bold text-slate-700 transition hover:border-[#FDBA74] hover:text-[#F97316]" href={customerHref(row)}>
+                          <Link className="inline-flex items-center gap-1 border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-bold text-slate-700 transition hover:border-phx-accent-line hover:text-phx-accent" href={customerHref(row)}>
                             View <ArrowUpRight className="h-3 w-3" />
                           </Link>
                         </td>

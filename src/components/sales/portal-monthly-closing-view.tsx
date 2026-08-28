@@ -49,9 +49,9 @@ type Props = {
 };
 
 const monthSelectClassName =
-  "h-11 w-44 rounded border border-[#D8E0EA] bg-[#F8FAFC] px-3.5 text-sm font-semibold text-[#0F172A] outline-none transition focus:border-[#FDBA74] focus:ring-4 focus:ring-[#F97316]/10 disabled:opacity-60";
+  "h-11 w-44 rounded border border-phx-line bg-phx-paper px-3.5 text-sm font-semibold text-phx-ink outline-none transition focus:border-phx-accent-line focus:ring-4 focus:ring-phx-accent/10 disabled:opacity-60";
 const lineSelectClassName =
-  "h-11 w-52 rounded border border-[#D8E0EA] bg-[#F8FAFC] px-3.5 text-sm font-semibold text-[#0F172A] outline-none transition focus:border-[#FDBA74] focus:ring-4 focus:ring-[#F97316]/10 disabled:opacity-60";
+  "h-11 w-52 rounded border border-phx-line bg-phx-paper px-3.5 text-sm font-semibold text-phx-ink outline-none transition focus:border-phx-accent-line focus:ring-4 focus:ring-phx-accent/10 disabled:opacity-60";
 
 export function PortalMonthlyClosingView({ matrix, office = null, line, availableLines, availablePeriods, selectedPeriod }: Props) {
   const router = useRouter();
@@ -257,7 +257,7 @@ export function PortalMonthlyClosingView({ matrix, office = null, line, availabl
               className={cn(
                 "inline-flex items-center gap-2 border-b-2 px-4 py-2.5 text-sm font-bold transition",
                 tab === entry.key
-                  ? "border-[#F97316] text-[#0B0B0B]"
+                  ? "border-phx-accent text-[#0B0B0B]"
                   : "border-transparent text-slate-500 hover:text-slate-800",
               )}
               key={entry.key}
@@ -281,7 +281,7 @@ export function PortalMonthlyClosingView({ matrix, office = null, line, availabl
                 value={filter}
               />
               <button
-                className="inline-flex h-10 shrink-0 items-center gap-2 border border-[#0B0B0B] bg-[#0B0B0B] px-4 text-sm font-bold text-white transition hover:bg-[#F97316] disabled:opacity-50"
+                className="inline-flex h-10 shrink-0 items-center gap-2 border border-[#0B0B0B] bg-[#0B0B0B] px-4 text-sm font-bold text-white transition hover:bg-phx-accent disabled:opacity-50"
                 disabled={isExporting || !hasMatrix}
                 onClick={() => void handleExport()}
                 type="button"

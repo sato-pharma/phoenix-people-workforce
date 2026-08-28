@@ -25,7 +25,7 @@ function BreakdownCard({
   children: React.ReactNode;
 }) {
   return (
-    <div className="overflow-hidden rounded-[18px] border border-[#D8E0EA] bg-white shadow-[0_18px_46px_rgba(15,23,42,0.08)]">
+    <div className="overflow-hidden rounded-[18px] border border-phx-line bg-white shadow-[0_18px_46px_rgba(15,23,42,0.08)]">
       <div className="flex items-center gap-2.5 border-b border-slate-200/80 bg-gradient-to-b from-white to-slate-50/50 px-5 py-4">
         <span className="h-2 w-2 rounded-full bg-gradient-to-r from-orange-500 to-amber-400 shadow-[0_0_8px_rgba(249,115,22,0.5)]" />
         <div>
@@ -61,7 +61,7 @@ function ShareBarList({
             onClick={() => onSelect?.(row.key)}
             className="group flex w-full items-center gap-3 text-left"
           >
-            <span className="w-32 shrink-0 truncate text-xs font-semibold text-slate-700 group-hover:text-[#C2410C]">
+            <span className="w-32 shrink-0 truncate text-xs font-semibold text-slate-700 group-hover:text-phx-accent-press">
               {row.key}
             </span>
             <span className="relative h-2.5 flex-1 overflow-hidden rounded-full bg-slate-100">
@@ -140,7 +140,7 @@ function Donut({
                   className="h-2.5 w-2.5 shrink-0 rounded-full"
                   style={{ backgroundColor: PIE_COLORS[index % PIE_COLORS.length] }}
                 />
-                <span className="truncate text-xs font-semibold text-slate-700 group-hover:text-[#C2410C]">
+                <span className="truncate text-xs font-semibold text-slate-700 group-hover:text-phx-accent-press">
                   {slice.name}
                 </span>
               </span>

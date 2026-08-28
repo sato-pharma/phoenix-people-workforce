@@ -49,11 +49,11 @@ import type {
 import { cn } from "@/lib/utils";
 
 const inputClassName =
-  "h-10 rounded-xl border-[#D8E0EA] bg-white/95 text-sm shadow-sm focus:border-[#FDBA74] focus:ring-[#F97316]/15";
+  "h-10 rounded-xl border-phx-line bg-white/95 text-sm shadow-sm focus:border-phx-accent-line focus:ring-phx-accent/15";
 const labelClassName =
-  "mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]";
+  "mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-soft";
 const factLabelClassName =
-  "text-[10px] font-black uppercase tracking-[0.14em] text-[#94A3B8]";
+  "text-[10px] font-black uppercase tracking-[0.14em] text-phx-ink-faint";
 
 type FieldKind = "text" | "code" | "number" | "date";
 
@@ -472,7 +472,7 @@ export function HiringPackManager({ canManage, candidates, initialError, initial
     : [];
 
   return (
-    <div className="relative overflow-hidden rounded-[34px] border border-[#D8E0EA] bg-[#F8FAFC] p-4 shadow-[0_24px_70px_rgba(15,23,42,0.1)] sm:p-6">
+    <div className="relative overflow-hidden rounded-[34px] border border-phx-line bg-phx-paper p-4 shadow-[0_24px_70px_rgba(15,23,42,0.1)] sm:p-6">
       <div className="flex flex-col gap-5">
         <AdminPageHero
           badges={
@@ -529,7 +529,7 @@ export function HiringPackManager({ canManage, candidates, initialError, initial
               ))}
             </SearchableSelect>
             {busy === "load" ? (
-              <p className="mt-3 inline-flex items-center gap-2 text-sm font-semibold text-[#64748B]">
+              <p className="mt-3 inline-flex items-center gap-2 text-sm font-semibold text-phx-ink-soft">
                 <Loader2 className="h-4 w-4 animate-spin" /> Loading the pack…
               </p>
             ) : null}
@@ -609,14 +609,14 @@ export function HiringPackManager({ canManage, candidates, initialError, initial
               <div className="grid gap-3 px-5 py-5 sm:grid-cols-2 sm:px-6 xl:grid-cols-3">
                 {facts.map((fact) => (
                   <div
-                    className="rounded-xl border border-[#E2E8F0] bg-white/95 px-3.5 py-2.5 shadow-sm"
+                    className="rounded-xl border border-phx-line bg-white/95 px-3.5 py-2.5 shadow-sm"
                     key={fact.label}
                   >
                     <span className={factLabelClassName}>{fact.label}</span>
                     <p
                       className={cn(
                         "mt-1 text-sm font-bold",
-                        fact.value === "Missing" ? "text-rose-600" : "text-[#0F172A]",
+                        fact.value === "Missing" ? "text-rose-600" : "text-phx-ink",
                       )}
                     >
                       {fact.value}
@@ -673,7 +673,7 @@ export function HiringPackManager({ canManage, candidates, initialError, initial
                 />
                 <div>
                   <label className={labelClassName} htmlFor="hiring-pack-notes">
-                    Notes <span className="text-[#94A3B8]">ملاحظات</span>
+                    Notes <span className="text-phx-ink-faint">ملاحظات</span>
                   </label>
                   <textarea
                     className={cn(inputClassName, "h-24 w-full resize-y px-3 py-2 leading-relaxed")}
@@ -757,14 +757,14 @@ function FieldGroup({
   return (
     <div>
       <div className="mb-3">
-        <h3 className="text-sm font-black uppercase tracking-[0.1em] text-[#0F172A]">{title}</h3>
-        <p className="mt-0.5 text-xs font-semibold text-[#64748B]">{subtitle}</p>
+        <h3 className="text-sm font-black uppercase tracking-[0.1em] text-phx-ink">{title}</h3>
+        <p className="mt-0.5 text-xs font-semibold text-phx-ink-soft">{subtitle}</p>
       </div>
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
         {fields.map((field) => (
           <div key={field.key}>
             <label className={labelClassName} htmlFor={`hiring-pack-${field.key}`}>
-              {field.labelEn} <span className="text-[#94A3B8]">{field.labelAr}</span>
+              {field.labelEn} <span className="text-phx-ink-faint">{field.labelAr}</span>
             </label>
             <Input
               className={inputClassName}
@@ -779,7 +779,7 @@ function FieldGroup({
               value={form[field.key] ?? ""}
             />
             {field.hint ? (
-              <p className="mt-1 text-[11px] font-semibold text-[#94A3B8]">{field.hint}</p>
+              <p className="mt-1 text-[11px] font-semibold text-phx-ink-faint">{field.hint}</p>
             ) : null}
           </div>
         ))}
@@ -836,12 +836,12 @@ function DocumentCard({
           ) : (
             <Badge variant="success">Complete</Badge>
           )}
-          <span className="text-xs font-semibold text-[#64748B]">
+          <span className="text-xs font-semibold text-phx-ink-soft">
             Last printed: {formatStamp(printedAt)}
           </span>
         </div>
 
-        <p className="rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] px-3.5 py-2.5 text-xs font-bold text-[#334155]">
+        <p className="rounded-xl border border-phx-line bg-phx-paper px-3.5 py-2.5 text-xs font-bold text-phx-ink-2">
           {printingNote}
         </p>
 
@@ -868,7 +868,7 @@ function DocumentCard({
         </div>
 
         {canManage ? (
-          <div className="flex flex-wrap items-end gap-3 border-t border-[#E2E8F0] pt-4">
+          <div className="flex flex-wrap items-end gap-3 border-t border-phx-line pt-4">
             <div>
               <label className={labelClassName} htmlFor={`hiring-pack-signed-${slug}`}>
                 Date signed

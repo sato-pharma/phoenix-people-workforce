@@ -113,7 +113,7 @@ export function ChannelsByRepTab() {
         <p className="font-black">Channels by Rep could not load</p>
         <p>{error}</p>
         <button
-          className="mt-2 border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 transition hover:border-[#FDBA74] hover:text-[#F97316]"
+          className="mt-2 border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 transition hover:border-phx-accent-line hover:text-phx-accent"
           onClick={() => setRefreshKey((key) => key + 1)}
           type="button"
         >
@@ -147,14 +147,14 @@ export function ChannelsByRepTab() {
           const Icon = tile.icon;
           const value = tile.of(totals);
           return (
-            <div className="border border-[#E2E8F0] bg-white p-4" key={tile.key}>
+            <div className="border border-phx-line bg-white p-4" key={tile.key}>
               <div className="flex items-center gap-2">
-                <Icon className="h-4 w-4 text-[#F97316]" />
+                <Icon className="h-4 w-4 text-phx-accent" />
                 <span className="whitespace-nowrap text-xs font-black uppercase tracking-[0.12em] text-slate-500">
                   {tile.label}
                 </span>
               </div>
-              <p className="mt-2 whitespace-nowrap text-2xl font-black tabular-nums text-[#0F172A]">
+              <p className="mt-2 whitespace-nowrap text-2xl font-black tabular-nums text-phx-ink">
                 {formatCurrency(value)}
               </p>
               <p className="mt-0.5 whitespace-nowrap text-xs text-slate-400">
@@ -198,7 +198,7 @@ export function ChannelsByRepTab() {
 
       {/* Desktop: the full table. Mobile: cards — never a horizontally scrolling table. */}
       <div className="hidden overflow-x-auto md:block">
-        <div className="overflow-hidden border border-[#E2E8F0]">
+        <div className="overflow-hidden border border-phx-line">
           <table className="w-full min-w-[900px] text-sm">
             <thead className="bg-[#0B0B0B] text-slate-100">
               <tr>
@@ -211,7 +211,7 @@ export function ChannelsByRepTab() {
                 <SortableTh align="right" className="text-xs tracking-[0.12em]" label="Total" onSort={table.toggleSort} sort={table.sort} sortKey="totalValue" variant="dark" />
               </tr>
             </thead>
-            <tbody className="divide-y divide-[#E2E8F0]">
+            <tbody className="divide-y divide-phx-line">
               {table.rows.length === 0 ? (
                 rows.length === 0 ? (
                   <tr>
@@ -235,7 +235,7 @@ export function ChannelsByRepTab() {
                       <span
                         className={cn(
                           "block font-semibold",
-                          row.attribution === "rep" ? "text-[#0F172A]" : "text-[#9A3412]",
+                          row.attribution === "rep" ? "text-phx-ink" : "text-[#9A3412]",
                         )}
                       >
                         {row.label}
@@ -246,7 +246,7 @@ export function ChannelsByRepTab() {
                     <td className="whitespace-nowrap px-3 py-2.5 text-right font-semibold tabular-nums text-slate-900">{formatCurrency(row.hospitalValue)}</td>
                     <td className="whitespace-nowrap px-3 py-2.5 text-right font-semibold tabular-nums text-slate-900">{formatCurrency(row.storeValue)}</td>
                     <td className="whitespace-nowrap px-3 py-2.5 text-right font-semibold tabular-nums text-slate-900">{formatCurrency(row.pharmacyValue)}</td>
-                    <td className="whitespace-nowrap px-3 py-2.5 text-right font-black tabular-nums text-[#0F172A]">{formatCurrency(row.totalValue)}</td>
+                    <td className="whitespace-nowrap px-3 py-2.5 text-right font-black tabular-nums text-phx-ink">{formatCurrency(row.totalValue)}</td>
                   </tr>
                 ))
               )}
@@ -265,7 +265,7 @@ export function ChannelsByRepTab() {
             <div
               className={cn(
                 "border p-3",
-                row.attribution === "rep" ? "border-slate-200 bg-white" : "border-[#FDBA74] bg-amber-50/40",
+                row.attribution === "rep" ? "border-slate-200 bg-white" : "border-phx-accent-line bg-amber-50/40",
               )}
               key={`${row.seatId ?? "none"}:${row.repHrId ?? "none"}:${row.areaCode ?? "none"}:${row.lineCode ?? "none"}`}
             >

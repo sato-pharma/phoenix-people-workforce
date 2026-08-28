@@ -133,7 +133,7 @@ export function DirectOrderRequestDetail({
         <Link href={backHref} className="text-sm font-bold text-orange-600 hover:text-orange-700">
           ← Back
         </Link>
-        <p className="border border-[#e4e9ec] bg-white px-4 py-6 text-sm text-slate-500">
+        <p className="border border-phx-line bg-white px-4 py-6 text-sm text-slate-500">
           This direct order request was not found, or you do not have access to it.
         </p>
       </div>
@@ -225,8 +225,8 @@ export function DirectOrderRequestDetail({
         ← {backLabel}
       </Link>
 
-      <section className="border border-[#e4e9ec] bg-white">
-        <header className="flex flex-wrap items-center justify-between gap-2 border-b border-[#e4e9ec] bg-slate-900 px-4 py-3">
+      <section className="border border-phx-line bg-white">
+        <header className="flex flex-wrap items-center justify-between gap-2 border-b border-phx-line bg-slate-900 px-4 py-3">
           <h2 className="flex flex-wrap items-center gap-2 text-base font-black text-white">
             {request.productName} × {request.qty.toLocaleString("en-US")}
             <DirectOrderStatusPill status={request.status} salesMonth={request.salesMonth} variant="solid" />
@@ -517,7 +517,7 @@ export function DirectOrderRequestDetail({
               and the two values being compared must stay stacked together to be readable. */}
           <div className="space-y-2 md:hidden">
             {comparisonRows.map((row) => (
-              <article key={row.label} className="block border border-[#e4e9ec] p-3">
+              <article key={row.label} className="block border border-phx-line p-3">
                 <div className="flex items-center justify-between gap-2">
                   <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">{row.label}</p>
                   <span className={`px-1.5 py-0.5 text-[10px] font-black uppercase tracking-wide ${VERDICT_TONE[row.verdict]}`}>
@@ -692,7 +692,7 @@ export function DirectOrderRequestDetail({
                 {distributors.map((row) => (
                   <article
                     key={`${row.distributorCode}-${row.customerCode}`}
-                    className="block border border-[#e4e9ec] p-3"
+                    className="block border border-phx-line p-3"
                   >
                     <p className="text-sm font-black text-slate-900">{row.distributorName}</p>
                     <p className="mt-0.5 text-[11px] text-slate-500">
@@ -863,7 +863,7 @@ export function DirectOrderRequestDetail({
               order against, and it is the first thing lost when a table is squeezed onto a phone. */}
           <div className="space-y-2 md:hidden">
             {salesMatrix.products.map((product) => (
-              <article key={product.productCode} className="block border border-[#e4e9ec] p-3">
+              <article key={product.productCode} className="block border border-phx-line p-3">
                 <div className="flex flex-wrap items-baseline justify-between gap-2">
                   <p className="text-sm font-black text-slate-900">
                     {product.productName} <span className="font-semibold text-slate-400">({product.productCode})</span>
@@ -996,7 +996,7 @@ export function DirectOrderRequestDetail({
               on a phone than any of the numbers beside it. */}
           <div className="space-y-2 md:hidden">
             {pharmacyHistory.map((row) => (
-              <article key={`${row.month}-${row.productCode}`} className="block border border-[#e4e9ec] p-3">
+              <article key={`${row.month}-${row.productCode}`} className="block border border-phx-line p-3">
                 <p className="text-sm font-black text-slate-900">
                   {row.month}
                   {row.monthIsProvisional ? (

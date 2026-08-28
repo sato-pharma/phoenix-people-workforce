@@ -277,14 +277,14 @@ const emptyResignationForm: ResignationFormState = {
 };
 
 const panelClassName =
-  "rounded-[28px] border border-[#D8E0EA] bg-white/94 shadow-[0_18px_46px_rgba(15,23,42,0.08)] backdrop-blur";
+  "rounded-[28px] border border-phx-line bg-white/94 shadow-[0_18px_46px_rgba(15,23,42,0.08)] backdrop-blur";
 
 function EmployeePageShell({ children }: { children: React.ReactNode }) {
   return (
-    <div className="relative isolate min-h-[calc(100vh-8rem)] overflow-hidden rounded-[34px] border border-[#D8E0EA] bg-[#F8FAFC] p-4 shadow-[0_24px_70px_rgba(15,23,42,0.1)] sm:p-6 lg:p-8">
+    <div className="relative isolate min-h-[calc(100vh-8rem)] overflow-hidden rounded-[34px] border border-phx-line bg-phx-paper p-4 shadow-[0_24px_70px_rgba(15,23,42,0.1)] sm:p-6 lg:p-8">
       <div
         aria-hidden="true"
-        className="pointer-events-none absolute -right-24 -top-28 h-96 w-96 rounded-full bg-[#F97316]/5 blur-3xl"
+        className="pointer-events-none absolute -right-24 -top-28 h-96 w-96 rounded-full bg-phx-accent/5 blur-3xl"
       />
       <div
         aria-hidden="true"
@@ -416,7 +416,7 @@ function SelectField({
             toneStyles.bg,
             toneStyles.text,
             toneStyles.focus,
-            disabled && "opacity-50 cursor-not-allowed bg-[#F8FAFC]"
+            disabled && "opacity-50 cursor-not-allowed bg-phx-paper"
           )}
           disabled={disabled}
           onChange={(event) => onChange(event.target.value)}
@@ -460,7 +460,7 @@ function TextField({
         {label}
       </span>
       <Input
-        className={cn("h-11 rounded-2xl border-[#D7E0EA] bg-white/95 shadow-sm", disabled && "bg-[#F8FAFC] text-[#64748B]")}
+        className={cn("h-11 rounded-2xl border-[#D7E0EA] bg-white/95 shadow-sm", disabled && "bg-phx-paper text-phx-ink-soft")}
         disabled={disabled}
         onChange={(event) => onChange(event.target.value)}
         placeholder={placeholder}
@@ -1500,19 +1500,19 @@ export function EmployeeManagement({
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-1 rounded-2xl border border-white/20 bg-white/10 p-1 shadow-sm backdrop-blur-sm">
               <a
-                className="inline-flex h-10 items-center justify-center gap-2.5 rounded-xl px-5 text-xs font-semibold text-slate-200 transition-all hover:bg-white/10 hover:text-white focus-visible:outline-2 focus-visible:outline-[#F97316] focus-visible:outline-offset-1"
+                className="inline-flex h-10 items-center justify-center gap-2.5 rounded-xl px-5 text-xs font-semibold text-slate-200 transition-all hover:bg-white/10 hover:text-white focus-visible:outline-2 focus-visible:outline-phx-accent focus-visible:outline-offset-1"
                 href="/api/employees/template"
                 title="Export active employee master data"
               >
-                <Download className="h-4 w-4 text-[#F97316]" />
+                <Download className="h-4 w-4 text-phx-accent" />
                 <span className="hidden sm:inline">Export</span>
               </a>
               <div className="h-5 w-px bg-white/15" />
-              <label className="inline-flex h-10 cursor-pointer items-center justify-center gap-2.5 rounded-xl px-5 text-xs font-semibold text-slate-200 transition-all hover:bg-white/10 hover:text-white focus-visible:outline-2 focus-visible:outline-[#F97316] focus-visible:outline-offset-1">
+              <label className="inline-flex h-10 cursor-pointer items-center justify-center gap-2.5 rounded-xl px-5 text-xs font-semibold text-slate-200 transition-all hover:bg-white/10 hover:text-white focus-visible:outline-2 focus-visible:outline-phx-accent focus-visible:outline-offset-1">
                 {isImportingTemplate ? (
                   <LoadingSpinner />
                 ) : (
-                  <Upload className="h-4 w-4 text-[#F97316]" />
+                  <Upload className="h-4 w-4 text-phx-accent" />
                 )}
                 <span className="hidden sm:inline">Upload</span>
                 <input
@@ -1525,7 +1525,7 @@ export function EmployeeManagement({
               </label>
             </div>
             <Button
-              className="h-10 gap-2 rounded-2xl border border-white/20 bg-white/10 px-4 text-xs font-semibold text-slate-100 backdrop-blur transition-all hover:border-[#FDBA74] hover:bg-white/[0.16] hover:text-white focus-visible:outline-2 focus-visible:outline-[#F97316] focus-visible:outline-offset-1"
+              className="h-10 gap-2 rounded-2xl border border-white/20 bg-white/10 px-4 text-xs font-semibold text-slate-100 backdrop-blur transition-all hover:border-phx-accent-line hover:bg-white/[0.16] hover:text-white focus-visible:outline-2 focus-visible:outline-phx-accent focus-visible:outline-offset-1"
               disabled={isLoading}
               onClick={() => void loadEmployees()}
               variant="secondary"
@@ -1533,7 +1533,7 @@ export function EmployeeManagement({
               {isLoading ? <LoadingSpinner /> : <RefreshCw className="h-4 w-4" />}
               <span className="hidden lg:inline">Sync</span>
             </Button>
-            <Button className="h-11 gap-2 rounded-2xl bg-[#F97316] px-6 text-xs font-bold text-white shadow-[0_14px_30px_rgba(249,115,22,0.3)] transition-all hover:bg-[#EA580C] hover:shadow-[0_18px_36px_rgba(249,115,22,0.4)] focus-visible:outline-2 focus-visible:outline-[#F97316] focus-visible:outline-offset-1" onClick={startCreate}>
+            <Button className="h-11 gap-2 rounded-2xl bg-phx-accent px-6 text-xs font-bold text-white shadow-[0_14px_30px_rgba(249,115,22,0.3)] transition-all hover:bg-phx-accent-hover hover:shadow-[0_18px_36px_rgba(249,115,22,0.4)] focus-visible:outline-2 focus-visible:outline-phx-accent focus-visible:outline-offset-1" onClick={startCreate}>
               <UserPlus className="h-4 w-4" />
               Add Employee
             </Button>
@@ -1567,7 +1567,7 @@ export function EmployeeManagement({
       {pendingImportPreview ? (
         <AdminCallout tone={pendingImportPreview.failedRows ? "danger" : "warning"}>
           <div className="flex items-start gap-4 w-full">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-[#F97316] to-[#FB923C] text-white shadow-lg">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-phx-accent to-[#FB923C] text-white shadow-lg">
               <Upload className="h-5 w-5" />
             </div>
             <div className="flex flex-1 flex-col gap-3 md:flex-row md:items-start md:justify-between">
@@ -1620,7 +1620,7 @@ export function EmployeeManagement({
               </div>
               <div className="flex items-center gap-2">
                 <Button
-                  className="h-10 rounded-xl px-5 text-xs font-semibold transition-all focus-visible:outline-2 focus-visible:outline-[#F97316] focus-visible:outline-offset-1"
+                  className="h-10 rounded-xl px-5 text-xs font-semibold transition-all focus-visible:outline-2 focus-visible:outline-phx-accent focus-visible:outline-offset-1"
                   disabled={isImportingTemplate || (pendingImportPreview.missingRequiredColumns?.length ?? 0) > 0}
                   onClick={() => void confirmPendingImport()}
                 >
@@ -1669,7 +1669,7 @@ export function EmployeeManagement({
           <AdminTableShell
             action={
               <div className="flex items-center gap-3">
-                <Badge className="bg-white text-[#475569] border-[#E2E8F0] shadow-sm" variant="neutral">
+                <Badge className="bg-white text-phx-ink-2 border-phx-line shadow-sm" variant="neutral">
                   {formatNumberValue(filteredEmployees.length)} results
                 </Badge>
               </div>
@@ -1677,11 +1677,11 @@ export function EmployeeManagement({
             description="Access and manage comprehensive employee records with real-time filters."
             title="Workforce Directory"
           >
-            <div className="h-1 w-full bg-gradient-to-r from-[#F97316] via-[#3B82F6] to-[#8B5CF6] opacity-80" />
-            <div className="border-b border-[#E2E8F0] bg-white px-4 py-3">
+            <div className="h-1 w-full bg-gradient-to-r from-phx-accent via-[#3B82F6] to-[#8B5CF6] opacity-80" />
+            <div className="border-b border-phx-line bg-white px-4 py-3">
               <div
                 aria-label="Employee directory views"
-                className="inline-flex flex-wrap items-center gap-1 rounded-2xl border border-[#E2E8F0] bg-[#F8FAFC] p-1 shadow-sm"
+                className="inline-flex flex-wrap items-center gap-1 rounded-2xl border border-phx-line bg-phx-paper p-1 shadow-sm"
                 role="tablist"
               >
                 {[
@@ -1705,22 +1705,22 @@ export function EmployeeManagement({
                     <button
                       aria-selected={isActive}
                       className={cn(
-                        "inline-flex h-10 items-center gap-2 rounded-xl px-4 text-xs font-bold transition-all focus-visible:outline-2 focus-visible:outline-[#F97316] focus-visible:outline-offset-1",
+                        "inline-flex h-10 items-center gap-2 rounded-xl px-4 text-xs font-bold transition-all focus-visible:outline-2 focus-visible:outline-phx-accent focus-visible:outline-offset-1",
                         isActive
-                          ? "bg-white text-[#0F172A] shadow-sm"
-                          : "text-[#64748B] hover:bg-white/70 hover:text-[#0F172A]",
+                          ? "bg-white text-phx-ink shadow-sm"
+                          : "text-phx-ink-soft hover:bg-white/70 hover:text-phx-ink",
                       )}
                       key={tab.value}
                       onClick={() => setDirectoryTab(tab.value)}
                       role="tab"
                       type="button"
                     >
-                      <Icon className={cn("h-4 w-4", tab.value === "missing" ? "text-[#F97316]" : "text-[#3B82F6]")} />
+                      <Icon className={cn("h-4 w-4", tab.value === "missing" ? "text-phx-accent" : "text-[#3B82F6]")} />
                       <span>{tab.label}</span>
                       <span
                         className={cn(
                           "rounded-full px-2 py-0.5 text-[10px] font-black",
-                          isActive ? "bg-[#F1F5F9] text-[#0F172A]" : "bg-white text-[#64748B]",
+                          isActive ? "bg-phx-paper-2 text-phx-ink" : "bg-white text-phx-ink-soft",
                         )}
                       >
                         {formatNumberValue(tab.count)}
@@ -1730,20 +1730,20 @@ export function EmployeeManagement({
                 })}
               </div>
             </div>
-            <div className="flex flex-col gap-4 border-b border-[#E2E8F0] bg-[#F8FAFC]/50 p-4">
+            <div className="flex flex-col gap-4 border-b border-phx-line bg-phx-paper/50 p-4">
               <div className="grid gap-4 xl:grid-cols-[1fr_auto]">
                 <label className="relative">
                   <span className="sr-only">Search employees</span>
-                  <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-[#94A3B8]" />
+                  <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-phx-ink-faint" />
                   <Input
-                    className="h-12 w-full rounded-2xl border-[#E2E8F0] bg-white pl-11 text-sm shadow-sm transition-all focus:border-[#F97316] focus:ring-2 focus:ring-[#F97316]/20 focus:shadow-[0_0_0_4px_rgba(249,115,22,0.1)]"
+                    className="h-12 w-full rounded-2xl border-phx-line bg-white pl-11 text-sm shadow-sm transition-all focus:border-phx-accent focus:ring-2 focus:ring-phx-accent/20 focus:shadow-[0_0_0_4px_rgba(249,115,22,0.1)]"
                     onChange={(event) => setQuery(event.target.value)}
                     placeholder="Search by name, ID, email, or manager..."
                     value={query}
                   />
                 </label>
                 <Button
-                  className="h-12 gap-2 rounded-2xl border-[#E2E8F0] bg-white px-6 text-sm font-semibold text-[#475569] shadow-sm transition-all hover:bg-[#F8FAFC] focus-visible:outline-2 focus-visible:outline-[#F97316] focus-visible:outline-offset-1 disabled:opacity-40"
+                  className="h-12 gap-2 rounded-2xl border-phx-line bg-white px-6 text-sm font-semibold text-phx-ink-2 shadow-sm transition-all hover:bg-phx-paper focus-visible:outline-2 focus-visible:outline-phx-accent focus-visible:outline-offset-1 disabled:opacity-40"
                   disabled={!hasActiveFilters}
                   onClick={clearFilters}
                   variant="outline"
@@ -1850,7 +1850,7 @@ export function EmployeeManagement({
                       actions={
                         <>
                           <Button
-                            className="h-9 flex-1 gap-1.5 rounded-xl border-[#E2E8F0] text-xs font-bold text-[#475569] hover:bg-[#F1F5F9] hover:text-[#0F172A]"
+                            className="h-9 flex-1 gap-1.5 rounded-xl border-phx-line text-xs font-bold text-phx-ink-2 hover:bg-phx-paper-2 hover:text-phx-ink"
                             onClick={() => setMasterDetailsEmployee(employee)}
                             variant="outline"
                           >
@@ -1858,7 +1858,7 @@ export function EmployeeManagement({
                             View
                           </Button>
                           <Button
-                            className="h-9 flex-1 gap-1.5 rounded-xl border-[#E2E8F0] text-xs font-bold text-[#475569] hover:bg-[#F1F5F9] hover:text-[#0F172A]"
+                            className="h-9 flex-1 gap-1.5 rounded-xl border-phx-line text-xs font-bold text-phx-ink-2 hover:bg-phx-paper-2 hover:text-phx-ink"
                             onClick={() => startEdit(employee)}
                             variant="outline"
                           >
@@ -1866,7 +1866,7 @@ export function EmployeeManagement({
                             Edit
                           </Button>
                           <Button
-                            className="h-9 flex-1 gap-1.5 rounded-xl border-[#E2E8F0] text-xs font-bold text-[#475569] hover:bg-[#F1F5F9] hover:text-[#0F172A]"
+                            className="h-9 flex-1 gap-1.5 rounded-xl border-phx-line text-xs font-bold text-phx-ink-2 hover:bg-phx-paper-2 hover:text-phx-ink"
                             onClick={() => startSeatTransfer(employee)}
                             variant="outline"
                           >
@@ -1960,7 +1960,7 @@ export function EmployeeManagement({
             {/* Desktop Table View */}
             <PortalDesktopTable minWidth="1200px">
               <thead>
-                <tr className="border-b border-[#E2E8F0] bg-[#F8FAFC] text-[11px] font-bold uppercase tracking-wider text-[#64748B]">
+                <tr className="border-b border-phx-line bg-phx-paper text-[11px] font-bold uppercase tracking-wider text-phx-ink-soft">
                   <th className="sticky top-0 z-10 px-6 py-4">Employee Information</th>
                   <th className="sticky top-0 z-10 px-6 py-4 whitespace-nowrap">Hiring Date</th>
                   <th className="sticky top-0 z-10 px-6 py-4">Organization</th>
@@ -1970,16 +1970,16 @@ export function EmployeeManagement({
                   <th className="sticky top-0 z-10 px-6 py-4 text-right">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-[#F1F5F9]">
+              <tbody className="divide-y divide-phx-paper-2">
                 {filteredEmployees.length === 0 ? (
                   <tr>
                     <td
-                      className="px-6 py-16 text-center text-sm text-[#94A3B8]"
+                      className="px-6 py-16 text-center text-sm text-phx-ink-faint"
                       colSpan={7}
                     >
                       <div className="flex flex-col items-center gap-3">
-                        <div className="h-12 w-12 rounded-full bg-[#F1F5F9] flex items-center justify-center">
-                          <Users className="h-6 w-6 text-[#CBD5E1]" />
+                        <div className="h-12 w-12 rounded-full bg-phx-paper-2 flex items-center justify-center">
+                          <Users className="h-6 w-6 text-phx-line-strong" />
                         </div>
                         <span>
                           {directoryTab === "missing" && !hasActiveFilters
@@ -1995,12 +1995,12 @@ export function EmployeeManagement({
 
                     return (
                       <tr
-                        className="group transition-all duration-200 hover:bg-[#F8FAFC] data-[state=selected]:bg-[#FFF7ED]"
+                        className="group transition-all duration-200 hover:bg-phx-paper data-[state=selected]:bg-phx-accent-soft"
                         key={employeeRowKey(employee, index)}
                       >
                       <td className="px-6 py-4">
                         <button
-                          className="flex items-center gap-3 rounded-lg text-left group/name focus-visible:outline-2 focus-visible:outline-[#F97316] focus-visible:outline-offset-1"
+                          className="flex items-center gap-3 rounded-lg text-left group/name focus-visible:outline-2 focus-visible:outline-phx-accent focus-visible:outline-offset-1"
                           onClick={() => startEdit(employee)}
                           type="button"
                         >
@@ -2010,11 +2010,11 @@ export function EmployeeManagement({
                             hrId={employee.hrId}
                           />
                           <div className="flex flex-col">
-                          <span className="font-bold text-[#0F172A] group-hover/name:text-[#F97316] transition-colors leading-tight">
+                          <span className="font-bold text-phx-ink group-hover/name:text-phx-accent transition-colors leading-tight">
                             {employee.displayName}
                           </span>
                           <div className="mt-1.5 flex items-center gap-2">
-                            <span className="font-mono text-[10px] font-black tracking-wider text-[#64748B] bg-slate-100 px-1.5 py-0.5 rounded uppercase">
+                            <span className="font-mono text-[10px] font-black tracking-wider text-phx-ink-soft bg-slate-100 px-1.5 py-0.5 rounded uppercase">
                               {employee.hrId}
                             </span>
                             {employee.employmentStatus === "active" && (
@@ -2036,16 +2036,16 @@ export function EmployeeManagement({
                         </button>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
-                        <span className="font-mono text-xs text-[#475569]">
+                        <span className="font-mono text-xs text-phx-ink-2">
                           {employee.hireDate ? employee.hireDate.slice(0, 10) : "-"}
                         </span>
                       </td>
                       <td className="px-6 py-4">
                         <div className="flex flex-col gap-1">
-                          <span className="text-xs font-semibold text-[#0F172A] leading-tight">
+                          <span className="text-xs font-semibold text-phx-ink leading-tight">
                             {emptyText(employee.positionTitle ?? employee.jobTitle)}
                           </span>
-                          <span className="text-[10px] text-[#64748B]">
+                          <span className="text-[10px] text-phx-ink-soft">
                             {emptyText(employee.departmentName)} · {emptyText(employee.lineName)}
                           </span>
                         </div>
@@ -2053,10 +2053,10 @@ export function EmployeeManagement({
                       <td className="px-6 py-4">
                         {employee.managerHrId ? (
                           <div className="flex flex-col gap-1">
-                            <span className="text-xs font-medium text-[#0F172A]">
+                            <span className="text-xs font-medium text-phx-ink">
                               {emptyText(employee.managerName)}
                             </span>
-                            <span className="font-mono text-[10px] tracking-tight text-[#94A3B8]">
+                            <span className="font-mono text-[10px] tracking-tight text-phx-ink-faint">
                               {employee.managerHrId}
                             </span>
                           </div>
@@ -2083,10 +2083,10 @@ export function EmployeeManagement({
                       </td>
                       <td className="px-6 py-4">
                         <div className="flex flex-col gap-1">
-                          <span className="text-xs font-medium text-[#0F172A] leading-tight">
+                          <span className="text-xs font-medium text-phx-ink leading-tight">
                             {emptyText(employee.workEmail)}
                           </span>
-                          <span className="font-mono text-[10px] tracking-tight text-[#64748B]">
+                          <span className="font-mono text-[10px] tracking-tight text-phx-ink-soft">
                             {emptyText(employee.mobileNumber)}
                           </span>
                         </div>
@@ -2094,7 +2094,7 @@ export function EmployeeManagement({
                       <td className="px-6 py-4 text-right">
                         <div className="flex justify-end gap-1.5 transition-all duration-200">
                           <Button
-                            className="h-8 w-8 rounded-xl p-0 text-[#64748B] hover:bg-[#F1F5F9] hover:text-[#0F172A] hover:scale-110 transition-all focus-visible:outline-2 focus-visible:outline-[#F97316] focus-visible:outline-offset-1"
+                            className="h-8 w-8 rounded-xl p-0 text-phx-ink-soft hover:bg-phx-paper-2 hover:text-phx-ink hover:scale-110 transition-all focus-visible:outline-2 focus-visible:outline-phx-accent focus-visible:outline-offset-1"
                             onClick={() => setMasterDetailsEmployee(employee)}
                             title="View Master Details"
                             variant="ghost"
@@ -2102,7 +2102,7 @@ export function EmployeeManagement({
                             <Info className="h-4 w-4" />
                           </Button>
                           <Button
-                            className="h-8 w-8 rounded-xl p-0 text-[#64748B] hover:bg-[#F1F5F9] hover:text-[#0F172A] hover:scale-110 transition-all focus-visible:outline-2 focus-visible:outline-[#F97316] focus-visible:outline-offset-1"
+                            className="h-8 w-8 rounded-xl p-0 text-phx-ink-soft hover:bg-phx-paper-2 hover:text-phx-ink hover:scale-110 transition-all focus-visible:outline-2 focus-visible:outline-phx-accent focus-visible:outline-offset-1"
                             onClick={() => startEdit(employee)}
                             title="Edit Record"
                             variant="ghost"
@@ -2110,7 +2110,7 @@ export function EmployeeManagement({
                             <Pencil className="h-4 w-4" />
                           </Button>
                           <Button
-                            className="h-8 w-8 rounded-xl p-0 text-[#64748B] hover:bg-[#F1F5F9] hover:text-[#0F172A] hover:scale-110 transition-all focus-visible:outline-2 focus-visible:outline-[#F97316] focus-visible:outline-offset-1"
+                            className="h-8 w-8 rounded-xl p-0 text-phx-ink-soft hover:bg-phx-paper-2 hover:text-phx-ink hover:scale-110 transition-all focus-visible:outline-2 focus-visible:outline-phx-accent focus-visible:outline-offset-1"
                             onClick={() => startSeatTransfer(employee)}
                             title="Transfer Seat"
                             variant="ghost"
@@ -2118,7 +2118,7 @@ export function EmployeeManagement({
                             <ArrowLeftRight className="h-4 w-4" />
                           </Button>
                           <Button
-                            className="h-8 w-8 rounded-xl p-0 text-[#64748B] hover:bg-rose-50 hover:text-rose-600 hover:scale-110 transition-all focus-visible:outline-2 focus-visible:outline-[#F97316] focus-visible:outline-offset-1"
+                            className="h-8 w-8 rounded-xl p-0 text-phx-ink-soft hover:bg-rose-50 hover:text-rose-600 hover:scale-110 transition-all focus-visible:outline-2 focus-visible:outline-phx-accent focus-visible:outline-offset-1"
                             onClick={() => startResignation(employee)}
                             title="Mark as Resigned"
                             variant="ghost"
@@ -2139,32 +2139,32 @@ export function EmployeeManagement({
 
       {masterDetailsEmployee ? (
         <div 
-          className="fixed inset-0 z-50 flex justify-end bg-[#0F172A]/40 backdrop-blur-sm transition-opacity duration-300" 
+          className="fixed inset-0 z-50 flex justify-end bg-phx-ink/40 backdrop-blur-sm transition-opacity duration-300" 
           onClick={() => setMasterDetailsEmployee(null)}
           role="dialog" 
           aria-modal="true" 
           aria-labelledby="master-details-title"
         >
           <Card 
-            className="h-full w-full max-w-[640px] overflow-hidden rounded-l-3xl border-l border-[#D8E0EA] bg-white shadow-[-24px_0_60px_rgba(15,23,42,0.15)] flex flex-col transition-transform duration-300 translate-x-0"
+            className="h-full w-full max-w-[640px] overflow-hidden rounded-l-3xl border-l border-phx-line bg-white shadow-[-24px_0_60px_rgba(15,23,42,0.15)] flex flex-col transition-transform duration-300 translate-x-0"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-center justify-between border-b border-[#E2E8F0] bg-gradient-to-r from-[#F8FAFC] to-white px-6 py-5">
+            <div className="flex items-center justify-between border-b border-phx-line bg-gradient-to-r from-phx-paper to-white px-6 py-5">
               <div className="flex items-center gap-4">
-                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-[#F97316] to-[#FB923C] text-white shadow-lg shadow-orange-200">
+                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-phx-accent to-[#FB923C] text-white shadow-lg shadow-orange-200">
                   <span className="text-lg font-bold">{masterDetailsEmployee.displayName.charAt(0).toUpperCase()}</span>
                 </div>
                 <div>
-                  <h2 className="text-xl font-bold tracking-tight text-[#0F172A]" id="master-details-title">{masterDetailsEmployee.displayName}</h2>
+                  <h2 className="text-xl font-bold tracking-tight text-phx-ink" id="master-details-title">{masterDetailsEmployee.displayName}</h2>
                   <div className="mt-1 flex items-center gap-2">
-                    <span className="font-mono text-[10px] font-black tracking-wider text-[#64748B] bg-slate-100 px-2 py-0.5 rounded uppercase">{masterDetailsEmployee.hrId}</span>
-                    <span className="text-[10px] text-[#94A3B8]">·</span>
-                    <span className="text-sm text-[#64748B]">{masterText(masterDetailsEmployee.positionTitle ?? masterDetailsEmployee.jobTitle)}</span>
+                    <span className="font-mono text-[10px] font-black tracking-wider text-phx-ink-soft bg-slate-100 px-2 py-0.5 rounded uppercase">{masterDetailsEmployee.hrId}</span>
+                    <span className="text-[10px] text-phx-ink-faint">·</span>
+                    <span className="text-sm text-phx-ink-soft">{masterText(masterDetailsEmployee.positionTitle ?? masterDetailsEmployee.jobTitle)}</span>
                   </div>
                 </div>
               </div>
               <Button
-                className="h-10 w-10 rounded-xl p-0 text-[#64748B] hover:bg-[#E2E8F0] hover:text-[#0F172A] transition-all focus-visible:outline-2 focus-visible:outline-[#F97316] focus-visible:outline-offset-1"
+                className="h-10 w-10 rounded-xl p-0 text-phx-ink-soft hover:bg-phx-line hover:text-phx-ink transition-all focus-visible:outline-2 focus-visible:outline-phx-accent focus-visible:outline-offset-1"
                 onClick={() => setMasterDetailsEmployee(null)}
                 variant="ghost"
                 aria-label="Close details panel"
@@ -2181,7 +2181,7 @@ export function EmployeeManagement({
               {[
                 {
                   title: "Identity",
-                  accent: "bg-[#F97316]",
+                  accent: "bg-phx-accent",
                   rows: [
                     ["Employee ID", masterDetailsEmployee.hrId],
                     ["Full Name", masterDetailsEmployee.fullName],
@@ -2254,7 +2254,7 @@ export function EmployeeManagement({
                 },
                 {
                   title: "Lifecycle/System",
-                  accent: "bg-[#64748B]",
+                  accent: "bg-phx-ink-soft",
                   rows: [
                     ["Payroll Eligible", masterDetailsEmployee.payrollEligible],
                     ["Organogram Visible", masterDetailsEmployee.organogramVisible],
@@ -2264,46 +2264,46 @@ export function EmployeeManagement({
                   ],
                 },
               ].map((group) => (
-                <section className="rounded-2xl border border-[#E2E8F0] bg-white p-4 shadow-sm transition-all hover:shadow-md hover:border-[#E2E8F0]/80" key={group.title}>
+                <section className="rounded-2xl border border-phx-line bg-white p-4 shadow-sm transition-all hover:shadow-md hover:border-phx-line/80" key={group.title}>
                   <div className="flex items-center gap-2 mb-3">
                     <div className={cn("h-1.5 w-1.5 rounded-full", group.accent)} />
-                    <h3 className="text-xs font-bold uppercase tracking-widest text-[#475569]">{group.title}</h3>
+                    <h3 className="text-xs font-bold uppercase tracking-widest text-phx-ink-2">{group.title}</h3>
                   </div>
                   <dl className="grid gap-1.5">
                     {group.rows.map(([label, value]) => (
-                      <div className="grid grid-cols-[140px_1fr] gap-3 border-b border-[#F8FAFC] py-2 last:border-0" key={String(label)}>
-                        <dt className="text-xs font-medium text-[#94A3B8]">{label}</dt>
-                        <dd className="text-sm font-medium text-[#0F172A]">{masterText(value)}</dd>
+                      <div className="grid grid-cols-[140px_1fr] gap-3 border-b border-phx-paper py-2 last:border-0" key={String(label)}>
+                        <dt className="text-xs font-medium text-phx-ink-faint">{label}</dt>
+                        <dd className="text-sm font-medium text-phx-ink">{masterText(value)}</dd>
                       </div>
                     ))}
                   </dl>
                 </section>
               ))}
               {masterDetailsEmployee?.salaryDetails?.length ? (
-                <section className="rounded-2xl border border-[#E2E8F0] bg-white p-4 shadow-sm transition-all hover:shadow-md hover:border-[#E2E8F0]/80">
+                <section className="rounded-2xl border border-phx-line bg-white p-4 shadow-sm transition-all hover:shadow-md hover:border-phx-line/80">
                   <div className="mb-3 flex items-center gap-2">
                     <div className="h-1.5 w-1.5 rounded-full bg-[#0EA5E9]" />
-                    <h3 className="text-xs font-bold uppercase tracking-widest text-[#475569]">
+                    <h3 className="text-xs font-bold uppercase tracking-widest text-phx-ink-2">
                       Flexible Salary Details
                     </h3>
                   </div>
                   <div className="space-y-3">
                     {masterDetailsEmployee.salaryDetails.map((detail) => (
                       <div
-                        className="rounded-2xl border border-[#E2E8F0] bg-[#F8FAFC] p-3"
+                        className="rounded-2xl border border-phx-line bg-phx-paper p-3"
                         key={detail.id}
                       >
                         <div className="flex items-start justify-between gap-3">
                           <div>
-                            <p className="text-sm font-semibold text-[#0F172A]">{detail.label}</p>
-                            <p className="text-[11px] uppercase tracking-[0.12em] text-[#64748B]">
+                            <p className="text-sm font-semibold text-phx-ink">{detail.label}</p>
+                            <p className="text-[11px] uppercase tracking-[0.12em] text-phx-ink-soft">
                               {detail.category.replace(/_/g, " ")} · {detail.valueType}
                             </p>
                           </div>
-                          <p className="text-sm font-semibold text-[#0F172A]">{detail.value || "-"}</p>
+                          <p className="text-sm font-semibold text-phx-ink">{detail.value || "-"}</p>
                         </div>
                         {detail.notes ? (
-                          <p className="mt-2 text-xs leading-relaxed text-[#475569]">{detail.notes}</p>
+                          <p className="mt-2 text-xs leading-relaxed text-phx-ink-2">{detail.notes}</p>
                         ) : null}
                       </div>
                     ))}
@@ -2311,9 +2311,9 @@ export function EmployeeManagement({
                 </section>
               ) : null}
             </div>
-            <div className="border-t border-[#E2E8F0] bg-[#F8FAFC] px-6 py-4 flex justify-end">
+            <div className="border-t border-phx-line bg-phx-paper px-6 py-4 flex justify-end">
               <Button
-                className="h-11 rounded-2xl px-8 text-sm font-bold text-white bg-[#0F172A] hover:bg-[#1E293B] shadow-lg transition-all focus-visible:outline-2 focus-visible:outline-[#F97316] focus-visible:outline-offset-1"
+                className="h-11 rounded-2xl px-8 text-sm font-bold text-white bg-phx-ink hover:bg-[#1E293B] shadow-lg transition-all focus-visible:outline-2 focus-visible:outline-phx-accent focus-visible:outline-offset-1"
                 onClick={() => setMasterDetailsEmployee(null)}
               >
                 Close Details
@@ -2325,27 +2325,27 @@ export function EmployeeManagement({
 
       {isFormOpen && (
         <div 
-          className="fixed inset-0 z-50 flex justify-end bg-[#0F172A]/40 backdrop-blur-sm transition-all duration-300" 
+          className="fixed inset-0 z-50 flex justify-end bg-phx-ink/40 backdrop-blur-sm transition-all duration-300" 
           onClick={closeForm}
           role="dialog" 
           aria-modal="true" 
           aria-labelledby="form-drawer-title"
         >
           <Card 
-            className="h-full w-full max-w-[680px] overflow-hidden rounded-l-3xl border-l border-[#D8E0EA] bg-white shadow-[-24px_0_60px_rgba(15,23,42,0.15)] flex flex-col transition-transform duration-300 translate-x-0"
+            className="h-full w-full max-w-[680px] overflow-hidden rounded-l-3xl border-l border-phx-line bg-white shadow-[-24px_0_60px_rgba(15,23,42,0.15)] flex flex-col transition-transform duration-300 translate-x-0"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-center justify-between border-b border-[#E2E8F0] bg-gradient-to-r from-[#F8FAFC] to-white px-6 py-5">
+            <div className="flex items-center justify-between border-b border-phx-line bg-gradient-to-r from-phx-paper to-white px-6 py-5">
               <div>
-                <h2 className="text-xl font-bold tracking-tight text-[#0F172A]" id="form-drawer-title">
+                <h2 className="text-xl font-bold tracking-tight text-phx-ink" id="form-drawer-title">
                   {editingHrId ? "Employee Profile" : "New Employee Onboarding"}
                 </h2>
-                <p className="mt-1 text-sm text-[#64748B]">
+                <p className="mt-1 text-sm text-phx-ink-soft">
                   {editingHrId ? `Editing master record for ${form.fullName || "..."}` : "Create a new workforce master data record."}
                 </p>
               </div>
               <Button
-                className="h-10 w-10 rounded-xl p-0 text-[#64748B] hover:bg-[#E2E8F0] hover:text-[#0F172A] transition-all focus-visible:outline-2 focus-visible:outline-[#F97316] focus-visible:outline-offset-1"
+                className="h-10 w-10 rounded-xl p-0 text-phx-ink-soft hover:bg-phx-line hover:text-phx-ink transition-all focus-visible:outline-2 focus-visible:outline-phx-accent focus-visible:outline-offset-1"
                 onClick={closeForm}
                 variant="ghost"
                 aria-label="Close form panel"
@@ -2357,9 +2357,9 @@ export function EmployeeManagement({
             <div className="flex-1 overflow-y-auto bg-white p-6 space-y-8">
               {/* Section 1: Identity Information */}
               <div className="space-y-4">
-                <div className="flex items-center gap-2 border-b border-[#F1F5F9] pb-2">
-                  <div className="h-2 w-2 rounded-full bg-[#F97316]" />
-                  <h3 className="text-xs font-bold uppercase tracking-widest text-[#475569]">Identity Information</h3>
+                <div className="flex items-center gap-2 border-b border-phx-paper-2 pb-2">
+                  <div className="h-2 w-2 rounded-full bg-phx-accent" />
+                  <h3 className="text-xs font-bold uppercase tracking-widest text-phx-ink-2">Identity Information</h3>
                 </div>
                 <div className="grid gap-4 sm:grid-cols-2">
                   <TextField
@@ -2420,9 +2420,9 @@ export function EmployeeManagement({
 
               {/* Section 2: Organizational Assignment */}
               <div className="space-y-4">
-                <div className="flex items-center gap-2 border-b border-[#F1F5F9] pb-2">
+                <div className="flex items-center gap-2 border-b border-phx-paper-2 pb-2">
                   <div className="h-2 w-2 rounded-full bg-[#3B82F6]" />
-                  <h3 className="text-xs font-bold uppercase tracking-widest text-[#475569]">Organizational Assignment</h3>
+                  <h3 className="text-xs font-bold uppercase tracking-widest text-phx-ink-2">Organizational Assignment</h3>
                 </div>
                 <div className="grid gap-4 sm:grid-cols-2">
                   <SelectField
@@ -2531,9 +2531,9 @@ export function EmployeeManagement({
 
               {/* Section 3: Employment Details */}
               <div className="space-y-4">
-                <div className="flex items-center gap-2 border-b border-[#F1F5F9] pb-2">
+                <div className="flex items-center gap-2 border-b border-phx-paper-2 pb-2">
                   <div className="h-2 w-2 rounded-full bg-[#10B981]" />
-                  <h3 className="text-xs font-bold uppercase tracking-widest text-[#475569]">Employment Details</h3>
+                  <h3 className="text-xs font-bold uppercase tracking-widest text-phx-ink-2">Employment Details</h3>
                 </div>
                 <div className="grid gap-4 sm:grid-cols-2">
                   <TextField
@@ -2566,9 +2566,9 @@ export function EmployeeManagement({
 
               {/* Section 4: Contact & CRM */}
               <div className="space-y-4">
-                <div className="flex items-center gap-2 border-b border-[#F1F5F9] pb-2">
+                <div className="flex items-center gap-2 border-b border-phx-paper-2 pb-2">
                   <div className="h-2 w-2 rounded-full bg-[#8B5CF6]" />
-                  <h3 className="text-xs font-bold uppercase tracking-widest text-[#475569]">Contact & System Access</h3>
+                  <h3 className="text-xs font-bold uppercase tracking-widest text-phx-ink-2">Contact & System Access</h3>
                 </div>
                 <div className="grid gap-4 sm:grid-cols-2">
                   <TextField
@@ -2601,9 +2601,9 @@ export function EmployeeManagement({
 
               {/* Section 5: Residence & Location */}
               <div className="space-y-4">
-                <div className="flex items-center gap-2 border-b border-[#F1F5F9] pb-2">
+                <div className="flex items-center gap-2 border-b border-phx-paper-2 pb-2">
                   <div className="h-2 w-2 rounded-full bg-[#F43F5E]" />
-                  <h3 className="text-xs font-bold uppercase tracking-widest text-[#475569]">Residence & Geography</h3>
+                  <h3 className="text-xs font-bold uppercase tracking-widest text-phx-ink-2">Residence & Geography</h3>
                 </div>
                 <div className="grid gap-4 sm:grid-cols-2">
                   <TextField
@@ -2625,7 +2625,7 @@ export function EmployeeManagement({
                     value={form.residenceArea}
                   />
                 </div>
-                <div className="rounded-xl border border-blue-100 bg-blue-50/50 p-4 text-[11px] leading-relaxed text-[#475569]">
+                <div className="rounded-xl border border-blue-100 bg-blue-50/50 p-4 text-[11px] leading-relaxed text-phx-ink-2">
                   <p className="font-bold text-[#1E40AF] mb-1 uppercase tracking-tight">Geocoding Information</p>
                   Residence address is automatically geocoded upon saving. Coordinates are used for distance-based expense validation and workforce heatmaps.
                 </div>
@@ -2633,9 +2633,9 @@ export function EmployeeManagement({
 
               {/* Section 6: Payroll Reference */}
               <div className="space-y-4">
-                <div className="flex items-center gap-2 border-b border-[#F1F5F9] pb-2">
+                <div className="flex items-center gap-2 border-b border-phx-paper-2 pb-2">
                   <div className="h-2 w-2 rounded-full bg-[#14B8A6]" />
-                  <h3 className="text-xs font-bold uppercase tracking-widest text-[#475569]">Payroll Reference</h3>
+                  <h3 className="text-xs font-bold uppercase tracking-widest text-phx-ink-2">Payroll Reference</h3>
                 </div>
                 <div className="grid gap-4 sm:grid-cols-2">
                   <TextField
@@ -2757,8 +2757,8 @@ export function EmployeeManagement({
                 <div className="rounded-2xl border border-[#D7EAF8] bg-[#F8FCFF] p-4">
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div>
-                      <h4 className="text-sm font-bold text-[#0F172A]">Flexible Salary Details</h4>
-                      <p className="mt-1 text-xs leading-relaxed text-[#64748B]">
+                      <h4 className="text-sm font-bold text-phx-ink">Flexible Salary Details</h4>
+                      <p className="mt-1 text-xs leading-relaxed text-phx-ink-soft">
                         Add any extra salary line you need without changing the code again. These rows are stored with the employee compensation record.
                       </p>
                     </div>
@@ -2774,7 +2774,7 @@ export function EmployeeManagement({
                   </div>
                   <div className="mt-4 space-y-3">
                     {form.salaryDetails.length === 0 ? (
-                      <div className="rounded-2xl border border-dashed border-[#BFDBFE] bg-white/70 px-4 py-5 text-xs text-[#64748B]">
+                      <div className="rounded-2xl border border-dashed border-[#BFDBFE] bg-white/70 px-4 py-5 text-xs text-phx-ink-soft">
                         No flexible salary details added yet.
                       </div>
                     ) : null}
@@ -2785,10 +2785,10 @@ export function EmployeeManagement({
                       >
                         <div className="mb-3 flex items-center justify-between gap-3">
                           <div>
-                            <p className="text-sm font-semibold text-[#0F172A]">
+                            <p className="text-sm font-semibold text-phx-ink">
                               Salary Detail {index + 1}
                             </p>
-                            <p className="text-[11px] uppercase tracking-[0.12em] text-[#64748B]">
+                            <p className="text-[11px] uppercase tracking-[0.12em] text-phx-ink-soft">
                               Flexible compensation row
                             </p>
                           </div>
@@ -2845,9 +2845,9 @@ export function EmployeeManagement({
 
               {/* Section 7: Lifecycle / System */}
               <div className="space-y-4">
-                <div className="flex items-center gap-2 border-b border-[#F1F5F9] pb-2">
-                  <div className="h-2 w-2 rounded-full bg-[#64748B]" />
-                  <h3 className="text-xs font-bold uppercase tracking-widest text-[#475569]">Lifecycle / System</h3>
+                <div className="flex items-center gap-2 border-b border-phx-paper-2 pb-2">
+                  <div className="h-2 w-2 rounded-full bg-phx-ink-soft" />
+                  <h3 className="text-xs font-bold uppercase tracking-widest text-phx-ink-2">Lifecycle / System</h3>
                 </div>
                 <div className="grid gap-4 sm:grid-cols-2">
                   <SelectField
@@ -2879,27 +2879,27 @@ export function EmployeeManagement({
               </div>
 
               {/* Payroll Information Note */}
-              <div className="rounded-xl border border-amber-100 bg-amber-50/50 p-4 text-[11px] leading-relaxed text-[#475569]">
+              <div className="rounded-xl border border-amber-100 bg-amber-50/50 p-4 text-[11px] leading-relaxed text-phx-ink-2">
                 <p className="font-bold text-[#92400E] mb-1 uppercase tracking-tight">Payroll Payout Structure</p>
                 <span className="font-bold text-[#92400E]">1 Part:</span> Net salary on Day 1, expenses on Day 10.<br/>
                 <span className="font-bold text-[#92400E]">2 Parts:</span> 70% Basic on Day 1. Remaining 30%, Cost of Living, Fuel, and Expenses on Day 10.
               </div>
             </div>
 
-            <div className="border-t border-[#E2E8F0] bg-gradient-to-r from-[#F8FAFC] to-white px-6 py-4 flex justify-between items-center">
-              <div className="text-xs text-[#94A3B8]">
+            <div className="border-t border-phx-line bg-gradient-to-r from-phx-paper to-white px-6 py-4 flex justify-between items-center">
+              <div className="text-xs text-phx-ink-faint">
                 {editingHrId ? "Editing existing master record" : "Creating new employee record"}
               </div>
               <div className="flex gap-3">
                 <Button
-                  className="h-11 rounded-2xl px-6 text-sm font-semibold text-[#475569] hover:bg-[#E2E8F0] transition-all focus-visible:outline-2 focus-visible:outline-[#F97316] focus-visible:outline-offset-1"
+                  className="h-11 rounded-2xl px-6 text-sm font-semibold text-phx-ink-2 hover:bg-phx-line transition-all focus-visible:outline-2 focus-visible:outline-phx-accent focus-visible:outline-offset-1"
                   onClick={closeForm}
                   variant="ghost"
                 >
                   Discard Changes
                 </Button>
                 <Button
-                  className="h-11 gap-2 rounded-2xl bg-[#0F172A] px-8 text-sm font-bold text-white shadow-lg transition-all hover:bg-[#1E293B] hover:shadow-xl disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-[#F97316] focus-visible:outline-offset-1"
+                  className="h-11 gap-2 rounded-2xl bg-phx-ink px-8 text-sm font-bold text-white shadow-lg transition-all hover:bg-[#1E293B] hover:shadow-xl disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-phx-accent focus-visible:outline-offset-1"
                   disabled={isSaving}
                   onClick={() => void saveEmployee()}
                 >
@@ -2913,7 +2913,7 @@ export function EmployeeManagement({
       )}
       {isResignationOpen && resigningEmployee ? (
         <div 
-          className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-[#0F172A]/60 px-4 py-6 backdrop-blur-md"
+          className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-phx-ink/60 px-4 py-6 backdrop-blur-md"
           onClick={closeResignation}
         >
           <Card 
@@ -3009,7 +3009,7 @@ export function EmployeeManagement({
 
       {isTransferOpen && transferEmployee ? (
         <div
-          className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-[#0F172A]/60 px-4 py-6 backdrop-blur-md"
+          className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-phx-ink/60 px-4 py-6 backdrop-blur-md"
           onClick={closeSeatTransfer}
         >
           <Card

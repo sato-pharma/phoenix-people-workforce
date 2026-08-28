@@ -106,9 +106,9 @@ export function PlacesAutocompleteInput({
   return (
     <div className="relative" ref={containerRef}>
       <div className="relative flex items-center">
-        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#94A3B8]" />
+        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-phx-ink-faint" />
         <input
-          className="h-11 w-full rounded-2xl border border-[#DDE6F1] bg-white/95 pl-9 pr-9 text-sm font-semibold text-[#0F172A] shadow-sm placeholder:font-normal placeholder:text-[#94A3B8] focus:border-[#F97316] focus:outline-none focus:ring-2 focus:ring-[#FED7AA] disabled:opacity-60"
+          className="h-11 w-full rounded-2xl border border-[#DDE6F1] bg-white/95 pl-9 pr-9 text-sm font-semibold text-phx-ink shadow-sm placeholder:font-normal placeholder:text-phx-ink-faint focus:border-phx-accent focus:outline-none focus:ring-2 focus:ring-[#FED7AA] disabled:opacity-60"
           disabled={disabled}
           onChange={handleChange}
           onFocus={() => predictions.length > 0 && setOpen(true)}
@@ -117,10 +117,10 @@ export function PlacesAutocompleteInput({
           value={inputValue}
         />
         {loading ? (
-          <Loader2 className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-[#F97316]" />
+          <Loader2 className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-phx-accent" />
         ) : inputValue ? (
           <button
-            className="absolute right-3 top-1/2 -translate-y-1/2 text-[#94A3B8] hover:text-[#64748B]"
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-phx-ink-faint hover:text-phx-ink-soft"
             onClick={handleClear}
             tabIndex={-1}
             type="button"
@@ -139,12 +139,12 @@ export function PlacesAutocompleteInput({
           {predictions.map((prediction) => (
             <li key={prediction.placeId}>
               <button
-                className="flex w-full items-start gap-2.5 px-4 py-3 text-left text-sm transition-colors hover:bg-[#FFF7ED] focus:bg-[#FFF7ED] focus:outline-none"
+                className="flex w-full items-start gap-2.5 px-4 py-3 text-left text-sm transition-colors hover:bg-phx-accent-soft focus:bg-phx-accent-soft focus:outline-none"
                 onClick={() => handleSelect(prediction)}
                 type="button"
               >
-                <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-[#F97316]" />
-                <span className="font-semibold text-[#0F172A]">{prediction.description}</span>
+                <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-phx-accent" />
+                <span className="font-semibold text-phx-ink">{prediction.description}</span>
               </button>
             </li>
           ))}

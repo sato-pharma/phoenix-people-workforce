@@ -288,7 +288,7 @@ export function SearchableSelect({
     onKeyDown?.(event);
   };
 
-  const baseInputClassName = "h-9 w-full rounded-[6px] border border-[#E2E8F0] bg-white px-3 text-sm font-medium text-[#0F172A] outline-none transition disabled:opacity-50";
+  const baseInputClassName = "h-9 w-full rounded-[6px] border border-phx-line bg-white px-3 text-sm font-medium text-phx-ink outline-none transition disabled:opacity-50";
 
   return (
     <div className="relative" ref={wrapperRef}>
@@ -324,7 +324,7 @@ export function SearchableSelect({
         onKeyDown={handleInputKeyDown}
         type="text"
       />
-      <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-[#94A3B8]">
+      <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-phx-ink-faint">
         <Search className="h-4 w-4" />
       </span>
 
@@ -344,7 +344,7 @@ export function SearchableSelect({
               }}
             >
               {filteredOptions.length === 0 ? (
-                <div className="p-2 text-xs text-[#64748B]" role="option" aria-disabled="true" aria-selected={false}>{noResultsText}</div>
+                <div className="p-2 text-xs text-phx-ink-soft" role="option" aria-disabled="true" aria-selected={false}>{noResultsText}</div>
               ) : (
                 filteredOptions.map((option, index) => {
                   const isActive = currentValue === option.value;

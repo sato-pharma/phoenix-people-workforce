@@ -76,7 +76,7 @@ export function ClosingPeriodSelect({
     <details className="group relative" ref={holder}>
       <summary
         className={cn(
-          "flex h-10 cursor-pointer list-none items-center gap-2 border border-[#D8E0EA] bg-white px-3 text-sm font-semibold text-[#0F172A] transition hover:border-[#FDBA74] [&::-webkit-details-marker]:hidden",
+          "flex h-10 cursor-pointer list-none items-center gap-2 border border-phx-line bg-white px-3 text-sm font-semibold text-phx-ink transition hover:border-phx-accent-line [&::-webkit-details-marker]:hidden",
           disabled && "pointer-events-none opacity-50",
         )}
       >
@@ -87,14 +87,14 @@ export function ClosingPeriodSelect({
 
       {/* z-50 for the same reason the filter panels use it: the closing matrix's sticky headers sit
           at z-40 and would otherwise paint over this panel and swallow its clicks. */}
-      <div className="absolute left-0 z-50 mt-1 max-h-80 w-72 overflow-auto border border-[#D8E0EA] bg-white p-2 shadow-[0_18px_42px_rgba(15,23,42,0.16)]">
+      <div className="absolute left-0 z-50 mt-1 max-h-80 w-72 overflow-auto border border-phx-line bg-white p-2 shadow-[0_18px_42px_rgba(15,23,42,0.16)]">
         <div className="mb-2 grid grid-cols-2 gap-1 border-b border-slate-100 pb-2">
           <button
             className={cn(
               "h-8 border text-xs font-bold transition",
               multi
-                ? "border-[#D8E0EA] bg-white text-slate-600 hover:border-[#FDBA74]"
-                : "border-[#F97316] bg-[#F97316] text-white",
+                ? "border-phx-line bg-white text-slate-600 hover:border-phx-accent-line"
+                : "border-phx-accent bg-phx-accent text-white",
             )}
             onClick={() => {
               setMultiChosen(false);
@@ -110,8 +110,8 @@ export function ClosingPeriodSelect({
             className={cn(
               "h-8 border text-xs font-bold transition",
               multi
-                ? "border-[#F97316] bg-[#F97316] text-white"
-                : "border-[#D8E0EA] bg-white text-slate-600 hover:border-[#FDBA74]",
+                ? "border-phx-accent bg-phx-accent text-white"
+                : "border-phx-line bg-white text-slate-600 hover:border-phx-accent-line",
             )}
             onClick={() => setMultiChosen(true)}
             type="button"
@@ -131,7 +131,7 @@ export function ClosingPeriodSelect({
                 </span>
                 <span className="flex gap-3">
                   <button
-                    className="text-xs font-bold text-[#F97316] hover:underline"
+                    className="text-xs font-bold text-phx-accent hover:underline"
                     onClick={() => onChange([...ordered].sort())}
                     type="button"
                   >
@@ -155,7 +155,7 @@ export function ClosingPeriodSelect({
               >
                 <input
                   checked={selected.has(period)}
-                  className="h-4 w-4 accent-[#F97316]"
+                  className="h-4 w-4 accent-phx-accent"
                   name={multi ? undefined : "closing-period"}
                   onChange={() => (multi ? toggle(period) : pickOne(period))}
                   type={multi ? "checkbox" : "radio"}

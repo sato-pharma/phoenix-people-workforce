@@ -26,7 +26,7 @@ export function ExpenseSavedViews({
   }
 
   return (
-    <div className="flex flex-wrap items-center gap-2 rounded-[18px] border border-[#D8E0EA] bg-white px-4 py-3 shadow-[0_8px_22px_rgba(15,23,42,0.04)]">
+    <div className="flex flex-wrap items-center gap-2 rounded-[18px] border border-phx-line bg-white px-4 py-3 shadow-[0_8px_22px_rgba(15,23,42,0.04)]">
       <span className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-400">
         Saved views
       </span>
@@ -82,7 +82,7 @@ export function ExpenseSavedViews({
           />
           <button
             type="button"
-            className="rounded-full bg-[#F97316] px-3 py-1 text-xs font-bold text-white transition-colors hover:bg-[#EA580C]"
+            className="rounded-full bg-phx-accent px-3 py-1 text-xs font-bold text-white transition-colors hover:bg-phx-accent-hover"
             onClick={commitSave}
           >
             Save

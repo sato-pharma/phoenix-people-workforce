@@ -80,13 +80,13 @@ function MapNowModal({ children, onClose, title }: { children: React.ReactNode; 
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4">
       <div
         aria-modal="true"
-        className="max-h-[92vh] w-full max-w-3xl overflow-y-auto rounded-[6px] border border-[#D8E0EA] bg-white shadow-[0_28px_90px_rgba(15,23,42,0.28)]"
+        className="max-h-[92vh] w-full max-w-3xl overflow-y-auto rounded-[6px] border border-phx-line bg-white shadow-[0_28px_90px_rgba(15,23,42,0.28)]"
         role="dialog"
       >
-        <div className="sticky top-0 z-10 flex items-center justify-between gap-4 border-b border-[#E2E8F0] bg-white px-5 py-3">
-          <h2 className="text-sm font-black text-[#0F172A]">{title}</h2>
+        <div className="sticky top-0 z-10 flex items-center justify-between gap-4 border-b border-phx-line bg-white px-5 py-3">
+          <h2 className="text-sm font-black text-phx-ink">{title}</h2>
           <button
-            className="inline-flex h-8 w-8 items-center justify-center rounded-[6px] border border-[#E2E8F0] text-[#64748B] transition hover:border-[#FDBA74]"
+            className="inline-flex h-8 w-8 items-center justify-center rounded-[6px] border border-phx-line text-phx-ink-soft transition hover:border-phx-accent-line"
             onClick={onClose}
             type="button"
           >
@@ -105,7 +105,7 @@ function statusTone(status: MonthlySalesStep["stepStatus"]): string {
     case "skipped": return "bg-slate-200 text-slate-700 border-slate-300";
     case "validated": return "bg-sky-100 text-sky-800 border-sky-200";
     case "uploaded": return "bg-amber-100 text-amber-800 border-amber-200";
-    default: return "bg-white text-slate-500 border-[#D8E0EA]";
+    default: return "bg-white text-slate-500 border-phx-line";
   }
 }
 
@@ -315,7 +315,7 @@ export function MonthlySalesWizard({
 
   return (
     <div className="flex flex-col gap-4">
-      <Card className="rounded-2xl border-[#D8E0EA] p-5">
+      <Card className="rounded-2xl border-phx-line p-5">
         <div className="flex flex-wrap items-end gap-3">
           <div className="flex flex-col gap-1">
             <label className="text-xs font-black uppercase tracking-wide text-slate-500">Month</label>
@@ -323,7 +323,7 @@ export function MonthlySalesWizard({
               type="month"
               value={period}
               onChange={(event) => setPeriod(event.target.value)}
-              className="h-10 rounded-xl border border-[#D8E0EA] bg-white px-3 text-sm font-bold text-slate-800"
+              className="h-10 rounded-xl border border-phx-line bg-white px-3 text-sm font-bold text-slate-800"
             />
           </div>
           <Button className="gap-2 rounded-xl font-black" disabled={busy} onClick={() => void startRun()}>
@@ -337,7 +337,7 @@ export function MonthlySalesWizard({
                 <p className="text-2xl font-black text-slate-900">{run.completionPct}%</p>
               </div>
               <div className="h-2 w-40 overflow-hidden rounded-full bg-slate-200">
-                <div className="h-full bg-[#F97316]" style={{ width: `${run.completionPct}%` }} />
+                <div className="h-full bg-phx-accent" style={{ width: `${run.completionPct}%` }} />
               </div>
             </div>
           ) : null}
@@ -354,7 +354,7 @@ export function MonthlySalesWizard({
       {run ? (
         <div className="grid gap-4 lg:grid-cols-[280px_1fr]">
           {/* Left rail — steps */}
-          <Card className="rounded-2xl border-[#D8E0EA] p-3">
+          <Card className="rounded-2xl border-phx-line p-3">
             <ol className="flex flex-col gap-1">
               {run.steps.map((step, index) => {
                 const active = activeStep?.distributorCode === step.distributorCode;
@@ -365,10 +365,10 @@ export function MonthlySalesWizard({
                       onClick={() => { setActiveCode(step.distributorCode); setPreview(null); setMessage(null); }}
                       className={cn(
                         "flex w-full items-center gap-2 rounded-xl border px-3 py-2 text-left text-sm font-bold transition",
-                        active ? "border-[#0B0B0B] bg-[#0B0B0B] text-white" : "border-transparent hover:border-[#D8E0EA]",
+                        active ? "border-[#0B0B0B] bg-[#0B0B0B] text-white" : "border-transparent hover:border-phx-line",
                       )}
                     >
-                      <span className={cn("flex h-6 w-6 items-center justify-center rounded-full border text-xs font-black", active ? "border-white text-white" : "border-[#D8E0EA] text-slate-500")}>
+                      <span className={cn("flex h-6 w-6 items-center justify-center rounded-full border text-xs font-black", active ? "border-white text-white" : "border-phx-line text-slate-500")}>
                         {index + 1}
                       </span>
                       <span className="flex-1 truncate">{step.distributorName}</span>
@@ -383,7 +383,7 @@ export function MonthlySalesWizard({
           </Card>
 
           {/* Right — active step body */}
-          <Card className="rounded-2xl border-[#D8E0EA] p-5">
+          <Card className="rounded-2xl border-phx-line p-5">
             {run.locked ? (
               <div className="mb-4 flex items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
                 <p className="flex items-center gap-2 text-sm font-bold text-amber-900"><Lock className="h-4 w-4" /> {period} is locked. Uploads are frozen.</p>
@@ -411,7 +411,7 @@ export function MonthlySalesWizard({
                   <AdminCallout tone="neutral"><SkipForward className="mt-0.5 h-4 w-4" /><p>Skipped: {activeStep.skipReason}</p></AdminCallout>
                 ) : null}
                 {activeStep.batch ? (
-                  <div className="grid grid-cols-3 gap-3 rounded-xl border border-[#D8E0EA] bg-slate-50 p-4">
+                  <div className="grid grid-cols-3 gap-3 rounded-xl border border-phx-line bg-slate-50 p-4">
                     <div><p className="text-xs font-black uppercase text-slate-500">File</p><p className="truncate text-sm font-bold text-slate-800">{activeStep.batch.fileName}</p></div>
                     <div><p className="text-xs font-black uppercase text-slate-500">Units</p><p className="text-sm font-bold text-slate-800">{formatNumber(activeStep.batch.totalQty)}</p></div>
                     <div><p className="text-xs font-black uppercase text-slate-500">Value</p><p className="text-sm font-bold text-slate-800">{formatCurrency(activeStep.batch.totalValue)}</p></div>
@@ -421,7 +421,7 @@ export function MonthlySalesWizard({
                 {!run.locked ? (
                   <div className="flex flex-col gap-3">
                     {/* File picker — must select before any action button works */}
-                    <label className="flex cursor-pointer items-center gap-3 rounded-xl border-2 border-dashed border-[#D8E0EA] bg-slate-50 px-4 py-3 transition-colors hover:border-orange-400 hover:bg-orange-50">
+                    <label className="flex cursor-pointer items-center gap-3 rounded-xl border-2 border-dashed border-phx-line bg-slate-50 px-4 py-3 transition-colors hover:border-orange-400 hover:bg-orange-50">
                       <UploadCloud className="h-5 w-5 shrink-0 text-slate-400" />
                       <span className="flex-1 text-sm">
                         {selectedFileName
@@ -469,14 +469,14 @@ export function MonthlySalesWizard({
                       <AdminCallout key={advisory} tone="neutral"><AlertTriangle className="mt-0.5 h-4 w-4" /><p>{advisory}</p></AdminCallout>
                     ))}
                     {preview.status === "validated" ? (
-                      <div className="grid grid-cols-3 gap-3 rounded-xl border border-[#D8E0EA] bg-slate-50 p-4">
+                      <div className="grid grid-cols-3 gap-3 rounded-xl border border-phx-line bg-slate-50 p-4">
                         <div><p className="text-xs font-black uppercase text-slate-500">Allocated units</p><p className="text-sm font-bold text-slate-800">{formatNumber(preview.totals.totalQty)}</p></div>
                         <div><p className="text-xs font-black uppercase text-slate-500">Allocated value</p><p className="text-sm font-bold text-slate-800">{formatCurrency(preview.totals.totalValue)}</p></div>
                         <div><p className="text-xs font-black uppercase text-slate-500">Bricks touched</p><p className="text-sm font-bold text-slate-800">{formatNumber(preview.byBrick.length)}</p></div>
                       </div>
                     ) : null}
                     {preview.byBrickProduct && preview.byBrickProduct.length > 0 ? (
-                      <div className="max-h-96 overflow-auto rounded-xl border border-[#D8E0EA]">
+                      <div className="max-h-96 overflow-auto rounded-xl border border-phx-line">
                         <table className="w-full text-sm">
                           <thead className="sticky top-0 bg-[#0B0B0B] text-white">
                             <tr>
@@ -503,7 +503,7 @@ export function MonthlySalesWizard({
                         </table>
                       </div>
                     ) : preview.byRegion.length > 0 ? (
-                      <div className="overflow-hidden rounded-xl border border-[#D8E0EA]">
+                      <div className="overflow-hidden rounded-xl border border-phx-line">
                         <table className="w-full text-sm">
                           <thead className="bg-[#0B0B0B] text-white"><tr><th className="px-3 py-2 text-left font-black">Region</th><th className="px-3 py-2 text-right font-black">Units</th><th className="px-3 py-2 text-right font-black">Value</th></tr></thead>
                           <tbody>
@@ -533,13 +533,13 @@ export function MonthlySalesWizard({
                       <AdminCallout tone="danger"><AlertTriangle className="mt-0.5 h-4 w-4" /><p>{preview.failedRows} row(s) must be fixed before this sheet can import.</p></AdminCallout>
                     )}
                     <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                      <div className="rounded-xl border border-[#D8E0EA] bg-slate-50 p-3"><p className="text-xs font-black uppercase text-slate-500">Importable</p><p className="text-sm font-bold text-slate-800">{formatNumber(preview.importableRows)}</p></div>
-                      <div className="rounded-xl border border-[#D8E0EA] bg-slate-50 p-3"><p className="text-xs font-black uppercase text-slate-500">Failed</p><p className={cn("text-sm font-bold", preview.failedRows > 0 ? "text-red-600" : "text-slate-800")}>{formatNumber(preview.failedRows)}</p></div>
-                      <div className="rounded-xl border border-[#D8E0EA] bg-slate-50 p-3"><p className="text-xs font-black uppercase text-slate-500">Total value</p><p className="text-sm font-bold text-slate-800">{formatCurrency(preview.totals.totalValue)}</p></div>
-                      <div className="rounded-xl border border-[#D8E0EA] bg-slate-50 p-3"><p className="text-xs font-black uppercase text-slate-500">Period</p><p className="text-sm font-bold text-slate-800">{preview.period ?? "—"}</p></div>
+                      <div className="rounded-xl border border-phx-line bg-slate-50 p-3"><p className="text-xs font-black uppercase text-slate-500">Importable</p><p className="text-sm font-bold text-slate-800">{formatNumber(preview.importableRows)}</p></div>
+                      <div className="rounded-xl border border-phx-line bg-slate-50 p-3"><p className="text-xs font-black uppercase text-slate-500">Failed</p><p className={cn("text-sm font-bold", preview.failedRows > 0 ? "text-red-600" : "text-slate-800")}>{formatNumber(preview.failedRows)}</p></div>
+                      <div className="rounded-xl border border-phx-line bg-slate-50 p-3"><p className="text-xs font-black uppercase text-slate-500">Total value</p><p className="text-sm font-bold text-slate-800">{formatCurrency(preview.totals.totalValue)}</p></div>
+                      <div className="rounded-xl border border-phx-line bg-slate-50 p-3"><p className="text-xs font-black uppercase text-slate-500">Period</p><p className="text-sm font-bold text-slate-800">{preview.period ?? "—"}</p></div>
                     </div>
                     {mapNowGroups.length > 0 ? (
-                      <div className="flex flex-col gap-2 rounded-xl border border-[#D8E0EA] bg-white p-3">
+                      <div className="flex flex-col gap-2 rounded-xl border border-phx-line bg-white p-3">
                         <p className="text-xs font-black uppercase tracking-wide text-slate-500">Fix inline, without leaving this page</p>
                         <ul className="flex flex-col gap-2">
                           {mapNowGroups.map((group) => (
@@ -557,7 +557,7 @@ export function MonthlySalesWizard({
                       </div>
                     ) : null}
                     {preview.issues.length > 0 ? (
-                      <div className="max-h-72 overflow-auto rounded-xl border border-[#D8E0EA]">
+                      <div className="max-h-72 overflow-auto rounded-xl border border-phx-line">
                         <table className="w-full text-sm">
                           <thead className="sticky top-0 bg-[#0B0B0B] text-white"><tr><th className="px-3 py-2 text-left font-black">Row</th><th className="px-3 py-2 text-left font-black">Field</th><th className="px-3 py-2 text-left font-black">Value</th><th className="px-3 py-2 text-left font-black">Error</th></tr></thead>
                           <tbody>
@@ -592,7 +592,7 @@ export function MonthlySalesWizard({
           </Card>
         </div>
       ) : (
-        <Card className="rounded-2xl border-[#D8E0EA] p-8 text-center">
+        <Card className="rounded-2xl border-phx-line p-8 text-center">
           <p className="text-sm text-slate-500">Pick a month and start the guided monthly close. You&apos;ll be walked through every distributor — upload, validate, confirm — then Office is computed last and the period is locked.</p>
         </Card>
       )}

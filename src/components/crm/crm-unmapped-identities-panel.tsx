@@ -81,7 +81,7 @@ function ResolutionCell({
             setAction(event.target.value as UnmappedCrmResolutionAction);
             setError(null);
           }}
-          className="h-8 border border-[#D8E0EA] bg-white px-2 text-xs text-slate-700"
+          className="h-8 border border-phx-line bg-white px-2 text-xs text-slate-700"
         >
           {RESOLUTION_OPTIONS.map((option) => (
             <option key={option.value} value={option.value}>{option.label}</option>
@@ -93,14 +93,14 @@ function ResolutionCell({
             value={hrIdInput}
             onChange={(event) => setHrIdInput(event.target.value)}
             placeholder="e.g. B-82"
-            className="h-8 w-24 border border-[#D8E0EA] bg-white px-2 text-xs text-slate-800"
+            className="h-8 w-24 border border-phx-line bg-white px-2 text-xs text-slate-800"
           />
         )}
         <button
           type="button"
           onClick={save}
           disabled={saving}
-          className="inline-flex h-8 items-center gap-1.5 border border-[#D8E0EA] bg-white px-2.5 text-xs font-bold text-[#0F172A] shadow-sm transition hover:border-[#FDBA74] hover:text-[#F97316] disabled:opacity-50"
+          className="inline-flex h-8 items-center gap-1.5 border border-phx-line bg-white px-2.5 text-xs font-bold text-phx-ink shadow-sm transition hover:border-phx-accent-line hover:text-phx-accent disabled:opacity-50"
         >
           {saving && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
           Save
@@ -163,7 +163,7 @@ export function CrmUnmappedIdentitiesPanel({
             value={search}
             onChange={(event) => setSearch(event.target.value)}
             placeholder="Search by CRM name or ID…"
-            className="h-9 w-full border border-[#D8E0EA] bg-white pl-8 pr-2 text-sm text-slate-800"
+            className="h-9 w-full border border-phx-line bg-white pl-8 pr-2 text-sm text-slate-800"
           />
         </div>
       </div>
@@ -195,7 +195,7 @@ export function CrmUnmappedIdentitiesPanel({
                   <button
                     type="button"
                     onClick={() => viewInVisits(identity)}
-                    className="h-8 border border-[#D8E0EA] bg-white px-2.5 text-xs font-bold text-[#0F172A] shadow-sm transition hover:border-[#FDBA74] hover:text-[#F97316]"
+                    className="h-8 border border-phx-line bg-white px-2.5 text-xs font-bold text-phx-ink shadow-sm transition hover:border-phx-accent-line hover:text-phx-accent"
                   >
                     View in Visits
                   </button>
@@ -243,7 +243,7 @@ export function CrmUnmappedIdentitiesPanel({
                       <button
                         type="button"
                         onClick={() => viewInVisits(identity)}
-                        className="h-8 border border-[#D8E0EA] bg-white px-2.5 text-xs font-bold text-[#0F172A] shadow-sm transition hover:border-[#FDBA74] hover:text-[#F97316]"
+                        className="h-8 border border-phx-line bg-white px-2.5 text-xs font-bold text-phx-ink shadow-sm transition hover:border-phx-accent-line hover:text-phx-accent"
                       >
                         View in Visits
                       </button>

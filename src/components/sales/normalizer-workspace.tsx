@@ -479,9 +479,9 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
               </div>
 
               {tab === "coded" ? (
-                <div className="overflow-x-auto border border-[#E2E8F0]">
+                <div className="overflow-x-auto border border-phx-line">
                   <table className="w-full text-sm">
-                    <thead className="bg-[#0B0B0B] text-[#F1F5F9]"><tr>{["Product ID", "Product", "Brick ID", "Brick", "Area", "Region", "Qty", "Customer"].map((h) => <th className="whitespace-nowrap px-3 py-2 text-left" key={h}>{h}</th>)}</tr></thead>
+                    <thead className="bg-[#0B0B0B] text-phx-paper-2"><tr>{["Product ID", "Product", "Brick ID", "Brick", "Area", "Region", "Qty", "Customer"].map((h) => <th className="whitespace-nowrap px-3 py-2 text-left" key={h}>{h}</th>)}</tr></thead>
                     <tbody>
                       {preview.sampleCoded.map((r, i) => (
                         <tr className={cn("transition-colors hover:bg-orange-50/50", i % 2 && "bg-slate-50/60")} key={i}>
@@ -534,7 +534,7 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
                   </div>
 
                   {preview.unknownProducts.length > 0 ? (
-                    <div className="overflow-x-auto border border-[#E2E8F0]">
+                    <div className="overflow-x-auto border border-phx-line">
                       <p className="flex items-center gap-2 bg-slate-900 px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-white"><span className="h-3.5 w-1 bg-orange-500" />Unknown products ({preview.unknownProducts.length})</p>
                       <table className="w-full text-sm">
                         <thead className="bg-slate-100"><tr>{["Raw code", "Raw name", "Rows", "Phoenix product"].map((h) => <th className="px-3 py-2 text-left font-semibold text-slate-600" key={h}>{h}</th>)}</tr></thead>
@@ -555,7 +555,7 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
                   ) : null}
 
                   {preview.unknownTerritories.length > 0 ? (
-                    <div className="overflow-x-auto border border-[#E2E8F0]">
+                    <div className="overflow-x-auto border border-phx-line">
                       <p className="flex items-center gap-2 bg-slate-900 px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-white"><span className="h-3.5 w-1 bg-orange-500" />Unknown territories ({preview.unknownTerritories.length})</p>
                       <table className="w-full text-sm">
                         <thead className="bg-slate-100"><tr>{["Raw territory", "Rows", "Phoenix brick"].map((h) => <th className="px-3 py-2 text-left font-semibold text-slate-600" key={h}>{h}</th>)}</tr></thead>
@@ -575,7 +575,7 @@ export function NormalizerWorkspace({ aiEnabled, distributors, references }: { a
                   ) : null}
 
                   {preview.unknownCustomers.length > 0 ? (
-                    <div className="overflow-x-auto border border-[#E2E8F0]">
+                    <div className="overflow-x-auto border border-phx-line">
                       <p className="flex items-center gap-2 bg-slate-900 px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-white"><span className="h-3.5 w-1 shrink-0 bg-orange-500" />Unknown customers / pharmacies ({preview.unknownCustomers.length}) — map by pharmacy when the area text is unreliable</p>
                       <div className="flex flex-wrap items-center gap-3 border-b border-slate-100 bg-slate-50 px-3 py-1.5 text-xs text-slate-600">
                         {geoCoverage ? (

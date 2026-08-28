@@ -25,7 +25,7 @@ import { WeeklyProductMappingManager } from "./weekly-product-mapping-manager";
 // history — reports UNITS. Value belongs to the surfaces that own the price (dashboard, export).
 const num = (value: number) => value.toLocaleString(undefined, { maximumFractionDigits: 0 });
 
-const card = "rounded-[6px] border border-[#E2E8F0] bg-white shadow-sm";
+const card = "rounded-[6px] border border-phx-line bg-white shadow-sm";
 const darkHead = "bg-[#020617] text-left text-[11px] font-black uppercase tracking-wide text-white";
 
 // Large workbooks (> ~4MB) can't be POSTed through the serverless function — Vercel caps the request
@@ -399,17 +399,17 @@ export function WeeklyUploadWorkspace({
   }
 
   const fileInputClass =
-    "h-10 w-full rounded-[6px] border border-[#E2E8F0] bg-white px-3 py-1.5 text-sm text-[#0F172A] file:mr-3 file:rounded file:border-0 file:bg-[#F1F5F9] file:px-3 file:py-1.5 file:text-sm file:font-bold";
+    "h-10 w-full rounded-[6px] border border-phx-line bg-white px-3 py-1.5 text-sm text-phx-ink file:mr-3 file:rounded file:border-0 file:bg-phx-paper-2 file:px-3 file:py-1.5 file:text-sm file:font-bold";
 
   return (
     <div className="space-y-5 p-4 sm:p-6">
       <header>
         <div className="flex items-center gap-2">
-          <span className="h-2 w-2 rounded-full bg-[#F97316]" aria-hidden />
-          <span className="text-[11px] font-black uppercase tracking-[0.16em] text-[#F97316]">Weekly Sales</span>
+          <span className="h-2 w-2 rounded-full bg-phx-accent" aria-hidden />
+          <span className="text-[11px] font-black uppercase tracking-[0.16em] text-phx-accent">Weekly Sales</span>
         </div>
-        <h1 className="mt-1 text-xl font-black text-[#0F172A]">Upload &amp; Validate</h1>
-        <p className="mt-1 text-sm font-medium text-[#64748B]">
+        <h1 className="mt-1 text-xl font-black text-phx-ink">Upload &amp; Validate</h1>
+        <p className="mt-1 text-sm font-medium text-phx-ink-soft">
           Upload a distributor&apos;s raw weekly Sales &amp; Stock file. The system maps it to your products and regions,
           nets returns out of sales, and recomputes value as net × factory price. Nothing is stored until you confirm.
         </p>
@@ -439,12 +439,12 @@ export function WeeklyUploadWorkspace({
         <div className="mb-5">
           <div className="flex flex-wrap items-center gap-2">
             <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-[#020617] text-[10px] font-black text-white">1</span>
-            <span className="text-[11px] font-black uppercase tracking-[0.16em] text-[#0F172A]">Week of month</span>
+            <span className="text-[11px] font-black uppercase tracking-[0.16em] text-phx-ink">Week of month</span>
             {weekNumber && (
-              <span className="inline-flex items-center rounded bg-[#FFF7ED] px-2 py-0.5 text-[11px] font-black text-[#9A3412]">Week {weekNumber}</span>
+              <span className="inline-flex items-center rounded bg-phx-accent-soft px-2 py-0.5 text-[11px] font-black text-[#9A3412]">Week {weekNumber}</span>
             )}
           </div>
-          <p className="mt-1 text-xs font-medium text-[#64748B]">
+          <p className="mt-1 text-xs font-medium text-phx-ink-soft">
             Distributor sheets are cumulative within a month (week 2 already includes week 1, and so on). Pick the week this
             file covers — the system also reads the date inside the file and flags any mismatch when you validate.
           </p>
@@ -453,8 +453,8 @@ export function WeeklyUploadWorkspace({
               <button
                 className={`h-10 min-w-[88px] rounded-[6px] border px-4 text-sm font-black transition disabled:opacity-60 ${
                   weekNumber === w
-                    ? "border-[#F97316] bg-[#F97316] text-white"
-                    : "border-[#E2E8F0] bg-white text-[#0F172A] hover:border-[#FDBA74]"
+                    ? "border-phx-accent bg-phx-accent text-white"
+                    : "border-phx-line bg-white text-phx-ink hover:border-phx-accent-line"
                 }`}
                 disabled={busy}
                 key={w}
@@ -470,15 +470,15 @@ export function WeeklyUploadWorkspace({
         {/* ── Step 2: Distributor & file ── */}
         <div className="mb-2 flex items-center gap-2">
           <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-[#020617] text-[10px] font-black text-white">2</span>
-          <span className="text-[11px] font-black uppercase tracking-[0.16em] text-[#0F172A]">Distributor &amp; file</span>
+          <span className="text-[11px] font-black uppercase tracking-[0.16em] text-phx-ink">Distributor &amp; file</span>
         </div>
 
         {/* File selectors */}
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
           <label className="block">
-            <span className="mb-1 block text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">Distributor</span>
+            <span className="mb-1 block text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-soft">Distributor</span>
             <SearchableSelect
-              className="h-10 w-full rounded-[6px] border border-[#E2E8F0] bg-white px-3 text-sm font-bold text-[#0F172A] outline-none focus:border-[#FDBA74]"
+              className="h-10 w-full rounded-[6px] border border-phx-line bg-white px-3 text-sm font-bold text-phx-ink outline-none focus:border-phx-accent-line"
               disabled={busy}
               onChange={(event) => {
                 setDistributorCode(event.target.value);
@@ -499,17 +499,17 @@ export function WeeklyUploadWorkspace({
           {isPS ? (
             <>
               <label className="block">
-                <span className="mb-1 block text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">POS sales matrix (.xlsx)</span>
+                <span className="mb-1 block text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-soft">POS sales matrix (.xlsx)</span>
                 <input accept=".xlsx" className={fileInputClass} disabled={busy} onChange={(e) => { setSalesFile(e.target.files?.[0] ?? null); clearVerification(); clearValidation(); }} type="file" />
               </label>
               <label className="block">
-                <span className="mb-1 block text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">POS stock matrix (.xlsx)</span>
+                <span className="mb-1 block text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-soft">POS stock matrix (.xlsx)</span>
                 <input accept=".xlsx" className={fileInputClass} disabled={busy} onChange={(e) => { setStockFile(e.target.files?.[0] ?? null); clearVerification(); clearValidation(); }} type="file" />
               </label>
             </>
           ) : (
             <label className="block sm:col-span-2">
-              <span className="mb-1 block text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">Weekly file (.xlsx)</span>
+              <span className="mb-1 block text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-soft">Weekly file (.xlsx)</span>
               <input accept=".xlsx" className={fileInputClass} disabled={busy} onChange={(e) => { setFile(e.target.files?.[0] ?? null); clearVerification(); clearValidation(); }} type="file" />
             </label>
           )}
@@ -518,16 +518,16 @@ export function WeeklyUploadWorkspace({
         {needsPeriodDate && (
           <div className="mt-4 flex flex-wrap items-end gap-3">
             <label className="block">
-              <span className="mb-1 block text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">Period date</span>
+              <span className="mb-1 block text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-soft">Period date</span>
               <input
-                className="h-10 rounded-[6px] border border-[#E2E8F0] bg-white px-3 text-sm font-bold text-[#0F172A] outline-none focus:border-[#FDBA74]"
+                className="h-10 rounded-[6px] border border-phx-line bg-white px-3 text-sm font-bold text-phx-ink outline-none focus:border-phx-accent-line"
                 disabled={busy}
                 onChange={(e) => { setPeriodDate(e.target.value); clearValidation(); }}
                 type="date"
                 value={periodDate}
               />
             </label>
-            <span className="pb-2 text-xs font-medium text-[#94A3B8]">
+            <span className="pb-2 text-xs font-medium text-phx-ink-faint">
               {isPS || distributorCode === "IS"
                 ? "This file has no date column — pick the week it covers."
                 : "This file spans many invoice dates — pick the period it represents."}
@@ -536,30 +536,30 @@ export function WeeklyUploadWorkspace({
         )}
 
         {/* ── Step 1: AI Verify ── */}
-        <div className="mt-5 border-t border-dashed border-[#E2E8F0] pt-4">
+        <div className="mt-5 border-t border-dashed border-phx-line pt-4">
           <div className="flex flex-wrap items-center gap-2">
             <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-[#020617] text-[10px] font-black text-white">3</span>
-            <span className="text-[11px] font-black uppercase tracking-[0.16em] text-[#0F172A]">Verify columns</span>
+            <span className="text-[11px] font-black uppercase tracking-[0.16em] text-phx-ink">Verify columns</span>
             {verified && (
               <span className="inline-flex items-center gap-1 rounded bg-emerald-50 px-2 py-0.5 text-[11px] font-black text-emerald-700">
                 <ShieldCheck className="h-3.5 w-3.5" /> Verified
               </span>
             )}
           </div>
-          <p className="mt-1 text-xs font-medium text-[#64748B]">
+          <p className="mt-1 text-xs font-medium text-phx-ink-soft">
             AI reads the column headers and shows which data it will take from which column. Only column titles are sent — never sales numbers.
           </p>
           <div className="mt-3 flex flex-wrap items-center gap-3">
             <button
-              className="inline-flex h-10 items-center gap-2 rounded-[6px] border border-[#020617] bg-white px-4 text-sm font-black text-[#0F172A] transition hover:bg-[#F8FAFC] disabled:opacity-60"
+              className="inline-flex h-10 items-center gap-2 rounded-[6px] border border-[#020617] bg-white px-4 text-sm font-black text-phx-ink transition hover:bg-phx-paper disabled:opacity-60"
               disabled={busy || !filesReady}
               onClick={handleVerify}
               type="button"
             >
-              {verifying ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4 text-[#F97316]" />}
+              {verifying ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4 text-phx-accent" />}
               {verifying ? "Analyzing…" : verifyResult ? "Re-run verification" : "Run AI verification"}
             </button>
-            {!filesReady && <span className="text-xs font-medium text-[#94A3B8]">Pick the file(s) above first.</span>}
+            {!filesReady && <span className="text-xs font-medium text-phx-ink-faint">Pick the file(s) above first.</span>}
           </div>
 
           {verifyError && (
@@ -573,22 +573,22 @@ export function WeeklyUploadWorkspace({
         </div>
 
         {/* ── Step 2: Validate (dry run) ── */}
-        <div className="mt-5 border-t border-dashed border-[#E2E8F0] pt-4">
+        <div className="mt-5 border-t border-dashed border-phx-line pt-4">
           <div className="flex items-center gap-2">
             <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-[#020617] text-[10px] font-black text-white">4</span>
-            <span className="text-[11px] font-black uppercase tracking-[0.16em] text-[#0F172A]">Validate</span>
+            <span className="text-[11px] font-black uppercase tracking-[0.16em] text-phx-ink">Validate</span>
             {validateResult && !validateError && (
               <span className={`inline-flex items-center rounded px-2 py-0.5 text-[11px] font-black ${validateResult.status === "validated" ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>
                 {validateResult.status === "validated" ? "Ready to upload" : "Blocked"}
               </span>
             )}
           </div>
-          <p className="mt-1 text-xs font-medium text-[#64748B]">
+          <p className="mt-1 text-xs font-medium text-phx-ink-soft">
             Parses the file, maps products and branches, checks for issues. Shows totals per product and per branch. Nothing is stored yet.
           </p>
           <div className="mt-3 flex flex-wrap items-center gap-3">
             <button
-              className="inline-flex h-10 items-center gap-2 rounded-[6px] bg-[#0F172A] px-4 text-sm font-black text-white transition hover:bg-[#1E293B] disabled:cursor-not-allowed disabled:bg-[#CBD5E1] disabled:hover:bg-[#CBD5E1]"
+              className="inline-flex h-10 items-center gap-2 rounded-[6px] bg-phx-ink px-4 text-sm font-black text-white transition hover:bg-[#1E293B] disabled:cursor-not-allowed disabled:bg-phx-line-strong disabled:hover:bg-phx-line-strong"
               disabled={busy || !canProceed || !verified}
               onClick={handleValidate}
               type="button"
@@ -597,7 +597,7 @@ export function WeeklyUploadWorkspace({
               {validating ? "Validating…" : "Validate"}
             </button>
             {!verified && (
-              <span className="inline-flex items-center gap-1 text-xs font-semibold text-[#94A3B8]">
+              <span className="inline-flex items-center gap-1 text-xs font-semibold text-phx-ink-faint">
                 <Lock className="h-3.5 w-3.5" /> Complete verification above to unlock.
               </span>
             )}
@@ -628,11 +628,11 @@ export function WeeklyUploadWorkspace({
       {/* Recent uploads */}
       <section>
         <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-          <h2 className="text-sm font-black uppercase tracking-[0.12em] text-[#64748B]">Recent weekly uploads</h2>
+          <h2 className="text-sm font-black uppercase tracking-[0.12em] text-phx-ink-soft">Recent weekly uploads</h2>
           <div className="flex flex-wrap items-center gap-2">
             <SearchableSelect
               aria-label="Filter by distributor"
-              className="h-8 rounded-[6px] border border-[#E2E8F0] bg-white px-2 text-xs font-semibold text-[#0F172A] outline-none focus:border-[#FDBA74]"
+              className="h-8 rounded-[6px] border border-phx-line bg-white px-2 text-xs font-semibold text-phx-ink outline-none focus:border-phx-accent-line"
               onChange={(e) => setFilterDistributor(e.target.value)}
               value={filterDistributor}
             >
@@ -643,7 +643,7 @@ export function WeeklyUploadWorkspace({
             </SearchableSelect>
             <SearchableSelect
               aria-label="Filter by period"
-              className="h-8 rounded-[6px] border border-[#E2E8F0] bg-white px-2 text-xs font-semibold text-[#0F172A] outline-none focus:border-[#FDBA74]"
+              className="h-8 rounded-[6px] border border-phx-line bg-white px-2 text-xs font-semibold text-phx-ink outline-none focus:border-phx-accent-line"
               onChange={(e) => setFilterPeriod(e.target.value)}
               value={filterPeriod}
             >
@@ -654,14 +654,14 @@ export function WeeklyUploadWorkspace({
             </SearchableSelect>
             {filtersActive && (
               <button
-                className="inline-flex items-center gap-1 rounded-[6px] border border-[#E2E8F0] bg-white px-2 py-1.5 text-xs font-semibold text-[#64748B] transition hover:bg-[#F8FAFC]"
+                className="inline-flex items-center gap-1 rounded-[6px] border border-phx-line bg-white px-2 py-1.5 text-xs font-semibold text-phx-ink-soft transition hover:bg-phx-paper"
                 onClick={() => { setFilterDistributor(""); setFilterPeriod(""); }}
                 type="button"
               >
                 <X className="h-3.5 w-3.5" /> Clear
               </button>
             )}
-            <span className="text-[11px] font-bold tabular-nums text-[#94A3B8]">
+            <span className="text-[11px] font-bold tabular-nums text-phx-ink-faint">
               {filteredBatches.length} of {batches.length}
             </span>
           </div>
@@ -680,7 +680,7 @@ export function WeeklyUploadWorkspace({
               Download {selectedIds.size} selected
             </button>
             <button
-              className="text-[11px] text-[#94A3B8] transition hover:text-[#0F172A]"
+              className="text-[11px] text-phx-ink-faint transition hover:text-phx-ink"
               onClick={() => setSelectedIds(new Set())}
               type="button"
             >
@@ -697,7 +697,7 @@ export function WeeklyUploadWorkspace({
                   <input
                     aria-label="Select all"
                     checked={allFilteredSelected}
-                    className="accent-[#F97316]"
+                    className="accent-phx-accent"
                     onChange={toggleAll}
                     type="checkbox"
                   />
@@ -715,7 +715,7 @@ export function WeeklyUploadWorkspace({
             <tbody>
               {filteredBatches.length === 0 && (
                 <tr>
-                  <td className="px-3 py-4 text-center text-[#94A3B8]" colSpan={9}>
+                  <td className="px-3 py-4 text-center text-phx-ink-faint" colSpan={9}>
                     {batches.length === 0 ? "No weekly uploads yet." : "No uploads match the current filters."}
                   </td>
                 </tr>
@@ -726,16 +726,16 @@ export function WeeklyUploadWorkspace({
                     <input
                       aria-label={`Select ${batch.distributorName} ${batch.weekStart ?? ""}`}
                       checked={selectedIds.has(batch.id)}
-                      className="accent-[#F97316]"
+                      className="accent-phx-accent"
                       onChange={() => toggleOne(batch.id)}
                       type="checkbox"
                     />
                   </td>
-                  <td className="px-3 py-2 font-bold text-[#0F172A]">
+                  <td className="px-3 py-2 font-bold text-phx-ink">
                     {retagId === batch.id ? (
                       <input
                         aria-label="Cycle month"
-                        className="h-8 rounded-[6px] border border-[#E2E8F0] bg-white px-2 text-xs font-bold text-[#0F172A] outline-none focus:border-[#FDBA74]"
+                        className="h-8 rounded-[6px] border border-phx-line bg-white px-2 text-xs font-bold text-phx-ink outline-none focus:border-phx-accent-line"
                         onChange={(e) => setRetagMonth(e.target.value)}
                         type="month"
                         value={retagMonth}
@@ -748,7 +748,7 @@ export function WeeklyUploadWorkspace({
                     {retagId === batch.id ? (
                       <select
                         aria-label="Week of month"
-                        className="h-8 rounded-[6px] border border-[#E2E8F0] bg-white px-1 text-xs font-bold text-[#0F172A] outline-none focus:border-[#FDBA74]"
+                        className="h-8 rounded-[6px] border border-phx-line bg-white px-1 text-xs font-bold text-phx-ink outline-none focus:border-phx-accent-line"
                         onChange={(e) => setRetagWeek(Number(e.target.value))}
                         value={retagWeek}
                       >
@@ -757,7 +757,7 @@ export function WeeklyUploadWorkspace({
                         ))}
                       </select>
                     ) : (
-                      <span className="inline-flex items-center rounded bg-[#FFF7ED] px-2 py-0.5 text-[11px] font-black text-[#9A3412]">
+                      <span className="inline-flex items-center rounded bg-phx-accent-soft px-2 py-0.5 text-[11px] font-black text-[#9A3412]">
                         {batch.weekNumber ? `W${batch.weekNumber}` : "—"}
                       </span>
                     )}
@@ -776,7 +776,7 @@ export function WeeklyUploadWorkspace({
                       {retagId === batch.id ? (
                         <>
                           <button
-                            className="inline-flex h-8 items-center gap-1 rounded-[6px] bg-[#F97316] px-2.5 text-xs font-black text-white transition hover:bg-[#EA6A0C] disabled:opacity-60"
+                            className="inline-flex h-8 items-center gap-1 rounded-[6px] bg-phx-accent px-2.5 text-xs font-black text-white transition hover:bg-[#EA6A0C] disabled:opacity-60"
                             disabled={retagBusy}
                             onClick={handleRetag}
                             type="button"
@@ -786,7 +786,7 @@ export function WeeklyUploadWorkspace({
                           </button>
                           <button
                             aria-label="Cancel re-tag"
-                            className="inline-flex text-[#94A3B8] transition hover:text-[#0F172A]"
+                            className="inline-flex text-phx-ink-faint transition hover:text-phx-ink"
                             onClick={() => setRetagId(null)}
                             type="button"
                           >
@@ -797,7 +797,7 @@ export function WeeklyUploadWorkspace({
                         <>
                           <button
                             aria-label="Download XLSX report"
-                            className="inline-flex text-[#94A3B8] transition hover:text-[#F97316] disabled:opacity-40"
+                            className="inline-flex text-phx-ink-faint transition hover:text-phx-accent disabled:opacity-40"
                             disabled={downloadingId === batch.id}
                             onClick={() => handleSingleDownload(batch)}
                             type="button"
@@ -808,7 +808,7 @@ export function WeeklyUploadWorkspace({
                           </button>
                           <button
                             aria-label="Re-tag week / month"
-                            className="inline-flex text-[#94A3B8] transition hover:text-[#F97316]"
+                            className="inline-flex text-phx-ink-faint transition hover:text-phx-accent"
                             onClick={() => startRetag(batch)}
                             type="button"
                           >
@@ -816,7 +816,7 @@ export function WeeklyUploadWorkspace({
                           </button>
                           <button
                             aria-label="Delete upload"
-                            className="inline-flex text-[#94A3B8] transition hover:text-rose-600"
+                            className="inline-flex text-phx-ink-faint transition hover:text-rose-600"
                             onClick={() => handleDelete(batch.id)}
                             type="button"
                           >
@@ -935,13 +935,13 @@ function MapNowModal({ children, onClose, title }: { children: React.ReactNode; 
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4">
       <div
         aria-modal="true"
-        className="max-h-[92vh] w-full max-w-5xl overflow-y-auto rounded-[6px] border border-[#D8E0EA] bg-white shadow-[0_28px_90px_rgba(15,23,42,0.28)]"
+        className="max-h-[92vh] w-full max-w-5xl overflow-y-auto rounded-[6px] border border-phx-line bg-white shadow-[0_28px_90px_rgba(15,23,42,0.28)]"
         role="dialog"
       >
-        <div className="sticky top-0 z-10 flex items-center justify-between gap-4 border-b border-[#E2E8F0] bg-white px-5 py-3">
-          <h2 className="text-sm font-black text-[#0F172A]">{title}</h2>
+        <div className="sticky top-0 z-10 flex items-center justify-between gap-4 border-b border-phx-line bg-white px-5 py-3">
+          <h2 className="text-sm font-black text-phx-ink">{title}</h2>
           <button
-            className="inline-flex h-8 w-8 items-center justify-center rounded-[6px] border border-[#E2E8F0] text-[#64748B] transition hover:border-[#FDBA74]"
+            className="inline-flex h-8 w-8 items-center justify-center rounded-[6px] border border-phx-line text-phx-ink-soft transition hover:border-phx-accent-line"
             onClick={onClose}
             type="button"
           >
@@ -988,7 +988,7 @@ function InlineSosProductsModal({ onClose, search }: { onClose: () => void; sear
         <SourceOfSalesProductsTab initialProducts={products} initialSearch={search ?? undefined} />
       ) : (
         <div className="flex items-center justify-center p-16">
-          <Loader2 className="h-6 w-6 animate-spin text-[#94A3B8]" />
+          <Loader2 className="h-6 w-6 animate-spin text-phx-ink-faint" />
         </div>
       )}
     </MapNowModal>
@@ -1029,7 +1029,7 @@ function ValidRegionCodesInline({ distributorCode }: { distributorCode: string }
   return (
     <>
       <button
-        className="ml-auto inline-flex h-7 items-center gap-1 rounded-[6px] border border-[#E2E8F0] px-3 text-xs font-bold text-[#334155] transition hover:border-[#FDBA74]"
+        className="ml-auto inline-flex h-7 items-center gap-1 rounded-[6px] border border-phx-line px-3 text-xs font-bold text-phx-ink-2 transition hover:border-phx-accent-line"
         onClick={() => void toggle()}
         type="button"
       >
@@ -1043,7 +1043,7 @@ function ValidRegionCodesInline({ distributorCode }: { distributorCode: string }
             <div className="mt-1 flex flex-wrap gap-1.5">
               {regions.map((region) => (
                 <span
-                  className="rounded-[4px] border border-[#E2E8F0] bg-[#F8FAFC] px-2 py-0.5 text-[11px] font-bold text-[#334155]"
+                  className="rounded-[4px] border border-phx-line bg-phx-paper px-2 py-0.5 text-[11px] font-bold text-phx-ink-2"
                   key={region.regionCode}
                 >
                   {region.regionName} ({region.regionCode})
@@ -1051,7 +1051,7 @@ function ValidRegionCodesInline({ distributorCode }: { distributorCode: string }
               ))}
             </div>
           ) : (
-            <Loader2 className="mt-1 h-3.5 w-3.5 animate-spin text-[#94A3B8]" />
+            <Loader2 className="mt-1 h-3.5 w-3.5 animate-spin text-phx-ink-faint" />
           )}
         </div>
       )}
@@ -1077,14 +1077,14 @@ function UnresolvedItemRow({
       <span className="rounded-[4px] bg-rose-100 px-1.5 py-0.5 text-[10px] font-black uppercase tracking-wide text-rose-700">
         {FIELD_LABELS[group.field] ?? group.field}
       </span>
-      <span className="text-sm font-semibold text-[#334155]">{group.message}</span>
-      <span className="text-xs font-medium text-[#94A3B8]">
+      <span className="text-sm font-semibold text-phx-ink-2">{group.message}</span>
+      <span className="text-xs font-medium text-phx-ink-faint">
         {group.rowNumbers.length} row{group.rowNumbers.length === 1 ? "" : "s"}
         {" "}(e.g. row {group.rowNumbers[0]})
       </span>
       {group.action && (
         <button
-          className="ml-auto inline-flex h-7 items-center gap-1 rounded-[6px] bg-[#0B0B0B] px-3 text-xs font-black text-white transition hover:bg-[#F97316]"
+          className="ml-auto inline-flex h-7 items-center gap-1 rounded-[6px] bg-[#0B0B0B] px-3 text-xs font-black text-white transition hover:bg-phx-accent"
           onClick={() => onMap(group.action as MapAction)}
           type="button"
         >
@@ -1102,7 +1102,7 @@ function UnresolvedItemsPanel({ result }: { result: WeeklySalesValidationResult 
   if (groups.length === 0) return null;
 
   return (
-    <div className="border-b border-[#E2E8F0] bg-rose-50/60 px-4 py-3">
+    <div className="border-b border-phx-line bg-rose-50/60 px-4 py-3">
       <h3 className="mb-2 text-xs font-black uppercase tracking-wide text-rose-700">
         Unresolved items ({groups.length}) — map these to unblock the upload
       </h3>
@@ -1111,7 +1111,7 @@ function UnresolvedItemsPanel({ result }: { result: WeeklySalesValidationResult 
           <UnresolvedItemRow distributorCode={result.distributor.code} group={group} key={group.key} onMap={setModal} />
         ))}
       </div>
-      <p className="mt-2 text-xs font-medium text-[#94A3B8]">
+      <p className="mt-2 text-xs font-medium text-phx-ink-faint">
         Map it right here, then click Validate again to re-check this file.
       </p>
       {modal?.kind === "branch" && (
@@ -1139,13 +1139,13 @@ function ExcludedItemsPanel({ items }: { items: WeeklyExcludedItem[] }) {
   const netQty = items.reduce((sum, item) => sum + item.netQty, 0);
 
   return (
-    <div className="border-b border-[#E2E8F0] bg-[#F8FAFC] px-4 py-3">
-      <h3 className="text-xs font-black uppercase tracking-wide text-[#475569]">
+    <div className="border-b border-phx-line bg-phx-paper px-4 py-3">
+      <h3 className="text-xs font-black uppercase tracking-wide text-phx-ink-2">
         Excluded on purpose ({items.length}) — {num(rows)} rows, {num(netQty)} net units kept out of the numbers
       </h3>
       <div className="mt-2 overflow-x-auto">
         <table className="w-full text-sm">
-          <thead className="text-left text-[11px] font-bold uppercase text-[#94A3B8]">
+          <thead className="text-left text-[11px] font-bold uppercase text-phx-ink-faint">
             <tr>
               <th className="py-1 pr-4 whitespace-nowrap">Item code</th>
               <th className="py-1 pr-4 whitespace-nowrap">Item name</th>
@@ -1156,18 +1156,18 @@ function ExcludedItemsPanel({ items }: { items: WeeklyExcludedItem[] }) {
           </thead>
           <tbody>
             {items.map((item) => (
-              <tr className="border-t border-[#E2E8F0]" key={`${item.itemCode}|${item.itemName}`}>
-                <td className="py-1 pr-4 font-semibold text-[#0F172A] whitespace-nowrap">{item.itemCode || "—"}</td>
-                <td className="py-1 pr-4 text-[#334155] whitespace-nowrap">{item.itemName || "—"}</td>
-                <td className="py-1 pr-4 text-right tabular-nums text-[#334155]">{num(item.rows)}</td>
-                <td className="py-1 pr-4 text-right tabular-nums text-[#334155]">{num(item.netQty)}</td>
-                <td className="py-1 text-right tabular-nums text-[#334155]">{num(item.stockQty)}</td>
+              <tr className="border-t border-phx-line" key={`${item.itemCode}|${item.itemName}`}>
+                <td className="py-1 pr-4 font-semibold text-phx-ink whitespace-nowrap">{item.itemCode || "—"}</td>
+                <td className="py-1 pr-4 text-phx-ink-2 whitespace-nowrap">{item.itemName || "—"}</td>
+                <td className="py-1 pr-4 text-right tabular-nums text-phx-ink-2">{num(item.rows)}</td>
+                <td className="py-1 pr-4 text-right tabular-nums text-phx-ink-2">{num(item.netQty)}</td>
+                <td className="py-1 text-right tabular-nums text-phx-ink-2">{num(item.stockQty)}</td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
-      <p className="mt-2 text-xs font-medium text-[#94A3B8]">
+      <p className="mt-2 text-xs font-medium text-phx-ink-faint">
         These items are mapped to IGNORE in Weekly Mapping — not Phoenix products. Re-point the mapping to a real product if any of them belongs to a line.
       </p>
     </div>
@@ -1180,13 +1180,13 @@ function ExcludedBranchesPanel({ branches }: { branches: WeeklyExcludedBranch[] 
   const stockQty = branches.reduce((sum, branch) => sum + branch.stockQty, 0);
 
   return (
-    <div className="border-b border-[#E2E8F0] bg-[#F8FAFC] px-4 py-3">
-      <h3 className="text-xs font-black uppercase tracking-wide text-[#475569]">
+    <div className="border-b border-phx-line bg-phx-paper px-4 py-3">
+      <h3 className="text-xs font-black uppercase tracking-wide text-phx-ink-2">
         Branches excluded on purpose ({branches.length}) — {num(rows)} rows, {num(netQty)} net and {num(stockQty)} stock units kept out of the numbers
       </h3>
       <div className="mt-2 overflow-x-auto">
         <table className="w-full text-sm">
-          <thead className="text-left text-[11px] font-bold uppercase text-[#94A3B8]">
+          <thead className="text-left text-[11px] font-bold uppercase text-phx-ink-faint">
             <tr>
               <th className="py-1 pr-4 whitespace-nowrap">Branch</th>
               <th className="py-1 pr-4 whitespace-nowrap">Branch name</th>
@@ -1197,18 +1197,18 @@ function ExcludedBranchesPanel({ branches }: { branches: WeeklyExcludedBranch[] 
           </thead>
           <tbody>
             {branches.map((branch) => (
-              <tr className="border-t border-[#E2E8F0]" key={`${branch.rawBranch}|${branch.branchColumnIndex ?? ""}`}>
-                <td className="py-1 pr-4 font-semibold text-[#0F172A] whitespace-nowrap">{branch.rawBranch || (branch.branchColumnIndex != null ? `Column ${branch.branchColumnIndex}` : "—")}</td>
-                <td className="py-1 pr-4 text-[#334155] whitespace-nowrap">{branch.branchName || "—"}</td>
-                <td className="py-1 pr-4 text-right tabular-nums text-[#334155]">{num(branch.rows)}</td>
-                <td className="py-1 pr-4 text-right tabular-nums text-[#334155]">{num(branch.netQty)}</td>
-                <td className="py-1 text-right tabular-nums text-[#334155]">{num(branch.stockQty)}</td>
+              <tr className="border-t border-phx-line" key={`${branch.rawBranch}|${branch.branchColumnIndex ?? ""}`}>
+                <td className="py-1 pr-4 font-semibold text-phx-ink whitespace-nowrap">{branch.rawBranch || (branch.branchColumnIndex != null ? `Column ${branch.branchColumnIndex}` : "—")}</td>
+                <td className="py-1 pr-4 text-phx-ink-2 whitespace-nowrap">{branch.branchName || "—"}</td>
+                <td className="py-1 pr-4 text-right tabular-nums text-phx-ink-2">{num(branch.rows)}</td>
+                <td className="py-1 pr-4 text-right tabular-nums text-phx-ink-2">{num(branch.netQty)}</td>
+                <td className="py-1 text-right tabular-nums text-phx-ink-2">{num(branch.stockQty)}</td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
-      <p className="mt-2 text-xs font-medium text-[#94A3B8]">
+      <p className="mt-2 text-xs font-medium text-phx-ink-faint">
         These depots are ticked &quot;excluded&quot; in the Weekly Mapping branch list, so none of their volume reaches the dashboard. Untick a branch there if its sales should count.
       </p>
     </div>
@@ -1243,13 +1243,13 @@ function ValidationResultPanel({
   return (
     <div className={card}>
       {/* Header */}
-      <div className={`flex flex-wrap items-center gap-2 border-b border-[#E2E8F0] px-4 py-3 text-sm font-black ${validated ? "text-emerald-700" : "text-amber-700"}`}>
+      <div className={`flex flex-wrap items-center gap-2 border-b border-phx-line px-4 py-3 text-sm font-black ${validated ? "text-emerald-700" : "text-amber-700"}`}>
         {validated ? <CheckCircle2 className="h-4 w-4" /> : <AlertTriangle className="h-4 w-4" />}
         {validated ? `Validation passed — ${result.rowCount} rows ready for upload` : "Validation blocked — fix the issues below"}
-        <span className="ml-auto text-xs font-bold text-[#64748B]">{result.distributor.name} · {result.weekStart ?? "no date"}</span>
+        <span className="ml-auto text-xs font-bold text-phx-ink-soft">{result.distributor.name} · {result.weekStart ?? "no date"}</span>
         {hasFailures && (
           <button
-            className="inline-flex h-8 items-center gap-1 rounded-[6px] border border-[#E2E8F0] px-3 text-xs font-bold text-[#334155] transition hover:border-[#FDBA74]"
+            className="inline-flex h-8 items-center gap-1 rounded-[6px] border border-phx-line px-3 text-xs font-bold text-phx-ink-2 transition hover:border-phx-accent-line"
             onClick={() => downloadUnmapped(result)}
             type="button"
           >
@@ -1278,19 +1278,19 @@ function ValidationResultPanel({
 
       {/* This week only — de-cumulated preview vs the previous cumulative sheet of this month-cycle */}
       {tw && (
-        <div className="border-b border-[#E2E8F0] bg-[#F0FDF4] px-4 py-3">
+        <div className="border-b border-phx-line bg-[#F0FDF4] px-4 py-3">
           <div className="text-[11px] font-black uppercase tracking-wide text-emerald-700">
             This week only{selectedWeek ? ` — Week ${selectedWeek}` : ""} (de-cumulated)
           </div>
-          <div className="mt-1 flex flex-wrap items-baseline gap-x-6 gap-y-1 text-sm font-bold text-[#0F172A]">
-            <span>Net units: <span className="text-[#F97316]">{num(tw.netQty)}</span></span>
-            <span className="text-xs font-medium text-[#64748B]">
+          <div className="mt-1 flex flex-wrap items-baseline gap-x-6 gap-y-1 text-sm font-bold text-phx-ink">
+            <span>Net units: <span className="text-phx-accent">{num(tw.netQty)}</span></span>
+            <span className="text-xs font-medium text-phx-ink-soft">
               {tw.priorWeekStart
                 ? `= this sheet (cumulative ${num(t.netQty)} units) − previous sheet of the month (${tw.priorWeekStart})`
                 : "first sheet of the month — equals the full cumulative figure"}
             </span>
           </div>
-          <div className="mt-1 text-xs font-medium text-[#94A3B8]">
+          <div className="mt-1 text-xs font-medium text-phx-ink-faint">
             Stock {num(tw.stockQty)} units is a snapshot — shown as-is, never subtracted.
           </div>
         </div>
@@ -1298,7 +1298,7 @@ function ValidationResultPanel({
 
       {/* Blocking reasons */}
       {result.blockingReasons.length > 0 && (
-        <ul className="list-disc space-y-1 border-b border-[#E2E8F0] bg-amber-50 px-8 py-3 text-sm font-semibold text-amber-800">
+        <ul className="list-disc space-y-1 border-b border-phx-line bg-amber-50 px-8 py-3 text-sm font-semibold text-amber-800">
           {result.blockingReasons.map((r) => <li key={r}>{r}</li>)}
         </ul>
       )}
@@ -1319,7 +1319,7 @@ function ValidationResultPanel({
       {result.excludedBranches.length > 0 && <ExcludedBranchesPanel branches={result.excludedBranches} />}
 
       {isPS && (
-        <p className="border-b border-[#E2E8F0] bg-[#FFF7ED] px-4 py-2 text-xs font-semibold text-[#9A3412]">
+        <p className="border-b border-phx-line bg-phx-accent-soft px-4 py-2 text-xs font-semibold text-[#9A3412]">
           Overseas POS files carry a single net quantity per outlet, so Sales and Return are shown as the net figure (Return = 0); Net is the true value.
         </p>
       )}
@@ -1328,7 +1328,7 @@ function ValidationResultPanel({
       {/* Validation is a UNITS check — the operator is confirming quantities parsed correctly, not
           money. Value is derived downstream from Product Master factory price, so showing EGP here
           invites reconciling against a figure this step does not own. Units only (owner's rule). */}
-      <div className="grid grid-cols-2 gap-px bg-[#E2E8F0] sm:grid-cols-3 lg:grid-cols-6">
+      <div className="grid grid-cols-2 gap-px bg-phx-line sm:grid-cols-3 lg:grid-cols-6">
         <Metric label="Rows" value={num(result.rowCount)} />
         <Metric label="Importable" value={num(result.importableRows)} />
         <Metric label="Sales units" value={num(t.salesQty)} />
@@ -1367,8 +1367,8 @@ function ValidationResultPanel({
 
       {/* Row issues */}
       {result.issues.length > 0 && (
-        <div className="border-t border-[#E2E8F0] p-4">
-          <h3 className="mb-2 text-xs font-black uppercase tracking-wide text-[#64748B]">
+        <div className="border-t border-phx-line p-4">
+          <h3 className="mb-2 text-xs font-black uppercase tracking-wide text-phx-ink-soft">
             Row issues ({result.issues.length})
           </h3>
           <div className="max-h-56 overflow-auto rounded-[6px] border border-[#FFE8D6]">
@@ -1376,11 +1376,11 @@ function ValidationResultPanel({
               <tbody>
                 {result.issues.slice(0, 100).map((issue, i) => (
                   <tr className="border-t border-[#FFE8D6]" key={`${issue.rowNumber}-${i}`}>
-                    <td className="px-2 py-1 font-bold text-[#64748B]">Row {issue.rowNumber}</td>
+                    <td className="px-2 py-1 font-bold text-phx-ink-soft">Row {issue.rowNumber}</td>
                     <td className="px-2 py-1">
                       <span className={issue.severity === "failure" ? "text-rose-600" : "text-amber-600"}>{issue.severity}</span>
                     </td>
-                    <td className="px-2 py-1 text-[#334155]">{issue.message}</td>
+                    <td className="px-2 py-1 text-phx-ink-2">{issue.message}</td>
                   </tr>
                 ))}
               </tbody>
@@ -1390,10 +1390,10 @@ function ValidationResultPanel({
       )}
 
       {/* Step 3 — Confirm Upload */}
-      <div className="border-t border-[#E2E8F0] px-4 py-4">
+      <div className="border-t border-phx-line px-4 py-4">
         <div className="flex items-center gap-2 mb-3">
           <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-[#020617] text-[10px] font-black text-white">5</span>
-          <span className="text-[11px] font-black uppercase tracking-[0.16em] text-[#0F172A]">Confirm &amp; Upload</span>
+          <span className="text-[11px] font-black uppercase tracking-[0.16em] text-phx-ink">Confirm &amp; Upload</span>
         </div>
 
         {uploadDone ? (
@@ -1413,7 +1413,7 @@ function ValidationResultPanel({
               </div>
             )}
             <button
-              className="inline-flex h-10 items-center gap-2 rounded-[6px] bg-[#F97316] px-5 text-sm font-black text-white transition hover:bg-[#EA6A0C] disabled:cursor-not-allowed disabled:bg-[#CBD5E1] disabled:hover:bg-[#CBD5E1]"
+              className="inline-flex h-10 items-center gap-2 rounded-[6px] bg-phx-accent px-5 text-sm font-black text-white transition hover:bg-[#EA6A0C] disabled:cursor-not-allowed disabled:bg-phx-line-strong disabled:hover:bg-phx-line-strong"
               disabled={uploadBusy}
               onClick={onUpload}
               type="button"
@@ -1421,7 +1421,7 @@ function ValidationResultPanel({
               {uploadBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
               {uploadBusy ? "Uploading…" : "Confirm & Upload"}
             </button>
-            <span className="text-xs font-medium text-[#64748B]">
+            <span className="text-xs font-medium text-phx-ink-soft">
               Validation passed. Review the tables above, then confirm to store the data.
             </span>
           </div>
@@ -1456,23 +1456,23 @@ function VerifyPanel({ result, verified, onConfirm }: { result: WeeklyVerifyResu
   const drift = result.verdict === "drift";
   return (
     <div className={`mt-3 ${card}`}>
-      <div className={`flex flex-wrap items-center gap-2 border-b border-[#E2E8F0] px-4 py-3 text-sm font-black ${drift ? "text-amber-700" : "text-emerald-700"}`}>
+      <div className={`flex flex-wrap items-center gap-2 border-b border-phx-line px-4 py-3 text-sm font-black ${drift ? "text-amber-700" : "text-emerald-700"}`}>
         {drift ? <AlertTriangle className="h-4 w-4" /> : <CheckCircle2 className="h-4 w-4" />}
         {drift ? "Possible column drift — review carefully" : "Columns look consistent"}
-        <span className={`ml-auto inline-flex items-center rounded px-2 py-0.5 text-[11px] font-bold ${result.aiUsed ? "bg-[#FFF7ED] text-[#9A3412]" : "bg-slate-100 text-slate-600"}`}>
+        <span className={`ml-auto inline-flex items-center rounded px-2 py-0.5 text-[11px] font-bold ${result.aiUsed ? "bg-phx-accent-soft text-[#9A3412]" : "bg-slate-100 text-slate-600"}`}>
           {result.aiUsed ? "AI checked" : "AI unavailable — manual review"}
         </span>
       </div>
 
       {result.aiNote && (
-        <p className="border-b border-[#E2E8F0] bg-[#F8FAFC] px-4 py-2 text-xs font-semibold text-[#334155]">{result.aiNote}</p>
+        <p className="border-b border-phx-line bg-phx-paper px-4 py-2 text-xs font-semibold text-phx-ink-2">{result.aiNote}</p>
       )}
 
       {result.files.length > 0 && (
-        <div className="flex flex-wrap gap-x-6 gap-y-1 border-b border-[#E2E8F0] px-4 py-2 text-xs text-[#64748B]">
+        <div className="flex flex-wrap gap-x-6 gap-y-1 border-b border-phx-line px-4 py-2 text-xs text-phx-ink-soft">
           {result.files.map((f) => (
             <span key={`${f.role}-${f.fileName}`}>
-              <span className="font-black uppercase tracking-wide text-[#94A3B8]">{f.role}</span> · {f.fileName} → &quot;{f.sheetName}&quot;
+              <span className="font-black uppercase tracking-wide text-phx-ink-faint">{f.role}</span> · {f.fileName} → &quot;{f.sheetName}&quot;
             </span>
           ))}
         </div>
@@ -1493,15 +1493,15 @@ function VerifyPanel({ result, verified, onConfirm }: { result: WeeklyVerifyResu
           <tbody>
             {result.columns.map((col, i) => (
               <tr className="border-t border-[#FFE8D6]" key={`${col.sheetRole}-${col.field}-${i}`}>
-                <td className="px-3 py-1.5 font-bold text-[#0F172A]">
-                  {col.label}{col.critical && <span className="ml-1 text-[#F97316]">*</span>}
+                <td className="px-3 py-1.5 font-bold text-phx-ink">
+                  {col.label}{col.critical && <span className="ml-1 text-phx-accent">*</span>}
                 </td>
-                <td className="px-3 py-1.5 text-[#64748B]">{col.sheetRole}</td>
-                <td className="px-3 py-1.5 text-center tabular-nums text-[#334155]">{col.columnIndex}</td>
-                <td className="px-3 py-1.5 text-[#0F172A]">
+                <td className="px-3 py-1.5 text-phx-ink-soft">{col.sheetRole}</td>
+                <td className="px-3 py-1.5 text-center tabular-nums text-phx-ink-2">{col.columnIndex}</td>
+                <td className="px-3 py-1.5 text-phx-ink">
                   {col.observedHeader || <span className="text-rose-600">— empty —</span>}
                 </td>
-                <td className="px-3 py-1.5 text-[#94A3B8]">{col.expectedHeaderHint}</td>
+                <td className="px-3 py-1.5 text-phx-ink-faint">{col.expectedHeaderHint}</td>
                 <td className="px-3 py-1.5"><StatusPill note={col.note} status={col.status} /></td>
               </tr>
             ))}
@@ -1510,20 +1510,20 @@ function VerifyPanel({ result, verified, onConfirm }: { result: WeeklyVerifyResu
       </div>
 
       {result.matrices.length > 0 && (
-        <div className="space-y-2 border-t border-[#E2E8F0] px-4 py-3">
+        <div className="space-y-2 border-t border-phx-line px-4 py-3">
           {result.matrices.map((matrix, i) => (
             <div className="text-xs" key={`${matrix.sheetRole}-${i}`}>
-              <div className="font-black text-[#0F172A]">
+              <div className="font-black text-phx-ink">
                 {matrix.kind === "branch-headers" ? "Branches / outlets (as column headers)" : "Storage locations (one per column)"} — {matrix.detectedCount} detected from column {matrix.firstColumn}
               </div>
-              <div className="mt-0.5 text-[#64748B]">{matrix.note}</div>
+              <div className="mt-0.5 text-phx-ink-soft">{matrix.note}</div>
               {matrix.sampleHeaders.length > 0 && (
                 <div className="mt-1 flex flex-wrap gap-1">
                   {matrix.sampleHeaders.map((h, hi) => (
-                    <span className="rounded bg-[#F1F5F9] px-1.5 py-0.5 font-medium text-[#334155]" key={hi}>{h}</span>
+                    <span className="rounded bg-phx-paper-2 px-1.5 py-0.5 font-medium text-phx-ink-2" key={hi}>{h}</span>
                   ))}
                   {matrix.detectedCount > matrix.sampleHeaders.length && (
-                    <span className="px-1 py-0.5 text-[#94A3B8]">+{matrix.detectedCount - matrix.sampleHeaders.length} more</span>
+                    <span className="px-1 py-0.5 text-phx-ink-faint">+{matrix.detectedCount - matrix.sampleHeaders.length} more</span>
                   )}
                 </div>
               )}
@@ -1533,12 +1533,12 @@ function VerifyPanel({ result, verified, onConfirm }: { result: WeeklyVerifyResu
       )}
 
       {result.warnings.length > 0 && (
-        <ul className="list-disc space-y-1 border-t border-[#E2E8F0] bg-amber-50 px-8 py-3 text-xs font-semibold text-amber-800">
+        <ul className="list-disc space-y-1 border-t border-phx-line bg-amber-50 px-8 py-3 text-xs font-semibold text-amber-800">
           {result.warnings.map((w) => <li key={w}>{w}</li>)}
         </ul>
       )}
 
-      <div className="flex flex-wrap items-center gap-3 border-t border-[#E2E8F0] px-4 py-3">
+      <div className="flex flex-wrap items-center gap-3 border-t border-phx-line px-4 py-3">
         {verified ? (
           <span className="inline-flex items-center gap-1 text-sm font-black text-emerald-700">
             <ShieldCheck className="h-4 w-4" /> Verified — proceed to Validate below.
@@ -1546,13 +1546,13 @@ function VerifyPanel({ result, verified, onConfirm }: { result: WeeklyVerifyResu
         ) : (
           <>
             <button
-              className="inline-flex h-10 items-center gap-2 rounded-[6px] bg-[#F97316] px-4 text-sm font-black text-white transition hover:bg-[#EA6A0C]"
+              className="inline-flex h-10 items-center gap-2 rounded-[6px] bg-phx-accent px-4 text-sm font-black text-white transition hover:bg-[#EA6A0C]"
               onClick={onConfirm}
               type="button"
             >
               <ShieldCheck className="h-4 w-4" /> Confirm — this looks correct
             </button>
-            <span className="text-xs font-medium text-[#94A3B8]">
+            <span className="text-xs font-medium text-phx-ink-faint">
               {drift ? "Drift was flagged — only confirm if you know the layout is right." : "Confirm to unlock the Validate step."}
             </span>
           </>
@@ -1640,8 +1640,8 @@ function MonthCompletenessTracker({ batches }: { batches: WeeklyBatch[] }) {
   const cellClass: Record<string, string> = {
     done: "bg-emerald-50 text-emerald-700 border-emerald-200",
     overdue: "bg-amber-50 text-amber-700 border-amber-200",
-    upcoming: "bg-white text-[#CBD5E1] border-[#E2E8F0]",
-    na: "bg-[#F8FAFC] text-[#CBD5E1] border-[#F1F5F9]",
+    upcoming: "bg-white text-phx-line-strong border-phx-line",
+    na: "bg-phx-paper text-phx-line-strong border-phx-paper-2",
   };
 
   return (
@@ -1649,28 +1649,28 @@ function MonthCompletenessTracker({ batches }: { batches: WeeklyBatch[] }) {
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <div className="flex items-center gap-2">
-            <span className="text-[11px] font-black uppercase tracking-[0.16em] text-[#0F172A]">This month — {trackerMonthLabel(focusMonth)}</span>
+            <span className="text-[11px] font-black uppercase tracking-[0.16em] text-phx-ink">This month — {trackerMonthLabel(focusMonth)}</span>
             {allIn && (
               <span className="inline-flex items-center gap-1 rounded bg-emerald-50 px-2 py-0.5 text-[11px] font-black text-emerald-700">
                 <CheckCircle2 className="h-3.5 w-3.5" /> All sheets in
               </span>
             )}
           </div>
-          <p className="mt-0.5 text-xs font-medium text-[#64748B]">
+          <p className="mt-0.5 text-xs font-medium text-phx-ink-soft">
             A reminder so no weekly sheet is forgotten — it never blocks you; upload late any time.
           </p>
         </div>
-        <span className="text-sm font-black tabular-nums text-[#0F172A]">{done} / {expected} sheets</span>
+        <span className="text-sm font-black tabular-nums text-phx-ink">{done} / {expected} sheets</span>
       </div>
 
-      <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-[#F1F5F9]">
-        <div className={`h-full rounded-full ${allIn ? "bg-emerald-500" : "bg-[#F97316]"}`} style={{ width: `${pctDone}%` }} />
+      <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-phx-paper-2">
+        <div className={`h-full rounded-full ${allIn ? "bg-emerald-500" : "bg-phx-accent"}`} style={{ width: `${pctDone}%` }} />
       </div>
 
       <div className="mt-4 overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
-            <tr className="text-left text-[10px] font-black uppercase tracking-wide text-[#94A3B8]">
+            <tr className="text-left text-[10px] font-black uppercase tracking-wide text-phx-ink-faint">
               <th className="px-2 py-1">Distributor</th>
               <th className="px-2 py-1 text-center">W1</th>
               <th className="px-2 py-1 text-center">W2</th>
@@ -1680,8 +1680,8 @@ function MonthCompletenessTracker({ batches }: { batches: WeeklyBatch[] }) {
           </thead>
           <tbody>
             {rows.map((row) => (
-              <tr key={row.code} className="border-t border-[#F1F5F9]">
-                <td className="px-2 py-1.5 font-bold text-[#0F172A]">{row.name} <span className="font-medium text-[#94A3B8]">({row.code})</span></td>
+              <tr key={row.code} className="border-t border-phx-paper-2">
+                <td className="px-2 py-1.5 font-bold text-phx-ink">{row.name} <span className="font-medium text-phx-ink-faint">({row.code})</span></td>
                 {row.cells.map((cell) => (
                   <td className="px-2 py-1.5 text-center" key={cell.week}>
                     <span
@@ -1698,11 +1698,11 @@ function MonthCompletenessTracker({ batches }: { batches: WeeklyBatch[] }) {
         </table>
       </div>
 
-      <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[10px] font-bold uppercase tracking-wide text-[#94A3B8]">
+      <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[10px] font-bold uppercase tracking-wide text-phx-ink-faint">
         <span><span className="text-emerald-600">✓</span> uploaded</span>
         <span><span className="text-amber-600">!</span> overdue</span>
-        <span><span className="text-[#CBD5E1]">–</span> upcoming</span>
-        <span><span className="text-[#CBD5E1]">·</span> not expected</span>
+        <span><span className="text-phx-line-strong">–</span> upcoming</span>
+        <span><span className="text-phx-line-strong">·</span> not expected</span>
       </div>
     </div>
   );
@@ -1713,19 +1713,19 @@ function MonthCompletenessTracker({ batches }: { batches: WeeklyBatch[] }) {
 function Metric({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
   return (
     <div className="bg-white px-3 py-2.5">
-      <div className="text-[10px] font-black uppercase tracking-wide text-[#94A3B8]">{label}</div>
-      <div className={`mt-0.5 text-sm font-black tabular-nums ${accent ? "text-[#F97316]" : "text-[#0F172A]"}`}>{value}</div>
+      <div className="text-[10px] font-black uppercase tracking-wide text-phx-ink-faint">{label}</div>
+      <div className={`mt-0.5 text-sm font-black tabular-nums ${accent ? "text-phx-accent" : "text-phx-ink"}`}>{value}</div>
     </div>
   );
 }
 
 function SummaryTable({ title, head, rows }: { title: string; head: string[]; rows: string[][] }) {
   return (
-    <div className="overflow-hidden rounded-[6px] border border-[#E2E8F0]">
+    <div className="overflow-hidden rounded-[6px] border border-phx-line">
       <div className="bg-[#020617] px-3 py-2 text-xs font-black uppercase tracking-wide text-white">{title}</div>
       <div className="max-h-72 overflow-auto">
         <table className="w-full text-sm">
-          <thead className="text-left text-[11px] font-bold uppercase text-[#94A3B8]">
+          <thead className="text-left text-[11px] font-bold uppercase text-phx-ink-faint">
             <tr>
               {head.map((cell, i) => (
                 <th className={`px-3 py-1.5 ${i === 0 ? "" : "text-right"}`} key={cell}>{cell}</th>
@@ -1734,12 +1734,12 @@ function SummaryTable({ title, head, rows }: { title: string; head: string[]; ro
           </thead>
           <tbody>
             {rows.length === 0 && (
-              <tr><td className="px-3 py-3 text-center text-[#94A3B8]" colSpan={head.length}>—</td></tr>
+              <tr><td className="px-3 py-3 text-center text-phx-ink-faint" colSpan={head.length}>—</td></tr>
             )}
             {rows.map((row, ri) => (
               <tr className="border-t border-[#FFE8D6]" key={ri}>
                 {row.map((cell, ci) => (
-                  <td className={`px-3 py-1.5 ${ci === 0 ? "font-semibold text-[#0F172A]" : "text-right tabular-nums text-[#334155]"}`} key={ci}>
+                  <td className={`px-3 py-1.5 ${ci === 0 ? "font-semibold text-phx-ink" : "text-right tabular-nums text-phx-ink-2"}`} key={ci}>
                     {cell}
                   </td>
                 ))}

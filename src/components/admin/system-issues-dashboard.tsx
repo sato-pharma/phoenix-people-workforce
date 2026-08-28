@@ -47,13 +47,13 @@ function StatusFilterPills({
 }) {
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <div className="flex rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] p-1">
+      <div className="flex rounded-xl border border-phx-line bg-phx-paper p-1">
         {STATUS_FILTERS.map((option) => (
           <button
             className={`rounded-lg px-3 py-1.5 text-[11px] font-black transition ${
               value === option.value
                 ? "bg-[#0B0B0B] text-white shadow-[0_6px_14px_rgba(15,23,42,0.18)]"
-                : "text-[#64748B] hover:text-orange-700"
+                : "text-phx-ink-soft hover:text-orange-700"
             }`}
             key={option.value}
             onClick={() => onChange(option.value)}
@@ -63,7 +63,7 @@ function StatusFilterPills({
           </button>
         ))}
       </div>
-      <span className="text-xs font-semibold text-[#64748B]">
+      <span className="text-xs font-semibold text-phx-ink-soft">
         {shownCount.toLocaleString("en-US")} of {totalCount.toLocaleString("en-US")} shown
       </span>
     </div>
@@ -136,8 +136,8 @@ function accountLabel(hrId: string, name: string | null): string {
 function DeployTimelinePanel({ state }: { state: TimelineState }) {
   if (state.loading) {
     return (
-      <div className="flex items-center gap-2 rounded-2xl border border-[#E2E8F0] bg-white/95 p-4 text-xs font-semibold text-[#64748B]">
-        <Loader2 className="h-4 w-4 animate-spin text-[#F97316]" /> Building deploy timeline…
+      <div className="flex items-center gap-2 rounded-2xl border border-phx-line bg-white/95 p-4 text-xs font-semibold text-phx-ink-soft">
+        <Loader2 className="h-4 w-4 animate-spin text-phx-accent" /> Building deploy timeline…
       </div>
     );
   }
@@ -152,8 +152,8 @@ function DeployTimelinePanel({ state }: { state: TimelineState }) {
     .filter((m): m is DeployMarkerWithIdx => m.idx !== undefined);
 
   return (
-    <div className="rounded-2xl border border-[#E2E8F0] bg-white/95 p-4 shadow-[0_10px_28px_rgba(15,23,42,0.06)]">
-      <p className="mb-2 text-[10px] font-black uppercase tracking-[0.18em] text-[#64748B]">
+    <div className="rounded-2xl border border-phx-line bg-white/95 p-4 shadow-[0_10px_28px_rgba(15,23,42,0.06)]">
+      <p className="mb-2 text-[10px] font-black uppercase tracking-[0.18em] text-phx-ink-soft">
         Errors per day — last {t.windowDays} days · dashed lines = deploys
       </p>
       <svg className="h-20 w-full" preserveAspectRatio="none" viewBox="0 0 100 30">
@@ -190,9 +190,9 @@ function DeployTimelinePanel({ state }: { state: TimelineState }) {
           <ul className="space-y-1">
             {t.regressions.slice(0, 10).map((r, i) => (
               <li className="flex items-center justify-between gap-2 text-xs" key={`${r.moduleLabel}-${r.route}-${i}`}>
-                <span className="font-bold text-[#0F172A]">
+                <span className="font-bold text-phx-ink">
                   {r.moduleLabel}
-                  {r.route && <span className="ml-1 font-mono text-[10px] font-normal text-[#64748B]">{r.route}</span>}
+                  {r.route && <span className="ml-1 font-mono text-[10px] font-normal text-phx-ink-soft">{r.route}</span>}
                 </span>
                 <span className="whitespace-nowrap font-mono text-[10px] text-rose-600">
                   quiet {r.gapReleases} deploy{r.gapReleases > 1 ? "s" : ""}, back on {r.currentRelease}
@@ -221,8 +221,8 @@ function SecurityLens({
 }) {
   if (state.loading) {
     return (
-      <div className="flex items-center gap-2 rounded-3xl border border-[#E2E8F0] bg-white/95 p-4 text-xs font-semibold text-[#64748B] shadow-[0_10px_28px_rgba(15,23,42,0.06)]">
-        <Loader2 className="h-4 w-4 animate-spin text-[#F97316]" /> Scanning login activity for security signals…
+      <div className="flex items-center gap-2 rounded-3xl border border-phx-line bg-white/95 p-4 text-xs font-semibold text-phx-ink-soft shadow-[0_10px_28px_rgba(15,23,42,0.06)]">
+        <Loader2 className="h-4 w-4 animate-spin text-phx-accent" /> Scanning login activity for security signals…
       </div>
     );
   }
@@ -249,8 +249,8 @@ function SecurityLens({
   }
 
   return (
-    <div className="rounded-3xl border border-[#E2E8F0] bg-white/95 p-5 shadow-[0_18px_42px_rgba(15,23,42,0.07)]">
-      <p className="mb-3 flex items-center gap-1.5 text-[10px] font-black uppercase tracking-[0.18em] text-[#64748B]">
+    <div className="rounded-3xl border border-phx-line bg-white/95 p-5 shadow-[0_18px_42px_rgba(15,23,42,0.07)]">
+      <p className="mb-3 flex items-center gap-1.5 text-[10px] font-black uppercase tracking-[0.18em] text-phx-ink-soft">
         <ShieldAlert className="h-3.5 w-3.5 text-rose-500" /> Security lens — last {s.windowDays} days
       </p>
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
@@ -262,7 +262,7 @@ function SecurityLens({
             <ul className="space-y-1">
               {s.lockedAccounts.map((a) => (
                 <li className="flex items-center justify-between gap-2 text-xs" key={a.hrId}>
-                  <span className="font-bold text-[#0F172A]">{accountLabel(a.hrId, a.name)}</span>
+                  <span className="font-bold text-phx-ink">{accountLabel(a.hrId, a.name)}</span>
                   <span className="whitespace-nowrap font-mono text-[10px] text-rose-600">
                     {a.failedAttempts} fails · until {formatDate(a.lockedUntil)}
                   </span>
@@ -279,7 +279,7 @@ function SecurityLens({
             <ul className="space-y-1">
               {s.hammeredAccounts.map((a) => (
                 <li className="flex items-center justify-between gap-2 text-xs" key={a.hrId}>
-                  <span className="font-bold text-[#0F172A]">
+                  <span className="font-bold text-phx-ink">
                     {accountLabel(a.hrId, a.name)}
                     {a.distributed && <span className="ml-1.5 rounded-full bg-rose-100 px-1.5 py-0.5 text-[9px] font-black text-rose-700">DISTRIBUTED</span>}
                   </span>
@@ -297,7 +297,7 @@ function SecurityLens({
             <ul className="space-y-1">
               {s.bruteForceIps.map((ip) => (
                 <li className="flex items-center justify-between gap-2 text-xs" key={ip.ip}>
-                  <span className="font-mono font-bold text-[#0F172A]">
+                  <span className="font-mono font-bold text-phx-ink">
                     {ip.ip}
                     {ip.credentialStuffing && <span className="ml-1.5 rounded-full bg-rose-100 px-1.5 py-0.5 text-[9px] font-black text-rose-700">CRED-STUFFING</span>}
                     {ip.blocked && <span className="ml-1.5 rounded-full bg-slate-200 px-1.5 py-0.5 text-[9px] font-black text-slate-600">BLOCKED</span>}
@@ -327,7 +327,7 @@ function SecurityLens({
             <ul className="space-y-1">
               {s.newLocationLogins.map((l, i) => (
                 <li className="flex items-center justify-between gap-2 text-xs" key={`${l.hrId}-${l.ip}-${i}`}>
-                  <span className="font-bold text-[#0F172A]">{accountLabel(l.hrId, l.name)}</span>
+                  <span className="font-bold text-phx-ink">{accountLabel(l.hrId, l.name)}</span>
                   <span className="whitespace-nowrap font-mono text-[10px] text-sky-700">{l.ip} · {formatDate(l.at)}</span>
                 </li>
               ))}
@@ -342,7 +342,7 @@ function SecurityLens({
             <ul className="space-y-1">
               {s.blockedIps.map((b) => (
                 <li className="flex items-center justify-between gap-2 text-xs" key={b.ip}>
-                  <span className="font-mono font-bold text-[#0F172A]">{b.ip}</span>
+                  <span className="font-mono font-bold text-phx-ink">{b.ip}</span>
                   <span className="flex items-center gap-2">
                     <span className="whitespace-nowrap font-mono text-[10px] text-slate-500">
                       {b.expiresAt ? `until ${formatDate(b.expiresAt)}` : "permanent"}
@@ -380,7 +380,7 @@ function formatDwell(ms: number): string {
 function TrailSection({ state }: { state: TrailState | undefined }) {
   if (!state || state.loading) {
     return (
-      <div className="flex items-center gap-2 text-xs font-semibold text-[#64748B]">
+      <div className="flex items-center gap-2 text-xs font-semibold text-phx-ink-soft">
         <Loader2 className="h-3.5 w-3.5 animate-spin" /> Loading what the user was doing…
       </div>
     );
@@ -389,17 +389,17 @@ function TrailSection({ state }: { state: TrailState | undefined }) {
     return <p className="text-xs font-semibold text-rose-700">{state.error}</p>;
   }
   if (!state.entries || state.entries.length === 0) {
-    return <p className="text-xs text-[#64748B]">No recent activity recorded for this user before the error.</p>;
+    return <p className="text-xs text-phx-ink-soft">No recent activity recorded for this user before the error.</p>;
   }
   return (
     <div className="space-y-1.5">
-      <p className="text-[10px] font-black uppercase tracking-[0.16em] text-[#64748B]">Before the error, this user visited</p>
+      <p className="text-[10px] font-black uppercase tracking-[0.16em] text-phx-ink-soft">Before the error, this user visited</p>
       <ol className="space-y-1">
         {state.entries.map((entry, i) => (
           <li className="flex items-center gap-2 text-xs" key={`${entry.createdAt}-${i}`}>
             <span className="w-4 text-right font-mono text-[10px] text-slate-400">{i + 1}</span>
-            <span className="font-bold text-[#0F172A]">{entry.moduleLabel}</span>
-            <span className="truncate font-mono text-[11px] text-[#64748B]">{entry.path}</span>
+            <span className="font-bold text-phx-ink">{entry.moduleLabel}</span>
+            <span className="truncate font-mono text-[11px] text-phx-ink-soft">{entry.path}</span>
             <span className="ml-auto whitespace-nowrap font-mono text-[10px] text-slate-400">
               {formatDate(entry.createdAt)} · {formatDwell(entry.durationMs)}
             </span>
@@ -429,7 +429,7 @@ function DetailPanel({
 }) {
   const explainStarted = Boolean(explain?.data || explain?.loading || explain?.error);
   return (
-    <div className="space-y-3 rounded-xl border border-[#E2E8F0] bg-white/90 p-4">
+    <div className="space-y-3 rounded-xl border border-phx-line bg-white/90 p-4">
       {hasHrId && <TrailSection state={trail} />}
       <div className="flex flex-wrap items-center gap-2">
         {aiEnabled &&
@@ -484,7 +484,7 @@ function ExplainPanel({ state }: { state: ExplainState | undefined }) {
         ? "bg-amber-50 text-amber-700 ring-amber-100"
         : "bg-slate-100 text-slate-600 ring-slate-200";
   return (
-    <div className="space-y-2 rounded-xl border border-violet-200 bg-white/90 px-4 py-3 text-sm text-[#0F172A]">
+    <div className="space-y-2 rounded-xl border border-violet-200 bg-white/90 px-4 py-3 text-sm text-phx-ink">
       <div className="flex items-center gap-2">
         <span className="flex items-center gap-1 text-[10px] font-black uppercase tracking-[0.16em] text-violet-500">
           <Sparkles className="h-3 w-3" /> AI explanation
@@ -495,13 +495,13 @@ function ExplainPanel({ state }: { state: ExplainState | undefined }) {
       </div>
       <p>{explanation}</p>
       {likelyCause && (
-        <p className="text-xs text-[#64748B]">
-          <span className="font-black text-[#0F172A]">Likely cause: </span>{likelyCause}
+        <p className="text-xs text-phx-ink-soft">
+          <span className="font-black text-phx-ink">Likely cause: </span>{likelyCause}
         </p>
       )}
       {suggestedFix && (
-        <p className="text-xs text-[#64748B]">
-          <span className="font-black text-[#0F172A]">Suggested fix: </span>{suggestedFix}
+        <p className="text-xs text-phx-ink-soft">
+          <span className="font-black text-phx-ink">Suggested fix: </span>{suggestedFix}
         </p>
       )}
       <p className="text-[10px] text-slate-400">AI-generated from redacted error data — verify before acting.</p>
@@ -527,7 +527,7 @@ function TabButton({
       className={`flex h-10 items-center gap-2 rounded-xl px-4 text-xs font-black transition ${
         active
           ? "bg-[#0B0B0B] text-white shadow-[0_12px_26px_rgba(15,23,42,0.18)]"
-          : "border border-[#E2E8F0] bg-white text-[#64748B] hover:border-orange-300 hover:bg-orange-50 hover:text-orange-700"
+          : "border border-phx-line bg-white text-phx-ink-soft hover:border-orange-300 hover:bg-orange-50 hover:text-orange-700"
       }`}
       onClick={onClick}
       type="button"
@@ -535,7 +535,7 @@ function TabButton({
       {icon}
       {label}
       <span
-        className={`rounded-full px-2 py-0.5 text-[10px] ${active ? "bg-white/15 text-white" : "bg-[#F1F5F9] text-[#64748B]"}`}
+        className={`rounded-full px-2 py-0.5 text-[10px] ${active ? "bg-white/15 text-white" : "bg-phx-paper-2 text-phx-ink-soft"}`}
       >
         {count.toLocaleString("en-US")}
       </span>
@@ -571,15 +571,15 @@ function HealthTile({
   tone?: "good" | "bad" | "neutral";
 }) {
   const valueClass =
-    tone === "good" ? "text-emerald-700" : tone === "bad" ? "text-rose-700" : "text-[#0F172A]";
+    tone === "good" ? "text-emerald-700" : tone === "bad" ? "text-rose-700" : "text-phx-ink";
   return (
-    <div className="rounded-2xl border border-[#E2E8F0] bg-white/95 p-4">
-      <p className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-[0.16em] text-[#64748B]">
+    <div className="rounded-2xl border border-phx-line bg-white/95 p-4">
+      <p className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-[0.16em] text-phx-ink-soft">
         {icon}
         {label}
       </p>
       <p className={`mt-1.5 text-2xl font-black ${valueClass}`}>{value}</p>
-      {sub && <p className="mt-0.5 text-[11px] font-semibold text-[#64748B]">{sub}</p>}
+      {sub && <p className="mt-0.5 text-[11px] font-semibold text-phx-ink-soft">{sub}</p>}
     </div>
   );
 }
@@ -610,9 +610,9 @@ function ServiceHealthCard({ state }: { state: ServiceHealthResult }) {
   const latencyMet = h.latencyMsP95 !== null && h.latencyMsP95 <= latencyTargetMs;
 
   return (
-    <div className="rounded-3xl border border-[#E2E8F0] bg-white/95 p-5 shadow-[0_18px_42px_rgba(15,23,42,0.07)]">
+    <div className="rounded-3xl border border-phx-line bg-white/95 p-5 shadow-[0_18px_42px_rgba(15,23,42,0.07)]">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <p className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-[0.18em] text-[#64748B]">
+        <p className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-[0.18em] text-phx-ink-soft">
           <Activity className="h-3.5 w-3.5 text-emerald-500" /> Service Health — live Cloud Run metrics
         </p>
         <span className="text-[10px] font-semibold text-slate-400">
@@ -650,7 +650,7 @@ function ServiceHealthCard({ state }: { state: ServiceHealthResult }) {
           sub="current container count"
         />
       </div>
-      <div className="mt-3 flex flex-wrap gap-4 text-[11px] font-semibold text-[#64748B]">
+      <div className="mt-3 flex flex-wrap gap-4 text-[11px] font-semibold text-phx-ink-soft">
         <span className="flex items-center gap-1.5">
           <Timer className="h-3 w-3" /> p50 {formatMs(h.latencyMsP50)}
         </span>
@@ -1073,7 +1073,7 @@ export function SystemIssuesDashboard({
               </div>
             </div>
           )}
-          <p className="text-xs text-[#64748B]">
+          <p className="text-xs text-phx-ink-soft">
             Status is automatic — never set by hand. An error shows <span className="font-bold text-amber-700">Active</span>{" "}
             while it still happens on the currently-deployed version, and flips to{" "}
             <span className="font-bold text-emerald-700">Resolved</span> on its own once it stops occurring on the live
@@ -1108,7 +1108,7 @@ export function SystemIssuesDashboard({
                   <p className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-[0.16em] text-violet-500">
                     <Sparkles className="h-3 w-3" /> AI summary
                   </p>
-                  <p className="text-sm font-medium text-[#0F172A]">{summaryState.data.summary}</p>
+                  <p className="text-sm font-medium text-phx-ink">{summaryState.data.summary}</p>
                   {summaryState.data.themes.length > 0 && (
                     <ul className="flex flex-wrap gap-1.5">
                       {summaryState.data.themes.map((theme, i) => (
@@ -1119,8 +1119,8 @@ export function SystemIssuesDashboard({
                     </ul>
                   )}
                   {summaryState.data.recommendation && (
-                    <p className="text-xs text-[#64748B]">
-                      <span className="font-black text-[#0F172A]">Recommendation: </span>
+                    <p className="text-xs text-phx-ink-soft">
+                      <span className="font-black text-phx-ink">Recommendation: </span>
                       {summaryState.data.recommendation}
                     </p>
                   )}
@@ -1129,14 +1129,14 @@ export function SystemIssuesDashboard({
               ) : null}
             </div>
           )}
-          <div className="overflow-hidden rounded-3xl border border-[#E2E8F0] bg-white/95 shadow-[0_18px_42px_rgba(15,23,42,0.07)]">
+          <div className="overflow-hidden rounded-3xl border border-phx-line bg-white/95 shadow-[0_18px_42px_rgba(15,23,42,0.07)]">
             <div className="overflow-x-auto">
               <table className="w-full min-w-[1050px]">
                 <thead>
-                  <tr className="border-b border-[#E2E8F0] bg-[#F8FAFC]">
+                  <tr className="border-b border-phx-line bg-phx-paper">
                     {["Time", "Origin", "Severity", "Status", "HR ID", "Module", "Message", "Route"].map((h) => (
                       <th
-                        className="px-5 py-4 text-left text-[10px] font-black uppercase tracking-widest text-[#64748B]"
+                        className="px-5 py-4 text-left text-[10px] font-black uppercase tracking-widest text-phx-ink-soft"
                         key={h}
                       >
                         {h}
@@ -1144,16 +1144,16 @@ export function SystemIssuesDashboard({
                     ))}
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-[#F1F5F9]">
+                <tbody className="divide-y divide-phx-paper-2">
                   {issuesLoading ? (
                     <tr>
-                      <td className="px-5 py-8 text-center text-sm text-[#64748B]" colSpan={8}>
-                        <Loader2 className="mx-auto h-5 w-5 animate-spin text-[#F97316]" />
+                      <td className="px-5 py-8 text-center text-sm text-phx-ink-soft" colSpan={8}>
+                        <Loader2 className="mx-auto h-5 w-5 animate-spin text-phx-accent" />
                       </td>
                     </tr>
                   ) : filteredIssues.length === 0 ? (
                     <tr>
-                      <td className="px-5 py-8 text-center text-sm text-[#64748B]" colSpan={8}>
+                      <td className="px-5 py-8 text-center text-sm text-phx-ink-soft" colSpan={8}>
                         {mergedIssues.length === 0 ? "No issues found." : "No issues match this filter."}
                       </td>
                     </tr>
@@ -1161,7 +1161,7 @@ export function SystemIssuesDashboard({
                     filteredIssues.map((row) => (
                       <Fragment key={row.id}>
                         <tr className="transition-colors hover:bg-orange-50/35">
-                          <td className="whitespace-nowrap px-5 py-4 font-mono text-xs font-semibold text-[#64748B]">
+                          <td className="whitespace-nowrap px-5 py-4 font-mono text-xs font-semibold text-phx-ink-soft">
                             {formatDate(row.timestamp)}
                           </td>
                           <td className="px-5 py-4">
@@ -1189,22 +1189,22 @@ export function SystemIssuesDashboard({
                             {row.hrId ? (
                               row.employeeName ? (
                                 <div className="leading-tight">
-                                  <div className="text-sm font-bold text-[#0F172A]">{row.employeeName}</div>
+                                  <div className="text-sm font-bold text-phx-ink">{row.employeeName}</div>
                                   <div className="font-mono text-[10px] text-slate-400">{row.hrId}</div>
                                 </div>
                               ) : (
-                                <span className="text-sm font-bold text-[#0F172A]">{row.hrId}</span>
+                                <span className="text-sm font-bold text-phx-ink">{row.hrId}</span>
                               )
                             ) : (
-                              <span className="text-sm text-[#64748B]">-</span>
+                              <span className="text-sm text-phx-ink-soft">-</span>
                             )}
                           </td>
-                          <td className="px-5 py-4 text-sm text-[#64748B]">{row.moduleLabel}</td>
-                          <td className="max-w-lg px-5 py-4 text-sm font-medium text-[#0F172A]">
+                          <td className="px-5 py-4 text-sm text-phx-ink-soft">{row.moduleLabel}</td>
+                          <td className="max-w-lg px-5 py-4 text-sm font-medium text-phx-ink">
                             <span className="line-clamp-2" title={row.message}>{row.displayMessage}</span>
                             {(row.hrId || aiEnabled) && (
                               <button
-                                className="mt-1 flex items-center gap-1 text-[11px] font-black text-[#64748B] transition hover:text-orange-700"
+                                className="mt-1 flex items-center gap-1 text-[11px] font-black text-phx-ink-soft transition hover:text-orange-700"
                                 onClick={() => toggleDetails(row)}
                                 type="button"
                               >
@@ -1212,7 +1212,7 @@ export function SystemIssuesDashboard({
                               </button>
                             )}
                           </td>
-                          <td className="max-w-xs px-5 py-4 font-mono text-xs text-[#64748B]">
+                          <td className="max-w-xs px-5 py-4 font-mono text-xs text-phx-ink-soft">
                             <span className="line-clamp-1">{row.route ?? "-"}</span>
                           </td>
                         </tr>
@@ -1252,46 +1252,46 @@ export function SystemIssuesDashboard({
           )}
           <div className="flex flex-col gap-1.5 px-1">
             {attempts.windowFrom && (
-              <p className="text-[11px] font-bold uppercase tracking-wide text-[#64748B]">
+              <p className="text-[11px] font-bold uppercase tracking-wide text-phx-ink-soft">
                 {attemptWindowDays === null
                   ? `Since ${attempts.windowFrom.slice(0, 10)}`
                   : `Showing last ${attemptWindowDays} days · since ${attempts.windowFrom.slice(0, 10)}`}
               </p>
             )}
             {attempts.unknownAttempts && attempts.unknownAttempts.attemptCount > 0 && (
-              <p className="text-[11px] font-semibold text-[#94A3B8]">
+              <p className="text-[11px] font-semibold text-phx-ink-faint">
                 + {attempts.unknownAttempts.attemptCount} failed attempts against{" "}
                 {attempts.unknownAttempts.distinctCount} unknown/non-existent usernames — hidden from this
                 list (test/probe noise); see the Security Lens above for attack patterns.
               </p>
             )}
           </div>
-          <div className="rounded-3xl border border-[#E2E8F0] bg-white/95 p-5 shadow-[0_18px_42px_rgba(15,23,42,0.07)]">
+          <div className="rounded-3xl border border-phx-line bg-white/95 p-5 shadow-[0_18px_42px_rgba(15,23,42,0.07)]">
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
               <div className="relative">
-                <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[#64748B]" />
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-phx-ink-soft" />
                 <input
-                  className="h-10 w-full rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] pl-8 pr-3 text-xs font-semibold text-[#0F172A] placeholder:text-[#64748B] focus:outline-none focus:ring-2 focus:ring-[#F97316]/30"
+                  className="h-10 w-full rounded-xl border border-phx-line bg-phx-paper pl-8 pr-3 text-xs font-semibold text-phx-ink placeholder:text-phx-ink-soft focus:outline-none focus:ring-2 focus:ring-phx-accent/30"
                   onChange={(e) => setHrIdDraft(e.target.value)}
                   placeholder="HR ID..."
                   value={hrIdDraft}
                 />
               </div>
               <input
-                className="h-10 rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] px-3 text-xs font-semibold text-[#0F172A] focus:outline-none focus:ring-2 focus:ring-[#F97316]/30"
+                className="h-10 rounded-xl border border-phx-line bg-phx-paper px-3 text-xs font-semibold text-phx-ink focus:outline-none focus:ring-2 focus:ring-phx-accent/30"
                 onChange={(e) => setDateFromDraft(e.target.value)}
                 type="date"
                 value={dateFromDraft}
               />
               <input
-                className="h-10 rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] px-3 text-xs font-semibold text-[#0F172A] focus:outline-none focus:ring-2 focus:ring-[#F97316]/30"
+                className="h-10 rounded-xl border border-phx-line bg-phx-paper px-3 text-xs font-semibold text-phx-ink focus:outline-none focus:ring-2 focus:ring-phx-accent/30"
                 onChange={(e) => setDateToDraft(e.target.value)}
                 type="date"
                 value={dateToDraft}
               />
               <div className="flex gap-2">
                 <button
-                  className="flex h-10 flex-1 items-center justify-center gap-1.5 rounded-xl bg-[#0B0B0B] px-4 text-xs font-black text-white shadow-[0_12px_26px_rgba(15,23,42,0.18)] transition hover:bg-[#F97316] disabled:opacity-50"
+                  className="flex h-10 flex-1 items-center justify-center gap-1.5 rounded-xl bg-[#0B0B0B] px-4 text-xs font-black text-white shadow-[0_12px_26px_rgba(15,23,42,0.18)] transition hover:bg-phx-accent disabled:opacity-50"
                   disabled={attemptsLoading}
                   onClick={fetchAttempts}
                   type="button"
@@ -1300,7 +1300,7 @@ export function SystemIssuesDashboard({
                   Apply
                 </button>
                 <button
-                  className="flex h-10 items-center justify-center gap-1.5 rounded-xl border border-[#E2E8F0] bg-white px-3 text-xs font-black text-[#64748B] transition hover:border-orange-300 hover:bg-orange-50 hover:text-orange-700"
+                  className="flex h-10 items-center justify-center gap-1.5 rounded-xl border border-phx-line bg-white px-3 text-xs font-black text-phx-ink-soft transition hover:border-orange-300 hover:bg-orange-50 hover:text-orange-700"
                   onClick={clearAttemptFilters}
                   type="button"
                 >
@@ -1318,15 +1318,15 @@ export function SystemIssuesDashboard({
             value={attemptsStatusFilter}
           />
 
-          <div className="overflow-hidden rounded-3xl border border-[#E2E8F0] bg-white/95 shadow-[0_18px_42px_rgba(15,23,42,0.07)]">
+          <div className="overflow-hidden rounded-3xl border border-phx-line bg-white/95 shadow-[0_18px_42px_rgba(15,23,42,0.07)]">
             <div className="overflow-x-auto">
               <table className="w-full min-w-[1150px]">
                 <thead>
-                  <tr className="border-b border-[#E2E8F0] bg-[#F8FAFC]">
+                  <tr className="border-b border-phx-line bg-phx-paper">
                     {["HR ID", "Type", "Status", "Module", "Route", "Attempts", "First Seen", "Last Seen", "Sample"].map(
                       (h) => (
                         <th
-                          className="px-5 py-4 text-left text-[10px] font-black uppercase tracking-widest text-[#64748B]"
+                          className="px-5 py-4 text-left text-[10px] font-black uppercase tracking-widest text-phx-ink-soft"
                           key={h}
                         >
                           {h}
@@ -1335,16 +1335,16 @@ export function SystemIssuesDashboard({
                     )}
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-[#F1F5F9]">
+                <tbody className="divide-y divide-phx-paper-2">
                   {attemptsLoading ? (
                     <tr>
-                      <td className="px-5 py-8 text-center text-sm text-[#64748B]" colSpan={9}>
-                        <Loader2 className="mx-auto h-5 w-5 animate-spin text-[#F97316]" />
+                      <td className="px-5 py-8 text-center text-sm text-phx-ink-soft" colSpan={9}>
+                        <Loader2 className="mx-auto h-5 w-5 animate-spin text-phx-accent" />
                       </td>
                     </tr>
                   ) : filteredAttemptRows.length === 0 ? (
                     <tr>
-                      <td className="px-5 py-8 text-center text-sm text-[#64748B]" colSpan={9}>
+                      <td className="px-5 py-8 text-center text-sm text-phx-ink-soft" colSpan={9}>
                         {attempts.rows.length === 0 ? "No attempts found." : "No attempts match this filter."}
                       </td>
                     </tr>
@@ -1356,14 +1356,14 @@ export function SystemIssuesDashboard({
                           <td className="whitespace-nowrap px-5 py-4">
                             {row.employeeName ? (
                               <div className="leading-tight">
-                                <div className="text-sm font-bold text-[#0F172A]">
+                                <div className="text-sm font-bold text-phx-ink">
                                   {row.employeeName}
                                   {row.employeeRole && <span className="ml-1 text-[10px] font-semibold text-slate-400">· {row.employeeRole}</span>}
                                 </div>
                                 <div className="font-mono text-[10px] text-slate-400">{row.hrId}</div>
                               </div>
                             ) : (
-                              <span className="text-sm font-bold text-[#0F172A]">{row.hrId}</span>
+                              <span className="text-sm font-bold text-phx-ink">{row.hrId}</span>
                             )}
                           </td>
                           <td className="px-5 py-4">
@@ -1380,20 +1380,20 @@ export function SystemIssuesDashboard({
                           <td className="px-5 py-4">
                             <StatusBadge status={row.status} />
                           </td>
-                          <td className="px-5 py-4 text-sm text-[#64748B]">{row.moduleLabel}</td>
-                          <td className="max-w-xs px-5 py-4 font-mono text-xs text-[#64748B]">
+                          <td className="px-5 py-4 text-sm text-phx-ink-soft">{row.moduleLabel}</td>
+                          <td className="max-w-xs px-5 py-4 font-mono text-xs text-phx-ink-soft">
                             <span className="line-clamp-1">{row.route ?? "-"}</span>
                           </td>
-                          <td className="whitespace-nowrap px-5 py-4 text-sm font-black text-[#0F172A]">
+                          <td className="whitespace-nowrap px-5 py-4 text-sm font-black text-phx-ink">
                             {row.attemptCount.toLocaleString("en-US")}
                           </td>
-                          <td className="whitespace-nowrap px-5 py-4 font-mono text-xs text-[#64748B]">
+                          <td className="whitespace-nowrap px-5 py-4 font-mono text-xs text-phx-ink-soft">
                             {formatDate(row.firstSeen)}
                           </td>
-                          <td className="whitespace-nowrap px-5 py-4 font-mono text-xs text-[#64748B]">
+                          <td className="whitespace-nowrap px-5 py-4 font-mono text-xs text-phx-ink-soft">
                             {formatDate(row.lastSeen)}
                           </td>
-                          <td className="max-w-sm px-5 py-4 text-sm text-[#0F172A]">
+                          <td className="max-w-sm px-5 py-4 text-sm text-phx-ink">
                             <span className="line-clamp-1" title={row.sampleMessage}>{row.displayMessage}</span>
                           </td>
                         </tr>

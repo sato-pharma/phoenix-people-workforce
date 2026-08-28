@@ -170,7 +170,7 @@ export function DirectOrderCleanupDesk({ plan }: Props) {
 
   if (plan.isEmpty) {
     return (
-      <section className="border border-[#e4e9ec] bg-white px-4 py-8 text-center">
+      <section className="border border-phx-line bg-white px-4 py-8 text-center">
         <p className="text-sm font-bold text-slate-800">Nothing to clean up.</p>
         <p className="mt-1 text-[12px] text-slate-500">
           No pharmacy is registered twice, no order is submitted twice, and every distributor code is in its
@@ -181,8 +181,8 @@ export function DirectOrderCleanupDesk({ plan }: Props) {
   }
 
   return (
-    <section className="border border-[#e4e9ec] bg-white">
-      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-[#e4e9ec] bg-slate-900 px-4 py-2.5">
+    <section className="border border-phx-line bg-white">
+      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-phx-line bg-slate-900 px-4 py-2.5">
         <div>
           <p className="text-[11px] font-black uppercase tracking-wider text-orange-400">Proposed cleanup</p>
           <p className="text-[12px] text-slate-300">
@@ -196,7 +196,7 @@ export function DirectOrderCleanupDesk({ plan }: Props) {
 
       {/* ── One pharmacy, two records ─────────────────────────────────────────── */}
       {plan.merges.length > 0 ? (
-        <div className="border-b border-[#e4e9ec] p-3">
+        <div className="border-b border-phx-line p-3">
           <p className="mb-2 text-[11px] font-black uppercase tracking-wider text-slate-500">
             Same pharmacy, entered more than once
           </p>
@@ -207,7 +207,7 @@ export function DirectOrderCleanupDesk({ plan }: Props) {
               const chosen = survivorChoice[key] ?? merge.survivor.pharmacyId;
               const everyone = [merge.survivor, ...merge.merged];
               return (
-                <article key={key} className={`border p-3 ${on ? "border-[#e4e9ec]" : "border-slate-200 bg-slate-50 opacity-60"}`}>
+                <article key={key} className={`border p-3 ${on ? "border-phx-line" : "border-slate-200 bg-slate-50 opacity-60"}`}>
                   <label className="flex items-start gap-2">
                     <input type="checkbox" checked={on} onChange={() => toggle(setOffMerges)(key)} className="mt-1" />
                     <span className="min-w-0">
@@ -279,7 +279,7 @@ export function DirectOrderCleanupDesk({ plan }: Props) {
 
       {/* ── One order, two submissions ────────────────────────────────────────── */}
       {plan.duplicates.length > 0 ? (
-        <div className="border-b border-[#e4e9ec] p-3">
+        <div className="border-b border-phx-line p-3">
           <p className="mb-2 text-[11px] font-black uppercase tracking-wider text-slate-500">
             Same order, submitted more than once
           </p>
@@ -289,7 +289,7 @@ export function DirectOrderCleanupDesk({ plan }: Props) {
               const on = !offDuplicates.has(key);
               const doubled = group.duplicates.reduce((sum, request) => sum + request.salesValue, 0);
               return (
-                <article key={key} className={`border p-3 ${on ? "border-[#e4e9ec]" : "border-slate-200 bg-slate-50 opacity-60"}`}>
+                <article key={key} className={`border p-3 ${on ? "border-phx-line" : "border-slate-200 bg-slate-50 opacity-60"}`}>
                   <label className="flex items-start gap-2">
                     <input type="checkbox" checked={on} onChange={() => toggle(setOffDuplicates)(key)} className="mt-1" />
                     <span className="min-w-0">
@@ -325,7 +325,7 @@ export function DirectOrderCleanupDesk({ plan }: Props) {
 
       {/* ── Codes in the wrong field ──────────────────────────────────────────── */}
       {plan.repairs.length > 0 ? (
-        <div className="border-b border-[#e4e9ec] p-3">
+        <div className="border-b border-phx-line p-3">
           <p className="mb-2 text-[11px] font-black uppercase tracking-wider text-slate-500">
             Distributor code typed into the pharmacy name
           </p>
@@ -335,7 +335,7 @@ export function DirectOrderCleanupDesk({ plan }: Props) {
               return (
                 <label
                   key={repair.pharmacyId}
-                  className={`flex items-start gap-2 border p-2.5 ${on ? "border-[#e4e9ec]" : "border-slate-200 bg-slate-50 opacity-60"}`}
+                  className={`flex items-start gap-2 border p-2.5 ${on ? "border-phx-line" : "border-slate-200 bg-slate-50 opacity-60"}`}
                 >
                   <input type="checkbox" checked={on} onChange={() => toggle(setOffRepairs)(repair.pharmacyId)} className="mt-1" />
                   <span className="min-w-0">
@@ -357,7 +357,7 @@ export function DirectOrderCleanupDesk({ plan }: Props) {
 
       {/* ── Held requests that resolution frees ───────────────────────────────── */}
       {plan.releases.length > 0 ? (
-        <div className="border-b border-[#e4e9ec] p-3">
+        <div className="border-b border-phx-line p-3">
           <p className="mb-2 text-[11px] font-black uppercase tracking-wider text-slate-500">
             Held requests these fixes release
           </p>
@@ -367,7 +367,7 @@ export function DirectOrderCleanupDesk({ plan }: Props) {
               return (
                 <label
                   key={release.pharmacyId}
-                  className={`flex items-start gap-2 border p-2.5 ${on ? "border-[#e4e9ec]" : "border-slate-200 bg-slate-50 opacity-60"}`}
+                  className={`flex items-start gap-2 border p-2.5 ${on ? "border-phx-line" : "border-slate-200 bg-slate-50 opacity-60"}`}
                 >
                   <input type="checkbox" checked={on} onChange={() => toggle(setOffReleases)(release.pharmacyId)} className="mt-1" />
                   <span className="min-w-0">
@@ -404,7 +404,7 @@ export function DirectOrderCleanupDesk({ plan }: Props) {
           onChange={(event) => setReason(event.target.value)}
           rows={2}
           placeholder="Reviewed the pairs against the distributor master — same pharmacy, same order."
-          className="mt-1 w-full border border-[#e4e9ec] px-2 py-1.5 text-sm"
+          className="mt-1 w-full border border-phx-line px-2 py-1.5 text-sm"
         />
         <div className="mt-2 flex flex-wrap items-center gap-3">
           <button

@@ -147,11 +147,11 @@ function ProductField({
 }) {
   return (
     <label className="space-y-1.5">
-      <span className="text-xs font-bold uppercase tracking-[0.16em] text-[#64748B]">
+      <span className="text-xs font-bold uppercase tracking-[0.16em] text-phx-ink-soft">
         {label}{required ? " *" : ""}
       </span>
       <Input
-        className="h-11 rounded-2xl border-[#D8E0EA] bg-[#F8FAFC] font-semibold text-[#0F172A] focus-visible:outline-[#F97316]"
+        className="h-11 rounded-2xl border-phx-line bg-phx-paper font-semibold text-phx-ink focus-visible:outline-phx-accent"
         disabled={disabled}
         onChange={(event) => onChange(event.target.value)}
         required={required}
@@ -183,15 +183,15 @@ function ProductModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4">
       <div
         aria-modal="true"
-        className="max-h-[92vh] w-full max-w-4xl overflow-y-auto rounded-3xl border border-[#D8E0EA] bg-white shadow-[0_28px_90px_rgba(15,23,42,0.28)]"
+        className="max-h-[92vh] w-full max-w-4xl overflow-y-auto rounded-3xl border border-phx-line bg-white shadow-[0_28px_90px_rgba(15,23,42,0.28)]"
         role="dialog"
       >
-        <div className="flex items-start justify-between gap-4 border-b border-[#E2E8F0] px-5 py-4">
+        <div className="flex items-start justify-between gap-4 border-b border-phx-line px-5 py-4">
           <div>
             <p className="text-[10px] font-black uppercase tracking-[0.18em] text-orange-600">
               Product Reference
             </p>
-            <h2 className="mt-1 text-xl font-black tracking-tight text-[#0F172A]">{title}</h2>
+            <h2 className="mt-1 text-xl font-black tracking-tight text-phx-ink">{title}</h2>
           </div>
           <Button className="h-9 w-9 rounded-xl p-0" disabled={saving} onClick={onClose} variant="secondary">
             <X className="h-4 w-4" />
@@ -258,22 +258,22 @@ function ProductModal({
             onChange={(value) => onChange({ ...form, sourceSheet: value })}
             value={form.sourceSheet}
           />
-          <label className="flex min-h-11 items-center gap-3 rounded-2xl border border-[#D8E0EA] bg-[#F8FAFC] px-3.5 md:col-span-2">
+          <label className="flex min-h-11 items-center gap-3 rounded-2xl border border-phx-line bg-phx-paper px-3.5 md:col-span-2">
             <input
               checked={form.active}
               className="h-4 w-4 accent-orange-600"
               onChange={(event) => onChange({ ...form, active: event.target.checked })}
               type="checkbox"
             />
-            <span className="text-sm font-semibold text-[#0F172A]">Active product reference</span>
+            <span className="text-sm font-semibold text-phx-ink">Active product reference</span>
           </label>
         </div>
 
-        <div className="flex flex-col-reverse gap-2 border-t border-[#E2E8F0] px-5 py-4 sm:flex-row sm:justify-end">
+        <div className="flex flex-col-reverse gap-2 border-t border-phx-line px-5 py-4 sm:flex-row sm:justify-end">
           <Button disabled={saving} onClick={onClose} variant="secondary">
             Cancel
           </Button>
-          <Button className="gap-2 bg-[#0B0B0B] text-white hover:bg-[#F97316]" disabled={saving} onClick={onSubmit}>
+          <Button className="gap-2 bg-[#0B0B0B] text-white hover:bg-phx-accent" disabled={saving} onClick={onSubmit}>
             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
             Save Product
           </Button>
@@ -476,7 +476,7 @@ export function SourceOfSalesProductsTab({
               {refreshing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
               Refresh
             </Button>
-            <Button className="gap-2 bg-[#0B0B0B] text-white hover:bg-[#F97316]" onClick={openCreateModal}>
+            <Button className="gap-2 bg-[#0B0B0B] text-white hover:bg-phx-accent" onClick={openCreateModal}>
               <Plus className="h-4 w-4" />
               Add Product
             </Button>
@@ -485,11 +485,11 @@ export function SourceOfSalesProductsTab({
         description="Product reference rows stored in Supabase Source of Sales."
         title="Products Reference"
       >
-        <div className="border-b border-[#E2E8F0] p-4 md:p-5">
+        <div className="border-b border-phx-line p-4 md:p-5">
           <label className="relative block max-w-md">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#64748B]" />
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-phx-ink-soft" />
             <Input
-              className="h-11 rounded-2xl border-[#D8E0EA] bg-[#F8FAFC] pl-10 font-semibold text-[#0F172A]"
+              className="h-11 rounded-2xl border-phx-line bg-phx-paper pl-10 font-semibold text-phx-ink"
               onChange={(event) => setSearch(event.target.value)}
               placeholder="Search products..."
               value={search}
@@ -497,9 +497,9 @@ export function SourceOfSalesProductsTab({
           </label>
         </div>
         <div className="overflow-x-auto p-4 md:p-5">
-          <div className="overflow-hidden rounded-[16px] border border-[#E2E8F0]">
+          <div className="overflow-hidden rounded-[16px] border border-phx-line">
             <table className="w-full min-w-[1680px] text-left text-sm">
-              <thead className="bg-[#F8FAFC]">
+              <thead className="bg-phx-paper">
                 <tr>
                   <SortableTh label="Product Code" sortKey="productCode" {...thProps} />
                   <SortableTh label="Product Name" sortKey="productName" {...thProps} />
@@ -519,13 +519,13 @@ export function SourceOfSalesProductsTab({
                   <SortableTh label="Action" {...thProps} />
                 </tr>
               </thead>
-              <tbody className="divide-y divide-[#E2E8F0]">
+              <tbody className="divide-y divide-phx-line">
                 {table.rows.map((product) => {
                   const deleting = deleteLoadingCode === product.productCode;
                   return (
-                    <tr className="text-[#64748B]" key={product.productCode}>
-                      <td className={`${tableCellClassName} font-black text-[#0F172A]`}>{product.productCode}</td>
-                      <td className={`${tableCellClassName} font-semibold text-[#0F172A]`}>{product.productName}</td>
+                    <tr className="text-phx-ink-soft" key={product.productCode}>
+                      <td className={`${tableCellClassName} font-black text-phx-ink`}>{product.productCode}</td>
+                      <td className={`${tableCellClassName} font-semibold text-phx-ink`}>{product.productName}</td>
                       <td className={tableCellClassName}>{product.normalizedProductName}</td>
                       <td className={tableCellClassName}>{formatCurrency(product.factoryPrice)}</td>
                       <td className={tableCellClassName}>{product.family}</td>
@@ -593,7 +593,7 @@ export function SourceOfSalesProductsTab({
                 })}
                 {table.rows.length === 0 ? (
                   <tr>
-                    <td className="px-4 py-8 text-center text-sm font-semibold text-[#64748B]" colSpan={16}>
+                    <td className="px-4 py-8 text-center text-sm font-semibold text-phx-ink-soft" colSpan={16}>
                       No products found.
                     </td>
                   </tr>

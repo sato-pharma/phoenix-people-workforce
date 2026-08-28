@@ -76,7 +76,7 @@ export function CompanyRequestsList({ items, emptyLabel, exportTitle, exportShee
 
   return (
     <div className="space-y-3">
-      <div className="flex flex-wrap items-end gap-2 border border-[#e4e9ec] bg-white px-3 py-2.5">
+      <div className="flex flex-wrap items-end gap-2 border border-phx-line bg-white px-3 py-2.5">
         <label className="flex flex-col gap-0.5">
           <span className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Employee / title</span>
           <input
@@ -162,14 +162,14 @@ export function CompanyRequestsList({ items, emptyLabel, exportTitle, exportShee
 
       <div className="space-y-2">
         {filtered.length === 0 ? (
-          <p className="border border-[#e4e9ec] bg-white px-4 py-8 text-center text-sm text-slate-500">
+          <p className="border border-phx-line bg-white px-4 py-8 text-center text-sm text-slate-500">
             {items.length === 0 ? emptyLabel : "No requests match these filters."}
           </p>
         ) : (
           filtered.map((item) => (
             <div
               key={item.id}
-              className="flex items-center justify-between gap-3 border border-[#e4e9ec] bg-white px-4 py-3"
+              className="flex items-center justify-between gap-3 border border-phx-line bg-white px-4 py-3"
             >
               <div className="min-w-0">
                 <p className="truncate text-sm font-bold text-slate-900">

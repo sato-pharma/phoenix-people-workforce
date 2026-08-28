@@ -581,8 +581,8 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
   return (
     <div className="grid gap-6 lg:grid-cols-[minmax(0,440px)_minmax(0,1fr)]">
       {/* ── Form ── */}
-      <section className="border border-[#e4e9ec] bg-white">
-        <header className="border-b border-[#e4e9ec] bg-slate-900 px-4 py-2.5">
+      <section className="border border-phx-line bg-white">
+        <header className="border-b border-phx-line bg-slate-900 px-4 py-2.5">
           <h3 className="text-[11px] font-black uppercase tracking-[0.14em] text-white">New direct order</h3>
         </header>
         <div className="space-y-4 px-4 py-4">
@@ -1266,8 +1266,8 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
       </section>
 
       {/* ── My requests ── */}
-      <section className="border border-[#e4e9ec] bg-white">
-        <header className="border-b border-[#e4e9ec] bg-slate-100 px-4 py-2.5">
+      <section className="border border-phx-line bg-white">
+        <header className="border-b border-phx-line bg-slate-100 px-4 py-2.5">
           <h3 className="text-[11px] font-black uppercase tracking-[0.14em] text-slate-600">My direct orders</h3>
         </header>
         {myRequests.length === 0 ? (
@@ -1276,7 +1276,7 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
           <div className="overflow-x-auto">
             <table className="w-full min-w-[640px] border-collapse text-sm">
               <thead>
-                <tr className="border-b border-[#e4e9ec] bg-slate-50 text-left text-[11px] font-black uppercase tracking-wider text-slate-500">
+                <tr className="border-b border-phx-line bg-slate-50 text-left text-[11px] font-black uppercase tracking-wider text-slate-500">
                   <th className="px-3 py-2">Product</th>
                   <th className="px-3 py-2 text-right">Qty</th>
                   <th className="px-3 py-2 text-right">Bonus</th>

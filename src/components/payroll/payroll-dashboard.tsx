@@ -220,14 +220,14 @@ function payrollPayloadBatchId(payload: { batch?: unknown }) {
 
 function PayrollPageShell({ children }: { children: ReactNode }) {
   return (
-    <div className="relative isolate min-h-[calc(100vh-8rem)] overflow-hidden rounded-[34px] border border-[#D8E0EA] bg-[radial-gradient(circle_at_top_left,rgba(249,115,22,0.16),transparent_32%),linear-gradient(135deg,#FFF9F3_0%,#FFFFFF_44%,#F7FAFC_100%)] p-4 shadow-[0_24px_70px_rgba(15,23,42,0.1)] sm:p-6">
+    <div className="relative isolate min-h-[calc(100vh-8rem)] overflow-hidden rounded-[34px] border border-phx-line bg-[radial-gradient(circle_at_top_left,rgba(249,115,22,0.16),transparent_32%),linear-gradient(135deg,#FFF9F3_0%,#FFFFFF_44%,#F7FAFC_100%)] p-4 shadow-[0_24px_70px_rgba(15,23,42,0.1)] sm:p-6">
       <div
         aria-hidden="true"
-        className="pointer-events-none absolute -right-24 -top-28 h-72 w-72 rounded-full bg-[#F97316]/12 blur-3xl"
+        className="pointer-events-none absolute -right-24 -top-28 h-72 w-72 rounded-full bg-phx-accent/12 blur-3xl"
       />
       <div
         aria-hidden="true"
-        className="pointer-events-none absolute bottom-10 left-1/3 h-64 w-64 rounded-full bg-[#0F172A]/6 blur-3xl"
+        className="pointer-events-none absolute bottom-10 left-1/3 h-64 w-64 rounded-full bg-phx-ink/6 blur-3xl"
       />
       <div className="relative z-10 space-y-6">{children}</div>
     </div>
@@ -1537,7 +1537,7 @@ function Donut({
               x={Math.min(Math.max(tooltipPoint.x - 75, 4), viewBox - 154)}
               y={Math.min(Math.max(tooltipPoint.y - 62, 4), viewBox - 86)}
             >
-              <div className="rounded-2xl border border-[#E2E8F0] bg-white/95 p-3 text-xs shadow-[0_8px_20px_rgba(15,23,42,0.04)] backdrop-blur">
+              <div className="rounded-2xl border border-phx-line bg-white/95 p-3 text-xs shadow-[0_8px_20px_rgba(15,23,42,0.04)] backdrop-blur">
                 <p className="font-semibold text-text">{activeSegment.label}</p>
                 <p className="mt-1 font-mono text-text">{formatEGP(activeSegment.value)}</p>
                 <p className="mt-1 text-text-secondary">{activeSegment.percent.toFixed(2)}%</p>
@@ -1550,7 +1550,7 @@ function Donut({
       <div
         className={cn(
           innerInset,
-          "pointer-events-none z-20 rounded-full border border-[#E2E8F0] bg-white shadow-[inset_0_0_24px_rgba(148,163,184,0.22),0_0_26px_rgba(14,165,233,0.13)]",
+          "pointer-events-none z-20 rounded-full border border-phx-line bg-white shadow-[inset_0_0_24px_rgba(148,163,184,0.22),0_0_26px_rgba(14,165,233,0.13)]",
         )}
       />
       <div className="pointer-events-none relative z-30 text-center">
@@ -1612,12 +1612,12 @@ function BarRows({
     >
       {rows.length > 3 && (
         <div className="mb-3 flex items-center justify-between gap-3">
-          <div className="flex items-center gap-1 rounded-xl border border-[#E2E8F0] bg-white p-1">
+          <div className="flex items-center gap-1 rounded-xl border border-phx-line bg-white p-1">
             {(["3M", "6M", "12M", "All"] as ZoomPreset[]).map((preset) => (
               <button
                 className={cn(
                   "rounded-lg px-2 py-1 text-[10px] font-semibold transition",
-                  zoomPreset === preset ? "bg-[#F97316]/10 text-[#F97316]" : "text-[#64748B] hover:bg-[#F8FAFC]",
+                  zoomPreset === preset ? "bg-phx-accent/10 text-phx-accent" : "text-phx-ink-soft hover:bg-phx-paper",
                 )}
                 key={preset}
                 onClick={() => {
@@ -1631,7 +1631,7 @@ function BarRows({
             ))}
           </div>
           <button
-            className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[#F97316]"
+            className="text-[10px] font-semibold uppercase tracking-[0.14em] text-phx-accent"
             onClick={() => {
               setZoomPreset("All");
               setViewStart(0);
@@ -1678,7 +1678,7 @@ function BarRows({
                     style={{ left: `${hoveredRow.x}%` }}
                   />
                   <span
-                    className="phoenix-bar-crosshair pointer-events-none absolute -top-11 z-10 -translate-x-1/2 rounded-xl border border-[#E2E8F0] bg-white px-3 py-2 text-[11px] font-semibold text-[#0F172A] shadow-[0_8px_20px_rgba(15,23,42,0.04)]"
+                    className="phoenix-bar-crosshair pointer-events-none absolute -top-11 z-10 -translate-x-1/2 rounded-xl border border-phx-line bg-white px-3 py-2 text-[11px] font-semibold text-phx-ink shadow-[0_8px_20px_rgba(15,23,42,0.04)]"
                     style={{ left: `${clamp(hoveredRow.x, 12, 88)}%` }}
                   >
                     {row.label}: {valueFormatter(row.value)}
@@ -1749,12 +1749,12 @@ function InteractiveVerticalBars({
     <div>
       {bars.length > 3 && (
         <div className="mb-3 flex items-center justify-between gap-3">
-          <div className="flex items-center gap-1 rounded-xl border border-[#E2E8F0] bg-white p-1">
+          <div className="flex items-center gap-1 rounded-xl border border-phx-line bg-white p-1">
             {(["3M", "6M", "12M", "All"] as ZoomPreset[]).map((preset) => (
               <button
                 className={cn(
                   "rounded-lg px-2 py-1 text-[10px] font-semibold transition",
-                  zoomPreset === preset ? "bg-[#F97316]/10 text-[#F97316]" : "text-[#64748B] hover:bg-[#F8FAFC]",
+                  zoomPreset === preset ? "bg-phx-accent/10 text-phx-accent" : "text-phx-ink-soft hover:bg-phx-paper",
                 )}
                 key={preset}
                 onClick={() => {
@@ -1768,7 +1768,7 @@ function InteractiveVerticalBars({
             ))}
           </div>
           <button
-            className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[#F97316]"
+            className="text-[10px] font-semibold uppercase tracking-[0.14em] text-phx-accent"
             onClick={() => {
               setZoomPreset("All");
               setViewStart(0);
@@ -1806,14 +1806,14 @@ function InteractiveVerticalBars({
             style={{ left: `${hover.x}%` }}
           />
           <span
-            className="phoenix-crosshair pointer-events-none absolute left-6 right-6 border-t border-dashed border-[#CBD5E1]/40"
+            className="phoenix-crosshair pointer-events-none absolute left-6 right-6 border-t border-dashed border-phx-line-strong/40"
             style={{ top: `${hover.y}%` }}
           />
         </>
       )}
       {activeBar && hover && (
         <div
-          className="phoenix-chart-tooltip pointer-events-none absolute z-20 w-52 rounded-2xl border border-[#E2E8F0] bg-white/95 p-4 text-xs shadow-[0_8px_20px_rgba(15,23,42,0.04)] backdrop-blur"
+          className="phoenix-chart-tooltip pointer-events-none absolute z-20 w-52 rounded-2xl border border-phx-line bg-white/95 p-4 text-xs shadow-[0_8px_20px_rgba(15,23,42,0.04)] backdrop-blur"
           style={{
             left: `${clamp(hover.x, 18, 82)}%`,
             top: `${clamp(hover.y, 28, 90)}%`,
@@ -1978,7 +1978,7 @@ function ComparePayrollChart({
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <SearchableSelect
-            className="h-9 rounded-xl border border-[#E2E8F0] bg-white px-3 text-xs text-[#0F172A] shadow-sm"
+            className="h-9 rounded-xl border border-phx-line bg-white px-3 text-xs text-phx-ink shadow-sm"
             onChange={(event) => {
               setCompareMode(event.target.value as GroupMode | "employee");
               setSelectedKeys([]);
@@ -1992,7 +1992,7 @@ function ComparePayrollChart({
             <option value="employee">Employees</option>
           </SearchableSelect>
           <SearchableSelect
-            className="h-9 rounded-xl border border-[#E2E8F0] bg-white px-3 text-xs text-[#0F172A] shadow-sm"
+            className="h-9 rounded-xl border border-phx-line bg-white px-3 text-xs text-phx-ink shadow-sm"
             onChange={(event) => setMetric(event.target.value as typeof metric)}
             value={metric}
           >
@@ -2002,7 +2002,7 @@ function ComparePayrollChart({
             <option value="deductions">Deductions</option>
           </SearchableSelect>
           <SearchableSelect
-            className="h-9 max-w-[190px] rounded-xl border border-[#E2E8F0] bg-white px-3 text-xs text-[#0F172A] shadow-sm"
+            className="h-9 max-w-[190px] rounded-xl border border-phx-line bg-white px-3 text-xs text-phx-ink shadow-sm"
             onChange={(event) => {
               const value = event.target.value;
               if (value && !activeKeys.includes(value)) {
@@ -2026,8 +2026,8 @@ function ComparePayrollChart({
             className={cn(
               "rounded-full border px-3 py-1 text-xs font-semibold transition",
               hiddenKeys.includes(option.key)
-                ? "border-[#E2E8F0] bg-[#F8FAFC] text-[#64748B] opacity-50"
-                : "border-[#F97316]/20 bg-[#F97316]/10 text-[#F97316]",
+                ? "border-phx-line bg-phx-paper text-phx-ink-soft opacity-50"
+                : "border-phx-accent/20 bg-phx-accent/10 text-phx-accent",
             )}
             key={option.key}
             onClick={() =>
@@ -2150,14 +2150,14 @@ function ComparePayrollChart({
         </svg>
         {hoverIndex !== null && activeCompareSeries && (
           <div
-            className="phoenix-chart-tooltip pointer-events-none absolute z-20 w-56 rounded-2xl border border-[#E2E8F0] bg-white/95 p-3 text-xs shadow-[0_8px_20px_rgba(15,23,42,0.04)] backdrop-blur"
+            className="phoenix-chart-tooltip pointer-events-none absolute z-20 w-56 rounded-2xl border border-phx-line bg-white/95 p-3 text-xs shadow-[0_8px_20px_rgba(15,23,42,0.04)] backdrop-blur"
             style={{
               left: `${clamp((xFor(hoverIndex) / width) * 100, 18, 82)}%`,
               top: `${clamp((yFor(activeCompareSeries.values[hoverIndex]) / height) * 100, 24, 92)}%`,
             }}
           >
             <p className="mb-2 text-sm font-semibold text-text">{periods[hoverIndex]} comparison</p>
-            <div className="rounded-xl bg-[#F97316]/10 px-2 py-1.5 text-[#F97316]">
+            <div className="rounded-xl bg-phx-accent/10 px-2 py-1.5 text-phx-accent">
               <div className="flex items-center justify-between gap-3">
                 <span className="flex min-w-0 items-center gap-2 truncate">
                   <span className="h-2 w-2 rounded-full" style={{ backgroundColor: activeCompareSeries.color }} />
@@ -2313,12 +2313,12 @@ function PayrollOverviewChart({
           </button>
         ))}
         </div>
-        <div className="flex items-center gap-1 rounded-xl border border-[#E2E8F0] bg-white p-1 shadow-sm">
+        <div className="flex items-center gap-1 rounded-xl border border-phx-line bg-white p-1 shadow-sm">
           {(["3M", "6M", "12M", "All"] as ZoomPreset[]).map((preset) => (
             <button
               className={cn(
                 "rounded-lg px-2.5 py-1 text-[11px] font-semibold transition",
-                zoomPreset === preset ? "bg-[#F97316]/10 text-[#F97316]" : "text-[#64748B] hover:bg-[#F8FAFC]",
+                zoomPreset === preset ? "bg-phx-accent/10 text-phx-accent" : "text-phx-ink-soft hover:bg-phx-paper",
               )}
               key={preset}
               onClick={() => setPreset(preset)}
@@ -2328,7 +2328,7 @@ function PayrollOverviewChart({
             </button>
           ))}
           <button
-            className="rounded-lg px-2.5 py-1 text-[11px] font-semibold text-[#64748B] transition hover:bg-[#F8FAFC] hover:text-[#0F172A]"
+            className="rounded-lg px-2.5 py-1 text-[11px] font-semibold text-phx-ink-soft transition hover:bg-phx-paper hover:text-phx-ink"
             onClick={() => {
               setPreset("All");
               setHiddenSeries([]);
@@ -2577,7 +2577,7 @@ function PayrollOverviewChart({
           </svg>
           {hover && activeValue && (
             <div
-              className="phoenix-chart-tooltip pointer-events-none absolute z-20 w-52 rounded-2xl border border-[#E2E8F0] bg-white/95 p-3 text-xs shadow-[0_8px_20px_rgba(15,23,42,0.04)] backdrop-blur"
+              className="phoenix-chart-tooltip pointer-events-none absolute z-20 w-52 rounded-2xl border border-phx-line bg-white/95 p-3 text-xs shadow-[0_8px_20px_rgba(15,23,42,0.04)] backdrop-blur"
               style={{
                 left: `${clamp((hoverX / width) * 100, 18, 82)}%`,
                 top: `${clamp((activeValue.y / height) * 100, 24, 92)}%`,
@@ -2654,7 +2654,7 @@ function KpiCard({
   const toneClass = {
     blue: "bg-blue-50 text-blue-600 shadow-[0_0_18px_rgba(37,99,235,0.12)]",
     green: "bg-green-50 text-success shadow-[0_0_18px_rgba(34,197,94,0.12)]",
-    orange: "bg-[#F97316]/10 text-[#F97316] shadow-[0_0_18px_rgba(249,115,22,0.12)]",
+    orange: "bg-phx-accent/10 text-phx-accent shadow-[0_0_18px_rgba(249,115,22,0.12)]",
     red: "bg-red-50 text-danger shadow-[0_0_18px_rgba(239,68,68,0.12)]",
     violet: "bg-violet-50 text-violet-600 shadow-[0_0_18px_rgba(124,58,237,0.12)]",
   }[tone];
@@ -2749,7 +2749,7 @@ function GenerateReadyPayrollSheet({
     <Card>
       <div className="grid gap-6 xl:grid-cols-[1fr_380px] xl:items-center">
         <div>
-          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#F97316]/10 text-[#F97316] shadow-[0_0_24px_rgba(249,115,22,0.18)]">
+          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-phx-accent/10 text-phx-accent shadow-[0_0_24px_rgba(249,115,22,0.18)]">
             <FileSpreadsheet className="h-6 w-6" />
           </div>
           <h2 className="mt-4 text-xl font-semibold text-text">
@@ -2790,7 +2790,7 @@ function GenerateReadyPayrollSheet({
         </div>
 
         <div className="rounded-2xl border border-orange-200 bg-orange-50/50 p-5 shadow-[0_18px_45px_rgba(249,115,22,0.10)]">
-          <p className="text-xs font-bold uppercase tracking-[0.2em] text-[#F97316]">
+          <p className="text-xs font-bold uppercase tracking-[0.2em] text-phx-accent">
             Payroll Period
           </p>
           <div className="mt-4 grid gap-3">
@@ -2858,7 +2858,7 @@ function GenerateReadyPayrollSheet({
 function ImpactBadge({ level }: { level: ImpactLevel }) {
   const className = {
     Critical: "border-red-200 bg-red-50 text-red-600",
-    High: "border-[#F97316]/20 bg-[#F97316]/10 text-[#F97316]",
+    High: "border-phx-accent/20 bg-phx-accent/10 text-phx-accent",
     Low: "border-green-200 bg-green-50 text-success",
     Medium: "border-amber-200 bg-amber-50 text-amber-600",
   }[level];
@@ -2936,7 +2936,7 @@ function IntelligenceSkeleton() {
           <div className="phoenix-skeleton h-28 rounded-2xl" key={item} />
         ))}
       </div>
-      <p className="mt-4 text-xs font-semibold uppercase tracking-[0.18em] text-[#F97316]">
+      <p className="mt-4 text-xs font-semibold uppercase tracking-[0.18em] text-phx-accent">
         Analyzing payroll intelligence...
       </p>
     </Card>
@@ -2957,7 +2957,7 @@ function AiPayrollInsights({
       <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
         <div>
           <div className="flex items-center gap-2">
-            <span className="flex h-9 w-9 items-center justify-center rounded-2xl bg-[#F97316]/10 text-[#F97316] shadow-[0_0_18px_rgba(249,115,22,0.18)]">
+            <span className="flex h-9 w-9 items-center justify-center rounded-2xl bg-phx-accent/10 text-phx-accent shadow-[0_0_18px_rgba(249,115,22,0.18)]">
               <Sparkles className="h-4 w-4" />
             </span>
             <div>
@@ -2999,7 +2999,7 @@ function AiPayrollInsights({
             </p>
             <p className="mt-2 min-h-12 text-sm text-text-secondary">{insight.summary}</p>
             <div className="mt-4 rounded-xl border border-white/70 bg-white/70 p-3">
-              <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#F97316]">
+              <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-phx-accent">
                 Suggested action
               </p>
               <p className="mt-1 text-xs text-text">{insight.action}</p>
@@ -3051,7 +3051,7 @@ function PayrollScoringPanel({
                 <span className="font-medium text-text-secondary">{component.label}</span>
                 <span className="font-mono font-semibold text-text">{Math.round(component.score)}%</span>
               </div>
-              <div className="h-2 rounded-full bg-[#E2E8F0]">
+              <div className="h-2 rounded-full bg-phx-line">
                 <div
                   className="phoenix-bar-fill h-2 rounded-full bg-gradient-to-r from-orange-400 to-amber-300"
                   style={{ width: `${clamp(component.score)}%` }}
@@ -3088,7 +3088,7 @@ function PayrollScoringPanel({
                       className={cn(
                         "rounded-full px-2.5 py-1 text-xs font-bold",
                         row.score >= 90 && "bg-green-50 text-success",
-                        row.score >= 75 && row.score < 90 && "bg-[#F97316]/10 text-[#F97316]",
+                        row.score >= 75 && row.score < 90 && "bg-phx-accent/10 text-phx-accent",
                         row.score >= 60 && row.score < 75 && "bg-amber-50 text-amber-600",
                         row.score < 60 && "bg-red-50 text-danger",
                       )}
@@ -3096,7 +3096,7 @@ function PayrollScoringPanel({
                       {row.score}
                     </span>
                   </div>
-                  <div className="mt-2 h-1.5 rounded-full bg-[#E2E8F0]">
+                  <div className="mt-2 h-1.5 rounded-full bg-phx-line">
                     <div
                       className="h-1.5 rounded-full"
                       style={{
@@ -3144,8 +3144,8 @@ function ExecutiveActionPanel({
   return (
     <Card className="overflow-hidden border-orange-200 bg-gradient-to-br from-white via-white to-orange-50/55">
       <div className="grid gap-5 xl:grid-cols-[0.72fr_1fr_1fr]">
-        <div className="rounded-2xl border border-[#E2E8F0] bg-white p-5 shadow-[0_0_32px_rgba(249,115,22,0.12)]">
-          <p className="text-xs font-bold uppercase tracking-[0.22em] text-[#F97316]">
+        <div className="rounded-2xl border border-phx-line bg-white p-5 shadow-[0_0_32px_rgba(249,115,22,0.12)]">
+          <p className="text-xs font-bold uppercase tracking-[0.22em] text-phx-accent">
             Executive Action Panel
           </p>
           <p className="mt-4 text-5xl font-semibold tracking-tight text-text">
@@ -3155,7 +3155,7 @@ function ExecutiveActionPanel({
             Payroll readiness
           </p>
           <button
-            className="phoenix-action-button mt-5 flex w-full items-center justify-center gap-2 rounded-2xl bg-[#F97316] px-4 py-3 text-sm font-semibold text-white shadow-[0_16px_34px_rgba(249,115,22,0.28)]"
+            className="phoenix-action-button mt-5 flex w-full items-center justify-center gap-2 rounded-2xl bg-phx-accent px-4 py-3 text-sm font-semibold text-white shadow-[0_16px_34px_rgba(249,115,22,0.28)]"
             onClick={onApprove}
             type="button"
           >
@@ -3200,7 +3200,7 @@ function ExecutiveActionPanel({
             ))}
           </div>
           <button
-            className="mt-3 text-xs font-semibold text-[#F97316]"
+            className="mt-3 text-xs font-semibold text-phx-accent"
             onClick={onDrilldown}
             type="button"
           >
@@ -3773,10 +3773,10 @@ export function PayrollDashboard({
           actions={salaryTemplateActions}
           badges={(
             <div className="flex flex-wrap gap-2">
-              <span className="rounded-full border border-[#E2E8F0] bg-[#F8FAFC] px-3 py-2 text-xs font-semibold text-[#64748B]">
+              <span className="rounded-full border border-phx-line bg-phx-paper px-3 py-2 text-xs font-semibold text-phx-ink-soft">
                 Current state: waiting for payroll batch
               </span>
-              <span className="rounded-full border border-[#E2E8F0] bg-[#F8FAFC] px-3 py-2 text-xs font-semibold text-[#64748B]">
+              <span className="rounded-full border border-phx-line bg-phx-paper px-3 py-2 text-xs font-semibold text-phx-ink-soft">
                 Step 1: upload salary sheet
               </span>
             </div>
@@ -3860,13 +3860,13 @@ export function PayrollDashboard({
           actions={salaryTemplateActions}
           badges={(
             <div className="flex flex-wrap items-center gap-2">
-              <span className="rounded-full border border-[#E2E8F0] bg-[#F8FAFC] px-3 py-2 text-xs font-semibold text-[#64748B]">
+              <span className="rounded-full border border-phx-line bg-phx-paper px-3 py-2 text-xs font-semibold text-phx-ink-soft">
                 Scope: payroll operations
               </span>
               {!isAllTimeScope ? (
                 statusBadge(batch.status)
               ) : (
-                <span className="rounded-full border border-[#E2E8F0] bg-[#F8FAFC] px-3 py-2 text-xs font-semibold text-[#64748B]">
+                <span className="rounded-full border border-phx-line bg-phx-paper px-3 py-2 text-xs font-semibold text-phx-ink-soft">
                   Active batch selected
                 </span>
               )}
@@ -3912,7 +3912,7 @@ export function PayrollDashboard({
       <PayrollGovernanceAlerts flags={flags} />
 
       <div className={`${panelClassName} flex flex-wrap gap-2 p-2`}>
-        <Button className="rounded-xl border border-[#FED7AA] bg-[#FFF7ED] px-4 py-2 text-sm text-[#EA580C] hover:bg-[#FFF1DD]" variant="secondary">
+        <Button className="rounded-xl border border-[#FED7AA] bg-phx-accent-soft px-4 py-2 text-sm text-phx-accent-hover hover:bg-[#FFF1DD]" variant="secondary">
           Payroll Sheet
         </Button>
         <Link href="/admin/outstation/expenses">
@@ -3928,38 +3928,38 @@ export function PayrollDashboard({
               salaryReportBatch ? (
                 <div className="flex flex-wrap items-center gap-2">
                   <Link href={`/api/payroll/template?ready=1&month=${salaryReportBatch.month}&year=${salaryReportBatch.year}&batchId=${salaryReportBatch.id}`}>
-                    <Button className="h-9 rounded-xl border border-[#E2E8F0] px-3 py-2 text-xs" variant="secondary">
+                    <Button className="h-9 rounded-xl border border-phx-line px-3 py-2 text-xs" variant="secondary">
                       <Download className="mr-2 h-3.5 w-3.5" />
                       Ready payroll
                     </Button>
                   </Link>
                   <Link href={`/api/payroll/${salaryReportBatch.id}/download`}>
-                    <Button className="h-9 rounded-xl border border-[#E2E8F0] px-3 py-2 text-xs" variant="secondary">
+                    <Button className="h-9 rounded-xl border border-phx-line px-3 py-2 text-xs" variant="secondary">
                       <Download className="mr-2 h-3.5 w-3.5" />
                       Flat export
                     </Button>
                   </Link>
                   <Link href={`/api/payroll/${salaryReportBatch.id}/bank-file`}>
-                    <Button className="h-9 rounded-xl border border-[#E2E8F0] px-3 py-2 text-xs" variant="secondary">
+                    <Button className="h-9 rounded-xl border border-phx-line px-3 py-2 text-xs" variant="secondary">
                       <Download className="mr-2 h-3.5 w-3.5" />
                       Bank file
                     </Button>
                   </Link>
                   <Link href={`/api/payroll/${salaryReportBatch.id}/statutory-summary`}>
-                    <Button className="h-9 rounded-xl border border-[#E2E8F0] px-3 py-2 text-xs" variant="secondary">
+                    <Button className="h-9 rounded-xl border border-phx-line px-3 py-2 text-xs" variant="secondary">
                       <Download className="mr-2 h-3.5 w-3.5" />
                       Statutory summary
                     </Button>
                   </Link>
                   {publishedPayslipStatuses.has(salaryReportBatch.status) ? (
                     <Link href={`/api/payroll/${salaryReportBatch.id}/payslips`} target="_blank">
-                      <Button className="h-9 rounded-xl border border-[#E2E8F0] px-3 py-2 text-xs" variant="secondary">
+                      <Button className="h-9 rounded-xl border border-phx-line px-3 py-2 text-xs" variant="secondary">
                         <FileCheck2 className="mr-2 h-3.5 w-3.5" />
                         Payslips
                       </Button>
                     </Link>
                   ) : (
-                    <Button className="h-9 rounded-xl border border-[#E2E8F0] px-3 py-2 text-xs" disabled variant="secondary">
+                    <Button className="h-9 rounded-xl border border-phx-line px-3 py-2 text-xs" disabled variant="secondary">
                       <FileCheck2 className="mr-2 h-3.5 w-3.5" />
                       Payslips
                     </Button>
@@ -3977,24 +3977,24 @@ export function PayrollDashboard({
             title="Salary report"
           />
 
-          <div className="space-y-4 rounded-[28px] border border-[#D8E0EA] bg-white/94 px-4 py-4 shadow-[0_18px_46px_rgba(15,23,42,0.08)] backdrop-blur sm:px-5 sm:py-5">
+          <div className="space-y-4 rounded-[28px] border border-phx-line bg-white/94 px-4 py-4 shadow-[0_18px_46px_rgba(15,23,42,0.08)] backdrop-blur sm:px-5 sm:py-5">
             <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
               {[
-                { label: "Employees", tone: "bg-[#F8FAFC] text-[#0F172A]", value: formatNumber(salaryReportTotals.employees) },
+                { label: "Employees", tone: "bg-phx-paper text-phx-ink", value: formatNumber(salaryReportTotals.employees) },
                 { label: "Additions", tone: "bg-emerald-50 text-emerald-800", value: formatEGP(salaryReportTotals.additions) },
                 { label: "Other Deductions", tone: "bg-rose-50 text-rose-800", value: formatEGP(salaryReportTotals.otherDeductions) },
-                { label: "Net", tone: "bg-[#0F172A] text-white", value: formatEGP(salaryReportTotals.net) },
+                { label: "Net", tone: "bg-phx-ink text-white", value: formatEGP(salaryReportTotals.net) },
                 { label: "First Part", tone: "bg-orange-50 text-orange-800", value: formatEGP(salaryReportTotals.firstPart) },
                 { label: "Second Part", tone: "bg-amber-50 text-amber-800", value: formatEGP(salaryReportTotals.secondPart) },
               ].map((metric) => (
-                <div className={cn("rounded-[22px] border border-[#E2E8F0] p-4 shadow-[0_12px_30px_rgba(15,23,42,0.05)]", metric.tone)} key={metric.label}>
+                <div className={cn("rounded-[22px] border border-phx-line p-4 shadow-[0_12px_30px_rgba(15,23,42,0.05)]", metric.tone)} key={metric.label}>
                   <p className="text-[10px] font-bold uppercase tracking-[0.16em] opacity-70">{metric.label}</p>
                   <p className="mt-2 truncate font-mono text-lg font-bold">{metric.value}</p>
                 </div>
               ))}
             </div>
 
-            <div className="grid gap-3 rounded-2xl border border-[#E2E8F0] bg-[#F8FAFC]/80 p-3 xl:grid-cols-[1fr_auto_auto_auto]">
+            <div className="grid gap-3 rounded-2xl border border-phx-line bg-phx-paper/80 p-3 xl:grid-cols-[1fr_auto_auto_auto]">
               <Input
                 className="bg-white"
                 onChange={(event) => setSalaryReportSearch(event.target.value)}

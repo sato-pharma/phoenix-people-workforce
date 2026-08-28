@@ -83,10 +83,10 @@ type SortKey =
 const allValue = "__all__";
 
 const selectClassName =
-  "h-10 w-full rounded-xl border border-[#D8E0EA] bg-white/95 px-3 text-sm font-semibold text-[#0F172A] shadow-[0_10px_24px_rgba(15,23,42,0.06)] outline-none transition focus:border-[#94A3B8] focus:ring-2 focus:ring-[#CBD5E1]/40";
+  "h-10 w-full rounded-xl border border-phx-line bg-white/95 px-3 text-sm font-semibold text-phx-ink shadow-[0_10px_24px_rgba(15,23,42,0.06)] outline-none transition focus:border-phx-ink-faint focus:ring-2 focus:ring-phx-line-strong/40";
 
 const adminTableHeaderClassName =
-  "px-2.5 py-2 text-[10px] font-black uppercase tracking-[0.14em] text-[#64748B]";
+  "px-2.5 py-2 text-[10px] font-black uppercase tracking-[0.14em] text-phx-ink-soft";
 
 const probationTableCellClassName =
   "px-2 py-1.5 text-xs text-text-secondary";
@@ -102,7 +102,7 @@ const premiumPanelClassName =
   "rounded-[20px] border border-slate-200/80 bg-white shadow-[0_16px_44px_rgba(15,23,42,0.06)]";
 
 const premiumInputClassName =
-  "h-10 rounded-xl border-[#D8E0EA] bg-white/95 shadow-[0_10px_24px_rgba(15,23,42,0.06)] focus:border-[#94A3B8] focus:ring-[#CBD5E1]/40";
+  "h-10 rounded-xl border-phx-line bg-white/95 shadow-[0_10px_24px_rgba(15,23,42,0.06)] focus:border-phx-ink-faint focus:ring-phx-line-strong/40";
 
 function emptyActionForm(): WorkflowActionForm {
   return {
@@ -183,7 +183,7 @@ function SelectFilter({
 }) {
   return (
     <label className="block">
-      <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">
+      <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-soft">
         {label}
       </span>
       <SearchableSelect
@@ -211,7 +211,7 @@ function ZoneSelect({
 }) {
   return (
     <label className="block">
-      <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">
+      <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-soft">
         Zone
       </span>
       <SearchableSelect
@@ -237,7 +237,7 @@ function SortSelect({
 }) {
   return (
     <label className="block">
-      <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">
+      <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-soft">
         Sort
       </span>
       <SearchableSelect
@@ -492,17 +492,17 @@ export function ProbationTracker({
               {canExport ? (
                 <>
                   <a
-                    className="inline-flex h-8 items-center justify-center gap-2 rounded-lg border border-[#D7E0EA] bg-white/95 px-2.5 py-2 text-xs font-semibold text-[#0F172A] shadow-[0_8px_20px_rgba(15,23,42,0.08)] transition hover:border-[#94A3B8] hover:bg-[#F8FAFC]"
+                    className="inline-flex h-8 items-center justify-center gap-2 rounded-lg border border-[#D7E0EA] bg-white/95 px-2.5 py-2 text-xs font-semibold text-phx-ink shadow-[0_8px_20px_rgba(15,23,42,0.08)] transition hover:border-phx-ink-faint hover:bg-phx-paper"
                     href="/api/exports?report=probation&format=pdf"
                   >
-                    <Download className="h-4 w-4 text-[#334155]" />
+                    <Download className="h-4 w-4 text-phx-ink-2" />
                     Export PDF
                   </a>
                   <a
-                    className="inline-flex h-8 items-center justify-center gap-2 rounded-lg border border-[#D7E0EA] bg-white/95 px-2.5 py-2 text-xs font-semibold text-[#0F172A] shadow-[0_8px_20px_rgba(15,23,42,0.08)] transition hover:border-[#94A3B8] hover:bg-[#F8FAFC]"
+                    className="inline-flex h-8 items-center justify-center gap-2 rounded-lg border border-[#D7E0EA] bg-white/95 px-2.5 py-2 text-xs font-semibold text-phx-ink shadow-[0_8px_20px_rgba(15,23,42,0.08)] transition hover:border-phx-ink-faint hover:bg-phx-paper"
                     href="/api/exports?report=probation&format=xlsx"
                   >
-                    <Download className="h-4 w-4 text-[#334155]" />
+                    <Download className="h-4 w-4 text-phx-ink-2" />
                     Export Excel
                   </a>
                 </>
@@ -612,12 +612,12 @@ export function ProbationTracker({
       >
         <div className="grid gap-2 p-3 sm:p-3.5 xl:grid-cols-[1.5fr_repeat(4,minmax(0,1fr))_auto]">
           <label className="relative block">
-            <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">
+            <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-soft">
               Search
             </span>
             <Search className="pointer-events-none absolute left-3 top-10 h-4 w-4 text-text-secondary" />
             <Input
-              className="h-10 rounded-xl border-[#D8E0EA] bg-white/95 pl-9 shadow-[0_8px_20px_rgba(15,23,42,0.08)]"
+              className="h-10 rounded-xl border-phx-line bg-white/95 pl-9 shadow-[0_8px_20px_rgba(15,23,42,0.08)]"
               onChange={(event) => setQuery(event.target.value)}
               placeholder="Search name, HR ID, CRM ID"
               value={query}
@@ -683,7 +683,7 @@ export function ProbationTracker({
                   ))}
                 </tr>
               </thead>
-              <tbody className="divide-y divide-[#E2E8F0]">
+              <tbody className="divide-y divide-phx-line">
                 {feedbackReportRows.length === 0 ? (
                   <tr>
                     <td className="px-3 py-7 text-center text-xs text-text-secondary" colSpan={12}>
@@ -757,7 +757,7 @@ export function ProbationTracker({
                 ))}
               </tr>
             </thead>
-            <tbody className="divide-y divide-[#E2E8F0]">
+            <tbody className="divide-y divide-phx-line">
               {filteredRows.length === 0 ? (
                 <tr>
                   <td className="px-3 py-7 text-center text-xs text-text-secondary" colSpan={14}>
@@ -808,7 +808,7 @@ export function ProbationTracker({
                         <div className="space-y-2">
                           <Badge variant={workflowBadgeVariant(row.workflow?.status)}>{workflowLabel(row.workflow?.status)}</Badge>
                           {row.workflow?.decision ? (
-                            <div className="text-xs font-semibold text-[#0F172A]">Decision: {row.workflow.decision}</div>
+                            <div className="text-xs font-semibold text-phx-ink">Decision: {row.workflow.decision}</div>
                           ) : null}
                         </div>
                       </td>
@@ -856,7 +856,7 @@ export function ProbationTracker({
                                   </Button>
                                 ))}
                               {(row.workflow.allowedActions ?? row.allowedActions ?? []).length === 0 ? (
-                                <span className="text-xs font-semibold text-[#64748B]">No available actions</span>
+                                <span className="text-xs font-semibold text-phx-ink-soft">No available actions</span>
                               ) : null}
                             </>
                           ) : (
@@ -932,13 +932,13 @@ export function ProbationTracker({
           <div className="grid gap-3 p-4 lg:grid-cols-3">
             {selectedAction.action === "manager_feedback" ? (
               <label className="block lg:col-span-3">
-                <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">Manager Feedback</span>
+                <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-soft">Manager Feedback</span>
                 <Input className={inputClassName} onChange={(event) => updateActionForm("managerFeedback", event.target.value)} placeholder="Manager evaluation feedback" value={actionForm.managerFeedback} />
               </label>
             ) : null}
             {selectedAction.action === "pass" || selectedAction.action === "terminate" ? (
               <label className="block lg:col-span-2">
-                <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">HR Note</span>
+                <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-soft">HR Note</span>
                 <Input className={inputClassName} onChange={(event) => updateActionForm("decisionReason", event.target.value)} placeholder={selectedAction.action === "terminate" ? "Termination reason" : "Optional HR note"} value={actionForm.decisionReason} />
               </label>
             ) : null}
@@ -949,7 +949,7 @@ export function ProbationTracker({
               </label>
             ) : null}
             <label className="block lg:col-span-3">
-              <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">Review Note</span>
+              <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-soft">Review Note</span>
               <Input className={inputClassName} onChange={(event) => updateActionForm("workflowNote", event.target.value)} placeholder="Optional note for this row-specific action" value={actionForm.workflowNote} />
             </label>
           </div>

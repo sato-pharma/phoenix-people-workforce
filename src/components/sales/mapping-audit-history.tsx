@@ -54,33 +54,33 @@ export function MappingAuditHistory({ entityType, distributorCode }: { entityTyp
   }, [open, distributorCode, entityType]);
 
   return (
-    <div className="rounded-[6px] border border-[#E2E8F0]">
+    <div className="rounded-[6px] border border-phx-line">
       <button
-        className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-xs font-black uppercase tracking-wide text-[#475569]"
+        className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-xs font-black uppercase tracking-wide text-phx-ink-2"
         onClick={() => setOpen((o) => !o)}
         type="button"
       >
         <span className="inline-flex items-center gap-1.5"><History className="h-4 w-4" /> Recent changes</span>
-        <span className="flex items-center gap-2 text-[#94A3B8]">
+        <span className="flex items-center gap-2 text-phx-ink-faint">
           {open && !loading ? <RefreshCw className="h-3.5 w-3.5" onClick={(e) => { e.stopPropagation(); void load(); }} /> : null}
           {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
           <span aria-hidden>{open ? "▾" : "▸"}</span>
         </span>
       </button>
       {open ? (
-        <div className="border-t border-[#E2E8F0]">
+        <div className="border-t border-phx-line">
           {loading ? (
-            <p className="px-3 py-3 text-xs text-[#94A3B8]">Loading…</p>
+            <p className="px-3 py-3 text-xs text-phx-ink-faint">Loading…</p>
           ) : entries.length === 0 ? (
-            <p className="px-3 py-3 text-xs text-[#94A3B8]">No changes recorded yet.</p>
+            <p className="px-3 py-3 text-xs text-phx-ink-faint">No changes recorded yet.</p>
           ) : (
-            <ul className="divide-y divide-[#F1F5F9]">
+            <ul className="divide-y divide-phx-paper-2">
               {entries.map((e) => (
                 <li className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 text-xs" key={e.id}>
-                  <span className="font-semibold text-[#0F172A]">
-                    {e.distributorCode ?? e.entityKey} · <span className="font-bold text-[#475569]">{ACTION_LABEL[e.action] ?? e.action}</span>
+                  <span className="font-semibold text-phx-ink">
+                    {e.distributorCode ?? e.entityKey} · <span className="font-bold text-phx-ink-2">{ACTION_LABEL[e.action] ?? e.action}</span>
                   </span>
-                  <span className="text-[#94A3B8]">{e.actor} · {when(e.createdAt)}</span>
+                  <span className="text-phx-ink-faint">{e.actor} · {when(e.createdAt)}</span>
                 </li>
               ))}
             </ul>

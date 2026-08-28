@@ -157,7 +157,7 @@ export function ExpenseDetailTable({
       case "km":
         return <span className="tabular-nums text-slate-600">{Math.round(row.km ?? 0).toLocaleString()}</span>;
       case "total":
-        return <span className="tabular-nums font-black text-[#0F172A]">{egp(row.total)}</span>;
+        return <span className="tabular-nums font-black text-phx-ink">{egp(row.total)}</span>;
       default:
         return null;
     }
@@ -217,7 +217,7 @@ export function ExpenseDetailTable({
             <PortalRecordCard
               accent="orange"
               meta={[formatShortDate(row.date), variant === "admin" ? sub : ""].filter(Boolean).join(" · ")}
-              status={<span className="text-sm font-black tabular-nums text-[#0F172A]">{egp(row.total)}</span>}
+              status={<span className="text-sm font-black tabular-nums text-phx-ink">{egp(row.total)}</span>}
               title={(variant === "admin" ? row.specialist : row.to || row.location) || "—"}
             >
               <PortalRecordFields
@@ -240,7 +240,7 @@ export function ExpenseDetailTable({
             ))}
           </colgroup>
           <thead>
-            <tr className="bg-[#0F172A]">
+            <tr className="bg-phx-ink">
               {columns.map((column) => {
                 const active = sortKey === column.key;
                 return (

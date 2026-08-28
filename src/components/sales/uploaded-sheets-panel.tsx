@@ -7,7 +7,7 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 import type { SalesDistributorEntry } from "@/lib/sales/distributor-registry";
 import type { SourceOfSalesUploadBatch } from "@/lib/sales/monthly-distributor-import";
 
-const card = "rounded-[6px] border border-[#E2E8F0] bg-white shadow-sm";
+const card = "rounded-[6px] border border-phx-line bg-white shadow-sm";
 const darkHead = "bg-[#020617] text-left text-[11px] font-black uppercase tracking-wide text-white";
 const money = (value: number) => `EGP ${Number(value || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
 const num = (value: number) => Number(value || 0).toLocaleString(undefined, { maximumFractionDigits: 0 });
@@ -92,18 +92,18 @@ export function UploadedSheetsPanel({
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <div className="flex items-center gap-2">
-            <span className="h-2 w-2 rounded-full bg-[#F97316]" aria-hidden />
-            <span className="text-[11px] font-black uppercase tracking-[0.16em] text-[#F97316]">Uploaded Sheets</span>
+            <span className="h-2 w-2 rounded-full bg-phx-accent" aria-hidden />
+            <span className="text-[11px] font-black uppercase tracking-[0.16em] text-phx-accent">Uploaded Sheets</span>
           </div>
-          <p className="mt-1 text-sm font-medium text-[#64748B]">
+          <p className="mt-1 text-sm font-medium text-phx-ink-soft">
             Every monthly sheet uploaded for the chosen month, across all distributors — and who is still pending.
           </p>
         </div>
         <label className="flex flex-col gap-1">
-          <span className="text-[10px] font-black uppercase tracking-[0.12em] text-[#94A3B8]">Month</span>
+          <span className="text-[10px] font-black uppercase tracking-[0.12em] text-phx-ink-faint">Month</span>
           <SearchableSelect
             aria-label="Filter uploaded sheets by month"
-            className="h-10 rounded-[6px] border border-[#E2E8F0] bg-white px-3 text-sm font-bold text-[#0F172A] outline-none focus:border-[#FDBA74]"
+            className="h-10 rounded-[6px] border border-phx-line bg-white px-3 text-sm font-bold text-phx-ink outline-none focus:border-phx-accent-line"
             disabled={periods.length === 0}
             onChange={(event) => setPickedPeriod(event.target.value)}
             value={selectedPeriod}
@@ -128,7 +128,7 @@ export function UploadedSheetsPanel({
         </div>
       )}
 
-      <div className="mt-3 overflow-x-auto rounded-[6px] border border-[#E2E8F0]">
+      <div className="mt-3 overflow-x-auto rounded-[6px] border border-phx-line">
         <table className="w-full text-sm">
           <thead className={darkHead}>
             <tr>
@@ -144,15 +144,15 @@ export function UploadedSheetsPanel({
           <tbody>
             {rows.length === 0 && (
               <tr>
-                <td className="px-3 py-4 text-center text-[#94A3B8]" colSpan={7}>
+                <td className="px-3 py-4 text-center text-phx-ink-faint" colSpan={7}>
                   {periods.length === 0 ? "No sheets uploaded yet." : `No sheets uploaded for ${formatPeriod(selectedPeriod)}.`}
                 </td>
               </tr>
             )}
             {rows.map((batch) => (
               <tr className="border-t border-[#FFE8D6]" key={batch.batchId}>
-                <td className="px-3 py-2 font-bold text-[#0F172A]">
-                  {batch.distributorName} <span className="font-mono text-xs text-[#94A3B8]">{batch.distributorCode}</span>
+                <td className="px-3 py-2 font-bold text-phx-ink">
+                  {batch.distributorName} <span className="font-mono text-xs text-phx-ink-faint">{batch.distributorCode}</span>
                 </td>
                 <td className="px-3 py-2">
                   <span className={`inline-flex items-center rounded px-2 py-0.5 text-[11px] font-black ${batch.status === "validated" ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>
@@ -161,17 +161,17 @@ export function UploadedSheetsPanel({
                 </td>
                 <td className="px-3 py-2 text-right tabular-nums">{num(batch.rowCount)}</td>
                 <td className="px-3 py-2 text-right tabular-nums">{money(batch.totalValue)}</td>
-                <td className="px-3 py-2 tabular-nums text-[#334155]">{formatDate(batch.createdAt)}</td>
-                <td className="px-3 py-2 text-[#64748B]">
+                <td className="px-3 py-2 tabular-nums text-phx-ink-2">{formatDate(batch.createdAt)}</td>
+                <td className="px-3 py-2 text-phx-ink-soft">
                   <span className="inline-flex items-center gap-1">
-                    <FileSpreadsheet className="h-3.5 w-3.5 text-[#94A3B8]" />
+                    <FileSpreadsheet className="h-3.5 w-3.5 text-phx-ink-faint" />
                     {batch.fileName ? batch.fileName.slice(0, 28) : "—"}
                   </span>
                 </td>
                 <td className="px-3 py-2 text-right">
                   <button
                     aria-label="Delete uploaded sheet"
-                    className="inline-flex text-[#94A3B8] transition hover:text-rose-600 disabled:opacity-50"
+                    className="inline-flex text-phx-ink-faint transition hover:text-rose-600 disabled:opacity-50"
                     disabled={busyId === batch.batchId}
                     onClick={() => remove(batch)}
                     type="button"

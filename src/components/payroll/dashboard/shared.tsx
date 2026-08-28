@@ -17,7 +17,7 @@ export const payrollMonths = [
 ];
 
 export const panelClassName =
-  "rounded-[28px] border border-[#D8E0EA] bg-white/94 shadow-[0_18px_46px_rgba(15,23,42,0.08)] backdrop-blur";
+  "rounded-[28px] border border-phx-line bg-white/94 shadow-[0_18px_46px_rgba(15,23,42,0.08)] backdrop-blur";
 
 export const publishedPayslipStatuses = new Set(["approved", "locked"]);
 

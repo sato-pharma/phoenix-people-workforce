@@ -1,13 +1,13 @@
 export const adminShellBackgroundClassName = "bg-[#F3F6FA]";
 
 export const adminPanelClassName =
-  "rounded-[18px] border border-[#D8E0EA] bg-white shadow-[0_8px_22px_rgba(15,23,42,0.04)]";
+  "rounded-[18px] border border-phx-line bg-white shadow-[0_8px_22px_rgba(15,23,42,0.04)]";
 
 export const adminSoftPanelClassName =
   "rounded-[16px] border border-[#E5EAF1] bg-[#FCFDFE] shadow-[0_6px_18px_rgba(15,23,42,0.035)]";
 
 export const adminInsetPanelClassName =
-  "rounded-[14px] border border-[#E2E8F0] bg-[#FBFCFD]";
+  "rounded-[14px] border border-phx-line bg-[#FBFCFD]";
 
 // ── Unified dark hero ────────────────────────────────────────────────────────
 // Single source of truth for the black command-center hero used by every admin
@@ -43,9 +43,9 @@ export const adminHeroChipOrangeClassName =
 
 // Hero action buttons (legible on black).
 export const adminHeroActionPrimaryClassName =
-  "inline-flex items-center justify-center gap-2 rounded-full bg-[#F97316] px-4 py-2 text-sm font-semibold text-white shadow-[0_8px_20px_rgba(249,115,22,0.32)] transition hover:bg-[#EA580C] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F97316]/60";
+  "inline-flex items-center justify-center gap-2 rounded-full bg-phx-accent px-4 py-2 text-sm font-semibold text-white shadow-[0_8px_20px_rgba(249,115,22,0.32)] transition hover:bg-phx-accent-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-phx-accent/60";
 export const adminHeroActionSecondaryClassName =
-  "inline-flex items-center justify-center gap-2 rounded-full border border-white/20 bg-white/10 px-4 py-2 text-sm font-semibold text-slate-100 backdrop-blur transition hover:border-[#FDBA74] hover:bg-white/[0.16] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F97316]/50";
+  "inline-flex items-center justify-center gap-2 rounded-full border border-white/20 bg-white/10 px-4 py-2 text-sm font-semibold text-slate-100 backdrop-blur transition hover:border-phx-accent-line hover:bg-white/[0.16] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-phx-accent/50";
 
 // Skeleton fill for the dark loading hero.
 export const adminHeroSkeletonClassName = "animate-pulse bg-white/10";

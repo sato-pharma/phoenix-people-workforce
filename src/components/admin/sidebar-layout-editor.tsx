@@ -326,7 +326,7 @@ export function SidebarLayoutEditor({
             Reset to standard
           </button>
           <button
-            className="flex items-center gap-1.5 whitespace-nowrap bg-[#0F172A] px-3.5 py-1.5 text-[12px] font-semibold text-white hover:bg-[#1E293B] disabled:opacity-50"
+            className="flex items-center gap-1.5 whitespace-nowrap bg-phx-ink px-3.5 py-1.5 text-[12px] font-semibold text-white hover:bg-[#1E293B] disabled:opacity-50"
             disabled={busy || !dirty}
             onClick={save}
             type="button"

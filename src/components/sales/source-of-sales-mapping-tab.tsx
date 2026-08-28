@@ -56,7 +56,7 @@ type PreviewResponse = {
 };
 type AiResponse = { success: boolean; data?: { suggestions: { raw: string; code: string; confidence?: number }[] }; error?: string };
 
-const panelClassName = "rounded-3xl border border-[#D8E0EA] bg-white/95 shadow-[0_18px_42px_rgba(15,23,42,0.07)]";
+const panelClassName = "rounded-3xl border border-phx-line bg-white/95 shadow-[0_18px_42px_rgba(15,23,42,0.07)]";
 
 async function readJson<T>(response: Response, fallback: T): Promise<T> {
   const text = await response.text();
@@ -111,12 +111,12 @@ function ResultBanner({ result, message, error }: { result: ImportResult | null;
                 return (
                   <li key={`${row.rowNumber ?? row.row ?? index}:${index}`}>
                     <b>Row {row.rowNumber ?? row.row ?? "?"}</b>: {row.reason}
-                    {detail ? <span className="text-[#64748B]"> ({detail})</span> : null}
+                    {detail ? <span className="text-phx-ink-soft"> ({detail})</span> : null}
                   </li>
                 );
               })}
             </ul>
-            {blocked.length > 50 ? <p className="mt-1 text-xs text-[#64748B]">…and {blocked.length - 50} more.</p> : null}
+            {blocked.length > 50 ? <p className="mt-1 text-xs text-phx-ink-soft">…and {blocked.length - 50} more.</p> : null}
           </div>
         </AdminCallout>
       ) : null}
@@ -171,26 +171,26 @@ function TemplateCard({
   }
 
   return (
-    <Card className={cn(panelClassName, "space-y-4 p-5", step ? "border-l-4 border-l-[#F97316]" : "")}>
+    <Card className={cn(panelClassName, "space-y-4 p-5", step ? "border-l-4 border-l-phx-accent" : "")}>
       <div className="flex items-start gap-3">
         {step ? (
           <span className="mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#0B0B0B] text-sm font-black text-white">{step}</span>
         ) : null}
         <div>
           <h3 className="text-lg font-black tracking-tight text-slate-950">{title}</h3>
-          <p className="mt-1 text-sm leading-6 text-[#64748B]">{description}</p>
+          <p className="mt-1 text-sm leading-6 text-phx-ink-soft">{description}</p>
         </div>
       </div>
       <div className="flex flex-wrap items-center gap-2">
         <a
-          className="inline-flex h-10 items-center gap-2 rounded-xl border border-[#D8E0EA] bg-white px-4 text-sm font-bold text-[#0F172A] transition hover:border-[#F97316] hover:text-[#F97316]"
+          className="inline-flex h-10 items-center gap-2 rounded-xl border border-phx-line bg-white px-4 text-sm font-bold text-phx-ink transition hover:border-phx-accent hover:text-phx-accent"
           href={templateHref}
         >
           <Download className="h-4 w-4" />
           {templateLabel}
         </a>
         <Button
-          className="h-10 gap-2 rounded-xl bg-[#0B0B0B] font-black text-white transition hover:bg-[#F97316]"
+          className="h-10 gap-2 rounded-xl bg-[#0B0B0B] font-black text-white transition hover:bg-phx-accent"
           disabled={busy}
           onClick={() => inputRef.current?.click()}
           type="button"
@@ -206,7 +206,7 @@ function TemplateCard({
           type="file"
         />
       </div>
-      {children ? <div className="border-t border-dashed border-[#E2E8F0] pt-4">{children}</div> : null}
+      {children ? <div className="border-t border-dashed border-phx-line pt-4">{children}</div> : null}
       <ResultBanner error={error} message={message} result={result} />
     </Card>
   );
@@ -234,13 +234,13 @@ function TipsPanel({ onNavigate }: { onNavigate?: (scrollId: string) => void }) 
     });
   }
   return (
-    <div className="rounded-2xl border border-[#FED7AA] bg-[#FFF7ED]">
+    <div className="rounded-2xl border border-[#FED7AA] bg-phx-accent-soft">
       <button className="flex w-full items-center justify-between px-4 py-3 text-left" onClick={toggle} type="button">
         <div className="flex items-center gap-2">
-          <Sparkles className="h-4 w-4 text-[#F97316]" />
-          <span className="text-sm font-black text-[#0F172A]">5 mapping tips &amp; tricks</span>
+          <Sparkles className="h-4 w-4 text-phx-accent" />
+          <span className="text-sm font-black text-phx-ink">5 mapping tips &amp; tricks</span>
         </div>
-        <ChevronDown className={cn("h-4 w-4 text-[#F97316] transition-transform duration-200", open && "rotate-180")} />
+        <ChevronDown className={cn("h-4 w-4 text-phx-accent transition-transform duration-200", open && "rotate-180")} />
       </button>
       {open ? (
         <div className="grid gap-4 border-t border-[#FED7AA] px-4 pb-4 pt-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
@@ -248,12 +248,12 @@ function TipsPanel({ onNavigate }: { onNavigate?: (scrollId: string) => void }) 
             <div className="flex gap-2.5" key={tip.title}>
               <span className="mt-0.5 shrink-0 text-base leading-none">{tip.icon}</span>
               <div className="flex flex-col gap-1.5">
-                <p className="text-xs font-black text-[#0F172A]">{tip.title}</p>
-                <p className="text-xs leading-5 text-[#64748B]">{tip.body}</p>
+                <p className="text-xs font-black text-phx-ink">{tip.title}</p>
+                <p className="text-xs leading-5 text-phx-ink-soft">{tip.body}</p>
                 {tip.href ? (
-                  <Link className="inline-flex w-fit items-center gap-1 rounded-lg border border-[#F97316] px-2.5 py-1 text-[11px] font-black text-[#F97316] transition hover:bg-[#F97316] hover:text-white" href={tip.href}>{tip.actionLabel}</Link>
+                  <Link className="inline-flex w-fit items-center gap-1 rounded-lg border border-phx-accent px-2.5 py-1 text-[11px] font-black text-phx-accent transition hover:bg-phx-accent hover:text-white" href={tip.href}>{tip.actionLabel}</Link>
                 ) : tip.scrollId ? (
-                  <button className="inline-flex w-fit items-center gap-1 rounded-lg border border-[#F97316] px-2.5 py-1 text-[11px] font-black text-[#F97316] transition hover:bg-[#F97316] hover:text-white" onClick={() => { if (onNavigate) onNavigate(tip.scrollId!); else document.getElementById(tip.scrollId!)?.scrollIntoView({ behavior: "smooth", block: "start" }); }} type="button">{tip.actionLabel}</button>
+                  <button className="inline-flex w-fit items-center gap-1 rounded-lg border border-phx-accent px-2.5 py-1 text-[11px] font-black text-phx-accent transition hover:bg-phx-accent hover:text-white" onClick={() => { if (onNavigate) onNavigate(tip.scrollId!); else document.getElementById(tip.scrollId!)?.scrollIntoView({ behavior: "smooth", block: "start" }); }} type="button">{tip.actionLabel}</button>
                 ) : null}
               </div>
             </div>
@@ -306,7 +306,7 @@ function BootstrapCard({ distributorCode, hasProfile }: { distributorCode: strin
     <Card className={cn(panelClassName, "space-y-4 p-5")} id="sos-bootstrap">
       <div>
         <h3 className="text-lg font-black tracking-tight text-slate-950">Learn from a coded file</h3>
-        <p className="mt-1 text-sm leading-6 text-[#64748B]">
+        <p className="mt-1 text-sm leading-6 text-phx-ink-soft">
           Already have a sheet with the Phoenix codes filled in (raw columns + <b>Product ID</b> / <b>Brick ID</b>)?
           Upload it for <b>{distributorCode || "(pick a distributor)"}</b> and the system learns every product and
           customer→brick pair at once — so most of your mapping is done in one click.
@@ -314,7 +314,7 @@ function BootstrapCard({ distributorCode, hasProfile }: { distributorCode: strin
       </div>
       {hasProfile ? null : <NoProfileNote distributorCode={distributorCode} />}
       <Button
-        className="h-10 w-fit gap-2 rounded-xl bg-[#0B0B0B] font-black text-white transition hover:bg-[#F97316]"
+        className="h-10 w-fit gap-2 rounded-xl bg-[#0B0B0B] font-black text-white transition hover:bg-phx-accent"
         disabled={busy || !distributorCode || !hasProfile}
         onClick={() => inputRef.current?.click()}
         type="button"
@@ -520,7 +520,7 @@ function MissingPanel({ distributorCode, hasProfile, products, bricks }: { distr
     <Card className={cn(panelClassName, "space-y-4 p-5")} id="sos-analyze">
       <div>
         <h3 className="text-lg font-black tracking-tight text-slate-950">Find unmapped items (AI assist)</h3>
-        <p className="mt-1 text-sm leading-6 text-[#64748B]">
+        <p className="mt-1 text-sm leading-6 text-phx-ink-soft">
           Upload the distributor&apos;s <b>raw sheet</b> here to preview how much already maps — <b>nothing is saved</b>.
           The few unmatched products and areas are listed below with a suggested Phoenix code; let AI fill them, adjust
           if needed, then save. They&apos;re remembered for every future upload.
@@ -528,7 +528,7 @@ function MissingPanel({ distributorCode, hasProfile, products, bricks }: { distr
       </div>
       {hasProfile ? null : <NoProfileNote distributorCode={distributorCode} />}
       <Button
-        className="h-10 w-fit gap-2 rounded-xl bg-[#0B0B0B] font-black text-white transition hover:bg-[#F97316]"
+        className="h-10 w-fit gap-2 rounded-xl bg-[#0B0B0B] font-black text-white transition hover:bg-phx-accent"
         disabled={busy || !distributorCode || !hasProfile}
         onClick={() => inputRef.current?.click()}
         type="button"
@@ -549,7 +549,7 @@ function MissingPanel({ distributorCode, hasProfile, products, bricks }: { distr
           <Info className="mt-0.5 h-4 w-4 shrink-0" />
           <div>
             <p className="text-sm font-semibold">This sheet has already been processed — use Import directly.</p>
-            <p className="mt-0.5 text-xs text-[#64748B]">The Analyzer is for raw distributor files only. Coded sheets (containing Phoenix product IDs) should go straight to the Import raw file button below.</p>
+            <p className="mt-0.5 text-xs text-phx-ink-soft">The Analyzer is for raw distributor files only. Coded sheets (containing Phoenix product IDs) should go straight to the Import raw file button below.</p>
           </div>
         </AdminCallout>
       ) : null}
@@ -577,10 +577,10 @@ function MissingPanel({ distributorCode, hasProfile, products, bricks }: { distr
         <div className="space-y-4">
           <div className="flex flex-wrap gap-2 text-xs font-bold">
             <span className="rounded-full border border-[#BBF7D0] bg-[#F0FDF4] px-3 py-1 text-[#166534]">{fullyCodedPct}% fully coded</span>
-            <span className="rounded-full border border-[#E2E8F0] bg-[#FCFDFE] px-3 py-1 text-[#0F172A]">{preview.summary.totalRows} rows</span>
-            <span className="rounded-full border border-[#E2E8F0] bg-[#FCFDFE] px-3 py-1 text-[#0F172A]">{preview.unknownProducts.length} unknown products</span>
-            <span className="rounded-full border border-[#E2E8F0] bg-[#FCFDFE] px-3 py-1 text-[#0F172A]">{preview.unknownTerritories.length} unknown areas</span>
-            <span className="rounded-full border border-[#E2E8F0] bg-[#FCFDFE] px-3 py-1 text-[#0F172A]">{preview.unknownCustomers.length} unknown customers</span>
+            <span className="rounded-full border border-phx-line bg-[#FCFDFE] px-3 py-1 text-phx-ink">{preview.summary.totalRows} rows</span>
+            <span className="rounded-full border border-phx-line bg-[#FCFDFE] px-3 py-1 text-phx-ink">{preview.unknownProducts.length} unknown products</span>
+            <span className="rounded-full border border-phx-line bg-[#FCFDFE] px-3 py-1 text-phx-ink">{preview.unknownTerritories.length} unknown areas</span>
+            <span className="rounded-full border border-phx-line bg-[#FCFDFE] px-3 py-1 text-phx-ink">{preview.unknownCustomers.length} unknown customers</span>
           </div>
 
           {blankCustomerErrors > 0 ? (
@@ -604,29 +604,29 @@ function MissingPanel({ distributorCode, hasProfile, products, bricks }: { distr
             <div className="space-y-1.5">
               {productsTotal > 0 ? (
                 <div className="flex items-center gap-3">
-                  <span className="w-16 shrink-0 text-xs font-semibold text-[#64748B]">Products</span>
-                  <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-[#E2E8F0]">
-                    <div className={cn("h-full rounded-full transition-all duration-300", productsMapped === productsTotal ? "bg-emerald-500" : "bg-[#F97316]")} style={{ width: `${Math.round((productsMapped / productsTotal) * 100)}%` }} />
+                  <span className="w-16 shrink-0 text-xs font-semibold text-phx-ink-soft">Products</span>
+                  <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-phx-line">
+                    <div className={cn("h-full rounded-full transition-all duration-300", productsMapped === productsTotal ? "bg-emerald-500" : "bg-phx-accent")} style={{ width: `${Math.round((productsMapped / productsTotal) * 100)}%` }} />
                   </div>
-                  <span className={cn("w-10 shrink-0 text-right text-xs font-black tabular-nums", productsMapped === productsTotal ? "text-emerald-600" : "text-[#F97316]")}>{productsMapped}/{productsTotal}</span>
+                  <span className={cn("w-10 shrink-0 text-right text-xs font-black tabular-nums", productsMapped === productsTotal ? "text-emerald-600" : "text-phx-accent")}>{productsMapped}/{productsTotal}</span>
                 </div>
               ) : null}
               {territoriesTotal > 0 ? (
                 <div className="flex items-center gap-3">
-                  <span className="w-16 shrink-0 text-xs font-semibold text-[#64748B]">Areas</span>
-                  <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-[#E2E8F0]">
-                    <div className={cn("h-full rounded-full transition-all duration-300", territoriesMapped === territoriesTotal ? "bg-emerald-500" : "bg-[#F97316]")} style={{ width: `${Math.round((territoriesMapped / territoriesTotal) * 100)}%` }} />
+                  <span className="w-16 shrink-0 text-xs font-semibold text-phx-ink-soft">Areas</span>
+                  <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-phx-line">
+                    <div className={cn("h-full rounded-full transition-all duration-300", territoriesMapped === territoriesTotal ? "bg-emerald-500" : "bg-phx-accent")} style={{ width: `${Math.round((territoriesMapped / territoriesTotal) * 100)}%` }} />
                   </div>
-                  <span className={cn("w-10 shrink-0 text-right text-xs font-black tabular-nums", territoriesMapped === territoriesTotal ? "text-emerald-600" : "text-[#F97316]")}>{territoriesMapped}/{territoriesTotal}</span>
+                  <span className={cn("w-10 shrink-0 text-right text-xs font-black tabular-nums", territoriesMapped === territoriesTotal ? "text-emerald-600" : "text-phx-accent")}>{territoriesMapped}/{territoriesTotal}</span>
                 </div>
               ) : null}
               {customersTotal > 0 ? (
                 <div className="flex items-center gap-3">
-                  <span className="w-16 shrink-0 text-xs font-semibold text-[#64748B]">Customers</span>
-                  <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-[#E2E8F0]">
-                    <div className={cn("h-full rounded-full transition-all duration-300", customersMapped === customersTotal ? "bg-emerald-500" : "bg-[#F97316]")} style={{ width: customersTotal > 0 ? `${Math.round((customersMapped / customersTotal) * 100)}%` : "0%" }} />
+                  <span className="w-16 shrink-0 text-xs font-semibold text-phx-ink-soft">Customers</span>
+                  <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-phx-line">
+                    <div className={cn("h-full rounded-full transition-all duration-300", customersMapped === customersTotal ? "bg-emerald-500" : "bg-phx-accent")} style={{ width: customersTotal > 0 ? `${Math.round((customersMapped / customersTotal) * 100)}%` : "0%" }} />
                   </div>
-                  <span className={cn("w-10 shrink-0 text-right text-xs font-black tabular-nums", customersMapped === customersTotal ? "text-emerald-600" : "text-[#F97316]")}>{customersMapped}/{customersTotal}</span>
+                  <span className={cn("w-10 shrink-0 text-right text-xs font-black tabular-nums", customersMapped === customersTotal ? "text-emerald-600" : "text-phx-accent")}>{customersMapped}/{customersTotal}</span>
                 </div>
               ) : null}
             </div>
@@ -639,7 +639,7 @@ function MissingPanel({ distributorCode, hasProfile, products, bricks }: { distr
                 <p className="text-sm font-semibold">
                   {[productsMapped > 0 ? `${productsMapped} product${productsMapped === 1 ? "" : "s"}` : "", territoriesMapped > 0 ? `${territoriesMapped} area${territoriesMapped === 1 ? "" : "s"}` : "", customersMapped > 0 ? `${customersMapped} customer${customersMapped === 1 ? "" : "s"}` : ""].filter(Boolean).join(" + ")} ready — save now
                 </p>
-                <Button className="h-8 shrink-0 gap-1.5 rounded-xl bg-[#F97316] font-black text-white hover:bg-[#EA6A0C]" disabled={saving} onClick={() => void save()} type="button">
+                <Button className="h-8 shrink-0 gap-1.5 rounded-xl bg-phx-accent font-black text-white hover:bg-[#EA6A0C]" disabled={saving} onClick={() => void save()} type="button">
                   {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
                   Save All
                 </Button>
@@ -683,7 +683,7 @@ function MissingPanel({ distributorCode, hasProfile, products, bricks }: { distr
 
           {hasUnknowns ? (
             <Button
-              className="h-10 w-fit gap-2 rounded-xl bg-[#F97316] font-black text-white transition hover:bg-[#EA6A0C]"
+              className="h-10 w-fit gap-2 rounded-xl bg-phx-accent font-black text-white transition hover:bg-[#EA6A0C]"
               disabled={saving}
               onClick={() => void save()}
               type="button"
@@ -731,13 +731,13 @@ function MissingPanel({ distributorCode, hasProfile, products, bricks }: { distr
               <UploadCloud className="h-4 w-4 shrink-0" />
               <span>{mappingsSaved ? "Mappings saved — upload the same raw file to import:" : "All items already mapped — upload the raw file to import:"}</span>
             </div>
-            <Button className="h-9 gap-2 rounded-xl bg-[#0B0B0B] font-black text-white hover:bg-[#F97316]" disabled={importing} onClick={() => importRef.current?.click()} type="button">
+            <Button className="h-9 gap-2 rounded-xl bg-[#0B0B0B] font-black text-white hover:bg-phx-accent" disabled={importing} onClick={() => importRef.current?.click()} type="button">
               {importing ? <Loader2 className="h-4 w-4 animate-spin" /> : <UploadCloud className="h-4 w-4" />}
               {importing ? "Importing…" : "Import raw file"}
             </Button>
             <input accept=".xlsx" className="hidden" onChange={(event) => { const file = event.target.files?.[0]; if (file) void handlePreviewFile(file); }} ref={importRef} type="file" />
           </div>
-          <p className="mt-2 text-xs text-[#64748B]">Upload the same raw file you just analyzed — it will be imported with your saved mappings applied.</p>
+          <p className="mt-2 text-xs text-phx-ink-soft">Upload the same raw file you just analyzed — it will be imported with your saved mappings applied.</p>
         </div>
       ) : null}
 
@@ -808,7 +808,7 @@ function MappingCombobox({
       <input
         ref={inputRef}
         disabled={disabled}
-        className="h-9 w-full rounded-lg border border-[#E2E8F0] px-2 text-sm focus:border-[#FDBA74] focus:outline-none"
+        className="h-9 w-full rounded-lg border border-phx-line px-2 text-sm focus:border-phx-accent-line focus:outline-none"
         onBlur={() => setTimeout(() => setOpen(false), 150)}
         onChange={(e) => { setSearchQuery(e.target.value); onChange(e.target.value); openDropdown(); }}
         onFocus={() => { setSearchQuery(""); openDropdown(); }}
@@ -817,12 +817,12 @@ function MappingCombobox({
       />
       {open && filtered.length > 0 && pos && (
         <div
-          className="z-9999 max-h-60 overflow-auto rounded-lg border border-[#E2E8F0] bg-white shadow-lg"
+          className="z-9999 max-h-60 overflow-auto rounded-lg border border-phx-line bg-white shadow-lg"
           style={{ position: "fixed", top: pos.top, left: pos.left, width: Math.max(pos.width, 360) }}
         >
           {filtered.map((o) => (
             <button
-              className="flex w-max min-w-full items-center gap-3 whitespace-nowrap px-3 py-1.5 text-left hover:bg-[#FFF7ED]"
+              className="flex w-max min-w-full items-center gap-3 whitespace-nowrap px-3 py-1.5 text-left hover:bg-phx-accent-soft"
               key={o.code}
               onMouseDown={() => {
                 if (disabled) return;
@@ -831,15 +831,15 @@ function MappingCombobox({
               }}
               type="button"
             >
-              <span className="shrink-0 font-mono text-xs font-bold text-[#0F172A]">{o.code}</span>
-              <span className="whitespace-nowrap text-xs text-[#475569]">{o.name}</span>
+              <span className="shrink-0 font-mono text-xs font-bold text-phx-ink">{o.code}</span>
+              <span className="whitespace-nowrap text-xs text-phx-ink-2">{o.name}</span>
             </button>
           ))}
         </div>
       )}
       {open && filtered.length === 0 && pos && (
         <div
-          className="z-9999 rounded-lg border border-[#E2E8F0] bg-white p-2 text-xs text-[#64748B] shadow-lg"
+          className="z-9999 rounded-lg border border-phx-line bg-white p-2 text-xs text-phx-ink-soft shadow-lg"
           style={{ position: "fixed", top: pos.top, left: pos.left, width: Math.max(pos.width, 240) }}
         >
           No results
@@ -870,13 +870,13 @@ function UnknownTable({
   const rawLabel = kind === "product" ? "item" : kind === "territory" ? "area" : "customer code";
   const codeLabel = kind === "product" ? "Product" : "Brick";
   return (
-    <div className="rounded-2xl border border-[#E2E8F0]">
-      <div className="flex items-center justify-between gap-3 border-b border-[#E2E8F0] px-4 py-2.5">
+    <div className="rounded-2xl border border-phx-line">
+      <div className="flex items-center justify-between gap-3 border-b border-phx-line px-4 py-2.5">
         <div className="flex items-center gap-2">
-          <p className="text-xs font-black uppercase tracking-[0.14em] text-[#64748B]">
+          <p className="text-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">
             Unknown {label} ({rows.length})
           </p>
-          {busyAi ? <span className="animate-pulse text-xs font-bold text-[#F97316]">AI working…</span> : null}
+          {busyAi ? <span className="animate-pulse text-xs font-bold text-phx-accent">AI working…</span> : null}
         </div>
         {onAi ? (
           <Button className="h-8 gap-2" disabled={busyAi} onClick={onAi} type="button" variant="secondary">
@@ -898,11 +898,11 @@ function UnknownTable({
             {rows.map((row) => (
               <tr className="border-b border-[#FFE8D6]" key={row.raw}>
                 <td className="px-4 py-2">
-                  <span className="block font-semibold text-[#0F172A]">{row.rawName || row.raw}</span>
-                  {row.rawName && row.rawName !== row.raw ? <span className="block text-xs text-[#64748B]">{row.raw}</span> : null}
-                  {row.suggestionLabel ? <span className="block text-xs text-[#F97316]">suggest: {row.suggestionLabel}</span> : null}
+                  <span className="block font-semibold text-phx-ink">{row.rawName || row.raw}</span>
+                  {row.rawName && row.rawName !== row.raw ? <span className="block text-xs text-phx-ink-soft">{row.raw}</span> : null}
+                  {row.suggestionLabel ? <span className="block text-xs text-phx-accent">suggest: {row.suggestionLabel}</span> : null}
                 </td>
-                <td className="px-4 py-2 text-right tabular-nums text-[#64748B]">{row.count}</td>
+                <td className="px-4 py-2 text-right tabular-nums text-phx-ink-soft">{row.count}</td>
                 <td className="px-4 py-2">
                   <div className="flex items-center gap-2">
                     <MappingCombobox
@@ -927,12 +927,12 @@ function UnknownTable({
   );
 }
 
-const fieldInputClass = "h-9 border border-[#E2E8F0] px-2 text-sm text-[#0F172A] outline-none focus:border-[#FDBA74]";
+const fieldInputClass = "h-9 border border-phx-line px-2 text-sm text-phx-ink outline-none focus:border-phx-accent-line";
 
 function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
     <label className="flex flex-col gap-1">
-      <span className="text-[10px] font-black uppercase tracking-[0.12em] text-[#94A3B8]">{label}</span>
+      <span className="text-[10px] font-black uppercase tracking-[0.12em] text-phx-ink-faint">{label}</span>
       {children}
     </label>
   );
@@ -1029,7 +1029,7 @@ export function ProductAddForm({
 
   return (
     <div className="space-y-3">
-      <p className="text-xs font-black uppercase tracking-[0.14em] text-[#64748B]">Or add one by field</p>
+      <p className="text-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">Or add one by field</p>
       <div className="flex flex-wrap items-end gap-2">
         <Field label="Alias (item code or name)">
           <input className={cn(fieldInputClass, "w-56")} disabled={busy} onChange={(event) => { setAlias(event.target.value); setAiConfidence(null); }} placeholder="distributor's item code or name" value={alias} />
@@ -1047,7 +1047,7 @@ export function ProductAddForm({
         </Field>
         <AiSuggestButton busy={aiBusy} disabled={aiBusy || busy || !alias.trim()} onClick={() => void aiSuggestOne()} />
         {aiConfidence != null ? <AiConfidenceBadge confidence={aiConfidence} /> : null}
-        <Button className="h-9 gap-1 rounded-xl bg-[#F97316] font-black text-white transition hover:bg-[#EA6A0C]" disabled={busy || !distributorCode} onClick={() => void add()} type="button">
+        <Button className="h-9 gap-1 rounded-xl bg-phx-accent font-black text-white transition hover:bg-[#EA6A0C]" disabled={busy || !distributorCode} onClick={() => void add()} type="button">
           {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />} Add
         </Button>
       </div>
@@ -1122,7 +1122,7 @@ export function CustomerBrickAddForm({
 
   return (
     <div className="space-y-3">
-      <p className="text-xs font-black uppercase tracking-[0.14em] text-[#64748B]">Or add one by field</p>
+      <p className="text-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">Or add one by field</p>
       <div className="flex flex-wrap items-end gap-2">
         <Field label="Customer code">
           <input className={cn(fieldInputClass, "w-40")} disabled={busy} onChange={(event) => setCustomerCode(event.target.value)} value={customerCode} />
@@ -1146,7 +1146,7 @@ export function CustomerBrickAddForm({
         </Field>
         <AiSuggestButton busy={aiBusy} disabled={aiBusy || busy || !(customerName.trim() || customerCode.trim())} onClick={() => void aiSuggestOne()} />
         {aiConfidence != null ? <AiConfidenceBadge confidence={aiConfidence} /> : null}
-        <Button className="h-9 gap-1 rounded-xl bg-[#F97316] font-black text-white transition hover:bg-[#EA6A0C]" disabled={busy || !distributorCode} onClick={() => void add()} type="button">
+        <Button className="h-9 gap-1 rounded-xl bg-phx-accent font-black text-white transition hover:bg-[#EA6A0C]" disabled={busy || !distributorCode} onClick={() => void add()} type="button">
           {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />} Add
         </Button>
       </div>
@@ -1217,7 +1217,7 @@ export function TerritoryAddForm({
 
   return (
     <div className="space-y-3">
-      <p className="text-xs font-black uppercase tracking-[0.14em] text-[#64748B]">Or add one by field</p>
+      <p className="text-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">Or add one by field</p>
       <div className="flex flex-wrap items-end gap-2">
         <Field label="Raw territory / district text">
           <input className={cn(fieldInputClass, "w-56")} disabled={busy} onChange={(event) => { setRaw(event.target.value); setAiConfidence(null); }} placeholder="exact text from the distributor sheet" value={raw} />
@@ -1235,7 +1235,7 @@ export function TerritoryAddForm({
         </Field>
         <AiSuggestButton busy={aiBusy} disabled={aiBusy || busy || !raw.trim()} onClick={() => void aiSuggestOne()} />
         {aiConfidence != null ? <AiConfidenceBadge confidence={aiConfidence} /> : null}
-        <Button className="h-9 gap-1 rounded-xl bg-[#F97316] font-black text-white transition hover:bg-[#EA6A0C]" disabled={busy} onClick={() => void add()} type="button">
+        <Button className="h-9 gap-1 rounded-xl bg-phx-accent font-black text-white transition hover:bg-[#EA6A0C]" disabled={busy} onClick={() => void add()} type="button">
           {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />} Add
         </Button>
       </div>
@@ -1253,15 +1253,15 @@ function CollapsibleSection({ title, subtitle, open, onToggle, children }: { tit
   return (
     <div>
       <button
-        className="flex w-full items-center justify-between gap-3 rounded-2xl border border-[#D8E0EA] bg-[#F8FAFC] px-5 py-3.5 text-left transition hover:bg-[#F1F5F9]"
+        className="flex w-full items-center justify-between gap-3 rounded-2xl border border-phx-line bg-phx-paper px-5 py-3.5 text-left transition hover:bg-phx-paper-2"
         onClick={onToggle}
         type="button"
       >
         <div>
           <h3 className="text-sm font-black text-slate-950">{title}</h3>
-          {subtitle ? <p className="mt-0.5 text-xs text-[#64748B]">{subtitle}</p> : null}
+          {subtitle ? <p className="mt-0.5 text-xs text-phx-ink-soft">{subtitle}</p> : null}
         </div>
-        <ChevronDown className={cn("h-5 w-5 shrink-0 text-[#64748B] transition-transform duration-200", open && "rotate-180")} />
+        <ChevronDown className={cn("h-5 w-5 shrink-0 text-phx-ink-soft transition-transform duration-200", open && "rotate-180")} />
       </button>
       {open ? <div className="mt-3 space-y-4">{children}</div> : null}
     </div>
@@ -1288,15 +1288,15 @@ export function SourceOfSalesMappingTab({ distributors, distributorCode, onDistr
         <p className="text-sm">
           <b>Map once, reuse forever.</b> Pick a distributor, set its <b>Product</b> and <b>Customer / Brick</b> mappings,
           then upload the raw sheet on the <b>Upload &amp; Status</b> tab. Anything still unmapped appears in{" "}
-          <Link className="font-semibold text-[#F97316] underline" href="/sales/missing-data">Missing Data</Link>.
+          <Link className="font-semibold text-phx-accent underline" href="/sales/missing-data">Missing Data</Link>.
         </p>
       </AdminCallout>
 
       {/* Step 1 — the one required choice. */}
       <Card className={cn(panelClassName, "flex flex-wrap items-center gap-3 p-4")}>
-        <span className="text-xs font-bold uppercase tracking-[0.16em] text-[#64748B]">Distributor</span>
+        <span className="text-xs font-bold uppercase tracking-[0.16em] text-phx-ink-soft">Distributor</span>
         <SearchableSelect
-          className="h-10 rounded-2xl border border-[#D8E0EA] bg-[#F8FAFC] px-3.5 text-sm font-semibold text-[#0F172A] outline-none transition focus:border-[#FDBA74] focus:ring-4 focus:ring-[#F97316]/10"
+          className="h-10 rounded-2xl border border-phx-line bg-phx-paper px-3.5 text-sm font-semibold text-phx-ink outline-none transition focus:border-phx-accent-line focus:ring-4 focus:ring-phx-accent/10"
           onChange={(event) => onDistributorChange(event.target.value)}
           value={distributorCode}
         >
@@ -1306,7 +1306,7 @@ export function SourceOfSalesMappingTab({ distributors, distributorCode, onDistr
             </option>
           ))}
         </SearchableSelect>
-        <span className="text-xs text-[#64748B]">Shared with the Upload &amp; Status tab and the tools below.</span>
+        <span className="text-xs text-phx-ink-soft">Shared with the Upload &amp; Status tab and the tools below.</span>
       </Card>
 
       {/* Primary — the two everyday mapping cards stay visible, numbered as the steps to do. */}
@@ -1355,8 +1355,8 @@ export function SourceOfSalesMappingTab({ distributors, distributorCode, onDistr
 
         <Card className={cn(panelClassName, "space-y-3 p-5")}>
           <div>
-            <h3 className="text-sm font-black uppercase tracking-[0.14em] text-[#64748B]">Advanced — manual coded columns</h3>
-            <p className="mt-1 text-sm leading-6 text-[#64748B]">
+            <h3 className="text-sm font-black uppercase tracking-[0.14em] text-phx-ink-soft">Advanced — manual coded columns</h3>
+            <p className="mt-1 text-sm leading-6 text-phx-ink-soft">
               Optional fallback. If you still prefer to paste the coded columns onto a sheet by hand, copy the headers and
               paste them as the last columns. The importer accepts coded sheets too.
             </p>

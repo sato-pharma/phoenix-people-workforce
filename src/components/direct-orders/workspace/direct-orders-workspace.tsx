@@ -155,7 +155,7 @@ const shortDate = (value: string | null) => (value ? String(value).slice(0, 10) 
 const surface = (variant: Variant) =>
   variant === "portal"
     ? "rounded-xl border border-slate-200 bg-white"
-    : "border border-[#e4e9ec] bg-white";
+    : "border border-phx-line bg-white";
 
 const control = (variant: Variant) => (variant === "portal" ? "rounded-lg" : "");
 

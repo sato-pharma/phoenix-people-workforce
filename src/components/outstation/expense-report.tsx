@@ -325,7 +325,7 @@ function HrDecisionControls({
           Amount
         </span>
         <input
-          className="h-8 w-28 rounded-lg border border-border bg-white px-2 text-right font-mono text-xs text-text focus:border-[#F97316] focus:outline-none"
+          className="h-8 w-28 rounded-lg border border-border bg-white px-2 text-right font-mono text-xs text-text focus:border-phx-accent focus:outline-none"
           inputMode="decimal"
           min={0}
           onChange={(event) => onUpdate({ approvedAmount: Number(event.target.value) || 0 })}
@@ -1006,15 +1006,15 @@ export function ExpenseReport({
       <div className="relative overflow-hidden border-b border-[#1F2937] bg-[radial-gradient(circle_at_top_right,rgba(249,115,22,0.24),transparent_34%),linear-gradient(135deg,#080B10_0%,#111827_58%,#24150D_100%)] px-5 py-6 text-white">
         <div
           aria-hidden="true"
-          className="pointer-events-none absolute -right-16 -top-20 h-48 w-48 rounded-full bg-[#F97316]/20 blur-3xl"
+          className="pointer-events-none absolute -right-16 -top-20 h-48 w-48 rounded-full bg-phx-accent/20 blur-3xl"
         />
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="relative z-10">
-            <p className="inline-flex rounded-full border border-[#F97316]/35 bg-[#F97316]/12 px-3 py-1 text-[11px] font-black uppercase tracking-[0.22em] text-[#FDBA74]">
+            <p className="inline-flex rounded-full border border-phx-accent/35 bg-phx-accent/12 px-3 py-1 text-[11px] font-black uppercase tracking-[0.22em] text-phx-accent">
               Outstation Expense Operations
             </p>
             <h2 className="mt-3 text-2xl font-black tracking-tight text-white">Outstation Expenses Report</h2>
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-[#CBD5E1]">
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-phx-line-strong">
               {analysis
                 ? `${analysis.fileName} - ${formatNumber(analysis.summary.trips)} trips saved for review`
                 : "Upload a historical outstation expenses sheet, approve rows from HR, then import approved expenses into payroll."}
@@ -1058,7 +1058,7 @@ export function ExpenseReport({
             Download Outstation Expenses
           </Button>
           <Button
-            className="rounded-2xl border border-[#FDBA74]/40 bg-[#F97316] px-3 py-2 text-xs text-white shadow-[0_14px_30px_rgba(249,115,22,0.22)] hover:bg-[#EA580C]"
+            className="rounded-2xl border border-phx-accent-line/40 bg-phx-accent px-3 py-2 text-xs text-white shadow-[0_14px_30px_rgba(249,115,22,0.22)] hover:bg-phx-accent-hover"
             disabled={!analysis || savingApprovals}
             onClick={saveApprovals}
             variant="secondary"
@@ -1078,7 +1078,7 @@ export function ExpenseReport({
       {error && <ExpenseErrorBanner message={error} />}
 
       {reports.length > 0 && (
-        <div className="overflow-hidden rounded-[28px] border border-[#D8E0EA] bg-white/94 shadow-[0_16px_38px_rgba(15,23,42,0.07)]">
+        <div className="overflow-hidden rounded-[28px] border border-phx-line bg-white/94 shadow-[0_16px_38px_rgba(15,23,42,0.07)]">
           <input
             accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             className="hidden"
@@ -1089,10 +1089,10 @@ export function ExpenseReport({
             ref={replaceReportInputRef}
             type="file"
           />
-          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#E2E8F0] bg-[linear-gradient(135deg,#F8FAFC_0%,#FFF7ED_100%)] px-4 py-3">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-phx-line bg-[linear-gradient(135deg,#F8FAFC_0%,#FFF7ED_100%)] px-4 py-3">
             <div>
-              <h3 className="text-sm font-semibold text-[#0F172A]">Historical Outstation Uploads</h3>
-              <p className="mt-0.5 text-xs text-[#64748B]">
+              <h3 className="text-sm font-semibold text-phx-ink">Historical Outstation Uploads</h3>
+              <p className="mt-0.5 text-xs text-phx-ink-soft">
                 Preview, replace, or delete historical uploaded expense reports from the system database.
               </p>
             </div>
@@ -1102,7 +1102,7 @@ export function ExpenseReport({
             {reports.slice(0, 12).map((report) => (
               <div
                 className={cn(
-                  "flex flex-wrap items-center justify-between gap-3 px-4 py-3 transition-colors hover:bg-[#FFF7ED]/70",
+                  "flex flex-wrap items-center justify-between gap-3 px-4 py-3 transition-colors hover:bg-phx-accent-soft/70",
                   selectedReportId === report.id && "bg-emerald-50/80 ring-1 ring-inset ring-emerald-200",
                 )}
                 key={report.id}
@@ -1162,14 +1162,14 @@ export function ExpenseReport({
         <div className="space-y-5">
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
             {[
-              { label: "Trips", tone: "bg-[#F8FAFC] text-[#0F172A]", value: formatNumber(analysis.summary.trips) },
-              { label: "Specialists", tone: "bg-[#F8FAFC] text-[#0F172A]", value: formatNumber(analysis.summary.specialists) },
+              { label: "Trips", tone: "bg-phx-paper text-phx-ink", value: formatNumber(analysis.summary.trips) },
+              { label: "Specialists", tone: "bg-phx-paper text-phx-ink", value: formatNumber(analysis.summary.specialists) },
               { label: "Filtered Total", tone: "bg-orange-50 text-orange-800", value: formatEGP(filteredTotal) },
               { label: "Travel Cost", tone: "bg-amber-50 text-amber-800", value: formatEGP(analysis.summary.totalTravelCost) },
               { label: "HR/Admin Approved", tone: "bg-emerald-50 text-emerald-800", value: formatEGP(approvedTotal) },
               { label: "Unmapped", tone: "bg-rose-50 text-rose-800", value: formatNumber(unmappedRecords.length) },
             ].map((metric) => (
-              <div className={cn("rounded-2xl border border-[#E2E8F0] p-4", metric.tone)} key={metric.label}>
+              <div className={cn("rounded-2xl border border-phx-line p-4", metric.tone)} key={metric.label}>
                 <p className="text-[10px] font-bold uppercase tracking-[0.16em] opacity-70">{metric.label}</p>
                 <p className="mt-2 truncate font-mono text-lg font-bold">{metric.value}</p>
               </div>
@@ -1221,13 +1221,13 @@ export function ExpenseReport({
             </div>
           </AdminCallout>
 
-          <div className="flex flex-wrap items-center gap-2 rounded-[28px] border border-[#D8E0EA] bg-white/90 p-4 shadow-[0_16px_38px_rgba(15,23,42,0.06)]">
+          <div className="flex flex-wrap items-center gap-2 rounded-[28px] border border-phx-line bg-white/90 p-4 shadow-[0_16px_38px_rgba(15,23,42,0.06)]">
             <div className="mr-2">
-              <p className="text-sm font-semibold text-[#0F172A]">Import to Payroll</p>
-              <p className="text-xs text-[#64748B]">Saved HR/admin approved rows with HR ID only.</p>
+              <p className="text-sm font-semibold text-phx-ink">Import to Payroll</p>
+              <p className="text-xs text-phx-ink-soft">Saved HR/admin approved rows with HR ID only.</p>
             </div>
             <SearchableSelect
-              className="h-10 rounded-2xl border border-[#D7E0EA] bg-white px-3 text-sm text-[#0F172A] focus:outline-none"
+              className="h-10 rounded-2xl border border-[#D7E0EA] bg-white px-3 text-sm text-phx-ink focus:outline-none"
               onChange={(event) => setImportMonth(event.target.value)}
               value={importMonth}
             >
@@ -1238,7 +1238,7 @@ export function ExpenseReport({
               ))}
             </SearchableSelect>
             <SearchableSelect
-              className="h-10 rounded-2xl border border-[#D7E0EA] bg-white px-3 text-sm text-[#0F172A] focus:outline-none"
+              className="h-10 rounded-2xl border border-[#D7E0EA] bg-white px-3 text-sm text-phx-ink focus:outline-none"
               onChange={(event) => setImportYear(event.target.value)}
               value={importYear}
             >
@@ -1261,7 +1261,7 @@ export function ExpenseReport({
             </p>
           </div>
 
-          <div className="grid gap-3 rounded-[28px] border border-[#E2E8F0] bg-[#F8FAFC]/80 p-3 md:grid-cols-[1fr_180px_180px_auto]">
+          <div className="grid gap-3 rounded-[28px] border border-phx-line bg-phx-paper/80 p-3 md:grid-cols-[1fr_180px_180px_auto]">
             <Input
               className="bg-white"
               onChange={(event) => setSearch(event.target.value)}
@@ -1295,7 +1295,7 @@ export function ExpenseReport({
 
           <div className="space-y-2">
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.14em] text-[#64748B]">
+              <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.14em] text-phx-ink-soft">
                 <span>Review &amp; approve</span>
                 <Badge variant="neutral">{formatNumber(records.length)} rows</Badge>
                 <span className="hidden font-normal normal-case tracking-normal text-text-secondary sm:inline">
@@ -1325,7 +1325,7 @@ export function ExpenseReport({
                           </span>
                           <div className="flex items-center gap-2">
                             <button
-                              className="text-[11px] font-semibold text-[#EA580C] hover:underline"
+                              className="text-[11px] font-semibold text-phx-accent-hover hover:underline"
                               onClick={() => setHiddenColumns(new Set())}
                               type="button"
                             >
@@ -1347,7 +1347,7 @@ export function ExpenseReport({
                           >
                             <input
                               checked={!hiddenColumns.has(column.key)}
-                              className="accent-[#F97316]"
+                              className="accent-phx-accent"
                               onChange={() => toggleColumnVisibility(column.key)}
                               type="checkbox"
                             />
@@ -1368,7 +1368,7 @@ export function ExpenseReport({
               </div>
             ) : null}
 
-            <div className="overflow-hidden rounded-[28px] border border-[#E2E8F0] bg-white shadow-[0_16px_38px_rgba(15,23,42,0.06)]">
+            <div className="overflow-hidden rounded-[28px] border border-phx-line bg-white shadow-[0_16px_38px_rgba(15,23,42,0.06)]">
               {/* Below `md` the review is a card list. This table is 1,240px+ with a sticky
                   employee column and a sticky HR-decision column, so on a phone it was a sideways
                   scroll whose *decision controls* — the whole point of the screen — sat off the
@@ -1433,7 +1433,7 @@ export function ExpenseReport({
 
               <div
                 aria-hidden="true"
-                className="hidden overflow-x-auto overflow-y-hidden border-b border-[#EEF2F6] bg-[#F8FAFC] md:block [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-300 hover:[&::-webkit-scrollbar-thumb]:bg-slate-400 [&::-webkit-scrollbar]:h-3"
+                className="hidden overflow-x-auto overflow-y-hidden border-b border-[#EEF2F6] bg-phx-paper md:block [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-300 hover:[&::-webkit-scrollbar-thumb]:bg-slate-400 [&::-webkit-scrollbar]:h-3"
                 onScroll={handleTopScroll}
                 ref={topScrollRef}
               >
@@ -1446,8 +1446,8 @@ export function ExpenseReport({
               >
                 <table className="w-max min-w-full border-separate border-spacing-0 text-left text-sm" ref={reviewTableRef}>
                   <thead>
-                    <tr className="text-xs uppercase tracking-[0.12em] text-[#64748B]">
-                      <th className="sticky left-0 top-0 z-30 min-w-[210px] border-b border-r border-[#E2E8F0] bg-[#F8FAFC] px-3 py-3 align-top font-semibold shadow-[8px_0_12px_-12px_rgba(15,23,42,0.45)]">
+                    <tr className="text-xs uppercase tracking-[0.12em] text-phx-ink-soft">
+                      <th className="sticky left-0 top-0 z-30 min-w-[210px] border-b border-r border-phx-line bg-phx-paper px-3 py-3 align-top font-semibold shadow-[8px_0_12px_-12px_rgba(15,23,42,0.45)]">
                         <TableHeaderMenu
                           filterValue={columnFilters.specialist ?? ""}
                           label="Employee"
@@ -1459,7 +1459,7 @@ export function ExpenseReport({
                         />
                       </th>
                       {visibleDetailColumns.map((column) => (
-                        <th className={cn("sticky top-0 z-20 whitespace-nowrap border-b border-[#E2E8F0] bg-[#F8FAFC] px-3 py-3 align-top font-semibold", column.className)} key={column.key}>
+                        <th className={cn("sticky top-0 z-20 whitespace-nowrap border-b border-phx-line bg-phx-paper px-3 py-3 align-top font-semibold", column.className)} key={column.key}>
                           <TableHeaderMenu
                             filterValue={columnFilters[column.key] ?? ""}
                             label={column.label}
@@ -1474,7 +1474,7 @@ export function ExpenseReport({
                           />
                         </th>
                       ))}
-                      <th className="sticky right-0 top-0 z-30 min-w-[320px] border-b border-l border-[#E2E8F0] bg-[#F8FAFC] px-3 py-3 text-left align-top font-semibold shadow-[-8px_0_12px_-12px_rgba(15,23,42,0.45)]">
+                      <th className="sticky right-0 top-0 z-30 min-w-[320px] border-b border-l border-phx-line bg-phx-paper px-3 py-3 text-left align-top font-semibold shadow-[-8px_0_12px_-12px_rgba(15,23,42,0.45)]">
                         HR Decision
                         <span className="mt-1 block text-[10px] font-medium normal-case tracking-normal text-text-secondary">
                           Approve · adjust amount · add reason
@@ -1500,7 +1500,7 @@ export function ExpenseReport({
                         return (
                         <Fragment key={`${record.tripId}-${record.row}`}>
                         <tr className="group">
-                          <td className="sticky left-0 z-10 min-w-[210px] border-b border-r border-slate-100 bg-white px-3 py-3 align-top shadow-[8px_0_12px_-12px_rgba(15,23,42,0.35)] group-hover:bg-[#FFF7ED]">
+                          <td className="sticky left-0 z-10 min-w-[210px] border-b border-r border-slate-100 bg-white px-3 py-3 align-top shadow-[8px_0_12px_-12px_rgba(15,23,42,0.35)] group-hover:bg-phx-accent-soft">
                             <p className="whitespace-nowrap font-semibold text-text">{record.specialist || "Unassigned"}</p>
                             <p className="mt-0.5 whitespace-nowrap font-mono text-[11px] text-text-secondary">
                               {record.hrId ? record.hrId : "HR ID not mapped"}
@@ -1531,7 +1531,7 @@ export function ExpenseReport({
 
                             if (column.key === "validation") {
                               return (
-                                <td className={cn("whitespace-nowrap border-b border-slate-100 px-3 py-3 align-top group-hover:bg-[#FFF7ED]", column.className)} key={column.key}>
+                                <td className={cn("whitespace-nowrap border-b border-slate-100 px-3 py-3 align-top group-hover:bg-phx-accent-soft", column.className)} key={column.key}>
                                   <Badge variant={issues.length > 0 ? "warning" : "success"}>
                                     {issues.length > 0 ? issues.join(", ") : "Ready"}
                                   </Badge>
@@ -1541,7 +1541,7 @@ export function ExpenseReport({
 
                             if (column.key === "hrId") {
                               return (
-                                <td className={cn("whitespace-nowrap border-b border-slate-100 px-3 py-3 align-top font-mono text-xs text-text-secondary group-hover:bg-[#FFF7ED]", column.className)} key={column.key}>
+                                <td className={cn("whitespace-nowrap border-b border-slate-100 px-3 py-3 align-top font-mono text-xs text-text-secondary group-hover:bg-phx-accent-soft", column.className)} key={column.key}>
                                   {record.hrId ? record.hrId : (
                                     <Badge variant="warning">Not mapped</Badge>
                                   )}
@@ -1552,7 +1552,7 @@ export function ExpenseReport({
                             return (
                               <td
                                 className={cn(
-                                  "whitespace-nowrap border-b border-slate-100 px-3 py-3 align-top text-text-secondary group-hover:bg-[#FFF7ED]",
+                                  "whitespace-nowrap border-b border-slate-100 px-3 py-3 align-top text-text-secondary group-hover:bg-phx-accent-soft",
                                   column.className,
                                   (isMoney || isNumeric) && "text-right font-mono text-xs",
                                   column.key === "total" && "font-semibold text-text",
@@ -1566,7 +1566,7 @@ export function ExpenseReport({
                           })}
                           <td
                             className={cn(
-                              "sticky right-0 z-10 min-w-[320px] border-b border-l border-slate-100 bg-white px-3 py-3 align-top shadow-[-8px_0_12px_-12px_rgba(15,23,42,0.35)] group-hover:bg-[#FFF7ED]",
+                              "sticky right-0 z-10 min-w-[320px] border-b border-l border-slate-100 bg-white px-3 py-3 align-top shadow-[-8px_0_12px_-12px_rgba(15,23,42,0.35)] group-hover:bg-phx-accent-soft",
                               reasonMissing && "bg-rose-50/80 group-hover:bg-rose-50",
                             )}
                           >
@@ -1620,7 +1620,7 @@ export function ExpenseReport({
           )}
         </div>
       ) : (
-        <div className="rounded-[28px] border border-dashed border-[#CBD5E1] bg-white/70 px-4 py-10 text-center text-sm text-[#64748B] shadow-[inset_0_1px_0_rgba(255,255,255,0.75)]">
+        <div className="rounded-[28px] border border-dashed border-phx-line-strong bg-white/70 px-4 py-10 text-center text-sm text-phx-ink-soft shadow-[inset_0_1px_0_rgba(255,255,255,0.75)]">
           No expenses sheet analyzed yet.
         </div>
       )}

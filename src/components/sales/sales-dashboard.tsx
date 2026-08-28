@@ -53,7 +53,7 @@ type Filters = {
 };
 
 const panelClassName =
-  "rounded-3xl border border-[#D8E0EA] bg-white/95 shadow-[0_18px_42px_rgba(15,23,42,0.07)]";
+  "rounded-3xl border border-phx-line bg-white/95 shadow-[0_18px_42px_rgba(15,23,42,0.07)]";
 
 function valueAsNumber(value: unknown) {
   const parsed = Number(value ?? 0);
@@ -154,7 +154,7 @@ function MetricCard({
   };
 
   return (
-    <Card className={`${panelClassName} group relative min-h-[138px] overflow-hidden px-5 py-4 transition-all duration-160 ease-out hover:-translate-y-px hover:border-[#FDBA74] hover:bg-white hover:shadow-md`}>
+    <Card className={`${panelClassName} group relative min-h-[138px] overflow-hidden px-5 py-4 transition-all duration-160 ease-out hover:-translate-y-px hover:border-phx-accent-line hover:bg-white hover:shadow-md`}>
       <div className="pointer-events-none absolute -right-8 -top-10 h-24 w-24 rounded-full bg-orange-200/20 blur-2xl" />
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0 flex-1">
@@ -186,7 +186,7 @@ function ProgressBar({ rate }: { rate: number }) {
   const color = rate >= 1 ? "bg-emerald-500" : rate >= 0.8 ? "bg-amber-500" : "bg-red-500";
 
   return (
-    <div className="h-2 overflow-hidden rounded-full bg-[#F8FAFC]">
+    <div className="h-2 overflow-hidden rounded-full bg-phx-paper">
       <div className={cn("h-full rounded-full", color)} style={{ width: `${Math.min(pct, 100)}%` }} />
     </div>
   );
@@ -195,8 +195,8 @@ function ProgressBar({ rate }: { rate: number }) {
 function SectionHeader({ title, subtitle }: { subtitle?: string; title: string }) {
   return (
     <div>
-      <h2 className="text-base font-bold text-[#0F172A]">{title}</h2>
-      {subtitle && <p className="mt-1 text-sm leading-6 text-[#64748B]">{subtitle}</p>}
+      <h2 className="text-base font-bold text-phx-ink">{title}</h2>
+      {subtitle && <p className="mt-1 text-sm leading-6 text-phx-ink-soft">{subtitle}</p>}
     </div>
   );
 }
@@ -208,12 +208,12 @@ function ChartCard({ children, subtitle, title }: { children: React.ReactNode; s
       <div className="flex items-start justify-between gap-3">
         <SectionHeader title={title} subtitle={subtitle} />
         <div className="flex items-center gap-2">
-          <span className="rounded-full border border-[#FED7AA] bg-[#FFF7ED] px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.16em] text-[#EA580C]">
+          <span className="rounded-full border border-[#FED7AA] bg-phx-accent-soft px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.16em] text-phx-accent-hover">
             Live
           </span>
         </div>
       </div>
-      <div className="relative mt-4 rounded-[24px] border border-[#E2E8F0] bg-[linear-gradient(180deg,#FFFFFF_0%,#F8FAFC_100%)] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.9)]">{children}</div>
+      <div className="relative mt-4 rounded-[24px] border border-phx-line bg-[linear-gradient(180deg,#FFFFFF_0%,#F8FAFC_100%)] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.9)]">{children}</div>
     </Card>
   );
 }
@@ -287,16 +287,16 @@ function TrendLineChart({ rows }: { rows: AnyRow[] }) {
         })}
       </svg>
       {activeRow && (
-        <div className="absolute right-4 top-4 rounded-2xl border border-[#E2E8F0] bg-white/95 p-3 text-xs shadow-[0_18px_40px_rgba(15,23,42,0.18)] backdrop-blur">
-          <p className="font-black text-[#0F172A]">{compactPeriod(valueAsText(activeRow.period))}</p>
-          <p className="mt-1 text-[#64748B]">Sales: {formatCurrency(valueAsNumber(activeRow.sales))}</p>
-          <p className="text-[#64748B]">Target: {formatCurrency(valueAsNumber(activeRow.target))}</p>
-          <p className="text-[#64748B]">Achievement: {formatPercent(valueAsNumber(activeRow.achievementRate))}</p>
+        <div className="absolute right-4 top-4 rounded-2xl border border-phx-line bg-white/95 p-3 text-xs shadow-[0_18px_40px_rgba(15,23,42,0.18)] backdrop-blur">
+          <p className="font-black text-phx-ink">{compactPeriod(valueAsText(activeRow.period))}</p>
+          <p className="mt-1 text-phx-ink-soft">Sales: {formatCurrency(valueAsNumber(activeRow.sales))}</p>
+          <p className="text-phx-ink-soft">Target: {formatCurrency(valueAsNumber(activeRow.target))}</p>
+          <p className="text-phx-ink-soft">Achievement: {formatPercent(valueAsNumber(activeRow.achievementRate))}</p>
         </div>
       )}
-      <div className="mt-3 flex gap-5 rounded-2xl border border-[#E2E8F0] bg-white/80 px-3 py-2 text-xs font-semibold text-[#64748B]">
+      <div className="mt-3 flex gap-5 rounded-2xl border border-phx-line bg-white/80 px-3 py-2 text-xs font-semibold text-phx-ink-soft">
         <span className="flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-full bg-orange-500 shadow-[0_0_12px_rgba(249,115,22,0.7)]" /> Sales</span>
-        <span className="flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-full bg-[#0F172A]/70" /> Target</span>
+        <span className="flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-full bg-phx-ink/70" /> Target</span>
       </div>
     </div>
   );
@@ -310,7 +310,7 @@ function DonutChart({ rows, total }: { rows: AnyRow[]; total: number }) {
   return (
     <div className="grid gap-5 sm:grid-cols-[190px_minmax(0,1fr)]">
       <div className="relative mx-auto h-44 w-44 rounded-full p-2 shadow-[0_20px_45px_rgba(15,23,42,0.12)] transition-all duration-160 ease-out hover:shadow-lg" style={{ background: `conic-gradient(${gradient})` }}>
-        <div className="absolute inset-7 flex flex-col items-center justify-center rounded-full border border-[#E2E8F0] bg-white shadow-[inset_0_1px_0_rgba(255,255,255,0.9)]">
+        <div className="absolute inset-7 flex flex-col items-center justify-center rounded-full border border-phx-line bg-white shadow-[inset_0_1px_0_rgba(255,255,255,0.9)]">
           <p className="text-2xl font-black text-slate-900">{shortCurrency(total).replace("EGP ", "")}</p>
           <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500">EGP Total</p>
         </div>
@@ -320,18 +320,18 @@ function DonutChart({ rows, total }: { rows: AnyRow[]; total: number }) {
           const value = valueAsNumber(row.value);
           const rate = total > 0 ? value / total : 0;
           return (
-            <div className="rounded-2xl border border-[#E2E8F0] bg-white/80 px-3 py-2 text-sm shadow-sm transition-all duration-160 ease-out hover:shadow-md hover:border-orange-200/60" key={valueAsText(row.name)}>
+            <div className="rounded-2xl border border-phx-line bg-white/80 px-3 py-2 text-sm shadow-sm transition-all duration-160 ease-out hover:shadow-md hover:border-orange-200/60" key={valueAsText(row.name)}>
               <div className="flex items-center justify-between gap-3">
               <span className="flex items-center gap-2 font-bold text-slate-900">
-                <span className={cn("h-2.5 w-2.5 rounded-full", index === 0 ? "bg-orange-500 shadow-[0_0_10px_rgba(249,115,22,0.7)]" : "bg-[#0F172A]")} />
+                <span className={cn("h-2.5 w-2.5 rounded-full", index === 0 ? "bg-orange-500 shadow-[0_0_10px_rgba(249,115,22,0.7)]" : "bg-phx-ink")} />
                 {valueAsText(row.name)}
               </span>
               <span className="text-right text-xs font-semibold text-slate-600">
                 {shortCurrency(value).replace("EGP ", "")} / {formatPercent(rate)}
               </span>
               </div>
-              <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-[#F1F5F9]">
-                <div className={cn("h-full rounded-full transition-all duration-160 ease-out", index === 0 ? "bg-gradient-to-r from-orange-400 to-orange-600" : "bg-[#0F172A]")} style={{ width: `${Math.min(rate * 100, 100)}%` }} />
+              <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-phx-paper-2">
+                <div className={cn("h-full rounded-full transition-all duration-160 ease-out", index === 0 ? "bg-gradient-to-r from-orange-400 to-orange-600" : "bg-phx-ink")} style={{ width: `${Math.min(rate * 100, 100)}%` }} />
               </div>
             </div>
           );
@@ -347,25 +347,25 @@ function TopList({ labelKey, rows, title }: { labelKey: string; rows: AnyRow[]; 
   const total = topRows.reduce((acc, row) => acc + valueAsNumber(row.sales), 0);
 
   return (
-    <Card className="rounded-3xl border-[#E2E8F0] bg-white/95 p-4 shadow-[0_16px_36px_rgba(15,23,42,0.07)]">
-      <h3 className="text-xs font-black uppercase tracking-[0.1em] text-[#0F172A]">{title}</h3>
+    <Card className="rounded-3xl border-phx-line bg-white/95 p-4 shadow-[0_16px_36px_rgba(15,23,42,0.07)]">
+      <h3 className="text-xs font-black uppercase tracking-[0.1em] text-phx-ink">{title}</h3>
       <div className="mt-3 space-y-2.5">
         {topRows.map((row, index) => {
           const sales = valueAsNumber(row.sales);
           return (
             <div className="grid grid-cols-[20px_minmax(0,1fr)_60px] items-center gap-2" key={`${valueAsText(row[labelKey])}-${index}`}>
-              <span className="flex h-5 w-5 items-center justify-center rounded-md bg-[#F8FAFC] text-[10px] font-black text-[#64748B]">{index + 1}</span>
+              <span className="flex h-5 w-5 items-center justify-center rounded-md bg-phx-paper text-[10px] font-black text-phx-ink-soft">{index + 1}</span>
               <div className="min-w-0">
                 <div className="flex items-center justify-between gap-2 text-xs">
-                  <p className="truncate font-bold text-[#0F172A]">{valueAsText(row[labelKey])}</p>
-                  <p className="shrink-0 text-[10px] font-bold text-[#64748B]">{shortCurrency(sales).replace("EGP ", "")}</p>
+                  <p className="truncate font-bold text-phx-ink">{valueAsText(row[labelKey])}</p>
+                  <p className="shrink-0 text-[10px] font-bold text-phx-ink-soft">{shortCurrency(sales).replace("EGP ", "")}</p>
                 </div>
-                {valueAsText(row.area) && <p className="mt-0.5 truncate text-[10px] font-semibold text-[#64748B]">{valueAsText(row.area)}</p>}
-                <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-[#F1F5F9]">
+                {valueAsText(row.area) && <p className="mt-0.5 truncate text-[10px] font-semibold text-phx-ink-soft">{valueAsText(row.area)}</p>}
+                <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-phx-paper-2">
                   <div className="h-full rounded-full bg-[linear-gradient(90deg,#F59E0B_0%,#F97316_100%)]" style={{ width: `${Math.min((sales / max) * 100, 100)}%` }} />
                 </div>
               </div>
-              <p className="text-right text-[10px] font-semibold text-[#64748B]">{formatPercent(total > 0 ? sales / total : 0)}</p>
+              <p className="text-right text-[10px] font-semibold text-phx-ink-soft">{formatPercent(total > 0 ? sales / total : 0)}</p>
             </div>
           );
         })}
@@ -422,12 +422,12 @@ function RankingHalfTable({
   const renderValue = (row: AnyRow) => (metric === "achievement" ? formatPercent(valueAsNumber(row.achievementRate)) : formatCurrency(valueAsNumber(row.sales)));
 
   return (
-    <div className="overflow-hidden rounded-xl border border-[#E2E8F0] transition-all duration-160 ease-out hover:shadow-md hover:border-[#FDBA74]/50">
+    <div className="overflow-hidden rounded-xl border border-phx-line transition-all duration-160 ease-out hover:shadow-md hover:border-phx-accent-line/50">
       <div className={cn("px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.12em]", tone === "top" ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700")}>
         {label}
       </div>
       <table className="w-full text-left text-xs">
-        <thead className="bg-[#F8FAFC] text-[9px] uppercase tracking-[0.08em] text-[#64748B]">
+        <thead className="bg-phx-paper text-[9px] uppercase tracking-[0.08em] text-phx-ink-soft">
           <tr>
             <th className="px-2 py-1.5 font-semibold">#</th>
             <th className="px-2 py-1.5 font-semibold">Name</th>
@@ -441,18 +441,18 @@ function RankingHalfTable({
           {tableRows.map((row, index) => {
             const isTopPerformer = index === 0 && tone === "top";
             return (
-              <tr className={cn("transition-all duration-160 ease-out hover:bg-[#F8FAFC]/80", isTopPerformer && "bg-emerald-50/30")} key={`${valueAsText(row.name)}-${label}-${index}`}>
-                <td className={cn("px-2 py-1.5 font-black text-[10px]", isTopPerformer ? "text-emerald-600" : "text-[#64748B]")}>{index + 1}</td>
+              <tr className={cn("transition-all duration-160 ease-out hover:bg-phx-paper/80", isTopPerformer && "bg-emerald-50/30")} key={`${valueAsText(row.name)}-${label}-${index}`}>
+                <td className={cn("px-2 py-1.5 font-black text-[10px]", isTopPerformer ? "text-emerald-600" : "text-phx-ink-soft")}>{index + 1}</td>
                 <td className="max-w-[180px] px-2 py-1.5">
                   <div className="flex items-center gap-1.5">
                     {isTopPerformer && <span className="h-1 w-1 rounded-full bg-emerald-500 animate-pulse" style={{ animationDuration: '1.5s' }} />}
-                    <p className={cn("truncate text-xs font-semibold", isTopPerformer ? "text-slate-900 font-bold" : "text-[#0F172A]")}>{valueAsText(row.name)}</p>
+                    <p className={cn("truncate text-xs font-semibold", isTopPerformer ? "text-slate-900 font-bold" : "text-phx-ink")}>{valueAsText(row.name)}</p>
                   </div>
                 </td>
-                <td className="max-w-[120px] truncate px-2 py-1.5 text-[10px] font-semibold text-[#64748B]">{valueAsText(row.area) || "-"}</td>
+                <td className="max-w-[120px] truncate px-2 py-1.5 text-[10px] font-semibold text-phx-ink-soft">{valueAsText(row.area) || "-"}</td>
                 <td className={cn("px-2 py-1.5 text-xs font-black", tone === "top" ? "text-emerald-600" : "text-rose-600")}>{renderValue(row)}</td>
-                <td className="px-2 py-1.5 text-xs text-[#64748B]">{shortCurrency(row.sales)}</td>
-                <td className="px-2 py-1.5 text-xs text-[#64748B]">{shortCurrency(row.target)}</td>
+                <td className="px-2 py-1.5 text-xs text-phx-ink-soft">{shortCurrency(row.sales)}</td>
+                <td className="px-2 py-1.5 text-xs text-phx-ink-soft">{shortCurrency(row.target)}</td>
               </tr>
             );
           })}
@@ -482,7 +482,7 @@ function LeadershipTable({ rows, title }: { rows: AnyRow[]; title: string }) {
       <div className="flex items-center justify-between gap-3">
         <SectionHeader title={title} />
         <div className="flex items-center gap-2">
-          <span className="rounded-full border border-[#FED7AA] bg-[#FFF7ED] px-2 py-0.5 text-[9px] font-black uppercase tracking-[0.14em] text-[#EA580C]">
+          <span className="rounded-full border border-[#FED7AA] bg-phx-accent-soft px-2 py-0.5 text-[9px] font-black uppercase tracking-[0.14em] text-phx-accent-hover">
             Live
           </span>
         </div>
@@ -505,9 +505,9 @@ function LeadershipTable({ rows, title }: { rows: AnyRow[]; title: string }) {
             <TableSearchInput value={table.query} onChange={table.setQuery} onClear={table.clearQuery} placeholder="Search name…" />
           </div>
         </div>
-        <div className="max-h-48 overflow-y-auto rounded-xl border border-[#E2E8F0] bg-white">
+        <div className="max-h-48 overflow-y-auto rounded-xl border border-phx-line bg-white">
           <table className="w-full text-left text-xs">
-            <thead className="bg-[#F8FAFC] text-[9px] uppercase tracking-[0.08em] text-[#64748B] sticky top-0">
+            <thead className="bg-phx-paper text-[9px] uppercase tracking-[0.08em] text-phx-ink-soft sticky top-0">
               <tr>
                 <SortableTh label="Name" sortKey="name" {...leaderThProps(table)} />
                 <SortableTh label="Sales" sortKey="sales" {...leaderThProps(table)} />
@@ -518,15 +518,15 @@ function LeadershipTable({ rows, title }: { rows: AnyRow[]; title: string }) {
             <tbody className="divide-y divide-slate-100">
               {table.rows.length === 0 ? (
                 <tr>
-                  <td className="px-2 py-4 text-center text-xs text-[#94A3B8]" colSpan={4}>
+                  <td className="px-2 py-4 text-center text-xs text-phx-ink-faint" colSpan={4}>
                     {table.isFiltered ? "No names match your search." : "No rows."}
                   </td>
                 </tr>
               ) : table.rows.map((row, index) => (
-                <tr className="transition-all duration-160 ease-out hover:bg-[#F8FAFC]/80" key={`${valueAsText(row.name)}-${index}`}>
-                  <td className="max-w-[180px] truncate px-2 py-1.5 text-xs font-semibold text-[#0F172A]">{valueAsText(row.name)}</td>
-                  <td className="px-2 py-1.5 text-xs font-black text-[#F97316]">{shortCurrency(row.sales)}</td>
-                  <td className="px-2 py-1.5 text-xs text-[#64748B]">{shortCurrency(row.target)}</td>
+                <tr className="transition-all duration-160 ease-out hover:bg-phx-paper/80" key={`${valueAsText(row.name)}-${index}`}>
+                  <td className="max-w-[180px] truncate px-2 py-1.5 text-xs font-semibold text-phx-ink">{valueAsText(row.name)}</td>
+                  <td className="px-2 py-1.5 text-xs font-black text-phx-accent">{shortCurrency(row.sales)}</td>
+                  <td className="px-2 py-1.5 text-xs text-phx-ink-soft">{shortCurrency(row.target)}</td>
                   <td className="px-2 py-1.5 text-xs font-black">{formatPercent(valueAsNumber(row.achievementRate))}</td>
                 </tr>
               ))}
@@ -592,7 +592,7 @@ function ComparativeLineSales({ rows }: { rows: AnyRow[] }) {
       <SectionHeader title="Comparative Sales by Line" subtitle="Sales, target, achievement, and contribution by selected line." />
       <div className="mt-3 space-y-2.5">
         {topRows.length === 0 ? (
-          <p className="rounded-lg border border-[#E2E8F0] bg-[#F8FAFC] p-3 text-xs text-[#64748B]">No line sales data for the selected filters.</p>
+          <p className="rounded-lg border border-phx-line bg-phx-paper p-3 text-xs text-phx-ink-soft">No line sales data for the selected filters.</p>
         ) : (
           topRows.map((row, index) => {
             const sales = valueAsNumber(row.sales);
@@ -600,7 +600,7 @@ function ComparativeLineSales({ rows }: { rows: AnyRow[] }) {
             const rate = valueAsNumber(row.achievementRate);
             const isTopPerformer = index === 0;
             return (
-              <div className={cn("rounded-xl border bg-white/80 px-3 py-2.5 shadow-sm transition-all duration-160 ease-out hover:border-[#FDBA74] hover:bg-white hover:shadow-md", isTopPerformer ? "border-orange-200/60 bg-gradient-to-r from-orange-50/30 to-white" : "border-[#E2E8F0]")} key={valueAsText(row.line)}>
+              <div className={cn("rounded-xl border bg-white/80 px-3 py-2.5 shadow-sm transition-all duration-160 ease-out hover:border-phx-accent-line hover:bg-white hover:shadow-md", isTopPerformer ? "border-orange-200/60 bg-gradient-to-r from-orange-50/30 to-white" : "border-phx-line")} key={valueAsText(row.line)}>
                 <div className="flex items-center justify-between gap-2">
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-1.5">
@@ -615,7 +615,7 @@ function ComparativeLineSales({ rows }: { rows: AnyRow[] }) {
                   </div>
                 </div>
                 <div className="mt-2 grid gap-1">
-                  <div className="h-2 overflow-hidden rounded-full bg-[#F1F5F9] shadow-[inset_0 1px 2px_rgba(15,23,42,0.06)]">
+                  <div className="h-2 overflow-hidden rounded-full bg-phx-paper-2 shadow-[inset_0 1px 2px_rgba(15,23,42,0.06)]">
                     <div className={cn("h-full rounded-full shadow-[0_0_14px_rgba(249,115,22,0.35)] transition-all duration-160 ease-out", isTopPerformer ? "bg-gradient-to-r from-orange-400 to-orange-600" : "bg-gradient-to-r from-amber-400 to-orange-600")} style={{ width: `${Math.min((sales / maxSales) * 100, 100)}%` }} />
                   </div>
                   <div className="flex justify-between text-[10px] font-semibold text-slate-500">
@@ -636,7 +636,7 @@ function AchievementBars({ rows }: { rows: AnyRow[] }) {
   const [activePeriod, setActivePeriod] = useState<string | null>(null);
 
   return (
-    <div className="flex h-72 items-end gap-3 rounded-[22px] border border-[#E2E8F0] bg-white/70 px-3 pb-3 pt-6">
+    <div className="flex h-72 items-end gap-3 rounded-[22px] border border-phx-line bg-white/70 px-3 pb-3 pt-6">
       {rows.map((row) => {
         const achievement = valueAsNumber(row.achievement);
         const period = valueAsText(row.period);
@@ -664,9 +664,9 @@ function AchievementBars({ rows }: { rows: AnyRow[] }) {
             <p className={cn("text-xs font-black text-slate-900 transition-all duration-160 ease-out", isActive ? "scale-110" : "")}>{achievement.toFixed(0)}%</p>
             <p className="truncate text-[11px] font-semibold text-slate-500">{compactPeriod(period).replace(" 2026", "")}</p>
             {isActive && (
-              <div className="absolute bottom-24 z-10 w-44 rounded-2xl border border-[#E2E8F0] bg-white/95 p-3 text-center text-xs shadow-[0_18px_40px_rgba(15,23,42,0.18)] backdrop-blur">
-                <p className="font-bold text-[#0F172A]">{compactPeriod(period)}</p>
-                <p className="mt-1 text-[#64748B]">Achievement {achievement.toFixed(1)}%</p>
+              <div className="absolute bottom-24 z-10 w-44 rounded-2xl border border-phx-line bg-white/95 p-3 text-center text-xs shadow-[0_18px_40px_rgba(15,23,42,0.18)] backdrop-blur">
+                <p className="font-bold text-phx-ink">{compactPeriod(period)}</p>
+                <p className="mt-1 text-phx-ink-soft">Achievement {achievement.toFixed(1)}%</p>
               </div>
             )}
           </div>
@@ -734,7 +734,7 @@ function PeriodFilter({
         <ChevronDown className={cn("h-4 w-4 text-slate-400 transition-transform duration-160 ease-out", open && "rotate-180")} />
       </button>
       {open && (
-        <div className="absolute z-30 mt-2 w-full rounded-xl border border-[#E2E8F0] bg-white p-3 shadow-2xl">
+        <div className="absolute z-30 mt-2 w-full rounded-xl border border-phx-line bg-white p-3 shadow-2xl">
           <label className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-2 text-sm font-semibold text-slate-900 hover:bg-slate-50">
             <input checked={allSelected} className="h-4 w-4 accent-orange-600" onChange={() => onChange([])} type="checkbox" />
             Select All
@@ -780,9 +780,9 @@ function FilterChip({ label, onRemove }: { label: string; onRemove: () => void }
 
 function MiniStat({ icon: Icon, label, value }: { icon: React.ComponentType<{ className?: string }>; label: string; value: string }) {
   return (
-    <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#64748B]">
+    <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-phx-ink-soft">
       <Icon className="h-3.5 w-3.5" />
-      {label}: <span className="text-[#0F172A]">{value}</span>
+      {label}: <span className="text-phx-ink">{value}</span>
     </span>
   );
 }
@@ -812,9 +812,9 @@ function PerformanceTable({
   rows: AnyRow[];
 }) {
   return (
-    <div className="overflow-hidden rounded-[24px] border border-[#E2E8F0]">
+    <div className="overflow-hidden rounded-[24px] border border-phx-line">
       <table className="w-full text-left text-xs">
-        <thead className="bg-[#F8FAFC] text-[9px] uppercase tracking-[0.08em] text-[#64748B]">
+        <thead className="bg-phx-paper text-[9px] uppercase tracking-[0.08em] text-phx-ink-soft">
           <tr>
             {columns.map((column) => (
               <th className="px-2 py-1.5 font-semibold" key={column.key}>
@@ -823,16 +823,16 @@ function PerformanceTable({
             ))}
           </tr>
         </thead>
-        <tbody className="divide-y divide-[#E2E8F0] bg-white">
+        <tbody className="divide-y divide-phx-line bg-white">
           {rows.length === 0 ? (
             <tr>
-              <td className="px-2 py-4 text-center text-xs text-[#64748B]" colSpan={columns.length}>
+              <td className="px-2 py-4 text-center text-xs text-phx-ink-soft" colSpan={columns.length}>
                 No approved sales data yet.
               </td>
             </tr>
           ) : (
             rows.map((row, index) => (
-              <tr className="transition hover:bg-[#F8FAFC]/80" key={`${row.name ?? row.manager ?? row.product ?? row.period ?? index}-${index}`}>
+              <tr className="transition hover:bg-phx-paper/80" key={`${row.name ?? row.manager ?? row.product ?? row.period ?? index}-${index}`}>
                 {columns.map((column) => (
                   <td className="px-2 py-1.5 align-middle" key={column.key}>
                     {column.render ? column.render(row) : valueAsText(row[column.key])}
@@ -1001,9 +1001,9 @@ function SalesDashboardContent({
   ].filter(Boolean);
 
   return (
-    <div className="min-h-[calc(100vh-7rem)] rounded-[32px] border border-[#E2E8F0] bg-[radial-gradient(circle_at_top_left,rgba(249,115,22,0.12),transparent_30%),linear-gradient(180deg,#F8FAFC_0%,#EEF3F8_100%)] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.9)] sm:p-6 xl:p-8">
+    <div className="min-h-[calc(100vh-7rem)] rounded-[32px] border border-phx-line bg-[radial-gradient(circle_at_top_left,rgba(249,115,22,0.12),transparent_30%),linear-gradient(180deg,#F8FAFC_0%,#EEF3F8_100%)] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.9)] sm:p-6 xl:p-8">
       <div className="space-y-7">
-      <div className="relative overflow-hidden rounded-3xl border border-[#D8E0EA] bg-white/95 p-7 shadow-[0_20px_54px_rgba(15,23,42,0.09)]">
+      <div className="relative overflow-hidden rounded-3xl border border-phx-line bg-white/95 p-7 shadow-[0_20px_54px_rgba(15,23,42,0.09)]">
         <div className="pointer-events-none absolute -right-16 -top-16 h-48 w-48 rounded-full bg-orange-200/35 blur-3xl" />
         <div className="pointer-events-none absolute bottom-0 left-12 h-28 w-28 rounded-full bg-slate-200/45 blur-2xl" />
         <div className="relative flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
@@ -1042,7 +1042,7 @@ function SalesDashboardContent({
               {!portalMode && (
                 <>
                   <Link href="/sales/upload">
-                    <Button className="gap-2 rounded-xl bg-[#0B0B0B] font-black text-white shadow-[0_12px_26px_rgba(15,23,42,0.18)] transition-all duration-160 ease-out hover:bg-[#F97316] hover:shadow-md hover:-translate-y-px active:scale-95">
+                    <Button className="gap-2 rounded-xl bg-[#0B0B0B] font-black text-white shadow-[0_12px_26px_rgba(15,23,42,0.18)] transition-all duration-160 ease-out hover:bg-phx-accent hover:shadow-md hover:-translate-y-px active:scale-95">
                       <FileSpreadsheet className="h-4 w-4" />
                       Sales Upload
                     </Button>
@@ -1058,16 +1058,16 @@ function SalesDashboardContent({
             </div>
           </div>
         </div>
-        <div className="relative mt-5 flex flex-wrap gap-2 border-t border-[#E2E8F0] pt-4 text-xs">
-            <span className="rounded-full border border-[#E2E8F0] bg-[#F8FAFC] px-3 py-2 font-semibold text-[#64748B]">Period: {periodRangeLabel(selectedPeriods)}</span>
-            <span className="rounded-full border border-[#E2E8F0] bg-[#F8FAFC] px-3 py-2 font-semibold text-[#64748B]">{formatNumber(summary.approvedRecords)} approved rows</span>
-            <span className="rounded-full border border-[#E2E8F0] bg-[#F8FAFC] px-3 py-2 font-semibold text-[#64748B]">Achievement {formatPercent(summary.achievementRate)}</span>
+        <div className="relative mt-5 flex flex-wrap gap-2 border-t border-phx-line pt-4 text-xs">
+            <span className="rounded-full border border-phx-line bg-phx-paper px-3 py-2 font-semibold text-phx-ink-soft">Period: {periodRangeLabel(selectedPeriods)}</span>
+            <span className="rounded-full border border-phx-line bg-phx-paper px-3 py-2 font-semibold text-phx-ink-soft">{formatNumber(summary.approvedRecords)} approved rows</span>
+            <span className="rounded-full border border-phx-line bg-phx-paper px-3 py-2 font-semibold text-phx-ink-soft">Achievement {formatPercent(summary.achievementRate)}</span>
         </div>
       </div>
 
       {/* Executive Summary Intelligence */}
       {hasData && (
-        <div className="relative overflow-hidden rounded-2xl border border-[#D8E0EA] bg-gradient-to-r from-slate-50 to-white p-5 shadow-sm">
+        <div className="relative overflow-hidden rounded-2xl border border-phx-line bg-gradient-to-r from-slate-50 to-white p-5 shadow-sm">
           <div className="pointer-events-none absolute -right-20 -top-20 h-48 w-48 rounded-full bg-orange-200/25 blur-3xl" />
           <div className="relative flex items-start gap-4">
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-orange-500 to-orange-600 text-white shadow-lg">
@@ -1115,7 +1115,7 @@ function SalesDashboardContent({
       {/* Focal Intelligence Blocks */}
       {hasData && (
         <div className="grid gap-4 lg:grid-cols-3">
-          <div className="relative overflow-hidden rounded-2xl border border-[#D8E0EA] bg-gradient-to-br from-emerald-50 to-white p-5 shadow-sm transition-all duration-160 ease-out hover:shadow-md">
+          <div className="relative overflow-hidden rounded-2xl border border-phx-line bg-gradient-to-br from-emerald-50 to-white p-5 shadow-sm transition-all duration-160 ease-out hover:shadow-md">
             <div className="pointer-events-none absolute -right-12 -top-12 h-32 w-32 rounded-full bg-emerald-200/30 blur-3xl" />
             <div className="relative flex items-start gap-3">
               <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-500 to-emerald-600 text-white shadow-md">
@@ -1128,7 +1128,7 @@ function SalesDashboardContent({
               </div>
             </div>
           </div>
-          <div className="relative overflow-hidden rounded-2xl border border-[#D8E0EA] bg-gradient-to-br from-orange-50 to-white p-5 shadow-sm transition-all duration-160 ease-out hover:shadow-md">
+          <div className="relative overflow-hidden rounded-2xl border border-phx-line bg-gradient-to-br from-orange-50 to-white p-5 shadow-sm transition-all duration-160 ease-out hover:shadow-md">
             <div className="pointer-events-none absolute -right-12 -top-12 h-32 w-32 rounded-full bg-orange-200/30 blur-3xl" />
             <div className="relative flex items-start gap-3">
               <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-orange-500 to-orange-600 text-white shadow-md">
@@ -1141,7 +1141,7 @@ function SalesDashboardContent({
               </div>
             </div>
           </div>
-          <div className="relative overflow-hidden rounded-2xl border border-[#D8E0EA] bg-gradient-to-br from-sky-50 to-white p-5 shadow-sm transition-all duration-160 ease-out hover:shadow-md">
+          <div className="relative overflow-hidden rounded-2xl border border-phx-line bg-gradient-to-br from-sky-50 to-white p-5 shadow-sm transition-all duration-160 ease-out hover:shadow-md">
             <div className="pointer-events-none absolute -right-12 -top-12 h-32 w-32 rounded-full bg-sky-200/30 blur-3xl" />
             <div className="relative flex items-start gap-3">
               <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-sky-500 to-sky-600 text-white shadow-md">
@@ -1209,7 +1209,7 @@ function SalesDashboardContent({
             <ReadOnlyField value="All Uploaded Sheets" />
           </FilterField>
         </div>
-          <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-[#E2E8F0] pt-4">
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-phx-line pt-4">
             <div className="flex flex-wrap gap-2">
               <FilterChip label={`Period: ${periodRangeLabel(selectedPeriods)}`} onRemove={() => setFilters((current) => ({ ...current, periods: [] }))} />
               {filters.line && <FilterChip label={`Line: ${filters.line}`} onRemove={() => setFilters((current) => ({ ...current, area: "", line: "" }))} />}
@@ -1273,7 +1273,7 @@ function SalesDashboardContent({
       </div>
 
       {ownershipBadges.length > 0 && (
-        <div className="flex flex-wrap gap-2 rounded-2xl border border-[#D8E0EA] bg-white/90 px-4 py-3 shadow-sm">
+        <div className="flex flex-wrap gap-2 rounded-2xl border border-phx-line bg-white/90 px-4 py-3 shadow-sm">
           {ownershipBadges.map((label) => (
             <Badge key={label} variant="neutral">{label}</Badge>
           ))}
@@ -1349,21 +1349,21 @@ function SalesDashboardContent({
       <Card className={`${panelClassName} p-4`}>
         <div className="grid gap-3 md:grid-cols-3">
           <div className="flex items-center gap-3">
-            <Users className="h-4.5 w-4.5 text-[#F97316]" />
+            <Users className="h-4.5 w-4.5 text-phx-accent" />
             <div>
               <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-slate-500">Linked Employees</p>
               <p className="text-sm font-bold text-slate-900">{formatNumber(summary.linkedEmployees)}</p>
             </div>
           </div>
           <div className="flex items-center gap-3">
-            <MapPinned className="h-4.5 w-4.5 text-[#F97316]" />
+            <MapPinned className="h-4.5 w-4.5 text-phx-accent" />
             <div>
               <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-slate-500">Territories</p>
               <p className="text-sm font-bold text-slate-900">{formatNumber(view.territoryRows.length)}</p>
             </div>
           </div>
           <div className="flex items-center gap-3">
-            <TrendingUp className="h-4.5 w-4.5 text-[#F97316]" />
+            <TrendingUp className="h-4.5 w-4.5 text-phx-accent" />
             <div>
               <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-slate-500">Avg Factory Price</p>
               <p className="text-sm font-bold text-slate-900">{formatCurrency(summary.averageFactoryPrice)}</p>

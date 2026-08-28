@@ -50,19 +50,19 @@ function MultiSelect({
   const count = selected.length;
   return (
     <details className="group relative">
-      <summary className="flex h-10 cursor-pointer list-none items-center gap-2 border border-[#D8E0EA] bg-white px-3 text-sm font-semibold text-[#0F172A] transition hover:border-[#FDBA74] [&::-webkit-details-marker]:hidden">
+      <summary className="flex h-10 cursor-pointer list-none items-center gap-2 border border-phx-line bg-white px-3 text-sm font-semibold text-phx-ink transition hover:border-phx-accent-line [&::-webkit-details-marker]:hidden">
         {label}
         {count > 0 ? (
-          <span className="bg-[#F97316] px-1.5 text-xs font-black text-white">{count}</span>
+          <span className="bg-phx-accent px-1.5 text-xs font-black text-white">{count}</span>
         ) : (
           <span className="text-xs font-normal text-slate-400">All</span>
         )}
         <ChevronDown className="h-4 w-4 text-slate-400 transition group-open:rotate-180" />
       </summary>
-      <div className="absolute left-0 z-40 mt-1 max-h-72 w-72 overflow-auto border border-[#D8E0EA] bg-white p-2 shadow-[0_18px_42px_rgba(15,23,42,0.16)]">
+      <div className="absolute left-0 z-40 mt-1 max-h-72 w-72 overflow-auto border border-phx-line bg-white p-2 shadow-[0_18px_42px_rgba(15,23,42,0.16)]">
         <div className="mb-2 flex items-center justify-between border-b border-slate-100 pb-2">
           <span className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">{count} selected</span>
-          <button className="text-xs font-bold text-[#F97316] hover:underline" onClick={onClear} type="button">Clear</button>
+          <button className="text-xs font-bold text-phx-accent hover:underline" onClick={onClear} type="button">Clear</button>
         </div>
         {options.length === 0 ? (
           <p className="px-2 py-3 text-xs text-slate-400">No options.</p>
@@ -74,7 +74,7 @@ function MultiSelect({
             >
               <input
                 checked={selected.includes(option.code)}
-                className="h-4 w-4 accent-[#F97316]"
+                className="h-4 w-4 accent-phx-accent"
                 onChange={() => onToggle(option.code)}
                 type="checkbox"
               />
@@ -146,7 +146,7 @@ export function CustomerDirectoryFilters({
   }
 
   const periodSelect =
-    "h-10 border border-[#D8E0EA] bg-white px-2 text-sm font-semibold text-[#0F172A] outline-none transition focus:border-[#FDBA74]";
+    "h-10 border border-phx-line bg-white px-2 text-sm font-semibold text-phx-ink outline-none transition focus:border-phx-accent-line";
 
   return (
     <div className="flex flex-wrap items-center gap-2">
@@ -207,7 +207,7 @@ export function CustomerDirectoryFilters({
       <div className="relative">
         <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
         <input
-          className="h-10 w-56 border border-[#D8E0EA] bg-white pl-9 pr-3 text-sm font-medium text-[#0F172A] outline-none transition focus:border-[#FDBA74] focus:ring-4 focus:ring-[#F97316]/10"
+          className="h-10 w-56 border border-phx-line bg-white pl-9 pr-3 text-sm font-medium text-phx-ink outline-none transition focus:border-phx-accent-line focus:ring-4 focus:ring-phx-accent/10"
           onChange={(event) => onChange({ ...value, search: event.target.value })}
           placeholder="Search name / code…"
           type="text"
@@ -216,7 +216,7 @@ export function CustomerDirectoryFilters({
       </div>
       <button
         className={cn(
-          "flex h-10 items-center gap-2 border border-[#D8E0EA] bg-white px-3 text-sm font-bold text-slate-600 transition hover:border-[#FDBA74] hover:text-[#F97316]",
+          "flex h-10 items-center gap-2 border border-phx-line bg-white px-3 text-sm font-bold text-slate-600 transition hover:border-phx-accent-line hover:text-phx-accent",
           !hasFilters && "opacity-50",
         )}
         disabled={!hasFilters}

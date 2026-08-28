@@ -101,14 +101,14 @@ export default async function AdminPrivateCalendarsPage({ searchParams }: PagePr
       />
 
       {/* Filter form */}
-      <form className="border border-[#E2E8F0] bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.06)]" method="get">
+      <form className="border border-phx-line bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.06)]" method="get">
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           <div>
-            <label className="mb-1 block text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">
+            <label className="mb-1 block text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-soft">
               Name
             </label>
             <input
-              className="w-full border border-[#E2E8F0] bg-white px-3 py-1.5 text-sm text-[#0F172A] focus:outline-none focus:ring-1 focus:ring-[#F97316]"
+              className="w-full border border-phx-line bg-white px-3 py-1.5 text-sm text-phx-ink focus:outline-none focus:ring-1 focus:ring-phx-accent"
               defaultValue={nameFilter}
               name="name"
               placeholder="Search by name..."
@@ -116,11 +116,11 @@ export default async function AdminPrivateCalendarsPage({ searchParams }: PagePr
             />
           </div>
           <div>
-            <label className="mb-1 block text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">
+            <label className="mb-1 block text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-soft">
               Line
             </label>
             <select
-              className="w-full border border-[#E2E8F0] bg-white px-3 py-1.5 text-sm text-[#0F172A] focus:outline-none focus:ring-1 focus:ring-[#F97316]"
+              className="w-full border border-phx-line bg-white px-3 py-1.5 text-sm text-phx-ink focus:outline-none focus:ring-1 focus:ring-phx-accent"
               defaultValue={lineFilter}
               name="line"
             >
@@ -131,11 +131,11 @@ export default async function AdminPrivateCalendarsPage({ searchParams }: PagePr
             </select>
           </div>
           <div>
-            <label className="mb-1 block text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">
+            <label className="mb-1 block text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-soft">
               Region / Area
             </label>
             <select
-              className="w-full border border-[#E2E8F0] bg-white px-3 py-1.5 text-sm text-[#0F172A] focus:outline-none focus:ring-1 focus:ring-[#F97316]"
+              className="w-full border border-phx-line bg-white px-3 py-1.5 text-sm text-phx-ink focus:outline-none focus:ring-1 focus:ring-phx-accent"
               defaultValue={regionFilter}
               name="region"
             >
@@ -146,11 +146,11 @@ export default async function AdminPrivateCalendarsPage({ searchParams }: PagePr
             </select>
           </div>
           <div>
-            <label className="mb-1 block text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">
+            <label className="mb-1 block text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-soft">
               Title
             </label>
             <input
-              className="w-full border border-[#E2E8F0] bg-white px-3 py-1.5 text-sm text-[#0F172A] focus:outline-none focus:ring-1 focus:ring-[#F97316]"
+              className="w-full border border-phx-line bg-white px-3 py-1.5 text-sm text-phx-ink focus:outline-none focus:ring-1 focus:ring-phx-accent"
               defaultValue={titleFilter}
               name="title"
               placeholder="Filter by title..."
@@ -160,11 +160,11 @@ export default async function AdminPrivateCalendarsPage({ searchParams }: PagePr
         </div>
         <div className="mt-3 flex items-center gap-3">
           <div>
-            <label className="mb-1 block text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">
+            <label className="mb-1 block text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-soft">
               Month
             </label>
             <select
-              className="border border-[#E2E8F0] bg-white px-3 py-1.5 text-sm text-[#0F172A] focus:outline-none focus:ring-1 focus:ring-[#F97316]"
+              className="border border-phx-line bg-white px-3 py-1.5 text-sm text-phx-ink focus:outline-none focus:ring-1 focus:ring-phx-accent"
               defaultValue={month}
               name="month"
             >
@@ -174,11 +174,11 @@ export default async function AdminPrivateCalendarsPage({ searchParams }: PagePr
             </select>
           </div>
           <div>
-            <label className="mb-1 block text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">
+            <label className="mb-1 block text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-soft">
               Year
             </label>
             <input
-              className="border border-[#E2E8F0] bg-white px-3 py-1.5 text-sm text-[#0F172A] focus:outline-none focus:ring-1 focus:ring-[#F97316]"
+              className="border border-phx-line bg-white px-3 py-1.5 text-sm text-phx-ink focus:outline-none focus:ring-1 focus:ring-phx-accent"
               defaultValue={year}
               max={currentYear + 1}
               min={2024}
@@ -188,14 +188,14 @@ export default async function AdminPrivateCalendarsPage({ searchParams }: PagePr
           </div>
           <div className="mt-auto">
             <button
-              className="border border-[#0F172A] bg-[#0F172A] px-4 py-1.5 text-sm font-black text-white transition hover:bg-[#1E293B]"
+              className="border border-phx-ink bg-phx-ink px-4 py-1.5 text-sm font-black text-white transition hover:bg-[#1E293B]"
               type="submit"
             >
               Filter
             </button>
             {hasFilters && (
               <a
-                className="ml-2 text-sm text-[#64748B] underline hover:text-[#0F172A]"
+                className="ml-2 text-sm text-phx-ink-soft underline hover:text-phx-ink"
                 href="/admin/private-calendars"
               >
                 Clear
@@ -207,21 +207,21 @@ export default async function AdminPrivateCalendarsPage({ searchParams }: PagePr
 
       {/* Employee results */}
       {!workspace && (
-        <div className="border border-[#E2E8F0] bg-white shadow-[0_1px_3px_rgba(15,23,42,0.06)]">
-          <div className="border-b border-[#E2E8F0] bg-[#0F172A] px-5 py-3">
+        <div className="border border-phx-line bg-white shadow-[0_1px_3px_rgba(15,23,42,0.06)]">
+          <div className="border-b border-phx-line bg-phx-ink px-5 py-3">
             <h2 className="text-xs font-black uppercase tracking-[0.14em] text-white">
               {hasFilters ? `${filtered.length} employee${filtered.length !== 1 ? "s" : ""} found` : `Eligible employees — ${eligible.length} total`}
             </h2>
           </div>
           {filtered.length === 0 ? (
             <div className="p-8 text-center">
-              <p className="text-sm font-black text-[#0F172A]">No employees match your filters</p>
-              <p className="mt-1 text-sm text-[#64748B]">Try adjusting the filters above.</p>
+              <p className="text-sm font-black text-phx-ink">No employees match your filters</p>
+              <p className="mt-1 text-sm text-phx-ink-soft">Try adjusting the filters above.</p>
             </div>
           ) : (
             <table className="w-full border-collapse text-left">
-              <thead className="bg-[#F8FAFC]">
-                <tr className="border-b border-[#E2E8F0] text-[11px] font-black uppercase tracking-[0.14em] text-[#64748B]">
+              <thead className="bg-phx-paper">
+                <tr className="border-b border-phx-line text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-soft">
                   <th className="px-5 py-3">Employee</th>
                   <th className="px-5 py-3">Title</th>
                   <th className="px-5 py-3">Line</th>
@@ -242,19 +242,19 @@ export default async function AdminPrivateCalendarsPage({ searchParams }: PagePr
                   });
                   return (
                     <tr
-                      className="border-b border-[#E2E8F0] bg-white text-sm last:border-b-0 hover:bg-[#FFFBF7]"
+                      className="border-b border-phx-line bg-white text-sm last:border-b-0 hover:bg-[#FFFBF7]"
                       key={emp.hrId}
                     >
                       <td className="px-5 py-3">
-                        <div className="font-semibold text-[#0F172A]">{emp.fullName}</div>
-                        <div className="font-mono text-[11px] text-[#94A3B8]">{emp.hrId}</div>
+                        <div className="font-semibold text-phx-ink">{emp.fullName}</div>
+                        <div className="font-mono text-[11px] text-phx-ink-faint">{emp.hrId}</div>
                       </td>
-                      <td className="px-5 py-3 text-[#475569]">{emp.jobTitle ?? "—"}</td>
-                      <td className="px-5 py-3 text-[#475569]">{emp.lineName ?? "—"}</td>
-                      <td className="px-5 py-3 text-[#475569]">{emp.areaName ?? "Head Office"}</td>
+                      <td className="px-5 py-3 text-phx-ink-2">{emp.jobTitle ?? "—"}</td>
+                      <td className="px-5 py-3 text-phx-ink-2">{emp.lineName ?? "—"}</td>
+                      <td className="px-5 py-3 text-phx-ink-2">{emp.areaName ?? "Head Office"}</td>
                       <td className="px-5 py-3">
                         <a
-                          className="inline-flex items-center gap-1.5 border border-[#0F172A] bg-[#0F172A] px-3 py-1.5 text-xs font-black text-white transition hover:bg-[#1E293B]"
+                          className="inline-flex items-center gap-1.5 border border-phx-ink bg-phx-ink px-3 py-1.5 text-xs font-black text-white transition hover:bg-[#1E293B]"
                           href={`/admin/private-calendars?${params.toString()}`}
                         >
                           View Calendar
@@ -267,7 +267,7 @@ export default async function AdminPrivateCalendarsPage({ searchParams }: PagePr
             </table>
           )}
           {filtered.length > 50 && (
-            <div className="border-t border-[#E2E8F0] px-5 py-3 text-sm text-[#64748B]">
+            <div className="border-t border-phx-line px-5 py-3 text-sm text-phx-ink-soft">
               Showing 50 of {filtered.length} — refine your filters to narrow down.
             </div>
           )}
@@ -277,19 +277,19 @@ export default async function AdminPrivateCalendarsPage({ searchParams }: PagePr
       {/* Calendar view */}
       {workspace && selectedEmployee && (
         <div className="space-y-4">
-          <div className="flex items-center justify-between border border-[#E2E8F0] bg-[#0F172A] px-5 py-3 shadow-[0_1px_3px_rgba(15,23,42,0.06)]">
+          <div className="flex items-center justify-between border border-phx-line bg-phx-ink px-5 py-3 shadow-[0_1px_3px_rgba(15,23,42,0.06)]">
             <div>
-              <span className="text-xs font-black uppercase tracking-[0.14em] text-[#94A3B8]">
+              <span className="text-xs font-black uppercase tracking-[0.14em] text-phx-ink-faint">
                 Private Calendar
               </span>
               <div className="mt-0.5 font-black text-white">{selectedEmployee.fullName}</div>
-              <div className="text-xs text-[#94A3B8]">
+              <div className="text-xs text-phx-ink-faint">
                 {selectedEmployee.jobTitle ?? "—"} &middot; {selectedEmployee.lineName ?? "Head Office"}
                 {selectedEmployee.areaName ? ` · ${selectedEmployee.areaName}` : ""}
               </div>
             </div>
             <a
-              className="border border-[#475569] px-3 py-1.5 text-xs font-black text-[#94A3B8] transition hover:border-white hover:text-white"
+              className="border border-phx-ink-2 px-3 py-1.5 text-xs font-black text-phx-ink-faint transition hover:border-white hover:text-white"
               href={`/admin/private-calendars?name=${nameFilter}&line=${lineFilter}&region=${regionFilter}&title=${titleFilter}&month=${month}&year=${year}`}
             >
               &larr; Back to list

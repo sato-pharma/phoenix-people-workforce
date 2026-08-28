@@ -24,7 +24,7 @@ export function AnalyticsModuleNav({ tabs, mountRoot }: { tabs: readonly Tab[]; 
             href={href}
             className={`px-4 py-2.5 text-xs font-semibold uppercase tracking-wide border-b-2 -mb-px transition-colors whitespace-nowrap ${
               active
-                ? "border-[#F97316] text-[#F97316]"
+                ? "border-phx-accent text-phx-accent"
                 : "border-transparent text-muted-foreground hover:text-foreground hover:border-border"
             }`}
           >

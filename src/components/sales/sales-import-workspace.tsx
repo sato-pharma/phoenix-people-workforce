@@ -112,8 +112,8 @@ type DashboardResponse = {
 };
 
 const panelClassName =
-  "rounded-3xl border border-[#D8E0EA] bg-white/95 shadow-[0_18px_42px_rgba(15,23,42,0.07)]";
-const tableHeaderClassName = "px-4 py-3 text-xs font-black uppercase tracking-[0.14em] text-[#64748B]";
+  "rounded-3xl border border-phx-line bg-white/95 shadow-[0_18px_42px_rgba(15,23,42,0.07)]";
+const tableHeaderClassName = "px-4 py-3 text-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft";
 // The dashboard's By Brick / By Product breakdowns are unpaginated and can run into the hundreds of
 // rows. Rendering all of them at once made this the heaviest page in the app (a single "dashboard" tab
 // mount of six full tables), slow enough to stall the very first click after load. Cap the default DOM
@@ -138,7 +138,7 @@ function Metric({
   const tones = {
     bad: "border-[#FECACA] bg-[#FEF2F2] text-[#991B1B]",
     good: "border-[#BBF7D0] bg-[#F0FDF4] text-[#166534]",
-    neutral: "border-[#E2E8F0] bg-[#FCFDFE] text-[#0F172A]",
+    neutral: "border-phx-line bg-[#FCFDFE] text-phx-ink",
     warn: "border-[#FDE68A] bg-[#FFFBEB] text-[#92400E]",
   };
   return (
@@ -446,7 +446,7 @@ function SummaryTable({
         </div>
         <div className="flex items-center gap-2">
           {table.isFiltered && (
-            <span className="text-xs text-[#64748B]">
+            <span className="text-xs text-phx-ink-soft">
               <Filter className="mr-1 inline h-3 w-3" />
               {table.visible} of {table.total}
             </span>
@@ -456,10 +456,10 @@ function SummaryTable({
           )}
         </div>
       </div>
-      <div className="overflow-hidden border border-[#E2E8F0]">
+      <div className="overflow-hidden border border-phx-line">
         <div className="overflow-x-auto">
           <table className="w-full min-w-[760px] text-left text-sm">
-            <thead className="bg-[#F8FAFC]">
+            <thead className="bg-phx-paper">
               <tr>
                 {columns.map((column, i) => (
                   <SortableTh
@@ -474,22 +474,22 @@ function SummaryTable({
                 ))}
               </tr>
             </thead>
-            <tbody className="divide-y divide-[#E2E8F0]">
+            <tbody className="divide-y divide-phx-line">
               {table.rows.length === 0 ? (
                 <tr>
-                  <td className="px-4 py-6 text-center text-sm text-[#94A3B8]" colSpan={columns.length}>
+                  <td className="px-4 py-6 text-center text-sm text-phx-ink-faint" colSpan={columns.length}>
                     {table.isFiltered ? "No rows match the filter." : "No data."}
                   </td>
                 </tr>
               ) : (
                 <>
                   {visibleRows.map((entry) => (
-                    <tr className="text-[#64748B]" key={`${entry.display.join(":")}:${entry.index}`}>
+                    <tr className="text-phx-ink-soft" key={`${entry.display.join(":")}:${entry.index}`}>
                       {entry.display.map((cell, cellIndex) => (
                         <td
                           className={cn(
                             "px-4 py-2.5 align-top",
-                            cellIndex === 0 ? "font-semibold text-[#0F172A]" : "",
+                            cellIndex === 0 ? "font-semibold text-phx-ink" : "",
                           )}
                           key={`${cell}:${cellIndex}`}
                         >
@@ -502,7 +502,7 @@ function SummaryTable({
                     <tr>
                       <td className="px-4 py-3 text-center" colSpan={columns.length}>
                         <button
-                          className="text-sm font-semibold text-[#F97316] hover:underline"
+                          className="text-sm font-semibold text-phx-accent hover:underline"
                           onClick={() => setShowAll(true)}
                           type="button"
                         >
@@ -532,7 +532,7 @@ function IssueTable({ issues }: { issues: DistributorSalesValidationIssue[] }) {
     >
       <div className="overflow-x-auto p-4 md:p-5">
         <table className="w-full min-w-[720px] text-left text-sm">
-          <thead className="bg-[#F8FAFC]">
+          <thead className="bg-phx-paper">
             <tr>
               <th className={tableHeaderClassName}>Row</th>
               <th className={tableHeaderClassName}>Field</th>
@@ -540,10 +540,10 @@ function IssueTable({ issues }: { issues: DistributorSalesValidationIssue[] }) {
               <th className={tableHeaderClassName}>Error</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-[#E2E8F0]">
+          <tbody className="divide-y divide-phx-line">
             {failedIssues.slice(0, 100).map((issue, index) => (
-              <tr className="text-[#64748B]" key={`${issue.rowNumber}:${issue.field}:${index}`}>
-                <td className="w-24 px-4 py-3 font-semibold text-[#0F172A]">{issue.rowNumber}</td>
+              <tr className="text-phx-ink-soft" key={`${issue.rowNumber}:${issue.field}:${index}`}>
+                <td className="w-24 px-4 py-3 font-semibold text-phx-ink">{issue.rowNumber}</td>
                 <td className="px-4 py-3">{issue.field}</td>
                 <td className="px-4 py-3">{issue.value ?? "-"}</td>
                 <td className="px-4 py-3">{issue.message}</td>
@@ -628,14 +628,14 @@ function UploadedSheetsTable({
         </div>
       ) : (
         <div className="space-y-4 p-4 md:p-5">
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-3 rounded-[12px] border border-[#E2E8F0] bg-[#F8FAFC] p-3">
-            <span className="inline-flex items-center gap-1.5 text-xs font-black uppercase tracking-[0.14em] text-[#64748B]">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-3 rounded-[12px] border border-phx-line bg-phx-paper p-3">
+            <span className="inline-flex items-center gap-1.5 text-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">
               <Filter className="h-3.5 w-3.5" /> Filter
             </span>
             <label className="flex items-center gap-2">
-              <span className="text-xs font-bold uppercase tracking-[0.12em] text-[#64748B]">Distributor</span>
+              <span className="text-xs font-bold uppercase tracking-[0.12em] text-phx-ink-soft">Distributor</span>
               <SearchableSelect
-                className="h-9 rounded-xl border border-[#D8E0EA] bg-white px-3 text-sm font-semibold text-[#0F172A] outline-none transition focus:border-[#FDBA74] focus:ring-4 focus:ring-[#F97316]/10"
+                className="h-9 rounded-xl border border-phx-line bg-white px-3 text-sm font-semibold text-phx-ink outline-none transition focus:border-phx-accent-line focus:ring-4 focus:ring-phx-accent/10"
                 onChange={(event) => setDistributorFilter(event.target.value)}
                 value={distributorFilter}
               >
@@ -649,7 +649,7 @@ function UploadedSheetsTable({
             </label>
             {periodOptions.length > 0 ? (
               <div className="flex flex-wrap items-center gap-1.5">
-                <span className="text-xs font-bold uppercase tracking-[0.12em] text-[#64748B]">Period</span>
+                <span className="text-xs font-bold uppercase tracking-[0.12em] text-phx-ink-soft">Period</span>
                 {periodOptions.map((period) => {
                   const active = periodFilter.includes(period);
                   return (
@@ -657,8 +657,8 @@ function UploadedSheetsTable({
                       className={cn(
                         "h-7 rounded-full border px-2.5 text-xs font-bold transition",
                         active
-                          ? "border-[#F97316] bg-[#F97316] text-white"
-                          : "border-[#D8E0EA] bg-white text-[#0F172A] hover:border-[#F97316]",
+                          ? "border-phx-accent bg-phx-accent text-white"
+                          : "border-phx-line bg-white text-phx-ink hover:border-phx-accent",
                       )}
                       key={period}
                       onClick={() => togglePeriod(period)}
@@ -675,7 +675,7 @@ function UploadedSheetsTable({
                 Clear
               </Button>
             ) : null}
-            <span className="ml-auto text-xs font-semibold text-[#64748B]">
+            <span className="ml-auto text-xs font-semibold text-phx-ink-soft">
               Showing {formatNumber(filtered.length)} of {formatNumber(batches.length)}
             </span>
           </div>
@@ -690,9 +690,9 @@ function UploadedSheetsTable({
             </AdminCallout>
           ) : (
             <div className="overflow-x-auto">
-              <div className="overflow-hidden rounded-[16px] border border-[#E2E8F0]">
+              <div className="overflow-hidden rounded-[16px] border border-phx-line">
                 <table className="w-full min-w-[980px] text-left text-sm">
-                  <thead className="bg-[#F8FAFC]">
+                  <thead className="bg-phx-paper">
                     <tr>
                       <th className={tableHeaderClassName}>File</th>
                       <th className={tableHeaderClassName}>Distributor</th>
@@ -706,14 +706,14 @@ function UploadedSheetsTable({
                       <th className={tableHeaderClassName}>Action</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-[#E2E8F0]">
+                  <tbody className="divide-y divide-phx-line">
                     {filtered.map((batch) => {
                       const deleting = deleteLoadingId === batch.batchId;
                       return (
-                        <tr className="text-[#64748B]" key={batch.batchId}>
+                        <tr className="text-phx-ink-soft" key={batch.batchId}>
                           <td className="max-w-[260px] px-4 py-3">
-                            <p className="truncate font-semibold text-[#0F172A]">{batch.fileName}</p>
-                            <p className="mt-1 text-xs text-[#64748B]">{batch.uploadedBy}</p>
+                            <p className="truncate font-semibold text-phx-ink">{batch.fileName}</p>
+                            <p className="mt-1 text-xs text-phx-ink-soft">{batch.uploadedBy}</p>
                           </td>
                           <td className="px-4 py-3">{batch.distributorName} / {batch.distributorCode}</td>
                           <td className="px-4 py-3">{batch.period ?? "-"}</td>
@@ -788,7 +788,7 @@ function SourceOfSalesDashboardPanel({
         action={(
           <div className="flex flex-col gap-2 sm:flex-row">
             <SearchableSelect
-              className="h-10 rounded-xl border border-[#D8E0EA] bg-[#F8FAFC] px-3 text-sm font-semibold text-[#0F172A] outline-none"
+              className="h-10 rounded-xl border border-phx-line bg-phx-paper px-3 text-sm font-semibold text-phx-ink outline-none"
               disabled={dashboard.availablePeriods.length === 0 || refreshing}
               onChange={(event) => onPeriodChange(event.target.value)}
               value={dashboard.period ?? ""}
@@ -849,7 +849,7 @@ function StepCircle({ number, done, active }: { active?: boolean; done?: boolean
     <div
       className={cn(
         "flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-black",
-        done ? "bg-emerald-500 text-white" : active ? "bg-[#0B0B0B] text-white" : "bg-[#E2E8F0] text-[#64748B]",
+        done ? "bg-emerald-500 text-white" : active ? "bg-[#0B0B0B] text-white" : "bg-phx-line text-phx-ink-soft",
       )}
     >
       {done ? <CheckCircle2 className="h-4 w-4" /> : number}
@@ -887,11 +887,11 @@ function UploadStatusPanel({
   const validatedCount = distributors.filter((d) => validatedCodes.has(d.code)).length;
 
   return (
-    <div className="overflow-hidden rounded-3xl border border-[#D8E0EA] bg-white/95 shadow-[0_18px_42px_rgba(15,23,42,0.07)]">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#E2E8F0] bg-[#F8FAFC] px-6 py-4">
+    <div className="overflow-hidden rounded-3xl border border-phx-line bg-white/95 shadow-[0_18px_42px_rgba(15,23,42,0.07)]">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-phx-line bg-phx-paper px-6 py-4">
         <div>
-          <p className="text-xs font-black uppercase tracking-[0.14em] text-[#64748B]">Upload Status</p>
-          <p className="mt-0.5 text-sm font-semibold text-[#0F172A]">
+          <p className="text-xs font-black uppercase tracking-[0.14em] text-phx-ink-soft">Upload Status</p>
+          <p className="mt-0.5 text-sm font-semibold text-phx-ink">
             {periodOptions.length === 0
               ? "No uploads yet"
               : `${validatedCount} of ${distributors.length} distributors validated`}
@@ -900,7 +900,7 @@ function UploadStatusPanel({
         </div>
         {periodOptions.length > 0 ? (
           <SearchableSelect
-            className="h-9 rounded-xl border border-[#D8E0EA] bg-white px-3 text-sm font-semibold text-[#0F172A] outline-none transition focus:border-[#FDBA74] focus:ring-4 focus:ring-[#F97316]/10"
+            className="h-9 rounded-xl border border-phx-line bg-white px-3 text-sm font-semibold text-phx-ink outline-none transition focus:border-phx-accent-line focus:ring-4 focus:ring-phx-accent/10"
             onChange={(e) => setSelectedPeriod(e.target.value)}
             value={selectedPeriod}
           >
@@ -910,7 +910,7 @@ function UploadStatusPanel({
       </div>
       <div className="p-5">
         {distributors.length === 0 ? (
-          <p className="text-sm text-[#64748B]">No distributors configured.</p>
+          <p className="text-sm text-phx-ink-soft">No distributors configured.</p>
         ) : (
           <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {distributors.map((d) => {
@@ -921,7 +921,7 @@ function UploadStatusPanel({
                     "flex items-center gap-3 rounded-2xl border p-3 text-left transition",
                     done
                       ? "border-emerald-200 bg-emerald-50 hover:border-emerald-300"
-                      : "border-[#E2E8F0] bg-[#F8FAFC] hover:border-[#F97316]/40 hover:bg-[#FFF7ED]/60",
+                      : "border-phx-line bg-phx-paper hover:border-phx-accent/40 hover:bg-phx-accent-soft/60",
                   )}
                   key={d.code}
                   onClick={() => { if (!done) onSelectDistributor(d.code); }}
@@ -930,10 +930,10 @@ function UploadStatusPanel({
                 >
                   {done
                     ? <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-500" />
-                    : <Clock className="h-4 w-4 shrink-0 text-[#94A3B8]" />}
+                    : <Clock className="h-4 w-4 shrink-0 text-phx-ink-faint" />}
                   <div className="min-w-0">
-                    <p className={cn("truncate text-xs font-black", done ? "text-emerald-800" : "text-[#0F172A]")}>{d.name}</p>
-                    <p className={cn("text-[11px] font-semibold", done ? "text-emerald-600" : "text-[#64748B]")}>{d.code} · {done ? "Validated ✓" : "Pending"}</p>
+                    <p className={cn("truncate text-xs font-black", done ? "text-emerald-800" : "text-phx-ink")}>{d.name}</p>
+                    <p className={cn("text-[11px] font-semibold", done ? "text-emerald-600" : "text-phx-ink-soft")}>{d.code} · {done ? "Validated ✓" : "Pending"}</p>
                   </div>
                 </button>
               );
@@ -1259,7 +1259,7 @@ export function SalesImportWorkspace({ distributors, initialBatches, initialDash
 
   if (initialError) {
     return (
-      <div className="min-h-[calc(100vh-7rem)] rounded-[32px] border border-[#E2E8F0] bg-[#F8FAFC] p-5 sm:p-6 xl:p-8">
+      <div className="min-h-[calc(100vh-7rem)] rounded-[32px] border border-phx-line bg-phx-paper p-5 sm:p-6 xl:p-8">
         <AdminCallout tone="danger">
           <AlertTriangle className="h-4 w-4" />
           <p>{initialError}</p>
@@ -1272,9 +1272,9 @@ export function SalesImportWorkspace({ distributors, initialBatches, initialDash
   const stepValidated = result?.status === "validated";
 
   return (
-    <div className="min-h-[calc(100vh-7rem)] rounded-[32px] border border-[#E2E8F0] bg-[linear-gradient(180deg,#F8FAFC_0%,#EEF3F8_100%)] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.9)] sm:p-6 xl:p-8">
+    <div className="min-h-[calc(100vh-7rem)] rounded-[32px] border border-phx-line bg-[linear-gradient(180deg,#F8FAFC_0%,#EEF3F8_100%)] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.9)] sm:p-6 xl:p-8">
       <div className="space-y-7">
-        <div className="relative overflow-hidden rounded-3xl border border-[#D8E0EA] bg-white/95 p-7 shadow-[0_20px_54px_rgba(15,23,42,0.09)]">
+        <div className="relative overflow-hidden rounded-3xl border border-phx-line bg-white/95 p-7 shadow-[0_20px_54px_rgba(15,23,42,0.09)]">
           <div className="pointer-events-none absolute -right-16 -top-16 h-48 w-48 rounded-full bg-orange-200/35 blur-3xl" />
           <div className="relative flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
             <div>
@@ -1296,7 +1296,7 @@ export function SalesImportWorkspace({ distributors, initialBatches, initialDash
             </div>
             <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
               <Link href="/sales">
-                <Button className="gap-2 rounded-xl bg-[#0B0B0B] font-black text-white shadow-[0_12px_26px_rgba(15,23,42,0.18)] transition hover:bg-[#F97316]">
+                <Button className="gap-2 rounded-xl bg-[#0B0B0B] font-black text-white shadow-[0_12px_26px_rgba(15,23,42,0.18)] transition hover:bg-phx-accent">
                   <Table2 className="h-4 w-4" />
                   Dashboard
                 </Button>
@@ -1309,7 +1309,7 @@ export function SalesImportWorkspace({ distributors, initialBatches, initialDash
               </Link>
             </div>
           </div>
-          <div className="relative mt-5 flex flex-wrap gap-2 border-t border-[#E2E8F0] pt-4">
+          <div className="relative mt-5 flex flex-wrap gap-2 border-t border-phx-line pt-4">
             <AdminInsightChip>Distributors: {formatNumber(distributors.length)}</AdminInsightChip>
             <AdminInsightChip>Uploaded sheets: {formatNumber(batches.length)}</AdminInsightChip>
             <AdminInsightChip>Products: {formatNumber(productsCount)}</AdminInsightChip>
@@ -1319,11 +1319,11 @@ export function SalesImportWorkspace({ distributors, initialBatches, initialDash
           </div>
         </div>
 
-        <div className="flex flex-wrap gap-2 rounded-2xl border border-[#D8E0EA] bg-white/90 p-2 shadow-[0_14px_32px_rgba(15,23,42,0.06)]">
+        <div className="flex flex-wrap gap-2 rounded-2xl border border-phx-line bg-white/90 p-2 shadow-[0_14px_32px_rgba(15,23,42,0.06)]">
           <Button
             className={cn(
               "gap-2 rounded-xl font-black",
-              activeTab === "dashboard" ? "bg-[#0B0B0B] text-white hover:bg-[#F97316]" : "",
+              activeTab === "dashboard" ? "bg-[#0B0B0B] text-white hover:bg-phx-accent" : "",
             )}
             onClick={() => setActiveTab("dashboard")}
             variant="secondary"
@@ -1334,7 +1334,7 @@ export function SalesImportWorkspace({ distributors, initialBatches, initialDash
           <Button
             className={cn(
               "gap-2 rounded-xl font-black",
-              activeTab === "monthly-sales" ? "bg-[#0B0B0B] text-white hover:bg-[#F97316]" : "",
+              activeTab === "monthly-sales" ? "bg-[#0B0B0B] text-white hover:bg-phx-accent" : "",
             )}
             onClick={() => setActiveTab("monthly-sales")}
             variant="secondary"
@@ -1345,7 +1345,7 @@ export function SalesImportWorkspace({ distributors, initialBatches, initialDash
           <Button
             className={cn(
               "gap-2 rounded-xl font-black",
-              activeTab === "sheets" ? "bg-[#0B0B0B] text-white hover:bg-[#F97316]" : "",
+              activeTab === "sheets" ? "bg-[#0B0B0B] text-white hover:bg-phx-accent" : "",
             )}
             onClick={() => setActiveTab("sheets")}
             variant="secondary"
@@ -1357,7 +1357,7 @@ export function SalesImportWorkspace({ distributors, initialBatches, initialDash
           <Button
             className={cn(
               "gap-2 rounded-xl font-black",
-              activeTab === "approvals" ? "bg-[#0B0B0B] text-white hover:bg-[#F97316]" : "",
+              activeTab === "approvals" ? "bg-[#0B0B0B] text-white hover:bg-phx-accent" : "",
             )}
             onClick={() => setActiveTab("approvals")}
             variant="secondary"
@@ -1368,7 +1368,7 @@ export function SalesImportWorkspace({ distributors, initialBatches, initialDash
           <Button
             className={cn(
               "gap-2 rounded-xl font-black",
-              activeTab === "mapping" ? "bg-[#0B0B0B] text-white hover:bg-[#F97316]" : "",
+              activeTab === "mapping" ? "bg-[#0B0B0B] text-white hover:bg-phx-accent" : "",
             )}
             onClick={() => setActiveTab("mapping")}
             variant="secondary"
@@ -1379,7 +1379,7 @@ export function SalesImportWorkspace({ distributors, initialBatches, initialDash
           <Button
             className={cn(
               "gap-2 rounded-xl font-black",
-              activeTab === "products" ? "bg-[#0B0B0B] text-white hover:bg-[#F97316]" : "",
+              activeTab === "products" ? "bg-[#0B0B0B] text-white hover:bg-phx-accent" : "",
             )}
             onClick={() => setActiveTab("products")}
             variant="secondary"
@@ -1390,7 +1390,7 @@ export function SalesImportWorkspace({ distributors, initialBatches, initialDash
           <Button
             className={cn(
               "gap-2 rounded-xl font-black",
-              activeTab === "coverage" ? "bg-[#0B0B0B] text-white hover:bg-[#F97316]" : "",
+              activeTab === "coverage" ? "bg-[#0B0B0B] text-white hover:bg-phx-accent" : "",
             )}
             onClick={() => setActiveTab("coverage")}
             variant="secondary"
@@ -1402,7 +1402,7 @@ export function SalesImportWorkspace({ distributors, initialBatches, initialDash
           <Button
             className={cn(
               "gap-2 rounded-xl font-black",
-              activeTab === "customers" ? "bg-[#0B0B0B] text-white hover:bg-[#F97316]" : "",
+              activeTab === "customers" ? "bg-[#0B0B0B] text-white hover:bg-phx-accent" : "",
             )}
             onClick={() => setActiveTab("customers")}
             variant="secondary"
@@ -1414,7 +1414,7 @@ export function SalesImportWorkspace({ distributors, initialBatches, initialDash
           <Button
             className={cn(
               "gap-2 rounded-xl font-black",
-              activeTab === "channels-by-rep" ? "bg-[#0B0B0B] text-white hover:bg-[#F97316]" : "",
+              activeTab === "channels-by-rep" ? "bg-[#0B0B0B] text-white hover:bg-phx-accent" : "",
             )}
             onClick={() => setActiveTab("channels-by-rep")}
             variant="secondary"
@@ -1457,28 +1457,28 @@ export function SalesImportWorkspace({ distributors, initialBatches, initialDash
             />
 
             {/* 3-Step Upload Wizard */}
-            <div className="overflow-hidden rounded-3xl border border-[#D8E0EA] bg-white/95 shadow-[0_18px_42px_rgba(15,23,42,0.07)]">
-              <div className="border-b border-[#E2E8F0] bg-[#F8FAFC] px-6 py-4">
+            <div className="overflow-hidden rounded-3xl border border-phx-line bg-white/95 shadow-[0_18px_42px_rgba(15,23,42,0.07)]">
+              <div className="border-b border-phx-line bg-phx-paper px-6 py-4">
                 <div className="mb-1 inline-flex items-center gap-2 rounded-full border border-orange-200 bg-orange-50 px-3 py-1">
                   <UploadCloud className="h-3 w-3 text-orange-600" />
                   <span className="text-[10px] font-black uppercase tracking-[0.18em] text-orange-600">Upload Monthly Sheet</span>
                 </div>
-                <p className="mt-1 text-xs text-[#64748B]">Pick the distributor, attach its raw export, validate, then confirm — three steps, no surprises.</p>
+                <p className="mt-1 text-xs text-phx-ink-soft">Pick the distributor, attach its raw export, validate, then confirm — three steps, no surprises.</p>
               </div>
 
               {/* Step 1 — Verify file & distributor */}
-              <div className="border-b border-[#E2E8F0] p-6">
+              <div className="border-b border-phx-line p-6">
                 <div className="mb-5 flex items-center gap-3">
                   <StepCircle active={!stepVerified} done={stepVerified} number={1} />
-                  <span className="text-sm font-black uppercase tracking-[0.12em] text-[#0F172A]">Verify File &amp; Distributor</span>
+                  <span className="text-sm font-black uppercase tracking-[0.12em] text-phx-ink">Verify File &amp; Distributor</span>
                   {stepVerified && !result && <CheckCircle2 className="ml-auto h-4 w-4 text-emerald-500" />}
                 </div>
                 <div className="grid gap-4 md:grid-cols-[240px_minmax(0,1fr)]">
                   <div className="space-y-3">
                     <label className="block space-y-1.5">
-                      <span className="text-xs font-bold uppercase tracking-[0.16em] text-[#64748B]">Distributor</span>
+                      <span className="text-xs font-bold uppercase tracking-[0.16em] text-phx-ink-soft">Distributor</span>
                       <SearchableSelect
-                        className="h-11 w-full rounded-2xl border border-[#D8E0EA] bg-[#F8FAFC] px-3.5 text-sm font-semibold text-[#0F172A] outline-none transition focus:border-[#FDBA74] focus:ring-4 focus:ring-[#F97316]/10"
+                        className="h-11 w-full rounded-2xl border border-phx-line bg-phx-paper px-3.5 text-sm font-semibold text-phx-ink outline-none transition focus:border-phx-accent-line focus:ring-4 focus:ring-phx-accent/10"
                         onChange={(event) => { setSelectedDistributorCode(event.target.value); setDetection(null); setResult(null); }}
                         value={selectedDistributorCode}
                       >
@@ -1490,11 +1490,11 @@ export function SalesImportWorkspace({ distributors, initialBatches, initialDash
                       </SearchableSelect>
                     </label>
                     <label className="block space-y-1.5">
-                      <span className="text-xs font-bold uppercase tracking-[0.16em] text-[#64748B]">
-                        Period <span className="font-medium normal-case tracking-normal text-[#94A3B8]">— only if the sheet has no date</span>
+                      <span className="text-xs font-bold uppercase tracking-[0.16em] text-phx-ink-soft">
+                        Period <span className="font-medium normal-case tracking-normal text-phx-ink-faint">— only if the sheet has no date</span>
                       </span>
                       <input
-                        className="h-11 w-full rounded-2xl border border-[#D8E0EA] bg-[#F8FAFC] px-3.5 text-sm font-semibold text-[#0F172A] outline-none transition focus:border-[#FDBA74] focus:ring-4 focus:ring-[#F97316]/10"
+                        className="h-11 w-full rounded-2xl border border-phx-line bg-phx-paper px-3.5 text-sm font-semibold text-phx-ink outline-none transition focus:border-phx-accent-line focus:ring-4 focus:ring-phx-accent/10"
                         onChange={(event) => setSelectedPeriod(event.target.value)}
                         type="month"
                         value={selectedPeriod}
@@ -1502,31 +1502,31 @@ export function SalesImportWorkspace({ distributors, initialBatches, initialDash
                     </label>
                   </div>
                   <div className="space-y-2">
-                    <span className="text-xs font-bold uppercase tracking-[0.16em] text-[#64748B]">Workbook</span>
+                    <span className="text-xs font-bold uppercase tracking-[0.16em] text-phx-ink-soft">Workbook</span>
                     <button
-                      className="flex min-h-[120px] w-full items-center justify-between gap-4 rounded-[24px] border border-dashed border-[#CBD5E1] bg-white px-4 py-5 text-left text-sm shadow-[inset_0_1px_0_rgba(255,255,255,0.9)] transition hover:border-[#F97316] hover:bg-[#FFF7ED]/50"
+                      className="flex min-h-[120px] w-full items-center justify-between gap-4 rounded-[24px] border border-dashed border-phx-line-strong bg-white px-4 py-5 text-left text-sm shadow-[inset_0_1px_0_rgba(255,255,255,0.9)] transition hover:border-phx-accent hover:bg-phx-accent-soft/50"
                       onClick={() => fileInputRef.current?.click()}
                       type="button"
                     >
                       <span className="flex min-w-0 items-center gap-3">
                         <span className={cn(
                           "flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border shadow-[0_8px_20px_rgba(249,115,22,0.10)]",
-                          selectedFile ? "border-emerald-200 bg-emerald-50 text-emerald-600" : "border-[#FED7AA] bg-[#FFF7ED] text-[#F97316]",
+                          selectedFile ? "border-emerald-200 bg-emerald-50 text-emerald-600" : "border-[#FED7AA] bg-phx-accent-soft text-phx-accent",
                         )}>
                           {selectedFile ? <CheckCircle2 className="h-5 w-5" /> : <FileSpreadsheet className="h-5 w-5" />}
                         </span>
                         <span className="min-w-0">
-                          <span className="block truncate text-sm font-semibold text-[#0F172A]">
+                          <span className="block truncate text-sm font-semibold text-phx-ink">
                             {selectedFile?.name ?? "Choose monthly distributor sheet"}
                           </span>
-                          <span className="mt-1 block text-xs leading-5 text-[#64748B]">
+                          <span className="mt-1 block text-xs leading-5 text-phx-ink-soft">
                             {selectedFile
                               ? `${(selectedFile.size / 1024 / 1024).toFixed(2)} MB — click to change`
                               : "Any distributor's raw export (.xlsx / .xls) — no coding needed."}
                           </span>
                         </span>
                       </span>
-                      <UploadCloud className="h-4 w-4 shrink-0 text-[#94A3B8]" />
+                      <UploadCloud className="h-4 w-4 shrink-0 text-phx-ink-faint" />
                     </button>
                     <input
                       accept=".xlsx,.xls"
@@ -1536,7 +1536,7 @@ export function SalesImportWorkspace({ distributors, initialBatches, initialDash
                       type="file"
                     />
                     {isDetecting ? (
-                      <p className="flex items-center gap-1.5 text-xs font-semibold text-[#64748B]">
+                      <p className="flex items-center gap-1.5 text-xs font-semibold text-phx-ink-soft">
                         <Loader2 className="h-3.5 w-3.5 animate-spin" />
                         Detecting distributor from the file…
                       </p>
@@ -1554,19 +1554,19 @@ export function SalesImportWorkspace({ distributors, initialBatches, initialDash
               </div>
 
               {/* Step 2 — Validate */}
-              <div className={cn("border-b border-[#E2E8F0] p-6", !stepVerified && "opacity-50")}>
+              <div className={cn("border-b border-phx-line p-6", !stepVerified && "opacity-50")}>
                 <div className="mb-4 flex items-center gap-3">
                   <StepCircle active={stepVerified && !result} done={Boolean(result)} number={2} />
-                  <span className="text-sm font-black uppercase tracking-[0.12em] text-[#0F172A]">Validate — Per Product · Per Region · Per Brick</span>
+                  <span className="text-sm font-black uppercase tracking-[0.12em] text-phx-ink">Validate — Per Product · Per Region · Per Brick</span>
                 </div>
                 {!stepVerified ? (
-                  <p className="flex items-center gap-2 text-xs text-[#64748B]">
+                  <p className="flex items-center gap-2 text-xs text-phx-ink-soft">
                     <Lock className="h-3.5 w-3.5" />
                     Complete Step 1 — pick a distributor and attach a file.
                   </p>
                 ) : (
                   <Button
-                    className="h-11 gap-2 bg-[#0B0B0B] font-black text-white transition hover:bg-[#F97316]"
+                    className="h-11 gap-2 bg-[#0B0B0B] font-black text-white transition hover:bg-phx-accent"
                     disabled={isValidating}
                     onClick={() => void handlePreview()}
                     type="button"
@@ -1581,16 +1581,16 @@ export function SalesImportWorkspace({ distributors, initialBatches, initialDash
               <div className={cn("p-6", !stepValidated && "opacity-50")}>
                 <div className="mb-4 flex items-center gap-3">
                   <StepCircle active={stepValidated} number={3} />
-                  <span className="text-sm font-black uppercase tracking-[0.12em] text-[#0F172A]">Confirm &amp; Save</span>
+                  <span className="text-sm font-black uppercase tracking-[0.12em] text-phx-ink">Confirm &amp; Save</span>
                 </div>
                 {!stepValidated ? (
-                  <p className="flex items-center gap-2 text-xs text-[#64748B]">
+                  <p className="flex items-center gap-2 text-xs text-phx-ink-soft">
                     <Lock className="h-3.5 w-3.5" />
                     {result ? "Validation blocked — fix the rows above before importing." : "Complete Step 2 — run validation first."}
                   </p>
                 ) : (
                   <Button
-                    className="h-11 gap-2 bg-[#F97316] font-black text-white shadow-[0_8px_20px_rgba(249,115,22,0.25)] transition hover:bg-[#EA580C]"
+                    className="h-11 gap-2 bg-phx-accent font-black text-white shadow-[0_8px_20px_rgba(249,115,22,0.25)] transition hover:bg-phx-accent-hover"
                     disabled={isCommitting}
                     onClick={() => void handleConfirmImport()}
                     type="button"

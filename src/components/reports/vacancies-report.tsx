@@ -39,18 +39,18 @@ type VacanciesReportProps = {
 };
 
 const panelClassName =
-  "rounded-[28px] border border-[#D8E0EA] bg-white/94 shadow-[0_18px_46px_rgba(15,23,42,0.08)] backdrop-blur";
+  "rounded-[28px] border border-phx-line bg-white/94 shadow-[0_18px_46px_rgba(15,23,42,0.08)] backdrop-blur";
 
 function VacanciesReportShell({ children }: { children: React.ReactNode }) {
   return (
-    <div className="relative isolate min-h-[calc(100vh-8rem)] overflow-hidden rounded-[34px] border border-[#D8E0EA] bg-[radial-gradient(circle_at_top_left,rgba(249,115,22,0.16),transparent_32%),linear-gradient(135deg,#FFF9F3_0%,#FFFFFF_44%,#F7FAFC_100%)] p-4 shadow-[0_24px_70px_rgba(15,23,42,0.1)] sm:p-6">
+    <div className="relative isolate min-h-[calc(100vh-8rem)] overflow-hidden rounded-[34px] border border-phx-line bg-[radial-gradient(circle_at_top_left,rgba(249,115,22,0.16),transparent_32%),linear-gradient(135deg,#FFF9F3_0%,#FFFFFF_44%,#F7FAFC_100%)] p-4 shadow-[0_24px_70px_rgba(15,23,42,0.1)] sm:p-6">
       <div
         aria-hidden="true"
-        className="pointer-events-none absolute -right-24 -top-28 h-72 w-72 rounded-full bg-[#F97316]/12 blur-3xl"
+        className="pointer-events-none absolute -right-24 -top-28 h-72 w-72 rounded-full bg-phx-accent/12 blur-3xl"
       />
       <div
         aria-hidden="true"
-        className="pointer-events-none absolute bottom-10 left-1/4 h-64 w-64 rounded-full bg-[#0F172A]/6 blur-3xl"
+        className="pointer-events-none absolute bottom-10 left-1/4 h-64 w-64 rounded-full bg-phx-ink/6 blur-3xl"
       />
       <div className="relative z-10 space-y-6">{children}</div>
     </div>
@@ -116,19 +116,19 @@ function BreakdownPanel({
     <Card className={`${panelClassName} p-5 transition-transform duration-200 hover:-translate-y-0.5`}>
       <div className="flex items-center justify-between gap-3">
         <div>
-          <p className="text-[11px] font-black uppercase tracking-[0.16em] text-[#64748B]">
+          <p className="text-[11px] font-black uppercase tracking-[0.16em] text-phx-ink-soft">
             {title}
           </p>
-          <p className="mt-1 text-sm text-[#64748B]">Top groups by visible vacancies.</p>
+          <p className="mt-1 text-sm text-phx-ink-soft">Top groups by visible vacancies.</p>
         </div>
-        <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-[#FFF7ED] text-[#F97316] shadow-[inset_0_1px_0_rgba(255,255,255,0.75)]">
+        <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-phx-accent-soft text-phx-accent shadow-[inset_0_1px_0_rgba(255,255,255,0.75)]">
           {icon}
         </div>
       </div>
 
       <div className="mt-5 space-y-3">
         {topItems.length === 0 ? (
-          <p className="text-sm text-[#64748B]">No data available.</p>
+          <p className="text-sm text-phx-ink-soft">No data available.</p>
         ) : (
           topItems.map((item) => {
             const width = total > 0 ? `${Math.max((item.count / total) * 100, 6)}%` : "0%";
@@ -136,12 +136,12 @@ function BreakdownPanel({
             return (
               <div key={item.name}>
                 <div className="flex items-center justify-between gap-3 text-sm">
-                  <span className="truncate font-medium text-[#0F172A]">{item.name}</span>
-                  <span className="text-[#64748B]">{item.count}</span>
+                  <span className="truncate font-medium text-phx-ink">{item.name}</span>
+                  <span className="text-phx-ink-soft">{item.count}</span>
                 </div>
-                <div className="mt-2 h-2 rounded-full bg-[#E2E8F0] shadow-inner">
+                <div className="mt-2 h-2 rounded-full bg-phx-line shadow-inner">
                   <div
-                    className="h-2 rounded-full bg-gradient-to-r from-[#F97316] to-[#FDBA74]"
+                    className="h-2 rounded-full bg-gradient-to-r from-phx-accent to-phx-accent-line"
                     style={{ width }}
                   />
                 </div>
@@ -169,11 +169,11 @@ function SelectFilter({
 }) {
   return (
     <label className={cn("block", className)}>
-      <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.16em] text-[#64748B]">
+      <span className="mb-1.5 block text-[11px] font-black uppercase tracking-[0.16em] text-phx-ink-soft">
         {label}
       </span>
       <SearchableSelect
-        className="h-11 w-full rounded-2xl border border-[#D7E0EA] bg-white/95 px-3 text-sm font-semibold text-[#0F172A] shadow-sm outline-none transition focus:border-[#FDBA74] focus:ring-2 focus:ring-[#F97316]/12"
+        className="h-11 w-full rounded-2xl border border-[#D7E0EA] bg-white/95 px-3 text-sm font-semibold text-phx-ink shadow-sm outline-none transition focus:border-phx-accent-line focus:ring-2 focus:ring-phx-accent/12"
         onChange={(event) => onChange(event.target.value)}
         value={value}
       >
@@ -439,7 +439,7 @@ export function VacanciesReport({
         <div className="grid gap-3 p-4 md:grid-cols-2 xl:grid-cols-[1.4fr_repeat(4,minmax(0,1fr))]">
           <label className="relative block">
             <span className="sr-only">Search vacancies</span>
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#64748B]" />
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-phx-ink-soft" />
             <Input
               className="h-11 rounded-2xl border-[#D7E0EA] bg-white/95 pl-9 shadow-sm"
               onChange={(event) => setQuery(event.target.value)}
@@ -515,7 +515,7 @@ export function VacanciesReport({
 
       {isLoading && !report ? (
         <Card className={`${panelClassName} p-4`}>
-          <div className="flex items-center gap-3 text-sm text-[#64748B]">
+          <div className="flex items-center gap-3 text-sm text-phx-ink-soft">
             <LoadingSpinner />
             Loading vacancies...
           </div>
@@ -586,7 +586,7 @@ export function VacanciesReport({
             />
             <div className="overflow-x-auto">
               <table className="min-w-full text-left text-sm">
-                <thead className="bg-[#F8FAFC] text-[10px] font-black uppercase tracking-[0.16em] text-[#64748B]">
+                <thead className="bg-phx-paper text-[10px] font-black uppercase tracking-[0.16em] text-phx-ink-soft">
                   <tr>
                     <th className="px-4 py-3">Vacancy</th>
                     <th className="px-4 py-3">Position</th>
@@ -599,11 +599,11 @@ export function VacanciesReport({
                     <th className="px-4 py-3">Status</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-[#E2E8F0]">
+                <tbody className="divide-y divide-phx-line">
                   {filteredRows.length === 0 ? (
                     <tr>
                       <td
-                        className="px-4 py-10 text-center text-sm text-[#64748B]"
+                        className="px-4 py-10 text-center text-sm text-phx-ink-soft"
                         colSpan={9}
                       >
                         No vacancies match the current filters.
@@ -611,39 +611,39 @@ export function VacanciesReport({
                     </tr>
                   ) : (
                     filteredRows.map((row) => (
-                      <tr className="transition-colors hover:bg-[#FFF7ED]/65" key={row.id}>
+                      <tr className="transition-colors hover:bg-phx-accent-soft/65" key={row.id}>
                         <td className="px-4 py-4">
-                          <p className="font-mono text-xs font-bold text-[#0F172A]">
+                          <p className="font-mono text-xs font-bold text-phx-ink">
                             {vacancyLabel(row.vacancyCode)}
                           </p>
-                          <p className="mt-1 text-xs text-[#64748B]">
+                          <p className="mt-1 text-xs text-phx-ink-soft">
                             Source row {emptyText(row.sourceRowNumber)}
                           </p>
                         </td>
-                        <td className="px-4 py-4 text-[#0F172A]">
+                        <td className="px-4 py-4 text-phx-ink">
                           {emptyText(row.positionTitle ?? row.jobTitle)}
                         </td>
-                        <td className="px-4 py-4 text-[#64748B]">
+                        <td className="px-4 py-4 text-phx-ink-soft">
                           {emptyText(row.departmentName)}
                         </td>
-                        <td className="px-4 py-4 text-[#64748B]">
+                        <td className="px-4 py-4 text-phx-ink-soft">
                           {emptyText(row.lineName)}
                         </td>
-                        <td className="px-4 py-4 text-[#64748B]">
+                        <td className="px-4 py-4 text-phx-ink-soft">
                           {emptyText(row.regionName)}
                         </td>
-                        <td className="px-4 py-4 text-[#64748B]">
+                        <td className="px-4 py-4 text-phx-ink-soft">
                           {emptyText(row.areaName)}
                         </td>
                         <td className="px-4 py-4">
-                          <p className="text-[#64748B]">{emptyText(row.managerName)}</p>
+                          <p className="text-phx-ink-soft">{emptyText(row.managerName)}</p>
                           {row.managerHrId ? (
-                            <p className="mt-1 text-xs text-[#64748B]">{row.managerHrId}</p>
+                            <p className="mt-1 text-xs text-phx-ink-soft">{row.managerHrId}</p>
                           ) : null}
                         </td>
-                        <td className="px-4 py-4 text-[#64748B]">
+                        <td className="px-4 py-4 text-phx-ink-soft">
                           <p>Master data import</p>
-                          <p className="mt-1 text-xs text-[#64748B]">{formatDate(row.createdAt)}</p>
+                          <p className="mt-1 text-xs text-phx-ink-soft">{formatDate(row.createdAt)}</p>
                         </td>
                         <td className="px-4 py-4">
                           <Badge
@@ -664,7 +664,7 @@ export function VacanciesReport({
         !isLoading &&
         !error &&
         <Card className={`${panelClassName} p-4`}>
-          <div className="rounded-2xl border border-[#E2E8F0] bg-[#FCFDFE] p-4 text-sm text-[#64748B]">
+          <div className="rounded-2xl border border-phx-line bg-[#FCFDFE] p-4 text-sm text-phx-ink-soft">
             No vacancy report data loaded yet. Use Refresh to request the latest snapshot.
           </div>
         </Card>

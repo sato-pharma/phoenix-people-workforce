@@ -146,9 +146,9 @@ export default async function AnalyticsHubPage() {
     <div className="p-6 max-w-5xl mx-auto space-y-6">
       <div className="flex items-center justify-between gap-4 border-b border-border pb-5">
         <div className="flex items-center gap-3">
-          <div className="w-1 h-12 bg-[#0F172A] shrink-0" />
+          <div className="w-1 h-12 bg-phx-ink shrink-0" />
           <div>
-            <p className="text-[10px] font-bold uppercase tracking-widest text-[#0F172A] mb-0.5">BI Foundation</p>
+            <p className="text-[10px] font-bold uppercase tracking-widest text-phx-ink mb-0.5">BI Foundation</p>
             <h1 className="text-2xl font-bold text-foreground leading-tight">Sales Analytics</h1>
             <p className="text-xs text-muted-foreground mt-0.5">
               Three sales pipelines, unified dimension filters, comparison mode.

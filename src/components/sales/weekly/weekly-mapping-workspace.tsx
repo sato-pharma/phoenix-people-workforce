@@ -45,28 +45,28 @@ export function WeeklyMappingWorkspace({ initialTab, initialProductsDistributor,
 
   return (
     <div className="space-y-4 p-4 sm:p-6">
-      <header className="rounded-[6px] border border-[#E2E8F0] bg-white px-4 py-3 shadow-sm">
-        <div className="mb-1 flex items-center gap-2 text-[11px] font-black uppercase tracking-[0.14em] text-[#94A3B8]">
-          <span className="h-2 w-2 rounded-full bg-[#F97316]" />
+      <header className="rounded-[6px] border border-phx-line bg-white px-4 py-3 shadow-sm">
+        <div className="mb-1 flex items-center gap-2 text-[11px] font-black uppercase tracking-[0.14em] text-phx-ink-faint">
+          <span className="h-2 w-2 rounded-full bg-phx-accent" />
           Weekly Sales
         </div>
-        <h1 className="flex items-center gap-2 text-xl font-black text-[#0F172A]">
-          <Tag className="h-5 w-5 text-[#F97316]" /> Weekly Mapping
+        <h1 className="flex items-center gap-2 text-xl font-black text-phx-ink">
+          <Tag className="h-5 w-5 text-phx-accent" /> Weekly Mapping
         </h1>
-        <p className="mt-1 text-sm font-medium text-[#64748B]">
+        <p className="mt-1 text-sm font-medium text-phx-ink-soft">
           Everything that teaches the weekly importer how each distributor&apos;s raw file maps to official
           Phoenix codes — branch→region and product aliases — in one place.
         </p>
       </header>
 
-      <div className="flex flex-wrap gap-2 rounded-[6px] border border-[#E2E8F0] bg-white p-2 shadow-sm">
+      <div className="flex flex-wrap gap-2 rounded-[6px] border border-phx-line bg-white p-2 shadow-sm">
         {TABS.map((tab) => {
           const Icon = tab.icon;
           const active = activeTab === tab.key;
           return (
             <Button
               key={tab.key}
-              className={cn("gap-2 rounded-[6px] font-black", active ? "bg-[#0B0B0B] text-white hover:bg-[#F97316]" : "")}
+              className={cn("gap-2 rounded-[6px] font-black", active ? "bg-[#0B0B0B] text-white hover:bg-phx-accent" : "")}
               onClick={() => setActiveTab(tab.key)}
               type="button"
               variant="secondary"
@@ -78,7 +78,7 @@ export function WeeklyMappingWorkspace({ initialTab, initialProductsDistributor,
         })}
       </div>
 
-      <div className="rounded-[6px] border border-[#E2E8F0] bg-white shadow-sm">
+      <div className="rounded-[6px] border border-phx-line bg-white shadow-sm">
         {activeTab === "branch" ? (
           <WeeklyBranchMappingManager initial={branch.initial} initialError={branch.initialError} />
         ) : (

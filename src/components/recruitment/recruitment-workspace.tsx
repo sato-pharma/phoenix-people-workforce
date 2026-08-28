@@ -2209,7 +2209,7 @@ const PROFILE_LANDING_GAP = 12;
  * `aria-label` and the native tooltip so a screen reader and a hovering recruiter get the same word.
  */
 const poolIconButtonClass =
-  "inline-flex h-7 w-7 shrink-0 items-center justify-center border border-slate-200 bg-white text-slate-500 transition hover:border-[#FDBA74] hover:text-[#F97316] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-slate-200 disabled:hover:text-slate-500";
+  "inline-flex h-7 w-7 shrink-0 items-center justify-center border border-slate-200 bg-white text-slate-500 transition hover:border-phx-accent-line hover:text-phx-accent disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-slate-200 disabled:hover:text-slate-500";
 
 function PoolIconButton({
   active,
@@ -2235,7 +2235,7 @@ function PoolIconButton({
   return (
     <button
       aria-label={label}
-      className={cn(poolIconButtonClass, toneClass, active && "border-[#FDBA74] bg-orange-50 text-[#F97316]")}
+      className={cn(poolIconButtonClass, toneClass, active && "border-phx-accent-line bg-orange-50 text-phx-accent")}
       disabled={disabled}
       onClick={onClick}
       title={label}
@@ -2529,10 +2529,10 @@ function ManagerGroupHeading({
 }) {
   return (
     <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-      <span className="text-sm font-black text-[#0F172A]">{name}</span>
+      <span className="text-sm font-black text-phx-ink">{name}</span>
       {seatLabel ? <span className="text-xs font-semibold text-slate-600">{seatLabel}</span> : null}
       {regionName ? <span className="text-xs font-medium text-slate-400">{regionName}</span> : null}
-      <span className="ml-auto text-xs font-bold tabular-nums text-[#C2410C]">
+      <span className="ml-auto text-xs font-bold tabular-nums text-phx-accent-press">
         {count} {count === 1 ? "CV" : "CVs"}
       </span>
       {lastSentAt ? (
@@ -3459,8 +3459,8 @@ function CandidatesTab({
                 aria-pressed={duplicatesOnly}
                 className={`inline-flex h-9 shrink-0 items-center gap-1.5 whitespace-nowrap border px-3 text-xs font-semibold transition ${
                   duplicatesOnly
-                    ? "border-[#F97316] bg-orange-50 text-[#C2410C]"
-                    : "border-[#D8E0EA] bg-white text-slate-600 hover:border-[#FDBA74] hover:text-[#F97316]"
+                    ? "border-phx-accent bg-orange-50 text-phx-accent-press"
+                    : "border-phx-line bg-white text-slate-600 hover:border-phx-accent-line hover:text-phx-accent"
                 }`}
                 onClick={() => setDuplicatesOnly((previous) => !previous)}
                 type="button"
@@ -3480,8 +3480,8 @@ function CandidatesTab({
                 aria-pressed={groupByManager}
                 className={`inline-flex h-9 shrink-0 items-center gap-1.5 whitespace-nowrap border px-3 text-xs font-semibold transition ${
                   groupByManager
-                    ? "border-[#F97316] bg-orange-50 text-[#C2410C]"
-                    : "border-[#D8E0EA] bg-white text-slate-600 hover:border-[#FDBA74] hover:text-[#F97316]"
+                    ? "border-phx-accent bg-orange-50 text-phx-accent-press"
+                    : "border-phx-line bg-white text-slate-600 hover:border-phx-accent-line hover:text-phx-accent"
                 }`}
                 onClick={() => setGroupByManager((previous) => !previous)}
                 type="button"
@@ -3545,7 +3545,7 @@ function CandidatesTab({
               const seatLabel = managerSeatLabel(group.seat);
               return (
                 <button
-                  className="inline-flex items-center gap-1.5 whitespace-nowrap border border-[#FDBA74] bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 transition hover:border-[#F97316] hover:text-[#C2410C]"
+                  className="inline-flex items-center gap-1.5 whitespace-nowrap border border-phx-accent-line bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 transition hover:border-phx-accent hover:text-phx-accent-press"
                   key={group.key}
                   onClick={() => scrollToManagerGroup(group.key)}
                   title={seatLabel ? `${group.seat.name} — ${seatLabel}` : group.seat.name}
@@ -3553,13 +3553,13 @@ function CandidatesTab({
                 >
                   <span className="font-bold">{group.seat.name}</span>
                   {seatLabel ? <span className="font-medium text-slate-500">{seatLabel}</span> : null}
-                  <span className="font-bold tabular-nums text-[#C2410C]">{group.candidates.length}</span>
+                  <span className="font-bold tabular-nums text-phx-accent-press">{group.candidates.length}</span>
                 </button>
               );
             })}
             {unsentVisible.length > 0 ? (
               <button
-                className="inline-flex items-center gap-1.5 whitespace-nowrap border border-[#D8E0EA] bg-white px-2.5 py-1 text-xs font-semibold text-slate-600 transition hover:border-slate-400"
+                className="inline-flex items-center gap-1.5 whitespace-nowrap border border-phx-line bg-white px-2.5 py-1 text-xs font-semibold text-slate-600 transition hover:border-slate-400"
                 onClick={() => scrollToManagerGroup(UNSENT_GROUP_KEY)}
                 type="button"
               >
@@ -3630,7 +3630,7 @@ function CandidatesTab({
               <>
                 {groupHeader ? (
                   <div
-                    className="border-l-4 border-[#F97316] bg-orange-50/70 px-4 py-2"
+                    className="border-l-4 border-phx-accent bg-orange-50/70 px-4 py-2"
                     id={managerGroupAnchorId(groupHeader.key, "card")}
                   >
                     <ManagerGroupHeading
@@ -3790,7 +3790,7 @@ function CandidatesTab({
                     <Fragment key={candidate.id}>
                       {groupHeader ? (
                         <tr className="bg-orange-50/70" id={managerGroupAnchorId(groupHeader.key, "table")}>
-                          <td className="border-l-4 border-[#F97316] px-3 py-2" colSpan={headingColSpan}>
+                          <td className="border-l-4 border-phx-accent px-3 py-2" colSpan={headingColSpan}>
                             <ManagerGroupHeading
                               count={groupHeader.candidates.length}
                               lastSentAt={groupHeader.lastSentAt}
@@ -3835,7 +3835,7 @@ function CandidatesTab({
                       <td className="px-3 py-2.5">
                         <div className="flex min-w-0 items-center gap-1.5">
                           <span
-                            className="min-w-0 truncate font-semibold text-[#0F172A]"
+                            className="min-w-0 truncate font-semibold text-phx-ink"
                             title={candidate.fullName}
                           >
                             {displayName}
@@ -4109,7 +4109,7 @@ function CandidatesTab({
             ref={profileHeaderRef}
           >
             <button
-              className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap border border-[#D8E0EA] bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:border-[#FDBA74] hover:text-[#F97316]"
+              className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap border border-phx-line bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:border-phx-accent-line hover:text-phx-accent"
               onClick={returnToPool}
               type="button"
             >
@@ -4131,7 +4131,7 @@ function CandidatesTab({
            */}
           {wayBackOffScreen ? (
             <button
-              className="fixed bottom-6 right-6 z-50 inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border border-[#FDBA74] bg-white px-4 py-2.5 text-xs font-semibold text-[#F97316] shadow-[0_10px_30px_rgba(15,23,42,0.18)] transition hover:bg-[#FFF7ED]"
+              className="fixed bottom-6 right-6 z-50 inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border border-phx-accent-line bg-white px-4 py-2.5 text-xs font-semibold text-phx-accent shadow-[0_10px_30px_rgba(15,23,42,0.18)] transition hover:bg-phx-accent-soft"
               onClick={returnToPool}
               type="button"
             >

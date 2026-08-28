@@ -213,7 +213,7 @@ export function TripWorkloadEvidencePanel({
         <span className="text-[11px] text-slate-500">{data.sourceLabel}</span>
       </div>
       <div className="grid gap-2 sm:grid-cols-3">
-        <div className="rounded-xl border border-[#e4e9ec] bg-white p-3">
+        <div className="rounded-xl border border-phx-line bg-white p-3">
           <p className="text-[10px] font-black uppercase tracking-[0.12em] text-slate-500">Declared (sheet)</p>
           <p className="mt-1 font-mono text-sm font-bold text-slate-900">
             AM {fmt(declaredAm)} · PM {fmt(declaredPm)}
@@ -230,7 +230,7 @@ export function TripWorkloadEvidencePanel({
             </p>
           ) : null}
         </div>
-        <div className="rounded-xl border border-[#e4e9ec] bg-white p-3">
+        <div className="rounded-xl border border-phx-line bg-white p-3">
           <p className="text-[10px] font-black uppercase tracking-[0.12em] text-slate-500">Visit type</p>
           <p className="mt-1 font-mono text-sm font-bold text-slate-900">
             Regular {fmt(data.regularVisits)} · Campaign {fmt(data.campaignVisits)}
@@ -242,7 +242,7 @@ export function TripWorkloadEvidencePanel({
           columns with no way to reach them — but a sideways-scrolling table is not what the phone
           is supposed to get at all (AGENTS.md §4). The table is now desktop-only and the same days
           render as cards below `md`, so nothing scrolls sideways and nothing is clipped. */}
-      <div className="overflow-hidden rounded-xl border border-[#e4e9ec]">
+      <div className="overflow-hidden rounded-xl border border-phx-line">
         <PortalResponsiveDataList
           empty={<p className="px-3 py-6 text-center text-xs font-semibold text-slate-400">No days in range.</p>}
           getKey={(day) => day.date}
@@ -314,7 +314,7 @@ export function TripWorkloadEvidencePanel({
           {data.dateBreakdown
             .filter((day) => (day.visits?.length ?? 0) > 0 || (day.checkins?.length ?? 0) > 0)
             .map((day) => (
-              <div className="rounded-xl border border-[#e4e9ec] bg-white p-3" key={`detail-${day.date}`}>
+              <div className="rounded-xl border border-phx-line bg-white p-3" key={`detail-${day.date}`}>
                 <p className="text-xs font-bold text-slate-900">{formatDateValue(day.date)}</p>
                 <div className="mt-2 space-y-3">
                   {/* `[&>*]:min-w-0` for the same reason as the workspace grid: below `md` this is a

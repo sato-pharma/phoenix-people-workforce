@@ -14,7 +14,7 @@ type Props = {
 export function ApprovalScopeList({ data, moduleLabel }: Props) {
   if (!data || data.totalPeople === 0) {
     return (
-      <p className="border border-[#e4e9ec] bg-white px-4 py-8 text-center text-sm text-slate-500">
+      <p className="border border-phx-line bg-white px-4 py-8 text-center text-sm text-slate-500">
         No one currently routes their {moduleLabel} requests to you for approval.
       </p>
     );
@@ -35,7 +35,7 @@ export function ApprovalScopeList({ data, moduleLabel }: Props) {
           </div>
           <div className="grid gap-2 sm:grid-cols-2">
             {group.people.map((person) => (
-              <div key={person.hrId} className="border border-[#e4e9ec] bg-white px-4 py-2.5">
+              <div key={person.hrId} className="border border-phx-line bg-white px-4 py-2.5">
                 <p className="truncate text-sm font-bold text-slate-900">{person.name}</p>
                 <p className="truncate text-xs text-slate-500">{person.jobTitle ?? "—"}</p>
               </div>

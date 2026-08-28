@@ -123,7 +123,7 @@ function Pagination({ page, total, unit, onPage }: { onPage: (next: number) => v
   const from = page * PAGE_SIZE + 1;
   const to = Math.min(total, (page + 1) * PAGE_SIZE);
   const btn =
-    "inline-flex h-9 items-center gap-1 border border-[#D8E0EA] bg-white px-3 text-xs font-bold text-[#0F172A] transition hover:border-[#FDBA74] hover:text-[#F97316] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-[#D8E0EA] disabled:hover:text-[#0F172A]";
+    "inline-flex h-9 items-center gap-1 border border-phx-line bg-white px-3 text-xs font-bold text-phx-ink transition hover:border-phx-accent-line hover:text-phx-accent disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-phx-line disabled:hover:text-phx-ink";
   return (
     <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 px-4 py-3">
       <span className="text-xs font-semibold text-slate-500">Showing {from}–{to} of {total} {unit}</span>
@@ -184,7 +184,7 @@ function DateRangeForm({ dateFrom, dateTo, tab }: { dateFrom: string; dateTo: st
           type="date"
           value={from}
           onChange={(event) => setFrom(event.target.value)}
-          className="h-9 border border-[#D8E0EA] bg-white px-2 text-sm text-slate-800"
+          className="h-9 border border-phx-line bg-white px-2 text-sm text-slate-800"
         />
       </label>
       <label className="flex flex-col gap-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">
@@ -193,13 +193,13 @@ function DateRangeForm({ dateFrom, dateTo, tab }: { dateFrom: string; dateTo: st
           type="date"
           value={to}
           onChange={(event) => setTo(event.target.value)}
-          className="h-9 border border-[#D8E0EA] bg-white px-2 text-sm text-slate-800"
+          className="h-9 border border-phx-line bg-white px-2 text-sm text-slate-800"
         />
       </label>
       <button
         type="button"
         onClick={apply}
-        className="h-9 border border-[#D8E0EA] bg-white px-3 text-xs font-bold text-[#0F172A] shadow-sm transition hover:border-[#FDBA74] hover:text-[#F97316]"
+        className="h-9 border border-phx-line bg-white px-3 text-xs font-bold text-phx-ink shadow-sm transition hover:border-phx-accent-line hover:text-phx-accent"
       >
         Apply Range
       </button>
@@ -421,7 +421,7 @@ export function DoubleVisitReportWorkspace({
   }
 
   const downloadLinkClass =
-    "inline-flex h-9 items-center gap-1.5 border border-[#D8E0EA] bg-white px-3 text-xs font-bold uppercase tracking-wider text-[#0F172A] shadow-sm transition hover:border-[#FDBA74] hover:text-[#F97316]";
+    "inline-flex h-9 items-center gap-1.5 border border-phx-line bg-white px-3 text-xs font-bold uppercase tracking-wider text-phx-ink shadow-sm transition hover:border-phx-accent-line hover:text-phx-accent";
 
   return (
     <div className="space-y-4">
@@ -473,7 +473,7 @@ export function DoubleVisitReportWorkspace({
               value={search}
               onChange={(event) => setSearch(event.target.value)}
               placeholder="Search name or HR ID…"
-              className="h-9 w-full border border-[#D8E0EA] bg-white pl-8 pr-2 text-sm text-slate-800"
+              className="h-9 w-full border border-phx-line bg-white pl-8 pr-2 text-sm text-slate-800"
             />
           </div>
           <button
@@ -481,11 +481,11 @@ export function DoubleVisitReportWorkspace({
             onClick={() => setShowAdvanced((v) => !v)}
             className={cn(
               "inline-flex h-9 items-center gap-1.5 border px-3 text-xs font-bold uppercase tracking-wider transition",
-              showAdvanced || advancedActive ? "border-[#FDBA74] bg-orange-50 text-[#F97316]" : "border-[#D8E0EA] bg-white text-[#0F172A] hover:border-[#FDBA74] hover:text-[#F97316]",
+              showAdvanced || advancedActive ? "border-phx-accent-line bg-orange-50 text-phx-accent" : "border-phx-line bg-white text-phx-ink hover:border-phx-accent-line hover:text-phx-accent",
             )}
           >
             <SlidersHorizontal className="h-3.5 w-3.5" /> Advanced filters
-            {advancedActive && <span className="inline-flex h-4 min-w-[16px] items-center justify-center rounded-full bg-[#F97316] px-1 text-[9px] text-white">on</span>}
+            {advancedActive && <span className="inline-flex h-4 min-w-[16px] items-center justify-center rounded-full bg-phx-accent px-1 text-[9px] text-white">on</span>}
           </button>
           {(advancedActive || search) && (
             <button type="button" onClick={clearFilters} className="text-xs font-bold text-slate-400 underline transition hover:text-slate-700">
@@ -499,7 +499,7 @@ export function DoubleVisitReportWorkspace({
             {tab === "log" && (
               <>
                 <FilterField label="Area">
-                  <select value={areaFilter} onChange={(event) => setAreaFilter(event.target.value)} className="h-9 border border-[#D8E0EA] bg-white px-2 text-sm text-slate-700">
+                  <select value={areaFilter} onChange={(event) => setAreaFilter(event.target.value)} className="h-9 border border-phx-line bg-white px-2 text-sm text-slate-700">
                     <option value={ALL}>All areas</option>
                     {data.filters.areas.map((area) => (
                       <option key={area} value={area}>{area}</option>
@@ -507,7 +507,7 @@ export function DoubleVisitReportWorkspace({
                   </select>
                 </FilterField>
                 <FilterField label="Region">
-                  <select value={regionFilter} onChange={(event) => setRegionFilter(event.target.value)} className="h-9 border border-[#D8E0EA] bg-white px-2 text-sm text-slate-700">
+                  <select value={regionFilter} onChange={(event) => setRegionFilter(event.target.value)} className="h-9 border border-phx-line bg-white px-2 text-sm text-slate-700">
                     <option value={ALL}>All regions</option>
                     {data.filters.regions.map((region) => (
                       <option key={region} value={region}>{region}</option>
@@ -515,7 +515,7 @@ export function DoubleVisitReportWorkspace({
                   </select>
                 </FilterField>
                 <FilterField label="Job Title">
-                  <select value={roleFilter} onChange={(event) => setRoleFilter(event.target.value)} className="h-9 border border-[#D8E0EA] bg-white px-2 text-sm text-slate-700">
+                  <select value={roleFilter} onChange={(event) => setRoleFilter(event.target.value)} className="h-9 border border-phx-line bg-white px-2 text-sm text-slate-700">
                     <option value={ALL}>All job titles</option>
                     {data.filters.doubleVisitorRoles.map((role) => (
                       <option key={role} value={role}>{role}</option>
@@ -523,7 +523,7 @@ export function DoubleVisitReportWorkspace({
                   </select>
                 </FilterField>
                 <FilterField label="Double visitor">
-                  <select value={visitorFilter} onChange={(event) => setVisitorFilter(event.target.value)} className="h-9 border border-[#D8E0EA] bg-white px-2 text-sm text-slate-700">
+                  <select value={visitorFilter} onChange={(event) => setVisitorFilter(event.target.value)} className="h-9 border border-phx-line bg-white px-2 text-sm text-slate-700">
                     <option value={ALL}>All double visitors</option>
                     {data.filters.doubleVisitors.map((visitor) => (
                       <option key={visitor} value={visitor}>{visitor}</option>
@@ -531,7 +531,7 @@ export function DoubleVisitReportWorkspace({
                   </select>
                 </FilterField>
                 <FilterField label="Type">
-                  <select value={visitKindFilter} onChange={(event) => setVisitKindFilter(event.target.value)} className="h-9 border border-[#D8E0EA] bg-white px-2 text-sm text-slate-700">
+                  <select value={visitKindFilter} onChange={(event) => setVisitKindFilter(event.target.value)} className="h-9 border border-phx-line bg-white px-2 text-sm text-slate-700">
                     <option value={ALL}>Regular + Campaign</option>
                     {data.filters.visitKinds.map((kind) => (
                       <option key={kind} value={kind}>{kind}</option>
@@ -539,7 +539,7 @@ export function DoubleVisitReportWorkspace({
                   </select>
                 </FilterField>
                 <FilterField label="Time Period">
-                  <select value={periodFilter} onChange={(event) => setPeriodFilter(event.target.value)} className="h-9 border border-[#D8E0EA] bg-white px-2 text-sm text-slate-700">
+                  <select value={periodFilter} onChange={(event) => setPeriodFilter(event.target.value)} className="h-9 border border-phx-line bg-white px-2 text-sm text-slate-700">
                     <option value={ALL}>All periods</option>
                     {periodOptions.map((period) => (
                       <option key={period} value={period}>{period}</option>
@@ -551,7 +551,7 @@ export function DoubleVisitReportWorkspace({
             {tab === "neverVisited" && (
               <>
                 <FilterField label="Area">
-                  <select value={areaFilter} onChange={(event) => setAreaFilter(event.target.value)} className="h-9 border border-[#D8E0EA] bg-white px-2 text-sm text-slate-700">
+                  <select value={areaFilter} onChange={(event) => setAreaFilter(event.target.value)} className="h-9 border border-phx-line bg-white px-2 text-sm text-slate-700">
                     <option value={ALL}>All areas</option>
                     {data.filters.areas.map((area) => (
                       <option key={area} value={area}>{area}</option>
@@ -559,14 +559,14 @@ export function DoubleVisitReportWorkspace({
                   </select>
                 </FilterField>
                 <label className="flex h-9 items-center gap-2 text-xs font-semibold text-slate-600">
-                  <input type="checkbox" checked={flaggedOnly} onChange={(event) => setFlaggedOnly(event.target.checked)} className="accent-[#F97316]" />
+                  <input type="checkbox" checked={flaggedOnly} onChange={(event) => setFlaggedOnly(event.target.checked)} className="accent-phx-accent" />
                   Overdue only (45+ days since hire)
                 </label>
               </>
             )}
             {tab === "probation" && (
               <FilterField label="DV status">
-                <select value={dvStatusFilter} onChange={(event) => setDvStatusFilter(event.target.value as typeof dvStatusFilter)} className="h-9 border border-[#D8E0EA] bg-white px-2 text-sm text-slate-700">
+                <select value={dvStatusFilter} onChange={(event) => setDvStatusFilter(event.target.value as typeof dvStatusFilter)} className="h-9 border border-phx-line bg-white px-2 text-sm text-slate-700">
                   <option value={ALL}>All statuses</option>
                   <option value="done">Done</option>
                   <option value="pending">Pending</option>

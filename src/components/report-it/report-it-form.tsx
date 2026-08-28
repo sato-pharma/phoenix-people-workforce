@@ -723,7 +723,7 @@ function ConfirmationScreen({
   return (
     <div className={isAdmin ? `mx-auto max-w-xl overflow-hidden p-0 ${adminPanelClassName}` : "mx-auto max-w-xl border border-slate-200 bg-white shadow-sm"}>
       {isAdmin ? (
-        <div className="border-b border-[#D8E0EA] bg-[#FCFDFE] px-6 py-7 text-center">
+        <div className="border-b border-phx-line bg-[#FCFDFE] px-6 py-7 text-center">
           <div className="mx-auto flex h-16 w-16 items-center justify-center border border-emerald-200 bg-emerald-50">
             <CheckCircle2 className="h-9 w-9 text-emerald-600" />
           </div>
@@ -960,7 +960,7 @@ export function ReportItForm({ onSubmitSuccess, variant = "employee" }: ReportIt
   return (
     <div className={isAdmin ? `overflow-hidden p-0 ${adminPanelClassName}` : "border border-slate-200 bg-white shadow-sm"}>
       {isAdmin ? (
-        <div className="border-b border-[#D8E0EA] bg-[#FCFDFE] px-5 py-4 sm:px-6">
+        <div className="border-b border-phx-line bg-[#FCFDFE] px-5 py-4 sm:px-6">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div className="min-w-0">
               <p className="text-[11px] font-black uppercase tracking-[0.18em] text-orange-600">Admin submission</p>

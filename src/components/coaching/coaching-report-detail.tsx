@@ -132,13 +132,13 @@ function StatTile({
   value: string;
 }) {
   return (
-    <div className="rounded-lg border border-[#E2E8F0] bg-white px-4 py-3 shadow-sm">
+    <div className="rounded-lg border border-phx-line bg-white px-4 py-3 shadow-sm">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="text-[10px] font-black uppercase tracking-[0.16em] text-[#64748B]">{label}</p>
-          <p className="mt-1 text-sm font-black text-[#0F172A]">{value}</p>
+          <p className="text-[10px] font-black uppercase tracking-[0.16em] text-phx-ink-soft">{label}</p>
+          <p className="mt-1 text-sm font-black text-phx-ink">{value}</p>
         </div>
-        {icon ? <div className="text-[#F97316]">{icon}</div> : null}
+        {icon ? <div className="text-phx-accent">{icon}</div> : null}
       </div>
     </div>
   );
@@ -155,8 +155,8 @@ function Pill({ children, className }: { children: ReactNode; className: string 
 function FeedbackBlock({ label, text }: { label: string; text: string | null }) {
   return (
     <Card className={cn(adminPanelClassName, "p-5")}>
-      <p className="text-xs font-black uppercase tracking-[0.16em] text-[#F97316]">{label}</p>
-      <p className="mt-3 whitespace-pre-wrap text-sm leading-7 text-[#475569]">
+      <p className="text-xs font-black uppercase tracking-[0.16em] text-phx-accent">{label}</p>
+      <p className="mt-3 whitespace-pre-wrap text-sm leading-7 text-phx-ink-2">
         {text?.trim() || "No feedback was provided."}
       </p>
     </Card>
@@ -172,7 +172,7 @@ function ScoreItemNotes({ score }: { score: CoachingScoreItemRow | undefined }) 
     <div className="mt-3 grid gap-2 md:grid-cols-2">
       {area ? (
         <div className="rounded-md border border-orange-100 bg-orange-50/70 px-3 py-2.5">
-          <p className="text-[10px] font-black uppercase tracking-[0.14em] text-[#EA580C]">Area to be Improved</p>
+          <p className="text-[10px] font-black uppercase tracking-[0.14em] text-phx-accent-hover">Area to be Improved</p>
           <p className="mt-1 whitespace-pre-wrap text-xs font-semibold leading-5 text-[#7C2D12]">{area}</p>
         </div>
       ) : null}
@@ -195,15 +195,15 @@ export function CoachingReportDetail({ detail }: CoachingReportDetailProps) {
   return (
     <div className="space-y-5">
       <Card className={cn(adminPanelClassName, "overflow-hidden p-0")}>
-        <div className="grid gap-5 border-b border-[#E2E8F0] bg-[linear-gradient(135deg,#FFFFFF_0%,#FFF7ED_58%,#F8FAFC_100%)] p-5 sm:p-6 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-end">
+        <div className="grid gap-5 border-b border-phx-line bg-[linear-gradient(135deg,#FFFFFF_0%,#FFF7ED_58%,#F8FAFC_100%)] p-5 sm:p-6 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-end">
           <div>
-            <p className="text-[11px] font-black uppercase tracking-[0.18em] text-[#F97316]">
+            <p className="text-[11px] font-black uppercase tracking-[0.18em] text-phx-accent">
               {report.report_number}
             </p>
-            <h2 className="mt-2 text-3xl font-black tracking-[-0.04em] text-[#0F172A]">
+            <h2 className="mt-2 text-3xl font-black tracking-[-0.04em] text-phx-ink">
               {formatEmployeeDisplayName(summary?.medicalRepName, report.medical_rep_hr_id)}
             </h2>
-            <p className="mt-2 text-sm leading-6 text-[#64748B]">
+            <p className="mt-2 text-sm leading-6 text-phx-ink-soft">
               Read-only coaching report for HR ID {report.medical_rep_hr_id}, coached by {formatEmployeeDisplayName(summary?.coachName, report.coach_hr_id)}.
             </p>
           </div>
@@ -233,13 +233,13 @@ export function CoachingReportDetail({ detail }: CoachingReportDetailProps) {
           <AdminSectionHeader
             title="Final score"
             description="Calculated from the 20 fixed coaching score items."
-            action={<Award className="h-5 w-5 text-[#F97316]" />}
+            action={<Award className="h-5 w-5 text-phx-accent" />}
           />
           <div className={cn(adminInsetPanelClassName, "mt-5 p-5")}>
-            <p className="text-5xl font-black tracking-[-0.06em] text-[#0F172A]">
+            <p className="text-5xl font-black tracking-[-0.06em] text-phx-ink">
               {formatPercent(report.final_score_percent)}
             </p>
-            <p className="mt-2 text-sm font-bold text-[#64748B]">
+            <p className="mt-2 text-sm font-bold text-phx-ink-soft">
               {formatScore(report.actual_score)} / {coachingMaxScore} points
             </p>
             <div className="mt-5 grid gap-3">
@@ -259,7 +259,7 @@ export function CoachingReportDetail({ detail }: CoachingReportDetailProps) {
           <AdminSectionHeader
             title="Review status"
             description="Tracks whether the medical rep has acknowledged the submitted coaching report."
-            action={<CheckCircle2 className="h-5 w-5 text-[#F97316]" />}
+            action={<CheckCircle2 className="h-5 w-5 text-phx-accent" />}
           />
           <div className={cn(adminInsetPanelClassName, "mt-5 grid gap-3 p-5 sm:grid-cols-2")}>
             <StatTile label="Acknowledgment Status" value={acknowledged ? "Acknowledged" : "Pending"} />
@@ -274,7 +274,7 @@ export function CoachingReportDetail({ detail }: CoachingReportDetailProps) {
         <AdminSectionHeader
           title="20 field excellence points"
           description="Five coaching parameters with fixed score items, each rated from 0 to 5."
-          action={<Target className="h-5 w-5 text-[#F97316]" />}
+          action={<Target className="h-5 w-5 text-phx-accent" />}
         />
 
         <div className="mt-5 grid gap-4">
@@ -285,15 +285,15 @@ export function CoachingReportDetail({ detail }: CoachingReportDetailProps) {
               <div className={cn(adminInsetPanelClassName, "p-4")} key={category}>
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div className="flex items-center gap-3">
-                    <span className="flex h-10 w-10 items-center justify-center rounded-md bg-[#0F172A] text-sm font-black text-[#FDBA74]">
+                    <span className="flex h-10 w-10 items-center justify-center rounded-md bg-phx-ink text-sm font-black text-phx-accent">
                       {categoryLetters[category]}
                     </span>
                     <div>
-                      <p className="text-base font-black text-[#0F172A]">{coachingParameterLabels[category]}</p>
-                      <p className="text-xs font-bold text-[#64748B]">{items.length} scoring items</p>
+                      <p className="text-base font-black text-phx-ink">{coachingParameterLabels[category]}</p>
+                      <p className="text-xs font-bold text-phx-ink-soft">{items.length} scoring items</p>
                     </div>
                   </div>
-                  <span className="rounded-full border border-[#E2E8F0] bg-white px-3 py-1.5 text-xs font-black text-[#475569]">
+                  <span className="rounded-full border border-phx-line bg-white px-3 py-1.5 text-xs font-black text-phx-ink-2">
                     {subtotal ? `${subtotal.actualScore} / ${subtotal.maxScore}` : "Not scored"}
                   </span>
                 </div>
@@ -304,15 +304,15 @@ export function CoachingReportDetail({ detail }: CoachingReportDetailProps) {
                     const score = scoreRow?.score;
                     return (
                       <div
-                        className="rounded-md border border-[#E2E8F0] bg-white px-4 py-3"
+                        className="rounded-md border border-phx-line bg-white px-4 py-3"
                         key={item.key}
                       >
                         <div className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-center">
                           <div>
-                            <p className="text-sm font-bold text-[#0F172A]">{item.label}</p>
-                            <p className="mt-1 text-xs font-semibold text-[#64748B]">Point {item.displayOrder}</p>
+                            <p className="text-sm font-bold text-phx-ink">{item.label}</p>
+                            <p className="mt-1 text-xs font-semibold text-phx-ink-soft">Point {item.displayOrder}</p>
                           </div>
-                          <span className="inline-flex h-9 min-w-12 items-center justify-center rounded-md bg-[#FFF7ED] px-3 text-sm font-black text-[#EA580C] ring-1 ring-[#FED7AA]">
+                          <span className="inline-flex h-9 min-w-12 items-center justify-center rounded-md bg-phx-accent-soft px-3 text-sm font-black text-phx-accent-hover ring-1 ring-[#FED7AA]">
                             {score ?? "-"} / 5
                           </span>
                         </div>

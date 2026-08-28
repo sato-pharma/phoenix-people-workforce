@@ -942,7 +942,7 @@ export function ExpenseApprovalsWorkspace({
         {/* Left: scannable list */}
         <div className="space-y-2">
           {loading ? (
-            <p className="flex items-center gap-2 border border-[#e4e9ec] bg-white px-4 py-8 text-sm text-slate-500">
+            <p className="flex items-center gap-2 border border-phx-line bg-white px-4 py-8 text-sm text-slate-500">
               <Loader2 className="h-4 w-4 animate-spin" /> Loading trips…
             </p>
           ) : loadError ? (

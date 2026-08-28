@@ -120,7 +120,7 @@ export function CustomerMappingWorkspace({ initialError, initialResult, options 
 
   if (initialError && !result) {
     return (
-      <div className="min-h-[calc(100vh-7rem)] border border-[#E2E8F0] bg-[#F8FAFC] p-5 sm:p-6 xl:p-8">
+      <div className="min-h-[calc(100vh-7rem)] border border-phx-line bg-phx-paper p-5 sm:p-6 xl:p-8">
         <AdminCallout tone="danger">
           <AlertTriangle className="h-4 w-4" />
           <p>{initialError}</p>
@@ -153,7 +153,7 @@ export function CustomerMappingWorkspace({ initialError, initialResult, options 
       <AdminTableShell
         action={(
           <button
-            className="inline-flex h-10 items-center gap-2 border border-[#0B0B0B] bg-[#0B0B0B] px-4 text-sm font-bold text-white transition hover:bg-[#F97316] disabled:opacity-50"
+            className="inline-flex h-10 items-center gap-2 border border-[#0B0B0B] bg-[#0B0B0B] px-4 text-sm font-bold text-white transition hover:bg-phx-accent disabled:opacity-50"
             disabled={isExporting || isLoading || (rows.length === 0 && consolidated.length === 0)}
             onClick={() => void handleExport()}
             type="button"
@@ -166,11 +166,11 @@ export function CustomerMappingWorkspace({ initialError, initialResult, options 
         title="Customer Mapping"
       >
         <div className="flex flex-wrap items-center gap-3 border-b border-slate-100 px-4 py-4 md:px-5">
-          <div className="flex items-center border border-[#D8E0EA]">
+          <div className="flex items-center border border-phx-line">
             <button
               className={cn(
                 "flex h-10 items-center gap-2 px-3 text-sm font-bold transition",
-                view === "byDistributor" ? "bg-[#0B0B0B] text-white" : "bg-white text-slate-600 hover:text-[#F97316]",
+                view === "byDistributor" ? "bg-[#0B0B0B] text-white" : "bg-white text-slate-600 hover:text-phx-accent",
               )}
               onClick={() => setView("byDistributor")}
               type="button"
@@ -180,7 +180,7 @@ export function CustomerMappingWorkspace({ initialError, initialResult, options 
             <button
               className={cn(
                 "flex h-10 items-center gap-2 px-3 text-sm font-bold transition",
-                view === "consolidated" ? "bg-[#0B0B0B] text-white" : "bg-white text-slate-600 hover:text-[#F97316]",
+                view === "consolidated" ? "bg-[#0B0B0B] text-white" : "bg-white text-slate-600 hover:text-phx-accent",
               )}
               onClick={() => setView("consolidated")}
               type="button"
@@ -205,7 +205,7 @@ export function CustomerMappingWorkspace({ initialError, initialResult, options 
                 Showing the first {formatNumber(shownCount)} of {formatNumber(totalCount)} — refine the filters to narrow the list. The XLSX export always contains the full filtered set.
               </p>
             ) : null}
-            <div className="overflow-hidden border border-[#E2E8F0]">
+            <div className="overflow-hidden border border-phx-line">
               {view === "byDistributor" ? (
                 <table className="w-full min-w-[1400px] text-sm">
                   <thead className="bg-[#0B0B0B] text-slate-100">
@@ -223,7 +223,7 @@ export function CustomerMappingWorkspace({ initialError, initialResult, options 
                       <th className={headerCell}>Master Customer</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-[#E2E8F0]">
+                  <tbody className="divide-y divide-phx-line">
                     {isLoading ? (
                       <tr><td className="px-3 py-6 text-center text-slate-400" colSpan={11}><Loader2 className="mx-auto h-5 w-5 animate-spin" /></td></tr>
                     ) : rows.length === 0 ? (
@@ -231,7 +231,7 @@ export function CustomerMappingWorkspace({ initialError, initialResult, options 
                     ) : (
                       rows.map((row) => (
                         <tr className="transition-colors hover:bg-orange-50/50" key={`${row.distributorCode}:${row.customerCode}`}>
-                          <td className="whitespace-nowrap px-3 py-2.5 font-semibold tabular-nums text-[#0F172A]">{row.customerCode}</td>
+                          <td className="whitespace-nowrap px-3 py-2.5 font-semibold tabular-nums text-phx-ink">{row.customerCode}</td>
                           <td className="px-3 py-2.5 text-slate-700">{row.customerName || "—"}</td>
                           <td className="max-w-[260px] px-3 py-2.5 text-slate-500"><span className="line-clamp-2">{row.customerAddress || "—"}</span></td>
                           <td className="whitespace-nowrap px-3 py-2.5 text-slate-600">{row.distributorName}</td>
@@ -244,7 +244,7 @@ export function CustomerMappingWorkspace({ initialError, initialResult, options 
                           <td className="whitespace-nowrap px-3 py-2.5">
                             <span className="font-mono text-xs font-semibold text-slate-700">{row.masterCustomerId}</span>
                             {row.matched ? (
-                              <span className="ml-2 bg-[#F97316] px-1.5 text-[10px] font-black text-white">×{row.distributorSpan}</span>
+                              <span className="ml-2 bg-phx-accent px-1.5 text-[10px] font-black text-white">×{row.distributorSpan}</span>
                             ) : null}
                           </td>
                         </tr>
@@ -268,7 +268,7 @@ export function CustomerMappingWorkspace({ initialError, initialResult, options 
                       <th className={`${headerCell} text-right`}>Value</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-[#E2E8F0]">
+                  <tbody className="divide-y divide-phx-line">
                     {isLoading ? (
                       <tr><td className="px-3 py-6 text-center text-slate-400" colSpan={10}><Loader2 className="mx-auto h-5 w-5 animate-spin" /></td></tr>
                     ) : consolidated.length === 0 ? (
@@ -279,10 +279,10 @@ export function CustomerMappingWorkspace({ initialError, initialResult, options 
                           <td className="whitespace-nowrap px-3 py-2.5">
                             <span className="font-mono text-xs font-semibold text-slate-700">{master.masterCustomerId}</span>
                             {master.distributorSpan > 1 ? (
-                              <span className="ml-2 bg-[#F97316] px-1.5 text-[10px] font-black text-white">×{master.distributorSpan}</span>
+                              <span className="ml-2 bg-phx-accent px-1.5 text-[10px] font-black text-white">×{master.distributorSpan}</span>
                             ) : null}
                           </td>
-                          <td className="px-3 py-2.5 font-semibold text-[#0F172A]">{master.customerName || "—"}</td>
+                          <td className="px-3 py-2.5 font-semibold text-phx-ink">{master.customerName || "—"}</td>
                           <td className="max-w-[240px] px-3 py-2.5 text-slate-500"><span className="line-clamp-2">{master.customerAddress || "—"}</span></td>
                           <td className="whitespace-nowrap px-3 py-2.5 text-slate-600">{master.brickName || master.brickId || "—"}</td>
                           <td className="whitespace-nowrap px-3 py-2.5 text-slate-600">{master.areaName || "—"}</td>

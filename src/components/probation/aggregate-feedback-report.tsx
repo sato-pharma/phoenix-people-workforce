@@ -143,7 +143,7 @@ export function AggregateFeedbackReport() {
                 "TA",
               ].map((col) => (
                 <th
-                  className="px-2.5 py-2 text-[10px] font-black uppercase tracking-[0.14em] text-[#64748B]"
+                  className="px-2.5 py-2 text-[10px] font-black uppercase tracking-[0.14em] text-phx-ink-soft"
                   key={col}
                 >
                   {col}
@@ -151,7 +151,7 @@ export function AggregateFeedbackReport() {
               ))}
             </tr>
           </thead>
-          <tbody className="divide-y divide-[#E2E8F0]">
+          <tbody className="divide-y divide-phx-line">
             {filtered.length === 0 ? (
               <tr>
                 <td

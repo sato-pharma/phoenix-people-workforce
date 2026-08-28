@@ -121,11 +121,11 @@ export function CrmIntegrityWorkspace({
           <div className="flex flex-wrap items-end gap-3 border border-slate-200 bg-white px-4 py-3">
             <label className="flex flex-col gap-1 text-[10px] font-bold uppercase tracking-wider text-slate-500">
               From
-              <input type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} className="h-9 border border-[#D8E0EA] bg-white px-2 text-sm" />
+              <input type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} className="h-9 border border-phx-line bg-white px-2 text-sm" />
             </label>
             <label className="flex flex-col gap-1 text-[10px] font-bold uppercase tracking-wider text-slate-500">
               To
-              <input type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} className="h-9 border border-[#D8E0EA] bg-white px-2 text-sm" />
+              <input type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} className="h-9 border border-phx-line bg-white px-2 text-sm" />
             </label>
             <label className="flex w-56 flex-col gap-1 text-[10px] font-bold uppercase tracking-wider text-slate-500">
               Agent
@@ -136,7 +136,7 @@ export function CrmIntegrityWorkspace({
                 ))}
               </SearchableSelect>
             </label>
-            <button type="button" onClick={() => applyFilters()} className="h-9 border border-[#D8E0EA] bg-white px-3 text-xs font-bold text-[#0F172A] shadow-sm transition hover:border-[#FDBA74] hover:text-[#F97316]">
+            <button type="button" onClick={() => applyFilters()} className="h-9 border border-phx-line bg-white px-3 text-xs font-bold text-phx-ink shadow-sm transition hover:border-phx-accent-line hover:text-phx-accent">
               Apply
             </button>
           </div>
@@ -210,7 +210,7 @@ export function CrmIntegrityWorkspace({
                 type="button"
                 disabled={data.page <= 1}
                 onClick={() => applyFilters({ page: data.page - 1 })}
-                className="h-9 border border-[#D8E0EA] bg-white px-3 text-xs font-bold text-[#0F172A] shadow-sm transition hover:border-[#FDBA74] hover:text-[#F97316] disabled:opacity-40"
+                className="h-9 border border-phx-line bg-white px-3 text-xs font-bold text-phx-ink shadow-sm transition hover:border-phx-accent-line hover:text-phx-accent disabled:opacity-40"
               >
                 Previous
               </button>
@@ -218,7 +218,7 @@ export function CrmIntegrityWorkspace({
                 type="button"
                 disabled={data.page >= totalPages}
                 onClick={() => applyFilters({ page: data.page + 1 })}
-                className="h-9 border border-[#D8E0EA] bg-white px-3 text-xs font-bold text-[#0F172A] shadow-sm transition hover:border-[#FDBA74] hover:text-[#F97316] disabled:opacity-40"
+                className="h-9 border border-phx-line bg-white px-3 text-xs font-bold text-phx-ink shadow-sm transition hover:border-phx-accent-line hover:text-phx-accent disabled:opacity-40"
               >
                 Next
               </button>
