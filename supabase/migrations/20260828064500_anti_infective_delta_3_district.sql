@@ -1,24 +1,49 @@
--- Anti Infective: open a new district, Delta (3).
+-- Anti Infective: open a new district, Delta (3), as a VACANT PLACEHOLDER.
 --
 -- Owner's instruction, 2026-08-28: a new District Manager position is open in the
--- ANTI INFECTIVE line only, covering Ismailia, Suez, Sharkia and Qalubia. This migration
--- builds the placeholder — the region, the seat, the vacancy and the territory. It hires
--- nobody: the DM seat and all five rep seats are left VACANT on purpose. The owner adds
--- the person, and `phx_hire_into_seat_on_vacancy_filled()` fills the seat from the vacancy.
+-- ANTI INFECTIVE line only, covering Ismailia, Suez, Sharkia and Qalubia.
 --
--- Already applied by hand to production on 2026-08-28 (project ozucdzovmcqvepbozvqf), so
--- every statement here is idempotent and this file is the record of what was run.
+-- SCOPE: anti_infective ONLY. The owner reiterated this explicitly — do NOT touch Pedia or
+-- CNS. Every statement below is scoped to the anti_infective line or to AIF-prefixed seats,
+-- and the D11/D24/D25/OT2/OT9 rows on cns and pedia are left exactly as they are.
+--
+-- This hires nobody: the DM seat and all four rep seats are left VACANT on purpose. The owner
+-- adds the person, and `phx_hire_into_seat_on_vacancy_filled()` fills the seat from the vacancy.
+--
+-- Already applied to production (project ozucdzovmcqvepbozvqf) on 2026-08-28, so every
+-- statement here is idempotent and this file is the record of what was run.
+--
+-- ─────────────────────────────────────────────────────────────────────────────
+-- WHAT THIS FILE DELIBERATELY DOES **NOT** DO: move the territory.
+--
+-- The five areas — D11 Qalubeya, D24 Sharkia 1, D25 Sharkia 2, OT2 Suez, OT9 Ismailia — STAY
+-- where they are for now. They were moved on 2026-08-28 and moved back the same day, on the
+-- owner's instruction that the new DM starts 1 September and the AUGUST monthly closing must
+-- come out on the old structure, "normally, before the change we made".
+--
+-- WHY A DATE-STAMPED SWITCH CANNOT DO THIS. `loadLineOperationalRegions`
+-- (src/lib/sales/closing-organogram-regions.ts) filters the map with:
+--
+--     if (from && from > today) return;
+--     if (to   && to   < today) return;
+--
+-- where `today` defaults to the moment the report RUNS — and both call sites in
+-- monthly-distributor-import.ts pass only the line code, never the period. So the closing
+-- resolves geography as of the RUN DATE, not as of the month being closed. That is the owner's
+-- own standing rule (all sales attribute to today's geography, never as-was), and it means
+-- effective-dating these rows to 2026-09-01 would STILL pull August onto Delta (3) the moment
+-- August is closed in September. Measured 2026-08-28: with the areas moved, July's Anti
+-- Infective sales immediately regrouped under Delta (3) — 10 rows, 52 units.
+--
+-- So the territory move is a DATED ACTION, not a migration: it runs once the August closing is
+-- published, and gets its own migration then. Until that moment the organogram shows the plan
+-- (a vacant Delta (3) with its four rep chairs) and the closing shows today's reality
+-- (D24 under Delta (2), the other four in Others). The two are meant to disagree.
+-- ─────────────────────────────────────────────────────────────────────────────
 --
 -- Precedent followed:
 --   20260802052000_sos_regions_upper_egypt_split.sql   — adding a region + its public mirror
---   20260803180926_split_gz6_fayoum_beni_suef.sql      — moving areas between DMs
---
--- Deliberately NOT touched:
---   * au.canonical_areas.code_region_code — the structural code-space region does not move.
---     Only line_area_map.operational_region_code does. (UE-1/UE-2 precedent.)
---   * Any sales row, and any au.monthly_targets row. Targets are keyed by (period, line,
---     area, product) with no region column, so they follow their area with nothing rewritten.
---   * The CNS and Pedia lines. Every change below is scoped to anti_infective.
+--   20260803180926_split_gz6_fayoum_beni_suef.sql      — seats for a newly opened territory
 
 begin;
 
@@ -53,8 +78,8 @@ values
    false, 'ANTI_INFECTIVE Delta (3) DM', true, date '2026-08-28')
 on conflict (seat_id) do nothing;
 
--- Three new rep seats. With SEAT-AIF-REP-D24, which comes across from Delta (2) below, the
--- district opens with the FOUR medical reps the owner specified on 2026-08-28:
+-- Three new rep seats. With SEAT-AIF-REP-D24, reparented below, the district opens with the
+-- FOUR medical reps the owner specified on 2026-08-28:
 --
 --   AIF Qalubeya rep         D11
 --   AIF Sharkia 1 rep        D24
@@ -63,7 +88,7 @@ on conflict (seat_id) do nothing;
 --
 -- Suez and Ismailia do NOT get a rep each. One seat serving two areas is an existing, supported
 -- shape: SEAT-PED-REP-GZ6 already serves pedia:GZ6 and pedia:UE9 the same way. The seat carries
--- the primary area code (OT2) and both line_area_map rows point at it.
+-- the primary area code (OT2); both areas point at it when the territory move runs.
 --
 -- Descriptive labels follow the 'AIF Fayoum rep' / 'AIF Beni Suef rep' precedent for
 -- governorate-named areas, and the owner's rule that a name beats a raw code.
@@ -76,46 +101,18 @@ values
   ('SEAT-AIF-REP-OT2','REP','anti_infective','D3','OT2','SEAT-AIF-DM-D3',false,'AIF Suez & Ismailia rep',true,date '2026-08-28')
 on conflict (seat_id) do nothing;
 
--- Sharkia 1 already had a rep seat under Delta (2); it follows its area across, and loses
--- the raw area code in its label at the same time.
+-- Sharkia 1 already had a rep seat under Delta (2). The SEAT moves now, so the organogram shows
+-- the planned district; its AREA does not move until the territory step runs, so the August
+-- closing still resolves D24 through Delta (2).
 update au.seats
    set region_code = 'D3',
        parent_seat_id = 'SEAT-AIF-DM-D3',
        seat_label = 'AIF Sharkia 1 rep'
  where seat_id = 'SEAT-AIF-REP-D24';
 
--- ── 3. Line ➜ area map ─────────────────────────────────────────────────────────
--- The five areas that make up the district. D11/D25 were other_line_specific and OT2/OT9
--- were other_permanent — all four sat in the Others bucket with no DM and no target. D24
--- was already vacant_will_hire under Delta (2).
---
--- carries_target is GENERATED — (area_state in ('occupied','vacant_will_hire')) — so it is
--- never written. Setting vacant_will_hire is what makes these areas target-bearing, and it
--- is the only state the model has for "a real DM owns this and the rep chair is empty".
--- It creates no target: au.monthly_targets stays untouched, so their target is zero until
--- one is uploaded.
---
--- Existing notes carry import tokens (token=QAL-AIF-OT, token=SH-AIF-OT) — appended to, never replaced.
-update au.line_area_map m
-   set operational_region_code = 'D3',
-       dm_seat_id = 'SEAT-AIF-DM-D3',
-       area_state = 'vacant_will_hire',
-       other_type = null,
-       staffed_in_line_code = null,
-       -- OT9 (Ismailia) shares OT2's seat; every other area has its own.
-       rep_seat_id = case when m.area_code = 'OT9' then 'SEAT-AIF-REP-OT2'
-                          else 'SEAT-AIF-REP-' || m.area_code end,
-       notes = coalesce(nullif(m.notes, '') || ' | ', '')
-               || 'Moved into the new Delta (3) district 2026-08-28'
- where m.line_code = 'anti_infective'
-   and m.area_code in ('D11', 'D24', 'D25', 'OT2', 'OT9')
-   and m.effective_to is null
-   and m.operational_region_code is distinct from 'D3';
-
--- ── 4. The vacancy that starts the lifecycle ───────────────────────────────────
+-- ── 3. The vacancy that starts the lifecycle ───────────────────────────────────
 -- status 'open'. When it is set to 'filled' with a filled_by_hr_id, the AFTER UPDATE trigger
--- trg_position_vacancies_hire_into_seat calls au.hire_into_seat, which writes the occupancy
--- row and flips the district's areas from vacant_will_hire to occupied.
+-- trg_position_vacancies_hire_into_seat calls au.hire_into_seat, which writes the occupancy row.
 insert into public.position_vacancies
   (vacancy_code, status, job_title, position_id, line_id, area_id, seat_id,
    region_name, manager_hr_id, manager_name, note)
@@ -126,7 +123,7 @@ values
    'Opened 2026-08-28 on the owner''s instruction: a NEW Anti Infective district, Delta (3), '
    'covering Ismailia, Suez, Sharkia and Qalubia. This is a brand-new seat, not a replacement, '
    'so there is no predecessor to inherit from. Manager is the current occupant of the parent '
-   'seat SEAT-AIF-NSM.')
+   'seat SEAT-AIF-NSM. The incoming DM starts 2026-09-01.')
 on conflict (vacancy_code) do nothing;
 
 commit;
