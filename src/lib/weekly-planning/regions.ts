@@ -17,6 +17,7 @@ export const APPROVED_PLANNING_REGIONS = [
   "Cairo",
   "Delta 1",
   "Delta 2",
+  "Delta 3",
   "Giza",
   "Upper Egypt",
 ] as const;
@@ -62,6 +63,7 @@ export function canonicalPlanningRegionName(value: unknown): ApprovedPlanningReg
   if (normalized === "cairo") return "Cairo";
   if (normalized === "delta 1" || normalized === "delta-1") return "Delta 1";
   if (normalized === "delta 2" || normalized === "delta-2") return "Delta 2";
+  if (normalized === "delta 3" || normalized === "delta-3") return "Delta 3";
   if (normalized === "giza") return "Giza";
   if (UPPER_EGYPT_DISTRICT.test(normalized)) return "Upper Egypt";
   return null;
