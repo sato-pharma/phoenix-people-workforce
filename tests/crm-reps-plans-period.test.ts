@@ -88,7 +88,7 @@ export function runCrmRepsPlansPeriodTests() {
     assert.equal(week1.dateFrom, "2026-08-01");
     assert.equal(week1.dateTo, "2026-08-07", "week 1 is week 1, not the month it sits in");
     assert.equal(week1.isWholeMonth, false);
-    assert.equal(week1.cappedAtToday ?? false, false);
+    assert.equal(week1.windowEnd, "2026-08-07", "and its own end is that same day — today truncated nothing");
 
     // A week still running is capped at today, so the rate is not divided by days nobody has worked.
     const running = repsPlansRange("2026-08", "2026-08-25", "w4");
@@ -175,6 +175,19 @@ export function runCrmRepsPlansPeriodTests() {
     // One perfect day inside a five-day week is a fifth of the standard — the honest answer, and one
     // no reader can reach if the denominator silently says twenty.
     assert.equal(board.reps[0].pm.reportedRate, 2, "10 PM calls over the week's 5 days");
+    assert.equal(board.cappedAtToday, false, "a finished week is shown whole, so there is nothing to warn about");
+
+    // The SAME week seen while it is still running is scored only through today, and SAYS so — the
+    // alternative is dividing a rep's work by days nobody has worked yet.
+    const midWeek = repsPlansRange("2026-08", "2026-08-10", "w2");
+    assert.equal(midWeek.dateTo, "2026-08-10", "a running week stops at today");
+    assert.equal(midWeek.windowEnd, "2026-08-14", "but keeps its own end, so the screen can say it was cut short");
+    const midBoard = buildRepsPlansBoard(
+      computeCallRate(callsOn("2026-08-10", 2, 10), [], { dateFrom: midWeek.dateFrom, dateTo: midWeek.dateTo }),
+      { isCurrentMonth: true, month: "2026-08", range: midWeek, weekOptions: [] },
+    );
+    assert.equal(midBoard.cappedAtToday, true, "and the board carries that, rather than quietly showing a short week");
+    assert.equal(midBoard.workingDays, 3, "Sat 8, Sun 9, Mon 10 — three days elapsed, not the week's eventual five");
 
     // A board built with NO range is the whole month — the behaviour before the picker existed, so
     // an older caller cannot silently acquire a window it never asked for.
