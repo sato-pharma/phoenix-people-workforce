@@ -888,7 +888,7 @@ function OfferCard({
           </div>
         ) : (
           <p className="text-xs text-slate-500">
-            Waiting for approval. Talent Acquisition cannot approve an offer it prepared.
+            Waiting for approval. The recruiter who prepared an offer cannot approve it.
           </p>
         )
       ) : null}

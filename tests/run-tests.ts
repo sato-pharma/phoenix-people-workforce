@@ -511,6 +511,7 @@ import { runEmployeePortalPayslipSalaryTests } from "./employee-portal-payslip-s
 import { runAdminPayslipImageExportTests } from "./admin-payslip-image-export.test.ts";
 import { runEmployeePayrollEligibilityTests } from "./employee-payroll-eligibility.test.ts";
 import { runEmployeeAccessProvisioningTests } from "./employee-access-provisioning.test.ts";
+import { runHrFunctionGovernanceTests } from "./hr-function-governance.test.ts";
 import { runTitlePermissionGovernanceTests } from "./title-permission-governance.test.ts";
 import { runOrganogramHardeningTests } from "./organogram-hardening.test.ts";
 import { runVacancyReportOrganogramConsistencyTests } from "./vacancy-report-organogram-consistency.test.ts";
@@ -1266,7 +1267,7 @@ await runTest(
   "recruitment advertising channels (the code round-trips from apply link to intake, or every CV loses its source)",
   runRecruitmentJobPostChannelTests,
 );
-await runTest("recruitment hub -> portal coverage (Talent Acquisition can reach every hub tool)", runRecruitmentHubPortalCoverageTests);
+await runTest("recruitment hub -> ADMIN-shell coverage (HR Advisory reaches every hub tool; the seven portal mirrors are offered to nobody)", runRecruitmentHubPortalCoverageTests);
 await runTest("recruitment portal \"View CV\" opens the viewer instead of downloading", runRecruitmentPortalCvViewTests);
 await runTest("recruitment inbound cv intake", runRecruitmentInboundCvIntakeTests);
 await runTest("recruitment intake finalize patch (a late throw must not erase the candidate it recorded)", runRecruitmentIntakeFinalizePatchTests);
@@ -1733,6 +1734,12 @@ await runTest("admin payslip image export", runAdminPayslipImageExportTests);
 await runTest("employee payroll eligibility", runEmployeePayrollEligibilityTests);
 await runTest("employee access provisioning", runEmployeeAccessProvisioningTests);
 await runTest("title permission governance", runTitlePermissionGovernanceTests);
+await runTest(
+  "HR function governance (a permission role is never a job title; the two retired HR seats fail "
+  + "closed to Employee; no bundle OR individual function breaches a job-description boundary; the "
+  + "matrix is composed from the catalogue rather than hand-edited; both seats keep a self-service floor)",
+  runHrFunctionGovernanceTests,
+);
 await runTest("organogram hardening", runOrganogramHardeningTests);
 await runTest("vacancy report / organogram consistency", runVacancyReportOrganogramConsistencyTests);
 await runTest("organogram godmode", runOrganogramGodmodeTests);
@@ -1765,7 +1772,7 @@ await runTest("resignations dashboard scope (unscoped-read fix)", runResignation
 await runTest("resignations Cairo-today (exit-date defaults resolve via Africa/Cairo)", runResignationsCairoTodayTests);
 await runTest("resignation submitted_by_hr_id FK (actor casing must not violate the employees FK; constraint errors are not 'schema missing')", runResignationSubmittedByFkTests);
 await runTest("resignation CRM identity release (a leaver releases crm_id for their successor but KEEPS crm_username so their own trailing visits stay attributable)", runResignationCrmIdentityReleaseTests);
-await runTest("probation feedback revival (coarse gate is probation:read, FK columns take the stored hr_id, Talent Acquisition resolves and is visible)", runProbationFeedbackRevivalTests);
+await runTest("probation feedback revival (coarse gate is probation:read, FK columns take the stored hr_id, both HR bundles resolve and are visible)", runProbationFeedbackRevivalTests);
 await runTest("access profile hr_id casing (admin-typed hr_id is normalised before it reaches the employees FK)", runAccessProfileHrIdCasingTests);
 await runTest("access governance hardening", runAccessGovernanceHardeningTests);
 await runTest("RLS authenticated-read revoke (M3)", runRlsAuthenticatedReadRevokeTests);
@@ -1860,7 +1867,7 @@ await runTest("activity tracking", runActivityTrackingTests);
 await runTest("activity manager view access (self + direct reports)", runActivityManagerViewAccessTests);
 await runTest("attendance self-scope", runAttendanceSelfScopeTests);
 await runTest("attendance exception notes (approving must not erase the requester's note)", runAttendanceExceptionNotesTests);
-await runTest("hiring documents access (Talent Acquisition company-wide bypass)", runHiringDocumentsAccessTests);
+await runTest("hiring documents access (HR seat company-wide bypass)", runHiringDocumentsAccessTests);
 await runTest("hiring document audit (every write names its actor, before-images read first)", runHiringDocumentsAuditTests);
 await runTest("hiring document capture (polish keeps colour, pages become one A4 PDF, paths never collide)", runHiringDocumentCaptureTests);
 await runTest("hiring document deadlines (a blur that changed nothing must not write, in both renders)", runHiringDocumentsDeadlineTests);

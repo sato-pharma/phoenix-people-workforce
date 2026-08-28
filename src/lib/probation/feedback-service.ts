@@ -204,7 +204,7 @@ async function resolveSubmitterRole(
   // like TM/PM-GPM rather than per-cycle like the DM: hers is a single HR-side perspective on
   // the probation, not a running line-manager assessment. The pass/terminate case decision is
   // unaffected and stays isProbationAdministrator-only.
-  if (appRole === "Talent Acquisition") return { role: "ta", isOnceOnly: true };
+  if (appRole === "HR Advisory" || appRole === "HR Operations") return { role: "ta", isOnceOnly: true };
   if (appRole === "Product Manager" || appRole === "Group Product Manager") {
     // Skip PM/GPM for CNS line employees
     const lineName = (emp as { line_name?: string | null } | null)?.line_name ?? "";
@@ -281,7 +281,7 @@ const SUBMITTER_ROLE_LABELS: Record<FeedbackSubmitterRole, string> = {
   nsm: "National Sales Manager",
   tm: "Training Manager",
   pm_gpm: "PM / GPM",
-  ta: "Talent Acquisition",
+  ta: "HR",
 };
 
 const RECOMMENDATION_LABELS_NOTIFY: Record<FeedbackRecommendation, string> = {

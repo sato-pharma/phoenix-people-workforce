@@ -34,7 +34,7 @@ export function runProbationFeedbackSecurityTests() {
   // shown the button), so the route rejected every real submitter and the feature had never
   // recorded a single row. Authorization now rests on the fine boundary in feedback-service.ts —
   // checkFeedbackEligibility -> resolveSubmitterRole admits a caller only as that specific
-  // employee's own direct manager, or as NSM / TM / PM-GPM / Talent Acquisition, and enforces the
+  // employee's own direct manager, or as NSM / TM / PM-GPM / HR Advisory, and enforces the
   // per-cycle / once-only limit. dv-checkbox deliberately stays on `update` (Super Admin only).
   const routeFiles: Array<[string, string]> = [
     ["app/api/probation/feedback/route.ts", "read"],

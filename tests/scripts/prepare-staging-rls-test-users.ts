@@ -17,7 +17,8 @@ type PhoenixRole =
   | "Training Manager"
   | "Marketing Manager"
   | "Finance Manager"
-  | "Talent Acquisition"
+  | "HR Advisory"
+  | "HR Operations"
   | "Manager"
   | "CEO"
   | "Super Admin";
@@ -50,7 +51,8 @@ const roles: PhoenixRole[] = [
   "Training Manager",
   "Marketing Manager",
   "Finance Manager",
-  "Talent Acquisition",
+  "HR Advisory",
+  "HR Operations",
   "Manager",
   "CEO",
   "Super Admin",
@@ -69,7 +71,8 @@ const testUserCreationOrder: PhoenixRole[] = [
   "Training Manager",
   "Marketing Manager",
   "Finance Manager",
-  "Talent Acquisition",
+  "HR Advisory",
+  "HR Operations",
   "CEO",
   "Super Admin",
 ];
@@ -152,12 +155,28 @@ const roleSpecs: Record<PhoenixRole, RoleSpec> = {
     managerHrId: null,
     role: "Finance Manager",
   },
-  "Talent Acquisition": {
+  // Two HR seats since 2026-08-28, so two fixtures. At the RLS layer they are expected to be
+  // IDENTICAL - both self-scoped, neither a legacy DB 'hr' role - because the split between them
+  // is an application-layer permission distinction. Provisioning both is what proves that: the
+  // easy mistake is assuming the seat that maintains personnel records gets database-level
+  // employee management, and it does not.
+  //
+  // The HR Operations loginId was "rls-test-hr-specialist" until 2026-08-28, naming a seat retired
+  // in 2026-06 - the same rot this rename exists to stop, two retirements deep. Renaming it leaves
+  // one orphaned staging login behind; delete rls-test-hr-specialist by hand if it is still there.
+  "HR Advisory": {
+    hrId: "RLS-HRA-001",
+    line: "Office",
+    loginId: "rls-test-hr-advisory",
+    managerHrId: null,
+    role: "HR Advisory",
+  },
+  "HR Operations": {
     hrId: "RLS-HR-001",
     line: "Office",
-    loginId: "rls-test-hr-specialist",
+    loginId: "rls-test-hr-operations",
     managerHrId: null,
-    role: "Talent Acquisition",
+    role: "HR Operations",
   },
   Manager: {
     hrId: "RLS-MGR-001",
@@ -291,7 +310,7 @@ function mapPhoenixRoleToCoarseAccessRole(role: PhoenixRole) {
       return "company_reader";
     case "Finance Manager":
       return "finance";
-    case "Talent Acquisition":
+    case "HR Operations":
       return "employee";
     case "District Manager":
     case "Regional Manager":
@@ -337,7 +356,7 @@ function mapPhoenixRoleToScopeType(role: PhoenixRole) {
       return "COMPANY_READ";
     case "Finance Manager":
       return "FINANCE";
-    case "Talent Acquisition":
+    case "HR Operations":
       return "SELF";
     case "District Manager":
     case "Manager":

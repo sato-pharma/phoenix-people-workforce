@@ -175,7 +175,11 @@ function withModuleIds(
   }));
 }
 
-const hrAuthorityNavigationRoles = ["Super Admin", "Talent Acquisition"] as const satisfies readonly PhoenixRole[];
+// Both HR bundles, because every entry using this list ALSO carries a `permissions:` requirement
+// and the sidebar filter applies both — so the recruitment tools reach HR Advisory (which holds
+// recruitment:read) and vacation control reaches HR Operations (which holds leave:update), from
+// one shared list. Mirrors hrAuthorityRoles in permissions.ts, which gates the pages themselves.
+const hrAuthorityNavigationRoles = ["Super Admin", "HR Advisory", "HR Operations"] as const satisfies readonly PhoenixRole[];
 // Single consumer: the "Payroll Report" (/payroll) card in payrollManagementPageItems. Finance
 // Manager was dropped on 2026-08-10 (owner) — his payroll:read/export grant stays, because the
 // Automated Payroll finance sheets and the bank transfer file both need it; only this card goes.
@@ -688,7 +692,12 @@ const adminNavigationSectionSeeds = [
   {
     id: "recruitment-hiring",
     items: [
-      { href: "/admin/recruitment-hiring", icon: BriefcaseBusiness, label: "Recruitment & Hiring", roles: hrAuthorityNavigationRoles },
+      // The ONE entry on this list that also needs a permission clause. Every other consumer of
+      // hrAuthorityNavigationRoles carries one, so the matrix separates the two HR bundles for
+      // free; this button did not, and would have put a Recruitment & Hiring row in HR Operations'
+      // sidebar opening a hub whose seven cards are all filtered out for her — the same empty-hub
+      // defect already recorded above for SFE Manager and Finance Manager on People Management.
+      { href: "/admin/recruitment-hiring", icon: BriefcaseBusiness, label: "Recruitment & Hiring", permissions: [{ resource: "recruitment", action: "read" }], roles: hrAuthorityNavigationRoles },
     ],
     label: "Recruitment & Hiring",
   },
@@ -735,7 +744,7 @@ const adminNavigationSectionSeeds = [
   {
     id: "leave-management",
     items: [
-      { href: "/leave-management", icon: CalendarDays, label: "Leave Management", roles: ["Super Admin", "CEO", "Talent Acquisition"] },
+      { href: "/leave-management", icon: CalendarDays, label: "Leave Management", roles: ["Super Admin", "CEO", "HR Operations"] },
       // Vacation Action Center removed — replaced by the Approvals Hub › Vacation Approvals surface.
     ],
     label: "Leave Management",
@@ -1135,54 +1144,14 @@ const employeePortalNavigationSectionSeeds = [
     ],
     label: "Payroll",
   },
-  // ── Recruitment & Hiring: Talent Acquisition's portal-side mirror of the
-  // admin-shell hrAuthorityNavigationRoles tools (app/(admin)/recruitment,
-  // /cv-database, /hiring-documents, /recruitment/intake-health,
-  // /leave-management/vacation-control, /admin/support-requests). Super Admin never
-  // sees this — resolveNavigationMode keeps Super Admin on the admin shell, where the
-  // originals still live.
-  //
-  // This mirror is the ONLY route Talent Acquisition has to these tools. The hub that
-  // lists the admin copies (/admin/recruitment-hiring) sits inside the (admin) route
-  // group, whose layout redirects every portal-mode role away — so an admin-only
-  // recruitment page is Super-Admin-only in practice, however its `roles` read.
-  {
-    id: "recruitment-hiring",
-    items: [
-      { href: "/employee-portals/recruitment", icon: BriefcaseBusiness, label: "Recruitment", permissions: [{ resource: "recruitment", action: "read" }], roles: ["Talent Acquisition"] },
-      { href: "/employee-portals/cv-database", icon: FileSpreadsheet, label: "CV Database", permissions: [{ resource: "vacancies", action: "read" }], roles: ["Talent Acquisition"] },
-      { href: "/employee-portals/hiring-documents", icon: FileCheck2, label: "Hiring Documents", permissions: [{ resource: "employee_documents", action: "read" }], roles: ["Talent Acquisition"] },
-      { href: "/employee-portals/hiring-pack", icon: FileSignature, label: "Contract & Form 1", permissions: [{ resource: "employee_documents", action: "read" }], roles: ["Talent Acquisition"] },
-      { href: "/employee-portals/offers", icon: MailCheck, label: "Job Offers", permissions: [{ resource: "offers", action: "read" }], roles: ["Talent Acquisition"] },
-      { href: "/employee-portals/intake-health", icon: HeartPulse, label: "Inbound Intake Health", permissions: [{ resource: "recruitment", action: "read" }], roles: ["Talent Acquisition"] },
-      { href: "/employee-portals/contact-review", icon: IdCard, label: "Missing Contact Details", permissions: [{ resource: "recruitment", action: "read" }], roles: ["Talent Acquisition"] },
-      { href: "/employee-portals/vacation-control", icon: Settings2, label: "Vacation Control", permissions: [{ resource: "leave", action: "update" }], roles: ["Talent Acquisition"] },
-      { href: "/employee-portals/support-requests", icon: LifeBuoy, label: "HR Support Requests", permissions: [{ resource: "support_requests", action: "read" }], roles: ["Talent Acquisition"] },
-    ],
-    label: "Recruitment & Hiring",
-  },
-  // ── People Management: Talent Acquisition's company-wide HR tooling, separate
-  // from the Recruitment & Hiring pipeline tools above (app/employee-portals/
-  // {employees,contracts,resignations}/page.tsx). Vacancies Report reuses the
-  // href already catalogued above (line ~605) for the field-management roles.
-  {
-    id: "people-management",
-    items: [
-      { href: "/employee-portals/employees", icon: UsersRound, label: "Employees", permissions: [{ resource: "employees", action: "read" }], roles: ["Talent Acquisition"] },
-      // The org chart, sitting beside the directory it charts. Added 2026-08-25 after the
-      // owner reported the Head Office organogram missing from this account: the branch was
-      // live and both of the page's gates passed for her, but she is a PORTAL-mode role, so
-      // the admin sidebar's /organogram entry never reaches her and the portal's own entry
-      // (in the employee-portal section) lists only field roles. She therefore had the
-      // permission and no link, since the 2026-07-24 expansion whose own matrix comment
-      // names "org chart" among what it granted. This is the missing half of that grant.
-      { href: "/employee-portals/organogram", icon: Network, label: "Organogram", permissions: [{ resource: "organogram", action: "read" }], roles: ["Talent Acquisition"] },
-      { href: "/employee-portals/contracts", icon: CalendarClock, label: "Contract Renewal", permissions: [{ resource: "contracts", action: "read" }], roles: ["Talent Acquisition"] },
-      { href: "/employee-portals/resignations", icon: FileSpreadsheet, label: "Resignations", permissions: [{ resource: "resignations", action: "read" }], roles: ["Talent Acquisition"] },
-      { href: "/employee-portals/account-activation", icon: UserCog, label: "Account Activation", permissions: [{ resource: "account_activation", action: "read" }], roles: ["Talent Acquisition"] },
-    ],
-    label: "People Management",
-  },
+  // The portal-side "Recruitment & Hiring" and "People Management" mirrors were REMOVED on
+  // 2026-08-28 with the Talent Acquisition role, which was their only holder. Both successor
+  // bundles (HR Advisory, HR Operations) are admin-shell roles, so the admin-shell originals
+  // these mirrored — app/(admin)/recruitment, /cv-database, /hiring-documents, /hiring-pack,
+  // /offers, /recruitment/intake-health, /leave-management/vacation-control — are now the only
+  // copy, reached through hrAuthorityNavigationRoles above. Do not recreate a portal mirror for
+  // an admin-shell role: maintaining two copies of one tool is what shipped two of these
+  // unreachable, and the second copy is where the drift always lands.
   {
     id: "sales-operations",
     items: [

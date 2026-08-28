@@ -18,7 +18,8 @@ const SELF_ONLY_ROLES: PhoenixRole[] = [
   "SFE Manager",
   "Training Manager",
   "Marketing Manager",
-  "Talent Acquisition",
+  "HR Advisory",
+  "HR Operations",
   "Manager",
 ];
 
@@ -36,7 +37,7 @@ export function runReportItAccessTests() {
     "Super Admin", "CEO", "Finance Manager",
     "Employee", "Medical Rep", "District Manager", "Regional Manager",
     "National Sales Manager", "Product Manager", "Group Product Manager",
-    "SFE Manager", "Training Manager", "Marketing Manager", "Talent Acquisition", "Manager",
+    "SFE Manager", "Training Manager", "Marketing Manager", "HR Advisory", "HR Operations", "Manager",
   ];
 
   for (const role of allRoles) {

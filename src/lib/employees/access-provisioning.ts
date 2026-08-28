@@ -80,7 +80,7 @@ export async function provisionNewHireAccess(input: {
       // upsertAccessUser is Super-Admin-only. Talent Acquisition can add employees but could
       // never create their login, so every hire they made ended up unable to sign in. Route
       // them through the create-only, rank-bounded entry point instead of failing.
-      if (input.actor?.loginId && input.actor.role === "Talent Acquisition") {
+      if (input.actor?.loginId && input.actor.role === "HR Operations") {
         await provisionEmployeeAccountForRecruiting(mutation, input.actor);
       } else {
         await upsertAccessUser(mutation, input.actor);

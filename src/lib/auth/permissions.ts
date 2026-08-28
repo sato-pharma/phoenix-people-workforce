@@ -4,6 +4,7 @@ import { isWithinManagerHierarchy, type SeatContinuitySubject } from "@/lib/work
 import { isMissingRequiredManager } from "@/lib/employees/hierarchy-governance";
 import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { hrBundleGrants } from "@/lib/auth/hr-functions";
 
 export const phoenixRoles = [
   "Employee",
@@ -18,7 +19,13 @@ export const phoenixRoles = [
   "Marketing Manager",
   "Finance Manager",
   "Financial Advisor",
-  "Talent Acquisition",
+  // HR seats are BUNDLES OF FUNCTIONS, not job titles — see src/lib/auth/hr-functions.ts.
+  // "HR Specialist" (retired 2026-06) and "Talent Acquisition" (retired here, 2026-08-28) were
+  // both job titles used as permission keys, and both had to be renamed across the codebase and
+  // an eleven-table migration when the person left. These two names are labels for a set of
+  // functions and are read by nothing for intent, so neither can go stale the same way.
+  "HR Advisory",
+  "HR Operations",
   "Manager",
   "CEO",
   "Super Admin",
@@ -40,6 +47,12 @@ export const phoenixCompanyJobTitles = [
   "Office Co-ordinator",
   "Regulatory Affairs",
   "Talent Acquisition",
+  // The two HR seats opening 2026-09-01. These are JOB TITLES and belong here; the ACCESS
+  // they carry is "HR Advisory" / "HR Operations" in phoenixRoles above, which is a different
+  // list on purpose. Office Co-ordinator and Talent Acquisition stay listed because employee
+  // records, offers and candidate applications still name them historically.
+  "HR Business Partner",
+  "HR Operations Coordinator",
   "Finance Manager",
   "CEO",
   "HR Manager",
@@ -148,7 +161,7 @@ export const permissionResources: PermissionResource[] = [
   "crm_visits",
   // MUST live in this runtime array, not only in the union above. The sidebar's permission lookup
   // FAILS OPEN on a key it has never seen, so omitting it here would show the Early Birds tab to
-  // every role — Finance Manager, Talent Acquisition, Employee — silently and with no test failure.
+  // every role — Finance Manager, HR Operations, Employee — silently and with no test failure.
   "early_birds",
   "user_activity",
   "synthetic_journeys",
@@ -186,8 +199,8 @@ type PermissionDbOverrideRow = {
 
 const allActions: PermissionAction[] = ["read", "create", "update", "delete", "approve", "export", "import"];
 // Governance: approval authority is reserved for Super Admin / HR Manager.
-// Talent Acquisition can operate recruitment workflows but must not inherit the
-// retired broad HR/payroll/leave/outstation authority.
+// The HR bundles operate recruitment and personnel workflows but must not inherit the retired
+// broad HR/payroll/leave/outstation authority — see HR_ROLE_BOUNDARIES in hr-functions.ts.
 const portalNavigationRoles = new Set<PhoenixRole>([
   "Employee",
   "Medical Rep",
@@ -200,14 +213,17 @@ const portalNavigationRoles = new Set<PhoenixRole>([
   "Training Manager",
   "CEO",
   "Manager",
-  "Talent Acquisition",
 ]);
 
 export const adminShellEmployeeRoles = [
   "SFE Manager",
   "Finance Manager",
   "Financial Advisor",
-  "Talent Acquisition",
+  // Owner decision 2026-08-28: both new HR seats live on the ADMIN shell, not the employee
+  // portal. The portal needs a second copy of every admin tool, and two of those copies shipped
+  // unreachable for the seat this replaces.
+  "HR Advisory",
+  "HR Operations",
 ] as const satisfies readonly PhoenixRole[];
 const adminShellEmployeeRoleSet = new Set<PhoenixRole>(adminShellEmployeeRoles);
 
@@ -215,7 +231,11 @@ export function isAdminShellEmployeeRole(role: PhoenixRole): boolean {
   return adminShellEmployeeRoleSet.has(role);
 }
 
-export const hrAuthorityRoles = ["Super Admin", "Talent Acquisition"] as const satisfies readonly PhoenixRole[];
+// Every caller pairs this with a resource check — `isHrAuthorityRole(role) && canAccess(role, X, Y)` —
+// so listing both HR bundles here is safe and the grant does the discriminating: the recruitment
+// and offers pages also demand recruitment:read, which only HR Advisory holds, and vacation
+// control also demands leave:update, which only HR Operations holds.
+export const hrAuthorityRoles = ["Super Admin", "HR Advisory", "HR Operations"] as const satisfies readonly PhoenixRole[];
 const hrAuthorityRoleSet = new Set<PhoenixRole>(hrAuthorityRoles);
 const hrSupportStaffActions: PermissionAction[] = ["read", "create", "update", "export"];
 const supportRequestSenderActions: PermissionAction[] = ["create"];
@@ -367,7 +387,13 @@ function hardBoundaryAllowedActions(role: PhoenixRole, resource: PermissionResou
     case "synthetic_journeys":
       return role === "Super Admin" ? ["read"] : [];
     case "employees":
-      return role === "Super Admin" || role === "Talent Acquisition" ? allActions : [];
+      if (role === "Super Admin") return allActions;
+      // HR Operations maintains personnel records; HR Advisory only reads them for workforce
+      // insight. NEITHER may delete: both job descriptions require records that survive an audit,
+      // so destruction stays Super Admin. This cap is belt-and-braces over HR_ROLE_BOUNDARIES.
+      if (role === "HR Operations") return ["read", "create", "update", "export", "import"];
+      if (role === "HR Advisory") return ["read", "export"];
+      return [];
     case "module_control":
       return role === "Super Admin" ? allActions : [];
     case "employee_documents":
@@ -522,7 +548,7 @@ const defaultPermissionMatrix: PermissionMap = {
     system_cleanup: allActions,
     // Bulk login-account/role admin (/api/admin/users/bulk) only. Employee-record bulk
     // import (/api/imports/employees/*) checks the `employees` resource instead, so
-    // Talent Acquisition's full `employees` grant covers it without touching this key.
+    // HR Operations' `employees` grant covers it without touching this key.
     imports: allActions,
     contracts: allActions,
     coaching: allActions,
@@ -617,58 +643,26 @@ const defaultPermissionMatrix: PermissionMap = {
     hiring_interviews: ["read", "update"],
     report_it: ["read", "create", "export"],
   },
-  "Talent Acquisition": {
-    employee_documents: ["read", "create", "update", "export"],
-    employee_profile: ["read", "update"],
-    // Required by the Private Calendar workspace load (getPrivateCalendarWorkspace
-    // asserts attendance:read). Self-scoped in practice — isPrivateCalendarGlobalViewer
-    // does not include this role, so this only unlocks her own attendance record, not
-    // company-wide attendance data (owner-requested 2026-07-25).
-    attendance: ["read"],
-    leave: ["read", "create", "update", "export"],
-    // Self-service only (own payslip) — matches Financial Advisor's grant. No broader
-    // payroll authority: Talent Acquisition must not inherit the retired HR Specialist
-    // role's company-wide payroll access.
-    payslips: ["read", "export"],
-    offers: ["read", "create", "update", "export"],
-    vacancies: ["read", "create", "update", "export"],
-    // `approve` is what POST /api/recruitment/applications/[id]/convert asserts — it is the
-    // act of marking an application hired, i.e. the final step of recruiting, not an approval
-    // of anyone else's request. Without it Talent Acquisition could run a candidate through
-    // screening and interviews and then be unable to finish the hire (owner-confirmed
-    // 2026-08-04). Deliberately still NO `delete`: removing an application or a requisition
-    // stays with Super Admin.
-    recruitment: ["read", "create", "update", "approve", "export", "import"],
-    candidates: ["read", "create", "update", "delete", "export", "import"],
-    support_requests: ["read", "create", "update", "export"],
-    report_it: ["read", "create"],
-    // Owner-requested expansion (2026-07-24): full portal parity for people-facing HR
-    // tooling — employee directory, contract renewal, resignations, and org chart —
-    // matching Super Admin's action set on these specific resources.
-    // Also covers bulk employee import (/api/imports/employees/*, owner-approved 2026-08-05)
-    // — that route checks the `employees` resource, not `imports`, so this single grant is
-    // what unlocks it. Does not touch the unrelated, still Super-Admin-only
-    // /api/admin/users/bulk (bulk login-account/role admin), gated on `imports`.
-    employees: allActions,
-    contracts: allActions,
-    resignations: allActions,
-    organogram: ["read"],
-    // Narrow, purpose-built resource for the portal-only account activate/deactivate
-    // tool — deliberately NOT user_admin (see hardBoundaryAllowedActions: that stays
-    // Super-Admin-only since it also covers role/scope/permission changes).
-    account_activation: ["read", "update"],
-    // Planning Calendar only (owner-requested 2026-07-25) — isPlanItemVisibleToViewer
-    // narrows her to Head-Office-line plan items. The Weekly/Monthly Plan submission
-    // page shares this same resource but stays deliberately unlinked from her nav; this
-    // grant alone does not unlock submission (still blocked by weekly_plans:create and
-    // isWeeklyMonthlyPlanEligibleTitle).
-    weekly_plans: ["read"],
-    // Portal parity (owner-requested 2026-07-24 expansion): Talent Acquisition submits
-    // probation feedback alongside HR — read access required to pass assertPermission on
-    // the /employee-portals/probation page. Write/admin actions remain restricted to
-    // isProbationAdministrator roles only.
-    probation: ["read"],
-  },
+  // ── The two HR seats, composed from functions ─────────────────────────────────────────────
+  // These entries are NOT hand-maintained. Each is the union of the grants carried by the
+  // functions its bundle holds (src/lib/auth/hr-functions.ts), where every function traces to a
+  // numbered section of the job description the owner supplied on 2026-08-28.
+  //
+  // To change what a seat can do, move a function key between the bundles in that file — do not
+  // add a key here. A grant added here would have no job-description line behind it, which is
+  // exactly how the seat this replaces accumulated company-wide employee write access over four
+  // months of one-off expansions.
+  //
+  // What each holds today:
+  //   HR Advisory    recruiting · engagement_retention · performance_probation ·
+  //                  workforce_insight · hr_governance
+  //   HR Operations  people_records · time_attendance · payroll_inputs ·
+  //                  performance_probation · hr_governance
+  //
+  // The two shared functions are deliberate: both job descriptions carry a probation section and
+  // a governance section, from different angles. Union of the two bundles = all eight functions.
+  "HR Advisory": hrBundleGrants("HR Advisory"),
+  "HR Operations": hrBundleGrants("HR Operations"),
   // Finance Manager (Ahmed El Maraghy, B-185 — the only holder): the company's finance execution
   // point. He EXECUTES money movements that others have already approved; he does not approve the
   // spend itself. Retuned 2026-08-10 on owner instruction, when the account was activated for the
@@ -717,7 +711,7 @@ const defaultPermissionMatrix: PermissionMap = {
     // he was the only one of the four without the grant. Pressing his own Request Vacation row
     // silently redirected him to /admin/outstation/expense-command — and an admin-shell role has
     // no employee portal, so he had no way to file leave anywhere on the system. SFE Manager,
-    // Financial Advisor and Talent Acquisition all already held it.
+    // Financial Advisor and the HR bundles all already hold it.
     //
     // Scope is exactly self-service: getVacationRequestPageData, createVacationRequest,
     // resubmitVacationRequest, and the attachment upload URL. It cannot reach company vacation
@@ -768,7 +762,7 @@ const defaultPermissionMatrix: PermissionMap = {
     //
     // Deliberately NOT create/update/approve. Acting on a resignation needs two further levers he
     // does not have and is not getting: a Workflow Registry row (a DB edit; the module is
-    // fail-closed and currently lists Super Admin / CEO / Talent Acquisition), and a company-scope
+    // fail-closed and currently lists Super Admin / CEO / the HR bundles), and a company-scope
     // branch in canSeeEmployee — which has none, so today he can only act on his own record.
     resignations: ["read"],
     support_requests: ["read", "create"],
@@ -1148,8 +1142,17 @@ function tryParseRole(value: string | null | undefined): PhoenixRole | null {
     "training manager": "Training Manager",
     "marketing manager": "Marketing Manager",
     "finance manager": "Finance Manager",
+    // Both retired HR seats fail CLOSED, and that is the point rather than an oversight.
+    // "HR Specialist" was retired 2026-06 and demoted here; "Talent Acquisition" is retired
+    // 2026-08-28 and gets identical treatment. Aliasing a retired seat to its SUCCESSOR looks
+    // like continuity and is really a privilege carry-forward: verified in production
+    // 2026-08-28, the only row still carrying "Talent Acquisition" is A-16, is_active=false,
+    // employment_status=resigned. Pointing that string at HR Advisory would hand a departed
+    // employee's stored role — or a token minted before the migration — the full recruiting
+    // grant. The two new hires are provisioned with their role written explicitly, so nobody
+    // who should have access ever reaches this table.
     "hr specialist": "Employee",
-    "talent acquisition": "Talent Acquisition",
+    "talent acquisition": "Employee",
     manager: "Manager",
     ceo: "CEO",
     "super admin": "Super Admin",
@@ -1178,7 +1181,7 @@ function tryParseRole(value: string | null | undefined): PhoenixRole | null {
     marketingmanager: "Marketing Manager",
     financemanager: "Finance Manager",
     hrspecialist: "Employee",
-    talentacquisition: "Talent Acquisition",
+    talentacquisition: "Employee",
     ceo: "CEO",
     superadmin: "Super Admin",
   };
@@ -1214,7 +1217,8 @@ export function getRolePrivilegeRank(role: PhoenixRole) {
       return 400;
     case "CEO":
       return 300;
-    case "Talent Acquisition":
+    case "HR Advisory":
+    case "HR Operations":
       return 150;
     case "Finance Manager":
       return 200;
@@ -1607,10 +1611,11 @@ export function canSeeEmployee(
   // getExpensesScope key off role, not this helper, so org-wide oversight never exposes salaries.
   if (context.role === "Training Manager") return true;
 
-  // Talent Acquisition has company-wide HR/recruiting oversight (owner-requested 2026-07-24) —
-  // same carve-out shape as Training Manager above, for the same reason: sensitive financial
-  // domains stay self-scoped because they key off role, not this helper.
-  if (context.role === "Talent Acquisition") return true;
+  // Both HR bundles have company-wide people oversight — HR Advisory to advise on the workforce
+  // (workforce_insight), HR Operations to maintain its records (people_records). Same carve-out
+  // shape as Training Manager above, for the same reason: sensitive financial domains stay
+  // self-scoped because they key off role, not this helper.
+  if (context.role === "HR Advisory" || context.role === "HR Operations") return true;
 
   const currentHrId = normalizeHrId(context.hrId);
   const employeeHrId = normalizeHrId(employee.hrId);
@@ -1685,7 +1690,7 @@ export function filterEmployeesForAccess<T extends Pick<EmployeeDirectoryRow, "h
   return rows.filter((row) => canSeeEmployee(context, row, { byCanonicalHrId }));
 }
 
-// Owner-requested (2026-07-25): Talent Acquisition can browse the whole employee
+// Owner-requested (2026-07-25, carried to both HR bundles): an HR seat browses the whole employee
 // directory (see hardBoundaryAllowedActions above), but must not see the real
 // salary figures for this specific set of senior employees — her own manager
 // chain (B-10 HR Manager, AA CEO) plus a handful of other named seniors. Row
@@ -1694,7 +1699,7 @@ export function filterEmployeesForAccess<T extends Pick<EmployeeDirectoryRow, "h
 // handler for the matching write-side guard — without it, a blanked read
 // becomes a real, destructive write the moment this viewer edits an unrelated
 // field and saves.
-const TALENT_ACQUISITION_SALARY_REDACTED_HR_IDS = new Set(
+const HR_SEAT_SALARY_REDACTED_HR_IDS = new Set(
   ["B-10", "AA", "A-12", "AB", "OF-0002", "B-185", "A-9"].map((id) => normalizeHrId(id)),
 );
 
@@ -1703,7 +1708,8 @@ export function isSalaryRedactedForViewer(
   context: Pick<AccessContext, "role">,
   hrId: string | null | undefined,
 ): boolean {
-  return context.role === "Talent Acquisition" && TALENT_ACQUISITION_SALARY_REDACTED_HR_IDS.has(normalizeHrId(hrId ?? ""));
+  if (context.role !== "HR Advisory" && context.role !== "HR Operations") return false;
+  return HR_SEAT_SALARY_REDACTED_HR_IDS.has(normalizeHrId(hrId ?? ""));
 }
 
 function redactSalaryFields(row: EmployeeDirectoryRow, context: AccessContext): EmployeeDirectoryRow {
@@ -1847,7 +1853,7 @@ export async function assertWeeklyMappingTemplatePermission(context: AccessConte
  *
  * Phase 1 is a READ-ONLY workflow map + simulator. Access is restricted to HR
  * governance: Super Admin only. HR Manager is a manager title held by a Super
- * Admin account. Talent Acquisition is intentionally excluded, as are CEO,
+ * Admin account. Both HR bundles are intentionally excluded, as are CEO,
  * Finance Manager, all Sales roles, Training
  * Manager and Employees.
  *

@@ -287,32 +287,32 @@ export function runWeeklyPlanCalendarOwnerScopeTests() {
   );
   assert.equal(isPlanItemVisibleToViewer(antiInfectivePmTitledItem, regionalManagerViewer), false, "Regional Manager does NOT see an Anti Infective-line plan");
 
-  // --- Talent Acquisition: unrestricted, same as Training Manager (owner decision
+  // --- HR Advisory: unrestricted, same as Training Manager (owner decision
   // 2026-07-25, Head Office system-wide audit) — she is a Head Office role serving all
   // 3 sales lines, not a role confined to Head-Office-only scheduling. A same-day
   // narrower rule (Head-Office-line plans plus one named PM exception) was reverted
   // once that concept was clarified; these assertions confirm the full revert, not
   // just the addition of a couple of previously-blocked cases. ---
 
-  const talentAcquisitionViewer = viewer({ hrId: "A-16", role: "Talent Acquisition" });
+  const hrAdvisoryViewer = viewer({ hrId: "A-16", role: "HR Advisory" });
   assert.equal(
-    isPlanItemVisibleToViewer(headOfficeItem, talentAcquisitionViewer),
+    isPlanItemVisibleToViewer(headOfficeItem, hrAdvisoryViewer),
     true,
-    "Talent Acquisition sees a Head-Office-line plan",
+    "HR Advisory sees a Head-Office-line plan",
   );
   assert.equal(
-    isPlanItemVisibleToViewer(pediaFieldItem, talentAcquisitionViewer),
+    isPlanItemVisibleToViewer(pediaFieldItem, hrAdvisoryViewer),
     true,
-    "Talent Acquisition sees a Pedia-line plan too — she serves all 3 sales lines, not just Head Office",
+    "HR Advisory sees a Pedia-line plan too — she serves all 3 sales lines, not just Head Office",
   );
   assert.equal(
-    isPlanItemVisibleToViewer(antiInfectiveFieldItem, talentAcquisitionViewer),
+    isPlanItemVisibleToViewer(antiInfectiveFieldItem, hrAdvisoryViewer),
     true,
-    "Talent Acquisition sees an Anti Infective-line plan too",
+    "HR Advisory sees an Anti Infective-line plan too",
   );
   assert.equal(
-    isPlanItemVisibleToViewer(antiInfectivePmTitledItem, talentAcquisitionViewer),
+    isPlanItemVisibleToViewer(antiInfectivePmTitledItem, hrAdvisoryViewer),
     true,
-    "Talent Acquisition sees every Anti Infective Product Manager's plan now, not just one named exception",
+    "HR Advisory sees every Anti Infective Product Manager's plan now, not just one named exception",
   );
 }

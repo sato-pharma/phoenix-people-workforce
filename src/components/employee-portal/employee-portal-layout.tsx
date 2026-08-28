@@ -212,10 +212,7 @@ function buildEmployeePortalSections({
   showPlansTab = false,
   showPlanningCalendarTab = false,
   showSupportTab = false,
-  showRecruitmentHiringTab = false,
-  showPeopleManagementTab = false,
   showPrivateCalendarTab = false,
-  showAccountActivationTab = false,
   showMyVisitsTab = true,
   showDeductionsTab = true,
   showMyCoachingTab = false,
@@ -388,13 +385,6 @@ function buildEmployeePortalSections({
     {
       title: "Recruitment & Hiring",
       items: [
-        ...(showRecruitmentHiringTab ? [{ href: "/employee-portals/recruitment", label: "Recruitment", icon: BriefcaseBusiness }] : []),
-        ...(showRecruitmentHiringTab ? [{ href: "/employee-portals/cv-database", label: "CV Database", icon: FileSpreadsheet }] : []),
-        ...(showRecruitmentHiringTab ? [{ href: "/employee-portals/hiring-documents", label: "Hiring Documents", icon: FileCheck2 }] : []),
-        ...(showRecruitmentHiringTab ? [{ href: "/employee-portals/hiring-pack", label: "Contract & Form 1", icon: FileSignature }] : []),
-        ...(showRecruitmentHiringTab ? [{ href: "/employee-portals/offers", label: "Job Offers", icon: MailCheck }] : []),
-        ...(showRecruitmentHiringTab ? [{ href: "/employee-portals/intake-health", label: "Inbound Intake Health", icon: HeartPulse }] : []),
-        ...(showRecruitmentHiringTab ? [{ href: "/employee-portals/contact-review", label: "Missing Contact Details", icon: IdCard }] : []),
       ],
     },
     // Talent Acquisition's company-wide HR tooling, separate from the recruiting-pipeline
@@ -405,11 +395,6 @@ function buildEmployeePortalSections({
     {
       title: "People Management",
       items: [
-        ...(showPeopleManagementTab ? [{ href: "/employee-portals/employees", label: "Employees", icon: UsersRound }] : []),
-        ...(showPeopleManagementTab ? [{ href: "/employee-portals/contracts", label: "Contract Renewal", icon: CalendarClock }] : []),
-        ...(showPeopleManagementTab ? [{ href: "/employee-portals/resignations", label: "Resignations", icon: FileSpreadsheet }] : []),
-        ...(showPeopleManagementTab ? [{ href: "/employee-portals/vacancies", label: "Vacancies Report", icon: BriefcaseBusiness }] : []),
-        ...(showAccountActivationTab ? [{ href: "/employee-portals/account-activation", label: "Account Activation", icon: UserCog }] : []),
       ],
     },
     // Merged from the old "Payroll" + "Expenses": what I am paid and what I claim back, in one
@@ -448,7 +433,6 @@ function buildEmployeePortalSections({
         ...(showFingerprintReportTab ? [{ href: "/employee-portals/fingerprint-analytics", label: "Attendance Analytics", icon: Fingerprint }] : []),
         ...(showReportItTab ? [{ href: "/employee-portals/report-it", label: "Report It", icon: FileText }] : []),
         ...(showSupportTab ? [{ href: "/employee-portals/contact-hr-support", label: "Request Support", icon: Headphones }] : []),
-        ...(showRecruitmentHiringTab ? [{ href: "/employee-portals/support-requests", label: "HR Support Requests", icon: Headphones }] : []),
       ],
     },
   ].filter((section) => section.items.length > 0);
