@@ -25,6 +25,41 @@
  * `manager_hr_id`), so the branch is assembled from it in the application layer and merged
  * into the emitted rows. No schema change, no migration, nothing sales-facing is touched.
  *
+ * ## Membership is the MANAGER CHAIN, not `line_id` alone (2026-08-28)
+ *
+ * `line_id = 4` was the whole membership test until the owner reported that the marketing
+ * branch was missing its product managers. It was: measured on production that day, three
+ * active people held NO AU seat and were not line 4 —
+ *
+ *     Nahed Tarek Hattab (A-10)      Product Manager        line 1, reports to A-9
+ *     Rasha Sabry Khalifa (A-8)      Group Product Manager  line 2, reports to A-9
+ *     Ahmed Sharaf Eldeen (B-155)    Product Manager        line 2, reports to A-8
+ *
+ * — and all three were absent from every chart in the system. Their `line_id` is not a
+ * mistake to be corrected: it records which product line a marketer markets, and it feeds
+ * sales attribution, targets and incentives. Rewriting it to 4 to fix a chart would move real
+ * money. So membership became the question that actually matches the org: **does this person's
+ * manager chain reach Head Office, and do they hold no sales seat?** Line 4 employees seed the
+ * set; anyone unseated reporting into it joins, transitively.
+ *
+ * The seat check is what keeps this tight rather than sprawling. Every member of the sales
+ * force holds an `au.seats` row, so a rep can never be pulled in by reporting to a District
+ * Manager who reports upward into Head Office — the DM and the rep both hold seats and are
+ * both excluded. Re-measured on the same data: the rule admits exactly those three people and
+ * nobody else.
+ *
+ * ## Open Head Office seats are drawn too (2026-08-28)
+ *
+ * The AU path renders an unfilled sales seat as a vacancy node, so the chart already shows
+ * open seats — but only sales ones. Head Office had no such thing, and its open roles do
+ * exist: `position_vacancies` auto-opens one on every resignation, which is how the two HR
+ * seats vacated on 31 August already had rows waiting. They simply reached the Vacancy Report
+ * and never the chart, so the HR department rendered as a manager with nobody under him.
+ *
+ * Only `line_id = 4` vacancies are emitted here. A sales vacancy already arrives from its own
+ * unfilled `au.seats` row, and emitting it a second time from `position_vacancies` would draw
+ * one open seat as two — the duplicate-node failure the acting-DM collapse exists to prevent.
+ *
  * ## The two invariants that keep the existing gates working
  *
  * Every row emitted here carries `lineId: 4` AND `lineName: "Head Office"`. Both matter:
@@ -37,6 +72,13 @@
  *   the line is what excludes it from line mode.
  *
  * Get either wrong and the failure is a silent over-disclosure, not a crash.
+ *
+ * That applies to the marketers pulled in by manager chain as well, and it is deliberate that
+ * they are stamped Head Office rather than their own product line. A row is only placeable if
+ * its manager is on the same chart: stamping a Product Manager "Anti Infective" would keep her
+ * on a line-scoped Anti Infective view while her manager — the Marketing Manager, a Head
+ * Office row — was stripped from it, leaving her hanging off a parent that is not there. The
+ * marketing branch appears or disappears as one piece.
  */
 
 import { canonicalHrIdKey } from "@/lib/hr-id";
@@ -76,6 +118,21 @@ export type HeadOfficeEmployeeRow = {
   work_email?: string | null;
 };
 
+/**
+ * An open Head Office seat, from `position_vacancies`.
+ *
+ * Deliberately a narrow shape: a vacancy row also carries a `note` naming the person who
+ * resigned and a public `vacancy_code`, and neither belongs on a chart node. Only the seat's
+ * title and where it hangs are read.
+ */
+export type HeadOfficeVacancyRow = {
+  id?: number | null;
+  job_title?: string | null;
+  line_id?: number | null;
+  manager_hr_id?: string | null;
+  status?: string | null;
+};
+
 export type BuildHeadOfficeRowsOptions = {
   /**
    * The node key of the CEO seat as the seat model emitted it (its occupant HR ID, e.g.
@@ -91,8 +148,16 @@ export type BuildHeadOfficeRowsOptions = {
    * Canonical HR IDs already emitted by the seat model. A person holding both an AU seat and
    * a Head Office employee record would otherwise be drawn twice under one node key — the
    * duplicate-node failure the seat model's own acting-DM collapse exists to prevent.
+   *
+   * This set is also what bounds the manager-chain expansion above: holding a sales seat is
+   * what makes someone a sales-force member rather than a marketer reporting into Head Office.
    */
   occupiedHrIds: ReadonlySet<string>;
+  /**
+   * Open `position_vacancies` rows. Optional so every existing caller and test keeps working
+   * unchanged and simply draws no open Head Office seats.
+   */
+  vacancies?: HeadOfficeVacancyRow[];
 };
 
 /** A synthetic, stable seat identity. Prefixed so it can never be read as an `au.seats` id. */
@@ -100,8 +165,26 @@ function headOfficeSeatId(hrId: string): string {
   return `HO-${hrId}`;
 }
 
-function isHeadOfficeEmployee(employee: HeadOfficeEmployeeRow): boolean {
-  if (employee.line_id !== HEAD_OFFICE_LINE_ID) return false;
+/**
+ * The node key of an open Head Office seat.
+ *
+ * Keyed on the vacancy's row id, NOT its `vacancy_code`. The code is a public-facing string
+ * that `applyOrganogramMirrorSafety` sanitises out of shared reports; putting it in a node key
+ * would smuggle it back onto the chart through a field nothing thinks to sanitise.
+ */
+function headOfficeVacancyNodeKey(vacancyId: number): string {
+  return `HO-VAC-${vacancyId}`;
+}
+
+/** Line-4 and currently open. */
+function isOpenHeadOfficeVacancy(vacancy: HeadOfficeVacancyRow): boolean {
+  if (vacancy.line_id !== HEAD_OFFICE_LINE_ID) return false;
+  if (typeof vacancy.id !== "number") return false;
+  return (vacancy.status ?? "").trim().toLowerCase() === "open";
+}
+
+/** Active, visible, and identifiable — the floor for appearing on the chart at all. */
+function isChartEligibleEmployee(employee: HeadOfficeEmployeeRow): boolean {
   if (!employee.hr_id || !employee.hr_id.trim()) return false;
   // `organogram_visible === false` is an explicit "hide this person" flag on the employee
   // master; null/undefined means nothing was ever said, which is not a hide.
@@ -109,29 +192,64 @@ function isHeadOfficeEmployee(employee: HeadOfficeEmployeeRow): boolean {
   return isEmployeeVisibleInOrganogram(employee.employment_status);
 }
 
+/** The seed of the branch: everyone the employee master files under Head Office. */
+function isHeadOfficeEmployee(employee: HeadOfficeEmployeeRow): boolean {
+  if (employee.line_id !== HEAD_OFFICE_LINE_ID) return false;
+  return isChartEligibleEmployee(employee);
+}
+
 /**
  * Build the Head Office rows.
  *
- * Pure by design — it takes the already-fetched employee rows and returns chart rows, so the
- * placement rules are unit-testable with no database and no network.
+ * Pure by design — it takes the already-fetched employee and vacancy rows and returns chart
+ * rows, so the placement rules are unit-testable with no database and no network.
  */
 export function buildHeadOfficeOrganogramRows(
   employees: HeadOfficeEmployeeRow[],
   options: BuildHeadOfficeRowsOptions,
 ): OrganogramReportRow[] {
-  const { ceoNodeKey, occupiedHrIds } = options;
+  const { ceoNodeKey, occupiedHrIds, vacancies = [] } = options;
   const ceoKey = ceoNodeKey ? canonicalHrIdKey(ceoNodeKey) : null;
 
-  // The people this branch will draw: Head Office, visible, not already on an AU seat, and
-  // never the CEO himself — the seat model emits him as the root and a second row would
-  // collide on his node key.
-  const branch = employees.filter((employee) => {
-    if (!isHeadOfficeEmployee(employee)) return false;
+  // Everyone who could appear here: visible, not already on an AU seat, and never the CEO
+  // himself — the seat model emits him as the root and a second row would collide on his
+  // node key.
+  const candidates = employees.filter((employee) => {
+    if (!isChartEligibleEmployee(employee)) return false;
     const key = canonicalHrIdKey(employee.hr_id);
     if (!key) return false;
     if (ceoKey && key === ceoKey) return false;
     return !occupiedHrIds.has(key);
   });
+
+  // Seed with Head Office proper, then absorb anyone unseated who reports into the set —
+  // repeatedly, because a chain can be several deep (a Product Manager reports to a Group
+  // Product Manager who reports to the Marketing Manager). Each pass can only ADD, and a
+  // candidate is admitted once, so this terminates in at most `candidates.length` passes
+  // even if `manager_hr_id` contains a cycle.
+  const branchKeys = new Set<string>();
+  for (const employee of candidates) {
+    if (isHeadOfficeEmployee(employee)) branchKeys.add(canonicalHrIdKey(employee.hr_id)!);
+  }
+  for (let pass = 0; pass < candidates.length; pass += 1) {
+    let added = false;
+    for (const employee of candidates) {
+      const key = canonicalHrIdKey(employee.hr_id)!;
+      if (branchKeys.has(key)) continue;
+      const managerKey = canonicalHrIdKey(employee.manager_hr_id);
+      // Reporting DIRECTLY to the CEO is not enough on its own to join the branch: the CEO is
+      // the root of the whole company, so admitting on that alone would pull the sales
+      // National Sales Managers in. Only a manager already inside the branch counts.
+      if (managerKey && branchKeys.has(managerKey)) {
+        branchKeys.add(key);
+        added = true;
+      }
+    }
+    if (!added) break;
+  }
+  const branch = candidates.filter((employee) =>
+    branchKeys.has(canonicalHrIdKey(employee.hr_id)!),
+  );
 
   // Canonical key -> the HR ID string exactly as it will be emitted, so a manager pointer
   // matches the child's `hrId` byte for byte. HR IDs are stored in mixed case in this
@@ -180,24 +298,33 @@ export function buildHeadOfficeOrganogramRows(
     }
   }
 
+  /** Resolve a manager pointer to the (managerHrId, managerName) a chart row carries. */
+  const managerFieldsFor = (
+    parentKey: string | null,
+  ): { managerHrId: string | null; managerName: string | null } => {
+    if (parentKey && emittedHrIdByKey.has(parentKey)) {
+      return {
+        managerHrId: emittedHrIdByKey.get(parentKey)!,
+        managerName: nameByKey.get(parentKey) ?? null,
+      };
+    }
+    if (parentKey && ceoKey && parentKey === ceoKey) {
+      return {
+        managerHrId: ceoNodeKey,
+        // Left null on purpose: the seat model owns the CEO's row and his display name. The
+        // chart resolves a manager's name from the manager's own node, so naming him here
+        // would only risk disagreeing with it.
+        managerName: null,
+      };
+    }
+    return { managerHrId: null, managerName: null };
+  };
+
   const rows: OrganogramReportRow[] = [];
   for (const employee of branch) {
     const key = canonicalHrIdKey(employee.hr_id)!;
     const hrId = emittedHrIdByKey.get(key)!;
-    const parentKey = parentByKey.get(key) ?? null;
-
-    let managerHrId: string | null = null;
-    let managerName: string | null = null;
-    if (parentKey && emittedHrIdByKey.has(parentKey)) {
-      managerHrId = emittedHrIdByKey.get(parentKey)!;
-      managerName = nameByKey.get(parentKey) ?? null;
-    } else if (parentKey && ceoKey && parentKey === ceoKey) {
-      managerHrId = ceoNodeKey;
-      // Left null on purpose: the seat model owns the CEO's row and his display name. The
-      // chart resolves a manager's name from the manager's own node, so naming him here
-      // would only risk disagreeing with it.
-      managerName = null;
-    }
+    const { managerHrId, managerName } = managerFieldsFor(parentByKey.get(key) ?? null);
 
     const title = employee.job_title?.trim() || null;
 
@@ -239,14 +366,76 @@ export function buildHeadOfficeOrganogramRows(
       status: "active",
       teamId: null,
       teamName: null,
-      // Head Office is sourced from real employee records, so every row is a filled seat.
-      // The branch carries no vacancies: open Head Office roles live in
-      // `position_vacancies` and reach the Vacancy Report through its own path.
       type: "employee",
       vacancyCode: null,
     });
   }
 
+  // Open Head Office seats. Emitted AFTER the people, so a vacancy can hang off a manager
+  // who was pulled in by the chain expansion above.
+  for (const vacancy of vacancies) {
+    if (!isOpenHeadOfficeVacancy(vacancy)) continue;
+
+    const managerKey = canonicalHrIdKey(vacancy.manager_hr_id);
+    // A vacancy whose manager is not on this chart hangs off the CEO, the same re-homing the
+    // people path uses. Dropping it instead would hide a real open seat.
+    const parentKey = managerKey && emittedHrIdByKey.has(managerKey) ? managerKey : ceoKey;
+    const { managerHrId, managerName } = managerFieldsFor(parentKey);
+
+    const title = vacancy.job_title?.trim() || null;
+    const nodeKey = headOfficeVacancyNodeKey(vacancy.id as number);
+
+    rows.push({
+      // No employee sits here, so every work field is empty rather than invented — the same
+      // choice the seat path makes for a vacant sales seat.
+      contractRenewalDate: null,
+      contractType: null,
+      employeeDepartmentName: null,
+      employeeJobTitle: null,
+      employeeTeamName: null,
+      employmentStatus: null,
+      hasWhatsApp: false,
+      nameAr: null,
+      workEmail: null,
+
+      areaId: null,
+      areaName: null,
+      departmentId: null,
+      departmentName: null,
+      // "Vacant" is the seat path's word for an unfilled seat; the chart renders its own
+      // "Open Vacancy" label and never prints this, but the two paths agreeing keeps an
+      // export or a diff from showing two names for one thing.
+      displayName: "Vacant",
+      fullName: "Vacant",
+      hireDate: null,
+      hrId: nodeKey,
+      jobTitle: title,
+      lineId: HEAD_OFFICE_LINE_ID,
+      lineName: HEAD_OFFICE_LINE_NAME,
+      managerHrId,
+      managerName,
+      managerReplacementForHrId: null,
+      positionId: null,
+      positionTitle: title,
+      regionName: null,
+      replacementForHrId: null,
+      seatId: nodeKey,
+      sourceRowNumber: null,
+      status: "open",
+      teamId: null,
+      teamName: null,
+      type: "vacancy",
+      // Never the real code. See headOfficeVacancyNodeKey.
+      vacancyCode: null,
+    });
+  }
+
   // Stable, name-ordered output so two renders of the same data draw the same chart.
-  return rows.sort((a, b) => a.displayName.localeCompare(b.displayName, "en"));
+  // Vacancies all share the displayName "Vacant", so they tie-break on their node key rather
+  // than landing in whatever order the query returned them.
+  return rows.sort(
+    (a, b) =>
+      a.displayName.localeCompare(b.displayName, "en") ||
+      String(a.hrId ?? "").localeCompare(String(b.hrId ?? ""), "en"),
+  );
 }

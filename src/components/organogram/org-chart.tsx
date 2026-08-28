@@ -228,7 +228,13 @@ function PersonNode({
         </div>
         <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px] text-slate-500">
           <span className="font-mono font-semibold text-slate-400">{row.hrId}</span>
-          {title && !showRepFields ? (
+          {/* A vacancy normally hides its title because the PLACE already says which seat is
+              open — "Open Vacancy" over a Cairo pin reads correctly on a sales chart. A Head
+              Office vacancy has no area, so hiding the title left it as "Open Vacancy" and a
+              seat code and nothing else: the HR seats added 2026-08-28 were unreadable. Show
+              the title whenever there is no place to carry the meaning; sales vacancies, which
+              all have one, look exactly as they did. */}
+          {title && (!showRepFields || !place) ? (
             <span className="break-words font-medium text-slate-600">{title}</span>
           ) : null}
         </div>

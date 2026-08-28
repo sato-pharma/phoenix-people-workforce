@@ -527,6 +527,7 @@ import { runOrganogramHardeningTests } from "./organogram-hardening.test.ts";
 import { runVacancyReportOrganogramConsistencyTests } from "./vacancy-report-organogram-consistency.test.ts";
 import { runOrganogramGodmodeTests } from "./organogram-godmode.test.ts";
 import { runOrganogramHeadOfficeBranchTests } from "./organogram-head-office-branch.test.ts";
+import { runOrganogramHeadOfficeMarketingAndOpenSeatsTests } from "./organogram-head-office-marketing-and-open-seats.test.ts";
 import { runOrganogramLinePickerHeadOfficeTests } from "./organogram-line-picker-offers-head-office.test.ts";
 import { runOrganogramPhantomSeatSuppressionTests } from "./organogram-phantom-seat-suppression.test.ts";
 import { runVacancyReportSourceTests } from "./vacancy-report-source.test.ts";
@@ -1793,6 +1794,10 @@ await runTest("organogram hardening", runOrganogramHardeningTests);
 await runTest("vacancy report / organogram consistency", runVacancyReportOrganogramConsistencyTests);
 await runTest("organogram godmode", runOrganogramGodmodeTests);
 await runTest("organogram head office branch (the AU seat model has no Head Office seats — the department was on nobody's chart)", runOrganogramHeadOfficeBranchTests);
+await runTest(
+  "organogram Head Office marketing chain + open seats (product managers sit on a sales line, so line_id alone left the whole marketing arm off every chart; an open Head Office seat could not be drawn at all)",
+  runOrganogramHeadOfficeMarketingAndOpenSeatsTests,
+);
 await runTest("organogram line picker offers Head Office to viewers cleared for it (the portal picker dropped the branch after the permission gate had allowed it)", runOrganogramLinePickerHeadOfficeTests);
 await runTest("organogram phantom seat suppression (stale-manager phantom DSM + same-area placeholder dup + NSM-direct vanish)", runOrganogramPhantomSeatSuppressionTests);
 await runTest("vacancy report source", runVacancyReportSourceTests);
