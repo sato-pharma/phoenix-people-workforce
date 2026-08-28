@@ -342,6 +342,33 @@ export function assertCompanyVacationReportReadAccess(
 }
 
 /**
+ * Who may READ the Company Activity Report (/admin/company-activity-report) — the day-by-day
+ * account of what every employee actually did over a freely chosen date range (CRM field/campaign
+ * visits, office attendance, leave activity, and gaps). Deliberately the SAME two roles as the
+ * Company Vacation Report above, and its own named set for the same reason: reading an org-wide
+ * report and administering the system are different privileges and must be able to diverge later
+ * without one silently dragging the other along.
+ *
+ * Owner-confirmed 2026-08-28: this is NOT a payroll report — it exists purely for awareness and
+ * accuracy review. It has no write path at all, so READING is all this ever grants.
+ */
+export const companyActivityReportReaderRoles = ["Super Admin", "SFE Manager"] as const satisfies readonly PhoenixRole[];
+const companyActivityReportReaderRoleSet = new Set<PhoenixRole>(companyActivityReportReaderRoles);
+
+export function canReadCompanyActivityReport(context: Pick<AccessContext, "role" | "scope">): boolean {
+  return context.scope === "system" || companyActivityReportReaderRoleSet.has(context.role);
+}
+
+export function assertCompanyActivityReportReadAccess(
+  context: Pick<AccessContext, "role" | "scope">,
+  workspace = "the company activity report",
+) {
+  if (!canReadCompanyActivityReport(context)) {
+    throw new Error(`Forbidden: ${context.role} cannot access ${workspace}.`);
+  }
+}
+
+/**
  * Who may turn ONE unverified "CRM Signal" row into a real, approved, balance-deducting vacation
  * request (app/api/vacation/company-report/approve).
  *
