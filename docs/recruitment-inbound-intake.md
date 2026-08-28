@@ -106,6 +106,51 @@ the owner confirmed it on 2026-08-28: the answer is a *preference*, recorded so 
 in the pipeline when someone resigns. There is no vacancy check anywhere in this path and none should
 be added.
 
+**A forward is an application too (owner's instruction, 2026-08-28).** The questions used to be
+skipped whenever Meta set `context.forwarded` on the message, on the reasoning that a forwarded CV is
+HR moving a batch rather than a person applying. That reasoning was wrong twice over. Meta sets the
+flag on *any* re-sent message, so an applicant forwarding their own CV out of their own chat — which
+is how most people send a document they already have on their phone — was silently never asked
+anything, and the owner's own end-to-end test failed at exactly this gate. Meanwhile the case the
+flag was meant to catch is already caught properly by `RECRUITMENT_WHATSAPP_IMPORT_SENDERS`, which
+says *who* sent the message instead of guessing *what* it is. The flag is still written to the intake
+queue row for the audit trail; it no longer decides anything. **The flow must behave identically
+whether the CV arrives attached fresh or forwarded** — that is the owner's requirement, in his words
+— so `startClassification` now has exactly one guard on this path: the import-sender list.
+
+**Questions 2 and 3 have a typed escape too (owner's instruction, 2026-08-28).** Question 1 already
+ended in **Other**; questions 2 and 3 did not, and that is a dead end the moment the organogram is
+ahead of the menu. The owner hit it himself: he was hiring a District Manager into **Delta (3)** on
+the day the region did not appear in the list, so the applicant for that seat could not name where
+she was applying and could not type it either. Both questions now end in a row reading **My region is
+not listed** / **My area is not listed**, which parks the conversation on a typed step
+(`region_other`, `area_other`) exactly as `job_title_other` does. The same rules apply: the answer is
+kept verbatim, whitespace collapsed, refused with a nudge naming the limit if it runs past 80
+characters, never truncated.
+
+Two details in that are deliberate and should not be tidied away:
+
+- The row says **not listed**, not **Other**. `OT` is already a real selling region whose label is
+  *Others* — two rows reading Other and Others would be a coin flip for the applicant.
+- A typed region is written to **`preferred_region_name`**, never to `preferred_region_code`. Words
+  in a code column is precisely the shape that produced undefined label lookups and NaN sort keys in
+  production on 2026-08-24. An area is a name in both cases, so both forms share `preferred_area_name`.
+
+**A region with no areas is now offered, and that inverted a test.** `areaMenu` is built from
+`au_v_canonical_areas`, and Delta (3) went live in `au.regions` carrying target with **zero** rows
+there. The old rule — every offered region must already have areas — would have kept D3 off the menu
+indefinitely; the typed escape is what makes offering it safe, because a region with no areas asks
+the applicant to type their area instead of dead-ending them. The escape row also costs one of
+WhatsApp's ten list rows, so `areaMenu` slices to nine areas, and the test pins that at `MAX - 1`:
+*Others* runs nine areas today and is exactly full.
+
+**Known gap — nothing displays these answers yet.** `applied_for_job_title` is shown in the
+recruitment workspace, but `preferred_region_code`, `preferred_region_name` and `preferred_area_name`
+are written by this flow and read by **no screen at all** (they were added by #2495 and have never
+been surfaced). The owner still sees every completed conversation on Telegram through
+`whatsapp-conversation-mirror.ts`, so the answers are not invisible — but anyone looking for them in
+the ATS will not find them. Surfacing them is a separate change.
+
 ### Coexistence — what changes when the handset is linked (2026-08-23)
 
 The owner completed the Meta **Coexistence** QR scan for `01159888247`, which puts the advertised

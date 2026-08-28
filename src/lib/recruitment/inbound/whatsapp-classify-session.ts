@@ -18,16 +18,23 @@ import { candidateRegionLabels, type CandidateRegionCode } from "@/lib/recruitme
 import { candidateRoleFamilyLabels, type CandidateRoleFamily } from "@/lib/recruitment/candidate-role-family";
 import { recruitmentDb, textOrNull } from "@/lib/recruitment/db";
 import {
+  AREA_OTHER_MAX,
   areaMenu,
+  areaOtherPromptText,
   classifyThankYouText,
-  cleanTypedJobTitle,
+  cleanTypedAnswer,
   isOfferedRegion,
   isOfferedRoleFamily,
+  JOB_TITLE_OTHER_MAX,
   jobTitleMenu,
   jobTitleOtherPromptText,
   jobTitleOtherTooLongText,
+  OTHER_ROW_VALUE,
   parseClassifyRowId,
+  REGION_OTHER_MAX,
   regionMenu,
+  regionOtherPromptText,
+  typedAnswerTooLongText,
   type ClassifyMenu,
 } from "@/lib/recruitment/inbound/whatsapp-classify-menus";
 import {
@@ -53,13 +60,40 @@ type SessionRow = {
   /** What they typed after choosing "Other". Null for every other answer. */
   job_title_other_text: string | null;
   region_code: string | null;
+  /** What they typed after choosing "my region is not listed". Null otherwise. */
+  region_other_text: string | null;
   area_name: string | null;
+  /** What they typed after choosing "my area is not listed", or when the region had no areas. */
+  area_other_text: string | null;
   last_prompt_wamid: string | null;
   applied_candidate_id: string | null;
 };
 
+/**
+ * The region and area as they should be READ BACK. Same single-source rule as `sessionRoleLabel`:
+ * the thank-you message, the owner's Telegram mirror and the candidate columns must never disagree
+ * about what the applicant said. A typed answer wins because it only exists when they told us the
+ * list was wrong.
+ */
+export function sessionRegionLabel(session: {
+  region_code: string | null;
+  region_other_text: string | null;
+}): string | null {
+  if (session.region_other_text) return session.region_other_text;
+  return session.region_code
+    ? candidateRegionLabels[session.region_code as CandidateRegionCode]
+    : null;
+}
+
+export function sessionAreaLabel(session: {
+  area_name: string | null;
+  area_other_text: string | null;
+}): string | null {
+  return session.area_name ?? session.area_other_text ?? null;
+}
+
 const SESSION_COLUMNS =
-  "id,wa_id,phone_number_id,step,job_title_family,job_title_other_text,region_code,area_name,last_prompt_wamid,applied_candidate_id";
+  "id,wa_id,phone_number_id,step,job_title_family,job_title_other_text,region_code,region_other_text,area_name,area_other_text,last_prompt_wamid,applied_candidate_id";
 
 /**
  * The role as it should be READ BACK — their typed words when they chose "Other", otherwise the
@@ -198,8 +232,6 @@ export type StartClassificationInput = {
   waId: string;
   phoneNumberId: string | null;
   cvWamid: string;
-  /** Meta's forwarded flag. A forwarded CV is not the applicant messaging us — see below. */
-  forwarded: boolean;
   /** True when this sender is a configured bulk-import account. */
   isImportSender: boolean;
   /** True for a coexistence history replay: it already happened, sometimes months ago. */
@@ -208,7 +240,7 @@ export type StartClassificationInput = {
 
 export type StartClassificationOutcome =
   | "disabled"
-  | "skipped_forwarded"
+  | "skipped_import_sender"
   | "skipped_historical"
   | "already_open"
   | "send_failed"
@@ -217,16 +249,27 @@ export type StartClassificationOutcome =
 /**
  * Opens the conversation and asks question 1. Returns why it did nothing when it did nothing.
  *
- * THE FORWARDED GUARD IS NOT OPTIONAL. When the owner forwards a CV from the HR handset, Meta
- * reports the SENDER as the handset's own number — so without this check the "thanks for your CV,
- * what are you applying for?" prompt goes to the owner's phone, once per forwarded CV, and the
- * applicant is never asked anything. Verified in production data: forwarded CVs carry
- * `sender_identifier` = the HR number and `forwarded: true`.
+ * THE IMPORT-SENDER GUARD IS NOT OPTIONAL, and it is the ONLY guard needed here. When the owner
+ * forwards a CV from the HR handset, Meta reports the SENDER as the handset's own number — so
+ * without it the "what are you applying for?" prompt goes to his phone, once per forwarded CV, and
+ * the applicant is never asked anything.
+ *
+ * Meta's `forwarded` flag USED to be checked alongside it, and was removed 2026-08-28 at the owner's
+ * instruction ("must be able to have the testing in both situations"). It was the wrong signal for
+ * the job. The scenario it was written for — the HR handset forwarding a pile of CVs — is already
+ * caught by the import-sender list, which names that handset. What the flag ADDED was a false
+ * negative on a real applicant who forwards their own CV out of their email or a chat: a perfectly
+ * ordinary way to apply, and one that got total silence, no menu and no acknowledgement.
+ *
+ * The list is a reliable signal about WHO sent it; the flag was a guess about WHAT the message was,
+ * and it guessed wrong on exactly the people this feature exists to serve. Blast radius of the
+ * change is one menu to an unlisted forwarder, because only one conversation is open per sender —
+ * and the fix for that is to add them to the list, which is what the list is for.
  */
 export async function startClassification(input: StartClassificationInput): Promise<StartClassificationOutcome> {
   if (!isWhatsAppClassifyEnabled()) return "disabled";
   if (input.historical) return "skipped_historical";
-  if (input.forwarded || input.isImportSender) return "skipped_forwarded";
+  if (input.isImportSender) return "skipped_import_sender";
 
   try {
     const supabase = recruitmentDb();
@@ -273,7 +316,6 @@ export type ClassifyReplyOutcome =
   | "no_session"
   | "out_of_step"
   | "unknown_value"
-  | "no_areas"
   | "asked_other"
   | "advanced"
   | "completed";
@@ -336,21 +378,39 @@ export async function handleClassifyReply(input: {
     }
 
     if (parsed.step === "region") {
+      // The escape, checked BEFORE the vocabulary guard: "other" is deliberately not a region code,
+      // so isOfferedRegion rejects it and it would otherwise read as an unknown value and be dropped.
+      if (parsed.value === OTHER_ROW_VALUE) {
+        await supabase
+          .from(SESSIONS_TABLE)
+          .update({ step: "region_other", updated_at: nowIso })
+          .eq("id", session.id);
+        await sendPromptText(
+          { ...session, phone_number_id: session.phone_number_id ?? input.phoneNumberId },
+          regionOtherPromptText(),
+        );
+        return "asked_other";
+      }
       if (!isOfferedRegion(parsed.value)) return "unknown_value";
       const areas = await areaNamesForRegion(parsed.value);
       if (areas.length === 0) {
-        // No area list to offer. Finish on what we have rather than dead-ending the applicant on a
-        // question with no answers — two of three fields is still far better than none.
+        // A real region with no areas yet — Delta (3) on 2026-08-28, live and carrying target the
+        // day its first District Manager seat opened. This used to give up and file two answers of
+        // three. Now it asks them to type the area, because "we have not drawn the areas yet" is our
+        // problem, not the applicant's, and the answer is worth more than the silence was.
         await supabase
           .from(SESSIONS_TABLE)
-          .update({ region_code: parsed.value, step: "area", updated_at: nowIso })
+          .update({ region_code: parsed.value, step: "area_other", updated_at: nowIso })
           .eq("id", session.id);
         logWarning("WhatsApp classification found no areas for a region", {
           context: { regionCode: parsed.value },
           labels: { event: "whatsapp_classify_no_areas" },
         });
-        await finishSession({ ...session, region_code: parsed.value }, input.phoneNumberId);
-        return "no_areas";
+        await sendPromptText(
+          { ...session, phone_number_id: session.phone_number_id ?? input.phoneNumberId },
+          areaOtherPromptText(),
+        );
+        return "asked_other";
       }
       await supabase
         .from(SESSIONS_TABLE)
@@ -364,6 +424,17 @@ export async function handleClassifyReply(input: {
     }
 
     // step === "area" — the last answer.
+    if (parsed.value === OTHER_ROW_VALUE) {
+      await supabase
+        .from(SESSIONS_TABLE)
+        .update({ step: "area_other", updated_at: nowIso })
+        .eq("id", session.id);
+      await sendPromptText(
+        { ...session, phone_number_id: session.phone_number_id ?? input.phoneNumberId },
+        areaOtherPromptText(),
+      );
+      return "asked_other";
+    }
     const validAreas = session.region_code ? await areaNamesForRegion(session.region_code) : [];
     if (validAreas.length > 0 && !validAreas.includes(parsed.value)) return "unknown_value";
     await supabase
@@ -416,25 +487,57 @@ export async function handleClassifyText(input: {
       .maybeSingle();
     if (!sessionRow) return "no_session";
     const session = sessionRow as SessionRow;
-    if (session.step !== "job_title_other") return "not_awaiting_text";
+    const awaitingText =
+      session.step === "job_title_other" || session.step === "region_other" || session.step === "area_other";
+    if (!awaitingText) return "not_awaiting_text";
 
     const withPhone = { ...session, phone_number_id: session.phone_number_id ?? input.phoneNumberId };
-    const typed = cleanTypedJobTitle(input.text);
+    const nowIso = new Date().toISOString();
 
-    // Too long to be a job title. Say so and stay on the same step rather than recording a
-    // paragraph in the column a hiring manager reads. The nudge is free: we are inside the window
-    // they opened by messaging us.
-    if (!typed) {
-      await sendPromptText(withPhone, jobTitleOtherTooLongText());
-      return "unusable_text";
+    // Too long to be an answer: say so and stay on the same step rather than recording a paragraph
+    // in a column a hiring manager reads. The nudge is free — we are inside the window they opened.
+    if (session.step === "job_title_other") {
+      const typed = cleanTypedAnswer(input.text, JOB_TITLE_OTHER_MAX);
+      if (!typed) {
+        await sendPromptText(withPhone, jobTitleOtherTooLongText());
+        return "unusable_text";
+      }
+      await supabase
+        .from(SESSIONS_TABLE)
+        .update({ job_title_other_text: typed, step: "region", updated_at: nowIso })
+        .eq("id", session.id);
+      await sendStep(withPhone, regionMenu());
+      return "advanced";
     }
 
-    const nowIso = new Date().toISOString();
+    if (session.step === "region_other") {
+      const typed = cleanTypedAnswer(input.text, REGION_OTHER_MAX);
+      if (!typed) {
+        await sendPromptText(withPhone, typedAnswerTooLongText("region", REGION_OTHER_MAX));
+        return "unusable_text";
+      }
+      // A region we do not have has no areas to list, so question 3 is typed as well. Going back to
+      // a menu here would offer the areas of a DIFFERENT region, which is worse than asking.
+      await supabase
+        .from(SESSIONS_TABLE)
+        .update({ region_other_text: typed, step: "area_other", updated_at: nowIso })
+        .eq("id", session.id);
+      await sendPromptText(withPhone, areaOtherPromptText());
+      return "advanced";
+    }
+
+    // step === "area_other" — the last answer, typed. Finishes the conversation exactly as a tap on
+    // the area menu does, so a typed applicant gets the same thank-you and the same mirror.
+    const typedArea = cleanTypedAnswer(input.text, AREA_OTHER_MAX);
+    if (!typedArea) {
+      await sendPromptText(withPhone, typedAnswerTooLongText("area", AREA_OTHER_MAX));
+      return "unusable_text";
+    }
     await supabase
       .from(SESSIONS_TABLE)
-      .update({ job_title_other_text: typed, step: "region", updated_at: nowIso })
+      .update({ area_other_text: typedArea, updated_at: nowIso })
       .eq("id", session.id);
-    await sendStep(withPhone, regionMenu());
+    await finishSession({ ...session, area_other_text: typedArea }, input.phoneNumberId);
     return "advanced";
   } catch (error) {
     logError("WhatsApp classification failed to handle a typed answer", {
@@ -449,17 +552,16 @@ export async function handleClassifyText(input: {
 
 async function finishSession(session: SessionRow, fallbackPhoneNumberId: string | null): Promise<void> {
   const roleLabel = sessionRoleLabel(session);
-  const regionLabel = session.region_code
-    ? candidateRegionLabels[session.region_code as CandidateRegionCode]
-    : null;
+  const regionLabel = sessionRegionLabel(session);
+  const areaLabel = sessionAreaLabel(session);
 
   await applyClassificationToCandidate(session);
   await closeSession(session.id, "completed");
 
-  if (roleLabel && regionLabel && session.area_name) {
+  if (roleLabel && regionLabel && areaLabel) {
     await sendWhatsAppText({
       phoneNumberId: session.phone_number_id ?? fallbackPhoneNumberId,
-      text: classifyThankYouText({ areaName: session.area_name, regionLabel, roleLabel }),
+      text: classifyThankYouText({ areaName: areaLabel, regionLabel, roleLabel }),
       toWaId: session.wa_id,
     });
   }
@@ -540,8 +642,13 @@ async function writeClassification(candidateId: string, session: SessionRow): Pr
   // and this column can never disagree about what the applicant said.
   const roleLabel = sessionRoleLabel(session);
   if (roleLabel) payload.applied_for_job_title = roleLabel;
+  // The code column takes ONLY a real code. A typed region is words, and words in a code column is
+  // the shape that produced undefined label lookups and NaN sort keys in production on 2026-08-24 —
+  // so it gets its own column instead. An area is a name either way, so both forms share one.
   if (session.region_code) payload.preferred_region_code = session.region_code;
-  if (session.area_name) payload.preferred_area_name = session.area_name;
+  if (session.region_other_text) payload.preferred_region_name = session.region_other_text;
+  const areaLabel = sessionAreaLabel(session);
+  if (areaLabel) payload.preferred_area_name = areaLabel;
 
   const { error } = await supabase.from("ats_candidates").update(payload).eq("id", candidateId);
   if (error) throw error;
