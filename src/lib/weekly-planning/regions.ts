@@ -214,6 +214,30 @@ export function planningAreaOptions(
 }
 
 /**
+ * Which of the approved regions a line's AU seat model actually has areas in.
+ *
+ * Not every line shares the same regions — Anti Infective's Delta 3 split has no CNS or Pedia
+ * counterpart (verified live 2026-08-28: `au.line_area_map` carries zero `D3` rows for either
+ * line), so `APPROVED_PLANNING_REGIONS` applied unfiltered to every line offers a CNS or Pedia
+ * rep a "Delta 3" they can select and then get zero areas for — the same class of dead-end
+ * cascading dropdown this module exists to prevent, just one level up. The region list must
+ * follow the seat model exactly the way the area list already does, per line, rather than
+ * naming a shared vocabulary and hoping every line's organogram happens to agree with it.
+ *
+ * Falls back to the full approved list when the seat model has nothing to offer at all (not
+ * loaded, or a genuinely empty line) — an empty region picker is worse than an over-wide one.
+ */
+export function approvedRegionsForSeats(seats: readonly PlanningAreaSeat[]): ApprovedPlanningRegion[] {
+  const present = new Set<ApprovedPlanningRegion>();
+  for (const seat of seats) {
+    const region = canonicalPlanningRegionName(seat.regionName);
+    if (region) present.add(region);
+  }
+  if (present.size === 0) return [...APPROVED_PLANNING_REGIONS];
+  return APPROVED_PLANNING_REGIONS.filter((region) => present.has(region));
+}
+
+/**
  * Whether `area` is a seat area that sits in `region` for this line — the server-side check
  * behind the Area picker.
  *
