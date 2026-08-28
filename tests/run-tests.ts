@@ -14,6 +14,7 @@ import { runErrorMonitorUserAttemptsTests } from "./error-monitor-user-attempts.
 import { runGcpMetricsTests } from "./gcp-metrics.test.ts";
 import { runWeeklySystemHealthDigestTests } from "./weekly-system-health-digest.test.ts";
 import { runNavigationActivePathTests } from "./navigation-active-path.test.ts";
+import { runNavigationPersonalLayoutTests } from "./navigation-personal-layout.test.ts";
 import { runFinanceManagerSixModuleAccessTests } from "./finance-manager-six-module-access.test.ts";
 import { runSidebarLabelWidthTests } from "./sidebar-label-width.test.ts";
 import { runAutomatedPayrollPageWidthTests } from "./automated-payroll-page-width.test.ts";
@@ -1033,6 +1034,10 @@ await runTest("error monitor per-user attempts (30d default window + real-accoun
 await runTest("gcp-metrics service health reader (availability/latency/instances + {available:false} guard)", runGcpMetricsTests);
 await runTest("weekly system health digest", runWeeklySystemHealthDigestTests);
 await runTest("navigation active path", runNavigationActivePathTests);
+await runTest(
+  "navigation personal layout (a layout rearranges the gated set and can never introduce an href)",
+  runNavigationPersonalLayoutTests,
+);
 await runTest(
   "finance manager six-module access (sales scope + grant as one change, full closing workbook, organogram two-gate + head office, resignations read-only, line-scoped calendar, payslip document export)",
   runFinanceManagerSixModuleAccessTests,
