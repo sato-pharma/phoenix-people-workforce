@@ -12,7 +12,6 @@ import {
   useSensor,
   useSensors,
   type DragEndEvent,
-  type DragOverEvent,
   type DragStartEvent,
 } from "@dnd-kit/core";
 import {
@@ -375,29 +374,43 @@ export function SidebarLayoutEditor({
     });
   }
 
-  function handleDragOver(event: DragOverEvent) {
-    const { active, over } = event;
-    if (!over) return;
-    const from = containerIdOf(state, scope, available, String(active.id));
-    const to = resolveContainer(String(over.id));
-    if (!from || !to || from === to) return;
-    moveBetweenContainers(from, to, String(active.id), String(over.id));
-    setDirty(true);
-  }
-
+  // Every move happens here, on DROP — deliberately never on drag-over.
+  //
+  // There used to be an `onDragOver` that moved the page between columns live, which is the classic
+  // dnd-kit multi-container trap: writing state mid-drag re-renders the board, dnd-kit re-measures
+  // the droppables under a pointer that has not moved, and the row can read as being back over its
+  // original column — so the next drag-over moves it straight back. The row ping-pongs and lands
+  // where it started, which from the outside is exactly "the drag and drop is not working". It
+  // shipped that way in #2516.
+  //
+  // Deciding on drop removes the loop by construction: nothing writes state while a drag is in
+  // flight, so there is no re-measure to react to. The DragOverlay still follows the cursor, so the
+  // drag stays legible; only the live preview inside the target column is given up.
   function handleDragEnd(event: DragEndEvent) {
     setDragging(null);
     const { active, over } = event;
     if (!over) return;
-    const container = containerIdOf(state, scope, available, String(active.id));
-    if (!container) return;
-    const items = readContainer(state, scope, available, container);
-    const oldIndex = items.indexOf(String(active.id));
-    const newIndex = items.indexOf(String(over.id));
+    const activeId = String(active.id);
+    const overId = String(over.id);
+    const from = containerIdOf(state, scope, available, activeId);
+    // Dropping on an empty column gives the column's own droppable id; dropping on a populated one
+    // gives the row underneath, whose column resolveContainer looks up. Both land here.
+    const to = resolveContainer(overId);
+    if (!from || !to) return;
+
+    if (from !== to) {
+      moveBetweenContainers(from, to, activeId, overId);
+      setDirty(true);
+      return;
+    }
+
+    const items = readContainer(state, scope, available, from);
+    const oldIndex = items.indexOf(activeId);
+    const newIndex = items.indexOf(overId);
     if (oldIndex === -1 || newIndex === -1 || oldIndex === newIndex) return;
     const reordered = arrayMove(items, oldIndex, newIndex);
-    if (container === AVAILABLE) setAvailable(reordered);
-    else setState((current) => writeContainer(current, scope, container, reordered));
+    if (from === AVAILABLE) setAvailable(reordered);
+    else setState((current) => writeContainer(current, scope, from, reordered));
     setDirty(true);
   }
 
@@ -580,7 +593,6 @@ export function SidebarLayoutEditor({
       <DndContext
         collisionDetection={closestCorners}
         onDragEnd={handleDragEnd}
-        onDragOver={handleDragOver}
         onDragStart={(event: DragStartEvent) => setDragging(String(event.active.id))}
         sensors={sensors}
       >
