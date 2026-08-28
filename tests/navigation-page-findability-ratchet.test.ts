@@ -95,6 +95,25 @@ function routeOf(file: string): string | null {
   return `/${segments.join("/")}`;
 }
 
+/**
+ * The forms a route can legitimately be LINKED as, which is not always the form it is
+ * AUTHORED as.
+ *
+ * The HR seats reach their admin pages through the /hr URL namespace: the file
+ * app/(admin)/admin/hr-command-center/page.tsx is authored as /admin/hr-command-center,
+ * but every real link to it — the "HR Overview" nav row in system-navigation.ts and the
+ * seat landing path in src/lib/auth/landing.ts — spells it /hr/admin/hr-command-center.
+ * The literal scan compares whole strings, so without this the page reads as unreachable
+ * while carrying a nav row of its own.
+ *
+ * This is not a hypothetical. This ratchet and #2568's HR landing dashboard each passed
+ * CI alone, met on main for the first time at the merge of #2567, and turned main's
+ * required `validate` check red on a page that was never stranded at all.
+ */
+function linkFormsOf(route: string): string[] {
+  return route.startsWith("/admin/") ? [route, `/hr${route}`] : [route];
+}
+
 export function runNavigationPageFindabilityRatchetTests() {
   const files = ROOTS.flatMap((root) => walk(root));
 
@@ -136,9 +155,12 @@ export function runNavigationPageFindabilityRatchetTests() {
     }
   }
 
-  // A page mentioning its own path does not make it reachable.
+  // A page mentioning its own path does not make it reachable. Every link form counts —
+  // see linkFormsOf: a /hr-namespaced link is a real door, not a near-miss.
   const unreachable = [...pageFileOf.entries()]
-    .filter(([route, own]) => [...(mentionedIn.get(route) ?? [])].filter((f) => f !== own).length === 0)
+    .filter(([route, own]) =>
+      linkFormsOf(route).every((form) => [...(mentionedIn.get(form) ?? [])].filter((f) => f !== own).length === 0),
+    )
     .map(([route]) => route)
     .sort();
 
