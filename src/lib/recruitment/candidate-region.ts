@@ -26,7 +26,11 @@
 // parsing those names — and this list has to answer for governorates no area covers at all
 // (Matrouh, Port Said) which a join can never produce.
 
-export const candidateRegionCodes = ["CA", "GZ", "AB", "D1", "D2", "UE", "OT"] as const;
+// D3 added 2026-08-28: Delta (3) is live and `carries_target` in `au.regions`, and the owner was
+// hiring a District Manager into it while an applicant could not choose it at all. UE-1/UE-2 are
+// deliberately NOT here — they are sales subdivisions of Upper Egypt, and offering all three to a
+// job applicant asks them to know an internal split they cannot be expected to know.
+export const candidateRegionCodes = ["CA", "GZ", "AB", "D1", "D2", "D3", "UE", "OT"] as const;
 export type CandidateRegionCode = (typeof candidateRegionCodes)[number];
 
 /** The company's own region names, verbatim from `au.regions.region_name`. */
@@ -35,6 +39,7 @@ export const candidateRegionLabels: Record<CandidateRegionCode, string> = {
   CA: "Cairo",
   D1: "Delta (1)",
   D2: "Delta (2)",
+  D3: "Delta (3)",
   GZ: "Giza",
   OT: "Others",
   UE: "Upper Egypt",

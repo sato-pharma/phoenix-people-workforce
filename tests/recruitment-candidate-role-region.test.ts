@@ -49,7 +49,9 @@ export function runCandidateRoleRegionTests() {
   // --- bare abbreviation is deliberately unmatched — nobody in this pool uses it.
   assert.equal(candidateRoleFamily("District Sales Manager"), "district_manager");
   assert.equal(candidateRoleFamily("Regional Manager"), "area_regional_manager");
-  assert.equal(candidateRoleFamily("Area Manager"), "area_regional_manager");
+  // "Area Manager" moved here 2026-08-28 — see the dedicated block below, where the owner's
+  // correction and its production measurement are documented.
+  assert.equal(candidateRoleFamily("Area Manager"), "district_manager");
   assert.equal(
     candidateRoleFamily("NSM"),
     "other",
@@ -90,22 +92,20 @@ export function runCandidateRoleRegionTests() {
   );
 
   assert.equal(candidateRoleFamily("Regional Manager \u2013 Upper Egypt"), "area_regional_manager");
-  assert.equal(candidateRoleFamily("Area Supervisor"), "area_regional_manager");
+  assert.equal(candidateRoleFamily("Assistant General Manager Of Operations(Zonal Head)"), "area_regional_manager");
 
   // --- "Sales" wedged between the region word and the seniority word must not push these into the
-  // --- sales catch-all: "Regional/Area Sales Manager" is this pool's own name for the RSM/ASM
-  // --- field-force role. Measured against production 2026-08-28: 12 of 345 titled candidates (9
-  // --- distinct titles, all this shape) were falling through to "sales" before this fix.
+  // --- sales catch-all: "Regional Sales Manager" is this pool's own name for the RSM field-force
+  // --- role. Measured against production 2026-08-28: these 5, plus the two asserted just above,
+  // --- are the complete set of 7 "Regional/Zonal" titles this pool holds.
   for (const title of [
     "Regional Sales Manager",
     "7-Regional Sales Manager",
     "Regional Sales Manager (Alex & Delta)",
+    "Regional Sales Manager | Healthcare & Pharmaceuticals",
     "Regional sales manager for great cairo",
-    "Area Sales Manager",
-    "area sales manager",
-    "Area Sales Manager GCC Region",
   ]) {
-    assert.equal(candidateRoleFamily(title), "area_regional_manager", `"${title}" is an Area / Regional Manager`);
+    assert.equal(candidateRoleFamily(title), "area_regional_manager", `"${title}" is a Regional Manager`);
   }
   // --- But not ANY word between the two \u2014 "Regional Collection Manager" carries both "regional"
   // --- and "manager" and is still not a field role, so it must stay unclaimed.
@@ -114,6 +114,23 @@ export function runCandidateRoleRegionTests() {
     "other",
     "a Regional Collection Manager is not the Area / Regional field-force role",
   );
+
+  // --- "Area (Sales) Manager/Supervisor" reads like a synonym for the block above, but the owner
+  // --- corrected this 2026-08-28: in this industry it names the SAME first-line seat Phoenix calls
+  // --- District Manager, not the tier above. Measured against production: these 6, plus "Area
+  // --- Manager" asserted above, are the complete set of 7 "Area"-titled candidates that were
+  // --- sitting in area_regional_manager (an 8th, "Pharmaceutical Area / District Sales Manager",
+  // --- already resolved to district_manager via the plain \bdistrict\b rule and never moved).
+  for (const title of [
+    "Area Sales Manager",
+    "area sales manager",
+    "Area sales manager",
+    "Area Sales Manager GCC Region",
+    "Area Supervisor",
+    "AREA MANGER", // the same misspelling normalizeJobTitle repairs for "district manger"
+  ]) {
+    assert.equal(candidateRoleFamily(title), "district_manager", `"${title}" is a District Manager, not Area / Regional`);
+  }
 
   assert.equal(candidateRoleFamily("Product Manager (Respiratory & Anti-Infective)"), "product_manager");
   assert.equal(candidateRoleFamily("Senior HR Generalist"), "human_resources");
