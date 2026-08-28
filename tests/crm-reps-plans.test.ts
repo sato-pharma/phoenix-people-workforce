@@ -255,15 +255,19 @@ export function runCrmRepsPlansTests() {
   const AI_DELTA = { lineCode: "ai", lineName: "Anti Infective", regionCode: "delta", regionName: "Delta (1)" };
   const AI_GIZA = { lineCode: "ai", lineName: "Anti Infective", regionCode: "giza", regionName: "Giza" };
 
+  // `ancestors` excludes the seat; the fixture appends the seat itself, because that is what
+  // `au_v_org_tree.path` actually carries — verified on production, where the acting DM's path
+  // ends with her own seat id. A fixture that quietly disagrees with the view is a test that
+  // proves the wrong thing.
   const seat = (
     seatId: string,
     seatTier: string,
     occupantHrId: string | null,
-    path: string[],
+    ancestors: string[],
     cell?: { lineCode: string; lineName: string; regionCode: string; regionName: string },
   ): OrgTreeNode => ({
     seatId,
-    path,
+    path: [...ancestors, seatId],
     seatTier,
     occupantHrId,
     lineCode: cell?.lineCode ?? null,
@@ -281,6 +285,11 @@ export function runCrmRepsPlansTests() {
     seat("S3", "REP", "AI-0003", ["CEO"], AI_DELTA),
     // Deliberately unfilled — a vacant territory.
     seat("S4", "REP", null, ["CEO"], AI_GIZA),
+    // THE ACTING DM, production's one two-seat person: she holds the acting seat AND the rep seat
+    // under it. Listed second here so the ACTING_DM row is seen FIRST — the order that would leave
+    // her unscored if the rep seat did not win.
+    seat("ADM-AI-DELTA", "ACTING_DM", "AI-0020", ["CEO"], AI_DELTA),
+    seat("S5", "REP", "AI-0020", ["CEO", "ADM-AI-DELTA"], AI_DELTA),
   ]);
 
   // The index keys on the BARE lowercased HR id, not on a `hr:` board key. Handing one board's key
@@ -306,6 +315,14 @@ export function runCrmRepsPlansTests() {
     "and the CEO covers everything under him, both lines",
   );
 
+  // THE ACTING DM — production's one person on two seats, and the owner has ruled on her: acting
+  // authority is an app role, not a job title, and she STAYS a medical rep. So the REP seat wins
+  // and her call rate is still measured. Her ACTING_DM row is seen first above, which is exactly
+  // the order that would leave her unscored if this were decided by whichever row arrived first.
+  assert.equal(tree.index.get("ai-0020")?.scored, true, "an acting DM who also holds the rep seat is still scored");
+  assert.equal(tree.index.get("ai-0020")?.tierLabel, "Medical Rep", "and is named as what the owner says she is");
+  assert.deepEqual(cellsOf("ai-0020"), ["Anti Infective · Delta (1)"], "on the one territory both her seats sit in");
+
   // A vacant territory is genuinely part of the CEO's coverage AND must never be offered as a
   // filter: picking it could only ever produce an empty board.
   assert.equal(
@@ -318,6 +335,8 @@ export function runCrmRepsPlansTests() {
     rep("Alia", 10, { verified: 20 }, { verified: 100 }, { agentCrmId: 1, agentHrId: "AI-0001" }),
     rep("Basem", 10, { verified: 10 }, { verified: 50 }, { agentCrmId: 2, agentHrId: "AI-0002" }),
     rep("Karim", 10, { verified: 0 }, { verified: 20 }, { agentCrmId: 3, agentHrId: "AI-0003" }),
+    // The acting DM, scored as the medical rep she still is.
+    rep("Nesma", 10, { verified: 10 }, { verified: 40 }, { agentCrmId: 20, agentHrId: "AI-0020" }),
     // A District Manager and an NSM, both with real field activity. Listed, scored on nothing.
     rep("Nabil", 10, { verified: 5 }, { verified: 5, campaign: 40 }, { agentCrmId: 10, agentHrId: "AI-0010" }),
     rep("Sherif", 10, { verified: 1 }, { verified: 2 }, { agentCrmId: 100, agentHrId: "AI-0100" }),
@@ -328,8 +347,8 @@ export function runCrmRepsPlansTests() {
 
   // No geography picked: everyone is LISTED. Only the medical reps are counted.
   const wide = buildRepsPlansBoard(geoReport, { month: "2026-08", isCurrentMonth: false, tree });
-  assert.equal(wide.reps.length, 7, "no geography filter lists every person");
-  assert.equal(wide.totals.reps, 3, "the tiles are the three MEDICAL REPS — the target is theirs");
+  assert.equal(wide.reps.length, 8, "no geography filter lists every person");
+  assert.equal(wide.totals.reps, 4, "the tiles are the four MEDICAL REPS — the target is theirs");
   assert.equal(wide.managersShown, 2, "and the board says how many managers are listed but unscored");
   assert.equal(wide.unplacedShown, 2, "and how many hold no seat at all");
   assert.equal(wide.geographyLabel, null);
@@ -355,7 +374,7 @@ export function runCrmRepsPlansTests() {
   // The proof he is outside the tiles rather than merely low in the list: 40 campaign calls, none of
   // which reach the company figure. Dalia and Emad carry 160 more, equally excluded.
   assert.equal(wide.totals.campaignCalls, 0, "a manager's activity never moves a number he is not measured by");
-  assert.equal(wide.totals.am.verifiedRate, 1, "30 verified AM / (10 days x 3 reps) = 1.00 — managers not in the divisor");
+  assert.equal(wide.totals.am.verifiedRate, 1, "40 verified AM / (10 days x 4 reps) = 1.00 — managers not in the divisor");
   assert.equal(wide.totals.repsOnTarget, 1, "only Alia clears both targets");
   assert.equal(
     wide.reps.find((r) => r.repName === "Dalia")?.territories.length,
@@ -402,8 +421,8 @@ export function runCrmRepsPlansTests() {
   });
   assert.deepEqual(
     ai.reps.map((r) => r.repName).sort(),
-    ["Dalia", "Emad", "Karim"],
-    "the CNS DM and the CNS NSM are both out of an Anti Infective board",
+    ["Dalia", "Emad", "Karim", "Nesma"],
+    "the CNS DM and the CNS NSM are both out of an Anti Infective board, while the acting DM belongs to it",
   );
   assert.equal(ai.managersShown, 0);
 
@@ -486,8 +505,8 @@ export function runCrmRepsPlansTests() {
   assert.equal(noTree.geographyAvailable, false);
   assert.deepEqual(noTree.lineOptions, []);
   assert.equal(noTree.appliedLine, null, "a line cannot be applied with no org model to resolve it");
-  assert.equal(noTree.reps.length, 7, "and the board still shows everyone");
-  assert.equal(noTree.totals.reps, 7, "all of them scored, exactly as the page read before the organogram was wired in");
+  assert.equal(noTree.reps.length, 8, "and the board still shows everyone");
+  assert.equal(noTree.totals.reps, 8, "all of them scored, exactly as the page read before the organogram was wired in");
   assert.ok(noTree.totals.am.verifiedRate != null, "so the tiles still carry a number rather than blanking");
   assert.equal(noTree.managersShown, 0, "nobody is called a manager on the strength of a chart that could not be read");
   assert.equal(noTree.unplacedShown, 0, "and nobody is called unplaced by it either");

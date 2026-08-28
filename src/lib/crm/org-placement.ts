@@ -27,9 +27,16 @@
 //   NSM                    one line, all its regions     -> 7-8 in production
 //   CEO                    everything                    -> 22 in production
 //
-// Measured against production 2026-08-28: 94 occupied seats, 94 resolved, none
-// left over. That number is the point — a resolution that leaves a tier behind
-// is the bug this module was written to end.
+// Measured against production 2026-08-28: 133 seats, 91 of them occupied by 90
+// people, and all 91 resolve — none left over. That last number is the point: a
+// resolution that leaves a tier behind is the bug this module exists to end.
+//
+// ── And 91 seats to 90 people is not a typo ─────────────────────────────────
+// One person holds TWO seats — an ACTING_DM seat and the REP seat beneath it,
+// both on the same line and region. That is deliberate and the owner has ruled
+// on it: an acting DM's authority is her app role, not her job title, and she
+// STAYS a medical rep. So when a person occupies several seats the REP one wins
+// for scoring — her call rate is still her own job. See {@link isScoredTier}.
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** One (line, region) a person covers. The pair is kept TOGETHER, never as two loose fields. */
@@ -43,7 +50,15 @@ export type OrgCell = {
 /** One row of `au_v_org_tree`, already trimmed of nulls the caller cannot use. */
 export type OrgTreeNode = {
   seatId: string;
-  /** Ancestor seat ids, root first. `au_v_org_tree.path`. Excludes the seat itself. */
+  /**
+   * Ancestor seat ids, root first, from `au_v_org_tree.path`.
+   *
+   * INCLUDES the seat itself as its last element — verified against production, where
+   * `SEAT-AIF-ADM-UE-1` carries `[SEAT-ROOT-CEO, SEAT-AIF-NSM, SEAT-AIF-ADM-UE-1]`. Harmless for
+   * the descendant walk below (a seat with its own cell never consults it, and a seat without one
+   * contributes nothing to itself), but worth stating: reading it as ancestors-only is how someone
+   * later "fixes" a bug that is not there.
+   */
   path: string[];
   seatTier: string;
   occupantHrId: string | null;
@@ -183,6 +198,16 @@ export function buildOrgPlacementTree(nodes: readonly OrgTreeNode[]): OrgPlaceme
         scored: isScoredTier(node.seatTier),
         cells: [],
       };
+
+    // A person on a SECOND seat: the REP seat wins the tier, whichever order the rows arrive in.
+    // Production has exactly one — an acting DM who also holds the rep seat under her — and the
+    // owner's rule is that she stays a medical rep, so her call rate is still measured. Taking
+    // whichever row came first would decide that by view ordering, which is no decision at all.
+    if (!placement.scored && isScoredTier(node.seatTier)) {
+      placement.tier = node.seatTier;
+      placement.tierLabel = orgTierLabel(node.seatTier);
+      placement.scored = true;
+    }
 
     for (const cell of raw) {
       // Deduped FIELD BY FIELD rather than through a joined key: any separator could in principle
