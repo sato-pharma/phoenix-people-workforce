@@ -103,14 +103,23 @@ export function RepsPlansBoardView({ basePath, board }: { basePath: string; boar
       <Section
         action={
           <RepsPlansControls
+            appliedLine={board.appliedLine}
+            appliedRegion={board.appliedRegion}
             appliedRepKey={board.appliedRepKey}
             basePath={basePath}
+            geographyAvailable={board.geographyAvailable}
+            lineOptions={board.lineOptions}
             month={board.month}
+            regionOptions={board.regionOptions}
             repOptions={board.repOptions}
           />
         }
         description={description}
-        title={`Reps Plans — ${board.monthLabel}`}
+        title={
+          board.geographyLabel
+            ? `Reps Plans — ${board.monthLabel} · ${board.geographyLabel}`
+            : `Reps Plans — ${board.monthLabel}`
+        }
       >
         <div className="space-y-4 p-5">
           {/* THE RULE, in one line, above the numbers it governs. The two rates are the owner's own
@@ -120,6 +129,21 @@ export function RepsPlansBoardView({ basePath, board }: { basePath: string; boar
             <span className="font-black text-slate-900">{board.pmTarget} PM clinics</span>. Every rate below divides by
             the {board.workingDays} calendar working days in the period, not by the days the rep chose to work.
           </p>
+
+          {/* Stated, never implied. A rep the org model has no seat for is still shown below — he is
+              usually one of the zero-proved ones, and this is the page that exists to surface him —
+              but he belongs to no territory, so folding him into a territory's rate would corrupt
+              it. Listed and marked above, counted nowhere here, and the count says so. */}
+          {board.unseatedShown > 0 ? (
+            <p className="border-l-[3px] border-l-slate-400 bg-slate-50 px-4 py-2.5 text-xs font-semibold text-slate-600">
+              The tiles below cover{" "}
+              <span className="font-black text-slate-900">{board.geographyLabel}</span> only.{" "}
+              <span className="font-black text-slate-900">{board.unseatedShown}</span>{" "}
+              {board.unseatedShown === 1 ? "rep holds" : "reps hold"} no seat in the organogram, so{" "}
+              {board.unseatedShown === 1 ? "he is" : "they are"} listed in the table marked{" "}
+              <span className="font-black text-slate-900">No territory</span> and counted in no rate on this page.
+            </p>
+          ) : null}
 
           {/* Row one: the KPI itself, AM then PM, each with the target it is measured against. */}
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">

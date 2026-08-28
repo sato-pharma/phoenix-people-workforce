@@ -17,6 +17,7 @@ import { RepsPlansBoardView } from "@/components/crm/reps-plans-board";
 import { canAccess } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { loadCallRateReport } from "@/lib/crm/call-rate-service";
+import { loadCoverageFilterTree } from "@/lib/crm/coverage-filters-data";
 import { cairoTodayIso } from "@/lib/crm/dates";
 import { buildRepsPlansBoard, repsPlansRange, resolveRepsPlansMonth } from "@/lib/crm/reps-plans";
 import { canAccessRepsPlans } from "@/lib/crm/reps-plans-access";
@@ -26,7 +27,9 @@ export const dynamic = "force-dynamic";
 
 type PageProps = {
   searchParams?: Promise<{
+    line?: string;
     month?: string;
+    region?: string;
     rep?: string;
   }>;
 };
@@ -55,6 +58,16 @@ export default async function RepsPlansPage({ searchParams }: PageProps) {
     loadError = error instanceof Error ? error.message : "CRM visit data is unavailable.";
   }
 
+  // The org model is a SEPARATE failure. It powers the line/region pickers only, so losing it must
+  // not take the call rate down with it — the board falls back to month + rep and hides the two
+  // pickers rather than offering empty ones.
+  let tree: Awaited<ReturnType<typeof loadCoverageFilterTree>> | null = null;
+  try {
+    tree = await loadCoverageFilterTree();
+  } catch {
+    tree = null;
+  }
+
   if (!report) {
     return (
       <div className="border border-rose-200 bg-rose-50 px-5 py-4">
@@ -65,9 +78,11 @@ export default async function RepsPlansPage({ searchParams }: PageProps) {
   }
 
   const board = buildRepsPlansBoard(report, {
+    geography: { line: params?.line ?? null, region: params?.region ?? null },
     isCurrentMonth: range.isCurrentMonth,
     month,
     repKey: params?.rep ?? null,
+    tree,
   });
 
   return (

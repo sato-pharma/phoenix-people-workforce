@@ -63,30 +63,49 @@ function pct(value: number | null): string {
 }
 
 export function RepsPlansControls({
+  appliedLine,
+  appliedRegion,
   appliedRepKey,
   basePath,
+  geographyAvailable,
+  lineOptions,
   month,
+  regionOptions,
   repOptions,
 }: {
+  appliedLine: string | null;
+  appliedRegion: string | null;
   appliedRepKey: string | null;
   basePath: string;
+  geographyAvailable: boolean;
+  lineOptions: Array<{ code: string; name: string }>;
   month: string;
+  regionOptions: Array<{ code: string; name: string }>;
   repOptions: Array<{ repKey: string; repName: string }>;
 }) {
   const router = useRouter();
-  const [draft, setDraft] = useState({ month, rep: appliedRepKey ?? "" });
+  const [draft, setDraft] = useState({
+    line: appliedLine ?? "",
+    month,
+    region: appliedRegion ?? "",
+    rep: appliedRepKey ?? "",
+  });
 
-  // Month and rep move TOGETHER. Pushing `?month=` on its own silently dropped the active rep on
+  // Every filter moves TOGETHER. Pushing `?month=` on its own silently dropped the active rep on
   // the sibling board, which read as the filter having been ignored.
   const push = (next: typeof draft) => {
     const params = new URLSearchParams();
     params.set("month", next.month);
+    if (next.line) params.set("line", next.line);
+    if (next.region) params.set("region", next.region);
     if (next.rep) params.set("rep", next.rep);
     router.push(`${basePath}?${params.toString()}`);
   };
 
+  const active = Boolean(draft.line || draft.region || draft.rep);
+
   return (
-    <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+    <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
       <label className="space-y-1">
         <span className={LABEL_CLASS}>Month</span>
         <input
@@ -100,6 +119,56 @@ export function RepsPlansControls({
           value={draft.month}
         />
       </label>
+
+      {/* LINE then REGION, in that order — the owner's own cascade. Region is narrowed by the line
+          above it because Beni Suef and Fayoum sit in different regions depending on the line, so
+          the reverse order offers a pairing no rep satisfies. Changing the line therefore CLEARS
+          the region rather than leaving a combination the dropdowns never offered. Both pickers are
+          hidden outright when the org model could not be read — an empty picker reads as "no lines
+          exist", which would be a lie. */}
+      {geographyAvailable ? (
+        <label className="space-y-1">
+          <span className={LABEL_CLASS}>Line</span>
+          <select
+            className={SELECT_CLASS}
+            onChange={(event) => {
+              const next = { ...draft, line: event.target.value, region: "" };
+              setDraft(next);
+              push(next);
+            }}
+            value={draft.line}
+          >
+            <option value="">All lines</option>
+            {lineOptions.map((option) => (
+              <option key={option.code} value={option.code}>
+                {option.name}
+              </option>
+            ))}
+          </select>
+        </label>
+      ) : null}
+
+      {geographyAvailable ? (
+        <label className="space-y-1">
+          <span className={LABEL_CLASS}>Region</span>
+          <select
+            className={SELECT_CLASS}
+            onChange={(event) => {
+              const next = { ...draft, region: event.target.value };
+              setDraft(next);
+              push(next);
+            }}
+            value={draft.region}
+          >
+            <option value="">All regions</option>
+            {regionOptions.map((option) => (
+              <option key={option.code} value={option.code}>
+                {option.name}
+              </option>
+            ))}
+          </select>
+        </label>
+      ) : null}
 
       <label className="space-y-1">
         <span className={LABEL_CLASS}>Rep</span>
@@ -125,23 +194,36 @@ export function RepsPlansControls({
         <span className={LABEL_CLASS}>&nbsp;</span>
         <button
           className="h-9 w-full border border-slate-200 bg-white px-3 text-xs font-black uppercase tracking-[0.1em] text-slate-500 hover:border-orange-400 hover:text-orange-600 disabled:opacity-40"
-          disabled={!draft.rep}
+          disabled={!active}
           onClick={() => {
-            const cleared = { month: draft.month, rep: "" };
+            const cleared = { line: "", month: draft.month, region: "", rep: "" };
             setDraft(cleared);
             push(cleared);
           }}
           type="button"
         >
-          All reps
+          Clear
         </button>
       </div>
     </div>
   );
 }
 
+/** "CNS · Delta (1)", or every pair when a rep is seated across more than one. */
+function territoryText(row: RepsPlansRepRow): string {
+  return row.territories.map((t) => `${t.lineName} · ${t.regionName}`).join("  |  ");
+}
+
 const REP_COLS = [
   { accessor: (r: RepsPlansRepRow) => r.repName, defaultDir: "asc" as const, key: "repName", type: "string" as const },
+  // Sorts the marked reps together rather than scattering them: an empty territory sorts as the
+  // marker text, so "No territory" lands in one block instead of at both ends of the alphabet.
+  {
+    accessor: (r: RepsPlansRepRow) => territoryText(r) || "No territory",
+    defaultDir: "asc" as const,
+    key: "territory",
+    type: "string" as const,
+  },
   { accessor: (r: RepsPlansRepRow) => r.am.verifiedRate, key: "amVerifiedRate", type: "number" as const },
   { accessor: (r: RepsPlansRepRow) => r.am.reportedRate, key: "amReportedRate", type: "number" as const },
   { accessor: (r: RepsPlansRepRow) => r.am.attainmentPct, key: "amAttainmentPct", type: "number" as const },
@@ -171,7 +253,13 @@ export function RepsPlansRepTable({
     // Opens on the worst PM attainment, because PM is ten of the twelve calls a perfect day is made
     // of — a rep short there is short on the month whatever the AM column says.
     initialSort: { dir: "asc", key: "pmAttainmentPct" },
-    searchAccessors: [(r) => r.repName, (r) => r.agentHrId ?? ""],
+    // Territory is searchable so "CNS" or "Delta" narrows the table without touching the pickers,
+    // and so does the marker itself — typing "No territory" lists exactly the unseated reps.
+    searchAccessors: [
+      (r) => r.repName,
+      (r) => r.agentHrId ?? "",
+      (r) => territoryText(r) || "No territory",
+    ],
   });
 
   const exportRows = table.rows.map((row) => ({
@@ -187,6 +275,9 @@ export function RepsPlansRepTable({
     pm_reported: row.pm.reportedRate,
     pm_pct: row.pm.attainmentPct,
     rep: row.repName,
+    // The export must match the screen (owner's standing rule), marker included — a file that
+    // silently dropped the territory column would read as though every rep had one.
+    territory: territoryText(row) || "No territory",
     unproven: row.unprovenPct,
     unspecified: row.unspecified,
     working_days: row.workingDays,
@@ -202,6 +293,7 @@ export function RepsPlansRepTable({
         <ExportXlsxButton
           columns={[
             { key: "rep", label: "Rep" },
+            { key: "territory", label: "Territory" },
             { key: "hr_id", label: "HR ID" },
             { key: "working_days", label: "Working Days", numeric: true },
             { key: "am_proved", label: "AM Proved Rate", numeric: true },
@@ -263,6 +355,17 @@ export function RepsPlansRepTable({
             <PortalRecordFields
               fields={[
                 {
+                  label: "Territory",
+                  value:
+                    row.territories.length === 0 ? (
+                      <span className="border border-amber-300 bg-amber-50 px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.1em] text-amber-700">
+                        No territory
+                      </span>
+                    ) : (
+                      <span className="text-slate-500">{territoryText(row)}</span>
+                    ),
+                },
+                {
                   label: "AM reported",
                   value: <span className="whitespace-nowrap text-slate-500">{rate(row.am.reportedRate)}</span>,
                 },
@@ -301,7 +404,7 @@ export function RepsPlansRepTable({
           </PortalRecordCard>
         )}
         renderTable={() => (
-          <PortalDesktopTable className="text-xs" minWidth="1460px">
+          <PortalDesktopTable className="text-xs" minWidth="1700px">
             <thead>
               {/* Two header rows: the session groups above, the measures below. AM and PM are
                   different KPIs against different targets, and a single flat row of twelve headings
@@ -309,6 +412,9 @@ export function RepsPlansRepTable({
               <tr className="bg-slate-900 text-left">
                 <th className={THEAD} rowSpan={2} scope="col">
                   Rep
+                </th>
+                <th className={THEAD} rowSpan={2} scope="col">
+                  Territory
                 </th>
                 <th className={`${THEAD} border-l border-slate-700 text-center`} colSpan={3} scope="colgroup">
                   AM — target 2 / day
@@ -415,6 +521,19 @@ export function RepsPlansRepTable({
               {table.rows.map((row) => (
                 <tr className="whitespace-nowrap bg-white hover:bg-slate-50" key={row.repKey}>
                   <td className="px-3 py-2 font-semibold text-slate-900">{row.repName}</td>
+                  {/* THE MARKER. A rep with no seat is kept on the board rather than filtered away
+                      — he is usually one of the zero-proved ones — so the row has to say plainly
+                      that he sits outside the territory the tiles describe. Amber, not rose: this
+                      is an org-model gap to close, not the rep's failure. */}
+                  <td className="px-3 py-2">
+                    {row.territories.length === 0 ? (
+                      <span className="border border-amber-300 bg-amber-50 px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.1em] text-amber-700">
+                        No territory
+                      </span>
+                    ) : (
+                      <span className="font-semibold text-slate-500">{territoryText(row)}</span>
+                    )}
+                  </td>
                   <td className={`border-l border-slate-100 px-3 py-2 text-right font-black ${attainmentText(row.am.attainmentPct)}`}>
                     {rate(row.am.verifiedRate)}
                   </td>

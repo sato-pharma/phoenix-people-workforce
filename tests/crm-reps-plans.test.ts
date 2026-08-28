@@ -9,8 +9,10 @@ import {
   type RepCallRate,
   type VisitForCallRate,
 } from "../src/lib/crm/call-rate.ts";
+import { buildCoverageFilterTree } from "../src/lib/crm/coverage-filters.ts";
 import {
   buildRepsPlansBoard,
+  indexRepsPlansTerritories,
   repsPlansRange,
   resolveRepsPlansMonth,
   toRepsPlansRow,
@@ -222,6 +224,188 @@ export function runCrmRepsPlansTests() {
   assert.equal(empty.totals.unprovenPct, null);
   assert.equal(empty.totals.campaignSharePct, 0);
   assert.equal(empty.reps.length, 0);
+
+  // ── the LINE -> REGION cascade ────────────────────────────────────────────
+  // Built through the REAL buildCoverageFilterTree rather than a hand-shaped tree, so these cases
+  // break if the shared cascade's own rules move underneath this board — which is the whole reason
+  // the board reuses it instead of owning a second copy.
+  //
+  // The fixture carries the two shapes that matter:
+  //   • `ai / giza` is a target-carrying territory with NOBODY in the seat, so it must never be
+  //     offered as a region on the Anti Infective line.
+  //   • D holds an HR id the org model has no seat for, and E has no HR id at all. On production
+  //     that group is ~15 of 87 reps and every one of them is ZERO-PROVED, which is exactly why a
+  //     geography filter must not swallow them.
+  const tree = buildCoverageFilterTree({
+    lineNames: new Map([
+      ["ai", "Anti Infective"],
+      ["cns", "CNS"],
+    ]),
+    mapRows: [
+      { areaCode: "D1", areaName: "Delta One", lineCode: "cns", regionCode: "delta", repSeatId: "S1" },
+      { areaCode: "G1", areaName: "Giza One", lineCode: "cns", regionCode: "giza", repSeatId: "S2" },
+      { areaCode: "D2", areaName: "Delta Two", lineCode: "ai", regionCode: "delta", repSeatId: "S3" },
+      { areaCode: "G2", areaName: "Giza Two", lineCode: "ai", regionCode: "giza", repSeatId: "S4" },
+    ],
+    regionNames: new Map([
+      ["delta", "Delta (1)"],
+      ["giza", "Giza"],
+    ]),
+    seats: [
+      { fullName: "Alia", hrId: "AI-0001", seatId: "S1", seatTier: "REP" },
+      { fullName: "Basem", hrId: "AI-0002", seatId: "S2", seatTier: "REP" },
+      { fullName: "Karim", hrId: "AI-0003", seatId: "S3", seatTier: "REP" },
+      // S4 is deliberately unfilled — a vacant territory.
+    ],
+  });
+
+  // The index keys on the BARE lowercased HR id, not on a `hr:` board key. Handing one board's key
+  // shape to another matches nothing while looking perfectly correct, which is the trap recorded
+  // against these two modules.
+  const territoryIndex = indexRepsPlansTerritories(tree);
+  assert.deepEqual(
+    territoryIndex.get("ai-0001")?.map((t) => `${t.lineName} · ${t.regionName}`),
+    ["CNS · Delta (1)"],
+    "a seated rep resolves to his line and region by lowercased HR id",
+  );
+  assert.equal(territoryIndex.has("AI-0001"), false, "the index is not keyed by the raw-case id");
+  assert.equal(territoryIndex.has("ai-0009"), false, "a rep with no seat is absent, never an empty entry");
+
+  const geoReport = report(10, [
+    rep("Alia", 10, { verified: 20 }, { verified: 100 }, { agentCrmId: 1, agentHrId: "AI-0001" }),
+    rep("Basem", 10, { verified: 10 }, { verified: 50 }, { agentCrmId: 2, agentHrId: "AI-0002" }),
+    rep("Karim", 10, { verified: 0 }, { verified: 20 }, { agentCrmId: 3, agentHrId: "AI-0003" }),
+    // The two the filter must not swallow — no seat, and nothing proved.
+    rep("Dalia", 10, { verified: 0, campaign: 40 }, { verified: 0, campaign: 60 }, { agentCrmId: 4, agentHrId: "AI-0009" }),
+    rep("Emad", 10, { verified: 0, campaign: 30 }, { verified: 0, campaign: 30 }, { agentCrmId: 5 }),
+  ]);
+
+  // No geography picked: unchanged from before this feature existed — everyone in, everyone counted.
+  const wide = buildRepsPlansBoard(geoReport, { month: "2026-08", isCurrentMonth: false, tree });
+  assert.equal(wide.reps.length, 5, "no geography filter lists every rep");
+  assert.equal(wide.totals.reps, 5, "and counts every rep in the tiles");
+  assert.equal(wide.unseatedShown, 0, "nothing is 'shown outside the tiles' when nothing is filtered");
+  assert.equal(wide.geographyLabel, null);
+  assert.equal(wide.geographyAvailable, true);
+  assert.deepEqual(
+    wide.lineOptions.map((o) => o.name),
+    ["Anti Infective", "CNS"],
+    "lines are offered by NAME, never by code (owner's standing rule)",
+  );
+  assert.equal(
+    wide.reps.find((r) => r.repName === "Dalia")?.territories.length,
+    0,
+    "a rep the org model has no seat for carries no territory",
+  );
+
+  // THE TILES RECOMPUTE. This is the half that separates line/region from the rep filter above.
+  const cns = buildRepsPlansBoard(geoReport, {
+    geography: { line: "cns" },
+    isCurrentMonth: false,
+    month: "2026-08",
+    tree,
+  });
+  assert.equal(cns.appliedLine, "cns");
+  assert.equal(cns.geographyLabel, "CNS", "the label names the line, never its code");
+  assert.equal(cns.totals.reps, 2, "the tiles cover the two CNS reps only");
+  // 20 + 10 verified AM over (10 working days x 2 reps) = 1.50, where the unfiltered board reads 0.60.
+  assert.equal(cns.totals.am.verifiedRate, 1.5, "the AM tile is rescoped to the line");
+  assert.equal(wide.totals.am.verifiedRate, 0.6, "and the unfiltered board still reads the whole force");
+
+  // AND THE UNSEATED REPS SURVIVE IT — listed, marked, counted nowhere.
+  assert.deepEqual(
+    cns.reps.map((r) => r.repName).sort(),
+    ["Alia", "Basem", "Dalia", "Emad"],
+    "a line filter keeps the seatless reps on the board",
+  );
+  assert.equal(cns.unseatedShown, 2, "and says how many are being shown outside the tiles");
+  assert.equal(
+    cns.reps.some((r) => r.repName === "Karim"),
+    false,
+    "while a rep seated on ANOTHER line is genuinely filtered out",
+  );
+  // The proof that they are outside the tiles rather than merely late in the list: Dalia and Emad
+  // carry 160 campaign calls between them, and none of it reaches the line's campaign figure.
+  assert.equal(cns.totals.campaignCalls, 0, "seatless reps contribute nothing to a territory's rate");
+
+  // Region is narrowed BY THE LINE — the owner's order, and the one that avoids the dead end.
+  assert.deepEqual(
+    cns.regionOptions.map((o) => o.name),
+    ["Delta (1)", "Giza"],
+    "CNS offers both of its regions",
+  );
+  const ai = buildRepsPlansBoard(geoReport, {
+    geography: { line: "ai" },
+    isCurrentMonth: false,
+    month: "2026-08",
+    tree,
+  });
+  assert.deepEqual(
+    ai.regionOptions.map((o) => o.name),
+    ["Delta (1)"],
+    "Anti Infective offers only Delta — its Giza territory is VACANT, so offering it would resolve to nobody",
+  );
+  assert.deepEqual(
+    ai.lineOptions.map((o) => o.name),
+    ["Anti Infective", "CNS"],
+    "the top of the cascade is never narrowed from below",
+  );
+
+  // Both levels together.
+  const cnsDelta = buildRepsPlansBoard(geoReport, {
+    geography: { line: "cns", region: "delta" },
+    isCurrentMonth: false,
+    month: "2026-08",
+    tree,
+  });
+  assert.equal(cnsDelta.geographyLabel, "CNS · Delta (1)");
+  assert.equal(cnsDelta.totals.reps, 1, "one seated rep in CNS/Delta");
+  assert.equal(cnsDelta.totals.am.verifiedRate, 2, "20 verified / (10 x 1) = 2.00");
+  assert.deepEqual(cnsDelta.reps.map((r) => r.repName).sort(), ["Alia", "Dalia", "Emad"]);
+
+  // A stale or hand-edited URL is PRUNED, never rejected — it keeps as much as still makes sense
+  // instead of dumping the viewer back to everything with no explanation.
+  const bogusLine = buildRepsPlansBoard(geoReport, {
+    geography: { line: "no-such-line", region: "delta" },
+    isCurrentMonth: false,
+    month: "2026-08",
+    tree,
+  });
+  assert.equal(bogusLine.appliedLine, null, "an unknown line is dropped");
+  assert.equal(bogusLine.appliedRegion, "delta", "while the region that IS real survives");
+  const impossiblePair = buildRepsPlansBoard(geoReport, {
+    geography: { line: "ai", region: "giza" },
+    isCurrentMonth: false,
+    month: "2026-08",
+    tree,
+  });
+  assert.equal(impossiblePair.appliedLine, "ai");
+  assert.equal(
+    impossiblePair.appliedRegion,
+    null,
+    "a region the chosen line does not reach is pruned rather than rendering an empty board",
+  );
+
+  // The rep picker follows what is on screen, so it can never offer a rep the board is not showing.
+  assert.deepEqual(
+    cnsDelta.repOptions.map((o) => o.repName),
+    ["Alia", "Dalia", "Emad"],
+    "the rep picker lists exactly the visible reps",
+  );
+
+  // No org model at all: the pickers are HIDDEN, not rendered empty — an empty line picker would
+  // read as "this company has no lines". The call rate itself is unaffected.
+  const noTree = buildRepsPlansBoard(geoReport, {
+    geography: { line: "cns" },
+    isCurrentMonth: false,
+    month: "2026-08",
+    tree: null,
+  });
+  assert.equal(noTree.geographyAvailable, false);
+  assert.deepEqual(noTree.lineOptions, []);
+  assert.equal(noTree.appliedLine, null, "a line cannot be applied with no org model to resolve it");
+  assert.equal(noTree.reps.length, 5, "and the board still shows every rep");
+  assert.equal(noTree.totals.reps, 5);
 
   // ── end to end, through the real computeCallRate ──────────────────────────
   // Proves the two modules connect: 2026-08-01 is a Saturday, so 08-01..08-05 is Sat/Sun/Mon/Tue/Wed
