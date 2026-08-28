@@ -1,4 +1,9 @@
+import { Badge, type BadgeTone } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
+
+// StatusBadge is now a thin semantic adapter over the one Badge device, not a
+// second badge. It exists to answer "what tone is `on_leave`?" — the drawing is
+// Badge's job, so the two can no longer drift apart the way they had.
 
 type StatusVariant = "completed" | "pending" | "failed" | "active" | "inactive" | "on_leave" | "probation";
 
@@ -7,27 +12,23 @@ type StatusBadgeProps = {
   className?: string;
 };
 
-const variants: Record<string, string> = {
-  completed: "bg-emerald-50 text-emerald-600",
-  active: "bg-emerald-50 text-emerald-600",
-  pending: "bg-orange-50 text-orange-600",
-  probation: "bg-orange-50 text-orange-600",
-  failed: "bg-rose-50 text-rose-600",
-  inactive: "bg-rose-50 text-rose-600",
-  on_leave: "bg-blue-50 text-blue-600",
+/** Employment/run statuses, mapped to meaning. Anything unrecognised reads neutral. */
+const TONE_BY_STATUS: Record<string, BadgeTone> = {
+  completed: "ok",
+  active: "ok",
+  pending: "warn",
+  probation: "warn",
+  failed: "danger",
+  inactive: "danger",
+  on_leave: "info",
 };
 
 export function StatusBadge({ status, className }: StatusBadgeProps) {
   const normalizedStatus = status.toLowerCase().replace(" ", "_");
-  const variantClass = variants[normalizedStatus] || "bg-slate-50 text-slate-600";
 
   return (
-    <span className={cn(
-      "inline-flex items-center rounded-full px-2 py-0.5 text-phx-3xs font-black uppercase tracking-wider",
-      variantClass,
-      className
-    )}>
+    <Badge tone={TONE_BY_STATUS[normalizedStatus] ?? "neutral"} size="sm" className={cn(className)}>
       {status}
-    </span>
+    </Badge>
   );
 }
