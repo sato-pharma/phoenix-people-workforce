@@ -789,6 +789,19 @@ free**; `scripts/memory-index-budget.mjs` holds the arithmetic and `tests/memory
 pins it — including a pin that the OLD ceiling-only rule stayed **silent at 335 bytes from the
 cliff**, which is what proves the test discriminates rather than passing for free.
 
+**And nobody has to go looking for that verdict any more.** `.claude/hooks/memory-index-guard.mjs`
+runs on **SessionStart** and puts the same three figures — size, headroom to the budget, and the
+exact bytes to free — plus the displacement rule below into every session's context *before* it
+appends anything. That closes the gap the doctor cannot: the doctor is a periodic audit, and an
+audit fires after the write. Two details are deliberate. It is **its own hook entry**, not a line
+inside `session-lock.mjs`, because that script returns early whenever another session's lock is
+live — exactly the case that produces colliding appends. And it resolves the index from the
+**primary checkout**, not from the worktree a session is sitting in, or every `_wt-*` session would
+look up a slug of its own path, find no directory, and stay silent while doing most of the
+appending. The human is interrupted only when action is due; the session is told every time.
+`tests/session-start-memory-index-guard.test.ts` pins the wiring and both lookups, and both were
+proven by breaking them.
+
 **THE DISPLACEMENT RULE: you may not add an index line without freeing at least as many bytes in
 the same edit.** Retire a resolved hook, or relocate one to §2.1/§2.3. This is the only part that
 changes the outcome — it turns an append-only file into a fixed-size one, and it puts the cost on

@@ -25,6 +25,12 @@
             "command": "DIR=\"$(git rev-parse --show-toplevel 2>/dev/null || pwd)\"; if [ -f \"$DIR/.git\" ] && [ -f \"$DIR/scripts/sync-worktree-env.mjs\" ]; then node \"$DIR/scripts/sync-worktree-env.mjs\" 2>/dev/null || true; fi",
             "shell": "bash",
             "statusMessage": "Syncing worktree env"
+          },
+          {
+            "type": "command",
+            "command": "DIR=\"$(git rev-parse --show-toplevel 2>/dev/null || pwd)\"; node \"$DIR/.claude/hooks/memory-index-guard.mjs\" \"$DIR\" 2>/dev/null || true",
+            "shell": "bash",
+            "statusMessage": "Checking memory index budget"
           }
         ]
       }
