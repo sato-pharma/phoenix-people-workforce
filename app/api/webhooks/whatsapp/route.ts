@@ -28,7 +28,7 @@ export const maxDuration = 60;
 // At most this many self-classification prompts per webhook DELIVERY. Each prompt is one Graph API
 // call inside the request, and this file exists to ack fast — a payload carrying many CVs must not
 // turn into many serial round trips. A bulk forward is already excluded before any network call
-// (startClassification skips forwarded and import senders), so this is a bound on the tail case,
+// (startClassification skips import senders and history replays), so this is a bound on the tail case,
 // not a limit anyone reaches in normal traffic. Anything over the budget is simply not asked; the
 // CV itself is unaffected because it was already enqueued.
 const MAX_CLASSIFY_PROMPTS_PER_DELIVERY = 3;
@@ -111,14 +111,17 @@ export async function POST(request: Request) {
         continue;
       }
 
-      // A typed answer to "Other" on question 1. Checked BEFORE buffering, because this text is the
-      // applicant's answer to a question we asked — not context about their CV — and filing it as
-      // context would both lose the answer and staple a job title onto the next document they send.
+      // A typed answer to an escape row — any of the three questions since 2026-08-28. Checked
+      // BEFORE buffering, because this text is the applicant's answer to a question we asked, not
+      // context about their CV, and filing it as context would both lose the answer and staple a
+      // job title onto the next document they send.
       //
-      // Narrow on purpose: `handleClassifyText` acts only when this sender has an open conversation
-      // parked on `job_title_other`, and returns `not_awaiting_text` for everything else, which
-      // falls through to the buffer exactly as before. A message carrying a document is excluded
-      // outright — that is a CV with a caption, never an answer.
+      // Narrow on purpose, and the narrowing lives in `handleClassifyText`, not here: it acts only
+      // when this sender has an open conversation parked on `job_title_other`, `region_other` or
+      // `area_other`, and returns `not_awaiting_text` for everything else, which falls through to
+      // the buffer exactly as before. Keeping the step list in one place is why adding two typed
+      // questions needed no change on this side. A message carrying a document is excluded outright
+      // — that is a CV with a caption, never an answer.
       if (message.text && !message.document && !message.historical) {
         const textOutcome = await handleClassifyText({
           phoneNumberId: message.deliveredToPhoneNumberId,
@@ -202,7 +205,6 @@ export async function POST(request: Request) {
       if (enqueued && classifyPromptsSent < MAX_CLASSIFY_PROMPTS_PER_DELIVERY) {
         const classifyOutcome = await startClassification({
           cvWamid: message.wamid,
-          forwarded: message.forwarded,
           historical: message.historical,
           isImportSender: isImport,
           phoneNumberId: message.deliveredToPhoneNumberId,

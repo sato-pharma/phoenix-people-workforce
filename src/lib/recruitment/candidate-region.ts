@@ -22,11 +22,12 @@
 // else in Phoenix — one vocabulary across the whole app beats a screen that quietly disagrees with
 // the Organogram about where Fayoum is.
 
-// DELTA (3), added 2026-08-28. A new Anti Infective district was opened — Qalubeya, Sharkia 1/2,
-// Suez and Ismailia — with a District Manager hired for 2026-09-01, and her reps still to be
-// recruited. Until this list carried "Delta (3)" there was no way to search the pool for her
-// district at all: her candidates sat scattered across Delta (1), Delta (2) and Others, and the
-// Region dropdown did not offer her territory as an option.
+// DELTA (3) — the GOVERNORATES, 2026-08-28. A new Anti Infective district was opened — Qalubeya,
+// Sharkia 1/2, Suez and Ismailia — with a District Manager hired for 2026-09-01 and her reps still
+// to be recruited. The CODE joined the vocabulary below in the same day's work; this block is about
+// the MAP further down, which is the half a recruiter actually feels. A CV says "Sharkia", never
+// "Delta (3)", so until these five governorates were re-filed, filtering the pool on her district
+// returned nothing while her own candidates sat under Delta (1), Delta (2) and Others.
 //
 // This file moves FIRST, on purpose. The matching change to the SALES geography — repointing those
 // areas in au.line_area_map and au.canonical_areas — must wait until the August closing has been
@@ -40,6 +41,10 @@
 // parsing those names — and this list has to answer for governorates no area covers at all
 // (Matrouh, Port Said) which a join can never produce.
 
+// D3 added 2026-08-28: Delta (3) is live and `carries_target` in `au.regions`, and the owner was
+// hiring a District Manager into it while an applicant could not choose it at all. UE-1/UE-2 are
+// deliberately NOT here — they are sales subdivisions of Upper Egypt, and offering all three to a
+// job applicant asks them to know an internal split they cannot be expected to know.
 export const candidateRegionCodes = ["CA", "GZ", "AB", "D1", "D2", "D3", "UE", "OT"] as const;
 export type CandidateRegionCode = (typeof candidateRegionCodes)[number];
 

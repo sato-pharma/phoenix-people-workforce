@@ -43,15 +43,31 @@ export type ClassifyStep = "job_title" | "region" | "area";
  * `job_title_other` has no menu and no row ids, so letting it into `ClassifyStep` would imply a
  * list that cannot exist. This union is the same vocabulary as the table's CHECK constraint.
  */
-export type ClassifySessionStep = ClassifyStep | "job_title_other" | "done";
+export type ClassifySessionStep =
+  | ClassifyStep
+  | "job_title_other"
+  | "region_other"
+  | "area_other"
+  | "done";
 
 export const classifySessionSteps: readonly ClassifySessionStep[] = [
   "job_title",
   "job_title_other",
   "region",
+  "region_other",
   "area",
+  "area_other",
   "done",
 ];
+
+/**
+ * The row value that means "none of these — let me type it". Shared by all three questions so the
+ * reply handler tests one constant, and deliberately not a real code: `isOfferedRegion("other")` and
+ * `isOfferedRoleFamily`-style guards must keep rejecting it, so every branch has to handle it
+ * explicitly before validating. A silent fall-through would look like an unknown value and drop the
+ * applicant's answer.
+ */
+export const OTHER_ROW_VALUE = "other";
 
 export type ClassifyRow = {
   /** Row id sent back to us verbatim when tapped. Namespaced so a stray reply can't be misread. */
@@ -201,53 +217,86 @@ export function jobTitleOtherTooLongText(): string {
   ].join("\n");
 }
 
-export function cleanTypedJobTitle(raw: string | null | undefined): string | null {
+export function cleanTypedAnswer(raw: string | null | undefined, max: number): string | null {
   const cleaned = String(raw ?? "")
     .replace(/\s+/g, " ")
     .trim();
   if (!cleaned) return null;
-  if (cleaned.length > JOB_TITLE_OTHER_MAX) return null;
+  if (cleaned.length > max) return null;
   return cleaned;
 }
 
+export function cleanTypedJobTitle(raw: string | null | undefined): string | null {
+  return cleanTypedAnswer(raw, JOB_TITLE_OTHER_MAX);
+}
+
+// ── The typed escape on questions 2 and 3 ────────────────────────────────────────────────────────
+// Owner's instruction, 2026-08-28, after hitting this himself: he was opening a District Manager
+// seat in Delta (3) — a region that is live and carries target in `au.regions` but had ZERO areas —
+// and found the applicant could neither pick the region nor type it. A list is a closed vocabulary
+// and the organogram moves faster than the list: a brand-new district exists for a while before it
+// has any areas, and that window is exactly when its first candidates apply.
+//
+// So every question now has a way out. A typed region and a typed area are recorded as the
+// applicant's own words and never mistaken for organogram values — see writeClassification, which
+// keeps them in separate columns from the codes.
+
+export const REGION_OTHER_MAX = 80;
+export const AREA_OTHER_MAX = 80;
+
+export function regionOtherPromptText(): string {
+  return [
+    "No problem — please type the region you would like to work in.",
+    "",
+    "Send it as a normal message, for example \"Delta (3)\".",
+  ].join("\n");
+}
+
+export function areaOtherPromptText(): string {
+  return [
+    "Please type the area or governorate you would like to work in.",
+    "",
+    "Send it as a normal message, for example \"Mansoura\".",
+  ].join("\n");
+}
+
+/** Same shape as the job-title nudge: names the limit, quotes nothing back. */
+export function typedAnswerTooLongText(what: string, max: number): string {
+  return [
+    `That looks longer than a ${what}.`,
+    "",
+    `Please send just the ${what} itself — up to ${max} characters.`,
+  ].join("\n");
+}
+
 // ── Question 2 — which region? ───────────────────────────────────────────────────────────────────
-// The company regions that CAN be followed by question 3. The caller passes which ones those are,
-// read live from au.canonical_areas, and the menu never offers one that has no areas behind it.
+// Still NOT read from au.regions live: that table also carries `UE-1` and `UE-2`, which are sales
+// subdivisions of Upper Egypt with ZERO active areas, and asking an applicant to choose between
+// them asks them to know an internal split. `candidateRegionCodes` stays the reviewed list.
 //
-// This used to be `candidateRegionCodes` verbatim, with a comment explaining that au.regions also
-// carries `UE-1`/`UE-2` — regions with ZERO active areas that would walk an applicant to question 3
-// and show an empty list. That was a hazard held off by a hand-maintained list, and it went stale
-// the moment a real region joined the vocabulary before its areas moved: "Delta (3)" was added to
-// the pool's Region filter on 2026-08-28, while the sales geography move behind it waits on the
-// August closing. Deriving the offer from the areas themselves fixes both cases at once — UE-1 and
-// UE-2 stay out because they have no areas, and Delta (3) starts being offered by itself, with no
-// second code change, on the day its areas arrive.
-//
-// Ordered by `candidateRegionCodes` rather than by the caller's set, so the list a candidate sees
-// keeps the company's own order however the areas were read.
-export function regionMenu(offeredCodes: readonly CandidateRegionCode[]): ClassifyMenu {
-  const offered = new Set<string>(offeredCodes);
+// Revised 2026-08-28. That reviewed list had gone stale in the one way that matters: Delta (3) was
+// live and carrying target in `au.regions` while absent here, so the owner could open a District
+// Manager seat in it that no applicant could ever select. D3 is now offered even though it has no
+// areas yet — which the old note rightly called a dead end, and which is only safe because the
+// "not listed" escape below means an empty area list is answerable instead of terminal.
+export function regionMenu(): ClassifyMenu {
   return {
     body: "Which region would you like to work in?",
     buttonLabel: "Choose a region",
-    rows: candidateRegionCodes
-      .filter((code) => offered.has(code))
-      .map((code) => rowFor("region", code, candidateRegionLabels[code])),
+    rows: [
+      ...candidateRegionCodes.map((code) => rowFor("region", code, candidateRegionLabels[code])),
+      // Worded "not listed" rather than "Other" on purpose: `OT` is already a real selling region
+      // labelled "Others", and two rows reading Other/Others would be a coin flip for the applicant.
+      rowFor("region", OTHER_ROW_VALUE, "My region is not listed"),
+    ],
     sectionTitle: "Regions",
     step: "region",
   };
 }
 
-/**
- * True for a region we are willing to offer — guards against a stale code arriving in a reply.
- * `offeredCodes` is the same set the menu was built from, so a candidate who kept an old message
- * open cannot answer with a region that has since stopped being offered.
- */
-export function isOfferedRegion(
-  value: string,
-  offeredCodes: readonly CandidateRegionCode[],
-): value is CandidateRegionCode {
-  return (offeredCodes as readonly string[]).includes(value);
+/** True for a region we are willing to offer — guards against a stale code arriving in a reply. */
+export function isOfferedRegion(value: string): value is CandidateRegionCode {
+  return (candidateRegionCodes as readonly string[]).includes(value);
 }
 
 /** True for a role family we offered. Same guard, for question 1. */
@@ -261,11 +310,15 @@ export function isOfferedRoleFamily(value: string): value is CandidateRoleFamily
 // enforced here anyway rather than assumed, because an org change could add a tenth and a silently
 // dropped area is a territory no candidate can ever choose.
 export function areaMenu(regionCode: CandidateRegionCode, areaNames: readonly string[]): ClassifyMenu {
+  // The escape takes a row, so the areas get one fewer. Sliced to MAX - 1 rather than appended and
+  // hoped for: the largest region (Others) runs 9 areas against a 10-row cap, so appending blindly
+  // would have been correct today and silently dropped a real area the day a tenth was added.
   const rows = areaNames
     .map((name) => name.trim())
     .filter((name) => name.length > 0)
-    .slice(0, WHATSAPP_LIST_MAX_ROWS)
+    .slice(0, WHATSAPP_LIST_MAX_ROWS - 1)
     .map((name) => rowFor("area", name, name, LONG_AREA_TITLES[name]));
+  rows.push(rowFor("area", OTHER_ROW_VALUE, "My area is not listed"));
 
   return {
     body: `Which area inside ${candidateRegionLabels[regionCode]}?`,

@@ -49,6 +49,7 @@ import {
   syncIReports360Visits,
 } from "@/lib/crm/sync";
 import { latestPlanSyncAtMs, resolvePlanSyncWindow, syncIReports360WeeklyPlans } from "@/lib/crm/plan-sync";
+import { PARITY_STALE_AFTER_DAYS, latestParityCheckAtMs, runIReports360ParitySweep } from "@/lib/crm/parity";
 import { CRM_SYNC_RUNS_TABLE } from "@/lib/crm/tables";
 import { notifyIReports360SyncResult } from "@/lib/notifications/ireports360-sync-digest";
 import { pingDeadMansSwitch } from "@/lib/observability/dead-mans-switch";
@@ -236,7 +237,22 @@ export const PLAN_SYNC_MIN_GAP_MS = 60 * 60 * 1000;
 export const PLAN_SYNC_EARLIEST_CAIRO_MINUTES = 6 * 60;
 export const PLAN_SYNC_FAILURE_RETRY_GAP_MS = 30 * 60 * 1000;
 
-export type ScheduledCrmWork = "rolling-sync" | "wide-reconcile" | "plan-sync" | null;
+/** Full-history parity sweep: one 30-day window of history re-proved against the CRM per day.
+ *
+ * DAILY, not weekly, and that is the whole point. The wide reconcile covers 120 days as four slices
+ * on a 4-week rotation, so nothing older than 120 days has ever been re-examined at all — 42% of the
+ * mirror on 2026-08-28. This walks EVERY window instead, stalest first, so ~8 windows of history are
+ * fully re-proved every ~8 days rather than never. One window a day keeps the per-run cost identical
+ * to a reconcile slice however far back history goes.
+ *
+ * 02:00 Cairo: outside the working day entirely. It is the only scheduled job that touches settled
+ * history, so it should never compete with a rep saving a visit, and it must not sit in the same
+ * slot as the Sunday 04:00 reconcile. */
+export const PARITY_SWEEP_MIN_GAP_MS = 20 * 60 * 60 * 1000;
+export const PARITY_SWEEP_EARLIEST_CAIRO_MINUTES = 2 * 60;
+export const PARITY_SWEEP_FAILURE_RETRY_GAP_MS = 2 * 60 * 60 * 1000;
+
+export type ScheduledCrmWork = "rolling-sync" | "wide-reconcile" | "plan-sync" | "parity-sweep" | null;
 
 /** Which (if any) scheduled deep run is due at this tick — pure, so week/day/hour edges are
  * testable without a clock. Reconcile outranks rolling: it is rarer and includes a 30-day slice
@@ -248,6 +264,8 @@ export function resolveDueScheduledWork(input: {
   cairoDayOfWeek: number;
   minutesSinceMidnight: number;
   nowMs: number;
+  lastParitySweepFailureMs: number | null;
+  lastParitySweepSuccessMs: number | null;
   lastPlanSyncFailureMs: number | null;
   lastPlanSyncSuccessMs: number | null;
   lastReconcileFailureMs: number | null;
@@ -272,13 +290,26 @@ export function resolveDueScheduledWork(input: {
     input.minutesSinceMidnight >= PLAN_SYNC_EARLIEST_CAIRO_MINUTES &&
     (input.lastPlanSyncSuccessMs === null || input.nowMs - input.lastPlanSyncSuccessMs >= PLAN_SYNC_MIN_GAP_MS) &&
     (input.lastPlanSyncFailureMs === null || input.nowMs - input.lastPlanSyncFailureMs >= PLAN_SYNC_FAILURE_RETRY_GAP_MS);
-  return planSyncDue ? "plan-sync" : null;
+  if (planSyncDue) return "plan-sync";
+
+  // Lowest priority of the four, deliberately. It re-proves SETTLED history, so it is the only one
+  // that costs nothing at all by waiting a tick — the other three feed today's attendance, today's
+  // doctor list, and payroll. Its 02:00 window is also outside the hours the others contend for.
+  const paritySweepDue =
+    input.minutesSinceMidnight >= PARITY_SWEEP_EARLIEST_CAIRO_MINUTES &&
+    (input.lastParitySweepSuccessMs === null ||
+      input.nowMs - input.lastParitySweepSuccessMs >= PARITY_SWEEP_MIN_GAP_MS) &&
+    (input.lastParitySweepFailureMs === null ||
+      input.nowMs - input.lastParitySweepFailureMs >= PARITY_SWEEP_FAILURE_RETRY_GAP_MS);
+  return paritySweepDue ? "parity-sweep" : null;
 }
 
 // ── Poller runtime (module-singleton) ────────────────────────────────────────────────────────────
 
 type PollerState = {
   consecutiveFailures: number;
+  lastParitySweepFailureMs: number | null;
+  lastParitySweepSuccessMs: number | null;
   lastPlanSyncFailureMs: number | null;
   lastPlanSyncSuccessMs: number | null;
   lastReconcileFailureMs: number | null;
@@ -293,6 +324,8 @@ type PollerState = {
 
 const state: PollerState = {
   consecutiveFailures: 0,
+  lastParitySweepFailureMs: null,
+  lastParitySweepSuccessMs: null,
   lastPlanSyncFailureMs: null,
   lastPlanSyncSuccessMs: null,
   lastReconcileFailureMs: null,
@@ -386,6 +419,19 @@ async function seedScheduledWorkMarkers(): Promise<void> {
       labels: { event: "crm_live_poll_seed_plan_marker_failed", job: "ireports360-plan-sync" },
     });
   }
+
+  // The parity sweep's own table is its marker — the newest checked_at across every window IS the
+  // last time it ran. Seeded in its own try so it cannot cost either block above its marker, and
+  // vice versa. Without this the sweep would fire on every deploy restart (~30 merges a day here),
+  // re-fetching 30-day windows from the vendor many times over instead of once daily.
+  try {
+    state.lastParitySweepSuccessMs = await latestParityCheckAtMs();
+  } catch (error) {
+    logError("CRM live poller could not seed the parity-sweep marker; the sweep will verify one window on the first due tick", {
+      error,
+      labels: { event: "crm_live_poll_seed_parity_marker_failed", job: "ireports360-parity-sweep" },
+    });
+  }
 }
 
 /**
@@ -424,6 +470,71 @@ async function runScheduledPlanSync(): Promise<void> {
   }
 }
 
+/**
+ * Re-proves the stalest 30-day window of history against the CRM, and repairs it if it differs.
+ *
+ * Firewalled exactly like runScheduledPlanSync, and for the same reason: it never throws, never
+ * pings the visits sync's dead-man's switch, and never sends the visits digest. This is the job that
+ * touches SETTLED history, so it must not be able to raise the alarms that mean "today's attendance
+ * data is broken" — a reader who sees the visits pipeline paging cannot be left guessing whether the
+ * problem is today's payroll input or a re-check of March.
+ *
+ * A parity DIFFERENCE is a normal finding and is reported by the log line, not by throwing. Only an
+ * inability to do the job at all (vendor login down, mirror unreadable) reaches the catch, and even
+ * then the failure gap simply holds the sweep off for two hours: history stays exactly as verified
+ * as it already was, which is the one thing this job can safely defer.
+ */
+async function runScheduledParitySweep(): Promise<void> {
+  try {
+    const result = await runIReports360ParitySweep();
+    state.lastParitySweepSuccessMs = Date.now();
+    if (!result.window) {
+      console.log(`[crm:live-poll] in-process parity-sweep — nothing to verify (${result.reason ?? "no windows"})`);
+      return;
+    }
+    const diff = result.diff;
+    console.log(
+      `[crm:live-poll] in-process parity-sweep ${result.window.from}..${result.window.to} — ` +
+        `crm ${diff?.crmRows ?? 0} vs mirror ${diff?.mirrorRows ?? 0}, ` +
+        `missing ${diff?.missingInMirror ?? 0}, extra ${diff?.extraInMirror ?? 0} -> ${result.action}` +
+        (result.action === "repair" ? ` (upserted ${result.repairedUpserted}, deleted ${result.repairedDeleted})` : "") +
+        ` [${result.staleWindows}/${result.totalWindows} windows stale]`,
+    );
+    // A window that needed repairing is the signal this whole sweep exists to produce: the two
+    // systems HAD disagreed, silently, and nothing else would ever have said so.
+    if (result.action === "repair") {
+      logError(
+        `CRM parity sweep repaired ${result.window.from}..${result.window.to}: the mirror was missing ` +
+          `${diff?.missingInMirror ?? 0} visit(s) the CRM holds and held ${diff?.extraInMirror ?? 0} the CRM does not`,
+        {
+          labels: {
+            event: "crm_parity_sweep_repaired",
+            windowFrom: result.window.from,
+            windowTo: result.window.to,
+          },
+        },
+      );
+    }
+    // The sweep reporting on its own health. With ~8 windows and one run a day the rotation
+    // completes in ~8 days, so anything still unverified after 21 means the sweep stopped running
+    // rather than that it is mid-cycle — and a parity guarantee nobody notices has stopped is worth
+    // nothing at all.
+    if (result.staleWindows > 0) {
+      logError(
+        `CRM parity sweep has ${result.staleWindows} of ${result.totalWindows} history window(s) unverified for ` +
+          `more than ${PARITY_STALE_AFTER_DAYS} days — the sweep is not completing its rotation`,
+        { labels: { event: "crm_parity_sweep_stale", job: "ireports360-parity-sweep" } },
+      );
+    }
+  } catch (error) {
+    state.lastParitySweepFailureMs = Date.now();
+    logError("CRM in-process parity-sweep failed; history is as verified as it already was", {
+      error,
+      labels: { event: "crm_parity_sweep_failed", job: "ireports360-parity-sweep" },
+    });
+  }
+}
+
 /** Runs one due deep job (rolling sync or wide reconcile) in place of this tick's probe, with the
  * same dead-man's-switch slugs and digest behavior the external cron routes use — so monitoring
  * continuity holds no matter which scheduler fired last. Reconcile always notifies (weekly
@@ -432,6 +543,10 @@ async function runScheduledPlanSync(): Promise<void> {
 async function runScheduledWork(work: Exclude<ScheduledCrmWork, null>): Promise<void> {
   if (work === "plan-sync") {
     await runScheduledPlanSync();
+    return;
+  }
+  if (work === "parity-sweep") {
+    await runScheduledParitySweep();
     return;
   }
   const isReconcile = work === "wide-reconcile";
@@ -455,7 +570,8 @@ async function runScheduledWork(work: Exclude<ScheduledCrmWork, null>): Promise<
       result.rowsSkippedReconcile > 0 ||
       result.checkinsFailed ||
       result.rowsFetched === 0 ||
-      result.blockedPostExitAttributions > 0;
+      result.blockedPostExitAttributions > 0 ||
+      result.blockedPreHireAttributions > 0;
     if (isReconcile || degraded) {
       const window = isReconcile ? resolveWideReconciliationSlice(scheduledAt) : { dateFrom: addDaysIso(today, -10), dateTo: today };
       await notifyIReports360SyncResult({
@@ -518,6 +634,8 @@ async function tick(): Promise<void> {
   // serialized through this single loop, so the app never runs two engine pulls concurrently.
   const dueWork = resolveDueScheduledWork({
     cairoDayOfWeek: cairoDayOfWeek(),
+    lastParitySweepFailureMs: state.lastParitySweepFailureMs,
+    lastParitySweepSuccessMs: state.lastParitySweepSuccessMs,
     lastPlanSyncFailureMs: state.lastPlanSyncFailureMs,
     lastPlanSyncSuccessMs: state.lastPlanSyncSuccessMs,
     lastReconcileFailureMs: state.lastReconcileFailureMs,

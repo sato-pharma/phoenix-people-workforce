@@ -3,19 +3,25 @@ import assert from "node:assert/strict";
 import { candidateRegionCodes, candidateRegionLabels } from "../src/lib/recruitment/candidate-region.ts";
 import { candidateRoleFamilies } from "../src/lib/recruitment/candidate-role-family.ts";
 import {
+  AREA_OTHER_MAX,
   areaMenu,
+  areaOtherPromptText,
   classifyRowId,
   classifySessionSteps,
+  cleanTypedAnswer,
   cleanTypedJobTitle,
   jobTitleMenu,
   jobTitleOtherPromptText,
   jobTitleOtherTooLongText,
   JOB_TITLE_OTHER_MAX,
-  isOfferedRegion,
   menuViolations,
   offeredRoleMenuFamilies,
+  OTHER_ROW_VALUE,
   parseClassifyRowId,
+  REGION_OTHER_MAX,
   regionMenu,
+  regionOtherPromptText,
+  typedAnswerTooLongText,
   WHATSAPP_LIST_MAX_ROWS,
   WHATSAPP_ROW_TITLE_MAX,
 } from "../src/lib/recruitment/inbound/whatsapp-classify-menus.ts";
@@ -65,21 +71,26 @@ export function runWhatsAppSelfClassificationTests() {
   // ── The menus must satisfy Meta's limits, or the message is a 400 and the flow dies silently ──
 
   assert.deepEqual(menuViolations(jobTitleMenu()), [], "the role menu must satisfy every Cloud API limit");
-  const OFFERED = Object.keys(PRODUCTION_AREAS) as Array<(typeof candidateRegionCodes)[number]>;
-  assert.deepEqual(menuViolations(regionMenu(OFFERED)), [], "the region menu must satisfy every Cloud API limit");
+  assert.deepEqual(menuViolations(regionMenu()), [], "the region menu must satisfy every Cloud API limit");
 
   for (const [regionCode, areas] of Object.entries(PRODUCTION_AREAS)) {
     const menu = areaMenu(regionCode as (typeof candidateRegionCodes)[number], areas);
     assert.deepEqual(menuViolations(menu), [], `the ${regionCode} area menu must satisfy every Cloud API limit`);
-    assert.equal(menu.rows.length, areas.length, `every active ${regionCode} area must be offered — none silently dropped`);
+    assert.equal(
+      menu.rows.length,
+      areas.length + 1,
+      `every active ${regionCode} area must be offered, plus the not-listed escape — none silently dropped`,
+    );
   }
 
-  // Every region really does fit the 10-row cap. Others is the largest at 9; if an org change ever
-  // pushes one past 10 this fails here rather than truncating a territory out of existence.
+  // Every region fits the cap WITH the escape row taking one of the ten. Others is the largest at
+  // 9, which is now exactly full. This is the assertion that catches an org change adding a tenth
+  // area: without it `areaMenu` would slice that area away silently and no candidate could ever
+  // choose the territory. It reads MAX - 1 on purpose — the escape is not optional.
   for (const [regionCode, areas] of Object.entries(PRODUCTION_AREAS)) {
     assert.ok(
-      areas.length <= WHATSAPP_LIST_MAX_ROWS,
-      `${regionCode} has ${areas.length} areas, which no longer fits WhatsApp's ${WHATSAPP_LIST_MAX_ROWS}-row list`,
+      areas.length <= WHATSAPP_LIST_MAX_ROWS - 1,
+      `${regionCode} has ${areas.length} areas, which no longer fits WhatsApp's ${WHATSAPP_LIST_MAX_ROWS}-row list beside the not-listed row`,
     );
   }
 
@@ -98,43 +109,114 @@ export function runWhatsAppSelfClassificationTests() {
   assert.equal(fayoum.description, undefined, "a title that already fits must not repeat itself as a description");
 
   // ── The region menu must not offer a dead end ─────────────────────────────────────────────────
-  // The menu is built from the regions that actually HAVE areas, read live from au.canonical_areas.
-  // au.regions also holds UE-1 and UE-2 with zero active areas, and the pool vocabulary now carries
-  // "Delta (3)" whose areas have not moved yet — offering any of the three would walk an applicant
-  // to question 3 and show an empty list.
-  const regionIds = regionMenu(OFFERED).rows.map((row) => row.id);
+  // au.regions also holds UE-1 and UE-2, which have ZERO active areas. Offering either would walk
+  // the applicant to question 3 and present an empty list.
+  const regionIds = regionMenu().rows.map((row) => row.id);
   assert.ok(!regionIds.includes(classifyRowId("region", "UE-1")), "UE-1 has no areas and must never be offered");
   assert.ok(!regionIds.includes(classifyRowId("region", "UE-2")), "UE-2 has no areas and must never be offered");
-  assert.equal(regionMenu(OFFERED).rows.length, OFFERED.length, "every offered region must have an area list");
-  for (const code of OFFERED) {
+  assert.equal(
+    regionMenu().rows.length,
+    candidateRegionCodes.length + 1,
+    "every region, plus the not-listed escape",
+  );
+
+  // THIS ASSERTION WAS INVERTED ON 2026-08-28, deliberately. It used to require that every offered
+  // region already had areas — "region X is offered but has no areas to follow it with" — which was
+  // the right rule while question 3 could only be answered by tapping. It is the wrong rule now,
+  // and keeping it would have blocked the very fix the owner asked for.
+  //
+  // Delta (3) is the case. It went live in au.regions carrying target, with ZERO rows in
+  // au.canonical_areas, on the same day the owner opened a District Manager seat in it — so the old
+  // rule said do not offer D3, and the applicant for that seat could not name their own region at
+  // all. What makes offering it safe is the typed escape: a region with no areas now asks the
+  // applicant to type the area instead of dead-ending them.
+  //
+  // So the invariant is no longer "every region has areas". It is "every region has SOMETHING to
+  // follow it with" — either a real area list, or the escape. The escape is what is pinned here,
+  // because it is now the thing load-bearing for D3.
+  const regionRows = regionMenu().rows;
+  const escapeRow = regionRows[regionRows.length - 1];
+  assert.equal(escapeRow.id, classifyRowId("region", OTHER_ROW_VALUE), "the escape must be the LAST region row");
+  assert.ok(
+    (candidateRegionCodes as readonly string[]).includes("D3"),
+    "Delta (3) is live and carries target in au.regions — an applicant must be able to choose it",
+  );
+  assert.equal(
+    PRODUCTION_AREAS.D3,
+    undefined,
+    "D3 genuinely has no areas — this records WHY the old every-region-has-areas rule had to go",
+  );
+  for (const code of candidateRegionCodes) {
+    const areas = PRODUCTION_AREAS[code];
+    const hasAreas = Array.isArray(areas) && areas.length > 0;
     assert.ok(
-      Array.isArray(PRODUCTION_AREAS[code]) && PRODUCTION_AREAS[code].length > 0,
-      `region ${candidateRegionLabels[code]} is offered but has no areas to follow it with`,
+      hasAreas || escapeRow !== undefined,
+      `region ${candidateRegionLabels[code]} has no areas and no escape to follow it with`,
     );
   }
 
-  // Delta (3) is in the pool vocabulary but has no canonical areas yet (verified in production
-  // 2026-08-28: au.canonical_areas has 0 rows with code_region_code = 'D3'). It must stay OUT of
-  // the menu until they move — and it must appear by itself, with no code change, once they do.
-  assert.ok(
-    candidateRegionCodes.includes("D3"),
-    "Delta (3) must be in the pool vocabulary — the Region filter is how her reps get recruited",
-  );
-  assert.ok(
-    !regionIds.includes(classifyRowId("region", "D3")),
-    "Delta (3) has no areas yet and must not be offered on WhatsApp",
-  );
-  const withDelta3 = regionMenu([...OFFERED, "D3"]).rows.map((row) => row.id);
-  assert.ok(
-    withDelta3.includes(classifyRowId("region", "D3")),
-    "the day Delta (3) has areas, the menu must offer it with no further code change",
+  // ── The exhaustive-Record backstop ──────────────────────────────────────────────
+  // `candidateRegionLabels` is a Record over the region union, and next.config sets
+  // ignoreBuildErrors, so a region added to the union without a label COMPILES, BUILDS and DEPLOYS
+  // and renders as undefined. That is exactly the 2026-08-24 failure that put NaN sort keys into
+  // the screening queue. Adding D3 is precisely such an edit, so it gets the runtime assertion the
+  // rule calls for: walk the union, prove every key resolves to real text.
+  for (const code of candidateRegionCodes) {
+    const label = candidateRegionLabels[code];
+    assert.equal(typeof label, "string", `region ${code} has no label — an exhaustive Record lost a key`);
+    assert.ok(label.length > 0 && !label.includes("undefined"), `region ${code} label is not human-readable: ${label}`);
+  }
+  assert.equal(
+    Object.keys(candidateRegionLabels).length,
+    candidateRegionCodes.length,
+    "the label Record must hold exactly the offered regions — no orphan key, no missing one",
   );
 
-  // The guard on the REPLY must use the same set as the menu, or a candidate holding an older
-  // message could answer with a region that is no longer offered.
-  assert.equal(isOfferedRegion("D3", OFFERED), false, "a region that was not offered is not accepted back");
-  assert.equal(isOfferedRegion("D3", [...OFFERED, "D3"]), true, "a region that WAS offered is accepted back");
-  assert.equal(isOfferedRegion("UE-1", OFFERED), false, "a region with no areas is never accepted");
+  // ── The typed escape on questions 2 and 3 ───────────────────────────────────
+
+  for (const [regionCode, areas] of Object.entries(PRODUCTION_AREAS)) {
+    const rows = areaMenu(regionCode as (typeof candidateRegionCodes)[number], areas).rows;
+    assert.equal(
+      rows[rows.length - 1].id,
+      classifyRowId("area", OTHER_ROW_VALUE),
+      `the ${regionCode} area menu must end with the not-listed escape`,
+    );
+  }
+
+  // The escape is NOT a region code and must keep failing the vocabulary guard — every branch has
+  // to handle it explicitly before validating, or a tap on it reads as an unknown value and the
+  // applicant's answer is dropped in silence.
+  assert.ok(
+    !(candidateRegionCodes as readonly string[]).includes(OTHER_ROW_VALUE),
+    "the escape value must never become a real region code",
+  );
+
+  // Wording: Others is already a real selling region (OT). Two rows reading Other and Others would
+  // be a coin flip for the applicant, so the escape says not listed instead.
+  assert.ok(escapeRow.title.includes("not listed"), "the region escape must not be worded as a second Others");
+  assert.notEqual(escapeRow.title, candidateRegionLabels.OT, "the escape must not duplicate the Others label");
+
+  // Both new prompts obey the owner's no-ellipsis rule.
+  for (const prompt of [regionOtherPromptText(), areaOtherPromptText()]) {
+    assert.ok(!prompt.includes("…") && !prompt.includes("..."), "a prompt must never trail off with an ellipsis");
+    assert.ok(prompt.length > 0);
+  }
+  assert.ok(typedAnswerTooLongText("region", REGION_OTHER_MAX).includes(String(REGION_OTHER_MAX)), "the nudge names its limit");
+  assert.ok(typedAnswerTooLongText("area", AREA_OTHER_MAX).includes(String(AREA_OTHER_MAX)), "the nudge names its limit");
+
+  // The shared cleaner: same contract as the job-title one, at whatever limit it is handed.
+  assert.equal(cleanTypedAnswer("  Delta   (3)  ", REGION_OTHER_MAX), "Delta (3)", "whitespace is collapsed and trimmed");
+  assert.equal(cleanTypedAnswer("", REGION_OTHER_MAX), null, "an empty answer is unusable, not an empty string");
+  assert.equal(cleanTypedAnswer("   ", REGION_OTHER_MAX), null);
+  assert.equal(cleanTypedAnswer(null, REGION_OTHER_MAX), null);
+  assert.equal(cleanTypedAnswer("x".repeat(REGION_OTHER_MAX), REGION_OTHER_MAX)?.length, REGION_OTHER_MAX, "exactly at the limit is fine");
+  assert.equal(cleanTypedAnswer("x".repeat(REGION_OTHER_MAX + 1), REGION_OTHER_MAX), null, "one over the limit is refused");
+  assert.equal(
+    cleanTypedJobTitle("Regulatory Affairs Specialist"),
+    "Regulatory Affairs Specialist",
+    "the job-title cleaner still delegates correctly",
+  );
+
 
   // ── The role menu offers the OWNER'S list, not every family ───────────────────────────────────
   // This assertion used to read `roleMenu.rows.length === candidateRoleFamilies.length` — "every
@@ -250,8 +332,8 @@ export function runWhatsAppSelfClassificationTests() {
 
   assert.deepEqual(
     [...classifySessionSteps],
-    ["job_title", "job_title_other", "region", "area", "done"],
-    "must match the CHECK constraint in 20260828071500_ats_whatsapp_classify_other_free_text.sql",
+    ["job_title", "job_title_other", "region", "region_other", "area", "area_other", "done"],
+    "must match the CHECK constraint in 20260828075500_ats_whatsapp_classify_typed_region_and_area.sql",
   );
   assert.equal(
     parseClassifyRowId("phx:job_title_other:anything"),
