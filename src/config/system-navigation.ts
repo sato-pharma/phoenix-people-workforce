@@ -435,32 +435,9 @@ const adminNavigationSectionSeeds = [
     ],
     label: "Payslips Center",
   },
-  {
-    id: "finance-monthly-closing",
-    items: [
-      // Owner, 2026-08-11: a Monthly Closing tab of his own, able to export the full workbook for
-      // CNS, Pedia or Anti Infective.
-      //
-      // He asked for /sales/monthly-closing. This row deliberately points somewhere else, because
-      // that page cannot give him what he asked for and would be a dead link twice over:
-      //   1. its guard admits only Super Admin, system scope and SFE Manager — he is redirected;
-      //   2. even past that, it loads its matrix behind assertPermission(sales, "import"), and
-      //      `sales:import` is the one action he must never hold — it is the gate on the whole
-      //      upload/publish workspace and ten other pages. Granting it to reach an export would
-      //      hand him the ability to produce the closing he is only meant to consume.
-      //
-      // /admin/analytics/monthly-closing/details is the export-only surface built for exactly this
-      // in #2010: assertPermission(sales, "read") plus canViewAdminCoreAnalytics, both of which he
-      // passes, and its Export XLSX button posts to /api/sales/monthly-closing/export, whose
-      // Branch A names Finance Manager — the full sheet set for any line, published or not.
-      //
-      // This row exists because that door was closed underneath him: /admin/analytics was narrowed
-      // to Super Admin only, and it was his ONLY route into the analytics tree. The CEO and SFE
-      // Manager kept dashboard shortcuts; he had none, so the grant survived with nothing to click.
-      { href: "/admin/analytics/monthly-closing/details", icon: ChartColumnBig, label: "Monthly Closing", permissions: [{ resource: "sales", action: "read" }], roles: ["Finance Manager"], excludedRoles: ["Super Admin", "CEO"] },
-    ],
-    label: "Monthly Closing",
-  },
+  // Monthly Closing used to sit here, in the finance tier. Ruling 1 makes it one of the five sales
+  // blocks ("Monthly Closing alone"), so it moved into the Tier 6 sales run — same id, same roles,
+  // same href, same Finance-Manager-only visibility. Search `finance-monthly-closing` to find it.
   {
     id: "finance-fingerprint-report",
     items: [
@@ -966,36 +943,52 @@ const adminNavigationSectionSeeds = [
     ],
     label: "Targets",
   },
+  // Ruling 1 (owner): Sales is five blocks, with Monthly Closing alone and Targets alone. This row
+  // is the "Monthly Closing alone" block. It was `finance-monthly-closing`, filed under the finance
+  // tier; the id is unchanged so nothing keyed on it breaks, and so are its roles — it is still the
+  // Finance Manager's row and still hidden from Super Admin and CEO, who reach the closing through
+  // the Source of Sales hub. Only its position in the rail moved. The long note on WHY it points at
+  // the analytics detail route rather than /sales/monthly-closing is preserved below; that reasoning
+  // is load-bearing and cost a real incident to work out.
   {
-    id: "sales-territory-management",
+    id: "finance-monthly-closing",
     items: [
-      // District Manager / Regional Manager / National Sales Manager land in the employee-portal
-      // shell (resolveNavigationMode) — their entry point is /employee-portals/territory-management
-      // just above. Restricting `roles` here to the admin-shell roles keeps this link from being
-      // shown to someone who would just be redirected straight past it.
-      { href: "/sales/territory-management", icon: Waypoints, label: "Territory Management", permissions: [{ resource: "sales" }], roles: ["CEO", "SFE Manager", "Super Admin"] },
+      // Owner, 2026-08-11: a Monthly Closing tab of his own, able to export the full workbook for
+      // CNS, Pedia or Anti Infective.
+      //
+      // He asked for /sales/monthly-closing. This row deliberately points somewhere else, because
+      // that page cannot give him what he asked for and would be a dead link twice over:
+      //   1. its guard admits only Super Admin, system scope and SFE Manager — he is redirected;
+      //   2. even past that, it loads its matrix behind assertPermission(sales, "import"), and
+      //      `sales:import` is the one action he must never hold — it is the gate on the whole
+      //      upload/publish workspace and ten other pages. Granting it to reach an export would
+      //      hand him the ability to produce the closing he is only meant to consume.
+      //
+      // /admin/analytics/monthly-closing/details is the export-only surface built for exactly this
+      // in #2010: assertPermission(sales, "read") plus canViewAdminCoreAnalytics, both of which he
+      // passes, and its Export XLSX button posts to /api/sales/monthly-closing/export, whose
+      // Branch A names Finance Manager — the full sheet set for any line, published or not.
+      //
+      // Ruling 11 delisted the Sales Analytics module from navigation, which makes this the ONLY
+      // remaining nav entry anywhere into the /admin/analytics tree. That is deliberate: the ruling
+      // removed the module, not this role's export, and the two were never the same thing.
+      { href: "/admin/analytics/monthly-closing/details", icon: ChartColumnBig, label: "Monthly Closing", permissions: [{ resource: "sales", action: "read" }], roles: ["Finance Manager"], excludedRoles: ["Super Admin", "CEO"] },
     ],
-    label: "Territory Management",
+    label: "Monthly Closing",
   },
-  {
-    id: "sales-analytics",
-    items: [
-      // Collapsed to a single standalone sidebar button. Unlike every other
-      // consolidated section, this one needs NO new hub page — "Analytics Hub"
-      // already pointed at /admin/analytics, a bespoke landing page with its own
-      // module-card grid (app/(analytics)/admin/analytics/page.tsx). That page's
-      // MODULES list has been extended with the 4 field-dashboard cards and now
-      // filters cards per-role, so it doubles as this section's hub directly.
-      // Owner, 2026-08-11: restricted to Super Admin only, sidebar-wide. CEO and SFE Manager keep
-      // separate dashboard shortcuts straight into /admin/analytics(/monthly-closing) on their own
-      // command centers (see SFE_NAV_ITEMS / the CEO quick-links array in ceo-phase-b.tsx), so
-      // they are not fully cut off. Finance Manager now reaches his Monthly Closing export via his
-      // own dedicated row instead (see the finance-monthly-closing section above), so this hub row
-      // narrows to Super Admin only with no remaining door left unclosed.
-      { href: "/admin/analytics", icon: ChartColumnBig, label: "Sales Analytics", permissions: [{ resource: "sales" }], roles: ["Super Admin"] },
-    ],
-    label: "Sales Analytics",
-  },
+  // Territory Management was its own rail block until ruling 1 capped Sales at five. It is the
+  // Source of Sales geography — every SoS sale attributes to today's geography — so it folded into
+  // the Source of Sales hub as a card rather than losing its home (see sourceOfSalesPageItems).
+  // The page and its own role gate are untouched; only the door moved.
+  //
+  // Sales Analytics was a rail block here too, pointing at /admin/analytics. Ruling 11 — "no
+  // analytics module, no sales analytics", said three times — removed it. The page and the nine
+  // modules under it still ship and still work by URL; nothing in the rail or the command palette
+  // offers them any more. Do NOT re-add a row here: tests/navigation-ruling-11-analytics.test.ts
+  // fails the PR if any role's rail exposes /admin/analytics, or if a rail label is exactly
+  // "Sales Analytics". It does NOT match the word "analytics" generally — "Attendance Analytics"
+  // and the other in-module TAB labels are a wider reading of the ruling the owner has not been
+  // asked to confirm, so they are deliberately left alone and deliberately not pinned either way.
 
   // ── Tier 7b: Master data governance ──────────────────────────────────────────
   // Standalone read-only master-data page. Deliberately NOT nested under the Marketing
@@ -1682,6 +1675,25 @@ export const sourceOfSalesPageItems: readonly AdminToolsPageItem[] = [
     permissions: [{ action: "import", resource: "sales" }],
   },
   {
+    // Folded in from the retired `sales-territory-management` rail block when ruling 1 capped Sales
+    // at five. It belongs here on the merits, not merely for want of a slot: Territory Management IS
+    // the Source of Sales geography, and every SoS sale — historical and future — attributes to
+    // today's geography, so the map and the numbers are one subject.
+    //
+    // Gate carried over VERBATIM from the rail row, deliberately. District / Regional / National
+    // Sales Managers land in the employee-portal shell (resolveNavigationMode) and their entry point
+    // is /employee-portals/territory-management, so naming only the admin-shell roles keeps this
+    // card from being offered to someone who would be redirected straight past it. It is `sales`
+    // read, NOT `sales:import` like the mapping cards around it — this is a narrower gate than its
+    // neighbours, which is correct and must not be "tidied" into line with them.
+    href: "/sales/territory-management",
+    icon: Waypoints,
+    label: "Territory Management",
+    description: "Bricks, areas and territory coverage.",
+    permissions: [{ resource: "sales" }],
+    roles: ["CEO", "SFE Manager", "Super Admin"],
+  },
+  {
     href: "/sales/distributor-profiles",
     icon: Tags,
     label: "Distributor Profiles",
@@ -1719,13 +1731,17 @@ export const sourceOfSalesPageItems: readonly AdminToolsPageItem[] = [
   },
 ] as const satisfies readonly AdminToolsPageItem[];
 
-// ── Sales Analytics cards (app/(analytics)/admin/analytics/page.tsx) ────────────────
-// The tools formerly listed individually under the sidebar's "Sales Analytics"
-// section (see adminNavigationSectionSeeds above, now collapsed to one link
-// pointing directly at the pre-existing /admin/analytics landing page — see the
-// comment there). "Analytics Hub" itself is omitted here since its destination
-// IS that page; this array exists purely so the command palette can still find
-// every module by name (see hubPageItemGroups below).
+// ── Sales Analytics cards — RETIRED, DELIBERATELY UNWIRED ──────────────────────────
+// ⚠️ This array is NOT referenced by hubPageItemGroups any more and NOTHING reads it.
+//
+// Ruling 11 ("no analytics module, no sales analytics", said three times) removed the module from
+// navigation. It is kept rather than deleted for one reason: it is the only record of who was
+// allowed to reach each dashboard, and re-deriving those five role lists from scratch if the owner
+// ever reverses the ruling would be guesswork. Re-wiring is one line in hubPageItemGroups.
+//
+// It is NOT a source of truth for anything today. The cards a user actually sees on
+// app/(admin)/admin/analytics/page.tsx come from that page's own MODULES array — the two lists were
+// always separate and have to move together, which is the trap the note below was written about.
 //
 // Roles reflect who can actually reach AND pass the analytics company-scope gate today: Super
 // Admin, CEO, SFE Manager (Exec/Recon stay CEO/Super-Admin-only). National Sales Manager /
@@ -3011,7 +3027,12 @@ export const hubPageItemGroups: readonly { label: string; items: readonly AdminT
   { items: leaveManagementPageItems, label: "Leave Management" },
   { items: [...financeLeaveManagementVacationItems, ...financeLeaveManagementExcuseItems], label: "Leave Management" },
   { items: sourceOfSalesPageItems, label: "Source of Sales" },
-  { items: salesAnalyticsPageItems, label: "Sales Analytics" },
+  // `salesAnalyticsPageItems` is deliberately ABSENT. Ruling 11 — "no analytics module, no sales
+  // analytics" — delisted the module, and this group was the last thing still offering its nine
+  // dashboards, via Cmd+K rather than the rail. Leaving it here would have made the ruling look
+  // done while the module stayed one keystroke away, which is the exact drift this restructure
+  // exists to end. The array itself is kept, unwired, so the decision is reversible in one line;
+  // tests/navigation-ruling-11-analytics.test.ts fails the PR if that line comes back.
   { items: masterDataPageItems, label: "Master Data" },
   { items: adminToolsPageItems, label: "Admin Tools" },
   { items: accessCommunicationPageItems, label: "Access & Communication" },
