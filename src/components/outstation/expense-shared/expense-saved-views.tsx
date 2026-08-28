@@ -64,7 +64,7 @@ export function ExpenseSavedViews({
         <span className="inline-flex items-center gap-1">
           <input
             autoFocus
-            className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700 outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
+            className="rounded-full border border-phx-line bg-white px-3 py-1 text-xs font-semibold text-phx-ink-soft outline-none focus:border-phx-warn-line focus:ring-2 focus:ring-phx-warn-line"
             maxLength={40}
             onBlur={() => {
               if (!draftName.trim()) setNaming(false);
@@ -91,7 +91,7 @@ export function ExpenseSavedViews({
       ) : (
         <button
           type="button"
-          className="ml-auto inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-bold text-slate-600 transition-colors hover:border-orange-300 hover:bg-orange-50 hover:text-orange-700"
+          className="ml-auto inline-flex items-center gap-1.5 rounded-full border border-phx-line bg-phx-paper px-3 py-1 text-xs font-bold text-phx-ink-soft transition-colors hover:border-phx-warn-line hover:bg-phx-warn-bg hover:text-phx-warn"
           onClick={() => setNaming(true)}
           title="Save current filters as a view"
         >

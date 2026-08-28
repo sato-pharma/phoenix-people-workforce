@@ -156,7 +156,7 @@ function SlaBadge({ item }: { item: ActionHubItem }) {
   const daysLeft = threshold - age;
   if (overdue) {
     return (
-      <span className="inline-flex items-center gap-1 rounded-full border border-rose-200/80 bg-rose-50 px-1.5 py-0.5 text-phx-2xs font-bold text-rose-700">
+      <span className="inline-flex items-center gap-1 rounded-full border border-phx-danger-line/80 bg-phx-danger-bg px-1.5 py-0.5 text-phx-2xs font-bold text-phx-danger">
         <span className="h-1 w-1 rounded-full bg-rose-500" />
         Overdue {age}d
       </span>
@@ -164,7 +164,7 @@ function SlaBadge({ item }: { item: ActionHubItem }) {
   }
   if (daysLeft <= 1) {
     return (
-      <span className="inline-flex items-center rounded-full border border-amber-200/80 bg-amber-50 px-1.5 py-0.5 text-phx-2xs font-bold text-amber-800">
+      <span className="inline-flex items-center rounded-full border border-phx-warn-line/80 bg-phx-warn-bg px-1.5 py-0.5 text-phx-2xs font-bold text-phx-warn">
         {daysLeft === 0 ? "Due today" : "1d left"}
       </span>
     );
@@ -980,7 +980,7 @@ export function ActionCenterHub({ initialData, initialModule, initialId, callerR
             <div className="flex shrink-0 items-center justify-between gap-3 border-b border-[#E5EAF1] bg-gradient-to-b from-white to-slate-50/60 px-4 py-3">
               <div className="flex items-center gap-2">
                 <span className="text-phx-xs font-black uppercase tracking-[0.16em] text-slate-500">Queue</span>
-                <span className="inline-flex min-w-[1.5rem] items-center justify-center rounded-full bg-slate-900 px-2 py-0.5 text-phx-xs font-black leading-none text-white">{stats.total}</span>
+                <span className="inline-flex min-w-[1.5rem] items-center justify-center rounded-full bg-phx-ink px-2 py-0.5 text-phx-xs font-black leading-none text-white">{stats.total}</span>
               </div>
               <div className="flex items-center gap-3 text-phx-xs">
                 {stats.overdue > 0 && (

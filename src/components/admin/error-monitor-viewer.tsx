@@ -96,7 +96,7 @@ export function ErrorMonitorViewer({
             </p>
             <p className="mt-1 text-xs text-slate-500">Search by HR ID, module, source, or date window.</p>
           </div>
-          <div className="rounded-full border border-phx-line bg-phx-paper px-3 py-1.5 text-xs font-black text-slate-500">
+          <div className="rounded-full border border-phx-line bg-phx-paper px-3 py-1.5 text-xs font-black text-phx-ink-soft">
             {data.total.toLocaleString("en-US")} events
           </div>
         </div>
@@ -203,7 +203,7 @@ export function ErrorMonitorViewer({
                     </td>
                     <td className="px-5 py-4 text-sm text-phx-ink-soft">{event.role ?? "-"}</td>
                     <td className="px-5 py-4">
-                      <span className="inline-flex items-center rounded-full bg-orange-50 px-2.5 py-1 text-phx-xs font-bold text-orange-600 ring-1 ring-orange-100">
+                      <span className="inline-flex items-center rounded-full bg-phx-warn-bg px-2.5 py-1 text-phx-xs font-bold text-phx-warn ring-1 ring-phx-warn-line">
                         {event.moduleLabel}
                       </span>
                     </td>

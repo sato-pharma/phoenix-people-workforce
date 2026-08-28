@@ -450,12 +450,12 @@ export function DoubleVisitReportWorkspace({
           >
             {t.label}
             {t.key === "neverVisited" && data.neverVisited.length > 0 && (
-              <span className="ml-2 inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-rose-500 px-1 text-phx-2xs text-white">
+              <span className="ml-2 inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-phx-danger px-1 text-phx-2xs text-white">
                 {data.neverVisited.length}
               </span>
             )}
             {t.key === "probation" && data.probation.length > 0 && (
-              <span className="ml-2 inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-orange-500 px-1 text-phx-2xs text-white">
+              <span className="ml-2 inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-phx-warn px-1 text-phx-2xs text-white">
                 {data.probation.length}
               </span>
             )}

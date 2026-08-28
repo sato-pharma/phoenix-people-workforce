@@ -598,7 +598,7 @@ function UnmappedList({ products, customers, territories, productOptions, brickO
                       <td className="px-3 py-1.5">
                         {excluded[k] ? (
                           <div className="flex items-center gap-2">
-                            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-phx-xs font-bold text-slate-500">Excluded — rows will be skipped</span>
+                            <span className="rounded-full bg-phx-paper px-2 py-0.5 text-phx-xs font-bold text-phx-ink-soft">Excluded — rows will be skipped</span>
                             <button className="text-phx-xs text-phx-ink-soft underline hover:text-phx-ink" onClick={() => unexclude(g.type, u.raw)} type="button">Undo</button>
                           </div>
                         ) : (
@@ -812,7 +812,7 @@ export const MonthlyUpload = forwardRef<MonthlyUploadHandle, MonthlyUploadProps>
         <div className="flex flex-col gap-1">
           <div className="flex items-center gap-2">
             <span className="text-phx-2xs font-black uppercase tracking-[0.12em] text-phx-ink-faint">Period{hasDateColumn ? " (optional)" : " (required)"}</span>
-            {periodAutoDetected && <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-phx-2xs font-bold text-emerald-700 ring-1 ring-emerald-200"><CheckCircle2 className="h-3 w-3" /> Auto-detected</span>}
+            {periodAutoDetected && <span className="inline-flex items-center gap-1 rounded-full bg-phx-ok-bg px-2 py-0.5 text-phx-2xs font-bold text-phx-ok ring-1 ring-phx-ok-line"><CheckCircle2 className="h-3 w-3" /> Auto-detected</span>}
           </div>
           <div className="flex gap-1">
             <select className={cn("h-9 rounded-[6px] border px-2 text-sm", periodAutoDetected ? "border-emerald-300 bg-emerald-50/40" : "border-phx-line")} disabled={busy !== null} onChange={(e) => onMonthChange(e.target.value)} value={periodMonth}>

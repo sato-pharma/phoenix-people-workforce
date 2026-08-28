@@ -435,7 +435,7 @@ export function PrivateCalendarsFilterMap({
                           {date ? Number(date.slice(8, 10)) : ""}
                         </span>
                         {dayItems.length > 0 ? (
-                          <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-phx-2xs font-black text-slate-500">{dayItems.length}</span>
+                          <span className="rounded-full bg-phx-paper px-1.5 py-0.5 text-phx-2xs font-black text-phx-ink-soft">{dayItems.length}</span>
                         ) : null}
                       </div>
 
@@ -481,7 +481,7 @@ export function PrivateCalendarsFilterMap({
             <p className="text-phx-xs font-black uppercase tracking-[0.14em] text-slate-500">Selected day</p>
             <h3 className="mt-1 text-lg font-black text-slate-950">{dayLabel(selectedDate)}</h3>
           </div>
-          <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs font-black text-slate-600">{selectedItems.length} item{selectedItems.length === 1 ? "" : "s"}</span>
+          <span className="rounded-full bg-phx-paper px-3 py-1.5 text-xs font-black text-phx-ink-soft">{selectedItems.length} item{selectedItems.length === 1 ? "" : "s"}</span>
         </div>
 
         {selectedItems.length === 0 ? (

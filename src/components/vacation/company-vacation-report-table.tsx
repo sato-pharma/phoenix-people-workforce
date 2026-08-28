@@ -582,7 +582,7 @@ export function CompanyVacationReportTable({
             <SlidersHorizontal className="h-3.5 w-3.5 text-orange-500" />
             <span className="whitespace-nowrap text-phx-md font-bold text-slate-800">Advanced Filters</span>
             {activeFilterCount > 0 ? (
-              <span className="inline-flex items-center whitespace-nowrap rounded-full border border-orange-200 bg-orange-50 px-2 py-0.5 text-phx-2xs font-bold text-orange-700">
+              <span className="inline-flex items-center whitespace-nowrap rounded-full border border-phx-warn-line bg-phx-warn-bg px-2 py-0.5 text-phx-2xs font-bold text-phx-warn">
                 {activeFilterCount} active
               </span>
             ) : null}

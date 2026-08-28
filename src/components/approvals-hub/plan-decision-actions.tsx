@@ -198,7 +198,7 @@ export function PlanDecisionActions({
       <section className={shell}>
         <header className={`flex items-center justify-between ${headerBar}`}>
           <h3 className={headerText}>Return plan — flag what to fix</h3>
-          <span className="inline-flex items-center gap-1 rounded-full bg-orange-500 px-2 py-0.5 text-phx-2xs font-black text-white">
+          <span className="inline-flex items-center gap-1 rounded-full bg-phx-warn px-2 py-0.5 text-phx-2xs font-black text-white">
             <Flag className="h-3 w-3" /> {flaggedCount} flagged
           </span>
         </header>

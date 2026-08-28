@@ -68,7 +68,7 @@ function PlanActivityCard({ item }: { item: WeeklyPlanDetail["items"][number] })
             <div key={vd.id ?? idx} className="rounded border border-sky-200 bg-sky-50 px-2 py-1">
               <p className="text-phx-2xs font-black text-sky-900">{vd.doctorName}</p>
               <p className="text-phx-2xs font-semibold text-sky-700">
-                <span className="rounded-full bg-sky-200 px-1.5 py-0.5 text-phx-3xs font-black uppercase tracking-wide text-sky-800">
+                <span className="rounded-full bg-phx-info-bg px-1.5 py-0.5 text-phx-3xs font-black uppercase tracking-wide text-phx-info">
                   {vd.speciality}
                 </span>
                 {" · "}{vd.address}

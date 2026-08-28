@@ -164,7 +164,7 @@ export function WeeklyDistributorColumnEditor({ initialContracts }: { initialCon
               ))}
             </select>
           </label>
-          {current?.isCustom ? <span className="mb-1.5 inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-0.5 text-phx-xs font-bold text-amber-800">Overridden in-app</span> : current ? <span className="mb-1.5 inline-flex items-center gap-1 rounded-full border border-phx-line bg-[#FCFDFE] px-2.5 py-0.5 text-phx-xs font-bold text-phx-ink-soft">Built-in</span> : null}
+          {current?.isCustom ? <span className="mb-1.5 inline-flex items-center gap-1 rounded-full border border-phx-warn-line bg-phx-warn-bg px-2.5 py-0.5 text-phx-xs font-bold text-phx-warn">Overridden in-app</span> : current ? <span className="mb-1.5 inline-flex items-center gap-1 rounded-full border border-phx-line bg-[#FCFDFE] px-2.5 py-0.5 text-phx-xs font-bold text-phx-ink-soft">Built-in</span> : null}
           {draft?.splitFiles ? <span className="mb-1.5 inline-flex items-center gap-1 rounded-full border border-phx-line bg-[#FCFDFE] px-2.5 py-0.5 text-phx-xs font-bold text-phx-ink-soft">Two files (sales + stock)</span> : null}
         </div>
 

@@ -986,7 +986,7 @@ function CategoryTab({ category, monthKey, canDecide }: { category: DeductionsCa
         </h2>
         <div className="flex items-center gap-2">
           {!config.requiresApproval ? (
-            <span className="whitespace-nowrap rounded-full bg-orange-500/20 px-2 py-0.5 text-phx-2xs font-black uppercase tracking-[0.1em] text-orange-300">
+            <span className="whitespace-nowrap rounded-full bg-phx-warn/20 px-2 py-0.5 text-phx-2xs font-black uppercase tracking-[0.1em] text-phx-warn-bg">
               Mandatory unless cleared
             </span>
           ) : null}
@@ -1091,7 +1091,7 @@ function CategoryTab({ category, monthKey, canDecide }: { category: DeductionsCa
                               a vacation day that also carried real work, for
                               instance — must not read like every other row. */}
                           {row.calculationStatus === "requires_review" ? (
-                            <span className="mr-1.5 whitespace-nowrap rounded-full bg-amber-100 px-2 py-0.5 text-phx-2xs font-black uppercase tracking-[0.08em] text-amber-800">
+                            <span className="mr-1.5 whitespace-nowrap rounded-full bg-phx-warn-bg px-2 py-0.5 text-phx-2xs font-black uppercase tracking-[0.08em] text-phx-warn">
                               Needs your review
                             </span>
                           ) : null}

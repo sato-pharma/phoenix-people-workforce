@@ -240,7 +240,7 @@ export default async function EmployeePortalTeamPerformancePage({
                 <p className="text-xs uppercase tracking-[0.14em] text-slate-500">Leaderboard</p>
                 <h3 className="text-lg font-semibold text-slate-900">Full Rankings</h3>
               </div>
-              <span className="text-xs text-slate-500 bg-slate-100 px-3 py-1.5 rounded-full">
+              <span className="text-xs text-phx-ink-soft bg-phx-paper px-3 py-1.5 rounded-full">
                 {members.length} reps
               </span>
             </div>

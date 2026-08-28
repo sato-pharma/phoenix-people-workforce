@@ -1758,12 +1758,12 @@ export function PlansWorkspace({
       <ShieldCheck className="h-4 w-4 shrink-0 text-sky-600" />
       <span className="whitespace-nowrap">Auto-synced into this plan:</span>
       {lockedSyncCount > 0 ? (
-        <span className="inline-flex items-center whitespace-nowrap rounded-full bg-violet-500 px-2 py-0.5 text-phx-2xs font-black uppercase text-white">
+        <span className="inline-flex items-center whitespace-nowrap rounded-full bg-phx-info px-2 py-0.5 text-phx-2xs font-black uppercase text-white">
           {lockedSyncCount} approved leave
         </span>
       ) : null}
       {weeklySyncCount > 0 ? (
-        <span className="inline-flex items-center whitespace-nowrap rounded-full bg-sky-500 px-2 py-0.5 text-phx-2xs font-black uppercase text-white">
+        <span className="inline-flex items-center whitespace-nowrap rounded-full bg-phx-info px-2 py-0.5 text-phx-2xs font-black uppercase text-white">
           {weeklySyncCount} from weekly plan
         </span>
       ) : null}
@@ -2951,7 +2951,7 @@ function MobileDayCard({
             </span>
           ) : null}
           {hasReturnNotes ? (
-            <span className="rounded-full bg-amber-500 px-1.5 py-0.5 text-phx-3xs font-black uppercase text-white">
+            <span className="rounded-full bg-phx-warn px-1.5 py-0.5 text-phx-3xs font-black uppercase text-white">
               Feedback
             </span>
           ) : null}

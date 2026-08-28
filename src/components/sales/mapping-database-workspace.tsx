@@ -207,7 +207,7 @@ function CustomersTab({ distributorCode, bricks }: { distributorCode: string; br
                     <span className="block font-semibold text-phx-ink">{r.customerName || r.customerCode}</span>
                     <span className="block font-mono text-xs text-phx-ink-soft">{r.customerCode}{r.address ? ` · ${r.address}` : ""}</span>
                     {r.source === "auto" ? (
-                      <span className="mt-0.5 inline-flex items-center gap-1 rounded-full border border-violet-200 bg-violet-50 px-1.5 py-0.5 text-phx-2xs font-bold text-violet-700">
+                      <span className="mt-0.5 inline-flex items-center gap-1 rounded-full border border-phx-info-line bg-phx-info-bg px-1.5 py-0.5 text-phx-2xs font-bold text-phx-info">
                         AUTO{typeof r.confidence === "number" ? ` · ${r.confidence}%` : ""}
                       </span>
                     ) : null}

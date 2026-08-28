@@ -233,7 +233,7 @@ export function MonitoringDashboard({ stats }: { stats: AdminMonitoringStats }) 
                 stats.operations.recent.map((event, index) => (
                   <tr key={`${event.module}-${event.timestamp}-${index}`} className="transition-colors hover:bg-orange-50/40">
                     <td className="whitespace-nowrap px-4 py-4 align-top sm:px-6">
-                      <span className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-phx-xs font-semibold uppercase tracking-[0.08em] text-slate-600">
+                      <span className="inline-flex rounded-full border border-phx-line bg-phx-paper px-2.5 py-1 text-phx-xs font-semibold uppercase tracking-[0.08em] text-phx-ink-soft">
                         {event.module}
                       </span>
                     </td>
@@ -426,7 +426,7 @@ export function MonitoringDashboard({ stats }: { stats: AdminMonitoringStats }) 
                       <p className="text-sm font-medium leading-5 text-slate-800">{event.summary}</p>
                     </td>
                     <td className="whitespace-nowrap px-4 py-4 align-top">
-                      <span className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-phx-xs font-semibold uppercase tracking-[0.08em] text-slate-600">
+                      <span className="inline-flex rounded-full border border-phx-line bg-phx-paper px-2.5 py-1 text-phx-xs font-semibold uppercase tracking-[0.08em] text-phx-ink-soft">
                         {event.entityType}
                       </span>
                     </td>

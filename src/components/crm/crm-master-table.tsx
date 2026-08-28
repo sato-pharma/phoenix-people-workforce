@@ -469,7 +469,7 @@ export function CrmMasterTable({
             ) : (
               activeChips.map((chip) => (
                 <button
-                  className="inline-flex items-center gap-1 rounded-full border border-orange-200 bg-orange-50 px-2.5 py-1 text-phx-xs font-semibold text-orange-700 transition hover:border-orange-400 hover:bg-orange-100"
+                  className="inline-flex items-center gap-1 rounded-full border border-phx-warn-line bg-phx-warn-bg px-2.5 py-1 text-phx-xs font-semibold text-phx-warn transition hover:border-phx-warn-line hover:bg-phx-warn-bg"
                   key={chip.id}
                   onClick={() => clearFilters(chip.keys)}
                   title="Remove this filter"

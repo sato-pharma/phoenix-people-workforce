@@ -1575,27 +1575,27 @@ export function EmployeeManagement({
               <div className="space-y-2">
                 <h2 className="text-sm font-semibold text-text">Employee import preview</h2>
                 <div className="flex flex-wrap items-center gap-3">
-                  <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-100 px-3 py-1 text-xs font-bold text-emerald-700">
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-phx-ok-bg px-3 py-1 text-xs font-bold text-phx-ok">
                     <Check className="h-3 w-3" />
                     {(pendingImportPreview.rowsToInsert?.length ?? 0)} to create
                   </span>
-                  <span className="inline-flex items-center gap-1.5 rounded-full bg-blue-100 px-3 py-1 text-xs font-bold text-blue-700">
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-phx-info-bg px-3 py-1 text-xs font-bold text-phx-info">
                     <Pencil className="h-3 w-3" />
                     {(pendingImportPreview.rowsToUpdate?.length ?? 0)} to update
                   </span>
                   {(pendingImportPreview.vacantPositionsToCreate?.length ?? 0) > 0 ? (
-                    <span className="inline-flex items-center gap-1.5 rounded-full bg-violet-100 px-3 py-1 text-xs font-bold text-violet-700">
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-phx-info-bg px-3 py-1 text-xs font-bold text-phx-info">
                       {(pendingImportPreview.vacantPositionsToCreate?.length ?? 0)} vacancies
                     </span>
                   ) : null}
                   {(pendingImportPreview.failedRows ?? 0) > 0 ? (
-                    <span className="inline-flex items-center gap-1.5 rounded-full bg-rose-100 px-3 py-1 text-xs font-bold text-rose-700">
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-phx-danger-bg px-3 py-1 text-xs font-bold text-phx-danger">
                       <AlertCircle className="h-3 w-3" />
                       {(pendingImportPreview.failedRows ?? 0)} blocked
                     </span>
                   ) : null}
                   {(pendingImportPreview.warningRows ?? 0) > 0 ? (
-                    <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-100 px-3 py-1 text-xs font-bold text-amber-700">
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-phx-warn-bg px-3 py-1 text-xs font-bold text-phx-warn">
                       <AlertCircle className="h-3 w-3" />
                       {(pendingImportPreview.warningRows ?? 0)} need review
                     </span>
@@ -1935,7 +1935,7 @@ export function EmployeeManagement({
                     >
                       {directoryTab === "missing" && missingFields.length > 0 ? (
                         <div
-                          className="mb-2 flex items-start gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-2 py-1 text-phx-2xs font-bold text-amber-700"
+                          className="mb-2 flex items-start gap-1.5 rounded-full border border-phx-warn-line bg-phx-warn-bg px-2 py-1 text-phx-2xs font-bold text-phx-warn"
                           title={missingFields.join(", ")}
                         >
                           <AlertCircle className="mt-0.5 h-3 w-3 shrink-0" />
@@ -1966,7 +1966,7 @@ export function EmployeeManagement({
                                 </span>
                               </>
                             ) : (
-                              <span className="inline-flex rounded-full border border-amber-100 bg-amber-50 px-2 py-0.5 text-phx-2xs font-bold uppercase tracking-tighter text-amber-600">
+                              <span className="inline-flex rounded-full border border-phx-warn-line bg-phx-warn-bg px-2 py-0.5 text-phx-2xs font-bold uppercase tracking-tighter text-phx-warn">
                                 Unassigned
                               </span>
                             ),
@@ -2047,7 +2047,7 @@ export function EmployeeManagement({
                           </div>
                           {directoryTab === "missing" && missingFields.length > 0 ? (
                             <span
-                              className="mt-2 inline-flex max-w-[280px] items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-phx-2xs font-bold text-amber-700"
+                              className="mt-2 inline-flex max-w-[280px] items-center gap-1.5 rounded-full border border-phx-warn-line bg-phx-warn-bg px-2 py-0.5 text-phx-2xs font-bold text-phx-warn"
                               title={missingFields.join(", ")}
                             >
                               <AlertCircle className="h-3 w-3 shrink-0" />
@@ -2085,7 +2085,7 @@ export function EmployeeManagement({
                             </span>
                           </div>
                         ) : (
-                          <span className="text-phx-2xs font-bold uppercase tracking-tighter text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-100">
+                          <span className="text-phx-2xs font-bold uppercase tracking-tighter text-phx-warn bg-phx-warn-bg px-2 py-0.5 rounded-full border border-phx-warn-line">
                             Unassigned
                           </span>
                         )}

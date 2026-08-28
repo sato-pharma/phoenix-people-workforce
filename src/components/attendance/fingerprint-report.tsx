@@ -174,15 +174,15 @@ export function FingerprintReport({ initialData, initialError }: Props) {
       {rows.length > 0 ? (
         <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-slate-200 bg-white px-5 py-3.5 shadow-sm">
           <span className="text-xs font-black uppercase tracking-[0.14em] text-slate-400">Before Decision</span>
-          <div className="flex items-center gap-1.5 rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-500 ring-1 ring-slate-200">
+          <div className="flex items-center gap-1.5 rounded-full bg-phx-paper px-3 py-1 text-xs font-bold text-phx-ink-soft ring-1 ring-phx-line">
             <CircleDashed className="h-3.5 w-3.5" />
             {pendingCount} pending
           </div>
-          <div className="flex items-center gap-1.5 rounded-full bg-rose-50 px-3 py-1 text-xs font-bold text-rose-700 ring-1 ring-rose-300">
+          <div className="flex items-center gap-1.5 rounded-full bg-phx-danger-bg px-3 py-1 text-xs font-bold text-phx-danger ring-1 ring-phx-danger-line">
             <XCircle className="h-3.5 w-3.5" />
             {deductCount} to deduct
           </div>
-          <div className="flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-700 ring-1 ring-emerald-300">
+          <div className="flex items-center gap-1.5 rounded-full bg-phx-ok-bg px-3 py-1 text-xs font-bold text-phx-ok ring-1 ring-phx-ok-line">
             <CheckCircle2 className="h-3.5 w-3.5" />
             {exemptCount} exempt
           </div>
