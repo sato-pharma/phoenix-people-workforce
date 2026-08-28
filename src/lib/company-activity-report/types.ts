@@ -117,6 +117,10 @@ export type CompanyActivityEmployeeSummary = {
   crmFieldVisitDays: number;
   totalCrmVisits: number;
   campaignVisits: number;
+  /** Distinct days with >=1 campaign visit — NOT the same number as campaignVisits, which sums
+   * every visit. Both are shown together so a reader can see density (visits per campaign day),
+   * not just a single total that hides whether it came from many days or a few heavy ones. */
+  campaignVisitDays: number;
   leaveApprovedDays: number;
   leavePendingDays: number;
   noEntryDays: number;

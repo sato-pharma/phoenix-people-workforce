@@ -281,6 +281,10 @@ function EmployeeSummaryCard({ href, row }: { href: string; row: CompanyActivity
         <div>
           <p className="text-phx-2xs font-bold uppercase tracking-[0.08em] text-orange-500">Campaign</p>
           <p className="mt-0.5 text-phx-sm font-extrabold text-orange-700">{row.campaignVisits}</p>
+          <p className="text-phx-2xs font-medium text-slate-400">
+            {row.campaignVisitDays} {row.campaignVisitDays === 1 ? "day" : "days"}
+            {row.campaignVisitDays > 0 ? ` · ${(row.campaignVisits / row.campaignVisitDays).toFixed(1)}/day` : ""}
+          </p>
         </div>
         <div>
           <p className="text-phx-2xs font-bold uppercase tracking-[0.08em] text-slate-400">Leave</p>
@@ -742,6 +746,10 @@ export function CompanyActivityReportTable({
                           </td>
                           <td className="whitespace-nowrap border-r border-slate-100 px-3 py-2.5 text-center">
                             <CountBadge tone="accent" value={row.campaignVisits} />
+                            <p className="mt-0.5 text-phx-2xs font-medium text-slate-400">
+                              {row.campaignVisitDays} {row.campaignVisitDays === 1 ? "day" : "days"}
+                              {row.campaignVisitDays > 0 ? ` · ${(row.campaignVisits / row.campaignVisitDays).toFixed(1)}/day` : ""}
+                            </p>
                           </td>
                           <td className="whitespace-nowrap border-r border-slate-100 px-3 py-2.5 text-center font-semibold text-slate-700">
                             {row.leaveApprovedDays}

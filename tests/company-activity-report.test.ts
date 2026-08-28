@@ -272,15 +272,19 @@ export function runCompanyActivityReportTests() {
     dayRow({ dateIso: "2026-08-10", dayType: "holiday", outcome: "holiday" }),
     // Presence + leave together -> conflict, counted regardless of which outcome the day carries.
     dayRow({ dateIso: "2026-08-11", outcome: "office_present", hasOfficePunch: true, leave: leave(), conflict: true }),
+    // A second campaign day, with TWO campaign visits on it — proves campaignVisitDays counts
+    // distinct days, not visits: 1 (from 08-02) + 2 here = 3 total visits, but only 2 days.
+    dayRow({ dateIso: "2026-08-12", outcome: "crm_field_visit", crmVisitCount: 2, crmCampaignVisitCount: 2, crmVisits: [visit({ isCampaign: true }), visit({ isCampaign: true })] }),
   ], { hasAttendanceChannel: true, hasCrmChannel: true });
 
   assert.equal(summary.employeeHrId, "A-1");
   assert.equal(summary.employeeName, "Test Employee", "employeeName prefers the nickname-aware displayName over fullName");
-  assert.equal(summary.workingDays, 9, "working days excludes weekly_off and holiday (11 rows - 2)");
+  assert.equal(summary.workingDays, 10, "working days excludes weekly_off and holiday (12 rows - 2)");
   assert.equal(summary.officePresentDays, 2);
-  assert.equal(summary.crmFieldVisitDays, 1);
-  assert.equal(summary.totalCrmVisits, 3, "visit totals accumulate from every day, not just crm_field_visit-outcome days");
-  assert.equal(summary.campaignVisits, 1);
+  assert.equal(summary.crmFieldVisitDays, 2);
+  assert.equal(summary.totalCrmVisits, 5, "visit totals accumulate from every day, not just crm_field_visit-outcome days");
+  assert.equal(summary.campaignVisits, 3, "sums every campaign visit: 1 on 08-02 + 2 on 08-12");
+  assert.equal(summary.campaignVisitDays, 2, "counts DISTINCT days with >=1 campaign visit, not the visit total — 08-12's two visits still count as one day");
   assert.equal(summary.leaveApprovedDays, 2, "crm_leave and leave_approved fold into the SAME tally — both are at-least-as-certain leave signals");
   assert.equal(summary.leavePendingDays, 1);
   assert.equal(summary.noEntryDays, 1);

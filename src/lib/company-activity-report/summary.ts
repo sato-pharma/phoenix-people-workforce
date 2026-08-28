@@ -16,6 +16,7 @@ export function summarizeCompanyActivityEmployee(
   let crmFieldVisitDays = 0;
   let totalCrmVisits = 0;
   let campaignVisits = 0;
+  let campaignVisitDays = 0;
   let leaveApprovedDays = 0;
   let leavePendingDays = 0;
   let noEntryDays = 0;
@@ -25,6 +26,7 @@ export function summarizeCompanyActivityEmployee(
   for (const day of days) {
     totalCrmVisits += day.crmVisitCount;
     campaignVisits += day.crmCampaignVisitCount;
+    if (day.crmCampaignVisitCount > 0) campaignVisitDays += 1;
     if (day.conflict) conflictDays += 1;
     if (day.dayType !== "working") continue;
     workingDays += 1;
@@ -70,6 +72,7 @@ export function summarizeCompanyActivityEmployee(
     crmFieldVisitDays,
     totalCrmVisits,
     campaignVisits,
+    campaignVisitDays,
     leaveApprovedDays,
     leavePendingDays,
     noEntryDays,

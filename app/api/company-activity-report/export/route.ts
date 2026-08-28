@@ -15,17 +15,21 @@ import { isApiRateLimitError } from "@/lib/security/api-rate-limit";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-/** Row 4 of each data sheet — the blank spacer export.ts leaves right after its title band (rows
- * 1-3) on every sheet, whatever comes after it (Daily Detail's header sits at a fixed row 6;
- * Executive Summary's KPI block pushes its own table header further down). Same row on both data
- * sheets, so one stamp routine covers both regardless of what each sheet does after row 4. */
+/** Row 4 on Cover, Summary, and Daily Detail — the blank spacer export.ts leaves right after its
+ * brand band (rows 1-3) on each of those sheets, before its own content (Cover's provenance table
+ * starts at row 5; Summary/Daily Detail's writeTable block starts at row 5 too, one row later than
+ * the shared kit's own convention specifically to keep this row free). Same row on all three, so
+ * one stamp routine covers them regardless of what each sheet does after row 4. Notes & Legend is
+ * deliberately excluded — it carries no filtered data, so stamping it would be noise, and its own
+ * table starts at row 4 with no spacer at all. */
 const FILTER_NOTE_ROW = 4;
-const DATA_SHEET_NAMES = ["Executive Summary", "Daily Detail"];
+const DATA_SHEET_NAMES = ["Cover", "Summary", "Daily Detail"];
 
 /**
- * Writes the filter stamp onto both data sheets. A downloaded workbook is forwarded without the
- * screen it came from, so a filtered one that looks exactly like a full-range one is how a slice
- * of the company gets read as the whole company by whoever opens it next.
+ * Writes the filter stamp onto every data-bearing sheet. A downloaded workbook is forwarded without
+ * the screen it came from, so a filtered one that looks exactly like a full-range one is how a
+ * slice of the company gets read as the whole company by whoever opens it next — and Cover, being
+ * the very first sheet a reader now opens, is the sheet where that risk is highest.
  */
 function stampFilterNote(workbook: ReturnType<typeof generateCompanyActivityReportWorkbook>, note: string) {
   for (const sheetName of DATA_SHEET_NAMES) {

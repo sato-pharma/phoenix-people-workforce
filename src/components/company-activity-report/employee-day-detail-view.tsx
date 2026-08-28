@@ -48,7 +48,7 @@ const OUTCOME_STYLE: Record<CompanyActivityDayOutcome, { chip: string; label: st
 /* ─── Summary strip ────────────────────────────────────────────────── */
 /* ═══════════════════════════════════════════════════════════════════ */
 
-function Stat({ tone, label, value }: { label: string; tone: "danger" | "neutral" | "warn"; value: number }) {
+function Stat({ tone, label, sub, value }: { label: string; sub?: string; tone: "danger" | "neutral" | "warn"; value: number }) {
   const toneClass = {
     danger: value > 0 ? "text-rose-700" : "text-slate-900",
     neutral: "text-slate-900",
@@ -58,6 +58,7 @@ function Stat({ tone, label, value }: { label: string; tone: "danger" | "neutral
     <div className="rounded-sm border border-slate-200 bg-white px-3 py-2.5 text-center">
       <p className={cn("text-xl font-extrabold leading-none tracking-[-0.03em]", toneClass)}>{value}</p>
       <p className="mt-1.5 whitespace-nowrap text-phx-2xs font-bold uppercase tracking-[0.08em] text-slate-400">{label}</p>
+      {sub ? <p className="mt-0.5 whitespace-nowrap text-phx-2xs font-medium text-slate-400">{sub}</p> : null}
     </div>
   );
 }
@@ -65,6 +66,7 @@ function Stat({ tone, label, value }: { label: string; tone: "danger" | "neutral
 function SummaryStrip({ summary }: { summary: CompanyActivityEmployeeSummary | null }) {
   const s = summary ?? {
     campaignVisits: 0,
+    campaignVisitDays: 0,
     conflictDays: 0,
     crmFieldVisitDays: 0,
     leaveApprovedDays: 0,
@@ -80,7 +82,12 @@ function SummaryStrip({ summary }: { summary: CompanyActivityEmployeeSummary | n
       <Stat label="Working Days" tone="neutral" value={s.workingDays} />
       <Stat label="Office" tone="neutral" value={s.officePresentDays} />
       <Stat label="CRM Visits" tone="neutral" value={s.totalCrmVisits} />
-      <Stat label="Campaign" tone="neutral" value={s.campaignVisits} />
+      <Stat
+        label="Campaign"
+        sub={s.campaignVisitDays > 0 ? `${s.campaignVisitDays} ${s.campaignVisitDays === 1 ? "day" : "days"} · ${(s.campaignVisits / s.campaignVisitDays).toFixed(1)}/day` : "0 days"}
+        tone="neutral"
+        value={s.campaignVisits}
+      />
       <Stat label="Leave Appr." tone="neutral" value={s.leaveApprovedDays} />
       <Stat label="Leave Pend." tone="warn" value={s.leavePendingDays} />
       <Stat label="No Entry" tone="danger" value={s.noEntryDays} />
