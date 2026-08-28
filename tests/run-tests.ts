@@ -100,6 +100,7 @@ import { runProbationDateTests } from "./probation-date.test.ts";
 import { runProbationCaseProvisioningTests } from "./probation-case-provisioning.test.ts";
 import { runProbationDomainMigrationReadinessTests } from "./probation-domain-migration-readiness.test.ts";
 import { runCrmIdentityTests } from "./crm-identity.test.ts";
+import { runCrmBlockCountingTests } from "./crm-block-counting.test.ts";
 import { runCrmPostExitAttributionTests } from "./crm-post-exit-attribution.test.ts";
 import { runCrmPreHireAttributionTests } from "./crm-pre-hire-attribution.test.ts";
 import { runCrmPreHireMappingGuardTests } from "./crm-pre-hire-mapping-guard.test.ts";
@@ -1171,6 +1172,7 @@ await runTest("crm post-exit attribution guard (work after an exit date is never
 await runTest("crm pre-hire attribution guard (nobody is credited with work dated before they joined)", runCrmPreHireAttributionTests);
 await runTest("crm pre-hire mapping guard (the Unmapped Agents screen refuses to create that miscredit)", runCrmPreHireMappingGuardTests);
 await runTest("crm override employment scope (one mapping credits both holders of a handed-over slot)", runCrmOverrideEmploymentScopeTests);
+await runTest("crm blocked-attribution counting (a holiday marker on a dead slot is not a handover)", runCrmBlockCountingTests);
 await runTest("crm full-history parity sweep (windows, staleness, and the refuse-to-delete guard)", runCrmParitySweepTests);
 await runTest("crm sync-run columns (every persisted column exists in the schema)", runCrmSyncRunColumnsTests);
 await runTest("probation DV source definition (P3-T01 predicate + attribution + dedup key)", runProbationDvSourceTests);
