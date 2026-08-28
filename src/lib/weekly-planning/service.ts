@@ -2,7 +2,6 @@ import crypto from "crypto";
 
 import { writeAuditLog } from "@/lib/admin/audit";
 import {
-  APPROVED_PLANNING_REGIONS,
   canonicalPlanningRegionName,
   planningAreaBelongsToRegion,
 } from "@/lib/weekly-planning/regions";
@@ -379,7 +378,6 @@ export type EmployeePlansWorkspace = {
   hasMorePlans: boolean;
   loadedPlanCount: number;
   planLimit: number;
-  workplaceRegions: string[];
   currentEmployee: {
     areaName: string | null;
     fullName: string;
@@ -601,36 +599,6 @@ function canSubmitFromEmployee(employee: EmployeeDirectoryRow | null, role: Phoe
 function isMedicalRepEmployee(employee: EmployeeDirectoryRow) {
   const title = `${employee.positionTitle ?? ""} ${employee.jobTitle ?? ""}`.toLowerCase();
   return title.includes("medical rep") || title.includes("medical representative");
-}
-
-const approvedPlanningRegions = APPROVED_PLANNING_REGIONS;
-
-function canonicalPlanningRegion(value: unknown) {
-  return canonicalPlanningRegionName(value);
-}
-
-function workplaceRegionsFromDirectory(directory: EmployeeDirectoryRow[]) {
-  const regionNameByKey = new Map<string, string>();
-  for (const row of directory) {
-    const regionName = canonicalPlanningRegion(row.regionName);
-    if (!regionName) continue;
-    const key = regionName.toLowerCase();
-    if (!regionNameByKey.has(key)) {
-      regionNameByKey.set(key, regionName);
-    }
-  }
-  return approvedPlanningRegions.filter((region) => regionNameByKey.has(region.toLowerCase()));
-}
-
-function workplaceRegionsForEmployee(employee: EmployeeDirectoryRow | null, directory: EmployeeDirectoryRow[]) {
-  if (!employee) {
-    return workplaceRegionsFromDirectory(directory);
-  }
-
-  const byLine = workplaceRegionsFromDirectory(directory.filter((row) => isSameLine(row, employee)));
-  if (byLine.length > 0) return byLine;
-
-  return workplaceRegionsFromDirectory(directory);
 }
 
 function isActiveEmployee(employee: EmployeeDirectoryRow) {
@@ -938,7 +906,7 @@ function normalizeItem(
   const locationText = activityType === "Training"
     ? normalizeTrainingFormat(item.locationText)
     : usesGeography
-      ? canonicalPlanningRegion(item.locationText)
+      ? canonicalPlanningRegionName(item.locationText)
       : null;
   const area = usesGeography ? nullableText(item.area) : null;
   const rawSelectedRepHrId = requiresRep ? nullableText(item.doubleVisitMedicalRepHrId) : null;
@@ -1873,7 +1841,6 @@ export async function getEmployeePlansWorkspace(access: AccessContext): Promise<
     await resolveViewerAllowedLines(access),
     seatDirectory,
   );
-  const workplaceRegions = workplaceRegionsForEmployee(employee, directory.employees);
   // Fails soft: an unreachable/empty seat map leaves the picker on its roster-derived
   // fallback rather than blanking it, which is the failure this whole change exists to end.
   let planningAreaSeats: PlanningAreaSeat[] = [];
@@ -1940,7 +1907,6 @@ export async function getEmployeePlansWorkspace(access: AccessContext): Promise<
       medicalRepOptions,
       planningAreaSeats,
       planLimit: WORKSPACE_PLAN_LIMIT,
-      workplaceRegions,
       plans,
       schemaReady: true,
       summary: summarizePlans(plans),
@@ -1972,7 +1938,6 @@ export async function getEmployeePlansWorkspace(access: AccessContext): Promise<
       medicalRepOptions,
       planningAreaSeats,
       planLimit: WORKSPACE_PLAN_LIMIT,
-      workplaceRegions,
       plans: [],
       schemaReady: false,
       summary: emptyPlansSummary(),

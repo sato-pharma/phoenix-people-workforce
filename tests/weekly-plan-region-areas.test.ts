@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 
 import {
   APPROVED_PLANNING_REGIONS,
+  approvedRegionsForSeats,
   canonicalPlanningRegionName,
   planningAreaBelongsToRegion,
   planningAreaOptions,
@@ -27,6 +28,13 @@ import {
  *
  *  3. Folding UE-1 and UE-2 into one region must NOT hand a UE-1 rep the UE-2 areas. A rep
  *     plans inside their own DM district.
+ *
+ *  4. The REGION list itself must follow the same authority: `APPROVED_PLANNING_REGIONS` is a
+ *     shared vocabulary of spellings, not a per-line menu. Applying it unfiltered to every line
+ *     is how Anti Infective's Delta 3 (added for the bug above) leaked into CNS and Pedia, whose
+ *     organograms have no Delta 3 at all — a second dead-end cascading dropdown one level up.
+ *     `approvedRegionsForSeats` scopes the region options to what the plan owner's own line
+ *     actually has, exactly the way `planningAreaOptions` already scopes areas.
  */
 
 // The live Anti Infective seat map (au_v_line_area_map + au_v_regions), which is what the
@@ -271,6 +279,30 @@ export function runWeeklyPlanRegionAreasTests() {
     "Delta 3 must offer its own areas, not silently canonicalise to null",
   );
 
+  // ------------------------------------------- 3b. the region picker must follow the seat model
+  //
+  // Not the fix for one missing region — the fix for the CLASS of bug. Anti Infective's Delta 3
+  // has no CNS/Pedia counterpart (verified live 2026-08-28: zero `D3` rows in `au.line_area_map`
+  // for either line), so a region list applied unfiltered to every line would offer CNS/Pedia a
+  // "Delta 3" that then resolves to zero areas — a second dead-end cascading dropdown, the exact
+  // complaint that motivated the Delta 3 fix, recurring one level up. The region options MUST be
+  // derived from the same per-line seat model the area options already come from.
+  assert.deepEqual(
+    approvedRegionsForSeats([...ANTI_INFECTIVE_SEATS, ...DELTA_3_SEATS]),
+    ["Cairo", "Delta 3", "Upper Egypt"],
+    "Anti Infective's own seats must offer Delta 3",
+  );
+  assert.ok(
+    !approvedRegionsForSeats(CNS_SEATS).includes("Delta 3"),
+    "CNS has no Delta 3 seats and must never offer a region that dead-ends on zero areas",
+  );
+  assert.deepEqual(approvedRegionsForSeats(CNS_SEATS), ["Upper Egypt"], "CNS offers only the regions its own seats cover");
+
+  // An unreachable/empty seat map falls back to the full approved list — an empty region picker
+  // is worse than an over-wide one, the same reasoning areasForRegion already applies one level
+  // down for the roster fallback.
+  assert.deepEqual(approvedRegionsForSeats([]), [...APPROVED_PLANNING_REGIONS]);
+
   // "Others" is not plannable under any region.
   for (const region of APPROVED_PLANNING_REGIONS) {
     assert.ok(
@@ -335,6 +367,23 @@ export function runWeeklyPlanRegionAreasTests() {
     workspaceSrc,
     /planningAreaOptions\(source\.seats, region, source\.owner\)[\s\S]{0,200}planningAreasForRegion\(source\.roster/,
     "areasForRegion must try the seat model first and fall back to the roster",
+  );
+
+  // The REGION picker must follow the same per-line seat model as the area picker beneath it,
+  // not a flat list shared by every line — that mismatch is what let a region with zero areas
+  // for a given line (Delta 3 for CNS/Pedia) be offered as a selectable option at all.
+  assert.match(
+    workspaceSrc,
+    /approvedRegionsForSeats\(source\.seats\)/,
+    "the region picker must derive its options from the plan owner's own line seats",
+  );
+  assert.ok(
+    !/\bAPPROVED_PLANNING_REGIONS\b/.test(workspaceSrc),
+    "the client must not read the flat approved-region list directly — every consumer scopes it through the seat model",
+  );
+  assert.ok(
+    !/\bworkplaceRegions\b/.test(serviceSrc),
+    "the directory-derived region list must not come back — it read employees.region_name, not the AU seat model, and was never wired to the client",
   );
   // All THREE district authorities have to reach the client, in order. Each is pinned
   // separately: the seat code is the one that resolves for 15 people the others miss, the area

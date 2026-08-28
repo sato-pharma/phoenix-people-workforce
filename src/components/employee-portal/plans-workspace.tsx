@@ -39,7 +39,7 @@ import { PlanConversationThread } from "@/components/weekly-planning/plan-conver
 import type { AccessContext } from "@/lib/auth/permissions";
 import { hrIdsMatch } from "@/lib/hr-id";
 import {
-  APPROVED_PLANNING_REGIONS,
+  approvedRegionsForSeats,
   canonicalPlanningRegionName,
   planningAreaOptions,
   planningAreasForRegion,
@@ -124,8 +124,6 @@ const AM_START = "09:00";
 const AM_END = "13:00";
 const PM_START = "13:00";
 const PM_END = "17:00";
-
-const approvedPlanningRegions = APPROVED_PLANNING_REGIONS;
 
 const noGeographyActivities = new Set<EmployeePlanItemInput["activityType"]>([
   "Office",
@@ -469,11 +467,15 @@ function canonicalRegion(value: string | null | undefined) {
   return canonicalPlanningRegionName(value) ?? "";
 }
 
-function regionOptions(currentRegion?: string | null) {
-  const options = [...approvedPlanningRegions];
+// Which regions this line's AU seat model actually has areas in — never the flat approved list
+// applied to every line alike. Anti Infective's Delta 3 has no CNS/Pedia counterpart, so a
+// region list shared across lines offers a region that then hands those two lines zero areas:
+// the same dead-end cascading dropdown this file's Area picker already had to be fixed for once.
+function regionOptions(source: AreaSource, currentRegion?: string | null) {
+  const options = approvedRegionsForSeats(source.seats);
   const current = String(currentRegion ?? "").trim();
   if (current && !canonicalRegion(current) && !options.some((region) => region.toLowerCase() === current.toLowerCase())) {
-    options.push(current as (typeof approvedPlanningRegions)[number]);
+    options.push(current as (typeof options)[number]);
   }
   return options;
 }
@@ -2434,7 +2436,7 @@ export function PlansWorkspace({
                           const rule = activityRule(row.activityType, row.activityTitle);
                           const availableAreas = areasForRegion(areaSource, row.locationText ?? "");
                           const autoRep = rule.autoRep ? autoRepForArea(workspace.medicalRepOptions, row.area ?? "", row.lineFilter) : null;
-                          const currentRegionOptions = regionOptions(row.locationText);
+                          const currentRegionOptions = regionOptions(areaSource, row.locationText);
                           const showLineSelect = tableNeedsLine && rule.showRep;
                           const locked = Boolean(row.locked);
 
@@ -3037,7 +3039,7 @@ function RowEditSheet({
   const rule = activityRule(row.activityType, row.activityTitle);
   const availableAreas = areasForRegion(areaSource, row.locationText ?? "");
   const autoRep = rule.autoRep ? autoRepForArea(medicalRepOptions, row.area ?? "", row.lineFilter) : null;
-  const currentRegionOptions = regionOptions(row.locationText);
+  const currentRegionOptions = regionOptions(areaSource, row.locationText);
   const lineOptions = lineOptionsFromReps(medicalRepOptions);
   const showLine = needsLineSelection(medicalRepOptions) && rule.showRep;
   const rowWarnings = validateDraftRow(row, medicalRepOptions);
