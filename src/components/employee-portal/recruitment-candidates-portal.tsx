@@ -15,7 +15,7 @@ import {
   type HiringManagerDecision,
 } from "@/lib/recruitment/candidate-status";
 import { detectCvFileKind } from "@/lib/recruitment/cv-file-kind";
-import { groupCandidatesByPosition } from "@/lib/recruitment/position-folder";
+import { groupCandidatesByPosition, shouldShowGroupHeadings } from "@/lib/recruitment/position-folder";
 import type { Candidate, Interview } from "@/lib/recruitment/types";
 
 type Props = {
@@ -513,6 +513,10 @@ export function RecruitmentCandidatesPortal({ initialApplications, initialSentTo
     [sentToMe],
   );
 
+  // One answer drives BOTH headings — see shouldShowGroupHeadings. They disagreed precisely because
+  // they used to be two separate expressions.
+  const showGroupHeadings = shouldShowGroupHeadings(positionFolders, unfiledSends);
+
   const reload = async () => {
     try {
       const data = await getJson("/api/recruitment/hiring-manager/applications");
@@ -552,9 +556,10 @@ export function RecruitmentCandidatesPortal({ initialApplications, initialSentTo
               vacancies, so comparing two candidates for one job means scrolling past three for
               other ones.
 
-              A single folder is a list with a heading on it, so the headings only appear once
-              there is genuinely something to separate. */}
-          {positionFolders.length > 1
+              Headings appear only once there is more than one GROUP to separate — and the sends
+              with no position count as one of those groups. A lone folder with nothing beside it
+              is just a list, and a heading on it would separate nothing. */}
+          {showGroupHeadings
             ? positionFolders.map((folder) => (
                 <div className="space-y-3" key={folder.key}>
                   <div className="flex items-baseline justify-between gap-3 border-b border-slate-200 pb-1">
@@ -576,7 +581,7 @@ export function RecruitmentCandidatesPortal({ initialApplications, initialSentTo
               filed under an invented heading that would read like a vacancy of its own. */}
           {unfiledSends.length > 0 ? (
             <div className="space-y-3">
-              {positionFolders.length > 0 ? (
+              {showGroupHeadings ? (
                 <div className="flex items-baseline justify-between gap-3 border-b border-slate-200 pb-1">
                   <h3 className="text-sm font-bold text-slate-800">No position given</h3>
                   <span className="shrink-0 text-xs font-semibold text-slate-500">

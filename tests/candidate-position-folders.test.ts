@@ -8,7 +8,9 @@ import {
   hasSentForPosition,
   positionFolderKey,
   positionFolderLabel,
+  shouldShowGroupHeadings,
 } from "../src/lib/recruitment/position-folder.ts";
+import type { PositionFolder } from "../src/lib/recruitment/position-folder.ts";
 import type { Candidate, SentForPosition } from "../src/lib/recruitment/types.ts";
 
 /**
@@ -284,6 +286,43 @@ export async function runCandidatePositionFolderTests() {
     /No position given/,
     "and pre-2026-08-28 sends keep their own heading rather than being hidden or invented into a vacancy",
   );
+
+  // ── 9b · Headings count GROUPS, and the unfiled pile is one ────────────────
+  //
+  // Behaviour, not a grep of a JSX condition: the rule lives in the pure module precisely so it can
+  // be asserted as an answer. The third case is the one that shipped wrong — every send predating
+  // 2026-08-28 has no position, so the FIRST manager to receive a positioned CV lands exactly there.
+  {
+    const folder = (key: string): PositionFolder => ({
+      candidates: [],
+      key,
+      label: key,
+      lastSentAt: null,
+      position: { areaName: key, jobTitle: "Medical Representative", lineName: null, regionName: null, vacancyId: null },
+    });
+    const someone = [{ id: "x" } as unknown as Candidate];
+
+    assert.equal(
+      shouldShowGroupHeadings([folder("Nasr City")], []),
+      false,
+      "one folder and nothing beside it is just a list — a heading there separates nothing",
+    );
+    assert.equal(
+      shouldShowGroupHeadings([], someone),
+      false,
+      "and the state before this feature existed — every send unfiled — must keep rendering bare, exactly as it did",
+    );
+    assert.equal(
+      shouldShowGroupHeadings([folder("Nasr City")], someone),
+      true,
+      "ONE folder beside unfiled sends is TWO groups: heading both, or the only heading on screen sits on the pile with no position",
+    );
+    assert.equal(
+      shouldShowGroupHeadings([folder("Nasr City"), folder("Heliopolis")], []),
+      true,
+      "two folders are two groups whether or not anything is unfiled",
+    );
+  }
 
   // ── 10 · The picker exists on the screening screen, both ways ──────────────
   const session = read("src/components/recruitment/candidate-screening-session.tsx");
