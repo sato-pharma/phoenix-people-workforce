@@ -9,6 +9,7 @@ import {
   layoutKeyFor,
   layoutOwnerKey,
   PERSONAL_LAYOUT_VERSION,
+  pinHrefToUpperRow,
   placementOf,
   resolveRowSet,
   resolveStripConflicts,
@@ -726,4 +727,131 @@ export function runNavigationPersonalLayoutTests() {
     );
   }
 
+  // ── The row's "+" — pinHrefToUpperRow ────────────────────────────────────────────────────────
+  // Owner, 2026-08-28: pressing "+" and choosing a page makes it "embedded like the organogram",
+  // i.e. fixed in EVERY module. Each assertion below is one of the three ways a naive append would
+  // have produced a 200 OK that changed nothing on screen.
+
+  // Nothing saved yet: the function has to invent a whole valid document, not patch a null.
+  {
+    const next = pinHrefToUpperRow(null, "/admin/organogram");
+    assert.equal(next.version, PERSONAL_LAYOUT_VERSION, "a fresh document carries the current version");
+    assert.deepEqual(next.upperRow, ["/admin/organogram"], "the page lands in the upper row");
+    assert.ok(
+      isPersonalNavigationLayout(next),
+      "the PUT route validates with isPersonalNavigationLayout, so an invalid document would 400",
+    );
+  }
+
+  // TRAP 1 — the strip outranks the row. Adding to the row without releasing the strip entry saves
+  // cleanly and renders nothing new; this is the failure the owner actually hit.
+  {
+    const next = pinHrefToUpperRow(layout({ strip: ["/admin/organogram", "/admin/sales"] }), "/admin/organogram");
+    assert.deepEqual(next.strip, ["/admin/sales"], "the strip releases the page");
+    assert.deepEqual(next.upperRow, ["/admin/organogram"], "and the row takes it");
+    assert.deepEqual(
+      applyPersonalLayout(gated, next).upperRow.map((i) => i.href),
+      ["/admin/organogram"],
+      "so it actually RENDERS in the row — the assertion the strip conflict used to break",
+    );
+  }
+
+  // TRAP 2 — a module override REPLACES the defaults. Appending only to the default upperRow would
+  // skip exactly the modules the viewer had already arranged.
+  {
+    const next = pinHrefToUpperRow(
+      layout({
+        upperRow: ["/admin/sales"],
+        moduleRows: {
+          people: { upperRow: ["/admin/employees"], lowerRow: [] },
+          sales: { upperRow: [], lowerRow: ["/admin/targets"] },
+        },
+      }),
+      "/admin/organogram",
+    );
+    assert.deepEqual(next.upperRow, ["/admin/sales", "/admin/organogram"], "the default row gains it");
+    assert.deepEqual(
+      next.moduleRows?.people,
+      { upperRow: ["/admin/employees", "/admin/organogram"], lowerRow: [] },
+      "and so does an override that already had a row",
+    );
+    assert.deepEqual(
+      next.moduleRows?.sales,
+      { upperRow: ["/admin/organogram"], lowerRow: ["/admin/targets"] },
+      "and one whose upper row was empty",
+    );
+    for (const moduleId of [null, "people", "sales", "nonexistent"]) {
+      assert.ok(
+        applyPersonalLayout(gated, next, moduleId).upperRow.some((i) => i.href === "/admin/organogram"),
+        `it renders in every module — module ${moduleId ?? "(none)"} is missing it`,
+      );
+    }
+  }
+
+  // TRAP 3 — a page cannot sit in both rows, and a hidden page must come back when pinned.
+  {
+    const next = pinHrefToUpperRow(
+      layout({ lowerRow: ["/admin/organogram", "/admin/targets"], hidden: ["/admin/organogram"] }),
+      "/admin/organogram",
+    );
+    assert.deepEqual(next.lowerRow, ["/admin/targets"], "the lower row releases it");
+    assert.deepEqual(next.hidden, [], "and it is no longer hidden");
+    assert.deepEqual(next.upperRow, ["/admin/organogram"], "the upper row has it");
+  }
+
+  // Pressing "+" twice on the same page must not put two identical tabs in the row.
+  {
+    const once = pinHrefToUpperRow(layout({ upperRow: ["/admin/sales"] }), "/admin/organogram");
+    const twice = pinHrefToUpperRow(once, "/admin/organogram");
+    assert.deepEqual(twice.upperRow, ["/admin/sales", "/admin/organogram"], "no duplicate, and no reordering");
+    assert.deepEqual(twice, once, "the second press is a no-op on the whole document");
+  }
+
+  // The `sections` list is left alone on purpose: a row entry outranks a section entry, so the
+  // section copy is inert while pinned, and is where the page returns to if it comes off the row.
+  {
+    const before = layout({ sections: [{ id: "people", label: "People", items: ["/admin/organogram"] }] });
+    const next = pinHrefToUpperRow(before, "/admin/organogram");
+    assert.deepEqual(next.sections, before.sections, "the section entry survives the pin");
+    const rendered = applyPersonalLayout(gated, next);
+    assert.deepEqual(
+      rendered.sections.flatMap((s) => s.items.map((i) => i.href)).sort(),
+      ["/admin/employees", "/admin/sales", "/admin/targets"],
+      "and the row still wins: the page is claimed by the row, so no section renders it as well",
+    );
+    assert.deepEqual(
+      rendered.upperRow.map((i) => i.href),
+      ["/admin/organogram"],
+      "it appears exactly once, in the row",
+    );
+  }
+
+  // ── The "+" must be wired to that function, and offer only gated pages ───────────────────────
+  // Source-pinned for the same reason as the editor checks above: both components are JSX, which
+  // the runner's type stripping cannot import.
+  {
+    const button = readFileSync("src/components/layout/nav-row-add-button.tsx", "utf8");
+    assert.ok(
+      /pinHrefToUpperRow\(body\?\.data \?\? null, href\)/.test(button),
+      "the + must write through pinHrefToUpperRow, or it re-opens all three traps above",
+    );
+    assert.ok(
+      /method: "PUT"/.test(button) && /router\.refresh\(\)/.test(button),
+      "a save that never refreshes leaves the row unchanged on screen — the original complaint",
+    );
+
+    const rows = readFileSync("src/components/layout/horizontal-nav-rows.tsx", "utf8");
+    assert.ok(
+      /const addable = gated\b/.test(rows),
+      "the picker must be built from the GATED sections, so it can no more introduce an href than applyPersonalLayout can",
+    );
+    assert.ok(
+      /canAdd: navigationMode === "admin"/.test(rows),
+      "admin chrome only, the same restriction the layout itself carries",
+    );
+    assert.ok(
+      /if \(items\.length === 0\) return null;/.test(rows),
+      "an empty row still renders nothing at all, + included",
+    );
+  }
 }
