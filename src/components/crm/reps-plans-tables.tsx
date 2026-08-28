@@ -12,6 +12,7 @@ import {
 import { ExportXlsxButton } from "@/components/ui/export-xlsx-button";
 import { SortableTh, TableSearchInput } from "@/components/ui/sortable-table";
 import { useSortableTable } from "@/components/ui/use-sortable-table";
+import { splitCrmRepName } from "@/lib/crm/rep-name";
 import type { RepsPlansRepRow } from "@/lib/crm/reps-plans";
 
 // Client half of Reps Plans. Styling copies the Rep Doctor Lists tables verbatim
@@ -232,10 +233,21 @@ export function RepsPlansRepTable({
         }
         getKey={(row) => row.repKey}
         items={table.rows}
-        renderCard={(row) => (
+        renderCard={(row) => {
+          // The CRM's agent_name is a login handle with the territory bolted on the end. The card
+          // title WRAPS below md and must keep doing so — #2268 chose that over nowrap (which took
+          // a 375px page to 455px of sideways scroll) and over an ellipsis. So the way to stop a
+          // name wrapping is to stop the string being long: the person goes in the title, the
+          // territory drops one line to the meta, and nothing is lost from the card.
+          const { name, territory } = splitCrmRepName(row.repName);
+          // A handle that is territory and NOTHING else has no person half. Show what there is
+          // rather than an empty heading — and then do not repeat it on the meta line.
+          const cardTitle = name || territory || row.repName;
+          const cardTerritory = name ? territory : null;
+          return (
           <PortalRecordCard
             accent={attainmentAccent(row.pm.attainmentPct)}
-            meta={`${row.workingDays} working days · ${row.reportedCalls} calls reported, ${row.verifiedCalls} proved`}
+            meta={`${cardTerritory ? `${cardTerritory} · ` : ""}${row.workingDays} working days · ${row.reportedCalls} calls reported, ${row.verifiedCalls} proved`}
             // Both rates sit in the badge, labelled. Neither answers the owner's question alone: AM
             // is the two accounts, PM is the ten clinics, and a rep can clear one and miss the other.
             status={
@@ -258,7 +270,7 @@ export function RepsPlansRepTable({
                 </span>
               </span>
             }
-            title={row.repName}
+            title={cardTitle}
           >
             <PortalRecordFields
               fields={[
@@ -299,7 +311,8 @@ export function RepsPlansRepTable({
               ]}
             />
           </PortalRecordCard>
-        )}
+          );
+        }}
         renderTable={() => (
           <PortalDesktopTable className="text-xs" minWidth="1460px">
             <thead>
