@@ -325,7 +325,9 @@ The message now names which of the two situations the gap describes — "nobody 
 batch from the HR handset, so CVs are accumulating there unread" under forwarding, or "no applicant
 has messaged the line" once direct intake is on — instead of restating the number of hours.
 
-`RECRUITMENT_WHATSAPP_SILENCE_ALERT_HOURS` (96 in Railway) sets both the paging threshold and the
+`RECRUITMENT_WHATSAPP_SILENCE_ALERT_HOURS` (**24** in Railway since 2026-08-28, lowered from 96
+because over the preceding 45 days only 2 gaps exceeded 96h while 7 exceeded 24h — at 96 the alarm
+could sleep four days while CVs piled up on the handset) sets both the paging threshold and the
 reach window. Once Coexistence is live, applicants arrive continuously and this stops firing on its
 own; until then it firing means real work is queued on a phone.
 
