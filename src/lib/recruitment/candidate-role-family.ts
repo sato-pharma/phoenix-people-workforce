@@ -101,7 +101,16 @@ export function candidateRoleFamily(raw: string | null | undefined): CandidateRo
   if (/\bproduct\s+specialist\b/.test(t)) return "medical_rep";
   if (/\bterritory\s+manager\b/.test(t)) return "medical_rep";
 
-  if (/\b(regional|area|zone|zonal)\s+(manager|supervisor|head)\b/.test(t)) return "area_regional_manager";
+  // "Sales" is allowed to sit between the region word and the seniority word, and nothing else is:
+  // "Regional Sales Manager" and "Area Sales Manager" are this pool's own names for the RSM/ASM
+  // field-force role (see screening-order.ts's field_force band), so requiring the two words to be
+  // adjacent was missing them — measured against production 2026-08-28, 12 of 345 titled candidates
+  // (9 distinct titles, all "Regional/Area (Sales) Manager" shapes) were falling through to the
+  // `sales` catch-all below and sorting behind every medical rep in the screening queue. Widening
+  // to any word here (mirroring the district branch's two-independent-tests shape) would go too
+  // far the other way: "Regional Collection Manager" also carries "regional" and "manager" but is
+  // a collections role, not a field one, and stays "other" precisely because nothing here forces it.
+  if (/\b(regional|area|zone|zonal)\s+(?:sales\s+)?(manager|supervisor|head)\b/.test(t)) return "area_regional_manager";
   if (/\bline\s+(manager|supervisor)\b/.test(t)) return "area_regional_manager";
   if (/\bsupervisor\s+for\s+\w+\s+line\b/.test(t)) return "area_regional_manager";
 
