@@ -48,7 +48,13 @@ import {
   reapStaleIReports360SyncRuns,
   syncIReports360Visits,
 } from "@/lib/crm/sync";
-import { latestPlanSyncAtMs, resolvePlanSyncWindow, syncIReports360WeeklyPlans } from "@/lib/crm/plan-sync";
+import { announceNewPlansToManagers } from "@/lib/crm/plan-notifications";
+import {
+  latestPlanSyncAtMs,
+  resolvePlanSyncWindow,
+  syncIReports360WeeklyPlans,
+  type NewlySeenPlan,
+} from "@/lib/crm/plan-sync";
 import { PARITY_STALE_AFTER_DAYS, latestParityCheckAtMs, runIReports360ParitySweep } from "@/lib/crm/parity";
 import { CRM_SYNC_RUNS_TABLE } from "@/lib/crm/tables";
 import { notifyIReports360SyncResult } from "@/lib/notifications/ireports360-sync-digest";
@@ -443,6 +449,47 @@ async function seedScheduledWorkMarkers(): Promise<void> {
  * refresh must not be able to raise its alarms or cost it a tick. A failure here is logged and the
  * failure gap holds it off for half an hour — the list is simply as stale as it was before.
  */
+/**
+ * Tells each rep's manager about the plans this run saw for the first time.
+ *
+ * Firewalled from the sync twice over. `announceNewPlansToManagers` is best-effort by construction
+ * and returns its skips rather than throwing, but it still reads the roster and writes
+ * notifications — so a throw is caught here rather than in the caller's `catch`, where it would set
+ * `lastPlanSyncFailureMs` and report a FAILED sync for a mirror that was written perfectly. An
+ * unsent email is an inconvenience; a plan sync that reads as broken sends someone looking for a
+ * data problem that does not exist.
+ *
+ * Silence is never the outcome: an announcement, a withheld run and a per-plan skip each leave a
+ * line. The 13-day outbox strand is the standing lesson here — a job that "runs fine" and does
+ * nothing looks identical to a quiet week unless it says which one it was.
+ */
+async function announceNewPlans(newPlans: NewlySeenPlan[]): Promise<void> {
+  if (newPlans.length === 0) return;
+  try {
+    const announcement = await announceNewPlansToManagers(newPlans);
+    console.log(
+      `[crm:live-poll] plan-sync saw ${newPlans.length} new plan(s) — announced ${announcement.announced}` +
+        (announcement.skipped.length > 0 ? `, skipped ${announcement.skipped.length}` : "") +
+        (announcement.withheldReason ? ` — WITHHELD: ${announcement.withheldReason}` : ""),
+    );
+    // A withheld run means managers were told about NOTHING while plans really did arrive, so it is
+    // the one outcome that has to be findable later without reading stdout.
+    if (announcement.withheldReason) {
+      logError(`CRM plan sync did not announce ${newPlans.length} new plan(s): ${announcement.withheldReason}`, {
+        labels: { event: "crm_plan_announce_withheld", job: "ireports360-plan-sync" },
+      });
+    }
+    for (const skip of announcement.skipped) {
+      console.log(`[crm:live-poll] plan ${skip.crmPlanId} not announced — ${skip.reason}`);
+    }
+  } catch (error) {
+    logError("CRM plan sync could not announce new plans; the mirror is fine and managers were not told", {
+      error,
+      labels: { event: "crm_plan_announce_failed", job: "ireports360-plan-sync" },
+    });
+  }
+}
+
 async function runScheduledPlanSync(): Promise<void> {
   const window = resolvePlanSyncWindow(cairoTodayIso());
   try {
@@ -461,6 +508,7 @@ async function runScheduledPlanSync(): Promise<void> {
         labels: { event: "crm_plan_sync_prune_refused", job: "ireports360-plan-sync" },
       });
     }
+    await announceNewPlans(result.newPlans);
   } catch (error) {
     state.lastPlanSyncFailureMs = Date.now();
     logError("CRM in-process plan-sync failed; the rep doctor lists are as stale as they were", {
