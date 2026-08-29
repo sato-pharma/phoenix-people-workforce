@@ -33,6 +33,13 @@
 // (`@/lib/crm/dates`, `@/lib/attendance/working-days`) and a third written here would be the
 // duplicate-Cairo-helper trap this repo has paid for before.
 
+// NOT EVERY ops marker belongs here, and the exception is worth naming because it is invisible
+// from the literal alone. scripts/recruitment-split-forwarded-candidates.ts keeps its hardcoded
+// `ops:forwarded-split-20260816` deliberately: it is a completed one-shot that fails closed on
+// re-run, so its date records when it happened rather than when it next runs. A re-runnable
+// batch needs the stamp to follow the run; a finished one needs it to stay put. That is the
+// distinction to check before reaching for this module — not whether the literal looks stale.
+
 import { cairoTodayIso } from "@/lib/crm/dates";
 
 /**

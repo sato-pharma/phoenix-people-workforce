@@ -39,6 +39,8 @@ const WRITERS = [
   "scripts/recruitment-reread-legacy-schema-cvs.ts",
 ];
 const READER = "scripts/recruitment-apply-reread-fields.ts";
+// A finished one-shot, kept here so section 5b can assert it is left alone.
+const ONE_SHOT = "scripts/recruitment-split-forwarded-candidates.ts";
 
 const read = (relative: string) => readFileSync(path.join(process.cwd(), relative), "utf8");
 
@@ -111,6 +113,24 @@ export function runRecruitmentOpsMarkerTests() {
       `${writer} contains a hardcoded dated marker (${frozen.join(", ")}) — it must come from cvRereadOpsMarker() so the stamp follows the run`,
     );
   }
+
+  // --- 5b. ...but the completed one-shot must KEEP its literal ----------------------------------
+  // The mirror of section 5, and the reason it exists: section 5 makes a dated literal look like a
+  // defect wherever it appears, so the next reader of the forwarded-split script sees a bug rather
+  // than a receipt. That script finished 2026-08-16 and fails closed at its expectName guard, so a
+  // run-date stamp there would date a run that cannot happen. If this assertion ever fails, the
+  // change that broke it is the mistake, not this test.
+  const oneShot = read(ONE_SHOT);
+  assert.match(
+    withoutComments(oneShot),
+    /const OPS_MARKER = "ops:forwarded-split-20260816";/,
+    `${ONE_SHOT} must KEEP its hardcoded dated marker — it is a completed one-shot whose date records when it ran, and it can never legitimately run again`,
+  );
+  assert.doesNotMatch(
+    withoutComments(oneShot),
+    /cvRereadOpsMarker\(/,
+    `${ONE_SHOT} must not stamp a run date — it is not a re-runnable batch, and a future date on it would be a receipt for a run that never happened`,
+  );
 
   // --- 6. ...and every writer actually stamps from the helper ------------------------------------
   // Section 5 alone is satisfied by deleting the marker altogether, which would write a null

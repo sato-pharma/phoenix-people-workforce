@@ -78,6 +78,16 @@ import { selectAutoApplyFields, type AutoApplyExtractedFields } from "@/lib/recr
 //        scripts/recruitment-split-forwarded-candidates.ts [--dry-run]
 // ─────────────────────────────────────────────────────────────────────────────
 
+// FROZEN ON PURPOSE. Do NOT convert this to a run-date stamp the way the CV re-read batches were
+// on 2026-08-29 (src/lib/recruitment/ops-marker.ts). That change was right there and is wrong
+// here, and the two cases look identical from the shape of the literal alone — which is exactly
+// how this nearly got 'fixed'.
+//
+// Those scripts advertise themselves as SAFE TO RE-RUN and had stamped four separate runs with
+// one date. This one is a completed one-shot: it finished 2026-08-16, and since the identities
+// below were replaced with placeholders it fails closed at the expectName guard, so it can never
+// legitimately run again. Its date is therefore a receipt of when it happened, not a stamp for
+// when it next runs, and a dynamic marker would put a future date on a run that cannot occur.
 const OPS_MARKER = "ops:forwarded-split-20260816";
 
 // Hardcoded on purpose. These five file ids were resolved and eyeballed one by one against the
