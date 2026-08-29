@@ -6,7 +6,7 @@ import {
 // planPeriodText comes from the lib, NOT from plan-verification-tables above. That file is
 // "use client" and this one is a server component, so importing a plain function from it hands the
 // server a client reference rather than the function, and calling it throws on every render.
-import { PLAN_STATUS_NEW, planPeriodText } from "@/lib/crm/plan-verification";
+import { PLAN_DOCTORS_ANCHOR_ID, PLAN_STATUS_NEW, planPeriodText } from "@/lib/crm/plan-verification";
 import type { PlanVerificationBoard } from "@/lib/crm/plan-board";
 
 // Server half of Plan Verification. The Section/Tile vocabulary is copied verbatim from
@@ -186,17 +186,24 @@ export function PlanVerificationBoardView({
         />
       </Section>
 
+      {/* The anchor the client half scrolls to when a plan opens. This section sits below the whole
+          plans table, so on a manager with many reps it renders well past the bottom of the screen —
+          without somewhere to aim at, pressing a rep changed the URL and moved nothing the manager
+          could see. It wraps the SECTION rather than the table so the heading naming the plan lands
+          on screen too. */}
       {selected ? (
-        <Section
-          description={
-            kind === "weekly"
-              ? "Every doctor on this plan, on the day the rep planned to see them."
-              : "Every doctor on this plan, with the number of calls the rep planned for the month."
-          }
-          title={`${selected.plan.repName} — ${planPeriodText(selected.plan)}`}
-        >
-          <PlanDoctorsTable kind={kind} plan={selected.plan} rows={selected.rows} />
-        </Section>
+        <div id={PLAN_DOCTORS_ANCHOR_ID}>
+          <Section
+            description={
+              kind === "weekly"
+                ? "Every doctor on this plan, on the day the rep planned to see them."
+                : "Every doctor on this plan, with the number of calls the rep planned for the month."
+            }
+            title={`${selected.plan.repName} — ${planPeriodText(selected.plan)}`}
+          >
+            <PlanDoctorsTable kind={kind} plan={selected.plan} rows={selected.rows} />
+          </Section>
+        </div>
       ) : null}
     </div>
   );
